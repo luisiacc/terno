@@ -1187,11 +1187,13 @@ function ReaderContent() {
   const draftShown = useApp((s) => s.draftShown);
   const draftKey = useDrafts((s) => (selectedId === null ? null : shownDraftKey(s.drafts, selectedId, draftShown)));
   const composing = useInlineComposerOpen(selectedId, draftKey);
-  const repliesOn = useApp(repliesOffered);
+  // plan 211: the conversation's account's own AI switch too
+  const accountId = detail?.thread.accountId;
+  const repliesOn = useApp((s) => repliesOffered(s, accountId));
   const readyHere = useReplies((r) => r.shown?.phase === "ready" && r.shown.threadId === selectedId);
-  const summarizeOffered = useApp(summariesOffered);
+  const summarizeOffered = useApp((s) => summariesOffered(s, accountId));
   // plan 147: Dev mode's switch off, what's stored stays out of sight too; elsewhere reading is never gated (plan 132)
-  const summaryShown = useApp(aiAllowed);
+  const summaryShown = useApp((s) => aiAllowed(s, accountId));
   // plan 161: only on the newsletter it was opened for
   const fromDigest = useToday((s) => s.fromDigest !== null && s.fromDigest === selectedId);
 

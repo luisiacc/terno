@@ -4,7 +4,7 @@ import { setLocale, t } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { afterEach, describe, expect, it } from "vitest";
-import { aiReady, askOffered, choiceLabel, choiceOf, datedReaderLine, disclosureLine, draftingOffered, errorHelp, keepsLine, mailDestinations, followupsOffered, helperElsewhere, OUTPUT_LABEL, presetLabel, privacyLine, providerName, repliesOffered, routeOf, routingLine, summariesOffered, todayOffered, writingModel, writingTarget } from "./ai";
+import { accountAi, aiAllowed, aiReady, askOffered, choiceLabel, choiceOf, datedReaderLine, disclosureLine, draftingOffered, errorHelp, keepsLine, mailDestinations, followupsOffered, helperElsewhere, OUTPUT_LABEL, presetLabel, privacyLine, providerName, repliesOffered, routeOf, routingLine, summariesOffered, todayOffered, writingModel, writingTarget } from "./ai";
 
 const ai = (over: Partial<AiSettings>) => ({ provider: "none", preset: null, baseURL: null, local: false, ...over }) as AiSettings;
 
@@ -48,6 +48,16 @@ describe("what the AI features offer (plan 147)", () => {
     expect(askOffered({ devAi: null, settings: settings(ownKey, { ask: { enabled: false } as AppSettings["ask"] }) })).toBe(false);
     expect(followupsOffered({ devAi: null, settings: settings(ownKey, { followups: { enabled: false } as AppSettings["followups"] }) })).toBe(false);
     expect(repliesOffered({ devAi: null, settings: settings(ownKey, { replies: { enabled: false } as AppSettings["replies"] }) })).toBe(false);
+  });
+
+  it("plan 211: on a conversation, its account's own AI switch too; an account not known, or none named, is on", () => {
+    const accounts = [{ id: 1, ai: false }, { id: 2, ai: true }, { id: 3 }];
+    for (const offered of [summariesOffered, followupsOffered, repliesOffered]) {
+      const s = { devAi: null, settings: settings(ownKey), accounts };
+      expect([offered(s, 1), offered(s, 2), offered(s, 3), offered(s, 9), offered(s)]).toEqual([false, true, true, true, true]);
+    }
+    expect(aiAllowed({ devAi: null, settings: settings(ownKey), accounts }, 1)).toBe(false);
+    expect(accountAi({ accounts }, null)).toBe(true);
   });
 });
 

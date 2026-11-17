@@ -140,7 +140,7 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
  * nudge (waiting on their reply) isn't a task, and keeps its card here.
  */
 export default function ThreadFollowups({ detail }: { detail: ThreadDetail }) {
-  const enabled = useApp(followupsOffered);
+  const enabled = useApp((s) => followupsOffered(s, detail.thread.accountId));
   const rows = useFollowups((s) => s.byThread.get(detail.thread.id));
   const shown = enabled && !detail.thread.inTrash && !detail.thread.inSpam ? rows : undefined;
   const waits = shown?.filter((r) => r.kind === "awaiting") ?? [];

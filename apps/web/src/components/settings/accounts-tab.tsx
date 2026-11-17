@@ -21,6 +21,7 @@ import SignInPanel from "../sign-in-panel";
 import { retryIn } from "../connection-pill";
 import { getApp, setApp, useApp } from "~/state/app";
 import { patchAccount, type AccountEdit } from "~/lib/accounts";
+import { aiFeaturesOffered } from "~/lib/ai";
 import { DaysField } from "./general-tab";
 import { AccountWriting } from "./ai-drafting";
 import { OwnerCard } from "./owner-card";
@@ -172,6 +173,9 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
   const [removing, setRemoving] = useState(false);
   // the text fields keep what was typed and say a failure under it: the account changes once the backend has it
   const save = (patch: AccountEdit) => patchAccount(account.id, patch, { optimistic: "color" in patch });
+  // plan 211: the account's two switches show where AI features can run; with its AI off, what depends on it isn't here
+  const aiOffered = useApp(aiFeaturesOffered);
+  const aiOn = account.ai !== false;
   return (
     <div className="hairline-divide pb-1 pl-5" data-testid="account-editor">
       <SettingsRow find="account.name" labelFor label={t("account.name")} hint={t("account.name.hint")}>
@@ -186,7 +190,17 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
       <SettingsRow find="account.signature" stacked labelFor label={t("account.signature")} hint={t("account.signature.hint")}>
         {(a) => <CommitInput multiline a11y={a} data-testid="account-signature" value={account.signature} placeholder={t("account.signature.placeholder")} maxLength={10_000} onCommit={(v) => save({ signature: v })} />}
       </SettingsRow>
-      <AccountWriting accountId={account.id} />
+      {aiOffered && (
+        <>
+          <SettingsRow find="account.ai" label={t("account.ai")} hint={t("account.ai.hint")}>
+            {(a) => <Switch {...a} data-testid="account-ai" checked={aiOn} onCheckedChange={(on) => void client.call("accounts.update", { id: account.id, ai: on })} />}
+          </SettingsRow>
+          <SettingsRow find="account.feed" label={t("account.feed")} hint={t("account.feed.hint")}>
+            {(a) => <Switch {...a} data-testid="account-feed" checked={account.feed !== false} onCheckedChange={(on) => void client.call("accounts.update", { id: account.id, feed: on })} />}
+          </SettingsRow>
+        </>
+      )}
+      {aiOn && <AccountWriting accountId={account.id} />}
       <SettingsRow find="account.syncWindow" labelFor label={t("settings.general.syncWindow")} hint={t("account.syncWindow.hint", { days: generalWindow })}>
         {(a) => (
           <DaysField
@@ -206,9 +220,11 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
         </SettingsRow>
       )}
       {/* plan 142 */}
-      <SettingsRow find="account.followups" label={t("account.followups")} hint={t("account.followups.hint")}>
-        {(a) => <Switch {...a} data-testid="account-followups" checked={account.followups !== false} onCheckedChange={(on) => void client.call("accounts.update", { id: account.id, followups: on })} />}
-      </SettingsRow>
+      {aiOn && (
+        <SettingsRow find="account.followups" label={t("account.followups")} hint={t("account.followups.hint")}>
+          {(a) => <Switch {...a} data-testid="account-followups" checked={account.followups !== false} onCheckedChange={(on) => void client.call("accounts.update", { id: account.id, followups: on })} />}
+        </SettingsRow>
+      )}
       <SettingsRow find="account.connection" stacked label={t("account.connection")} hint={<span className="whitespace-pre-wrap [overflow-wrap:anywhere]">{status(account)}</span>}>
         {() => <Reconnect account={account} />}
       </SettingsRow>

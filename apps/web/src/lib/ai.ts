@@ -1,4 +1,4 @@
-import { aiCanRun, aiFeaturesAvailable, aiReady, AI_JOBS, routedByKeys, routeFor, SUMMARY_DEFAULT_MODEL, WRITING_CLAUDE_MODEL, type AiErrorKind, type AiJob, type AiProviderId, type AiRoute, type CompatiblePreset, type OutputMode } from "@terno/core";
+import { aiCanRun, aiFeaturesAvailable, aiReady, AI_JOBS, routedByKeys, routeFor, SUMMARY_DEFAULT_MODEL, WRITING_CLAUDE_MODEL, type AiErrorKind, type AiJob, type AiProviderId, type AiRoute, type CompatiblePreset, type OutputMode, type Account } from "@terno/core";
 import type { AiSettings, AppSettings } from "@terno/core/rpc";
 import { getLocale, t } from "@terno/i18n";
 
@@ -135,21 +135,34 @@ export function writingTarget(ai: AiSettings | null | undefined): { ready: boole
 interface AiOffer {
   devAi: unknown;
   settings: AppSettings | null;
+  /** plan 211: each account's "Use AI with this account" */
+  accounts?: readonly Pick<Account, "id" | "ai">[];
 }
 
-/** Plan 147: on a local build Dev mode's switch decides, whatever the profile has saved. Elsewhere there's nothing to ask yet (plan 85: no entitlement). */
-export const aiAllowed = (s: AiOffer): boolean => s.devAi === null || s.settings?.devAi === true;
+/** Plan 211: the account lets the AI read its mail (an account not known here, or none named, is on, its default). */
+export const accountAi = (s: Pick<AiOffer, "accounts">, accountId?: number | null): boolean => accountId == null || s.accounts?.find((a) => a.id === accountId)?.ai !== false;
 
-/** Plan 147: an AI feature shows only where it can run: a free install with nothing set up sees none, and Settings → AI is the way in. */
-export const summariesOffered = (s: AiOffer): boolean => aiAllowed(s) && summaryReady(s.settings?.ai);
+/**
+ * Plan 147: on a local build Dev mode's switch decides, whatever the profile has saved. Elsewhere there's nothing to ask yet
+ * (plan 85: no entitlement). Plan 211: for a conversation, its account's own switch too (`accountId`).
+ */
+export const aiAllowed = (s: AiOffer, accountId?: number | null): boolean => (s.devAi === null || s.settings?.devAi === true) && accountAi(s, accountId);
+
+/**
+ * Plan 147: an AI feature shows only where it can run: a free install with nothing set up sees none, and Settings → AI is
+ * the way in. Plan 211: on a conversation, only where its account's AI is on (`accountId`).
+ */
+export const summariesOffered = (s: AiOffer, accountId?: number | null): boolean => aiAllowed(s, accountId) && summaryReady(s.settings?.ai);
 export const draftingOffered = (s: AiOffer): boolean => aiAllowed(s) && writingTarget(s.settings?.ai).ready;
 export const askOffered = (s: AiOffer): boolean => aiAllowed(s) && s.settings?.ask?.enabled === true && askReady(s.settings?.ai);
+/** The AI features' own rule (plan 145, Today's first), with Dev mode's switch: what Settings shows of them. */
+export const aiFeaturesOffered = (s: AiOffer): boolean => aiAllowed(s) && aiFeaturesAvailable(s.settings);
 /** Today's own rule (plan 145), with the switch. `todayOffered` adds its row's setting. */
-export const todayAvailable = (s: AiOffer): boolean => aiAllowed(s) && aiFeaturesAvailable(s.settings);
+export const todayAvailable = aiFeaturesOffered;
 export const todayOffered = (s: AiOffer): boolean => todayAvailable(s) && s.settings?.today?.show !== false;
 /** These two need a provider to turn on, and what they found stays readable when a key goes. */
-export const followupsOffered = (s: AiOffer): boolean => aiAllowed(s) && s.settings?.followups?.enabled === true;
-export const repliesOffered = (s: AiOffer): boolean => aiAllowed(s) && s.settings?.replies?.enabled === true;
+export const followupsOffered = (s: AiOffer, accountId?: number | null): boolean => aiAllowed(s, accountId) && s.settings?.followups?.enabled === true;
+export const repliesOffered = (s: AiOffer, accountId?: number | null): boolean => aiAllowed(s, accountId) && s.settings?.replies?.enabled === true;
 
 /** A provider by name, wherever it's named outside its own settings. */
 export function providerLabel(provider: AiProviderId, ai?: Pick<AiSettings, "provider" | "preset" | "local">): string {

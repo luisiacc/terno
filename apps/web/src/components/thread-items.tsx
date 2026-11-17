@@ -38,8 +38,9 @@ export interface ReaderModel extends ReaderItems {
 export function useReaderItems(detail: ThreadDetail): ReaderModel {
   const threadId = detail.thread.id;
   const hidden = detail.thread.inTrash || detail.thread.inSpam;
-  const datedOn = useApp((s) => aiAllowed(s) && s.settings?.dated?.enabled === true) && !hidden;
-  const promisesOn = useApp(followupsOffered) && !hidden;
+  // plan 211: and the conversation's account's AI
+  const datedOn = useApp((s) => aiAllowed(s, detail.thread.accountId) && s.settings?.dated?.enabled === true) && !hidden;
+  const promisesOn = useApp((s) => followupsOffered(s, detail.thread.accountId)) && !hidden;
   const target = useFeedTarget(threadId);
   const targetKey = target.map(refKey).join(" ");
   // a history line's closed item: its own read, as the feed opened it

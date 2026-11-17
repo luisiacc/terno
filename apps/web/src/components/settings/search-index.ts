@@ -49,6 +49,7 @@ export interface IndexEntry {
 
 const ai = (ctx: FindContext) => aiFeaturesAvailable(ctx.settings);
 const ownAi = (ctx: FindContext) => !ctx.settings.ai.fromEnv;
+const accountAi = (_ctx: FindContext, account?: Account) => account?.ai !== false;
 
 /**
  * Plan 203: every setting Settings shows, in its order (sections as the sidebar has them, rows as each section draws
@@ -100,12 +101,15 @@ export const SETTINGS_INDEX = [
   { id: "account.sender", tab: "accounts", label: "account.sender", hint: "account.sender.hint", scope: "account" },
   { id: "account.color", tab: "accounts", label: "settings.color", scope: "account" },
   { id: "account.signature", tab: "accounts", label: "account.signature", hint: "account.signature.hint", scope: "account" },
-  { id: "account.instructions", tab: "accounts", label: "aiDraft.account.instructions", hint: "aiDraft.account.instructionsHint", words: "settings.find.words.instructions", scope: "account" },
-  { id: "account.replies", tab: "accounts", label: "replies.account", hint: "replies.accountHint", scope: "account" },
-  { id: "account.useGeneral", tab: "accounts", label: "aiDraft.account.useGeneral", hint: "aiDraft.account.useGeneralHint", scope: "account" },
+  // plan 211: where AI features can run; what depends on the account's AI only while it's on
+  { id: "account.ai", tab: "accounts", label: "account.ai", hint: "account.ai.hint", scope: "account", when: ai },
+  { id: "account.feed", tab: "accounts", label: "account.feed", hint: "account.feed.hint", scope: "account", when: ai },
+  { id: "account.instructions", tab: "accounts", label: "aiDraft.account.instructions", hint: "aiDraft.account.instructionsHint", words: "settings.find.words.instructions", scope: "account", when: accountAi },
+  { id: "account.replies", tab: "accounts", label: "replies.account", hint: "replies.accountHint", scope: "account", when: accountAi },
+  { id: "account.useGeneral", tab: "accounts", label: "aiDraft.account.useGeneral", hint: "aiDraft.account.useGeneralHint", scope: "account", when: accountAi },
   { id: "account.syncWindow", tab: "accounts", label: "settings.general.syncWindow", words: "settings.find.words.syncWindow", scope: "account" },
   { id: "account.separateTabs", tab: "accounts", label: "account.separateTabs", hint: "account.separateTabs.hint", words: "settings.find.words.separateTabs", scope: "account", when: (_c, a) => a?.kind === "gmail" },
-  { id: "account.followups", tab: "accounts", label: "account.followups", hint: "account.followups.hint", scope: "account" },
+  { id: "account.followups", tab: "accounts", label: "account.followups", hint: "account.followups.hint", scope: "account", when: accountAi },
   { id: "account.connection", tab: "accounts", label: "account.connection", words: "settings.find.words.connection", scope: "account" },
   { id: "account.sentCopies", tab: "accounts", label: "account.sentCopies", hint: "account.sentCopies.hint", scope: "account", when: (_c, a) => a?.kind === "imap" },
   { id: "account.recipientReceipts", tab: "accounts", label: "account.recipientReceipts", hint: "account.recipientReceipts.hint", scope: "account", when: (_c, a) => a?.kind === "imap" },

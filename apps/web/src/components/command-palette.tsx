@@ -278,7 +278,8 @@ export function CommandPalette() {
   const followupsOn = useApp((s) => open && followupsOffered(s));
   const todayOn = useApp((s) => open && todayOffered(s));
   const canAsk = useApp((s) => open && askOffered(s));
-  const canSummarize = useApp((s) => open && summariesOffered(s));
+  // plan 211: the open conversation's account's AI too
+  const canSummarize = useApp((s) => open && summariesOffered(s, openThread?.thread.accountId));
   const drafting = useCanDraft();
   const updatesAvailable = useHasUpdates();
   const readyVersion = useUpdates((s) => (open && s.state?.ready && s.state.status !== "installing" ? s.state.ready.version : null));

@@ -1066,3 +1066,61 @@ test("plan 210 (iteration 5): Today's own by one key, a broken promise needed to
     await page.emulateMedia({ colorScheme: "light" });
   }
 });
+
+test("plan 211: an account's switches in Settings → Accounts: out of What matters, nothing of it shows; AI off, only what the AI made goes, and what depends on its AI leaves Settings", async ({ app: page, server }) => {
+  await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true, scanAnswered: true } }, dev);
+  await item(server, "power", "Pay the power bill", null);
+  // a conversation waiting on you: Needs you's own, local rule
+  const store = server.backend.store;
+  await store.sync.ingest([message(server, "waiting", { name: "Ana Ruiz", email: "ana@people.test" }, "Can we meet Thursday?", "Can we meet Thursday?", E2E_NOW - HOUR, { isRead: false, inInbox: true })], { applyFilters: false, now: E2E_NOW, classifier: null });
+  const db = sqlDb(store);
+  const waiting = db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = 'waiting'")!.thread_id;
+  db.run("UPDATE threads SET waiting_since = ?, has_sent = 1 WHERE id = ?", E2E_NOW - HOUR, waiting);
+  await fresh(page);
+  const settings = async () => {
+    await page.getByTestId("open-settings").click();
+    await page.getByTestId("tab-accounts").click();
+    const editor = page.getByTestId("account-editor").first();
+    if (!(await editor.isVisible())) await page.getByTestId("account-toggle").first().click();
+    await expect(page.getByTestId("account-ai")).toBeVisible();
+  };
+  const feedShows = async (bill: boolean, ana: boolean) => {
+    await page.keyboard.press("Escape");
+    await page.getByTestId("nav-today").click();
+    await expect(feed(page)).toBeVisible();
+    await expect(openLine(page, "Pay the power bill")).toHaveCount(bill ? 1 : 0);
+    await expect(feed(page).locator(`[data-thread-id="${waiting}"]`)).toHaveCount(ana ? 1 : 0);
+  };
+  await page.getByTestId("nav-today").click();
+  await expect(openLine(page, "Pay the power bill")).toBeVisible({ timeout: 15_000 });
+  await expect(feed(page).locator(`[data-thread-id="${waiting}"]`)).toHaveCount(1);
+
+  await scenario("Show in What matters off: neither the bill nor the conversation waiting on you; on, both are back", async () => {
+    await settings();
+    await expect(page.getByTestId("account-feed")).toHaveAccessibleName("Show in What matters");
+    await page.getByTestId("account-feed").click();
+    await expect(page.getByTestId("account-feed")).toHaveAttribute("aria-checked", "false");
+    // its other AI is untouched: what depends on it stays
+    await expect(page.getByTestId("account-followups")).toBeVisible();
+    await feedShows(false, false);
+    await settings();
+    await page.getByTestId("account-feed").click();
+    await expect(page.getByTestId("account-feed")).toHaveAttribute("aria-checked", "true");
+    await feedShows(true, true);
+  });
+
+  await scenario("Use AI off: the bill goes, the waiting conversation stays, and what depends on the account's AI leaves Settings; on, it's all back", async () => {
+    await settings();
+    await expect(page.getByTestId("account-ai")).toHaveAccessibleName("Use AI with this account");
+    await page.getByTestId("account-ai").click();
+    await expect(page.getByTestId("account-ai")).toHaveAttribute("aria-checked", "false");
+    await expect(page.getByTestId("account-followups")).toHaveCount(0);
+    await expect(page.getByTestId("account-prepare-replies")).toHaveCount(0);
+    await expect(page.getByTestId("account-feed")).toBeVisible();
+    await feedShows(false, true);
+    await settings();
+    await page.getByTestId("account-ai").click();
+    await expect(page.getByTestId("account-followups")).toBeVisible();
+    await feedShows(true, true);
+  });
+});
