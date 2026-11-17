@@ -192,6 +192,21 @@ describe("a reply's checked verdict (the Codex review of iteration 3, revision 1
     expect(checkSentMail({ promises: [monday], expectsReply: false, awaiting: [], kept: [], answers: [{ label: "q1", verdict: "fulfilled", evidence: "me, Chris, Sofia, Mateo, and yes Chris's mom is coming this year." }] }, { ...base, ownText: maria, recipients: [{ label: "r1", name: "Elena Ruiz", email: "elena@ruiz.test" }], requests: new Map([["q1", { id: 7, revision: 2, senderKey: "elena@ruiz.test" }]]) }).verdicts).toEqual([{ request: { id: 7, revision: 2 }, verdict: "fulfilled" }]);
   });
 
+  it("the second morning's code review: a holding promise holds a done request only when it qualifies it (its sentence, or a thing named in both), never by its paragraph alone", () => {
+    const elena = { label: "r1", name: "Elena Ruiz", email: "elena@ruiz.test" };
+    const headcount = new Map([["q1", { id: 7, revision: 2, senderKey: "elena@ruiz.test", text: "Tell Elena how many of you are coming for Thanksgiving" }]]);
+    const read = (ownText: string, promise: SentMailResult["promises"][number], evidence: string, requests = headcount) => checkSentMail({ promises: [promise], expectsReply: false, awaiting: [], kept: [], answers: [{ label: "q1", verdict: "fulfilled", evidence }] }, { ...base, ownText, recipients: [elena], requests }).verdicts;
+    // the head count, and a promise about her shift in the same paragraph: done
+    const monday = { text: "let Elena know whether you're working Thursday", quote: "I'll let you know Monday if I'm working Thursday.", to: "r1", due: "2026-11-16" };
+    expect(read("Hey E,\n\nThere will be five of us. I'll let you know Monday if I'm working Thursday.\n\nMaria", monday, "There will be five of us.")).toEqual([{ request: { id: 7, revision: 2 }, verdict: "fulfilled" }]);
+    // the same in Spanish
+    const lunes = { text: "avisarle a Elena si trabajas el jueves", quote: "Te aviso el lunes si me toca trabajar el jueves.", to: "r1", due: "2026-11-16" };
+    expect(read("Hola E,\n\nSomos cinco. Te aviso el lunes si me toca trabajar el jueves.\n\nMaría", lunes, "Somos cinco.")).toEqual([{ request: { id: 7, revision: 2 }, verdict: "fulfilled" }]);
+    // one about the head count itself, in another sentence: held
+    const count = { text: "confirm with Chris's mom how many of you are coming and tell Elena", quote: "I'll check with Chris's mom and let you know how many are coming.", to: "r1", due: null };
+    expect(read("Hey E,\n\nProbably five of us. I'll check with Chris's mom and let you know how many are coming.\n\nMaria", count, "Probably five of us.")).toEqual([{ request: { id: 7, revision: 2 }, verdict: "holding", item: 0 }]);
+  });
+
   it("a promise that only holds it holds it, whatever the model called it (iteration 4); a \"done\" that's a promise's words is that promise", () => {
     const ownText = "Let me check my calendar and get back to you. I'll send it Wednesday.";
     const holding = { text: "check and get back to Ms. Greer", quote: "Let me check my calendar and get back to you", to: "r1", due: null };

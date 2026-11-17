@@ -6,7 +6,7 @@ import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
 import { AWAITING_ITEM, HELD_REQUEST_CLOSED, type FollowupFinish, type FollowupSnapshot, type FollowupSource, type FollowupWrite, type MailStore, type SentMark } from "@terno/store";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import { UI_LOCALE_KEY } from "./forwarding";
-import { contextOf, paragraphsOf, plainEvidence, sameObject, sentencesOf, sentencesWith } from "./dated-evidence";
+import { contextOf, namingWords, plainEvidence, sameObject, sentencesOf, sentencesWith } from "./dated-evidence";
 import { promiseMoment } from "./promise-time";
 
 const MAX_DELAY = 2 ** 31 - 1;
@@ -205,7 +205,19 @@ export function renewedPromise(p: FollowupWrite, open: Iterable<FollowupRow>, o:
   return undefined;
 }
 
-export function checkSentMail(result: SentMailResult, input: { ownText: string; recipients: readonly { label: string; name: string; email: string }[]; open: ReadonlyMap<string, FollowupRow>; requests?: ReadonlyMap<string, Pick<DatedRow, "id" | "revision"> & Partial<Pick<DatedRow, "senderKey">>>; sentAt: number; nudgeAfterDays: number }): { rows: FollowupWrite[]; kept: { id: number; revision: number }[]; verdicts: Verdict[] } {
+/** The sentences some words of the reply touch: each its quote's sentences is in, or one inside it (a quote across two). */
+function touches(quote: string, sentences: ReturnType<typeof sentencesOf>): Set<number> {
+  return new Set([...sentencesWith(quote, sentences), ...sentencesOf(quote).flatMap((q) => sentencesWith(q.said, sentences))]);
+}
+// what any holding says, never the thing held ("get back to her", "check whether")
+const HOLDS_WORDS = new Set(["back", "check", "whether", "sure", "first"]);
+/** Whether a holding promise and a request name a thing in common (names aside), as their texts say it. */
+function namesBoth(promise: string, request: string): boolean {
+  const asked = namingWords(request, { names: false });
+  return [...namingWords(promise, { names: false })].some((w) => asked.has(w) && !HOLDS_WORDS.has(w));
+}
+
+export function checkSentMail(result: SentMailResult, input: { ownText: string; recipients: readonly { label: string; name: string; email: string }[]; open: ReadonlyMap<string, FollowupRow>; requests?: ReadonlyMap<string, Pick<DatedRow, "id" | "revision"> & Partial<Pick<DatedRow, "senderKey" | "text">>>; sentAt: number; nudgeAfterDays: number }): { rows: FollowupWrite[]; kept: { id: number; revision: number }[]; verdicts: Verdict[] } {
   const own = norm(input.ownText);
   const byLabel = new Map(input.recipients.map((r) => [r.label, r]));
   // plan 161, real models: Haiku names who it means ("Arjun Ramírez") where the prompt asks for a label ("r1"). A name
@@ -245,8 +257,7 @@ export function checkSentMail(result: SentMailResult, input: { ownText: string; 
    * that promise; anything else leaves it.
    */
   const sentences = sentencesOf(input.ownText);
-  // a done verdict's paragraphs, by its request (the second morning: where a holding promise in them holds it instead)
-  const paragraphs = paragraphsOf(input.ownText);
+  // a done verdict's sentences, by its request (the second morning: where a holding promise in them holds it instead)
   const doneIn = new Map<number, Set<number>>();
   const verdicts = (result.answers ?? []).flatMap((a): Verdict[] => {
     const request = input.requests?.get(a.label);
@@ -260,22 +271,26 @@ export function checkSentMail(result: SentMailResult, input: { ownText: string; 
     if (promise && onlyHolds(promise.quote!)) return [{ request: shown, verdict: "holding" as const, item: promise.item }];
     if (promise) return a.verdict === "holding" ? [] : [{ request: shown, verdict: "promise" as const, item: promise.item }];
     if (a.verdict !== "fulfilled") return [];
-    doneIn.set(request.id, new Set(pieces.flatMap((p) => sentencesWith(p, paragraphs))));
+    doneIn.set(request.id, new Set(pieces.flatMap((p) => [...touches(p, sentences)])));
     return [{ request: shown, verdict: "fulfilled" as const }];
   });
   /**
    * Plan 210 (the second morning, Priya's offsite): a reply that holds the question in the words it was "done" with ("My gut
    * says Sonoma too, but let me check … I'll get back to you") never does it: a "done" on a request from the person this
-   * reply's holding promise is to, the promise in a paragraph of that evidence and holding no other request, is that holding.
-   * One said apart ("…and yes, Chris's mom is coming. … I'll let you know Monday if I'm working Thursday") stays done.
+   * reply's holding promise is to, holding no other request, is that holding when it qualifies what was asked: its words in a
+   * sentence of that evidence ("…too, but let me check"), or a thing named in both it and the request. Its code review: a
+   * promise only beside it, the paragraph alone, holds nothing ("There will be five of us. I'll let you know Monday if I'm
+   * working Thursday": the head count is done).
    */
   const holding = rows.filter((r) => r.kind === "promise" && r.quote && onlyHolds(r.quote) && !verdicts.some((v) => v.verdict !== "fulfilled" && v.item === r.item));
-  const senders = new Map([...(input.requests?.values() ?? [])].map((r) => [r.id, r.senderKey]));
+  const asked = new Map([...(input.requests?.values() ?? [])].map((r) => [r.id, r]));
   for (const [i, v] of verdicts.entries()) {
     if (v.verdict !== "fulfilled") continue;
-    const from = senders.get(v.request.id);
+    const request = asked.get(v.request.id);
+    const from = request?.senderKey;
     const said = doneIn.get(v.request.id);
-    const held = holding.find((r) => (from === undefined || (r.personEmail != null && addressKey(r.personEmail) === from)) && sentencesWith(r.quote!, paragraphs).some((n) => said?.has(n)));
+    const qualifies = (r: FollowupWrite) => [...touches(r.quote!, sentences)].some((n) => said?.has(n)) || (request?.text !== undefined && namesBoth(r.text, request.text));
+    const held = holding.find((r) => (from === undefined || (r.personEmail != null && addressKey(r.personEmail) === from)) && qualifies(r));
     if (!held) continue;
     verdicts[i] = { request: v.request, verdict: "holding", item: held.item };
     holding.splice(holding.indexOf(held), 1);
