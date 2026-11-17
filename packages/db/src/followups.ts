@@ -178,7 +178,7 @@ function apart(db: Db, promiseId: number, requestId: number): void {
   const key = (id: number) => refKey({ source: "promise", id });
   const [promise, request] = [key(promiseId), refKey({ source: "dated", id: requestId })];
   const p = db.get<{ message_id: number; same_as: string | null }>("SELECT message_id, same_as FROM followups WHERE id = ?", promiseId)!;
-  const r = db.get<{ same_as: string | null; kind: string }>("SELECT same_as, kind FROM dated_items WHERE id = ?", requestId)!;
+  const r = db.get<{ same_as: string | null }>("SELECT same_as FROM dated_items WHERE id = ?", requestId)!;
   const [item, mine] = [r.same_as ?? request, p.same_as ?? promise];
   const canonical = (x: { id: number; same_as: string | null }) => x.same_as ?? key(x.id);
   const readings = db
@@ -187,10 +187,10 @@ function apart(db: Db, promiseId: number, requestId: number): void {
   for (const x of readings) if (x.id !== promiseId) db.run("UPDATE followups SET answers = ? WHERE id = ? AND answers IS NULL", requestId, x.id);
   if (!readings.some((x) => canonical(x) === item)) return;
   if (readings.some((x) => key(x.id) === item)) {
-    // a reading leads the request's item: the request and its own readings leave it, the request theirs (round 16: a bill's
-    // readings are bills); a reading on its own (no item of its own) joins the one its twin leads
+    // a reading leads the request's item: the request and its own readings leave it, the request theirs; a reading on its
+    // own (no item of its own) joins the one its twin leads
     db.run("UPDATE dated_items SET same_as = NULL WHERE id = ?", requestId);
-    db.run(`UPDATE dated_items SET same_as = ? WHERE id IN (SELECT id FROM dated_items INDEXED BY dated_same WHERE same_as = ?) AND (kind IN (${ANSWERED_KINDS.map((k) => `'${k}'`).join(", ")}) OR kind = ?)`, request, item, r.kind);
+    db.run(`UPDATE dated_items SET same_as = ? WHERE id IN (SELECT id FROM dated_items INDEXED BY dated_same WHERE same_as = ?) AND kind IN (${ANSWERED_KINDS.map((k) => `'${k}'`).join(", ")})`, request, item);
     for (const x of readings) {
       const leads = db.get("SELECT 1 FROM followups INDEXED BY followups_same WHERE same_as = ?1 UNION ALL SELECT 1 FROM dated_items INDEXED BY dated_same WHERE same_as = ?1 LIMIT 1", key(x.id));
       if (x.same_as === null && key(x.id) !== item && !leads) db.run("UPDATE followups SET same_as = ? WHERE id = ?", item, x.id);
@@ -269,6 +269,9 @@ export function finishFollowups(db: Db, w: FollowupFinish): FollowupFinishOutcom
         }
         continue;
       }
+      // round 16's code review: a bill is only ever paid by a reply, never folded into a promise to pay it (its row, day,
+      // amount and counts stay its own until it's paid)
+      if (!(ANSWERED_KINDS as readonly string[]).includes(r.kind)) continue;
       // the promise this reply made (its own row, or the older one it said again), an open one, linked once
       const p = db.get<{ id: number }>("SELECT id FROM followups WHERE ((message_id = ? AND item = ?) OR id = ?) AND kind = 'promise' AND state IN ('open','due') AND answers IS NULL AND holds IS NULL", w.messageId, v.item, renewed.get(v.item) ?? -1);
       if (!p) continue;

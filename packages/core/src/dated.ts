@@ -1,6 +1,6 @@
 import { REMIND_MORNING } from "./reminders";
 import { followupWakeAt, localDay } from "./followups";
-import { addressKey, WAITING_WINDOW_MS } from "./people";
+import { addressKey, automatedLevel, WAITING_WINDOW_MS } from "./people";
 import type { ItemSchedule, ScheduleProposal } from "./schedule";
 import { dueCutoff, type PartOfDay } from "./part-of-day";
 
@@ -25,10 +25,14 @@ export const ANSWERED_KINDS: readonly DatedKind[] = ["respond", "ask"];
 /**
  * Plan 210 (round 16, Sam's electric): what a reply of yours may be read as answering. A request, as `ANSWERED_KINDS`; and a
  * bill from someone the reply writes to (`recipients`: its To and Cc, by `addressKey`), theirs to be told it's paid (a
- * roommate's "your half is $48.20", answered "just venmo'd you"). A biller's bill, its sender not written to, isn't.
+ * roommate's "your half is $48.20", answered "just venmo'd you"). A biller's bill, its sender not written to, isn't; nor,
+ * its code review, one whose sender's address isn't a person's by itself (billing@, accounts@, noreply@: `automatedLevel`),
+ * copied on a reply-all or not: a company's bill is paid by its receipt. Only "done" reaches a bill: a promise to pay is
+ * the promise's row, the bill keeps its own.
  */
 export const replyAnswers = (row: { kind: string; senderKey: string }, recipients: ReadonlySet<string>): boolean =>
-  (ANSWERED_KINDS as readonly string[]).includes(row.kind) || (row.kind === "pay" && row.senderKey !== "" && recipients.has(row.senderKey));
+  (ANSWERED_KINDS as readonly string[]).includes(row.kind) ||
+  (row.kind === "pay" && row.senderKey !== "" && recipients.has(row.senderKey) && automatedLevel({ from_email: row.senderKey, list_id: null, is_bulk: 0, gmail_labels: null, is_spam: 0 }) === 0);
 /** How a reply's verdict closes what it settles (`closedReason`): a bill paid ("settled", Earlier's "Paid"), a request answered. */
 export const replyClosedReason = (kind: string): "settled" | "answered" => (kind === "pay" ? "settled" : "answered");
 /** A reply's recipients as `replyAnswers` reads them. */

@@ -358,6 +358,19 @@ export function negatedReceipt(words: string): boolean {
   return [...read.matchAll(new RegExp(SETTLES.pay!.source, "gu"))].some((m) => NOT_YET.test(read.slice(0, m.index).trim().split(" ").slice(-3).join(" ")));
 }
 
+// plan 210 (round 16's code review): the payer's own word that it's paid (en, es), as `norm` reads it: "just venmo'd you",
+// "paid you back", "sent you the $48.20", "ya te pagué", "te transferí", "te mandé"
+const PAID = /\b(?:paid|venmo d|venmoed|zelled|zelle d|transferred|wired|sent (?:you|it|over|the|your|\$)|pague|pagado|pagada|transferi|deposite|(?:te|le|les) (?:mande|envie))\b/u;
+// in the four words before it, said not to have happened, or only to come, or only if or when: "I have not paid", "haven't",
+// "will have paid", "if I paid", "todavía no te pagué", "cuando te pague", "quieres que te mande"
+const UNPAID = /\b(?:not|never|t|no|nunca|aun|todavia|will|ll|going|gonna|if|once|when|unless|should|would|could|need|needs|have to|si|cuando|que|hasta)\b/u;
+
+/** Plan 210 (round 16's code review): whether your own words say you've paid (never "I have not paid", "I'll pay"). */
+export function paidSaid(words: string): boolean {
+  const read = norm(words);
+  return [...read.matchAll(new RegExp(PAID.source, "gu"))].some((m) => !UNPAID.test(read.slice(0, m.index).trim().split(" ").slice(-4).join(" ")));
+}
+
 /** Whether some words say what settles an item of a kind, of the reader's own: "Payment received" a bill, "cancelled" a booking. */
 export function settlesKind(kind: string, words: string): boolean {
   const read = norm(words);

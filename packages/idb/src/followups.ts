@@ -176,7 +176,7 @@ function apart(c: Ctx, promiseId: number, requestId: number): void {
   if (!readings.some((x) => canonical(x) === item)) return;
   if (readings.some((x) => key(x.id) === item)) {
     dated.update(r, { same_as: null });
-    for (const x of dated.by("same", item)) if ((ANSWERED_KINDS as readonly string[]).includes(x.kind) || x.kind === r.kind) dated.update(x, { same_as: request });
+    for (const x of dated.by("same", item)) if ((ANSWERED_KINDS as readonly string[]).includes(x.kind)) dated.update(x, { same_as: request });
     for (const x of readings) if (x.same_as == null && key(x.id) !== item && !followups.count("same", key(x.id)) && !dated.count("same", key(x.id))) followups.update(x, { same_as: item });
     return;
   }
@@ -245,6 +245,8 @@ export function finishFollowups(c: Ctx, w: FollowupFinish): FollowupFinishOutcom
       }
       continue;
     }
+    // as SQL's (round 16's code review): a bill is only ever paid by a reply, never linked to a promise or held by one
+    if (!(ANSWERED_KINDS as readonly string[]).includes(r.kind)) continue;
     // plan 210 (iteration 4): a promise that only holds it is stored with it, once (no revision moves)
     // (its own row, or the older one it said again)
     const renewedRow = renewed.has(v.item) ? rows.get(renewed.get(v.item)!) : undefined;

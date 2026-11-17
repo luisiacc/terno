@@ -361,13 +361,6 @@ describe("early, broken, one time", () => {
       expect(projectToday(facts({ dated: [dated("respond", "2026-11-22", { threadId: 9 })] })).rows[0]!.why.item!.before).toBeUndefined();
     });
 
-    it("plan 210 (round 16): a promise that answers a roommate's bill (\"I'll venmo you\", no day) sits under the bill's day, the bill no row of its own", () => {
-      const half = dated("pay", "2026-11-20", { threadId: 9 });
-      const venmo = promise(at(2026, 11, 22, 9), { threadId: 9, answers: half.id, dated: false });
-      expect(linked(half, venmo)[0]).toMatchObject({ needed: half.dueAt });
-      expect(projectToday(facts({ dated: [half], promises: linked(half, venmo) })).rows.map((r) => [r.id, r.group, r.day])).toEqual([[`promise:${venmo.id}`, "day", "2026-11-20"]]);
-    });
-
     it("plan 210 (iteration 5, revision 4): a part of the day reaches the row, the promise that answers it, and Missed at noon", () => {
       // Wednesday at 10:00: Kai's notes by this morning, María's cupcakes this morning
       const kai = dated("respond", "2026-11-18", { threadId: 9, partOfDay: "morning" });

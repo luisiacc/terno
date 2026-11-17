@@ -567,6 +567,22 @@ describe("a bill from someone your reply writes to (round 16: Sam's electric)", 
     await reply(statement, "can you cover half of this one too?", { to: [jonah] });
     await followupsDone();
     expect(sentPrompts().at(-1)).not.toContain("<requests>");
+    // its code review: nor with the utility's billing address copied on a reply-all (a company's bill is paid by its receipt)
+    await reply(statement, "Jonah, I paid my half of this one.", { to: [jonah], cc: [utility] });
+    await followupsDone();
+    expect(sentPrompts().at(-1)).not.toContain("<requests>");
+  });
+
+  it("its code review: a bill is settled only by your saying it's paid, never by a promise to, a denial or a condition (en, es)", () => {
+    const requests = new Map([["q1", { id: 7, revision: 2, kind: "pay" as const, senderKey: "jonah@home.test", text: "Pay Jonah $48.20 for the electric bill" }]]);
+    const input = (ownText: string) => ({ ownText, recipients: [{ label: "r1", name: "Jonah", email: "jonah@home.test" }], open: new Map(), requests, sentAt: NOW, nudgeAfterDays: 5 });
+    const done = (ownText: string, evidence = ownText) => checkSentMail({ promises: [], expectsReply: false, awaiting: [], kept: [], answers: [{ label: "q1", verdict: "fulfilled", evidence }] }, input(ownText)).verdicts;
+    const paid = [{ request: { id: 7, revision: 2 }, verdict: "fulfilled" }];
+    for (const yes of ["just venmo'd you the $48.20", "Paid you back for the electric.", "I sent you the $48.20 on Zelle.", "Ya te pagué los $48.20.", "Te transferí lo de la luz."]) expect(done(yes), yes).toEqual(paid);
+    for (const no of ["I have not paid the $48.20 yet.", "I haven't paid the electric yet.", "I will have paid you by Friday.", "If I paid you twice, tell me.", "Todavía no te pagué lo de la luz.", "Cuando te pague te aviso.", "Thanks for the electric numbers!"]) expect(done(no), no).toEqual([]);
+    // a promise to pay it links nothing: the bill keeps its own row
+    const promise = { text: "venmo Jonah the $48.20", quote: "I'll venmo you Sunday", to: "r1", due: "2026-11-15", partOfDay: null };
+    for (const verdict of ["promise", "fulfilled", "holding"] as const) expect(checkSentMail({ promises: [promise], expectsReply: false, awaiting: [], kept: [], answers: [{ label: "q1", verdict, evidence: "I'll venmo you Sunday" }] }, input("I'll venmo you Sunday.")).verdicts).toEqual([]);
   });
 });
 

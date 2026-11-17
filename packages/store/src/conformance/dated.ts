@@ -962,37 +962,35 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
       });
 
       it("plan 210 (round 16, Sam's electric): a bill from someone the reply writes to (To or Cc) is theirs to be told it's paid; a biller's isn't", async () => {
-        const { store, bill, reply, read } = await talk();
-        const paid = { request: { id: bill.id, revision: bill.revision }, verdict: "fulfilled" as const };
+        const { store, got, item, finish, bill, reply, read } = await talk();
+        const paid = (row: { id: number; revision: number }) => ({ request: { id: row.id, revision: row.revision }, verdict: "fulfilled" as const });
         // to someone else: the bill's sender isn't written to, whatever the verdict
         const elsewhere = await reply({ to: [colleague] });
-        await read(elsewhere, { verdicts: [paid] });
+        await read(elsewhere, { verdicts: [paid(bill)] });
         expect(await store.dated.get(bill.id)).toMatchObject({ state: "open", revision: bill.revision });
+        // its code review: a company's billing address copied on a reply-all isn't a person told it's paid
+        const power = { name: "City Power", email: "billing@citypower.test" };
+        const statement = await got({ from: power, rfcMessageId: "power@v", date: NOW - 8800 });
+        await finish(statement.id, statement.thread, { rows: [item({ text: "Pay the electricity bill" })] });
+        const [company] = await store.dated.ofThread(statement.thread);
+        const all = await reply({ to: [colleague], cc: [power], inReplyTo: "power@v", references: ["power@v"] });
+        expect(all.thread).toBe(statement.thread);
+        await read(all, { verdicts: [paid(company!)] });
+        expect(await store.dated.get(company!.id)).toMatchObject({ state: "open", revision: company!.revision });
         // the sender in Cc ("just venmo'd you the $48.20"): paid, so Earlier says "Paid", never "Answered"
         const venmo = await reply({ to: [colleague], cc: [{ ...bank, email: "bills@bank.TEST" }] });
-        await read(venmo, { verdicts: [paid] });
+        await read(venmo, { verdicts: [paid(bill)] });
         expect(await store.dated.get(bill.id)).toMatchObject({ state: "settled", closedReason: "settled", closedAt: NOW, settledBy: venmo.id, revision: bill.revision + 1 });
       });
 
-      it("plan 210 (round 16): a promise to pay the bill's sender answers the bill, apart from it with the bill's other reading, and kept, settles it as paid", async () => {
-        const { store, got, item, finish, bill, reply, read, promise } = await talk();
-        // the bill's reminder, made one item with the promise by its words before the verdict came, as the bill was
-        const again = await got({ inReplyTo: "ask@v", references: ["ask@v"], date: NOW - 8500 });
-        await finish(again.id, again.thread, { rows: [item({ text: "Pay the bank the $48.20" })] });
-        const reminder = (await store.dated.ofThread(again.thread)).find((x) => x.messageId === again.id)!;
+      it("plan 210 (round 16's code review): a promise to pay a bill, or one that holds it, is never linked to it: the bill keeps its own row until it's paid", async () => {
+        const { store, bill, reply, read, promise } = await talk();
+        const shown = { id: bill.id, revision: bill.revision };
         const first = await reply();
-        const venmo = promise({ text: "venmo the bank the $48.20", quote: "I'll venmo you tonight" });
-        await read(first, { rows: [venmo] });
-        const [sends] = await store.followups.ofThread(first.thread);
-        expect(await store.today.link({ same: [{ item: { source: "dated", id: bill.id }, sameAs: `promise:${sends!.id}` }, { item: { source: "dated", id: reminder.id }, sameAs: `promise:${sends!.id}` }], details: [] })).toBe(2);
-        await store.followups.marks.queueScan([first.id], NOW);
-        await read(first, { rows: [venmo], verdicts: [{ request: { id: bill.id, revision: bill.revision }, verdict: "promise", item: 0 }] });
-        expect(await store.followups.get(sends!.id)).toMatchObject({ answers: bill.id, sameAs: null });
+        await read(first, { rows: [promise({ text: "venmo the bank the $48.20", quote: "I'll venmo you Sunday" }), promise({ item: 1, text: "check the amount and get back to the bank", quote: "let me check the amount", dated: false })], verdicts: [{ request: shown, verdict: "promise", item: 0 }, { request: shown, verdict: "holding", item: 1 }] });
+        const mine = await store.followups.ofThread(first.thread);
+        expect(mine.map((p) => [p.answers, p.holds])).toEqual([[null, null], [null, null]]);
         expect(await store.dated.get(bill.id)).toMatchObject({ state: "open", sameAs: null, revision: bill.revision });
-        expect((await store.dated.get(reminder.id))!.sameAs).toBe(`dated:${bill.id}`);
-        const second = await reply();
-        await read(second, { kept: [{ id: sends!.id, revision: sends!.revision }] });
-        expect(await store.dated.get(bill.id)).toMatchObject({ state: "settled", closedReason: "settled", settledBy: second.id, revision: bill.revision + 1 });
       });
 
       it("plan 210 (round 14's faults, the second morning): a promise said again moves the open one it renews, never a row beside it, its first missed day kept and a verdict on it reaching the older; one changed since is a row of its own", async () => {

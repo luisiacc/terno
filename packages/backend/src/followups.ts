@@ -6,7 +6,7 @@ import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
 import { AWAITING_ITEM, HELD_REQUEST_CLOSED, type FollowupFinish, type FollowupSnapshot, type FollowupSource, type FollowupWrite, type MailStore, type SentMark } from "@terno/store";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import { UI_LOCALE_KEY } from "./forwarding";
-import { contextOf, namingWords, plainEvidence, sameObject, sentencesOf, sentencesWith } from "./dated-evidence";
+import { contextOf, namingWords, paidSaid, plainEvidence, sameObject, sentencesOf, sentencesWith } from "./dated-evidence";
 import { promiseMoment } from "./promise-time";
 
 const MAX_DELAY = 2 ** 31 - 1;
@@ -220,7 +220,7 @@ function namesBoth(promise: string, request: string): boolean {
   return [...namingWords(promise, { names: false })].some((w) => asked.has(w) && !HOLDS_WORDS.has(w));
 }
 
-export function checkSentMail(result: SentMailResult, input: { ownText: string; recipients: readonly { label: string; name: string; email: string }[]; open: ReadonlyMap<string, FollowupRow>; requests?: ReadonlyMap<string, Pick<DatedRow, "id" | "revision"> & Partial<Pick<DatedRow, "senderKey" | "text">>>; sentAt: number; nudgeAfterDays: number }): { rows: FollowupWrite[]; kept: { id: number; revision: number }[]; verdicts: Verdict[] } {
+export function checkSentMail(result: SentMailResult, input: { ownText: string; recipients: readonly { label: string; name: string; email: string }[]; open: ReadonlyMap<string, FollowupRow>; requests?: ReadonlyMap<string, Pick<DatedRow, "id" | "revision"> & Partial<Pick<DatedRow, "senderKey" | "text" | "kind">>>; sentAt: number; nudgeAfterDays: number }): { rows: FollowupWrite[]; kept: { id: number; revision: number }[]; verdicts: Verdict[] } {
   const own = norm(input.ownText);
   const byLabel = new Map(input.recipients.map((r) => [r.label, r]));
   // plan 161, real models: Haiku names who it means ("Arjun Ramírez") where the prompt asks for a label ("r1"). A name
@@ -269,6 +269,9 @@ export function checkSentMail(result: SentMailResult, input: { ownText: string; 
     if (!pieces || !plainEvidence(pieces.join(" "), pieces.map((p) => contextOf(p, sentences)).join(" "))) return [];
     const promise = rows.find((r) => r.kind === "promise" && r.quote && pieces.some((p) => sameWords(r.quote!, p)));
     const shown = { id: request.id, revision: request.revision };
+    // round 16's code review: a bill (from a person this reply writes to) only by your saying it's paid ("just venmo'd you",
+    // never "I have not paid it yet"); a promise to pay it links nothing, the bill keeping its own row
+    if (request.kind === "pay") return a.verdict === "fulfilled" && !promise && paidSaid(pieces.join(" ")) ? [{ request: shown, verdict: "fulfilled" as const }] : [];
     // plan 210 (iteration 4, the Codex review's revision 4): a promise that only holds it is stored with it, whatever the
     // model called it ("holding" kept, no longer dropped); a "holding" whose words also send or sign something links nothing
     if (promise && onlyHolds(promise.quote!)) return [{ request: shown, verdict: "holding" as const, item: promise.item }];
