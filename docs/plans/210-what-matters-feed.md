@@ -1369,3 +1369,19 @@ Round 19's verified claims ledger (`/tmp/terno-scratch/p204/panel/ledger-r19-ver
 **Ran.** `pnpm typecheck` (every package): clean. `oxlint --deny-warnings` on every changed file: clean. Unit: core's `today-projection`, `today`; ai's `dated`; the backend's `dated`, `dated-second-look`, `dated-evidence`, `dated-automatic`, `dated-relay`, `promise-answers`, `followups`, `promise-time`, `model-stub`, `today`, `today-history`, `hand-to`; web `lib/hand-to`, `lib/today-sentence` (all pass). Not run: e2e (no spec changed; no committed spec has a zone note), the perf gates (no query; the checks read one sentence or one bracket), `pnpm test:all`, a Codex code review, a replay of the panel's mail.
 
 *Its Codex code review* (`/tmp/terno-scratch/p204/review-r19.out`, three points, each reproduced and fixed with a test that fails without it, en and es): (1) "We need you to book a dinner venue for the offsite." matched the get-together (four free words swallowed "you to book") and the request was dropped: `getTogetherOnly` now reads only a collective suggestion with the get-together right after it, a going verb at most ("ir por", "go out for", "tomarnos"), never "you" between, and never a meal that's a thing to arrange ("a dinner venue", "lunch order"), so "we need to book a dinner" and "tenemos que reservar una cena" stay asks; (2) "We should grab lunch soon, and send me your schedule." (and "… — send me…") lost its ask: the clauses are now split as written, at a comma, a dash, a semicolon and "and"/"y", their leading connector dropped (`saidClauses`, `dated-evidence.ts`), and a clause that starts on a verb addressed to the reader (`directsReader`: "send me", "forward me", "share", "mándame", "pásame", "dime") keeps the ask; (3) "Let me check with Chris and I'll get back to you. Send me the available shifts in the meantime." lost its wait: `asksBack` reads the same imperative clauses as asking back. Ran: backend typecheck, `oxlint --deny-warnings` on the changed files, the backend's `dated*`, `promise-answers`, `followups`, `promise-time`, `model-stub` (335 tests, all pass).
+
+##### Rounds 16 to 19 under the new bar
+
+The bar after round 14 is the verified claims ledger: each reviewer claim checked against the mail by Fable, counted per persona as verified wrong or missing items (wording apart), on Friday and on the second morning (Saturday).
+
+| Round | Friday | Saturday | Cells at 8+ (Fri / Sat) |
+|---|---|---|---|
+| 15 | 21 | 36 | 24/63 · 33/70 |
+| 16 | 9 | 13 | 35/63 · 41/70 |
+| 17 | 5 | 4 | 42/63 · 54/70 |
+| 18 | 6 | 3 | 35/63 · 47/70 |
+| 19 | 6 | 5 | 44/63 · 52/70 |
+
+From round 17 on, no rule fault or UI bug repeats from a round before; what stays is mostly a reading's new mistake on another mail, so the count holds between 3 and 6. The owner's "questions the user already answered still show as open" was fixed in each shape the panel found: a reply's evidence joined across list lines (8b2bc5f48), clipped at commas and joined with "; " (756b44755), a list's lead-in alone (cd9b7bbc9), a passing promise inside the answer (d8fe8713d, 71e662399); a reminder that is the same request (dde3c1af0); a promise answering a closed request joined by the same thing asked again (e89848c71); one occasion read twice moving together (576478c03); a person's bill paid by your reply (the round 16 note); a receipt stating the bill's own amount (fb3489403, 5f6d96802). Also from the panel: the gift-card scam backstop (fb3489403, 5f6d96802).
+
+Left to the owner: Theo's security advisory (read as nothing; a prompt change and its eval), Margaret's Gary ("at most an ask", iteration 4), Waiting on you's order for undated asks, a holding reply's row wording, where a far request sits, the Today perf gate (SQLite ~65–68 ms against 60 ms, failing on the base too), Creatix-style renewals with a fee, re-promising after Change….
