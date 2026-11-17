@@ -1857,6 +1857,10 @@ describe("the claims ledger's second batch: what its mail said happened (Earlier
     expect(settledHow("delivery", "Tu paquete fue entregado", "Tu paquete fue entregado, mientras que tu otro pedido fue cancelado.")).toBe("arrived");
     // evidence across a comma reads both its clauses
     expect(settledHow("event", "Your reservation for Saturday, November 14", "Your reservation for Saturday, November 14 at 7:30 PM has been cancelled as requested.")).toBe("cancelled");
+    // round two: a date's comma, or one in parentheses, is no clause's edge (en, es)
+    expect(settledHow("event", "Your appointment for Friday", "Your appointment for Friday, November 13 has been cancelled as requested.")).toBe("cancelled");
+    expect(settledHow("event", "Tu cita del viernes", "Tu cita del viernes, 13 de noviembre fue cancelada.")).toBe("cancelled");
+    expect(settledHow("event", "Your table", "Your table (party of 9, back room) has been cancelled.")).toBe("cancelled");
   });
 
   it("checkDates carries it with the settlement, from the evidence's sentence", () => {

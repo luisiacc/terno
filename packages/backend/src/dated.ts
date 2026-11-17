@@ -157,15 +157,39 @@ const PAID_WORDS = /\b(?:paid|payment (?:received|processed|went through)|receiv
 // its code review: a word said of it, never denied just before ("wasn't cancelled", "no fue cancelado")
 const DENIED_BEFORE = /\b(?:not|never|wasn t|weren t|isn t|hasn t|haven t|no|nunca)(?: \S+){0,2}$/u;
 const says = (re: RegExp, read: string) => [...read.matchAll(new RegExp(re.source, "gu"))].some((m) => !DENIED_BEFORE.test(read.slice(0, m.index).trim()));
-/** a clause's edge inside a sentence: a comma (never a figure's), a semicolon, or a word that starts another ("while", "mientras") */
-const CLAUSE_EDGE = /,(?!\d)|;|\s(?:while|whereas|but|although|though|however|mientras|pero|aunque|sin embargo)\s/iu;
+/**
+ * a clause's edge inside a sentence: a comma, a semicolon, or a word that starts another ("while", "mientras"); round two:
+ * never a date's comma ("Friday, November 13", "viernes, 13 de noviembre", "Nov 13, 2026") nor one in parentheses
+ */
+const MONTH_WORDS = String.raw`jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre`;
+const CLAUSE_EDGE = new RegExp(String.raw`,(?!\s*(?:\d|(?:${MONTH_WORDS})\b))|;|\s(?:while|whereas|but|although|though|however|mientras|pero|aunque|sin embargo)\s`, "iu");
+/** a sentence's clauses, never split inside parentheses */
+function clausesOf(sentence: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let from = 0;
+  for (let i = 0; i < sentence.length; i++) {
+    const c = sentence[i]!;
+    if (c === "(") depth++;
+    else if (c === ")") depth = Math.max(0, depth - 1);
+    if (depth) continue;
+    const edge = CLAUSE_EDGE.exec(sentence.slice(i));
+    if (edge?.index === 0) {
+      out.push(sentence.slice(from, i));
+      i += edge[0].length - 1;
+      from = i + 1;
+    }
+  }
+  out.push(sentence.slice(from));
+  return out;
+}
 /**
  * The evidence's own clauses of its sentence: those it overlaps (its code review: "Your Blue cotton tees were delivered,
  * while your separate order was cancelled" is the tees' "delivered" alone). `sentence` absent: the evidence alone.
  */
 function ownClause(evidence: string, sentence = ""): string {
   const e = norm(evidence);
-  const clauses = sentence.split(CLAUSE_EDGE).map(norm).filter(Boolean);
+  const clauses = clausesOf(sentence).map(norm).filter(Boolean);
   const whole = clauses.join(" ");
   const at = e ? whole.indexOf(e) : -1;
   if (at < 0) return e;
