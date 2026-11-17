@@ -137,10 +137,10 @@ describe("the conversation's line keeps the whole wording (plan 204, after the s
     // Thursday 12 November 2026, 10:00
     const now = new Date(2026, 10, 12, 10, 0).getTime();
     const facts = { kind: "pay" as const, dueDay: "2026-11-12", dueAt: new Date(2026, 10, 12, 13, 0).getTime(), timed: true, dated: true, text: "Wire payroll" };
-    expect(datedLine(facts, false, now)).toBe("Due today 1:00 PM · Wire payroll");
-    expect(datedLine({ ...facts, dueDay: "2026-11-11", timed: false }, true, now)).toBe("Was due yesterday · Wire payroll");
+    expect(datedLine(facts, false, now)).toBe("Due today 1:00 PM\u00a0·\u00a0Wire payroll");
+    expect(datedLine({ ...facts, dueDay: "2026-11-11", timed: false }, true, now)).toBe("Was due yesterday\u00a0·\u00a0Wire payroll");
     expect(datedLine({ ...facts, dated: false }, false, now)).toBe("Wire payroll");
-    expect(promiseLine({ text: "send the agenda", dueAt: facts.dueAt, dated: true }, false, now)).toBe("Due today · You said: send the agenda");
+    expect(promiseLine({ text: "send the agenda", dueAt: facts.dueAt, dated: true }, false, now)).toBe("Due today\u00a0·\u00a0You said: send the agenda");
     expect(promiseLine({ text: "call back", dated: false }, false, now)).toBe("You said: call back");
   });
   it("plan 210 (iteration 5, revision 4): a part of the day in the reader's line, never a clock; missed after its noon (en, es)", async () => {
@@ -151,18 +151,18 @@ describe("the conversation's line keeps the whole wording (plan 204, after the s
     // Thursday 12 November 2026, 10:00
     const now = new Date(2026, 10, 12, 10, 0).getTime();
     const kai = { kind: "respond" as const, dueDay: "2026-11-14", dueAt: new Date(2026, 10, 14, 9).getTime(), timed: false, dated: true, text: "Send Kai notes on cut v2", partOfDay: "morning" as const };
-    expect(datedLine(kai, false, now)).toBe("Due Saturday morning · Send Kai notes on cut v2");
-    expect(datedLine({ ...kai, dueDay: "2026-11-13" }, false, now)).toBe("Due tomorrow morning · Send Kai notes on cut v2");
+    expect(datedLine(kai, false, now)).toBe("Due Saturday morning\u00a0·\u00a0Send Kai notes on cut v2");
+    expect(datedLine({ ...kai, dueDay: "2026-11-13" }, false, now)).toBe("Due tomorrow morning\u00a0·\u00a0Send Kai notes on cut v2");
     const cupcakes = { text: "bring Jessica the cupcakes", dueAt: new Date(2026, 10, 12, 9).getTime(), dated: true, partOfDay: "morning" as const };
-    expect(promiseLine(cupcakes, false, now)).toBe("Due this morning · You said: bring Jessica the cupcakes");
-    expect(promiseLine(cupcakes, true, new Date(2026, 10, 12, 12).getTime())).toBe("Was due this morning · You said: bring Jessica the cupcakes");
+    expect(promiseLine(cupcakes, false, now)).toBe("Due this morning\u00a0·\u00a0You said: bring Jessica the cupcakes");
+    expect(promiseLine(cupcakes, true, new Date(2026, 10, 12, 12).getTime())).toBe("Was due this morning\u00a0·\u00a0You said: bring Jessica the cupcakes");
     // a day later it's yesterday's, as any
-    expect(promiseLine(cupcakes, true, new Date(2026, 10, 13, 12).getTime())).toBe("Was due yesterday · You said: bring Jessica the cupcakes");
+    expect(promiseLine(cupcakes, true, new Date(2026, 10, 13, 12).getTime())).toBe("Was due yesterday\u00a0·\u00a0You said: bring Jessica the cupcakes");
     setLocale("es", es);
     try {
-      expect(datedLine(kai, false, now)).toBe("Vence el sábado por la mañana · Send Kai notes on cut v2");
-      expect(promiseLine(cupcakes, false, now)).toMatch(/^Vence esta mañana · /u);
-      expect(promiseLine(cupcakes, true, new Date(2026, 10, 12, 12).getTime())).toMatch(/^Venció esta mañana · /u);
+      expect(datedLine(kai, false, now)).toBe("Vence el sábado por la mañana\u00a0·\u00a0Send Kai notes on cut v2");
+      expect(promiseLine(cupcakes, false, now)).toMatch(/^Vence esta mañana\u00a0·\u00a0/u);
+      expect(promiseLine(cupcakes, true, new Date(2026, 10, 12, 12).getTime())).toMatch(/^Venció esta mañana\u00a0·\u00a0/u);
     } finally {
       setLocale("en", en);
     }
@@ -177,15 +177,15 @@ describe("the conversation's line keeps the whole wording (plan 204, after the s
     const dueAt = new Date(2026, 10, 16, 23, 0).getTime();
     const wall = { day: "2026-11-16", time: "16:00", zone: "America/Chicago", place: "Austin" };
     const back = { kind: "event" as const, dueDay: "2026-11-16", dueAt, timed: true, dated: true, text: "Return flight to Madrid", wall };
-    expect(datedLine(back, false, now)).toBe("Monday 4:00 PM Austin · Return flight to Madrid");
+    expect(datedLine(back, false, now)).toBe("Monday 4:00 PM Austin\u00a0·\u00a0Return flight to Madrid");
     // a zone the mail named with no place stays the reader's
-    expect(datedLine({ ...back, wall: { ...wall, place: null } }, false, now)).toBe("Monday 11:00 PM · Return flight to Madrid");
+    expect(datedLine({ ...back, wall: { ...wall, place: null } }, false, now)).toBe("Monday 11:00 PM\u00a0·\u00a0Return flight to Madrid");
     // the row's screen-reader words, from what Today carries
     const why = { kind: "dated" as const, text: back.text, dueAt, item: { id: 1, revision: 0, kind: "event" as const, dueDay: "2026-11-16", timed: true, dated: true, travel: { day: "2026-11-16", time: "16:00", place: "Austin" } } };
     expect(taskOf(why, now)?.due).toBe("Monday 4:00 PM Austin");
     setLocale("es", es);
     try {
-      expect(datedLine(back, false, now)).toMatch(/^Lunes 16:00 en Austin · Return flight to Madrid$/i);
+      expect(datedLine(back, false, now)).toMatch(/^Lunes 16:00 en Austin\u00a0·\u00a0Return flight to Madrid$/i);
     } finally {
       setLocale("en", en);
     }
@@ -198,7 +198,7 @@ describe("the conversation's line keeps the whole wording (plan 204, after the s
     const now = new Date(2026, 11, 12, 10, 0).getTime();
     const alert = { kind: "alert" as const, dueDay: "2026-12-14", dueAt: now, timed: false, dated: false, text: "Debit card frozen after a $412.18 charge" };
     expect(datedLine(alert, false, now)).toBe("Debit card frozen after a $412.18 charge, the email says");
-    expect(datedLine({ ...alert, dated: true }, false, now)).toBe("Due Monday · Debit card frozen after a $412.18 charge, the email says");
+    expect(datedLine({ ...alert, dated: true }, false, now)).toBe("Due Monday\u00a0·\u00a0Debit card frozen after a $412.18 charge, the email says");
     // only an alert's
     expect(datedText({ kind: "pay", text: "Pay $187.42 for the utility bill" })).toBe("Pay $187.42 for the utility bill");
     setLocale("es", es);
@@ -248,10 +248,10 @@ describe("a row's second item (plan 204, the fifth panel round, change 6)", () =
     // Saturday 14 November 2026, 10:00
     const now = new Date(2026, 10, 14, 10, 0).getTime();
     const board = { kind: "event" as const, text: "Board meeting", dueDay: "2026-11-19", dueAt: new Date(2026, 10, 19, 9, 0).getTime(), timed: true, dated: true };
-    expect(alsoLine(board, now)).toBe("Also Thu 9:00 AM · Board meeting");
-    expect(alsoLine({ ...board, dueDay: "2026-11-15", dueAt: new Date(2026, 10, 15, 9, 0).getTime() }, now)).toBe("Also tomorrow 9:00 AM · Board meeting");
-    expect(alsoLine({ kind: "promise", text: "send the deck", dueDay: "2026-11-14", dueAt: new Date(2026, 10, 14, 9).getTime(), timed: false, dated: true }, now)).toBe("Also today · You said: send the deck");
-    expect(alsoLine({ kind: "pay", text: "Renew the lease", dueDay: "2026-11-30", dueAt: new Date(2026, 10, 30, 9).getTime(), timed: false, dated: true }, now)).toBe("Also Nov 30 · Renew the lease");
+    expect(alsoLine(board, now)).toBe("Also Thu 9:00 AM\u00a0·\u00a0Board meeting");
+    expect(alsoLine({ ...board, dueDay: "2026-11-15", dueAt: new Date(2026, 10, 15, 9, 0).getTime() }, now)).toBe("Also tomorrow 9:00 AM\u00a0·\u00a0Board meeting");
+    expect(alsoLine({ kind: "promise", text: "send the deck", dueDay: "2026-11-14", dueAt: new Date(2026, 10, 14, 9).getTime(), timed: false, dated: true }, now)).toBe("Also today\u00a0·\u00a0You said: send the deck");
+    expect(alsoLine({ kind: "pay", text: "Renew the lease", dueDay: "2026-11-30", dueAt: new Date(2026, 10, 30, 9).getTime(), timed: false, dated: true }, now)).toBe("Also Nov 30\u00a0·\u00a0Renew the lease");
     expect(alsoLine({ kind: "ask", text: "Answer Jess about the budget", dueDay: "2026-11-13", dueAt: now, timed: false, dated: false }, now)).toBe("Also: Answer Jess about the budget");
     expect(alsoLine({ kind: "alert", text: "Debit card frozen", dueDay: "2026-11-16", dueAt: now, timed: false, dated: false }, now)).toBe("Also: Debit card frozen, the email says");
     // plan 210 (iteration 5, R9): your promise to attend the row's event or bring someone, in your words, no day
@@ -260,8 +260,8 @@ describe("a row's second item (plan 204, the fifth panel round, change 6)", () =
     setLocale("es", es);
     try {
       expect(alsoLine({ ...bring, text: "llevar a Nina y al ingeniero" }, now)).toBe("Dijiste que ibas a llevar a Nina y al ingeniero");
-      expect(alsoLine(board, now)).toBe("También el jue 09:00 · Board meeting");
-      expect(alsoLine({ kind: "promise", text: "enviar la presentación", dueDay: "2026-11-15", dueAt: new Date(2026, 10, 15, 9).getTime(), timed: false, dated: true }, now)).toBe("También mañana · Dijiste: enviar la presentación");
+      expect(alsoLine(board, now)).toBe("También el jue 09:00\u00a0·\u00a0Board meeting");
+      expect(alsoLine({ kind: "promise", text: "enviar la presentación", dueDay: "2026-11-15", dueAt: new Date(2026, 10, 15, 9).getTime(), timed: false, dated: true }, now)).toBe("También mañana\u00a0·\u00a0Dijiste: enviar la presentación");
     } finally {
       setLocale("en", en);
     }

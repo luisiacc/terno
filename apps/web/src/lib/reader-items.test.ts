@@ -50,8 +50,8 @@ describe("the reader's one line (plan 210, iteration 3, Codex revision 10)", () 
     const r = read({ followups: [script, nudge], target: [{ source: "promise", id: 9 }] });
     expect(keys(r)).toEqual(["promise:9", "dated:2", "dated:1"]);
     expect(r.top?.source).toBe("promise");
-    expect(readerLine(r.top!, NOW)).toBe("Due today · You told Jess you’d send the script");
-    expect(readerLine(r.others[0]!, NOW)).toBe("Saturday 8:00 AM · Board meeting");
+    expect(readerLine(r.top!, NOW)).toBe("Due today\u00a0·\u00a0You told Jess you’d send the script");
+    expect(readerLine(r.others[0]!, NOW)).toBe("Saturday 8:00 AM\u00a0·\u00a0Board meeting");
   });
 
   it("an item chosen from the line under it leads, while the feed's open row is the same; one gone, the row's leads again", () => {
@@ -103,14 +103,14 @@ describe("the reader's one line (plan 210, iteration 3, Codex revision 10)", () 
     const broken = promise({ id: 9, text: "send Jess the script", dueAt: at(25), brokenDueAt: at(20) });
     const r = read({ dated: [], followups: [broken] });
     expect(r.top).toMatchObject({ key: "promise:9", missed: false, dueAt: at(25) });
-    expect(readerLine(r.top!, NOW)).toBe("You said Tue 20 (missed) ·\u00a0needed Sun · You told Jess you’d send the script");
+    expect(readerLine(r.top!, NOW)).toBe("You said Tue 20 (missed)\u00a0·\u00a0needed Sun\u00a0·\u00a0You told Jess you’d send the script");
     // it said Wednesday (over), the request it answers needs it Saturday: under Saturday, not Missed
     const late = promise({ id: 9, text: "send Jess the script", dueAt: at(21), answers: 1 });
     const answered = read({ dated: [draft], followups: [late] });
     expect(answered.top).toMatchObject({ key: "promise:9", missed: false, dueAt: at(24) });
-    expect(readerLine(answered.top!, NOW)).toBe("You said yesterday (missed) ·\u00a0needed Sat · You told Jess you’d send the script");
+    expect(readerLine(answered.top!, NOW)).toBe("You said yesterday (missed)\u00a0·\u00a0needed Sat\u00a0·\u00a0You told Jess you’d send the script");
     // its own day ahead, the request's later: its own day, and the request's beside it
-    expect(readerLine(read({ dated: [draft], followups: [{ ...late, dueAt: at(23) }] }).top!, NOW)).toBe("Due tomorrow ·\u00a0needed Sat · You told Jess you’d send the script");
+    expect(readerLine(read({ dated: [draft], followups: [{ ...late, dueAt: at(23) }] }).top!, NOW)).toBe("Due tomorrow\u00a0·\u00a0needed Sat\u00a0·\u00a0You told Jess you’d send the script");
   });
 
   it("plan 210 (iteration 5): a promise for this morning is missed in the reader once noon has passed, its line saying the part", () => {
@@ -118,12 +118,12 @@ describe("the reader's one line (plan 210, iteration 3, Codex revision 10)", () 
     const cupcakes = promise({ id: 9, text: "bring Jess the cupcakes", dueAt: at(22), partOfDay: "morning" });
     const r = read({ dated: [], followups: [cupcakes] });
     expect(r.top).toMatchObject({ key: "promise:9", missed: true });
-    expect(readerLine(r.top!, NOW)).toBe("Was due this morning · You told Jess you’d bring the cupcakes");
+    expect(readerLine(r.top!, NOW)).toBe("Was due this morning\u00a0·\u00a0You told Jess you’d bring the cupcakes");
     // the whole day: still today's
     expect(read({ dated: [], followups: [{ ...cupcakes, partOfDay: null }] }).top).toMatchObject({ missed: false });
     // its morning tomorrow, the request it answers Saturday morning
     const ahead = promise({ id: 9, text: "send Jess the script", dueAt: at(23), partOfDay: "morning", answers: 1 });
-    expect(readerLine(read({ dated: [{ ...draft, partOfDay: "morning" }], followups: [ahead] }).top!, NOW)).toBe("Due tomorrow morning · needed Sat morning · You told Jess you’d send the script");
+    expect(readerLine(read({ dated: [{ ...draft, partOfDay: "morning" }], followups: [ahead] }).top!, NOW)).toBe("Due tomorrow morning\u00a0·\u00a0needed Sat morning\u00a0·\u00a0You told Jess you’d send the script");
   });
 
   it("the open row's item not read yet (its answer on its way) leaves the soonest on top, never nothing", () => {
