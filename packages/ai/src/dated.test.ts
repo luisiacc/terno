@@ -351,6 +351,10 @@ describe("reading dates in mail you got (plan 204)", () => {
     const meet = "The reviewers meet before Friday. The revised budget is due Friday instead of Wednesday.";
     expect(move("2026-11-20", meet, "The revised budget is due Friday instead of Wednesday.")).toMatchObject({ due: "2026-11-20" });
     expect(move("2026-11-20", meet, "The revised budget is due Friday instead of Wednesday.").before).toBeUndefined();
+    // round two: nor one another sentence asks for ("Please submit your travel receipts before Friday.")
+    const receipts = "Please submit your travel receipts before Friday. The revised budget is due Friday instead of Wednesday.";
+    expect(move("2026-11-20", receipts, "The revised budget is due Friday instead of Wednesday.")).toMatchObject({ due: "2026-11-20" });
+    expect(move("2026-11-20", receipts, "The revised budget is due Friday instead of Wednesday.").before).toBeUndefined();
   });
 
   it("prompt v9 (the sixth panel round): an offer isn't an ask; an alert's stated deadline is its day and time; \"reply C to confirm\" in the event's words; a failed payment and its bill are one item", () => {

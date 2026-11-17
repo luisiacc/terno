@@ -603,7 +603,8 @@ const BEFORE_THEN = /\b(?:before then|before that(?: day| date)?|antes de (?:eso
  * is a deadline too. The claims ledger's second batch (Diego's Inés, "necesitaríamos tu bio y tu foto antes del miércoles
  * 18"): a move's own sentence (`moved`, its evidence) gives the open deadline its new day, so it asks by being one: a
  * "before" in it is read whatever verb asks (a lower bound or a negation still isn't one); its code review: only in that
- * sentence ("The reviewers meet before Friday." beside the move is no deadline's), and a move to a plain day has none.
+ * sentence ("The reviewers meet before Friday." or "Please submit your receipts before Friday." beside the move is no
+ * deadline's), and a move to a plain day has none.
  */
 export function beforeOf(kind: string, due: string | null, time: string | null, said: string, o: { moved?: string } = {}): { due: string | null; before: string | null } {
   const day = due ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(due) : null;
@@ -623,7 +624,9 @@ export function beforeOf(kind: string, due: string | null, time: string | null, 
     // plan 210 (iteration 4): a question asks too ("¿Tendrías 20 minutos antes de esa fecha?")
     const sentence = words.slice(sentenceStart, sentenceEnd);
     const own = !!evidence && !!flat(sentence) && (evidence.includes(flat(sentence)) || flat(sentence).includes(evidence));
-    return !NOT_BEFORE.test(words.slice(clauseStart, start)) && !NOT_AFTER.test(words.slice(end, clauseEnd)) && (own || ASKS.test(sentence) || words[sentenceEnd] === "?" || sentence.includes("¿"));
+    // its code review, round two: a move's "before" is its own sentence's, whatever another sentence asks
+    const asks = o.moved ? own : ASKS.test(sentence) || words[sentenceEnd] === "?" || sentence.includes("¿");
+    return !NOT_BEFORE.test(words.slice(clauseStart, start)) && !NOT_AFTER.test(words.slice(end, clauseEnd)) && asks;
   };
   const befores = [...words.matchAll(BEFORE)].filter((b) => asked(b.index!, b.index! + b[0].length));
   // the day it names given as that day (moved back), or the day before it already (kept)
