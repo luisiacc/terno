@@ -65,6 +65,41 @@ describe("plan 210 (iteration 5, revision 9): the stake is a condition, held to 
   });
 });
 
+// round 15's panel (the claims ledger's STAKE-CUT-BY-HELDSTAKE): Jordan's expenses, kickoff form and Tallis call, Margaret's
+// homeowners policy, Sam's registration; each mail as the panel had it
+const EXPENSES = "October expense reports must be submitted in Expensely by Thursday, November 12 at 11:59 PM CT. Reports submitted after the cutoff will roll into the December reimbursement run.";
+const KICKOFF = "What you need to do:\n1. Complete the registration and travel form by Friday, November 20 (dietary needs, T-shirt size, arrival airport)\n2. Travel will book flights for you from the form\n\nNo form = no hotel room. We mean it this year.";
+const TALLIS = "I think we need an exec-to-exec call (our CRO with their new CIO) before end of the month, otherwise procurement will treat this as a new evaluation. Can you set that up? I can prep the usage story.";
+const REGISTRAR = "Your enrollment window closes Wednesday, December 9 at 11:59 PM. Doctoral students must register for at least 9 credits (or 1 credit of BIO 999 if advanced to candidacy) to keep full-time status and funding.\n\nRegister in HalvorsenOne > Student Center.";
+
+describe("the claims ledger's second batch: a stake the mail supports in substance stays", () => {
+  it("the panel's five rows: an \"or\" clause whose object the mail names where it says what happens if the reader doesn't act", () => {
+    for (const [kind, text, mail] of [
+      ["respond", "Submit October expense reports in Expensely (or rolls into December reimbursement run)", EXPENSES],
+      ["respond", "Complete the Cobaltline FY27 Sales Kickoff registration and travel form (or no hotel room)", KICKOFF],
+      ["respond", "Set up a Tallis exec-to-exec call (or procurement treats it as new evaluation)", TALLIS],
+      ["pay", "Pay $1,486.00 for the Lakeshore Mutual homeowners policy (or coverage lapses Dec 1)", POLICY],
+      ["respond", "Register in HalvorsenOne (or lose full-time status and funding)", REGISTRAR],
+      // es
+      ["respond", "Subir los gastos de octubre en Expensely (o pasan a la quincena de diciembre)", "Sube tus gastos de octubre en Expensely antes del jueves 12. Lo que llegue después del cierre pasa a la quincena de diciembre."],
+      ["respond", "Llenar el formulario del congreso (o sin cuarto de hotel)", "Llena el formulario de registro antes del viernes 20.\n\nSin formulario no hay cuarto de hotel."],
+      ["respond", "Inscribirte en el portal (o pierdes el estatus de tiempo completo y la beca)", "Tu periodo de inscripción cierra el miércoles 9. Inscríbete en al menos 9 créditos para conservar el estatus de tiempo completo y la beca."],
+    ] as const) expect(heldStake(kind, text, mail), text).toBe(text);
+  });
+
+  it("never on what the mail doesn't name where it says what happens, nor on a condition about something else", () => {
+    // the object named nowhere the mail speaks of not acting
+    expect(heldStake("respond", "Submit October expense reports (or rolls into January payroll)", EXPENSES)).toBe("Submit October expense reports");
+    expect(heldStake("respond", "Complete the kickoff form (or no flights booked)", "Complete the registration form by Friday, November 20. Flights are booked from the form.")).toBe("Complete the kickoff form");
+    // any "if" is no failure to act: "If you have questions about your policy, call us"
+    expect(heldStake("pay", "Pay the premium (or policy cancelled)", "Please pay the premium by November 25. If you have questions about your policy, call us.")).toBe("Pay the premium");
+    // a fact the mail states, written as a fact, still goes when the mail says it only on a condition (iteration 5)
+    expect(heldStake("respond", "Register in HalvorsenOne (funding lost)", REGISTRAR)).toBe("Register in HalvorsenOne");
+    // es: the condition about something else
+    expect(heldStake("respond", "Inscribirte en el portal (o pierdes la beca)", "Inscríbete antes del miércoles 9. Si tienes dudas sobre tu beca, escríbenos.")).toBe("Inscribirte en el portal");
+  });
+});
+
 describe("plan 210 (iteration 5): a renewal's own \"before\" a day", () => {
   it("its words saying before its day sort it under the day before, keeping the day asked before; the mail's words never do", () => {
     expect(renewalBefore("2026-11-19", null, "Cambiar o cancelar Creatix Cloud antes del 19 nov")).toEqual({ due: "2026-11-18", before: "2026-11-19" });
