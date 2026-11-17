@@ -59,6 +59,7 @@ import {
   pickUnsubscribeMessage,
   UNSUBSCRIBE_LOOKBACK,
   withAccountPrefs,
+  patchesAccountPrefs,
   categoryAction,
   categoryOf,
   categoryOfJson,
@@ -1550,7 +1551,7 @@ export function updateAccount(c: Ctx, id: number, patch: AccountPatch): Account 
   const accounts = T(c, "accounts");
   const r = accounts.get(id);
   if (!r) return null;
-  const prefs = patch.senderName !== undefined || patch.signature !== undefined || patch.syncWindowDays !== undefined || patch.separateTabs !== undefined || patch.followups !== undefined || patch.backfill !== undefined;
+  const prefs = patchesAccountPrefs(patch);
   accounts.update(r, {
     ...(patch.displayName !== undefined ? { display_name: patch.displayName } : {}),
     ...(patch.color !== undefined ? { color: patch.color } : {}),

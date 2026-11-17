@@ -1153,6 +1153,10 @@ export const contract = {
       /** plan 86 (Gmail): Promotions and Social apart from the Inbox */
       separateTabs: z.boolean().optional(),
       followups: z.boolean().optional(),
+      /** plan 211: "Use AI with this account" */
+      ai: z.boolean().optional(),
+      /** plan 211: "Show in What matters" */
+      feed: z.boolean().optional(),
     }),
   ),
   /** plan 169: the sidebar's order (dragged); accounts left out keep theirs after the given ones */

@@ -1987,6 +1987,26 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         expect(await store.accounts.update(a!, { syncWindowDays: null })).toMatchObject({ syncWindowDays: null, signature: "Luis\nAcme Studio", displayName: "Trabajo" });
         expect(await store.accounts.update(9999, { displayName: "x" })).toBeNull();
       });
+
+      it("plan 211: Use AI and Show in What matters are on by default, round-trip, and record when each went off (the first moment while it stays off)", async () => {
+        let store = await fresh();
+        const [a] = await withAccounts(store, 1);
+        await store.accounts.setProviderConfig(a!, { cursor: { historyId: "42" } });
+        expect(await store.accounts.get(a!)).toMatchObject({ ai: true, feed: true });
+        expect(await store.accounts.update(a!, { ai: false, offAt: 100 })).toMatchObject({ ai: false, feed: true });
+        // off again: the first moment stays; the other switch records its own
+        await store.accounts.update(a!, { ai: false, feed: false, offAt: 200 });
+        store = await harness.reopen(store);
+        open.push(store);
+        expect(await store.accounts.get(a!)).toMatchObject({ ai: false, feed: false });
+        expect((await store.accounts.config<Record<string, unknown>>(a!))!.config).toMatchObject({ cursor: { historyId: "42" }, ai: false, feed: false, aiOffAt: 100, feedOffAt: 200 });
+        // back on: absent again, and when it went off is kept (the check of mail already here reads from it)
+        expect(await store.accounts.update(a!, { ai: true, feed: true })).toMatchObject({ ai: true, feed: true });
+        const config = (await store.accounts.config<Record<string, unknown>>(a!))!.config;
+        expect(config).toMatchObject({ aiOffAt: 100, feedOffAt: 200 });
+        expect(config).not.toHaveProperty("ai");
+        expect(config).not.toHaveProperty("feed");
+      });
     });
 
     describe("secrets", () => {

@@ -40,6 +40,10 @@ export interface Account {
   separateTabs?: boolean;
   /** plan 142: absent: on */
   followups?: boolean;
+  /** plan 211: "Use AI with this account": off, none of its mail reaches an AI provider; absent: on */
+  ai?: boolean;
+  /** plan 211: "Show in What matters": off, nothing of it is in the feed; absent: on */
+  feed?: boolean;
   syncState: AccountSyncState;
 }
 
@@ -53,6 +57,11 @@ export interface AccountPatch {
   separateTabs?: boolean;
   /** plan 142: absent: on */
   followups?: boolean;
+  /** plan 211: absent: on */
+  ai?: boolean;
+  feed?: boolean;
+  /** plan 211: backend only (never in the RPC schema): when a switch turned off is recorded as this moment (ms) */
+  offAt?: number;
   /**
    * plan 101: backend only (never in the RPC schema), applied inside the store's update transaction so concurrent
    * changes never lose one another: `merge` a widening into the pending span (their union), `clearIf` it's done
@@ -76,13 +85,26 @@ export interface AccountPrefs {
   separateTabs?: boolean;
   /** plan 142: false: this account's mail isn't read for follow-ups; absent: on */
   followups?: boolean;
+  /** plan 211: false: none of this account's mail goes to an AI provider; absent: on */
+  ai?: boolean;
+  /** plan 211: false: nothing of this account is in What matters; absent: on */
+  feed?: boolean;
+  /** plan 211: when `ai` last went from on to off (ms); kept when it's turned back on (the check of mail already here reads from it) */
+  aiOffAt?: number;
+  /** plan 211: when `feed` last went from on to off (ms), likewise */
+  feedOffAt?: number;
   /** plan 101: older mail still to download */
   backfill?: BackfillRequest;
 }
 
+/** Whether a patch changes anything kept in the provider config (the stores' one test, so a new preference can't miss one). */
+export function patchesAccountPrefs(patch: AccountPatch): boolean {
+  return patch.senderName !== undefined || patch.signature !== undefined || patch.syncWindowDays !== undefined || patch.separateTabs !== undefined || patch.followups !== undefined || patch.ai !== undefined || patch.feed !== undefined || patch.backfill !== undefined;
+}
+
 /** An account's preferences as the renderer sees them, from its stored config. */
-export function accountPrefs(config: AccountPrefs, displayName: string): Pick<Account, "senderName" | "signature" | "syncWindowDays" | "separateTabs" | "followups" | "backfillSince"> {
-  return { senderName: config.senderName || displayName, signature: config.signature ?? "", syncWindowDays: config.syncWindowDays ?? null, separateTabs: config.separateTabs !== false, followups: config.followups !== false, backfillSince: config.backfill?.since ?? null };
+export function accountPrefs(config: AccountPrefs, displayName: string): Pick<Account, "senderName" | "signature" | "syncWindowDays" | "separateTabs" | "followups" | "ai" | "feed" | "backfillSince"> {
+  return { senderName: config.senderName || displayName, signature: config.signature ?? "", syncWindowDays: config.syncWindowDays ?? null, separateTabs: config.separateTabs !== false, followups: config.followups !== false, ai: config.ai !== false, feed: config.feed !== false, backfillSince: config.backfill?.since ?? null };
 }
 
 /** The config with a patch's preferences applied (the rest of the patch lives in columns). */
@@ -101,6 +123,21 @@ export function withAccountPrefs<T extends AccountPrefs>(config: T, patch: Accou
   if (patch.separateTabs !== undefined) {
     if (patch.separateTabs) delete next.separateTabs;
     else next.separateTabs = false;
+  }
+  // plan 211: absent is on; turning one off records when (only from on: off again keeps the first moment)
+  if (patch.ai !== undefined) {
+    if (patch.ai) delete next.ai;
+    else {
+      if (next.ai !== false && patch.offAt !== undefined) next.aiOffAt = patch.offAt;
+      next.ai = false;
+    }
+  }
+  if (patch.feed !== undefined) {
+    if (patch.feed) delete next.feed;
+    else {
+      if (next.feed !== false && patch.offAt !== undefined) next.feedOffAt = patch.offAt;
+      next.feed = false;
+    }
   }
   if (patch.backfill === null) delete next.backfill;
   else if (patch.backfill && "merge" in patch.backfill) {
