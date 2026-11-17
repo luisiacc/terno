@@ -630,6 +630,9 @@ describe("plan 210 (iteration 3)", () => {
       for (const [text, quote] of ([["¡Mucha suerte en el partido de hoy!", "¡Mucha suerte en el partido de hoy!"], ["Have fun at the party today!", "Have fun at the party today!"]] as const)) {
         expect(checkDates({ items: [game("The game", quote)], settled: [] }, mail(text)).rows, text).toEqual([]);
       }
+      // the replay: the wish passed on to Sofia is no ask either; a question beside a wish still is
+      expect(checkDates({ items: [ask("Tell Sofia Elena says score one for her", "tell Sofia her tía says score one for me!")], settled: [] }, mail(thanks))).toMatchObject({ rows: [], asked: false });
+      expect(checkDates({ items: [ask("Answer Elena about the cooler", "can you bring the cooler?")], settled: [] }, mail("Good luck at the game, can you bring the cooler?")).rows).toHaveLength(1);
       // news: the time and place it gives, or no wish at all
       expect(checkDates({ items: [game("Sofia's game (Field 3)", "Good luck at the 10:00 game on Field 3!")], settled: [] }, mail("Good luck at the 10:00 game on Field 3!")).rows).toHaveLength(1);
       expect(checkDates({ items: [game("Sofia's game", "The game is today at Field 3")], settled: [] }, mail("The game is today at Field 3.")).rows).toHaveLength(1);
