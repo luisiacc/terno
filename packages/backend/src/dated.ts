@@ -572,25 +572,27 @@ const nextDay = (day: string): string => {
 /**
  * The claims ledger's third batch (Sam's Tyler: "Lab Report 3 is due this Friday and I don't think I can do a good job on it
  * by then. Could I have an extension until next Wednesday?"): a person's ask for more time is answered by the deadline it's
- * about, the day the nearest sentence before it in its paragraph says that is due (from the mail's own day, within two
- * weeks); never the day it asks for. Read as `norm` reads them, en and es; a deadline already gone ("was due") gives none.
+ * about, the day a sentence before it in its paragraph says that is due (from the mail's own day, within two weeks); never
+ * the day it asks for. Read as `norm` reads them, en and es; a deadline already gone ("was due") gives none. Its code review:
+ * only the deadline whose sentence names what the ask is about (a naming word of its words or its quote, beyond the asking
+ * for time: "The report is due November 20. The electricity bill is due November 13. Could I have more time for the
+ * report?" is the 20th); none or several such: no day.
  */
 const MORE_TIME = /\b(?:extension|extend|more time|extra (?:time|day|days)|prorroga|mas tiempo|(?:unos|un par de) dias mas|extender|ampliar el plazo)\b/u;
 const IS_DUE = /\b(?:due|deadline|vence|vencen|se entrega|hay que entregar|fecha limite|toca entregar)\b/u;
 const WAS_DUE = /\b(?:was due|were due|vencio|vencieron)\b/u;
+/** what asking for time says of any deadline, never which one */
+const TIME_WORDS = new Set(["extension", "extend", "extended", "time", "extra", "more", "days", "deadline", "prorroga", "tiempo", "plazo", "dias", "mas", "ampliar", "extender"]);
 const DUE_SCAN_DAYS = 14;
-function dueAskedAbout(quote: string, paragraphs: Sentences, arrivedAt: number): string | null {
-  if (!MORE_TIME.test(norm(quote))) return null;
-  const own = sentencesOf(contextOf(quote, paragraphs));
-  const at = sentencesWith(quote, own)[0];
-  for (let n = (at ?? 0) - 1; n >= 0; n--) {
-    const s = own[n]!;
-    if (!IS_DUE.test(s.read)) continue;
-    if (WAS_DUE.test(s.read)) return null;
-    let day = dayKeyOf(arrivedAt);
-    for (let k = 0; k < DUE_SCAN_DAYS; k++, day = nextDay(day)) if (saysDay(s.said, day, { arrivedAt })) return day;
-    return null;
-  }
+function dueAskedAbout(ask: { text: string; quote: string }, paragraphs: Sentences, arrivedAt: number): string | null {
+  if (!MORE_TIME.test(norm(ask.quote))) return null;
+  const about = [...namingWords(`${ask.text}\n${ask.quote}`)].filter((w) => !TIME_WORDS.has(w));
+  const own = sentencesOf(contextOf(ask.quote, paragraphs));
+  const at = sentencesWith(ask.quote, own)[0] ?? 0;
+  const named = own.slice(0, at).filter((s) => IS_DUE.test(s.read) && about.some((w) => namingWords(s.said).has(w)));
+  if (named.length !== 1 || WAS_DUE.test(named[0]!.read)) return null;
+  let day = dayKeyOf(arrivedAt);
+  for (let k = 0; k < DUE_SCAN_DAYS; k++, day = nextDay(day)) if (saysDay(named[0]!.said, day, { arrivedAt })) return day;
   return null;
 }
 
@@ -870,7 +872,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   const candidates = [...answered, ...items].filter((i) => !promised.has(i)).map(spanned).filter((i) => !refused(i)).map((i) => (i.kind === "respond" && input.sender?.person && (offerOnly(`${i.quote}\n${contextOf(i.quote, sentences)}`, contextOf(i.quote, paragraphs)) || wishOnly(contextOf(i.quote, sentences), i.due, input.arrivedAt)) ? { ...i, kind: "ask", due: null, time: null } : i)).map((i) => {
     // the claims ledger's third batch: an undated ask for more time carries the day of the deadline it's about (checked as an
     // ask, then the request with that day)
-    const due = i.kind === "ask" && !i.due && input.sender?.person ? dueAskedAbout(i.quote, paragraphs, input.arrivedAt) : null;
+    const due = i.kind === "ask" && !i.due && input.sender?.person ? dueAskedAbout(i, paragraphs, input.arrivedAt) : null;
     return due ? { ...i, due } : i;
   });
   // plan 210 (iteration 4, revision 12): an item's facts (someone there, a lapse, charged by itself) from the whole mail, but

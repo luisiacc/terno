@@ -664,12 +664,18 @@ describe("plan 210 (iteration 3)", () => {
       const mail = (text: string) => ({ ...person(text), arrivedAt: at(2026, 11, 9, 8), now: at(2026, 11, 9, 8) });
       expect(checkDates({ items: [extension], settled: [] }, mail(TYLER)).rows).toEqual([expect.objectContaining({ kind: "respond", dueDay: "2026-11-13", dated: true, text: extension.text })]);
       const es = "Hola Diego:\n\nEl reporte vence el viernes 13 y no voy a llegar. ¿Me darías una prórroga hasta el martes?\n\nGracias";
-      expect(checkDates({ items: [ask("Responder a Ana sobre la prórroga", "¿Me darías una prórroga hasta el martes?")], settled: [] }, mail(es)).rows.map((r) => [r.kind, r.dueDay])).toEqual([["respond", "2026-11-13"]]);
+      expect(checkDates({ items: [ask("Responder a Ana sobre la prórroga del reporte", "¿Me darías una prórroga hasta el martes?")], settled: [] }, mail(es)).rows.map((r) => [r.kind, r.dueDay])).toEqual([["respond", "2026-11-13"]]);
       // no deadline named before it, one already gone, or an ask for something else: undated, as it was
       for (const text of ["Could I have an extension until next Wednesday?", "The report was due Friday. Could I have an extension until next Wednesday?"]) {
         expect(checkDates({ items: [{ ...extension, quote: "Could I have an extension until next Wednesday?" }], settled: [] }, mail(text)).rows.map((r) => [r.kind, r.dated]), text).toEqual([["ask", false]]);
       }
       expect(checkDates({ items: [ask("Answer Tyler about the rubric", "Could you share the rubric?")], settled: [] }, mail("Lab Report 3 is due this Friday. Could you share the rubric?")).rows.map((r) => [r.kind, r.dated])).toEqual([["ask", false]]);
+      // its code review: the deadline of what it asks time for, never the nearest; none or several named, no day
+      const report = ask("Answer Ana about more time for the report", "Could I have more time for the report?");
+      const two = "The report is due November 20. The electricity bill is due November 13. Could I have more time for the report?";
+      expect(checkDates({ items: [report], settled: [] }, mail(two)).rows.map((r) => [r.kind, r.dueDay])).toEqual([["respond", "2026-11-20"]]);
+      expect(checkDates({ items: [report], settled: [] }, mail("The bill is due November 13. Could I have more time for the report?")).rows.map((r) => [r.kind, r.dated])).toEqual([["ask", false]]);
+      expect(checkDates({ items: [report], settled: [] }, mail("The report draft is due November 13. The final report is due November 20. Could I have more time for the report?")).rows.map((r) => [r.kind, r.dated])).toEqual([["ask", false]]);
     });
     it("the Codex code review of the second morning (point 2): a wish's sentence keeps the request and the news beside it (en, es); a wish passed on stays none", () => {
       const mail = (text: string) => ({ ...person(text), arrivedAt: at(2026, 11, 14, 7, 52), now: at(2026, 11, 14, 7, 52) });
