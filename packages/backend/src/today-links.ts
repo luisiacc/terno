@@ -84,11 +84,24 @@ export function sameErrand(d: DatedRow, p: FollowupRow): boolean {
 /**
  * One request read twice in one conversation (the same draft asked for in two messages, a person's ask that came back with a
  * day): the same sender's, a request each, the same thing by their words (`sameThing`: one quote holds the other, or the
- * same object), never two different requests of one person.
+ * same object), never two different requests of one person. Round 16 (Priya's SignPath reminder): an object named only by
+ * names ("Sign the Halvorsen Logistics MSA": every word past the verb capitalized, so `sameObject` sees none) is the same
+ * request on the same day when its named words, two or more, are all among the other's; Done on the first left the
+ * reminder's copy to come back as Missed.
  */
 export function sameRequest(a: DatedRow, b: DatedRow): boolean {
   const request = (r: DatedRow) => r.kind === "respond" || r.kind === "ask";
-  return a.id !== b.id && a.threadId === b.threadId && a.senderKey === b.senderKey && a.messageId !== b.messageId && request(a) && request(b) && !periodsDiffer(`${a.text}\n${a.quote}`, `${b.text}\n${b.quote}`) && sameThing(a, b);
+  if (!(a.id !== b.id && a.threadId === b.threadId && a.senderKey === b.senderKey && a.messageId !== b.messageId && request(a) && request(b) && !periodsDiffer(`${a.text}\n${a.quote}`, `${b.text}\n${b.quote}`))) return false;
+  return sameThing(a, b) || (a.dueDay === b.dueDay && sameNamed(a.text, b.text));
+}
+function sameNamed(a: string, b: string): boolean {
+  // the same verb first ("Sign …", "Sign …"), so a person's two requests named by their name ("Reply to Karl Brandt", "Send
+  // Karl Brandt the W-9") stay two
+  const verb = (t: string) => norm(t).split(" ")[0];
+  if (verb(a) !== verb(b)) return false;
+  const [wa, wb] = [namingWords(a), namingWords(b)];
+  const [few, many] = wa.size <= wb.size ? [wa, wb] : [wb, wa];
+  return few.size >= 2 && [...few].every((w) => many.has(w));
 }
 
 /**

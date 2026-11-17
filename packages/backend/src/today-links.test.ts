@@ -54,6 +54,15 @@ describe("one thing, read twice", () => {
     expect(sameRequest(draft, dated("ask", "Answer Jess about the budget", { quote: "can you tell me the budget", threadId: 4 }))).toBe(false);
     expect(sameRequest(draft, dated("respond", "Send Jess your draft", { quote: "your draft by Saturday", threadId: 5 }))).toBe(false);
     expect(sameRequest(draft, dated("respond", "Send Jess your draft", { quote: "your draft by Saturday", threadId: 4, senderKey: "else@x.test" }))).toBe(false);
+    // round 16 (Priya's SignPath reminder): an object named only by names is one request on one day (en, es)
+    const msa = dated("respond", "Sign the Halvorsen Logistics MSA for the expansion", { quote: "Please sign by Nov 13 so we can issue the PO before our fiscal close.", threadId: 8 });
+    const reminder = dated("respond", "Sign the Halvorsen Logistics MSA", { quote: "This envelope expires today, November 13, 2026.", threadId: 8 });
+    expect(sameRequest(msa, reminder)).toBe(true);
+    expect(sameRequest(dated("respond", "Firmar el MSA de Halvorsen Logistics", { quote: "Firma antes del 13", threadId: 8 }), dated("respond", "Firmar el contrato Halvorsen Logistics", { quote: "El sobre vence hoy", threadId: 8 }))).toBe(true);
+    // never another day, another verb, or one shared name
+    expect(sameRequest(msa, { ...reminder, dueDay: "2026-12-01" })).toBe(false);
+    expect(sameRequest(dated("respond", "Reply to Karl Brandt", { quote: "let me know", threadId: 8 }), dated("respond", "Send Karl Brandt the W-9", { quote: "send me the W-9", threadId: 8 }))).toBe(false);
+    expect(sameRequest(dated("respond", "Sign the Halvorsen MSA", { quote: "sign it", threadId: 8 }), dated("respond", "Sign the Lumora NDA", { quote: "sign this one", threadId: 8 }))).toBe(false);
     // Codex code review: a recurring request for another period is another request
     const nov = dated("respond", "Send the November payroll report", { quote: "send the November payroll report", threadId: 6 });
     expect(sameRequest(nov, dated("respond", "Send the December payroll report", { quote: "send the December payroll report", threadId: 6 }))).toBe(false);
