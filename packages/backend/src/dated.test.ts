@@ -3381,3 +3381,20 @@ describe("plan 210 (iteration 5): Remove's narrow offer, a kind from one sender 
 });
 
 const followupRows = async (client: RpcClient) => (await client.call("followups.list", {})).rows;
+
+describe("round 16 (Priya's board meeting): one occasion read twice moves together", () => {
+  const nine = at(2026, 11, 19, 9);
+  const ev = (id: number, threadId: number, messageId: number, text: string) => ({ id, revision: 0, threadId, messageId, senderKey: "jess@lumora.test", kind: "event", text, quote: text, dueDay: "2026-11-19", dueAt: nine, timed: true }) as DatedRow;
+  const own = ev(4, 7, 9, "Board meeting at Foundry Peak's office");
+  const invite = ev(6, 8, 10, "Invited: Lumora Board Meeting at Foundry Peak");
+  const text = "Hi Priya,\n\nTom Akers can't make Thursday, so Elena asked to move the board meeting. It's now Monday, Nov 23, 9:00–12:00, same place (Foundry Peak, the big room). The board meeting is no longer on Thursday the 19th.\n\nJess";
+  const evidence = "It's now Monday, Nov 23, 9:00–12:00, same place (Foundry Peak, the big room).";
+  const read = (open: Map<string, DatedRow>) => checkDates({ items: [], settled: [], moved: [...open.keys()].map((label) => ({ label, due: "2026-11-23", time: "09:00", evidence })) }, { text, subject: "Re: Board meeting Nov 19", arrivedAt: NOW, open, fromScan: false, now: NOW, sender: { person: true }, threadId: 7, senderKey: "jess@lumora.test" }).moved.map((m) => [m.id, m.dueDay]);
+  it("Jess's note moves her item and the calendar's invitation of the same meeting alike", () => {
+    expect(read(new Map([["o3", invite], ["o5", own]]))).toEqual([[6, "2026-11-23"], [4, "2026-11-23"]]);
+  });
+  it("never another meeting the note doesn't tell apart: another moment is still another item", () => {
+    const dinner = { ...ev(7, 7, 11, "Board dinner at Foundry Peak"), dueAt: at(2026, 11, 19, 19) };
+    expect(read(new Map([["o5", own], ["o6", dinner]]))).toEqual([]);
+  });
+});

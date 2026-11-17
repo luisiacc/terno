@@ -12,6 +12,7 @@ import { handledItself } from "./dated-automatic";
 import { bareDayAhead, contextOf, insideQuotes, quoteSpan, type Sentences, namesApart, namesItem, namingWords, negatedReceipt, norm, otherAmounts, otherIds, paragraphsOf, plainEvidence, replacesPlainly, sameObject, sameThing, saysReplaced, saysWhen, scamPressure, sentencesOf, settlesKind, startClock, zeroNamesItem, zeroOnly } from "./dated-evidence";
 import { mayRelay, relayedAsk, relays, type Relay } from "./dated-relay";
 import { untrustedSenders, withoutUntrusted } from "./suspicious-sender";
+import { sameEvent } from "./today-links";
 
 /**
  * Plan 204 §3: the dated reader. Reads live mail the user got (and, with a yes, the last 14 days), oldest first, and keeps
@@ -678,7 +679,11 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     if (!move && row.kind === "pay" && negatedReceipt(`${evidence}\n${context}`)) return false;
     const receipt = !move && row.kind === "pay" && input.threadId !== undefined && row.threadId === input.threadId && row.senderKey === input.senderKey && input.paysInThread === 1 && settlesKind("pay", `${evidence}\n${context}`);
     if (otherAmounts(row, context) && !receipt) return false;
-    const named = [...input.open.values()].filter((r) => namesItem(r, context, input.from));
+    // round 16 (Priya's board meeting): the same occasion read twice (Jess's note and the calendar's invitation, one moment,
+    // one place) is never "another" item the mail must tell this one apart from: Jess's "It's now Monday, Nov 23" moved the
+    // invitation and left Priya's own item on Thursday
+    const full = [...input.open.values()].find((r) => r.id === row.id);
+    const named = [...input.open.values()].filter((r) => namesItem(r, context, input.from) && (r.id === row.id || !full || !sameEvent(full, r)));
     if (named.length && !namesApart(row, named, context, input.from)) return false;
     if (input.threadId !== undefined && row.threadId !== input.threadId) {
       if (row.senderKey !== input.senderKey) return false;
