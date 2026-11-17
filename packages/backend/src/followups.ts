@@ -106,6 +106,9 @@ export function ownPieces(evidence: string, ownText: string): string[] | null {
   const own = norm(ownText);
   const whole = norm(evidence);
   if (!whole) return null;
+  // round 18 (Theo's notes for Kai, quoted as "notes:" alone): a list's lead-in stands for the list it leads, their own lines
+  // under it; one with no list under it is a word, which says nothing
+  if (leadIn(whole)) return listUnder(whole, ownText);
   if (wordsAt(own, whole) >= 0) return [whole];
   const pieces = evidence.split(ELLIPSIS).map(norm).filter((p) => /[\p{L}\p{N}]/u.test(p));
   if (pieces.length < 2) return joinedLines(whole, ownText);
@@ -148,6 +151,24 @@ const wordCount = (s: string) => s.split(" ").filter((w) => /[\p{L}\p{N}]/u.test
  * "notes: - 3:05 the zoom on the error log is too slow" answers; never as the answer's last run.
  */
 const leadIn = (run: string) => /^[\p{L}\p{N}]+:$/u.test(run.trim());
+const LIST_LINE = /^\s*(?:[-•*–]|\d{1,2}[.)])\s+(.+)$/u;
+/** a lead-in's list: the lead-in, then the list lines right under it in their text (blank lines between allowed); null for none */
+function listUnder(lead: string, ownText: string): string[] | null {
+  const lines = normalizeText(ownText).split("\n");
+  const at = lines.findIndex((l) => norm(l).endsWith(lead) && (norm(l) === lead || /[\s.!?]$/u.test(norm(l).slice(0, -lead.length))));
+  if (at < 0) return null;
+  const items: string[] = [];
+  for (const line of lines.slice(at + 1)) {
+    if (!line.trim()) {
+      if (items.length) break;
+      continue;
+    }
+    const m = LIST_LINE.exec(line);
+    if (!m) break;
+    items.push(norm(m[1]!));
+  }
+  return items.length ? [lead, ...items] : null;
+}
 function joinedLines(evidence: string, ownText: string): string[] | null {
   const units = normalizeText(ownText).split(UNIT_END).map(norm).filter(Boolean);
   // the same text as `norm`'s, each unit's start and end in it
