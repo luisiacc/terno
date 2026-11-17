@@ -227,7 +227,13 @@ export function findLinks(dated: readonly DatedRow[], promises: readonly Followu
     if (r !== undefined) push(answeredBy, r, p);
   }
   const datedById = new Map(dated.map((r) => [r.id, r]));
-  const errand = (d: DatedRow, p: FollowupRow) => sameErrand(d, answers.has(p.id) && p.answers == null ? { ...p, answers: answers.get(p.id)! } : p);
+  // round 16 (Jordan's SOC 2 report): the link keeps a promise apart from requests by their words while the request it
+  // answers is open (its row carries that day); once that request is closed, the same thing asked again ("Following up — we
+  // haven't received the SOC 2 report") is the promise's, by its words, never a second row beside it
+  const errand = (d: DatedRow, p: FollowupRow) => {
+    const linked = answers.get(p.id);
+    return sameErrand(d, { ...p, answers: linked !== undefined && datedById.has(linked) ? linked : null });
+  };
   // each item's canonical, this pass's links included; an item others are the same as is never made anyone's
   const joined = new Map<string, string>();
   const canonicals = new Set<string>([...dated, ...promises].flatMap((r) => (r.sameAs ? [r.sameAs] : [])));

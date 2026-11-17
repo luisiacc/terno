@@ -205,6 +205,16 @@ describe("findLinks", () => {
     expect(findLinks([dated("respond", "Send the revised budget", { threadId: 30, createdAt: 200 })], [budget, email], all).same).toHaveLength(1);
   });
 
+  it("round 16 (Jordan's SOC 2 report): a promise whose request is closed is the same thing asked again; while that request is open, never", () => {
+    const first = dated("ask", "Send Owen the most recent SOC 2 Type II report and bridge letter", { threadId: 40, senderKey: "owen@bank.test", createdAt: 100 });
+    const sends = promise("send Owen the SOC 2 Type II report and bridge letter", { threadId: 40, messageId: 600, createdAt: 200, answers: first.id });
+    const again = dated("respond", "Send Owen the most recent SOC 2 Type II report and bridge letter", { threadId: 40, senderKey: "owen@bank.test", createdAt: 300, quote: "Following up — we haven't received the SOC 2 report or bridge letter yet. Could you get them to me before then?" });
+    // the first ask closed (not among the open items): the follow-up joins the promise's item
+    expect(findLinks([again], [sends], all).same).toEqual([{ item: { source: "dated", id: again.id }, sameAs: `promise:${sends.id}` }]);
+    // the first ask still open: the follow-up is that ask's, and the promise stays apart from both
+    expect(findLinks([first, again], [sends], all).same).toEqual([{ item: { source: "dated", id: again.id }, sameAs: `dated:${first.id}` }]);
+  });
+
   it("a trip's return leg is linked as a detail", () => {
     const out = dated("event", "Flight to Austin", { messageId: 900, dueDay: "2026-11-20" });
     const back = dated("event", "Return flight", { messageId: 900, dueDay: "2026-11-24", dueAt: T + 4 * 86_400_000 });
