@@ -102,6 +102,9 @@ describe("which sentences get a second look", () => {
     // a request with a day is no proposal ("could you … by"), nor a question asking whether they can host (the book club)
     expect(look("Could you send me the deck? The board meets Tuesday, November 17 at 9:00 AM.")).toEqual(["The board meets Tuesday, November 17 at 9:00 AM."]);
     expect(look(BOOK_CLUB, { first: { ...none, items: [HOST] } })).toEqual([MEETING]);
+    // round 18's code review: a proposal of something else leaves the mail's other moments to be asked about, en and es
+    expect(look("The board meets Thursday, November 19 at 3 PM. Would you like to join me for lunch next week?")).toEqual(["The board meets Thursday, November 19 at 3 PM."]);
+    expect(look("La junta de consejo es el jueves 19 de noviembre a las 15:00. ¿Te animas a comer conmigo la próxima semana?")).toEqual(["La junta de consejo es el jueves 19 de noviembre a las 15:00."]);
   });
 
   it("at most two sentences and 1,000 characters, each whole", () => {

@@ -687,14 +687,29 @@ const ASKS_OWN = /\b(?:please|could you|can you|need you to|por favor|puedes|pod
 const proposing = (s: { said: string; read: string }): boolean => !PAYMENT.test(s.read) && ((/[?¿]/u.test(s.said) && PROPOSES_ASKED.test(s.read)) || PROPOSES.test(s.read));
 
 
+/** a proposal's words that point back at what it proposes ("would you be up for it?", "¿te da tiempo de hacerla?"), as `norm` reads them */
+const REFERS_BACK = /\b(?:up for (?:it|this|that)|take (?:it|this|that|them) on|(?:do|handle|lead|run) (?:it|this|that|them))\b|\b(?:it|this|that|them)$|\b\p{L}{2,}(?:ar|er|ir|ando|iendo)(?:la|lo|las|los)\b|\b(?:te|me|se) (?:la|lo|las|los)\b/u;
+/** a plan already settled ("is confirmed", "booked", "confirmado"): never a proposal's, whatever it names */
+const CONFIRMED = /\b(?:confirmed|is set|are set|booked|locked in|confirmad[oa]s?|agendad[oa]s?|reservad[oa]s?)\b/u;
+
 /**
  * The sentences a proposal the reader hasn't accepted holds (`n` of `sentencesOf`): its own (a proposing question, or words
- * that wait on their yes), and, in a mail that has one, every other but a bill's or a payment's and a request of the
- * reader's own. Its days are the proposal's: no plan or deadline of theirs. None in a mail that proposes nothing. Read by the
- * second look (what it never asks about) and by `checkDates` (round 18, the first reading's plan read from it).
+ * that wait on their yes), the one before it when it points back there ("if you're in", "hacerla", "up for it"), and the
+ * sentences that name what those name. Never a bill's or a payment's, a request of the reader's own, or a plan already
+ * confirmed; nothing else in the mail (round 18's code review: "Would you like to join me for lunch next week?" leaves the
+ * board meeting beside it alone). Its days are the proposal's: no plan or deadline of theirs. None in a mail that proposes
+ * nothing. Read by the second look (what it never asks about) and by `checkDates` (round 18).
  */
 export function proposedIn(sentences: Sentences): (n: number) => boolean {
   const own = new Set(sentences.flatMap((s, n) => (proposing(s) ? [n] : [])));
   if (!own.size) return () => false;
-  return (n) => own.has(n) || !(PAYMENT.test(sentences[n]!.read) || ASKS_OWN.test(sentences[n]!.read));
+  const about = new Set(own);
+  for (const n of own) if (n > 0 && (PROPOSES.test(sentences[n]!.read) || REFERS_BACK.test(sentences[n]!.read))) about.add(n - 1);
+  const named = new Set([...about].flatMap((n) => [...namingWords(sentences[n]!.said)].filter((w) => !GENERIC.has(w))));
+  const theirs = (s: { read: string }) => PAYMENT.test(s.read) || ASKS_OWN.test(s.read) || CONFIRMED.test(s.read);
+  return (n) => {
+    if (own.has(n)) return true;
+    const s = sentences[n]!;
+    return !theirs(s) && (about.has(n) || [...namingWords(s.said)].some((w) => named.has(w)));
+  };
 }

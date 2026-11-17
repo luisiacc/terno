@@ -3536,4 +3536,19 @@ describe("round 18's faults", () => {
     expect(checkDates({ items: [meeting], settled: [] }, person("We're meeting Thursday, November 19 at 3:00 PM in the big room.")).rows).toHaveLength(1);
     expect(checkDates({ items: [{ ...meeting, quote: "The board meets Thursday, November 19 at 3:00 PM." }], settled: [] }, person("Could you send me the deck? The board meets Thursday, November 19 at 3:00 PM.")).rows).toHaveLength(1);
   });
+
+  it("its code review: only the proposal's own activity goes, never a confirmed plan or another item beside it (en, es)", () => {
+    const board = { kind: "event", text: "Board meeting", quote: "The board meeting is confirmed for Thursday, November 19 at 3 PM.", due: "2026-11-19", time: "15:00" };
+    const BOARD = "The board meeting is confirmed for Thursday, November 19 at 3 PM.";
+    expect(checkDates({ items: [board], settled: [] }, person(BOARD)).rows).toHaveLength(1);
+    expect(checkDates({ items: [board], settled: [] }, person(`${BOARD} Would you like to join me for lunch next week?`)).rows).toHaveLength(1);
+    // not confirmed, and another thing: still its own
+    const meets = { ...board, quote: "The board meets Thursday, November 19 at 3 PM." };
+    expect(checkDates({ items: [meets], settled: [] }, person("The board meets Thursday, November 19 at 3 PM. Would you like to join me for lunch next week?")).rows).toHaveLength(1);
+    const junta = { kind: "event", text: "Junta de consejo", quote: "La junta de consejo es el jueves 19 de noviembre a las 15:00.", due: "2026-11-19", time: "15:00" };
+    expect(checkDates({ items: [junta], settled: [] }, person("La junta de consejo es el jueves 19 de noviembre a las 15:00. ¿Te animas a comer conmigo la próxima semana?", { reader: "Diego Ramírez Castañeda", from: "Fer" })).rows).toHaveLength(1);
+    // the proposal's own activity in another sentence, by what it names, still goes
+    const taller = { kind: "event", text: "Taller de identidad", quote: "El taller de identidad sería el jueves 19 a las 18:00.", due: "2026-11-19", time: "18:00" };
+    expect(checkDates({ items: [taller], settled: [] }, person("El taller de identidad sería el jueves 19 a las 18:00. ¿Te animas a dar el taller?", { reader: "Diego Ramírez Castañeda", from: "Fer" })).rows).toEqual([]);
+  });
 });
