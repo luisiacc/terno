@@ -156,6 +156,13 @@ describe("a reply's checked verdict (the Codex review of iteration 3, revision 1
     expect(one("I can send it to Ana instead", declined)).toEqual([]);
     expect(one("I can't make Friday. she has the files", declined)).toEqual([]);
     expect(one("I can't make Friday. Send it to Ana instead", declined)).toHaveLength(1);
+    // round 16 (Theo's notes for Kai): a list's one-word lead-in joins a line of the list, a bullet skipped (en, es)
+    const theo = "kai. v2 is the one. notes:\n\n- intro music: \"a bit much\" is exactly right, keep it\n- 3:05 the zoom on the error log is too slow, punch it in\n- thumbnail: perfect. it hurts. ship it\n\nt";
+    expect(one("notes: - 3:05 the zoom on the error log is too slow, punch it in", theo)).toHaveLength(1);
+    expect(one("cambios: - 3:05 el zoom va muy lento", "Listo. cambios:\n- la música se queda\n- 3:05 el zoom va muy lento\n\nT")).toHaveLength(1);
+    // never a one-word lead-in at the end, nor a word without its colon
+    expect(one("3:05 the zoom on the error log is too slow, punch it in notes:", theo)).toEqual([]);
+    expect(one("kai. - 3:05 the zoom on the error log is too slow", theo)).toEqual([]);
   });
 
   it("the second morning (Diego's adjustments) and its code review: a request this reply does is its verdict alone, the promise answering it kept by the store with it (never here, past the request's revision), and renewed by nothing", () => {

@@ -144,7 +144,10 @@ const wordCount = (s: string) => s.split(" ").filter((w) => /[\p{L}\p{N}]/u.test
  * settled or kept nothing. Such evidence is its runs: each run their words whole, two words or more, in their order; a join
  * only where a sentence or a line of theirs ends and the next run begins one, so no run is cut out of a sentence to make
  * another ("I can" of "I can't" never joins "send it"). The first run may begin, and the last end, inside one, as a quote.
+ * Round 16 (Theo's notes for Kai): a list's lead-in of one word ("notes:", "cambios:") is a run before the list's lines, so
+ * "notes: - 3:05 the zoom on the error log is too slow" answers; never as the answer's last run.
  */
+const leadIn = (run: string) => /^[\p{L}\p{N}]+:$/u.test(run.trim());
 function joinedLines(evidence: string, ownText: string): string[] | null {
   const units = normalizeText(ownText).split(UNIT_END).map(norm).filter(Boolean);
   // the same text as `norm`'s, each unit's start and end in it
@@ -168,13 +171,13 @@ function joinedLines(evidence: string, ownText: string): string[] | null {
       // the answer's last run, ending at a word's end
       if (p + length === evidence.length && wordEnd(s + length)) {
         const all = [...runs, own.slice(s, s + length)];
-        if (all.length > 1 && all.every((r) => wordCount(r) >= 2)) return all;
+        if (all.length > 1 && all.every((r, i) => wordCount(r) >= 2 || (i < all.length - 1 && leadIn(r)))) return all;
       }
       // or a run to the end of one of their sentences or lines, the answer going on with another
       for (let k = length; k > 0; k--) {
         if (!ends.has(s + k) || evidence[p + k] !== " ") continue;
         const run = own.slice(s, s + k);
-        if (wordCount(run) < 2) continue;
+        if (wordCount(run) < 2 && !leadIn(run)) continue;
         const found = search(p + k + 1, s + k + 1, [...runs, run]);
         if (found) return found;
       }
