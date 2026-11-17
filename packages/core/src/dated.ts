@@ -711,6 +711,16 @@ function comingUpDay(own: string | null, deferredUntil: number | null | undefine
 }
 
 /**
+ * Plan 210 (the second morning, Theo's and Priya's asks put off to Monday): what isn't shown yet sits where it comes back.
+ * On one of the seven days ahead, that's the day's own heading, as the seven days are whole (never a Coming up bucket for
+ * Monday drawn below Friday's heading); later, or later today, Coming up's. A day ahead is never counted, as before.
+ */
+function notYet(own: string | null, deferredUntil: number | null | undefined, today: string): TaskPlace {
+  const day = comingUpDay(own, deferredUntil, today);
+  return day > today && day <= lastShownDay(today) ? { group: "day", day } : { group: "comingUp", day };
+}
+
+/**
  * Plan 210 (by day): the group an item shows in, and its day, assigned after `datedPlace` has said whether it shows
  * (eligibility, expiry, Later), from the item's own day: Today on or before it, its own day within the seven ahead, Ahead
  * past them (iteration 5, revision 5). What has no date (an ask, an alert that named none) is Today's while it shows; a
@@ -721,7 +731,7 @@ export function datedGroupAt(r: Parameters<typeof datedPlace>[0], now: number, t
   if (place === "hidden") return null;
   if (place === "missed") return MISSED;
   const undated = r.kind === "ask" || undatedAlert(r);
-  if (place === "comingUp") return { group: "comingUp", day: comingUpDay(undated ? null : r.dueDay, r.deferredUntil, today) };
+  if (place === "comingUp") return notYet(undated ? null : r.dueDay, r.deferredUntil, today);
   if (undated || r.dueDay <= today) return TODAY;
   // plan 210 (iteration 2): a request shown from its arrival is Today's (its people) until its day; iteration 5 (revision
   // 5, the owner): only within the seven days, a request due later being Ahead's like anything else that far
@@ -742,7 +752,7 @@ export function promiseGroupAt(r: PromiseFacts, now: number, today = dayKeyOf(no
   if (place === "missed") return MISSED;
   if (place === "needsYou") return TODAY;
   const day = dayKeyOf(r.dueAt);
-  if (place === "comingUp") return { group: "comingUp", day: comingUpDay(r.dated ? day : null, r.deferredUntil, today) };
+  if (place === "comingUp") return notYet(r.dated ? day : null, r.deferredUntil, today);
   return day <= today ? TODAY : dayOrAhead(day, today);
 }
 

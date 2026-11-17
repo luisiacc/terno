@@ -506,9 +506,9 @@ describe("Waiting on you, a part of Today (plan 210, iteration 3, revision 8)", 
     // (iteration 5, revision 6) the two broken promises are overdue, a part of waiting
     expect(counts).toEqual({ missed: 0, today: 1, waiting: 3, overdue: 2 });
     expect(projectToday(f, { count: true }).counts).toEqual(counts);
-    // put off with Later: behind Coming up, neither shown nor counted
+    // put off with Later: out of Today, under the day it comes back (the second morning), never counted
     const off = { ...moved, deferredUntil: at(2026, 11, 20, 9) };
-    expect(projectToday(facts({ promises: [off] })).rows.map((r) => r.group)).toEqual(["comingUp"]);
+    expect(projectToday(facts({ promises: [off] })).rows.map((r) => [r.group, r.bucket])).toEqual([["day", "2026-11-21"]]);
     expect(projectToday(facts({ promises: [off] }), { count: true }).counts).toEqual({ missed: 0, today: 0, waiting: 0, overdue: 0 });
     // its live day over too: Missed
     expect(projectToday(facts({ now: at(2026, 11, 22, 10), promises: [moved] })).rows.map((r) => r.group)).toEqual(["missed"]);
