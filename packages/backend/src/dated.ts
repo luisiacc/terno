@@ -188,6 +188,11 @@ export function settledHow(kind: string, evidence: string, sentence?: string): S
 /** a sentence that says again what another said ("I mean…", "that is…", "i.e.", "o sea…", "es decir…"), as `norm` reads it */
 const RESTATES = /\b(?:i mean|that is|i e|ie|in other words|to be clear|namely|o sea|osea|es decir|quiero decir|mejor dicho)\b/u;
 
+/** a mailing's address ("news@", "newsletter@", "marketing@", "promo@", "updates@", "boletin@"), never a person's */
+const BULK_LOCAL = /(?:^|[._+-])(?:news|newsletters?|marketing|promos?|promotions?|campaigns?|mailer|mailings?|digest|bulletin|updates|notifications?|announce\w*|hello|boletin|noticias|novedades|ofertas)(?:$|[._+-])/u;
+/** a mailing's footer: unsubscribe, view it in a browser, manage what you get (en, es), as `norm` reads it */
+const BULK_FOOTER = /\b(?:unsubscribe|opt out|view (?:it |this (?:email )?)?in (?:your |a )?browser|manage (?:your )?(?:preferences|subscription|email settings)|update (?:your )?preferences|darte de baja|date de baja|dar(?:se)? de baja|cancelar (?:tu |la )?suscripcion|desuscribir\w*|ver (?:este correo |el correo )?en (?:tu |el )?navegador|(?:administrar|gestionar|actualizar) (?:tus )?preferencias)\b/u;
+
 /** a greeting's words before the reader's name ("¡Hola Diego!", "Hi Diego,", "Dear Diego") */
 const GREETING = /^(?:(?:hi|hello|hey|dear|good (?:morning|afternoon|evening)|hola|buenas|buenos dias|buenas tardes|buenas noches|querid[oa]|estimad[oa]|que tal)\s+)?/u;
 
@@ -202,6 +207,8 @@ export function personAtRole(src: { automated: boolean; fromEmail: string; fromN
   const first = nameWords(src.fromName)[0];
   const reader = nameWords(readerName)[0];
   if (!first || !reader || automatedSender(src) || norm(src.fromEmail.split("@")[1] ?? "").split(" ").some((w) => w.includes(first))) return false;
+  // its code review: a newsletter's personalised greeting and signature are no person: a list's address, or its footer
+  if (BULK_LOCAL.test(src.fromEmail.split("@")[0]!.toLowerCase()) || BULK_FOOTER.test(norm(text))) return false;
   const lines = text.split("\n").map(norm).filter(Boolean);
   const greets = (lines[0] ?? "").replace(GREETING, "").split(" ");
   if (greets[0] !== reader || greets.length > 4) return false;

@@ -13,7 +13,7 @@ import { msg, threadOf } from "@terno/store/conformance";
 import { DATED_NOTHING_ASKED_SINCE, type IncomingMessage } from "@terno/store";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
-import { checkDates, settledHow } from "./dated";
+import { checkDates, personAtRole, settledHow } from "./dated";
 import { relayedAsk } from "./dated-relay";
 
 const at = (y: number, m: number, d: number, h = 0, min = 0) => new Date(y, m - 1, d, h, min).getTime();
@@ -1886,6 +1886,14 @@ describe("the claims ledger's second batch: a person writing from a role address
     await read2();
     expect(promptText(readings(m2.requests)[0]!.messages[0]!.content)).toContain("Sent from an automated address");
     expect((await other.store.dated.active()).map((r) => r.early)).toEqual([false, false]);
+    // its code review: a newsletter's personal greeting and signature are no person (its address, or its footer; en, es)
+    const NEWS = "Hi Diego,\n\nPlease reply by Friday with your favorite issue of the year.\n\nAlex\n\nUnsubscribe · View in browser";
+    expect(personAtRole({ automated: false, fromEmail: "news@weekly.test", fromName: "Alex Turner" }, NEWS, "Diego Ramírez")).toBe(false);
+    expect(personAtRole({ automated: false, fromEmail: "editor@weekly.test", fromName: "Alex Turner" }, NEWS, "Diego Ramírez")).toBe(false);
+    expect(personAtRole({ automated: false, fromEmail: "editor@weekly.test", fromName: "Alex Turner" }, NEWS.replace("\n\nUnsubscribe · View in browser", ""), "Diego Ramírez")).toBe(true);
+    expect(personAtRole({ automated: false, fromEmail: "comunidad@colmena.test", fromName: "Fer Aguirre" }, `${FER}\n\nSi ya no quieres recibir estos correos, date de baja aquí.`, "Diego Ramírez")).toBe(false);
+    expect(personAtRole({ automated: false, fromEmail: "boletin@colmena.test", fromName: "Fer Aguirre" }, FER, "Diego Ramírez")).toBe(false);
+    expect(personAtRole({ automated: false, fromEmail: "comunidad@colmena.test", fromName: "Fer Aguirre" }, FER, "Diego Ramírez")).toBe(true);
   });
 });
 
