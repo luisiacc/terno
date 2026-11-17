@@ -622,6 +622,18 @@ describe("plan 210 (iteration 3)", () => {
         expect(checkDates({ items: [ask("Answer Sergio", quote)], settled: [] }, person(text)).rows, text).toHaveLength(1);
       }
     });
+    it("the second morning (María's d08): a person's good wishes for something of the reader's are no event (en, es); one that gives its time is", () => {
+      const thanks = "YOU'RE THE BEST. Ok so with Rob's parents that's 14. Turkey is ordered.\n\nMom almost cried about the arroz lol.\n\nGood luck at the game this morning, tell Sofia her tía says score one for me!\n\nE";
+      const mail = (text: string) => ({ ...person(text), arrivedAt: at(2026, 11, 14, 7, 52), now: at(2026, 11, 14, 7, 52) });
+      const game = (text: string, quote: string) => ({ kind: "event", text, quote, due: "2026-11-14", time: null });
+      expect(checkDates({ items: [game("Sofia's game (tell her Elena says score one)", "Good luck at the game this morning, tell Sofia her tía says score one for me!")], settled: [] }, mail(thanks)).rows).toEqual([]);
+      for (const [text, quote] of ([["¡Mucha suerte en el partido de hoy!", "¡Mucha suerte en el partido de hoy!"], ["Have fun at the party today!", "Have fun at the party today!"]] as const)) {
+        expect(checkDates({ items: [game("The game", quote)], settled: [] }, mail(text)).rows, text).toEqual([]);
+      }
+      // news: the time and place it gives, or no wish at all
+      expect(checkDates({ items: [game("Sofia's game (Field 3)", "Good luck at the 10:00 game on Field 3!")], settled: [] }, mail("Good luck at the 10:00 game on Field 3!")).rows).toHaveLength(1);
+      expect(checkDates({ items: [game("Sofia's game", "The game is today at Field 3")], settled: [] }, mail("The game is today at Field 3.")).rows).toHaveLength(1);
+    });
     it("a 'let me know' after the visit's condition that asks for something concrete is an ask; one asking only for notice isn't (en, es; the code review of iteration 3)", () => {
       for (const [text, quote] of ([["When you're back, let me know what you think of the draft.", "When you're back, let me know what you think of the draft"], ["Cuando regreses, dime qué opinas del borrador.", "Cuando regreses, dime qué opinas del borrador"], ["Cuando vengas, avísame qué día te queda mejor.", "Cuando vengas, avísame qué día te queda mejor"]] as const)) {
         expect(checkDates({ items: [ask("Answer Sergio", quote)], settled: [] }, person(text)), text).toMatchObject({ rows: [{ kind: "ask" }], asked: true });
