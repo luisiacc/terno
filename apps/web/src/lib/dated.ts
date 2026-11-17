@@ -260,8 +260,12 @@ export function laterStart(w: LaterWindow, now = Date.now()): number {
 
 const SAID = { done: "dated.snack.done", dismiss: "dated.snack.removed", later: "dated.snack.later" } as const;
 const SAID_ITEM = { done: "dated.snack.doneItem", dismiss: "dated.snack.removedItem", later: "dated.snack.laterItem" } as const;
-/** A task's words in the snack, at most: one line beside its Undo (the snack ellipsizes what's left over too) */
-const SAID_MAX = 60;
+/**
+ * A task's words in the snack, at most: two lines beside its Undo (the snack ellipsizes what's left over too). The claims
+ * ledger's second batch: the snack's message wraps to two lines now, so "Done: Pay $58.71 for the City of Millbrook water
+ * and sewer service" is whole (60 and one line cut it at "water and s…")
+ */
+const SAID_MAX = 84;
 
 /** A long task cut at a word, if one is near the end, with an ellipsis. */
 function shortened(text: string): string {

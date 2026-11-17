@@ -279,3 +279,58 @@ for (const language of ["en", "es"] as const) {
     await expect(openLine(page, "2 Laptop stands arrive")).toBeVisible();
   });
 }
+
+/**
+ * The claims ledger's second batch (Jordan, Margaret, Sam): the offer cut a long sender to "(vi…" and the item's words were
+ * clamped in an 8rem column beside it; the Done message was one cut line. The offer has its own line under the message at
+ * any width, the sender whole; a message wraps to two lines before it's cut.
+ */
+for (const language of ["en", "es"] as const) {
+  test(`the claims ledger's second batch: the offer's own line, its sender whole; Done's message on two lines (${language})`, async ({ app: page, server }) => {
+    await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true, scanAnswered: true }, language }, dev);
+    await item(server, "lab", "Lab meeting snacks arrive", "delivery", { name: "Ingrid Vasquez-Lund (via Calendar)", email: "events@halvorsen.test", listId: "<events.halvorsen.test>" }, 14);
+    const water = "Pay $58.71 for the City of Millbrook water and sewer service, account 4471-22";
+    await item(server, "water", water, "pay", { name: "City of Millbrook", email: "billing@millbrook.test", listId: null }, 15);
+    await page.addInitScript((l) => localStorage.setItem("terno:language", l), language);
+    await fresh(page);
+    await page.getByTestId("nav-today").click();
+    await expect(openLine(page, "Lab meeting snacks arrive")).toBeVisible({ timeout: 15_000 });
+    await remove(page, "Lab meeting snacks arrive");
+    const offer = page.getByTestId("snack-secondary");
+    await expect(offer).toHaveText(language === "en" ? "Don’t show deliveries from Ingrid Vasquez-Lund (via Calendar)" : "No mostrar entregas de Ingrid Vasquez-Lund (via Calendar)");
+    const fit = await page.getByTestId("snack").evaluate((card) => {
+      const box = (el: Element) => el.getBoundingClientRect();
+      const q = (id: string) => card.querySelector<HTMLElement>(`[data-testid=${id}]`)!;
+      const [, words] = [...q("snack-message").querySelectorAll("p")] as HTMLElement[];
+      const said = q("snack-secondary").querySelector("span")!;
+      return { card: box(card), message: box(q("snack-message")), offer: box(said), words: box(words!), wordsWhole: words!.scrollHeight <= words!.clientHeight + 1, offerWhole: said.scrollHeight <= said.clientHeight + 1 };
+    });
+    // the offer under the message, starting where it does, whole; the item's words get the card's width, whole
+    expect(fit.offer.top).toBeGreaterThanOrEqual(fit.message.bottom - 1);
+    expect(Math.abs(fit.offer.left - fit.message.left)).toBeLessThanOrEqual(1);
+    expect(fit.offerWhole).toBe(true);
+    expect(fit.wordsWhole).toBe(true);
+    expect(fit.words.width).toBeGreaterThan(fit.card.width / 2);
+    await axeBothModes(page, '[data-testid="snack"]');
+    const shots = process.env.WM_MUTE_SHOTS;
+    const shoot = async (name: string) => {
+      if (!shots) return;
+      for (const mode of ["light", "dark"] as const) {
+        await page.emulateMedia({ colorScheme: mode });
+        await page.screenshot({ path: join(shots, `${name}-${language}-${mode}.png`) });
+      }
+      await page.emulateMedia({ colorScheme: "light" });
+    };
+    await shoot("ledger2-offer");
+    // Done on a long item: its message on two lines, never cut on one
+    await page.getByTestId("snack-close").click();
+    await openLine(page, water.slice(0, 20)).getByTestId("wm-item-open").click();
+    await expect(openLine(page, water.slice(0, 20))).toHaveAttribute("data-open");
+    await page.keyboard.press("d");
+    const message = page.getByTestId("snack-message").locator("p").first();
+    await expect(message).toContainText(language === "en" ? "Done: Pay $58.71" : "Hecho: Pay $58.71");
+    const done = await message.evaluate((p) => ({ whole: p.scrollHeight <= p.clientHeight + 1, lines: Math.round(p.clientHeight / parseFloat(getComputedStyle(p).lineHeight)) }));
+    expect(done).toEqual({ whole: true, lines: 2 });
+    await shoot("ledger2-done");
+  });
+}

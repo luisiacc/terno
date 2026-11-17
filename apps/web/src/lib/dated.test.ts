@@ -61,12 +61,14 @@ describe("a Today row's task (plan 204, after the panel)", () => {
   });
 
   it("a long task is cut at a word, so the snack keeps its Undo in view", () => {
-    const long = "Renew the commercial general liability insurance policy for the downtown warehouse before it lapses";
+    const long = "Renew the commercial general liability insurance policy for the downtown warehouse before it lapses at midnight";
     const text = taskSaid("done", long);
-    expect(text).toBe("Done: Renew the commercial general liability insurance policy…");
-    expect(text.length).toBeLessThanOrEqual("Done: ".length + 60);
+    expect(text).toBe("Done: Renew the commercial general liability insurance policy for the downtown warehouse…");
+    expect(text.length).toBeLessThanOrEqual("Done: ".length + 84);
+    // the claims ledger's second batch: Margaret's water bill whole, on the message's two lines
+    expect(taskSaid("done", "Pay $58.71 for the City of Millbrook water and sewer service, account 4471-22")).toBe("Done: Pay $58.71 for the City of Millbrook water and sewer service, account 4471-22");
     // one word with no space near the end is cut where it must be
-    expect(taskSaid("dismiss", "x".repeat(80))).toBe(`Removed from What matters: ${"x".repeat(59)}…`);
+    expect(taskSaid("dismiss", "x".repeat(100))).toBe(`Removed from What matters: ${"x".repeat(83)}…`);
     expect(taskSaid("later", "  ")).toBe("Moved to later");
   });
 

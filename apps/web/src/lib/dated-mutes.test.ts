@@ -40,8 +40,10 @@ describe("Mute (plan 210, iteration 4)", () => {
     // no name: the address
     expect(offerLabel({ on: "pair", key: "pay|billing@power.test", kind: "pay", name: "" })).toBe("Don’t show bills from billing@power.test");
     expect(offerLabel({ on: "sender", key: "track@parcelo.test", name: "" })).toBe("Don’t show anything from track@parcelo.test");
-    // a long name is cut, so the snack keeps room for its message and Undo
-    expect(offerLabel({ on: "pair", key: "delivery|cs@amazon.test", kind: "delivery", name: "Amazon.com Customer Service" })).toBe("Don’t show deliveries from Amazon.com Customer Ser…");
+    // the claims ledger's second batch: a long name whole on the offer's own line; one longer still cut, only the name
+    expect(offerLabel({ on: "pair", key: "delivery|cs@amazon.test", kind: "delivery", name: "Amazon.com Customer Service" })).toBe("Don’t show deliveries from Amazon.com Customer Service");
+    expect(offerLabel({ on: "pair", key: "event|events@grace.test", kind: "event", name: "Ingrid Vasquez-Lund (via Calendar)" })).toBe("Don’t show events from Ingrid Vasquez-Lund (via Calendar)");
+    expect(offerLabel({ on: "pair", key: "pay|ar@city.test", kind: "pay", name: "City of Millbrook Department of Public Utilities Billing" })).toBe("Don’t show bills from City of Millbrook Department of Public Utilitie…");
     // the list: a kind whole, a pair by both, the address beside a name and never twice
     expect(muteName({ on: "kind", key: "pay", name: "" })).toBe("Bills");
     expect(muteName({ on: "pair", key: "delivery|track@parcelo.test", name: "Parcelo" })).toBe("Deliveries from Parcelo");
@@ -55,6 +57,7 @@ describe("Mute (plan 210, iteration 4)", () => {
     setLocale("es", es);
     try {
       expect(offerLabel({ on: "pair", key: "event|calendar@uni.edu", kind: "event", name: "uni.edu", service: "uni.edu" })).toBe("No mostrar eventos de Calendario de uni.edu");
+      expect(offerLabel({ on: "pair", key: "event|calendar-noreply@halvorsen.edu", kind: "event", name: "halvorsen.edu", service: "halvorsen.edu" })).toBe("No mostrar eventos de Calendario de halvorsen.edu");
       expect(offerLabel({ on: "pair", key: "delivery|track@parcelo.test", kind: "delivery", name: "Parcelo" })).toBe("No mostrar entregas de Parcelo");
       expect(offerLabel({ on: "sender", key: "track@parcelo.test", name: "Parcelo" })).toBe("No mostrar nada de Parcelo");
       expect(muteName({ on: "kind", key: "event", name: "" })).toBe("Eventos");
@@ -76,7 +79,7 @@ describe("Mute (plan 210, iteration 4)", () => {
     await actOnTask({ kind: "dated", item, when: null, due: null, dueAt: 0, text: "Package arrives" }, "dismiss");
     expect(calls.map((c) => c.method)).toEqual(["dated.act", "dated.muteOffer"]);
     expect(calls[1]!.p).toEqual({ id: 30 });
-    expect(said[0]).toMatchObject({ text: "Removed", description: "Package arrives", action: { label: "Undo" }, secondary: { label: "Don’t show deliveries from Parcelo" } });
+    expect(said[0]).toMatchObject({ text: "Removed", description: "Package arrives", action: { label: "Undo" }, secondary: { label: "Don’t show deliveries from Parcelo", below: true } });
     // Done and Later never ask
     calls.length = 0;
     await actOnTask({ kind: "dated", item, when: null, due: null, dueAt: 0 }, "done");

@@ -32,6 +32,8 @@ export interface SnackAction {
   name?: string;
   /** the undo it runs: its z keycap shows while z would run the same one */
   undo?: Undo;
+  /** a secondary that reads as a sentence (Remove's mute offer): on its own line under the message, at any width */
+  below?: boolean;
 }
 
 export interface SnackInput {

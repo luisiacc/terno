@@ -102,16 +102,20 @@ export function SnackMore({ open, onToggle, controls, action }: { open: boolean;
 function Row({ snack }: { snack: Snack }) {
   const z = useSnack((s) => zHolds(s, snack.action?.undo));
   const wraps = snack.tone === "error" || snack.tone === "warning";
+  // the claims ledger's second batch: an action that reads as a sentence (Remove's offer) has its own line under the first
+  // at any width, so the message ("Removed" and the item's words), Undo and the close button keep the card's width and the
+  // offer its whole name: beside the message, an 8rem column clamped the item's words and cut "(via Calendar)" to "(vi…"
+  const below = snack.secondary?.below === true;
   return (
-    // the Codex code review of round 14's faults: in a narrow card (Split's reader at its minimum) the offer has its own
-    // line under the first, its words on the message's line, so neither the message, Undo nor the close button gives way
+    // the Codex code review of round 14's faults: in a narrow card (Split's reader at its minimum) a quiet action has its own
+    // line under the first too, so neither the message, Undo nor the close button gives way
     <div className="@container/snack">
-    <div className="flex min-h-9 items-center gap-x-2 py-1.5 pr-1.5 pl-3 @max-[29rem]/snack:flex-wrap">
+    <div className={cn("flex min-h-9 items-center gap-x-2 py-1.5 pr-1.5 pl-3 @max-[29rem]/snack:flex-wrap", below && "flex-wrap")}>
       {TONE_ICON[snack.tone]}
-      {/* plan 210 (round 14's faults): beside an offer the message keeps room for its first line ("Removed" and the item's
-          words); a long offer wraps beside it instead ("Don't show deliveries from Northgate Business Store" had crushed it to "R…") */}
-      <div className={cn("min-w-0 flex-1 text-sm", snack.secondary && "min-w-32 @max-[29rem]/snack:min-w-0")} data-testid="snack-message">
-        <p className={cn(wraps ? "line-clamp-3" : "truncate", snack.tone === "error" && "text-destructive-ink")} title={snack.message}>
+      {/* plan 210 (round 14's faults): beside a quiet action the message keeps room for its first line */}
+      <div className={cn("min-w-0 flex-1 text-sm", snack.secondary && !below && "min-w-32 @max-[29rem]/snack:min-w-0")} data-testid="snack-message">
+        {/* two lines before it's cut ("Done: Pay $58.71 for the City of Millbrook water and s…" was one), the whole in its title */}
+        <p className={cn(wraps ? "line-clamp-3" : "line-clamp-2", snack.tone === "error" && "text-destructive-ink")} title={snack.message}>
           {snack.message}
         </p>
         {snack.description && (
@@ -121,8 +125,8 @@ function Row({ snack }: { snack: Snack }) {
         )}
       </div>
       {snack.secondary && (
-        <div className={cn("contents @max-[29rem]/snack:order-last @max-[29rem]/snack:flex @max-[29rem]/snack:basis-full", TONE_ICON[snack.tone] && "@max-[29rem]/snack:ps-5.5")}>
-          <Button variant="ghost" size="xs" data-testid="snack-secondary" aria-label={snack.secondary.name} title={snack.secondary.label} onClick={() => runAction("secondary")} className={cn(SNACK_QUIET, "h-auto min-h-6 min-w-0 shrink py-1 text-start whitespace-normal @max-[29rem]/snack:-ms-2")}>
+        <div className={cn(below ? "order-last flex min-w-0 basis-full" : "contents @max-[29rem]/snack:order-last @max-[29rem]/snack:flex @max-[29rem]/snack:basis-full", TONE_ICON[snack.tone] && (below ? "ps-5.5" : "@max-[29rem]/snack:ps-5.5"))}>
+          <Button variant="ghost" size="xs" data-testid="snack-secondary" aria-label={snack.secondary.name} title={snack.secondary.label} onClick={() => runAction("secondary")} className={cn(SNACK_QUIET, "h-auto min-h-6 min-w-0 shrink py-1 text-start whitespace-normal", below ? "-ms-2" : "@max-[29rem]/snack:-ms-2")}>
             <span className="line-clamp-2 text-balance">{snack.secondary.label}</span>
           </Button>
         </div>

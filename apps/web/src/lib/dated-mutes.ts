@@ -69,15 +69,18 @@ export const wholeKindsLeft = (mutes: readonly Muting[] | null): DatedKind[] => 
   return WHOLE_MUTE_KINDS.filter((k) => !hidden.has(k));
 };
 
-/** a name in the snack's one line, at most this long: its message and Undo keep their room */
-const OFFER_NAME_MAX = 24;
+/**
+ * a name in the offer at most this long, cut only there, never the kind before it (the claims ledger's second batch: the
+ * offer has its own line now, so "Ingrid Vasquez-Lund (via Calendar)" is whole; round 14's 24 cut it to "(vi…")
+ */
+const OFFER_NAME_MAX = 48;
 const cut = (name: string): string => (name.length <= OFFER_NAME_MAX ? name : `${name.slice(0, OFFER_NAME_MAX - 1).trimEnd()}…`);
 
 /** Remove's snack's quiet second button: what to mute, the first time (null: nothing to offer, or the offer couldn't be read). */
 export async function muteOfferAction(id: number): Promise<SnackAction | undefined> {
   try {
     const { offer } = await client.call("dated.muteOffer", { id });
-    return offer ? { label: offerLabel(offer), onClick: () => void mute(offer) } : undefined;
+    return offer ? { label: offerLabel(offer), onClick: () => void mute(offer), below: true } : undefined;
   } catch {
     // an offer is never worth an error: the Remove itself went through
     return undefined;
