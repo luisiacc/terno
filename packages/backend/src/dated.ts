@@ -9,7 +9,7 @@ import { silenced, silenceOf, withoutMuted } from "./dated-mutes";
 import { secondLook } from "./dated-second-look";
 import { UI_LOCALE_KEY } from "./forwarding";
 import { handledItself } from "./dated-automatic";
-import { bareDayAhead, contextOf, insideQuotes, quoteSpan, type Sentences, namesApart, namesItem, namingWords, negatedReceipt, norm, otherAmounts, otherIds, paragraphsOf, plainEvidence, replacesPlainly, sameObject, sameThing, saysReplaced, saysWhen, scamPressure, sentencesOf, settlesKind, startClock } from "./dated-evidence";
+import { bareDayAhead, contextOf, insideQuotes, quoteSpan, type Sentences, namesApart, namesItem, namingWords, negatedReceipt, norm, otherAmounts, otherIds, paragraphsOf, plainEvidence, replacesPlainly, sameObject, sameThing, saysReplaced, saysWhen, scamPressure, sentencesOf, settlesKind, startClock, zeroNamesItem, zeroOnly } from "./dated-evidence";
 import { mayRelay, relayedAsk, relays, type Relay } from "./dated-relay";
 import { untrustedSenders, withoutUntrusted } from "./suspicious-sender";
 
@@ -473,6 +473,8 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     if (!quoted(evidence) || !plainEvidence(evidence, context) || (move && !saysWhen(evidence, contextOf(evidence, paragraphs), move, input.arrivedAt))) return false;
     if (!row) return true;
     if (otherIds(row, context)) return false;
+    // the Codex code review of the second morning (point 1): a zero balance is checked against the mail it's in, never exempt
+    if (zeroOnly(context) && !zeroNamesItem(row, `${input.subject}\n${input.text}`)) return false;
     // plan 210 (iteration 3, revision 5): paid is paid, narrowly. A receipt said not to have happened settles no bill; one
     // naming another amount settles it only as its own sender's receipt in its own conversation, the one open bill there
     // (counted in the store: Diego's card read as its $1,105.00 minimum, paid with "Recibimos tu pago por $8,432.17")

@@ -219,6 +219,30 @@ export function otherIds(item: { text: string; quote: string }, words: string): 
 }
 
 /**
+ * The Codex code review of the second morning (point 1): words whose only amount is a zero ("Balance remaining: $0.00"),
+ * which `amountsOf` leaves out, so `otherAmounts` has nothing of theirs to hold against the item's.
+ */
+export function zeroOnly(words: string): boolean {
+  const said = [...words.matchAll(AMOUNT)];
+  return said.length > 0 && said.every((m) => amountToken(m[0]) === "¤0");
+}
+
+/**
+ * The Codex code review of the second morning (point 1): a zero balance names no bill, so it settles one only by the mail it's
+ * in: no identifier the bill doesn't have ("Invoice 1002 … Balance remaining: $0.00" against invoice 1001), and the bill's own
+ * amount or identifier stated (the City's receipt says "$58.71" beside its zero), never only another's ("Invoice: $64.58").
+ * A bill that states neither has nothing to check: the other checks decide. `mail`: its subject and text.
+ */
+export function zeroNamesItem(item: { text: string; quote: string }, mail: string): boolean {
+  const own = namingWords(`${item.text}\n${item.quote}`);
+  const [amounts, ids] = [amountsOf(`${item.text}\n${item.quote}`), idsOf(own)];
+  if (otherIds(item, mail)) return false;
+  if (!amounts.size && !ids.size) return true;
+  const said = namingWords(mail);
+  return shares(amounts, said) || shares(ids, idsOf(said));
+}
+
+/**
  * Plan 210 (iteration 3, revision 5): words that state an amount the item doesn't, and none it does ("we received your
  * payment of $61.00" against a bill of $54.20), are about another payment, unless they're its receipt (`checkDates`).
  */

@@ -798,6 +798,16 @@ describe("plan 210 (iteration 3)", () => {
       // another amount it states is still another payment's, unless it says it's a receipt
       expect(checkDates(settle("AMOUNT PAID: $64.58"), mail).settled).toEqual([]);
     });
+    it("the Codex code review of the second morning (point 1): a zero balance settles a bill only when its mail names that bill, never another invoice's", () => {
+      const invoice = card({ senderKey: "billing@acme.test", text: "Pay $58.71 for Acme invoice 1001", quote: "Invoice 1001: $58.71 due 11/20/2026", dueDay: "2026-11-20" });
+      const mail = (text: string) => ({ ...receipt({ text, senderKey: "billing@acme.test" }), subject: "Your Acme account", from: "Acme Billing", open: new Map([["o1", invoice]]) });
+      // invoice 1002's mail, or one stating only another amount: its zero is that bill's
+      expect(checkDates(settle("Balance remaining: $0.00"), mail("Invoice 1002: $64.58\nBalance remaining: $0.00")).settled).toEqual([]);
+      expect(checkDates(settle("Saldo pendiente: $0.00"), mail("Factura: $64.58\nSaldo pendiente: $0.00")).settled).toEqual([]);
+      // the bill's own invoice or amount beside it: settled
+      expect(checkDates(settle("Balance remaining: $0.00"), mail("Payment received for invoice 1001.\nBalance remaining: $0.00")).settled).toEqual([{ id: 9, revision: 2 }]);
+      expect(checkDates(settle("Balance remaining: $0.00"), mail("Paid: $58.71\nBalance remaining: $0.00")).settled).toEqual([{ id: 9, revision: 2 }]);
+    });
     it("an amount that names one of two bills settles it, never the other", () => {
       const two = new Map([["o1", card()], ["o2", card({ id: 10, text: "Pagar $8,432.17 de la Tarjeta de Crédito Nopal Oro", quote: "Pago para no generar intereses: $8,432.17", dueDay: "2026-11-13" })]]);
       const out = checkDates({ items: [], settled: [{ label: "o1", evidence: "Recibimos tu pago por $8,432.17" }, { label: "o2", evidence: "Recibimos tu pago por $8,432.17" }] }, { ...receipt({ paysInThread: 2 }), open: two });
