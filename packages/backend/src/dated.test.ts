@@ -1809,6 +1809,33 @@ describe("a later message moves a day (after the panel)", () => {
   });
 });
 
+describe("the claims ledger's second batch: a person writing from a role address (Diego's Fer)", () => {
+  const fer = { name: "Fer Aguirre · Comunidad Colmena", email: "comunidad@colmenacowork.mx" };
+  const FER = "¡Hola Diego!\n\nTe escribo por lo que platicamos en la cocina. ¿Siempre sí te animas a dar el taller el jueves 19 a las 18:00?\n\nNecesito que me confirmes antes del viernes para meterlo al newsletter de la comunidad.\n\nGracias!!\nFer\nComunidad · Colmena Cowork";
+  const confirm: Item = { kind: "respond", text: "Confirmar a Fer el taller", quote: "Necesito que me confirmes antes del viernes para meterlo al newsletter de la comunidad.", due: "2026-11-12", time: null };
+
+  it("greeting the reader by name and signed with their own first name, they're a person: their dated request waits on the reader from its arrival", async () => {
+    const { backend, model, receive, read, raw } = await setup();
+    raw.run("UPDATE accounts SET display_name = 'Diego Ramírez Castañeda'");
+    model.answer = () => reply([confirm]);
+    const thread = await receive({ from: fer, subject: "¿Das el taller del jueves 19?", bodyText: FER });
+    await read();
+    // read as a person's mail, and the request is theirs: early, so it's with the people waiting, not under its day
+    expect(promptText(readings(model.requests)[0]!.messages[0]!.content)).toContain("Sent by a person.");
+    const [row] = await backend.store.dated.active();
+    expect(row).toMatchObject({ threadId: thread, kind: "respond", early: true });
+    // the same role address signed by its organisation, or greeting nobody by name: not a person, the request under its day
+    const { backend: other, model: m2, receive: r2, read: read2, raw: raw2 } = await setup();
+    raw2.run("UPDATE accounts SET display_name = 'Diego Ramírez Castañeda'");
+    m2.answer = () => reply([confirm]);
+    await r2({ from: { name: "Colmena Cowork", email: "comunidad@colmenacowork.mx" }, subject: "Taller", bodyText: FER.replace("\nFer\n", "\nColmena\n") });
+    await r2({ from: fer, subject: "Taller", bodyText: FER.replace("¡Hola Diego!", "¡Hola a todos!") });
+    await read2();
+    expect(promptText(readings(m2.requests)[0]!.messages[0]!.content)).toContain("Sent from an automated address");
+    expect((await other.store.dated.active()).map((r) => r.early)).toEqual([false, false]);
+  });
+});
+
 describe("a later message moves an item's time (the fourth panel round, revision 5)", () => {
   const game = { id: 9, revision: 2, kind: "event", dueDay: "2026-11-14", dueAt: at(2026, 11, 14, 10), timed: true } as DatedRow;
   const base = { text: "Heads up: Saturday's game is moved earlier to 8:00 AM, same field.", subject: "Re: Saturday", arrivedAt: NOW, open: new Map([["o1", game]]), fromScan: false, now: NOW };

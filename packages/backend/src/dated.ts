@@ -1,5 +1,5 @@
 import { AiError, DATED_PROMPT_VERSION, DATED_SUBJECT_CHARS, DATED_TEXT_CHARS, costAt, datedBudget, fitDates, inZone, priceOf, wallHolds, type AiTasks, type DatedResult } from "@terno/ai";
-import { addressKey, mutedOf, canLapse, saysClock, saysDay, withEventEnds, lapsesUnlessRenewed, localDay, needsPresence, saysNoReplyNeeded, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, dayKeyOf, datedTiming, dayEnd, dueCutoff, hasTimeCue, partMoment, partOfDayIn, type PartOfDay, normalizeText, withoutQuotes, type AiErrorKind, type DatedKind, type DatedRow, type DatedTiming, type DatedWall } from "@terno/core";
+import { addressKey, automatedSender, mutedOf, canLapse, saysClock, saysDay, withEventEnds, lapsesUnlessRenewed, localDay, needsPresence, saysNoReplyNeeded, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, dayKeyOf, datedTiming, dayEnd, dueCutoff, hasTimeCue, partMoment, partOfDayIn, type PartOfDay, normalizeText, withoutQuotes, type AiErrorKind, type DatedKind, type DatedRow, type DatedTiming, type DatedWall } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import type { AppSettings } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
@@ -143,6 +143,26 @@ function askAllowed(quote: string, said: string, text: string, o: { sender?: { p
   const at = said.indexOf(q);
   const where = ` ${at < 0 ? q : said.slice(Math.max(0, at - NAMED_BEFORE_CHARS), at + q.length)} `;
   return nameWords(o.reader.name).some((w) => where.includes(` ${w} `));
+}
+
+/** a greeting's words before the reader's name ("¡Hola Diego!", "Hi Diego,", "Dear Diego") */
+const GREETING = /^(?:(?:hi|hello|hey|dear|good (?:morning|afternoon|evening)|hola|buenas|buenos dias|buenas tardes|buenas noches|querid[oa]|estimad[oa]|que tal)\s+)?/u;
+
+/**
+ * The claims ledger's second batch (Diego's Fer, writing from comunidad@colmenacowork.mx): a role address a person writes
+ * from as themselves is that person, as an ask's checks and the reading's header read it. Only with no machine's sign (no
+ * list, bulk or no-reply), the mail's first line greeting the reader by their first name, and one of its last lines the
+ * From name's first word alone (a person's sign-off, "Fer"), that word not the address's own organisation ("Cobaltline
+ * Finance" signing as itself). Pure.
+ */
+export function personAtRole(src: { automated: boolean; fromEmail: string; fromName: string }, text: string, readerName: string): boolean {
+  const first = nameWords(src.fromName)[0];
+  const reader = nameWords(readerName)[0];
+  if (!first || !reader || automatedSender(src) || norm(src.fromEmail.split("@")[1] ?? "").split(" ").some((w) => w.includes(first))) return false;
+  const lines = text.split("\n").map(norm).filter(Boolean);
+  const greets = (lines[0] ?? "").replace(GREETING, "").split(" ");
+  if (greets[0] !== reader || greets.length > 4) return false;
+  return lines.slice(-6).some((l) => l === first);
 }
 
 // a verb that asks for it, then within the sentence what it asks for; read without accents, so "envíame" is "enviame"
@@ -1086,7 +1106,9 @@ export class DatedWorker {
     if (src.bodyState !== "full" && !src.bodyUnavailable) return { hold: src.senderKey };
     const { text, whole } = await this.text(src);
     const readerName = accounts.find((a) => a.id === src.accountId)?.displayName ?? "";
-    const relay = src.person ? null : relayedAsk(src.subject, text, src.fromName || src.fromEmail.split("@")[0]!, readerName);
+    // the claims ledger's second batch: a person writing from a role address, as themselves, is a person
+    const person = src.person || personAtRole(src, text, readerName);
+    const relay = person ? null : relayedAsk(src.subject, text, src.fromName || src.fromEmail.split("@")[0]!, readerName);
     if (filtered && !relay) return drop();
     // a cost filter, not a judgment (§3): a person's mail is read whatever its words, and so is a person's relayed ask
     if (!open.length && src.automated && !relay && !hasTimeCue(text, src.subject)) return drop();
@@ -1110,7 +1132,7 @@ export class DatedWorker {
       const own = new Set(accounts.map((a) => addressKey(a.email)));
       const others = [...src.to, ...src.cc].filter((p) => !own.has(addressKey(p.email))).map(nameOf);
       // the third panel round: "a person" as the ask's local check reads it (a role address you never wrote to isn't one)
-      const input = fitDates({ text, subject: src.subject, from: { name: src.fromName || src.fromEmail.split("@")[0]!, automated: src.automated || !src.person }, reader, to: src.to.map(nameOf), cc: src.cc.map(nameOf), receivedAt: inWords(src.date, language), zone: readerZone(), open: [...[...labels].map(([label, r]) => ({ label, kind: r.kind as DatedKind | "promise", text: r.text, due: r.dated ? r.dueDay : null, time: r.timed ? clockOf(r.dueAt) : null })), ...[...promises].map(([label, p]) => ({ label, kind: "promise" as const, text: p.text, due: p.dated ? dayKeyOf(p.dueAt) : null }))], language, outputTokens: budget.outputTokens }, budget.promptChars);
+      const input = fitDates({ text, subject: src.subject, from: { name: src.fromName || src.fromEmail.split("@")[0]!, automated: src.automated || !person }, reader, to: src.to.map(nameOf), cc: src.cc.map(nameOf), receivedAt: inWords(src.date, language), zone: readerZone(), open: [...[...labels].map(([label, r]) => ({ label, kind: r.kind as DatedKind | "promise", text: r.text, due: r.dated ? r.dueDay : null, time: r.timed ? clockOf(r.dueAt) : null })), ...[...promises].map(([label, p]) => ({ label, kind: "promise" as const, text: p.text, due: p.dated ? dayKeyOf(p.dueAt) : null }))], language, outputTokens: budget.outputTokens }, budget.promptChars);
       // a change of provider or key, the setting, Spam meanwhile: each stops it, at the provider too
       const signal = AbortSignal.any([generation.signal, asked.signal, stop.signal]);
       if (signal.aborted) return await drop();
@@ -1143,7 +1165,7 @@ export class DatedWorker {
       // plan 210 (iteration 3, revision 5): a receipt's one bill is counted in the store, never among the labels sent; read
       // only when the model settled something
       const paysInThread = result.settled.length ? (await store.dated.ofThread(src.threadId)).filter((r) => r.kind === "pay").length : 0;
-      const checked = checkDates(result, { text, subject: src.subject, arrivedAt: src.date, open: new Map([...labels].filter(([l]) => sent.has(l))), promises: new Map([...promises].filter(([l]) => sent.has(l))), fromScan, now, sender: { person: src.person }, reader, others, threadId: src.threadId, senderKey: src.senderKey, from: input.from.name, paysInThread, relay, listed: src.automated });
+      const checked = checkDates(result, { text, subject: src.subject, arrivedAt: src.date, open: new Map([...labels].filter(([l]) => sent.has(l))), promises: new Map([...promises].filter(([l]) => sent.has(l))), fromScan, now, sender: { person }, reader, others, threadId: src.threadId, senderKey: src.senderKey, from: input.from.name, paysInThread, relay, listed: src.automated });
       // plan 210 (iteration 2, the Codex code review): "nothing asked" only of a message the model saw all of (never one cut
       // to the window or the reader's limit, nor a subject past what's sent), and in which the checks found no request at all;
       // iteration 5 (revision 3): nor while a second look it needed is incomplete (claimed before, or failed)
