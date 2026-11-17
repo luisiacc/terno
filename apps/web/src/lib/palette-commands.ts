@@ -37,7 +37,10 @@ export interface PaletteCommand {
   searchOnly?: boolean;
   /** weighs the match (Superhuman's "scale"): a page's value at the root is 0.5, so a bare name finds the thing, not an action on it */
   scale?: number;
-  /** another row that says the same when both match ("Show starred" and Starred): this one steps aside for it */
+  /**
+   * another row that says the same when both match ("Show starred" and Starred), or owns the word both match by (a remind
+   * preset's "Later today" beside the item in hand's Later): this one steps aside for it
+   */
   sameAs?: string;
   /** Enter opens this page instead of running */
   page?: PalettePage;

@@ -943,6 +943,12 @@ test("plan 210 (iteration 5): Today's own by one key, a broken promise needed to
     await expect(page.locator("[data-group]").first()).toHaveAttribute("data-group", "item");
     await expect(page.locator('[aria-selected="true"]')).toHaveAttribute("data-command", "dated.later");
     await expect(page.getByTestId("palette-remind").getByTestId("palette-alias")).toHaveCount(0);
+    // round 15's second morning: nor a Remind me preset ("Remind me: Later today") beside it; "remind" still finds them
+    const presets = page.locator("[data-command^='remind:']");
+    await expect(presets).toHaveCount(0);
+    await page.getByTestId("palette-input").fill("remind");
+    await expect(page.getByTestId("palette-remind")).toBeVisible();
+    await expect(presets.first()).toBeVisible();
     // Remind me's page: a moment before the dinner's 7:00 PM only
     await page.getByTestId("palette-input").fill("");
     await page.getByTestId("palette-remind").click();

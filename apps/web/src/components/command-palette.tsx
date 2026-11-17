@@ -521,7 +521,9 @@ export function CommandPalette() {
             const set = () => void setReminder(ids(), p.at, kind);
             const hint = presetWhen(p, now);
             add({ id, group, label: presetLabel(p.id), icon: <AlarmClock />, hint, testId: `palette-remind-${kind}-${p.id}`, run: set });
-            add({ id, group: "actions", label: t("palette.remindAt", { kind: t(kindKey), preset: presetLabel(p.id) }), icon: <AlarmClock />, hint, keywords: [...english(kindKey), ...english("palette.alias.remind").flatMap(words)], searchOnly: true, scale: 0.5, run: set });
+            // round 15's second morning: with an item in hand, "later" is its Later's alone; a preset ("Remind me: Later
+            // today") steps aside for it wherever both match, and answers to "remind…" as ever
+            add({ id, group: "actions", label: t("palette.remindAt", { kind: t(kindKey), preset: presetLabel(p.id) }), icon: <AlarmClock />, hint, keywords: [...english(kindKey), ...english("palette.alias.remind").flatMap(words)], searchOnly: true, scale: 0.5, ...(itemInHand && { sameAs: "dated.later" }), run: set });
           }
           add({ id: `remind:${kind}:custom`, group, label: t("remind.pick"), icon: <CalendarClock />, testId: `palette-remind-${kind}-custom`, run: () => openRemind({ kind, custom: true }) });
         }
