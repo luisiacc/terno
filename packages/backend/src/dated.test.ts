@@ -637,6 +637,23 @@ describe("plan 210 (iteration 3)", () => {
       expect(checkDates({ items: [game("Sofia's game (Field 3)", "Good luck at the 10:00 game on Field 3!")], settled: [] }, mail("Good luck at the 10:00 game on Field 3!")).rows).toHaveLength(1);
       expect(checkDates({ items: [game("Sofia's game", "The game is today at Field 3")], settled: [] }, mail("The game is today at Field 3.")).rows).toHaveLength(1);
     });
+    it("the Codex code review of the second morning (point 2): a wish's sentence keeps the request and the news beside it (en, es); a wish passed on stays none", () => {
+      const mail = (text: string) => ({ ...person(text), arrivedAt: at(2026, 11, 14, 7, 52), now: at(2026, 11, 14, 7, 52) });
+      const event = (text: string, quote: string) => ({ kind: "event", text, quote, due: "2026-11-15", time: null });
+      // a request in the wish's sentence
+      for (const [text, quote] of ([["Enjoy your trip, please send me the itinerary.", "please send me the itinerary"], ["¡Disfruta el viaje, mándame el itinerario!", "mándame el itinerario"]] as const)) {
+        expect(checkDates({ items: [ask("Send Elena the itinerary", quote)], settled: [] }, mail(text)), text).toMatchObject({ rows: [{ kind: "ask" }], asked: true });
+      }
+      // what's planned, said beside the wish
+      for (const text of ["Enjoy the concert; it has moved to Sunday.", "Disfruta el concierto, se cambió al domingo."]) {
+        expect(checkDates({ items: [event("The concert (moved to Sunday)", text)], settled: [] }, mail(text)).rows, text).toHaveLength(1);
+      }
+      // a wish, a cheer and one passed on are still nothing; telling Sofia to do something isn't a wish
+      for (const text of ["Good luck tomorrow, you've got this!", "¡Mucha suerte mañana, dile a Sofi que su tía le manda un abrazo!"]) {
+        expect(checkDates({ items: [event("The game", text)], settled: [] }, mail(text)).rows, text).toEqual([]);
+      }
+      expect(checkDates({ items: [ask("Tell Sofia to bring her cleats", "tell Sofia to bring her cleats")], settled: [] }, mail("Good luck at the game, tell Sofia to bring her cleats!")).rows).toHaveLength(1);
+    });
     it("a 'let me know' after the visit's condition that asks for something concrete is an ask; one asking only for notice isn't (en, es; the code review of iteration 3)", () => {
       for (const [text, quote] of ([["When you're back, let me know what you think of the draft.", "When you're back, let me know what you think of the draft"], ["Cuando regreses, dime qué opinas del borrador.", "Cuando regreses, dime qué opinas del borrador"], ["Cuando vengas, avísame qué día te queda mejor.", "Cuando vengas, avísame qué día te queda mejor"]] as const)) {
         expect(checkDates({ items: [ask("Answer Sergio", quote)], settled: [] }, person(text)), text).toMatchObject({ rows: [{ kind: "ask" }], asked: true });

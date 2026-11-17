@@ -210,8 +210,22 @@ export function courtesyOnly(sentence: string): boolean {
  * ("good luck Friday, can you send me the slides?") is still asked. The sentence as `norm` reads it, en and es.
  */
 const WELL_WISH = /\b(?:good luck|best of luck|break a leg|have (?:fun|a (?:great|good|wonderful|lovely|blast))|enjoy|hope (?:it|the \p{L}+|you) (?:goes|go|went) (?:well|great)|fingers crossed|(?:buena |mucha )?suerte|que (?:te|les|le) vaya (?:bien|super)|que (?:te|se) (?:diviertas|diviertan)|disfrut(?:a|en|alo|enlo)|exito en)\b/u;
+/**
+ * The Codex code review of the second morning (point 2): a sentence is a wish only when every clause of it wishes, cheers or
+ * passes a wish on ("tell Sofia her tía says score one for me"); a clause that asks ("Enjoy your trip, please send me the
+ * itinerary") or tells what's planned ("Enjoy the concert; it has moved to Sunday") is the sentence's news, and it's read as
+ * any other. A clause of a word or two ("Elena", "love you") says neither.
+ */
+const CHEERS = /\b(?:you(?: ve)? got this|rooting for|cheering (?:for|you on)|proud of|knock (?:em|them) dead|tu puedes|echale ganas|animo)\b/u;
+const RELAYS = /^(?:and |y )?(?:tell|give|say (?:hi|hello) to|dile|diles|dale|dales|saluda a|saludos a)\b/u;
+const PASSED_ON = /\b(?:says|said|from (?:me|us)|my love|our love|hi|hello|hugs?|kisses|dice|de mi parte|de nuestra parte|abrazos?|besos?|saludos)\b/u;
+// what a wish's sentence may also say that's news: a change or a plan's facts ("it has moved to Sunday", "se cambió al domingo")
+const NEWS = /\b(?:moved|changed|rescheduled|postponed|pushed|cancel\w*|instead|now (?:at|on|in)|starts?|begins?|doors open|se (?:movio|cambio|pospuso|cancelo)|cambio|ahora es|empieza|inicia|en vez de|en lugar de)\b/u;
+// a clause that wishes, cheers, or passes a wish on, never one that has them do something ("tell Sofia to bring her cleats")
+const wishClause = (clause: string) => !NEWS.test(clause) && (WELL_WISH.test(clause) || CHEERS.test(clause) || (RELAYS.test(clause) && PASSED_ON.test(clause) && !/^(?:and )?tell \p{L}+ to\b/u.test(clause)));
 export function wellWishOnly(sentence: string): boolean {
-  return WELL_WISH.test(norm(sentence)) && !saysClock(sentence) && !/[?¿]/u.test(sentence);
+  if (!WELL_WISH.test(norm(sentence)) || saysClock(sentence) || /[?¿]/u.test(sentence) || asksDirectly(sentence)) return false;
+  return sentence.split(/[,;:.!—–\n]+/u).map(norm).every((clause) => clause.split(" ").filter(Boolean).length <= 2 || wishClause(clause));
 }
 
 /**
