@@ -49,7 +49,7 @@ export function WhatMattersOptions() {
   const [open, setOpen] = useState(false);
   const finished = useApp((s) => s.settings?.today?.finished !== false);
   // plan 210 (iteration 1): who reads the mail for it, where its options are
-  const reader = useApp((s) => datedReaderLine(s.settings?.ai, "settings"));
+  const reader = useApp((s) => datedReaderLine(s.settings?.ai));
   const labelId = useId();
   const hintId = useId();
   const more = () => {

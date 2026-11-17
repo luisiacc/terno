@@ -1,4 +1,4 @@
-/** Plan 204 §6, the Codex code review: the 14-day check's yes is kept only once the check is queued. */
+/** Plan 204: what acting on a task says and sends, and the lines and choices around it. */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const calls: string[] = [];
@@ -17,7 +17,7 @@ const errors: string[] = [];
 const said: { text: string; undo: boolean }[] = [];
 vi.mock("~/lib/snack", () => ({ registerUndo: (f: () => void) => f, snack: { success: (text: string, o: { action?: unknown }) => said.push({ text, undo: !!o.action }), error: (m: string) => errors.push(m) } }));
 
-const { actOnTask, answerScan, laterChoices, laterNote, laterStart, laterWindow, scanOfferText, taskSaid } = await import("./dated");
+const { actOnTask, laterChoices, laterNote, laterStart, laterWindow, taskSaid } = await import("./dated");
 
 beforeEach(() => {
   calls.length = 0;
@@ -72,15 +72,6 @@ describe("a Today row's task (plan 204, after the panel)", () => {
     expect(taskSaid("later", "  ")).toBe("Moved to later");
   });
 
-  it("plan 210 (iteration 1): the 14-day check says \"less than a cent\" only for a positive estimate under one; free, unknown and larger costs as they were", () => {
-    expect(scanOfferText({ count: 23, usd: 0.004 })).toBe("Check the last 14 days too? 23 messages, less than a cent.");
-    expect(scanOfferText({ count: 1, usd: 0.0099 })).toBe("Check the last 14 days too? 1 message, less than a cent.");
-    expect(scanOfferText({ count: 23, usd: 0.02 })).toBe("Check the last 14 days too? 23 messages, about $0.02.");
-    expect(scanOfferText({ count: 23, usd: 0.01 })).toMatch(/about \$0\.01/);
-    expect(scanOfferText({ count: 23, usd: 0 })).toBe("Check the last 14 days too? 23 messages.");
-    expect(scanOfferText({ count: 23, usd: null })).toBe("Check the last 14 days too? 23 messages.");
-  });
-
   it("Later's choices: every preset that applies now; on a Plan, only those before it ends", () => {
     // Thursday 12 November 2026, 10:00: later today, tomorrow, this weekend, next week
     const now = new Date(2026, 10, 12, 10, 0).getTime();
@@ -104,30 +95,6 @@ describe("a Today row's task (plan 204, after the panel)", () => {
     expect(laterChoices({ kind: "promise", id: 7, revision: 3, when: "Today", due: "Due today", dated: true }, now).map((p) => p.id)).toEqual(["laterToday", "tomorrow", "weekend", "nextWeek"]);
     // the picker starts an hour before the moment when tomorrow at 9 is past it
     expect(laterStart(laterWindow(payroll, now), now)).toBe(new Date(2026, 10, 12, 12).getTime());
-  });
-});
-
-describe("the 14-day check's answer", () => {
-  it("yes: queued, then answered", async () => {
-    const save = vi.fn(async () => {});
-    expect(await answerScan(true, save)).toBe(true);
-    expect(calls).toEqual(["dated.scan"]);
-    expect(save).toHaveBeenCalledWith({ scanAnswered: true });
-  });
-
-  it("a yes that fails isn't saved: it says so, and the offer stays", async () => {
-    fail = true;
-    const save = vi.fn(async () => {});
-    expect(await answerScan(true, save)).toBe(false);
-    expect(save).not.toHaveBeenCalled();
-    expect(errors).toEqual(["The backend is busy."]);
-  });
-
-  it("not now: answered, nothing queued", async () => {
-    const save = vi.fn(async () => {});
-    await answerScan(false, save);
-    expect(calls).toEqual([]);
-    expect(save).toHaveBeenCalledWith({ scanAnswered: true });
   });
 });
 

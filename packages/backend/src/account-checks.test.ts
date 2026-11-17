@@ -15,6 +15,7 @@ import { msg } from "@terno/store/conformance";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AccountChecks, DATED_CHECKED_KEY, FOLLOWUPS_CHECKED_KEY, type AccountChecksHost } from "./account-checks";
 import { Backend, plaintextCipher } from "./backend";
+import { readSettings } from "./settings";
 
 const DAY = 86_400_000;
 const NOW = new Date(2026, 10, 17, 12).getTime();
@@ -297,6 +298,8 @@ describe("in the backend (scripted providers)", () => {
     await expect.poll(() => first.state(a!).lastSyncAt).not.toBeNull();
     expect(await first.checked(DATED_CHECKED_KEY)).toEqual([a]);
     expect(await first.checked(FOLLOWUPS_CHECKED_KEY)).toEqual([a]);
+    // the answers went with the offers
+    expect((await readSettings(first.backend.store)).dated).toEqual({ enabled: true, enabledAt: NOW - 30 * DAY });
     await new Promise((r) => setTimeout(r, 50));
     expect(first.datedQueued).toEqual([]);
     expect(first.sentQueued).toEqual([]);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readSettings, stampSmartCategorize, updateSettings, type SettingsStore } from "./settings";
+import { readOfferAnswers, readSettings, stampSmartCategorize, updateSettings, type SettingsStore } from "./settings";
 
 function memory(initial?: unknown): SettingsStore & { raw(): unknown; writes: number } {
   const values = new Map<string, unknown>(initial === undefined ? [] : [["app", initial]]);
@@ -73,5 +73,20 @@ describe("the one-time reset of the AI switch", () => {
     await updateSettings(store, { aiCategorize: true });
     await stampSmartCategorize(store);
     expect((await readSettings(store)).aiCategorize).toBe(true);
+  });
+});
+
+describe("plan 211: What matters and Follow-ups with no offers", () => {
+  it("on by default, a stored off stays off, and the offers' answers are read from the row as written but never shown", async () => {
+    expect((await readSettings(memory())).dated).toEqual({ enabled: true, enabledAt: null });
+    expect((await readSettings(memory())).followups).toMatchObject({ enabled: true, enabledAt: null });
+    const off = memory({ dated: { enabled: false, enabledAt: null, scanAnswered: false, offerDismissed: true }, followups: { enabled: false, enabledAt: null, nudgeAfterDays: 5, scanAnswered: true } });
+    const read = await readSettings(off);
+    expect(read.dated).toEqual({ enabled: false, enabledAt: null });
+    expect(read.followups).toEqual({ enabled: false, enabledAt: null, nudgeAfterDays: 5 });
+    expect(await readOfferAnswers(off)).toEqual({ dated: false, followups: true });
+    // a write of the user's drops them for good, and turning it on records the moment
+    await updateSettings(off, { dated: { enabled: true } }, 77);
+    expect((off.raw() as { dated: unknown }).dated).toEqual({ enabled: true, enabledAt: 77 });
   });
 });

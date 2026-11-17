@@ -56,7 +56,7 @@ test("on a cloud provider every AI surface runs on the first ask; Settings → A
     // the newest mail, so its row is at the top
     await ingestConversation(server, { subject: "Quokka policy", count: 3, now: E2E_NOW + 3_540_000 });
     await awaiting(server, "Are you in");
-    await server.backend.server.invoke("settings.update", { ai: { provider: "openai", baseURL: `${stub.url}/v1`, model: "gpt-6-luna" }, followups: { enabled: true, scanAnswered: false } }, dev);
+    await server.backend.server.invoke("settings.update", { ai: { provider: "openai", baseURL: `${stub.url}/v1`, model: "gpt-6-luna" }, followups: { enabled: true } }, dev);
     await server.backend.server.invoke("ai.setKey", { provider: "openai", value: "sk-openai-e2e-not-a-real-key" }, dev);
     await fresh(page);
     const ran = (task: string) => expect.poll(() => stub.tasks.includes(task), { message: `the stub got ${task}` }).toBe(true);

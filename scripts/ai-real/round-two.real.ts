@@ -187,7 +187,11 @@ ${recent.map((m) => `${m.sent ? "(sent) " : ""}${m.s} | ${m.f} <${m.e.replace(/^
   it.runIf(PHASE === "followups")("what was promised", { timeout: 1_500_000 }, async () => {
     const t = await open("followups");
     await t.client.call("settings.update", { followups: { enabled: true } });
-    await t.client.call("followups.scan", {});
+    // plan 211: the check of what was sent is the backend's, each account's once its sync is done
+    const ids = (await t.backend.store.accounts.list()).map((a) => a.id);
+    for (const id of ids) await t.backend.store.accounts.setSyncState(id, { lastSyncAt: Date.now() });
+    await t.backend.followups.start();
+    await t.backend.followups.checkAccounts(ids);
     t.backend.followups.wake({ network: true } as never);
     for (let i = 0, idle = 0; i < 12_000 && idle < 200; i++) {
       await new Promise((res) => setTimeout(res, 100));

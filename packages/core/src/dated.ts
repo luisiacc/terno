@@ -198,14 +198,10 @@ export interface DatedSetting {
    * null while it's on by default
    */
   enabledAt: number | null;
-  /** the one-time check was answered (yes or no) */
-  scanAnswered: boolean;
-  /** Today's header stops offering it */
-  offerDismissed: boolean;
 }
 
 /** Plan 211: on by default wherever AI runs (the AI gate still decides whether anything is read); a stored false stays off. */
-export const DEFAULT_DATED: DatedSetting = { enabled: true, enabledAt: null, scanAnswered: false, offerDismissed: false };
+export const DEFAULT_DATED: DatedSetting = { enabled: true, enabledAt: null };
 
 const startOfDay = (ms: number): number => {
   const d = new Date(ms);

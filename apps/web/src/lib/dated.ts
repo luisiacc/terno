@@ -1,7 +1,5 @@
 import { alertUntil, askUntil, datedGroup, datedGroupAt, defaultRemindAt, dueCutoff, laterBefore, localDay, planEnd, remindPresets, undatedAlert, type DatedKind, type DatedRow, type DatedWall, type ItemSeen, type PartOfDay, type RemindPreset, type TodayAlso, type TodayWhy } from "@terno/core";
 import { getLocale, t } from "@terno/i18n";
-import { useEffect, useState } from "react";
-import { usd } from "~/lib/ai";
 import type { LeftRows } from "~/lib/actions";
 import { muteOfferAction } from "~/lib/dated-mutes";
 import { registerUndo, snack, type SnackAction } from "~/lib/snack";
@@ -329,45 +327,4 @@ function said(action: "done" | "dismiss" | "later", text: string | null | undefi
   // (iteration 5) the narrow offer names a kind and a sender, so the line before it is one word: "Removed"
   if (secondary) snack.success(t(action === "dismiss" ? "dated.snack.removedOffer" : SAID[action]), { ...undoing, secondary, ...(words ? { description: shortened(words) } : {}) });
   else snack.success(taskSaid(action, text), undoing);
-}
-
-/**
- * Plan 204 §6: the one-time check of the last 14 days, offered while the feature is on and the question unanswered, with
- * the count and the cost (none on a local model), as follow-ups' 30 days (plan 142). Today's header and Settings ask it
- * alike; `save` writes the answer the way each writes settings. Nothing old is read without a yes.
- */
-export function useDatedScanOffer(offering: boolean, save: (patch: { scanAnswered: true }) => Promise<unknown>): { offer: { count: number; usd: number | null } | null; answer: (check: boolean) => Promise<boolean> } {
-  const [offer, setOffer] = useState<{ count: number; usd: number | null } | null>(null);
-  useEffect(() => {
-    if (!offering) return setOffer(null);
-    let current = true;
-    void client.call("dated.scanOffer", {}).then((o) => current && setOffer(o), () => {});
-    return () => {
-      current = false;
-    };
-  }, [offering]);
-  return { offer, answer: (check: boolean) => answerScan(check, save) };
-}
-
-/** The offer's answer. Codex code review: a yes is kept only once the check is queued; one that failed says so and stays offered. */
-export async function answerScan(check: boolean, save: (patch: { scanAnswered: true }) => Promise<unknown>): Promise<boolean> {
-  if (check) {
-    try {
-      await client.call("dated.scan", {});
-    } catch (error) {
-      snack.error((error as { message?: string }).message ?? t("dated.scanFailed"));
-      return false;
-    }
-  }
-  await save({ scanAnswered: true });
-  return true;
-}
-
-/**
- * The offer's words: "Check the last 14 days too? 23 messages, about $0.02."; under a cent, "less than a cent" (plan 210,
- * iteration 1: "about $0.00" read as nothing, or as a fault); no cost where it's free (a model of the user's own) or unknown.
- */
-export function scanOfferText(offer: { count: number; usd: number | null }): string {
-  if (offer.usd === null || !(offer.usd > 0)) return t("today.dated.scan", { count: offer.count });
-  return offer.usd < 0.01 ? t("today.dated.scanTiny", { count: offer.count }) : t("today.dated.scanCost", { count: offer.count, usd: usd(offer.usd) });
 }

@@ -1,7 +1,6 @@
 import { aiCanRun, NUDGE_DAYS, type AiErrorKind, type AiSummariesStatus, type NotNewsletter } from "@terno/core";
 import type { AiUsageReport, AppSettings } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
-import { Button } from "@terno/ui/components/button";
 import { CloseButton } from "@terno/ui/components/close-button";
 import { NumberField } from "@terno/ui/components/number-field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
@@ -13,7 +12,6 @@ import { undoAction } from "~/lib/actions";
 import { registerUndo, snack } from "~/lib/snack";
 import { reloadList } from "~/state/list";
 import { leaveOut, letBackIn, senderKey } from "~/state/today";
-import { scanOfferText, useDatedScanOffer } from "~/lib/dated";
 import { client } from "~/rpc/connection";
 import { useApp } from "~/state/app";
 import { SettingsGroup, SettingsNote, SettingsRow, type SettingsUpdate } from "./parts";
@@ -21,16 +19,14 @@ import { SettingsGroup, SettingsNote, SettingsRow, type SettingsUpdate } from ".
 const NUDGE_CHOICES = NUDGE_DAYS.map((d) => String(d));
 
 /**
- * Plan 142 §8: off by default. Turning it on offers the last 30 days once, with the count and the cost, and sends nothing
- * old without a yes.
+ * Plan 142, on by default since plan 211 wherever AI runs (a switch off stays off). What you sent in the last 30 days is the
+ * backend's to check, each account once, with no offer.
  */
 export function FollowupsGroup({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
   const { ai, followups } = settings;
   // plan 168: Terno picks where it runs (`routeFor`); the hint names who receives it
   const target = routeOf("followup", ai);
   const ready = aiCanRun("followup", ai);
-  const [offer, setOffer] = useState<{ count: number; usd: number | null } | null>(null);
-  const offering = followups.enabled && !followups.scanAnswered;
   const [status, setStatus] = useState<{ blockedBy: { kind: AiErrorKind; message: string } | null } | null>(null);
   useEffect(() => {
     if (!followups.enabled) return setStatus(null);
@@ -40,28 +36,11 @@ export function FollowupsGroup({ settings, update }: { settings: AppSettings; up
     const off = client.on("followupsStatus", setStatus);
     return () => { current = false; off(); };
   }, [followups.enabled, ai]);
-  useEffect(() => {
-    if (!offering) return setOffer(null);
-    let current = true;
-    void client.call("followups.scanOffer", {}).then((o) => current && setOffer(o), () => {});
-    return () => { current = false; };
-  }, [offering]);
-  const answer = async (check: boolean) => {
-    if (check) await client.call("followups.scan", {}).catch(() => {});
-    await update({ followups: { scanAnswered: true } }, { quiet: true });
-  };
   return (
     <SettingsGroup title={t("followups.title")} testId="ai-followups">
       <SettingsRow find="ai.followups" label={t("ai.followups.switch")} hint={ready ? t("ai.followups.hint", { provider: providerLabel(target.provider, ai) }) : t("ai.followups.hintNoProvider")}>
         {(a) => <Switch {...a} checked={followups.enabled} disabled={!ready && !followups.enabled} data-testid="ai-followups-switch" onCheckedChange={(enabled) => void update({ followups: { enabled } })} />}
       </SettingsRow>
-      {offering && offer && offer.count > 0 && (
-        <SettingsNote testId="ai-followups-offer">
-          <span>{offer.usd !== null ? t("ai.followups.offerCost", { count: offer.count, usd: usd(offer.usd) }) : t("ai.followups.offer", { count: offer.count })}</span>{" "}
-          <Button variant="link" size="xs" data-testid="ai-followups-check" onClick={() => void answer(true)}>{t("ai.followups.check")}</Button>{" "}
-          <Button variant="link-secondary" size="xs" data-testid="ai-followups-notnow" onClick={() => void answer(false)}>{t("ai.followups.notNow")}</Button>
-        </SettingsNote>
-      )}
       {followups.enabled && status?.blockedBy && (
         <SettingsNote testId="ai-followups-status">
           <span role="status" className="text-destructive-ink">{t("ai.followups.paused")}</span>
@@ -117,14 +96,13 @@ export function DigestGroup({ settings, update }: { settings: AppSettings; updat
 }
 
 /**
- * Plan 204 §6: dates in new mail, for Today's Missed, Deadlines, Plans and Coming up. Off by default (the owner); on, it
- * asks once about the last 14 days, as Today's header does, and says when it has stopped.
+ * Plan 204 §6: dates in new mail, for What matters. On by default since plan 211 wherever AI runs (a switch off stays off);
+ * the last 14 days are the backend's to check, each account once, with no offer. It says when it has stopped.
  */
 export function DatedGroup({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
   const { ai, dated } = settings;
   const target = routeOf("dated", ai);
   const ready = aiCanRun("dated", ai);
-  const scan = useDatedScanOffer(dated.enabled && !dated.scanAnswered, (patch) => update({ dated: patch }, { quiet: true }));
   const [status, setStatus] = useState<{ blockedBy: { kind: AiErrorKind; message: string } | null } | null>(null);
   useEffect(() => {
     if (!dated.enabled) return setStatus(null);
@@ -138,13 +116,6 @@ export function DatedGroup({ settings, update }: { settings: AppSettings; update
       <SettingsRow find="ai.dated" label={t("ai.dated.switch")} hint={ready ? t("ai.dated.hint", { provider: providerLabel(target.provider, ai) }) : t("ai.dated.hintNoProvider")}>
         {(a) => <Switch {...a} checked={dated.enabled} disabled={!ready && !dated.enabled} data-testid="ai-dated-switch" onCheckedChange={(enabled) => void update({ dated: { enabled } })} />}
       </SettingsRow>
-      {scan.offer && scan.offer.count > 0 && (
-        <SettingsNote testId="ai-dated-offer">
-          <span>{scanOfferText(scan.offer)}</span>{" "}
-          <Button variant="link" size="xs" data-testid="ai-dated-check" onClick={() => void scan.answer(true)}>{t("today.dated.check")}</Button>{" "}
-          <Button variant="link-secondary" size="xs" data-testid="ai-dated-notnow" onClick={() => void scan.answer(false)}>{t("today.dated.notNow")}</Button>
-        </SettingsNote>
-      )}
       {dated.enabled && status?.blockedBy && (
         <SettingsNote testId="ai-dated-status">
           <span role="status" className="text-destructive-ink">{t("ai.dated.paused")}</span>

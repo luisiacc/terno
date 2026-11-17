@@ -141,6 +141,26 @@ export function migrateAgents(s: StoredSettings, fresh: boolean): StoredSettings
   return { ...rest, agents: { enabled: false, access }, agentsVersion: AGENTS_VERSION };
 }
 
+/**
+ * Plan 211: the offers are gone, and their answers with them: an install's answers are carried over once, at startup, as
+ * the accounts already checked (`upgradeChecks`, which reads them before this drops them). Pure, like the others.
+ */
+export function migrateOffers(s: StoredSettings): StoredSettings {
+  const dated = s.dated as (StoredSettings["dated"] & { scanAnswered?: unknown; offerDismissed?: unknown }) | undefined;
+  const followups = s.followups as (StoredSettings["followups"] & { scanAnswered?: unknown }) | undefined;
+  if (!(dated && ("scanAnswered" in dated || "offerDismissed" in dated)) && !(followups && "scanAnswered" in followups)) return s;
+  const out = { ...s };
+  if (dated) {
+    const { scanAnswered: _a, offerDismissed: _d, ...rest } = dated;
+    out.dated = rest as NonNullable<StoredSettings["dated"]>;
+  }
+  if (followups) {
+    const { scanAnswered: _a, ...rest } = followups;
+    out.followups = rest as NonNullable<StoredSettings["followups"]>;
+  }
+  return out;
+}
+
 /** Plan 211 (revision 10): whether the stored install answered each check's offer (yes or no), from the row as written. */
 export async function readOfferAnswers(store: Pick<SettingsStore, "settings">): Promise<{ dated: boolean; followups: boolean }> {
   const raw = await store.settings.get<{ dated?: { scanAnswered?: unknown }; followups?: { scanAnswered?: unknown } }>("app", {});
@@ -150,7 +170,7 @@ export async function readOfferAnswers(store: Pick<SettingsStore, "settings">): 
 /** Every read-time migration, in order. */
 function migrate(s: StoredSettings): StoredSettings {
   const fresh = Object.keys(s).length === 0;
-  return migrateAgents(migrateLocalMail(migrateErrorReports(migrateRemoteImages(migrateAppearance(s, fresh)))), fresh);
+  return migrateOffers(migrateAgents(migrateLocalMail(migrateErrorReports(migrateRemoteImages(migrateAppearance(s, fresh)))), fresh));
 }
 
 export const DEFAULT_SETTINGS: General = {
@@ -186,7 +206,7 @@ export const DEFAULT_SETTINGS: General = {
   replies: { enabled: false },
   today: DEFAULT_TODAY,
   // plan 211: on by default wherever AI runs (the workers read the AI gate, so this alone sends nothing); a stored false stays
-  followups: { enabled: true, enabledAt: null, nudgeAfterDays: NUDGE_DEFAULT, scanAnswered: false },
+  followups: { enabled: true, enabledAt: null, nudgeAfterDays: NUDGE_DEFAULT },
   // plan 211: on by default too (plan 204 had it off, with Today's header offering it)
   dated: DEFAULT_DATED,
   errorReports: "ask",

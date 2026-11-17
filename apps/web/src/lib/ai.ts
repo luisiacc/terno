@@ -194,18 +194,18 @@ export function privacyLine(ai: AiSettings): string {
  * Plan 210 (iteration 1, Codex's critique point 8): who reads the mail for What matters' bills, trips and requests, by
  * where the dated reader's job is routed (`routeFor("dated")`, the backend's rule), never the settings' main provider:
  * a cloud by its name (a relay or a server of the user's own by its host, as every disclosure says it), one on this Mac as
- * staying here. `where`: the offer follows "Show bills, trips and requests here." ("to find these"); What matters'
- * settings say what they're for. Null when nothing can read it.
+ * staying here, saying what it's for (plan 211: What matters' settings, its one place now that nothing offers it). Null
+ * when nothing can read it.
  */
-export function datedReaderLine(ai: AiSettings | null | undefined, where: "offer" | "settings"): string | null {
+export function datedReaderLine(ai: AiSettings | null | undefined): string | null {
   const route = ai ? routeFor("dated", ai) : null;
   if (!ai || !route) return null;
   const target = targetOf(ai, route.provider);
   if (target.local) {
     const name = target.provider === "compatible" ? choiceLabel("local-server") : providerLabel(target.provider, ai);
-    return t(where === "offer" ? "whatMatters.privacy.local" : "whatMatters.privacy.localSettings", { name });
+    return t("whatMatters.privacy.localSettings", { name });
   }
-  return t(where === "offer" ? "whatMatters.privacy.cloud" : "whatMatters.privacy.cloudSettings", { destination: destinationName(ai, target) });
+  return t("whatMatters.privacy.cloudSettings", { destination: destinationName(ai, target) });
 }
 
 type Target = { provider: AiProviderId; preset: CompatiblePreset | null; baseURL: string | null; local: boolean };

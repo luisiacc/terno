@@ -97,8 +97,6 @@ export interface FollowupsSetting {
    */
   enabledAt: number | null;
   nudgeAfterDays: number;
-  /** the one-time offer was answered */
-  scanAnswered: boolean;
 }
 
 /**

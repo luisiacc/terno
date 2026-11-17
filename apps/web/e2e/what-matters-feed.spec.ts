@@ -101,7 +101,7 @@ async function walk(page: Page): Promise<{ rows: { kind: string; text: string }[
 }
 
 test("the open part, the automated section and the history under Earlier, paged as it's scrolled; Done to the history and Undo back; a new item live; virtualized; axe", async ({ app: page, server }) => {
-  await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true, scanAnswered: true } }, dev);
+  await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true } }, dev);
   await item(server, "payroll", "Wire payroll", null);
   // the history: closings an hour apart, the newest an hour ago (Bill 59), the oldest 60 hours ago (Bill 0)
   // every other one still in the Inbox: the Inbox's rows and the history's are the same conversations
@@ -210,7 +210,7 @@ test("the open part, the automated section and the history under Earlier, paged 
 });
 
 test("an item: one sentence, when in its column, who under it; its conversation beside the feed, put away by Esc, the reader's Close or a second click; D and z; axe in light and dark", async ({ app: page, server }) => {
-  await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true, scanAnswered: true } }, dev);
+  await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true } }, dev);
   await item(server, "payroll", "Wire payroll", null);
   await item(server, "rent", "Pay the rent", null);
   await fresh(page);
@@ -360,7 +360,7 @@ test("an item: one sentence, when in its column, who under it; its conversation 
 });
 
 test("the owner's inbox-zero setting: the gear on What matters' title row hides the finished items and shows them again; Settings has the same switch, and More settings opens it", async ({ app: page, server }) => {
-  await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true, scanAnswered: true } }, dev);
+  await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true } }, dev);
   await item(server, "payroll", "Wire payroll", null);
   await item(server, "closed-1", "Pay the old bill", E2E_NOW - HOUR);
   await fresh(page);
@@ -440,7 +440,7 @@ test("the owner's inbox-zero setting: the gear on What matters' title row hides 
 
 
 test("plan 210 (iteration 1): inside a day, tasks before plans; iteration 2: a conversation with both is two rows; the item's keys in its tooltips", async ({ app: page, server }) => {
-  await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true, scanAnswered: true } }, dev);
+  await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true } }, dev);
   // a breakfast at 9:00 and a parcel today, then the payroll at 1:00 PM; one conversation with a dinner at 8:00 and a deposit
   await items(server, "breakfast", [{ kind: "event", text: "Team breakfast", hour: 9 }]);
   await items(server, "parcel", [{ kind: "delivery", text: "Your parcel arrives", hour: null }]);
@@ -559,7 +559,7 @@ async function dated(server: DevServerFixture, key: string, from: string, row: {
 }
 
 test("plan 210 (iteration 3): the header says missed, today and waiting; Waiting on you is Today's quiet part; Coming up is a disclosure, by day then by week", async ({ app: page, server }) => {
-  await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true, scanAnswered: true } }, dev);
+  await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true } }, dev);
   await dated(server, "water", "City Water", { kind: "pay", text: "Pay the water bill", days: -2 });
   await item(server, "payroll", "Wire payroll", null);
   await dated(server, "rfp", "Owen Hale", { kind: "respond", text: "Send Owen the RFP response", days: 3, hour: 17, early: true });
@@ -666,7 +666,7 @@ async function promised(server: DevServerFixture, key: string, who: { name: stri
 const LONG = "Send Megan Cole the revised logo files with the ligature version and both mockups (the coaster and the shop window), the color guide for the printer, and the signage drafts for both branches";
 
 test("plan 210 (iteration 4): 'to do today'; a broken promise first in Waiting on you; Coming up the last heading, out of j/k while closed; the sentence keeps its width beside the reader; the palette with nothing selected; the menu's More", async ({ app: page, server }) => {
-  await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true, scanAnswered: true }, followups: { enabled: true } }, dev);
+  await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true }, followups: { enabled: true } }, dev);
   await dated(server, "water", "City Water", { kind: "pay", text: "Pay the water bill", days: -2 });
   await item(server, "payroll", "Wire payroll", null);
   await dated(server, "rfp", "Owen Hale", { kind: "respond", text: "Send Owen the RFP response", days: 3, hour: 17, early: true });
@@ -879,7 +879,7 @@ test("plan 210 (iteration 4): 'to do today'; a broken promise first in Waiting o
 });
 
 test("plan 210 (iteration 5): Today's own by one key, a broken promise needed today first; '1 overdue'; Ahead after the seven days, Coming up last; the palette with an item selected; the reader's line; ⇧B and ⇧F", async ({ app: page, server }) => {
-  await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true, scanAnswered: true }, followups: { enabled: true } }, dev);
+  await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true }, followups: { enabled: true } }, dev);
   // Today: a pay with a time, a pay with none, a delivery at 9:00 and a dinner at 7:00 PM, and María's slip, promised Monday,
   // needed today
   await item(server, "payroll", "Wire payroll", null);
@@ -1068,7 +1068,7 @@ test("plan 210 (iteration 5): Today's own by one key, a broken promise needed to
 });
 
 test("plan 211: an account's switches in Settings → Accounts: out of What matters, nothing of it shows; AI off, only what the AI made goes, and what depends on its AI leaves Settings", async ({ app: page, server }) => {
-  await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true, scanAnswered: true } }, dev);
+  await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true } }, dev);
   await item(server, "power", "Pay the power bill", null);
   // a conversation waiting on you: Needs you's own, local rule
   const store = server.backend.store;

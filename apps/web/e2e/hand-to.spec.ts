@@ -63,7 +63,7 @@ async function shoot(page: Page, name: string) {
 }
 
 test("Hand to… from the item's menu: an inline forward with its line; Undo send leaves it open; confirmed, it's handed and Earlier says to whom", async ({ app: page, server }) => {
-  await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true, scanAnswered: true }, followups: { enabled: true, scanAnswered: true }, undoSend: true }, dev);
+  await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true }, followups: { enabled: true }, undoSend: true }, dev);
   const form = await seed(server);
   await fresh(page);
   await page.getByTestId("nav-today").click();
@@ -138,7 +138,7 @@ test("Hand to… from the item's menu: an inline forward with its line; Undo sen
 });
 
 test("Hand to… from the reader's line, in Spanish: the forward's line and Earlier's in Spanish", async ({ app: page, server }) => {
-  await server.backend.server.invoke("settings.update", { language: "es", ai: { provider: "fake", model: "demo" }, dated: { enabled: true, scanAnswered: true }, followups: { enabled: true, scanAnswered: true } }, dev);
+  await server.backend.server.invoke("settings.update", { language: "es", ai: { provider: "fake", model: "demo" }, dated: { enabled: true }, followups: { enabled: true } }, dev);
   const form = await seed(server);
   await fresh(page);
   await page.getByTestId("nav-today").click();

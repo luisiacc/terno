@@ -87,7 +87,7 @@ const shot = async (page: Page, name: string, el?: ReturnType<Page["getByTestId"
 };
 
 test("plan 210 (iteration 4): Change… from the row's menu, the reader's line and the palette; Earlier says Changed; a later mail's move is the user's to take; Undo; axe", async ({ app: page, server }) => {
-  await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true, scanAnswered: true } }, dev);
+  await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true } }, dev);
   const store = server.backend.store;
   const lumen = await read(server, message(server, "lumen", { name: "Lumen Billing", email: "billing@lumen.test" }, "Your invoice", "Pay the Lumen invoice.", E2E_NOW - HOUR), [{ kind: "pay", text: "Pay the Lumen invoice", days: 1 }]);
   const elena = { name: "Elena Ruiz", email: "elena@school.test" };

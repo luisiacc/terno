@@ -1566,15 +1566,6 @@ export class DatedWorker {
     return queued;
   }
 
-  /** Plan 211: the offer is gone; the backend checks each account by itself (the window's offer stays quiet until it goes). */
-  async scanOffer(): Promise<{ count: number; usd: number | null }> {
-    return { count: 0, usd: null };
-  }
-
-  async scan(): Promise<number> {
-    return 0;
-  }
-
   status(): { blockedBy: { kind: AiErrorKind; message: string } | null } {
     return { blockedBy: this.paused };
   }

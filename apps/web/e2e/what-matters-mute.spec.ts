@@ -47,7 +47,7 @@ async function remove(page: Page, text: string): Promise<void> {
 }
 
 async function seed(server: DevServerFixture) {
-  await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true, scanAnswered: true } }, dev);
+  await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true } }, dev);
   await item(server, "box1", "First parcel arrives", "delivery", parcelo, 14);
   await item(server, "box2", "Second parcel arrives", "delivery", parcelo, 15);
   await item(server, "box4", "Third parcel arrives", "delivery", parcelo, 17);
@@ -183,7 +183,7 @@ for (const language of ["en", "es"] as const) {
  */
 for (const language of ["en", "es"] as const) {
   test(`plan 210 (round 14's faults): a long sender's offer never crushes the snack's first line (${language})`, async ({ app: page, server }) => {
-    await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true, scanAnswered: true }, language }, dev);
+    await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true }, language }, dev);
     await item(server, "stands", "2 Laptop stands arrive", "delivery", { name: "Northgate Business Store", email: "orders@northgate.test", listId: "<orders.northgate.test>" }, 14);
     await page.addInitScript((l) => localStorage.setItem("terno:language", l), language);
     await fresh(page);
@@ -227,7 +227,7 @@ for (const language of ["en", "es"] as const) {
  */
 for (const language of ["en", "es"] as const) {
   test(`plan 210 (round 14's faults, code review): in the narrowest reader the offer has its own line (${language})`, async ({ app: page, server }) => {
-    await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true, scanAnswered: true }, language }, dev);
+    await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true }, language }, dev);
     await item(server, "stands", "2 Laptop stands arrive", "delivery", { name: "Northgate Business Store", email: "orders@northgate.test", listId: "<orders.northgate.test>" }, 14);
     await page.addInitScript((l) => localStorage.setItem("terno:language", l), language);
     await fresh(page);
@@ -287,7 +287,7 @@ for (const language of ["en", "es"] as const) {
  */
 for (const language of ["en", "es"] as const) {
   test(`the claims ledger's second batch: the offer's own line, its sender whole; Done's message on two lines (${language})`, async ({ app: page, server }) => {
-    await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true, scanAnswered: true }, language }, dev);
+    await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true }, language }, dev);
     await item(server, "lab", "Lab meeting snacks arrive", "delivery", { name: "Ingrid Vasquez-Lund (via Calendar)", email: "events@halvorsen.test", listId: "<events.halvorsen.test>" }, 14);
     const water = "Pay $58.71 for the City of Millbrook water and sewer service, account 4471-22";
     await item(server, "water", water, "pay", { name: "City of Millbrook", email: "billing@millbrook.test", listId: null }, 15);

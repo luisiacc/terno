@@ -576,7 +576,7 @@ test.describe("What matters and its digest (plan 145)", () => {
     await expect(last.getByTestId("digest-tick")).not.toBeChecked();
   });
 
-  test("the digest's way in is no conversation: no menu, and a refresh keeps it; the dates offer, once dismissed, stays away", async ({ app: page, server }) => {
+  test("the digest's way in is no conversation: no menu, and a refresh keeps it", async ({ app: page, server }) => {
     await withMail(server);
     await settingUp(page, server, { ai: { provider: "fake", model: "demo" } });
     await page.getByTestId("nav-today").click();
@@ -598,20 +598,6 @@ test.describe("What matters and its digest (plan 145)", () => {
       await expect(page.getByTestId("menu-reply")).toHaveCount(0);
       expect(asked.filter((a) => /Too small|VALIDATION|invalid/i.test(a))).toEqual([]);
       await page.keyboard.press("Escape");
-    });
-
-    await scenario("plan 204: the header's dates offer, on the title's text edge; dismissed, it's gone after a reload", async () => {
-      const offer = page.getByTestId("today-dated-offer");
-      await expect(offer).toBeVisible();
-      const edge = async (l: Locator) => l.evaluate((e) => e.getBoundingClientRect().left);
-      expect(Math.abs((await edge(offer)) - (await edge(page.getByTestId("today-line"))))).toBeLessThanOrEqual(1);
-      expect((await offer.boundingBox())!.y).toBeGreaterThan((await page.getByTestId("list-title").boundingBox())!.y);
-      await offer.getByTestId("today-dated-dismiss").click();
-      await expect(offer).toHaveCount(0);
-      await fresh(page);
-      await page.getByTestId("nav-today").click();
-      await expect(page.getByTestId("today-line")).toBeVisible();
-      await expect(page.getByTestId("today-dated-offer")).toHaveCount(0);
     });
   });
 });
@@ -649,7 +635,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
     await server.backend.store.sync.ingest([message], { applyFilters: false, now: E2E_NOW, classifier: null, ...(live ? { datedMail: await server.backend.dated.wanted() } : {}) });
     return db.get<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE provider_msg_id = ?", key)!;
   }
-  const datedSetting = async (server: DevServerFixture) => ((await server.backend.server.invoke("app.bootstrap", {}, dev)) as { settings: { dated: { enabled: boolean; scanAnswered: boolean } } }).settings.dated;
+  const datedSetting = async (server: DevServerFixture) => ((await server.backend.server.invoke("app.bootstrap", {}, dev)) as { settings: { dated: { enabled: boolean } } }).settings.dated;
   /** Needs you (the demo's waiting conversations) comes before Soon (the seventh panel round), so what's Soon's can be past the virtualized feed's first screen */
   const reach = async (page: Page, text: string) => {
     await expect.poll(async () => (await item(page, text).count()) > 0 || (await feedList(page).evaluate((el) => { el.scrollTop += el.clientHeight / 2; }), false)).toBe(true);
@@ -659,29 +645,20 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
   /** the open item: the conversation beside the feed */
   const open = (page: Page) => page.locator(`${FEED} [data-testid=wm-item][data-open]`);
 
-  test("turned on from What matters' header; a bill, a flight and a renewal from new mail; Missed; Done from the menu with Undo; Coming up by keyboard; the reader's line", async ({ app: page, server }) => {
+  test("on, What matters' header offers nothing; a bill, a flight and a renewal from new mail; Missed; Done from the menu with Undo; Coming up by keyboard; the reader's line", async ({ app: page, server }) => {
     // a long flow, and the feed is walked end to end to read its groups (it draws only what's near the view)
     test.setTimeout(120_000);
     await settingUp(page, server, { ai: { provider: "fake", model: "demo" } });
     await page.getByTestId("nav-today").click();
 
-    await scenario("the header offers it while it's off, and turning it on asks about the last 14 days once", async () => {
-      const offer = page.getByTestId("today-dated-offer");
-      await expect(offer).toContainText("Show bills, trips and requests here.");
-      // plan 210 (iteration 1): who would read the mail, by where the dated reader's job goes (the offline model: here)
-      await expect(offer.getByTestId("today-dated-privacy")).toHaveText(/^Terno reads each new message with .+ on this Mac to find these; nothing leaves your Mac for them\.$/);
-      await expect(offer.getByTestId("today-dated-dismiss")).toHaveAccessibleName("Don’t offer bills, trips and requests again");
-      if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-dated-offer-light.png` });
-      await offer.getByTestId("today-dated-on").click();
-      await expect(offer).toHaveCount(0);
+    await scenario("plan 211: on (the fixture had it off), the header asks nothing: the backend checks each account itself, and the demo's mailbox counts as checked", async () => {
+      await server.backend.server.invoke("settings.update", { dated: { enabled: true } }, dev);
       await expect.poll(async () => (await datedSetting(server)).enabled).toBe(true);
-      const scan = page.getByTestId("today-dated-scan");
-      await expect(scan).toContainText(/^Check the last 14 days too\? \d+ messages?/);
-      if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-dated-scan-light.png` });
-      // nothing old is read without a yes
-      await scan.getByTestId("today-dated-notnow").click();
-      await expect(scan).toHaveCount(0);
-      await expect.poll(async () => (await datedSetting(server)).scanAnswered).toBe(true);
+      const header = page.locator(`${FEED} header`);
+      await expect(header.getByTestId("today-line")).toBeVisible();
+      // the title's row and the day's line, and no offer under them: no link, no button but the title row's options
+      await expect(header.locator('p:has(button), [data-testid^="today-dated"]')).toHaveCount(0);
+      if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-dated-on-light.png` });
       expect(await server.backend.store.dated.marks.count()).toBe(0);
     });
 
@@ -963,7 +940,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
     });
 
     await scenario("promises of yours: said as yours, to the person; one with no day in Needs you says none, one due later in Coming up says its day, the card says its day, D is the promise's own Done", async () => {
-      await server.backend.server.invoke("settings.update", { followups: { enabled: true, scanAnswered: true } }, dev);
+      await server.backend.server.invoke("settings.update", { followups: { enabled: true } }, dev);
       const store = server.backend.store;
       const promise = async (subject: string, text: string, dueAt: number, dated = true) => {
         await ingestConversation(server, { subject, count: 2, now: E2E_NOW });

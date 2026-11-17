@@ -27,11 +27,11 @@ async function render(node: React.ReactNode) {
 }
 
 const settings = (over: Partial<AppSettings["ai"]> = {}) =>
-  ({ summaries: { enabled: true }, ask: { enabled: true }, followups: { enabled: true, nudgeAfterDays: 3, scanAnswered: true }, today: { digest: true }, devAi: false, ai: { provider: "anthropic", model: "claude-sonnet-5-5", local: false, hasKey: true, keyConfirmed: true, keyUnreadable: false, keys: { anthropic: { hasKey: true, keyHint: null }, openai: { hasKey: true, keyHint: null } }, profiles: {}, monthlyLimitUsd: 20, ...over } }) as unknown as AppSettings;
+  ({ summaries: { enabled: true }, ask: { enabled: true }, followups: { enabled: true, nudgeAfterDays: 3 }, today: { digest: true }, devAi: false, ai: { provider: "anthropic", model: "claude-sonnet-5-5", local: false, hasKey: true, keyConfirmed: true, keyUnreadable: false, keys: { anthropic: { hasKey: true, keyHint: null }, openai: { hasKey: true, keyHint: null } }, profiles: {}, monthlyLimitUsd: 20, ...over } }) as unknown as AppSettings;
 
 describe("plan 168: no feature chooses its provider or model", () => {
   beforeEach(() => {
-    vi.mocked(client.call).mockImplementation((async (method: string) => (method === "today.notNewsletters" ? { senders: [] } : method === "followups.scanOffer" ? { count: 0, usd: null } : {})) as never);
+    vi.mocked(client.call).mockImplementation((async (method: string) => (method === "today.notNewsletters" ? { senders: [] } : {})) as never);
     useApp.setState({ devAi: null, settings: settings() } as never);
   });
 
@@ -53,7 +53,7 @@ describe("plan 168: no feature chooses its provider or model", () => {
   });
 
   it("plan 210 (iteration 3): What matters' group names the feature and who reads its mail in one line, never the digest or the keys' choice", async () => {
-    const s = { ...settings(), dated: { enabled: true, scanAnswered: true } } as AppSettings;
+    const s = { ...settings(), dated: { enabled: true, enabledAt: null } } as AppSettings;
     useApp.setState({ settings: s } as never);
     const host = await render(<DatedGroup settings={s} update={vi.fn() as never} />);
     const group = host.querySelector('[data-testid="ai-dated"]')!;

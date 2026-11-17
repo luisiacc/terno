@@ -24,7 +24,6 @@ import { comingBucket, digestLabel, feedRow, groupDay, groupWeek, openFeedRow, s
 import { EmptyState } from "../empty-state";
 import { listScroller } from "~/lib/list-scroller";
 import { ThreadMenu } from "../thread-menu";
-import { TodayDatedOffer } from "../today-dated-offer";
 import { WhatMattersOptions } from "./options";
 import { BriefTaskControls } from "./task-menus";
 import { TodayLine } from "./today-line";
@@ -252,7 +251,6 @@ export function WhatMattersFeed() {
           </div>
           <div className="-mt-1.5">
             <TodayLine />
-            <TodayDatedOffer />
           </div>
         </div>
       </header>

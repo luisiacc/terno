@@ -16,7 +16,7 @@ export default function TodaySettings({ settings, update }: { settings: AppSetti
   const proOff = !useApp(aiAllowed);
   const [h = 8, m = 0] = (today?.prepareAt ?? "08:00").split(":").map(Number);
   // plan 210 (iteration 1): who reads the mail for it, by where the dated reader's job goes
-  const reader = datedReaderLine(settings.ai, "settings");
+  const reader = datedReaderLine(settings.ai);
   const [mutes, setMutes] = useDatedMutes();
   return (
     <SettingsGroup title={t("today.title")} testId="today-settings" footer={reader && <span data-testid="today-privacy">{reader}</span>}>

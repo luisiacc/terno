@@ -278,9 +278,12 @@ describe.skipIf(process.env.TERNO_PANEL !== "1" || process.env.TERNO_PANEL_RELIS
         const rest = all.filter((m) => atOf(m) > PHASE_ONE);
         // phase one: what was already here when it was turned on, then the 14-day check and follow-ups' 30 days
         await backend.ingestSliced(first.map((m) => incoming(box, account.id, m, atOf(m) < PHASE_ONE - 2 * DAY)), false);
-        expect(await backend.dated.scan()).toBeGreaterThan(0);
-        await backend.followups.scan();
-        await client.call("settings.update", { dated: { scanAnswered: true }, followups: { scanAnswered: true } });
+        // plan 211: the checks are the backend's, the account's once its sync is done
+        await backend.store.accounts.setSyncState(account.id, { lastSyncAt: PHASE_ONE });
+        await backend.dated.start();
+        await backend.followups.start();
+        await backend.dated.checkAccounts([account.id]);
+        await backend.followups.checkAccounts([account.id]);
         await drained(backend);
         // phase two: the rest as it arrives, on the morning it's opened
         clock.set(NOW - 30 * 60_000);

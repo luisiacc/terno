@@ -1552,8 +1552,6 @@ export function createHandlers(b: Backend): Handlers {
       const row = await b.store.followups.get(id);
       return { row: row?.kind === "promise" ? row : null };
     },
-    "followups.scanOffer": () => b.followups.scanOffer(),
-    "followups.scan": async () => ({ queued: await b.followups.scan() }),
     // plan 204: renderer only; none of these is in MCP_ALLOWED
     // plan 210 (iteration 2): an item is acted on with every item it's the same thing as, all or none (What matters' one act)
     "dated.act": async ({ id, revision, action, until }) => {
@@ -1572,8 +1570,6 @@ export function createHandlers(b: Backend): Handlers {
     },
     "dated.ofThread": async ({ threadId, include }) => ({ rows: await b.dated.ofThread(threadId, include) }),
     "dated.status": () => b.dated.status(),
-    "dated.scanOffer": () => b.dated.scanOffer(),
-    "dated.scan": async () => ({ queued: await b.dated.scan() }),
     // plan 210 (iteration 4): renderer only, as the rest of What matters
     "dated.mutes": async () => ({ mutes: await b.mutes.list() }),
     "dated.muteOffer": async ({ id }) => ({ offer: await b.mutes.offer(id) }),

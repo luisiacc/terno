@@ -37,7 +37,7 @@ async function tracked(server: DevServerFixture, subject: string, kind: "promise
 
 test.describe("follow-ups (plan 142)", () => {
   test("a due promise: on the Inbox's top with its line, opening ends the row and the list keeps it, Done and Undo, the thread's line", async ({ app: page, server }) => {
-    await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, followups: { enabled: true, scanAnswered: true } });
+    await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, followups: { enabled: true } });
     await tracked(server, "The contract", "promise", true);
     await fresh(page);
 
@@ -101,7 +101,7 @@ test.describe("follow-ups (plan 142)", () => {
   });
 
   test("a wait: its line says how long, Nudge opens a draft on the thread and sends nothing", async ({ app: page, server }) => {
-    await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, followups: { enabled: true, scanAnswered: true } });
+    await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, followups: { enabled: true } });
     await tracked(server, "Are you in", "awaiting", true);
     await fresh(page);
     await rows(page).first().click();
@@ -118,7 +118,7 @@ test.describe("follow-ups (plan 142)", () => {
   test.describe("plan 161: the line's anatomy", () => {
     test.use({ tips: true });
     test("a fresh wait: when it comes back and what does, buttons at 28 px, Open message named, and a tip for a wait under the line", async ({ app: page, server }) => {
-      await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, followups: { enabled: true, scanAnswered: true } });
+      await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, followups: { enabled: true } });
       const threadId = await tracked(server, "Coffee next week", "awaiting", false);
       await fresh(page);
       await page.locator(`[data-thread-id="${threadId}"]`).first().click();
@@ -153,7 +153,7 @@ test.describe("follow-ups (plan 142)", () => {
   });
 
   test("plan 161, pass 2: Later shows its times, and a drafted nudge is offered rather than another", async ({ app: page, server }) => {
-    await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, followups: { enabled: true, scanAnswered: true } });
+    await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, followups: { enabled: true } });
     const threadId = await tracked(server, "Lunch on Friday", "awaiting", false);
     await fresh(page);
     await scenario("Later's choices each say when they resolve to", async () => {
@@ -221,7 +221,7 @@ test.describe("follow-ups (plan 142)", () => {
     });
   });
 
-  test("on: Settings offers the last 30 days once; Not now sends nothing; off hides the row, the list and the lines", async ({ app: page, server }) => {
+  test("on: Settings asks nothing (the backend checks each account itself; the demo's counts as checked); off hides the row, the list and the lines", async ({ app: page, server }) => {
     await settingUp(page, server, { ai: { provider: "fake", model: "demo" } });
     await expect(page.getByTestId("nav-followups")).toHaveCount(0);
     await page.getByTestId("open-settings").click();
@@ -230,9 +230,9 @@ test.describe("follow-ups (plan 142)", () => {
     await group.scrollIntoViewIfNeeded();
     await expect(group).toContainText("Sends the text of each message you send, and the message it answers, to Offline demo.");
     await page.getByTestId("ai-followups-switch").click();
-    // the Nudge row comes with the switch; the offer once its count is in
-    await page.getByTestId("ai-followups-notnow").click();
-    await expect(page.getByTestId("ai-followups-offer")).toHaveCount(0);
+    // the Nudge row comes with the switch, and nothing else: no offer, and nothing old read (plan 211)
+    await expect(page.getByTestId("ai-followups-nudge")).toBeVisible();
+    await expect(group.locator("button:not([role=switch]):not([role=combobox])")).toHaveCount(0);
     expect(await server.backend.store.followups.marks.count()).toBe(0);
     expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=ai-followups]").analyze()).violations).toEqual([]);
     await page.keyboard.press("Escape");
@@ -245,7 +245,7 @@ test.describe("follow-ups (plan 142)", () => {
   });
 
   test("the wide list says what's owed too, and when; turning it off leaves the list", async ({ app: page, server }) => {
-    await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, layout: "list", followups: { enabled: true, scanAnswered: true } });
+    await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, layout: "list", followups: { enabled: true } });
     await tracked(server, "The contract", "promise", true);
     await fresh(page);
     await expect(rows(page).first()).toContainText("You told Tom Reed you’d send the contract");
@@ -270,7 +270,7 @@ test.describe("follow-ups (plan 142)", () => {
   });
 
   test("Spanish: the list and the line in Spanish", async ({ app: page, server }) => {
-    await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, language: "es", followups: { enabled: true, scanAnswered: true } });
+    await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, language: "es", followups: { enabled: true } });
     await tracked(server, "El contrato", "promise", true);
     await fresh(page);
     await expect(rows(page).first()).toContainText("Le dijiste a Tom Reed que ibas a send the contract");
@@ -278,7 +278,7 @@ test.describe("follow-ups (plan 142)", () => {
   });
 
   test("the line beside its neighbours in every design; plan 161, pass 3: nothing in its menu or popover is clipped, light and dark, 1440 and 1100", { tag: "@design" }, async ({ app: page, server }) => {
-    await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, followups: { enabled: true, scanAnswered: true } });
+    await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, followups: { enabled: true } });
     // plan 210 (iteration 3): a wait's card (a promise is on the reader's line, its Later today.spec's)
     await tracked(server, "The contract", "awaiting", true);
     await fresh(page);

@@ -231,13 +231,13 @@ export interface AppSettings {
   /** plan 132: summarize new mail as it arrives (off unless the user turns it on: it sends mail with no click); mail from before `enabledAt` never */
   summaries: AiSummariesSetting;
   ask: AskSetting;
-  /** plan 142 */
+  /** plan 142; plan 211: on by default wherever AI runs, mail already here checked by the backend, each account once */
   followups: FollowupsSetting;
   /** plan 144: off by default; the switch is the consent */
   replies: RepliesSetting;
   /** plan 145 */
   today: TodaySetting;
-  /** plan 204: dates in new mail, off by default (the owner); mail from before `enabledAt` only with the 14-day check's yes */
+  /** plan 204: dates in new mail; plan 211: on by default wherever AI runs, mail already here checked by the backend, each account once */
   dated: DatedSetting;
   /** anonymous error reports (builds with a DSN, outside local mode): ask each time, send, or never */
   errorReports: "ask" | "always" | "never";
@@ -552,9 +552,9 @@ const settingsPatch = z.object({
   /** `enabledAt` is the backend's */
   replies: z.object({ enabled: z.boolean() }).strict().optional(),
   today: z.object({ show: z.boolean().optional(), prepareAt: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(), notify: z.boolean().optional(), digest: z.boolean().optional(), finished: z.boolean().optional() }).strict().optional(),
-  followups: z.object({ enabled: z.boolean().optional(), nudgeAfterDays: z.union([z.literal(3), z.literal(5), z.literal(7), z.literal(14)]).optional(), scanAnswered: z.boolean().optional() }).strict().optional(),
+  followups: z.object({ enabled: z.boolean().optional(), nudgeAfterDays: z.union([z.literal(3), z.literal(5), z.literal(7), z.literal(14)]).optional() }).strict().optional(),
   /** `enabledAt` is the backend's */
-  dated: z.object({ enabled: z.boolean().optional(), scanAnswered: z.boolean().optional(), offerDismissed: z.boolean().optional() }).strict().optional(),
+  dated: z.object({ enabled: z.boolean().optional() }).strict().optional(),
   errorReports: z.enum(["ask", "always", "never"]).optional(),
   language: z.enum(LANGUAGE_SETTINGS).optional(),
   composeSuggestions: z.boolean().optional(),
@@ -1272,8 +1272,6 @@ export const contract = {
   "followups.status": m<{ blockedBy: { kind: AiErrorKind; message: string } | null }>()(empty),
   /** plan 210 (iteration 2): one promise of yours whatever its state (a history line opened: its closed promise) */
   "followups.get": m<{ row: FollowupRow | null }>()(z.object({ id })),
-  "followups.scanOffer": m<{ count: number; usd: number | null }>()(empty),
-  "followups.scan": m<{ queued: number }>()(empty),
   /** plan 204: Done, Dismiss and Later on a dated item, each with an exact Undo; never MCP */
   "dated.act": m<{ undoId: string | null; row: DatedRow | null }>()(z.object({ id, revision: z.number().int().min(0), action: z.enum(["done", "dismiss", "later"]), until: z.number().int().optional() })),
   "dated.undo": m<{ ok: true }>()(z.object({ undoId: z.string().min(1).max(64) })),
@@ -1294,8 +1292,6 @@ export const contract = {
   "dated.ofThread": m<{ rows: DatedRow[] }>()(z.object({ threadId: id, include: id.optional() })),
   "dated.status": m<{ blockedBy: { kind: AiErrorKind; message: string } | null }>()(empty),
   /** the 14-day check: how many, and what it would cost; then the yes */
-  "dated.scanOffer": m<{ count: number; usd: number | null }>()(empty),
-  "dated.scan": m<{ queued: number }>()(empty),
   /** plan 210 (iteration 4): what's muted in What matters, newest first; never MCP */
   "dated.mutes": m<{ mutes: DatedMute[] }>()(empty),
   /** after Remove on this item: what its snack offers to mute, once per kind from a sender (iteration 5: a pair) or per automated sender (null: nothing) */
