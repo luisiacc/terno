@@ -269,6 +269,24 @@ describe("a reply's checked verdict (the Codex review of iteration 3, revision 1
     expect(onlyHolds("I'll check the numbers and send you the report Friday")).toBe(false);
     expect(onlyHolds("te lo mando el lunes")).toBe(false);
   });
+
+  it("round 19 (María's book fair shift): a reply that holds their request and asks them nothing waits on no reply of theirs (en, es)", () => {
+    const jessica = { label: "r1", name: "Jessica Monroe", email: "jessica@pta.test" };
+    const shift = new Map([["q1", { id: 7, revision: 2, senderKey: "jessica@pta.test", text: "Tell Jessica which book fair volunteer shift you can take" }]]);
+    const read = (ownText: string, quote: string, o: { requests?: typeof shift; verdict?: "holding" | "unknown" } = {}) =>
+      checkSentMail({ promises: [{ text: "check with Chris about pickup and get back to Jessica", quote, to: "r1", due: null, partOfDay: null }], expectsReply: true, awaiting: ["r1"], kept: [], answers: [{ label: "q1", verdict: o.verdict ?? "holding", evidence: quote }] }, { ...base, ownText, recipients: [jessica], requests: o.requests ?? shift }).rows.filter((r) => r.kind === "awaiting");
+    // the panel's reading (#8): holding, and expecting her reply
+    const MARIA = "Hi Jessica!\n\nI think Tuesday afternoon might work, but let me check with Chris about who's doing pickup that day and I'll get back to you.\n\nMaria";
+    const quote = "let me check with Chris about who's doing pickup that day and I'll get back to you.";
+    expect(read(MARIA, quote)).toEqual([]);
+    expect(read("¡Hola Jessica!\n\nCreo que el martes en la tarde puedo, pero lo veo con Chris y te aviso.\n\nMaría", "lo veo con Chris y te aviso.")).toEqual([]);
+    // a question back, or a "let me know", still waits on her
+    expect(read("Hi Jessica!\n\nLet me check with Chris and I'll get back to you. Is Thursday still open too?\n\nMaria", "Let me check with Chris and I'll get back to you.")).toHaveLength(1);
+    expect(read("Hola Jessica:\n\nLo veo con Chris y te aviso. Avísame si el jueves sigue libre.\n\nMaría", "Lo veo con Chris y te aviso.")).toHaveLength(1);
+    // nothing of hers held (no verdict, or another person's request): as the reading said
+    expect(read(MARIA, quote, { verdict: "unknown" })).toHaveLength(1);
+    expect(read(MARIA, quote, { requests: new Map([["q1", { ...shift.get("q1")!, senderKey: "chris@home.test" }]]) })).toHaveLength(1);
+  });
 });
 
 describe("a promise that answers a request keeps its deadline (iteration 3)", () => {

@@ -6,7 +6,7 @@ import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
 import { AWAITING_ITEM, HELD_REQUEST_CLOSED, type FollowupFinish, type FollowupSnapshot, type FollowupSource, type FollowupWrite, type MailStore, type SentMark } from "@terno/store";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import { UI_LOCALE_KEY } from "./forwarding";
-import { contextOf, namingWords, paidSaid, plainEvidence, sameObject, sentencesOf, sentencesWith } from "./dated-evidence";
+import { contextOf, namingWords, norm as plain, paidSaid, plainEvidence, sameObject, sentencesOf, sentencesWith } from "./dated-evidence";
 import { promiseMoment } from "./promise-time";
 
 const MAX_DELAY = 2 ** 31 - 1;
@@ -75,6 +75,10 @@ const DELIVERS = /\b(?:send|share|forward|attach|pay|sign|submit|book|bring|deli
 type Verdict = NonNullable<FollowupFinish["verdicts"]>[number];
 
 export const onlyHolds = (quote: string): boolean => HOLDS.test(normalizeText(quote).toLowerCase()) && !DELIVERS.test(normalizeText(quote).toLowerCase());
+
+/** Round 19: whether your words ask the person something back (a question, "could you", "let me know", "¿me dices…?"), as `plain` reads them. */
+const ASKS_BACK = /\b(?:could you|can you|would you|will you|do you|are you|please|let me know|tell me|need you to|want you to|por favor|puedes|podrias|me (?:dices|avisas|confirmas|mandas|envias)|avisame|dime|confirmame|necesito que)\b/u;
+const asksBack = (text: string): boolean => /[?¿]/u.test(text) || ASKS_BACK.test(plain(text));
 
 /**
  * Plan 210 (iteration 4): a promise's text is said to you, so your things are "your", never "my" (prompt v11's rule, which
@@ -296,14 +300,6 @@ export function checkSentMail(result: SentMailResult, input: { ownText: string; 
     const { dueAt, timed, text, partOfDay } = promiseMoment({ text: p.text, quote: p.quote, day: due, part: p.partOfDay ?? null }, day, input.sentAt);
     rows.push({ kind: "promise", item, text: yourWords(text), quote: p.quote, personName: to?.name || null, personEmail: to?.email ?? null, dueAt, dated: day.dated, ...(timed ? { timed } : {}), ...(partOfDay ? { partOfDay } : {}) });
   });
-  if (result.expectsReply) {
-    const who = result.awaiting.flatMap((label) => person.get(label) ?? []).filter((r) => isPerson(r.email));
-    const first = who[0];
-    if (first) {
-      const { dueAt, dated } = followupDue({ kind: "awaiting", sentAt: input.sentAt, due: null, nudgeAfterDays: input.nudgeAfterDays });
-      rows.push({ kind: "awaiting", item: AWAITING_ITEM, text: "", quote: null, personName: first.name || null, personEmail: first.email, dueAt, dated });
-    }
-  }
   const kept = result.kept.flatMap((k) => {
     const row = input.open.get(k.label);
     return row && ownPieces(k.evidence, input.ownText) ? [{ id: row.id, revision: row.revision }] : [];
@@ -367,6 +363,23 @@ export function checkSentMail(result: SentMailResult, input: { ownText: string; 
     if (!held) continue;
     verdicts[i] = { request: v.request, verdict: "holding", item: held.item };
     holding.splice(holding.indexOf(held), 1);
+  }
+  if (result.expectsReply) {
+    // round 19 (María's "let me check with Chris … and I'll get back to you", read as waiting on Jessica): a reply that holds
+    // a person's request and asks them nothing waits on no reply of theirs: the next word is the reader's (the prompt's own
+    // "false when it only promises to get back to them", which the reading broke)
+    const quiet = !asksBack(input.ownText);
+    const heldFrom = (email: string) =>
+      verdicts.some((v) => {
+        const from = v.verdict === "holding" ? asked.get(v.request.id)?.senderKey : null;
+        return from === undefined || (!!from && from === addressKey(email));
+      });
+    const who = result.awaiting.flatMap((label) => person.get(label) ?? []).filter((r) => isPerson(r.email) && !(quiet && heldFrom(r.email)));
+    const first = who[0];
+    if (first) {
+      const { dueAt, dated } = followupDue({ kind: "awaiting", sentAt: input.sentAt, due: null, nudgeAfterDays: input.nudgeAfterDays });
+      rows.push({ kind: "awaiting", item: AWAITING_ITEM, text: "", quote: null, personName: first.name || null, personEmail: first.email, dueAt, dated });
+    }
   }
   // plan 210 (round 14's faults, the second morning): a promise said again is the older one's, never a row beside it. One
   // answering a request this reply does is kept with it by the store (the second morning, Diego's adjustments; its code
