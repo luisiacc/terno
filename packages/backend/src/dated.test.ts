@@ -748,6 +748,20 @@ describe("plan 210 (iteration 3)", () => {
       expect(checkDates({ items: [ask("Tell Ingrid if something is in the way", "If something's in the way, tell me")], settled: [] }, person("If something's in the way, tell me, and we'll work it out.")).rows).toEqual([]);
       expect(checkDates({ items: [ask("Decirle a Teresa si algo te lo impide", "Si algo te lo impide, dímelo")], settled: [] }, person("Si algo te lo impide, dímelo y lo resolvemos.")).rows).toEqual([]);
     });
+    it("round 15's second morning (Margaret): help offered in case the reader's way is hard is a courtesy, no ask (en, es); an offer that waits on a yes, or one asking for more, still is", () => {
+      // Friday's reading of David's m16 made this an ask, which stayed open on Saturday after Margaret scanned the papers
+      const david = "Hi Mom,\n\nMs. Greer (the estate attorney) asked for two things before your meeting:\n1. A copy of the homeowners insurance declarations page\n2. A copy of Dad's death certificate\n\nCould you scan them and email them to me by Wednesday? If the scanner at the library is a hassle I can come by on the weekend, just tell me.\n\nLove,\nDavid";
+      const scan = { kind: "respond", text: "Scan and email David the homeowners insurance declarations page and Dad's death certificate", quote: "Could you scan them and email them to me by Wednesday?", due: "2026-11-11", time: null };
+      const hassle = ask("Tell David if the library scanner is a hassle", "If the scanner at the library is a hassle I can come by on the weekend, just tell me.");
+      expect(checkDates({ items: [scan, hassle], settled: [] }, person(david)).rows.map((r) => r.kind)).toEqual(["respond"]);
+      for (const [text, quote] of ([["If the portal gives you any trouble, I can file it for you, just let me know.", "If the portal gives you any trouble, I can file it for you, just let me know."], ["If you run into problems with the form, let me know.", "If you run into problems with the form, let me know."], ["Si se te complica, paso yo el sábado, nada más avísame.", "Si se te complica, paso yo el sábado, nada más avísame."], ["Si la impresora es una lata, dímelo y lo imprimo yo.", "Si la impresora es una lata, dímelo y lo imprimo yo."]] as const)) {
+        expect(checkDates({ items: [ask("Answer David", quote)], settled: [] }, person(text)).rows, text).toEqual([]);
+      }
+      // an offer that waits on a yes, no trouble in it, and trouble with something asked of the reader, are asks
+      expect(checkDates({ items: [ask("Answer David about coming by Saturday", "If it's easier, I can swing by Saturday morning and take pictures of them with my phone. Just let me know.")], settled: [] }, person("If it's easier, I can swing by Saturday morning and take pictures of them with my phone. Just let me know.")).rows).toHaveLength(1);
+      expect(checkDates({ items: [ask("Send David the papers", "If the scanner is a hassle, please send me photos instead and let me know.")], settled: [] }, person("If the scanner is a hassle, please send me photos instead and let me know.")).rows).toHaveLength(1);
+      expect(checkDates({ items: [ask("Answer David", "If the scanner is a hassle, can you tell me which day works?")], settled: [] }, person("If the scanner is a hassle, can you tell me which day works?")).rows).toHaveLength(1);
+    });
     it("only copied to know about it, a task said of the reader isn't theirs; one that speaks to them by name still is", () => {
       const carla = "Hola Ana Sofía,\n\nAna, ¿nos mandas las ilustraciones finales el lunes 16? Diego las monta en las etiquetas esa misma semana.\n\nDiego, te copio para que estés al tanto; cuando Ana las entregue te las reenvío.\n\nCarla";
       const mount = { kind: "respond", text: "Montar las ilustraciones finales en las etiquetas", quote: "Diego las monta en las etiquetas esa misma semana.", due: "2026-11-20", time: null };

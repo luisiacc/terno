@@ -181,9 +181,17 @@ export function onlyTells(quote: string): boolean {
  * asks for something ("When you're back, let me know what you think of the draft", "dime qué opinas") is an ask. The code
  * review's second round: what follows "and"/"y" is the sender's only when it says so ("and we'll sort it out", "and I'll
  * pick you up", "y lo arreglamos", "y te ayudo"); "let me know and approve the final draft" asks the reader for more.
+ * Round 15's second morning (Margaret): help offered in case the reader's way is hard ("If the scanner at the library is a
+ * hassle I can come by on the weekend, just tell me", "si se te complica, paso yo, nada más avísame") is the same courtesy,
+ * the prompt's "I can cover for you if needed": read as an ask, it stayed open after she scanned the papers herself. The
+ * sender's own "I can" isn't asked of the reader; an offer that waits on a yes with no trouble in it ("If it's easier, I
+ * can swing by Saturday … Just let me know") is still an ask.
  */
-const COURTESY_IF = /\b(?:if (?:something|anything)(?: s| is)? (?:in the way|comes up)|si algo te lo impide|si surge algo|when(?:ever)? you(?: re| are)? (?:come|coming|visit|visiting|next in|in town|back|around|passing through|pass through|over here|here)|if you(?: re| are)? ever (?:in|around|back|over|passing|here)|next time you(?: re| are)? (?:in|around|here|over|back)|if you (?:ever )?need (?:anything|something|a hand|help)|cuando (?:vengas|vengan|pases|pasen|estes|esten|andes|regreses|vuelvas)|si (?:vienes|pasas|andas|estas por)|la proxima vez que (?:vengas|pases|estes)|si (?:necesitas|ocupas) (?:algo|cualquier cosa|ayuda))\b/u;
+const TROUBLE_IF = String.raw`if (?:\p{L}+ ){0,6}?(?:is|s|are|gets|becomes|turns out to be) (?:a (?:hassle|pain|problem|bother)|too much|(?:too |very )?(?:difficult|hard|tricky|complicated|inconvenient))|if (?:you (?:have|run into|hit)|(?:\p{L}+ ){1,6}?gives? you) (?:any )?(?:trouble|problems?|issues?)|if you get stuck|if (?:it|that|this) (?:doesn t|does not|won t|will not) work(?: out)?|si (?:\p{L}+ ){0,6}?(?:es|resulta|te es|te resulta) (?:(?:muy|mucha|una|un) )?(?:molestia|lata|problema|complicado|dificil|engorroso)|si (?:se te |te )?complica\p{L}*|si te cuesta\p{L}*|si tienes (?:algun |cualquier )?problema\p{L}*|si no (?:te )?funciona`;
+const COURTESY_IF = new RegExp(String.raw`\b(?:${TROUBLE_IF}|if (?:something|anything)(?: s| is)? (?:in the way|comes up)|si algo te lo impide|si surge algo|when(?:ever)? you(?: re| are)? (?:come|coming|visit|visiting|next in|in town|back|around|passing through|pass through|over here|here)|if you(?: re| are)? ever (?:in|around|back|over|passing|here)|next time you(?: re| are)? (?:in|around|here|over|back)|if you (?:ever )?need (?:anything|something|a hand|help)|cuando (?:vengas|vengan|pases|pasen|estes|esten|andes|regreses|vuelvas)|si (?:vienes|pasas|andas|estas por)|la proxima vez que (?:vengas|pases|estes)|si (?:necesitas|ocupas) (?:algo|cualquier cosa|ayuda))\b`, "u");
 const LET_KNOW = /\b(?:let (?:me|us) know|tell me|dimelo|give (?:me|us) a (?:shout|call|ring|heads up)|drop (?:me|us) a line|avisa(?:me|nos)|me avisas|nos avisas|dime|escribe(?:me|nos)|llama(?:me|nos))\b/u;
+// the sender's own "I can come by", never asked of the reader
+const SENDER_CAN = /\b(?:i|we) (?:can|could)\b/gu;
 const ASKS_MORE = /\b(?:please|could|can|would|will you|send|bring|need you|want you|por favor|puedes|podrias|envia\w*|manda\w*|trae\w*|necesito que)\b/u;
 const COURTESY_HERE = new RegExp(`^(?:${COURTESY_IF.source})`, "u");
 // the sender reassuring, in their own person: "and we'll work it out", "so I can help", "y lo arreglamos", "y ya te ayudo"
@@ -198,7 +206,7 @@ function noticeOnly(clause: string): boolean {
 export function courtesyOnly(sentence: string): boolean {
   if (/[?¿]/u.test(sentence)) return false;
   const read = norm(sentence);
-  return COURTESY_IF.test(read) && LET_KNOW.test(read) && !ASKS_MORE.test(read.replace(COURTESY_IF, " ").replace(LET_KNOW, " ")) && sentence.split(/[.,;:!\n]/u).every((clause) => noticeOnly(norm(clause)));
+  return COURTESY_IF.test(read) && LET_KNOW.test(read) && !ASKS_MORE.test(read.replace(COURTESY_IF, " ").replace(LET_KNOW, " ").replace(SENDER_CAN, " ")) && sentence.split(/[.,;:!\n]/u).every((clause) => noticeOnly(norm(clause)));
 }
 
 /**
