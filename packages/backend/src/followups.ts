@@ -94,7 +94,14 @@ const sameWords = (a: string, b: string): boolean => {
   return !!x && !!y && (x.includes(y) || y.includes(x));
 };
 
-const ELLIPSIS = /\s*(?:\[(?:\.{3}|…)\]|\.{3}|…)\s*/u;
+/** a promise's quote that is the evidence piece, or holds it, or makes half its words or more */
+function answersBy(quote: string, piece: string): boolean {
+  if (!sameWords(quote, piece)) return false;
+  const [q, p] = [norm(quote).toLowerCase(), norm(piece).toLowerCase()];
+  return q.includes(p) || wordCount(q) * 2 >= wordCount(p);
+}
+
+const ELLIPSIS =/\s*(?:\[(?:\.{3}|…)\]|\.{3}|…)\s*/u;
 /**
  * Plan 210 (round 14's faults, Priya's 409A): a verdict's or a kept promise's evidence, as pieces of their own words. The
  * model shortens a long answer with an ellipsis ("We've used Calder Valuation for our last two. ... Yes, I'd use them
@@ -303,7 +310,10 @@ export function checkSentMail(result: SentMailResult, input: { ownText: string; 
     if (!request || a.verdict === "unknown") return [];
     const pieces = ownPieces(a.evidence, input.ownText);
     if (!pieces || !plainEvidence(pieces.join(" "), pieces.map((p) => contextOf(p, sentences)).join(" "))) return [];
-    const promise = rows.find((r) => r.kind === "promise" && r.quote && pieces.some((p) => sameWords(r.quote!, p)));
+    // round 18 (Theo's notes for Kai): a promise is the answer when it's what the evidence says, its words most of a piece;
+    // one said in passing inside a longer answer ("…drop the merch plug, we'll do it in the next one" among five notes sent)
+    // is a promise of its own, and the answer stands
+    const promise = rows.find((r) => r.kind === "promise" && r.quote && pieces.some((p) => answersBy(r.quote!, p)));
     const shown = { id: request.id, revision: request.revision };
     // round 16's code review: a bill (from a person this reply writes to) only by your saying it's paid ("just venmo'd you",
     // never "I have not paid it yet"); a promise to pay it links nothing, the bill keeping its own row

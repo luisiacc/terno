@@ -174,6 +174,14 @@ describe("a reply's checked verdict (the Codex review of iteration 3, revision 1
     expect(one("cambios:", "Listo. cambios:\n\n- la música se queda\n- 3:05 el zoom va muy lento\n\nT")).toHaveLength(1);
     expect(one("notes:", "Hey Kai, notes: none yet, I'll send them tomorrow.\n\nT")).toEqual([]);
     expect(one("notes:", "My notes:\nI haven't watched it yet.\n\nT")).toEqual([]);
+    // round 18: a promise said in passing inside the answer ("drop the merch plug, we'll do it in the next one") is its own;
+    // the notes are sent; a reply whose answer is the promise still links it
+    const full = "kai. v2 is the one. notes:\n\n- intro music: keep it\n- 3:05 the zoom is too slow, punch it in\n- 11:20 to 11:48: use my first take\n- end card: drop the merch plug, we'll do it in the next one\n- thumbnail: perfect. ship it\n\nt";
+    const merch = { text: "do the merch plug in the next one", quote: "we'll do it in the next one", to: "r1", due: null };
+    const sent = (evidence: string, ownText: string) => checkSentMail({ promises: [merch], expectsReply: false, awaiting: [], kept: [], answers: [{ label: "q1", verdict: "fulfilled", evidence }] }, { ...base, ownText }).verdicts;
+    expect(sent("notes:\n\n- intro music: keep it\n- 3:05 the zoom is too slow, punch it in\n- 11:20 to 11:48: use my first take\n- end card: drop the merch plug, we'll do it in the next one", full)).toEqual([{ request: { id: 7, revision: 2 }, verdict: "fulfilled" }]);
+    const later = "Not tonight, sorry. we'll do it in the next one\n\nt";
+    expect(sent("we'll do it in the next one", later)).toEqual([{ request: { id: 7, revision: 2 }, verdict: "promise", item: 0 }]);
     expect(one("cambios: - 3:05 el zoom va muy lento", "Listo. cambios:\n- la música se queda\n- 3:05 el zoom va muy lento\n\nT")).toHaveLength(1);
     // never a one-word lead-in at the end, nor a word without its colon
     expect(one("3:05 the zoom on the error log is too slow, punch it in notes:", theo)).toEqual([]);
