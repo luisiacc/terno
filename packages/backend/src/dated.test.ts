@@ -3552,3 +3552,25 @@ describe("round 18's faults", () => {
     expect(checkDates({ items: [taller], settled: [] }, person("El taller de identidad sería el jueves 19 a las 18:00. ¿Te animas a dar el taller?", { reader: "Diego Ramírez Castañeda", from: "Fer" })).rows).toEqual([]);
   });
 });
+
+describe("round 19's faults", () => {
+  const person = (text: string) => ({ text, subject: "how's your mom?", arrivedAt: NOW, open: new Map<string, DatedRow>(), fromScan: false, now: NOW, sender: { person: true }, reader: { name: "Maria Delgado", addressed: "to" as const }, from: "Keisha Johnson" });
+  const ask = (text: string, quote: string) => ({ kind: "ask", text, quote, due: null, time: null });
+
+  it("a get-together suggested with no question and no day asks nothing (María's Keisha; en, es); the real question beside it stays", () => {
+    const KEISHA = "Hey lady,\n\nDidn't see you on Monday. How did your mom's knee procedure go? I've been thinking about you guys. Let me know if you need me to swap anything this month, I owe you from September.\n\nAlso we need a coffee after shift soon, I have so much tea about the new manager.\n\nK";
+    // the panel's reading (#38)
+    const knee = ask("Answer Keisha about your mom's knee procedure", "How did your mom's knee procedure go?");
+    const coffee = ask("Answer Keisha about coffee after shift", "Also we need a coffee after shift soon");
+    expect(checkDates({ items: [knee, coffee], settled: [] }, person(KEISHA)).rows.map((r) => r.text)).toEqual([knee.text]);
+    for (const said of ["We should grab lunch sometime!", "Let's catch up soon.", "We're overdue for drinks.", "Tenemos que ir por un café un día de estos.", "A ver cuándo nos vemos.", "Hay que juntarnos pronto, te extraño."]) {
+      expect(checkDates({ items: [ask("Answer Keisha", said)], settled: [] }, person(`Hi!\n\n${said}\n\nK`)), said).toMatchObject({ rows: [], asked: false });
+    }
+  });
+
+  it("a get-together that asks, names a day or a time, or sits beside a request is read as any; coffee that's no get-together too", () => {
+    for (const said of ["We should grab lunch, are you free Friday?", "¿Cuándo nos tomamos un café?", "Let's grab lunch Thursday.", "Tenemos que ir por un café el viernes.", "Let's get coffee at 3:00 PM.", "We need a coffee soon, and please bring the forms.", "We should catch up soon, send me your schedule.", "We need coffee for the meeting."]) {
+      expect(checkDates({ items: [ask("Answer Keisha", said)], settled: [] }, person(`Hi!\n\n${said}\n\nK`)).rows, said).toHaveLength(1);
+    }
+  });
+});

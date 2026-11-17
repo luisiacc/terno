@@ -1,5 +1,5 @@
 import { AiError, DATED_PROMPT_VERSION, DATED_SUBJECT_CHARS, DATED_TEXT_CHARS, costAt, datedBudget, fitDates, inZone, priceOf, wallHolds, type AiTasks, type DatedResult } from "@terno/ai";
-import { addressKey, automatedSender, mutedOf, canLapse, saysClock, saysDay, withEventEnds, lapsesUnlessRenewed, localDay, needsPresence, saysNoReplyNeeded, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, dayKeyOf, datedTiming, dayEnd, dueCutoff, hasTimeCue, partMoment, partOfDayIn, type PartOfDay, normalizeText, withoutQuotes, type SettledHow, type AiErrorKind, type DatedKind, type DatedRow, type DatedTiming, type DatedWall } from "@terno/core";
+import { addressKey, automatedSender, mutedOf, canLapse, namesDayFrom, saysClock, saysDay, withEventEnds, lapsesUnlessRenewed, localDay, needsPresence, saysNoReplyNeeded, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, dayKeyOf, datedTiming, dayEnd, dueCutoff, hasTimeCue, partMoment, partOfDayIn, type PartOfDay, normalizeText, withoutQuotes, type SettledHow, type AiErrorKind, type DatedKind, type DatedRow, type DatedTiming, type DatedWall } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import type { AppSettings } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
@@ -355,6 +355,26 @@ const wishClause = (clause: string) => !NEWS.test(clause) && (WELL_WISH.test(cla
 export function wellWishOnly(sentence: string): boolean {
   if (!WELL_WISH.test(norm(sentence)) || saysClock(sentence) || /[?¿]/u.test(sentence) || asksDirectly(sentence)) return false;
   return sentence.split(/[,;:.!—–\n]+/u).map(norm).every((clause) => clause.split(" ").filter(Boolean).length <= 2 || wishClause(clause));
+}
+
+/**
+ * Round 19 (María's Keisha: "Also we need a coffee after shift soon, I have so much tea about the new manager.", read as a
+ * second ask beside the real question): a get-together suggested with no question and no day ("we need a coffee soon", "we
+ * should grab lunch sometime", "let's catch up", "tenemos que ir por un café un día de estos", "a ver cuándo nos vemos")
+ * asks the reader nothing. One with a question ("we should grab lunch, are you free Friday?"), a day or a time ("let's grab
+ * lunch Thursday"), or a request beside it ("we need a coffee soon, and please bring the forms") is read as any. The
+ * sentence as `norm` reads it, en and es; the meal or drink with an article or a verb, so "we need coffee for the meeting"
+ * is no get-together.
+ */
+const SUGGESTS = String.raw`(?:we (?:really |totally |definitely |so |still |seriously )?(?:need|should|have to|gotta|got to|must|ought to)(?: to)?|let s|lets|(?:tenemos|tendriamos) que|hay que|deberiamos|a ver (?:cuando|si))`;
+const MEAL = String.raw`(?:coffee|lunch|dinner|drinks?|beers?|brunch|breakfast|catch up)`;
+const GATHERING = String.raw`(?:(?:a|an|some|grab|get|have|do|go for|go out for|go get)\s+(?:\p{L}+\s+)?${MEAL}|catch up|get together|hang out|(?:un|unos|unas)\s+(?:cafe|cafecito|trago|tragos|chelas|cervezas|cerveza)|vernos|juntarnos|nos (?:vemos|juntamos)|ponernos al dia|ir a (?:comer|cenar|desayunar))`;
+const GET_TOGETHER = new RegExp(String.raw`\b(?:${SUGGESTS}\s+(?:\p{L}+\s+){0,4}?${GATHERING}|we re (?:long |so )?(?:overdue|due) for (?:a |an |some )?${MEAL})\b`, "u");
+export function getTogetherOnly(sentence: string, arrivedAt: number): boolean {
+  if (/[?¿]/u.test(sentence) || saysClock(sentence) || namesDayFrom(sentence, arrivedAt)) return false;
+  if (!GET_TOGETHER.test(norm(sentence))) return false;
+  // nothing else asked, clause by clause, the suggestion set aside ("we need a coffee soon, send me the forms" asks)
+  return sentence.split(/[,;:.!\n]/u).every((clause) => !asksDirectly(norm(clause).replace(GET_TOGETHER, " ")));
 }
 
 /**
@@ -973,6 +993,8 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     // plan 210 (iteration 3): an offer is its own question, never hidden by a request about the same papers
     const around = `${item.quote}\n${contextOf(item.quote, sentences)}`;
     if (kind === "ask" && ((requested(item) && !offerOnly(around, contextOf(item.quote, paragraphs))) || noReply || onlyTells(item.quote) || onlyTells(contextOf(item.quote, sentences)) || courtesyOnly(around) || selfOffer(around, contextOf(item.quote, paragraphs)) || yourOwnWord(contextOf(item.quote, sentences)) || !(askAllowed(item.quote, said, input.text, input) || rebooks(item)))) continue;
+    // round 19: a get-together suggested with no question and no day asks nothing
+    if (kind === "ask" && getTogetherOnly(contextOf(item.quote, sentences), input.arrivedAt)) continue;
     // plan 210 (the second morning): a person's good wishes for something of the reader's are no plan of theirs, nor an ask
     if ((kind === "event" || kind === "ask") && input.sender?.person && wellWishOnly(contextOf(item.quote, sentences))) continue;
     // the claims ledger's third batch: the sender's own opening or launch, the reader not invited, is no plan of theirs
