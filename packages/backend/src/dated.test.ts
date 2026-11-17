@@ -1240,6 +1240,14 @@ describe("plan 210 (iteration 5): the reading", () => {
     const CONTRATO = "¿Me mandas el contrato firmado del proveedor? O sea, el acuerdo de suministro contrafirmado. Lo necesito para el viernes.";
     const plazo = "Lo necesito para el viernes.";
     expect(checkDates({ items: [{ ...vendor, text: "Mandarle a Lena el contrato firmado del proveedor", quote: plazo }, { ...supplier, text: "Mandarle a Lena el acuerdo de suministro contrafirmado", quote: plazo }], settled: [] }, { ...lena, text: CONTRATO, subject: "Contrato" }).rows).toHaveLength(1);
+    // round two: a relative "that is" restates nothing; set off by commas it does
+    const BOTH = "Please send the signed vendor contract. Also send a reference that is available next week. Please send both by Friday.";
+    const byFriday = "Please send both by Friday.";
+    const available = { kind: "respond", text: "Send Lena a reference available next week", quote: byFriday, due: "2026-11-13", time: null };
+    expect(checkDates({ items: [{ ...vendor, quote: byFriday }, available], settled: [] }, { ...lena, text: BOTH, subject: "Two things" }).rows).toHaveLength(2);
+    const SAID_AGAIN = "Please send the signed vendor contract. That is, the countersigned supplier agreement. Please send it by Friday.";
+    const sendIt = "Please send it by Friday.";
+    expect(checkDates({ items: [{ ...vendor, quote: sendIt }, { ...supplier, quote: sendIt }], settled: [] }, { ...lena, text: SAID_AGAIN, subject: "Contract" }).rows).toHaveLength(1);
   });
 
   it("V2: an event's one start time in its quote, given none, is its time; a bare 7:00, two times, or a place's clock leave it untimed", () => {

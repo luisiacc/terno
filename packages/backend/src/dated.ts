@@ -185,8 +185,13 @@ export function settledHow(kind: string, evidence: string, sentence?: string): S
   return says(CANCELS, read) && !(kind === "pay" && PAID_WORDS.test(read)) ? "cancelled" : null;
 }
 
-/** a sentence that says again what another said ("I mean…", "that is…", "i.e.", "o sea…", "es decir…"), as `norm` reads it */
-const RESTATES = /\b(?:i mean|that is|i e|ie|in other words|to be clear|namely|o sea|osea|es decir|quiero decir|mejor dicho)\b/u;
+/**
+ * a sentence that says again what another said ("I mean…", "i.e.", "o sea…", "es decir…"), as written: its marker at the
+ * sentence's or a clause's start, after a comma, a colon or a dash (round two: never a relative "that is available");
+ * "that is" and "namely" only set off by a comma or a colon ("…, that is, the supplier agreement")
+ */
+const RESTATES = /(?:^|[,;:(—–-]\s*)(?:i mean|i\.\s?e\.|in other words|to be clear|o sea|osea|es decir|quiero decir|mejor dicho|(?:that is|namely)\s*[,:])/u;
+const restates = (said: string) => RESTATES.test(normalizeText(said).toLowerCase().trim());
 
 /** a mailing's address ("news@", "newsletter@", "marketing@", "promo@", "updates@", "boletin@"), never a person's */
 const BULK_LOCAL = /(?:^|[._+-])(?:news|newsletters?|marketing|promos?|promotions?|campaigns?|mailer|mailings?|digest|bulletin|updates|notifications?|announce\w*|hello|boletin|noticias|novedades|ofertas)(?:$|[._+-])/u;
@@ -841,7 +846,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   const apart = (a: { text: string; quote: string }, b: { text: string; quote: string }) => {
     if (sameObject(a.text, b.text)) return false;
     const [la, lb] = [ownLine(a.text), ownLine(b.text)];
-    if (la < 0 || lb < 0 || la === lb || [la, lb].some((l) => RESTATES.test(sentences[l]!.read))) return false;
+    if (la < 0 || lb < 0 || la === lb || [la, lb].some((l) => restates(sentences[l]!.said))) return false;
     return !partOf(a, { quote: sentences[la]!.said }) && !partOf(b, { quote: sentences[lb]!.said });
   };
   const requested = (ask: { text: string; quote: string }) => requests.some((r) => sameThing(r, ask) || partOf(r, ask) || (replyTo(r.text) && replyTo(ask.text) && !asksDirectly(contextOf(ask.quote, sentences))));
