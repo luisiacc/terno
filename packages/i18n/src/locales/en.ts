@@ -3316,11 +3316,11 @@ It contains none of your mail, contacts, settings or keys.
   "errors.rpc.restarted": "The mail engine restarted. Try again.",
   "errors.rpc.timeout": "The mail engine took too long to answer. Try again.",
   // the page the browser shows after Google sign-in
-  "backend.oauth.connected": "Account connected ✓",
+  "backend.oauth.connected": "Account connected",
   "backend.oauth.failed": "Couldn’t connect",
-  "backend.oauth.invalid": "Invalid request.",
-  "backend.oauth.denied": "Permission denied.",
-  "backend.oauth.back": "You can go back to Terno now.",
+  "backend.oauth.invalid": "Terno couldn’t verify Google’s answer. Go back to Terno to try again.",
+  "backend.oauth.denied": "Google didn’t give Terno access. Go back to Terno to try again.",
+  "backend.oauth.back": "You can close this tab and go back to Terno.",
   // AI test
   "backend.ai.contextWindow": "The model accepts {tokens} tokens of context; rules need about {needed}.",
   // what an outgoing action is (the outbox, failure notices)

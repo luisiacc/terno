@@ -2,7 +2,8 @@ import { RequestNotDispatchedError } from "./net-errors";
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { DEFAULT_LOCALE, L, LOCALE_IDS, LOCALES } from "@terno/i18n";
+import { L } from "@terno/i18n";
+import { callbackPage, type CallbackKey } from "./oauth-page";
 import { buildRaw } from "./compose";
 import { readGoogleIdentity, withGoogleSignIn } from "./gmail-web";
 import { GMAIL_UNITS_PER_SECOND } from "./gmail-quota";
@@ -11,6 +12,7 @@ import { createGmailApiProvider, GMAIL_SCOPES as SCOPES, GOOGLE_ENDPOINTS, type 
 import { ProviderAuthError, ProviderError, type GmailConnectResult, type MailProvider, type ProviderContext, type RequestRun, type MailAdmission, type GoogleRequests } from "./types";
 
 export * from "./gmail-api";
+export { callbackPage } from "./oauth-page";
 
 const b64url = (buf: Buffer) => buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
@@ -32,26 +34,6 @@ export interface ConnectOptions {
   scopes?: string[];
   /** Only an existing-account caller that will prove the stored grant may accept true wire omission. */
   allowOmittedRefreshToken?: boolean;
-}
-
-type CallbackKey = "backend.oauth.invalid" | "backend.oauth.denied" | "backend.oauth.back" | "errors.google.adminPolicy";
-
-/**
- * The page the browser shows after Google's redirect. The backend has no
- * language, so the page carries every locale and shows the browser's own
- * (English without script).
- */
-export async function callbackPage(): Promise<(ok: boolean, msg: CallbackKey) => string> {
-  const catalogs = await Promise.all(LOCALE_IDS.map(async (id) => [id, await LOCALES[id].load()] as const));
-  const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
-  const pick = `<script>(function(){var ids=${JSON.stringify(LOCALE_IDS)};var l=(navigator.languages||[navigator.language]).map(function(t){return String(t).toLowerCase().split(/[-_]/)[0]}).find(function(b){return ids.indexOf(b)>=0});if(l)document.querySelectorAll("[data-locale]").forEach(function(e){e.hidden=e.getAttribute("data-locale")!==l})})()</script>`;
-  return (ok, msg) => {
-    const blocks = catalogs.map(([id, m]) => {
-      const text = (k: CallbackKey | "backend.oauth.connected" | "backend.oauth.failed") => esc(String(m[k] ?? k));
-      return `<div lang="${LOCALES[id].tag}" data-locale="${id}"${id === DEFAULT_LOCALE ? "" : " hidden"}><h2>${text(ok ? "backend.oauth.connected" : "backend.oauth.failed")}</h2><p>${text(msg)}</p></div>`;
-    });
-    return `<!doctype html><meta charset="utf-8"><body style="font:15px -apple-system;padding:40px;text-align:center">${blocks.join("")}${pick}</body>`;
-  };
 }
 
 /**

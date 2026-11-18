@@ -3270,11 +3270,11 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "errors.rpc.restarted": "El motor de correo se reinició. Inténtalo de nuevo.",
   "errors.rpc.timeout": "El motor de correo tardó demasiado en responder. Inténtalo de nuevo.",
   // the page the browser shows after Google sign-in
-  "backend.oauth.connected": "Cuenta conectada ✓",
+  "backend.oauth.connected": "Cuenta conectada",
   "backend.oauth.failed": "No se pudo conectar",
-  "backend.oauth.invalid": "Solicitud inválida.",
-  "backend.oauth.denied": "Permiso denegado.",
-  "backend.oauth.back": "Ya puedes volver a Terno.",
+  "backend.oauth.invalid": "Terno no pudo verificar la respuesta de Google. Vuelve a Terno para intentarlo de nuevo.",
+  "backend.oauth.denied": "Google no le dio acceso a Terno. Vuelve a Terno para intentarlo de nuevo.",
+  "backend.oauth.back": "Ya puedes cerrar esta pestaña y volver a Terno.",
   // AI test
   "backend.ai.contextWindow": "El modelo admite {tokens} tokens de contexto; las reglas necesitan unos {needed}.",
   // what an outgoing action is (the outbox, failure notices)

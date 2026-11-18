@@ -6,12 +6,19 @@ describe("what the mail providers say to the user", () => {
   it("the page after Google's redirect carries every language; the browser shows its own, English without script", async () => {
     const page = await callbackPage();
     const ok = page(true, "backend.oauth.back");
-    expect(ok).toContain('<div lang="en-US" data-locale="en"><h2>Account connected ✓</h2><p>You can go back to Terno now.</p></div>');
-    expect(ok).toContain('<div lang="es-MX" data-locale="es" hidden><h2>Cuenta conectada ✓</h2><p>Ya puedes volver a Terno.</p></div>');
+    expect(ok).toContain('<div lang="en-US" data-locale="en"><h1>Account connected</h1><p>You can close this tab and go back to Terno.</p></div>');
+    expect(ok).toContain('<div lang="es-MX" data-locale="es" hidden><h1>Cuenta conectada</h1><p>Ya puedes cerrar esta pestaña y volver a Terno.</p></div>');
+    expect(ok).toContain("<title>Account connected</title>");
+    expect(ok).toContain("<main data-ok>");
     expect(ok).toContain("navigator.languages");
+    // nothing leaves the machine: no remote fonts, images or scripts
+    expect(ok).not.toMatch(/(?:src|href)=|url\(|@import/);
     const denied = page(false, "backend.oauth.denied");
-    expect(denied).toContain("<h2>Couldn’t connect</h2><p>Permission denied.</p>");
-    expect(denied).toContain("<h2>No se pudo conectar</h2><p>Permiso denegado.</p>");
+    expect(denied).toContain("<main data-fail>");
+    expect(denied).toContain("<h1>Couldn’t connect</h1><p>Google didn’t give Terno access. Go back to Terno to try again.</p>");
+    expect(denied).toContain("<h1>No se pudo conectar</h1><p>Google no le dio acceso a Terno. Vuelve a Terno para intentarlo de nuevo.</p>");
+    // shown for a forged or stale state and for a malformed answer alike, so it claims neither
+    expect(page(false, "backend.oauth.invalid")).toContain("<p>Terno couldn’t verify Google’s answer. Go back to Terno to try again.</p>");
   });
 
   it("SMTP failures are catalog messages around the server's own words", () => {
