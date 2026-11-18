@@ -1,10 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { aiProblems, belowBar, DESIGNS, FACETS, missingShots, modelsLine, RATERS, reportProblems, roundSet, SCREENS, verdict } from "./gate.mjs";
 import { runRecord } from "./harness.mjs";
 import { PRO_ROUTING } from "./keys.mjs";
-import { SETS, shotFiles } from "./sets.mjs";
+import { briefFor, SETS, shotFiles } from "./sets.mjs";
 
 function report(score = 9, screens: readonly string[] = SCREENS) {
   return {
@@ -135,6 +135,23 @@ describe("plan 161: a round rates the set it froze", () => {
       expect(aiProblems({ ...base, ai: { ...base.ai, runs: { lumen: [run("light"), { mode: "dark" }] } } })).toEqual(["lumen dark: the run's record shows no model answering"]);
       expect(aiProblems({ ...base, ai: { ...base.ai, runs: { lumen: [run("light"), run("dark", ["api.groq.com"])] } } })).toEqual(["lumen dark: reached api.groq.com, not a provider in use"]);
       expect(aiProblems({ ...base, ai: { ...base.ai, models: "gpt" } })).toEqual(["round.json names unknown models: gpt"]);
+    });
+
+    it("plan 214: What matters' set runs real models too: its record is checked as the AI set's, and its stub brief is whole", () => {
+      const wm = (over: object = {}) => real({ set: "whatmatters", screens: SETS.whatmatters.screens, shots: shotFiles("whatmatters"), ...over });
+      expect(aiProblems(wm())).toEqual([]);
+      expect(modelsLine(wm())).toContain("openai/gpt-6-luna");
+      const base = wm();
+      expect(aiProblems({ ...base, ai: { ...base.ai, runs: { lumen: [run("light")] } } })).toEqual(["lumen dark: no record of the models' run"]);
+      expect(aiProblems(wm({ ai: undefined, hashes: {} }))).toEqual(["an AI round without its models' record"]);
+      // a seeded round may ask the models nothing new (plan 214's code review); an unseeded one can't
+      const quiet = { ...run("dark", []), usage: { byTask: {}, total: { requests: 0, usd: 0 } } };
+      const seeded = wm({ hashes: { seed: "abc" } });
+      expect(aiProblems({ ...seeded, ai: { ...seeded.ai, runs: { lumen: [run("light"), quiet] } } })).toEqual([]);
+      expect(aiProblems({ ...base, ai: { ...base.ai, runs: { lumen: [run("light"), quiet] } } })).toEqual(["lumen dark: the run's record shows no model answering"]);
+      expect(aiProblems({ ...seeded, ai: { ...seeded.ai, runs: { lumen: [run("light"), run("dark", ["api.groq.com"])] } } })).toEqual(["lumen dark: reached api.groq.com, not a provider in use"]);
+      const brief = readFileSync(join(import.meta.dirname, "brief-wm.md"), "utf8");
+      expect(briefFor(brief, "stub")).toContain("local stand-in");
     });
 
     it("a round.json holding a loaded key, of any shape, or anything shaped like one, fails, and the summary never repeats it", () => {

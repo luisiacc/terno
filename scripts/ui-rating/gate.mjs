@@ -5,7 +5,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { envFile, holdsKey, PRO_ROUTING, PROVIDERS, readKeys, redact } from "./keys.mjs";
-import { SETS, shotFiles } from "./sets.mjs";
+import { SETS, shotFiles, usesAi } from "./sets.mjs";
 
 export const BAR = 9;
 /** The everyday set's screens (plan 158), the default for a round from before sets */
@@ -102,7 +102,7 @@ const ROUTE = /^(anthropic|openai|jev)\/\S+$/;
 export function aiProblems(round, secrets = []) {
   const text = JSON.stringify(round);
   const problems = holdsKey(text, secrets) || redact(text) !== text ? ["round.json holds something shaped like an API key"] : [];
-  if (roundSet(round).set !== "ai") return problems;
+  if (!usesAi(roundSet(round).set)) return problems;
   if (!round.ai) return round.hashes?.stub ? problems : [...problems, "an AI round without its models' record"];
   const ai = round.ai;
   if (ai.models === "stub") return problems;
@@ -115,7 +115,9 @@ export function aiProblems(round, secrets = []) {
     for (const mode of ["light", "dark"]) {
       const run = runs.find((r) => r.mode === mode);
       if (!run) problems.push(`${design} ${mode}: no record of the models' run`);
-      else if (run.ai !== "real" || !run.reached?.length || !(run.usage?.total?.requests > 0)) problems.push(`${design} ${mode}: the run's record shows no model answering`);
+      // plan 214: What matters' set opens on a seed whose model work is done (its feed what the models found, the queues
+      // emptied), so its runs may ask nothing new; where they reached, only providers in use (below)
+      else if (run.ai !== "real" || (!round.hashes?.seed && (!run.reached?.length || !(run.usage?.total?.requests > 0)))) problems.push(`${design} ${mode}: the run's record shows no model answering`);
     }
     for (const r of runs) for (const host of r.reached ?? []) if (!ai.hosts?.includes(host)) problems.push(`${design} ${r.mode}: reached ${host}, not a provider in use`);
   }
@@ -124,7 +126,7 @@ export function aiProblems(round, secrets = []) {
 
 /** What answered, said once in the summary: real rounds are compared only with real rounds at the same models. */
 export function modelsLine(round, secrets = []) {
-  if (roundSet(round).set !== "ai") return null;
+  if (!usesAi(roundSet(round).set)) return null;
   const ai = round.ai ?? { models: "stub" };
   if (ai.models !== "real") return "Models: the local stand-in (model-stub.mjs)";
   const ids = [...new Set(Object.values(ai.routing ?? {}))].join(", ");

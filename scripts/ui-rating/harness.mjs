@@ -1,6 +1,6 @@
 // The real Electron build on a throwaway demo profile, behind the user's windows (plan 158). Nothing here touches a real
 // profile, and the renderer's outside requests are refused, so no mail image or icon leaves the machine.
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -216,7 +216,24 @@ export function electronEnv({ base = process.env, profile, log, mode, keys }) {
  * clock at AI_NOW, and every request the backend makes logged and checked. `true` runs Pro's real models on the keys in
  * the owner's .env (keys.mjs); `"stub"` the local stand-in.
  */
-export async function launch({ design = "lumen", dark = false, width = 1440, height = 900, layout, ai = false } = {}) {
+/**
+ * Plan 214: a round's mailbox can start from a seed (`UI_RATING_SEED`, which rate.mjs sets for What matters' set): the
+ * demo mailbox's database after its AI preparation, What matters' readers' queues emptied, so every launch, the capture's
+ * and a rater's, opens on the same feed and reads nothing in the background. Only its database files are copied.
+ */
+export function seedProfile(profile, seed) {
+  // the seed's own look would be every capture's: it must be Lumen in its own colors, light and dark following the
+  // system, as a fresh profile starts (each style's first launch then picks its style, as on a fresh profile)
+  const db = new DatabaseSync(join(seed, "terno.db"), { readOnly: true });
+  let app;
+  try { app = JSON.parse(db.prepare("SELECT value_json FROM settings WHERE key = 'app'").get()?.value_json ?? "{}"); } finally { db.close(); }
+  const look = { design: app.design ?? "lumen", lightTheme: app.lightTheme ?? "design", darkTheme: app.darkTheme ?? "design" };
+  if (look.design !== "lumen" || look.lightTheme !== "design" || look.darkTheme !== "design") throw new Error(`the seed's look isn't a fresh profile's (Lumen in its own colors): ${JSON.stringify(look)}`);
+  mkdirSync(profile, { recursive: true });
+  for (const f of readdirSync(seed)) if (/^terno\.db(\.(search|contacts|phrases))?$/.test(f)) copyFileSync(join(seed, f), join(profile, f));
+}
+
+export async function launch({ design = "lumen", dark = false, width = 1440, height = 900, layout, ai = false, seed = process.env.UI_RATING_SEED || null } = {}) {
   const mode = aiMode(ai);
   // read before anything starts: a missing key fails here, and from now on this process's output can't carry one
   const keys = mode === "real" ? readKeys(envFile()) : null;
@@ -225,6 +242,7 @@ export async function launch({ design = "lumen", dark = false, width = 1440, hei
   const work = mkdtempSync("/tmp/ui-rating-");
   const profile = join(work, "profile");
   const log = join(work, "net.log");
+  if (seed) seedProfile(profile, seed);
   // the window's first paint reads the design from the profile (vibrancy can't change later), so the style's first launch sets it and the second is what's rated
   const env = electronEnv({ profile, log, mode, keys });
   const stub = mode === "stub" ? await startModelStub({ paceMs: 20 }) : null;

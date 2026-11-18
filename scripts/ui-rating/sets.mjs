@@ -11,6 +11,13 @@ const EVERYDAY_SHOTS = [
 export const AI_SMALL = ["a01-summary", "a02-draft-prompt", "a03-draft-written", "a04-ask-answer", "a05-actions-preview"];
 const AI_SHOTS = ["a01-summary", "a02-draft-prompt", "a03-draft-written", "a04-ask-answer", "a05-actions-preview", "a06-actions-undo", "a07-today", "a08-today-digest", "a09-followup", "a10-reply-ready", "a11-filter-ai", "a12-writing-style"];
 
+/**
+ * Plan 214: What matters on its own, on Pro's real models (its rows are what the app's readers found in the demo mailbox):
+ * the feed at rest, a row hovered (Done and Later), a row open beside the reader (the feed narrowed, the next row hovered),
+ * further down (the automated mail, Coming up open), the feed in a 1100x700 window, and Earlier.
+ */
+const WM_SHOTS = ["w01-feed", "w02-feed-hover", "w03-feed-reader", "w04-feed-further", "w05-feed-small", "w06-feed-earlier"];
+
 export const SETS = {
   everyday: {
     brief: "brief.md",
@@ -22,7 +29,15 @@ export const SETS = {
     screens: ["summary", "ai_draft", "ask", "actions", "today", "followups_replies", "ai_settings"],
     shots: AI_SHOTS.flatMap((s) => (AI_SMALL.includes(s) ? [s, `${s}-small`] : [s])),
   },
+  whatmatters: {
+    brief: "brief-wm.md",
+    screens: ["what_matters"],
+    shots: WM_SHOTS,
+  },
 };
+
+/** Whether a set's app runs AI (the AI set and What matters): its capture and its raters launch with `ai`. */
+export const usesAi = (set) => set === "ai" || set === "whatmatters";
 
 /** Every file a set's capture writes for one style. */
 export const shotFiles = (set) => SETS[set].shots.flatMap((s) => [`${s}-light.png`, `${s}-dark.png`]);

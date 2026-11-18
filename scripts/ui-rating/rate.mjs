@@ -3,7 +3,7 @@
 // no project instructions, no memory, no earlier round, no idea how many rounds there were or what changed.
 // `--screens ai` rates plan 161's AI screens with their own brief, on Pro's real models (keys from the owner's .env,
 // keys.mjs), or on the local stand-in with `--ai stub`.
-//   node scripts/ui-rating/rate.mjs --out <dir> [--screens everyday|ai] [--ai real|stub] [--designs lumen,macos] [--raters claude,codex] [--parallel 6] [--allow-dirty]
+//   node scripts/ui-rating/rate.mjs --out <dir> [--screens everyday|ai|whatmatters] [--seed <dir>] [--ai real|stub] [--designs lumen,macos] [--raters claude,codex] [--parallel 6] [--allow-dirty]
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
@@ -11,7 +11,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DESIGNS, RATERS, reportProblems } from "./gate.mjs";
 import { copyRedacted, envFile, guardOutput, PRO_ROUTING, readKeys, writeRedacted } from "./keys.mjs";
-import { aiFlag, briefFor, SETS, screensFlag, shotFiles } from "./sets.mjs";
+import { aiFlag, briefFor, SETS, screensFlag, shotFiles, usesAi } from "./sets.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, "../..");
@@ -20,13 +20,19 @@ const flag = (name, fallback) => { const i = process.argv.indexOf(`--${name}`); 
 const out = flag("out");
 if (!out) throw new Error("usage: rate.mjs --out <dir> [--screens everyday|ai] [--ai real|stub] [--designs a,b] [--raters claude,codex] [--parallel n] [--allow-dirty]");
 const set = screensFlag(process.argv);
-const ai = set === "ai" ? aiFlag(process.argv) : null;
+const ai = usesAi(set) ? aiFlag(process.argv) : null;
 /**
  * Real models: the keys are read here only to fail early and to redact. This process never passes them on: each
  * capture's harness reads the same file and hands them to its Electron alone. Every log, report and probe this round
  * writes goes through redaction (keys.mjs), and so does this process's own output.
  */
 const keys = ai === "real" ? readKeys(envFile()) : null;
+/**
+ * Plan 214: What matters' set starts every launch from a seed (harness.mjs `seedProfile`): the demo mailbox's database after
+ * `pnpm dev:demo-ai` prepared it, its readers' queues emptied. Frozen with the round and hashed into round.json.
+ */
+const seed = set === "whatmatters" ? flag("seed", "/tmp/terno-scratch/rating/wm-seed") : null;
+if (seed && !existsSync(join(seed, "terno.db"))) throw new Error(`--seed ${seed} holds no terno.db: What matters' set rates a prepared mailbox (plan 214)`);
 const secrets = keys?.secrets ?? [];
 if (keys) guardOutput(secrets);
 const designs = flag("designs", DESIGNS.join(",")).split(",");
@@ -65,6 +71,7 @@ const round = {
     capture: hash("scripts/ui-rating/capture.mjs", "scripts/ui-rating/harness.mjs", "scripts/ui-rating/sets.mjs", "scripts/ui-rating/keys.mjs"),
     ...(ai === "stub" ? { stub: hash("scripts/ui-rating/model-stub.mjs") } : {}),
     demo: hash("packages/mock-data/src/generate.ts", "packages/mock-data/src/banks.ts", "packages/backend/src/demo.ts"),
+    ...(seed ? { seed: createHash("sha256").update(readFileSync(join(seed, "terno.db"))).digest("hex").slice(0, 16) } : {}),
   },
   ...(ai === "real" ? { ai: { models: "real", providers: keys.providers, hosts: keys.hosts, routing: PRO_ROUTING, runs: {} } } : ai === "stub" ? { ai: { models: "stub" } } : {}),
 };
@@ -88,7 +95,8 @@ function freeze() {
   const pnpmDir = join(repo, "node_modules/.pnpm");
   const core = readdirSync(pnpmDir).find((d) => d.startsWith("playwright-core@"));
   cpSync(join(pnpmDir, core, "node_modules/playwright-core"), join(app, "node_modules/playwright-core"), { recursive: true, dereference: true });
-  for (const f of ["harness.mjs", "capture.mjs", "sets.mjs", "model-stub.mjs", "keys.mjs", "brief.md", "brief-ai.md"]) cpSync(join(here, f), join(runtime, f));
+  for (const f of ["harness.mjs", "capture.mjs", "sets.mjs", "model-stub.mjs", "keys.mjs", "brief.md", "brief-ai.md", "brief-wm.md"]) cpSync(join(here, f), join(runtime, f));
+  if (seed) cpSync(seed, join(runtime, "seed"), { recursive: true, filter: (f) => !/-(wal|shm)$/.test(f) });
   return runtime;
 }
 
@@ -114,7 +122,7 @@ function run(cmd, args, { cwd, env, stdin, log, timeout }) {
  * harness reads the owner's .env itself (keys.mjs), at its default path or the one TERNO_RATING_ENV names.
  */
 function cleanEnv(runtime) {
-  const env = { UI_RATING_RUNTIME: runtime };
+  const env = { UI_RATING_RUNTIME: runtime, ...(seed ? { UI_RATING_SEED: join(runtime, "seed") } : {}) };
   for (const k of ["PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "LANG", "LC_ALL", "TERM", "TERNO_RATING_ENV"]) if (process.env[k]) env[k] = process.env[k];
   return env;
 }
@@ -134,6 +142,9 @@ const HANDS_ON = {
   ai: (full) => full
     ? "Try at least, with `ai: true`: summarize a conversation from its toolbar; in a reply, press ⌘J, give an instruction, then try the strip's actions and Undo; press ⇧⌘K, ask about your mail, open a source and come back; describe an action in the same place, check its preview, Apply, then Undo; open Today and its digest; send someone a question and open it in Sent to see the follow-up, then Nudge (nothing sends); open a conversation waiting for your reply and Use the reply prepared for it; create a filter with AI in Rules; look at Settings → AI → Writing style; and a smaller window (about 1100x700)."
     : "Try at least, with `ai: true`, the AI surfaces as this style draws them: the summary card, the ⌘J row and its strip, the Ask panel, an action's preview and its undo, Today and the digest, the follow-up line and the prepared reply, in light and dark, plus any other flow you need to score a cell honestly. Judge contrast with particular care, in both modes.",
+  whatmatters: (full) => full
+    ? "Try at least, with `ai: true`: open What matters from the sidebar and give it a few minutes to fill as the app reads the mail; move through it with j and k, open an item and put it away with Esc, hover an item and use Done, then Undo; use Later; open Coming up and scroll to the end (the automated mail and Earlier); right-click an item; and a smaller window (about 1100x700)."
+    : "Try at least, with `ai: true`, What matters as this style draws it: the feed at rest, hovered, with an item open beside the reader, Coming up and Earlier, in light and dark, plus any other flow you need to score the screen honestly. Judge contrast with particular care, in both modes.",
 };
 
 function brief(design, runtime) {

@@ -1,12 +1,18 @@
 // The fixed evidence of a rating (plan 158): the same screens in the same states, for one style, light and dark.
 // `--screens ai` shoots plan 161's AI screens instead, with AI on Pro's real models (keys from the owner's .env,
 // keys.mjs), or on the local stand-in with `--ai stub`.
-//   node scripts/ui-rating/capture.mjs <design> <outDir> [light|dark] [--screens everyday|ai] [--ai real|stub]
+// `--screens whatmatters` shoots What matters alone (plan 214), on the same real models.
+//   node scripts/ui-rating/capture.mjs <design> <outDir> [light|dark] [--screens everyday|ai|whatmatters] [--ai real|stub]
 import { existsSync, mkdirSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 import { launch, resize, runRecord, setLayout, shot } from "./harness.mjs";
 import { redact } from "./keys.mjs";
 import { AI_SMALL, aiFlag, screensFlag, shotFiles } from "./sets.mjs";
+
+/** What matters' rows and its feed's scroller (plan 210) */
+const WM_ITEM = "[data-testid=wm-feed] [data-testid=wm-item]";
+const WM_SCROLLER = "[data-testid=wm-feed] [data-keep-scroll=list]";
 
 const REPLY = "Hi Isabella,\n\nThanks for flagging this. I looked at the payment and it went through on our side, so it may just be the bank holding it. Can you send me the error you saw?\n\nI'm free for the concert on Friday, by the way.";
 
@@ -186,18 +192,33 @@ async function aiPass(design, mode, dir, ai) {
     if (await page.getByTestId("reply-ready").count()) throw new Error(`${where}: Reply ready reached a conversation it shouldn't`);
   };
   try {
-    // --- Today, and the digest the backend prepared on its own ---
+    // --- What matters (plan 210's feed; plan 214), and the digest the backend prepared on its own ---
     await page.getByTestId("nav-today").click();
-    await visible("today-heading");
-    // ready, not "Preparing today's digest…": the row counts the newsletters, and the page shows that many
-    await visible("digest-row", { hasText: /\d+ newsletters? · today/, timeout: wait.job });
-    const count = Number(/(\d+) newsletter/.exec(await page.getByTestId("digest-row").first().innerText())[1]);
-    // the digest is prepared once a day, on its own: a model that found no newsletter can't be asked again from here
-    if (count < 1) throw new Error("the digest has no newsletter lines: the model put every issue under other");
+    await page.locator(WM_ITEM).first().waitFor({ timeout: wait.job });
+    // the automated mail's row (the feed's last open item; the feed draws only what's near the view): sought a step at a
+    // time, from the top again until it comes
+    const digest = page.locator(`${WM_ITEM}[data-digest]`);
+    const toDigest = async () => {
+      for (const end = Date.now() + wait.job; !(await digest.count()); ) {
+        if (Date.now() > end) throw new Error("What matters' automated mail row never came");
+        const atEnd = await page.locator(WM_SCROLLER).evaluate((el) => {
+          const end = el.scrollTop + el.clientHeight >= el.scrollHeight - 2;
+          el.scrollTop = end ? 0 : el.scrollTop + el.clientHeight * 0.6;
+          return end;
+        });
+        await page.waitForTimeout(atEnd ? 2000 : 120);
+      }
+      await digest.first().scrollIntoViewIfNeeded();
+    };
+    await toDigest();
+    await page.locator(WM_SCROLLER).evaluate((el) => (el.scrollTop = 0));
     await s("a07-today");
-    await page.getByTestId("digest-row").first().click();
+    await toDigest();
+    await digest.first().click();
     await visible("digest-page");
-    await page.waitForFunction((n) => document.querySelectorAll("[data-testid=digest-item]").length === n, count);
+    // ready, not "Preparing today's digest…": the digest is prepared once a day, on its own, and a model that found no
+    // newsletter can't be asked again from here
+    await visible("digest-item", { timeout: wait.job });
     await s("a08-today-digest");
     await provenance("digest-provenance");
 
@@ -351,14 +372,148 @@ async function aiPass(design, mode, dir, ai) {
   } finally { await close(); }
 }
 
+/**
+ * Plan 214: What matters on its own, as the app's readers fill it on Pro's real models (AI is on by default, plan 211):
+ * shot once both readers have read what they queued and the header's numbers hold. A state that isn't there fails the
+ * capture, never a shot of something else.
+ */
+async function wmPass(design, mode, dir, ai) {
+  const { app, page, profile, close, network, models, usage } = await launch({ design, dark: mode === "dark", ai: ai === "stub" ? "stub" : true });
+  const scroller = page.locator(WM_SCROLLER);
+  const row = (id) => page.locator(`${WM_ITEM}[data-row-id="${id}"]`);
+  const still = async () => {
+    await page.mouse.move(0, 0);
+    await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== "running" || !(Number(a.effect?.getComputedTiming().endTime) <= 1000)));
+  };
+  const closeReader = async () => {
+    for (let i = 0; i < 4 && (await page.locator(`${WM_ITEM}[data-open]`).count()); i++) {
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(200);
+    }
+  };
+  /** the feed scrolled until `locator` is drawn, a step at a time (the virtualizer measures as it goes), from the top */
+  const reach = async (locator) => {
+    await scroller.evaluate((el) => (el.scrollTop = 0));
+    // at the end, Earlier's next page comes in as the feed nears it: waited for, and asked again by leaving the end and
+    // coming back (30 s at most)
+    for (const end = Date.now() + 30_000; !(await locator.count()); ) {
+      if (Date.now() > end) throw new Error(`not in the feed: ${locator}`);
+      const atEnd = await scroller.evaluate((el) => {
+        const at = el.scrollTop + el.clientHeight >= el.scrollHeight - 2;
+        el.scrollTop = at ? el.scrollTop - el.clientHeight * 2 : el.scrollTop + el.clientHeight * 0.6;
+        return at;
+      });
+      await page.waitForTimeout(atEnd ? 800 : 120);
+    }
+  };
+  /** `locator` at the feed's top (a little below the header), and checked in view */
+  const toTop = async (locator) => {
+    // the row can leave the virtualizer's window between finding it and checking it (its neighbours measured on the way,
+    // Earlier's next page coming in as the feed nears its end): the feed's height held for a second, then found again
+    const inView = (el, s) => {
+      const r = el.getBoundingClientRect(), v = document.querySelector(s).getBoundingClientRect();
+      return r.top >= v.top - 1 && r.bottom <= v.bottom + 1;
+    };
+    for (let tries = 0; ; tries++) {
+      await reach(locator);
+      for (let last = -1, height = 0; height !== last; await page.waitForTimeout(1000)) [last, height] = [height, await scroller.evaluate((el) => el.scrollHeight)];
+      await reach(locator);
+      const placed = await locator.first().evaluate((el) => el.scrollIntoView({ block: "start" }), null, { timeout: 2000 }).then(() => true, () => false);
+      if (placed) {
+        await scroller.evaluate((el) => (el.scrollTop -= 16));
+        await page.waitForTimeout(300);
+        if (await locator.first().evaluate(inView, WM_SCROLLER, { timeout: 2000 }).catch(() => false)) return;
+      }
+      if (tries === 4) throw new Error(`couldn't bring into view: ${locator}`);
+    }
+  };
+  /** the drawn rows that have Done and Later, in order, by their ids */
+  const actionable = () => page.locator(`${WM_ITEM}:has([data-testid=wm-controls])`).evaluateAll((els) => els.map((e) => e.getAttribute("data-row-id")));
+  try {
+    await page.getByTestId("nav-today").click();
+    // settled: both readers have checked every account and read what they queued (plan 211: a fresh profile reads its
+    // last 14 days' mail and 30 days' sent mail, hundreds of a model's reads), and the header's numbers then hold for 20 s
+    const queued = () => {
+      const db = new DatabaseSync(join(profile, "terno.db"), { readOnly: true });
+      try {
+        const accounts = db.prepare("SELECT COUNT(*) AS n FROM accounts").get().n;
+        const checked = (key) => Object.keys(JSON.parse(db.prepare("SELECT value_json FROM settings WHERE key = ?").get(key)?.value_json ?? "{}")).length;
+        if (checked("dated:checked") < accounts || checked("followups:checked") < accounts) return Infinity;
+        return db.prepare("SELECT COUNT(*) AS n FROM ai_dated_mail").get().n + db.prepare("SELECT COUNT(*) AS n FROM ai_sent_mail").get().n;
+      } finally { db.close(); }
+    };
+    const reading = () => page.evaluate(() => `${document.querySelector("[data-testid=today-line]")?.textContent}|${document.querySelector("[data-testid=nav-today]")?.textContent}`);
+    let last = "";
+    let since = Date.now();
+    let settled = false;
+    for (const end = Date.now() + 1_500_000; !settled && Date.now() < end; await page.waitForTimeout(5000)) {
+      const now = `${queued()}|${await reading()}`;
+      if (now !== last) [last, since] = [now, Date.now()];
+      else settled = now.startsWith("0|") && Date.now() - since > 20_000;
+    }
+    if (!settled) throw new Error(`What matters didn't settle in 25 minutes (${last})`);
+
+    // at rest, from the top
+    await scroller.evaluate((el) => (el.scrollTop = 0));
+    await still();
+    await shot(page, `w01-feed-${mode}`, dir);
+    // the first two rows with Done and Later: the first hovered, then open beside the reader with the second hovered
+    const [first, second] = await actionable();
+    if (!first || !second) throw new Error("fewer than two rows with Done and Later on the feed's first screen");
+    await row(first).hover();
+    await row(first).getByTestId("wm-controls").getByTestId("wm-done").waitFor();
+    await page.waitForTimeout(250);
+    await shot(page, `w02-feed-hover-${mode}`, dir);
+    await row(first).getByTestId("wm-item-open").click();
+    await page.getByTestId("reader-subject").waitFor();
+    await row(first).and(page.locator("[data-open]")).waitFor();
+    await still();
+    await row(second).scrollIntoViewIfNeeded();
+    await row(second).hover();
+    await row(second).getByTestId("wm-done").waitFor();
+    await page.waitForTimeout(250);
+    await shot(page, `w03-feed-reader-${mode}`, dir);
+    await closeReader();
+    // further down: the automated mail's row at the top, Coming up opened under it (when anything is coming up)
+    await toTop(page.locator(`${WM_ITEM}[data-digest]`));
+    const coming = page.getByTestId("wm-coming-up");
+    if (await coming.count()) {
+      if ((await coming.getAttribute("aria-expanded")) !== "true") await coming.click();
+      await page.locator("[data-testid=wm-feed] [data-testid=wm-heading][data-kind=coming]").first().waitFor();
+    }
+    await still();
+    await shot(page, `w04-feed-further-${mode}`, dir);
+    // Earlier, from its heading
+    await toTop(page.locator("[data-testid=wm-feed] [data-testid=wm-heading][data-kind=history]"));
+    await still();
+    await shot(page, `w06-feed-earlier-${mode}`, dir);
+    // a 1100x700 window, the first row open beside the reader
+    await scroller.evaluate((el) => (el.scrollTop = 0));
+    await resize(app, 1100, 700);
+    await page.waitForFunction(() => innerWidth === 1100);
+    await row(first).getByTestId("wm-item-open").click();
+    await page.getByTestId("reader-subject").waitFor();
+    await still();
+    await shot(page, `w05-feed-small-${mode}`, dir);
+    await closeReader();
+    await resize(app, 1440, 900);
+    const net = network();
+    if (net.problems.length) throw new Error(`requests outside the providers in use: ${net.problems.join("; ")}`);
+    if (models?.ai === "real") console.log(`AI_RUN ${JSON.stringify(runRecord({ design, mode, models, net, seen: {}, usage: usage() }))}`);
+  } catch (error) {
+    await page.screenshot({ path: join(dir, `FAILED-${mode}.png`) }).catch(() => {});
+    throw error;
+  } finally { await close(); }
+}
+
 const args = process.argv.slice(2);
 const set = screensFlag(args);
 const ai = aiFlag(args);
 const [design, dir, only] = args.filter((a, i) => !a.startsWith("--") && args[i - 1] !== "--screens" && args[i - 1] !== "--ai");
-if (!design || !dir) throw new Error("usage: capture.mjs <design> <outDir> [light|dark] [--screens everyday|ai] [--ai real|stub]");
+if (!design || !dir) throw new Error("usage: capture.mjs <design> <outDir> [light|dark] [--screens everyday|ai|whatmatters] [--ai real|stub]");
 try {
   mkdirSync(dir, { recursive: true });
-  for (const mode of only ? [only] : ["light", "dark"]) await (set === "ai" ? aiPass(design, mode, dir, ai) : pass(design, mode, dir));
+  for (const mode of only ? [only] : ["light", "dark"]) await (set === "ai" ? aiPass(design, mode, dir, ai) : set === "whatmatters" ? wmPass(design, mode, dir, ai) : pass(design, mode, dir));
   // every file of the set, or the capture failed
   const missing = shotFiles(set).filter((f) => (!only || f.endsWith(`-${only}.png`)) && !existsSync(join(dir, f)));
   if (missing.length) throw new Error(`capture ${set} is missing ${missing.join(", ")}`);
