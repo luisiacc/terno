@@ -4,9 +4,9 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const calls = vi.hoisted(() => ({ retry: vi.fn(async (_args: unknown) => {}), download: vi.fn(async (_accountId: number, _ref: unknown) => {}) }));
+const calls = vi.hoisted(() => ({ retry: vi.fn(async (_args: unknown) => {}), download: vi.fn(async (_accountId: number, _ref: unknown) => {}), open: vi.fn(async (_accountId: number, _ref: unknown) => "opened" as const) }));
 vi.mock("~/rpc/connection", () => ({ client: { call: (method: string, args: unknown) => (method === "attachments.retry" ? calls.retry(args) : Promise.reject(new Error(method))) } }));
-vi.mock("~/lib/attachments", async (original) => ({ ...(await original<typeof import("~/lib/attachments")>()), downloadAttachment: calls.download }));
+vi.mock("~/lib/attachments", async (original) => ({ ...(await original<typeof import("~/lib/attachments")>()), downloadAttachment: calls.download, openAttachment: calls.open }));
 vi.mock("~/lib/snack", () => ({ snack: Object.assign(vi.fn(), { error: vi.fn() }) }));
 // what each avatar is asked for (icons, a person's), not the icon machinery: that's sender-avatar's own
 vi.mock("./sender-avatar", () => ({ SenderAvatar: ({ icon, person }: { icon: boolean; person: boolean }) => <span aria-hidden data-testid="avatar" data-icon={String(icon)} data-person={String(person)} /> }));
@@ -18,7 +18,7 @@ const { ThreadPeople } = await import("./thread-people");
 
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 let cleanup: (() => void) | null = null;
-afterEach(() => { cleanup?.(); cleanup = null; calls.retry.mockClear(); calls.download.mockClear(); });
+afterEach(() => { cleanup?.(); cleanup = null; calls.retry.mockClear(); calls.download.mockClear(); calls.open.mockClear(); });
 
 async function render(node: React.ReactNode) {
   const host = document.createElement("div");
@@ -33,7 +33,7 @@ let n = 1;
 const me = { name: "Luis", email: "luis@acme.studio" };
 const person = (i: number) => ({ name: `Person${i} Last`, email: `p${i}@acme.studio` });
 const msg = (o: Partial<MessageDetail> = {}): MessageDetail => ({ id: n++, accountId: 4, from: person(0), to: [me], cc: [], isSent: false, listId: null, attachments: [], ...o }) as MessageDetail;
-const file = (id: number, assetId?: string): AttachmentInfo => ({ id, filename: `file-${id}.pdf`, size: 2048, mime: "application/pdf", ...(assetId ? { assetId } : {}) });
+const file = (id: number, assetId?: string, filename = `file-${id}.pdf`): AttachmentInfo => ({ id, filename, size: 2048, mime: "application/pdf", ...(assetId ? { assetId } : {}) });
 const peopleOf = (messages: MessageDetail[]) => <ThreadPeople detail={{ messages } as ThreadDetail} myEmails={[me.email]} icons={false} personOf={() => true} />;
 
 describe("ThreadPeople (plan 177)", () => {
@@ -107,18 +107,23 @@ describe("ThreadAttachments (plan 177)", () => {
     expect(trigger.textContent).toBe("Attachments2");
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
     const files = [...host.querySelectorAll("[data-testid=thread-attachment] button")];
-    expect(files.map((b) => b.getAttribute("aria-label"))).toEqual(["Download file-1.pdf 2 KB", "Download file-2.pdf 2 KB · Unavailable offline"]);
+    // plan 212: what a click does is the name: the web build opens a PDF in a tab
+    expect(files.map((b) => b.getAttribute("aria-label"))).toEqual(["Open file-1.pdf 2 KB", "Open file-2.pdf 2 KB · Unavailable offline"]);
     await act(async () => trigger.click());
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
   });
 
-  it("a file does what its message's tile does: downloads what's cached, asks its own message for what isn't", async () => {
-    const a = msg({ attachments: [file(1, "asset-1")] });
+  it("a file does what its message's tile does: opens what opens here, downloads the rest, asks its own message for what isn't cached", async () => {
+    const a = msg({ attachments: [file(1, "asset-1"), file(3, "asset-3", "mockups.fig")] });
     const b = msg({ attachments: [file(2)] });
     const host = await render(<ThreadAttachments messages={[a, b]} />);
-    const [cached, missing] = [...host.querySelectorAll<HTMLButtonElement>("[data-testid=thread-attachment] button")];
-    await act(async () => cached!.click());
-    expect(calls.download).toHaveBeenCalledWith(4, expect.objectContaining({ id: 1, assetId: "asset-1" }));
+    const [opens, downloads, missing] = [...host.querySelectorAll<HTMLButtonElement>("[data-testid=thread-attachment] button")];
+    expect(downloads!.getAttribute("aria-label")).toBe("Download mockups.fig 2 KB");
+    await act(async () => opens!.click());
+    expect(calls.open).toHaveBeenCalledWith(4, expect.objectContaining({ id: 1, assetId: "asset-1" }));
+    expect(calls.download).not.toHaveBeenCalled();
+    await act(async () => downloads!.click());
+    expect(calls.download).toHaveBeenCalledWith(4, expect.objectContaining({ id: 3, assetId: "asset-3" }));
     await act(async () => missing!.click());
     expect(calls.retry).toHaveBeenCalledWith({ accountId: 4, messageId: b.id });
   });
@@ -131,8 +136,13 @@ describe("ThreadAttachments (plan 177)", () => {
     await act(async () => first!.click());
     expect(first!.getAttribute("aria-busy")).toBe("true");
     expect(second!.getAttribute("aria-busy")).toBe("false");
-    expect(second!.disabled).toBe(true);
+    // plan 212: unavailable, but still focusable (a menu's focus never lands on a disabled button)
+    expect(second!.disabled).toBe(false);
+    expect(second!.getAttribute("aria-disabled")).toBe("true");
+    await act(async () => second!.click());
+    expect(calls.retry).toHaveBeenCalledTimes(1);
     await act(async () => finish());
+    expect(second!.getAttribute("aria-disabled")).toBeNull();
     expect(first!.getAttribute("aria-busy")).toBe("false");
   });
 

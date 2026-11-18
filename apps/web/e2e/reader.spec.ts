@@ -79,7 +79,7 @@ test.describe("reader conversation", () => {
       await expect(tile).toBeVisible();
       await expect(tile).toContainText("boarding-pass.pdf");
       await expect(tile).toContainText("1.5 MB");
-      const download = tile.getByRole("button", { name: "Download boarding-pass.pdf 1.5 MB · Unavailable offline", exact: true });
+      const download = tile.getByRole("button", { name: "Open boarding-pass.pdf 1.5 MB · Unavailable offline", exact: true });
       await expect(download).toHaveAttribute("aria-description", "application/pdf");
       const reply = page.getByTestId("quick-reply");
       await reply.focus();
@@ -102,6 +102,12 @@ test.describe("reader conversation", () => {
       const fig = page.getByRole("list", { name: "Every file in this conversation" }).getByRole("button", { name: "Download mockups.fig 20.0 MB · Unavailable offline", exact: true });
       await expect(fig).toBeVisible();
       await axeBothModes(page, "[data-testid=thread-people]", "[data-testid=thread-attachments]");
+      // plan 212: the strip's files have the tile's menu; one that only downloads offers Download alone
+      await fig.click({ button: "right" });
+      await expect(page.getByTestId("attachment-menu").getByRole("menuitem")).toHaveText(["Download"]);
+      await expect(page.getByTestId("message-menu")).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      await expect(fig).toBeFocused();
       await disclosure.click();
       await expect(disclosure).toHaveAttribute("aria-expanded", "false");
       await expect(fig).toBeHidden();

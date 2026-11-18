@@ -1,4 +1,4 @@
-import { ATTACHMENT_CHUNK, MAX_ATTACHMENT_BYTES, MAX_MIME_BYTES, attachmentFilename, attachmentMessageBudgetAsync, base64Bytes, bytesBase64, type AttachmentRef } from "@terno/core";
+import { ATTACHMENT_CHUNK, MAX_ATTACHMENT_BYTES, MAX_MIME_BYTES, attachmentFilename, attachmentMessageBudgetAsync, base64Bytes, browserPreviewType, bytesBase64, opensInPlace, type AttachmentRef } from "@terno/core";
 import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { textToHtmlChunks } from "@terno/richtext/quote";
@@ -187,4 +187,55 @@ export async function downloadAttachment(accountId: number, ref: AttachmentRef):
   a.download = attachmentFilename(ref.filename);
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/**
+ * Plan 212: whether choosing this file opens it rather than downloading it. The desktop app hands a document to the OS
+ * (a shell without that bridge downloads: Electron denies pop-ups); the web build shows a PDF or an image in a tab.
+ */
+export function canOpenAttachment(filename: string): boolean {
+  const desktop = window.ternoDesktop;
+  if (desktop) return typeof desktop.openAttachment === "function" && opensInPlace(filename);
+  return browserPreviewType(filename) !== null;
+}
+
+/** the web build's last few preview URLs: a tab left open keeps working (save, print), and memory stays bounded */
+const PREVIEWS_KEPT = 3;
+const previews: string[] = [];
+
+/**
+ * Opens a file `canOpenAttachment` said yes to. Call it straight from the click or the menu item: the web build
+ * reserves its tab before anything is awaited, so no pop-up blocker stands in the way. "busy": the desktop app is
+ * already opening one. Throws, with what to do next, when it couldn't.
+ */
+export function openAttachment(accountId: number, ref: AttachmentRef): Promise<"opened" | "downloaded" | "busy"> {
+  const desktop = window.ternoDesktop?.openAttachment;
+  if (desktop) return openOnDesktop(desktop, accountId, ref);
+  const type = browserPreviewType(ref.filename);
+  const tab = type ? window.open("", "_blank") : null;
+  // blocked (or nothing a browser shows): a download instead
+  if (!tab || !type) return downloadAttachment(accountId, ref).then(() => "downloaded" as const);
+  tab.opener = null;
+  return openInTab(tab, type, accountId, ref);
+}
+
+async function openOnDesktop(open: NonNullable<NonNullable<Window["ternoDesktop"]>["openAttachment"]>, accountId: number, ref: AttachmentRef): Promise<"opened" | "busy"> {
+  const failed = () => new Error(t("attachments.openFailed", { name: ref.filename }));
+  const blob = await attachmentBlob(accountId, ref).catch(() => { throw failed(); });
+  const { status } = await open(ref.filename, await blob.arrayBuffer()).catch(() => ({ status: "failed" as const }));
+  if (status === "failed") throw failed();
+  return status;
+}
+
+async function openInTab(tab: Window, type: string, accountId: number, ref: AttachmentRef): Promise<"opened"> {
+  let blob: Blob;
+  try { blob = await attachmentBlob(accountId, ref); } catch { tab.close(); throw new Error(t("attachments.openFailed", { name: ref.filename })); }
+  // closed while the bytes came: nothing more to do
+  if (tab.closed) return "opened";
+  // the type is the extension's, never the message's: a blob URL shares the app's origin
+  const url = URL.createObjectURL(new Blob([blob], { type }));
+  previews.push(url);
+  while (previews.length > PREVIEWS_KEPT) URL.revokeObjectURL(previews.shift()!);
+  tab.location.replace(url);
+  return "opened";
 }
