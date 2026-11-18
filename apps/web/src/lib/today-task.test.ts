@@ -364,7 +364,7 @@ describe("plan 215: a conversation waiting on you", () => {
     const base = fake.handlers["today.list"]!;
     fake.handlers["today.list"] = async (p) => {
       const list = (await base(p)) as TodayList;
-      if (!cleared) list.sections.push({ kind: "today", part: "waiting", items: [{ id: "waiting:8", thread: { ...thread(8), fromName: "Tomas" }, why: { kind: "waiting", wrote: true, reply: { since: 700, rev: 0 } } }] });
+      if (!cleared) list.sections.push({ kind: "today", part: "waiting", items: [{ id: "waiting:8", thread: { ...thread(8), fromName: "Tomas" }, why: { kind: "waiting", wrote: true, reply: { since: 700, rev: 0, message: 80 } } }] });
       return list;
     };
     fake.handlers["today.waitingAct"] = async (p) => ((cleared = (p as { action: string }).action === "done"), { undoId: "w1" });
@@ -377,10 +377,10 @@ describe("plan 215: a conversation waiting on you", () => {
     const acts: unknown[] = [];
     const act = fake.handlers["today.waitingAct"]!;
     fake.handlers["today.waitingAct"] = async (p) => (acts.push(p), act(p));
-    expect(task("waiting:8")).toMatchObject({ kind: "waiting", threadId: 8, since: 700, rev: 0, name: "Tomas" });
+    expect(task("waiting:8")).toMatchObject({ kind: "waiting", threadId: 8, since: 700, message: 80, rev: 0, name: "Tomas" });
     expect(doneOnSelected()).toBe(true);
     expect(shown()).not.toContain("waiting:8");
-    await vi.waitFor(() => expect(acts).toEqual([{ threadId: 8, since: 700, rev: 0, action: "done" }]));
+    await vi.waitFor(() => expect(acts).toEqual([{ threadId: 8, since: 700, message: 80, rev: 0, action: "done" }]));
     await vi.waitFor(() => expect(useSnack.getState().undo).toBeTruthy());
     await undo();
     expect(shown()).toContain("waiting:8");

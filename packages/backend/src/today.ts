@@ -49,7 +49,7 @@ import {
 import { captureError } from "@terno/core/diag";
 import { RpcError, type AppSettings } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
-import { ANSWERED_WITH_PROMISE, NEEDS_WALK, WAITING_DEFERRED_MAX, type DigestStored, type ItemChanges, type ItemSnapshots, type ScheduleSnapshots, type WaitingSnapshot } from "@terno/store";
+import { ANSWERED_WITH_PROMISE, NEEDS_WALK, WAITING_MOMENTS_MAX, type DigestStored, type ItemChanges, type ItemSnapshots, type ScheduleSnapshots, type WaitingSnapshot } from "@terno/store";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import type { BackendCore as Backend } from "./core";
 import { readerZone } from "./promise-time";
@@ -628,18 +628,20 @@ export class TodayService {
     const reminders = await this.local(due, (r) => r.threadId);
     const ids = [...placedThreads(items), ...reminders.map((r) => r.threadId)];
     const page = await this.local(await store.today.waitingPage({ now, after: null, limit: NEEDS_WALK }), (w) => w.id);
-    // plan 215: what's put off with Later, read by its own (bounded): the count only leaves it out of Waiting on you
-    const deferred = await this.local(await store.today.waiting.deferred(now, WAITING_DEFERRED_MAX), (d) => d.threadId);
-    // the list's rows name their waiting message's revision for Done and Later (most have none: nothing is probed)
-    const revs = o.count ? null : await store.today.waiting.revs(page.map((w) => ({ threadId: w.id, since: w.waitingSince })));
-    const waiting = revs?.size ? page.map((w) => ({ ...w, rev: revs.get(w.id) ?? 0 })) : page;
+    // plan 215: each row's waiting message, its record's revision and Later's moment (the list's); the count reads only the
+    // deferrals still ahead, which keep a row out of Waiting on you, and nothing while there's none
+    const acts = await store.today.waiting.rows(page.map((w) => ({ threadId: w.id, since: w.waitingSince })), now, { messages: !o.count });
+    const waiting = acts.size || !o.count ? page.map((w) => {
+      const a = acts.get(w.id);
+      return a ? { ...w, message: a.message, rev: a.rev, deferredUntil: a.until } : w;
+    }) : page;
     // (the zone's read only for the rows' words: an Intl formatter is dear on every count)
-    const fact = { now, waiting, deferred, reminders, zone: o.count ? "" : readerZone() };
+    const fact = { now, waiting, reminders, zone: o.count ? "" : readerZone() };
     if (o.count) {
       const live = await store.today.liveAmong([...new Set(ids)]);
       return { ...projectRows(items, { ...fact, live: (id) => live.has(id) }, o), threads: new Map() };
     }
-    const threads = new Map((await store.threads.summaries([...new Set([...ids, ...waiting.map((w) => w.id), ...deferred.map((d) => d.threadId)])])).map((t) => [t.id, t]));
+    const threads = new Map((await store.threads.summaries([...new Set([...ids, ...waiting.map((w) => w.id)])])).map((t) => [t.id, t]));
     const live = (id: number) => {
       const t = threads.get(id);
       return !!t && !t.inSpam && !t.inTrash;
@@ -1042,10 +1044,10 @@ export class TodayService {
    * everywhere (the Inbox's Waiting filter and count, search, the badge: its thread is announced changed) and stops a reply
    * being prepared for it; Later only puts the row off in What matters, until its moment. Its Undo puts it back exactly.
    */
-  async waitingAct(o: { threadId: number; since: number; rev: number; action: "done" | "later"; until?: number }): Promise<{ undoId: string }> {
+  async waitingAct(o: { threadId: number; since: number; message: number; rev: number; action: "done" | "later"; until?: number }): Promise<{ undoId: string }> {
     const now = this.b.now();
     if (o.action === "later" && (o.until === undefined || o.until <= now)) throw new RpcError("BAD_REQUEST", L("errors.dated.later"));
-    const before = await this.b.store.today.waiting.act({ threadId: o.threadId, since: o.since, rev: o.rev, state: o.action, until: o.action === "later" ? o.until! : null, now });
+    const before = await this.b.store.today.waiting.act({ threadId: o.threadId, since: o.since, message: o.message, rev: o.rev, state: o.action, until: o.action === "later" ? o.until! : null, now });
     if (!before) throw new RpcError("STALE", L("errors.dated.changed"));
     const undoId = `w${++this.undoSeq}`;
     this.waitingSnapshots.set(undoId, before);
@@ -1120,8 +1122,7 @@ export class TodayService {
     const midnight = new Date(now);
     midnight.setHours(24, 0, 0, 0);
     // plan 215: a conversation put off with Later comes back at its moment
-    const deferred = (await store.today.waiting.deferred(now, WAITING_DEFERRED_MAX)).map((d) => d.until);
-    const next = Math.min(nextTodayChange(items, promises, now, deferred) ?? Infinity, midnight.getTime());
+    const next = Math.min(nextTodayChange(items, promises, now, await store.today.waiting.moments(now, WAITING_MOMENTS_MAX)) ?? Infinity, midnight.getTime());
     if (this.stopped || seq !== this.clockSeq) return;
     if (this.clock) clearTimeout(this.clock);
     this.clockAt = next;
@@ -1131,11 +1132,7 @@ export class TodayService {
       // a day's bounds with nothing to read: what's over is retired (Codex code review); a promise too (plan 210, iteration 3)
       void this.b.dated.daily().catch(() => {});
       void this.b.followups.retire().catch(() => {});
-      // plan 215: deferrals whose moment came go before the list is read again, so no row is drawn at a revision about to go
-      void store.today.waiting
-        .prune(this.b.now())
-        .catch(() => 0)
-        .then(() => this.changed());
+      this.changed();
     }, Math.min(MAX_DELAY, Math.max(0, next - now)));
     (this.clock as { unref?: () => void }).unref?.();
   }

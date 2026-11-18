@@ -1,5 +1,4 @@
-import { waitingCutoff, type WaitingDeferred } from "@terno/core";
-import { WAITING_CLOSED, waitingWords, type ClosedAt, type WaitingActRecord, type WaitingActState, type WaitingDone, type WaitingSnapshot } from "@terno/store";
+import { WAITING_CLOSED, waitingWords, type ClosedAt, type WaitingActRecord, type WaitingActState, type WaitingDone, type WaitingRowFacts, type WaitingSnapshot } from "@terno/store";
 import { recomputeContext, refreshFacts, waitingFactsOf } from "./facts";
 import type { Db } from "./sqlite";
 
@@ -30,29 +29,33 @@ function write(db: Db, r: WaitingActRecord): void {
 const ASKED = "kind IN ('ask', 'respond')";
 
 /**
- * The dated reader's requests from the message follow the conversation's record from `from` to `to` (an act, or its Undo):
- * what Later put off with it closes with Done, moves with another Later, comes back with an Undo. Only what this record
- * did (closed as `waiting`, put off to its very moment): an item the user acted on is left as it is.
+ * The dated reader's requests from the message follow the conversation's record from `from` to `to` (an act, or its Undo),
+ * whenever the reader read it, before or after: Done closes them (as `waiting`: the waiting line says it), Later puts off
+ * those not put off already to its moment, another Later moves what it put off, an Undo puts each back. What the user did
+ * to an item alone (their own Later) is left as it is.
  */
 function followItems(db: Db, messageId: number, from: WaitingActRecord | null, to: WaitingActRecord | null, now: number): void {
   if (to?.state === "done") {
-    if (from?.state === "later") db.run(`UPDATE dated_items SET state = 'dismissed', closed_reason = ?, closed_at = ?, revision = revision + 1 WHERE message_id = ? AND ${ASKED} AND state = 'open' AND deferred_until = ?`, WAITING_CLOSED, now, messageId, from.until);
+    if (from?.state !== "done") db.run(`UPDATE dated_items SET state = 'dismissed', closed_reason = ?, closed_at = ?, revision = revision + 1 WHERE message_id = ? AND ${ASKED} AND state = 'open'`, WAITING_CLOSED, now, messageId);
     return;
   }
   if (from?.state === "done") {
-    db.run(`UPDATE dated_items SET state = 'open', closed_reason = NULL, closed_at = NULL, deferred_until = coalesce(?, deferred_until), revision = revision + 1 WHERE message_id = ? AND ${ASKED} AND state = 'dismissed' AND closed_reason = ?`, to?.until ?? null, messageId, WAITING_CLOSED);
+    // back open; put off again to the Later it had (one read after the Done was stored closed with none)
+    db.run(`UPDATE dated_items SET state = 'open', closed_reason = NULL, closed_at = NULL, deferred_until = coalesce(deferred_until, ?), revision = revision + 1 WHERE message_id = ? AND ${ASKED} AND state = 'dismissed' AND closed_reason = ?`, to?.until ?? null, messageId, WAITING_CLOSED);
     return;
   }
   if (from?.state === "later") db.run(`UPDATE dated_items SET deferred_until = ? WHERE message_id = ? AND ${ASKED} AND state = 'open' AND deferred_until = ?`, to?.until ?? null, messageId, from.until);
+  else if (to?.state === "later") db.run(`UPDATE dated_items SET deferred_until = ? WHERE message_id = ? AND ${ASKED} AND state = 'open' AND deferred_until IS NULL`, to.until, messageId);
 }
 
-export function actOnWaiting(db: Db, o: { threadId: number; since: number; rev: number; state: WaitingActState; until: number | null; now: number }): WaitingSnapshot | null {
+export function actOnWaiting(db: Db, o: { threadId: number; since: number; message: number; rev: number; state: WaitingActState; until: number | null; now: number }): WaitingSnapshot | null {
   return db.tx(() => {
     const ctx = recomputeContext(db);
     if (!ctx) return null;
     // the message the facts judge waiting now, walked again in this transaction: never a date's
     const f = waitingFactsOf(db, o.threadId, ctx);
-    if (f.waitingMessageId === null || f.waitingSince !== o.since) return null;
+    // the message the row was drawn for, still the one waiting (a newer one at the same moment isn't: Codex code review 1, #2)
+    if (f.waitingMessageId !== o.message || f.waitingSince !== o.since) return null;
     const before = recordOf(db, f.waitingMessageId);
     if ((before?.rev ?? 0) !== o.rev) return null;
     const words = db.get<{ from_name: string | null; from_email: string; subject: string | null; has_sent: number }>(
@@ -81,33 +84,27 @@ export function restoreWaiting(db: Db, s: WaitingSnapshot): number | null {
   });
 }
 
-export function waitingRevs(db: Db, threads: readonly { threadId: number; since: number }[]): Map<number, number> {
-  // most mailboxes have no record at all: nothing is probed
-  if (!threads.length || !db.get("SELECT 1 FROM waiting_acts LIMIT 1")) return new Map();
-  // each conversation's message at its waiting date (messages_thread is (thread_id, date, id)), then its record
-  const rows = db.all<{ thread_id: number; rev: number }>(
-    `SELECT m.thread_id, w.rev FROM json_each(?) j
-     JOIN messages m INDEXED BY messages_thread ON m.thread_id = json_extract(j.value, '$[0]') AND m.date = json_extract(j.value, '$[1]')
-     JOIN waiting_acts w ON w.message_id = m.id`,
+/** The waiting message at a conversation's waiting date: the newest shown one then (one seek of messages_thread). */
+const WAITING_MESSAGE = `(SELECT x.id FROM messages x INDEXED BY messages_thread WHERE x.thread_id = json_extract(j.value, '$[0]') AND x.date = json_extract(j.value, '$[1]')
+  AND x.is_draft = 0 AND x.is_trash = 0 AND x.is_spam = 0 ORDER BY x.date DESC, x.id DESC LIMIT 1)`;
+
+export function waitingRows(db: Db, threads: readonly { threadId: number; since: number }[], now: number, o: { messages: boolean }): Map<number, WaitingRowFacts> {
+  const out = new Map<number, WaitingRowFacts>();
+  if (!threads.length) return out;
+  // the count: only a deferral still ahead changes a row, and most mailboxes have none (one probe of its index)
+  if (!o.messages && !db.get("SELECT 1 FROM waiting_acts INDEXED BY waiting_acts_later WHERE state = 'later' AND until > ? LIMIT 1", now)) return out;
+  const rows = db.all<{ thread_id: number; message: number; rev: number | null; state: string | null; until: number | null }>(
+    `SELECT json_extract(j.value, '$[0]') AS thread_id, m.id AS message, w.rev, w.state, w.until FROM json_each(?) j
+     JOIN messages m ON m.id = ${WAITING_MESSAGE} ${o.messages ? "LEFT " : ""}JOIN waiting_acts w ON w.message_id = m.id`,
     JSON.stringify(threads.map((t) => [t.threadId, t.since])),
   );
-  return new Map(rows.map((r) => [r.thread_id, r.rev]));
+  for (const r of rows) out.set(r.thread_id, { message: o.messages ? r.message : null, rev: r.rev ?? 0, until: r.state === "later" && r.until !== null && r.until > now ? r.until : null });
+  return out;
 }
 
-export function waitingDeferred(db: Db, now: number, limit: number): WaitingDeferred[] {
-  // a deferral holds while its conversation still waits at its message (a newer one from them isn't put off), in the Inbox
-  return db
-    .all<{ thread_id: number; until: number; rev: number; last_date: number; has_sent: number; waiting_since: number }>(
-      `SELECT m.thread_id, w.until, w.rev, t.last_date, t.has_sent, t.waiting_since FROM waiting_acts w INDEXED BY waiting_acts_later
-       JOIN messages m ON m.id = w.message_id JOIN threads t ON t.id = m.thread_id
-       WHERE w.state = 'later' AND w.until > ? AND t.waiting_since = m.date AND t.waiting_since >= ? AND t.in_inbox = 1 AND t.in_spam = 0 AND t.in_trash = 0
-       ORDER BY w.until, w.message_id LIMIT ?`,
-      now,
-      waitingCutoff(now),
-      limit,
-    )
-    .map((r) => ({ threadId: r.thread_id, until: r.until, rev: r.rev, lastDate: r.last_date, hasSent: r.has_sent === 1, waitingSince: r.waiting_since }));
-}
+/** The deferrals' moments still ahead, soonest first (the clock's: one that no longer holds wakes it for nothing). */
+export const waitingMoments = (db: Db, now: number, limit: number): number[] =>
+  db.all<{ until: number }>("SELECT until FROM waiting_acts INDEXED BY waiting_acts_later WHERE state = 'later' AND until > ? ORDER BY until LIMIT ?", now, limit).map((r) => r.until);
 
 export function waitingDonePage(db: Db, o: { since: number; after: ClosedAt | null; limit: number }): WaitingDone[] {
   const { after } = o;
@@ -121,5 +118,3 @@ export function waitingDonePage(db: Db, o: { since: number; after: ClosedAt | nu
     )
     .map((r) => ({ messageId: r.message_id, threadId: r.thread_id, at: r.at, who: r.who, subject: r.subject, wrote: r.wrote === 1 }));
 }
-
-export const pruneWaiting = (db: Db, now: number): number => Number(db.run("DELETE FROM waiting_acts WHERE state = 'later' AND until <= ?", now).changes);

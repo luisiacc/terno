@@ -1,7 +1,7 @@
 import { ASK_MATCH_MESSAGES, ASK_MATCH_PARTS, CORPUS_TEXTS_MAX, finishBodyClose, rankSentRefs, readPassages, readThreadContext, type SentRef } from "@terno/store";
 import { ClosedOrder } from "./closed-order";
 import { actOnItems, fromOf, itemMembers, linkItems, liveAmong, restoreItems, needsCount, needsWalk, type NeedsWalk, messagesHere, senders, allDigests, beginDigest, clearDigests, digestFacts, digestLive, digestRead, getDigest, latestDigest, pendingDigestDays, pruneDigests, waitingAmong, waitingPage, writeDigest } from "./today";
-import { actOnWaiting, pruneWaiting, restoreWaiting, waitingDeferred, waitingDonePage, waitingRevs } from "./waiting-acts";
+import { actOnWaiting, restoreWaiting, waitingDonePage, waitingMoments, waitingRows } from "./waiting-acts";
 import { scheduleItems, unscheduleItems } from "./schedule";
 import { clearReplies, finishReply, getReply, transitionReply } from "./replies";
 import { activeDated, addDatedMute, datedMutes, removeDatedMute, closedDatedPage, claimDatedLook, clearDated, datedMarkCount, datedPendingOn, datedMarkPage, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, datedWritten, updateDated } from "./dated";
@@ -2027,10 +2027,9 @@ export class IdbMailStore implements MailStore {
     waiting: {
       act: (o) => this.command(() => actOnWaiting(this.c, o)),
       restore: (s) => this.command(() => restoreWaiting(this.c, s)),
-      revs: (threads) => this.read(() => waitingRevs(this.c, threads)),
-      deferred: (now, limit) => this.read(() => waitingDeferred(this.c, now, limit)),
+      rows: (threads, now, o) => this.read(() => waitingRows(this.c, threads, now, o)),
+      moments: (now, limit) => this.read(() => waitingMoments(this.c, now, limit)),
       donePage: (o) => this.read(() => waitingDonePage(this.c, o)),
-      prune: (now) => this.command(() => pruneWaiting(this.c, now)),
     },
     digest: {
       get: (day) => this.read(() => getDigest(this.c, day)),

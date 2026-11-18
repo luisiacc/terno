@@ -39,7 +39,8 @@ it("a version-37 mailbox gains an empty store; its waiting conversation stays, a
   const upgraded = await open(legacyName);
   expect(await upgraded.today.waiting.donePage({ since: 0, after: null, limit: 10 })).toEqual([]);
   expect(await upgraded.today.waitingAmong([talk], NOW)).toEqual([talk]);
-  const done = await upgraded.today.waiting.act({ threadId: talk, since: NOW - 1000, rev: 0, state: "done", until: null, now: NOW });
+  const message = (await upgraded.today.waiting.rows([{ threadId: talk, since: NOW - 1000 }], NOW, { messages: true })).get(talk)!.message!;
+  const done = await upgraded.today.waiting.act({ threadId: talk, since: NOW - 1000, message, rev: 0, state: "done", until: null, now: NOW });
   expect(done?.rev).toBe(1);
   expect(await upgraded.today.waitingAmong([talk], NOW)).toEqual([]);
   await upgraded.close();

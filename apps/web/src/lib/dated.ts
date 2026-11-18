@@ -170,7 +170,7 @@ export type TodayTask = (
    * plan 215: a conversation waiting on you: Done ("no reply needed") and Later only, at its waiting date and record's
    * revision as drawn (`TodayWhy.reply`); `name`, who wrote, what its snack names; no day of its own
    */
-  | { kind: "waiting"; threadId: number; since: number; rev: number; name: string; when?: null; due?: null; noDay: true; text?: null }
+  | { kind: "waiting"; threadId: number; since: number; message: number; rev: number; name: string; when?: null; due?: null; noDay: true; text?: null }
 ) & {
   /** the fifth panel round (change 6): its conversation's next item, in words ("Also Thu 9:00 AM · Board meeting"), never what it acts on */
   also?: string;
@@ -196,7 +196,7 @@ export type ItemTask = Exclude<TodayTask, { kind: "waiting" }>;
  * named by `thread`'s sender; a reminder has none.
  */
 export function taskOf(why: TodayWhy, now = Date.now(), thread?: Pick<ThreadSummary, "id" | "fromName" | "fromEmail">): TodayTask | null {
-  if (why.kind === "waiting") return why.reply && thread ? { kind: "waiting", threadId: thread.id, since: why.reply.since, rev: why.reply.rev, name: thread.fromName || thread.fromEmail, noDay: true } : null;
+  if (why.kind === "waiting") return why.reply && thread ? { kind: "waiting", threadId: thread.id, since: why.reply.since, message: why.reply.message, rev: why.reply.rev, name: thread.fromName || thread.fromEmail, noDay: true } : null;
   if (why.kind === "dated" && why.item) {
     const item = why.item;
     const dueAt = why.dueAt ?? 0;
@@ -330,7 +330,7 @@ export function waitingSaid(action: "done" | "later", name: string, at?: number,
 /** Plan 215: Done and Later on a conversation waiting on you, with an Undo that puts it back exactly (or says it changed). */
 async function actOnWaiting(task: Extract<TodayTask, { kind: "waiting" }>, action: "done" | "later", at?: number, left?: LeftRows): Promise<void> {
   try {
-    const { undoId } = await client.call("today.waitingAct", { threadId: task.threadId, since: task.since, rev: task.rev, action, ...(at !== undefined ? { until: at } : {}) });
+    const { undoId } = await client.call("today.waitingAct", { threadId: task.threadId, since: task.since, message: task.message, rev: task.rev, action, ...(at !== undefined ? { until: at } : {}) });
     const run = () => client.call("today.waitingUndo", { undoId }).then(() => undefined);
     const undo = registerUndo(() => (left ? left.undo(run) : run()));
     snack.success(waitingSaid(action, task.name, at), { action: { label: t("common.undo"), name: t("dated.undo"), undo } });

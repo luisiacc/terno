@@ -264,6 +264,10 @@ export class ReplyService {
     this.b.server.emit("aiReply", { threadId: 0, phase: "cleared" }, { origins: ["renderer", "dev"] });
   }
 
+  private async waits(threadId: number): Promise<boolean> {
+    return (await this.b.store.threads.summaries([threadId]))[0]?.waitingSince != null;
+  }
+
   /** Each only from the state it saw. Use also holds to the same thread, the same people and the same settings (revision 7). */
   async act(p: Act): Promise<PreparedReply | null> {
     const { store } = this.b;
@@ -283,12 +287,13 @@ export class ReplyService {
         if (key !== row.generationKey) return null;
         return store.replies.transition(p.threadId, from, "used");
       }
+      // plan 215: brought back only while the conversation still waits (marked Done meanwhile: no reply needed)
       case "restore":
-        return row.state === "used" ? store.replies.transition(p.threadId, from, "ready") : null;
+        return row.state === "used" && (await this.waits(p.threadId)) ? store.replies.transition(p.threadId, from, "ready") : null;
       case "dismiss":
         return row.state === "ready" ? store.replies.transition(p.threadId, from, "dismissed") : null;
       case "undismiss":
-        return row.state === "dismissed" && row.body ? store.replies.transition(p.threadId, from, "ready") : null;
+        return row.state === "dismissed" && row.body && (await this.waits(p.threadId)) ? store.replies.transition(p.threadId, from, "ready") : null;
     }
   }
 }

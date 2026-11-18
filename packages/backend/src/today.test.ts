@@ -862,13 +862,13 @@ describe("plan 215: Done and Later on a conversation waiting on you", () => {
     const bo = await waitingOn(t, "Bo", 120_000);
     const list = await client.call("today.list", { held: [] });
     const row = rowOf(list, `waiting:${ana}`)!;
-    expect(row.why.reply).toEqual({ since: row.thread.waitingSince, rev: 0 });
+    expect(row.why.reply).toEqual({ since: row.thread.waitingSince, rev: 0, message: expect.any(Number) });
     expect(list.counts.waiting).toBe(2);
     const counts = await client.call("counts.get", {});
     expect([counts.inboxWaiting, counts.today]).toEqual([2, 2]);
     const changed: number[][] = [];
     client.on("changed", (e) => changed.push(e.threadIds));
-    const { undoId } = await client.call("today.waitingAct", { threadId: ana, since: row.why.reply!.since, rev: 0, action: "done" });
+    const { undoId } = await client.call("today.waitingAct", { threadId: ana, since: row.why.reply!.since, message: row.why.reply!.message, rev: 0, action: "done" });
     const after = await client.call("today.list", { held: [], history: { through: null } });
     expect(rowOf(after, `waiting:${ana}`)).toBeUndefined();
     expect(after.counts.waiting).toBe(1);
@@ -876,10 +876,10 @@ describe("plan 215: Done and Later on a conversation waiting on you", () => {
     expect((await client.call("counts.get", {})).inboxWaiting).toBe(1);
     await vi.waitFor(() => expect(changed.flat()).toContain(ana));
     // the same act on what it showed is stale, Later on it too
-    await expect(client.call("today.waitingAct", { threadId: ana, since: row.why.reply!.since, rev: 0, action: "later", until: t.clock.now + 3_600_000 })).rejects.toMatchObject({ code: "STALE" });
+    await expect(client.call("today.waitingAct", { threadId: ana, since: row.why.reply!.since, message: row.why.reply!.message, rev: 0, action: "later", until: t.clock.now + 3_600_000 })).rejects.toMatchObject({ code: "STALE" });
     await client.call("today.waitingUndo", { undoId });
     const back = await client.call("today.list", { held: [], history: { through: null } });
-    expect(rowOf(back, `waiting:${ana}`)?.why.reply).toEqual({ since: row.why.reply!.since, rev: 0 });
+    expect(rowOf(back, `waiting:${ana}`)?.why.reply).toEqual(row.why.reply);
     expect(back.history!.items).toEqual([]);
     expect((await client.call("counts.get", {})).inboxWaiting).toBe(2);
     await expect(client.call("today.waitingUndo", { undoId })).rejects.toMatchObject({ code: "STALE" });
@@ -892,7 +892,7 @@ describe("plan 215: Done and Later on a conversation waiting on you", () => {
     const ana = await waitingOn(t, "Ana", 120_000);
     const drawn = rowOf(await client.call("today.list", { held: [] }), `waiting:${ana}`)!.why.reply!;
     await waitingOn(t, "Ana", 30_000);
-    await expect(client.call("today.waitingAct", { threadId: ana, since: drawn.since, rev: 0, action: "done" })).rejects.toMatchObject({ code: "STALE" });
+    await expect(client.call("today.waitingAct", { threadId: ana, since: drawn.since, message: drawn.message, rev: 0, action: "done" })).rejects.toMatchObject({ code: "STALE" });
     expect(rowOf(await client.call("today.list", { held: [] }), `waiting:${ana}`)!.why.reply!.since).toBe(t.clock.now - 30_000);
   });
 
@@ -902,17 +902,24 @@ describe("plan 215: Done and Later on a conversation waiting on you", () => {
     const ana = await waitingOn(t, "Ana");
     const reply = rowOf(await client.call("today.list", { held: [] }), `waiting:${ana}`)!.why.reply!;
     const until = clock.now + 3 * 3_600_000;
-    expect(await client.call("today.waitingAct", { threadId: ana, since: reply.since, rev: 0, action: "later", until: clock.now - 1 }).catch((e: { code: string }) => e.code)).toBe("BAD_REQUEST");
-    const { undoId } = await client.call("today.waitingAct", { threadId: ana, since: reply.since, rev: 0, action: "later", until });
+    expect(await client.call("today.waitingAct", { threadId: ana, since: reply.since, message: reply.message, rev: 0, action: "later", until: clock.now - 1 }).catch((e: { code: string }) => e.code)).toBe("BAD_REQUEST");
+    const { undoId } = await client.call("today.waitingAct", { threadId: ana, since: reply.since, message: reply.message, rev: 0, action: "later", until });
     const list = await client.call("today.list", { held: [] });
     const row = rowOf(list, `waiting:${ana}`)!;
-    expect([row.section.kind, row.why.back, row.why.reply]).toEqual(["comingUp", until, { since: reply.since, rev: 1 }]);
+    expect([row.section.kind, row.why.back, row.why.reply]).toEqual(["comingUp", until, { ...reply, rev: 1 }]);
     expect(list.counts.waiting).toBe(0);
     const counts = await client.call("counts.get", {});
     expect([counts.inboxWaiting, counts.today]).toEqual([1, 0]);
     await vi.waitFor(() => expect(backend.today.clockNextAt).toBe(until));
     clock.now = until;
     expect(rowOf(await client.call("today.list", { held: [] }), `waiting:${ana}`)!.section.kind).toBe("today");
+    // filed in a category hidden from the Inbox meanwhile: neither row (the same rules as Waiting on you, Codex code review 1)
+    clock.now = until - 1000;
+    const quiet = await backend.store.categories.create("Quiet", "slate", { showInInbox: false });
+    await backend.store.categories.add({ categoryId: quiet.id, threadIds: [ana], addedBy: "user", now: clock.now });
+    backend.today.touched();
+    expect(rowOf(await client.call("today.list", { held: [] }), `waiting:${ana}`)).toBeUndefined();
+    await backend.store.categories.remove({ categoryId: quiet.id, threadIds: [ana], reason: "user", now: clock.now });
     // its Undo, the moment come and the record still there: back as it was
     clock.now = until - 1000;
     await client.call("today.waitingUndo", { undoId });

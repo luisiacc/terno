@@ -246,7 +246,7 @@ export function refreshFacts(db: MemDb, threadId: number): WaitingFacts | null {
   return f;
 }
 
-function writeFacts(db: MemDb, threadId: number, f: ThreadFacts | null): void {
+export function writeFacts(db: MemDb, threadId: number, f: ThreadFacts | null): void {
   const threads = t(db, "threads");
   const row = threads.get(threadId);
   if (!row) return;

@@ -1,4 +1,3 @@
-import type { WaitingDeferred } from "@terno/core";
 import type { ClosedAt } from "./dated";
 
 /**
@@ -6,7 +5,9 @@ import type { ClosedAt } from "./dated";
  * A record is a message's: the one the conversation waited on when it was acted on (its thread is the message's, through
  * merges and moves; it goes with its message). Done is "no reply needed": the thread's facts read it (`FactContext.cleared`),
  * so everything that says "waiting" agrees. Later only puts the row off in What matters, until its moment. `rev` moves on
- * every write, so two windows never overwrite each other's choice; Undo puts the whole previous record back.
+ * every write, so two windows never overwrite each other's choice; Undo puts the whole previous record back. Records go only with
+ * their message (a Later over is kept, never pruned: a revision that started again could name another's act, Codex code
+ * review 1, #1).
  */
 
 export type WaitingActState = "done" | "later";
@@ -53,26 +54,37 @@ export interface WaitingDone {
   wrote: boolean;
 }
 
-/** How many deferrals the open part and the clock read at most. */
-export const WAITING_DEFERRED_MAX = 500;
+/** How many deferrals' moments the clock reads at most (the soonest). */
+export const WAITING_MOMENTS_MAX = 500;
+
+/** A waiting conversation's record as its row needs it: the message the facts judge waiting, its revision, Later's moment. */
+export interface WaitingRowFacts {
+  /** null: not resolved (asked without `messages`) */
+  message: number | null;
+  rev: number;
+  /** Later's moment while it's ahead */
+  until: number | null;
+}
 
 export interface WaitingActsStore {
   /**
    * Done or Later on a conversation waiting on you, in one transaction: its facts are walked again (bounded) for the message
-   * they judge waiting; refused (null) unless that's still waiting since `since` and its record is still at `rev` (absent:
-   * 0). Done refreshes the thread's `person` and `waiting_since` and marks it for search in the same write.
+   * they judge waiting; refused (null) unless that's still `message`, waiting since `since`, and its record is still at
+   * `rev` (absent: 0). Done clears the thread's `waiting_since` (marking search) in the same write; the dated reader's
+   * requests from the message follow either choice.
    */
-  act(o: { threadId: number; since: number; rev: number; state: WaitingActState; until: number | null; now: number }): Promise<WaitingSnapshot | null>;
+  act(o: { threadId: number; since: number; message: number; rev: number; state: WaitingActState; until: number | null; now: number }): Promise<WaitingSnapshot | null>;
   /** Its Undo: the previous record back (or none), the facts refreshed; the thread refreshed, or null when it changed since */
   restore(s: WaitingSnapshot): Promise<number | null>;
-  /** Of these waiting conversations (their waiting date), the revisions of their waiting message's records; most have none */
-  revs(threads: readonly { threadId: number; since: number }[]): Promise<Map<number, number>>;
-  /** Deferrals still ahead whose conversation still waits at the message put off, in the Inbox, soonest first */
-  deferred(now: number, limit: number): Promise<WaitingDeferred[]>;
+  /**
+   * Of these waiting conversations (their waiting date), what their rows need: with `messages`, each one's waiting message
+   * (the list's; one seek a row) and its record; without, the records alone (the count's: nothing read while there's none)
+   */
+  rows(threads: readonly { threadId: number; since: number }[], now: number, o: { messages: boolean }): Promise<Map<number, WaitingRowFacts>>;
+  /** The moments of the deferrals still ahead, soonest first, at most `limit`: what the clock wakes for */
+  moments(now: number, limit: number): Promise<number[]>;
   /** Done records since `since`, strictly after `after` by (at, message), newest first */
   donePage(o: { since: number; after: ClosedAt | null; limit: number }): Promise<WaitingDone[]>;
-  /** Deferrals whose moment has come go; how many */
-  prune(now: number): Promise<number>;
 }
 
 /** A record's words, bounded. */

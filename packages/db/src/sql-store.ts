@@ -5,7 +5,7 @@ import { resolvable, parseSearch, searchTerms } from "@terno/core";
 import { bodyUpgradePending, BodyUpgradeRequired, BODY_UPGRADE_APPLICATION_ID, BODY_READY_APPLICATION_ID } from "./body-upgrade";
 import { unsubscribeBodyParts, decodeBodyPart } from "@terno/store";
 import { actOnItems, fromOf, itemMembers, linkItems, liveAmong, needsCount, restoreItems, messagesHere, senders, allDigests, beginDigest, clearDigests, digestFacts, digestLive, digestRead, getDigest, latestDigest, pendingDigestDays, pruneDigests, waitingAmong, waitingPage, writeDigest } from "./today";
-import { actOnWaiting, pruneWaiting, restoreWaiting, waitingDeferred, waitingDonePage, waitingRevs } from "./waiting-acts";
+import { actOnWaiting, restoreWaiting, waitingDonePage, waitingMoments, waitingRows } from "./waiting-acts";
 import { clearReplies, finishReply, getReply, transitionReply } from "./replies";
 import { scheduleItems, unscheduleItems } from "./schedule";
 import { activeDated, addDatedMute, datedMutes, removeDatedMute, closedDatedPage, claimDatedLook, clearDated, datedMarkCount, datedPendingOn, datedMarkPage, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, datedWritten, updateDated } from "./dated";
@@ -1127,10 +1127,9 @@ export class SqlMailStore implements MailStore {
     waiting: {
       act: async (o) => actOnWaiting(this.db, o),
       restore: async (s) => restoreWaiting(this.db, s),
-      revs: async (threads) => waitingRevs(this.db, threads),
-      deferred: async (now, limit) => waitingDeferred(this.db, now, limit),
+      rows: async (threads, now, o) => waitingRows(this.db, threads, now, o),
+      moments: async (now, limit) => waitingMoments(this.db, now, limit),
       donePage: async (o) => waitingDonePage(this.db, o),
-      prune: async (now) => pruneWaiting(this.db, now),
     },
     digest: {
       get: async (day) => getDigest(this.db, day),

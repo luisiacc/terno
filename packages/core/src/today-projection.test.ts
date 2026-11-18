@@ -25,38 +25,39 @@ function promise(dueAt: number, more: Partial<FollowupRow> = {}): FollowupRow {
 const facts = (more: Partial<ProjectionFacts>): ProjectionFacts => ({ now: NOW, dated: [], promises: [], waiting: [], reminders: [], live: () => true, zone: "America/New_York", ...more });
 
 describe("plan 215: a conversation waiting on you, put off with Later", () => {
-  const waiting = [{ id: 4, lastDate: NOW - 4, hasSent: true, waitingSince: NOW - 4, rev: 0 }, { id: 5, lastDate: NOW - 5, hasSent: false, waitingSince: NOW - 5, rev: 2 }];
+  const friday = at(2026, 11, 20, 9);
+  const waiting = [{ id: 4, lastDate: NOW - 4, hasSent: true, waitingSince: NOW - 4, message: 40, rev: 0 }, { id: 5, lastDate: NOW - 5, hasSent: false, waitingSince: NOW - 5, message: 50, rev: 2 }];
 
-  it("each waiting row names what its Done and Later act on: the waiting date as drawn and its record's revision", () => {
+  it("each waiting row names what its Done and Later act on: the waiting date as drawn, its message and its record's revision", () => {
     const { rows } = projectToday(facts({ waiting }));
     expect(rows.map((r) => [r.id, r.why.reply])).toEqual([
-      ["waiting:4", { since: NOW - 4, rev: 0 }],
-      ["waiting:5", { since: NOW - 5, rev: 2 }],
+      ["waiting:4", { since: NOW - 4, rev: 0, message: 40 }],
+      ["waiting:5", { since: NOW - 5, rev: 2, message: 50 }],
     ]);
   });
 
   it("sits under Coming up on its moment's day saying when it's back, out of Waiting on you and the counts; back at its moment", () => {
-    const friday = at(2026, 11, 20, 9);
-    const deferred = [{ threadId: 5, until: friday, lastDate: NOW - 5, hasSent: false, waitingSince: NOW - 5, rev: 3 }];
-    const { rows, counts } = projectToday(facts({ waiting, deferred }));
+    const put = waiting.map((w) => (w.id === 5 ? { ...w, rev: 3, deferredUntil: friday } : w));
+    const { rows, counts } = projectToday(facts({ waiting: put }));
     expect(rows.map((r) => [r.id, r.group, r.day, r.why.back ?? null])).toEqual([
       ["waiting:4", "today", null, null],
       ["waiting:5", "comingUp", "2026-11-20", friday],
     ]);
     const later = rows.find((r) => r.id === "waiting:5")!;
-    expect([later.waiting, later.part, later.bucket, later.why.reply]).toEqual([true, undefined, displayBucket("2026-11-20", "2026-11-18"), { since: NOW - 5, rev: 3 }]);
+    expect([later.waiting, later.part, later.bucket, later.why.reply]).toEqual([true, undefined, displayBucket("2026-11-20", "2026-11-18"), { since: NOW - 5, rev: 3, message: 50 }]);
     expect(counts).toEqual({ missed: 0, today: 0, waiting: 1, overdue: 0 });
-    expect(projectToday(facts({ waiting, deferred }), { count: true }).counts).toEqual(counts);
+    // the count, which resolves no message, leaves it out alike
+    expect(projectToday(facts({ waiting: put.map(({ message: _m, ...w }) => w) }), { count: true }).counts).toEqual(counts);
     // at its moment (the clock's: `nextTodayChange` takes it), it's Waiting on you's again, counted
-    const back = projectToday(facts({ now: friday, waiting, deferred }));
+    const back = projectToday(facts({ now: friday, waiting: put }));
     expect(back.rows.map((r) => [r.id, r.group])).toEqual([["waiting:4", "today"], ["waiting:5", "today"]]);
     expect(back.counts.waiting).toBe(2);
   });
 
-  it("an item of the conversation shown now says it: no Coming up row of its own", () => {
-    const ask = dated("ask", null, { threadId: 5 });
-    const deferred = [{ threadId: 5, until: at(2026, 11, 20, 9), lastDate: NOW - 5, hasSent: false, waitingSince: NOW - 5, rev: 1 }];
-    expect(projectToday(facts({ dated: [ask], waiting, deferred })).rows.map((r) => r.id).sort()).toEqual([`dated:${ask.id}`, "waiting:4"].sort());
+  it("an item of the conversation placed anywhere says it, Coming up's too (the reader's request put off with it): no row of its own", () => {
+    const ask = dated("ask", null, { threadId: 5, deferredUntil: friday });
+    const put = waiting.map((w) => (w.id === 5 ? { ...w, deferredUntil: friday } : w));
+    expect(projectToday(facts({ dated: [ask], waiting: put })).rows.map((r) => r.id).sort()).toEqual([`dated:${ask.id}`, "waiting:4"].sort());
   });
 });
 

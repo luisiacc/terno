@@ -58,10 +58,10 @@ export interface TodayWhy {
   /** a waiting row: you've written in this conversation (else it's new, from someone you write to: `needsYou`'s two reasons) */
   wrote?: boolean;
   /**
-   * plan 215: a waiting row, what its Done and Later act on: the conversation's waiting date as drawn (`waiting_since`) and
-   * its waiting message's record's revision (0: none). The store finds the message itself (`waitingFactsNewestFirst`)
+   * plan 215: a waiting row, what its Done and Later act on: the conversation's waiting date as drawn (`waiting_since`), the
+   * message the facts judged waiting, and its record's revision (0: none); the store checks all three in its act
    */
-  reply?: { since: number; rev: number };
+  reply?: { since: number; rev: number; message: number };
   /** plan 204: its day is over and nothing was done (a dated item, or a dated promise of yours) */
   missed?: boolean;
   /**

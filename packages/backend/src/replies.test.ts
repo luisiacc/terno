@@ -240,13 +240,14 @@ describe("what an open spends", () => {
   });
 
   it("plan 215: Done on its waiting row mid-way stops it and keeps nothing; the next open prepares none", async () => {
-    const { client, model, put, prepare, row } = await setup();
+    const { backend, client, model, put, prepare, row } = await setup();
     let write!: () => void;
     model.gate = new Promise((r) => (write = r));
     const t = await put();
     await prepare(t);
     await vi.waitFor(() => expect(model.drafts.length).toBe(1));
-    await client.call("today.waitingAct", { threadId: t, since: NOW - 3_600_000, rev: 0, action: "done" });
+    const message = (await backend.store.threads.get(t))!.messages.at(-1)!.id;
+    await client.call("today.waitingAct", { threadId: t, since: NOW - 3_600_000, message, rev: 0, action: "done" });
     write();
     await new Promise((r) => setTimeout(r, 30));
     expect(await row(t)).toBeNull();
@@ -350,6 +351,21 @@ describe("what an open spends", () => {
     await client.call("ai.replyAct", { threadId: t, rowId: newer.rowId, revision: newer.revision, action: "dismiss" });
     expect(await client.call("ai.replyAct", { threadId: t, rowId: first.rowId, revision: dismissed!.revision, action: "undismiss" })).toBeNull();
     expect((await row(t))!.state).toBe("dismissed");
+  });
+
+  it("plan 215: a dismissed or used reply isn't brought back once its conversation is marked Done", async () => {
+    const { backend, client, put, prepare, row, settled } = await setup();
+    const t = await put();
+    await prepare(t);
+    await settled(t, "ready");
+    const first = (await row(t))!;
+    const dismissed = (await client.call("ai.replyAct", { threadId: t, rowId: first.rowId, revision: first.revision, action: "dismiss" }))!;
+    const message = (await backend.store.threads.get(t))!.messages.at(-1)!.id;
+    const { undoId } = await client.call("today.waitingAct", { threadId: t, since: NOW - 3_600_000, message, rev: 0, action: "done" });
+    expect(await client.call("ai.replyAct", { threadId: t, rowId: first.rowId, revision: dismissed.revision, action: "undismiss" })).toBeNull();
+    // its Undo: waiting again, the reply comes back as before
+    await client.call("today.waitingUndo", { undoId });
+    expect(await client.call("ai.replyAct", { threadId: t, rowId: first.rowId, revision: dismissed.revision, action: "undismiss" })).toMatchObject({ state: "ready" });
   });
 
   it("starts no learning, and what goes is what the hint says", async () => {
