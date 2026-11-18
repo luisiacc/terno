@@ -4,7 +4,7 @@
  * line per closed item (two of one conversation are two lines), an untrusted sender's never; true duplicates one line at
  * their newest closing, none while one of them is open, once across pages; a held row none.
  */
-import type { DatedRow, FollowupRow, ThreadSummary } from "@terno/core";
+import type { DatedRow, FollowupRow, HistoryKey, ThreadSummary, TodayHistoryPage } from "@terno/core";
 import type { MailStore } from "@terno/store";
 import { describe, expect, it } from "vitest";
 import { historyPage, type HistoryAsk } from "./today-history";
@@ -179,5 +179,53 @@ describe("historyPage", () => {
       { id: 29, threadId: 21, closedAt: null, state: "open", kind: "delivery", text: "Llegan las pilas recargables", arrivedAt: NOW - 4 * 86_400_000 } as Closed,
     ]);
     expect((await historyPage(store, ask({}))).items.map((i) => i.id)).toEqual(["dated:13"]);
+  });
+});
+
+describe("plan 215: a waiting conversation's Done, Earlier's fifth source", () => {
+  /** the fake store with waiting Done records (newest first by moment, then message) and threads that wait again or are off */
+  function withWaiting(base: ReturnType<typeof fakeStore>, done: { messageId: number; threadId: number; at: number }[], o: { waitsAgain?: ReadonlySet<number>; account?: (threadId: number) => number } = {}) {
+    const store = base.store as unknown as Record<string, Record<string, unknown>>;
+    const rows = done.map((d) => ({ ...d, who: `Who ${d.messageId}`, subject: `Subject ${d.messageId}`, wrote: d.messageId % 2 === 0 }));
+    store.today = {
+      ...store.today,
+      waiting: {
+        donePage: async (q: { since: number; after: { at: number; id: number } | null; limit: number }) =>
+          [...rows].sort((a, b) => b.at - a.at || b.messageId - a.messageId).filter((r) => r.at >= q.since && (!q.after || r.at < q.after.at || (r.at === q.after.at && r.messageId < q.after.id))).slice(0, q.limit),
+      },
+    };
+    const summaries = (store.threads as { summaries: (ids: readonly number[]) => Promise<ThreadSummary[]> }).summaries;
+    store.threads = { summaries: async (ids: readonly number[]) => (await summaries(ids)).map((t) => ({ ...t, waitingSince: o.waitsAgain?.has(t.id) ? NOW : null, accountId: o.account?.(t.id) ?? 1 })) };
+    return base.store;
+  }
+
+  it("pages across all three tables and the Changed lines at equal moments never repeat or skip a line", async () => {
+    const at = NOW - MIN;
+    const base = fakeStore([{ id: 1, threadId: 1, closedAt: at }, { id: 2, threadId: 2, closedAt: at }], [{ id: 3, threadId: 3, closedAt: at }]);
+    const store = withWaiting(base, [{ messageId: 10, threadId: 10, at }, { messageId: 11, threadId: 11, at }, { messageId: 12, threadId: 12, at: at - MIN }]);
+    const changed = { dated: [{ id: 5, threadId: 5, state: "open", changedAt: at, sameAs: null, kind: "pay", text: "Pay 5" } as unknown as DatedRow], promises: [] };
+    const all = await historyPage(store, ask({ waiting: true, changed }));
+    expect(all.items.map((i) => i.id)).toEqual(["dated:2", "dated:1", "promise:3", "change:dated:5", "waiting-done:11", "waiting-done:10", "waiting-done:12"]);
+    const waitingLine = all.items.find((i) => i.id === "waiting-done:10")!;
+    expect([waitingLine.item, waitingLine.outcome, waitingLine.kind, waitingLine.key, waitingLine.waiting]).toEqual([{ source: "waiting", messageId: 10 }, "done", "waiting", { at, src: 4, id: 10 }, { who: "Who 10", subject: "Subject 10", wrote: true }]);
+    for (let size = 1; size <= 3; size++) {
+      const lines: string[] = [];
+      let after: HistoryKey | null = null;
+      for (let i = 0; i < 10; i++) {
+        const page: TodayHistoryPage = await historyPage(store, ask({ waiting: true, changed, after, limit: size }));
+        lines.push(...page.items.map((x) => x.id));
+        if (!page.next) break;
+        after = page.next;
+      }
+      expect(lines, `pages of ${size}`).toEqual(all.items.map((i) => i.id));
+    }
+  });
+
+  it("none for a conversation waiting again, held open, in an account whose What matters is off, or with the source off; a request closed with it never", async () => {
+    const base = fakeStore([{ id: 1, threadId: 20, closedAt: NOW - MIN, state: "dismissed", closedReason: "waiting", kind: "ask" } as Closed]);
+    const store = withWaiting(base, [20, 21, 22, 23].map((id, i) => ({ messageId: id, threadId: id, at: NOW - (i + 2) * MIN })), { waitsAgain: new Set([21]), account: (id) => (id === 23 ? 2 : 1) });
+    const page = await historyPage(store, ask({ waiting: true, held: new Set(["waiting:22"]), showsWaiting: (a) => a === 1 }));
+    expect(page.items.map((i) => i.id)).toEqual(["waiting-done:20"]);
+    expect((await historyPage(store, ask({}))).items).toEqual([]);
   });
 });

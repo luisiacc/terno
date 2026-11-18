@@ -239,6 +239,23 @@ describe("what an open spends", () => {
     expect(await row(v)).toBeNull();
   });
 
+  it("plan 215: Done on its waiting row mid-way stops it and keeps nothing; the next open prepares none", async () => {
+    const { client, model, put, prepare, row } = await setup();
+    let write!: () => void;
+    model.gate = new Promise((r) => (write = r));
+    const t = await put();
+    await prepare(t);
+    await vi.waitFor(() => expect(model.drafts.length).toBe(1));
+    await client.call("today.waitingAct", { threadId: t, since: NOW - 3_600_000, rev: 0, action: "done" });
+    write();
+    await new Promise((r) => setTimeout(r, 30));
+    expect(await row(t)).toBeNull();
+    model.drafts.length = 0;
+    model.gate = null;
+    expect((await prepare(t)).status).toBe("none");
+    expect(model.drafts).toEqual([]);
+  });
+
   it("charges its own task, and past the day's limit nothing goes and ⌘J still runs", async () => {
     const { backend, client, model, put, prepare, row, account, ANA } = await setup({ cloud: true });
     const t = await put();

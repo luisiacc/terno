@@ -1562,6 +1562,12 @@ export function createHandlers(b: Backend): Handlers {
       await b.today.undoAct(undoId);
       return { ok: true };
     },
+    // plan 215
+    "today.waitingAct": async (o) => b.today.waitingAct(o),
+    "today.waitingUndo": async ({ undoId }) => {
+      await b.today.waitingUndo(undoId);
+      return { ok: true as const };
+    },
     // plan 210 (iteration 4, Change…): its own act, with its own Undo
     "today.schedule": ({ item, to }) => b.today.schedule(item, "accept" in to ? { accept: true } : { day: to.day, time: to.time }),
     "today.scheduleUndo": async ({ undoId }) => {

@@ -1,5 +1,5 @@
-import { changeLineId, DATED_CLOSED_KEEP_MS, datedGroup, HANDED, historyAfter, historyOrder, refKey, type HistorySource, type DatedRow, type FeedRowId, type FollowupRow, type HistoryKey, type HistoryOutcome, type ItemRef, type SettledHow, type ThreadSummary, type TodayHistoryItem, type TodayHistoryPage } from "@terno/core";
-import { ANSWERED_WITH_PROMISE, HELD_REQUEST_CLOSED, type ClosedAt, type MailStore } from "@terno/store";
+import { changeLineId, DATED_CLOSED_KEEP_MS, datedGroup, HANDED, historyAfter, historyOrder, refKey, waitingDoneLineId, waitingRowId, type HistorySource, type DatedRow, type FeedRowId, type FollowupRow, type HistoryKey, type HistoryOutcome, type ItemRef, type SettledHow, type ThreadSummary, type TodayHistoryItem, type TodayHistoryPage } from "@terno/core";
+import { ANSWERED_WITH_PROMISE, HELD_REQUEST_CLOSED, WAITING_CLOSED, type ClosedAt, type MailStore, type WaitingDone } from "@terno/store";
 import { sameParcel } from "./dated-evidence";
 import { withoutUntrusted } from "./suspicious-sender";
 
@@ -17,7 +17,7 @@ import { withoutUntrusted } from "./suspicious-sender";
 const READ_BATCH = 100;
 
 interface Source<R> {
-  src: 0 | 1;
+  src: 0 | 1 | 4;
   after: ClosedAt | null;
   buf: R[];
   done: boolean;
@@ -35,6 +35,8 @@ export interface HistoryAsk {
   held: ReadonlySet<FeedRowId>;
   dated: boolean;
   promises: boolean;
+  /** plan 215: a conversation waiting on you marked Done (What matters' own: no reader's setting gates it) */
+  waiting?: boolean;
   /**
    * Plan 210 (iteration 4, Change…): the open items the user changed (as the open part reads them: trusted, within the
    * bounds), each a "Changed" line at the moment of its change while it's open. Absent: none
@@ -42,6 +44,8 @@ export interface HistoryAsk {
   changed?: { dated: readonly DatedRow[]; promises: readonly FollowupRow[] };
   /** plan 211: an account whose lines show (AI and What matters on); absent: every account's */
   shows?: (accountId: number) => boolean;
+  /** plan 215: an account whose waiting Done lines show (What matters on, as its waiting rows); absent: every account's */
+  showsWaiting?: (accountId: number) => boolean;
   /** Codex code review: a walk past many left-out rows gives the event loop back between reads, within the slice's budget */
   yieldTurn: () => Promise<void>;
   sliceMs: number;
@@ -54,7 +58,11 @@ const outcomeOf = (r: { state: string; closedReason: string | null }): HistoryOu
 type Row = (DatedRow & { src: 0 }) | (FollowupRow & { src: 1 });
 /** plan 210 (iteration 4): an open item the user changed, at its change */
 type Changed = (DatedRow & { src: 2 }) | (FollowupRow & { src: 3 });
-const sourceOf = (src: HistorySource): ItemRef["source"] => (src % 2 === 0 ? "dated" : "promise");
+/** a dated item's line or its Changed line (0, 2), a promise's (1, 3); a waiting Done (4) is no item's */
+const SOURCE_OF: Readonly<Record<0 | 1 | 2 | 3, ItemRef["source"]>> = { 0: "dated", 1: "promise", 2: "dated", 3: "promise" };
+const sourceOf = (src: 0 | 1 | 2 | 3): ItemRef["source"] => SOURCE_OF[src];
+/** plan 215: a waiting Done as a history row, keyed by its moment and its message */
+type WaitingLine = WaitingDone & { src: 4; id: number; closedAt: number };
 const keyOf = (r: Row | Changed): string => r.sameAs ?? refKey({ source: sourceOf(r.src), id: r.id });
 const closingOf = (r: Row): HistoryKey => ({ at: r.closedAt!, src: r.src, id: r.id });
 const REASKED: SettledHow = "reasked";
@@ -89,9 +97,12 @@ export async function historyPage(store: MailStore, o: HistoryAsk): Promise<Toda
   // an item from an untrusted sender isn't shown (as in the open part, Codex's second pass of plan 204)
   const trusted = (rows: DatedRow[]) => withoutUntrusted(rows, (keys) => store.dated.written(keys));
   // each table strictly after the key, translated: at the key's moment a dated item comes before a promise
-  const start = (src: 0 | 1): ClosedAt | null => (o.after ? historyAfter(o.after, src) : null);
+  const start = (src: HistorySource): ClosedAt | null => (o.after ? historyAfter(o.after, src) : null);
   const dated: Source<Row> = { src: 0, after: start(0), buf: [], done: !o.dated, read: async (after) => (await store.dated.closedPage({ since, after, limit: READ_BATCH })).map((r) => ({ ...r, src: 0 as const })) };
   const promises: Source<Row> = { src: 1, after: start(1), buf: [], done: !o.promises, read: async (after) => (await store.followups.closedPage({ since, after, limit: READ_BATCH })).map((r) => ({ ...r, src: 1 as const })) };
+  const waiting: Source<WaitingLine> = { src: 4, after: start(4), buf: [], done: o.waiting !== true, read: async (after) => (await store.today.waiting.donePage({ since, after, limit: READ_BATCH })).map((r) => ({ ...r, src: 4 as const, id: r.messageId, closedAt: r.at })) };
+  // plan 215: a waiting Done's line shows while its conversation does (What matters' own switch) and doesn't wait again
+  const waitingVisible = (t: ThreadSummary | null | undefined): t is ThreadSummary => !!t && !t.inSpam && !t.inTrash && t.waitingSince == null && (!o.showsWaiting || o.showsWaiting(t.accountId));
   // what each read brought: its thread (Spam, Trash, gone), and each item's members: a merged item is a line once, at its
   // newest closing, and only when none of it is open (lone items, most, are their own and only member)
   const threads = new Map<number, ThreadSummary | null>();
@@ -139,7 +150,7 @@ export async function historyPage(store: MailStore, o: HistoryAsk): Promise<Toda
     await o.yieldTurn();
     slice = performance.now();
   };
-  const fill = async (s: Source<Row>, keep: (rows: Row[]) => Promise<readonly Row[]>) => {
+  const fill = async <R extends { closedAt: number | null; id: number }>(s: Source<R>, keep: (rows: R[]) => Promise<readonly R[]>) => {
     // a whole batch left out (an untrusted sender's items) reads on
     while (!s.buf.length && !s.done) {
       await breathe();
@@ -148,13 +159,27 @@ export async function historyPage(store: MailStore, o: HistoryAsk): Promise<Toda
       if (!rows.length) return;
       const last = rows.at(-1)!;
       s.after = { at: last.closedAt!, id: last.id };
-      const kept = await keep(rows);
-      await learn(kept);
-      s.buf.push(...kept);
+      s.buf.push(...(await keep(rows)));
     }
   };
-  const datedTrusted = async (rows: Row[]) => (await trusted(rows as DatedRow[])) as Row[];
-  const all = async (rows: Row[]) => rows;
+  const datedTrusted = async (rows: Row[]) => {
+    const kept = (await trusted(rows as DatedRow[])) as Row[];
+    await learn(kept);
+    return kept;
+  };
+  const all = async (rows: Row[]) => {
+    await learn(rows);
+    return rows;
+  };
+  // a waiting Done needs only its conversation, read with the page's
+  const conversations = async (rows: WaitingLine[]) => {
+    const fresh = [...new Set(rows.map((r) => r.threadId))].filter((id) => !threads.has(id));
+    if (fresh.length) {
+      const byId = new Map((await store.threads.summaries(fresh)).map((t) => [t.id, t]));
+      for (const id of fresh) threads.set(id, byId.get(id) ?? null);
+    }
+    return rows;
+  };
   // plan 210 (iteration 4): the "Changed" lines, from the open items in hand (bounded), one a canonical item at its newest
   // change, strictly after `after`, newest first; their conversations read once with the page's
   const changes = changedLines(o, since);
@@ -166,8 +191,9 @@ export async function historyPage(store: MailStore, o: HistoryAsk): Promise<Toda
   const items: TodayHistoryItem[] = [];
   let next: HistoryKey | null = null;
   for (;;) {
-    await Promise.all([fill(dated, datedTrusted), fill(promises, all)]);
-    const heads: { key: HistoryKey; source: Source<Row> | null }[] = [dated.buf[0], promises.buf[0]].filter((r): r is Row => !!r).map((r) => ({ key: closingOf(r), source: r.src === 0 ? dated : promises }));
+    await Promise.all([fill(dated, datedTrusted), fill(promises, all), fill(waiting, conversations)]);
+    const heads: { key: HistoryKey; source: Source<Row> | Source<WaitingLine> | null }[] = [dated.buf[0], promises.buf[0]].filter((r): r is Row => !!r).map((r) => ({ key: closingOf(r), source: r.src === 0 ? dated : promises }));
+    if (waiting.buf[0]) heads.push({ key: { at: waiting.buf[0].at, src: 4, id: waiting.buf[0].messageId }, source: waiting });
     if (changes[0]) heads.push({ key: changes[0].key, source: null });
     if (!heads.length) {
       next = null;
@@ -195,7 +221,19 @@ export async function historyPage(store: MailStore, o: HistoryAsk): Promise<Toda
       next = items.at(-1)?.key ?? o.through;
       break;
     }
-    const row = head.source.buf.shift()!;
+    if (head.source === waiting) {
+      const w = waiting.buf.shift()!;
+      const thread = threads.get(w.threadId);
+      // the conversation's open row held (it waits again, or is kept in place) has none
+      if (!waitingVisible(thread) || o.held.has(waitingRowId(w.threadId))) continue;
+      items.push({ id: waitingDoneLineId(w.messageId), item: { source: "waiting", messageId: w.messageId }, thread, key: head.key, outcome: "done", kind: "waiting", text: "", waiting: { who: w.who, subject: w.subject, wrote: w.wrote } });
+      if (!o.through && items.length >= o.limit) {
+        next = head.key;
+        break;
+      }
+      continue;
+    }
+    const row = (head.source as Source<Row>).buf.shift()!;
     const thread = threads.get(row.threadId);
     const id = keyOf(row);
     const group = groups.get(id);
@@ -203,7 +241,9 @@ export async function historyPage(store: MailStore, o: HistoryAsk): Promise<Toda
     if (!visible(thread) || o.held.has(id) || !group || group.open || !group.newest || historyOrder(group.newest, head.key) !== 0) continue;
     // plan 210 (iteration 3): a request finished with the promise that answered it is that promise's line
     if (row.src === 0 && row.closedReason === ANSWERED_WITH_PROMISE) continue;
-    // the claims ledger's third batch: an ask its person asked again with a day lives on as the request that mail made
+    // plan 215: a request closed with its conversation's Done: the waiting line says it
+    if (row.src === 0 && row.closedReason === WAITING_CLOSED) continue;
+        // the claims ledger's third batch: an ask its person asked again with a day lives on as the request that mail made
     if (row.src === 0 && row.closedReason === REASKED) continue;
     // (Diego's arm) a parcel's notice whose day went by while a newer notice of that parcel is still on its way was replaced,
     // not over: its line would say "Over yesterday" beside the live delivery

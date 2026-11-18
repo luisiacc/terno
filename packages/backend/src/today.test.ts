@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createAi, promptText, type AiOptions, type CompletionRequest, type ProviderConfig } from "@terno/ai";
-import { todayKey } from "@terno/core";
+import { todayKey, type TodayList } from "@terno/core";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { demoRegistry } from "@terno/mail";
 import type { IncomingMessage } from "@terno/store";
@@ -840,5 +840,82 @@ describe("plan 211: the digest and an account's switches", () => {
     expect((await t.client.call("today.digest", {}))!.items.map((i) => i.from)).toEqual(["Stratechery"]);
     await t.client.call("accounts.update", { id: other.id, feed: true });
     await vi.waitFor(() => expect(told).toBeGreaterThanOrEqual(2));
+  });
+});
+
+describe("plan 215: Done and Later on a conversation waiting on you", () => {
+  /** a conversation waiting on you as ingest computes it (not set by hand): their message to you, someone you write to */
+  async function waitingOn(t: Awaited<ReturnType<typeof setup>>, name: string, ago = 60_000) {
+    const { backend, account, clock, raw } = t;
+    const email = `${name.toLowerCase()}@people.test`;
+    raw.run("INSERT OR IGNORE INTO correspondents (email, written, own) VALUES (?, 1, 0)", email);
+    const id = `w-${name}-${ago}`;
+    await backend.store.sync.ingest([msg({ accountId: account.id, date: clock.now - ago, providerMsgId: id, providerThreadId: `conv-${name}`, from: { name, email }, to: [{ name: "Me", email: account.email }], subject: `About ${name}` })], { applyFilters: false, now: clock.now, classifier: null });
+    return threadOf(backend.store, id);
+  }
+  const rowOf = (list: TodayList, id: string) => list.sections.flatMap((s) => s.items.map((i) => ({ ...i, section: s }))).find((i) => i.id === id);
+
+  it("Done: the row leaves with the Inbox's Waiting count and the badge, Earlier says it; its Undo brings it back; a second is stale", async () => {
+    const t = await setup();
+    const { client } = t;
+    const ana = await waitingOn(t, "Ana");
+    const bo = await waitingOn(t, "Bo", 120_000);
+    const list = await client.call("today.list", { held: [] });
+    const row = rowOf(list, `waiting:${ana}`)!;
+    expect(row.why.reply).toEqual({ since: row.thread.waitingSince, rev: 0 });
+    expect(list.counts.waiting).toBe(2);
+    const counts = await client.call("counts.get", {});
+    expect([counts.inboxWaiting, counts.today]).toEqual([2, 2]);
+    const changed: number[][] = [];
+    client.on("changed", (e) => changed.push(e.threadIds));
+    const { undoId } = await client.call("today.waitingAct", { threadId: ana, since: row.why.reply!.since, rev: 0, action: "done" });
+    const after = await client.call("today.list", { held: [], history: { through: null } });
+    expect(rowOf(after, `waiting:${ana}`)).toBeUndefined();
+    expect(after.counts.waiting).toBe(1);
+    expect(after.history!.items.map((i) => [i.id, i.outcome, i.kind, i.waiting])).toEqual([[expect.stringMatching(/^waiting-done:\d+$/), "done", "waiting", { who: "Ana", subject: "About Ana", wrote: false }]]);
+    expect((await client.call("counts.get", {})).inboxWaiting).toBe(1);
+    await vi.waitFor(() => expect(changed.flat()).toContain(ana));
+    // the same act on what it showed is stale, Later on it too
+    await expect(client.call("today.waitingAct", { threadId: ana, since: row.why.reply!.since, rev: 0, action: "later", until: t.clock.now + 3_600_000 })).rejects.toMatchObject({ code: "STALE" });
+    await client.call("today.waitingUndo", { undoId });
+    const back = await client.call("today.list", { held: [], history: { through: null } });
+    expect(rowOf(back, `waiting:${ana}`)?.why.reply).toEqual({ since: row.why.reply!.since, rev: 0 });
+    expect(back.history!.items).toEqual([]);
+    expect((await client.call("counts.get", {})).inboxWaiting).toBe(2);
+    await expect(client.call("today.waitingUndo", { undoId })).rejects.toMatchObject({ code: "STALE" });
+    void bo;
+  });
+
+  it("a newer message from them since the row was drawn: the act is refused, and the row is about the new message", async () => {
+    const t = await setup();
+    const { client } = t;
+    const ana = await waitingOn(t, "Ana", 120_000);
+    const drawn = rowOf(await client.call("today.list", { held: [] }), `waiting:${ana}`)!.why.reply!;
+    await waitingOn(t, "Ana", 30_000);
+    await expect(client.call("today.waitingAct", { threadId: ana, since: drawn.since, rev: 0, action: "done" })).rejects.toMatchObject({ code: "STALE" });
+    expect(rowOf(await client.call("today.list", { held: [] }), `waiting:${ana}`)!.why.reply!.since).toBe(t.clock.now - 30_000);
+  });
+
+  it("Later: under Coming up saying when it's back, out of the counts, the Inbox keeping it; the clock brings it back at its moment", async () => {
+    const t = await setup();
+    const { backend, client, clock } = t;
+    const ana = await waitingOn(t, "Ana");
+    const reply = rowOf(await client.call("today.list", { held: [] }), `waiting:${ana}`)!.why.reply!;
+    const until = clock.now + 3 * 3_600_000;
+    expect(await client.call("today.waitingAct", { threadId: ana, since: reply.since, rev: 0, action: "later", until: clock.now - 1 }).catch((e: { code: string }) => e.code)).toBe("BAD_REQUEST");
+    const { undoId } = await client.call("today.waitingAct", { threadId: ana, since: reply.since, rev: 0, action: "later", until });
+    const list = await client.call("today.list", { held: [] });
+    const row = rowOf(list, `waiting:${ana}`)!;
+    expect([row.section.kind, row.why.back, row.why.reply]).toEqual(["comingUp", until, { since: reply.since, rev: 1 }]);
+    expect(list.counts.waiting).toBe(0);
+    const counts = await client.call("counts.get", {});
+    expect([counts.inboxWaiting, counts.today]).toEqual([1, 0]);
+    await vi.waitFor(() => expect(backend.today.clockNextAt).toBe(until));
+    clock.now = until;
+    expect(rowOf(await client.call("today.list", { held: [] }), `waiting:${ana}`)!.section.kind).toBe("today");
+    // its Undo, the moment come and the record still there: back as it was
+    clock.now = until - 1000;
+    await client.call("today.waitingUndo", { undoId });
+    expect(rowOf(await client.call("today.list", { held: [] }), `waiting:${ana}`)!.why.reply!.rev).toBe(0);
   });
 });
