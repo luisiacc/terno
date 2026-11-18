@@ -73,3 +73,20 @@ A third history source, the `done` records within `DATED_CLOSED_KEEP_MS`, by `(a
 - The reader's line for a waiting conversation (it has none today).
 - Bulk Done on several waiting rows.
 - Dragging feed rows to categories and folders, and the 40/60 split beside the reader: the build queue's next two.
+
+## Revisions after the Codex review
+
+Codex's critique (twelve points, all taken). Where the design above and this section disagree, this section holds.
+
+1. **The waiting message is the fact's, not a date.** `decide` returns the message it judged (`ThreadFacts.waitingMessageId`, computed, not stored). The act names the thread and the `waiting_since` it saw; in its transaction the store recomputes the thread's facts (the bounded newest-first walk, point 12) and acts on the message `decide` picked, refusing as stale if the fact's date isn't the one seen. Ties and drafts, failed sends and own-address mail are `decide`'s, as everywhere.
+2. **A real revision.** `waiting_acts` gains `rev INTEGER NOT NULL`. A waiting task carries the record's rev as drawn (0: none). Every write checks it (absent counts as 0) and bumps it, so two windows can't overwrite each other's choice.
+3. **Undo restores the whole previous record** (none, or Later with its moment), only while the current rev is the one the act wrote, and recomputes the facts in the same transaction. A stale Undo says so (`STALE`), unlike `undoAct`'s silent false today.
+4. **No `thread_id` column.** The record is the message's: its thread is `messages.thread_id`, which follows merges and moves. History and Undo resolve the conversation through it.
+5. **Deferrals have their own read.** `waiting_acts_later ON waiting_acts(until, message_id) WHERE state = 'later'`: the projection's Coming up rows and `armClock` read the deferrals directly (bounded), never through `waitingPage`'s window or `NEEDS_WALK`. At its moment a deferral ends: the conversation comes back only if it still waits by the usual rules (`waitingPage`); otherwise nothing shows, and the expired record is pruned with the closed ones.
+6. **Reply ready stops.** Done cancels a preparation running for that conversation, and both stores' `finishReply` refuses to store a reply for a conversation that no longer waits (`waiting_since` null), whatever the source stamp says. The renderer's Reply ready already hides when the conversation stops waiting; a test holds it.
+7. **The reader can't bring it back.** When the dated reader finishes a message you marked Done, its ask and respond items are stored closed (`dismissed`, reason `user`), so the same request doesn't reappear as a task; a Later on it puts them off to the same moment. Other kinds (an event, a bill) are untouched. Both stores, in `finish`.
+8. **Earlier's gate per source.** Waiting closings follow the What matters switch (`gate.feed`), as waiting rows do, not the readers' gate.
+9. **Earlier's words are kept at Done.** The record stores who and the subject (bounded, 200 characters each) and whether they wrote back, so the line says what the row said then; the sentence is formatted through i18n when shown.
+10. **Sources 0–3 stay; waiting Done is 4**, with an explicit source mapping (no `% 2`). A waiting history line's ref is its own type, apart from `ItemRef`; its identity is `waiting-done:<message>`, and a held `waiting:<thread>` row maps to it explicitly. Paging is tested at equal moments after every source, Changed lines included.
+11. **IndexedDB's closed order** (`ClosedOrder`) is generalized to a key and a moment, so the waiting record's `(at, message_id)` pages as the closed tables do, and the message cascade is registered in `FOREIGN_KEYS`.
+12. **A facts-only refresh.** Done and Undo refresh that thread's `person` and `waiting_since` alone, through the same `factContext` and the bounded newest-first walk, marking search dirty in the same transaction; never the whole-thread recompute. IndexedDB gets a bounded equivalent (its `factsOf` reads the whole thread today). A test with a long conversation.
