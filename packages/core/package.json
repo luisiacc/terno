@@ -12,7 +12,8 @@
     "./diag/envelope": "./src/diag/envelope.ts",
     "./updates": "./src/updates/index.ts",
     "./mailbox": "./src/mailbox/index.ts",
-    "./mail-link": "./src/mail-link.ts"
+    "./mail-link": "./src/mail-link.ts",
+    "./attachment-open": "./src/attachment-open.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"

@@ -32,6 +32,7 @@ export * from "./localized";
 export * from "./agents";
 export * from "./mail-link";
 export * from "./attachments";
+export * from "./attachment-open";
 export * from "./similar";
 
 export * from "./send-copy";
