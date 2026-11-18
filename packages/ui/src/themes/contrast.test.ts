@@ -59,7 +59,8 @@ describe("WCAG AA in every built-in theme", () => {
     // plan 193: a one-line row's preview on a row's four fills
     // plan 203: a setting search opened, its two inks on the primary's 8% wash over Settings' tint, card and dialog
     // plan 208 (after relief-r03): a read row's words on a row's three unselected fills
-    expect(CONTRAST_PAIRS).toHaveLength(2 + 4 + 49 + 2 + 4 + 2 + 6 + 4 + 3 + 3 + 4 + 40 + 2 + 5 + 1 + 1 + 1 + 8 + 1 + 2 + 1 + 2 + 2 + 2 + 2 + 3 + 6 + 12 + 4 + 6 + 3);
+    // plan 214: What matters' Missed when and its two gutter marks, on the pane, a hovered row and the open one
+    expect(CONTRAST_PAIRS).toHaveLength(2 + 4 + 49 + 2 + 4 + 2 + 6 + 4 + 3 + 3 + 4 + 40 + 2 + 5 + 1 + 1 + 1 + 8 + 1 + 2 + 1 + 2 + 2 + 2 + 2 + 3 + 6 + 12 + 4 + 6 + 3 + 7);
   });
 
   it("reports a failing pair with its ratio", () => {

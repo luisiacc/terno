@@ -41,7 +41,7 @@ export const FEED_ROWS_ID = "wm-feed-rows";
  */
 
 type Drawn =
-  | { type: "heading"; key: string; kind: FeedGroupKind }
+  | { type: "heading"; key: string; kind: FeedGroupKind; /** the items under it, till the next heading */ count: number }
   | { type: "item"; key: string; row: FeedRow }
   | { type: "digest"; key: string; row: FeedRow }
   | { type: "comingUp"; key: string };
@@ -78,20 +78,27 @@ function drawn(rows: readonly FeedRow[], comingUp: number): Drawn[] {
       disclosed = true;
     }
     if (comingBucket(kind) !== null && kind !== prev) {
-      out.push({ type: "heading", key: `h-${kind}`, kind: kind! });
+      out.push({ type: "heading", key: `h-${kind}`, kind: kind!, count: 0 });
       prev = kind;
       out.push({ type: "item", key: row.id, row });
       continue;
     }
     // Waiting on you is a part of Today (plan 210, iteration 3): Today's heading stands above it even when Today has no
     // rows of its own
-    if (kind === "waiting" && prev !== "today" && prev !== "waiting") out.push({ type: "heading", key: `h-today-${row.id}`, kind: "today" });
+    if (kind === "waiting" && prev !== "today" && prev !== "waiting") out.push({ type: "heading", key: `h-today-${row.id}`, kind: "today", count: 0 });
     // keyed by the row it stands above: a group can begin twice while the rows and their groups are on their way
-    if (kind && kind !== prev) out.push({ type: "heading", key: `h-${kind}-${row.id}`, kind });
+    if (kind && kind !== prev) out.push({ type: "heading", key: `h-${kind}-${row.id}`, kind, count: 0 });
     prev = kind;
     out.push({ type: "item", key: row.id, row });
   }
   if (!disclosed) out.push({ type: "comingUp", key: COMING_UP_KEY });
+  // each heading's count, said beside it (plan 214): the items under it, till the next heading or the disclosure
+  let heading: Extract<Drawn, { type: "heading" }> | null = null;
+  for (const d of out) {
+    if (d.type === "heading") heading = d;
+    else if (d.type === "item" && heading) heading.count++;
+    else if (d.type !== "item") heading = null;
+  }
   return out;
 }
 
@@ -119,7 +126,10 @@ const senderOf = (thread: ThreadSummary, task: TodayTask | undefined, entry: Tod
 /** The right-click menu is a conversation's: the digest's item has none (its row on the list has none either). */
 const menuId = (id: number): number | undefined => (id === DIGEST_ROW_ID ? undefined : id);
 
-/** The column every line of the feed sits on: the same at any width, centred where the feed is wide. */
+/**
+ * The column every line of the feed sits on: the same at any width, centred where the feed is wide. The rows' words start
+ * 1rem into it (plan 214: room for the mark inside a row's fill), and the headings and the header's title with them.
+ */
 const COLUMN = "mx-auto w-full max-w-[44rem] px-5";
 
 export function WhatMattersFeed() {
@@ -211,7 +221,7 @@ export function WhatMattersFeed() {
   // second line ends before them (`measureControls`: by the first drawn, and again when either changes)
   const sectionRef = useRef<HTMLElement>(null);
   const controlsKey = `${getLocale()}|${design.id}`;
-  useLayoutEffect(() => measureControls(sectionRef.current?.querySelector<HTMLElement>("[data-testid=wm-controls]") ?? null, true), [controlsKey]);
+  useLayoutEffect(() => measureControls(sectionRef.current?.querySelector<HTMLElement>("[data-testid=wm-controls-buttons]") ?? null, true), [controlsKey]);
 
   // leaving What matters, the place it was left at goes with it
   useEffect(
@@ -240,8 +250,10 @@ export function WhatMattersFeed() {
   }, [nearEnd, historyLines]);
   return (
     <section ref={sectionRef} className="relative flex h-full min-h-0 flex-col bg-pane" data-testid="wm-feed" data-controls-key={controlsKey}>
-      <header ref={headerRef} className="drag-region scroll-hairline shrink-0 pb-2">
-        <div className={cn(COLUMN, "pl-8")}>
+      {/* the header keeps the list's scrollbar gutter, so a wide feed's centered column is the same column above and below
+          (plan 214: the list's alone was half a scrollbar to the left), as the reader's toolbar and body do */}
+      <header ref={headerRef} className="drag-region scroll-hairline shrink-0 overflow-y-hidden pb-2 [scrollbar-gutter:stable]">
+        <div className={cn(COLUMN, "pl-9")}>
           <div className="flex h-(--pane-bar) items-center">
             <h1 className={cn("min-w-0 flex-1 truncate", LIST_TITLE[design.variants.listHeader === "title" ? "title" : "display"])} data-testid="list-title">
               {t("today.title")}
@@ -255,12 +267,12 @@ export function WhatMattersFeed() {
         </div>
       </header>
       <ThreadMenu>
-        <div ref={scrollRef} id={FEED_ROWS_ID} data-keep-scroll="list" aria-busy={loading || undefined} className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        <div ref={scrollRef} id={FEED_ROWS_ID} data-keep-scroll="list" aria-busy={loading || undefined} className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]">
           <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
           {loading && items.length === 0 ? (
             <div className={cn(COLUMN, "space-y-4 pt-4")}>
               {Array.from({ length: 6 }, (_, i) => (
-                <div key={i} className="space-y-1.5 px-3">
+                <div key={i} className="space-y-1.5 ps-4 pe-3">
                   <Skeleton shape="text" className="w-5/6" />
                   <Skeleton shape="text" className="w-1/3" />
                 </div>
@@ -278,8 +290,8 @@ export function WhatMattersFeed() {
                 return (
                   <div key={v.key} data-index={v.index} ref={virtualizer.measureElement} className="absolute inset-x-0 top-0" style={{ transform: `translateY(${v.start}px)` }}>
                     {/* (a query container: a row lays its when column out by the feed's own width, plan 210, iteration 4) */}
-                    <div className={cn(COLUMN, "@container")}>
-                      {row.type === "heading" ? <Heading kind={row.kind} /> : row.type === "comingUp" ? <ComingUpHeading /> : row.type === "item" ? <FeedItem row={row.row} thread={items[index.get(row.row.threadId) ?? -1]} /> : <DigestItem />}
+                    <div className={cn(COLUMN, "@container py-px")}>
+                      {row.type === "heading" ? <Heading kind={row.kind} count={row.count} /> : row.type === "comingUp" ? <ComingUpHeading /> : row.type === "item" ? <FeedItem row={row.row} thread={items[index.get(row.row.threadId) ?? -1]} /> : <DigestItem />}
                     </div>
                   </div>
                 );
@@ -293,29 +305,32 @@ export function WhatMattersFeed() {
 }
 
 /**
- * A group's heading: its name, over a hairline. Today's "Waiting on you" (plan 210, iteration 3) is a part of Today, not a
- * group of its own: a quiet sub-heading, no hairline, on the same line as the headings and the rows' words.
+ * A group's heading (plan 214, Ledger): its name as a small-caps label in the quiet ink, its count beside it, on the rows'
+ * text line; no hairline (the rows have theirs). Today's "Waiting on you" (plan 210, iteration 3) and Coming up's buckets
+ * (iteration 4) are parts of a group: the same label, closer to what's above. The count sits outside the heading's own
+ * words, so its name is what a screen reader's heading list and the tests read.
  */
-function Heading({ kind }: { kind: FeedGroupKind }) {
-  // plan 210 (iteration 4): a Coming up bucket, a quiet sub-heading under its disclosure, as Waiting on you is under Today
-  if (comingBucket(kind) !== null)
-    return (
-      <h3 data-testid="wm-heading" data-kind="coming" data-day={groupDay(kind) ?? groupWeek(kind) ?? undefined} className="mx-3 mb-0.5 pt-4 pb-1 text-sm font-medium text-muted-foreground">
-        {headingName(kind)}
-      </h3>
-    );
-  if (kind === "waiting")
-    return (
-      <h3 data-testid="wm-heading" data-kind="waiting" className="mx-3 mb-0.5 pt-4 pb-1 text-sm font-medium text-muted-foreground">
-        {headingName(kind)}
-      </h3>
-    );
+function Heading({ kind, count }: { kind: FeedGroupKind; count: number }) {
+  const part = kind === "waiting" || comingBucket(kind) !== null;
+  // a part of a group is a level under it, for a screen reader's headings too
+  const Tag = part ? "h3" : "h2";
+  const dataKind = comingBucket(kind) !== null ? "coming" : groupDay(kind) !== null ? "day" : groupWeek(kind) !== null ? "week" : kind;
   return (
-    <h2 data-testid="wm-heading" data-kind={groupDay(kind) !== null ? "day" : groupWeek(kind) !== null ? "week" : kind} data-day={groupDay(kind) ?? groupWeek(kind) ?? undefined} className="hairline-b mx-3 mb-1 pt-5 pb-1.5 text-sm font-medium text-foreground">
-      {headingName(kind)}
-    </h2>
+    <div className={cn("ms-4 me-3 flex items-baseline gap-1.5 pb-1.5", part ? "pt-4" : "pt-6")}>
+      <Tag data-testid="wm-heading" data-kind={dataKind} data-day={groupDay(kind) ?? groupWeek(kind) ?? undefined} className={LABEL}>
+        {headingName(kind)}
+      </Tag>
+      {count > 0 && (
+        <span data-testid="wm-heading-count" className={cn(LABEL, "font-medium tabular")}>
+          {count}
+        </span>
+      )}
+    </div>
   );
 }
+
+/** A heading's words (plan 214): the caption size, semibold, spaced capitals, the quiet ink (AA on the pane). */
+const LABEL = "text-xs font-semibold tracking-wide text-muted-foreground uppercase";
 
 /**
  * Plan 210 (iteration 4, the Codex review's revision 9; the owner: "Coming up as the feed's last heading, closed, with its
@@ -330,9 +345,9 @@ function ComingUpHeading({ empty = false }: { /** under the empty feed's words, 
     <Collapsible
       open={open}
       onOpenChange={setComingUpOpen}
-      render={<h2 data-testid="wm-heading" data-kind="comingUp" className={empty ? "mt-2 text-sm font-normal text-muted-foreground" : "hairline-b mx-3 mb-1 pt-5 pb-1.5 text-sm font-medium text-foreground"} />}
+      render={<h2 data-testid="wm-heading" data-kind="comingUp" className={empty ? "mt-2 text-sm font-normal text-muted-foreground" : cn("ms-4 me-3 pt-6 pb-1.5", LABEL)} />}
     >
-      <CollapsibleTrigger data-testid="wm-coming-up" aria-controls={FEED_ROWS_ID} className={cn("w-auto gap-1 text-[length:inherit] leading-[inherit] [&>[data-slot=collapsible-chevron]]:ms-0 [&>[data-slot=collapsible-chevron]]:size-3.5", empty ? "font-normal text-muted-foreground hover:text-foreground" : "font-medium text-foreground")}>
+      <CollapsibleTrigger data-testid="wm-coming-up" aria-controls={FEED_ROWS_ID} className={cn("w-auto gap-1 text-[length:inherit] leading-[inherit] [&>[data-slot=collapsible-chevron]]:ms-0 [&>[data-slot=collapsible-chevron]]:size-3.5", empty ? "font-normal text-muted-foreground hover:text-foreground" : "tracking-[inherit] text-muted-foreground uppercase hover:text-foreground aria-expanded:text-foreground")}>
         {t("whatMatters.comingUp", { count })}
       </CollapsibleTrigger>
     </Collapsible>
@@ -370,17 +385,15 @@ function OpenItem({ row, thread, open, cursor }: { row: FeedRow; thread: ThreadS
 }
 
 /**
- * While Done and Later show (hover, focus, the open item, their Later menu open), the second line ends before them: they are
- * `--wm-controls` wide (measured) from 0.5rem in, and the line's end is 0.75rem in (the item's padding), or past the when
- * column (at least 5rem) and its 1rem gap; a wider column only leaves more room. Never under them (plan 210, iteration 1).
- * Iteration 4: in a narrow feed the when column is under the sentence, so the second line is the row's whole width: their
- * width (`ROOM_NARROW`); else beside the column (`ROOM_BESIDE_WHEN`, the feed's width wide enough).
+ * While Done and Later show (hover, focus, their Later menu open), they sit at the second line's end, and
+ * the line (who, then when) ends before them: `--wm-controls` wide, measured (plan 210, iteration 1: never under them).
+ * When stays in sight beside them (plan 214, after the first rating: every rater wanted the date kept as you act on it);
+ * they stay at the row's end, away from its middle, where a click opens it. The second line is one line either way (who
+ * truncates, when doesn't wrap), so the row's height, which the virtualizer measured, never changes under the pointer or
+ * the focus. The open item at rest shows none (plan 214, after the second rating: beside the reader they cut who to
+ * "To Em…"): the reader beside it carries its Done, Later and the rest on its own line, and D and B act on it.
  */
-const ROOM_BESIDE_WHEN =
-  "@min-[30rem]:group-hover/item:pr-[max(0px,calc(var(--wm-controls,7.5rem)-6rem))] @min-[30rem]:group-has-focus-reveal/item:pr-[max(0px,calc(var(--wm-controls,7.5rem)-6rem))] @min-[30rem]:group-data-open/item:pr-[max(0px,calc(var(--wm-controls,7.5rem)-6rem))] @min-[30rem]:group-has-[[aria-expanded=true]]/item:pr-[max(0px,calc(var(--wm-controls,7.5rem)-6rem))]";
-const ROOM_NARROW =
-  "@max-[30rem]:group-hover/item:pr-(--wm-controls,7.5rem) @max-[30rem]:group-has-focus-reveal/item:pr-(--wm-controls,7.5rem) @max-[30rem]:group-data-open/item:pr-(--wm-controls,7.5rem) @max-[30rem]:group-has-[[aria-expanded=true]]/item:pr-(--wm-controls,7.5rem)";
-const ROOM = "group-hover/item:pr-(--wm-controls,7.5rem) group-has-focus-reveal/item:pr-(--wm-controls,7.5rem) group-data-open/item:pr-(--wm-controls,7.5rem) group-has-[[aria-expanded=true]]/item:pr-(--wm-controls,7.5rem)";
+const ROOM = "group-hover/item:pe-(--wm-controls,7.5rem) group-has-focus-reveal/item:pe-(--wm-controls,7.5rem) group-has-[[aria-expanded=true]]/item:pe-(--wm-controls,7.5rem)";
 
 interface ItemProps {
   row: FeedRow;
@@ -389,13 +402,13 @@ interface ItemProps {
   task: TodayTask | undefined;
   /** its conversation is the one open beside the feed */
   open: boolean;
-  /** Coming up's: its column quieter (its words the row's ink: plan 210, iteration 3) */
+  /** Coming up's: its when quieter (its words the row's ink: plan 210, iteration 3) */
   later: boolean;
   /** plan 210: a history line (done, removed, settled, over) */
   past?: boolean;
   /** the item a conversation was just put away from: marked quietly (the hover's fill), where j/k go on from */
   cursor?: boolean;
-  /** the right column: a short day, a time, "Was due Wed", or nothing */
+  /** the second line's end: a short day, a time, "Was due Wed", or nothing */
   when: string | null;
   tone: TodayTone;
   /** the digest's way in (no conversation of its own) */
@@ -403,70 +416,61 @@ interface ItemProps {
 }
 
 /**
- * Plan 210 (iteration 1, Codex's critique point 10): the quiet words (who, "since Wed", a day ahead's column, Coming up's
- * sentences) are the row's preview ink, a step stronger than the muted one and held to AA on every fill a row has (rest,
- * hover, the cursor: CONTRAST_PAIRS' row-preview); on the open item, the selection's ink. The history alone stays muted.
- *
- * After the UI panel: what's Missed or due today reads stronger than what's days away (the ink and a medium weight); days
- * away, the day is quiet. No red: weight alone (plan 210, iteration 3: the accent on today's day read as a meaning of its
- * own beside the grey ones, so it went). On the open item every word is the selection's ink (the pairs CONTRAST_PAIRS
- * holds).
+ * Plan 214 (Ledger, the owner's pick of five): what's pressing reads first. Missed and today's items: the sentence in a
+ * medium weight, a mark in the gutter (Mail's unread dot: red for Missed, the design's unread color for today), Missed's when
+ * in the destructive ink (CONTRAST_PAIRS: on the pane and a row's hover). Everything else: the sentence in the ink, its
+ * when quiet; Coming up's too (plan 210, iteration 3: no fade), the history muted. Plan 210 (iteration 1, Codex's critique point 10): who and a quiet when are the row's preview
+ * ink, held to AA on every fill a row has (CONTRAST_PAIRS' row-preview); on the open item, every word is the selection's.
  */
 const SENTENCE_INK: Record<TodayTone, string> = { missed: "font-medium text-foreground", today: "font-medium text-foreground", later: "text-foreground", none: "text-foreground" };
-const WHEN_INK: Record<TodayTone, string> = {
-  missed: "font-medium text-foreground",
-  // plan 210 (iteration 3, the panel): one treatment for "Today", the ink and weight, never an accent beside the quiet ones
-  today: "font-medium text-foreground",
-  later: "text-row-preview",
-  none: "text-row-preview",
-};
+const WHEN_INK: Record<TodayTone, string> = { missed: "font-medium text-destructive-ink", today: "font-medium text-foreground", later: "text-row-preview", none: "text-row-preview" };
+const MARK: Partial<Record<TodayTone, string>> = { missed: "bg-destructive", today: "bg-unread" };
+/** when's ink on the open item: the selection's (red on the selection fails AA in every palette; Missed's mark stays red there) */
+const WHEN_OPEN = "group-data-open/item:text-row-selected-foreground";
 
 /**
- * An item: one plain sentence (three lines at most, the open one whole, the rest in its title), who under it, and when in a column of its
- * own on the right, in the list's words. The whole item opens its conversation, the list staying where it is. Done and
- * Later, in words, on hover, on focus and on the open item, over the second line's end (they take no room while hidden);
- * D and the right-click menu as on the list.
+ * An item: one plain sentence (three lines at most, the open one whole, the rest in its title), and under it who, with
+ * when at the line's end, in the list's words. The whole item opens its conversation, the list staying where it is. A
+ * hairline under each (Mail's list), gone under the hovered and the open one; never two fills touching (the rows' pixel
+ * apart). Done and Later, in words, on hover, on focus and on the open item, in place of when (they take no room while
+ * hidden); D and the right-click menu as on the list.
  */
 function Item({ row, sentence, meta, when, tone, task, open, cursor = false, later, past = false, digest = false }: ItemProps) {
   const textId = useId();
+  const quiet = past ? "text-muted-foreground" : null;
+  const mark = past || later ? undefined : MARK[tone];
+  const whenTone = past ? null : later ? "later" : tone;
+  const whenInk = whenTone === null ? "text-muted-foreground group-data-open/item:text-row-selected-foreground" : cn(WHEN_INK[whenTone], WHEN_OPEN);
   return (
     // the right-click menu is the conversation's, its task this row's (plan 210, iteration 2: `menuRow`)
     <div data-thread-id={menuId(row.threadId)} data-row-id={row.id} data-held={row.held || undefined} data-testid="wm-item" onContextMenu={() => useToday.setState({ menuRow: row.id })} data-open={open || undefined} data-cursor={cursor || undefined} data-history={past || undefined} data-digest={digest || undefined} data-ahead={(later && !past) || undefined} data-tone={tone} className="group/item relative rounded-lg not-data-open:hover:bg-row-hover data-cursor:bg-row-hover data-open:bg-row-selected">
-      {/* plan 210 (iteration 4, design point 2): the sentence keeps at least two thirds of the row: the when column is at
-          most a third (its words wrap there); in a narrow feed (the reader open beside it) it goes under the sentence, on a
-          line of its own above who, so "You said you'd…" is never crushed beside it */}
-      <button type="button" data-testid="wm-item-open" title={`${sentence}\n${meta}`} aria-expanded={open} onFocus={() => placeFeedKeys(row.id)} onClick={() => openItem(row)} className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4 rounded-lg px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring @max-[30rem]:grid-cols-1">
-        {/* plan 210 (iteration 3): Coming up's sentences in the row ink, not a fade (its column stays quiet). The claims
-            ledger's second batch: three lines at most, the open item's whole (two cut an alert's ", the email says" and a
-            promise's second deliverable, worst beside the reader); the whole sentence is the button's title and, unclamped in
-            the DOM, what a screen reader reads */}
-        <span id={textId} data-testid="wm-sentence" className={cn("col-start-1 row-start-1 line-clamp-3 text-base text-pretty group-data-open/item:line-clamp-none group-data-open/item:text-row-selected-foreground", past ? "text-muted-foreground" : SENTENCE_INK[tone])}>
+      <button type="button" data-testid="wm-item-open" title={`${sentence}\n${meta}`} aria-expanded={open} onFocus={() => placeFeedKeys(row.id)} onClick={() => openItem(row)} className="relative flex w-full min-w-0 flex-col rounded-lg ps-4 pe-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        {/* what's pressing, marked in the row's leading padding, inside its fill, in every state (plan 214, after the first
+            rating: it hung over the fill's edge and went on the open row); the text line stays the headings' */}
+        {mark && <span aria-hidden data-testid="wm-mark" className={cn("absolute top-[calc(0.5rem+0.75em-3px)] start-1 size-1.5 rounded-full", mark)} />}
+        {/* the claims ledger's second batch: three lines at most, the open item's whole; the whole sentence is the button's
+            title and, unclamped in the DOM, what a screen reader reads */}
+        <span id={textId} data-testid="wm-sentence" className={cn("line-clamp-3 text-base text-pretty group-data-open/item:line-clamp-none group-data-open/item:text-row-selected-foreground", quiet ?? SENTENCE_INK[later ? "later" : tone])}>
           {sentence}
         </span>
-        {when && (
-          <span
-            data-testid="wm-when"
-            className={cn(
-              "col-start-2 row-span-2 row-start-1 max-w-[calc(100cqw/3-1.5rem)] min-w-20 pt-px text-right text-sm text-balance tabular group-data-open/item:text-row-selected-foreground @max-[30rem]:col-start-1 @max-[30rem]:row-span-1 @max-[30rem]:row-start-2 @max-[30rem]:mt-0.5 @max-[30rem]:max-w-none @max-[30rem]:min-w-0 @max-[30rem]:pt-0 @max-[30rem]:text-left",
-              past ? "text-muted-foreground" : WHEN_INK[tone],
-            )}
-          >
-            {when}
+        <span className={cn("mt-0.5 flex min-w-0 items-baseline gap-3 text-sm", task && ROOM)}>
+          <span data-testid="wm-meta" className={cn("min-w-0 flex-1 truncate group-data-open/item:text-row-selected-foreground", quiet ?? "text-row-preview")}>
+            {meta}
           </span>
-        )}
-        {/* while Done and Later show over its end, it ends (in an ellipsis) before them: a little before, beside the right
-            column (at least 5rem, so they reach no further into it), else their width */}
-        <span data-testid="wm-meta" className={cn("col-start-1 row-start-2 mt-0.5 block min-w-0 truncate text-sm group-data-open/item:text-row-selected-foreground @max-[30rem]:row-start-3", past ? "text-muted-foreground" : "text-row-preview", task && (when ? cn(ROOM_BESIDE_WHEN, ROOM_NARROW) : ROOM))}>
-          {meta}
+          {when && (
+            <span data-testid="wm-when" className={cn("max-w-full shrink-0 truncate tabular", whenInk)}>
+              {when}
+            </span>
+          )}
         </span>
       </button>
+      <span aria-hidden className="hairline-b pointer-events-none absolute start-4 end-3 -bottom-px group-hover/item:invisible group-data-open/item:invisible group-data-cursor/item:invisible" />
       {task && (
-        <div
-          data-testid="wm-controls"
-          ref={(el) => measureControls(el)}
-          className="pointer-events-none absolute right-2 bottom-1.5 flex items-center gap-1 rounded-md bg-pane pl-2 opacity-0 transition-opacity duration-fast group-hover/item:pointer-events-auto group-[:hover:not([data-open])]/item:bg-row-hover group-hover/item:opacity-100 group-data-open/item:pointer-events-auto group-data-open/item:bg-row-selected group-data-open/item:opacity-100 has-focus-reveal:pointer-events-auto has-focus-reveal:opacity-100 has-[[aria-expanded=true]]:pointer-events-auto has-[[aria-expanded=true]]:opacity-100"
-        >
-          <BriefTaskControls rowId={row.id} task={task} describedBy={textId} />
+        <div data-testid="wm-controls" className="pointer-events-none absolute end-2 bottom-1.5 flex items-center opacity-0 transition-opacity duration-fast group-hover/item:opacity-100 group-has-focus-reveal/item:opacity-100 has-focus-reveal:opacity-100 has-[[aria-expanded=true]]:opacity-100">
+          {/* (measured with its leading gap: what the line leaves room for) */}
+          <div data-testid="wm-controls-buttons" ref={(el) => measureControls(el)} className="flex items-center gap-1 ps-3 group-hover/item:pointer-events-auto group-has-focus-reveal/item:pointer-events-auto has-focus-reveal:pointer-events-auto has-[[aria-expanded=true]]:pointer-events-auto">
+            <BriefTaskControls rowId={row.id} task={task} describedBy={textId} />
+          </div>
         </div>
       )}
     </div>

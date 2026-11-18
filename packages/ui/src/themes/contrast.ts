@@ -51,6 +51,11 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   ...ui("sidebar-glyph", ["sidebar", "sidebar-accent"]),
   // plan 08: settings draw on tint groups and in a sidebar
   ...text("destructive-ink", ["background", "tint", "popover"]),
+  // plan 214: What matters' Missed when, and its gutter marks (Missed's, today's), on the feed's pane, a hovered row and
+  // the open one (the marks stay as you act on it; the open row's words are the selection's ink, red there fails AA)
+  ...text("destructive-ink", ["pane", "row-hover"]),
+  ...ui("destructive", ["pane", "row-hover", "row-selected"]),
+  ...ui("unread", ["pane", "row-hover"]),
   ...text("success-ink", ["background", "tint"]),
   ...ui("ring", ["tint", "sidebar"]),
   ...ui("primary", ["tint"]),

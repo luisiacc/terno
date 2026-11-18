@@ -245,7 +245,13 @@ test("an item: one sentence, when in its column, who under it; its conversation 
     await expect(page.locator("#reader-subject")).toHaveText("Wire payroll (payroll)");
     await expect(it).toHaveAttribute("data-open");
     await expect(feed(page)).toBeVisible();
+    // under the pointer, Done and Later; at rest, none (plan 214, after the second rating: the reader beside it has them,
+    // and who and when stay whole)
+    await it.hover();
     await expect(it.getByTestId("wm-controls")).toHaveCSS("opacity", "1");
+    await page.mouse.move(0, 0);
+    await expect(it.getByTestId("wm-controls")).toHaveCSS("opacity", "0");
+    await expect(page.getByTestId("thread-dated-done")).toBeVisible();
     await expect(open).toHaveAttribute("aria-expanded", "true");
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("reader")).toHaveCount(0);
@@ -709,20 +715,33 @@ test("plan 210 (iteration 4): 'to do today'; a broken promise first in Waiting o
     await expect(row.getByTestId("wm-when")).toHaveText(/^You said \w{3} \d{1,2} \(missed\)\u00a0·\u00a0needed \w{3}$/);
   });
 
-  await scenario("the sentence keeps two thirds of the row; beside the reader the when column goes under it", async () => {
+  await scenario("plan 214 (Ledger): the sentence is the row's whole width, wide and beside the reader; when ends the line under it, beside who", async () => {
     await reach(page, "send Jess the full");
     const row = openLine(page, "send Jess the full");
     const box = async (id: string) => row.getByTestId(id).evaluate((el) => el.getBoundingClientRect().toJSON() as DOMRect);
     const whole = async () => row.getByTestId("wm-item-open").evaluate((el) => el.getBoundingClientRect().width - 24);
-    expect((await box("wm-sentence")).width).toBeGreaterThanOrEqual((await whole()) * 0.66);
-    expect((await box("wm-when")).top).toBeLessThan((await box("wm-sentence")).bottom);
+    const laidOut = async () => {
+      const [sentence, when, meta] = [await box("wm-sentence"), await box("wm-when"), await box("wm-meta")];
+      return sentence.width >= (await whole()) * 0.9 && when.top >= sentence.bottom - 1 && meta.top >= sentence.bottom - 1 && when.left >= meta.right - 1;
+    };
+    expect(await laidOut()).toBe(true);
+    // Done and Later take when's place without moving anything: the row's height (what the virtualizer measured) holds
+    // under the pointer and under keyboard focus (Codex's critique of plan 214, point 1)
+    const height = () => row.evaluate((el) => el.getBoundingClientRect().height);
+    await page.mouse.move(0, 0);
+    const resting = await height();
+    await row.hover();
+    await expect(row.getByTestId("wm-done")).toBeVisible();
+    expect(await height()).toBe(resting);
+    await page.mouse.move(0, 0);
+    await row.getByTestId("wm-item-open").focus();
+    expect(await height()).toBe(resting);
     await row.getByTestId("wm-item-open").click();
     await expect(page.getByTestId("reader")).toBeVisible();
     await expect(row).toHaveAttribute("data-open", "true");
-    // narrow: under the sentence, above who, the sentence the row's whole width
-    await expect.poll(async () => (await box("wm-when")).top >= (await box("wm-sentence")).bottom - 1).toBe(true);
-    expect((await box("wm-meta")).top).toBeGreaterThanOrEqual((await box("wm-when")).bottom - 1);
-    expect((await box("wm-sentence")).width).toBeGreaterThanOrEqual((await whole()) * 0.9);
+    // narrow: the same two lines (Done and Later take when's place on the open row: it's measured with the row hovered away)
+    await page.mouse.move(0, 0);
+    await expect.poll(async () => (await box("wm-sentence")).width >= (await whole()) * 0.9).toBe(true);
     await expect(row.getByTestId("wm-sentence")).toContainText("You said you'd send Jess the full");
   });
 
