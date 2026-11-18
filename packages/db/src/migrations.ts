@@ -1643,6 +1643,23 @@ CREATE TABLE dated_mute_pairs (
   { version: 73, name: "What matters: the second look's claim (plan 210, iteration 5)", sql: `
 ALTER TABLE ai_dated_mail ADD COLUMN looked_at INTEGER;
 ` },
+  // plan 215: Done ("no reply needed") and Later on What matters' "Waiting on you" rows, a record per message (its thread is
+  // the message's, through merges; it goes with its message). The facts read Done; What matters reads Later by its moment;
+  // Earlier reads Done by its own. Shape only: an empty table and two partial indexes
+  { version: 74, name: "What matters: Done and Later on a conversation waiting on you (plan 215)", sql: `
+CREATE TABLE waiting_acts (
+  message_id INTEGER PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
+  state TEXT NOT NULL CHECK (state IN ('done', 'later')),
+  until INTEGER,
+  at INTEGER NOT NULL,
+  rev INTEGER NOT NULL,
+  who TEXT NOT NULL DEFAULT '',
+  subject TEXT NOT NULL DEFAULT '',
+  wrote INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX waiting_acts_done ON waiting_acts(at, message_id) WHERE state = 'done';
+CREATE INDEX waiting_acts_later ON waiting_acts(until, message_id) WHERE state = 'later';
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

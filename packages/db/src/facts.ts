@@ -1,4 +1,4 @@
-import { addressKey, automatedLevel, threadFactsNewestFirst, type Address, type ArrivalRow, type FactContext, type FactRow, type ThreadFacts } from "@terno/core";
+import { addressKey, automatedLevel, threadFactsNewestFirst, waitingFactsNewestFirst, type Address, type ArrivalRow, type FactContext, type FactRow, type ThreadFacts, type WaitingFacts } from "@terno/core";
 import type { Db } from "./sqlite";
 import { hidingSql, inboxHiding } from "./inbox-hiding";
 import { requestTabRefresh } from "./tabs";
@@ -69,6 +69,8 @@ export function factContext(db: Db, own: ReadonlySet<string>): FactContext {
     written: (key) => db.get<{ written: number }>("SELECT written FROM correspondents WHERE email = ?", key)?.written === 1,
     failedSend: (id) => failedSend(db, id),
     details: (id) => db.get<{ to_json: string; cc_json: string; rfc_message_id: string | null }>("SELECT to_json, cc_json, rfc_message_id FROM messages WHERE id = ?", id) ?? { to_json: "[]", cc_json: "[]", rfc_message_id: null },
+    // plan 215: Done on its waiting row, one primary-key lookup for a newest message that would otherwise wait
+    cleared: (id) => db.get("SELECT 1 FROM waiting_acts WHERE message_id = ? AND state = 'done'", id) !== undefined,
     answered: (rfcMessageId) => {
       // message_refs is keyed by (account_id, ref): a probe per account in one statement, the thread's own account
       // included (a Gmail thread id can put a reply in another thread of the same account)
@@ -104,12 +106,12 @@ export function recomputeContext(db: Db): FactContext | null {
   return factsPhase(db).phase === "senders" ? null : factContext(db, ownAddresses(db));
 }
 
-/** One thread's facts from its messages newest first, through messages_thread, a page at a time (Codex R10). */
-export function factsOf(db: Db, threadId: number, ctx: FactContext): ThreadFacts {
+/** A thread's messages newest first, through messages_thread, a page at a time (Codex R10). */
+function newestFirst(db: Db, threadId: number): () => FactRow | undefined {
   const sql = `SELECT id, date, from_email, is_sent, is_trash, is_spam, ${FACT_COLUMNS} FROM messages INDEXED BY messages_thread WHERE thread_id = ?`;
   let page: FactRow[] = db.all<FactRow>(`${sql} ORDER BY date DESC, id DESC LIMIT ${WALK_PAGE}`, threadId);
   let i = 0;
-  return threadFactsNewestFirst(() => {
+  return () => {
     if (i === page.length && page.length === WALK_PAGE) {
       const last = page[page.length - 1]!;
       // a row value: a range of the index (an OR would read the thread's rows from the start)
@@ -117,7 +119,27 @@ export function factsOf(db: Db, threadId: number, ctx: FactContext): ThreadFacts
       i = 0;
     }
     return page[i++];
-  }, ctx);
+  };
+}
+
+/** One thread's facts from its messages newest first, a bounded walk. */
+export function factsOf(db: Db, threadId: number, ctx: FactContext): ThreadFacts {
+  return threadFactsNewestFirst(newestFirst(db, threadId), ctx);
+}
+
+/** Plan 215: the same walk, with the message it judged waiting. */
+export const waitingFactsOf = (db: Db, threadId: number, ctx: FactContext): WaitingFacts => waitingFactsNewestFirst(newestFirst(db, threadId), ctx);
+
+/**
+ * Plan 215: a thread's `person` and `waiting_since` alone, again (Done and its Undo): the bounded walk, never the whole
+ * thread's recompute, marking search dirty when they change. Null while the backfill still collects your addresses.
+ */
+export function refreshFacts(db: Db, threadId: number): WaitingFacts | null {
+  const ctx = recomputeContext(db);
+  if (!ctx) return null;
+  const f = waitingFactsOf(db, threadId, ctx);
+  writeFacts(db, threadId, f);
+  return f;
 }
 
 /** Writes facts that changed, marking the thread for the search outbox; true when it wrote. */

@@ -1,5 +1,5 @@
 import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, parseHandedTo, readPartOfDay, DATED_MUTE_NAME_MAX, DATED_MUTE_PAIRS_MAX, DATED_MUTES_MAX, muteKey, pairKey, pairOf, senderIsPerson, THREAD_SCOPED_KINDS, waitingCutoff, type DatedMute, type DatedMuteOn, readWall, type DatedRow } from "@terno/core";
-import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, readNothingAsked, recipientList, type ClosedAt, type DatedFinish, type DatedFinishOutcome, type DatedMuteAdded, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
+import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, readNothingAsked, recipientList, WAITING_CLOSED, type ClosedAt, type DatedFinish, type DatedFinishOutcome, type DatedMuteAdded, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
 import { received, receivedOwn } from "./ai-summaries";
 import { remarkReplies } from "./followups";
 import { T, type Ctx, type R } from "./mail";
@@ -218,11 +218,15 @@ export function finishDated(c: Ctx, w: DatedFinish): DatedFinishOutcome {
   // plan 210 (iteration 4): a muted kind's new items aren't stored; its settlements and moves below still are
   // (iteration 5) nor are a kind's muted for this sender alone (its pairs, by sender): the rest of their mail is
   const kinds = new Set([...T(c, "dated_mutes").by("target", "kind").map((r) => String(r.key)), ...T(c, "dated_mute_pairs").by("sender", src.senderKey).map((r) => String(r.kind))]);
+  // plan 215: as SQL's, a request read from a message marked Done or put off on its waiting row follows that choice
+  const waiting = T(c, "waiting_acts").get(w.messageId) as { state: "done" | "later"; until: number | null } | undefined;
   for (const r of w.rows) {
     if (kinds.has(r.kind)) continue;
     if (rows.by("identity", w.messageId, r.item).length) continue;
+    const asked = waiting !== undefined && ANSWERED_KINDS.includes(r.kind);
+    const closed = asked && waiting.state === "done";
     // plan 210 (iteration 3): a request read after your reply is stored open like any other: only a reply's verdict settles it
-    if (open >= DATED_ACTIVE_MAX) {
+    if (!closed && open >= DATED_ACTIVE_MAX) {
       // the bound keeps the soonest: the furthest of them all isn't added
       let furthest: R | undefined;
       for (const x of rows.by("state", "open")) if (!furthest || byAct(x, furthest) > 0) furthest = x;
@@ -232,10 +236,10 @@ export function finishDated(c: Ctx, w: DatedFinish): DatedFinishOutcome {
     }
     rows.put({
       thread_id: src.threadId, message_id: w.messageId, item: r.item, kind: r.kind, text: r.text, quote: r.quote, sender_key: src.senderKey, due_day: r.dueDay, due_at: r.dueAt, timed: r.timed ? 1 : 0, dated: r.dated ? 1 : 0, act_at: r.actAt,
-      deferred_until: null, arrived_at: src.date, state: "open", closed_reason: null, closed_at: null, from_scan: w.fromScan ? 1 : 0, revision: 0, model: w.model, provider: w.provider, prompt_version: w.promptVersion, created_at: w.now, early: r.early ? 1 : 0, lapses: r.lapses ? 1 : 0,
+      deferred_until: !closed && asked && waiting.until !== null && waiting.until > w.now ? waiting.until : null, arrived_at: src.date, state: closed ? "dismissed" : "open", closed_reason: closed ? WAITING_CLOSED : null, closed_at: closed ? w.now : null, from_scan: w.fromScan ? 1 : 0, revision: 0, model: w.model, provider: w.provider, prompt_version: w.promptVersion, created_at: w.now, early: r.early ? 1 : 0, lapses: r.lapses ? 1 : 0,
       before_day: r.before ?? null, confirms: null, wall: wallRecord(r.wall), part_of_day: r.partOfDay ?? null,
     });
-    open++;
+    if (!closed) open++;
   }
   // plan 210 (iteration 4, revision 11): as SQL's, an ask that confirms an event of this message, linked to that event's row
   for (const r of w.rows) {

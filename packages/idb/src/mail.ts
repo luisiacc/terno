@@ -104,7 +104,7 @@ export interface Ctx {
   /** the same order, per quick filter (unread, attachments, starred): a filtered page never walks the threads it leaves out */
   filterOrders: Record<ListFilter, ThreadOrder>;
   /** plan 210: closed items and closed promises of yours by closing time (SQLite's `dated_closed` and `followups_closed`) */
-  closedOrders: { dated: ClosedOrder; followups: ClosedOrder };
+  closedOrders: { dated: ClosedOrder; followups: ClosedOrder; /** plan 215: a waiting conversation's Done by `(at, message_id)` */ waiting: ClosedOrder };
   scopes: ScopeIndex;
   /** plan 17: the threads whose facts the backfill hasn't computed yet */
   facts: FactsQueue;

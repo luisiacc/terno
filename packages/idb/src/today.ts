@@ -29,7 +29,7 @@ export function needsWalk(c: Ctx, now: number): NeedsWalk {
     const t = threads.get(id)!;
     if (t.last_date < cutoff) break;
     if (t.waiting_since < cutoff || t.in_inbox !== 1 || hidden?.(id)) continue;
-    rows.push({ id, lastDate: t.last_date, from: String(t.last_from_email), subject: String(t.subject), hasSent: t.has_sent === 1 });
+    rows.push({ id, lastDate: t.last_date, waitingSince: t.waiting_since, from: String(t.last_from_email), subject: String(t.subject), hasSent: t.has_sent === 1 });
     if (rows.length >= NEEDS_WALK) break;
   }
   // plan 210 (iteration 4): as SQL's, a muted sender's conversations aren't waiting on you, nothing recorded for them; left
@@ -85,12 +85,12 @@ function stillWaiting(c: Ctx, threadId: number, ack: number | undefined, now: nu
   return shown(c, threadId).some((m) => m.created_at >= summary!.generated_at!);
 }
 
-export function waitingPage(c: Ctx, o: { after: { lastDate: number; id: number } | null; limit: number }, walk: NeedsWalk): { id: number; lastDate: number; hasSent: boolean }[] {
+export function waitingPage(c: Ctx, o: { after: { lastDate: number; id: number } | null; limit: number }, walk: NeedsWalk): { id: number; lastDate: number; hasSent: boolean; waitingSince: number }[] {
   const { after } = o;
   return needsRows(c, walk)
     .filter((r) => !after || r.lastDate < after.lastDate || (r.lastDate === after.lastDate && r.id < after.id))
     .slice(0, o.limit)
-    .map((r) => ({ id: r.id, lastDate: r.lastDate, hasSent: r.hasSent }));
+    .map((r) => ({ id: r.id, lastDate: r.lastDate, hasSent: r.hasSent, waitingSince: r.waitingSince }));
 }
 
 export function waitingAmong(c: Ctx, threadIds: readonly number[], walk: NeedsWalk): number[] {

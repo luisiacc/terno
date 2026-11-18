@@ -2,6 +2,7 @@ import { addressKey, CALENDAR_ANSWER_PREFIXES, SUMMARY_WHO_ACTS_SINCE, type Date
 import type { DatedSnapshot } from "./dated";
 import type { FollowupSnapshot } from "./followups";
 import type { ScheduleChanges, ScheduleSnapshots } from "./schedule";
+import type { WaitingActsStore } from "./waiting-acts";
 
 /**
  * Plan 210 (iteration 2): one act on the items a row is, each at the revision it was seen at. A dated item's patch is
@@ -73,6 +74,8 @@ export const NEEDS_WALK = 2000;
 export interface WaitingRow {
   id: number;
   lastDate: number;
+  /** plan 215: the conversation's `waiting_since` */
+  waitingSince: number;
   from: string;
   subject: string;
   hasSent: boolean;
@@ -120,7 +123,7 @@ export function summaryAsksNothing(row: { state: string; prompt_version: number 
 
 export interface TodayStore {
   /** What needs you (`needsYou`), newest first, among the newest `NEEDS_WALK` waiting: plan 17's "a person" holds any plain address, and on real mail most of it was a bank's and a service's notices. `after` is the last id of the page before */
-  waitingPage(o: { now: number; after: { lastDate: number; id: number } | null; limit: number }): Promise<{ id: number; lastDate: number; /** why `needsYou` let it in: you've written in it (else: new, from someone you write to) */ hasSent: boolean }[]>;
+  waitingPage(o: { now: number; after: { lastDate: number; id: number } | null; limit: number }): Promise<{ id: number; lastDate: number; /** why `needsYou` let it in: you've written in it (else: new, from someone you write to) */ hasSent: boolean; /** plan 215: its `waiting_since`, what Done and Later on its row name */ waitingSince: number }[]>;
   /** which of these threads the Inbox holds as waiting (a due follow-up may be one too: it counts once) */
   waitingAmong(threadIds: readonly number[], now: number): Promise<number[]>;
   /** how many `waitingPage` would walk: plan 145's own number (the Today perf gate's baseline) */
@@ -172,6 +175,8 @@ export interface TodayStore {
    * item's sender, not its conversation's latest. One read for the rows a list shows
    */
   fromOf(messageIds: readonly number[]): Promise<Map<number, { name: string; email: string }>>;
+  /** plan 215: Done and Later on a conversation waiting on you */
+  waiting: WaitingActsStore;
   digest: {
     get(day: string): Promise<DigestStored | null>;
     /** the newest at or before this day */

@@ -53,6 +53,8 @@ export function finishReply(db: Db, w: ReplyWrite): ReplyFinish {
     const sources = summarySources(db, w.threadId);
     if (!sources) return "gone";
     if (summaryBlocked(sources) || sources.stamp !== w.sourceStamp) return "moved";
+    // plan 215: a conversation that no longer waits (marked Done meanwhile: no reply needed) gets none, whatever its sources say
+    if (db.get<{ waiting_since: number | null }>("SELECT waiting_since FROM threads WHERE id = ?", w.threadId)?.waiting_since == null) return "moved";
     const prior = db.get<{ row_id: string; revision: number }>("SELECT row_id, revision FROM ai_prepared_replies WHERE thread_id = ?", w.threadId);
     if ((prior?.row_id ?? null) !== (w.expect?.rowId ?? null) || (prior && prior.revision !== w.expect?.revision)) return "moved";
     db.run(

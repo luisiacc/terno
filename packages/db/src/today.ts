@@ -11,8 +11,8 @@ import type { Db } from "./sqlite";
 function needsRows(db: Db, now: number): WaitingRow[] {
   const cutoff = waitingCutoff(now);
   const hiding = shownSql(inboxHiding(db));
-  const rows = db.all<{ id: number; last_date: number; last_from_email: string; subject: string; has_sent: number; snippet: string | null }>(
-    `SELECT id, last_date, last_from_email, subject, has_sent, snippet FROM threads INDEXED BY threads_waiting
+  const rows = db.all<{ id: number; last_date: number; last_from_email: string; subject: string; has_sent: number; snippet: string | null; waiting_since: number }>(
+    `SELECT id, last_date, last_from_email, subject, has_sent, snippet, waiting_since FROM threads INDEXED BY threads_waiting
      WHERE waiting_since IS NOT NULL AND last_date >= ? AND waiting_since >= ? AND in_inbox = 1${hiding.where}
      ORDER BY last_date DESC, id DESC LIMIT ?`,
     cutoff,
@@ -22,7 +22,7 @@ function needsRows(db: Db, now: number): WaitingRow[] {
   );
   const snippets = new Map(rows.map((r) => [r.id, r.snippet]));
   const needs = needsYou(
-    rows.map((r) => ({ id: r.id, lastDate: r.last_date, from: r.last_from_email, subject: r.subject, hasSent: r.has_sent === 1 })),
+    rows.map((r) => ({ id: r.id, lastDate: r.last_date, waitingSince: r.waiting_since, from: r.last_from_email, subject: r.subject, hasSent: r.has_sent === 1 })),
     (key) => db.get<{ written: number; own: number }>("SELECT written, own FROM correspondents WHERE email = ?", key),
   );
   // plan 210 (iteration 4): a muted sender's conversations aren't waiting on you in What matters, read once a walk; nothing
@@ -81,12 +81,12 @@ function stillWaiting(db: Db, threadId: number, snippet: string | null, now: num
   return !!db.get("SELECT 1 FROM messages INDEXED BY messages_thread WHERE thread_id = ? AND created_at >= ? AND is_draft = 0 AND is_spam = 0 AND is_trash = 0 LIMIT 1", threadId, summary!.generated_at);
 }
 
-export function waitingPage(db: Db, o: { now: number; after: { lastDate: number; id: number } | null; limit: number }): { id: number; lastDate: number; hasSent: boolean }[] {
+export function waitingPage(db: Db, o: { now: number; after: { lastDate: number; id: number } | null; limit: number }): { id: number; lastDate: number; hasSent: boolean; waitingSince: number }[] {
   const { after } = o;
   return needsRows(db, o.now)
     .filter((r) => !after || r.lastDate < after.lastDate || (r.lastDate === after.lastDate && r.id < after.id))
     .slice(0, o.limit)
-    .map((r) => ({ id: r.id, lastDate: r.lastDate, hasSent: r.hasSent }));
+    .map((r) => ({ id: r.id, lastDate: r.lastDate, hasSent: r.hasSent, waitingSince: r.waitingSince }));
 }
 
 export function waitingAmong(db: Db, threadIds: readonly number[], now: number): number[] {

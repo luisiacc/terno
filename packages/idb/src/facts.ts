@@ -1,4 +1,4 @@
-import { addressKey, automatedLevel, FACTS_WINDOW, newestMessages, threadFacts, type Address, type ArrivalRow, type FactContext, type FactRow, type ThreadFacts } from "@terno/core";
+import { addressKey, automatedLevel, FACTS_WINDOW, newestMessages, threadFacts, waitingFactsNewestFirst, type Address, type ArrivalRow, type FactContext, type FactRow, type ThreadFacts, type WaitingFacts } from "@terno/core";
 import type { MemDb, Row, Table } from "./mem";
 import { hiddenCategories, hiddenFromInbox, tabHiddenTest } from "./inbox-hidden";
 import { requestTabRefresh } from "./tabs";
@@ -195,6 +195,8 @@ export function factContext(db: MemDb, own: ReadonlySet<string>): FactContext {
     own: (key) => own.has(key),
     written: (key) => correspondents.get(key)?.written === 1,
     failedSend: (id) => failedSend(db, id),
+    // plan 215: Done on its waiting row (a key lookup, for a newest message that would otherwise wait)
+    cleared: (id) => t(db, "waiting_acts").get(id)?.state === "done",
     answered: (rfcMessageId) => {
       for (const a of t(db, "accounts").all()) {
         for (const ref of t(db, "message_refs").by("ref", a.id, rfcMessageId)) {
@@ -216,6 +218,32 @@ export function recomputeContext(db: MemDb): FactContext | null {
 
 export function factsOf(db: MemDb, threadId: number, ctx: FactContext): ThreadFacts {
   return threadFacts(t(db, "messages").by("fk_thread_id", threadId) as unknown as FactRow[], ctx);
+}
+
+/**
+ * Plan 215: a thread's facts with the message they judged waiting, its messages streamed through the newest FACTS_WINDOW
+ * (twice that held at most, never the thread's rows at once), then walked newest first, as SQLite's index walk reads them.
+ */
+export function waitingFactsOf(db: MemDb, threadId: number, ctx: FactContext): WaitingFacts {
+  const messages = t(db, "messages");
+  let rows: FactRow[] = [];
+  for (const key of messages.keysBy("fk_thread_id", threadId)) {
+    const m = messages.get(key);
+    if (m) rows.push(m as unknown as FactRow);
+    if (rows.length >= 2 * FACTS_WINDOW) rows = newestMessages(rows, FACTS_WINDOW);
+  }
+  const sorted = newestMessages(rows, FACTS_WINDOW).sort((a, b) => b.date - a.date || b.id - a.id);
+  let i = 0;
+  return waitingFactsNewestFirst(() => sorted[i++], ctx);
+}
+
+/** Plan 215: a thread's `person` and `waiting_since` alone, again (Done and its Undo); null while addresses are still collected. */
+export function refreshFacts(db: MemDb, threadId: number): WaitingFacts | null {
+  const ctx = recomputeContext(db);
+  if (!ctx) return null;
+  const f = waitingFactsOf(db, threadId, ctx);
+  writeFacts(db, threadId, f);
+  return f;
 }
 
 function writeFacts(db: MemDb, threadId: number, f: ThreadFacts | null): void {

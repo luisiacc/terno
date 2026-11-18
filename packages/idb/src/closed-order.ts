@@ -5,7 +5,7 @@ import type { R } from "./mail";
 /** Past this many changes since the last read, the order is rebuilt rather than patched (and nothing more is tracked). */
 const PATCH_MAX = 256;
 
-/** A closed row's place: newest first, the later closing, then the higher id. */
+/** A closed row's place: newest first, the later closing, then the higher key. */
 interface Entry {
   at: number;
   id: number;
@@ -30,7 +30,8 @@ function position(list: readonly Entry[], e: Entry): number {
  * newest first, kept as rows change (a closing, an Undo, a prune) rather than sorted for each page. A page is a binary
  * search to its key and a walk of `limit` rows. Built once, on the first read (rows loaded before it existed), as
  * `ThreadOrder` is; past `PATCH_MAX` changes unread (Clear AI data, a bulk prune) it's marked stale and tracks nothing more.
- * Plan 210 (iteration 2): a line per closed item, so no thread's own order any more.
+ * Plan 210 (iteration 2): a line per closed item, so no thread's own order any more. Plan 215: any table's moment and numeric
+ * key (`columns`): a waiting conversation's Done by `(at, message_id)`.
  */
 export class ClosedOrder {
   private all: Entry[] = [];
@@ -42,11 +43,12 @@ export class ClosedOrder {
     db: MemDb,
     private readonly table: string,
     private readonly keep: (row: R) => boolean,
+    private readonly columns: { key: string; at: string } = { key: "id", at: "closed_at" },
   ) {
     db.onRow((name, row, prev) => {
       if (name !== this.table || this.stale) return;
-      if (row && prev && row.closed_at === prev.closed_at && this.keep(row as R) === this.keep(prev as R)) return;
-      this.pending.add((row ?? prev)!.id as number);
+      if (row && prev && row[this.columns.at] === prev[this.columns.at] && this.keep(row as R) === this.keep(prev as R)) return;
+      this.pending.add((row ?? prev)![this.columns.key] as number);
       // too much to patch: rebuilt on the next read, and nothing more held meanwhile
       if (this.pending.size > PATCH_MAX) {
         this.stale = true;
@@ -56,7 +58,8 @@ export class ClosedOrder {
   }
 
   private entry(r: R): Entry | null {
-    return r.closed_at == null || !this.keep(r) ? null : { at: r.closed_at as number, id: r.id as number };
+    const at = r[this.columns.at];
+    return at == null || !this.keep(r) ? null : { at: at as number, id: r[this.columns.key] as number };
   }
 
   private add(e: Entry): void {

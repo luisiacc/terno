@@ -840,6 +840,24 @@ describe("migration v71: a part of the day (plan 210, iteration 5)", () => {
   });
 });
 
+describe("migration v74: Done and Later on a conversation waiting on you (plan 215)", () => {
+  it("adds an empty table with its two partial indexes, every message and thread kept as it was; a record goes with its message", () => {
+    const { db } = legacyMail(73, { threads: 3, seed: 17 });
+    const threads = db.all<Record<string, unknown>>("SELECT * FROM threads ORDER BY id");
+    const messages = db.all<Record<string, unknown>>("SELECT * FROM messages ORDER BY id");
+    expect(migrate(db)).toEqual({ from: 73, to: SCHEMA_VERSION });
+    expect(db.all<Record<string, unknown>>("SELECT * FROM threads ORDER BY id")).toEqual(threads);
+    expect(db.all<Record<string, unknown>>("SELECT * FROM messages ORDER BY id")).toEqual(messages);
+    expect(db.all("SELECT * FROM waiting_acts")).toEqual([]);
+    expect(db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'waiting_acts' AND sql IS NOT NULL ORDER BY name").map((r) => r.name)).toEqual(["waiting_acts_done", "waiting_acts_later"]);
+    const m = messages[0]!.id as number;
+    db.run("INSERT INTO waiting_acts (message_id, state, until, at, rev) VALUES (?, 'later', 9, 1, 1)", m);
+    expect(() => db.run("INSERT INTO waiting_acts (message_id, state, at, rev) VALUES (?, 'gone', 1, 1)", messages[1]!.id as number)).toThrow();
+    db.run("DELETE FROM messages WHERE id = ?", m);
+    expect(db.all("SELECT * FROM waiting_acts")).toEqual([]);
+  });
+});
+
 describe("migration v73: the second look's claim (plan 210, iteration 5)", () => {
   it("adds the mark's claim at none, every mark kept as it was (shape only)", () => {
     // the version just before it, whichever of iteration 5's others came first

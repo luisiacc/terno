@@ -40,10 +40,11 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  * the whole day, so no version change.
  * Version 37 adds a kind muted from one sender in What matters (SQL v72, plan 210, iteration 5).
  * SQL v73 (plan 210, iteration 5) adds `ai_dated_mail.looked_at`: absent on older marks reads as unclaimed, so no version change.
+ * Version 38 adds Done and Later on a conversation waiting on you (SQL v74, plan 215).
  */
 export { IDB_VERSION };
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 72;
+export const LOGICAL_SCHEMA = 74;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 
@@ -133,6 +134,8 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   { name: "dated_mutes", early: true, key: ["target", "key"], indexes: { target: ["target"] } },
   // plan 210 (iteration 5): a kind muted from one sender, by sender (the reader's finish reads one sender's)
   { name: "dated_mute_pairs", early: true, key: ["sender_key", "kind"], indexes: { sender: ["sender_key"] } },
+  // plan 215: Done and Later on a conversation waiting on you, a record per message (`done`, Earlier's; `later`, the deferrals)
+  { name: "waiting_acts", key: ["message_id"], indexes: { ...fk("message_id"), done: { columns: ["state"], where: (r) => r.state === "done" }, later: { columns: ["state"], where: (r) => r.state === "later" } } },
   { name: "send_copies", early: true, key: ["opId"], indexes: fk("accountId") },
   { name: "send_copy_bytes", key: ["id"], lazy: true },
   { name: "recipient_receipts", early: true, key: ["opId"], indexes: fk("accountId") },
@@ -216,6 +219,7 @@ export const FOREIGN_KEYS: readonly ForeignKey[] = [
   c("ai_dated_mail", "message_id", "messages"),
   c("dated_items", "thread_id", "threads"),
   c("dated_nothing_asked", "message_id", "messages"),
+  c("waiting_acts", "message_id", "messages"),
   c("writing_profiles", "account_id", "accounts"),
   c("writing_generations", "account_id", "accounts"),
   c("writing_generations", "draft_id", "drafts"),
@@ -415,6 +419,8 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
       if (event.oldVersion >= 1 && event.oldVersion < 36 && !db.objectStoreNames.contains("dated_mutes")) db.createObjectStore("dated_mutes");
       // plan 210, iteration 5 (likewise)
       if (event.oldVersion >= 1 && event.oldVersion < 37 && !db.objectStoreNames.contains("dated_mute_pairs")) db.createObjectStore("dated_mute_pairs");
+      // plan 215 (likewise)
+      if (event.oldVersion >= 1 && event.oldVersion < 38 && !db.objectStoreNames.contains("waiting_acts")) db.createObjectStore("waiting_acts");
       // plan 144 (likewise)
       if (event.oldVersion >= 1 && event.oldVersion < 31 && !db.objectStoreNames.contains("ai_prepared_replies")) db.createObjectStore("ai_prepared_replies");
       // plan 142 (likewise)

@@ -1,6 +1,7 @@
 import { ASK_MATCH_MESSAGES, ASK_MATCH_PARTS, CORPUS_TEXTS_MAX, finishBodyClose, rankSentRefs, readPassages, readThreadContext, type SentRef } from "@terno/store";
 import { ClosedOrder } from "./closed-order";
 import { actOnItems, fromOf, itemMembers, linkItems, liveAmong, restoreItems, needsCount, needsWalk, type NeedsWalk, messagesHere, senders, allDigests, beginDigest, clearDigests, digestFacts, digestLive, digestRead, getDigest, latestDigest, pendingDigestDays, pruneDigests, waitingAmong, waitingPage, writeDigest } from "./today";
+import { actOnWaiting, pruneWaiting, restoreWaiting, waitingDeferred, waitingDonePage, waitingRevs } from "./waiting-acts";
 import { scheduleItems, unscheduleItems } from "./schedule";
 import { clearReplies, finishReply, getReply, transitionReply } from "./replies";
 import { activeDated, addDatedMute, datedMutes, removeDatedMute, closedDatedPage, claimDatedLook, clearDated, datedMarkCount, datedPendingOn, datedMarkPage, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, datedWritten, updateDated } from "./dated";
@@ -309,7 +310,7 @@ export class IdbMailStore implements MailStore {
     const filterOrders = Object.fromEntries(LIST_FILTERS.map((f) => [f, new ThreadOrder(db, FILTER_TEST[f])])) as Record<ListFilter, ThreadOrder>;
     const facts = new FactsQueue(db);
     const scopes = new ScopeIndex(db);
-    const closedOrders = { dated: new ClosedOrder(db, "dated_items", (r) => r.state !== "open"), followups: new ClosedOrder(db, "followups", (r) => r.kind === "promise" && (r.state === "done" || r.state === "dismissed")) };
+    const closedOrders = { dated: new ClosedOrder(db, "dated_items", (r) => r.state !== "open"), followups: new ClosedOrder(db, "followups", (r) => r.kind === "promise" && (r.state === "done" || r.state === "dismissed")), waiting: new ClosedOrder(db, "waiting_acts", (r) => r.state === "done", { key: "message_id", at: "at" }) };
     const bodies = db.table<R>("message_bodies");
     this.c = {
       db,
@@ -2022,6 +2023,15 @@ export class IdbMailStore implements MailStore {
     messagesHere: (ids) => this.read(() => messagesHere(this.c, ids)),
     senders: (ids) => this.read(() => senders(this.c, ids)),
     fromOf: (ids) => this.read(() => fromOf(this.c, ids)),
+    // plan 215: an act and its Undo are one command (the facts, the record and the reader's items together)
+    waiting: {
+      act: (o) => this.command(() => actOnWaiting(this.c, o)),
+      restore: (s) => this.command(() => restoreWaiting(this.c, s)),
+      revs: (threads) => this.read(() => waitingRevs(this.c, threads)),
+      deferred: (now, limit) => this.read(() => waitingDeferred(this.c, now, limit)),
+      donePage: (o) => this.read(() => waitingDonePage(this.c, o)),
+      prune: (now) => this.command(() => pruneWaiting(this.c, now)),
+    },
     digest: {
       get: (day) => this.read(() => getDigest(this.c, day)),
       latest: (day) => this.read(() => latestDigest(this.c, day)),

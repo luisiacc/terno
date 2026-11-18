@@ -1,5 +1,5 @@
 import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, parseHandedTo, readPartOfDay, DATED_MUTE_NAME_MAX, DATED_MUTE_PAIRS_MAX, DATED_MUTES_MAX, muteKey, pairOf, senderIsPerson, THREAD_SCOPED_KINDS, waitingCutoff, type DatedMute, type DatedMuteOn, type DatedRow } from "@terno/core";
-import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, readNothingAsked, recipientList, type ClosedAt, type DatedFinish, type DatedFinishOutcome, type DatedMuteAdded, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
+import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, readNothingAsked, recipientList, WAITING_CLOSED, type ClosedAt, type DatedFinish, type DatedFinishOutcome, type DatedMuteAdded, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
 import { OWN_SENDER_SQL, RECEIVED_SQL } from "./ai-summaries";
 import { ownAddresses } from "./facts";
 import { remarkReplies } from "./followups";
@@ -204,9 +204,21 @@ export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
     // plan 210 (iteration 4): a muted kind's new items aren't stored; its settlements and moves below still are
     // (iteration 5) nor are a kind's muted for this sender alone (its pairs, by the key's prefix): the rest of their mail is
     const kinds = new Set(db.all<{ key: string }>("SELECT key FROM dated_mutes WHERE target = 'kind' UNION ALL SELECT kind FROM dated_mute_pairs WHERE sender_key = ?", src.senderKey).map((r) => r.key));
+    // plan 215: their message marked as needing no reply, or put off with Later on its waiting row: a request read from it
+    // follows that choice (stored closed, or put off to the same moment), so the same request never comes back as a task
+    const waiting = db.get<{ state: "done" | "later"; until: number | null }>("SELECT state, until FROM waiting_acts WHERE message_id = ?", w.messageId);
     for (const r of w.rows) {
       if (kinds.has(r.kind)) continue;
       if (db.get("SELECT 1 FROM dated_items WHERE message_id = ? AND item = ?", w.messageId, r.item)) continue;
+      const asked = waiting !== undefined && ANSWERED_KINDS.includes(r.kind);
+      if (asked && waiting.state === "done") {
+        db.run(
+          `INSERT OR IGNORE INTO dated_items (thread_id, message_id, item, kind, text, quote, sender_key, due_day, due_at, timed, dated, act_at, deferred_until, arrived_at, state, closed_reason, closed_at, from_scan, revision, model, provider, prompt_version, created_at, early, lapses, before_day, wall, part_of_day)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 'dismissed', ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          src.threadId, w.messageId, r.item, r.kind, r.text, r.quote, src.senderKey, r.dueDay, r.dueAt, r.timed ? 1 : 0, r.dated ? 1 : 0, r.actAt, src.date, WAITING_CLOSED, w.now, w.fromScan ? 1 : 0, w.model, w.provider, w.promptVersion, w.now, r.early ? 1 : 0, r.lapses ? 1 : 0, r.before ?? null, wallJson(r.wall), r.partOfDay ?? null,
+        );
+        continue;
+      }
       // plan 210 (iteration 3): a request read after your reply is stored open like any other: only a reply's verdict settles it
       if (open >= DATED_ACTIVE_MAX) {
         // the bound keeps the soonest: the furthest of them all isn't added
@@ -217,8 +229,8 @@ export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
       }
       open += Number(db.run(
         `INSERT OR IGNORE INTO dated_items (thread_id, message_id, item, kind, text, quote, sender_key, due_day, due_at, timed, dated, act_at, deferred_until, arrived_at, state, from_scan, revision, model, provider, prompt_version, created_at, early, lapses, before_day, wall, part_of_day)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 'open', ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        src.threadId, w.messageId, r.item, r.kind, r.text, r.quote, src.senderKey, r.dueDay, r.dueAt, r.timed ? 1 : 0, r.dated ? 1 : 0, r.actAt, src.date, w.fromScan ? 1 : 0, w.model, w.provider, w.promptVersion, w.now, r.early ? 1 : 0, r.lapses ? 1 : 0, r.before ?? null, wallJson(r.wall), r.partOfDay ?? null,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        src.threadId, w.messageId, r.item, r.kind, r.text, r.quote, src.senderKey, r.dueDay, r.dueAt, r.timed ? 1 : 0, r.dated ? 1 : 0, r.actAt, asked && waiting.until !== null && waiting.until > w.now ? waiting.until : null, src.date, w.fromScan ? 1 : 0, w.model, w.provider, w.promptVersion, w.now, r.early ? 1 : 0, r.lapses ? 1 : 0, r.before ?? null, wallJson(r.wall), r.partOfDay ?? null,
       ).changes);
     }
     // plan 210 (iteration 4, revision 11): an ask that confirms an event of this message, linked to that event's row

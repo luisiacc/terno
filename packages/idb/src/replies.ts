@@ -33,6 +33,8 @@ export function finishReply(c: Ctx, w: ReplyWrite): ReplyFinish {
   const sources = summarySources(c, w.threadId);
   if (!sources) return "gone";
   if (summaryBlocked(sources) || sources.stamp !== w.sourceStamp) return "moved";
+  // plan 215: as SQL's: a conversation that no longer waits gets none, whatever its sources say
+  if (T(c, "threads").get(w.threadId)?.waiting_since == null) return "moved";
   const table = T(c, "ai_prepared_replies");
   const prior = table.get(w.threadId);
   if ((prior?.row_id ?? null) !== (w.expect?.rowId ?? null) || (prior && prior.revision !== w.expect?.revision)) return "moved";
