@@ -1,5 +1,5 @@
 import { ANSWERED_KINDS, type DatedKind } from "@terno/core";
-import { WAITING_CLOSED, waitingWords, type ClosedAt, type WaitingActRecord, type WaitingActState, type WaitingDone, type WaitingRowFacts, type WaitingSnapshot } from "@terno/store";
+import { WAITING_CLOSED, waitingWords, type ClosedAt, type DatedSnapshot, type WaitingActRecord, type WaitingActState, type WaitingDone, type WaitingRowFacts, type WaitingSnapshot } from "@terno/store";
 import { recomputeContext, refreshFacts, waitingFactsOf, writeFacts } from "./facts";
 import { T, type Ctx, type R } from "./mail";
 
@@ -15,19 +15,37 @@ function write(c: Ctx, r: WaitingActRecord): void {
   T(c, "waiting_acts").put({ message_id: r.messageId, state: r.state, until: r.until, at: r.at, rev: r.rev, who: r.who, subject: r.subject, wrote: r.wrote ? 1 : 0 });
 }
 
-/** As SQL's `followItems`: the reader's requests from the message follow the record from `from` to `to`, before or after. */
-function followItems(c: Ctx, messageId: number, from: WaitingActRecord | null, to: WaitingActRecord | null, now: number): void {
+const asked = (d: R): boolean => ANSWERED_KINDS.includes(d.kind as DatedKind);
+
+/** As SQL's `applyItems`: the reader's open requests from the message follow the act, each snapshot kept for its Undo. */
+function applyItems(c: Ctx, messageId: number, from: WaitingActRecord | null, to: WaitingActRecord, now: number): DatedSnapshot[] {
   const items = T(c, "dated_items");
+  const changed: DatedSnapshot[] = [];
   for (const d of items.by("message", messageId)) {
-    if (!ANSWERED_KINDS.includes(d.kind as DatedKind)) continue;
-    if (to?.state === "done") {
-      if (from?.state !== "done" && d.state === "open") items.update(d, { state: "dismissed", closed_reason: WAITING_CLOSED, closed_at: now, revision: d.revision + 1 });
-    } else if (from?.state === "done") {
-      if (d.state === "dismissed" && d.closed_reason === WAITING_CLOSED) items.update(d, { state: "open", closed_reason: null, closed_at: null, deferred_until: d.deferred_until ?? to?.until ?? null, revision: d.revision + 1 });
-    } else if (d.state !== "open") continue;
-    else if (from?.state === "later") {
-      if (d.deferred_until === from.until) items.update(d, { deferred_until: to?.until ?? null });
-    } else if (to?.state === "later" && d.deferred_until == null) items.update(d, { deferred_until: to.until });
+    if (!asked(d) || d.state !== "open") continue;
+    const until = (d.deferred_until ?? null) as number | null;
+    if (to.state === "later" && !(until === null || until <= now || (from?.state === "later" && until === from.until))) continue;
+    changed.push({ id: d.id, revision: d.revision, state: d.state, deferredUntil: until, closedReason: d.closed_reason ?? null, closedAt: d.closed_at ?? null });
+    items.update(d, to.state === "done" ? { state: "dismissed", closed_reason: WAITING_CLOSED, closed_at: now, revision: d.revision + 1 } : { deferred_until: to.until, revision: d.revision + 1 });
+  }
+  return changed;
+}
+
+/** As SQL's `unapplyItems`: what the act changed back at its revision, what the reader stored since as the restored record would have. */
+function unapplyItems(c: Ctx, s: WaitingSnapshot, current: WaitingActRecord): void {
+  const items = T(c, "dated_items");
+  for (const i of s.items) {
+    const d = items.get(i.id);
+    if (d && d.revision === i.revision + 1) items.update(d, { state: i.state, deferred_until: i.deferredUntil, closed_reason: i.closedReason, closed_at: i.closedAt, revision: i.revision });
+  }
+  const later = s.before?.state === "later" ? s.before.until : null;
+  for (const d of items.by("message", s.messageId)) {
+    if (!asked(d) || d.revision !== 0) continue;
+    if (current.state === "done") {
+      if (s.before?.state !== "done" && d.state === "dismissed" && d.closed_reason === WAITING_CLOSED) items.update(d, { state: "open", closed_reason: null, closed_at: null, deferred_until: later, revision: 1 });
+    } else if (d.state === "open" && d.deferred_until === current.until) {
+      items.update(d, s.before?.state === "done" ? { state: "dismissed", closed_reason: WAITING_CLOSED, closed_at: s.before.at, revision: 1 } : { deferred_until: later, revision: 1 });
+    }
   }
 }
 
@@ -42,10 +60,10 @@ export function actOnWaiting(c: Ctx, o: { threadId: number; since: number; messa
   const t = T(c, "threads").get(o.threadId)!;
   const next: WaitingActRecord = { messageId: f.waitingMessageId, state: o.state, until: o.state === "later" ? o.until : null, at: o.now, rev: o.rev + 1, who: waitingWords(m.from_name || m.from_email), subject: waitingWords(t.subject), wrote: t.has_sent === 1 };
   write(c, next);
-  followItems(c, next.messageId, before, next, o.now);
+  const items = applyItems(c, next.messageId, before, next, o.now);
   // its newest message cleared is answered: the walk would say no more than that (one walk an act: Codex code review 1, #8)
   if (o.state === "done") writeFacts(c.db, o.threadId, { person: f.person, waitingSince: null });
-  return { messageId: next.messageId, threadId: o.threadId, rev: next.rev, before };
+  return { messageId: next.messageId, threadId: o.threadId, rev: next.rev, before, items };
 }
 
 export function restoreWaiting(c: Ctx, s: WaitingSnapshot): number | null {
@@ -53,19 +71,19 @@ export function restoreWaiting(c: Ctx, s: WaitingSnapshot): number | null {
   if (!current || current.rev !== s.rev) return null;
   if (s.before) write(c, s.before);
   else T(c, "waiting_acts").delete(s.messageId);
-  followItems(c, s.messageId, current, s.before, current.at);
+  unapplyItems(c, s, current);
   const thread = T(c, "messages").get(s.messageId)!.thread_id as number;
   refreshFacts(c.db, thread);
   return thread;
 }
 
-/** As SQL's: the waiting message is the newest shown one at the waiting date (a walk of the thread's keys, in memory). */
+/** As SQL's: the waiting message is the newest received, shown one at the waiting date (a walk of the thread's keys, in memory). */
 function waitingMessage(c: Ctx, threadId: number, since: number): number | null {
   const messages = T(c, "messages");
   let best: number | null = null;
   for (const key of messages.keysBy("fk_thread_id", threadId)) {
     const m = messages.get(key);
-    if (m && m.date === since && !m.is_draft && !m.is_trash && !m.is_spam && (best === null || m.id > best)) best = m.id;
+    if (m && m.date === since && !m.is_sent && !m.is_draft && !m.is_trash && !m.is_spam && (best === null || m.id > best)) best = m.id;
   }
   return best;
 }

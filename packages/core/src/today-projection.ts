@@ -388,7 +388,8 @@ export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFact
     }
     const plan = lead.source === "dated" && datedGroup(lead.row.kind) === "plans";
     if (!plan && at.group !== "comingUp") represented.add(lead.row.threadId);
-    if (!plan) anywhere.add(lead.row.threadId);
+    // (every member's conversation: a merged row stands for each of them, Codex code review 2, #6)
+    if (!plan) for (const e of item.entries) anywhere.add(e.row.threadId);
     const early = lead.source === "dated" && at.group === "today" && shownEarly(lead.row, today);
     // the count needs only what `todayCounted` and `waitsOnYou` read: no words made
     const why: TodayWhy = o.count

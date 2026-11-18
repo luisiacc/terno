@@ -127,7 +127,8 @@ export class ReplyService {
       const ai = await this.b.aiService.forTask("reply");
       const { key, waiting } = await this.generationKey(p, ai);
       if (stored?.sourceStamp === now.stamp) {
-        if (stored.state === "ready" && stored.generationKey === key && stored.body) return { status: "ready", row: stored };
+        // plan 215: read again after the key's wait: a conversation marked Done meanwhile gets nothing (Codex code review 2, #4)
+        if (stored.state === "ready" && stored.generationKey === key && stored.body) return (await this.eligible(p.threadId, now.stamp)) ? { status: "ready", row: stored } : { status: "none" };
         // whatever was decided at this state stands, and reopening costs nothing
         if (stored.state !== "ready") return { status: "none" };
       }
@@ -264,10 +265,6 @@ export class ReplyService {
     this.b.server.emit("aiReply", { threadId: 0, phase: "cleared" }, { origins: ["renderer", "dev"] });
   }
 
-  private async waits(threadId: number): Promise<boolean> {
-    return (await this.b.store.threads.summaries([threadId]))[0]?.waitingSince != null;
-  }
-
   /** Each only from the state it saw. Use also holds to the same thread, the same people and the same settings (revision 7). */
   async act(p: Act): Promise<PreparedReply | null> {
     const { store } = this.b;
@@ -287,13 +284,13 @@ export class ReplyService {
         if (key !== row.generationKey) return null;
         return store.replies.transition(p.threadId, from, "used");
       }
-      // plan 215: brought back only while the conversation still waits (marked Done meanwhile: no reply needed)
+      // plan 215: back to ready only while the conversation still waits (the store checks it in the transition itself)
       case "restore":
-        return row.state === "used" && (await this.waits(p.threadId)) ? store.replies.transition(p.threadId, from, "ready") : null;
+        return row.state === "used" ? store.replies.transition(p.threadId, from, "ready") : null;
       case "dismiss":
         return row.state === "ready" ? store.replies.transition(p.threadId, from, "dismissed") : null;
       case "undismiss":
-        return row.state === "dismissed" && row.body && (await this.waits(p.threadId)) ? store.replies.transition(p.threadId, from, "ready") : null;
+        return row.state === "dismissed" && row.body ? store.replies.transition(p.threadId, from, "ready") : null;
     }
   }
 }

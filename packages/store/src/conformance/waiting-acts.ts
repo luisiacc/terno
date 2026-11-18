@@ -51,7 +51,7 @@ export function defineWaitingActsConformance(fresh: () => Promise<MailStore>): v
       expect(await store.today.waiting.act({ threadId: ana.thread, since: NOW - 2 * DAY, message: ana.message, rev: 0, state: "done", until: null, now: NOW })).toBeNull();
       expect(await store.today.waiting.act({ threadId: ana.thread, since: NOW - DAY, message: ana.message, rev: 1, state: "done", until: null, now: NOW })).toBeNull();
       const done = await store.today.waiting.act({ threadId: ana.thread, since: NOW - DAY, message: ana.message, rev: 0, state: "done", until: null, now: NOW });
-      expect(done).toEqual({ messageId: ana.message, threadId: ana.thread, rev: 1, before: null });
+      expect(done).toEqual({ messageId: ana.message, threadId: ana.thread, rev: 1, before: null, items: [] });
       expect(await since(ana.thread)).toBeNull();
       expect(await waitingIds()).toEqual([bea.thread]);
       expect((await store.threads.counts(NOW)).inboxWaiting).toBe(1);
@@ -90,7 +90,7 @@ export function defineWaitingActsConformance(fresh: () => Promise<MailStore>): v
       const { store, talk, again, since, waitingIds, page, rows } = await setup();
       const ana = await talk("Ana", NOW - DAY);
       const later = await store.today.waiting.act({ threadId: ana.thread, since: NOW - DAY, message: ana.message, rev: 0, state: "later", until: NOW + DAY, now: NOW });
-      expect(later).toEqual({ messageId: ana.message, threadId: ana.thread, rev: 1, before: null });
+      expect(later).toEqual({ messageId: ana.message, threadId: ana.thread, rev: 1, before: null, items: [] });
       expect(await since(ana.thread)).toBe(NOW - DAY);
       expect(await waitingIds()).toEqual([ana.thread]);
       // Needs you's walk still has it: What matters places it by its row's deferral (the projection), the same rules holding
@@ -197,6 +197,38 @@ export function defineWaitingActsConformance(fresh: () => Promise<MailStore>): v
       expect(await of()).toEqual([]);
     });
 
+    it("Codex code review 2: Undo puts back only what the act changed, each item's revision moving with it", async () => {
+      const { store, talk } = await setup();
+      const ana = await talk("Ana", NOW - DAY);
+      const ask = (item: number) => ({ kind: "ask" as const, item, text: `Ask ${item}`, quote: "q", dueDay: "2026-11-18", dueAt: NOW + DAY, timed: false, dated: false, actAt: NOW });
+      await store.dated.marks.queueScan([ana.message], NOW);
+      await store.dated.finish({ messageId: ana.message, threadId: ana.thread, fromScan: true, rows: [ask(0), ask(1)], settled: [], now: NOW, model: "m", provider: "p", promptVersion: 1, clearGeneration: store.dated.clearGeneration() });
+      const [mine, other] = (await store.dated.ofThread(ana.thread)).sort((a, b) => a.item - b.item);
+      // the first put off to Friday by the user's own Later; the conversation's Later to that very Friday leaves it as it is
+      const friday = NOW + 3 * DAY;
+      await store.dated.update(mine!.id, mine!.revision, { deferredUntil: friday });
+      const own = (await store.dated.get(mine!.id))!;
+      const later = await store.today.waiting.act({ threadId: ana.thread, since: NOW - DAY, message: ana.message, rev: 0, state: "later", until: friday, now: NOW });
+      expect(later!.items.map((i) => i.id)).toEqual([other!.id]);
+      // the one it put off moved its revision: an act on it as it was seen before is refused
+      expect(await store.dated.update(other!.id, other!.revision, { state: "done" })).toBeNull();
+      await store.today.waiting.restore(later!);
+      expect((await store.dated.get(mine!.id))!.deferredUntil).toBe(friday);
+      expect((await store.dated.get(mine!.id))!.revision).toBe(own.revision);
+      expect((await store.dated.get(other!.id))!.deferredUntil).toBeNull();
+    });
+
+    it("Codex code review 2: a failed send of yours at the same moment is never the row's message", async () => {
+      const { store, accountId, talk, rows } = await setup();
+      const ana = await talk("Ana", NOW - DAY);
+      const { opId } = await store.compose.queueSend({ accountId, to: [ana.them], cc: [], bcc: [], subject: "Re: x", bodyText: "Sí", inReplyToMessageId: ana.message, recordReply: false, now: NOW - DAY });
+      await store.ops.claimReady(NOW, 10);
+      expect(await store.ops.fail(opId, "rejected", false, NOW)).toBe("failed");
+      expect((await store.threads.summaries([ana.thread]))[0]!.waitingSince).toBe(NOW - DAY);
+      expect((await rows(ana.thread, NOW - DAY))?.message).toBe(ana.message);
+      expect(await store.today.waiting.act({ threadId: ana.thread, since: NOW - DAY, message: ana.message, rev: 0, state: "done", until: null, now: NOW })).toMatchObject({ messageId: ana.message });
+    });
+
     it("Reply ready stops: a reply written for a conversation marked Done meanwhile isn't kept, whatever its sources say", async () => {
       const { store, talk } = await setup();
       const ana = await talk("Ana", NOW - DAY);
@@ -208,6 +240,13 @@ export function defineWaitingActsConformance(fresh: () => Promise<MailStore>): v
       expect(await store.replies.get(ana.thread)).toBeNull();
       await store.today.waiting.restore(done!);
       expect(await store.replies.finish(write)).toBe("written");
+      // and one written before isn't made ready again once it's Done (in the transition itself)
+      const row = (await store.replies.get(ana.thread))!;
+      const dismissed = (await store.replies.transition(ana.thread, { rowId: row.rowId, state: "ready", revision: row.revision }, "dismissed"))!;
+      const again = await store.today.waiting.act({ threadId: ana.thread, since: NOW - DAY, message: ana.message, rev: 0, state: "done", until: null, now: NOW });
+      expect(await store.replies.transition(ana.thread, { rowId: row.rowId, state: "dismissed", revision: dismissed.revision }, "ready")).toBeNull();
+      await store.today.waiting.restore(again!);
+      expect(await store.replies.transition(ana.thread, { rowId: row.rowId, state: "dismissed", revision: dismissed.revision }, "ready")).toMatchObject({ state: "ready" });
     });
 
     it("a long conversation: the act walks its newest messages only, and judges the same message", async () => {

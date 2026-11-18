@@ -54,6 +54,13 @@ describe("plan 215: a conversation waiting on you, put off with Later", () => {
     expect(back.counts.waiting).toBe(2);
   });
 
+  it("Codex code review 2: a merged row stands for every member's conversation: none beside it", () => {
+    const lead = dated("ask", null, { threadId: 1, deferredUntil: friday });
+    const member = dated("ask", null, { threadId: 5, deferredUntil: friday, sameAs: `dated:${lead.id}` });
+    const put = waiting.map((w) => (w.id === 5 ? { ...w, deferredUntil: friday } : w));
+    expect(projectToday(facts({ dated: [lead, member], waiting: put })).rows.map((r) => r.id).sort()).toEqual([`dated:${lead.id}`, "waiting:4"].sort());
+  });
+
   it("an item of the conversation placed anywhere says it, Coming up's too (the reader's request put off with it): no row of its own", () => {
     const ask = dated("ask", null, { threadId: 5, deferredUntil: friday });
     const put = waiting.map((w) => (w.id === 5 ? { ...w, deferredUntil: friday } : w));

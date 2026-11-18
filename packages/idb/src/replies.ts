@@ -53,6 +53,8 @@ export function transitionReply(c: Ctx, threadId: number, from: { rowId: string;
   const table = T(c, "ai_prepared_replies");
   const r = table.get(threadId);
   if (!r || r.row_id !== from.rowId || r.state !== from.state || r.revision !== from.revision) return null;
+  // plan 215: as SQL's, never ready again for a conversation that no longer waits
+  if (to === "ready" && T(c, "threads").get(threadId)?.waiting_since == null) return null;
   table.update(r, { state: to, revision: r.revision + 1 });
   return getReply(c, threadId);
 }

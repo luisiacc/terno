@@ -1,4 +1,4 @@
-import { WAITING_CLOSED, waitingWords, type ClosedAt, type WaitingActRecord, type WaitingActState, type WaitingDone, type WaitingRowFacts, type WaitingSnapshot } from "@terno/store";
+import { WAITING_CLOSED, waitingWords, type ClosedAt, type DatedSnapshot, type WaitingActRecord, type WaitingActState, type WaitingDone, type WaitingRowFacts, type WaitingSnapshot } from "@terno/store";
 import { recomputeContext, refreshFacts, waitingFactsOf } from "./facts";
 import type { Db } from "./sqlite";
 
@@ -29,23 +29,38 @@ function write(db: Db, r: WaitingActRecord): void {
 const ASKED = "kind IN ('ask', 'respond')";
 
 /**
- * The dated reader's requests from the message follow the conversation's record from `from` to `to` (an act, or its Undo),
- * whenever the reader read it, before or after: Done closes them (as `waiting`: the waiting line says it), Later puts off
- * those not put off already to its moment, another Later moves what it put off, an Undo puts each back. What the user did
- * to an item alone (their own Later) is left as it is.
+ * The dated reader's requests from the message (read before the act) follow it: Done closes the open ones (as `waiting`:
+ * the waiting line says it); Later puts off those not put off to a moment of the user's own (none, one passed, or the Later
+ * it replaces). Each changed one's revision moves and its snapshot is the act's, so Undo puts back exactly what it changed
+ * (Codex code review 2, #1, #2).
  */
-function followItems(db: Db, messageId: number, from: WaitingActRecord | null, to: WaitingActRecord | null, now: number): void {
-  if (to?.state === "done") {
-    if (from?.state !== "done") db.run(`UPDATE dated_items SET state = 'dismissed', closed_reason = ?, closed_at = ?, revision = revision + 1 WHERE message_id = ? AND ${ASKED} AND state = 'open'`, WAITING_CLOSED, now, messageId);
-    return;
+function applyItems(db: Db, messageId: number, from: WaitingActRecord | null, to: WaitingActRecord, now: number): DatedSnapshot[] {
+  const rows = db.all<{ id: number; revision: number; state: DatedSnapshot["state"]; deferred_until: number | null; closed_reason: string | null; closed_at: number | null }>(
+    `SELECT id, revision, state, deferred_until, closed_reason, closed_at FROM dated_items WHERE message_id = ? AND ${ASKED} AND state = 'open'`,
+    messageId,
+  );
+  const changed: DatedSnapshot[] = [];
+  for (const r of rows) {
+    if (to.state === "later" && !(r.deferred_until === null || r.deferred_until <= now || (from?.state === "later" && r.deferred_until === from.until))) continue;
+    if (to.state === "done") db.run("UPDATE dated_items SET state = 'dismissed', closed_reason = ?, closed_at = ?, revision = revision + 1 WHERE id = ?", WAITING_CLOSED, now, r.id);
+    else db.run("UPDATE dated_items SET deferred_until = ?, revision = revision + 1 WHERE id = ?", to.until, r.id);
+    changed.push({ id: r.id, revision: r.revision, state: r.state, deferredUntil: r.deferred_until, closedReason: r.closed_reason, closedAt: r.closed_at });
   }
-  if (from?.state === "done") {
-    // back open; put off again to the Later it had (one read after the Done was stored closed with none)
-    db.run(`UPDATE dated_items SET state = 'open', closed_reason = NULL, closed_at = NULL, deferred_until = coalesce(deferred_until, ?), revision = revision + 1 WHERE message_id = ? AND ${ASKED} AND state = 'dismissed' AND closed_reason = ?`, to?.until ?? null, messageId, WAITING_CLOSED);
-    return;
-  }
-  if (from?.state === "later") db.run(`UPDATE dated_items SET deferred_until = ? WHERE message_id = ? AND ${ASKED} AND state = 'open' AND deferred_until = ?`, to?.until ?? null, messageId, from.until);
-  else if (to?.state === "later") db.run(`UPDATE dated_items SET deferred_until = ? WHERE message_id = ? AND ${ASKED} AND state = 'open' AND deferred_until IS NULL`, to.until, messageId);
+  return changed;
+}
+
+/**
+ * Undo's: what the act changed, back as it was (its revision too) while it's at the act's revision; and what the reader stored from the message since
+ * (untouched since, revision 0), as the record now restored would have had it stored.
+ */
+function unapplyItems(db: Db, s: WaitingSnapshot, current: WaitingActRecord): void {
+  // exactly, its revision too, so an Undo after an Undo (Later, Done, back, back) puts back what the first changed
+  for (const i of s.items) db.run("UPDATE dated_items SET state = ?, deferred_until = ?, closed_reason = ?, closed_at = ?, revision = ? WHERE id = ? AND revision = ?", i.state, i.deferredUntil, i.closedReason, i.closedAt, i.revision, i.id, i.revision + 1);
+  const later = s.before?.state === "later" ? s.before.until : null;
+  if (current.state === "done") {
+    if (s.before?.state !== "done") db.run(`UPDATE dated_items SET state = 'open', closed_reason = NULL, closed_at = NULL, deferred_until = ?, revision = revision + 1 WHERE message_id = ? AND ${ASKED} AND state = 'dismissed' AND closed_reason = ? AND revision = 0`, later, s.messageId, WAITING_CLOSED);
+  } else if (s.before?.state === "done") db.run(`UPDATE dated_items SET state = 'dismissed', closed_reason = ?, closed_at = ?, revision = revision + 1 WHERE message_id = ? AND ${ASKED} AND state = 'open' AND deferred_until = ? AND revision = 0`, WAITING_CLOSED, s.before.at, s.messageId, current.until);
+  else db.run(`UPDATE dated_items SET deferred_until = ?, revision = revision + 1 WHERE message_id = ? AND ${ASKED} AND state = 'open' AND deferred_until = ? AND revision = 0`, later, s.messageId, current.until);
 }
 
 export function actOnWaiting(db: Db, o: { threadId: number; since: number; message: number; rev: number; state: WaitingActState; until: number | null; now: number }): WaitingSnapshot | null {
@@ -64,9 +79,9 @@ export function actOnWaiting(db: Db, o: { threadId: number; since: number; messa
     )!;
     const next: WaitingActRecord = { messageId: f.waitingMessageId, state: o.state, until: o.state === "later" ? o.until : null, at: o.now, rev: o.rev + 1, who: waitingWords(words.from_name || words.from_email), subject: waitingWords(words.subject), wrote: words.has_sent === 1 };
     write(db, next);
-    followItems(db, next.messageId, before, next, o.now);
+    const items = applyItems(db, next.messageId, before, next, o.now);
     if (o.state === "done") refreshFacts(db, o.threadId);
-    return { messageId: next.messageId, threadId: o.threadId, rev: next.rev, before };
+    return { messageId: next.messageId, threadId: o.threadId, rev: next.rev, before, items };
   });
 }
 
@@ -76,7 +91,7 @@ export function restoreWaiting(db: Db, s: WaitingSnapshot): number | null {
     if (!current || current.rev !== s.rev) return null;
     if (s.before) write(db, s.before);
     else db.run("DELETE FROM waiting_acts WHERE message_id = ?", s.messageId);
-    followItems(db, s.messageId, current, s.before, current.at);
+    unapplyItems(db, s, current);
     // its conversation now (a merge since moves it with its message)
     const thread = db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", s.messageId)!.thread_id;
     refreshFacts(db, thread);
@@ -84,9 +99,12 @@ export function restoreWaiting(db: Db, s: WaitingSnapshot): number | null {
   });
 }
 
-/** The waiting message at a conversation's waiting date: the newest shown one then (one seek of messages_thread). */
+/**
+ * The waiting message at a conversation's waiting date: the newest one received then, shown (one seek of messages_thread).
+ * Never a send of yours (a failed one at the same moment counts for nothing: Codex code review 2, #3).
+ */
 const WAITING_MESSAGE = `(SELECT x.id FROM messages x INDEXED BY messages_thread WHERE x.thread_id = json_extract(j.value, '$[0]') AND x.date = json_extract(j.value, '$[1]')
-  AND x.is_draft = 0 AND x.is_trash = 0 AND x.is_spam = 0 ORDER BY x.date DESC, x.id DESC LIMIT 1)`;
+  AND x.is_sent = 0 AND x.is_draft = 0 AND x.is_trash = 0 AND x.is_spam = 0 ORDER BY x.date DESC, x.id DESC LIMIT 1)`;
 
 export function waitingRows(db: Db, threads: readonly { threadId: number; since: number }[], now: number, o: { messages: boolean }): Map<number, WaitingRowFacts> {
   const out = new Map<number, WaitingRowFacts>();

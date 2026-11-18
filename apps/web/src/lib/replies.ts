@@ -88,6 +88,9 @@ async function ask(threadId: number): Promise<void> {
   const r = await client.call("ai.prepareReply", { threadId, accountId: detail.thread.accountId, to, cc, timezone: timezone() }).catch(() => ({ status: "none" as const }));
   if (reading !== threadId) return;
   if (composedOn === threadId) return void client.call("ai.replyLeave", { threadId }).catch(() => {});
+  // plan 215: and the conversation still waits as this window has it now (marked Done meanwhile: nothing shown)
+  const current = useThreads.getState().details.get(threadId);
+  if (r.status === "ready" && current && !waits(current)) return leave();
   if (r.status === "ready") useReplies.setState({ shown: { threadId, phase: "ready", text: r.row.body ?? "", row: r.row } });
   else if (r.status === "waitingBody") {
     // the reader is fetching it: it goes on when it's here, if this is still what's open

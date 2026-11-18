@@ -76,6 +76,17 @@ describe("plan 215: a conversation marked Done (no reply needed)", () => {
     expect(useReplies.getState().shown).toBeNull();
     useThreads.setState({ details: new Map([[7, detail]]) });
   });
+
+  it("Codex code review 2: a cached reply that comes back after the conversation stopped waiting here isn't shown", async () => {
+    call.mockClear();
+    useReplies.setState({ shown: null });
+    useThreads.setState({ details: new Map([[7, { ...detail, thread: { ...detail.thread, waitingSince: null as unknown as number } }]]) });
+    call.mockImplementationOnce(async () => ({ status: "ready", row: { body: "Hola Ana" } }));
+    await opened();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(useReplies.getState().shown).toBeNull();
+    useThreads.setState({ details: new Map([[7, detail]]) });
+  });
 });
 
 describe("plan 144, owner's decisions (2): the card's Reply | Reply all", () => {

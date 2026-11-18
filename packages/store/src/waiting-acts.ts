@@ -1,4 +1,4 @@
-import type { ClosedAt } from "./dated";
+import type { ClosedAt, DatedSnapshot } from "./dated";
 
 /**
  * Plan 215: Done and Later on What matters' "Waiting on you" rows, both stores' (`waiting_acts`, SQLite v74, IndexedDB 38).
@@ -42,6 +42,8 @@ export interface WaitingSnapshot {
   threadId: number;
   rev: number;
   before: WaitingActRecord | null;
+  /** the dated reader's requests from the message the act changed, as they were (each put back while it's at the act's revision) */
+  items: DatedSnapshot[];
 }
 
 /** A waiting conversation's Done, as Earlier lists it (its thread is its message's now). */

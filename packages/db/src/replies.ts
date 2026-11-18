@@ -72,6 +72,8 @@ export function finishReply(db: Db, w: ReplyWrite): ReplyFinish {
 
 export function transitionReply(db: Db, threadId: number, from: { rowId: string; state: ReplyState; revision: number }, to: ReplyState): PreparedReply | null {
   return db.tx(() => {
+    // plan 215: never ready again for a conversation that no longer waits (marked Done: no reply needed), in this transaction
+    if (to === "ready" && db.get<{ w: number | null }>("SELECT waiting_since AS w FROM threads WHERE id = ?", threadId)?.w == null) return null;
     const moved = db.run("UPDATE ai_prepared_replies SET state = ?, revision = revision + 1 WHERE thread_id = ? AND row_id = ? AND state = ? AND revision = ?", to, threadId, from.rowId, from.state, from.revision);
     return Number(moved.changes) ? getReply(db, threadId) : null;
   });
