@@ -146,6 +146,44 @@ describe("ThreadAttachments (plan 177)", () => {
     expect(first!.getAttribute("aria-busy")).toBe("false");
   });
 
+  it("plan 212: a file's menu offers Open where a click opens, Download always; while one file's work runs, its items say they're unavailable", async () => {
+    let finish!: () => void;
+    calls.retry.mockImplementationOnce(() => new Promise<void>((r) => (finish = r)));
+    const host = await render(<ThreadAttachments messages={[msg({ attachments: [file(1)] }), msg({ attachments: [file(2, "asset-2"), file(3, "asset-3", "mockups.fig")] })]} />);
+    const [missing, pdf, fig] = [...host.querySelectorAll<HTMLButtonElement>("[data-testid=thread-attachment] button")];
+    const items = () => [...document.querySelectorAll<HTMLElement>("[data-testid=attachment-menu] [role=menuitem]")];
+    const menuOn = async (el: HTMLElement) => {
+      await act(async () => { el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 5, clientY: 5, button: 2 })); });
+      await vi.waitFor(() => expect(items().length).toBeGreaterThan(0));
+    };
+    const close = async () => { await act(async () => { document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); }); await vi.waitFor(() => expect(items()).toHaveLength(0)); };
+    await menuOn(fig!);
+    expect(items().map((i) => i.textContent)).toEqual(["Download"]);
+    await close();
+    await menuOn(pdf!);
+    expect(items().map((i) => i.textContent)).toEqual(["Open", "Download"]);
+    expect(items().every((i) => i.getAttribute("aria-disabled") !== "true")).toBe(true);
+    await close();
+    await act(async () => missing!.click());
+    await menuOn(pdf!);
+    expect(items().map((i) => i.getAttribute("aria-disabled"))).toEqual(["true", "true"]);
+    await close();
+    await act(async () => finish());
+  });
+
+  it("plan 212: a long press picks the file under the finger, not the one a right-click picked before", async () => {
+    const host = await render(<ThreadAttachments messages={[msg({ attachments: [file(1, "asset-1", "mockups.fig")] }), msg({ attachments: [file(2, "asset-2")] })]} />);
+    const [fig, pdf] = [...host.querySelectorAll<HTMLButtonElement>("[data-testid=thread-attachment] button")];
+    const items = () => [...document.querySelectorAll<HTMLElement>("[data-testid=attachment-menu] [role=menuitem]")];
+    await act(async () => { fig!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 5, clientY: 5, button: 2 })); });
+    await vi.waitFor(() => expect(items().map((i) => i.textContent)).toEqual(["Download"]));
+    await act(async () => { document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+    await vi.waitFor(() => expect(items()).toHaveLength(0));
+    const touch = { identifier: 1, target: pdf!, clientX: 5, clientY: 5 } as unknown as Touch;
+    await act(async () => { pdf!.dispatchEvent(new TouchEvent("touchstart", { bubbles: true, cancelable: true, touches: [touch], targetTouches: [touch], changedTouches: [touch] })); });
+    await vi.waitFor(() => expect(items().map((i) => i.textContent)).toEqual(["Open", "Download"]), { timeout: 2000 });
+  });
+
   it("past twelve files, the rest wait behind Show all", async () => {
     const host = await render(<ThreadAttachments messages={[msg({ attachments: Array.from({ length: 15 }, (_, i) => file(i + 1, `a${i}`)) }), msg()]} />);
     expect(host.querySelectorAll("[data-testid=thread-attachment]")).toHaveLength(12);

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MAX_ATTACHMENT_BYTES } from "@terno/core";
-import { AttachmentOpener, KEEP, MAX_AGE_MS, attachmentBytes, type OpenerDeps } from "./opened-attachments";
+import { AttachmentOpener, KEEP, MAX_AGE_MS, MAX_DISK_NAME_BYTES, attachmentBytes, diskName, type OpenerDeps } from "./opened-attachments";
 
 const dirs: string[] = [];
 afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
@@ -57,6 +57,19 @@ describe("AttachmentOpener (plan 212)", () => {
     for (const [name, data] of refused) expect(await opener.open(name, data), String(name).slice(0, 20)).toEqual({ status: "failed" });
     expect(opened).toEqual([]);
     expect(copies(root)).toEqual([]);
+  });
+
+  it("opens a long name in a script of many bytes: shortened on disk by whole characters, its extension kept", async () => {
+    const { opened, opener } = setup();
+    const name = `${"報".repeat(90)}.pdf`;
+    expect(await opener.open(name, bytes(1))).toEqual({ status: "opened" });
+    const leaf = opened[0]!.split("/").pop()!;
+    expect(leaf.endsWith(".pdf")).toBe(true);
+    expect(Buffer.byteLength(leaf)).toBeLessThanOrEqual(MAX_DISK_NAME_BYTES);
+    expect(name.startsWith(leaf.slice(0, -4))).toBe(true);
+    // an emoji is never cut in half, and a short name is left alone
+    expect(diskName(`${"😀".repeat(60)}.png`)).toMatch(/^(😀)+\.png$/u);
+    expect(diskName("report.pdf")).toBe("report.pdf");
   });
 
   it("copies exactly the bytes a typed view covers", () => {

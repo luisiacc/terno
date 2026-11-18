@@ -1,5 +1,5 @@
 import { client } from "~/rpc/connection";
-import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement, type SyntheticEvent } from "react";
 import { Download, ExternalLink, Paperclip } from "@terno/ui/icons";
 import type { AttachmentInfo, MessageDetail } from "@terno/core";
 import { formatList, t } from "@terno/i18n";
@@ -119,7 +119,7 @@ function useFileActions() {
       onClick: () => act(f, how),
     };
   };
-  return { act, fileProps };
+  return { busy: busy !== null, act, fileProps };
 }
 
 const fileKey = (f: FileTarget) => `${f.messageId}:${f.a.id}`;
@@ -132,7 +132,7 @@ const fileLabel = (a: AttachmentInfo, how: FileAction) => t(how === "open" ? "at
  * right-click (or ⇧F10, `data-context-menu`) on a file opens it there and not the conversation's; one between files is
  * passed on to the conversation's. Focus goes back to the file it was opened on.
  */
-function FilesMenu({ files, act, children }: { files: readonly FileTarget[]; act: (f: FileTarget, how: FileAction) => void; children: ReactElement }) {
+function FilesMenu({ files, busy, act, children }: { files: readonly FileTarget[]; busy: boolean; act: (f: FileTarget, how: FileAction) => void; children: ReactElement }) {
   const [target, setTarget] = useState<FileTarget | null>(null);
   const button = useRef<HTMLElement | null>(null);
   // shortcuts wait while a menu is open; a list that goes while its menu is open never leaves them waiting
@@ -140,6 +140,16 @@ function FilesMenu({ files, act, children }: { files: readonly FileTarget[]; act
   useEffect(() => () => {
     if (shown.current) setApp({ menuOpen: false });
   }, []);
+  /** the file under the pointer or finger, remembered for the menu; null between files */
+  const pick = (from: EventTarget): FileTarget | null => {
+    const el = (from as Element).closest<HTMLElement>("[data-attachment]");
+    const found = el ? files.find((f) => fileKey(f) === el.dataset.attachment) : undefined;
+    if (!el || !found) return null;
+    button.current = el;
+    setTarget(found);
+    return found;
+  };
+  const skipBaseUI = (e: SyntheticEvent) => (e as unknown as { preventBaseUIHandler(): void }).preventBaseUIHandler();
   return (
     <ContextMenu
       onOpenChange={(next) => {
@@ -151,31 +161,29 @@ function FilesMenu({ files, act, children }: { files: readonly FileTarget[]; act
         data-context-menu
         render={children}
         onContextMenu={(e) => {
-          const el = (e.target as Element).closest<HTMLElement>("[data-attachment]");
-          const found = el ? files.find((f) => fileKey(f) === el.dataset.attachment) : undefined;
-          if (!el || !found) {
-            // between files: the conversation's menu. Skipping Base UI marks this event for every trigger it reaches,
-            // so it goes on as a fresh one from the list's parent (as message-menu's backgroundMenu replays one)
-            (e as unknown as { preventBaseUIHandler(): void }).preventBaseUIHandler();
-            e.preventDefault();
-            e.stopPropagation();
-            e.currentTarget.parentElement?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: e.clientX, clientY: e.clientY, button: 2 }));
-            return;
-          }
-          // this menu, not the conversation's around it
+          if (pick(e.target)) return;
+          // between files: the conversation's menu. Skipping Base UI marks this event for every trigger it reaches,
+          // so it goes on as a fresh one from the list's parent (as message-menu's backgroundMenu replays one)
+          skipBaseUI(e);
+          e.preventDefault();
           e.stopPropagation();
-          button.current = el;
-          setTarget(found);
+          e.currentTarget.parentElement?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: e.clientX, clientY: e.clientY, button: 2 }));
+        }}
+        // a long press opens the menu without a contextmenu event: the file is picked here too, and one between files is
+        // left to the conversation's own long press
+        onTouchStart={(e) => {
+          if (e.touches.length === 1 && !pick(e.target)) skipBaseUI(e);
         }}
       />
       <ContextMenuContent className="w-auto min-w-40 max-w-72" data-testid="attachment-menu" aria-label={target?.a.filename} finalFocus={() => (button.current?.isConnected ? button.current : true)}>
+        {/* while a file's work runs the list takes no other: its items say so, as the files do */}
         {target && clickAction(target.a) === "open" && (
-          <ContextMenuItem data-testid="attachment-menu-open" onClick={() => act(target, "open")}>
+          <ContextMenuItem data-testid="attachment-menu-open" disabled={busy} onClick={() => act(target, "open")}>
             <ExternalLink />
             <span className="flex-1">{t("common.open")}</span>
           </ContextMenuItem>
         )}
-        <ContextMenuItem data-testid="attachment-menu-download" onClick={() => target && act(target, "download")}>
+        <ContextMenuItem data-testid="attachment-menu-download" disabled={busy} onClick={() => target && act(target, "download")}>
           <Download />
           <span className="flex-1">{t("attachments.downloadItem")}</span>
         </ContextMenuItem>
@@ -185,9 +193,9 @@ function FilesMenu({ files, act, children }: { files: readonly FileTarget[]; act
 }
 
 export function ReaderAttachments({ accountId, messageId, attachments }: { accountId: number; messageId: number; attachments: AttachmentInfo[] }) {
-  const { act, fileProps } = useFileActions();
+  const { busy, act, fileProps } = useFileActions();
   const files = attachments.map((a) => ({ accountId, messageId, a }));
-  return <FilesMenu files={files} act={act}>
+  return <FilesMenu files={files} busy={busy} act={act}>
     <ul aria-label={t("reader.attachments")} className="mt-4 flex flex-wrap gap-2">
       {files.map((f) => <li key={f.a.id} data-testid="attachment" className="min-w-0 max-w-full">
         <button {...fileProps(f)} className="flex h-14 w-[260px] max-w-full items-center gap-3 rounded-lg bg-tint px-3 text-left hover:bg-accent aria-disabled:opacity-60">
@@ -209,7 +217,7 @@ const FILES_SHOWN = 12;
  */
 export function ThreadAttachments({ messages }: { messages: readonly MessageDetail[] }) {
   const files = useMemo(() => (messages.length > 1 ? threadFiles(messages).map(({ message, attachment }) => ({ accountId: message.accountId, messageId: message.id, a: attachment })) : []), [messages]);
-  const { act, fileProps } = useFileActions();
+  const { busy, act, fileProps } = useFileActions();
   const [all, setAll] = useState(false);
   if (!files.length) return null;
   const shown = all ? files : files.slice(0, FILES_SHOWN);
@@ -220,7 +228,7 @@ export function ThreadAttachments({ messages }: { messages: readonly MessageDeta
         {t("reader.attachments")}<span className="font-normal text-muted-foreground tabular">{files.length}</span>
       </CollapsibleTrigger>
       <CollapsiblePanel>
-        <FilesMenu files={shown} act={act}>
+        <FilesMenu files={shown} busy={busy} act={act}>
         <ul aria-label={t("reader.allAttachments")} className="flex flex-wrap items-center gap-1.5 pt-2">
           {shown.map((f) => <li key={fileKey(f)} data-testid="thread-attachment" className="flex max-w-full min-w-0">
             <button {...fileProps(f)} title={f.a.filename} className="flex h-7 max-w-full min-w-0 items-center gap-1.5 rounded-md bg-tint px-2 text-xs outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring aria-disabled:opacity-60">

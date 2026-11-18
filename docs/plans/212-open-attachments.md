@@ -1,6 +1,6 @@
 # Plan 212: open an attachment, download it from its menu
 
-- **Status:** plan.
+- **Status:** built.
 - **Builds on:**
   - plan 29, mail attachments (the store's chunked bytes, `attachmentBlob`);
   - plan 177, the conversation's files strip above the first message;
@@ -208,3 +208,28 @@ Codex critiqued the plan against the code in 12 points. All 12 are taken, and th
     - `pnpm ui:rate`/`ui:gate` on the reader screen.
 
     Render cost: one `ContextMenu` root per list, the popup not mounted until opened (Base UI), and no new state per file. The reader has no perf gate on attachments, so this is argued here, not measured.
+
+## Codex code review
+
+Codex reviewed the first three commits, `0c237e0ff..fef369cea`, and reported three findings. All three are fixed. Each fix has a regression test, and each test was checked to fail without its fix.
+
+1. **A long press could act on the wrong file.**
+   - **The bug:** Base UI opens a touch long press itself, without a `contextmenu` event. So the menu kept the file a right-click had picked before, or had none.
+   - **The fix:** the list now picks the file on `touchstart` as well. A touch between files is left to the conversation's own long press.
+   - **Test:** `thread-overview.test.tsx`, "a long press picks the file under the finger".
+2. **A long name in a many-byte script couldn't be written.**
+   - **The bug:** filesystems limit a name to 255 bytes. The cleaned name is limited in characters, so ninety `報` and `.pdf` made 274 bytes, and the exclusive create failed.
+   - **The fix:** `diskName` shortens the stem by whole characters until the name is at most 200 UTF-8 bytes. The extension is kept, so the OS still opens it with the same app.
+   - **Test:** `opened-attachments.test.ts`.
+3. **A busy list's menu offered items that did nothing.**
+   - **The bug:** while one file's work ran, Open and Download in the menu stayed enabled. Choosing one only closed the menu.
+   - **The fix:** the list's busy state now reaches the menu, and its items are `disabled`, as the files are `aria-disabled`.
+   - **Test:** `thread-overview.test.tsx`, "while one file's work runs, its items say they're unavailable".
+
+## Verification
+
+- typecheck (web, desktop, core, i18n) and lint;
+- unit tests: `attachment-open.test.ts`, `opened-attachments.test.ts`, `attachments-open.test.ts`, `thread-overview.test.tsx`, plus the source scan, the architecture check and i18n;
+- e2e: `attachment-controls.spec.ts`, `reader.spec.ts` and `attachments.spec.ts`;
+- the desktop bridge through the real preload, IPC and file path: `print.smoke.ts`, plan 212's test, run against `dist` (`TERNO_PRINT_SMOKE_DEV=1`);
+- light and dark screenshots of the strip and the tiles with the menu open.

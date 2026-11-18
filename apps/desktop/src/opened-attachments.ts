@@ -18,6 +18,19 @@ export const MAX_NAME = 1000;
 /** each open's directory starts with this, so cleanup removes only what it made */
 const PREFIX = "open-";
 
+/** a name on disk at most this many UTF-8 bytes: filesystems count bytes (255), the cleaned name counts characters */
+export const MAX_DISK_NAME_BYTES = 200;
+
+/** The cleaned name as it can be written: its stem shortened, a whole character at a time, until it fits; the extension kept. */
+export function diskName(filename: string): string {
+  if (Buffer.byteLength(filename) <= MAX_DISK_NAME_BYTES) return filename;
+  const dot = filename.lastIndexOf(".");
+  const ext = dot > 0 ? filename.slice(dot) : "";
+  const stem = [...(dot > 0 ? filename.slice(0, dot) : filename)];
+  while (stem.length > 1 && Buffer.byteLength(stem.join("") + ext) > MAX_DISK_NAME_BYTES) stem.pop();
+  return stem.join("").replace(/[.\s]+$/u, "") + ext;
+}
+
 export type OpenResult = { status: "opened" | "busy" | "failed" };
 
 export interface OpenerDeps {
@@ -55,7 +68,7 @@ export class AttachmentOpener {
       await this.privateRoot();
       await this.prune();
       dir = await mkdtemp(join(this.deps.root, PREFIX));
-      const path = join(dir, filename);
+      const path = join(dir, diskName(filename));
       const file = await open(path, "wx", 0o600);
       try { await file.writeFile(data); } finally { await file.close(); }
       // the mark first: a read-only file can't take one
