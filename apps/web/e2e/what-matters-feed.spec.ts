@@ -1233,3 +1233,99 @@ test("the list's keys on What matters' rows: e, # and r on the row the keys are 
     await expect(page.getByTestId("composer")).toBeVisible();
   });
 });
+
+test("plan 215: Done and Later on Waiting on you's rows: Done leaves with its snack, lands under Earlier, leaves the Inbox's Waiting, Undo brings it back; Later puts it under Coming up, back tomorrow, out of the count; axe", async ({ app: page, server }) => {
+  await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true } }, dev);
+  const store = server.backend.store;
+  const db = sqlDb(store);
+  const me = db.get<{ email: string }>("SELECT email FROM accounts ORDER BY id LIMIT 1")!.email;
+  // as Needs you's own rule finds them: you wrote, they answered (never set by hand: Done walks the facts again)
+  const waitingOn = async (key: string, who: { name: string; email: string }, subject: string, at: number) => {
+    const mine = message(server, `${key}-mine`, { name: "", email: me }, subject, "Sounds good, what works for you?", at - HOUR, { providerThreadId: key, to: [who], isSent: true });
+    const theirs = message(server, key, who, `Re: ${subject}`, subject, at, { providerThreadId: key, isRead: false, inInbox: true, inReplyTo: `<${key}-mine@e2e.test>` });
+    await store.sync.ingest([mine, theirs], { applyFilters: false, now: E2E_NOW, classifier: null });
+    return db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = ?", key)!.thread_id;
+  };
+  const tomas = await waitingOn("tomas", { name: "Tomas Santarcieri", email: "tomas@people.test" }, "The Q3 numbers", E2E_NOW - HOUR);
+  const ben = await waitingOn("ben", { name: "Ben Ito", email: "ben@people.test" }, "Notes from the offsite", E2E_NOW - 2 * HOUR);
+  await fresh(page);
+  await page.getByTestId("nav-today").click();
+  const row = (id: number) => feed(page).locator(`[data-row-id="waiting:${id}"]`);
+  await expect(row(tomas)).toBeVisible({ timeout: 15_000 });
+  const waitingCount = async () => Number(/(\d+) waiting/.exec(await page.getByTestId("today-needs").innerText())?.[1] ?? 0);
+  const before = await waitingCount();
+  const shots = process.env.WM_215_SHOTS;
+  const shoot = async (name: string, rest = false) => {
+    if (!shots) return;
+    // at rest: no pointer on a row, no snack over the feed's foot
+    if (rest) {
+      await page.mouse.move(5, 5);
+      if (await page.getByTestId("snack-close").count()) await page.getByTestId("snack-close").first().click();
+    }
+    for (const mode of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: mode });
+      await page.waitForTimeout(150);
+      await page.screenshot({ path: `${shots}/${test.info().project.name}-${name}-${mode}.png` });
+    }
+    await page.emulateMedia({ colorScheme: "light" });
+  };
+
+  await scenario("hovered, a waiting row shows Done and Later beside its date, as any task's", async () => {
+    await row(tomas).hover();
+    await expect(row(tomas).getByTestId("wm-done")).toBeVisible();
+    await expect(row(tomas).getByTestId("wm-later")).toBeVisible();
+    await expect(row(tomas).getByTestId("wm-when")).toBeVisible();
+    await shoot("hover");
+  });
+
+  await scenario("Done: the row leaves with its snack, Earlier says it in the row's words, the Inbox's Waiting has it no more; z brings it all back", async () => {
+    await row(tomas).getByTestId("wm-done").click();
+    await expect(row(tomas)).toHaveCount(0);
+    await expect(page.getByTestId("snack")).toContainText("Done: Tomas Santarcieri");
+    await expect.poll(waitingCount).toBe(before - 1);
+    await reach(page, "Tomas Santarcieri wrote back about");
+    const line = feed(page).locator("[data-history]").filter({ hasText: "Tomas Santarcieri wrote back about" });
+    await expect(line).toHaveCount(1);
+    await expect(line.getByTestId("wm-when")).toHaveText("Done today");
+    await expect(line.getByTestId("wm-controls")).toHaveCount(0);
+    await line.evaluate((el) => el.scrollIntoView({ block: "center" }));
+    await shoot("earlier", true);
+    await page.getByTestId("nav-inbox").click();
+    await page.keyboard.press("ControlOrMeta+k");
+    await page.getByTestId("palette-filter-waiting").click();
+    await expect(page.getByTestId("thread-list")).toHaveAttribute("data-results-for", /,"waiting","[^"]*"\]$/);
+    await expect(page.locator(`[data-testid="thread-row"][data-thread-id="${ben}"]`)).toHaveCount(1);
+    await expect(page.locator(`[data-testid="thread-row"][data-thread-id="${tomas}"]`)).toHaveCount(0);
+    await page.getByTestId("nav-today").click();
+    await expect(feed(page)).toBeVisible();
+    await page.keyboard.press("z");
+    await expect.poll(() => db.get<{ w: number | null }>("SELECT waiting_since AS w FROM threads WHERE id = ?", tomas)!.w).not.toBeNull();
+    await scroller(page).evaluate((el) => (el.scrollTop = 0));
+    await expect(row(tomas)).toBeVisible();
+    await expect.poll(waitingCount).toBe(before);
+    await expect(line).toHaveCount(0);
+  });
+
+  await scenario("Later to tomorrow: under Coming up, back tomorrow, out of the header's count; the Inbox keeps it", async () => {
+    await row(tomas).hover();
+    await row(tomas).getByTestId("wm-later").click();
+    await page.getByTestId("wm-later-menu").getByTestId("wm-later-tomorrow").click();
+    await expect(page.getByTestId("snack")).toContainText(/^Later: Tomas Santarcieri, back tomorrow/);
+    await expect.poll(waitingCount).toBe(before - 1);
+    // Coming up's disclosure, where the feed draws it (only what's near the view is drawn)
+    const coming = page.getByTestId("wm-coming-up");
+    await scroller(page).evaluate((el) => (el.scrollTop = 0));
+    for (let i = 0; i < 60 && !(await coming.count()); i++) {
+      await scroller(page).evaluate((el) => (el.scrollTop += el.clientHeight * 0.7));
+      await page.waitForTimeout(80);
+    }
+    if ((await coming.getAttribute("aria-expanded")) !== "true") await coming.click();
+    await reach(page, "Tomas Santarcieri");
+    await expect(row(tomas)).toHaveAttribute("data-ahead", "true");
+    await expect(row(tomas).getByTestId("wm-when")).toHaveText(/^back tomorrow/);
+    expect(db.get<{ w: number | null }>("SELECT waiting_since AS w FROM threads WHERE id = ?", tomas)!.w).not.toBeNull();
+    await row(tomas).evaluate((el) => el.scrollIntoView({ block: "center" }));
+    await shoot("later", true);
+    await axeBothModes(page, '[data-testid="wm-feed"]');
+  });
+});
