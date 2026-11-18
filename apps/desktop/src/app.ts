@@ -43,6 +43,7 @@ import { backstopAllows, originOf, requestFrame } from "./network-backstop";
 import { DB_FILE } from "./legacy-profile";
 import { registerPrint } from "./print";
 import { registerMboxExport } from "./mbox-export";
+import { registerAttachmentOpen } from "./attachment-open";
 import { isTrustedSender, testImapInsecure, testPdfDir, testSmtpPort } from "./print-policy";
 import { testClock, testDevAi, testNetLog } from "./test-hooks";
 import { clockArgs } from "./window-clock";
@@ -853,6 +854,7 @@ if (!app.requestSingleInstanceLock()) {
       testPdfDir: testPdfDir(process.env, app.isPackaged, demo),
     });
     registerMboxExport({ trusted, testDir: testPdfDir(process.env, app.isPackaged, demo) });
+    registerAttachmentOpen({ trusted, testDir: testPdfDir(process.env, app.isPackaged, demo) });
     await switchLanguage(language, systemLanguages());
     buildMenu();
     startBackend();

@@ -232,3 +232,21 @@ test("plan 37: in local mode “Load content” gets a newsletter's images past 
   // styles, fonts and media before they reach main; network-backstop.test.ts covers main's rule for each of them)
   await page.keyboard.press("Escape");
 });
+
+test("plan 212: an attachment handed to main is written private, read-only and marked, and never a program", async () => {
+  type Bridge = { ternoDesktop: { openAttachment(name: string, bytes: ArrayBuffer): Promise<{ status: string }> } };
+  const root = join(pdfDir, "Opened Attachments");
+  const copies = () => (existsSync(root) ? readdirSync(root) : []);
+  expect(await page.evaluate(() => (window as unknown as Bridge).ternoDesktop.openAttachment("report.pdf", new Uint8Array([37, 80, 68, 70]).buffer))).toEqual({ status: "opened" });
+  const [dir] = copies();
+  const path = join(root, dir!, "report.pdf");
+  expect([...readFileSync(path)]).toEqual([37, 80, 68, 70]);
+  expect(statSync(path).mode & 0o777).toBe(0o400);
+  expect(statSync(join(root, dir!)).mode & 0o777).toBe(0o700);
+  // the mark a download carries: Office opens it in Protected View, and the OS knows where it came from
+  expect(execFileSync("/usr/bin/xattr", ["-p", "com.apple.quarantine", path], { encoding: "utf8" })).toMatch(/^0081;[0-9a-f]+;Terno;/);
+  // main checks again: a page that skips its own check still can't hand the OS an app
+  expect(await page.evaluate(() => (window as unknown as Bridge).ternoDesktop.openAttachment("setup.command", new Uint8Array([1]).buffer))).toEqual({ status: "failed" });
+  expect(await page.evaluate(() => (window as unknown as Bridge).ternoDesktop.openAttachment("report.pdf", "AQID" as unknown as ArrayBuffer))).toEqual({ status: "failed" });
+  expect(copies()).toEqual([dir]);
+});

@@ -45,6 +45,8 @@ export interface DesktopBridge {
   print?(job: DesktopPrintJob): Promise<DesktopPrintResult>;
   /** reveals a PDF this session exported, by the id its export returned */
   showSaved?(exportId: string): Promise<boolean>;
+  /** plan 212: opens an attachment in the app the OS picks, from a private copy; older shells don't have it */
+  openAttachment?(name: string, bytes: ArrayBuffer): Promise<{ status: "opened" | "busy" | "failed" }>;
   /** plan 107: a folder's .mbox, written by main (older shells don't have it) */
   mboxExport?: DesktopMboxExport;
   /** the menu's commands (Archivo, Ver) */

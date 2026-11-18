@@ -47,6 +47,8 @@ contextBridge.exposeInMainWorld("ternoDesktop", {
   // the print document and its options; main validates every field and owns the CSP, title and footer
   print: (job: unknown) => ipcRenderer.invoke("terno:print", job),
   showSaved: (exportId: string) => ipcRenderer.invoke("terno:show-saved", String(exportId)),
+  // plan 212: an attachment opened by the OS from a private copy; main checks the name, size and type again
+  openAttachment: (name: string, bytes: ArrayBuffer) => ipcRenderer.invoke("terno:open-attachment", String(name), bytes),
   // plan 107: a folder's .mbox: main shows the save panel, appends each piece to a temp file, renames it into place
   mboxExport: {
     begin: (name: string) => ipcRenderer.invoke("terno:export-begin", String(name)),
