@@ -88,6 +88,12 @@ describe("where an item sits (revision 8)", () => {
     expect(datedOver(later, at(2026, 12, 9, 0))).toBe(true);
     expect(nextTodayChange([later], [], at(2026, 12, 8, 23, 30))).toBe(at(2026, 12, 9));
   });
+  it("plan 215: a conversation waiting on you put off with Later comes back at its moment (the clock's), a past one never", () => {
+    const now = at(2026, 12, 8, 10);
+    expect(nextTodayChange([], [], now)).toBeNull();
+    expect(nextTodayChange([], [], now, [at(2026, 12, 8, 15), at(2026, 12, 8, 11), at(2026, 12, 8, 9)])).toBe(at(2026, 12, 8, 11));
+    expect(nextTodayChange([], [], now, [now])).toBeNull();
+  });
   it("plan 210 (iteration 3): a dated promise is Coming up's at any distance, and shows as its seven days begin (midnight)", () => {
     const promise = { kind: "promise", state: "open", dated: true, dueAt: at(2026, 11, 30, 9) };
     expect(promisePlace(promise, at(2026, 10, 2, 9))).toBe("comingUp");

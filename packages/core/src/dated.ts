@@ -607,13 +607,15 @@ export function missedUntil(r: Pick<DatedRow, "dueDay" | "deferredUntil">): numb
 
 /**
  * Revision 11: the next moment, strictly after `now`, at which Today changes by the clock alone: an item showing,
- * entering Coming up, a day ending (Missed), Missed ending, a Plan ending, a deferral ending, a promise's day ending.
+ * entering Coming up, a day ending (Missed), Missed ending, a Plan ending, a deferral ending, a promise's day ending. Plan
+ * 215: a conversation waiting on you put off with Later (`waiting`, the deferrals' moments) coming back.
  */
-export function nextTodayChange(items: readonly Pick<DatedRow, "kind" | "state" | "dueDay" | "dueAt" | "timed" | "dated" | "actAt" | "deferredUntil" | "arrivedAt" | "early" | "lapses" | "eventEnd" | "partOfDay">[], promises: readonly PromiseFacts[], now: number): number | null {
+export function nextTodayChange(items: readonly Pick<DatedRow, "kind" | "state" | "dueDay" | "dueAt" | "timed" | "dated" | "actAt" | "deferredUntil" | "arrivedAt" | "early" | "lapses" | "eventEnd" | "partOfDay">[], promises: readonly PromiseFacts[], now: number, waiting: readonly number[] = []): number | null {
   let next = Infinity;
   const consider = (at: number) => {
     if (at > now && at < next) next = at;
   };
+  for (const at of waiting) consider(at);
   for (const r of items) {
     if (r.state !== "open") continue;
     const from = showsFrom(r);

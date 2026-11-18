@@ -2,7 +2,7 @@ import type { AppSettings } from "./rpc/contract";
 import type { ThreadSummary } from "./types";
 import { aiReady } from "./ai-routing";
 import { datedGroup, type DatedKind, type TodayGroupKind } from "./dated";
-import type { FeedRowId, ItemRef, ItemSeen } from "./today-items";
+import type { FeedRowId, ItemRef, ItemSeen, WaitingDoneRef } from "./today-items";
 import type { PartOfDay } from "./part-of-day";
 import { withoutQuotes } from "./text";
 
@@ -57,6 +57,11 @@ export interface TodayWhy {
   back?: number;
   /** a waiting row: you've written in this conversation (else it's new, from someone you write to: `needsYou`'s two reasons) */
   wrote?: boolean;
+  /**
+   * plan 215: a waiting row, what its Done and Later act on: the conversation's waiting date as drawn (`waiting_since`) and
+   * its waiting message's record's revision (0: none). The store finds the message itself (`waitingFactsNewestFirst`)
+   */
+  reply?: { since: number; rev: number };
   /** plan 204: its day is over and nothing was done (a dated item, or a dated promise of yours) */
   missed?: boolean;
   /**
@@ -336,9 +341,10 @@ export interface HistoryKey {
 
 /**
  * Where a line comes from: a closed dated item (0), a closed promise (1); plan 210 (iteration 4, Change…), an open dated item
- * the user changed (2) and an open promise (3), at the moment of the change.
+ * the user changed (2) and an open promise (3), at the moment of the change; plan 215, a conversation waiting on you marked
+ * Done (4), by its message.
  */
-export type HistorySource = 0 | 1 | 2 | 3;
+export type HistorySource = 0 | 1 | 2 | 3 | 4;
 
 /** Negative: `a` comes first (newer). */
 export const historyOrder = (a: HistoryKey, b: HistoryKey): number => b.at - a.at || a.src - b.src || b.id - a.id;
@@ -360,15 +366,17 @@ export type HistoryOutcome = "done" | "dismissed" | "settled" | "over" | "replac
 export interface TodayHistoryItem {
   /** plan 210 (iteration 2): its row's identity, the closed item's (a merged one's canonical's) */
   id: FeedRowId;
-  /** the closed item the line is: what the reader's line shows when it's opened */
-  item: ItemRef;
+  /** the closed item the line is: what the reader's line shows when it's opened; plan 215, a waiting conversation's message */
+  item: ItemRef | WaitingDoneRef;
   thread: ThreadSummary;
   key: HistoryKey;
   outcome: HistoryOutcome;
-  /** a dated item's kind, or a promise of yours */
-  kind: DatedKind | "promise";
+  /** a dated item's kind, a promise of yours, or (plan 215) a conversation that waited on you */
+  kind: DatedKind | "promise" | "waiting";
   /** its words, as the open part said them */
   text: string;
+  /** plan 215: a waiting line's words as its row had them at Done (who wrote, about what, and whether you'd written there) */
+  waiting?: { who: string; subject: string; wrote: boolean };
   /** plan 210 (iteration 4): `handed`'s person, as the confirmed forward went ("Handed to Jess Tue") */
   handedTo?: import("./handoff").HandedTo;
   /**

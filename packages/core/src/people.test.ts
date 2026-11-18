@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BULK_LOCAL } from "./categorize/features";
-import { addressKey, automatedLevel, bulkHeaders, FACTS_WINDOW, ROLE_WORDS, senderIsPerson, threadFacts, threadFactsNewestFirst, waitingCutoff, WAITING_WINDOW_MS, type FactContext, type FactRow } from "./people";
+import { addressKey, automatedLevel, bulkHeaders, FACTS_WINDOW, ROLE_WORDS, senderIsPerson, threadFacts, threadFactsNewestFirst, waitingCutoff, waitingFactsNewestFirst, WAITING_WINDOW_MS, type FactContext, type FactRow } from "./people";
 
 const sender = (from_email: string, o: Partial<FactRow> = {}) => ({ from_email, list_id: null, is_bulk: 0, gmail_labels: null, is_spam: 0, ...o });
 
@@ -126,6 +126,28 @@ describe("a thread's facts (plan 17 §2.3)", () => {
   it("a reply from another account that didn't copy this one: answered", () => {
     const m = msg({ date: 5, rfc_message_id: "q@x" });
     expect(threadFacts([m], ctx({ answered: (id) => id === "q@x" }))).toEqual({ person: 1, waitingSince: null });
+  });
+
+  it("plan 215: a newest message marked as needing no reply is answered; a newer one from them waits again; with answered too, none", () => {
+    const asked = msg({ date: 5 });
+    const cleared = (id: number) => id === asked.id;
+    expect(threadFacts([asked], ctx({ cleared }))).toEqual({ person: 1, waitingSince: null });
+    // the walk names the message it judged waiting, or none once it's cleared
+    const walk = (rows: FactRow[], c: FactContext) => {
+      const sorted = [...rows].sort((a, b) => b.date - a.date || b.id - a.id);
+      let i = 0;
+      return waitingFactsNewestFirst(() => sorted[i++], c);
+    };
+    expect(walk([asked], ctx())).toEqual({ person: 1, waitingSince: 5, waitingMessageId: asked.id });
+    expect(walk([asked], ctx({ cleared }))).toEqual({ person: 1, waitingSince: null, waitingMessageId: null });
+    const again = msg({ date: 7 });
+    expect(threadFacts([asked, again], ctx({ cleared }))).toEqual({ person: 1, waitingSince: 7 });
+    expect(walk([asked, again], ctx({ cleared }))).toEqual({ person: 1, waitingSince: 7, waitingMessageId: again.id });
+    // asked only of a message that would wait: an answered one never reaches it
+    let asks = 0;
+    const answered = msg({ date: 9, rfc_message_id: "z@x" });
+    expect(threadFacts([answered], ctx({ answered: (id) => id === "z@x", cleared: () => (asks++, true) }))).toEqual({ person: 1, waitingSince: null });
+    expect(asks).toBe(0);
   });
 
   it("a newsletter is neither", () => {

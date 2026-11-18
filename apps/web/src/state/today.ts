@@ -219,7 +219,8 @@ export function useFeedTarget(threadId: number): readonly ItemRef[] {
   const row = useToday((s) => (opened === null ? undefined : s.rows.find((r) => r.id === opened)));
   const today = useApp((s) => s.today);
   if (!today || row?.threadId !== threadId) return NO_TARGET;
-  if (row.line) return [row.line.item];
+  // plan 215: a waiting conversation's Done line names a message, no item of the reader's
+  if (row.line) return row.line.item.source === "waiting" ? NO_TARGET : [row.line.item];
   const members = row.entry?.why.members;
   if (members) return members;
   const task = row.task;

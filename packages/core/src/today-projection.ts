@@ -22,14 +22,32 @@ export interface ProjectionFacts {
   dated: readonly DatedRow[];
   /** your open promises (follow-ups on), with the day of the request each answers (`withNeeds`); a nudge isn't one */
   promises: readonly NeedingPromise[];
-  /** conversations waiting on your answer (`waitingPage`), newest first: in the Inbox, so never Spam or Trash */
-  waiting: readonly { id: number; lastDate: number; hasSent: boolean }[];
+  /**
+   * conversations waiting on your answer (`waitingPage`), newest first: in the Inbox, so never Spam or Trash. Plan 215: with
+   * their waiting date and its record's revision (the list's: what the row's Done and Later name)
+   */
+  waiting: readonly { id: number; lastDate: number; hasSent: boolean; waitingSince?: number; rev?: number }[];
+  /**
+   * plan 215: conversations waiting on you put off with Later, until their moment (`WaitingDeferral`): under Coming up,
+   * "back Fri", never in Waiting on you nor counted meanwhile
+   */
+  deferred?: readonly WaitingDeferred[];
   /** your reminders due by the end of today (the list's only: never counted) */
   reminders: readonly { threadId: number; dueAt: number }[];
   /** whether an item's conversation may show: not in Spam or Trash (it comes back with it) */
   live: (threadId: number) => boolean;
   /** the reader's zone: a promise's stated time in another is said in brackets */
   zone: string;
+}
+
+/** Plan 215: a conversation waiting on you, put off with Later until `until`, while it still waits at the message put off. */
+export interface WaitingDeferred {
+  threadId: number;
+  until: number;
+  lastDate: number;
+  hasSent: boolean;
+  waitingSince: number;
+  rev: number;
 }
 
 export interface ProjectedRow {
@@ -344,7 +362,7 @@ export function projectToday(f: ProjectionFacts, o: { count?: boolean } = {}): {
 }
 
 /** The projection's second step: placed items, what's waiting and your reminders as rows, and the counts' buckets. */
-export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFacts, "now" | "waiting" | "reminders" | "live" | "zone">, o: { count?: boolean } = {}): { rows: ProjectedRow[]; counts: TodayCounts } {
+export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFacts, "now" | "waiting" | "deferred" | "reminders" | "live" | "zone">, o: { count?: boolean } = {}): { rows: ProjectedRow[]; counts: TodayCounts } {
   const today = dayKeyOf(f.now);
   const placed: Placed[] = [];
   // each day's heading once (most rows share a few days)
@@ -403,9 +421,21 @@ export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFact
   // what's waiting on you (the owner's round 10: only when something is asked; the stores' `stillWaiting` says so), unless
   // an item of the conversation already says it
   const waiting: Placed[] = [];
+  // plan 215: put off with Later, a conversation waits under Coming up on its moment's day, saying when it's back, out of
+  // the counts (the count leaves Coming up out, so it only keeps it from Waiting on you); at its moment, it's back there
+  const deferred = new Set<number>();
+  for (const d of f.deferred ?? []) {
+    if (d.until <= f.now || deferred.has(d.threadId)) continue;
+    deferred.add(d.threadId);
+    if (o.count || represented.has(d.threadId)) continue;
+    const day = dayKeyOf(d.until);
+    waiting.push({ id: waitingRowId(d.threadId), threadId: d.threadId, group: "comingUp", day, bucket: bucketOf(day), why: { kind: "waiting", wrote: d.hasSent, back: d.until, reply: { since: d.waitingSince, rev: d.rev } }, waiting: true, dueAt: d.until, came: d.lastDate });
+  }
   for (const w of f.waiting) {
-    if (represented.has(w.id)) continue;
-    waiting.push({ id: waitingRowId(w.id), threadId: w.id, group: "today", day: null, why: { kind: "waiting", wrote: w.hasSent }, waiting: true, part: "waiting", dueAt: w.lastDate, came: w.lastDate });
+    if (represented.has(w.id) || deferred.has(w.id)) continue;
+    const why: TodayWhy = { kind: "waiting", wrote: w.hasSent };
+    if (!o.count && w.waitingSince !== undefined) why.reply = { since: w.waitingSince, rev: w.rev ?? 0 };
+    waiting.push({ id: waitingRowId(w.id), threadId: w.id, group: "today", day: null, why, waiting: true, part: "waiting", dueAt: w.lastDate, came: w.lastDate });
   }
   const all = placed.concat(waiting);
   // your reminder on a conversation with no row of its own (one that has one already brings it to you); plan 210

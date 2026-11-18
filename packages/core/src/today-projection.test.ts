@@ -24,6 +24,42 @@ function promise(dueAt: number, more: Partial<FollowupRow> = {}): FollowupRow {
 
 const facts = (more: Partial<ProjectionFacts>): ProjectionFacts => ({ now: NOW, dated: [], promises: [], waiting: [], reminders: [], live: () => true, zone: "America/New_York", ...more });
 
+describe("plan 215: a conversation waiting on you, put off with Later", () => {
+  const waiting = [{ id: 4, lastDate: NOW - 4, hasSent: true, waitingSince: NOW - 4, rev: 0 }, { id: 5, lastDate: NOW - 5, hasSent: false, waitingSince: NOW - 5, rev: 2 }];
+
+  it("each waiting row names what its Done and Later act on: the waiting date as drawn and its record's revision", () => {
+    const { rows } = projectToday(facts({ waiting }));
+    expect(rows.map((r) => [r.id, r.why.reply])).toEqual([
+      ["waiting:4", { since: NOW - 4, rev: 0 }],
+      ["waiting:5", { since: NOW - 5, rev: 2 }],
+    ]);
+  });
+
+  it("sits under Coming up on its moment's day saying when it's back, out of Waiting on you and the counts; back at its moment", () => {
+    const friday = at(2026, 11, 20, 9);
+    const deferred = [{ threadId: 5, until: friday, lastDate: NOW - 5, hasSent: false, waitingSince: NOW - 5, rev: 3 }];
+    const { rows, counts } = projectToday(facts({ waiting, deferred }));
+    expect(rows.map((r) => [r.id, r.group, r.day, r.why.back ?? null])).toEqual([
+      ["waiting:4", "today", null, null],
+      ["waiting:5", "comingUp", "2026-11-20", friday],
+    ]);
+    const later = rows.find((r) => r.id === "waiting:5")!;
+    expect([later.waiting, later.part, later.bucket, later.why.reply]).toEqual([true, undefined, displayBucket("2026-11-20", "2026-11-18"), { since: NOW - 5, rev: 3 }]);
+    expect(counts).toEqual({ missed: 0, today: 0, waiting: 1, overdue: 0 });
+    expect(projectToday(facts({ waiting, deferred }), { count: true }).counts).toEqual(counts);
+    // at its moment (the clock's: `nextTodayChange` takes it), it's Waiting on you's again, counted
+    const back = projectToday(facts({ now: friday, waiting, deferred }));
+    expect(back.rows.map((r) => [r.id, r.group])).toEqual([["waiting:4", "today"], ["waiting:5", "today"]]);
+    expect(back.counts.waiting).toBe(2);
+  });
+
+  it("an item of the conversation shown now says it: no Coming up row of its own", () => {
+    const ask = dated("ask", null, { threadId: 5 });
+    const deferred = [{ threadId: 5, until: at(2026, 11, 20, 9), lastDate: NOW - 5, hasSent: false, waitingSince: NOW - 5, rev: 1 }];
+    expect(projectToday(facts({ dated: [ask], waiting, deferred })).rows.map((r) => r.id).sort()).toEqual([`dated:${ask.id}`, "waiting:4"].sort());
+  });
+});
+
 describe("a row per item", () => {
   it("two items of one conversation are two rows, each with its own id", () => {
     const bill = dated("pay", "2026-11-18", { threadId: 7 });

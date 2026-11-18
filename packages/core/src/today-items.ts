@@ -26,6 +26,16 @@ export function parseRef(key: string): ItemRef | null {
 export type FeedRowId = string;
 
 export const waitingRowId = (threadId: number): FeedRowId => `waiting:${threadId}`;
+
+/**
+ * Plan 215: a conversation waiting on you marked Done, as Earlier lists it: its own reference, apart from `ItemRef` (no
+ * item of a reader's), named by the message that needed no reply. Its line's id is never the open row's (`waiting:12`).
+ */
+export interface WaitingDoneRef {
+  source: "waiting";
+  messageId: number;
+}
+export const waitingDoneLineId = (messageId: number): FeedRowId => `waiting-done:${messageId}`;
 export const reminderRowId = (threadId: number): FeedRowId => `reminder:${threadId}`;
 export const DIGEST_FEED_ROW: FeedRowId = "digest";
 

@@ -123,6 +123,11 @@ export interface FactContext {
   failedSend(messageId: number): boolean;
   /** a row's To, Cc and Message-ID when the store left them out of its rows (read for one message per thread) */
   details?(messageId: number): { to_json: string; cc_json: string; rfc_message_id: string | null };
+  /**
+   * plan 215: you marked this message as needing no reply (Done on What matters' waiting row): it counts as answered. Asked
+   * only of a newest message that would otherwise wait (one primary-key lookup); a newer one from them isn't, so it waits again
+   */
+  cleared?(messageId: number): boolean;
 }
 
 /** Is an inbound message's sender a person (plan 17 §2.2)? */
@@ -136,6 +141,11 @@ export interface ThreadFacts {
   person: 0 | 1;
   /** the newest visible message waits for your reply: its date */
   waitingSince: number | null;
+}
+
+/** Plan 215: the facts with the message they judged waiting (computed, never stored): what Done and Later on its row act on. */
+export interface WaitingFacts extends ThreadFacts {
+  waitingMessageId: number | null;
 }
 
 const later = (a: Pick<FactRow, "date" | "id">, b: Pick<FactRow, "date" | "id">) => a.date > b.date || (a.date === b.date && a.id > b.id);
@@ -155,16 +165,20 @@ const mineOf = (m: FactRow, ctx: FactContext) => m.is_sent === 1 || ctx.own(addr
 const visibleOf = (m: FactRow) => !m.is_trash && !m.is_spam;
 
 /** The facts from the newest visible message and the newest inbound one of the right pool. */
-function decide(newest: FactRow | null, inbound: FactRow | null, ctx: FactContext): ThreadFacts {
+function decide(newest: FactRow | null, inbound: FactRow | null, ctx: FactContext): WaitingFacts {
   const person = inbound !== null && senderIsPerson(inbound, ctx);
   // the newest visible message is inbound only if it is also the newest inbound one
-  if (!newest || newest !== inbound || !person) return { person: person ? 1 : 0, waitingSince: null };
+  if (!newest || newest !== inbound || !person) return { person: person ? 1 : 0, waitingSince: null, waitingMessageId: null };
   const d = newest.to_json === undefined && ctx.details ? ctx.details(newest.id) : { to_json: newest.to_json ?? "[]", cc_json: newest.cc_json ?? "[]", rfc_message_id: newest.rfc_message_id ?? null };
   const to = addressesOf(d.to_json);
   const ccOnly = !to.some(ctx.own) && addressesOf(d.cc_json).some(ctx.own);
-  const waiting = !ccOnly && !(d.rfc_message_id && ctx.answered(d.rfc_message_id));
-  return { person: 1, waitingSince: waiting ? newest.date : null };
+  // plan 215: "no reply needed", said by hand, is answered (asked last: only of a message that would wait)
+  const waiting = !ccOnly && !(d.rfc_message_id && ctx.answered(d.rfc_message_id)) && !ctx.cleared?.(newest.id);
+  return waiting ? { person: 1, waitingSince: newest.date, waitingMessageId: newest.id } : { person: 1, waitingSince: null, waitingMessageId: null };
 }
+
+/** The stored facts alone: what's computed beside them never reaches a thread's row. */
+const factsOnly = (f: WaitingFacts): ThreadFacts => ({ person: f.person, waitingSince: f.waitingSince });
 
 /**
  * The facts read a conversation's newest messages, this many at most (drafts
@@ -229,7 +243,7 @@ export function threadFacts(rows: readonly FactRow[], ctx: FactContext, window: 
       if (!inbound || later(m, inbound)) inbound = m;
     } else if (!hiddenInbound || later(m, hiddenInbound)) hiddenInbound = m;
   }
-  return decide(newest, newest ? inbound : hiddenInbound, ctx);
+  return factsOnly(decide(newest, newest ? inbound : hiddenInbound, ctx));
 }
 
 /**
@@ -239,6 +253,11 @@ export function threadFacts(rows: readonly FactRow[], ctx: FactContext, window: 
  * thread's index with it). Equal to threadFacts (a property test holds them).
  */
 export function threadFactsNewestFirst(next: () => FactRow | undefined, ctx: FactContext, window: number = FACTS_WINDOW): ThreadFacts {
+  return factsOnly(waitingFactsNewestFirst(next, ctx, window));
+}
+
+/** Plan 215: the same walk, with the message it judged waiting (Done and Later act on it, in the store's own transaction). */
+export function waitingFactsNewestFirst(next: () => FactRow | undefined, ctx: FactContext, window: number = FACTS_WINDOW): WaitingFacts {
   let newest: FactRow | null = null;
   let inbound: FactRow | null = null;
   let hiddenInbound: FactRow | null = null;

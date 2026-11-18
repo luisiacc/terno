@@ -68,7 +68,7 @@ import {
 
 const id = z.number().int().positive();
 /** plan 210: a history line's key (`HistoryKey`) */
-const historyKey = z.object({ at: z.number().int().nonnegative(), src: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]), id });
+const historyKey = z.object({ at: z.number().int().nonnegative(), src: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3), z.literal(4)]), id });
 /** plan 210 (iteration 2): a What matters row's id ("dated:42", "promise:7", "waiting:12", "reminder:12") */
 const feedRowId = z.string().regex(/^(?:dated|promise|waiting|reminder):\d{1,15}$/);
 /** plan 210 (iteration 4): a hand-off saved with its forward's draft (`parseHandoff` reads it back the same way) */
