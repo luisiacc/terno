@@ -99,21 +99,17 @@ export function restoreWaiting(db: Db, s: WaitingSnapshot): number | null {
   });
 }
 
-/**
- * The waiting message at a conversation's waiting date: the newest one received then, shown (one seek of messages_thread).
- * Never a send of yours (a failed one at the same moment counts for nothing: Codex code review 2, #3).
- */
-const WAITING_MESSAGE = `(SELECT x.id FROM messages x INDEXED BY messages_thread WHERE x.thread_id = json_extract(j.value, '$[0]') AND x.date = json_extract(j.value, '$[1]')
-  AND x.is_sent = 0 AND x.is_draft = 0 AND x.is_trash = 0 AND x.is_spam = 0 ORDER BY x.date DESC, x.id DESC LIMIT 1)`;
-
 export function waitingRows(db: Db, threads: readonly { threadId: number; since: number }[], now: number, o: { messages: boolean }): Map<number, WaitingRowFacts> {
   const out = new Map<number, WaitingRowFacts>();
   if (!threads.length) return out;
   // the count: only a deferral still ahead changes a row, and most mailboxes have none (one probe of its index)
   if (!o.messages && !db.get("SELECT 1 FROM waiting_acts INDEXED BY waiting_acts_later WHERE state = 'later' AND until > ? LIMIT 1", now)) return out;
+  // each conversation's newest received message at its waiting date (a range of messages_thread a row), then its record
   const rows = db.all<{ thread_id: number; message: number; rev: number | null; state: string | null; until: number | null }>(
-    `SELECT json_extract(j.value, '$[0]') AS thread_id, m.id AS message, w.rev, w.state, w.until FROM json_each(?) j
-     JOIN messages m ON m.id = ${WAITING_MESSAGE} ${o.messages ? "LEFT " : ""}JOIN waiting_acts w ON w.message_id = m.id`,
+    `SELECT p.thread_id, p.message, w.rev, w.state, w.until FROM (
+       SELECT x.thread_id, max(x.id) AS message FROM json_each(?) j JOIN messages x INDEXED BY messages_thread ON x.thread_id = j.value ->> 0 AND x.date = j.value ->> 1
+       WHERE x.is_sent = 0 AND x.is_draft = 0 AND x.is_trash = 0 AND x.is_spam = 0 GROUP BY x.thread_id
+     ) p ${o.messages ? "LEFT " : ""}JOIN waiting_acts w ON w.message_id = p.message`,
     JSON.stringify(threads.map((t) => [t.threadId, t.since])),
   );
   for (const r of rows) out.set(r.thread_id, { message: o.messages ? r.message : null, rev: r.rev ?? 0, until: r.state === "later" && r.until !== null && r.until > now ? r.until : null });

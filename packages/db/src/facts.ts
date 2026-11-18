@@ -64,8 +64,9 @@ function failedSend(db: Db, messageId: number): boolean {
 
 /** What threadFacts asks the database. */
 export function factContext(db: Db, own: ReadonlySet<string>): FactContext {
-  // plan 215: a schema before v74 has no Done to read (a mailbox is migrated before any write; legacy fixtures write mail at
-  // the version they stand for): looked up once a context, and only when a message would wait
+  // plan 215: whether any Done is recorded at all, looked up once a context (contexts live for one unit) and only when a message
+  // would wait: most mailboxes have none, and a slice of the backfill then asks nothing a thread. A schema before v74 has none
+  // (a mailbox is migrated before any write; legacy fixtures write mail at the version they stand for)
   let acts: boolean | undefined;
   return {
     own: (key) => own.has(key),
@@ -73,7 +74,9 @@ export function factContext(db: Db, own: ReadonlySet<string>): FactContext {
     failedSend: (id) => failedSend(db, id),
     details: (id) => db.get<{ to_json: string; cc_json: string; rfc_message_id: string | null }>("SELECT to_json, cc_json, rfc_message_id FROM messages WHERE id = ?", id) ?? { to_json: "[]", cc_json: "[]", rfc_message_id: null },
     // plan 215: Done on its waiting row, one primary-key lookup for a newest message that would otherwise wait
-    cleared: (id) => (acts ??= db.get("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'waiting_acts'") !== undefined) && db.get("SELECT 1 FROM waiting_acts WHERE message_id = ? AND state = 'done'", id) !== undefined,
+    cleared: (id) =>
+      (acts ??= db.get("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'waiting_acts'") !== undefined && db.get("SELECT 1 FROM waiting_acts INDEXED BY waiting_acts_done WHERE state = 'done' LIMIT 1") !== undefined) &&
+      db.get("SELECT 1 FROM waiting_acts WHERE message_id = ? AND state = 'done'", id) !== undefined,
     answered: (rfcMessageId) => {
       // message_refs is keyed by (account_id, ref): a probe per account in one statement, the thread's own account
       // included (a Gmail thread id can put a reply in another thread of the same account)
