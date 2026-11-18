@@ -12,8 +12,11 @@ case "${1:-}" in
   demo)
     TERNO_USER_DATA=/tmp/terno-demo TERNO_VITE_PORT=5412 exec pnpm dev:desktop:demo
     ;;
+  personal)
+    TERNO_USER_DATA=/tmp/terno-personalme TERNO_VITE_PORT=5423 exec pnpm dev:desktop
+    ;;
   demoai)
-    TERNO_USER_DATA=/tmp/terno-demo-ai TERNO_VITE_PORT=5442 exec pnpm dev:demo-ai
+    TERNO_USER_DATA=/tmp/terno-demo-ai TERNO_VITE_PORT=5430 exec pnpm dev:demo-ai
     ;;
   *)
     echo "usage: $0 demo|demoai" >&2
