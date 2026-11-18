@@ -6,6 +6,7 @@ import { listFilterOf, matchesFilter } from "@terno/core";
  * on). The rules themselves are the pure functions in lib/selection.ts.
  */
 import { listScroller } from "~/components/thread-list";
+import { feedKeyThread } from "~/lib/feed-focus";
 import type { ThreadScope } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { getApp, markSelectionIntent, setApp, type AppState } from "~/state/app";
@@ -167,9 +168,12 @@ export function scopeRows<T extends { id: number; unread: boolean; starred: bool
   return items.filter((t) => (!filter || matchesFilter(filter, t)) && !onlyOnTop(t));
 }
 
-/** What an action applies to now: a scope, the checked rows (in list order), or the open thread. */
+/** What an action applies to now: a scope, the checked rows (in list order), or the open thread (What matters: its key's row's). */
 export function currentTargets(): { scope: NonNullable<AppState["scope"]> } | { ids: number[] } {
   const s = getApp();
   if (s.scope && s.scope.key === listKey()) return { scope: s.scope };
-  return { ids: targetsOf(s.checked, s.selectedId, s.checked.size ? listOrder() : undefined) };
+  return { ids: targetsOf(s.checked, keyThread(), s.checked.size ? listOrder() : undefined) };
 }
+
+/** The one conversation the keys act on with nothing checked: the open one, or in What matters the row the keys are on. */
+export const keyThread = (): number | null => feedKeyThread() ?? getApp().selectedId;

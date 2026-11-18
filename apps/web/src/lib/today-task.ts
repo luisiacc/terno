@@ -1,65 +1,27 @@
 import { dayKeyOf, DIGEST_ROW_ID, dueCutoff, promiseDay, type FeedRowId, type FollowupRow, type PartOfDay } from "@terno/core";
-import { feedPlace, focusedFeedItem, focusFeedItem } from "~/lib/feed-focus";
+import { feedPlace, focusedFeedItem } from "~/lib/feed-focus";
+import { dropFeedRows, feedBefore, keysOnTo, restoreFeedRow } from "~/lib/feed-leave";
 import type { LeftRows } from "~/lib/actions";
 import { actOnDated, actOnTask, type DatedRef, type TodayTask } from "~/lib/dated";
 import { actOnFollowup } from "~/lib/followups";
 import { changeOfItem, changeOfTask, openChange } from "~/lib/change";
 import { handTo, othersOfTask, seenOfReaderItem, seenOfTask } from "~/lib/hand-to";
-import { closePage, currentPage, listLayout } from "~/lib/page";
 import type { ReaderItem } from "~/lib/reader-items";
-import { getApp, openedByApp, setApp, setAppOpened } from "~/state/app";
-import { listKey, noteEdit, reloadList } from "~/state/list";
+import { getApp, setApp } from "~/state/app";
+import { listKey, reloadList } from "~/state/list";
 import { feedRow, feedRowsOfItem, readerHeld, rowOfThread, useFeedRow, useReaderChoice, useToday, type FeedRow } from "~/state/today";
 
 type TaskAction = "done" | "dismiss" | "later";
 
 /**
- * Plan 210 (iteration 2): rows that leave the feed at once (Done, Remove, Later on them), never their conversation's other
- * rows. The open one moves on, as after Archive: the row after it opens (else the one before, else nothing). Undo (the
- * snack's, z) brings them back with the next read, and the open row with them, when nothing was opened since. Iteration 4
- * (the owner): the next row's mail opens only when the user had the reader open by their own choice (a click, Enter, j/k,
- * or a Done that went on from such a one); one the app opened, the reader is put away and the feed is on the next row,
- * its mail unopened. The row the feed was put away on moves to the next likewise.
+ * Rows that leave the feed at once (Done, Remove, Later on them), the open one moving on (`dropFeedRows`). Undo (the
+ * snack's, z) brings them back with the next read, and the open row with them, when nothing was opened since.
  */
 function leaveFeedRows(ids: readonly FeedRowId[]): LeftRows | undefined {
-  const s = getApp();
-  const { rows } = useToday.getState();
-  const gone = new Set(ids.filter((id) => rows.some((r) => r.id === id)));
-  if (!s.today || !gone.size) return undefined;
-  const { opened, carried } = useFeedRow.getState();
   // how it was open too (the user's own choice, or the app's; a Done that went on from the user's), so an Undo restores the
   // reader as the user had it and a Done after it goes on as it would have (Codex's code review of iteration 4)
-  const before = { opened, carried, selectedId: s.selectedId, byApp: s.selectedId !== null && openedByApp(s.selectedId) };
-  const open = feedRow(opened);
-  // a read that started before this act may bring the row back: the list asks again (as `patchRows` does)
-  noteEdit();
-  useToday.setState({ rows: rows.filter((r) => !gone.has(r.id)) });
-  if (open && gone.has(open.id) && s.selectedId === open.threadId) {
-    if (listLayout() && currentPage() === "thread") closePage({ focus: true });
-    else {
-      const at = rows.indexOf(open);
-      // (plan 210, iteration 4: never the automated section's page, which sits between the open part and Coming up)
-      const stays = (r: FeedRow) => !gone.has(r.id) && r.threadId !== DIGEST_ROW_ID;
-      const next = rows.slice(at + 1).find(stays) ?? rows.slice(0, at).reverse().find(stays);
-      const byUser = !openedByApp(open.threadId) || useFeedRow.getState().carried === open.id;
-      if (byUser || !next) {
-        useFeedRow.setState(({ moves }) => ({ opened: next?.id ?? null, carried: next?.id ?? null, moves: moves + 1 }));
-        // opened by the app, as Archive's next is: not read until chosen (Codex code review of iteration 2)
-        setAppOpened(next ? next.threadId : null);
-      } else {
-        useFeedRow.setState(({ moves }) => ({ opened: null, cursor: next.id, carried: null, moves: moves + 1 }));
-        setApp({ selectedId: null });
-        keysOnTo(next.id);
-      }
-    }
-  } else {
-    const { cursor } = useFeedRow.getState();
-    if (cursor !== null && gone.has(cursor)) {
-      const at = rows.findIndex((r) => r.id === cursor);
-      const stays = (r: FeedRow) => !gone.has(r.id) && r.threadId !== DIGEST_ROW_ID;
-      useFeedRow.setState({ cursor: (rows.slice(at + 1).find(stays) ?? rows.slice(0, at).reverse().find(stays))?.id ?? null });
-    }
-  }
+  const before = feedBefore();
+  if (!dropFeedRows(ids)) return undefined;
   const moved = useFeedRow.getState().moves;
   const where = { key: listKey(), selectedId: getApp().selectedId };
   const back = async () => {
@@ -67,11 +29,7 @@ function leaveFeedRows(ids: readonly FeedRowId[]): LeftRows | undefined {
     // code review, round 2); its next read brings the row
     if (!getApp().today || listKey() !== where.key) return;
     await reloadList({ keepSelection: true });
-    // the open row back, unless another was opened since (Codex's design: a newer selection wins, a sibling row included)
-    if (useFeedRow.getState().moves !== moved || getApp().selectedId !== where.selectedId || listKey() !== where.key || before.opened === null || !useToday.getState().rows.some((r) => r.id === before.opened)) return;
-    useFeedRow.setState(({ moves }) => ({ opened: before.opened, carried: before.carried, moves: moves + 1 }));
-    if (before.byApp) setAppOpened(before.selectedId);
-    else setApp({ selectedId: before.selectedId });
+    if (listKey() === where.key) restoreFeedRow(before, moved, where.selectedId);
   };
   return {
     async undo(run) {
@@ -230,11 +188,6 @@ export function handOnSelected(): boolean {
   void ("item" in target ? handTo(seenOfReaderItem(target.item)) : handTo(seenOfTask(target.row.task), target.row.id, othersOfTask(target.row.task)));
   return true;
 }
-
-/** The keys on to `next` once the row has gone, as after D (a frame: the feed draws the rows that are left). */
-const keysOnTo = (next: FeedRowId | undefined): void => {
-  if (next !== undefined) requestAnimationFrame(() => focusFeedItem(next));
-};
 
 /**
  * Plan 204 (after the panel, fix 10): Later's "Pick a date…", a moment of your own in its own window; `next`, where the

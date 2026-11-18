@@ -1124,3 +1124,93 @@ test("plan 211: an account's switches in Settings → Accounts: out of What matt
     await feedShows(true, true);
   });
 });
+
+test("the list's keys on What matters' rows: e, # and r on the row the keys are on with nothing open; e on the open one moves on; a task stays, its mail filed; z exact", async ({ app: page, server }) => {
+  await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true } }, dev);
+  const bill = await item(server, "power", "Pay the power bill", null);
+  // two conversations waiting on you, as Needs you's own rule finds them: you wrote, they answered
+  const store = server.backend.store;
+  const db = sqlDb(store);
+  const me = db.get<{ email: string }>("SELECT email FROM accounts ORDER BY id LIMIT 1")!.email;
+  const waitingOn = async (key: string, who: { name: string; email: string }, subject: string, at: number) => {
+    const mine = message(server, `${key}-mine`, { name: "", email: me }, subject, "Sounds good, what works for you?", at - HOUR, { providerThreadId: key, to: [who], isSent: true });
+    const theirs = message(server, key, who, `Re: ${subject}`, subject, at, { providerThreadId: key, isRead: false, inInbox: true, inReplyTo: `<${key}-mine@e2e.test>` });
+    await store.sync.ingest([mine, theirs], { applyFilters: false, now: E2E_NOW, classifier: null });
+    return db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = ?", key)!.thread_id;
+  };
+  const ana = await waitingOn("ana", { name: "Ana Ruiz", email: "ana@people.test" }, "Can we meet Thursday?", E2E_NOW - HOUR);
+  await waitingOn("ben", { name: "Ben Ito", email: "ben@people.test" }, "Notes from the offsite", E2E_NOW - 2 * HOUR);
+  const where = (id: number) => db.get<{ in_inbox: number; in_trash: number }>("SELECT in_inbox, in_trash FROM threads WHERE id = ?", id)!;
+  await fresh(page);
+  await page.getByTestId("nav-today").click();
+  const anaRow = feed(page).locator(`[data-row-id="waiting:${ana}"]`);
+  await expect(anaRow).toBeVisible({ timeout: 15_000 });
+  /** the row drawn after Ana's, which the keys and the reader go on to */
+  const nextId = () => anaRow.evaluate((el) => el.closest("[data-index]")!.nextElementSibling?.querySelector("[data-row-id]")?.getAttribute("data-row-id") ?? null);
+  const row = (id: string) => feed(page).locator(`[data-row-id="${id}"]`);
+
+  await scenario("e with nothing open archives the row the keys are on: it leaves, the keys on the next; z brings it back, the keys on it", async () => {
+    const next = (await nextId())!;
+    await anaRow.getByTestId("wm-item-open").focus();
+    await page.keyboard.press("e");
+    await expect(anaRow).toHaveCount(0);
+    await expect(page.getByTestId("snack")).toContainText("Archived");
+    await expect.poll(() => where(ana).in_inbox).toBe(0);
+    await expect(row(next).getByTestId("wm-item-open")).toBeFocused();
+    await expect(page.getByTestId("reader")).toHaveCount(0);
+    await page.keyboard.press("z");
+    await expect.poll(() => where(ana).in_inbox).toBe(1);
+    await expect(page.getByTestId("snack")).toContainText("Restored");
+    await expect(anaRow.getByTestId("wm-item-open")).toBeFocused();
+    await expect(page.getByTestId("reader")).toHaveCount(0);
+  });
+
+  await scenario("e on the open row: it leaves and the next row's conversation opens, as the Inbox's next; z opens it again", async () => {
+    const next = (await nextId())!;
+    await anaRow.getByTestId("wm-item-open").click();
+    await expect(page.locator("#reader-subject")).toHaveText(/Can we meet Thursday\?/);
+    await page.keyboard.press("e");
+    await expect(anaRow).toHaveCount(0);
+    await expect(row(next)).toHaveAttribute("data-open");
+    await expect(row(next).getByTestId("wm-item-open")).toBeFocused();
+    await expect(page.locator("#reader-subject")).not.toHaveText(/Can we meet Thursday\?/);
+    await page.keyboard.press("z");
+    await expect.poll(() => where(ana).in_inbox).toBe(1);
+    await expect(page.getByTestId("snack")).toContainText("Restored");
+    await expect(anaRow).toHaveAttribute("data-open");
+    await expect(page.locator("#reader-subject")).toHaveText(/Can we meet Thursday\?/);
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("reader")).toHaveCount(0);
+  });
+
+  await scenario("a task stays (plan 204: the bill still has to be paid): e files its mail, its row stays open", async () => {
+    const billRow = openLine(page, "Pay the power bill");
+    await billRow.getByTestId("wm-item-open").click();
+    await page.keyboard.press("e");
+    await expect(page.getByTestId("snack")).toContainText("Archived");
+    await expect.poll(() => where(bill).in_inbox).toBe(0);
+    await expect(billRow).toHaveAttribute("data-open");
+    await page.keyboard.press("z");
+    await expect.poll(() => where(bill).in_inbox).toBe(1);
+    await expect(page.getByTestId("snack")).toContainText("Restored");
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("reader")).toHaveCount(0);
+  });
+
+  await scenario("# with nothing open trashes the keys' row; z restores it; r opens its conversation with the reply", async () => {
+    await anaRow.getByTestId("wm-item-open").focus();
+    const next = (await nextId())!;
+    await page.keyboard.press("#");
+    await expect(anaRow).toHaveCount(0);
+    await expect.poll(() => where(ana).in_trash).toBe(1);
+    await expect(row(next).getByTestId("wm-item-open")).toBeFocused();
+    await page.keyboard.press("z");
+    await expect.poll(() => where(ana).in_trash).toBe(0);
+    await expect(page.getByTestId("snack")).toContainText("Restored");
+    await expect(anaRow.getByTestId("wm-item-open")).toBeFocused();
+    await page.keyboard.press("r");
+    await expect(page.locator("#reader-subject")).toHaveText(/Can we meet Thursday\?/);
+    await expect(anaRow).toHaveAttribute("data-open");
+    await expect(page.getByTestId("composer")).toBeVisible();
+  });
+});

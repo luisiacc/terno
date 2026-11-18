@@ -13,7 +13,9 @@ import { invalidateThreads, useThreads } from "~/state/threads";
 import { closePage, currentPage, listLayout, readerShown } from "~/lib/page";
 import { placeActions } from "~/lib/places";
 import { showSimilarSnackbar } from "~/components/similar-snackbar";
-import { leaveToDigest, reopenFromDigest, useToday } from "~/state/today";
+import { leaveToDigest, reopenFromDigest, useFeedRow, useToday } from "~/state/today";
+import { dropFeedRows, feedBefore, feedRowsLeaving, onToFirstRow, reopenFeedRow, type FeedBefore } from "~/lib/feed-leave";
+import { focusFeed } from "~/lib/feed-focus";
 
 /** Does a thread still belong in the current list after an action? */
 function staysInView(s: Pick<AppState, "view" | "gmailTab" | "categoryId" | "reviewCategoryId" | "folder" | "query">, action: ThreadAction): boolean {
@@ -247,17 +249,21 @@ interface SelectionBefore {
   revision: number;
   leftChecked: AppState["checked"];
   leftScope: ScopeSelection | null;
+  /** What matters' open row and the keys' row (plan 210): what Undo puts back with the conversation */
+  feed: FeedBefore | null;
+  /** the feed's own choices the action left (a sibling row opened since is a newer choice the selection doesn't show) */
+  feedMoves: number;
 }
 
 const selectionBefore = (): SelectionBefore => {
   const s = getApp();
-  return { key: listKey(), checked: s.checked, scope: s.scope, selectedId: s.selectedId, anchorId: s.anchorId, left: s.selectedId, byApp: s.selectedId !== null && openedByApp(s.selectedId), fromDigest: s.selectedId !== null && useToday.getState().fromDigest === s.selectedId, movedTo: s.selectedId === null ? undefined : useToday.getState().movedTo.get(s.selectedId), revision: -1, leftChecked: s.checked, leftScope: s.scope };
+  return { key: listKey(), checked: s.checked, scope: s.scope, selectedId: s.selectedId, anchorId: s.anchorId, left: s.selectedId, byApp: s.selectedId !== null && openedByApp(s.selectedId), fromDigest: s.selectedId !== null && useToday.getState().fromDigest === s.selectedId, movedTo: s.selectedId === null ? undefined : useToday.getState().movedTo.get(s.selectedId), revision: -1, leftChecked: s.checked, leftScope: s.scope, feed: s.today ? feedBefore() : null, feedMoves: useFeedRow.getState().moves };
 };
 
 /** What the action itself left selected: the line a newer choice is measured from. */
 function settled(before: SelectionBefore): void {
   const s = getApp();
-  Object.assign(before, { left: s.selectedId, revision: getSelectionWriteRevision(), leftChecked: s.checked, leftScope: s.scope });
+  Object.assign(before, { left: s.selectedId, revision: getSelectionWriteRevision(), leftChecked: s.checked, leftScope: s.scope, feedMoves: useFeedRow.getState().moves });
 }
 
 /** Where the keyboard was when Undo was asked for: focus that has moved on by its end is the user's newer choice. */
@@ -273,18 +279,31 @@ function restoreSelection(before: SelectionBefore, focusAtStart: Element | null 
   const s = getApp();
   if (listKey() !== before.key) return;
   // a row opened since and the cursor back on the same one is still a newer choice, as is a check made and taken off
-  if (getSelectionWriteRevision() !== before.revision || s.checked !== before.leftChecked || s.scope !== before.leftScope || s.selectedId !== before.left) return;
-  setApp({ checked: before.checked, scope: before.scope, anchorId: before.anchorId });
-  // only an action that went back to the digest: a star undone on the open newsletter leaves it as it is (Codex review)
-  if (before.fromDigest && before.left === DIGEST_ROW_ID && before.selectedId !== null && s.today) reopenFromDigest(before.selectedId, before.movedTo);
-  else if (before.byApp) setAppOpened(before.selectedId);
-  else setApp({ selectedId: before.selectedId });
+  if (getSelectionWriteRevision() !== before.revision || s.checked !== before.leftChecked || s.scope !== before.leftScope || s.selectedId !== before.left || useFeedRow.getState().moves !== before.feedMoves) return;
+  const checks = () => setApp({ checked: before.checked, scope: before.scope, anchorId: before.anchorId });
   // the keyboard goes back to the list only from where Undo was asked (or from nowhere, the snack's button gone), never
   // out of a draft, its recipients, or anything being typed in
-  const active = document.activeElement;
-  if (active && active !== focusAtStart && active !== document.body) return;
-  if (active?.closest("input, textarea, select, [contenteditable=true], [role=dialog], [data-draft-key], [data-recipient-field]")) return;
-  document.querySelector<HTMLElement>("[data-testid=thread-list] [data-keep-scroll=list]")?.focus({ preventScroll: true });
+  const keysBack = (feed = false) => {
+    const active = document.activeElement;
+    if (active && active !== focusAtStart && active !== document.body) return;
+    if (active?.closest("input, textarea, select, [contenteditable=true], [role=dialog], [data-draft-key], [data-recipient-field]")) return;
+    if (feed) focusFeed({ quiet: true });
+    else document.querySelector<HTMLElement>("[data-testid=thread-list] [data-keep-scroll=list]")?.focus({ preventScroll: true });
+  };
+  const fromDigest = before.fromDigest && before.left === DIGEST_ROW_ID && before.selectedId !== null && s.today;
+  // What matters: its row back too, once the feed holds it, the checks and the keys with it (checked before the read
+  // brings their rows, they'd be pruned)
+  if (before.feed && s.today && !fromDigest)
+    return reopenFeedRow(before.feed, () => {
+      checks();
+      keysBack(true);
+    });
+  checks();
+  // only an action that went back to the digest: a star undone on the open newsletter leaves it as it is (Codex review)
+  if (fromDigest && before.selectedId !== null) reopenFromDigest(before.selectedId, before.movedTo);
+  else if (before.byApp) setAppOpened(before.selectedId);
+  else setApp({ selectedId: before.selectedId });
+  keysBack();
 }
 
 /** Plan 86: a row in a Gmail tab its account keeps apart (Move to Inbox fits it). */
@@ -323,13 +342,30 @@ export function leaveList(action: ThreadAction, targets: readonly number[], opti
 
   // back on the list first (focus with it), then the cursor moves: the page closes even when no thread is left to move to
   if (backToList) closePage({ focus: true });
-  if (!backToDigest && leaving && !reading) stepPast(targets);
-  if (leaving) reflowRemoval(targets.filter((id) => id !== stays));
-  patchRows(targets, (t): ThreadSummary | null => (leaving && t.id !== stays ? null : patched(t, action)));
+  if (s.today && !backToDigest) leaveFeed(action, targets);
+  else {
+    if (!backToDigest && leaving && !reading) stepPast(targets);
+    if (leaving) reflowRemoval(targets.filter((id) => id !== stays));
+    patchRows(targets, (t): ThreadSummary | null => (leaving && t.id !== stays ? null : patched(t, action)));
+  }
 
   // what the user acted on stops being selected; automatic and undo actions never touch the selection
   const onTargets = !options.quiet && targets.some((id) => s.checked.has(id));
   if (onTargets && (s.checked.size || s.scope)) setApp({ checked: new Set(), scope: null });
+}
+
+/**
+ * What matters (plan 210): its rows leave, not its conversations: those the action ends (`feedRowsLeaving`: Archive a person
+ * waiting on your answer, Trash and Spam everything), at once, the open one moving on to the next row as after Done. A
+ * conversation leaves the list once none of its rows is left; one with a task still to do stays, its mail filed.
+ */
+function leaveFeed(action: ThreadAction, targets: readonly number[]): void {
+  const s = getApp();
+  const elsewhere = s.selectedId !== null && targets.includes(s.selectedId) && !useToday.getState().rows.some((r) => r.threadId === s.selectedId) && !staysInView(s, action);
+  dropFeedRows(feedRowsLeaving(action, targets));
+  if (elsewhere) onToFirstRow();
+  const left = new Set(useToday.getState().rows.map((r) => r.threadId));
+  patchRows(targets, (t) => (left.has(t.id) ? patched(t, action) : null));
 }
 
 /**

@@ -14,7 +14,7 @@ import { LIST_TITLE } from "~/lib/list-title";
 import { installScrollHairline } from "~/lib/scroll-hairline";
 import { pressRow, releaseRow } from "~/lib/select";
 import { historySentence, historyWhen, todaySentence, todayWhen, type TodayTone } from "~/lib/today-sentence";
-import { feedScroller } from "~/lib/feed-focus";
+import { feedScroller, placeFeedKeys } from "~/lib/feed-focus";
 import { measureControls } from "~/lib/feed-controls";
 import { closeFeedConversation } from "~/lib/feed-pane";
 import { listLayout } from "~/lib/page";
@@ -435,7 +435,7 @@ function Item({ row, sentence, meta, when, tone, task, open, cursor = false, lat
       {/* plan 210 (iteration 4, design point 2): the sentence keeps at least two thirds of the row: the when column is at
           most a third (its words wrap there); in a narrow feed (the reader open beside it) it goes under the sentence, on a
           line of its own above who, so "You said you'd…" is never crushed beside it */}
-      <button type="button" data-testid="wm-item-open" title={`${sentence}\n${meta}`} aria-expanded={open} onClick={() => openItem(row)} className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4 rounded-lg px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring @max-[30rem]:grid-cols-1">
+      <button type="button" data-testid="wm-item-open" title={`${sentence}\n${meta}`} aria-expanded={open} onFocus={() => placeFeedKeys(row.id)} onClick={() => openItem(row)} className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4 rounded-lg px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring @max-[30rem]:grid-cols-1">
         {/* plan 210 (iteration 3): Coming up's sentences in the row ink, not a fade (its column stays quiet). The claims
             ledger's second batch: three lines at most, the open item's whole (two cut an alert's ", the email says" and a
             promise's second deliverable, worst beside the reader); the whole sentence is the button's title and, unclamped in

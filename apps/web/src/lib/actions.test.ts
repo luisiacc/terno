@@ -471,3 +471,54 @@ describe("an account's Mark all as read (plan 106)", () => {
     expect(shown()).toEqual([[10, true], [11, true], [12, true], [20, true]]);
   });
 });
+
+describe("plan 213: the list's keys on What matters' rows, and their Undo", () => {
+  /** what the backend's What matters holds: these waiting conversations */
+  let holds = [1, 2, 3];
+  beforeEach(async () => {
+    holds = [1, 2, 3];
+    fake.handlers["threads.act"] = async () => ({ undoId: 9 });
+    fake.handlers["threads.undo"] = async () => ({ restored: 1 });
+    fake.handlers["today.list"] = async () => ({ sections: [{ kind: "today", items: holds.map((id) => ({ id: `waiting:${id}`, thread: row(id), why: { kind: "waiting" } })) }], digest: null, held: [], now: 0 });
+    const { useFeedRow } = await import("~/state/today");
+    useFeedRow.setState({ opened: null, cursor: null, carried: null });
+    setApp({ view: "all", today: true });
+    await vi.waitFor(() => expect(useList.getState().items.map((t) => t.id)).toEqual([1, 2, 3]));
+    // (nothing open, as What matters opens)
+    setApp({ selectedId: null });
+  });
+  afterEach(() => setApp({ today: false }));
+
+  it("a row the keys were put on after the action is a newer choice: Undo brings the row back, the keys stay", async () => {
+    const { useFeedRow, useToday } = await import("~/state/today");
+    const { placeFeedKeys } = await import("./feed-focus");
+    placeFeedKeys("waiting:1");
+    holds = [2, 3];
+    await act("archive");
+    expect(useFeedRow.getState().cursor).toBe("waiting:2");
+    placeFeedKeys("waiting:3");
+    holds = [1, 2, 3];
+    await runUndo(useSnack.getState().undo!);
+    await vi.waitFor(() => expect(useToday.getState().rows.map((r) => r.id)).toContain("waiting:1"));
+    expect(useFeedRow.getState().cursor).toBe("waiting:3");
+  });
+
+  it("Undo while the backend hasn't the conversation back yet: the open row and the checks come back with it, never pruned on the way", async () => {
+    const { reloadList } = await import("~/state/list");
+    const { useFeedRow } = await import("~/state/today");
+    setApp({ selectedId: 1, checked: new Set([1]) });
+    useFeedRow.setState({ opened: "waiting:1" });
+    holds = [2, 3];
+    await act("archive");
+    expect(getApp().selectedId).toBe(2);
+    expect(getApp().checked.size).toBe(0);
+    // the answers after the Undo don't hold it yet, twice; the third does
+    await runUndo(useSnack.getState().undo!);
+    await reloadList({ keepSelection: true });
+    holds = [1, 2, 3];
+    await reloadList({ keepSelection: true });
+    await vi.waitFor(() => expect(useFeedRow.getState().opened).toBe("waiting:1"));
+    expect(getApp().selectedId).toBe(1);
+    expect([...getApp().checked]).toEqual([1]);
+  });
+});

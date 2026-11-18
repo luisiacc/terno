@@ -6,7 +6,7 @@ import { act, openCompose, toggleRead, toggleStar, undoLast } from "~/lib/action
 import { togglePin } from "~/lib/pins";
 import { focusReader, movePane } from "~/lib/pane-focus";
 import { announce } from "~/lib/announce";
-import { clearSelection, extendSelection, isMac, selectAll, selectWhere, toggleCurrent } from "~/lib/select";
+import { clearSelection, extendSelection, isMac, keyThread, selectAll, selectWhere, toggleCurrent } from "~/lib/select";
 import { openFocusedMenu, openMenuForSelection } from "~/components/thread-menu";
 import { chooseOpenThread, getApp, markSelectionIntent, navigate, setApp } from "~/state/app";
 import { loadMore, useList } from "~/state/list";
@@ -21,7 +21,7 @@ import { checkForUpdates } from "~/lib/updates";
 import { closeEmptySearch, focusRows, focusSearch, listScroller } from "~/components/thread-list";
 import { closeFeedConversation } from "~/lib/feed-pane";
 import { popupOpen } from "~/components/composer/controller";
-import { feedPlace, feedScroller, focusFeed } from "~/lib/feed-focus";
+import { feedPlace, feedScroller, focusFeed, openFeedKeyRow } from "~/lib/feed-focus";
 import { snackbarControls } from "~/components/category-snackbar";
 import { setListFilter, toggleUnreadFilter } from "~/lib/unread";
 import { closePage, currentPage, goBack, goForward, listLayout, openThread, uncoverList } from "~/lib/page";
@@ -170,6 +170,8 @@ export function focusSearchField(): void {
 }
 
 export function reply(mode: DraftMode) {
+  // What matters with nothing open: the conversation of the row the keys are on opens, its reply in it
+  if (getApp().selectedId === null) openFeedKeyRow();
   const id = getApp().selectedId;
   if (listLayout() && currentPage() === "list" && id !== null) openThread(id);
   // plan 144: a reply ready here is what reply means. R is Use, so it answers as the card's Reply | Reply all says (owner's decisions 2); `a` is Reply all
@@ -317,10 +319,7 @@ const DECIDES: Partial<Record<Command, () => boolean>> = {
   "today.handTo": () => !digestHasKeys() && handOnSelected(),
 };
 
-const hasTargets = () => {
-  const s = getApp();
-  return s.selectedId !== null || s.checked.size > 0;
-};
+const hasTargets = () => keyThread() !== null || getApp().checked.size > 0;
 
 function isEditable(el: Element | null): boolean {
   if (!el) return false;

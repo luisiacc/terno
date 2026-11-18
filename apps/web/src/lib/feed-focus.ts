@@ -1,8 +1,8 @@
-import type { FeedRowId } from "@terno/core";
+import { DIGEST_ROW_ID, type FeedRowId } from "@terno/core";
 import { hideFocusRing } from "~/lib/focus-ring";
 import { focusQuietly } from "~/lib/quiet-focus";
-import { getApp } from "~/state/app";
-import { feedRow, useFeedRow, useToday } from "~/state/today";
+import { getApp, setApp } from "~/state/app";
+import { feedRow, openFeedRow, useFeedRow, useToday, type FeedRow } from "~/state/today";
 
 /**
  * Plan 210 (iteration 2): the feed scrolls a row into view by its id (registered by the feed while it's drawn); the list's
@@ -76,4 +76,35 @@ export function focusFeedItem(id: FeedRowId, still: () => boolean = () => true):
 export function focusedFeedItem(): FeedRowId | null {
   const el = document.activeElement?.closest?.("[data-testid=wm-feed] [data-row-id]");
   return el?.getAttribute("data-row-id") ?? null;
+}
+
+/**
+ * The row What matters' keys act on with nothing open (e, #, s, u, l, r…): the feed's place, the row the keys were put on
+ * (Tab, j's way back, Esc). With a conversation open, that one is the target, as the Inbox's open row is, wherever focus
+ * is (a dialog's field, the palette, the digest's row); the digest's row is never one.
+ */
+function keyRow(): FeedRow | undefined {
+  const s = getApp();
+  if (!s.today || s.selectedId !== null) return undefined;
+  const row = feedRow(useFeedRow.getState().cursor);
+  return row && row.threadId !== DIGEST_ROW_ID ? row : undefined;
+}
+
+/**
+ * A row of the feed has the keys (Tab, a click's press) with nothing open: it's the feed's place, what the keys act on. A
+ * new place is a choice of the feed's own (`moves`), so an Undo from before it leaves it be, as a row chosen on the list.
+ */
+export function placeFeedKeys(id: FeedRowId): void {
+  if (getApp().selectedId === null && useFeedRow.getState().cursor !== id) useFeedRow.setState(({ moves }) => ({ cursor: id, moves: moves + 1 }));
+}
+
+/** The conversation of the row What matters' keys are on (`keyRow`), if any. */
+export const feedKeyThread = (): number | null => keyRow()?.threadId ?? null;
+
+/** With nothing open in What matters, the row the keys are on opens its conversation (r, a, f reply in it). */
+export function openFeedKeyRow(): void {
+  const row = keyRow();
+  if (!row) return;
+  openFeedRow(row.id);
+  setApp({ selectedId: row.threadId });
 }
