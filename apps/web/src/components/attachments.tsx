@@ -108,7 +108,9 @@ function useFileActions() {
     if (running.current) return;
     running.current = true;
     setBusy(busyKey(f.a));
-    void runFileAction(f, how, () => act(f, "download")).finally(() => { running.current = false; setBusy(null); });
+    // the snack's Download is asked for on its own: it never waits on the list's one-at-a-time, which would drop it while
+    // another file's work runs (Codex code review)
+    void runFileAction(f, how, () => void runFileAction(f, "download", () => {})).finally(() => { running.current = false; setBusy(null); });
   };
   /** a file's button: named for what a click does, and marked so its list's menu finds it */
   const fileProps = (f: FileTarget) => {

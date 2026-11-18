@@ -195,13 +195,18 @@ describe("ThreadAttachments (plan 177)", () => {
     const { AttachmentOpenFailed } = await import("~/lib/attachments");
     const { snack } = await import("~/lib/snack");
     calls.open.mockRejectedValueOnce(new AttachmentOpenFailed("file-1.pdf"));
-    const host = await render(<ThreadAttachments messages={[msg({ attachments: [file(1, "asset-1")] }), msg()]} />);
+    const host = await render(<ThreadAttachments messages={[msg({ attachments: [file(1, "asset-1")] }), msg({ attachments: [file(2)] })]} />);
     await act(async () => host.querySelector<HTMLButtonElement>("[data-testid=thread-attachment] > button")!.click());
     const [message, options] = vi.mocked(snack.error).mock.calls.at(-1)!;
     expect(message).toBe("Couldn’t open file-1.pdf.");
     expect(options?.action).toMatchObject({ label: "Download", name: "Download file-1.pdf" });
+    // while another file's work runs, the download asked for from the message still happens
+    let finish!: () => void;
+    calls.retry.mockImplementationOnce(() => new Promise<void>((r) => (finish = r)));
+    await act(async () => host.querySelectorAll<HTMLButtonElement>("[data-testid=thread-attachment] > button")[1]!.click());
     await act(async () => options!.action!.onClick!());
     expect(calls.download).toHaveBeenCalledWith(4, expect.objectContaining({ id: 1, assetId: "asset-1" }));
+    await act(async () => finish());
   });
 
   it("past twelve files, the rest wait behind Show all", async () => {

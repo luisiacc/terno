@@ -262,3 +262,7 @@ Codex reviewed the first three commits, `0c237e0ff..fef369cea`, and reported thr
 - **What changed:**
   - **The error offers the way out.** "Couldn't open {name}." now carries a **Download** button, instead of pointing to a menu. `AttachmentOpenFailed` marks the errors that get it.
   - **Main logs where an open stopped:** `attachment.open_failed`, with `openStep` (root, write, mark or open) and the `errno`. It never logs the file's name, nor `openPath`'s message, which contains the path.
+- **Codex code review:** one finding, fixed.
+  - **The bug:** the message's Download went through the list's one-at-a-time guard. Clicked while another file's work ran, it closed the message and downloaded nothing.
+  - **The fix:** that Download is a request of its own, and runs at once.
+  - **Test:** `thread-overview.test.tsx`, which fails without the fix.
