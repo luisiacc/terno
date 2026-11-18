@@ -233,3 +233,14 @@ Codex reviewed the first three commits, `0c237e0ff..fef369cea`, and reported thr
 - e2e: `attachment-controls.spec.ts`, `reader.spec.ts` and `attachments.spec.ts`;
 - the desktop bridge through the real preload, IPC and file path: `print.smoke.ts`, plan 212's test, run against `dist` (`TERNO_PRINT_SMOKE_DEV=1`);
 - light and dark screenshots of the strip and the tiles with the menu open.
+
+## Follow-up: a Download button on hover
+
+> can we have a button to download that shows on hover on the right?
+
+- **Files that open:** a file that opens shows a Download icon button at its right, on hover or on its own Tab focus. The button is named "Download {name}", and it comes after the file in Tab order.
+  - **In the strip,** the file's size steps aside (fades out) and the button takes its place. Nothing moves, and no letter is cut: an earlier version that faded the button over the size left half a number showing.
+  - **On a tile,** it sits in the trailing slot. The text leaves that slot free (`pe-11`).
+- **Files whose click downloads** show the download glyph in that place instead of a second control that would do the same thing. On a tile the glyph shows at rest; in the strip it shows on hover.
+- **Hover** now belongs to the file as a whole, not its button, so the hover background holds while the pointer is on Download. The button carries `data-attachment`, so a right-click on it opens the file's menu.
+- **Codex code review:** one finding, fixed. The hidden button still took the pointer, so on a touch screen, which never hovers, a tap at a file's end downloaded it instead of opening it. The button now takes the pointer only while it shows (`SHOWN_ON_HOVER`), and Tab still reaches it. The e2e checks `pointer-events` at rest and on hover, and that check was confirmed to fail without the fix.

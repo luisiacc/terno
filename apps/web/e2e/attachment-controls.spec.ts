@@ -50,9 +50,12 @@ test("reader attachment controls include all visible labels and localized downlo
   // a Download button at the file's right, shown on hover; a file whose click downloads shows the glyph there instead
   const pixelTile = page.getByTestId("attachment").filter({ hasText: "pixel.png" });
   const hoverDownload = pixelTile.getByRole("button", { name: "Download pixel.png", exact: true });
+  // hidden, it takes no pointer: a tap at the tile's end (a touch screen never hovers) opens the file
   await expect(hoverDownload).toHaveCSS("opacity", "0");
+  await expect(hoverDownload).toHaveCSS("pointer-events", "none");
   await pixelTile.hover();
   await expect(hoverDownload).toHaveCSS("opacity", "1");
+  await expect(hoverDownload).toHaveCSS("pointer-events", "auto");
   await axeBothModes(page, "[data-testid=attachment]");
   const viaButton = page.waitForEvent("download");
   await hoverDownload.click();

@@ -89,6 +89,7 @@ test.describe("reader conversation", () => {
       const own = tile.getByRole("button", { name: "Download boarding-pass.pdf", exact: true });
       await expect(own).toBeFocused();
       await expect(own).toHaveCSS("opacity", "1");
+      await expect(own).toHaveCSS("pointer-events", "auto");
       await page.keyboard.press("Shift+Tab");
       await expect(download).toBeFocused();
     });

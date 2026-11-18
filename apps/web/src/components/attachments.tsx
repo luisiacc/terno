@@ -213,12 +213,18 @@ export function ReaderAttachments({ accountId, messageId, attachments }: { accou
         </button>
         {/* the slot the text leaves free (pe-11): the glyph at rest where a click downloads, the button on hover where it opens */}
         <span className="pointer-events-none absolute inset-y-0 end-2 flex items-center">
-          {downloadButton(f, "icon-sm", "pointer-events-auto opacity-0 transition-opacity duration-fast group-hover/file:opacity-100 focus-reveal:opacity-100")}
+          {downloadButton(f, "icon-sm", cn(SHOWN_ON_HOVER, "opacity-0 transition-opacity duration-fast group-hover/file:opacity-100 focus-reveal:opacity-100"))}
         </span>
       </li>)}
     </ul>
   </FilesMenu>;
 }
+
+/**
+ * A file's Download button takes the pointer only while it shows: hidden, a click or a tap at the file's end reaches the
+ * file (a touch screen never hovers, so there it's never in the way). Tab still reaches it, and shows it.
+ */
+const SHOWN_ON_HOVER = "pointer-events-none group-hover/file:pointer-events-auto focus-reveal:pointer-events-auto";
 
 /** past this many files, the rest wait behind "Show all": a long conversation's strip stays a few lines */
 const FILES_SHOWN = 12;
@@ -250,7 +256,7 @@ export function ThreadAttachments({ messages }: { messages: readonly MessageDeta
               <span className="shrink-0 text-muted-foreground tabular transition-opacity duration-fast group-hover/file:opacity-0 group-has-[[data-testid=attachment-download]:focus-visible]/file:opacity-0">{formatBytes(f.a.size)}</span>
             </button>
             <span className="pointer-events-none absolute inset-y-0 end-0.5 flex items-center opacity-0 transition-opacity duration-fast group-hover/file:opacity-100 has-[:focus-visible]:opacity-100">
-              {downloadButton(f, "icon-xs", "pointer-events-auto")}
+              {downloadButton(f, "icon-xs", SHOWN_ON_HOVER)}
             </span>
           </li>)}
           {/* one toggle, there while open too: focus stays on it, and it folds the rest back */}
