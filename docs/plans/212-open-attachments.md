@@ -244,3 +244,8 @@ Codex reviewed the first three commits, `0c237e0ff..fef369cea`, and reported thr
 - **Files whose click downloads** show the download glyph in that place instead of a second control that would do the same thing. On a tile the glyph shows at rest; in the strip it shows on hover.
 - **Hover** now belongs to the file as a whole, not its button, so the hover background holds while the pointer is on Download. The button carries `data-attachment`, so a right-click on it opens the file's menu.
 - **Codex code review:** one finding, fixed. The hidden button still took the pointer, so on a touch screen, which never hovers, a tap at a file's end downloaded it instead of opening it. The button now takes the pointer only while it shows (`SHOWN_ON_HOVER`), and Tab still reaches it. The e2e checks `pointer-events` at rest and on hover, and that check was confirmed to fail without the fix.
+- **Motion** (owner, 2026-11-17: "a nice smooth simple animation"):
+  - **Arriving:** the Download button fades in and grows from nine tenths to full size, eased out (`ease-motion`) over the motion cap (`duration-slow`, 100 ms at the default setting). In the strip, the size crossfades with it on the same timing.
+  - **Leaving:** it takes half that (`duration-fast`), so moving on never waits on it.
+  - **Motion off or reduced:** it simply appears (`globals.css`).
+  - **Verification:** a throwaway probe with motion on sampled each frame. On hover, opacity went 0 → 0.61 → 0.86 → 0.95 → 1 and scale 0.9 → 1 within about 100 ms. On leave it was gone in about 45 ms.

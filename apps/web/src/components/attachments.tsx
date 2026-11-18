@@ -213,7 +213,7 @@ export function ReaderAttachments({ accountId, messageId, attachments }: { accou
         </button>
         {/* the slot the text leaves free (pe-11): the glyph at rest where a click downloads, the button on hover where it opens */}
         <span className="pointer-events-none absolute inset-y-0 end-2 flex items-center">
-          {downloadButton(f, "icon-sm", cn(SHOWN_ON_HOVER, "opacity-0 transition-opacity duration-fast group-hover/file:opacity-100 focus-reveal:opacity-100"))}
+          {downloadButton(f, "icon-sm", cn(SHOWN_ON_HOVER, ARRIVES, "transition-[opacity,scale,background-color,color] opacity-0 scale-90 group-hover/file:opacity-100 group-hover/file:scale-100 focus-reveal:opacity-100 focus-reveal:scale-100"))}
         </span>
       </li>)}
     </ul>
@@ -225,6 +225,12 @@ export function ReaderAttachments({ accountId, messageId, attachments }: { accou
  * file (a touch screen never hovers, so there it's never in the way). Tab still reaches it, and shows it.
  */
 const SHOWN_ON_HOVER = "pointer-events-none group-hover/file:pointer-events-auto focus-reveal:pointer-events-auto";
+
+/**
+ * How it arrives: a fade and a grow from nine tenths, eased out over the motion cap (--motion-slow); it leaves in half that,
+ * so moving on never waits on it. Motion off or reduced: it simply appears (globals.css).
+ */
+const ARRIVES = "duration-fast ease-motion group-hover/file:duration-slow focus-reveal:duration-slow";
 
 /** past this many files, the rest wait behind "Show all": a long conversation's strip stays a few lines */
 const FILES_SHOWN = 12;
@@ -253,10 +259,10 @@ export function ThreadAttachments({ messages }: { messages: readonly MessageDeta
               <Paperclip aria-hidden className="size-[1.15em] shrink-0 text-muted-foreground" />
               <span className="max-w-56 min-w-0 truncate font-medium">{f.a.filename}</span>{" "}
               {/* a chip has no room to spare: its size steps aside for the Download button, no letter cut and nothing moving */}
-              <span className="shrink-0 text-muted-foreground tabular transition-opacity duration-fast group-hover/file:opacity-0 group-has-[[data-testid=attachment-download]:focus-visible]/file:opacity-0">{formatBytes(f.a.size)}</span>
+              <span className="shrink-0 text-muted-foreground tabular transition-opacity duration-fast ease-motion group-hover/file:opacity-0 group-hover/file:duration-slow group-has-[[data-testid=attachment-download]:focus-visible]/file:opacity-0">{formatBytes(f.a.size)}</span>
             </button>
-            <span className="pointer-events-none absolute inset-y-0 end-0.5 flex items-center opacity-0 transition-opacity duration-fast group-hover/file:opacity-100 has-[:focus-visible]:opacity-100">
-              {downloadButton(f, "icon-xs", SHOWN_ON_HOVER)}
+            <span className="pointer-events-none absolute inset-y-0 end-0.5 flex items-center opacity-0 transition-opacity duration-fast ease-motion group-hover/file:opacity-100 group-hover/file:duration-slow has-[:focus-visible]:opacity-100 has-[:focus-visible]:duration-slow">
+              {downloadButton(f, "icon-xs", cn(SHOWN_ON_HOVER, ARRIVES, "transition-[scale,background-color,color] scale-90 group-hover/file:scale-100 focus-reveal:scale-100"))}
             </span>
           </li>)}
           {/* one toggle, there while open too: focus stays on it, and it folds the rest back */}
