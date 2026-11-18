@@ -59,6 +59,25 @@ describe("what a window shows of a prepared reply (plan 144)", () => {
   });
 });
 
+describe("plan 215: a conversation marked Done (no reply needed)", () => {
+  it("what's shown goes, and the stream's next word doesn't bring it back", async () => {
+    call.mockClear();
+    frames.length = 0;
+    useThreads.setState({ details: new Map([[7, detail]]) });
+    await opened();
+    const event = listeners.get("aiReply")!;
+    event({ threadId: 7, phase: "ready", row: { body: "Hola Ana" } });
+    expect(useReplies.getState().shown?.text).toBe("Hola Ana");
+    useThreads.setState({ details: new Map([[7, { ...detail, thread: { ...detail.thread, waitingSince: null as unknown as number } }]]) });
+    expect(useReplies.getState().shown).toBeNull();
+    expect(call).toHaveBeenCalledWith("ai.replyLeave", { threadId: 7 });
+    event({ threadId: 7, phase: "writing", text: "Hola" });
+    frames.splice(0).forEach((f) => f());
+    expect(useReplies.getState().shown).toBeNull();
+    useThreads.setState({ details: new Map([[7, detail]]) });
+  });
+});
+
 describe("plan 144, owner's decisions (2): the card's Reply | Reply all", () => {
   beforeEach(() => {
     call.mockClear();

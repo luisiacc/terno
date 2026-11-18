@@ -1,10 +1,10 @@
-import { alertUntil, askUntil, datedGroup, datedGroupAt, defaultRemindAt, dueCutoff, laterBefore, localDay, planEnd, remindPresets, undatedAlert, type DatedKind, type DatedRow, type DatedWall, type ItemSeen, type PartOfDay, type RemindPreset, type TodayAlso, type TodayWhy } from "@terno/core";
+import { alertUntil, askUntil, datedGroup, datedGroupAt, defaultRemindAt, dueCutoff, laterBefore, localDay, planEnd, remindPresets, undatedAlert, type DatedKind, type DatedRow, type DatedWall, type ItemSeen, type PartOfDay, type RemindPreset, type ThreadSummary, type TodayAlso, type TodayWhy } from "@terno/core";
 import { getLocale, t } from "@terno/i18n";
 import type { LeftRows } from "~/lib/actions";
 import { muteOfferAction } from "~/lib/dated-mutes";
 import { registerUndo, snack, type SnackAction } from "~/lib/snack";
 import { client } from "~/rpc/connection";
-import { alertSays, attendsLine, placeClock, withMailDay } from "~/lib/today-sentence";
+import { alertSays, attendsLine, backWhen, placeClock, withMailDay } from "~/lib/today-sentence";
 import { datedDay, dueShort, partDay, partInSentence, reminderTime } from "~/lib/when";
 
 /** Plan 204: a dated item as Today's row carries it, what Done and Later act on. */
@@ -166,6 +166,11 @@ export const promiseLine = (o: { text: string; dueAt?: number; dated: boolean },
 export type TodayTask = (
   | { kind: "dated"; item: DatedRef; when: string | null; due: string | null; dueAt: number; noDay?: boolean; text?: string | null }
   | { kind: "promise"; id: number; revision: number; when: string | null; due: string | null; dated?: boolean; noDay?: boolean; person?: TaskPerson; text?: string | null; /** plan 210 (iteration 4): its moment and whether it's a time, where Change… starts */ dueAt?: number; timed?: boolean; /** plan 210 (iteration 5's code review): the part of its day it sits under, where its day ends */ part?: PartOfDay | null;/** plan 210 (iteration 4): the reply's other promises the row shows, acted on with it */ with?: ItemSeen[] }
+  /**
+   * plan 215: a conversation waiting on you: Done ("no reply needed") and Later only, at its waiting date and record's
+   * revision as drawn (`TodayWhy.reply`); `name`, who wrote, what its snack names; no day of its own
+   */
+  | { kind: "waiting"; threadId: number; since: number; rev: number; name: string; when?: null; due?: null; noDay: true; text?: null }
 ) & {
   /** the fifth panel round (change 6): its conversation's next item, in words ("Also Thu 9:00 AM · Board meeting"), never what it acts on */
   also?: string;
@@ -183,8 +188,15 @@ function personOf(why: TodayWhy): TaskPerson | undefined {
   return name ? { name, email } : undefined;
 }
 
-/** A Today row's task, from what the backend said of it: a dated item or a promise; a waiting row or a reminder has none. */
-export function taskOf(why: TodayWhy, now = Date.now()): TodayTask | null {
+/** A task that is an item (a dated item or a promise of yours): what Change…, Hand to… and Remove take. */
+export type ItemTask = Exclude<TodayTask, { kind: "waiting" }>;
+
+/**
+ * A Today row's task, from what the backend said of it: a dated item, a promise, or (plan 215) a conversation waiting on you,
+ * named by `thread`'s sender; a reminder has none.
+ */
+export function taskOf(why: TodayWhy, now = Date.now(), thread?: Pick<ThreadSummary, "id" | "fromName" | "fromEmail">): TodayTask | null {
+  if (why.kind === "waiting") return why.reply && thread ? { kind: "waiting", threadId: thread.id, since: why.reply.since, rev: why.reply.rev, name: thread.fromName || thread.fromEmail, noDay: true } : null;
   if (why.kind === "dated" && why.item) {
     const item = why.item;
     const dueAt = why.dueAt ?? 0;
@@ -235,6 +247,7 @@ export function itemLaterWindow(item: Pick<DatedRow, "kind" | "dueDay" | "dueAt"
 
 export function laterWindow(task: TodayTask, now = Date.now()): LaterWindow {
   if (task.kind === "dated") return itemLaterWindow({ ...task.item, dueAt: task.dueAt }, now);
+  // a promise of yours, and (plan 215) a conversation waiting on you: anywhere ahead
   return { before: null, limit: null };
 }
 
@@ -305,9 +318,33 @@ export async function actOnDated(item: Pick<DatedRef, "id" | "revision"> & { tex
   }
 }
 
+/**
+ * Plan 215: what the snack says of Done and Later on a conversation waiting on you, naming who wrote: "Done: Tomas
+ * Santarcieri", "Later: Tomas Santarcieri, back Fri 9:00 AM".
+ */
+export function waitingSaid(action: "done" | "later", name: string, at?: number, now = Date.now()): string {
+  const who = shortened(name.trim());
+  return action === "later" && at !== undefined ? t("whatMatters.waiting.later", { name: who, when: backWhen(at, now) }) : t("whatMatters.waiting.done", { name: who });
+}
+
+/** Plan 215: Done and Later on a conversation waiting on you, with an Undo that puts it back exactly (or says it changed). */
+async function actOnWaiting(task: Extract<TodayTask, { kind: "waiting" }>, action: "done" | "later", at?: number, left?: LeftRows): Promise<void> {
+  try {
+    const { undoId } = await client.call("today.waitingAct", { threadId: task.threadId, since: task.since, rev: task.rev, action, ...(at !== undefined ? { until: at } : {}) });
+    const run = () => client.call("today.waitingUndo", { undoId }).then(() => undefined);
+    const undo = registerUndo(() => (left ? left.undo(run) : run()));
+    snack.success(waitingSaid(action, task.name, at), { action: { label: t("common.undo"), name: t("dated.undo"), undo } });
+  } catch (error) {
+    left?.failed();
+    snack.error((error as { message?: string }).message ?? t("dated.actFailed"));
+  }
+}
+
 /** The same three on a Today row's task: a promise through follow-ups' act (its revision, its Undo), in Today's words. */
 export async function actOnTask(task: TodayTask, action: "done" | "dismiss" | "later", at?: number, left?: LeftRows): Promise<void> {
   if (task.kind === "dated") return actOnDated({ ...task.item, text: task.text }, action, at, left);
+  // plan 215: a conversation waiting on you has Done and Later only (Remove is an item's)
+  if (task.kind === "waiting") return action === "dismiss" ? undefined : actOnWaiting(task, action, at, left);
   try {
     const { undoId } = await client.call("followups.act", { id: task.id, revision: task.revision, action, ...(at !== undefined ? { dueAt: at } : {}), ...(task.with ? { with: task.with } : {}) });
     said(action, task.text, undoId === null ? null : () => client.call("followups.undo", { undoId }).then(() => undefined), "followup.undo", left);

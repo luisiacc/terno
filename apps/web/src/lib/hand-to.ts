@@ -1,7 +1,7 @@
 import { splitZoneNote, type FeedRowId, type ItemSeen, type PartOfDay } from "@terno/core";
 import { t } from "@terno/i18n";
 import { composeLanding } from "~/lib/compose";
-import type { TodayTask } from "~/lib/dated";
+import type { ItemTask, TodayTask } from "~/lib/dated";
 import { currentPage, listLayout, openThread } from "~/lib/page";
 import type { ReaderItem } from "~/lib/reader-items";
 import { snack } from "~/lib/snack";
@@ -79,8 +79,8 @@ export function handOffLine(text: string, when: HandOffWhen, now = Date.now()): 
   return t("whatMatters.handTo.line", { item, day: when.timed ? `${day} ${reminderTime(dueAt)}` : day });
 }
 
-/** The item a feed row's task is, as it was seen. */
-export const seenOfTask = (task: TodayTask): ItemSeen => (task.kind === "dated" ? { source: "dated", id: task.item.id, revision: task.item.revision } : { source: "promise", id: task.id, revision: task.revision });
+/** The item a feed row's task is, as it was seen (plan 215: a conversation waiting on you is no item to hand on). */
+export const seenOfTask = (task: ItemTask): ItemSeen => (task.kind === "dated" ? { source: "dated", id: task.item.id, revision: task.item.revision } : { source: "promise", id: task.id, revision: task.revision });
 
 /** A reply's row's other promises (its Also lines), handed with it as the row's Done takes them (iteration 4, merge). */
 export const othersOfTask = (task: TodayTask): ItemSeen[] => (task.kind === "promise" ? (task.with ?? []) : []);

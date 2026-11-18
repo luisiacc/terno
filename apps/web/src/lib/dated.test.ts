@@ -98,6 +98,50 @@ describe("a Today row's task (plan 204, after the panel)", () => {
   });
 });
 
+describe("plan 215: a conversation waiting on you", () => {
+  const thread = { id: 12, fromName: "Tomas Santarcieri", fromEmail: "tomas@acme.test" };
+  it("its task is Done and Later at what the row was drawn at, named by who wrote; none without what to act on, nor a reminder", async () => {
+    const { taskOf } = await import("./dated");
+    const why = { kind: "waiting" as const, wrote: true, reply: { since: 500, rev: 2 } };
+    expect(taskOf(why, 0, thread)).toEqual({ kind: "waiting", threadId: 12, since: 500, rev: 2, name: "Tomas Santarcieri", noDay: true });
+    expect(taskOf(why, 0, { ...thread, fromName: "" })).toMatchObject({ name: "tomas@acme.test" });
+    expect(taskOf({ kind: "waiting", wrote: true }, 0, thread)).toBeNull();
+    expect(taskOf(why, 0)).toBeNull();
+    expect(taskOf({ kind: "reminder", dueAt: 5 }, 0, thread)).toBeNull();
+  });
+
+  it("Done and Later go to the waiting act with their Undo, naming who wrote and when it's back (en, es); Remove isn't one", async () => {
+    const { taskOf, laterWindow } = await import("./dated");
+    const { setLocale } = await import("@terno/i18n");
+    const { default: en } = await import("@terno/i18n/locales/en");
+    const { default: es } = await import("@terno/i18n/locales/es");
+    const task = taskOf({ kind: "waiting", wrote: false, reply: { since: 500, rev: 0 } }, 0, thread)!;
+    expect(laterWindow(task)).toEqual({ before: null, limit: null });
+    const friday = new Date(2099, 0, 2, 9).getTime();
+    await actOnTask(task, "done");
+    await actOnTask(task, "later", friday);
+    await actOnTask(task, "dismiss");
+    expect(calls).toEqual(["today.waitingAct", "today.waitingAct"]);
+    expect(params).toEqual([{ threadId: 12, since: 500, rev: 0, action: "done" }, { threadId: 12, since: 500, rev: 0, action: "later", until: friday }]);
+    expect(said).toEqual([{ text: "Done: Tomas Santarcieri", undo: true }, { text: "Later: Tomas Santarcieri, back Jan 2, 2099 9:00 AM", undo: true }]);
+    setLocale("es", es);
+    try {
+      said.length = 0;
+      await actOnTask(task, "done");
+      await actOnTask(task, "later", friday);
+      expect(said.map((x) => x.text)).toEqual(["Hecho: Tomas Santarcieri", expect.stringMatching(/^Más tarde: Tomas Santarcieri, vuelve /u)]);
+    } finally {
+      setLocale("en", en);
+    }
+    // a failure says so, and puts the row back
+    fail = true;
+    const failed = vi.fn();
+    await actOnTask(task, "done", undefined, { undo: async () => {}, failed });
+    expect(errors).toEqual(["The backend is busy."]);
+    expect(failed).toHaveBeenCalled();
+  });
+});
+
 describe("the conversation's line keeps the whole wording (plan 204, after the second panel round)", () => {
   it("when, then the task; a promise's in your words; no day, the task alone", async () => {
     const { datedLine, promiseLine } = await import("./dated");

@@ -356,6 +356,50 @@ describe("Done means gone (plan 204, after the second panel round; plan 210, ite
   });
 });
 
+describe("plan 215: a conversation waiting on you", () => {
+  /** Waiting on you: Tomas's conversation (8), while it isn't done */
+  let cleared = false;
+  beforeEach(async () => {
+    cleared = false;
+    const base = fake.handlers["today.list"]!;
+    fake.handlers["today.list"] = async (p) => {
+      const list = (await base(p)) as TodayList;
+      if (!cleared) list.sections.push({ kind: "today", part: "waiting", items: [{ id: "waiting:8", thread: { ...thread(8), fromName: "Tomas" }, why: { kind: "waiting", wrote: true, reply: { since: 700, rev: 0 } } }] });
+      return list;
+    };
+    fake.handlers["today.waitingAct"] = async (p) => ((cleared = (p as { action: string }).action === "done"), { undoId: "w1" });
+    fake.handlers["today.waitingUndo"] = async () => ((cleared = false), { ok: true });
+    await reloadList();
+    open("waiting:8");
+  });
+
+  it("D finishes it (its act at what the row was drawn at), the row leaving at once; Undo brings it back; b opens its Later", async () => {
+    const acts: unknown[] = [];
+    const act = fake.handlers["today.waitingAct"]!;
+    fake.handlers["today.waitingAct"] = async (p) => (acts.push(p), act(p));
+    expect(task("waiting:8")).toMatchObject({ kind: "waiting", threadId: 8, since: 700, rev: 0, name: "Tomas" });
+    expect(doneOnSelected()).toBe(true);
+    expect(shown()).not.toContain("waiting:8");
+    await vi.waitFor(() => expect(acts).toEqual([{ threadId: 8, since: 700, rev: 0, action: "done" }]));
+    await vi.waitFor(() => expect(useSnack.getState().undo).toBeTruthy());
+    await undo();
+    expect(shown()).toContain("waiting:8");
+    open("waiting:8");
+    expect(laterOnSelected()).toBe(true);
+    expect(useToday.getState().laterPick?.task).toMatchObject({ kind: "waiting", threadId: 8 });
+    setApp({ dialog: null });
+    useToday.setState({ laterPick: null });
+  });
+
+  it("⇧D, ⇧B and ⇧F leave the key alone: Remove, Change… and Hand to… are an item's", () => {
+    expect(removeOnSelected()).toBe(false);
+    expect(changeOnSelected()).toBe(false);
+    expect(handOnSelected()).toBe(false);
+    expect(shown()).toContain("waiting:8");
+    expect(remindLimit({ task: task("waiting:8") })).toBeNull();
+  });
+});
+
 describe("plan 210 (iteration 5, R7): how far Remind me may go for the item in hand", () => {
   const at = (d: number, h: number, m = 0) => new Date(2026, 10, d, h, m).getTime();
   const now = at(12, 10);

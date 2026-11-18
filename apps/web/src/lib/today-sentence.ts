@@ -166,6 +166,18 @@ export function promiseDayWords(p: { said?: number | null; needed?: number | nul
   return { text: beforeWords(p.before, dueAt, now) ?? own, missed: false };
 }
 
+/**
+ * When something put off with Later is back, mid-phrase: "Mon 9:00 AM", "tomorrow 9:00 AM" (the row's "back …", plan 215's
+ * snack "Later: Ana, back Fri 9:00 AM").
+ */
+export function backWhen(at: number, now = Date.now()): string {
+  const short = dueShort(at, true, now);
+  const time = dueTimeLeft(at, true, now);
+  const back = time ? `${short} ${time}` : short;
+  const tomorrow = t("today.when.tomorrow");
+  return back.startsWith(tomorrow) ? tomorrow.toLocaleLowerCase(getLocale()) + back.slice(tomorrow.length) : back;
+}
+
 function whenOf(item: Pick<TodayItem, "thread" | "why">, now: number): { text: string | null; tone: TodayTone } {
   const { thread, why } = item;
   // plan 210 (iteration 2): one time per row, the reader's, and the mail's own in brackets when its zone isn't theirs
@@ -188,11 +200,7 @@ function whenOf(item: Pick<TodayItem, "thread" | "why">, now: number): { text: s
   const came = { text: t("whatMatters.since", { day: day === t("date.yesterday") ? day.toLocaleLowerCase(getLocale()) : day }), tone: "none" as const };
   if (why.kind === "reminder" && why.dueAt !== undefined) return { text: dueShort(why.dueAt, true, now), tone: "none" };
   // round 15's second morning: put off with Later and drawn before then (Coming up open), when it's back ("back Mon 9:00 AM")
-  if (why.back !== undefined) {
-    const back = ahead(why.back, why.back, true).text;
-    const tomorrow = t("today.when.tomorrow");
-    return { text: t("whatMatters.back", { when: back.startsWith(tomorrow) ? tomorrow.toLocaleLowerCase(getLocale()) + back.slice(tomorrow.length) : back }), tone: "none" };
-  }
+  if (why.back !== undefined) return { text: t("whatMatters.back", { when: backWhen(why.back, now) }), tone: "none" };
   if (why.kind === "dated" && why.item) {
     const it = why.item;
     if (it.kind === "ask" || !it.dated) return came;
@@ -233,7 +241,9 @@ function whenOf(item: Pick<TodayItem, "thread" | "why">, now: number): { text: s
  * Plan 210: a history line in the open part's words: an item's own ("Pay $187.42 for the electricity bill."), an alert's
  * with whose word it is, a promise of yours as "You said you'd …".
  */
-export function historySentence(line: Pick<TodayHistoryItem, "kind" | "text" | "thread">): string {
+export function historySentence(line: Pick<TodayHistoryItem, "kind" | "text" | "thread" | "waiting">): string {
+  // plan 215: a conversation that waited on you, in the words its row had at Done
+  if (line.kind === "waiting") return t(line.waiting?.wrote ? "whatMatters.say.replied" : "whatMatters.say.wrote", { name: line.waiting?.who || line.thread.fromName || line.thread.fromEmail, subject: line.waiting?.subject || line.thread.subject?.trim() || t("common.noSubject") });
   const text = bare(line.text);
   if (!text) return ended(line.thread.subject?.trim() || t("common.noSubject"));
   if (line.kind === "promise") return promiseSentence(text);

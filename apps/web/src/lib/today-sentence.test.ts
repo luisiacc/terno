@@ -193,6 +193,20 @@ describe("the history's lines (plan 210)", () => {
 });
 
 
+describe("plan 215: a waiting conversation's Done under Earlier", () => {
+  const line = (wrote: boolean) => ({ thread, kind: "waiting" as const, outcome: "done" as const, text: "", key: { at: at(12, 9), src: 4 as const, id: 9 }, waiting: { who: "Tomas Santarcieri", subject: "The Q3 numbers", wrote } });
+  afterEach(() => setLocale("en", en));
+
+  it("says what its row said at Done, and when it was done (en, es)", () => {
+    expect(historySentence(line(true))).toBe("Tomas Santarcieri wrote back about “The Q3 numbers”.");
+    expect(historySentence(line(false))).toBe("Tomas Santarcieri wrote to you about “The Q3 numbers”.");
+    expect(historyWhen(line(true), NOW)).toBe("Done yesterday");
+    setLocale("es", es);
+    expect(historySentence(line(true))).toBe("Tomas Santarcieri respondió sobre «The Q3 numbers».");
+    expect(historyWhen(line(true), NOW)).toBe("Hecho ayer");
+  });
+});
+
 describe("plan 210 (iteration 2): one time per row, a request shown early, a broken promise", () => {
   const dueAt = (day: number, h: number, m = 0) => at(day, h, m);
   it("the reader's time, and the mail's own in brackets only when its zone isn't the reader's", () => {

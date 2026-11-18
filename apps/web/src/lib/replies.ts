@@ -143,13 +143,15 @@ export function installReplies(): void {
     if (repliesOffered(prev) && !repliesOffered(s)) leave();
   });
 
-  // another message came in: what's shown answered the last one. It goes, and it doesn't start another by itself.
+  // another message came in: what's shown answered the last one. It goes, and it doesn't start another by itself. Plan 215:
+  // so does one for a conversation that stopped waiting (marked Done on What matters: no reply needed)
   useThreads.subscribe((state) => {
     const { shown } = useReplies.getState();
     if (!shown || newestShown === null) return;
-    const newest = state.details.get(shown.threadId)?.messages.at(-1)?.id;
+    const now = state.details.get(shown.threadId);
+    const newest = now?.messages.at(-1)?.id;
     // the stream too: its next word would bring back what's out of date
-    if (newest !== undefined && newest !== newestShown) leave();
+    if ((newest !== undefined && newest !== newestShown) || (now && !waits(now))) leave();
   });
 
   // ⌘J, `r` with nothing ready, a click on the reply pill: they asked for something else

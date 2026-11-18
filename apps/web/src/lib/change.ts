@@ -43,8 +43,10 @@ export interface ChangeTo {
   time: string | null;
 }
 
-/** A row's task, as Change… takes it; null for what has no day to change (a person's ask). */
+/** A row's task, as Change… takes it; null for what has no day to change (a person's ask, a conversation waiting on you). */
 export function changeOfTask(task: TodayTask): ChangeTarget | null {
+  // plan 215: a conversation waiting on you has no day to change (Done and Later only)
+  if (task.kind === "waiting") return null;
   if (task.kind === "dated") {
     if (task.item.kind === "ask") return null;
     return { source: "dated", id: task.item.id, revision: task.item.revision, text: task.text ?? null, dueDay: task.item.dated ? task.item.dueDay : null, dueAt: task.dueAt, timed: task.item.timed };

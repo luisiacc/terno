@@ -470,7 +470,7 @@ export function todayAnswer(list: TodayList, before: readonly ThreadSummary[]): 
   for (const group of feedGroups(list, open)) {
     for (const { item, section } of group.items) {
       const why = dayKnown(item.why, section);
-      const task = taskOf(why);
+      const task = taskOf(why, Date.now(), item.thread);
       const entry = why === item.why ? item : { ...item, why };
       rows.push({ id: item.id, threadId: item.thread.id, group: group.kind, entry, ...(task ? { task: item.also?.length ? { ...task, also: item.also.map((a) => alsoLine(a)).join(" · ") } : task } : {}), ...(section === "comingUp" ? { ahead: true } : {}) });
     }

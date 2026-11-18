@@ -543,9 +543,13 @@ export function CommandPalette() {
       const change = readerItem ? changeOfItem(readerItem) : todayTask ? changeOfTask(todayTask.task) : null;
       if (change) add({ id: "dated.change", group: "item", label: t("palette.todayChange"), icon: <CalendarDays />, shortcut: keysOf("today.change"), testId: "palette-dated-change", keywords: english("palette.todayChange"), takesFocus: true, run: () => requestAnimationFrame(() => openChange(change)) });
       // plan 210 (iteration 4): Hand to…, the item's forward opening in the reader (its To field focused) once the palette has gone
-      const hand = () => void (readerItem ? handTo(seenOfReaderItem(readerItem)) : todayTask && handTo(seenOfTask(todayTask.task), todayTask.rowId, othersOfTask(todayTask.task)));
-      add({ id: "dated.handTo", group: "item", label: t("whatMatters.handTo.action"), icon: <Forward />, shortcut: keysOf("today.handTo"), testId: "palette-dated-hand", ...synonyms("palette.alias.handTo", english("whatMatters.handTo.action")), takesFocus: true, run: () => requestAnimationFrame(hand) });
-      add({ id: "dated.dismiss", group: "item", label: t("palette.todayRemove"), icon: <Ban />, shortcut: keysOf("today.remove"), testId: "palette-dated-dismiss", ...synonyms("palette.alias.todayRemove", english("palette.todayRemove")), run: () => actOn("dismiss") });
+      // plan 215: a conversation waiting on you has Done and Later only: Hand to… and Remove are an item's
+      const item = readerItem ? null : todayTask && todayTask.task.kind !== "waiting" ? todayTask.task : undefined;
+      if (item !== undefined) {
+        const hand = () => void (readerItem ? handTo(seenOfReaderItem(readerItem)) : item && handTo(seenOfTask(item), todayTask!.rowId, othersOfTask(item)));
+        add({ id: "dated.handTo", group: "item", label: t("whatMatters.handTo.action"), icon: <Forward />, shortcut: keysOf("today.handTo"), testId: "palette-dated-hand", ...synonyms("palette.alias.handTo", english("whatMatters.handTo.action")), takesFocus: true, run: () => requestAnimationFrame(hand) });
+        add({ id: "dated.dismiss", group: "item", label: t("palette.todayRemove"), icon: <Ban />, shortcut: keysOf("today.remove"), testId: "palette-dated-dismiss", ...synonyms("palette.alias.todayRemove", english("palette.todayRemove")), run: () => actOn("dismiss") });
+      }
     } else if (inToday && targets === 0) {
       // plan 210 (iteration 4, design point 2): with nothing selected in What matters its three acts are still there to be
       // found, unavailable, saying what they need (a row chosen, then D, B, ⇧D or here)

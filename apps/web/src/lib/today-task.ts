@@ -87,6 +87,8 @@ export function remindLimit(target: { task: TodayTask } | { item: ReaderItem }, 
   if ("task" in target) {
     const { task } = target;
     if (task.kind === "dated") at = task.item.dated ? { dueAt: task.dueAt, timed: task.item.timed, day: task.item.dueDay, part: task.item.part ?? null } : null;
+    // plan 215: a conversation waiting on you has no moment of its own
+    else if (task.kind === "waiting") at = null;
     else at = task.dated && task.dueAt !== undefined ? { dueAt: task.dueAt, timed: task.timed === true, day: dayKeyOf(task.dueAt), part: task.part ?? null } : null;
   } else if (target.item.source === "dated") {
     const r = target.item.row;
@@ -143,7 +145,8 @@ function keyTarget(): { row: FeedRow & { task: TodayTask }; next: FeedRowId | un
 /** D (Done) and ⇧D (Remove) on the key's row, the keys going on as from the open one. */
 function actOnKeyTarget(action: "done" | "dismiss"): boolean {
   const target = keyTarget();
-  if (!target) return false;
+  // plan 215: Remove is an item's: on a conversation waiting on you, ⇧D is left alone
+  if (!target || (action === "dismiss" && "row" in target && target.row.task.kind === "waiting")) return false;
   if ("item" in target) void actOnReaderItem(target.threadId, target.item, action);
   else {
     void actOnTodayRow(target.row.id, target.row.task, action);
@@ -185,7 +188,14 @@ export function changeOnSelected(): boolean {
 export function handOnSelected(): boolean {
   const target = keyTarget();
   if (!target) return false;
-  void ("item" in target ? handTo(seenOfReaderItem(target.item)) : handTo(seenOfTask(target.row.task), target.row.id, othersOfTask(target.row.task)));
+  if ("item" in target) {
+    void handTo(seenOfReaderItem(target.item));
+    return true;
+  }
+  const { task } = target.row;
+  // plan 215: a conversation waiting on you is no item to hand on (⇧F left alone)
+  if (task.kind === "waiting") return false;
+  void handTo(seenOfTask(task), target.row.id, othersOfTask(task));
   return true;
 }
 
