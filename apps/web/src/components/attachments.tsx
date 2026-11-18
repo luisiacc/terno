@@ -119,7 +119,16 @@ function useFileActions() {
       onClick: () => act(f, how),
     };
   };
-  return { busy: busy !== null, act, fileProps };
+  /**
+   * Plan 212: the Download button a file that opens shows at its right on hover (or its own Tab focus); a file whose click
+   * downloads shows the glyph there instead, not a second control doing the same thing. Marked like the file, so a
+   * right-click on it opens the file's menu.
+   */
+  const downloadButton = (f: FileTarget, size: "icon-xs" | "icon-sm", className: string) =>
+    clickAction(f.a) === "open"
+      ? <IconButton label={t("attachments.download", { name: f.a.filename })} size={size} data-attachment={fileKey(f)} data-testid="attachment-download" aria-disabled={busy !== null || undefined} className={className} onClick={() => act(f, "download")}><Download /></IconButton>
+      : <span aria-hidden className={cn("pointer-events-none flex items-center justify-center text-muted-foreground", size === "icon-xs" ? "size-6" : "size-7")}><Download className={size === "icon-xs" ? "size-[1.15em]" : "size-3.5"} /></span>;
+  return { busy: busy !== null, act, fileProps, downloadButton };
 }
 
 const fileKey = (f: FileTarget) => `${f.messageId}:${f.a.id}`;
@@ -193,16 +202,19 @@ function FilesMenu({ files, busy, act, children }: { files: readonly FileTarget[
 }
 
 export function ReaderAttachments({ accountId, messageId, attachments }: { accountId: number; messageId: number; attachments: AttachmentInfo[] }) {
-  const { busy, act, fileProps } = useFileActions();
+  const { busy, act, fileProps, downloadButton } = useFileActions();
   const files = attachments.map((a) => ({ accountId, messageId, a }));
   return <FilesMenu files={files} busy={busy} act={act}>
     <ul aria-label={t("reader.attachments")} className="mt-4 flex flex-wrap gap-2">
-      {files.map((f) => <li key={f.a.id} data-testid="attachment" className="min-w-0 max-w-full">
-        <button {...fileProps(f)} className="flex h-14 w-[260px] max-w-full items-center gap-3 rounded-lg bg-tint px-3 text-left hover:bg-accent aria-disabled:opacity-60">
+      {/* the tile is the item, so its hover holds while the pointer is on its Download button */}
+      {files.map((f) => <li key={f.a.id} data-testid="attachment" className="group/file relative min-w-0 max-w-full rounded-lg bg-tint hover:bg-accent has-[[aria-disabled=true]]:opacity-60">
+        <button {...fileProps(f)} className="flex h-14 w-[260px] max-w-full items-center gap-3 rounded-lg ps-3 pe-11 text-left">
           <Paperclip className="size-4 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1"><span className="line-clamp-2 text-sm leading-4 font-medium break-all">{f.a.filename}</span>{" "}<span className="block text-xs text-muted-foreground tabular">{formatBytes(f.a.size)}{!f.a.assetId && ` · ${t("attachments.notCached")}`}</span></span>
-          {/* what a click does when it isn't the obvious open: a file that opens shows none, as Mail's tiles */}
-          {clickAction(f.a) === "download" && <Download aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />}
         </button>
+        {/* the slot the text leaves free (pe-11): the glyph at rest where a click downloads, the button on hover where it opens */}
+        <span className="pointer-events-none absolute inset-y-0 end-2 flex items-center">
+          {downloadButton(f, "icon-sm", "pointer-events-auto opacity-0 transition-opacity duration-fast group-hover/file:opacity-100 focus-reveal:opacity-100")}
+        </span>
       </li>)}
     </ul>
   </FilesMenu>;
@@ -217,7 +229,7 @@ const FILES_SHOWN = 12;
  */
 export function ThreadAttachments({ messages }: { messages: readonly MessageDetail[] }) {
   const files = useMemo(() => (messages.length > 1 ? threadFiles(messages).map(({ message, attachment }) => ({ accountId: message.accountId, messageId: message.id, a: attachment })) : []), [messages]);
-  const { busy, act, fileProps } = useFileActions();
+  const { busy, act, fileProps, downloadButton } = useFileActions();
   const [all, setAll] = useState(false);
   if (!files.length) return null;
   const shown = all ? files : files.slice(0, FILES_SHOWN);
@@ -230,12 +242,16 @@ export function ThreadAttachments({ messages }: { messages: readonly MessageDeta
       <CollapsiblePanel>
         <FilesMenu files={shown} busy={busy} act={act}>
         <ul aria-label={t("reader.allAttachments")} className="flex flex-wrap items-center gap-1.5 pt-2">
-          {shown.map((f) => <li key={fileKey(f)} data-testid="thread-attachment" className="flex max-w-full min-w-0">
-            <button {...fileProps(f)} title={f.a.filename} className="flex h-7 max-w-full min-w-0 items-center gap-1.5 rounded-md bg-tint px-2 text-xs outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring aria-disabled:opacity-60">
+          {shown.map((f) => <li key={fileKey(f)} data-testid="thread-attachment" className="group/file relative flex max-w-full min-w-0 rounded-md bg-tint hover:bg-accent has-[[aria-disabled=true]]:opacity-60">
+            <button {...fileProps(f)} title={f.a.filename} className="flex h-7 max-w-full min-w-0 items-center gap-1.5 rounded-md px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring">
               <Paperclip aria-hidden className="size-[1.15em] shrink-0 text-muted-foreground" />
               <span className="max-w-56 min-w-0 truncate font-medium">{f.a.filename}</span>{" "}
-              <span className="shrink-0 text-muted-foreground tabular">{formatBytes(f.a.size)}</span>
+              {/* a chip has no room to spare: its size steps aside for the Download button, no letter cut and nothing moving */}
+              <span className="shrink-0 text-muted-foreground tabular transition-opacity duration-fast group-hover/file:opacity-0 group-has-[[data-testid=attachment-download]:focus-visible]/file:opacity-0">{formatBytes(f.a.size)}</span>
             </button>
+            <span className="pointer-events-none absolute inset-y-0 end-0.5 flex items-center opacity-0 transition-opacity duration-fast group-hover/file:opacity-100 has-[:focus-visible]:opacity-100">
+              {downloadButton(f, "icon-xs", "pointer-events-auto")}
+            </span>
           </li>)}
           {/* one toggle, there while open too: focus stays on it, and it folds the rest back */}
           {files.length > FILES_SHOWN && <li className="flex">

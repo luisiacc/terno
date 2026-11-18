@@ -84,6 +84,11 @@ test.describe("reader conversation", () => {
       const reply = page.getByTestId("quick-reply");
       await reply.focus();
       await expect(reply).toBeFocused();
+      // plan 212: a file that opens has its own Download after it, shown while it has Tab focus
+      await page.keyboard.press("Shift+Tab");
+      const own = tile.getByRole("button", { name: "Download boarding-pass.pdf", exact: true });
+      await expect(own).toBeFocused();
+      await expect(own).toHaveCSS("opacity", "1");
       await page.keyboard.press("Shift+Tab");
       await expect(download).toBeFocused();
     });

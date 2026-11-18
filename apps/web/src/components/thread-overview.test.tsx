@@ -106,7 +106,7 @@ describe("ThreadAttachments (plan 177)", () => {
     const trigger = host.querySelector<HTMLButtonElement>("[data-slot=collapsible-trigger]")!;
     expect(trigger.textContent).toBe("Attachments2");
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
-    const files = [...host.querySelectorAll("[data-testid=thread-attachment] button")];
+    const files = [...host.querySelectorAll("[data-testid=thread-attachment] > button")];
     // plan 212: what a click does is the name: the web build opens a PDF in a tab
     expect(files.map((b) => b.getAttribute("aria-label"))).toEqual(["Open file-1.pdf 2 KB", "Open file-2.pdf 2 KB · Unavailable offline"]);
     await act(async () => trigger.click());
@@ -117,8 +117,15 @@ describe("ThreadAttachments (plan 177)", () => {
     const a = msg({ attachments: [file(1, "asset-1"), file(3, "asset-3", "mockups.fig")] });
     const b = msg({ attachments: [file(2)] });
     const host = await render(<ThreadAttachments messages={[a, b]} />);
-    const [opens, downloads, missing] = [...host.querySelectorAll<HTMLButtonElement>("[data-testid=thread-attachment] button")];
+    const [opens, downloads, missing] = [...host.querySelectorAll<HTMLButtonElement>("[data-testid=thread-attachment] > button")];
     expect(downloads!.getAttribute("aria-label")).toBe("Download mockups.fig 2 KB");
+    // a file that opens has a Download button of its own, revealed on hover; one whose click downloads has none
+    const extra = [...host.querySelectorAll<HTMLButtonElement>("[data-testid=attachment-download]")];
+    expect(extra.map((b) => b.getAttribute("aria-label"))).toEqual(["Download file-1.pdf", "Download file-2.pdf"]);
+    await act(async () => extra[0]!.click());
+    expect(calls.download).toHaveBeenCalledWith(4, expect.objectContaining({ id: 1, assetId: "asset-1" }));
+    expect(calls.open).not.toHaveBeenCalled();
+    calls.download.mockClear();
     await act(async () => opens!.click());
     expect(calls.open).toHaveBeenCalledWith(4, expect.objectContaining({ id: 1, assetId: "asset-1" }));
     expect(calls.download).not.toHaveBeenCalled();
@@ -132,7 +139,7 @@ describe("ThreadAttachments (plan 177)", () => {
     let finish!: () => void;
     calls.retry.mockImplementationOnce(() => new Promise<void>((r) => (finish = r)));
     const host = await render(<ThreadAttachments messages={[msg({ attachments: [file(1)] }), msg({ attachments: [file(2)] })]} />);
-    const [first, second] = [...host.querySelectorAll<HTMLButtonElement>("[data-testid=thread-attachment] button")];
+    const [first, second] = [...host.querySelectorAll<HTMLButtonElement>("[data-testid=thread-attachment] > button")];
     await act(async () => first!.click());
     expect(first!.getAttribute("aria-busy")).toBe("true");
     expect(second!.getAttribute("aria-busy")).toBe("false");
@@ -150,7 +157,7 @@ describe("ThreadAttachments (plan 177)", () => {
     let finish!: () => void;
     calls.retry.mockImplementationOnce(() => new Promise<void>((r) => (finish = r)));
     const host = await render(<ThreadAttachments messages={[msg({ attachments: [file(1)] }), msg({ attachments: [file(2, "asset-2"), file(3, "asset-3", "mockups.fig")] })]} />);
-    const [missing, pdf, fig] = [...host.querySelectorAll<HTMLButtonElement>("[data-testid=thread-attachment] button")];
+    const [missing, pdf, fig] = [...host.querySelectorAll<HTMLButtonElement>("[data-testid=thread-attachment] > button")];
     const items = () => [...document.querySelectorAll<HTMLElement>("[data-testid=attachment-menu] [role=menuitem]")];
     const menuOn = async (el: HTMLElement) => {
       await act(async () => { el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 5, clientY: 5, button: 2 })); });
@@ -173,7 +180,7 @@ describe("ThreadAttachments (plan 177)", () => {
 
   it("plan 212: a long press picks the file under the finger, not the one a right-click picked before", async () => {
     const host = await render(<ThreadAttachments messages={[msg({ attachments: [file(1, "asset-1", "mockups.fig")] }), msg({ attachments: [file(2, "asset-2")] })]} />);
-    const [fig, pdf] = [...host.querySelectorAll<HTMLButtonElement>("[data-testid=thread-attachment] button")];
+    const [fig, pdf] = [...host.querySelectorAll<HTMLButtonElement>("[data-testid=thread-attachment] > button")];
     const items = () => [...document.querySelectorAll<HTMLElement>("[data-testid=attachment-menu] [role=menuitem]")];
     await act(async () => { fig!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 5, clientY: 5, button: 2 })); });
     await vi.waitFor(() => expect(items().map((i) => i.textContent)).toEqual(["Download"]));

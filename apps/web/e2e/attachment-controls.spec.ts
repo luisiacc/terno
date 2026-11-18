@@ -23,7 +23,7 @@ test("reader attachment controls include all visible labels and localized downlo
   await expect(cached).toHaveAccessibleDescription("application/octet-stream");
   await expect(page.getByTestId("attachment").getByRole("button", { name: /Download empty.txt/ })).toHaveAccessibleName("Download empty.txt 0 B");
   // plan 212: what a click does is the name; the web build opens a PDF or an image in a tab
-  await expect(page.getByTestId("attachment").getByRole("button", { name: /unavailable.pdf/ })).toHaveAccessibleName("Open unavailable.pdf 1 KB · Unavailable offline");
+  await expect(page.getByTestId("attachment").getByRole("button", { name: "Open unavailable.pdf 1 KB · Unavailable offline", exact: true })).toBeVisible();
   const pixel = page.getByTestId("attachment").getByRole("button", { name: `Open pixel.png ${PIXEL.length} B`, exact: true });
   const tab = context.waitForEvent("page");
   await pixel.click();
@@ -46,6 +46,18 @@ test("reader attachment controls include all visible labels and localized downlo
   expect(readFileSync((await saved.path())!)).toEqual(PIXEL);
   await expect(menu).toHaveCount(0);
   await expect(pixel).toBeFocused();
+
+  // a Download button at the file's right, shown on hover; a file whose click downloads shows the glyph there instead
+  const pixelTile = page.getByTestId("attachment").filter({ hasText: "pixel.png" });
+  const hoverDownload = pixelTile.getByRole("button", { name: "Download pixel.png", exact: true });
+  await expect(hoverDownload).toHaveCSS("opacity", "0");
+  await pixelTile.hover();
+  await expect(hoverDownload).toHaveCSS("opacity", "1");
+  await axeBothModes(page, "[data-testid=attachment]");
+  const viaButton = page.waitForEvent("download");
+  await hoverDownload.click();
+  expect(readFileSync((await (await viaButton).path())!)).toEqual(PIXEL);
+  await expect(page.getByTestId("attachment").filter({ hasText: "résumé.bin" }).getByTestId("attachment-download")).toHaveCount(0);
 
   // a file that only downloads: Download alone; ⇧F10 opens it from the keyboard
   await cached.focus();
