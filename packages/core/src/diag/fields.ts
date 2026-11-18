@@ -72,6 +72,8 @@ export const FIELD_TYPES = {
   retryable: bool,
   rpcCode: enumOf(...RPC_CODES),
   stage: enumOf("check", "download", "verify", "install", "other"),
+  /** plan 212: where opening an attachment stopped (its private folder, writing the copy, marking it, the OS) */
+  openStep: enumOf("root", "write", "mark", "open"),
   source: enumOf("backend", "store", "search", "categorizer", "keychain", "main", "renderer", "worker", "mcp", "other"),
   status: int(0, 999),
   schema: int(0, 100_000),

@@ -42,7 +42,7 @@ const en = {
   "attachments.download": "Download {name}",
   "attachments.open": "Open {name}",
   "attachments.downloadItem": "Download",
-  "attachments.openFailed": "Couldn’t open {name}. Download it from its menu instead.",
+  "attachments.openFailed": "Couldn’t open {name}.",
   "attachments.notCached": "Unavailable offline",
   "attachments.busy": "An attachment is busy. Try again in a moment.",
   "attachments.unavailable": "This attachment is unavailable. Reattach the file before sending.",

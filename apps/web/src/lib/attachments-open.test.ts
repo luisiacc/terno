@@ -78,7 +78,7 @@ describe("openAttachment on the web (plan 212)", () => {
   it("closes the tab and says what to do when the bytes can't be read", async () => {
     const ref = stored("scan.pdf", "application/pdf");
     call.mockImplementation(async (method: string) => (method === "attachments.info" ? { ...ref, size: 99 } : { dataBase64: null }));
-    await expect(openAttachment(1, ref)).rejects.toThrow("Couldn’t open scan.pdf. Download it from its menu instead.");
+    await expect(openAttachment(1, ref)).rejects.toThrow("Couldn’t open scan.pdf.");
     expect(opened[0]!.close).toHaveBeenCalled();
   });
 

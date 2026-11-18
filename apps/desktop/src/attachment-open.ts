@@ -6,6 +6,7 @@
 import { execFile } from "node:child_process";
 import { join } from "node:path";
 import { app, ipcMain, shell, type IpcMainInvokeEvent } from "electron";
+import { log } from "@terno/core/diag";
 import { AttachmentOpener } from "./opened-attachments";
 
 export interface AttachmentOpenDeps {
@@ -30,6 +31,7 @@ export function registerAttachmentOpen(deps: AttachmentOpenDeps): void {
     quarantine,
     openPath: deps.testDir ? async () => "" : (path) => shell.openPath(path),
     now: Date.now,
+    failed: (openStep, errno) => log.warn("attachment.open_failed", errno ? { openStep, errno } : { openStep }),
   });
   ipcMain.handle("terno:open-attachment", (event, name: unknown, bytes: unknown) => (deps.trusted(event) ? opener.open(name, bytes) : { status: "failed" as const }));
 }

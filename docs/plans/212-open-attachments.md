@@ -249,3 +249,16 @@ Codex reviewed the first three commits, `0c237e0ff..fef369cea`, and reported thr
   - **Leaving:** it takes half that (`duration-fast`), so moving on never waits on it.
   - **Motion off or reduced:** it simply appears (`globals.css`).
   - **Verification:** a throwaway probe with motion on sampled each frame. On hover, opacity went 0 → 0.61 → 0.86 → 0.95 → 1 and scale 0.9 → 1 within about 100 ms. On leave it was gone in about 45 ms.
+
+## Follow-up: "Couldn't open" on a file that downloads
+
+> it shows this when i try to open it, which i think we're doing something wrong here becuase if i can download it i should be able to open it
+
+- **Cause:** the owner's dev app (`pnpm dev:desktop`) had been running since before main gained `terno:open-attachment`.
+  - `dev.mjs` builds main once, at launch.
+  - Rebuilding `apps/desktop/dist` while testing handed the reloaded window a preload with `openAttachment`. Main had no handler for it, so `invoke` rejected and every open failed.
+  - A download never asks main, so it worked.
+  - A packaged build can't split this way: its page and main ship together. Restarting the dev app fixes it.
+- **What changed:**
+  - **The error offers the way out.** "Couldn't open {name}." now carries a **Download** button, instead of pointing to a menu. `AttachmentOpenFailed` marks the errors that get it.
+  - **Main logs where an open stopped:** `attachment.open_failed`, with `openStep` (root, write, mark or open) and the `errno`. It never logs the file's name, nor `openPath`'s message, which contains the path.

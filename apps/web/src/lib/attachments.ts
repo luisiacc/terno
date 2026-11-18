@@ -199,6 +199,11 @@ export function canOpenAttachment(filename: string): boolean {
   return browserPreviewType(filename) !== null;
 }
 
+/** An open that didn't happen: what's shown offers the download instead (plan 212). */
+export class AttachmentOpenFailed extends Error {
+  constructor(name: string) { super(t("attachments.openFailed", { name })); }
+}
+
 /** the web build's last few preview URLs: a tab left open keeps working (save, print), and memory stays bounded */
 const PREVIEWS_KEPT = 3;
 const previews: string[] = [];
@@ -220,7 +225,7 @@ export function openAttachment(accountId: number, ref: AttachmentRef): Promise<"
 }
 
 async function openOnDesktop(open: NonNullable<NonNullable<Window["ternoDesktop"]>["openAttachment"]>, accountId: number, ref: AttachmentRef): Promise<"opened" | "busy"> {
-  const failed = () => new Error(t("attachments.openFailed", { name: ref.filename }));
+  const failed = () => new AttachmentOpenFailed(ref.filename);
   const blob = await attachmentBlob(accountId, ref).catch(() => { throw failed(); });
   const { status } = await open(ref.filename, await blob.arrayBuffer()).catch(() => ({ status: "failed" as const }));
   if (status === "failed") throw failed();
@@ -229,7 +234,7 @@ async function openOnDesktop(open: NonNullable<NonNullable<Window["ternoDesktop"
 
 async function openInTab(tab: Window, type: string, accountId: number, ref: AttachmentRef): Promise<"opened"> {
   let blob: Blob;
-  try { blob = await attachmentBlob(accountId, ref); } catch { tab.close(); throw new Error(t("attachments.openFailed", { name: ref.filename })); }
+  try { blob = await attachmentBlob(accountId, ref); } catch { tab.close(); throw new AttachmentOpenFailed(ref.filename); }
   // closed while the bytes came: nothing more to do
   if (tab.closed) return "opened";
   // the type is the extension's, never the message's: a blob URL shares the app's origin

@@ -36,7 +36,7 @@ const es = {
   "attachments.download": "Descargar {name}",
   "attachments.open": "Abrir {name}",
   "attachments.downloadItem": "Descargar",
-  "attachments.openFailed": "No se pudo abrir {name}. Descárgalo desde su menú.",
+  "attachments.openFailed": "No se pudo abrir {name}.",
   "attachments.notCached": "No disponible sin conexión",
   "attachments.busy": "Un adjunto está ocupado. Inténtalo de nuevo en un momento.",
   "attachments.unavailable": "Este adjunto no está disponible. Vuelve a adjuntar el archivo antes de enviar.",

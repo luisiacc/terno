@@ -90,13 +90,17 @@ describe("AttachmentOpener (plan 212)", () => {
     expect(opened).toHaveLength(1);
   });
 
-  it("fails closed: a copy that can't be marked or opened is removed and never handed on", async () => {
-    const unmarked = setup({ quarantine: async () => { throw new Error("xattr"); } });
+  it("fails closed: a copy that can't be marked or opened is removed and never handed on, and says where it stopped", async () => {
+    const failed = vi.fn();
+    const unmarked = setup({ quarantine: async () => { throw Object.assign(new Error("xattr"), { code: "ETIMEDOUT" }); }, failed });
     expect(await unmarked.opener.open("a.pdf", bytes(1))).toEqual({ status: "failed" });
+    expect(failed).toHaveBeenLastCalledWith("mark", "ETIMEDOUT");
     expect(unmarked.opened).toEqual([]);
     expect(copies(unmarked.root)).toEqual([]);
-    const unopened = setup({ openPath: async () => "Failed to open path" });
+    const unopened = setup({ openPath: async () => "Failed to open path", failed });
     expect(await unopened.opener.open("a.pdf", bytes(1))).toEqual({ status: "failed" });
+    // never what openPath said: it names the path, so the file
+    expect(failed).toHaveBeenLastCalledWith("open", null);
     expect(copies(unopened.root)).toEqual([]);
     const rejected = setup({ openPath: async () => { throw new Error("launch"); } });
     expect(await rejected.opener.open("a.pdf", bytes(1))).toEqual({ status: "failed" });

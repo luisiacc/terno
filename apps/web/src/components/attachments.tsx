@@ -9,7 +9,7 @@ import { Chip } from "@terno/ui/components/chip";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@terno/ui/components/collapsible";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@terno/ui/components/context-menu";
 import { cn } from "@terno/ui/lib/utils";
-import { attachFiles, canOpenAttachment, downloadAttachment, openAttachment, useAttachmentUploads } from "~/lib/attachments";
+import { AttachmentOpenFailed, attachFiles, canOpenAttachment, downloadAttachment, openAttachment, useAttachmentUploads } from "~/lib/attachments";
 import { editDraft, type LocalDraft } from "~/lib/drafts";
 import { chipRefs } from "~/lib/inline-images";
 import { formatBytes } from "~/lib/format";
@@ -85,11 +85,15 @@ const clickAction = (a: AttachmentInfo): FileAction => (canOpenAttachment(a.file
  * Opens or downloads a file, or asks the backend for its bytes while they aren't on this device. Called straight from
  * the click or the menu item: the web build reserves its tab before anything is awaited (`openAttachment`).
  */
-function runFileAction({ accountId, messageId, a }: FileTarget, how: FileAction): Promise<void> {
+function runFileAction({ accountId, messageId, a }: FileTarget, how: FileAction, download: () => void): Promise<void> {
   if (!a.assetId) return client.call("attachments.retry", { accountId, messageId }).then(() => { snack(t("attachments.retryRequested")); }, () => { snack.error(t("attachments.readerUnavailable")); });
   const ref = { ...a, assetId: a.assetId };
   const work: Promise<unknown> = how === "open" ? openAttachment(accountId, ref) : downloadAttachment(accountId, ref);
-  return work.then(() => {}, (error: unknown) => { snack.error(error instanceof Error ? error.message : t("attachments.unavailable")); });
+  return work.then(() => {}, (error: unknown) => {
+    // a file that couldn't open can still be saved: the way to it is on what says so, not in a menu to find
+    const action = error instanceof AttachmentOpenFailed ? { label: t("attachments.downloadItem"), name: t("attachments.download", { name: a.filename }), onClick: download } : undefined;
+    snack.error(error instanceof Error ? error.message : t("attachments.unavailable"), { action });
+  });
 }
 
 /**
@@ -104,7 +108,7 @@ function useFileActions() {
     if (running.current) return;
     running.current = true;
     setBusy(busyKey(f.a));
-    void runFileAction(f, how).finally(() => { running.current = false; setBusy(null); });
+    void runFileAction(f, how, () => act(f, "download")).finally(() => { running.current = false; setBusy(null); });
   };
   /** a file's button: named for what a click does, and marked so its list's menu finds it */
   const fileProps = (f: FileTarget) => {

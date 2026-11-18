@@ -191,6 +191,19 @@ describe("ThreadAttachments (plan 177)", () => {
     await vi.waitFor(() => expect(items().map((i) => i.textContent)).toEqual(["Open", "Download"]), { timeout: 2000 });
   });
 
+  it("plan 212: a file that couldn't open says so, with the download right there", async () => {
+    const { AttachmentOpenFailed } = await import("~/lib/attachments");
+    const { snack } = await import("~/lib/snack");
+    calls.open.mockRejectedValueOnce(new AttachmentOpenFailed("file-1.pdf"));
+    const host = await render(<ThreadAttachments messages={[msg({ attachments: [file(1, "asset-1")] }), msg()]} />);
+    await act(async () => host.querySelector<HTMLButtonElement>("[data-testid=thread-attachment] > button")!.click());
+    const [message, options] = vi.mocked(snack.error).mock.calls.at(-1)!;
+    expect(message).toBe("Couldn’t open file-1.pdf.");
+    expect(options?.action).toMatchObject({ label: "Download", name: "Download file-1.pdf" });
+    await act(async () => options!.action!.onClick!());
+    expect(calls.download).toHaveBeenCalledWith(4, expect.objectContaining({ id: 1, assetId: "asset-1" }));
+  });
+
   it("past twelve files, the rest wait behind Show all", async () => {
     const host = await render(<ThreadAttachments messages={[msg({ attachments: Array.from({ length: 15 }, (_, i) => file(i + 1, `a${i}`)) }), msg()]} />);
     expect(host.querySelectorAll("[data-testid=thread-attachment]")).toHaveLength(12);

@@ -41,7 +41,11 @@ export interface OpenerDeps {
   /** hands the file to the OS; "" when it opened, else what went wrong (Electron's `shell.openPath`) */
   openPath(path: string): Promise<string>;
   now(): number;
+  /** where an open stopped, and the error's code when it has one: never the file's name */
+  failed?(step: OpenStep, errno: string | null): void;
 }
+
+export type OpenStep = "root" | "write" | "mark" | "open";
 
 /** exactly the bytes a typed view covers, or null when it's neither a buffer nor a view of one, or too big */
 export function attachmentBytes(value: unknown): Buffer | null {
@@ -64,21 +68,28 @@ export class AttachmentOpener {
     if (!opensInPlace(filename) || !data) return { status: "failed" };
     this.running = true;
     let dir: string | null = null;
+    let step: OpenStep = "root";
     try {
       await this.privateRoot();
       await this.prune();
+      step = "write";
       dir = await mkdtemp(join(this.deps.root, PREFIX));
       const path = join(dir, diskName(filename));
       const file = await open(path, "wx", 0o600);
       try { await file.writeFile(data); } finally { await file.close(); }
       // the mark first: a read-only file can't take one
+      step = "mark";
       await this.deps.quarantine(path);
       // read-only: an edit in the viewer asks to duplicate rather than saving into a copy that's cleared a day later
       await chmod(path, 0o400);
+      step = "open";
+      // what openPath says names the path, so the file's name: only that it failed is kept
       if (await this.deps.openPath(path)) throw new Error("not opened");
       dir = null;
       return { status: "opened" };
-    } catch {
+    } catch (error) {
+      const code = (error as { code?: unknown } | null)?.code;
+      this.deps.failed?.(step, typeof code === "string" ? code : null);
       return { status: "failed" };
     } finally {
       if (dir) await rm(dir, { recursive: true, force: true }).catch(() => {});

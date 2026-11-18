@@ -140,6 +140,7 @@ export const CODES = {
   "compose.send_failed": c("errorClass", "rpcCode", "expected"),
   "print.failed": c("action", "errorClass", "reason"),
   "print.load_timeout": c("action"),
+  "attachment.open_failed": c("openStep", "errno"),
   "settings.update_failed": c("rpcCode", "errorClass"),
   "boot.failed": c("errorClass", "rpcCode"),
   "engine.stopped": c("attempt"),
