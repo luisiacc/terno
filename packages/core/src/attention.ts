@@ -5,11 +5,24 @@
  */
 import { t } from "@terno/i18n";
 import { addressKey, automatedLevel } from "./people";
+import { leadScreen, type FirstScreen } from "./first-screen";
+import type { Counts } from "./types";
 
 /** The Dock badge: nothing at 0, the number up to 9,999, then "9999+" (five digits cover the icon). */
 export function badgeText(count: number): string {
   if (!Number.isFinite(count) || count <= 0) return "";
   return count > 9999 ? "9999+" : String(Math.floor(count));
+}
+
+/**
+ * Plan 207: the number on the Dock (the web: the app's icon), the sidebar's one number: What matters' when it opens
+ * first and is shown (`today` present), else the Inbox's unread. While What matters' number is still coming (null:
+ * plan 17's backfill) the badge keeps `last`, so it never shows the Inbox's and then jumps.
+ */
+export function badgeCount(on: boolean, firstScreen: FirstScreen | null | undefined, counts: Pick<Counts, "inboxUnread" | "today">, last: number): number {
+  if (!on) return 0;
+  if (leadScreen(firstScreen, counts.today !== undefined) === "inbox") return counts.inboxUnread;
+  return counts.today ?? last;
 }
 
 /** A message only counts as just arrived if it is this recent (backfill and old mail moved in are not news). */

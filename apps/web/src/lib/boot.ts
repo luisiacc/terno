@@ -7,14 +7,14 @@ import { reconcileAccounts, rememberFocus, restoredFocus } from "~/lib/account-f
 import { setSyncProgress } from "~/state/sync-progress";
 import { localized } from "~/lib/i18n";
 import { t } from "@terno/i18n";
-import type { DesignId } from "@terno/core";
+import { leadScreen, type DesignId } from "@terno/core";
 import { acquireDraftHold, trackDraftComposition, draftsSaved, flushAllDrafts, loadDrafts, shownDraftKey, useDrafts } from "~/lib/drafts";
 import { installQueryRecovery } from "~/rpc/reconnect";
 import { client, connectBackend } from "~/rpc/connection";
 import { removeFromCategory } from "~/lib/categorize";
-import { getApp, navigate, setAccounts, setApp, setCategories, setFolders } from "~/state/app";
+import { getApp, navigate, setAccounts, setApp, setCategories, setFolders, type AppState } from "~/state/app";
 import { refreshList, reloadList, useList } from "~/state/list";
-import { bootPage, installPage, listCovered, readerShown } from "~/lib/page";
+import { bootPage, installPage, listCovered, listLayout, readerShown } from "~/lib/page";
 import { invalidateThreads, loadThread, useThreads } from "~/state/threads";
 import { snack } from "~/lib/snack";
 import { applyAppearance, installAppearanceListeners, reconcileSettings, updateAppearance } from "~/lib/appearance";
@@ -37,6 +37,7 @@ import { snippetsSaved } from "~/lib/snippets";
 import { applyForwards, loadForwards, shareLocale } from "~/lib/forwards";
 import { summaryReady } from "~/lib/summaries";
 import { loadDraftingEnabled } from "~/lib/ai-draft-state";
+import { todayOffered } from "~/lib/ai";
 import { applyScheduled, loadScheduled } from "~/lib/scheduled";
 import { heldWent, settleOverdue } from "~/lib/held-sends";
 
@@ -52,7 +53,12 @@ export async function boot(): Promise<void> {
     const b = await client.call("app.bootstrap", {});
     applyAppearance(reconcileSettings(b.settings));
     acceptNextFavorites();
-    setApp({ ready: true, accounts: b.accounts, categories: b.categories, folders: b.folders ?? [], counts: b.counts, settings: b.settings, owner: b.owner, demo: b.demo, devAi: b.devAi ?? null, version: b.version, host: b.host, supportedFilters: supportedFilters(b.filters), ...restoredFocus(b.accounts) });
+    // plan 207: the first screen, in the same change as the rest (one first list, never the Inbox's and then the feed's).
+    // A reload that brings a conversation back (List's address) keeps it; a remembered focus on an account waits for the
+    // next launch on the Inbox (What matters is every account's)
+    const launch = leadScreen(b.settings.firstScreen, todayOffered({ settings: b.settings, devAi: b.devAi ?? null })) === "whatMatters" && !(listLayout() && location.hash.startsWith("#/"));
+    const place: Partial<AppState> = launch ? { today: true, view: "all", accountId: null } : restoredFocus(b.accounts);
+    setApp({ ready: true, accounts: b.accounts, categories: b.categories, folders: b.folders ?? [], counts: b.counts, settings: b.settings, owner: b.owner, demo: b.demo, devAi: b.devAi ?? null, version: b.version, host: b.host, supportedFilters: supportedFilters(b.filters), ...place });
     // plan 108: focus on an account is remembered however it changes (the menu, the back arrow, leaving for another)
     rememberFocus();
     // a remembered open account that's no longer there (plan 67)

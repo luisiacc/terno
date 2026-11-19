@@ -1,13 +1,15 @@
-import { aiFeaturesAvailable, UNDO_SEND_SECONDS, type UndoSendSeconds } from "@terno/core";
+import { aiFeaturesAvailable, leadScreen, UNDO_SEND_SECONDS, type FirstScreen, type UndoSendSeconds } from "@terno/core";
 import type { AppSettings } from "@terno/core/rpc";
 import { Button } from "@terno/ui/components/button";
 import { NumberField } from "@terno/ui/components/number-field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Switch } from "@terno/ui/components/switch";
-import { Keyboard } from "@terno/ui/icons";
+import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
+import { Inbox, Keyboard, Sun } from "@terno/ui/icons";
 import { useEffect, useReducer, useRef, useState } from "react";
 import { isLanguageSetting, LOCALE_IDS, LOCALES, resolveLocale, t, type LanguageSetting } from "@terno/i18n";
-import { setApp } from "~/state/app";
+import { setApp, useApp } from "~/state/app";
+import { todayOffered } from "~/lib/ai";
 import { commitLanguage } from "~/lib/i18n";
 import { snack } from "~/lib/snack";
 import { MacSection } from "~/lib/web-parts";
@@ -113,8 +115,15 @@ export function DaysField({
  * browser the switch reads on only with the permission granted, and turning
  * it on asks inside the click.
  */
+/** Plan 207: the badge shows the first screen's number, and says which. */
+const badgeLabel = (desktop: boolean, lead: FirstScreen): string =>
+  lead === "whatMatters" ? t(desktop ? "settings.general.badgeWhatMatters" : "settings.general.badgeWhatMattersWeb") : t(desktop ? "settings.general.badge" : "settings.general.badgeWeb");
+const badgeHint = (desktop: boolean, lead: FirstScreen): string =>
+  lead === "whatMatters" ? t("settings.general.badgeWhatMatters.hint") : t(desktop ? "settings.general.badge.hint" : "settings.general.badgeWeb.hint");
+
 function NotificationsGroup({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
   const desktop = !!window.ternoDesktop;
+  const lead = leadScreen(settings.firstScreen, useApp(todayOffered));
   const page = !desktop && pageNotificationsSupported();
   // the browser's permission, read live: it can change in the site's settings while this is open (Codex code review #10)
   const [, repaint] = useReducer((n: number) => n + 1, 0);
@@ -155,7 +164,7 @@ function NotificationsGroup({ settings, update }: { settings: AppSettings; updat
         </SettingsRow>
       )}
       {badge && (
-        <SettingsRow find={desktop ? "general.badge" : "general.badgeWeb"} label={t(desktop ? "settings.general.badge" : "settings.general.badgeWeb")} hint={t(desktop ? "settings.general.badge.hint" : "settings.general.badgeWeb.hint")} testId="badge-row">
+        <SettingsRow find={desktop ? "general.badge" : "general.badgeWeb"} label={badgeLabel(desktop, lead)} hint={badgeHint(desktop, lead)} testId="badge-row">
           {(a) => <Switch {...a} data-testid="badge-switch" checked={settings.dockBadge} onCheckedChange={(next) => void update({ dockBadge: next })} />}
         </SettingsRow>
       )}
@@ -217,9 +226,49 @@ function LanguageRow({ settings, update }: { settings: AppSettings; update: Sett
 /** Plan 188: Undo send's windows, in seconds. */
 const undoSendChoices = (): { value: UndoSendSeconds; label: string }[] => UNDO_SEND_SECONDS.map((n) => ({ value: n, label: t("settings.general.undoSendTime.seconds", { count: n }) }));
 
+/**
+ * Plan 207: the screen the app opens on, and so the one number the sidebar and the Dock show. Only where What matters can
+ * show; the current screen stays where it is (it decides launches).
+ */
+function FirstScreenGroup({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
+  // What matters' own settings' rule (a local build with Dev mode's AI off still sets it), and its row shown
+  if (!aiFeaturesAvailable(settings) || settings.today?.show === false) return null;
+  const value: FirstScreen = settings.firstScreen ?? "inbox";
+  return (
+    <SettingsGroup testId="first-screen-group">
+      <SettingsRow find="general.firstScreen" label={t("firstScreen.setting")} hint={t("firstScreen.setting.hint")} testId="first-screen-row">
+        {(a) => (
+          <ToggleGroup
+            aria-labelledby={a["aria-labelledby"]}
+            aria-describedby={a["aria-describedby"]}
+            variant="segmented"
+            value={[value]}
+            onValueChange={(v: string[]) => {
+              const next = v[0];
+              if ((next === "inbox" || next === "whatMatters") && next !== value) void update({ firstScreen: next });
+            }}
+            data-testid="first-screen-toggle"
+          >
+            <ToggleGroupItem value="inbox" data-testid="first-screen-inbox" className="gap-1.5">
+              <Inbox aria-hidden />
+              {t("view.inbox")}
+            </ToggleGroupItem>
+            <ToggleGroupItem value="whatMatters" data-testid="first-screen-what-matters" className="gap-1.5">
+              <Sun aria-hidden />
+              {t("today.title")}
+            </ToggleGroupItem>
+          </ToggleGroup>
+        )}
+      </SettingsRow>
+    </SettingsGroup>
+  );
+}
+
 export function GeneralTab({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
   return (
     <div data-testid="general-tab">
+      <FirstScreenGroup settings={settings} update={update} />
+
       <SettingsGroup>
         <SettingsRow find="general.remoteImages" label={t("settings.general.remoteImages")} hint={t(settings.remoteImages === "always" ? "settings.general.remoteImages.hintOn" : "settings.general.remoteImages.hint")}>
           {(a) => <Switch {...a} data-testid="remote-images-switch" checked={settings.remoteImages === "always"} onCheckedChange={(on) => void update({ remoteImages: on ? "always" : "ask" })} />}

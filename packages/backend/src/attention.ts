@@ -10,7 +10,7 @@
  * notice at most every NOTICE_GAP_MS. Nothing is collected, read or timed
  * while they're off.
  */
-import { importance, ruleAwaitsBody, redact, stillNew, summarize, type Counts, type MailNotice } from "@terno/core";
+import { badgeCount, importance, ruleAwaitsBody, redact, stillNew, summarize, type Counts, type FirstScreen, type MailNotice } from "@terno/core";
 import { captureError, log } from "@terno/core/diag";
 import type { MailStore } from "@terno/store";
 import { readAttention } from "./settings";
@@ -60,6 +60,7 @@ const NONE: PassArrivals = { add() {}, end() {} };
 
 export class Attention {
   private dockBadge = true;
+  private firstScreen: FirstScreen | null = null;
   private notifications = true;
   private preview = true;
   /** bumped when notifications go off or the backend stops: work started before delivers nothing */
@@ -106,6 +107,7 @@ export class Attention {
   async refresh(): Promise<void> {
     const s = await readAttention(this.o.store);
     this.dockBadge = s.dockBadge;
+    this.firstScreen = s.firstScreen;
     this.preview = s.notificationPreview;
     if (this.notifications && !s.notifications) this.drop();
     this.notifications = s.notifications;
@@ -113,10 +115,10 @@ export class Attention {
     else if (!this.dockBadge) this.show(0);
   }
 
-  /** The sidebar's counts, just computed: the badge shows their Inbox number when it changed. */
+  /** The sidebar's counts, just computed: the badge shows its one number (plan 207: the first screen's) when it changed. */
   counts(c: Counts): void {
     this.last = c;
-    this.show(this.dockBadge ? c.inboxUnread : 0);
+    this.show(badgeCount(this.dockBadge, this.firstScreen, c, this.shown ?? 0));
   }
 
   private show(n: number): void {

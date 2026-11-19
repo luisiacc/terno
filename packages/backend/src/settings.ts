@@ -230,6 +230,8 @@ export const DEFAULT_SETTINGS: General = {
   favoriteFolders: [],
   // plan 41: like Mail, the count and the notifications are on until turned off
   dockBadge: true,
+  // plan 207: asked once What matters is offered; until then the Inbox
+  firstScreen: null,
   notifications: true,
   notificationPreview: true,
 };
@@ -329,11 +331,12 @@ export async function readComposeSuggestions(store: SettingsStore): Promise<bool
   return (await stored(store)).composeSuggestions ?? DEFAULT_SETTINGS.composeSuggestions;
 }
 
-/** Plan 41: the Dock badge and notifications, read at start and when settings change. */
-export async function readAttention(store: SettingsStore): Promise<Pick<AppSettings, "dockBadge" | "notifications" | "notificationPreview">> {
+/** Plan 41: the Dock badge and notifications, read at start and when settings change; plan 207: which number the badge shows. */
+export async function readAttention(store: SettingsStore): Promise<Pick<AppSettings, "dockBadge" | "firstScreen" | "notifications" | "notificationPreview">> {
   const s = await stored(store);
   return {
     dockBadge: s.dockBadge ?? DEFAULT_SETTINGS.dockBadge,
+    firstScreen: s.firstScreen ?? DEFAULT_SETTINGS.firstScreen,
     notifications: s.notifications ?? DEFAULT_SETTINGS.notifications,
     notificationPreview: s.notificationPreview ?? DEFAULT_SETTINGS.notificationPreview,
   };

@@ -111,6 +111,21 @@ describe("the Dock badge", () => {
     expect(t.badges).toEqual([0, 7, 0]);
   });
 
+  it("plan 207: What matters first, its number; chosen or dropped in Settings, at once; its backfill never flashes the Inbox's", async () => {
+    const t = setup({ settings: { firstScreen: "whatMatters" } });
+    await t.attention.start();
+    t.attention.counts({ ...counts(9), today: 2 });
+    t.attention.counts({ ...counts(9), today: null });
+    // What matters went (AI off, its row hidden): the Inbox's
+    t.attention.counts(counts(9));
+    t.app.firstScreen = "inbox";
+    await t.attention.refresh();
+    t.attention.counts({ ...counts(8), today: 2 });
+    t.app.firstScreen = "whatMatters";
+    await t.attention.refresh();
+    expect(t.badges).toEqual([2, 9, 8, 2]);
+  });
+
   it("no host (the web): nothing published, nothing shown (the page reads the counts itself)", async () => {
     const t = setup({ host: false });
     await t.attention.start();

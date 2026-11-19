@@ -28,6 +28,8 @@ const GENERAL_KEYS = [
   "language",
   // plan 41: the badge's switch (notifications and their preview only ever go off: settingsFrom)
   "dockBadge",
+  // plan 207: the screen it opens on (a null, never asked, isn't carried: the question comes again)
+  "firstScreen",
   // plan 170 (Codex critique #1): a sound turned off stays off on a new store
   "sendSound",
   // plan 188: how a person reaches the app (single-key shortcuts off) and Undo send, whole (on or off and its window)
@@ -49,7 +51,8 @@ async function exportedSettings(store: SettingsStore) {
 function settingsFrom(raw: Record<string, unknown>, current: Parameters<typeof switchDesign>[0] & { localMode: boolean; agents: { enabled: boolean }; errorReports: string; senderIcons: boolean; remoteImages: string; notifications: boolean; notificationPreview: boolean }): { general: SettingsPatch; ai: SettingsPatch["ai"] } {
   const general: Record<string, unknown> = {};
   for (const key of GENERAL_KEYS) {
-    if (raw[key] === undefined) continue;
+    // plan 207: a file never asked carries no answer (null would undo this install's)
+    if (raw[key] === undefined || (key === "firstScreen" && raw[key] === null)) continue;
     const r = settingsPatchSchema.safeParse({ [key]: raw[key] });
     if (r.success) general[key] = (r.data as Record<string, unknown>)[key];
   }
@@ -448,7 +451,7 @@ export async function importMailbox(b: Backend, file: ExportFile): Promise<Impor
     b.summaries.settingsChanged(after);
     await b.writing.learner.aiChanged();
     if (after.localMode !== before.localMode || after.errorReports !== before.errorReports || after.language !== before.language) await b.publishPolicy();
-    if (after.dockBadge !== before.dockBadge || after.notifications !== before.notifications || after.notificationPreview !== before.notificationPreview) await b.attention.refresh();
+    if (after.dockBadge !== before.dockBadge || after.firstScreen !== before.firstScreen || after.notifications !== before.notifications || after.notificationPreview !== before.notificationPreview) await b.attention.refresh();
     // plan 183 (Codex critique #4): agents turned off by the file are cut off now
     if (after.agents.enabled !== before.agents.enabled) await b.agentConnector?.sync();
   }

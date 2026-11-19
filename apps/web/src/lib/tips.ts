@@ -9,8 +9,7 @@ export const TIPS = [
   "category-inbox",
   // plan 142: the first follow-up on an open conversation: what the line is, and how it ends
   "followups-first",
-  // plan 145: the first time the Today row appears
-  "today-first",
+  // (plan 145's "today-first" went with plan 207: the first-screen question says what What matters is)
 ] as const;
 export type TipId = (typeof TIPS)[number];
 

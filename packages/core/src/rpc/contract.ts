@@ -1,6 +1,7 @@
 import { AGENT_ACCESS, type AgentsSetting } from "../agents";
 import type { AttachmentRef } from "../attachments";
 import type { MailNotice } from "../attention";
+import type { FirstScreen } from "../first-screen";
 import { LANGUAGE_SETTINGS, LOCALE_IDS, t, type LanguageSetting } from "@terno/i18n";
 import { z } from "zod";
 import { isValidEmail, MAX_RECIPIENTS } from "../address";
@@ -262,8 +263,10 @@ export interface AppSettings {
   googlePhotos: Record<string, GooglePhotoState>;
   /** plan 74: Gmail accounts whose photos are switched on but wait for the account's next sign-in with Google (Google asks then) */
   googlePhotosPending: number[];
-  /** plan 41: the Inbox's unread count on the Dock icon (the web: the installed app's icon) */
+  /** plan 41: the sidebar's one number on the Dock icon (the web: the installed app's icon); plan 207: the first screen's */
   dockBadge: boolean;
+  /** plan 207: the screen the app opens on, and so the one number the sidebar and the Dock show; null: not asked yet (the Inbox) */
+  firstScreen: FirstScreen | null;
   /** plan 41: system notifications for important new mail while Terno runs */
   notifications: boolean;
   /** plan 41: notifications name the sender and the subject (off: only how many) */
@@ -564,6 +567,8 @@ const settingsPatch = z.object({
   sendSound: z.boolean().optional(),
   senderIcons: z.boolean().optional(),
   dockBadge: z.boolean().optional(),
+  // null only puts the question back (tests; nothing in the app asks for it)
+  firstScreen: z.enum(["inbox", "whatMatters"]).nullable().optional(),
   notifications: z.boolean().optional(),
   notificationPreview: z.boolean().optional(),
 });

@@ -57,6 +57,7 @@ const SERVER: AppSettings = {
   senderIcons: false,
   googlePhotos: {}, googlePhotosPending: [], favoriteFolders: [],
   dockBadge: true,
+  firstScreen: null,
   notifications: true,
   notificationPreview: true,
   theme: "dark",

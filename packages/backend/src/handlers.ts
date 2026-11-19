@@ -1477,8 +1477,8 @@ export function createHandlers(b: Backend): Handlers {
           if (next.composeSuggestions !== was.composeSuggestions) await b.autocomplete.setPhrases(next.composeSuggestions);
           // plan 22: website icons turned off: nothing in flight lands, windows forget them
           if (next.senderIcons !== was.senderIcons) b.icons.invalidate();
-          // plan 41: the badge follows at once; notifications turned off drop what was pending
-          if (next.dockBadge !== was.dockBadge || next.notifications !== was.notifications || next.notificationPreview !== was.notificationPreview) await b.attention.refresh();
+          // plan 41: the badge follows at once; notifications turned off drop what was pending; plan 207: so does its number
+          if (next.dockBadge !== was.dockBadge || next.firstScreen !== was.firstScreen || next.notifications !== was.notifications || next.notificationPreview !== was.notificationPreview) await b.attention.refresh();
           // plan 101: a wider General window: the accounts that follow it download their older mail
           // plan 183: the socket opens or closes with the switch (off cuts every agent)
           if (next.agents.enabled !== was.agents.enabled) await b.agentConnector?.sync();

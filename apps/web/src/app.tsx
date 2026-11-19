@@ -49,6 +49,7 @@ import { SettingsDialog } from "./components/settings-dialog";
 import { AddAccountDialog } from "./components/add-account-dialog";
 import { ShortcutsDialog } from "./components/shortcuts-dialog";
 import { FirstRun } from "./components/first-run";
+import { FirstScreenAsk, FirstScreenDialog } from "./components/first-screen-dialog";
 import { PrintSheet } from "./components/print-sheet";
 import MailboxCover from "./components/mailbox-cover";
 import { WebGate } from "~/lib/web-parts";
@@ -240,6 +241,9 @@ export function App() {
       {dialog === "remind" && <RemindDialog />}
       {dialog === "todayLater" && <TodayLaterDialog />}
       {dialog === "todayChange" && <TodayChangeDialog />}
+      {/* plan 207: asked once, when What matters is first offered */}
+      <FirstScreenAsk />
+      {dialog === "firstScreen" && <FirstScreenDialog />}
       {fresh && dialog === null && needsFirstRun() && <FirstRun />}
       {/* inside the settings sheet it opens over the sheet (a nested dialog) */}
       {dialog !== "settings" && <ReportPreview />}

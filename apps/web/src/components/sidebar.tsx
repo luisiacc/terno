@@ -1,6 +1,6 @@
 import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { create } from "zustand";
-import { COUNTED_VIEWS, FOLDER_VIEWS, folderRef, separatesTabs, tabRef, TABS, viewRef, type Account, type Category, type CategoryColor, type CountedView, type Folder, type FolderView, type Tab, type View } from "@terno/core";
+import { COUNTED_VIEWS, FOLDER_VIEWS, folderRef, leadScreen, separatesTabs, tabRef, TABS, viewRef, type Account, type FirstScreen, type Category, type CategoryColor, type CountedView, type Folder, type FolderView, type Tab, type View } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
 import { AccountMark, CategoryDot } from "@terno/ui/components/category-dot";
 import { Shortcut } from "@terno/ui/components/shortcut";
@@ -16,7 +16,7 @@ import { useReminders } from "~/lib/reminders";
 import { followupsOffered, todayOffered } from "~/lib/ai";
 import { useFollowups } from "~/state/followups";
 import { createCategory as createNamedCategory } from "~/lib/new-category";
-import { offerTip, usePendingTip } from "~/lib/tips";
+import { usePendingTip } from "~/lib/tips";
 import { ACCOUNT_VIEWS, SOLO_VIEWS, listedByAccount, useFolderRows, pressAccount, useOpenAccount, type AccountPress, type FolderRow } from "~/lib/account-folders";
 import { renderProbe } from "~/lib/render-probe";
 import { enterReview, mostWaiting, reviewTotals } from "~/lib/review";
@@ -37,7 +37,6 @@ import { accountLabels } from "~/lib/account-labels";
 import { patchAccount } from "~/lib/accounts";
 import { snack } from "~/lib/snack";
 import CategoryInboxTip from "./category-inbox-tip";
-import TodayTip from "./today-tip";
 
 const VIEWS: { view: View; icon: typeof Inbox; keys?: string }[] = [
   { view: "inbox", icon: Inbox, keys: "g i" },
@@ -140,6 +139,13 @@ function accountPress(e: React.MouseEvent<HTMLElement>): AccountPress {
 }
 
 /**
+ * How a row draws its unread number. Plan 207: "hidden" when the sidebar's one number is another row's (What matters
+ * opens first): not drawn, still said in the row's description.
+ */
+type CountTone = "muted" | "unread" | "hidden";
+const useLead = (): FirstScreen => useApp((s) => leadScreen(s.settings?.firstScreen, todayOffered(s)));
+
+/**
  * A sidebar row whose right-click menu is open (its trigger, a wrapper of the row alone, says so): the list's outline for the
  * row a menu is for. Important: the chosen row's lift (plan 208, `data-active:shadow-(--depth-nav)`) is emitted after it,
  * and would hide it on the row that's open (Codex code review)
@@ -173,8 +179,8 @@ function NavItem({
   icon: React.ReactNode;
   label: string;
   count?: number;
-  /** the inbox's count in the unread color (the design decides) */
-  countTone?: "muted" | "unread";
+  /** the inbox's count in the unread color (the design decides); plan 207: "hidden", not drawn (another row has the number) */
+  countTone?: CountTone;
   testId?: string;
   /** rows can be dropped on it: a category's id, (plan 127) a folder's `folderRef`, or (plan 178) a place's `actionRef` */
   dropTarget?: DropId;
@@ -271,7 +277,7 @@ function NavItem({
         </span>
       )}
       {drop === "already" && <Check aria-label={t("sidebar.alreadyHere")} className="size-3.5 text-muted-foreground" />}
-      {count ? (
+      {count && countTone !== "hidden" ? (
         <span data-slot="nav-count" className={cn("inline-block text-xs tabular", countTone === "unread" ? "font-semibold text-unread-ink" : "text-muted-foreground", hoverAction && "group-hover/row:invisible")}>
           {formatNumber(count)}
         </span>
@@ -420,6 +426,7 @@ type MoreSlot = View | "reminders" | "followups";
  */
 function FavoriteRows() {
   const favorites = useApp((s) => s.settings?.favoriteFolders);
+  const lead = useLead();
   const accounts = useApp((s) => s.accounts);
   const folders = useApp((s) => s.folders);
   const counts = useApp((s) => s.counts);
@@ -489,6 +496,7 @@ function FavoriteRows() {
                 icon={icon}
                 label={name}
                 count={count || undefined}
+                countTone={f.view === "inbox" && lead === "whatMatters" ? "hidden" : undefined}
                 // with several accounts, whose it is, quietly (plan 23's label)
                 note={accounts.length > 1 ? <span className="min-w-0 truncate text-2xs text-muted-foreground" title={account.email}>{labels.get(account.id)?.text}</span> : undefined}
               />
@@ -789,7 +797,7 @@ function AccountFolders({
   rows: readonly FolderRow[];
   folderUnread: Record<string, number>;
   unread?: number;
-  countTone: "muted" | "unread";
+  countTone: CountTone;
   /** plan 86: a Gmail account that keeps Promotions and Social apart lists them after its Trash */
   tabs: boolean;
   activeTab: Tab | null;
@@ -1140,7 +1148,7 @@ const AccountEntry = memo(function AccountEntry({
   folders: readonly Folder[];
   unread: number | undefined;
   folderUnread: Record<string, number> | undefined;
-  countTone: "muted" | "unread";
+  countTone: CountTone;
   /** plan 86: the Gmail tab you're in, only for the account it's in */
   gmailTab: Tab | null;
   promotionsUnread: number;
@@ -1184,6 +1192,7 @@ const AccountEntry = memo(function AccountEntry({
               label={a.displayName}
               // open, the count is its Inbox's row's
               count={open ? undefined : unread || undefined}
+              countTone={countTone === "hidden" ? "hidden" : undefined}
               // open, its "+" sits where the count was (plan 107)
               reserveEnd={a.syncState.authRequired || open ? "icon" : undefined}
             />
@@ -1215,7 +1224,7 @@ const AccountEntry = memo(function AccountEntry({
  * flush (every view, its Gmail tabs, its own folders under a title). Built on its own, open or not in the normal
  * sidebar; where you are is always shown here (there are no favorites to share it with).
  */
-function SoloSidebar({ account: a, countTone }: { account: Account; countTone: "muted" | "unread" }) {
+function SoloSidebar({ account: a, countTone }: { account: Account; countTone: CountTone }) {
   const view = useApp((s) => s.view);
   const searching = useApp((s) => s.query.trim() !== "");
   const categoryId = useApp((s) => s.categoryId);
@@ -1307,10 +1316,10 @@ export function Sidebar() {
   const searching = useApp((s) => s.query.trim() !== "");
   // plan 145: no provider, no row, no list and no work; and never for an app that's still reading its settings
   const todayShown = useApp(todayOffered);
-  const todayTip = usePendingTip("today-first") !== null;
-  useEffect(() => {
-    if (todayShown) offerTip("today-first", 0);
-  }, [todayShown]);
+  // plan 207: the sidebar's one number is the first screen's: the other row's isn't drawn (its description still says it)
+  const lead = useLead();
+  // a due reminder is What matters' to do, counted there, unless its account is out of What matters (plan 211)
+  const remindersInFeed = useApp((s) => s.accounts.every((a) => a.feed !== false));
   const dueFollowups = useFollowups((s) => s.due);
   const followupsOn = useApp(followupsOffered);
   const accounts = useApp((s) => s.accounts);
@@ -1328,6 +1337,7 @@ export function Sidebar() {
   const categories = useApp((s) => s.categories);
   const counts = useApp((s) => s.counts);
   const design = useDesign();
+  const inboxTone: CountTone = lead === "whatMatters" ? "hidden" : design.surfaces.inboxCount;
 
   const openAccount = useOpenAccount((s) => s.id);
   const unreadByAccount = useFolderUnreadByAccount(counts.folderUnread);
@@ -1397,7 +1407,7 @@ export function Sidebar() {
       icon={<Icon className="size-(--icon-nav)" />}
       label={viewLabel(v)}
       count={(v === "inbox" ? counts.inboxUnread : isCounted(v) ? viewTotals[v] : 0) || undefined}
-      countTone={v === "inbox" ? design.surfaces.inboxCount : "muted"}
+      countTone={v === "inbox" ? inboxTone : "muted"}
       shortcut={keys}
     />
   );
@@ -1432,12 +1442,11 @@ export function Sidebar() {
           label={t("today.title")}
           count={counts.today || undefined}
           countSaid={counts.today ? t("sidebar.count.needYou", { count: counts.today }) : undefined}
-          countTone={design.surfaces.inboxCount}
+          countTone={lead === "whatMatters" ? design.surfaces.inboxCount : "hidden"}
           // plan 161: what the number counts, in words
           countHelp={counts.today ? { id: "today-count-help", text: t("today.countHelp", { count: counts.today }) } : undefined}
         />
       )}
-      {todayTip && <TodayTip />}
       {VIEWS.slice(0, PINNED).map(folder)}
       <FavoriteRows />
       <MoreFolders
@@ -1452,7 +1461,7 @@ export function Sidebar() {
             label={t("view.reminders")}
             count={dueReminders}
             countSaid={dueReminders ? t("sidebar.count.due", { count: dueReminders }) : undefined}
-            countTone={design.surfaces.inboxCount}
+            countTone={lead === "whatMatters" && remindersInFeed ? "hidden" : design.surfaces.inboxCount}
             shortcut="g r"
           />
         }
@@ -1565,7 +1574,7 @@ export function Sidebar() {
               unread={counts.inboxUnreadByAccount[a.id]}
               // only the open account's folders show counts; its own slice, the same object while nothing in it moved
               folderUnread={openAccount === a.id ? unreadByAccount.get(a.id) : undefined}
-              countTone={design.surfaces.inboxCount}
+              countTone={inboxTone}
               gmailTab={accountId === a.id && !searching ? gmailTab : null}
               promotionsUnread={counts.tabUnread?.[tabRef(a.id, "promotions")] ?? 0}
               socialUnread={counts.tabUnread?.[tabRef(a.id, "social")] ?? 0}
@@ -1596,7 +1605,7 @@ export function Sidebar() {
       {variant(design.variants.compose, { "list-header": null, "sidebar-outline": <ComposeOutline />, "sidebar-pill": <ComposePill />, "sidebar-row": <ComposeRow /> })}
       <nav ref={navRef} data-drop-scroll aria-label={soloAccount ? t("sidebar.solo.nav", { account: soloAccount.displayName }) : undefined} className="min-h-0 flex-1 overflow-y-auto px-(--sidebar-pad) pb-3">
         {/* keyed: another account focused is another sidebar (Codex code review #1: never the last one's rows) */}
-        {soloAccount ? <SoloSidebar key={soloAccount.id} account={soloAccount} countTone={design.surfaces.inboxCount} /> : all}
+        {soloAccount ? <SoloSidebar key={soloAccount.id} account={soloAccount} countTone={inboxTone} /> : all}
       </nav>
       {/* The last pill stands clear of the footer's hairline; empty, the stack takes no room. */}
       <div className="flex shrink-0 flex-col pb-2 empty:hidden">

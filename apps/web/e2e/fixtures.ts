@@ -189,6 +189,8 @@ interface Fixtures {
   formatBar: boolean;
   /** plan 145: Today's row, hidden unless a test opts in: the demo has an AI provider, and every screen would show it (today.spec holds it in every design) */
   today: boolean;
+  /** plan 207: the first-screen question answered ("inbox") unless a test asks for it (null), or for another answer */
+  firstScreen: "inbox" | "whatMatters" | null;
   server: DevServer & { smtp: CapturedMail[]; net: TestNetwork; icons: IconStub; unsubscribes: UnsubscribeRecorder };
   /** the app, loaded, connected and showing the inbox */
   app: Page;
@@ -203,7 +205,8 @@ export const test = base.extend<Fixtures>({
   tips: [false, { option: true }],
   formatBar: [false, { option: true }],
   today: [false, { option: true }],
-  server: async ({ backendOptions, siteIcons, today }, use) => {
+  firstScreen: ["inbox", { option: true }],
+  server: async ({ backendOptions, siteIcons, today, firstScreen }, use) => {
     const template = process.env[TEMPLATE_ENV];
     if (!template) throw new Error("global setup did not seed a template database");
     const dir = mkdtempSync(join(tmpdir(), "terno-e2e-"));
@@ -224,6 +227,8 @@ export const test = base.extend<Fixtures>({
     const server = await startDevServer({ ...(backendOptions.devAi ? { devAi: backendOptions.devAi, lookup: async () => { throw new Error("no network in e2e"); } } : {}), port: 0, dataDir: dir, token: "e2e", now: () => E2E_NOW, autoSync: true, seed: !backendOptions.empty, ownerClaims: backendOptions.ownerClaims, agentSocket: backendOptions.agentSocket, providers, connectivity, iconTransport: icons, unsubscribeTransport: unsubscribes, openExternal: backendOptions.network ? async () => {} : undefined, googleClients: backendOptions.noGoogle ? null : E2E_GOOGLE });
     if (!siteIcons) await server.backend.server.invoke("settings.update", { senderIcons: false }, { clientId: "setup", origin: "dev" as const });
     if (!today) await server.backend.server.invoke("settings.update", { today: { show: false } }, { clientId: "setup", origin: "dev" as const });
+    // plan 207: with the demo's AI, every test would meet the question
+    if (firstScreen !== null) await server.backend.server.invoke("settings.update", { firstScreen }, { clientId: "setup", origin: "dev" as const });
     // plan 158: Send's five seconds would be every send's, in every test: a test about them turns it on
     // plan 211: and What matters' readers (on by default with the demo's AI) would read every test's new and sent mail
     await server.backend.server.invoke("settings.update", { undoSend: false, dated: { enabled: false }, followups: { enabled: false } }, { clientId: "setup", origin: "dev" as const });
@@ -235,7 +240,7 @@ export const test = base.extend<Fixtures>({
     await capture?.close();
     rmSync(dir, { recursive: true, force: true });
   },
-  app: async ({ page, server, fixedClock, backendOptions, design, layout, tips, formatBar }, use) => {
+  app: async ({ page, server, fixedClock, backendOptions, design, layout, tips, formatBar, firstScreen }, use) => {
     if (fixedClock) await page.clock.setFixedTime(new Date(E2E_NOW));
     if (!tips) await page.addInitScript((keys) => keys.forEach((k) => localStorage.setItem(k, "shown")), TIPS.map(tipKey));
     if (formatBar) await page.addInitScript(() => { if (localStorage.getItem("terno:format-bar") === null) localStorage.setItem("terno:format-bar", "shown"); });
@@ -247,7 +252,8 @@ export const test = base.extend<Fixtures>({
     if (backendOptions.empty) await isolateLocalDiscovery(server);
     await page.goto(`/?backend=${encodeURIComponent(server.url)}&token=e2e`);
     await page.locator("[data-ready]").waitFor();
-    if (!backendOptions.empty) await rows(page).first().waitFor();
+    // (plan 207: a launch on What matters shows the feed, not the Inbox's rows)
+    if (!backendOptions.empty && firstScreen !== "whatMatters") await rows(page).first().waitFor();
     await use(page);
   },
 });

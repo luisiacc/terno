@@ -7,7 +7,7 @@
  */
 import { BRIEF_NOTICE_THREAD } from "@terno/core";
 import { todayOffered } from "~/lib/ai";
-import { noticeText, type MailNotice } from "@terno/core";
+import { badgeCount, noticeText, type MailNotice } from "@terno/core";
 import { client } from "~/rpc/connection";
 import { reconcileSettings } from "~/lib/appearance";
 import { closePage, listCovered, openThread } from "~/lib/page";
@@ -113,10 +113,13 @@ async function turnOff(): Promise<void> {
   }
 }
 
+let shownBadge = 0;
 function syncBadge(): void {
   const nav = navigator as BadgeNavigator;
   const { settings, counts } = getApp();
-  const n = settings?.dockBadge ? counts.inboxUnread : 0;
+  // plan 207: the sidebar's one number, the first screen's
+  const n = badgeCount(settings?.dockBadge === true, settings?.firstScreen, counts, shownBadge);
+  shownBadge = n;
   const done = n > 0 ? nav.setAppBadge?.(n) : nav.clearAppBadge?.();
   // not installed, or not allowed: nothing to show
   void done?.catch(() => {});
@@ -137,7 +140,7 @@ export function startAttention(): void {
     syncBadge();
     let last = "";
     useApp.subscribe((s) => {
-      const key = `${s.settings?.dockBadge}:${s.counts.inboxUnread}`;
+      const key = `${s.settings?.dockBadge}:${s.settings?.firstScreen}:${s.counts.inboxUnread}:${s.counts.today}`;
       if (key === last) return;
       last = key;
       syncBadge();
