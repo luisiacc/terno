@@ -509,7 +509,10 @@ test.describe("the List layout: what stays put", () => {
       await page.locator("[data-ready]").waitFor();
       await rows(page).first().waitFor();
       await focusList(page);
+      // plan 221: the rows on screen aren't warmed on the list page either (past the warming's settle)
+      await page.waitForTimeout(500);
       const before = calls.filter((c) => c === "threads.get").length;
+      expect(before).toBe(0);
       for (let i = 0; i < 5; i++) await page.keyboard.press("j");
       await page.waitForTimeout(500);
       expect(calls.filter((c) => c === "threads.get").length).toBe(before);

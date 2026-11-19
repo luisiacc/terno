@@ -14,7 +14,7 @@ vi.mock("~/rpc/connection", () => ({
 }));
 
 const { setApp } = await import("~/state/app");
-const { invalidateThreads, loadThread, staleMarksForTests, useThreads } = await import("~/state/threads");
+const { invalidateThreads, loadThread, staleMarksForTests, threadCached, useThreads } = await import("~/state/threads");
 
 const detail = (id: number, rev: number) => ({ thread: { id }, messages: [], rev }) as unknown as ThreadDetail;
 const shown = (id: number) => useThreads.getState().details.get(id) as (ThreadDetail & { rev: number }) | undefined;
@@ -139,4 +139,37 @@ it("stale marks don't outlive what they mark", async () => {
     invalidateThreads([1]);
   }
   expect(staleMarksForTests()).toBe(0);
+});
+
+it("plan 221: past 150 conversations, or past the bodies' budget, the oldest go but never the open one nor the newest", async () => {
+  setApp({ selectedId: 1 });
+  for (let id = 1; id <= 160; id++) await cached(id, 1);
+  expect(useThreads.getState().details.size).toBe(150);
+  expect(shown(1)).toBeDefined();
+  expect(shown(2)).toBeUndefined();
+  // two bodies of 9M characters can't both stay with the open one: the older goes, the newest stays
+  const big = (id: number) => ({ thread: { id }, messages: [{ bodyHtml: "x".repeat(9_000_000), bodyText: null }], rev: 1 }) as unknown as ThreadDetail;
+  for (const id of [500, 501]) {
+    const p = loadThread(id, true);
+    pending.splice(pending.findIndex((q) => q.id === id), 1)[0]!.resolve(big(id));
+    await p;
+  }
+  expect(shown(500)).toBeUndefined();
+  expect(shown(501)).toBeDefined();
+  expect(shown(1)).toBeDefined();
+});
+
+it("plan 221: a conversation counts as cached while its answer is current or on its way, and not once it changed", async () => {
+  expect(threadCached(3)).toBe(false);
+  const p = loadThread(3);
+  expect(threadCached(3)).toBe(true);
+  // changed while its fetch was on its way: that answer can't pass for current
+  invalidateThreads([3]);
+  expect(threadCached(3)).toBe(false);
+  await answer(3, 1);
+  await p;
+  await cached(3, 2);
+  expect(threadCached(3)).toBe(true);
+  invalidateThreads([3]);
+  expect(threadCached(3)).toBe(false);
 });

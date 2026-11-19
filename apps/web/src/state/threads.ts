@@ -8,6 +8,19 @@ import { getApp } from "./app";
 import { editCount, syncRow } from "./list";
 
 const MAX = 150;
+/** and their bodies' characters (plan 221: warming fills the cache by itself, so it's bounded by size too) */
+const MAX_CHARS = 16_000_000;
+const charsOf = new WeakMap<ThreadDetail, number>();
+
+function chars(detail: ThreadDetail): number {
+  let n = charsOf.get(detail);
+  if (n === undefined) {
+    n = 0;
+    for (const m of detail.messages) n += (m.bodyHtml?.length ?? 0) + (m.bodyText?.length ?? 0);
+    charsOf.set(detail, n);
+  }
+  return n;
+}
 
 interface ThreadCache {
   details: Map<number, ThreadDetail>;
@@ -29,8 +42,14 @@ function put(detail: ThreadDetail): void {
   const details = new Map(useThreads.getState().details);
   details.delete(id);
   details.set(id, detail);
-  while (details.size > MAX) {
-    const evicted = details.keys().next().value as number;
+  // the oldest go, never the open one nor this one (plan 221: warming the rows on screen can put many others after them)
+  const open = getApp().selectedId;
+  let total = 0;
+  for (const d of details.values()) total += chars(d);
+  for (const [evicted, d] of details) {
+    if (details.size <= MAX && total <= MAX_CHARS) break;
+    if (evicted === open || evicted === id) continue;
+    total -= chars(d);
     details.delete(evicted);
     staleSince.delete(evicted);
   }
@@ -92,6 +111,13 @@ export async function hydrateSelectedThread(id: number, selected: () => boolean,
       return;
     }
   }
+}
+
+/** Plan 221: a load would answer from the cache or join a fetch already on its way (nothing to warm). */
+export function threadCached(id: number): boolean {
+  if (connection !== client.connectionVersion) return false;
+  const pending = inflight.get(id);
+  return (useThreads.getState().details.has(id) && !staleSince.has(id)) || (pending !== undefined && pending.n > (staleSince.get(id) ?? 0));
 }
 
 export function loadThread(id: number, force = false): Promise<ThreadDetail | null> {

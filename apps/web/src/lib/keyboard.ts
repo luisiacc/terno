@@ -10,7 +10,8 @@ import { clearSelection, extendSelection, isMac, keyThread, selectAll, selectWhe
 import { openFocusedMenu, openMenuForSelection } from "~/components/thread-menu";
 import { chooseOpenThread, getApp, markSelectionIntent, navigate, setApp } from "~/state/app";
 import { loadMore, useList } from "~/state/list";
-import { loadThread, useThreads } from "~/state/threads";
+import { useThreads } from "~/state/threads";
+import { warmNext } from "~/lib/warm";
 import { acceptSuggestion, answerReview, rejectSuggestion } from "~/lib/categorize";
 import { leaveReview } from "~/lib/review";
 import { backToDigest, digestHasKeys, digestKeys, openFeedRow, useFeedRow, useToday } from "~/state/today";
@@ -134,12 +135,8 @@ export function move(delta: number, byKey = false) {
   if (byKey) followCursor(id, before);
   // where it is now: a read row the filter kept may have just left above it
   listScroller.scrollToIndex?.(useList.getState().index.get(id) ?? next);
-  // warm the neighbours so the next keypress renders from cache (only where a conversation shows: R12)
-  if (listLayout() && !onPage) return;
-  for (const n of [next + delta, next + 2 * delta]) {
-    const t = items[n];
-    if (t) void loadThread(t.id);
-  }
+  // the next two in the direction of travel, so the next keypress renders from cache (plan 221; R12 is its gate)
+  warmNext([next + delta, next + 2 * delta].flatMap((n) => items[n]?.id ?? []));
 }
 
 /** Enter / o: in List the cursor's conversation becomes the page. */

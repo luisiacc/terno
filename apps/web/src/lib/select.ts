@@ -11,7 +11,7 @@ import type { ThreadScope } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { getApp, markSelectionIntent, setApp, type AppState } from "~/state/app";
 import { currentScope, listKey, onlyOnTop, useList } from "~/state/list";
-import { loadThread } from "~/state/threads";
+import { warmNext } from "~/lib/warm";
 import { viewLabel } from "~/lib/format";
 import { addRange, extend, pick, scopeLabel, targetsOf, toggle, type Order } from "~/lib/selection";
 import { listCovered, listLayout, openThread } from "~/lib/page";
@@ -143,8 +143,8 @@ export function extendSelection(delta: number): void {
   if (i !== undefined) {
     listScroller.scrollToIndex?.(i);
     const next = useList.getState().items[i + delta];
-    // no conversation shows on List's list page: nothing to warm (R12)
-    if (next && !listLayout()) void loadThread(next.id);
+    // plan 221 (R12 is its gate: no conversation shows on List's list page)
+    if (next) warmNext([next.id]);
   }
 }
 

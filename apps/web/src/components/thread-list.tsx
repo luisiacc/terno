@@ -87,6 +87,7 @@ function TopHeading({ kind, top, name, count }: { kind: TopSectionKind; top: num
 export const searchInputRef: { current: HTMLInputElement | null } = { current: null };
 export { listScroller } from "~/lib/list-scroller";
 import { listScroller } from "~/lib/list-scroller";
+import { warmNothing, warmOnScreen } from "~/lib/warm";
 
 /** A virtualized-out option cannot be the listbox's active descendant. */
 function pointListCursor(el: HTMLElement | null, id: number | null) {
@@ -1242,6 +1243,13 @@ export function ThreadList() {
   }, [itemsKey]);
 
   const virtualItems = virtualizer.getVirtualItems();
+  // plan 221: the rows on screen (not the overscan) are warmed once the list rests, so a click opens from the cache
+  const onScreen = virtualizer.range, scrolling = virtualizer.isScrolling;
+  const screenFrom = onScreen?.startIndex ?? 0, screenTo = onScreen?.endIndex ?? -1;
+  useEffect(() => {
+    warmOnScreen(items.slice(screenFrom, screenTo + 1).map((t) => t.id), scrolling);
+  }, [items, screenFrom, screenTo, scrolling]);
+  useEffect(() => warmNothing, []);
   // plan 188: how many rows the list has, on each mounted option (-1: more pages to come): written, not rendered, so a page
   // that arrives re-renders no row for it (a row's own position is its prop: it changes with its offset anyway)
   const setSize = useList((s) => (s.nextCursor !== null ? -1 : s.items.length));
