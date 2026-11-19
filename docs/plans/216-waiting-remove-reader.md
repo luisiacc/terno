@@ -97,3 +97,36 @@ Codex's critique (eleven points). Where the design above and this section disagr
 9. **The count's read is bounded by the page.** The removed records are read at most one more than the page's conversations (`LIMIT`); past that, the grouped resolution runs over the page (the list's read, bounded by `NEEDS_WALK`) instead. IndexedDB likewise. The Today perf gate gains thousands of obsolete removals (records whose message no longer waits) in its waiting scenario, both engines.
 10. **v75's rebuild at size.** `migrations.perf` fills `waiting_acts` with a record per received message of the 57,000-conversation mailbox (far past any real history) before v75 runs, and v75 stays under its 1 s step. v74 is untouched (frozen); the rebuild copies rows without reading or writing anything else.
 11. **Two windows and Undo.** Conformance: a stale Done or Later after another window's Remove is refused; an old Remove's Undo after a newer choice is refused; Remove follows its message when its conversation is merged. Web: when the open waiting row is removed elsewhere, the feed holds it as words (no task); the card then shows nothing for it, and the keys are left alone on it (never moved to a sibling item).
+
+## Built
+
+As the revisions say, with these decisions:
+
+- **The record.** `WaitingActState` is `done | later | removed`. SQLite v75 rebuilds `waiting_acts` with the wider CHECK and adds `waiting_acts_removed (message_id) WHERE state = 'removed'`; IndexedDB has a `removed` partial index in memory and no version change (`LOGICAL_SCHEMA` 75). `waiting.rows` gives `removed: true` on a removed row (the key absent otherwise). The count's read on SQLite: with no deferral ahead, the removed records (at most one past the page's size) joined to their message's thread and date, then the grouped resolution for the matching threads; past the page's size, the page's own grouped read. On IndexedDB it walks the `removed` index lazily, each a key lookup, the thread walked only for a record at a page conversation's waiting date (code review, #3: no page-wide fallback).
+- **Undo** of a Remove that replaced a Later puts the requests the reader stored meanwhile off to the Later's moment at revision 0, as the reader would have stored them under it, so the Later's own Undo takes them back too (code review, #2).
+- **The backend** maps `remove` to `removed`; a Remove only re-reads What matters (`changed()`): no thread announced, Reply ready untouched.
+- **The web.** `actOnTask` sends `dismiss` on a waiting task as `remove` ("Removed from What matters: {name}" / "Quitado de Lo importante: {name}"); ⇧D, the right-click menu (Remove with "The email stays") and the palette offer it. The reader: `useFeedWaiting` (the open row while it's this conversation's waiting row), `readerItems({ waiting })` (`waiting: "top" | "also"`, `chose`), and in `thread-items.tsx` the card split into `ItemLine` and `WaitingLine` on the same layout constants, `ItemLater` taking its words and window. "Lucas Fajardo Gutiérrez is waiting on your reply · since 8:30 AM" (`whatMatters.waiting.line`, es "… espera tu respuesta · …"), the when being the feed row's own (`todayWhen`).
+- **Focus.** Revision 6 is done by the line itself, not the button (`useKeysWhenGone`): a line that unmounts while it, or its Later's menu or picker, holds the focus, or after the focus fell to the page, leaves the keys on the feed's open row (or its place), once its portals have gone; never while focus was moved elsewhere on purpose, and only in What matters (code review, #4 and round 2). And an Undo that puts the open row back brings back the keys the act had moved on to the next row (`restoreFeedRow`, code review #1), for every act that leaves the feed, the row's own Done too.
+- **Deviation:** revision 5 as written (B and the palette's Later open the feed row's menu for an open waiting row, as for a dated item open from the feed).
+
+## Codex code review
+
+Round 1 (four findings, all fixed, each with a regression test that fails without the fix):
+
+1. Undo after the card's Remove reopened the row while the keys stayed on the next one, so D acted on that one: the keys come back with the open row (web unit, `feed-leave.test.ts`; the e2e's ⇧D after the Undo no longer refocuses by hand).
+2. Later, Remove, a request read, Undo, Undo left the request put off: put back at revision 0 (conformance, both engines).
+3. IndexedDB's count, past the page's size of Removes, walked every page conversation: it walks the removed records alone (the Today gate holds 4,000 Removes, 3,000 stale).
+4. Focus recovery ran two frames after the act, before a line that goes once the reply comes: it runs when the line unmounts (component test).
+
+Round 2 (one finding, fixed with a component test): the Later menu's item held the focus when the line went (a portal outside it): its portals count as the line's, and the recovery waits for them to go.
+
+## Tests run
+
+- Typecheck (`pnpm typecheck`, in `test:all`) and `oxlint --deny-warnings`: clean.
+- Unit, named: conformance on both engines (`store.conformance`, `idb.conformance`: 1,552 pass; plan 216's 6 a store), `migrations`, `migrations-shipped`, IndexedDB's `waiting-acts-upgrade`, `idb.uncertain-upgrade`, `idb.folders-upgrade`; core `today-projection` (50); backend `today` (plans 215 and 216's 11); web `dated`, `today-task`, `reader-items`, `thread-items-change`, `feed-leave`, `feed-focus`, `state/today`: all pass.
+- E2E (`E2E_PORT=5716`): `what-matters-feed`, `today`, `hand-to`, `what-matters-change`, `what-matters-mute`: 41 of 42; `today.spec.ts:648` (the known flaky one) failed once in the crowd and passed alone four times.
+- Perf: `migrations.perf` with a `waiting_acts` row for every received message of the 57,000-conversation mailbox: v75 176 ms (1 s budget). The Today gate: IndexedDB passes every scenario (its new one, 4,000 Removes, 3,000 stale: list p95 12.1 ms, count 7.5, 2.2 added, longest turn 29.4). SQLite's new scenario holds its budget (list 57–58 ms, count 45–47, 9–12 added, longest turn 74 of 120); its `spread` scenario's longest turn is 61.9–64.6 ms against 60, as plan 215 measured before this plan (61.7–62.8: the scenario has no waiting record; this plan adds one probe of an empty index to its count).
+- `pnpm test:all` (`E2E_PORT=5716`, `WEB_PORT=5726`; 1,441 s, the machine shared, load 10 to 14 at its start): lint, build, typecheck pass; db-wasm and ui-perf flaky (failed only the crowded first pass). Failing, none from this change: `apps/site/src/render.test.ts`, `web.spec.ts:533`, `visual.spec.ts` and `resign-in.spec.ts:312` screenshot comparisons (all four fail on plan 215's base too); the packaged `ai-rating.smoke.ts:13` (the AI stub doesn't know the dated reader's prompt: nothing here touches it; not checked on the base); startup's `mailbox.smoke.ts:121` (covered under load; passes alone); perf's `folders-migration`, `workloads` dated reads (5.2 of 5 ms), `reconcile` and `perf.perf` navigation stalls under load, and the Today gate above.
+- Visual: the open waiting row with the reader's card, and the right-click menu on a waiting row, light and dark (`WM_216_SHOTS`).
+
+Seen, not this plan's: an open row's who is cut ("Lucas Fajard…") while its button holds the focus, the room for Done and Later kept though they're hidden at rest (plan 214's `ROOM` on `has-focus-reveal`).
