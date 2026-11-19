@@ -234,6 +234,8 @@ export const DEFAULT_SETTINGS: General = {
   firstScreen: null,
   // with What matters first, the Inbox's number goes until this is turned on
   keepInboxCount: false,
+  // the owner: off until turned on (Settings → Accounts)
+  accountCounts: false,
   notifications: true,
   notificationPreview: true,
 };

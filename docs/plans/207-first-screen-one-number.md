@@ -218,3 +218,16 @@ This replaces §2's table for the sidebar (the Dock is unchanged: it shows the f
   - What matters' number shows while the Inbox leads;
   - the switch brings the Inbox's number back while the app badge stays What matters';
   - the switch goes when the Inbox leads.
+
+## Accounts' numbers, a setting of their own (the owner, 2026-11-19)
+
+> lets also have a setting to show the unread counts of each account that's on the sidebar, off by default, have it in the "Accounts" section in settings, should be the 1st thing there
+
+- **`accountCounts`** (default **off**) is the first row of Settings → Accounts: "Show unread counts on accounts" ("Each account’s unread conversations, beside its name in the sidebar.").
+- **What it covers:** an account's number in the sidebar, on its row, and on its Inbox's row while it's open. It's the only thing deciding them, whichever screen leads.
+- **What it leaves alone:**
+  - A focused account's sidebar (plan 108) keeps the Inbox rule: its Inbox is the sidebar's Inbox there.
+  - A favourited account Inbox keeps the Inbox rule too.
+  - An account's folders, Archive and Spam keep their counts.
+- **Off by default changes the sidebar for everyone:** the accounts' numbers went away until turned on, as asked.
+- **Tests:** `account-folders.spec.ts` checks that an account has no number by default, that the switch is the first row in Settings → Accounts, and that turning it on brings the number, which still moves to the open account's Inbox. The settings search finds the row. A file carries it as it carries the first screen (`GENERAL_KEYS`).

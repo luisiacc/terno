@@ -1341,6 +1341,9 @@ export function Sidebar() {
   const counts = useApp((s) => s.counts);
   const design = useDesign();
   const inboxTone: CountTone = useInboxHidden() ? "hidden" : design.surfaces.inboxCount;
+  // the owner: an account's own number (its row, and its Inbox's when it's open) only with Settings → Accounts' switch on;
+  // focused on one, its Inbox is the sidebar's Inbox (inboxTone)
+  const accountTone: CountTone = useApp((s) => s.settings?.accountCounts === true) ? design.surfaces.inboxCount : "hidden";
 
   const openAccount = useOpenAccount((s) => s.id);
   const unreadByAccount = useFolderUnreadByAccount(counts.folderUnread);
@@ -1579,7 +1582,7 @@ export function Sidebar() {
               unread={counts.inboxUnreadByAccount[a.id]}
               // only the open account's folders show counts; its own slice, the same object while nothing in it moved
               folderUnread={openAccount === a.id ? unreadByAccount.get(a.id) : undefined}
-              countTone={inboxTone}
+              countTone={accountTone}
               gmailTab={accountId === a.id && !searching ? gmailTab : null}
               promotionsUnread={counts.tabUnread?.[tabRef(a.id, "promotions")] ?? 0}
               socialUnread={counts.tabUnread?.[tabRef(a.id, "social")] ?? 0}

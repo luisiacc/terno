@@ -308,12 +308,18 @@ function AccountItem({ account, generalWindow, isOwner }: { account: Account; ge
   );
 }
 
-export function AccountsTab({ settings }: { settings: AppSettings; update: SettingsUpdate }) {
+export function AccountsTab({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
   const accounts = useApp((s) => s.accounts);
   const owner = useApp((s) => s.owner);
   const demo = useApp((s) => s.demo);
   return (
     <div data-testid="accounts-tab">
+      {/* plan 207 (the owner): first here, off until turned on */}
+      <SettingsGroup testId="account-counts-group">
+        <SettingsRow find="accounts.counts" label={t("account.counts")} hint={t("account.counts.hint")} testId="account-counts-row">
+          {(a) => <Switch {...a} data-testid="account-counts" checked={settings.accountCounts} onCheckedChange={(on) => void update({ accountCounts: on })} />}
+        </SettingsRow>
+      </SettingsGroup>
       <OwnerCard owner={owner} demo={demo} accounts={accounts} />
       <SettingsGroup title={t("account.list")} testId="accounts-group">
         {/* plan 106: Settings opened on an account (the sidebar's Account Settings…) opens it; later events leave it be */}

@@ -269,6 +269,8 @@ export interface AppSettings {
   firstScreen: FirstScreen | null;
   /** plan 207 (the owner): with What matters first, the Inbox's unread count still shows in the sidebar (off: hidden) */
   keepInboxCount: boolean;
+  /** plan 207 (the owner): each account's unread count beside its name in the sidebar (off: none) */
+  accountCounts: boolean;
   /** plan 41: system notifications for important new mail while Terno runs */
   notifications: boolean;
   /** plan 41: notifications name the sender and the subject (off: only how many) */
@@ -572,6 +574,7 @@ const settingsPatch = z.object({
   // null only puts the question back (tests; nothing in the app asks for it)
   firstScreen: z.enum(["inbox", "whatMatters"]).nullable().optional(),
   keepInboxCount: z.boolean().optional(),
+  accountCounts: z.boolean().optional(),
   notifications: z.boolean().optional(),
   notificationPreview: z.boolean().optional(),
 });

@@ -100,6 +100,8 @@ export const SETTINGS_INDEX = [
 
   // Accounts
   { id: "accounts.owner", tab: "accounts", label: "account.owner.title", hint: "account.owner.footer", words: "settings.find.words.owner" },
+  // plan 207 (the owner): the accounts' numbers in the sidebar
+  { id: "accounts.counts", tab: "accounts", label: "account.counts", hint: "account.counts.hint", words: "settings.find.words.accountCounts" },
   { id: "accounts.add", tab: "accounts", group: "account.list", label: "account.add", words: "settings.find.words.addAccount" },
   { id: "account.name", tab: "accounts", label: "account.name", hint: "account.name.hint", scope: "account" },
   { id: "account.sender", tab: "accounts", label: "account.sender", hint: "account.sender.hint", scope: "account" },

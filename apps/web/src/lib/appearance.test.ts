@@ -59,6 +59,7 @@ const SERVER: AppSettings = {
   dockBadge: true,
   firstScreen: null,
   keepInboxCount: false,
+  accountCounts: false,
   notifications: true,
   notificationPreview: true,
   theme: "dark",

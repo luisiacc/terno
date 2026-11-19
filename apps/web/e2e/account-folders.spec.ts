@@ -86,8 +86,19 @@ test.describe("accounts open into their folders", () => {
   });
 
   test("the scope: top folders, counts, shortcuts, the palette, what's remembered", async ({ app: page, server }) => {
-    await scenario("the top folders and categories are all accounts; the count moves to the open account's Inbox", async () => {
+    await scenario("an account's number only with Settings → Accounts' first switch on (plan 207, the owner); it moves to the open account's Inbox", async () => {
       const [a] = await accountIds(page);
+      await expect(count(row(page, a!))).toHaveCount(0);
+      await page.keyboard.press("Meta+k");
+      await page.getByTestId("palette-input").fill("settings accounts");
+      await expect(page.getByRole("option", { selected: true })).toHaveAttribute("data-testid", "palette-settings-accounts");
+      await page.keyboard.press("Enter");
+      // the first thing there
+      await expect(page.getByTestId("accounts-tab").locator("[data-testid=settings-row], [role=switch], [data-testid$=-row]").first()).toHaveAttribute("data-testid", "account-counts-row");
+      await page.getByTestId("account-counts").click();
+      await expect(page.getByTestId("account-counts")).toBeChecked();
+      await page.keyboard.press("Escape");
+      await expect(count(row(page, a!))).toHaveText(/^[1-9][\d,]*$/);
       const unread = await count(row(page, a!)).textContent();
       expect(Number(unread)).toBeGreaterThan(0);
       await row(page, a!).dblclick();
