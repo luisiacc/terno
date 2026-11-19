@@ -227,12 +227,12 @@ function LanguageRow({ settings, update }: { settings: AppSettings; update: Sett
 const undoSendChoices = (): { value: UndoSendSeconds; label: string }[] => UNDO_SEND_SECONDS.map((n) => ({ value: n, label: t("settings.general.undoSendTime.seconds", { count: n }) }));
 
 /**
- * Plan 207: the screen the app opens on, and so the one number the sidebar and the Dock show. Only where What matters can
- * show; the current screen stays where it is (it decides launches).
+ * Plan 207: the screen the app opens on, and so the one number the sidebar and the Dock show. Only where What matters
+ * shows; the current screen stays where it is (it decides launches).
  */
 function FirstScreenGroup({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
-  // What matters' own settings' rule (a local build with Dev mode's AI off still sets it), and its row shown
-  if (!aiFeaturesAvailable(settings) || settings.today?.show === false) return null;
+  // only where What matters shows (Codex code review #6: a local build with Dev mode's AI off has nothing to open on)
+  if (!useApp(todayOffered)) return null;
   const value: FirstScreen = settings.firstScreen ?? "inbox";
   return (
     <SettingsGroup testId="first-screen-group">

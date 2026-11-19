@@ -59,8 +59,8 @@ export const SETTINGS_INDEX = [
   // General
   { id: "general.remoteImages", tab: "general", label: "settings.general.remoteImages", hint: "settings.general.remoteImages.hint", words: "settings.find.words.remoteImages" },
   { id: "general.language", tab: "general", label: "language.label", hint: "language.hint", words: "settings.find.words.language" },
-  // plan 207: where What matters is shown (the row's own rule)
-  { id: "general.firstScreen", tab: "general", label: "firstScreen.setting", hint: "firstScreen.setting.hint", words: "settings.find.words.firstScreen", when: (c) => ai(c) && c.settings.today?.show !== false },
+  // plan 207: where What matters shows (the row's own rule, todayOffered: a local build's Dev mode switch too)
+  { id: "general.firstScreen", tab: "general", label: "firstScreen.setting", hint: "firstScreen.setting.hint", words: "settings.find.words.firstScreen", when: (c) => ai(c) && (!c.devMode || c.settings.devAi === true) && c.settings.today?.show !== false },
   { id: "general.today", tab: "general", group: "today.title", label: "today.settings.show", when: ai },
   { id: "general.todayFinished", tab: "general", group: "today.title", label: "today.settings.finished", hint: "today.settings.finishedHint", words: "settings.find.words.finished", when: ai },
   { id: "general.todayMuted", tab: "general", group: "today.title", label: "dated.mute.title", hint: "dated.mute.hint", words: "settings.find.words.muted", when: ai },

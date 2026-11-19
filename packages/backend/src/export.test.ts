@@ -246,3 +246,19 @@ it("retains unresolved reply context in a subsequent backup", async () => {
   expect((await client.call("app.import", { data })).pending.drafts).toBe(1);
   expect((await client.call("app.export", {})).drafts).toEqual([expect.objectContaining({ bodyText: "keep", quotedText: "> keep", replyContext: draft.replyContext })]);
 });
+
+it("plan 207: the first screen comes in with a file (a never-asked null keeps this install's answer); the counts are sent again, the Dock's number with them", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "terno-import-first-"));
+  const backend = new Backend({ dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, providers: demoRegistry, autoSync: false });
+  cleanups.push(async () => { await backend.stop(); rmSync(dir, { recursive: true, force: true }); });
+  await backend.start();
+  const [c, s] = createMemoryTransportPair();
+  backend.connect(s, { clientId: "r", origin: "renderer" });
+  const client = new RpcClient(c);
+  const counts = vi.spyOn(backend, "countsChanged");
+  await client.call("app.import", { data: { format: "terno-export", version: 2, settings: { firstScreen: "whatMatters" } } as never });
+  expect((await client.call("app.bootstrap", {})).settings.firstScreen).toBe("whatMatters");
+  expect(counts).toHaveBeenCalled();
+  await client.call("app.import", { data: { format: "terno-export", version: 2, settings: { firstScreen: null } } as never });
+  expect((await client.call("app.bootstrap", {})).settings.firstScreen).toBe("whatMatters");
+});

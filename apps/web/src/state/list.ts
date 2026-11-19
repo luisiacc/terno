@@ -723,6 +723,9 @@ useApp.subscribe((s, prev) => {
 // Any change of view / account / category / query reloads the list (navigation,
 // search box, palette, shortcuts all just update app state).
 useApp.subscribe((s, prev) => {
+  // plan 207 (Codex code review #5): bootstrap's own place (a launch on What matters, a remembered focus) is boot's first
+  // list, asked once by boot itself
+  if (s.ready && !prev.ready) return;
   // plan 107 (Codex code review #7): the folder you're in renamed (an IMAP one gets a new key) is the same mailbox:
   // the open thread, the reader and the checked rows stay
   const followed = s.folder !== prev.folder && followedRename.from === prev.folder && followedRename.to === s.folder && s.view === prev.view && s.accountId === prev.accountId && s.query === prev.query;

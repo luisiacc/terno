@@ -176,3 +176,20 @@ Codex's critique (12 points), and what changed:
 Also:
 - The "today-first" tip is removed rather than kept dormant: the question replaces it. The desktop smoke tests that dismissed it now dismiss the question.
 - After the first screenshots, the first benefit was shortened to one line ("Only what needs you: replies, bills, your promises").
+
+## Codex code review
+
+Seven findings, all taken; each has a test that fails without its fix:
+
+1. **List's own address skipped the launch.** Every `#/…` counted as a conversation coming back, so a reload on List's plain `#/` opened the Inbox. Now `reloadsConversation()` (`lib/page.ts`) reads the history entry as `bootPage` does. Test: the e2e reloads List on `#/` and lands on What matters.
+2. **An import left the Dock on old counts.** The import now tells What matters its settings changed and sends the counts again, and the web adopts bootstrap's counts after an import. Test: `export.test.ts` (the counts are sent; a file's null keeps the answer).
+3. **An answer saved late closed a newer dialog.** If another dialog opened while the answer saved (⌘, works over dialogs), the setting lands but the stage and the place stay. Test: `first-screen-dialog.test.tsx`, with a failed save too.
+4. **What matters' description was never in the page.** Fixed in the copy commit: the row renders its `today-count-help`, as a category does. Test: the e2e reads it, with and without the number drawn.
+5. **A launch on What matters asked for the feed twice.** Bootstrap's own place reloaded the list, then boot asked again. The list's navigation subscriber now leaves bootstrap's change to boot, which also removes the same double request for a remembered focus. Test: the e2e counts one `today.list` per launch.
+6. **"Open at launch" showed where What matters can't.** The control and its search entry follow `todayOffered`, including Dev mode's switch on a local build.
+7. **The e2e could pass with the count broken.** It now checks:
+   - a positive number drawn on What matters, matching its description;
+   - the exact badge label and hint;
+   - the app badge's own value through a stubbed Badging API, for both leads.
+
+`what-matters-feed.spec.ts:103` failed once in a 43-test run on a loaded machine (28.5 s against about 10 s alone, load 5.6). It passed twice alone.

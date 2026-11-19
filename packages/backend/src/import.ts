@@ -452,6 +452,10 @@ export async function importMailbox(b: Backend, file: ExportFile): Promise<Impor
     await b.writing.learner.aiChanged();
     if (after.localMode !== before.localMode || after.errorReports !== before.errorReports || after.language !== before.language) await b.publishPolicy();
     if (after.dockBadge !== before.dockBadge || after.firstScreen !== before.firstScreen || after.notifications !== before.notifications || after.notificationPreview !== before.notificationPreview) await b.attention.refresh();
+    // plan 207 (Codex code review #2): What matters comes or goes with an imported provider or its row, and with it the
+    // sidebar's and the Dock's one number: fresh counts, never the ones from before the file
+    b.today.settingsChanged();
+    b.countsChanged();
     // plan 183 (Codex critique #4): agents turned off by the file are cut off now
     if (after.agents.enabled !== before.agents.enabled) await b.agentConnector?.sync();
   }

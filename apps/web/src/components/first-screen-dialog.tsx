@@ -44,9 +44,12 @@ export function FirstScreenDialog() {
     setFailed(false);
     try {
       const settings = reconcileSettings(await client.call("settings.update", { firstScreen: choice }));
-      setApp({ settings, dialog: null });
+      // (Codex code review #3) another dialog opened while it saved (⌘, works over dialogs): the setting lands, and
+      // that dialog and where you are stay
+      const ours = getApp().dialog === "firstScreen";
+      setApp(ours ? { settings, dialog: null } : { settings });
       // what they chose, at once (only while it can still show)
-      if (choice === "whatMatters" && todayOffered(getApp())) navigate({ today: true });
+      if (ours && choice === "whatMatters" && todayOffered(getApp())) navigate({ today: true });
     } catch {
       // stays open and says so: never closed as if it were saved, never asked again behind their back
       setFailed(true);

@@ -34,7 +34,8 @@ export async function importFile(file: File): Promise<ImportResult> {
   await loadDrafts();
   const boot = await client.call("app.bootstrap", {});
   adoptSettings(boot.settings);
-  setApp({ categories: boot.categories });
+  // (plan 207: with the counts that go with them: which number leads may have changed)
+  setApp({ categories: boot.categories, counts: boot.counts });
   if (result.snippets) void reloadSnippets();
   return result;
 }

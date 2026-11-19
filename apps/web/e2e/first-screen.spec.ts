@@ -22,7 +22,15 @@ async function settings(page: Page, query: string, tab: string): Promise<void> {
   await page.keyboard.press("Enter");
 }
 
+/** the installed web app's icon number (Badging API), as the page last set it; -1: never set */
+const appBadge = (page: Page) => page.evaluate(() => (window as unknown as { __badge?: number }).__badge ?? -1);
+
 test("asked once AI is on, after Settings closes; What matters leads the sidebar, the launch and Settings; Esc keeps the Inbox", async ({ app: page, server }) => {
+  // every load from here on has the Badging API, recorded (the next reload's page shows the app icon's number)
+  await page.addInitScript(() => {
+    const w = window as unknown as { __badge?: number };
+    Object.assign(navigator, { setAppBadge: async (n?: number) => void (w.__badge = n ?? 0), clearAppBadge: async () => void (w.__badge = 0) });
+  });
   const inbox = page.getByTestId("nav-inbox");
   const today = page.getByTestId("nav-today");
   // a mailbox with unread mail: the Inbox's number is the sidebar's while it leads
@@ -60,13 +68,34 @@ test("asked once AI is on, after Settings closes; What matters leads the sidebar
     await expect(page.getByTestId("wm-feed")).toBeVisible();
     await expect(drawn(inbox)).toHaveCount(0);
     expect(await said(inbox)).toBe(`${unread} unread`);
-    await expect(drawn(today)).toHaveText(/^\d+$/);
+    // its number drawn, the one its description says (the demo's feed has people waiting on you)
+    await expect(drawn(today)).toHaveText(/^[1-9]\d*$/);
+    const needs = (await drawn(today).textContent())!;
+    await expect(page.locator("#today-count-help")).toContainText(`${needs} need`);
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/what-matters-first.png` });
+    // the launch asks for the feed once (Codex code review #5: bootstrap's own place is boot's first list)
+    const feed = server.backend.today as unknown as { list: (...a: unknown[]) => unknown };
+    const list = feed.list;
+    let asked = 0;
+    feed.list = (...a) => (asked++, list.apply(feed, a));
     await page.reload();
     await page.locator("[data-ready]").waitFor();
     await expect(today).toHaveAttribute("data-active", "true");
     await expect(page.getByTestId("wm-feed")).toBeVisible();
     await expect(question(page)).toHaveCount(0);
+    expect(asked).toBe(1);
+    feed.list = list;
+    // the app icon shows What matters' number, not the Inbox's
+    await expect.poll(() => appBadge(page)).toBe(Number(needs));
+    // List's own address (#/, no conversation in it) is a launch too (Codex code review #1)
+    await server.backend.server.invoke("settings.update", { layout: "list" }, { clientId: "setup", origin: "dev" as const });
+    await page.evaluate(() => history.replaceState(null, "", "#/"));
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await expect(today).toHaveAttribute("data-active", "true");
+    await server.backend.server.invoke("settings.update", { layout: "split" }, { clientId: "setup", origin: "dev" as const });
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
   });
 
   await scenario("Settings → General → Open at launch: found by the search; the Inbox again, its number back, and the launch", async () => {
@@ -75,11 +104,14 @@ test("asked once AI is on, after Settings closes; What matters leads the sidebar
     await expect(page.getByTestId("settings-find-result").first().getByTestId("settings-find-name")).toHaveText("Open at launch");
     await page.getByTestId("settings-find").fill("");
     await expect(page.getByTestId("first-screen-what-matters")).toHaveAttribute("aria-pressed", "true");
-    // the Dock's switch says which number it shows
-    await expect(page.getByTestId("badge-row")).toContainText(/What matters|app icon/);
+    // the badge's switch says which number it shows
+    await expect(page.getByTestId("badge-row")).toContainText("Show What matters' number on the app icon");
+    await expect(page.getByTestId("badge-row")).toContainText("What needs you in What matters, the same number as in the sidebar.");
     if (SHOTS) await page.getByTestId("first-screen-group").screenshot({ path: `${SHOTS}/setting-light.png` });
     await page.getByTestId("first-screen-inbox").click();
     await expect(page.getByTestId("first-screen-inbox")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("badge-row")).toContainText("Show unread count on the app icon");
+    await expect.poll(() => appBadge(page)).toBe(Number(unread));
     await page.keyboard.press("Escape");
     await expect(drawn(inbox)).toHaveText(unread!);
     // the screen you're on stays: it decides launches

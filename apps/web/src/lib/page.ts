@@ -10,7 +10,7 @@ import { focusSearch } from "~/components/thread-list";
 import { flushSync } from "react-dom";
 import { useAppearance } from "~/lib/appearance";
 import { leaveNewDraft, supersedeCompose } from "~/lib/compose";
-import { createPageHistory, type Page, type PageHistory } from "~/lib/page-history";
+import { createPageHistory, entryOf, type Page, type PageHistory } from "~/lib/page-history";
 import { getApp, markSelectionIntent, setApp, useApp, type AppState } from "~/state/app";
 import { flushDeferredRefresh, followedRename, listKey, refreshPolicy, soloSearch } from "~/state/list";
 import { noteOpen } from "~/lib/reminders";
@@ -202,6 +202,9 @@ export function installPage(): () => void {
     history = null;
   };
 }
+
+/** Plan 207: a reload in List that `bootPage` will bring a conversation back from (its own reading of the entry, before it's installed). */
+export const reloadsConversation = (): boolean => listLayout() && entryOf(window.history.state, mailboxOf())?.page === "thread";
 
 /** At boot, in List: the thread a reload on a conversation reopens (applied before the first list load), or null. */
 export function bootPage(): number | null {
