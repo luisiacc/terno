@@ -1420,8 +1420,8 @@ test("plan 216: Remove on Waiting on you's rows (the right-click menu, ⇧D), th
   await scenario("⇧D on the open waiting row removes it; the card's Later to tomorrow and its Done act on it too, each with its Undo", async () => {
     await openRow();
     await expect(card.getByTestId("thread-dated-item")).toHaveAttribute("data-source", "waiting");
-    // the keys on it (after the card's act they went on to the next row, where they'd act)
-    await row(lucas).getByTestId("wm-item-open").focus();
+    // the keys came back to it with the Undo (they'd gone on to the next row with the card's Remove)
+    await expect.poll(() => page.evaluate(() => document.activeElement?.closest("[data-row-id]")?.getAttribute("data-row-id"))).toBe(`waiting:${lucas}`);
     await page.keyboard.press("Shift+D");
     await expect(row(lucas)).toHaveCount(0);
     await expect(snack).toContainText("Removed from What matters: Lucas Fajardo Gutiérrez");

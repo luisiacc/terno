@@ -59,10 +59,11 @@ function unapplyItems(db: Db, s: WaitingSnapshot, current: WaitingActRecord): vo
   // exactly, its revision too, so an Undo after an Undo (Later, Done, back, back) puts back what the first changed
   for (const i of s.items) db.run("UPDATE dated_items SET state = ?, deferred_until = ?, closed_reason = ?, closed_at = ?, revision = ? WHERE id = ? AND revision = ?", i.state, i.deferredUntil, i.closedReason, i.closedAt, i.revision, i.id, i.revision + 1);
   const later = s.before?.state === "later" ? s.before.until : null;
-  // (plan 216) a Remove changed none; the reader stored a removed message's requests as any other's, put off again with the
-  // Later restored (Codex review of plan 216, #1)
+  // (plan 216) a Remove changed none; the reader stored a removed message's requests as any other's: put off with the Later
+  // restored, as the reader would have stored them under it (revision 0, so that Later's own Undo takes them back too: Codex
+  // review of plan 216, #1; code review, #2)
   if (current.state === "removed") {
-    if (later !== null) db.run(`UPDATE dated_items SET deferred_until = ?, revision = revision + 1 WHERE message_id = ? AND ${ASKED} AND state = 'open' AND deferred_until IS NULL AND revision = 0`, later, s.messageId);
+    if (later !== null) db.run(`UPDATE dated_items SET deferred_until = ? WHERE message_id = ? AND ${ASKED} AND state = 'open' AND deferred_until IS NULL AND revision = 0`, later, s.messageId);
     return;
   }
   if (current.state === "done") {

@@ -156,3 +156,28 @@ describe("plan 216: the open waiting row's line in the reader", () => {
     expect(q("thread-dated")).toBeNull();
   });
 });
+
+describe("plan 216 (Codex code review, #4): a line that goes holding the focus", () => {
+  it("leaves the keys on the feed's open row, whenever it goes (an item's line replaced by the waiting line once the act's reply comes)", async () => {
+    const { setApp } = await import("~/state/app");
+    const { useFeedRow } = await import("~/state/today");
+    const feedHost = document.createElement("section");
+    feedHost.dataset.testid = "wm-feed";
+    feedHost.innerHTML = `<div data-row-id="waiting:7"><button data-testid="wm-item-open">row</button></div>`;
+    document.body.append(feedHost);
+    setApp({ today: true });
+    useFeedRow.setState({ opened: "waiting:7" });
+    try {
+      await render(row());
+      q("thread-dated-done")!.focus();
+      expect(document.activeElement).toBe(q("thread-dated-done"));
+      // later, the reply: the item's line goes, the waiting line leads
+      const waiting = { ...model(row()), top: null, waiting: "top" as const, waitingRow: { id: "waiting:7", threadId: 7, entry: { id: "waiting:7", thread: { id: 7, fromName: "Lucas", fromEmail: "l@x.test", subject: "S", lastDate: NOW }, why: { kind: "waiting", wrote: true } }, task: { kind: "waiting", threadId: 7, since: NOW, message: 1, rev: 0, name: "Lucas", noDay: true } } as never };
+      await act(async () => root!.render(<ThreadItems detail={detail} items={waiting} />));
+      await vi.waitFor(() => expect(document.activeElement?.closest("[data-row-id]")?.getAttribute("data-row-id")).toBe("waiting:7"));
+    } finally {
+      setApp({ today: false });
+      useFeedRow.setState({ opened: null });
+    }
+  });
+});

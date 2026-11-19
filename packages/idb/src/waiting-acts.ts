@@ -43,7 +43,7 @@ function unapplyItems(c: Ctx, s: WaitingSnapshot, current: WaitingActRecord): vo
   // (plan 216: a Remove changed none, and the requests stored since are put off with the Later restored; below,
   // `deferred_until === current.until` would take every request with none for its)
   if (current.state === "removed") {
-    if (later !== null) for (const d of items.by("message", s.messageId)) if (asked(d) && d.revision === 0 && d.state === "open" && (d.deferred_until ?? null) === null) items.update(d, { deferred_until: later, revision: 1 });
+    if (later !== null) for (const d of items.by("message", s.messageId)) if (asked(d) && d.revision === 0 && d.state === "open" && (d.deferred_until ?? null) === null) items.update(d, { deferred_until: later });
     return;
   }
   for (const d of items.by("message", s.messageId)) {
@@ -101,7 +101,7 @@ export function waitingRows(c: Ctx, threads: readonly { threadId: number; since:
   if (!threads.length) return out;
   if (!o.messages) {
     // the count: only a deferral still ahead or (plan 216) a Remove changes a row; walked from those records, each to its
-    // message's thread
+    // message's thread, the thread walked only when that message is at the page conversation's waiting date
     const since = new Map(threads.map((t) => [t.threadId, t.since]));
     const messages = T(c, "messages");
     const at = (r: R): number | null => {
@@ -112,15 +112,13 @@ export function waitingRows(c: Ctx, threads: readonly { threadId: number; since:
       const thread = r.until > now ? at(r) : null;
       if (thread !== null) out.set(thread, { message: null, rev: r.rev, until: r.until });
     }
-    // (Removes add up: past the page's size, the page itself is resolved, as the list's read)
-    if (records.count("removed", "removed") <= threads.length) {
-      for (const r of records.by("removed", "removed")) {
-        const thread = at(r);
-        if (thread !== null) out.set(thread, { message: null, rev: r.rev, until: null, removed: true });
-      }
-      return out;
+    // (each a key lookup in memory, the thread walked only for one at a page conversation's waiting date: never the page's
+    // every conversation, as resolving it would: Codex code review of plan 216, #3)
+    for (const key of records.keysBy("removed", "removed")) {
+      const r = records.get(key);
+      const thread = r ? at(r) : null;
+      if (thread !== null) out.set(thread, { message: null, rev: r!.rev, until: null, removed: true });
     }
-    for (const [thread, f] of waitingRows(c, threads, now, { messages: true })) if (f.removed || f.until !== null) out.set(thread, { ...f, message: null });
     return out;
   }
   for (const t of threads) {

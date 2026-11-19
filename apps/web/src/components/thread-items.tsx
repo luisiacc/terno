@@ -5,7 +5,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Popover, PopoverContent } from "@terno/ui/components/popover";
 import { CalendarClock, ChevronDown } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
-import { useEffect, useId, useRef, useState, type Ref } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type Ref, type RefObject } from "react";
 import { aiAllowed, followupsOffered } from "~/lib/ai";
 import { changeItem, changeOfItem, proposalSaid, whenSaid, type ChangeTarget } from "~/lib/change";
 import { itemLaterWindow, laterNote, laterPresets, laterStart, laterWindow, type LaterWindow, type TodayTask } from "~/lib/dated";
@@ -195,19 +195,26 @@ function ItemLater({ text, span, act }: { text: string; span: LaterWindow; act: 
 const itemSpan = (item: ReaderItem, now = Date.now()): LaterWindow => (item.source === "dated" ? itemLaterWindow(item.row, now) : { before: null, limit: null });
 
 /**
- * Plan 216 (Codex review, #6): an act from the card whose line then goes (its row left the feed) leaves no focus behind: the
- * keys go to the feed's row that's open now, or holds its place.
+ * Plan 216 (Codex review, #6; code review, #4): a line that goes while it holds the focus (its item or row acted on, here or
+ * elsewhere, at once or once the reply comes), or after the focus already fell to the page (its menu's item gone with it),
+ * leaves the keys on the feed's row that's open now, or holds its place: never on the page. Focus moved elsewhere on purpose
+ * stays where it is.
  */
-function keepingFocus(run: () => void): void {
-  run();
-  requestAnimationFrame(() =>
-    requestAnimationFrame(() => {
-      const active = document.activeElement;
-      if (active && active !== document.body) return;
-      const { opened, cursor } = useFeedRow.getState();
-      keysOnTo(opened ?? cursor ?? undefined);
-    }),
-  );
+function useKeysWhenGone(): RefObject<HTMLDivElement | null> {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    return () => {
+      const lost = () => !document.activeElement || document.activeElement === document.body;
+      if (!el?.contains(document.activeElement) && !lost()) return;
+      requestAnimationFrame(() => {
+        if (!lost() || !getApp().today) return;
+        const { opened, cursor } = useFeedRow.getState();
+        keysOnTo(opened ?? cursor ?? undefined);
+      });
+    };
+  }, []);
+  return ref;
 }
 
 /**
@@ -362,9 +369,11 @@ function ItemLine({ threadId, item, targeted, doneRef, now }: { threadId: number
   const text = readerText(item);
   // plan 210 (iteration 4): an open item with a day to change (a person's ask has none)
   const change = changeOfItem(item);
+  const lineRef = useKeysWhenGone();
   return (
     <>
       <div
+        ref={lineRef}
         data-testid="thread-dated-item"
         data-source={item.source}
         data-kind={item.source === "dated" ? item.row.kind : "promise"}
@@ -378,16 +387,16 @@ function ItemLine({ threadId, item, targeted, doneRef, now }: { threadId: number
         {item.open ? (
           // Done outlined (what's usually meant), Later and Remove quiet beside it; on a narrow card they wrap, never shrink
           <span data-testid="thread-dated-controls" className="flex flex-wrap items-center gap-1.5">
-            <Button ref={doneRef} variant="outline" size="sm" className="text-foreground" data-testid="thread-dated-done" aria-label={t("dated.doneItem", { text })} onClick={() => keepingFocus(() => void actOnReaderItem(threadId, item, "done"))}>
+            <Button ref={doneRef} variant="outline" size="sm" className="text-foreground" data-testid="thread-dated-done" aria-label={t("dated.doneItem", { text })} onClick={() => void actOnReaderItem(threadId, item, "done")}>
               {t("dated.done")}
             </Button>
-            <ItemLater key={item.key} text={text} span={itemSpan(item, now)} act={(at) => keepingFocus(() => void actOnReaderItem(threadId, item, "later", at))} />
+            <ItemLater key={item.key} text={text} span={itemSpan(item, now)} act={(at) => void actOnReaderItem(threadId, item, "later", at)} />
             {change && <ItemChange key={`change:${item.key}`} item={item} target={change} />}
             {/* plan 210 (iteration 4): Hand to…, the forward opening under this line, in the reader */}
             <Button variant="ghost" size="sm" className={QUIET} data-testid="thread-dated-hand" aria-label={t("whatMatters.handTo.item", { text })} onClick={() => void handTo(seenOfReaderItem(item))}>
               {t("whatMatters.handTo.action")}
             </Button>
-            <Button variant="ghost" size="sm" className={QUIET} data-testid="thread-dated-dismiss" aria-label={t("dated.removeItem", { text })} onClick={() => keepingFocus(() => void actOnReaderItem(threadId, item, "dismiss"))}>
+            <Button variant="ghost" size="sm" className={QUIET} data-testid="thread-dated-dismiss" aria-label={t("dated.removeItem", { text })} onClick={() => void actOnReaderItem(threadId, item, "dismiss")}>
               {t("dated.remove")}
             </Button>
           </span>
@@ -410,9 +419,10 @@ const waitingWords = (row: FeedRow, task: Extract<TodayTask, { kind: "waiting" }
  * newer message or another window's choice is another task, and remounts it (closing what was open: Codex review, #4).
  */
 function WaitingLine({ row, task, doneRef, now }: { row: FeedRow; task: Extract<TodayTask, { kind: "waiting" }>; doneRef: Ref<HTMLButtonElement>; now: number }) {
-  const act = (action: "done" | "dismiss" | "later", at?: number) => keepingFocus(() => void actOnTodayRow(row.id, task, action, at));
+  const act = (action: "done" | "dismiss" | "later", at?: number) => void actOnTodayRow(row.id, task, action, at);
+  const lineRef = useKeysWhenGone();
   return (
-    <div data-testid="thread-dated-item" data-source="waiting" data-target className={LINE}>
+    <div ref={lineRef} data-testid="thread-dated-item" data-source="waiting" data-target className={LINE}>
       <span data-testid="thread-dated-text" className={LINE_TEXT}>{waitingWords(row, task, now)}</span>
       <span data-testid="thread-dated-controls" className="flex flex-wrap items-center gap-1.5">
         <Button ref={doneRef} variant="outline" size="sm" className="text-foreground" data-testid="thread-dated-done" aria-label={t("dated.doneItem", { text: task.name })} onClick={() => act("done")}>

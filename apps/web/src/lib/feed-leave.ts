@@ -82,7 +82,12 @@ export function dropFeedRows(ids: readonly FeedRowId[]): boolean {
  */
 export function restoreFeedRow(before: FeedBefore, moved: number, selectedId: number | null): void {
   if (useFeedRow.getState().moves !== moved || getApp().selectedId !== selectedId || before.opened === null) return;
-  reopenFeedRow(before);
+  reopenFeedRow(before, () => {
+    // the keys the act moved on to the next row come back with the open one: D is its own again, as the reader and the
+    // palette say (Codex code review of plan 216, #1)
+    const keys = focusedFeedItem();
+    if (keys !== null && keys !== before.opened) keysOnTo(before.opened ?? undefined);
+  });
 }
 
 /** How many of the feed's answers a put-back waits through for its row before it gives up. */

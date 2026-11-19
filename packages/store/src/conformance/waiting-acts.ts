@@ -327,8 +327,10 @@ export function defineWaitingActsConformance(fresh: () => Promise<MailStore>): v
       await finish(ana);
       expect(await of(ana)).toEqual([["open", null, 0]]);
       await store.today.waiting.restore(removed!);
-      expect(await of(ana)).toEqual([["open", NOW + DAY, 1]]);
+      expect(await of(ana)).toEqual([["open", NOW + DAY, 0]]);
+      // and the Later's own Undo takes it back with it, as one the reader stored under it (Codex code review of plan 216, #2)
       expect(await store.today.waiting.restore(later!)).toBe(ana.thread);
+      expect(await of(ana)).toEqual([["open", null, 1]]);
       // a Remove with no Later before it: its Undo touches no request
       const plain = await store.today.waiting.act({ threadId: ana.thread, since: NOW - DAY, message: ana.message, rev: 0, state: "removed", until: null, now: NOW });
       const before = await of(ana);

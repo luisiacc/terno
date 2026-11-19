@@ -11,7 +11,7 @@ vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, remo
 vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => frames.push(cb));
 vi.mock("~/rpc/connection", () => ({ client: { call: vi.fn(async () => null), on: () => () => {}, connectionVersion: 1 } }));
 
-const { dropFeedRows, feedBefore, feedRowsLeaving, reopenFeedRow } = await import("./feed-leave");
+const { dropFeedRows, feedBefore, feedRowsLeaving, reopenFeedRow, restoreFeedRow } = await import("./feed-leave");
 const { feedKeyThread, focusedFeedItem, placeFeedKeys } = await import("./feed-focus");
 const { keyThread } = await import("./select");
 const { getApp, setApp } = await import("~/state/app");
@@ -128,4 +128,21 @@ it("a put-back still waiting ends when What matters is left, with no answer afte
   setApp({ today: true, selectedId: null });
   useToday.setState({ rows: ROWS as never });
   expect(back).not.toHaveBeenCalled();
+});
+
+it("plan 216 (Codex code review, #1): Undo's open row back takes back the keys the act moved on to the next row", () => {
+  setApp({ today: true, selectedId: 2 });
+  useFeedRow.setState({ opened: "waiting:2" });
+  button("waiting:2").focus();
+  const before = feedBefore();
+  dropFeedRows(["waiting:2"]);
+  runFrames();
+  expect(focusedFeedItem()).toBe("waiting:3");
+  const moved = useFeedRow.getState().moves;
+  // the Undo's read holds the row again
+  useToday.setState({ rows: ROWS as never });
+  restoreFeedRow(before, moved, 3);
+  expect(useFeedRow.getState().opened).toBe("waiting:2");
+  runFrames();
+  expect(focusedFeedItem()).toBe("waiting:2");
 });
