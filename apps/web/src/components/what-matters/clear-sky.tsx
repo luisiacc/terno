@@ -1,5 +1,6 @@
 import { t } from "@terno/i18n";
 import { useEffect, useId, useRef, useState, type RefObject } from "react";
+import { dayKeyOf } from "@terno/core";
 import { ARC, countClearDay, nextChange, nextUp, sunPlace, type Moment } from "~/lib/clear";
 import { freeUntil } from "~/lib/when";
 import { useToday } from "~/state/today";
@@ -12,8 +13,9 @@ import { useToday } from "~/state/today";
  */
 export function ClearSky() {
   const moments = useToday((s) => s.moments);
+  const answeredDay = useToday((s) => s.answeredDay);
   const ref = useRef<HTMLDivElement>(null);
-  const { now, n } = useClearMoment(ref, moments);
+  const { now, n } = useClearMoment(ref, moments, answeredDay);
   const d = new Date(now);
   return (
     <div ref={ref} className="flex flex-col items-center text-center" data-testid="wm-clear">
@@ -33,9 +35,10 @@ export function ClearSky() {
 /**
  * The moment it's drawn for, read on mount, when the window is back and at the clock's next change; and today's clear day,
  * counted only once the horizon is on screen in a visible window (a virtualized row can be drawn out of view, Codex's plan
- * critique, 9), and again past midnight. The number stays hidden until it's counted.
+ * critique, 9), and again past midnight, once an answer for the new day says it's still clear (Codex code review, 3: never
+ * on yesterday's answer). The number stays hidden until it's counted.
  */
-function useClearMoment(ref: RefObject<HTMLElement | null>, moments: readonly Moment[]): { now: number; n: number | null } {
+function useClearMoment(ref: RefObject<HTMLElement | null>, moments: readonly Moment[], answeredDay: string | null): { now: number; n: number | null } {
   const [moment, setMoment] = useState<{ now: number; n: number | null }>(() => ({ now: Date.now(), n: null }));
   useEffect(() => {
     let inView = false;
@@ -44,7 +47,7 @@ function useClearMoment(ref: RefObject<HTMLElement | null>, moments: readonly Mo
       clearTimeout(timer);
       if (document.visibilityState !== "visible") return;
       const now = Date.now();
-      const n = inView ? countClearDay(now) : undefined;
+      const n = inView && answeredDay === dayKeyOf(now) ? countClearDay(now) : undefined;
       setMoment((was) => ({ now, n: n === undefined ? was.n : n }));
       // (a timer's longest wait is about 24.8 days; midnight comes first)
       timer = setTimeout(seen, Math.max(1000, nextChange(moments, now) - now));
@@ -64,7 +67,7 @@ function useClearMoment(ref: RefObject<HTMLElement | null>, moments: readonly Mo
       window.removeEventListener("focus", seen);
       document.removeEventListener("visibilitychange", seen);
     };
-  }, [ref, moments]);
+  }, [ref, moments, answeredDay]);
   return moment;
 }
 

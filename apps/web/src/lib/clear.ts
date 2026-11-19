@@ -28,10 +28,14 @@ function momentOf(why: TodayWhy): Moment | null {
   return null;
 }
 
-/** The other promises and items a row carries (`also`): a reply's later promise can lead an earlier one (Codex's plan critique, 3). */
-const alsoMoment = (a: TodayAlso): Moment | null => (a.dated ? (a.timed ? { at: a.dueAt, timed: true, day: dayKeyOf(a.dueAt) } : { at: localDay(a.dueDay)?.getTime() ?? a.dueAt, timed: false, day: a.dueDay }) : null);
+/**
+ * The other promises and items a row carries (`also`): a reply's later promise can lead an earlier one (Codex's plan critique,
+ * 3). Not a promise to attend the row's event: it has no day of its own (Codex code review, 4).
+ */
+const alsoMoment = (a: TodayAlso): Moment | null => (a.dated && !a.attends ? (a.timed ? { at: a.dueAt, timed: true, day: dayKeyOf(a.dueAt) } : { at: localDay(a.dueDay)?.getTime() ?? a.dueAt, timed: false, day: a.dueDay }) : null);
 
-const momentsOf = (item: TodayItem): (Moment | null)[] => [momentOf(item.why), ...(item.also ?? []).map(alsoMoment)];
+/** A row put off with Later is back at one moment, all of it (Codex code review, 2: never its `also`'s old days). */
+const momentsOf = (item: TodayItem): (Moment | null)[] => (item.why.back !== undefined ? [momentOf(item.why)] : [momentOf(item.why), ...(item.also ?? []).map(alsoMoment)]);
 
 /** Every moment the answer's items have, Coming up's included (drawn or not): read once, when the answer is published. */
 export const momentsOfList = (list: Pick<TodayList, "sections">): Moment[] => list.sections.flatMap((s) => s.items.flatMap(momentsOf)).filter((m): m is Moment => m !== null);

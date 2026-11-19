@@ -3,7 +3,7 @@ import { DIGEST_ROW_ID, localDay, todayBadge, type FeedRowId, type ThreadSummary
 import { getLocale, t } from "@terno/i18n";
 import { Collapsible, CollapsibleTrigger } from "@terno/ui/components/collapsible";
 import { Skeleton } from "@terno/ui/components/skeleton";
-import { Newspaper } from "@terno/ui/icons";
+import { Newspaper, Sun } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef } from "react";
 import type { TodayTask } from "~/lib/dated";
@@ -158,6 +158,7 @@ export function WhatMattersFeed() {
   const feed = useToday((s) => s.rows);
   const comingUp = useToday((s) => s.comingUp);
   // plan 222: nothing missed, due today or waiting on you, by an answer (never the empty state before the first one)
+  const answered = useToday((s) => s.answered);
   const clear = useToday((s) => s.answered && todayBadge(s.counts) === 0);
   const rows = useMemo(() => drawn(feed, comingUp, clear), [feed, comingUp, clear]);
   /** each row's place among what's drawn, by its id */
@@ -311,9 +312,10 @@ export function WhatMattersFeed() {
             </div>
           ) : feed.length === 0 ? (
             // (plan 210, iteration 4: nothing now, Coming up's disclosure under the words, so what's ahead is a click away;
-            // plan 222: on the feed's column, under the horizon)
-            <EmptyState className={COLUMN}>
-              <ClearSky />
+            // plan 222: on the feed's column, under the horizon, once an answer says so: never on a request that failed,
+            // Codex code review, 1)
+            <EmptyState className={COLUMN} {...(answered ? {} : { icon: <Sun className="mb-2 size-7 text-muted-foreground" aria-hidden />, title: t("today.empty") })}>
+              {answered && <ClearSky />}
               {comingUp > 0 && <ComingUpHeading empty />}
             </EmptyState>
           ) : (

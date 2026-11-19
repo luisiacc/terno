@@ -14,7 +14,9 @@ const { WhatMattersFeed } = await import("./feed");
 const { useToday } = await import("~/state/today");
 const { useList } = await import("~/state/list");
 
+const { dayKeyOf } = await import("@terno/core");
 const DAY = 86_400_000;
+const zero = { missed: 0, today: 0, waiting: 0, overdue: 0 };
 let host: HTMLDivElement;
 beforeEach(() => {
   localStorage.clear();
@@ -35,7 +37,7 @@ describe("plan 222: an empty, clear What matters", () => {
     const d = new Date(at);
     const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     useList.setState({ items: [], loading: false });
-    useToday.setState({ rows: [], answered: true, counts: { missed: 0, today: 0, waiting: 0, overdue: 0 }, comingUp: 1, moments: [{ at, timed: true, day }] });
+    useToday.setState({ rows: [], answered: true, answeredDay: dayKeyOf(Date.now()), counts: zero, comingUp: 1, moments: [{ at, timed: true, day }] });
     const root = await draw();
     const empty = host.querySelector("[data-testid=list-empty]")!;
     expect(empty.querySelector("[data-testid=wm-horizon]")).not.toBeNull();
@@ -47,11 +49,23 @@ describe("plan 222: an empty, clear What matters", () => {
     act(() => root.unmount());
   });
 
-  it("before the first answer, the skeleton: never a clear day counted while loading", async () => {
-    useList.setState({ items: [], loading: true });
-    useToday.setState({ rows: [], answered: false, counts: { missed: 0, today: 0, waiting: 0, overdue: 0 }, comingUp: 0, moments: [] });
+  it("before the first answer, the skeleton; with none (its request failed, Codex code review), no horizon: never a clear day counted", async () => {
+    for (const loading of [true, false]) {
+      useList.setState({ items: [], loading });
+      useToday.setState({ rows: [], answered: false, answeredDay: null, counts: zero, comingUp: 0, moments: [] });
+      const root = await draw();
+      expect(host.querySelector("[data-testid=wm-clear]")).toBeNull();
+      expect(localStorage.getItem("terno.whatMatters.clearDays")).toBeNull();
+      act(() => root.unmount());
+    }
+  });
+
+  it("Codex code review: an answer for another day (yesterday's, before midnight's reload) counts nothing", async () => {
+    useList.setState({ items: [], loading: false });
+    useToday.setState({ rows: [], answered: true, answeredDay: dayKeyOf(Date.now() - DAY), counts: zero, comingUp: 0, moments: [] });
     const root = await draw();
-    expect(host.querySelector("[data-testid=wm-clear]")).toBeNull();
+    expect(host.querySelector("[data-testid=wm-clear]")).not.toBeNull();
+    expect(host.querySelector("[data-testid=wm-clear-day]")).toBeNull();
     expect(localStorage.getItem("terno.whatMatters.clearDays")).toBeNull();
     act(() => root.unmount());
   });

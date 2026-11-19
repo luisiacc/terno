@@ -122,3 +122,12 @@ Also from building it:
 
 - **Earlier.** The demo mailbox always has an automated row, so e2e can't reach a feed with no rows. The empty branch is a component test (`feed.test.tsx`), and the e2e covers the clear row with Earlier shown and hidden.
 - **j from a fresh load** lands on the first item, never the horizon (e2e). After a Done, the keys go on from the item put away, as before.
+
+## Codex code review
+
+1. **[P2] A failed first request showed the horizon and counted a day.** With no answer, the empty feed keeps its old words ("Nothing needs you today." under the Sun), and no horizon or count until an answer says it's clear (`feed.test.tsx`).
+2. **[P2] A reply put off with Later still had its other promises' old days.** A row with `why.back` has that one moment, its `also` left out (`clear.test.ts`).
+3. **[P2] Midnight counted a day on yesterday's answer.** The answer carries its day (`answeredDay`, from its `now`). A day is counted only on an answer for today, so a bill due tomorrow that's due today after midnight doesn't add a clear day (`feed.test.tsx`).
+4. **[P2] A promise to attend the row's event read as an all-day item.** `also` entries with `attends` have no moment, so the event's own time shows ("You're free until 6:00 PM.") (`clear.test.ts`).
+
+One review round. Each test fails without its fix.

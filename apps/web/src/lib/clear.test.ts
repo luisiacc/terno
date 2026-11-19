@@ -46,6 +46,16 @@ describe("nextUp (plan 222): the next moment ahead in a clear What matters", () 
     const l = { sections: [{ kind: "ahead", items: [{ id: "p", thread: {}, why: lead, also: [{ kind: "promise", text: "Send the deck", dueDay: "2026-11-24", dueAt: at(2026, 11, 24, 9), timed: false, dated: true }] }] }] } as unknown as TodayList;
     expect(next(l, NOW)).toEqual({ at: at(2026, 11, 24), timed: false });
   });
+  it("Codex code review: a reply put off with Later is back at one moment, never at its other promises' old days", () => {
+    const lead: TodayWhy = { kind: "promise", dueAt: at(2026, 11, 21, 12), back: at(2026, 11, 20, 9), promise: { id: 4, revision: 1, dated: true, timed: true } };
+    const l = { sections: [{ kind: "comingUp", items: [{ id: "p", thread: {}, why: lead, also: [{ kind: "promise", text: "Call Ana", dueDay: "2026-11-19", dueAt: at(2026, 11, 19, 16), timed: true, dated: true }] }] }] } as unknown as TodayList;
+    expect(next(l, NOW)).toEqual({ at: at(2026, 11, 20, 9), timed: true });
+  });
+  it("Codex code review: a promise to attend the row's event has no day of its own", () => {
+    const event = dated(at(2026, 11, 19, 18), true);
+    const l = { sections: [{ kind: "today", items: [{ id: "e", thread: {}, why: event, also: [{ kind: "promise", text: "You said you'd come", dueDay: "2026-11-19", dueAt: at(2026, 11, 19), timed: false, dated: true, attends: true }] }] }] } as unknown as TodayList;
+    expect(next(l, NOW)).toEqual({ at: at(2026, 11, 19, 18), timed: true });
+  });
   it("Codex's plan critique: a plan underway is today's, not free time; once it's over, what's next", () => {
     const meeting = list([dated(at(2026, 11, 19, 9, 30), true), dated(at(2026, 11, 20, 9), true)]);
     expect(next(meeting, NOW)).toBe("today");
