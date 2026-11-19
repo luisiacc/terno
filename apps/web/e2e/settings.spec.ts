@@ -109,6 +109,8 @@ test.describe("accounts, settings and command palette", () => {
       await expect(auto.getByTestId("settings-filter")).toHaveCount(0);
       await toggle.click();
       await expect(auto.getByTestId("settings-filter")).toHaveCount(2);
+      // the panel that clips while it moves is the card itself, so its ring and depth are never cut (Codex review)
+      expect(await auto.locator("[data-slot=collapsible-panel]").evaluate((el) => getComputedStyle(el).boxShadow)).not.toBe("none");
 
       // Turn all off, then Undo: both back on
       await auto.getByTestId("settings-filters-auto-off").click();

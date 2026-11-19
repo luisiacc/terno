@@ -82,3 +82,4 @@ Nothing: it found no defects in 077380ba6.
 - Its open state is kept for the session (a module object in `filters-tab.tsx`): Edit opens the builder and the tab mounts again on the way back, so it comes back as it was left.
 - "Created for you" (`filters.group.auto`) is no longer used anywhere and leaves both catalogs.
 - `settings.spec.ts`: folded with its count and the footer, no rows; opened, two; back from the builder, still open, the count now one.
+- Codex code review of the follow-up, one finding: the panel clips (it moves), and the card inside it drew its ring and Relief's depth outside its box, so they were cut. Folding, the panel is now the card itself (an element's own shadow isn't clipped by its overflow). `settings.spec.ts` checks the open panel carries the card's shadow; seen in Relief, light and dark.

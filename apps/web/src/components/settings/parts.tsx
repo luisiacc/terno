@@ -53,7 +53,7 @@ export function SettingsGroup({ title, footer, children, testId, className, find
   fold?: { open: boolean; onOpenChange: (open: boolean) => void };
 }) {
   const titleId = useId();
-  const card = <div className="hairline-divide card-group px-4">{children}</div>;
+  const card = "hairline-divide card-group px-4";
   const body = (
     <>
       {title && (
@@ -61,7 +61,8 @@ export function SettingsGroup({ title, footer, children, testId, className, find
           {title}
         </h3>
       )}
-      {fold ? <CollapsiblePanel>{card}</CollapsiblePanel> : card}
+      {/* folding, the panel is the card: it clips what it holds while it moves, never its own ring and depth (Codex review) */}
+      {fold ? <CollapsiblePanel className={cn(card, "mx-0")}>{children}</CollapsiblePanel> : <div className={card}>{children}</div>}
       {footer && <div className="mt-1.5 px-1 text-xs text-muted-foreground">{footer}</div>}
     </>
   );
