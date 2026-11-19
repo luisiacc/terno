@@ -2,6 +2,7 @@ import { CATEGORY_COLORS, type CategoryColor } from "@terno/core";
 import type { SettingsPatch } from "@terno/core/rpc";
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@terno/ui/components/alert-dialog";
 import { Button } from "@terno/ui/components/button";
+import { Collapsible, CollapsiblePanel } from "@terno/ui/components/collapsible";
 import { ColorSwatch, ColorSwatches } from "@terno/ui/components/color-swatches";
 import { Input } from "@terno/ui/components/input";
 import { Textarea } from "@terno/ui/components/textarea";
@@ -35,7 +36,7 @@ export interface RowA11y {
 /** Plan 203: marks the element Settings' search opens for a setting (a row is marked by its `find`). */
 export const findAttrs = (id: SettingId) => ({ "data-setting": id });
 
-export function SettingsGroup({ title, footer, children, testId, className, find, busy }: {
+export function SettingsGroup({ title, footer, children, testId, className, find, busy, fold }: {
   title?: React.ReactNode;
   footer?: React.ReactNode;
   children: React.ReactNode;
@@ -45,18 +46,32 @@ export function SettingsGroup({ title, footer, children, testId, className, find
   find?: SettingId;
   /** what it shows is still loading and may change (plan 203: a search waits for it before opening a row in it) */
   busy?: boolean;
+  /**
+   * Plan 219: its rows fold away under the title, which then holds the `CollapsibleTrigger`; the footer stays, saying
+   * what the folded rows are
+   */
+  fold?: { open: boolean; onOpenChange: (open: boolean) => void };
 }) {
   const titleId = useId();
-  return (
-    <section className={cn("mb-6 last:mb-0", className)} data-testid={testId} data-setting={find} aria-busy={busy || undefined} aria-labelledby={title ? titleId : undefined}>
+  const card = <div className="hairline-divide card-group px-4">{children}</div>;
+  const body = (
+    <>
       {title && (
         <h3 id={titleId} className="mb-1.5 px-1 text-xs font-semibold text-muted-foreground">
           {title}
         </h3>
       )}
-      <div className="hairline-divide card-group px-4">{children}</div>
+      {fold ? <CollapsiblePanel>{card}</CollapsiblePanel> : card}
       {footer && <div className="mt-1.5 px-1 text-xs text-muted-foreground">{footer}</div>}
-    </section>
+    </>
+  );
+  const props = { className: cn("mb-6 last:mb-0", className), "data-testid": testId, "data-setting": find, "aria-busy": busy || undefined, "aria-labelledby": title ? titleId : undefined };
+  return fold ? (
+    <Collapsible open={fold.open} onOpenChange={fold.onOpenChange} render={<section />} {...props}>
+      {body}
+    </Collapsible>
+  ) : (
+    <section {...props}>{body}</section>
   );
 }
 

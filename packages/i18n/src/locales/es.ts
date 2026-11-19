@@ -842,7 +842,6 @@ const es = {
   "filters.stop.undo": "Deshacer: seguir archivando en {category}",
   "filters.stop.failed": "No se pudo desactivar la regla: {error}",
   "filters.group.yours": "Tus reglas",
-  "filters.group.auto": "Creados para ti",
   "filters.group.autoCount": { one: "# regla creada para ti", other: "# reglas creadas para ti" },
   "filters.group.autoFooter": "Terno los creó cuando ordenaste tu correo. Edita uno y pasará a ser tuyo.",
   "filters.auto.turnAllOff": "Desactivar todos",

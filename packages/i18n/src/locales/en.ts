@@ -850,7 +850,6 @@ const en = {
   "filters.stop.undo": "Undo: keep filing into {category}",
   "filters.stop.failed": "Couldn’t turn the rule off: {error}",
   "filters.group.yours": "Your rules",
-  "filters.group.auto": "Created for you",
   "filters.group.autoCount": { one: "# rule created for you", other: "# rules created for you" },
   "filters.group.autoFooter": "Terno made these when you sorted mail. Edit one and it becomes yours.",
   "filters.auto.turnAllOff": "Turn all off",

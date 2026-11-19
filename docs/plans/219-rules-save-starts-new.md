@@ -33,7 +33,7 @@
 - A closed panel isn't rendered (Collapsible's default): no rows to draw until it's opened.
 - Esc from a text field goes to the open rule's row; when that row is folded away it falls back to New, as it already does for a rule not in the list.
 
-Settings → Rules (`filters-tab.tsx`) keeps its group as is: it's a full-width page with its own Turn all off and footer, and the request was the dialog's list.
+Settings → Rules (`filters-tab.tsx`) was left as is at first; the owner then asked for it too (below).
 
 ## Tests
 
@@ -47,7 +47,6 @@ Fewer rows drawn when closed; one string per save. No hot path.
 
 ## Out of scope
 
-- Settings → Rules' own list.
 - Updating the footer line when the apply job ends (its snack says it).
 
 ## Revisions after the Codex review (plan)
@@ -73,3 +72,13 @@ Nothing: it found no defects in 077380ba6.
 - e2e (`--project=e2e`): `filters.spec.ts` "AI filters and learned filters", `settings.spec.ts` "Created for you…", `category-forwarding.spec.ts` "from a filter", `folder-drop.spec.ts`: all pass.
 - Screenshots and axe of the dialog (saved line, group open) in light and dark: clean.
 - Typecheck of `@terno/web` fails only in `full-message.tsx`, another series' uncommitted work.
+
+## Follow-up: Settings → Rules folds too (owner, 2026-11-19)
+
+> yes lets collapse it there as well and say how many there are
+
+- `SettingsGroup` (`settings/parts.tsx`) takes `fold`: the group's root becomes a `Collapsible` (still a `<section>`), its card the panel, and the caller's title holds the `CollapsibleTrigger`. The footer stays visible, so a folded group still says what it holds.
+- Terno's group reads "2 rules created for you ⌄", the chevron beside the words (Turn all off keeps the line's end); closed by default.
+- Its open state is kept for the session (a module object in `filters-tab.tsx`): Edit opens the builder and the tab mounts again on the way back, so it comes back as it was left.
+- "Created for you" (`filters.group.auto`) is no longer used anywhere and leaves both catalogs.
+- `settings.spec.ts`: folded with its count and the footer, no rows; opened, two; back from the builder, still open, the count now one.

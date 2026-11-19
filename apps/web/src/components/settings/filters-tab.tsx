@@ -1,5 +1,6 @@
 import { type Category, type Filter } from "@terno/core";
 import { Button, GHOST_DANGER_PRESS } from "@terno/ui/components/button";
+import { CollapsibleTrigger } from "@terno/ui/components/collapsible";
 import { cn } from "@terno/ui/lib/utils";
 import { Switch } from "@terno/ui/components/switch";
 import { Pencil, Plus, Trash2 } from "@terno/ui/icons";
@@ -129,6 +130,12 @@ async function turnAllOff(filters: Filter[]): Promise<number | null> {
 }
 
 /**
+ * Plan 219: whether Terno's rules are unfolded, kept for the session, so editing one in the builder and coming back
+ * finds them as they were (the tab mounts again)
+ */
+const autoFold = { open: false };
+
+/**
  * Ajustes → Filtros: the user's filters, then (plan 90) the ones Terno made
  * when they sorted mail; each on or off, edited in the builder (an edited
  * automatic one becomes theirs), removed with a confirmation.
@@ -144,6 +151,7 @@ export function FiltersTab() {
   const on = auto.filter((f) => f.enabled).length;
   /** "Turn all off" just ran: its Undo takes the button's place until something else changes */
   const [undoOff, setUndoOff] = useState<number | null>(null);
+  const [autoOpen, setAutoOpen] = useState(() => autoFold.open);
   return (
     <div data-testid="filters-tab">
       <SettingsGroup find="filters.yours" title={t("filters.group.yours")} footer={t("filters.footer")} testId="settings-filters-yours">
@@ -163,9 +171,16 @@ export function FiltersTab() {
       {auto.length > 0 && (
         <SettingsGroup
           testId="settings-filters-auto"
+          // plan 219: folded under their count until asked for
+          fold={{ open: autoOpen, onOpenChange: (open) => {
+            autoFold.open = open;
+            setAutoOpen(open);
+          } }}
           title={
             <span className="flex items-center justify-between gap-2">
-              {t("filters.group.auto")}
+              <CollapsibleTrigger data-testid="settings-filters-auto-toggle" className="w-auto gap-1 rounded-sm hover:text-foreground [&_[data-slot=collapsible-chevron]]:ms-0 [&_[data-slot=collapsible-chevron]]:size-3.5">
+                {t("filters.group.autoCount", { count: auto.length })}
+              </CollapsibleTrigger>
               {undoOff !== null ? (
                 <Button
                   variant="ghost"

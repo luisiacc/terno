@@ -101,8 +101,13 @@ test.describe("accounts, settings and command palette", () => {
       const yours = page.getByTestId("settings-filters-yours");
       const auto = page.getByTestId("settings-filters-auto");
       await expect(yours.locator(`[data-filter-id="${mine.id}"]`)).toBeVisible();
-      await expect(auto).toContainText("Created for you");
+      // plan 219: folded under their count, what they are said under it; opened, their rows
+      const toggle = auto.getByTestId("settings-filters-auto-toggle");
+      await expect(toggle).toHaveText("2 rules created for you");
+      await expect(toggle).toHaveAttribute("aria-expanded", "false");
       await expect(auto).toContainText("Terno made these when you sorted mail. Edit one and it becomes yours.");
+      await expect(auto.getByTestId("settings-filter")).toHaveCount(0);
+      await toggle.click();
       await expect(auto.getByTestId("settings-filter")).toHaveCount(2);
 
       // Turn all off, then Undo: both back on
@@ -132,6 +137,9 @@ test.describe("accounts, settings and command palette", () => {
       await expect(group).toHaveText("1 rule created for you");
       await page.keyboard.press("Escape");
       await expect(yours).toContainText("Uber receipts");
+      // back from the builder, still open as it was left, its count as it is now
+      await expect(toggle).toHaveText("1 rule created for you");
+      await expect(toggle).toHaveAttribute("aria-expanded", "true");
       await expect(auto.getByTestId("settings-filter")).toHaveCount(1);
       // a new rule from here: Terno's are folded away until asked for
       await page.getByTestId("settings-filter-new").click();
