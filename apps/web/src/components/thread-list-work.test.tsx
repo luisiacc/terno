@@ -29,6 +29,13 @@ vi.mock("@tanstack/react-virtual", async (original) => {
   }) };
 });
 vi.mock("~/rpc/connection", () => ({ client: { call: vi.fn().mockResolvedValue({ items: [], nextCursor: null }) } }));
+// plan 221: what the list reports for warming, recorded (nothing is fetched here)
+const warm = vi.hoisted(() => ({ onScreen: [] as { ids: number[]; scrolling: boolean }[], next: [] as number[][], nothing: 0 }));
+vi.mock("~/lib/warm", () => ({
+  warmOnScreen: (ids: readonly number[], scrolling = false) => { warm.onScreen.push({ ids: [...ids], scrolling }); },
+  warmNext: (ids: readonly number[]) => { warm.next.push([...ids]); },
+  warmNothing: () => { warm.nothing++; },
+}));
 vi.mock("~/lib/drag-install", () => ({ installDragController: () => () => {} }));
 vi.mock("~/lib/scroll-hairline", () => ({ installScrollHairline: () => () => {} }));
 vi.mock("./thread-menu", () => ({ ThreadMenu: ({ children }: { children: ReactNode }) => children }));
@@ -146,6 +153,50 @@ it("the visible-range pagination trigger appends current keys once and keeps the
     await act(async () => root.unmount());
     useApp.setState(app, true); useList.setState(list, true); host.remove();
     call.mockReset(); call.mockResolvedValue({ items: [], nextCursor: null } as never);
+  }
+});
+
+it("plan 221: the rows on screen are reported for warming, not the overscan, with the scroll's state; again when the layout changes on the same rows; another list drops the keyboard's next; unmount clears", async () => {
+  const app = useApp.getState(), list = useList.getState(), appearance = useAppearance.getState();
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  const items = Array.from({ length: 100 }, (_, i) => row(i + 1));
+  Object.assign(warm, { onScreen: [], next: [], nothing: 0 });
+  try {
+    useApp.setState({ selectedId: null });
+    const key = listKey();
+    // (another list's key: the same shape, another view)
+    const other = JSON.stringify((JSON.parse(key) as unknown[]).map((part, i) => (i === 0 ? "elsewhere" : part)));
+    useList.setState({ key, itemsKey: key, items, index: new Map(items.map((t, i) => [t.id, i])), loading: false, loadingMore: false, nextCursor: null });
+    await act(async () => root.render(<ThreadList />));
+    const rendered = host.querySelectorAll('[data-testid="thread-row"]').length;
+    const height = Number.parseFloat(host.querySelector<HTMLElement>('[data-testid="thread-row"]')!.style.height);
+    const first = warm.onScreen.at(-1)!;
+    expect(first.ids[0]).toBe(1);
+    expect(first.ids.length).toBe(Math.ceil(600 / height));
+    expect(first.ids.length).toBeLessThan(rendered);
+    expect(first.scrolling).toBe(false);
+    await act(async () => probe.scroll!(height * 30, true));
+    expect(warm.onScreen.at(-1)).toMatchObject({ scrolling: true });
+    expect(warm.onScreen.at(-1)!.ids[0]).toBe(31);
+    await act(async () => probe.scroll!(height * 30, false));
+    expect(warm.onScreen.at(-1)).toMatchObject({ scrolling: false });
+    // List (rows as tall: not wide enough for one-line rows here) then Split: the same rows are reported again
+    const reports = warm.onScreen.length;
+    await act(async () => useAppearance.setState({ layout: "list" }));
+    await act(async () => useAppearance.setState({ layout: "split" }));
+    expect(warm.onScreen.length).toBe(reports + 2);
+    expect(warm.onScreen.at(-1)!.ids).toEqual(warm.onScreen[reports - 1]!.ids);
+    // another list: the keyboard's next were the last one's
+    const nexts = warm.next.length;
+    await act(async () => useList.setState({ key: other, itemsKey: other }));
+    expect(warm.next.slice(nexts)).toEqual([[]]);
+    expect(warm.nothing).toBe(0);
+    await act(async () => root.unmount());
+    expect(warm.nothing).toBe(1);
+  } finally {
+    await act(async () => root.unmount());
+    useApp.setState(app, true); useList.setState(list, true); useAppearance.setState(appearance, true); host.remove();
   }
 });
 

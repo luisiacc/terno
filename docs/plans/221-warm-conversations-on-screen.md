@@ -67,3 +67,19 @@ Codex's critique (8 points), all taken:
 - IMAP bodies not yet downloaded (`bodyState: "none"`): they're fetched from the server on open, as today.
 - What matters' feed items, and List's list page (R12) warm nothing.
 - Pre-rendering mail frames (memory per frame, for ~15 ms).
+
+## Codex code review
+
+Three findings, all fixed with a test that fails without the fix; Codex also compiled `ThreadList` with the installed React Compiler and confirmed it isn't optimized (TanStack Virtual is an incompatible library), so `virtualizer.range` and `isScrolling` are read live each render.
+
+1. A switch from List to Split on the same rows never warmed them (the effect's inputs didn't change, and the scheduler had stopped at List's gate). The layout is now one of its inputs (`thread-list-work.test.tsx`).
+2. The keyboard's queued next survived a change of list and could start ahead of the new screen. A new list (`itemsKey`) clears them (same test).
+3. The e2e click passed even if the click opened nothing (the previous conversation's subject satisfied the wait). It now waits for the target's own row and subject.
+
+`thread-list-work.test.tsx` also stands the scheduler in with recording spies, so its RPC counts never include a warming fetch.
+
+## Tests run
+
+- Unit: `warm.test.ts`, `threads.test.ts`, `threads-hydration.test.ts`, `thread-list-work.test.tsx`, `keyboard.test.ts`, `keyboard-focus.test.ts`, `selection.test.ts`.
+- e2e: `warm.spec.ts`, `list-layout.spec.ts`, `selection.spec.ts`, `reader.spec.ts`, `search.spec.ts`.
+- Perf (`--project=perf`, machine load ≈ 14): holding j, sustained j in five designs with flings, continuous scrolling with icons, scrolling 2,000 deep, a long conversation, List 1,500 deep and its scrolling: all within their gates.

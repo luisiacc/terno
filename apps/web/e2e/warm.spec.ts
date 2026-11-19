@@ -2,7 +2,7 @@
  * Plan 221: the conversations on screen are warmed once the list rests, so a click opens from the cache; nothing but a
  * read of the local store (no body download, no change, no AI, no remote picture).
  */
-import { expect, navTo, readerSubject, scenario, test } from "./fixtures";
+import { expect, navTo, scenario, test } from "./fixtures";
 import type { Page } from "@playwright/test";
 
 const remote = (url: URL) => /^https?:$/.test(url.protocol) && url.hostname !== "127.0.0.1" && url.hostname !== "localhost";
@@ -59,8 +59,11 @@ test("plan 221: the rows on screen are warmed once the list rests, and a click o
     const open = await selected();
     const target = rows.find((id) => id !== open)!;
     const before = sent.length;
+    const subject = (await server.backend.store.threads.get(target))!.thread.subject;
     await page.locator(`[data-testid=thread-row][data-thread-id="${target}"]`).dispatchEvent("mousedown");
-    await readerSubject(page);
+    // its own conversation on screen (not the one open before)
+    await expect(page.locator("[data-testid=thread-row][aria-selected=true]").first()).toHaveAttribute("data-thread-id", String(target));
+    await expect(page.getByTestId("reader-subject")).toHaveText(subject);
     await page.waitForTimeout(300);
     expect(sent.slice(before).filter((c) => c.m === "threads.get" && c.p.threadId === target)).toEqual([]);
   });
