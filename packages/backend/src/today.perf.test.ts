@@ -160,6 +160,22 @@ async function linkedRequests(store: MailStore, accountId: number, now: number):
   return requests;
 }
 
+/** Plan 216: every Needs you conversation removed from What matters, then half of them written to again (`needsAtBound`'s). */
+async function removedAtBound(store: MailStore, accountId: number, now: number) {
+  const page = await store.today.waitingPage({ now, after: null, limit: NEEDS_WALK });
+  const rows = await store.today.waiting.rows(page.map((w) => ({ threadId: w.id, since: w.waitingSince })), now, { messages: true });
+  let removed = 0;
+  for (const w of page) {
+    const r = rows.get(w.id);
+    if (r?.message != null && (await store.today.waiting.act({ threadId: w.id, since: w.waitingSince, message: r.message, rev: r.rev, state: "removed", until: null, now }))) removed++;
+  }
+  expect(removed).toBe(page.length);
+  const me = { name: "Me", email: "me@perf.test" };
+  const again = Array.from({ length: NEEDS_WALK / 2 }, (_, i) => msg({ accountId, date: now - 60_000 + i, providerMsgId: `needs-${i}-again`, providerThreadId: `needs-${i}`, from: { name: `Person ${i}`, email: `person${i}@needs.test` }, to: [me], isRead: false, listId: null, subject: `Re: Notes ${i}`, bodyText: "One more thing about the plan." }));
+  for (let i = 0; i < again.length; i += 500) await store.sync.ingest(again.slice(i, i + 500), { applyFilters: false, now, classifier: null });
+  while (!(await store.facts.idle())) await store.facts.backfill({ limit: 5000 });
+}
+
 async function run(kind: "SQLite" | "IndexedDB", budget: { spread: Gate; bound: Gate; needs: Gate; linked: Gate; busyMs: number }) {
   const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) };
   let store: MailStore | undefined;
@@ -273,6 +289,10 @@ async function run(kind: "SQLite" | "IndexedDB", budget: { spread: Gate; bound: 
     expect(promises.filter((p) => p.answers != null)).toHaveLength(LINKED);
     expect((await backend.store.dated.active()).length).toBeGreaterThanOrEqual(1000);
     await measure("Linked requests at the combined bounds", NOW + 2 * DAY, budget.linked);
+    // plan 216 (Codex review, #9): Removes add up (kept with their message): every Needs you conversation removed, then half
+    // of them written to again, their Removes now about an older message. The count reads them bounded by the page
+    await removedAtBound(backend.store, accountId, NOW + 2 * DAY);
+    await measure("Linked requests at the combined bounds, Needs you all removed, half of it stale", NOW + 2 * DAY, budget.linked);
   } finally {
     await backend.stop();
   }
