@@ -200,18 +200,26 @@ const itemSpan = (item: ReaderItem, now = Date.now()): LaterWindow => (item.sour
  * leaves the keys on the feed's row that's open now, or holds its place: never on the page. Focus moved elsewhere on purpose
  * stays where it is.
  */
+const LINE_PORTALS = "[data-testid=thread-dated-later-menu], [data-testid=thread-dated-later-custom]";
+
 function useKeysWhenGone(): RefObject<HTMLDivElement | null> {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const el = ref.current;
     return () => {
       const lost = () => !document.activeElement || document.activeElement === document.body;
-      if (!el?.contains(document.activeElement) && !lost()) return;
-      requestAnimationFrame(() => {
+      // (its Later's menu and picker are portals: focus there is the line's too, Codex code review of plan 216, round 2)
+      const held = el?.contains(document.activeElement) || document.activeElement?.closest(LINE_PORTALS);
+      if (!held && !lost()) return;
+      // a frame for the line's portals to go (their focus with them), a few at most
+      let frames = 0;
+      const after = () => {
+        if (document.activeElement?.closest(LINE_PORTALS) && ++frames < 5) return void requestAnimationFrame(after);
         if (!lost() || !getApp().today) return;
         const { opened, cursor } = useFeedRow.getState();
         keysOnTo(opened ?? cursor ?? undefined);
-      });
+      };
+      requestAnimationFrame(after);
     };
   }, []);
   return ref;

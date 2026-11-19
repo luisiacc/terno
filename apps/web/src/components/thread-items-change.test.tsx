@@ -181,3 +181,33 @@ describe("plan 216 (Codex code review, #4): a line that goes holding the focus",
     }
   });
 });
+
+describe("plan 216 (Codex code review, round 2): the line going while its Later menu holds the focus", () => {
+  it("leaves the keys on the feed's open row, not the page", async () => {
+    const { setApp } = await import("~/state/app");
+    const { useFeedRow } = await import("~/state/today");
+    const feedHost = document.createElement("section");
+    feedHost.dataset.testid = "wm-feed";
+    feedHost.innerHTML = `<div data-row-id="waiting:7"><button data-testid="wm-item-open">row</button></div>`;
+    document.body.append(feedHost);
+    setApp({ today: true, view: "all" });
+    useFeedRow.setState({ opened: "waiting:7" });
+    try {
+      await render(row());
+      await act(async () => q("thread-dated-later")!.click());
+      const preset = await vi.waitFor(() => {
+        const item = document.querySelector<HTMLElement>("[data-testid=thread-dated-later-menu] [role=menuitem]");
+        expect(item).toBeTruthy();
+        return item!;
+      });
+      preset.focus();
+      expect(document.activeElement).toBe(preset);
+      // its row acted on: the reader shows nothing for it any more
+      await act(async () => root!.render(<ThreadItems detail={detail} items={{ ...model(row()), top: null, ready: true } as never} />));
+      await vi.waitFor(() => expect(document.activeElement?.closest("[data-row-id]")?.getAttribute("data-row-id")).toBe("waiting:7"));
+    } finally {
+      setApp({ today: false });
+      useFeedRow.setState({ opened: null });
+    }
+  });
+});
