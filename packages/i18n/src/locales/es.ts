@@ -2663,6 +2663,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "whatMatters.waiting.done": "Hecho: {name}",
   "whatMatters.waiting.later": "Más tarde: {name}, vuelve {when}",
   "whatMatters.waiting.removed": "Quitado de Lo importante: {name}",
+  "whatMatters.waiting.line": "{name} espera tu respuesta\u00a0·\u00a0{when}",
   "whatMatters.waitingOnYou": "Te esperan",
   "whatMatters.ahead": "Para ir resolviendo",
   "whatMatters.weekOf": "Semana del {day}",

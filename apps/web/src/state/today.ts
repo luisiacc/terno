@@ -229,6 +229,17 @@ export function useFeedTarget(threadId: number): readonly ItemRef[] {
 const NO_TARGET: readonly ItemRef[] = [];
 
 /**
+ * Plan 216: the feed's open row while it's this conversation's waiting row: what the reader's card leads with. Its `task` is
+ * there while the row is the backend's; one held after an act elsewhere (words only) has none, and the card shows nothing for it.
+ */
+export function useFeedWaiting(threadId: number): FeedRow | null {
+  const opened = useFeedRow((s) => s.opened);
+  const row = useToday((s) => (opened === null ? undefined : s.rows.find((r) => r.id === opened)));
+  const today = useApp((s) => s.today);
+  return today && row?.threadId === threadId && !row.line && row.entry?.why.kind === "waiting" ? row : null;
+}
+
+/**
  * The feed's rows standing for an item: its own, or a merged row it's a member of (plan 210, iteration 2). What leaves with
  * the item's act, and (iteration 3) the row the reader's line opens when the item is chosen there.
  */

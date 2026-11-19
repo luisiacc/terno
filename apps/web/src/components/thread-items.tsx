@@ -1,23 +1,24 @@
-import { defaultRemindAt, HANDED, refKey, type DatedRow, type FollowupRow, type ScheduleProposal, type ThreadDetail } from "@terno/core";
+import { HANDED, refKey, type DatedRow, type FollowupRow, type ScheduleProposal, type ThreadDetail } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
 import { Popover, PopoverContent } from "@terno/ui/components/popover";
 import { CalendarClock, ChevronDown } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type Ref } from "react";
 import { aiAllowed, followupsOffered } from "~/lib/ai";
 import { changeItem, changeOfItem, proposalSaid, whenSaid, type ChangeTarget } from "~/lib/change";
-import { itemLaterWindow, laterNote, laterPresets, laterStart, type LaterWindow } from "~/lib/dated";
-import { readerItems, readerLine, readerText, type ReaderItem, type ReaderItems } from "~/lib/reader-items";
+import { itemLaterWindow, laterNote, laterPresets, laterStart, laterWindow, type LaterWindow, type TodayTask } from "~/lib/dated";
+import { keysOnTo } from "~/lib/feed-leave";
+import { readerItems, readerLine, readerText, waitingLine, type ReaderItem, type ReaderItems } from "~/lib/reader-items";
 import { presetLabel, presetWhen } from "~/lib/reminders";
 import { handTo, seenOfReaderItem } from "~/lib/hand-to";
-import { historyWhen } from "~/lib/today-sentence";
-import { actOnReaderItem, closeReaderLater, openReaderLater } from "~/lib/today-task";
+import { historyWhen, todayWhen } from "~/lib/today-sentence";
+import { actOnReaderItem, actOnTodayRow, closeReaderLater, openReaderLater } from "~/lib/today-task";
 import { client } from "~/rpc/connection";
 import { getApp, useApp } from "~/state/app";
 import { useFollowups } from "~/state/followups";
-import { feedRowsOfItem, openFeedRow, useFeedTarget, useReaderChoice } from "~/state/today";
+import { feedRowsOfItem, openFeedRow, useFeedRow, useFeedTarget, useFeedWaiting, useReaderChoice, type FeedRow } from "~/state/today";
 import { AI_CARD, AI_INSET, AI_TITLE } from "./ai-card";
 import { ChangeForm } from "./change-form";
 import { WhenForm } from "./when-fields";
@@ -27,6 +28,10 @@ export interface ReaderModel extends ReaderItems {
   /** every read it needs has answered for this conversation: nothing is drawn before (no line that swaps on arrival) */
   ready: boolean;
   choose: (item: ReaderItem) => void;
+  /** plan 216: the feed's open row while it's this conversation's waiting row (its task while it's the backend's) */
+  waitingRow: FeedRow | null;
+  /** plan 216: the waiting line chosen from the Also line: it leads again (the choice and its Later menu let go) */
+  chooseWaiting: () => void;
 }
 
 /**
@@ -42,7 +47,9 @@ export function useReaderItems(detail: ThreadDetail): ReaderModel {
   const datedOn = useApp((s) => aiAllowed(s, detail.thread.accountId) && s.settings?.dated?.enabled === true) && !hidden;
   const promisesOn = useApp((s) => followupsOffered(s, detail.thread.accountId)) && !hidden;
   const target = useFeedTarget(threadId);
-  const targetKey = target.map(refKey).join(" ");
+  const waitingRow = useFeedWaiting(threadId);
+  // a choice holds for the open row it was made under, by its identity (a waiting row has no items: its own id)
+  const targetKey = waitingRow ? waitingRow.id : target.map(refKey).join(" ");
   // a history line's closed item: its own read, as the feed opened it
   const datedTarget = target.filter((r) => r.source === "dated").map((r) => r.id);
   const include = datedTarget.length === 1 ? datedTarget[0] : undefined;
@@ -90,10 +97,12 @@ export function useReaderItems(detail: ThreadDetail): ReaderModel {
     followups: promisesOn ? [...(followups ?? []), ...(closedRow ? [closedRow] : [])] : [],
     target,
     chosen: chosenKey,
+    waiting: waitingRow !== null,
     now: Date.now(),
   });
-  // (code review) the choice leads with no feed row of its own: D, b, ⇧D and the palette act on it, not the open row's item
-  const held = ready && items.top?.open && items.top.key === chosenKey ? items.top : null;
+  // (code review) the choice leads with no feed row of its own: D, b, ⇧D and the palette act on it, not the open row's item;
+  // whichever member of its line shows (Codex review of plan 216, #3)
+  const held = ready && items.chose && items.top?.open ? items.top : null;
   useEffect(() => {
     const was = useReaderChoice.getState().held;
     const same = held ? was?.threadId === threadId && was.item.key === held.key && was.item.row.revision === held.row.revision : was === null;
@@ -112,28 +121,32 @@ export function useReaderItems(detail: ThreadDetail): ReaderModel {
     if (row && getApp().today) return openFeedRow(row.id);
     setChosen({ threadId, target: targetKey, key: item.key });
   };
-  return { ...items, ready, choose };
+  const chooseWaiting = () => {
+    closeReaderLater();
+    setChosen(null);
+  };
+  return { ...items, ready, choose, waitingRow, chooseWaiting };
 }
 
 /**
  * Later on the line: a dated item's presets in its window (a timed one still ahead, only what's before its moment; a Plan,
- * before its end; a Missed one, every preset), a promise's anywhere ahead (its Later is its own), and a moment of your own.
- * It goes through the row's flow: the feed's row leaves at once, Undo is exact, a failure brings it back.
+ * before its end; a Missed one, every preset), a promise's and (plan 216) a person waiting's anywhere ahead, and a moment of
+ * your own. It goes through the row's flow: the feed's row leaves at once, Undo is exact, a failure brings it back. `text`,
+ * the words its button names.
  */
-function ItemLater({ item, act }: { item: ReaderItem; act: (at: number) => void }) {
+function ItemLater({ text, span, act }: { text: string; span: LaterWindow; act: (at: number) => void }) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   // the app's (b opens it on a chosen item); an item that goes takes its open menu with it, and the app's keys come back
   const open = useReaderChoice((s) => s.later);
   useEffect(() => closeReaderLater, []);
   const [picking, setPicking] = useState(false);
   const now = Date.now();
-  const span: LaterWindow = item.source === "dated" ? itemLaterWindow(item.row, now) : { before: null, limit: null };
   const presets = laterPresets(span, now);
   const back = () => triggerRef.current?.focus({ preventScroll: true });
   return (
     <>
       <DropdownMenu open={open} onOpenChange={(next) => (next ? openReaderLater() : closeReaderLater())}>
-        <DropdownMenuTrigger render={<Button ref={triggerRef} variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" data-testid="thread-dated-later" aria-label={t("dated.laterItem", { text: readerText(item) })} />}>
+        <DropdownMenuTrigger render={<Button ref={triggerRef} variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" data-testid="thread-dated-later" aria-label={t("dated.laterItem", { text })} />}>
           {t("dated.later")}
           <ChevronDown aria-hidden />
         </DropdownMenuTrigger>
@@ -161,7 +174,7 @@ function ItemLater({ item, act }: { item: ReaderItem; act: (at: number) => void 
       >
         <PopoverContent anchor={triggerRef} align="end" className="w-80" data-testid="thread-dated-later-custom" aria-label={t("dated.later")}>
           <WhenForm
-            start={item.source === "dated" ? laterStart(span, now) : defaultRemindAt(new Date(now))}
+            start={laterStart(span, now)}
             before={span.before}
             notes={laterNote(span)}
             testPrefix="thread-dated-later"
@@ -175,6 +188,25 @@ function ItemLater({ item, act }: { item: ReaderItem; act: (at: number) => void 
         </PopoverContent>
       </Popover>
     </>
+  );
+}
+
+/** An item's Later window on the line: a dated item's own, a promise of yours anywhere ahead (its Later is its own). */
+const itemSpan = (item: ReaderItem, now = Date.now()): LaterWindow => (item.source === "dated" ? itemLaterWindow(item.row, now) : { before: null, limit: null });
+
+/**
+ * Plan 216 (Codex review, #6): an act from the card whose line then goes (its row left the feed) leaves no focus behind: the
+ * keys go to the feed's row that's open now, or holds its place.
+ */
+function keepingFocus(run: () => void): void {
+  run();
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      const active = document.activeElement;
+      if (active && active !== document.body) return;
+      const { opened, cursor } = useFeedRow.getState();
+      keysOnTo(opened ?? cursor ?? undefined);
+    }),
   );
 }
 
@@ -243,91 +275,154 @@ function outcomeOf(item: ReaderItem): string {
   return historyWhen({ outcome, kind: item.source === "dated" ? item.row.kind : "promise", key: { at: item.row.closedAt ?? item.row.createdAt, src: item.source === "dated" ? 0 : 1, id: item.row.id }, ...(handed && { handedTo: handed }), on: item.row.settledAt ?? undefined, reason: item.row.closedReason });
 }
 
+/** The Also line's key for the waiting line (plan 216): what the keys go to when it's chosen there. */
+const WAITING_KEY = "waiting";
+
 /**
  * Plan 210 (iteration 3, Codex revision 10): the conversation's items on the AI card's surface at its top, one line on top in
  * one design for a dated item and a promise of yours ("Due Friday · Pay the electricity bill", "Due today · You told Jess
  * you'd send the script"), with its Done, Later and Remove; the conversation's other items as one quiet line under it, each
  * leading when chosen. The feed's open row's item leads (a history line's, closed, says what happened). Only while dates or
- * follow-ups are read; never in Trash or Spam.
+ * follow-ups are read; never in Trash or Spam. Plan 216: the feed's open row a person waiting on you, its line leads in the
+ * same design ("Lucas is waiting on your reply · since Oct 21") with the row's own Done, Later and Remove.
  */
 export default function ThreadItems({ detail, items }: { detail: ThreadDetail; items: ReaderModel }) {
-  const { top, others, targeted, ready, choose } = items;
+  const { top, others, targeted, ready, choose, waiting, waitingRow, chooseWaiting } = items;
   const threadId = detail.thread.id;
   const alsoId = useId();
   const doneRef = useRef<HTMLButtonElement>(null);
-  // chosen from the line under it: the keys go to the item that now leads (its button was the one chosen, and has gone)
+  // chosen from the line under it: the keys go to the line that now leads (its button was the one chosen, and has gone)
   const moved = useRef<string | null>(null);
+  const leadKey = waiting === "top" ? WAITING_KEY : (top?.key ?? null);
   useEffect(() => {
-    if (top && moved.current === top.key) {
+    if (leadKey !== null && moved.current === leadKey) {
       moved.current = null;
       doneRef.current?.focus({ preventScroll: true });
     }
-  }, [top]);
-  if (!ready || !top) return null;
+  }, [leadKey]);
+  // (a waiting row held after an act elsewhere is words only: nothing to say or do here for it)
+  const task = waitingRow?.task?.kind === "waiting" ? waitingRow.task : null;
+  if (!ready || (waiting === "top" ? !task : !top)) return null;
   const now = Date.now();
-  const text = readerText(top);
-  // plan 210 (iteration 4): an open item with a day to change (a person's ask has none)
-  const change = changeOfItem(top);
   return (
     // the summary card's surface and inset (plan 181): a model's reading, not the sender's words
     <section aria-label={t("dated.section")} data-testid="thread-dated" className={cn(AI_CARD, AI_INSET, "mb-4")}>
-      <div
-        data-testid="thread-dated-item"
-        data-source={top.source}
-        data-kind={top.source === "dated" ? top.row.kind : "promise"}
-        data-target={targeted || undefined}
-        data-closed={!top.open || undefined}
-        // plan 210 (iteration 5, R8): the sentence on a line of its own, the card's whole width, and its controls under it on
-        // the same edge (Done's outline on the sentence's first letter), never five controls squeezing it into a column
-        className="flex flex-col items-start gap-2 pt-3 pb-2.5 text-sm"
-      >
-        <span data-testid="thread-dated-text" className={cn(AI_TITLE, "w-full min-w-0 text-pretty wrap-anywhere tabular", !top.open && "text-muted-foreground")}>{readerLine(top, now)}</span>
-        {top.open ? (
-          // Done outlined (what's usually meant), Later and Remove quiet beside it; on a narrow card they wrap, never shrink
-          <span data-testid="thread-dated-controls" className="flex flex-wrap items-center gap-1.5">
-            <Button ref={doneRef} variant="outline" size="sm" className="text-foreground" data-testid="thread-dated-done" aria-label={t("dated.doneItem", { text })} onClick={() => void actOnReaderItem(threadId, top, "done")}>
-              {t("dated.done")}
-            </Button>
-            <ItemLater key={top.key} item={top} act={(at) => void actOnReaderItem(threadId, top, "later", at)} />
-            {change && <ItemChange key={`change:${top.key}`} item={top} target={change} />}
-            {/* plan 210 (iteration 4): Hand to…, the forward opening under this line, in the reader */}
-            <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" data-testid="thread-dated-hand" aria-label={t("whatMatters.handTo.item", { text })} onClick={() => void handTo(seenOfReaderItem(top))}>
-              {t("whatMatters.handTo.action")}
-            </Button>
-            <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" data-testid="thread-dated-dismiss" aria-label={t("dated.removeItem", { text })} onClick={() => void actOnReaderItem(threadId, top, "dismiss")}>
-              {t("dated.remove")}
-            </Button>
-          </span>
-        ) : (
-          // a history line opened: it's done, so what happened, no buttons
-          <span data-testid="thread-dated-outcome" className="shrink-0 text-muted-foreground tabular">{outcomeOf(top)}</span>
-        )}
-      </div>
-      {change && top.row.proposal && <ItemProposal item={top} target={change} proposal={top.row.proposal} />}
-      {others.length > 0 && (
+      {waiting === "top" ? <WaitingLine row={waitingRow!} task={task!} doneRef={doneRef} now={now} /> : <ItemLine threadId={threadId} item={top!} targeted={targeted} doneRef={doneRef} now={now} />}
+      {(others.length > 0 || (waiting === "also" && task)) && (
         // the label, then the items one under another on their own edge (wide); narrow, the label above them
         <div role="group" aria-labelledby={alsoId} data-testid="thread-dated-also" className="-mt-1 flex flex-col gap-1 pb-3 text-sm @min-[600px]:flex-row @min-[600px]:gap-x-3">
           <span id={alsoId} className="shrink-0 text-muted-foreground">{t("dated.also")}</span>
           <span className="flex min-w-0 flex-col items-start gap-1">
+            {waiting === "also" && task && (
+              <AlsoButton
+                lineKey={WAITING_KEY}
+                onClick={() => {
+                  moved.current = WAITING_KEY;
+                  chooseWaiting();
+                }}
+              >
+                {waitingWords(waitingRow!, task, now)}
+              </AlsoButton>
+            )}
             {others.map((o) => (
-              // quiet, as the label: the ink when pointed at, what can be chosen
-              <Button
+              <AlsoButton
                 key={o.key}
-                variant="link-secondary"
-                data-testid="thread-dated-also-item"
-                data-key={o.key}
-                className="justify-start text-start font-normal whitespace-normal text-muted-foreground tabular hover:text-foreground"
+                lineKey={o.key}
                 onClick={() => {
                   moved.current = o.key;
                   choose(o);
                 }}
               >
                 {readerLine(o, now)}
-              </Button>
+              </AlsoButton>
             ))}
           </span>
         </div>
       )}
     </section>
+  );
+}
+
+/** One of the Also line's: quiet, as the label; the ink when pointed at, what can be chosen. */
+function AlsoButton({ lineKey, onClick, children }: { lineKey: string; onClick: () => void; children: string }) {
+  return (
+    <Button variant="link-secondary" data-testid="thread-dated-also-item" data-key={lineKey} className="justify-start text-start font-normal whitespace-normal text-muted-foreground tabular hover:text-foreground" onClick={onClick}>
+      {children}
+    </Button>
+  );
+}
+
+/** The lead line's layout: the sentence on a line of its own, its controls (or what happened) under it on the same edge. */
+const LINE = "flex flex-col items-start gap-2 pt-3 pb-2.5 text-sm";
+const LINE_TEXT = cn(AI_TITLE, "w-full min-w-0 text-pretty wrap-anywhere tabular");
+const QUIET = "text-muted-foreground hover:text-foreground";
+
+/** An item leading the card: its line, and Done · Later · Change… · Hand to… · Remove (a history line's: what happened). */
+function ItemLine({ threadId, item, targeted, doneRef, now }: { threadId: number; item: ReaderItem; targeted: boolean; doneRef: Ref<HTMLButtonElement>; now: number }) {
+  const text = readerText(item);
+  // plan 210 (iteration 4): an open item with a day to change (a person's ask has none)
+  const change = changeOfItem(item);
+  return (
+    <>
+      <div
+        data-testid="thread-dated-item"
+        data-source={item.source}
+        data-kind={item.source === "dated" ? item.row.kind : "promise"}
+        data-target={targeted || undefined}
+        data-closed={!item.open || undefined}
+        // plan 210 (iteration 5, R8): the sentence on a line of its own, the card's whole width, and its controls under it on
+        // the same edge (Done's outline on the sentence's first letter), never five controls squeezing it into a column
+        className={LINE}
+      >
+        <span data-testid="thread-dated-text" className={cn(LINE_TEXT, !item.open && "text-muted-foreground")}>{readerLine(item, now)}</span>
+        {item.open ? (
+          // Done outlined (what's usually meant), Later and Remove quiet beside it; on a narrow card they wrap, never shrink
+          <span data-testid="thread-dated-controls" className="flex flex-wrap items-center gap-1.5">
+            <Button ref={doneRef} variant="outline" size="sm" className="text-foreground" data-testid="thread-dated-done" aria-label={t("dated.doneItem", { text })} onClick={() => keepingFocus(() => void actOnReaderItem(threadId, item, "done"))}>
+              {t("dated.done")}
+            </Button>
+            <ItemLater key={item.key} text={text} span={itemSpan(item, now)} act={(at) => keepingFocus(() => void actOnReaderItem(threadId, item, "later", at))} />
+            {change && <ItemChange key={`change:${item.key}`} item={item} target={change} />}
+            {/* plan 210 (iteration 4): Hand to…, the forward opening under this line, in the reader */}
+            <Button variant="ghost" size="sm" className={QUIET} data-testid="thread-dated-hand" aria-label={t("whatMatters.handTo.item", { text })} onClick={() => void handTo(seenOfReaderItem(item))}>
+              {t("whatMatters.handTo.action")}
+            </Button>
+            <Button variant="ghost" size="sm" className={QUIET} data-testid="thread-dated-dismiss" aria-label={t("dated.removeItem", { text })} onClick={() => keepingFocus(() => void actOnReaderItem(threadId, item, "dismiss"))}>
+              {t("dated.remove")}
+            </Button>
+          </span>
+        ) : (
+          // a history line opened: it's done, so what happened, no buttons
+          <span data-testid="thread-dated-outcome" className="shrink-0 text-muted-foreground tabular">{outcomeOf(item)}</span>
+        )}
+      </div>
+      {change && item.row.proposal && <ItemProposal item={item} target={change} proposal={item.row.proposal} />}
+    </>
+  );
+}
+
+/** Plan 216: who's waiting, and the feed row's own when ("since Oct 21", "back Fri 9:00 AM"). */
+const waitingWords = (row: FeedRow, task: Extract<TodayTask, { kind: "waiting" }>, now: number): string => waitingLine(task.name, (row.entry && todayWhen(row.entry, now).text) ?? "");
+
+/**
+ * Plan 216: the feed's open row a person waiting on you, leading the card: its line, then the row's own Done · Later ·
+ * Remove (`actOnTodayRow`, as its hover controls, D, b, ⇧D, the menu and the palette). Its Later is the task's as drawn: a
+ * newer message or another window's choice is another task, and remounts it (closing what was open: Codex review, #4).
+ */
+function WaitingLine({ row, task, doneRef, now }: { row: FeedRow; task: Extract<TodayTask, { kind: "waiting" }>; doneRef: Ref<HTMLButtonElement>; now: number }) {
+  const act = (action: "done" | "dismiss" | "later", at?: number) => keepingFocus(() => void actOnTodayRow(row.id, task, action, at));
+  return (
+    <div data-testid="thread-dated-item" data-source="waiting" data-target className={LINE}>
+      <span data-testid="thread-dated-text" className={LINE_TEXT}>{waitingWords(row, task, now)}</span>
+      <span data-testid="thread-dated-controls" className="flex flex-wrap items-center gap-1.5">
+        <Button ref={doneRef} variant="outline" size="sm" className="text-foreground" data-testid="thread-dated-done" aria-label={t("dated.doneItem", { text: task.name })} onClick={() => act("done")}>
+          {t("dated.done")}
+        </Button>
+        <ItemLater key={`${row.id}:${task.message}:${task.rev}`} text={task.name} span={laterWindow(task, now)} act={(at) => act("later", at)} />
+        <Button variant="ghost" size="sm" className={QUIET} data-testid="thread-dated-dismiss" aria-label={t("dated.removeItem", { text: task.name })} onClick={() => act("dismiss")}>
+          {t("dated.remove")}
+        </Button>
+      </span>
+    </div>
   );
 }

@@ -26,8 +26,8 @@ const draft = dated({ id: 1, text: "Send Jess your draft" });
 const board = dated({ id: 2, kind: "event", text: "Board meeting", dueAt: at(24, 8), timed: true });
 const script = promise({ id: 9, text: "send Jess the script" });
 const nudge = promise({ id: 10, kind: "awaiting", text: "" });
-const read = (o: { target?: ItemRef[]; chosen?: string | null; dated?: DatedRow[]; followups?: FollowupRow[] } = {}) =>
-  readerItems({ dated: o.dated ?? [draft, board], followups: o.followups ?? [], target: o.target ?? [], chosen: o.chosen ?? null, now: NOW });
+const read = (o: { target?: ItemRef[]; chosen?: string | null; dated?: DatedRow[]; followups?: FollowupRow[]; waiting?: boolean } = {}) =>
+  readerItems({ dated: o.dated ?? [draft, board], followups: o.followups ?? [], target: o.target ?? [], chosen: o.chosen ?? null, waiting: o.waiting ?? false, now: NOW });
 const keys = (r: ReturnType<typeof read>) => [r.top?.key, ...r.others.map((o) => o.key)];
 
 describe("the reader's one line (plan 210, iteration 3, Codex revision 10)", () => {
@@ -167,5 +167,34 @@ describe("the summary's To do, less what the line says (Codex revision 10)", () 
     expect(repeatsItem("Send the full draft by Monday", ["Send Ingrid the full draft of Chapter 2"])).toBe(true);
     // but a name is all that tells two errands apart, it counts
     expect(repeatsItem("Pay Pingwire", ["Pay Stratus"])).toBe(false);
+  });
+});
+
+describe("plan 216: the open row a person waiting on you", () => {
+  it("leads the card: the conversation's items are its Also line; with none, the line alone", () => {
+    const r = read({ waiting: true });
+    expect([r.top, r.others.map((i) => i.key), r.waiting, r.chose, r.targeted]).toEqual([null, ["dated:2", "dated:1"], "top", false, false]);
+    expect(read({ waiting: true, dated: [] })).toEqual({ top: null, others: [], targeted: false, chose: false, waiting: "top" });
+  });
+
+  it("an item chosen under it leads, by the user's choice (the keys' too), and the waiting line is on the Also line", () => {
+    const r = read({ waiting: true, chosen: "dated:2" });
+    expect([r.top?.key, r.others.map((i) => i.key), r.waiting, r.chose]).toEqual(["dated:2", ["dated:1"], "also", true]);
+    // a choice no longer there: the waiting line leads again
+    expect(read({ waiting: true, chosen: "dated:99" }).waiting).toBe("top");
+  });
+
+  it("a chosen member of a merged pair leads as chosen, whichever member its line shows (Codex review of plan 216, #3)", () => {
+    const twin = dated({ id: 5, text: "Send Jess your draft", sameAs: "dated:1" });
+    const r = read({ dated: [draft, twin, board], chosen: "dated:5" });
+    expect([r.top?.key, r.chose]).toEqual(["dated:1", true]);
+    expect(read({ dated: [draft, twin, board] }).chose).toBe(false);
+  });
+
+  it("its words: who, and the feed row's when (en, es)", async () => {
+    const { waitingLine } = await import("./reader-items");
+    expect(waitingLine("Lucas Fajardo", "since Oct 21")).toBe("Lucas Fajardo is waiting on your reply\u00a0·\u00a0since Oct 21");
+    setLocale("es", (await import("@terno/i18n/locales/es")).default as never);
+    expect(waitingLine("Lucas Fajardo", "desde 21 oct")).toBe("Lucas Fajardo espera tu respuesta\u00a0·\u00a0desde 21 oct");
   });
 });

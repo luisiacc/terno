@@ -27,6 +27,13 @@ export interface ReaderItems {
   others: ReaderItem[];
   /** the top one is what the feed's open row is */
   targeted: boolean;
+  /** the top one is there by the user's choice (from the line under it): what D, b, ⇧D and the palette act on */
+  chose: boolean;
+  /**
+   * plan 216: the feed's open row is this conversation's waiting row: its line leads the card (`top` null, the items its
+   * Also), or, with an item chosen leading, it's the first on the Also line
+   */
+  waiting: "top" | "also" | null;
 }
 
 export interface ReaderInput {
@@ -38,15 +45,18 @@ export interface ReaderInput {
   target: readonly ItemRef[];
   /** an item chosen from the line under the top one, by its key: it's on top while it's there */
   chosen: string | null;
+  /** plan 216: the feed's open row is this conversation's waiting row (a person waiting isn't an item: the row is its own) */
+  waiting: boolean;
   now: number;
 }
 
-const NONE: ReaderItems = { top: null, others: [], targeted: false };
+const NONE: ReaderItems = { top: null, others: [], targeted: false, chose: false, waiting: null };
+const WAITING: ReaderItems = { ...NONE, waiting: "top" };
 
 /** A promise of yours still to keep: open, or due (follow-ups' "it's time"). */
 const openPromise = (r: FollowupRow): boolean => r.state === "open" || r.state === "due";
 
-export function readerItems({ dated, followups, target, chosen, now }: ReaderInput): ReaderItems {
+export function readerItems({ dated, followups, target, chosen, waiting, now }: ReaderInput): ReaderItems {
   const targetKeys = new Set(target.map(refKey));
   const items: ReaderItem[] = [];
   // plan 210 (iteration 4, design point 2): a request an open promise of yours answers is that promise's line, never a
@@ -72,7 +82,7 @@ export function readerItems({ dated, followups, target, chosen, now }: ReaderInp
     const day = promiseDay(row, now);
     items.push({ key: refKey(ref), ref, open, missed: open && day.dated && now >= dueCutoff(dayKeyOf(day.dueAt), day.part), dueAt: day.dueAt, source: "promise", row });
   }
-  if (!items.length) return NONE;
+  if (!items.length) return waiting ? WAITING : NONE;
   // one thing read twice is one line: the feed's open row's members together, else each with its canonical
   const groupOf = (i: ReaderItem): string => {
     const same = i.row.sameAs ?? null;
@@ -95,10 +105,19 @@ export function readerItems({ dated, followups, target, chosen, now }: ReaderInp
   // Missed first, then soonest (the order the conversation's own line always had)
   const order = (a: ReaderItem, b: ReaderItem) => Number(b.missed) - Number(a.missed) || a.dueAt - b.dueAt;
   const open = lines.filter((l) => l.item.open).sort((a, b) => order(a.item, b.item));
-  const top = (chosen !== null ? lines.find((l) => l.keys.includes(chosen) && l.item.open) : undefined) ?? lines.find((l) => l.id === "target") ?? open[0];
+  const picked = chosen !== null ? lines.find((l) => l.keys.includes(chosen) && l.item.open) : undefined;
+  // plan 216: the open row a person waiting on you: its line leads, unless an item was chosen under it
+  if (waiting) return { top: picked?.item ?? null, others: open.filter((l) => l !== picked).map((l) => l.item), targeted: false, chose: picked !== undefined, waiting: picked ? "also" : "top" };
+  const top = picked ?? lines.find((l) => l.id === "target") ?? open[0];
   if (!top) return NONE;
-  return { top: top.item, others: open.filter((l) => l !== top).map((l) => l.item), targeted: top.id === "target" };
+  return { top: top.item, others: open.filter((l) => l !== top).map((l) => l.item), targeted: top.id === "target", chose: top === picked, waiting: null };
 }
+
+/**
+ * Plan 216: the open waiting row's line, its when the feed row's own: "Lucas Fajardo is waiting on your reply · since Oct 21",
+ * "… · back Fri 9:00 AM" (put off with Later).
+ */
+export const waitingLine = (name: string, when: string): string => t("whatMatters.waiting.line", { name, when });
 
 /** The line's words: "Due Friday · Pay the electricity bill", "Due today · You told Jess you'd send the script". */
 export function readerLine(item: ReaderItem, now = Date.now()): string {
