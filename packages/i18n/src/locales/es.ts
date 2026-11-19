@@ -2662,6 +2662,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   // plan 215: Done and Later on a conversation waiting on you, naming who wrote
   "whatMatters.waiting.done": "Hecho: {name}",
   "whatMatters.waiting.later": "Más tarde: {name}, vuelve {when}",
+  "whatMatters.waiting.removed": "Quitado de Lo importante: {name}",
   "whatMatters.waitingOnYou": "Te esperan",
   "whatMatters.ahead": "Para ir resolviendo",
   "whatMatters.weekOf": "Semana del {day}",

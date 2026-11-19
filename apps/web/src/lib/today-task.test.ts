@@ -391,12 +391,23 @@ describe("plan 215: a conversation waiting on you", () => {
     useToday.setState({ laterPick: null });
   });
 
-  it("⇧D, ⇧B and ⇧F leave the key alone: Remove, Change… and Hand to… are an item's", () => {
-    expect(removeOnSelected()).toBe(false);
+  it("⇧B and ⇧F leave the key alone: Change… and Hand to… are an item's", () => {
     expect(changeOnSelected()).toBe(false);
     expect(handOnSelected()).toBe(false);
     expect(shown()).toContain("waiting:8");
     expect(remindLimit({ task: task("waiting:8") })).toBeNull();
+  });
+
+  it("plan 216: ⇧D removes it from What matters (its act at what the row was drawn at), the row leaving at once; Undo brings it back", async () => {
+    const acts: unknown[] = [];
+    const act = fake.handlers["today.waitingAct"]!;
+    fake.handlers["today.waitingAct"] = async (p) => (acts.push(p), act(p));
+    expect(removeOnSelected()).toBe(true);
+    expect(shown()).not.toContain("waiting:8");
+    await vi.waitFor(() => expect(acts).toEqual([{ threadId: 8, since: 700, message: 80, rev: 0, action: "remove" }]));
+    await vi.waitFor(() => expect(useSnack.getState().undo).toBeTruthy());
+    await undo();
+    expect(shown()).toContain("waiting:8");
   });
 });
 

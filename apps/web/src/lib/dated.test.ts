@@ -110,7 +110,7 @@ describe("plan 215: a conversation waiting on you", () => {
     expect(taskOf({ kind: "reminder", dueAt: 5 }, 0, thread)).toBeNull();
   });
 
-  it("Done and Later go to the waiting act with their Undo, naming who wrote and when it's back (en, es); Remove isn't one", async () => {
+  it("Done, Later and (plan 216) Remove go to the waiting act with their Undo, naming who wrote and when it's back (en, es)", async () => {
     const { taskOf, laterWindow } = await import("./dated");
     const { setLocale } = await import("@terno/i18n");
     const { default: en } = await import("@terno/i18n/locales/en");
@@ -121,15 +121,16 @@ describe("plan 215: a conversation waiting on you", () => {
     await actOnTask(task, "done");
     await actOnTask(task, "later", friday);
     await actOnTask(task, "dismiss");
-    expect(calls).toEqual(["today.waitingAct", "today.waitingAct"]);
-    expect(params).toEqual([{ threadId: 12, since: 500, message: 90, rev: 0, action: "done" }, { threadId: 12, since: 500, message: 90, rev: 0, action: "later", until: friday }]);
-    expect(said).toEqual([{ text: "Done: Tomas Santarcieri", undo: true }, { text: "Later: Tomas Santarcieri, back Jan 2, 2099 9:00 AM", undo: true }]);
+    expect(calls).toEqual(["today.waitingAct", "today.waitingAct", "today.waitingAct"]);
+    expect(params).toEqual([{ threadId: 12, since: 500, message: 90, rev: 0, action: "done" }, { threadId: 12, since: 500, message: 90, rev: 0, action: "later", until: friday }, { threadId: 12, since: 500, message: 90, rev: 0, action: "remove" }]);
+    expect(said).toEqual([{ text: "Done: Tomas Santarcieri", undo: true }, { text: "Later: Tomas Santarcieri, back Jan 2, 2099 9:00 AM", undo: true }, { text: "Removed from What matters: Tomas Santarcieri", undo: true }]);
     setLocale("es", es);
     try {
       said.length = 0;
       await actOnTask(task, "done");
       await actOnTask(task, "later", friday);
-      expect(said.map((x) => x.text)).toEqual(["Hecho: Tomas Santarcieri", expect.stringMatching(/^Más tarde: Tomas Santarcieri, vuelve /u)]);
+      await actOnTask(task, "dismiss");
+      expect(said.map((x) => x.text)).toEqual(["Hecho: Tomas Santarcieri", expect.stringMatching(/^Más tarde: Tomas Santarcieri, vuelve /u), "Quitado de Lo importante: Tomas Santarcieri"]);
     } finally {
       setLocale("en", en);
     }

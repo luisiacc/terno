@@ -2689,6 +2689,7 @@ It contains none of your mail, contacts, settings or keys.
   // plan 215: Done and Later on a conversation waiting on you, naming who wrote
   "whatMatters.waiting.done": "Done: {name}",
   "whatMatters.waiting.later": "Later: {name}, back {when}",
+  "whatMatters.waiting.removed": "Removed from What matters: {name}",
   // plan 210 (iteration 3, the owner): people's asks and requests shown early, a quiet part of Today
   "whatMatters.waitingOnYou": "Waiting on you",
   // plan 210 (iteration 5, revision 5; the owner): what shows past the seven days, one heading with no date in it

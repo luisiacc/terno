@@ -167,8 +167,8 @@ export type TodayTask = (
   | { kind: "dated"; item: DatedRef; when: string | null; due: string | null; dueAt: number; noDay?: boolean; text?: string | null }
   | { kind: "promise"; id: number; revision: number; when: string | null; due: string | null; dated?: boolean; noDay?: boolean; person?: TaskPerson; text?: string | null; /** plan 210 (iteration 4): its moment and whether it's a time, where Change… starts */ dueAt?: number; timed?: boolean; /** plan 210 (iteration 5's code review): the part of its day it sits under, where its day ends */ part?: PartOfDay | null;/** plan 210 (iteration 4): the reply's other promises the row shows, acted on with it */ with?: ItemSeen[] }
   /**
-   * plan 215: a conversation waiting on you: Done ("no reply needed") and Later only, at its waiting date and record's
-   * revision as drawn (`TodayWhy.reply`); `name`, who wrote, what its snack names; no day of its own
+   * plan 215: a conversation waiting on you: Done ("no reply needed"), Later and (plan 216) Remove, at its waiting date and
+   * record's revision as drawn (`TodayWhy.reply`); `name`, who wrote, what its snack names; no day of its own
    */
   | { kind: "waiting"; threadId: number; since: number; message: number; rev: number; name: string; when?: null; due?: null; noDay: true; text?: null }
 ) & {
@@ -188,7 +188,7 @@ function personOf(why: TodayWhy): TaskPerson | undefined {
   return name ? { name, email } : undefined;
 }
 
-/** A task that is an item (a dated item or a promise of yours): what Change…, Hand to… and Remove take. */
+/** A task that is an item (a dated item or a promise of yours): what Change… and Hand to… take. */
 export type ItemTask = Exclude<TodayTask, { kind: "waiting" }>;
 
 /**
@@ -320,17 +320,18 @@ export async function actOnDated(item: Pick<DatedRef, "id" | "revision"> & { tex
 
 /**
  * Plan 215: what the snack says of Done and Later on a conversation waiting on you, naming who wrote: "Done: Tomas
- * Santarcieri", "Later: Tomas Santarcieri, back Fri 9:00 AM".
+ * Santarcieri", "Later: Tomas Santarcieri, back Fri 9:00 AM"; plan 216, "Removed from What matters: Tomas Santarcieri".
  */
-export function waitingSaid(action: "done" | "later", name: string, at?: number, now = Date.now()): string {
+export function waitingSaid(action: "done" | "dismiss" | "later", name: string, at?: number, now = Date.now()): string {
   const who = shortened(name.trim());
+  if (action === "dismiss") return t("whatMatters.waiting.removed", { name: who });
   return action === "later" && at !== undefined ? t("whatMatters.waiting.later", { name: who, when: backWhen(at, now) }) : t("whatMatters.waiting.done", { name: who });
 }
 
-/** Plan 215: Done and Later on a conversation waiting on you, with an Undo that puts it back exactly (or says it changed). */
-async function actOnWaiting(task: Extract<TodayTask, { kind: "waiting" }>, action: "done" | "later", at?: number, left?: LeftRows): Promise<void> {
+/** Plan 215: Done, Later and (plan 216) Remove on a conversation waiting on you, with an Undo that puts it back exactly (or says it changed). */
+async function actOnWaiting(task: Extract<TodayTask, { kind: "waiting" }>, action: "done" | "dismiss" | "later", at?: number, left?: LeftRows): Promise<void> {
   try {
-    const { undoId } = await client.call("today.waitingAct", { threadId: task.threadId, since: task.since, message: task.message, rev: task.rev, action, ...(at !== undefined ? { until: at } : {}) });
+    const { undoId } = await client.call("today.waitingAct", { threadId: task.threadId, since: task.since, message: task.message, rev: task.rev, action: action === "dismiss" ? "remove" : action, ...(at !== undefined ? { until: at } : {}) });
     const run = () => client.call("today.waitingUndo", { undoId }).then(() => undefined);
     const undo = registerUndo(() => (left ? left.undo(run) : run()));
     snack.success(waitingSaid(action, task.name, at), { action: { label: t("common.undo"), name: t("dated.undo"), undo } });
@@ -343,8 +344,8 @@ async function actOnWaiting(task: Extract<TodayTask, { kind: "waiting" }>, actio
 /** The same three on a Today row's task: a promise through follow-ups' act (its revision, its Undo), in Today's words. */
 export async function actOnTask(task: TodayTask, action: "done" | "dismiss" | "later", at?: number, left?: LeftRows): Promise<void> {
   if (task.kind === "dated") return actOnDated({ ...task.item, text: task.text }, action, at, left);
-  // plan 215: a conversation waiting on you has Done and Later only (Remove is an item's)
-  if (task.kind === "waiting") return action === "dismiss" ? undefined : actOnWaiting(task, action, at, left);
+  // plan 215: a conversation waiting on you, its own act (plan 216: Remove too, off What matters only)
+  if (task.kind === "waiting") return actOnWaiting(task, action, at, left);
   try {
     const { undoId } = await client.call("followups.act", { id: task.id, revision: task.revision, action, ...(at !== undefined ? { dueAt: at } : {}), ...(task.with ? { with: task.with } : {}) });
     said(action, task.text, undoId === null ? null : () => client.call("followups.undo", { undoId }).then(() => undefined), "followup.undo", left);

@@ -145,8 +145,7 @@ function keyTarget(): { row: FeedRow & { task: TodayTask }; next: FeedRowId | un
 /** D (Done) and ⇧D (Remove) on the key's row, the keys going on as from the open one. */
 function actOnKeyTarget(action: "done" | "dismiss"): boolean {
   const target = keyTarget();
-  // plan 215: Remove is an item's: on a conversation waiting on you, ⇧D is left alone
-  if (!target || (action === "dismiss" && "row" in target && target.row.task.kind === "waiting")) return false;
+  if (!target) return false;
   if ("item" in target) void actOnReaderItem(target.threadId, target.item, action);
   else {
     void actOnTodayRow(target.row.id, target.row.task, action);

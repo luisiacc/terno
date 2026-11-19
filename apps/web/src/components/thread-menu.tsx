@@ -484,7 +484,7 @@ function TaskItems({ threadId }: { threadId: number }) {
           <MenuNote id={changeId} testId="menu-dated-change-note" text={t("whatMatters.menu.changeSets")} />
         </>
       )}
-      {/* plan 215: a conversation waiting on you has Done and Later only: Hand to… and Remove are an item's */}
+      {/* plan 215: Hand to… is an item's: a conversation waiting on you has none */}
       {task.kind !== "waiting" && (
         <>
           {/* plan 210 (iteration 4): Hand to…, an inline forward asking someone to take care of it (its composer takes focus, as
@@ -495,16 +495,17 @@ function TaskItems({ threadId }: { threadId: number }) {
             {hint("today.handTo")}
           </ContextMenuItem>
           <MenuNote id={handId} testId="menu-dated-hand-note" text={t("whatMatters.menu.handForwards")} />
-          {/* plan 210 (iteration 3): Remove says what it removes from, last of What matters' own and a separator away from the
-              mail's (Delete further on), with what it leaves under it, at its label's edge, as the menu's other notes */}
-          <ContextMenuItem data-testid="menu-dated-dismiss" data-wide aria-describedby={keepsId} onClick={() => void actOnTodayRow(rowId, task, "dismiss")}>
-            <Ban />
-            <span className="min-w-0 flex-1 truncate">{t("whatMatters.menu.remove")}</span>
-            {hint("today.remove")}
-          </ContextMenuItem>
-          <MenuNote id={keepsId} testId="menu-dated-keeps" text={t("whatMatters.menu.removeKeeps")} />
         </>
       )}
+      {/* plan 210 (iteration 3): Remove says what it removes from, last of What matters' own and a separator away from the
+          mail's (Delete further on), with what it leaves under it, at its label's edge, as the menu's other notes; plan 216, a
+          conversation waiting on you's too (off What matters only: it still waits in the Inbox) */}
+      <ContextMenuItem data-testid="menu-dated-dismiss" data-wide aria-describedby={keepsId} onClick={() => void actOnTodayRow(rowId, task, "dismiss")}>
+        <Ban />
+        <span className="min-w-0 flex-1 truncate">{t("whatMatters.menu.remove")}</span>
+        {hint("today.remove")}
+      </ContextMenuItem>
+      <MenuNote id={keepsId} testId="menu-dated-keeps" text={t("whatMatters.menu.removeKeeps")} />
       <ContextMenuSeparator />
     </>
   );
