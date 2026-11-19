@@ -554,6 +554,8 @@ function SimilarItems({ action, ids }: { action: SimilarAction; ids: number[] })
     };
   }, [action, ids]);
   const shown = offers ? orderOffers(visibleOffers(action, offers.offers)) : [];
+  // plan 217: every offer catches their new mail too; each says so to a screen reader before it runs
+  const noteId = useId();
   // what a delete would take reads as one, however many it is
   const variant = action === "trash" ? "destructive" : undefined;
   return (
@@ -562,11 +564,9 @@ function SimilarItems({ action, ids }: { action: SimilarAction; ids: number[] })
       <ContextMenuItem data-testid="menu-similar-only" variant={variant} onClick={() => void act(action, ids, { automation: "none" })}>
         <span className="min-w-0 flex-1 truncate">{t(`offers.onlyThis.${action}`, { count: ids.length })}</span>
       </ContextMenuItem>
-      {action === "spam" && (
-        <div className="max-w-80 px-2 py-1 text-xs text-muted-foreground" data-testid="menu-spam-similar-note">
-          {t("similar.spamFuture")}
-        </div>
-      )}
+      <div id={noteId} className="max-w-80 px-2 py-1 text-xs text-muted-foreground" data-testid={`menu-${action}-similar-note`}>
+        {t(`similar.menuFuture.${action}`)}
+      </div>
       {!offers ? (
         <ContextMenuItem disabled data-testid="menu-similar-counting">
           {t("similar.counting")}
@@ -579,7 +579,7 @@ function SimilarItems({ action, ids }: { action: SimilarAction; ids: number[] })
         shown.map((o) => {
           const sentence = offerSentence(action, o, offers.senderName);
           return (
-            <ContextMenuItem key={o.scope.kind} data-testid={`menu-similar-${o.scope.kind}`} variant={variant} title={sentence} onClick={() => void actSimilar(action, ids, o.scope, offers.senderName)}>
+            <ContextMenuItem key={o.scope.kind} data-testid={`menu-similar-${o.scope.kind}`} variant={variant} title={sentence} aria-describedby={noteId} onClick={() => void actSimilar(action, ids, o.scope, offers.senderName)}>
               <span className="min-w-0 flex-1 truncate">
                 {sentence}
                 {/* a named sender carries its address, muted, so same-named senders tell apart */}

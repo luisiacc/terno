@@ -82,19 +82,12 @@ async function undoSimilar(u: SimilarUndo, original: Undo | undefined): Promise<
   }
 }
 
-/** "Always" after an archive or delete: the scope as a filter for future mail. */
-function always(scope: SimilarScope, action: SimilarAction): void {
-  void client.call("similar.always", { scope, action, filterName: filterNameOf(scope, action) }).then(
-    () => void snack.success(t("category.filterCreated"), { action: { label: t("common.edit"), name: t("category.editFilter"), onClick: () => setApp({ dialog: "filters" }) } }),
-    (e: unknown) => void snack.error(t("category.filterFailed", { error: errorText(e) })),
-  );
-}
-
 /**
  * Archives, deletes or spams a similar scope on the backend (sliced, with
- * progress), plus `threadIds` that are still in place. Spam also catches
- * future mail. One Undo takes back the sweep, the filter and `original`
- * (the action the snackbar's chip followed).
+ * progress), plus `threadIds` that are still in place. Plan 217: acting on
+ * similar mail means this kind of mail, so its future mail is caught too (a
+ * filter, made first), for every action. One Undo takes back the sweep, the
+ * filter and `original` (the action the snackbar's chip followed).
  */
 export async function applySimilar(action: SimilarAction, threadIds: readonly number[], scope: SimilarScope, o: { senderName: string | null; original?: Undo }): Promise<void> {
   const label = scopeLabel(scope, o.senderName);
@@ -104,25 +97,28 @@ export async function applySimilar(action: SimilarAction, threadIds: readonly nu
   const outcome = new Promise<SimilarUndo>((r) => (settle = r));
   const undo = registerUndo(() => outcome.then((u) => undoSimilar(u, o.original)));
   try {
-    const r = await client.call("similar.apply", { threadIds: [...threadIds], scope, action, jobId: progress.jobId, filterName: action === "spam" ? filterNameOf(scope, action) : undefined });
+    const r = await client.call("similar.apply", { threadIds: [...threadIds], scope, action, jobId: progress.jobId, filterName: filterNameOf(scope, action), always: true });
     settle({ undoId: r.undoId, filterUndo: r.filter?.filterUndo ?? null, n: r.affected });
     // undone meanwhile: its own snacks say so
     if (undo.state !== "ready") return void dismissSnack(progress.snackId);
-    const notes = [r.skipped > 0 ? t("similar.skipped", { count: r.skipped }) : null, action === "spam" ? t(r.filterFailed ? "similar.filterFailed" : "similar.future") : null].filter((n): n is string => n !== null);
+    const notes = [r.skipped > 0 ? t("similar.skipped", { count: r.skipped }) : null, r.filterFailed ? t("similar.filterFailed") : r.filter ? t(`similar.future.${action}`) : null].filter((n): n is string => n !== null);
     const undoable = r.undoId !== null || r.filter?.filterUndo != null || o.original?.state === "ready";
     snack[r.filterFailed ? "warning" : "success"](t(`similar.done.${action}`, { count: r.affected, scope: label }), {
       id: progress.snackId,
       duration: 10_000,
       description: notes.join(" ") || undefined,
       action: undoable ? { ...undoAction(undo, t("similar.undoName")) } : undefined,
-      secondary: action === "spam" ? undefined : { label: t("similar.always"), name: t("similar.alwaysName"), onClick: () => always(scope, action) },
+      // the rule is a default: changing or removing it is one step away (Undo takes back everything)
+      secondary: r.filter && !r.filterFailed ? { label: t("common.edit"), name: t("similar.editRule"), onClick: () => setApp({ dialog: "filters" }) } : undefined,
     });
   } catch (error) {
-    // the slices that committed come back with an undo
-    const undoId = error instanceof RpcError ? (error.details as { undoId?: number } | undefined)?.undoId ?? null : null;
-    settle({ undoId, filterUndo: null, n: 0 });
+    // the slices that committed come back with an undo, and the filter made before them
+    const details = error instanceof RpcError ? (error.details as { undoId?: number; filterUndo?: number } | undefined) : undefined;
+    const undoId = details?.undoId ?? null;
+    const filterUndo = details?.filterUndo ?? null;
+    settle({ undoId, filterUndo, n: 0 });
     captureUi(error, { code: "action.failed", fields: { action, count: threadIds.length } });
-    snack.error(t("similar.failed", { error: errorText(error) }), { id: progress.snackId, action: undoId !== null || o.original?.state === "ready" ? undoAction(undo, t("similar.undoName")) : undefined });
+    snack.error(t("similar.failed", { error: errorText(error) }), { id: progress.snackId, action: undoId !== null || filterUndo !== null || o.original?.state === "ready" ? undoAction(undo, t("similar.undoName")) : undefined });
   } finally {
     progress.stop();
     void reloadList({ keepSelection: true });

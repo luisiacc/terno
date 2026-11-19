@@ -34,8 +34,9 @@ const result = (page: Page, text: string | RegExp) => page.locator("[data-testid
 
 test.describe("similar mail", () => {
   test("similar mail: 1 archives the rest with one Undo; Mark similar as spam; the submenu by keyboard", async ({ app: page, server }) => {
-    await scenario("archiving one thread offers the rest from its sender: 1 archives them, one Undo brings back all", async () => {
+    await scenario("archiving one thread offers the rest from its sender: 1 archives them and their new mail, one Undo brings back all", async () => {
       const { email, ids, inInbox } = senderSetup(server);
+      const rules = async () => (await server.backend.store.filters.list()).filter((f) => f.rule.conditions.some((c) => "value" in c && c.value === email)).map((f) => [f.rule.conditions, f.rule.actions]);
       expect(ids.length).toBeGreaterThan(2);
       await selectThread(page, ids[0]!, `in:inbox from:${email}`);
       await page.keyboard.press("e");
@@ -49,6 +50,8 @@ test.describe("similar mail", () => {
       await expect(snack.getByTestId("similar-sender").locator("> :last-child")).toHaveText(/^\d$/);
       await expect(snack.getByTestId("similar-sender")).toHaveAttribute("aria-keyshortcuts", /^\d$/);
       await expect(snack.getByTestId("similar-sender-count")).toHaveText(`${ids.length - 1}`);
+      // plan 217: it says before the click that their new mail is archived too
+      await expect(snack.getByTestId("similar-sender-future")).toHaveText("+ new mail");
       await expect.poll(inInbox).toBe(ids.length - 1);
       // plan 91: archiving has no default; the lines are the category snackbar's, the same sender and subject first
       await expect(snack.getByTestId("snackbar-only")).toHaveCount(0);
@@ -59,11 +62,14 @@ test.describe("similar mail", () => {
       const done = result(page, `Archived ${ids.length - 1}`);
       await expect(done).toBeVisible();
       await expect.poll(inInbox).toBe(0);
-      // Always is offered for the future
-      await expect(done.getByTestId("snack-secondary")).toHaveText("Always");
+      // plan 217: always is the default: the rule is made with the sweep, said, and one step from its edit
+      await expect.poll(rules).toEqual([[[{ field: "from", op: "equals", value: email }], [{ type: "archive" }]]]);
+      await expect(done).toContainText("Future mail like this is archived too.");
+      await expect(done.getByTestId("snack-secondary")).toHaveText("Edit");
 
       await page.keyboard.press("z");
       await expect.poll(inInbox).toBe(ids.length);
+      await expect.poll(rules).toEqual([]);
     });
     await scenario("right-click → Mark similar as spam → sender: all of it goes to Spam and future mail with it; Undo takes both back", async () => {
       await fresh(page);

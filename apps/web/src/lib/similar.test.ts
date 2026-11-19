@@ -67,6 +67,36 @@ describe("applySimilar's one Undo (plan 63)", () => {
   });
 });
 
+describe("plan 217: always is the default", () => {
+  it("archive similar makes the rule too: the result says so and offers its edit, not Always", async () => {
+    handlers["similar.apply"] = async () => applied;
+    await applySimilar("archive", [], scope, { senderName: "B" });
+    expect(calls[0]!.params).toMatchObject({ action: "archive", always: true, filterName: "Archive: a@b.com" });
+    const current = useSnack.getState().current!;
+    expect(current.description).toBe("Future mail like this is archived too.");
+    expect(current.secondary).toMatchObject({ label: "Edit", name: "Edit the rule for future mail" });
+  });
+
+  it("a rule that couldn't be made says so, with no edit", async () => {
+    handlers["similar.apply"] = async () => ({ ...applied, filter: null, filterFailed: true });
+    await applySimilar("trash", [], scope, { senderName: "B" });
+    const current = useSnack.getState().current!;
+    expect(current.description).toBe("Couldn’t set up the rule for future mail. You can add it in Settings → Rules.");
+    expect(current.secondary).toBeUndefined();
+  });
+
+  it("a sweep failing after its rule was made: Undo takes the rule back too", async () => {
+    const { RpcError } = await import("@terno/core/rpc");
+    handlers["similar.apply"] = async () => {
+      throw new RpcError("INTERNAL", "disk full", { undoId: null, filterUndo: 4 });
+    };
+    handlers["similar.undo"] = async () => ({ restored: 0 });
+    await applySimilar("archive", [], scope, { senderName: "B" });
+    await runUndo(useSnack.getState().undo!);
+    expect(calls[1]).toEqual({ method: "similar.undo", params: { undoId: null, filterUndo: 4, jobId: undefined } });
+  });
+});
+
 describe("plan 158: an offer says what it will do", () => {
   const scope = {
     sender: { kind: "sender", email: "a@xataka.com" },

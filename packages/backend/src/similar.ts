@@ -1,6 +1,6 @@
 /**
  * Plan 63: the filters "similar" actions create (Spam similar always; Archive
- * and Delete when the user says Always). One at a time, so two applies never
+ * and Delete when asked, plan 217: the snack's and menu's default). One at a time, so two applies never
  * make two filters; Undo takes back only what it did, and only while the
  * filter is still exactly that.
  *

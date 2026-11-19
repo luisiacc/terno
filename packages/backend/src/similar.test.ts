@@ -1,7 +1,8 @@
 /**
  * Plan 63 on the backend: a similar scope archived, deleted or spammed in
- * slices with one undo; Spam also catches future mail with a filter that
- * Undo takes back (only while unchanged); stars added mid-sweep win.
+ * slices with one undo; Spam (and the others with `always`, plan 217) also
+ * catches future mail with a filter that Undo takes back (only while
+ * unchanged); stars added mid-sweep win.
  */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -60,6 +61,50 @@ describe("similar.apply", () => {
     expect(inInbox(db, [...many, target])).toEqual(Array(41).fill(1));
   });
 
+  it("plan 217: archive with always makes its filter before the sweep; one undo takes back the filter, then the mail", async () => {
+    const { backend, db, client, thread } = await setup();
+    const ids = [await thread(), await thread(), await thread()];
+    const act = backend.store.threads.act.bind(backend.store.threads);
+    const filtersAtSweep: number[] = [];
+    backend.store.threads.act = async (c) => {
+      filtersAtSweep.push((await backend.store.filters.list()).length);
+      return act(c);
+    };
+    const r = await client.call("similar.apply", { threadIds: [ids[0]!], scope: sender, action: "archive", filterName: "Archive: receipts@uber.com", always: true });
+    expect(r).toMatchObject({ affected: 3, filter: { id: expect.any(Number), filterUndo: expect.any(Number) }, filterFailed: false });
+    // the filter was there before the first slice: mail arriving mid-sweep is caught by it
+    expect(filtersAtSweep[0]).toBe(1);
+    expect(await backend.store.filters.list()).toEqual([expect.objectContaining({ name: "Archive: receipts@uber.com", enabled: true, rule: { match: "all", conditions: [{ field: "from", op: "equals", value: "receipts@uber.com" }], actions: [{ type: "archive" }] } })]);
+    await client.call("similar.undo", { undoId: r.undoId, filterUndo: r.filter!.filterUndo });
+    expect(await backend.store.filters.list()).toEqual([]);
+    expect(inInbox(db, ids)).toEqual([1, 1, 1]);
+  });
+
+  it("plan 217: a sweep that fails after some slices names its filter too; one refused before any leaves no filter", async () => {
+    const { backend, db, client, thread } = await setup();
+    const ids: number[] = [];
+    for (let i = 0; i < 60; i++) ids.push(await thread());
+    const act = backend.store.threads.act.bind(backend.store.threads);
+    let calls = 0;
+    backend.store.threads.act = async (c) => {
+      if (++calls === 3) throw new Error("disk full");
+      return act(c);
+    };
+    const error = (await client.call("similar.apply", { threadIds: [], scope: sender, action: "trash", always: true }).catch((e: unknown) => e)) as RpcError;
+    expect(error.details).toEqual({ undoId: expect.any(Number), filterUndo: expect.any(Number) });
+    backend.store.threads.act = act;
+    const { undoId, filterUndo } = error.details as { undoId: number; filterUndo: number };
+    await client.call("similar.undo", { undoId, filterUndo });
+    expect(await backend.store.filters.list()).toEqual([]);
+    expect(inInbox(db, ids)).toEqual(Array(60).fill(1));
+
+    // refused past the cap: nothing moved, and the filter made for it is gone again
+    backend.options.similarCap = 10;
+    await expect(client.call("similar.apply", { threadIds: [], scope: sender, action: "archive", always: true })).rejects.toThrow();
+    expect(await backend.store.filters.list()).toEqual([]);
+    expect(inInbox(db, ids)).toEqual(Array(60).fill(1));
+  });
+
   it("spam creates the filter once (its learned key silences the proposal); undo deletes it first, then restores", async () => {
     const { backend, db, client, thread } = await setup();
     const a = await thread();
@@ -85,21 +130,22 @@ describe("similar.apply", () => {
     const a = await thread();
     const [x, y] = await Promise.all([
       client.call("similar.apply", { threadIds: [a], scope: sender, action: "spam" }),
-      client.call("similar.always", { scope: sender, action: "spam" }),
+      client.call("similar.apply", { threadIds: [], scope: sender, action: "spam" }),
     ]);
     expect(await backend.store.filters.list()).toHaveLength(1);
-    expect([x.filter!.filterUndo, y.filterUndo].filter((u) => u !== null)).toHaveLength(1);
+    expect([x.filter!.filterUndo, y.filter!.filterUndo].filter((u) => u !== null)).toHaveLength(1);
     const f = (await backend.store.filters.list())[0]!;
     await backend.store.filters.save({ ...f, enabled: false }, NOW);
-    const on = await client.call("similar.always", { scope: sender, action: "spam" });
-    expect(on.filter.enabled).toBe(true);
-    await client.call("similar.undo", { undoId: null, filterUndo: on.filterUndo });
+    const on = await client.call("similar.apply", { threadIds: [], scope: sender, action: "spam" });
+    expect((await backend.store.filters.get(f.id))!.enabled).toBe(true);
+    await client.call("similar.undo", { undoId: null, filterUndo: on.filter!.filterUndo });
     expect((await backend.store.filters.get(f.id))!.enabled).toBe(false);
     // edited after it was made: Undo keeps it
-    const domain = await client.call("similar.always", { scope: { kind: "domain", domain: "uber.com" }, action: "archive" });
-    await backend.store.filters.save({ ...domain.filter, name: "Mine now" }, NOW);
-    await client.call("similar.undo", { undoId: null, filterUndo: domain.filterUndo });
-    expect(await backend.store.filters.get(domain.filter.id)).toMatchObject({ name: "Mine now" });
+    const domain = await client.call("similar.apply", { threadIds: [], scope: { kind: "domain", domain: "uber.com" }, action: "archive", always: true });
+    const made = (await backend.store.filters.get(domain.filter!.id))!;
+    await backend.store.filters.save({ ...made, name: "Mine now" }, NOW);
+    await client.call("similar.undo", { undoId: null, filterUndo: domain.filter!.filterUndo });
+    expect(await backend.store.filters.get(made.id)).toMatchObject({ name: "Mine now" });
   });
 
   it("a thread starred while the sweep runs stays (re-read per slice)", async () => {

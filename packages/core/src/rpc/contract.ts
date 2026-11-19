@@ -895,15 +895,15 @@ export const contract = {
   /**
    * Archives, deletes or spams a scope (resolved once, sliced, with progress) plus the
    * targets still in place; starred and replied threads are skipped unless targeted.
-   * Spam also sends future mail there (a filter). A failure after some slices carries
-   * `{ undoId }` in its details. `filterUndo` lets similar.undo take the filter back.
+   * Spam also sends future mail there (a filter), and so do archive and delete with `always`
+   * (plan 217; the filter is made first). A failure after some slices carries `{ undoId }`
+   * in its details, and `{ filterUndo }` once the filter was made. `filterUndo` lets
+   * similar.undo take the filter back.
    */
   "similar.apply": m<{ affected: number; skipped: number; undoId: number | null; filter: { id: number; filterUndo: number | null } | null; filterFailed: boolean }>()(
-    z.object({ threadIds: z.array(id).max(200), scope: similarScope, action: z.enum(SIMILAR_ACTIONS), jobId: jobId.optional(), filterName }),
+    z.object({ threadIds: z.array(id).max(200), scope: similarScope, action: z.enum(SIMILAR_ACTIONS), jobId: jobId.optional(), filterName, always: z.boolean().optional() }),
     { timeoutMs: 300_000 },
   ),
-  /** "Always": the scope as a filter for future mail (an identical one is reused, a disabled one enabled). */
-  "similar.always": m<{ filter: Filter; filterUndo: number | null }>()(z.object({ scope: similarScope, action: z.enum(SIMILAR_ACTIONS), filterName })),
   /** Takes back similar.apply: the filter first (no new mail caught meanwhile), then the threads. Retryable: a failure keeps it. */
   "similar.undo": m<{ restored: number }>()(z.object({ undoId: id.nullable(), filterUndo: id.nullable(), jobId: jobId.optional() }), { timeoutMs: 300_000 }),
 

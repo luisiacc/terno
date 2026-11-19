@@ -103,8 +103,10 @@ function SimilarSnackbar({ id, action, targets, offers: first, undo, undoName, a
         if (current()) patchSnack(id, { message: t("offers.default.spammed", { count: targets.length + r.affected, name }) }, true);
       },
       (error: unknown) => {
-        const undoId = (error as { details?: { undoId?: unknown } }).details?.undoId;
-        settle({ undoId: typeof undoId === "number" ? undoId : null, filterUndo: null });
+        // plan 217: the filter is made first, so a failed sweep may name it too
+        const details = (error as { details?: { undoId?: unknown; filterUndo?: unknown } }).details;
+        const num = (v: unknown) => (typeof v === "number" ? v : null);
+        settle({ undoId: num(details?.undoId), filterUndo: num(details?.filterUndo) });
         setDef((d) => d && { ...d, status: "failed" });
         if (current()) patchSnack(id, { message: t("offers.default.spamFailed", { name, error: error instanceof Error ? error.message : String(error) }), tone: "error" }, true);
       },
@@ -200,7 +202,7 @@ function SimilarSnackbar({ id, action, targets, offers: first, undo, undoName, a
             testId={`similar-${o.scope.kind}`}
             label={offerSentence(action, o, offers.senderName, true)}
             help={t(`offers.help.${action}`, { scope: scopeLabel(o.scope, offers.senderName) })}
-            future={action === "spam"}
+            future
             disabled={def?.status === "running" || busy}
             count={shownCount(o)}
             onClick={() => run(o)}
