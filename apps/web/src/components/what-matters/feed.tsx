@@ -1,9 +1,9 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { DIGEST_ROW_ID, localDay, type FeedRowId, type ThreadSummary, type TodayItem } from "@terno/core";
+import { DIGEST_ROW_ID, localDay, todayBadge, type FeedRowId, type ThreadSummary, type TodayItem } from "@terno/core";
 import { getLocale, t } from "@terno/i18n";
 import { Collapsible, CollapsibleTrigger } from "@terno/ui/components/collapsible";
 import { Skeleton } from "@terno/ui/components/skeleton";
-import { Newspaper, Sun } from "@terno/ui/icons";
+import { Newspaper } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef } from "react";
 import type { TodayTask } from "~/lib/dated";
@@ -13,6 +13,7 @@ import { dayHeading, weekHeading } from "~/lib/when";
 import { LIST_TITLE } from "~/lib/list-title";
 import { installScrollHairline } from "~/lib/scroll-hairline";
 import { pressRow, releaseRow } from "~/lib/select";
+import { arrive } from "~/lib/flash";
 import { historySentence, historyWhen, todaySentence, todayWhen, type TodayTone } from "~/lib/today-sentence";
 import { feedScroller, placeFeedKeys } from "~/lib/feed-focus";
 import { measureControls } from "~/lib/feed-controls";
@@ -28,6 +29,7 @@ import { WhatMattersOptions } from "./options";
 import { BriefTaskControls } from "./task-menus";
 import { SenderAvatar } from "../sender-avatar";
 import { TodayLine } from "./today-line";
+import { ClearSky } from "./clear-sky";
 
 /** The feed's rows, what Coming up's disclosure shows more of (its rows join the feed there: no panel of its own) */
 export const FEED_ROWS_ID = "wm-feed-rows";
@@ -45,7 +47,9 @@ type Drawn =
   | { type: "heading"; key: string; kind: FeedGroupKind; /** the items under it, till the next heading */ count: number }
   | { type: "item"; key: string; row: FeedRow }
   | { type: "digest"; key: string; row: FeedRow }
-  | { type: "comingUp"; key: string };
+  | { type: "comingUp"; key: string }
+  /** plan 222: nothing needs you, above what's ahead and Earlier; not an item (no keys land on it) */
+  | { type: "clear"; key: string };
 
 /** Plan 210 (iteration 4): Coming up's disclosure, one per feed, its key stable whatever's under it. */
 const COMING_UP_KEY = "coming-up";
@@ -62,10 +66,11 @@ function headingName(kind: FeedGroupKind): string {
 /**
  * The rows with a heading where each group begins (a held row keeps its group's), and the digest's. Plan 210 (iteration 4,
  * revision 9): Coming up's disclosure after the open part and the automated section, before the history, when anything is
- * coming up (`comingUp`), its buckets under it while it's open, each heading keyed by its bucket.
+ * coming up (`comingUp`), its buckets under it while it's open, each heading keyed by its bucket. Plan 222: a clear
+ * What matters (`clear`) heads it with its horizon.
  */
-function drawn(rows: readonly FeedRow[], comingUp: number): Drawn[] {
-  const out: Drawn[] = [];
+function drawn(rows: readonly FeedRow[], comingUp: number, clear: boolean): Drawn[] {
+  const out: Drawn[] = clear ? [{ type: "clear", key: "clear" }] : [];
   let prev: FeedGroupKind | undefined;
   let disclosed = comingUp === 0;
   for (const row of rows) {
@@ -152,7 +157,9 @@ export function WhatMattersFeed() {
   const loading = useList((s) => s.loading);
   const feed = useToday((s) => s.rows);
   const comingUp = useToday((s) => s.comingUp);
-  const rows = useMemo(() => drawn(feed, comingUp), [feed, comingUp]);
+  // plan 222: nothing missed, due today or waiting on you, by an answer (never the empty state before the first one)
+  const clear = useToday((s) => s.answered && todayBadge(s.counts) === 0);
+  const rows = useMemo(() => drawn(feed, comingUp, clear), [feed, comingUp, clear]);
   /** each row's place among what's drawn, by its id */
   const placeOf = useMemo(() => new Map(rows.flatMap((r, i) => (r.type === "item" || r.type === "digest" ? [[r.key, i] as const] : []))), [rows]);
   const design = useDesign();
@@ -162,7 +169,7 @@ export function WhatMattersFeed() {
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: (i) => (rows[i]!.type === "heading" || rows[i]!.type === "comingUp" ? 44 : 68),
+    estimateSize: (i) => (rows[i]!.type === "clear" ? 210 : rows[i]!.type === "heading" || rows[i]!.type === "comingUp" ? 44 : 68),
     getItemKey: (i) => rows[i]!.key,
     overscan: 6,
     paddingEnd: 24,
@@ -252,6 +259,16 @@ export function WhatMattersFeed() {
     return root && sentinel && header ? installScrollHairline(root, sentinel, header) : undefined;
   }, []);
 
+  // plan 222 (plan 198's arrival): an answer that something needed you, then one that nothing does (the last item done) while
+  // the feed is on screen: the horizon heading the rows settles in, once, before paint (never as its row is drawn again
+  // by scrolling); navigated to, or the first answer, it's simply there. The empty feed's has plan 198's own.
+  const busy = useToday((s) => s.answered && todayBadge(s.counts) > 0);
+  const wasBusy = useRef(busy);
+  useLayoutEffect(() => {
+    if (clear && wasBusy.current) arrive(scrollRef.current?.querySelector("[data-index] [data-testid=wm-clear]") ?? null, { spring: true, inPlace: true });
+    wasBusy.current = busy;
+  }, [clear, busy]);
+
   const virtualItems = virtualizer.getVirtualItems();
   // plan 210: the history's next page as the feed nears its end, as the Inbox's (the list keeps its cursor). Iteration 4
   // (revision 9): Earlier's own boundary: only as the drawn window comes near its end, and again once each page lands;
@@ -293,8 +310,10 @@ export function WhatMattersFeed() {
               ))}
             </div>
           ) : feed.length === 0 ? (
-            // (plan 210, iteration 4: nothing now, Coming up's disclosure under the words, so what's ahead is a click away)
-            <EmptyState icon={<Sun className="mb-2 size-7 text-muted-foreground" aria-hidden />} title={t("today.empty")}>
+            // (plan 210, iteration 4: nothing now, Coming up's disclosure under the words, so what's ahead is a click away;
+            // plan 222: on the feed's column, under the horizon)
+            <EmptyState className={COLUMN}>
+              <ClearSky />
               {comingUp > 0 && <ComingUpHeading empty />}
             </EmptyState>
           ) : (
@@ -305,7 +324,7 @@ export function WhatMattersFeed() {
                   <div key={v.key} data-index={v.index} ref={virtualizer.measureElement} className="absolute inset-x-0 top-0" style={{ transform: `translateY(${v.start}px)` }}>
                     {/* (a query container: a row lays its when column out by the feed's own width, plan 210, iteration 4) */}
                     <div className={cn(COLUMN, "@container py-px")}>
-                      {row.type === "heading" ? <Heading kind={row.kind} count={row.count} /> : row.type === "comingUp" ? <ComingUpHeading /> : row.type === "item" ? <FeedItem row={row.row} thread={items[index.get(row.row.threadId) ?? -1]} /> : <DigestItem />}
+                      {row.type === "clear" ? <div className="pt-6 pb-4"><ClearSky /></div> : row.type === "heading" ? <Heading kind={row.kind} count={row.count} /> : row.type === "comingUp" ? <ComingUpHeading /> : row.type === "item" ? <FeedItem row={row.row} thread={items[index.get(row.row.threadId) ?? -1]} /> : <DigestItem />}
                     </div>
                   </div>
                 );

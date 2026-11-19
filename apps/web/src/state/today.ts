@@ -3,6 +3,7 @@ import { addressKey, dayKeyOf, DIGEST_FEED_ROW, DIGEST_ROW_ID, type DigestItem, 
 import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { alsoLine, taskOf, type TodayTask } from "~/lib/dated";
+import { momentsOfList, type Moment } from "~/lib/clear";
 import type { ReaderItem } from "~/lib/reader-items";
 import { client } from "~/rpc/connection";
 import type { Undo } from "~/lib/snack";
@@ -103,6 +104,10 @@ interface TodayState {
   counts: TodayCounts;
   /** plan 204: what Coming up holds, shown or not (never counted) */
   comingUp: number;
+  /** plan 222: the answer's items' moments (`momentsOfList`), what a clear What matters reads what you're free until from */
+  moments: readonly Moment[];
+  /** plan 222: an answer has been published, so zero counts mean clear, never "not loaded yet" */
+  answered: boolean;
   /** plan 204: Coming up open under the rest (closed by default; remembered on this machine; iteration 4: the feed's last part) */
   comingUpOpen: boolean;
   /** plan 204 (after the panel, fix 10): the row whose task Later's "Pick a date…" is choosing a moment for */
@@ -137,7 +142,7 @@ function storedComingUp(): boolean {
   }
 }
 
-export const useToday = create<TodayState>(() => ({ rows: [], counts: { missed: 0, today: 0, waiting: 0, overdue: 0 }, comingUp: 0, comingUpOpen: storedComingUp(), laterPick: null, laterMenu: null, menuRow: null, digest: null, fromDigest: null, pick: null, movedTo: new Map(), notNewsletters: new Set() }));
+export const useToday = create<TodayState>(() => ({ rows: [], counts: { missed: 0, today: 0, waiting: 0, overdue: 0 }, comingUp: 0, moments: [], answered: false, comingUpOpen: storedComingUp(), laterPick: null, laterMenu: null, menuRow: null, digest: null, fromDigest: null, pick: null, movedTo: new Map(), notNewsletters: new Set() }));
 
 /**
  * Plan 210 (iteration 2): which row the feed has open, and the one a conversation was put away from (Esc, the reader's
@@ -537,7 +542,8 @@ export function todayAnswer(list: TodayList, before: readonly ThreadSummary[]): 
     items.push(thread);
   }
   const shown = rows.filter((r) => listed.has(r.threadId));
-  const publish = () => useToday.setState(({ notNewsletters }) => ({ rows: shown, counts: list.counts, comingUp, digest: list.digest && withoutSenders(list.digest, notNewsletters) }));
+  const moments = momentsOfList(list);
+  const publish = () => useToday.setState(({ notNewsletters }) => ({ rows: shown, counts: list.counts, comingUp, moments, answered: true, digest: list.digest && withoutSenders(list.digest, notNewsletters) }));
   return { items, publish };
 }
 

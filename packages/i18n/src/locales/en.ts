@@ -2730,6 +2730,12 @@ It contains none of your mail, contacts, settings or keys.
   "whatMatters.waitingOnYou": "Waiting on you",
   // plan 210 (iteration 5, revision 5; the owner): what shows past the seven days, one heading with no date in it
   "whatMatters.ahead": "Ahead",
+  "whatMatters.clear.untilTime": "You're free until {time}.",
+  "whatMatters.clear.untilTomorrow": "Nothing needs you until tomorrow.",
+  "whatMatters.clear.untilDay": "Nothing needs you until {day}.",
+  "whatMatters.clear.untilDate": "Nothing needs you until {date}.",
+  "whatMatters.clear.nothingAhead": "Nothing on the horizon.",
+  "whatMatters.clear.day": "Clear day No. {n}",
   // plan 210 (iteration 3): Coming up past its first two weeks, by week
   "whatMatters.weekOf": "Week of {day}",
   "whatMatters.by": "by {day}",

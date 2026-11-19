@@ -167,3 +167,18 @@ export const partInSentence = (text: string): string => text.charAt(0).toLocaleL
 
 /** What `dueShort` can't say: the time of a timed one not due today (Codex code review: "Tomorrow" alone lost "7:40"). */
 export const dueTimeLeft = (ms: number, timed: boolean, now = Date.now()): string | null => (timed && daysAway(ms, now) !== 0 ? fmt().time.format(ms) : null);
+
+/**
+ * Plan 222: what a clear What matters says, by the next moment ahead (`nextUp`): its time later today ("You're free until
+ * 3:00 PM."), tomorrow, its weekday within 6 days ("until Thursday"), further its date ("until Dec 3"). An untimed item
+ * today leaves the day as it was ("Nothing needs you today."); nothing ahead at all, "Nothing on the horizon."
+ */
+export function freeUntil(next: { at: number; timed: boolean } | "today" | null, now = Date.now()): string {
+  if (next === null) return t("whatMatters.clear.nothingAhead");
+  if (next === "today") return t("today.empty");
+  const days = daysAway(next.at, now);
+  if (days <= 0) return next.timed ? t("whatMatters.clear.untilTime", { time: fmt().time.format(next.at) }) : t("today.empty");
+  if (days === 1) return t("whatMatters.clear.untilTomorrow");
+  if (days < 7) return t("whatMatters.clear.untilDay", { day: fmt().weekdayLong.format(next.at) });
+  return t("whatMatters.clear.untilDate", { date: dayOf(next.at, now) });
+}

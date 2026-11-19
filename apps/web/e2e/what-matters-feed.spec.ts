@@ -1476,3 +1476,75 @@ test("plan 216: Remove on Waiting on you's rows (the right-click menu, ⇧D), th
     await expect.poll(waitingSince).not.toBeNull();
   });
 });
+
+test("plan 222: nothing needs you: the horizon heads the feed and says what you're free until; the clear day counted once a day; on the feed's column; axe in light and dark", async ({ app: page, server }) => {
+  await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true } }, dev);
+  // (the demo mailbox's own conversations waiting on you would keep it from ever being clear)
+  sqlDb(server.backend.store).run("UPDATE threads SET waiting_since = NULL");
+  await item(server, "gas", "Pay the gas bill", E2E_NOW - 2 * HOUR);
+  await item(server, "payroll", "Wire payroll", null);
+  server.backend.today.changed();
+  await fresh(page);
+  await page.getByTestId("nav-today").click();
+  await expect(openLine(page, "Wire payroll")).toBeVisible({ timeout: 15_000 });
+  const clear = feed(page).getByTestId("wm-clear");
+  const words = clear.getByTestId("wm-clear-words");
+
+  await scenario("something needs you: no horizon; the last item done, it heads the feed with Earlier under it, the first clear day", async () => {
+    await expect(clear).toHaveCount(0);
+    await openLine(page, "Wire payroll").getByTestId("wm-item-open").click();
+    await page.keyboard.press("d");
+    await page.keyboard.press("Escape");
+    await expect(words).toHaveText("Nothing on the horizon.");
+    await expect(clear.getByTestId("wm-clear-day")).toHaveText("Clear day No. 1");
+    await expect(feed(page).locator('[data-index="0"] [data-testid=wm-clear]')).toHaveCount(1);
+    await expect(feed(page).locator('[data-testid="wm-heading"][data-kind="history"]')).toBeVisible();
+    // 9:30 on the demo's morning: the sun on its arc, never a night scene
+    await expect(clear.getByTestId("wm-horizon")).toHaveAttribute("data-sun", "up");
+  });
+
+  await scenario("finished items hidden: the horizon still heads the feed, centred on the feed's column; axe in light and dark", async () => {
+    await page.getByTestId("wm-options").click();
+    await page.getByTestId("wm-options-finished").click();
+    await page.keyboard.press("Escape");
+    await expect(feed(page).locator('[data-testid="wm-heading"][data-kind="history"]')).toHaveCount(0);
+    await expect(words).toHaveText("Nothing on the horizon.");
+    await expect(clear.getByTestId("wm-clear-day")).toHaveText("Clear day No. 1");
+    const centre = (el: Element) => {
+      const r = el.getBoundingClientRect();
+      return r.left + r.width / 2;
+    };
+    // the header's column, the one the title starts on
+    const column = await page.getByTestId("list-title").evaluate((el) => {
+      const r = el.closest("header")!.firstElementChild!.getBoundingClientRect();
+      return r.left + r.width / 2;
+    });
+    expect(Math.abs((await clear.evaluate(centre)) - column)).toBeLessThanOrEqual(2);
+    await axeBothModes(page, '[data-testid="wm-feed"]');
+    await page.getByTestId("wm-options").click();
+    await page.getByTestId("wm-options-finished").click();
+    await page.keyboard.press("Escape");
+    await expect(feed(page).locator('[data-testid="wm-heading"][data-kind="history"]')).toBeVisible();
+  });
+
+  await scenario("an item two days ahead: free until its day, said as it arrives", async () => {
+    await dated(server, "keynote", "Shipfast", { kind: "event", text: "Shipfast Summit keynote", days: 2, hour: 19 });
+    server.backend.today.changed();
+    const day = await page.evaluate((now) => {
+      const d = new Date(now);
+      d.setDate(d.getDate() + 2);
+      return new Intl.DateTimeFormat("en-US", { weekday: "long" }).format(d);
+    }, E2E_NOW);
+    await expect(words).toHaveText(`Nothing needs you until ${day}.`);
+    await expect(openLine(page, "Shipfast Summit keynote")).toBeVisible();
+  });
+
+  await scenario("a reload the same day: still the first clear day; j, with nothing open, lands on the first item, never on the horizon", async () => {
+    await fresh(page);
+    await page.getByTestId("nav-today").click();
+    await expect(clear.getByTestId("wm-clear-day")).toHaveText("Clear day No. 1");
+    await page.keyboard.press("j");
+    await expect(feed(page).locator("[data-cursor], [data-open]")).toHaveCount(1);
+    await expect(feed(page).locator("[data-cursor], [data-open]")).toContainText("Shipfast Summit keynote");
+  });
+});
