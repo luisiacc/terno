@@ -57,7 +57,7 @@ describe("plan 168: no feature chooses its provider or model", () => {
     useApp.setState({ settings: s } as never);
     const host = await render(<DatedGroup settings={s} update={vi.fn() as never} />);
     const group = host.querySelector('[data-testid="ai-dated"]')!;
-    expect(group.textContent).toContain("What matters: OpenAI.");
+    expect(group.textContent).toContain("“What matters”: OpenAI.");
     expect(group.textContent).not.toMatch(/digest|Claude or OpenAI/);
   });
 

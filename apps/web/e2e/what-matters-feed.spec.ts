@@ -379,7 +379,7 @@ test("the owner's inbox-zero setting: the gear on What matters' title row hides 
   const toggle = page.getByTestId("wm-options-finished");
 
   await scenario("the gear: on the title's row, named; its switch hides the history at once, and shows it again", async () => {
-    await expect(gear).toHaveAccessibleName("What matters options");
+    await expect(gear).toHaveAccessibleName("“What matters” options");
     const mid = async (id: string) => page.getByTestId(id).evaluate((el) => { const r = el.getBoundingClientRect(); return r.top + r.height / 2; });
     expect(Math.abs((await mid("wm-options")) - (await mid("list-title")))).toBeLessThanOrEqual(2);
     await reach(page, "Pay the old bill");
@@ -1152,7 +1152,7 @@ test("plan 211: an account's switches in Settings → Accounts: out of What matt
 
   await scenario("Show in What matters off: neither the bill nor the conversation waiting on you; on, both are back", async () => {
     await settings();
-    await expect(page.getByTestId("account-feed")).toHaveAccessibleName("Show in What matters");
+    await expect(page.getByTestId("account-feed")).toHaveAccessibleName("Show in “What matters”");
     await page.getByTestId("account-feed").click();
     await expect(page.getByTestId("account-feed")).toHaveAttribute("aria-checked", "false");
     // its other AI is untouched: what depends on it stays
@@ -1418,7 +1418,7 @@ test("plan 216: Remove on Waiting on you's rows (the right-click menu, ⇧D), th
     await shoot("menu");
     await page.getByTestId("menu-dated-dismiss").click();
     await expect(row(lucas)).toHaveCount(0);
-    await expect(snack).toContainText("Removed from What matters: Lucas Fajardo Gutiérrez");
+    await expect(snack).toContainText("Removed from “What matters”: Lucas Fajardo Gutiérrez");
     await expect.poll(waitingCount).toBe(before - 1);
     // no Earlier line, and the conversation still waits: the Inbox's Waiting lists it
     await expect(feed(page).locator("[data-history]").filter({ hasText: "Lucas Fajardo" })).toHaveCount(0);
@@ -1448,7 +1448,7 @@ test("plan 216: Remove on Waiting on you's rows (the right-click menu, ⇧D), th
   await scenario("the card's Remove: the row leaves, the keys go on to the feed's row; z brings it back open", async () => {
     await card.getByTestId("thread-dated-dismiss").click();
     await expect(row(lucas)).toHaveCount(0);
-    await expect(snack).toContainText("Removed from What matters: Lucas Fajardo Gutiérrez");
+    await expect(snack).toContainText("Removed from “What matters”: Lucas Fajardo Gutiérrez");
     await expect.poll(() => page.evaluate(() => document.activeElement?.closest("[data-testid=wm-feed]") !== null)).toBe(true);
     await back();
   });
@@ -1460,7 +1460,7 @@ test("plan 216: Remove on Waiting on you's rows (the right-click menu, ⇧D), th
     await expect.poll(() => page.evaluate(() => document.activeElement?.closest("[data-row-id]")?.getAttribute("data-row-id"))).toBe(`waiting:${lucas}`);
     await page.keyboard.press("Shift+D");
     await expect(row(lucas)).toHaveCount(0);
-    await expect(snack).toContainText("Removed from What matters: Lucas Fajardo Gutiérrez");
+    await expect(snack).toContainText("Removed from “What matters”: Lucas Fajardo Gutiérrez");
     await back();
     await openRow();
     await card.getByTestId("thread-dated-later").click();

@@ -48,7 +48,7 @@ test("asked once AI is on, after Settings closes; What matters leads the sidebar
     await expect(question(page)).toHaveCount(0);
     await page.keyboard.press("Escape");
     await expect(question(page)).toBeVisible();
-    await expect(question(page).getByRole("heading")).toHaveText("Want to try What matters?");
+    await expect(question(page).getByRole("heading")).toHaveText("Want to try the “What matters” view?");
     await expect(page.getByTestId("first-screen-choose-what-matters")).toBeFocused();
     if (SHOTS) await question(page).screenshot({ path: `${SHOTS}/question-light.png` });
     expect((await new AxeBuilder({ page }).include("[data-testid=first-screen-question]").analyze()).violations).toEqual([]);
@@ -105,8 +105,8 @@ test("asked once AI is on, after Settings closes; What matters leads the sidebar
     await page.getByTestId("settings-find").fill("");
     await expect(page.getByTestId("first-screen-what-matters")).toHaveAttribute("aria-pressed", "true");
     // the badge's switch says which number it shows
-    await expect(page.getByTestId("badge-row")).toContainText("Show What matters' number on the app icon");
-    await expect(page.getByTestId("badge-row")).toContainText("What needs you in What matters, the same number as in the sidebar.");
+    await expect(page.getByTestId("badge-row")).toContainText("Show the “What matters” number on the app icon");
+    await expect(page.getByTestId("badge-row")).toContainText("What needs you in “What matters”, the same number as in the sidebar.");
     if (SHOTS) await page.getByTestId("first-screen-group").screenshot({ path: `${SHOTS}/setting-light.png` });
     await page.getByTestId("first-screen-inbox").click();
     await expect(page.getByTestId("first-screen-inbox")).toHaveAttribute("aria-pressed", "true");

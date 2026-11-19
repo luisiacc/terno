@@ -156,7 +156,7 @@ describe("Done means gone (plan 204, after the second panel round; plan 210, ite
     useToday.setState({ rows: [] });
     slow!();
     await acting;
-    expect(useSnack.getState().current?.message).toBe("Removed from What matters: Task 2");
+    expect(useSnack.getState().current?.message).toBe("Removed from “What matters”: Task 2");
   });
 
   it("Remove and Later leave too; a row that isn't the open one leaves without moving the open one", async () => {

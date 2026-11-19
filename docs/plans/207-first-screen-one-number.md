@@ -97,18 +97,18 @@ It also covers an existing user who already has AI: they're asked at their next 
 **The look.** A small dialog (`Dialog`, BoardUI's Modal port), about 400 px wide, calm, in the design's tokens:
 - **A picture of the feed in miniature** (built with `tip-picture.tsx`'s pieces): a "Today" heading and three rows, each one sentence with a "when" on the right: "Reply to Ana about Friday's venue · 3 pm", "Pay the water bill · Fri", "Send Marco the deck, as you said · Tue". It is decorative (`aria-hidden`).
 - **The words** (the owner, 2026-11-19, after the first version: "they have zero context as to what this is … 5th grade reading level … frame it as a question if they would like to try it, then lay out the benefits clearly, also mention they can personalize what goes in"):
-  - **Title:** "Want to try What matters?"
-  - **Body:** "What matters is a new screen. It reads your email and shows only what you need to do. Your Inbox keeps everything."
+  - **Title:** "Want to try the “What matters” view?" (the owner, the same day: say it's a view, and quote the name in running text)
+  - **Body:** "It’s a new view. It reads your email and shows only what you need to do. Your Inbox keeps everything."
   - **Four reasons**, each a muted icon, a short name in medium weight, then one plain sentence:
     - "**See what needs you first.** Emails to answer, bills to pay, and things you said you'd do."
     - "**Never miss a date.** If something is late, it stays at the top so you don't forget."
     - "**Finish and move on.** Mark a task Done and it leaves the list."
     - "**Make it yours.** Remove what you don't need. Don't want bills from one store here? Hide them." (Remove, and the mute offer's sender-and-kind pair, plan 210.)
-  - **A quiet footnote:** "If you say yes, Terno opens on What matters. You can change this anytime in Settings → General."
-  - **Buttons:** "No, keep my Inbox" (secondary) and "Yes, try What matters" (primary, the default focus).
+  - **A quiet footnote:** "If you say yes, Terno opens on the “What matters” view. You can change this anytime in Settings → General."
+  - **Buttons:** "No, keep my Inbox" (secondary) and "Yes, try it" (primary, the default focus).
 
 **The answer.**
-- **"Yes, try What matters"** saves `whatMatters` and goes to What matters now, so the user sees what they chose.
+- **"Yes, try it"** saves `whatMatters` and goes to What matters now, so the user sees what they chose.
 - **"No, keep my Inbox"** or Esc saves `inbox`. The question never returns, and Settings is the way back. There's no close ×: the answers say it, and a × sat over the picture's corner.
 - **Saving fails:** the dialog stays open and the error says so in plain words ("Couldn't save your choice. Try again."). It isn't asked again behind the user's back.
 
@@ -193,3 +193,9 @@ Seven findings, all taken; each has a test that fails without its fix:
    - the app badge's own value through a stubbed Badging API, for both leads.
 
 `what-matters-feed.spec.ts:103` failed once in a 43-test run on a loaded machine (28.5 s against about 10 s alone, load 5.6). It passed twice alone.
+
+## The name in running text (the owner, 2026-11-19)
+
+> lets keep what matters, but lets add quotes when mentioning it in other views because it sounds weird, and on the screen to prompt them for the first time to use it, lets say the "What matters" view, so theyu know is a view
+
+The name stays. Inside a sentence or a label it's quoted: “What matters” in English, «Lo importante» in Spanish (each language's own quotes, as the catalogs already use them). Examples: "Remove from “What matters”", "Show in “What matters”", "the “What matters” number". It stays bare where it stands alone as the name: the sidebar row, the view's title, the settings group's heading (`today.title`, `ai.dated.title`) and the "Open at launch" choice. Forty strings in each language changed, and their tests with them.

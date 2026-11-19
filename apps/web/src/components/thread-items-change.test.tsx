@@ -140,7 +140,7 @@ describe("plan 216: the open waiting row's line in the reader", () => {
     expect([...q("thread-dated-controls")!.querySelectorAll("button")].map((b) => [b.dataset.testid, b.getAttribute("aria-label")])).toEqual([
       ["thread-dated-done", "Done: Lucas Fajardo"],
       ["thread-dated-later", "Later: Lucas Fajardo"],
-      ["thread-dated-dismiss", "Remove from What matters: Lucas Fajardo"],
+      ["thread-dated-dismiss", "Remove from “What matters”: Lucas Fajardo"],
     ]);
     await act(async () => q("thread-dated-dismiss")!.click());
     expect(vi.mocked(client.call)).toHaveBeenCalledWith("today.waitingAct", { threadId: 7, since: reply.since, message: 90, rev: 3, action: "remove" });

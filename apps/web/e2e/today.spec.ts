@@ -798,7 +798,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       // plan 210 (iteration 1, the owner): "Not a task" is "Remove", and the menu says its key, as Later's does; iteration
       // 3: what it removes from, that the email stays, and after Done and Later, a separator away from the mail's actions
       const remove = page.getByTestId("menu-dated-dismiss");
-      await expect(remove).toContainText("Remove from What matters");
+      await expect(remove).toContainText("Remove from “What matters”");
       await expect(remove).toContainText("⇧D");
       await expect(remove).toHaveAccessibleDescription("The email stays");
       await expect(page.getByTestId("menu-dated-later")).toContainText("B");
@@ -861,7 +861,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await item(page, "Electricity bill").click({ button: "right" });
       await page.getByTestId("menu-dated-dismiss").click();
       await gone();
-      await expect(snack).toContainText(/Removed( from What matters)?.*Electricity bill/);
+      await expect(snack).toContainText(/Removed( from “What matters”)?.*Electricity bill/);
       await expect.poll(async () => (await server.backend.store.dated.active()).some((r) => r.text === "Electricity bill")).toBe(false);
       await undo("Remove");
       if (await page.getByTestId("reader").count()) await page.keyboard.press("Escape");
@@ -874,7 +874,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await page.keyboard.press("Shift+D");
       await gone();
       await expect(open(page)).toHaveAttribute("data-thread-id", next);
-      await expect(snack).toContainText(/Removed( from What matters)?.*Electricity bill/);
+      await expect(snack).toContainText(/Removed( from “What matters”)?.*Electricity bill/);
       await undo("⇧D");
       await expect(open(page)).toHaveAttribute("data-thread-id", bill!);
 
@@ -1032,13 +1032,13 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await expect(line.getByTestId("thread-dated-text")).toHaveText("Due Saturday · Electricity bill");
       await expect(line).toHaveClass(/\bai-card\b/);
       await expect(line.getByTestId("thread-dated-done")).toHaveAccessibleName("Done: Electricity bill");
-      await expect(line.getByTestId("thread-dated-dismiss")).toHaveAccessibleName("Remove from What matters: Electricity bill");
+      await expect(line.getByTestId("thread-dated-dismiss")).toHaveAccessibleName("Remove from “What matters”: Electricity bill");
       await expect(line.getByTestId("thread-dated-dismiss")).toHaveText("Remove");
       // Remove here: the item leaves What matters as from its own menu (the next conversation opens), and the snack's
       // Undo brings it back, open again with its line
       await line.getByTestId("thread-dated-dismiss").click();
       await expect(item(page, "Electricity bill")).toHaveCount(0);
-      await expect(page.locator("[data-testid=snack]")).toContainText(/Removed( from What matters)?.*Electricity bill/);
+      await expect(page.locator("[data-testid=snack]")).toContainText(/Removed( from “What matters”)?.*Electricity bill/);
       await focusList(page);
       await page.keyboard.press("z");
       await expect(open(page)).toContainText("Electricity bill");
@@ -1290,7 +1290,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       // plan 210 (iteration 3): the feature by its name, and who reads its mail, in one line
       await expect(group).toContainText("What matters");
       await expect(group.getByTestId("ai-dated-switch")).toBeChecked();
-      await expect(group).toContainText(/What matters: \S/);
+      await expect(group).toContainText(/“What matters”: \S/);
       await expect(group).not.toContainText("digest");
       await group.scrollIntoViewIfNeeded();
       if (SHOTS) {

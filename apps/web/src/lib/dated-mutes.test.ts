@@ -51,7 +51,7 @@ describe("Mute (plan 210, iteration 4)", () => {
     expect(muteName({ on: "pair", key: "delivery|track@parcelo.test", name: "" })).toBe("Deliveries from track@parcelo.test");
     expect(muteAddress({ on: "pair", key: "delivery|track@parcelo.test", name: "" })).toBeNull();
     expect(muteAddress({ on: "kind", key: "pay", name: "" })).toBeNull();
-    expect(about({ on: "pair", key: "delivery|track@parcelo.test", name: "Parcelo" }, "done")).toBe("You won’t see deliveries from Parcelo in What matters");
+    expect(about({ on: "pair", key: "delivery|track@parcelo.test", name: "Parcelo" }, "done")).toBe("You won’t see deliveries from Parcelo in “What matters”");
     // the claims ledger's second batch: a calendar service's invitations by the service, never the person they're from
     expect(offerLabel({ on: "pair", key: "event|calendar-noreply@halvorsen.edu", kind: "event", name: "halvorsen.edu", service: "halvorsen.edu" })).toBe("Don’t show events from halvorsen.edu Calendar");
     setLocale("es", es);
@@ -62,7 +62,7 @@ describe("Mute (plan 210, iteration 4)", () => {
       expect(offerLabel({ on: "sender", key: "track@parcelo.test", name: "Parcelo" })).toBe("No mostrar nada de Parcelo");
       expect(muteName({ on: "kind", key: "event", name: "" })).toBe("Eventos");
       expect(muteName({ on: "pair", key: "delivery|track@parcelo.test", name: "Parcelo" })).toBe("Entregas de Parcelo");
-      expect(about({ on: "pair", key: "delivery|track@parcelo.test", name: "Parcelo" }, "unmuted")).toBe("Volverás a ver entregas de Parcelo en Lo importante");
+      expect(about({ on: "pair", key: "delivery|track@parcelo.test", name: "Parcelo" }, "unmuted")).toBe("Volverás a ver entregas de Parcelo en «Lo importante»");
     } finally {
       setLocale("en", en);
     }
@@ -96,17 +96,17 @@ describe("Mute (plan 210, iteration 4)", () => {
     answers = { "dated.mute": { mute: { on: "sender", key: "track@parcel.test", name: "Parcel Co", at: 5 } } };
     await mute({ on: "sender", key: "track@parcel.test", name: "Parcel Co" });
     expect(calls[0]).toEqual({ method: "dated.mute", p: { on: "sender", key: "track@parcel.test", name: "Parcel Co" } });
-    expect(said[0]).toMatchObject({ text: "Nothing from Parcel Co will show in What matters", action: { label: "Undo", name: "Show Parcel Co in What matters again" } });
+    expect(said[0]).toMatchObject({ text: "Nothing from Parcel Co will show in “What matters”", action: { label: "Undo", name: "Show Parcel Co in “What matters” again" } });
     await said[0]!.action!.undo!.run();
     expect(calls[1]).toEqual({ method: "dated.unmute", p: { on: "sender", key: "track@parcel.test" } });
     answers["dated.mute"] = { mute: { on: "kind", key: "delivery", name: "", at: 6 } };
     await mute({ on: "kind", key: "delivery" });
-    expect(said[1]!.text).toBe("You won’t see deliveries in What matters");
+    expect(said[1]!.text).toBe("You won’t see deliveries in “What matters”");
     // a pair: the offer's key and name, its own Undo unmuting that pair only
     answers["dated.mute"] = { mute: { on: "pair", key: "delivery|track@parcelo.test", name: "Parcelo", at: 7 } };
     await mute({ on: "pair", key: "delivery|track@parcelo.test", kind: "delivery", name: "Parcelo" });
     expect(calls[3]).toEqual({ method: "dated.mute", p: { on: "pair", key: "delivery|track@parcelo.test", name: "Parcelo" } });
-    expect(said[2]).toMatchObject({ text: "You won’t see deliveries from Parcelo in What matters", action: { label: "Undo", name: "Show deliveries from Parcelo in What matters again" } });
+    expect(said[2]).toMatchObject({ text: "You won’t see deliveries from Parcelo in “What matters”", action: { label: "Undo", name: "Show deliveries from Parcelo in “What matters” again" } });
     await said[2]!.action!.undo!.run();
     expect(calls[4]).toEqual({ method: "dated.unmute", p: { on: "pair", key: "delivery|track@parcelo.test" } });
     failing = "dated.mute";
@@ -118,13 +118,13 @@ describe("Mute (plan 210, iteration 4)", () => {
     const m = { on: "kind" as const, key: "delivery", name: "", at: 7 };
     answers = { "dated.unmute": { mute: m } };
     expect(await unmute(m)).toBe(true);
-    expect(said[0]).toMatchObject({ text: "You’ll see deliveries in What matters again", action: { name: "Hide deliveries again" } });
+    expect(said[0]).toMatchObject({ text: "You’ll see deliveries in “What matters” again", action: { name: "Hide deliveries again" } });
     await said[0]!.action!.undo!.run();
     expect(calls[1]).toEqual({ method: "dated.mute", p: { on: "kind", key: "delivery", name: "", at: 7 } });
     setLocale("es", es);
     try {
       expect(await unmute(m)).toBe(true);
-      expect(said[1]!.text).toBe("Volverás a ver entregas en Lo importante");
+      expect(said[1]!.text).toBe("Volverás a ver entregas en «Lo importante»");
     } finally {
       setLocale("en", en);
     }
@@ -132,7 +132,7 @@ describe("Mute (plan 210, iteration 4)", () => {
     const pair = { on: "pair" as const, key: "delivery|track@parcelo.test", name: "Parcelo", at: 8 };
     answers = { "dated.unmute": { mute: pair } };
     expect(await unmute(pair)).toBe(true);
-    expect(said[2]).toMatchObject({ text: "You’ll see deliveries from Parcelo in What matters again", action: { name: "Hide deliveries from Parcelo again" } });
+    expect(said[2]).toMatchObject({ text: "You’ll see deliveries from Parcelo in “What matters” again", action: { name: "Hide deliveries from Parcelo again" } });
     await said[2]!.action!.undo!.run();
     expect(calls.at(-1)).toEqual({ method: "dated.mute", p: { on: "pair", key: "delivery|track@parcelo.test", name: "Parcelo", at: 8 } });
     failing = "dated.unmute";

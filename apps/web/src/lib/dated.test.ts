@@ -35,7 +35,7 @@ describe("a Today row's task (plan 204, after the panel)", () => {
     // plan 210 (iteration 4): a date's Remove asks what its snack may offer to mute (a promise is yours: nothing)
     expect(calls).toEqual(["dated.act", "dated.muteOffer", "followups.act"]);
     expect(params).toEqual([{ id: 30, revision: 2, action: "dismiss" }, { id: 30 }, { id: 7, revision: 3, action: "dismiss" }]);
-    expect(said).toEqual([{ text: "Removed from What matters", undo: true }, { text: "Removed from What matters", undo: true }]);
+    expect(said).toEqual([{ text: "Removed from “What matters”", undo: true }, { text: "Removed from “What matters”", undo: true }]);
   });
 
   it("Done and Later say so; a promise's Later moves its due moment", async () => {
@@ -52,7 +52,7 @@ describe("a Today row's task (plan 204, after the panel)", () => {
     await actOnTask(bill, "later", 1234);
     expect(said).toEqual([
       { text: "Done: Pay $187.42 for the utility bill", undo: true },
-      { text: "Removed from What matters: send the agenda", undo: true },
+      { text: "Removed from “What matters”: send the agenda", undo: true },
       { text: "Later: Pay $187.42 for the utility bill", undo: true },
     ]);
     // a task with no words of its own: the plain ones
@@ -68,7 +68,7 @@ describe("a Today row's task (plan 204, after the panel)", () => {
     // the claims ledger's second batch: Margaret's water bill whole, on the message's two lines
     expect(taskSaid("done", "Pay $58.71 for the City of Millbrook water and sewer service, account 4471-22")).toBe("Done: Pay $58.71 for the City of Millbrook water and sewer service, account 4471-22");
     // one word with no space near the end is cut where it must be
-    expect(taskSaid("dismiss", "x".repeat(100))).toBe(`Removed from What matters: ${"x".repeat(83)}…`);
+    expect(taskSaid("dismiss", "x".repeat(100))).toBe(`Removed from “What matters”: ${"x".repeat(83)}…`);
     expect(taskSaid("later", "  ")).toBe("Moved to later");
   });
 
@@ -123,14 +123,14 @@ describe("plan 215: a conversation waiting on you", () => {
     await actOnTask(task, "dismiss");
     expect(calls).toEqual(["today.waitingAct", "today.waitingAct", "today.waitingAct"]);
     expect(params).toEqual([{ threadId: 12, since: 500, message: 90, rev: 0, action: "done" }, { threadId: 12, since: 500, message: 90, rev: 0, action: "later", until: friday }, { threadId: 12, since: 500, message: 90, rev: 0, action: "remove" }]);
-    expect(said).toEqual([{ text: "Done: Tomas Santarcieri", undo: true }, { text: "Later: Tomas Santarcieri, back Jan 2, 2099 9:00 AM", undo: true }, { text: "Removed from What matters: Tomas Santarcieri", undo: true }]);
+    expect(said).toEqual([{ text: "Done: Tomas Santarcieri", undo: true }, { text: "Later: Tomas Santarcieri, back Jan 2, 2099 9:00 AM", undo: true }, { text: "Removed from “What matters”: Tomas Santarcieri", undo: true }]);
     setLocale("es", es);
     try {
       said.length = 0;
       await actOnTask(task, "done");
       await actOnTask(task, "later", friday);
       await actOnTask(task, "dismiss");
-      expect(said.map((x) => x.text)).toEqual(["Hecho: Tomas Santarcieri", expect.stringMatching(/^Más tarde: Tomas Santarcieri, vuelve /u), "Quitado de Lo importante: Tomas Santarcieri"]);
+      expect(said.map((x) => x.text)).toEqual(["Hecho: Tomas Santarcieri", expect.stringMatching(/^Más tarde: Tomas Santarcieri, vuelve /u), "Quitado de «Lo importante»: Tomas Santarcieri"]);
     } finally {
       setLocale("en", en);
     }

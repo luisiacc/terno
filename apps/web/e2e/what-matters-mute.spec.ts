@@ -70,7 +70,7 @@ test("plan 210 (iteration 5): Remove offers that kind from its sender, then a ma
     const offer = page.getByTestId("snack-secondary");
     await expect(offer).toHaveText("Don’t show deliveries from Parcelo");
     await offer.click();
-    await expect(snack(page)).toContainText("You won’t see deliveries from Parcelo in What matters");
+    await expect(snack(page)).toContainText("You won’t see deliveries from Parcelo in “What matters”");
     // the open row (the next, opened by the Remove) stays in place while it's open; the others go at once
     await expect(openLine(page, "Third parcel arrives")).toHaveCount(0);
     await expect(openLine(page, "Pay the Parcelo invoice")).toBeVisible();
@@ -88,7 +88,7 @@ test("plan 210 (iteration 5): Remove offers that kind from its sender, then a ma
     await expect(page.getByTestId("snack-secondary")).toHaveText("Don’t show deliveries from Lamp Shop");
     // taken this time: kept for the lists below
     await page.getByTestId("snack-secondary").click();
-    await expect(snack(page)).toContainText("You won’t see deliveries from Lamp Shop in What matters");
+    await expect(snack(page)).toContainText("You won’t see deliveries from Lamp Shop in “What matters”");
     await expect(openLine(page, "Shade arrives")).toHaveCount(0);
     // Parcelo's next: both of theirs were offered once, so the snack is the plain one
     await remove(page, "Third parcel arrives");
@@ -101,7 +101,7 @@ test("plan 210 (iteration 5): Remove offers that kind from its sender, then a ma
     await page.getByTestId("wm-options").click();
     const section = page.getByTestId("wm-options-muted");
     await expect(section).toBeVisible();
-    await expect(page.getByTestId("wm-muted")).toHaveAccessibleName("Hidden from What matters");
+    await expect(page.getByTestId("wm-muted")).toHaveAccessibleName("Hidden from “What matters”");
     await expect(page.getByTestId("wm-muted-item")).toHaveText(["Deliveries from Lamp Shoporders@lamps.testShow again"]);
     const show = page.getByTestId("wm-muted-unmute");
     await expect(show).toHaveAccessibleName("Show again");
@@ -109,7 +109,7 @@ test("plan 210 (iteration 5): Remove offers that kind from its sender, then a ma
     await axeBothModes(page, '[data-testid="wm-options-panel"]');
     await show.focus();
     await page.keyboard.press("Enter");
-    await expect(snack(page)).toContainText("You’ll see deliveries from Lamp Shop in What matters again");
+    await expect(snack(page)).toContainText("You’ll see deliveries from Lamp Shop in “What matters” again");
     await expect(section).toHaveCount(0);
     await page.keyboard.press("Escape");
     await expect(openLine(page, "Shade arrives")).toBeVisible();
@@ -127,7 +127,7 @@ test("plan 210 (iteration 5): Remove offers that kind from its sender, then a ma
     const menu = page.getByTestId("today-hide-kind-menu");
     await expect(menu.getByRole("menuitem")).toHaveText(["Bills", "Renewals", "Expirations", "Alerts", "Events", "Deliveries"]);
     await menu.getByRole("menuitem", { name: "Bills" }).click();
-    await expect(snack(page)).toContainText("You won’t see bills in What matters");
+    await expect(snack(page)).toContainText("You won’t see bills in “What matters”");
     await server.backend.server.invoke("dated.mute", { on: "pair", key: "delivery|track@parcelo.test", name: "Parcelo" }, dev);
     // the same moment (the app's clock is held here): by target, then key
     await expect(page.getByTestId("today-muted-list-item")).toHaveText(["BillsFrom any senderShow again", "Deliveries from Parcelotrack@parcelo.testShow again"]);
