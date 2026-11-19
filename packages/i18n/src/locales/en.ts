@@ -2621,7 +2621,10 @@ It contains none of your mail, contacts, settings or keys.
   "notify.brief": { one: "# thing needs you today", other: "# things need you today" },
   // plan 207: the first screen, and the one number
   "firstScreen.setting": "Open at launch",
-  "firstScreen.setting.hint": "Its number is the one the sidebar and the Dock show.",
+  "firstScreen.setting.hint": "The view Terno opens on. Its number is the one on the Dock.",
+  "firstScreen.keepInboxCount": "Show the unread count on the Inbox",
+  "firstScreen.keepInboxCount.hint": "With “What matters” first, the Inbox’s number is hidden. Turn this on to see it too.",
+  "settings.find.words.keepInboxCount": "unread, count, number, inbox, badge, sidebar",
   "firstScreen.ask.title": "Want to try the “What matters” view?",
   "firstScreen.ask.body": "It’s a new view. It reads your email and shows only what you need to do. Your Inbox keeps everything.",
   "firstScreen.ask.first": "See what needs you first.",

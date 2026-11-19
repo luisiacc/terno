@@ -232,6 +232,8 @@ export const DEFAULT_SETTINGS: General = {
   dockBadge: true,
   // plan 207: asked once What matters is offered; until then the Inbox
   firstScreen: null,
+  // with What matters first, the Inbox's number goes until this is turned on
+  keepInboxCount: false,
   notifications: true,
   notificationPreview: true,
 };

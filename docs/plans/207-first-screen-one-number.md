@@ -199,3 +199,22 @@ Seven findings, all taken; each has a test that fails without its fix:
 > lets keep what matters, but lets add quotes when mentioning it in other views because it sounds weird, and on the screen to prompt them for the first time to use it, lets say the "What matters" view, so theyu know is a view
 
 The name stays. Inside a sentence or a label it's quoted: “What matters” in English, «Lo importante» in Spanish (each language's own quotes, as the catalogs already use them). Examples: "Remove from “What matters”", "Show in “What matters”", "the “What matters” number". It stays bare where it stands alone as the name: the sidebar row, the view's title, the settings group's heading (`today.title`, `ai.dated.title`) and the "Open at launch" choice. Forty strings in each language changed, and their tests with them.
+
+## Both numbers while the Inbox leads (the owner, 2026-11-19)
+
+> when 'what matters' is visible, lets always show the pending count there, even if inbox is the principal, but when 'what matters' is the principal view, we do hide the inbox number, and lets have a setting when that happens, to still show the unread count on the inbox.
+
+This replaces §2's table for the sidebar (the Dock is unchanged: it shows the first screen's number):
+
+| | Inbox first (the default) | What matters first |
+|---|---|---|
+| What matters | its number | its number |
+| Inbox (every Inbox row: unified, each account's, a favourite) | unread | hidden, said in its description; shown with **"Show the unread count on the Inbox"** on |
+| Reminders | as now | hidden unless an account is out of What matters (as before) |
+
+- **The setting** is `keepInboxCount` (default off). It's a switch under "Open at launch", shown only while What matters is first, and found by the settings search only then. It's imported with a file like the first screen.
+- **"Open at launch"'s hint** now reads "The view Terno opens on. Its number is the one on the Dock."
+- **The e2e** checks that:
+  - What matters' number shows while the Inbox leads;
+  - the switch brings the Inbox's number back while the app badge stays What matters';
+  - the switch goes when the Inbox leads.

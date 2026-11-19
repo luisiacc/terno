@@ -260,6 +260,12 @@ function FirstScreenGroup({ settings, update }: { settings: AppSettings; update:
           </ToggleGroup>
         )}
       </SettingsRow>
+      {/* the owner: What matters first hides the Inbox's number; this keeps it */}
+      {value === "whatMatters" && (
+        <SettingsRow find="general.keepInboxCount" label={t("firstScreen.keepInboxCount")} hint={t("firstScreen.keepInboxCount.hint")} testId="keep-inbox-count-row">
+          {(a) => <Switch {...a} data-testid="keep-inbox-count" checked={settings.keepInboxCount} onCheckedChange={(on) => void update({ keepInboxCount: on })} />}
+        </SettingsRow>
+      )}
     </SettingsGroup>
   );
 }

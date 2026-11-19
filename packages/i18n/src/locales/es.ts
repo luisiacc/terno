@@ -2601,7 +2601,10 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "notify.brief": { one: "# cosa te necesita hoy", other: "# cosas te necesitan hoy" },
   // plan 207: la primera pantalla, y un solo número
   "firstScreen.setting": "Abrir al iniciar",
-  "firstScreen.setting.hint": "Su número es el que muestran la barra lateral y el Dock.",
+  "firstScreen.setting.hint": "La vista en la que se abre Terno. Su número es el del Dock.",
+  "firstScreen.keepInboxCount": "Mostrar los no leídos en Entrada",
+  "firstScreen.keepInboxCount.hint": "Con «Lo importante» primero, el número de Entrada se oculta. Actívalo para verlo también.",
+  "settings.find.words.keepInboxCount": "no leídos, contador, número, entrada, barra lateral",
   "firstScreen.ask.title": "¿Quieres probar la vista «Lo importante»?",
   "firstScreen.ask.body": "Es una vista nueva. Lee tu correo y te muestra solo lo que tienes que hacer. Entrada lo sigue guardando todo.",
   "firstScreen.ask.first": "Ve primero lo que te necesita.",

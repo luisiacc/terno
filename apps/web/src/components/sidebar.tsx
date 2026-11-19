@@ -139,11 +139,13 @@ function accountPress(e: React.MouseEvent<HTMLElement>): AccountPress {
 }
 
 /**
- * How a row draws its unread number. Plan 207: "hidden" when the sidebar's one number is another row's (What matters
- * opens first): not drawn, still said in the row's description.
+ * How a row draws its unread number. Plan 207: "hidden" for the Inbox's while What matters opens first: not drawn,
+ * still said in the row's description.
  */
 type CountTone = "muted" | "unread" | "hidden";
 const useLead = (): FirstScreen => useApp((s) => leadScreen(s.settings?.firstScreen, todayOffered(s)));
+/** Plan 207: the Inbox's unread count isn't drawn while What matters opens first, unless Settings keeps it. */
+const useInboxHidden = (): boolean => useApp((s) => leadScreen(s.settings?.firstScreen, todayOffered(s)) === "whatMatters" && s.settings?.keepInboxCount !== true);
 
 /**
  * A sidebar row whose right-click menu is open (its trigger, a wrapper of the row alone, says so): the list's outline for the
@@ -426,7 +428,7 @@ type MoreSlot = View | "reminders" | "followups";
  */
 function FavoriteRows() {
   const favorites = useApp((s) => s.settings?.favoriteFolders);
-  const lead = useLead();
+  const inboxHidden = useInboxHidden();
   const accounts = useApp((s) => s.accounts);
   const folders = useApp((s) => s.folders);
   const counts = useApp((s) => s.counts);
@@ -496,7 +498,7 @@ function FavoriteRows() {
                 icon={icon}
                 label={name}
                 count={count || undefined}
-                countTone={f.view === "inbox" && lead === "whatMatters" ? "hidden" : undefined}
+                countTone={f.view === "inbox" && inboxHidden ? "hidden" : undefined}
                 // with several accounts, whose it is, quietly (plan 23's label)
                 note={accounts.length > 1 ? <span className="min-w-0 truncate text-2xs text-muted-foreground" title={account.email}>{labels.get(account.id)?.text}</span> : undefined}
               />
@@ -1316,7 +1318,8 @@ export function Sidebar() {
   const searching = useApp((s) => s.query.trim() !== "");
   // plan 145: no provider, no row, no list and no work; and never for an app that's still reading its settings
   const todayShown = useApp(todayOffered);
-  // plan 207: the sidebar's one number is the first screen's: the other row's isn't drawn (its description still says it)
+  // plan 207 (the owner): What matters always shows its number; with it first, the Inbox's isn't drawn (its description
+  // still says it) unless kept in Settings
   const lead = useLead();
   // a due reminder is What matters' to do, counted there, unless its account is out of What matters (plan 211)
   const remindersInFeed = useApp((s) => s.accounts.every((a) => a.feed !== false));
@@ -1337,7 +1340,7 @@ export function Sidebar() {
   const categories = useApp((s) => s.categories);
   const counts = useApp((s) => s.counts);
   const design = useDesign();
-  const inboxTone: CountTone = lead === "whatMatters" ? "hidden" : design.surfaces.inboxCount;
+  const inboxTone: CountTone = useInboxHidden() ? "hidden" : design.surfaces.inboxCount;
 
   const openAccount = useOpenAccount((s) => s.id);
   const unreadByAccount = useFolderUnreadByAccount(counts.folderUnread);
@@ -1442,7 +1445,7 @@ export function Sidebar() {
           label={t("today.title")}
           count={counts.today || undefined}
           countSaid={counts.today ? t("sidebar.count.needYou", { count: counts.today }) : undefined}
-          countTone={lead === "whatMatters" ? design.surfaces.inboxCount : "hidden"}
+          countTone={design.surfaces.inboxCount}
           // plan 161: what the number counts, in words
           countHelp={counts.today ? { id: "today-count-help", text: t("today.countHelp", { count: counts.today }) } : undefined}
         />

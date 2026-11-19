@@ -30,6 +30,7 @@ const GENERAL_KEYS = [
   "dockBadge",
   // plan 207: the screen it opens on (a null, never asked, isn't carried: the question comes again)
   "firstScreen",
+  "keepInboxCount",
   // plan 170 (Codex critique #1): a sound turned off stays off on a new store
   "sendSound",
   // plan 188: how a person reaches the app (single-key shortcuts off) and Undo send, whole (on or off and its window)

@@ -267,6 +267,8 @@ export interface AppSettings {
   dockBadge: boolean;
   /** plan 207: the screen the app opens on, and so the one number the sidebar and the Dock show; null: not asked yet (the Inbox) */
   firstScreen: FirstScreen | null;
+  /** plan 207 (the owner): with What matters first, the Inbox's unread count still shows in the sidebar (off: hidden) */
+  keepInboxCount: boolean;
   /** plan 41: system notifications for important new mail while Terno runs */
   notifications: boolean;
   /** plan 41: notifications name the sender and the subject (off: only how many) */
@@ -569,6 +571,7 @@ const settingsPatch = z.object({
   dockBadge: z.boolean().optional(),
   // null only puts the question back (tests; nothing in the app asks for it)
   firstScreen: z.enum(["inbox", "whatMatters"]).nullable().optional(),
+  keepInboxCount: z.boolean().optional(),
   notifications: z.boolean().optional(),
   notificationPreview: z.boolean().optional(),
 });

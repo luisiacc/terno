@@ -1,7 +1,7 @@
 /**
- * Plan 207: the first screen, asked once when What matters is first offered, and the one number it brings: the question
- * after Settings closes, What matters chosen (the feed at once and at launch, its row's number alone), Settings → General's
- * "Open at launch" back to the Inbox, Esc keeping the Inbox for good; axe on the question, light and dark.
+ * Plan 207: the first screen, asked once when What matters is first offered: the question after Settings closes, What
+ * matters chosen (the feed at once and at launch, the Inbox's number hidden unless kept, the Dock's What matters'), Settings
+ * → General's "Open at launch" back to the Inbox, Esc keeping the Inbox for good; axe on the question, light and dark.
  */
 import AxeBuilder from "@axe-core/playwright";
 import type { Locator, Page } from "@playwright/test";
@@ -42,9 +42,10 @@ test("asked once AI is on, after Settings closes; What matters leads the sidebar
     await page.getByTestId("dev-ai-switch").click();
     await expect(page.getByTestId("dev-ai-on")).toBeVisible();
     await expect(today).toBeVisible();
-    // the Inbox leads until asked: What matters' number is said, not drawn
-    await expect(drawn(today)).toHaveCount(0);
-    await expect(page.locator("#today-count-help")).toContainText(/\d+ needs? you/);
+    // the Inbox leads until asked, and What matters shows its number all the same (the owner)
+    await expect(drawn(today)).toHaveText(/^[1-9]\d*$/);
+    await expect(page.locator("#today-count-help")).toContainText(`${await drawn(today).textContent()} need`);
+    await expect(drawn(inbox)).toHaveText(unread!);
     await expect(question(page)).toHaveCount(0);
     await page.keyboard.press("Escape");
     await expect(question(page)).toBeVisible();
@@ -108,7 +109,19 @@ test("asked once AI is on, after Settings closes; What matters leads the sidebar
     await expect(page.getByTestId("badge-row")).toContainText("Show the “What matters” number on the app icon");
     await expect(page.getByTestId("badge-row")).toContainText("What needs you in “What matters”, the same number as in the sidebar.");
     if (SHOTS) await page.getByTestId("first-screen-group").screenshot({ path: `${SHOTS}/setting-light.png` });
+    // the Inbox's number, hidden while What matters leads, kept by its switch; the app icon stays What matters'
+    const keep = page.getByTestId("keep-inbox-count");
+    await expect(keep).not.toBeChecked();
+    await keep.click();
+    await expect(keep).toBeChecked();
+    await expect(drawn(inbox)).toHaveText(unread!);
+    await expect(drawn(today)).toHaveText(/^[1-9]\d*$/);
+    await expect.poll(() => appBadge(page)).toBe(Number(await drawn(today).textContent()));
+    await keep.click();
+    await expect(drawn(inbox)).toHaveCount(0);
     await page.getByTestId("first-screen-inbox").click();
+    // the switch is What matters-first's alone
+    await expect(page.getByTestId("keep-inbox-count-row")).toHaveCount(0);
     await expect(page.getByTestId("first-screen-inbox")).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByTestId("badge-row")).toContainText("Show unread count on the app icon");
     await expect.poll(() => appBadge(page)).toBe(Number(unread));
