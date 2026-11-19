@@ -1309,11 +1309,12 @@ function ReaderContent() {
         <ToolbarDivider />
         <ToolbarMore threadId={selectedId} />
         <ReplyGroup replyTo={detail ? replyName(detail, myEmails) : ""} everyone={everyone} quiet={composing && !!detail} />
-        {/* plan 204, the UI experiment: beside Today's feed the pane is the feed's, and closes back to it, as Esc does */}
+        {/* plan 204, the UI experiment: beside Today's feed the pane is the feed's, and closes back to it, as Esc does: a
+            newsletter the digest opened goes back to the digest's page first (plan 161's way back, the owner's ask) */}
         {feedPane && <ToolbarDivider />}
         {feedPane && (
           <Tooltip>
-            <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={t("whatMatters.closeEmail")} aria-keyshortcuts="Escape" onClick={() => closeFeedConversation()} data-testid="reader-close" className={cn(tool, "-mr-2 @max-[560px]:-mr-1.5")} />}>
+            <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={t("whatMatters.closeEmail")} aria-keyshortcuts="Escape" onClick={() => backToDigest() || closeFeedConversation()} data-testid="reader-close" className={cn(tool, "-mr-2 @max-[560px]:-mr-1.5")} />}>
               <X />
             </TooltipTrigger>
             <TooltipContent className="flex items-center gap-2">

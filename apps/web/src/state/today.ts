@@ -155,8 +155,13 @@ export const useFeedRow = create<{
   carried: FeedRowId | null;
 }>(() => ({ opened: null, cursor: null, moves: 0, carried: null }));
 
-/** The feed opens this row (its conversation is the app's to open), or none. */
+/**
+ * The feed opens this row (its conversation is the app's to open), or none. A conversation opened through the feed's own
+ * row has no way back to the digest, even one the digest opened before: the reader's × and Esc then close it to the feed
+ * (Codex review, 2026-11-18: back on the digest, then a newsletter's own row, × went to the digest).
+ */
 export function openFeedRow(id: FeedRowId | null): void {
+  if (id !== null && id !== DIGEST_FEED_ROW && useToday.getState().fromDigest !== null) useToday.setState({ fromDigest: null });
   useFeedRow.setState(({ moves }) => ({ opened: id, ...(id !== null ? { cursor: null } : {}), moves: moves + 1, carried: null }));
 }
 

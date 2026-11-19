@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { dayKeyOf, DIGEST_ROW_ID, type TodayList } from "@terno/core";
+import { dayKeyOf, DIGEST_FEED_ROW, DIGEST_ROW_ID, type TodayList } from "@terno/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
@@ -33,6 +33,17 @@ describe("Back to the digest (plan 161)", () => {
     expect(useToday.getState().fromDigest).toBe(7);
     setApp({ selectedId: DIGEST_ROW_ID });
     expect(useToday.getState().fromDigest).toBe(7);
+  });
+
+  it("goes when the newsletter is opened again through the feed's own row (the reader's × and Esc then close to the feed)", async () => {
+    const { openFeedRow } = await import("./today");
+    useToday.setState({ fromDigest: 7 });
+    setApp({ selectedId: 7 });
+    setApp({ selectedId: DIGEST_ROW_ID });
+    openFeedRow(DIGEST_FEED_ROW);
+    expect(useToday.getState().fromDigest).toBe(7);
+    openFeedRow("dated:7");
+    expect(useToday.getState().fromDigest).toBe(null);
   });
 
   it("goes when another conversation opens, or Today is left", () => {

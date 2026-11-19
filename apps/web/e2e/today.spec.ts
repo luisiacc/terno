@@ -486,9 +486,12 @@ test.describe("What matters and its digest (plan 145)", () => {
         ["Enter, then Esc", async () => page.keyboard.press("Escape")],
         ["Back to the digest", async () => page.getByTestId("back-to-digest").click()],
         ["the digest's way in", async () => (await digestRow(page)).click()],
+        // the reader's ×, "Close (Esc)", does what Esc does: the digest first, never the feed behind it (owner, 2026-11-18)
+        ["the reader's close", async () => page.getByTestId("reader-close").click()],
       ];
+      expect(total).toBeGreaterThan((ways.length - 1) * 2);
       for (const [i, [way, back]] of ways.entries()) {
-        const at = i * 3;
+        const at = i * 2;
         const subject = await subjectOf(at);
         if (i === 0) {
           await page.getByTestId("digest-open").nth(at).focus();
