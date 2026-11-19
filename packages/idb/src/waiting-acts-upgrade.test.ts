@@ -53,3 +53,23 @@ it("a version-37 mailbox gains an empty store; its waiting conversation stays, a
   db.close();
   await reopened.close();
 });
+
+it("plan 216: a removed record is kept across a reopen, and the count finds it by its in-memory index (no version change)", async () => {
+  const name = crypto.randomUUID();
+  const store = await open(name);
+  const [account] = await withAccounts(store, 1);
+  const me = (await store.accounts.list())[0]!;
+  const ana = { name: "Ana", email: "ana@people.test" };
+  await store.sync.ingest([msg({ accountId: account!, providerMsgId: "out", rfcMessageId: "out@t", from: { name: "Me", email: me.email }, to: [ana], isSent: true, isRead: true, date: NOW - 5000 })], { applyFilters: false, now: NOW, classifier: null });
+  await store.sync.ingest([msg({ accountId: account!, providerMsgId: "ask", from: ana, to: [{ name: "Me", email: me.email }], inReplyTo: "out@t", references: ["out@t"], date: NOW - 1000 })], { applyFilters: false, now: NOW, classifier: null });
+  const talk = await threadOf(store, "ask");
+  const message = (await store.today.waiting.rows([{ threadId: talk, since: NOW - 1000 }], NOW, { messages: true })).get(talk)!.message!;
+  expect(await store.today.waiting.act({ threadId: talk, since: NOW - 1000, message, rev: 0, state: "removed", until: null, now: NOW })).not.toBeNull();
+  await store.close();
+  const reopened = await open(name);
+  expect((await reopened.today.waiting.rows([{ threadId: talk, since: NOW - 1000 }], NOW, { messages: false })).get(talk)).toEqual({ message: null, rev: 1, until: null, removed: true });
+  const db = await request(indexedDB.open(databaseName(name)));
+  expect(db.version).toBe(IDB_VERSION);
+  db.close();
+  await reopened.close();
+});

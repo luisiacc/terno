@@ -2,7 +2,7 @@ import { WAITING_CLOSED, waitingWords, type ClosedAt, type DatedSnapshot, type W
 import { recomputeContext, refreshFacts, waitingFactsOf } from "./facts";
 import type { Db } from "./sqlite";
 
-/** Plan 215 on SQLite (v74): see packages/store/src/waiting-acts.ts. */
+/** Plans 215 and 216 on SQLite (v74, v75): see packages/store/src/waiting-acts.ts. */
 
 interface Raw {
   message_id: number;
@@ -35,6 +35,8 @@ const ASKED = "kind IN ('ask', 'respond')";
  * (Codex code review 2, #1, #2).
  */
 function applyItems(db: Db, messageId: number, from: WaitingActRecord | null, to: WaitingActRecord, now: number): DatedSnapshot[] {
+  // plan 216: Remove takes the row off What matters, and leaves the reader's requests as they are
+  if (to.state === "removed") return [];
   const rows = db.all<{ id: number; revision: number; state: DatedSnapshot["state"]; deferred_until: number | null; closed_reason: string | null; closed_at: number | null }>(
     `SELECT id, revision, state, deferred_until, closed_reason, closed_at FROM dated_items WHERE message_id = ? AND ${ASKED} AND state = 'open'`,
     messageId,
@@ -57,6 +59,12 @@ function unapplyItems(db: Db, s: WaitingSnapshot, current: WaitingActRecord): vo
   // exactly, its revision too, so an Undo after an Undo (Later, Done, back, back) puts back what the first changed
   for (const i of s.items) db.run("UPDATE dated_items SET state = ?, deferred_until = ?, closed_reason = ?, closed_at = ?, revision = ? WHERE id = ? AND revision = ?", i.state, i.deferredUntil, i.closedReason, i.closedAt, i.revision, i.id, i.revision + 1);
   const later = s.before?.state === "later" ? s.before.until : null;
+  // (plan 216) a Remove changed none; the reader stored a removed message's requests as any other's, put off again with the
+  // Later restored (Codex review of plan 216, #1)
+  if (current.state === "removed") {
+    if (later !== null) db.run(`UPDATE dated_items SET deferred_until = ?, revision = revision + 1 WHERE message_id = ? AND ${ASKED} AND state = 'open' AND deferred_until IS NULL AND revision = 0`, later, s.messageId);
+    return;
+  }
   if (current.state === "done") {
     if (s.before?.state !== "done") db.run(`UPDATE dated_items SET state = 'open', closed_reason = NULL, closed_at = NULL, deferred_until = ?, revision = revision + 1 WHERE message_id = ? AND ${ASKED} AND state = 'dismissed' AND closed_reason = ? AND revision = 0`, later, s.messageId, WAITING_CLOSED);
   } else if (s.before?.state === "done") db.run(`UPDATE dated_items SET state = 'dismissed', closed_reason = ?, closed_at = ?, revision = revision + 1 WHERE message_id = ? AND ${ASKED} AND state = 'open' AND deferred_until = ? AND revision = 0`, WAITING_CLOSED, s.before.at, s.messageId, current.until);
@@ -102,17 +110,36 @@ export function restoreWaiting(db: Db, s: WaitingSnapshot): number | null {
 export function waitingRows(db: Db, threads: readonly { threadId: number; since: number }[], now: number, o: { messages: boolean }): Map<number, WaitingRowFacts> {
   const out = new Map<number, WaitingRowFacts>();
   if (!threads.length) return out;
-  // the count: only a deferral still ahead changes a row, and most mailboxes have none (one probe of its index)
-  if (!o.messages && !db.get("SELECT 1 FROM waiting_acts INDEXED BY waiting_acts_later WHERE state = 'later' AND until > ? LIMIT 1", now)) return out;
+  let asked = threads;
+  // the count: only a deferral still ahead or (plan 216) a Remove changes a row, and most mailboxes have neither (a probe of
+  // each index). Removes are kept with their message, so they add up: with no deferral ahead and fewer of them than rows,
+  // only the conversations a removed record sits at the waiting date of are resolved
+  if (!o.messages && !db.get("SELECT 1 FROM waiting_acts INDEXED BY waiting_acts_later WHERE state = 'later' AND until > ? LIMIT 1", now)) {
+    // (read at most one past the page's size: past that, resolving the page itself is the cheaper, bounded read)
+    const removed = db.all<{ thread_id: number; date: number }>("SELECT m.thread_id, m.date FROM waiting_acts w INDEXED BY waiting_acts_removed JOIN messages m ON m.id = w.message_id WHERE w.state = 'removed' LIMIT ?", threads.length + 1);
+    if (!removed.length) return out;
+    if (removed.length <= threads.length) {
+      const since = new Map(threads.map((t) => [t.threadId, t.since]));
+      const at = new Set(removed.flatMap((r) => (since.get(r.thread_id) === r.date ? [r.thread_id] : [])));
+      if (!at.size) return out;
+      asked = threads.filter((t) => at.has(t.threadId));
+    }
+  }
   // each conversation's newest received message at its waiting date (a range of messages_thread a row), then its record
-  const rows = db.all<{ thread_id: number; message: number; rev: number | null; state: string | null; until: number | null }>(
+  const rows = db.all<{ thread_id: number; message: number; rev: number | null; state: WaitingActState | null; until: number | null }>(
     `SELECT p.thread_id, p.message, w.rev, w.state, w.until FROM (
        SELECT x.thread_id, max(x.id) AS message FROM json_each(?) j JOIN messages x INDEXED BY messages_thread ON x.thread_id = j.value ->> 0 AND x.date = j.value ->> 1
        WHERE x.is_sent = 0 AND x.is_draft = 0 AND x.is_trash = 0 AND x.is_spam = 0 GROUP BY x.thread_id
      ) p ${o.messages ? "LEFT " : ""}JOIN waiting_acts w ON w.message_id = p.message`,
-    JSON.stringify(threads.map((t) => [t.threadId, t.since])),
+    JSON.stringify(asked.map((t) => [t.threadId, t.since])),
   );
-  for (const r of rows) out.set(r.thread_id, { message: o.messages ? r.message : null, rev: r.rev ?? 0, until: r.state === "later" && r.until !== null && r.until > now ? r.until : null });
+  for (const r of rows) {
+    const until = r.state === "later" && r.until !== null && r.until > now ? r.until : null;
+    const removed = r.state === "removed";
+    // (the count's: what keeps a row out, nothing else)
+    if (!o.messages && until === null && !removed) continue;
+    out.set(r.thread_id, { message: o.messages ? r.message : null, rev: r.rev ?? 0, until, ...(removed && { removed }) });
+  }
   return out;
 }
 

@@ -1,5 +1,5 @@
 import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, parseHandedTo, readPartOfDay, DATED_MUTE_NAME_MAX, DATED_MUTE_PAIRS_MAX, DATED_MUTES_MAX, muteKey, pairKey, pairOf, senderIsPerson, THREAD_SCOPED_KINDS, waitingCutoff, type DatedMute, type DatedMuteOn, readWall, type DatedRow } from "@terno/core";
-import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, readNothingAsked, recipientList, WAITING_CLOSED, type ClosedAt, type DatedFinish, type DatedFinishOutcome, type DatedMuteAdded, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
+import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, readNothingAsked, recipientList, WAITING_CLOSED, type ClosedAt, type DatedFinish, type DatedFinishOutcome, type DatedMuteAdded, type DatedMark, type DatedSnapshot, type DatedSource, type WaitingActState } from "@terno/store";
 import { received, receivedOwn } from "./ai-summaries";
 import { remarkReplies } from "./followups";
 import { T, type Ctx, type R } from "./mail";
@@ -218,8 +218,9 @@ export function finishDated(c: Ctx, w: DatedFinish): DatedFinishOutcome {
   // plan 210 (iteration 4): a muted kind's new items aren't stored; its settlements and moves below still are
   // (iteration 5) nor are a kind's muted for this sender alone (its pairs, by sender): the rest of their mail is
   const kinds = new Set([...T(c, "dated_mutes").by("target", "kind").map((r) => String(r.key)), ...T(c, "dated_mute_pairs").by("sender", src.senderKey).map((r) => String(r.kind))]);
-  // plan 215: as SQL's, a request read from a message marked Done or put off on its waiting row follows that choice
-  const waiting = T(c, "waiting_acts").get(w.messageId) as { state: "done" | "later"; until: number | null } | undefined;
+  // plan 215: as SQL's, a request read from a message marked Done or put off on its waiting row follows that choice (plan
+  // 216: a Remove's, as any message's)
+  const waiting = T(c, "waiting_acts").get(w.messageId) as { state: WaitingActState; until: number | null } | undefined;
   for (const r of w.rows) {
     if (kinds.has(r.kind)) continue;
     if (rows.by("identity", w.messageId, r.item).length) continue;

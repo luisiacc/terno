@@ -249,6 +249,128 @@ export function defineWaitingActsConformance(fresh: () => Promise<MailStore>): v
       expect(await store.replies.transition(ana.thread, { rowId: row.rowId, state: "dismissed", revision: dismissed.revision }, "ready")).toMatchObject({ state: "ready" });
     });
 
+    it("plan 216: Remove takes the row off What matters only: the fact, the Inbox and search as they were, no Earlier line or moment; Undo exact", async () => {
+      const { store, talk, again, since, waitingIds, page, rows } = await setup();
+      const ana = await talk("Ana", NOW - DAY);
+      const bea = await talk("Bea", NOW - 2 * DAY);
+      const removed = await store.today.waiting.act({ threadId: ana.thread, since: NOW - DAY, message: ana.message, rev: 0, state: "removed", until: null, now: NOW });
+      expect(removed).toEqual({ messageId: ana.message, threadId: ana.thread, rev: 1, before: null, items: [] });
+      expect(await since(ana.thread)).toBe(NOW - DAY);
+      expect(await waitingIds()).toEqual([ana.thread, bea.thread]);
+      expect((await store.threads.counts(NOW)).inboxWaiting).toBe(2);
+      expect((await store.threads.searchText({ query: "About", threadFilter: "waiting", limit: 10, now: NOW })).items.map((t) => t.id).sort()).toEqual([ana.thread, bea.thread].sort());
+      // Needs you's walk still has it; its row (the list's and the count's) says it's removed, the other's nothing
+      expect(await page()).toEqual([ana.thread, bea.thread]);
+      expect(await rows(ana.thread, NOW - DAY)).toEqual({ message: ana.message, rev: 1, until: null, removed: true });
+      expect(await rows(ana.thread, NOW - DAY, false)).toEqual({ message: null, rev: 1, until: null, removed: true });
+      expect(await rows(bea.thread, NOW - 2 * DAY, false)).toBeUndefined();
+      expect(await store.today.waiting.donePage({ since: 0, after: null, limit: 10 })).toEqual([]);
+      expect(await store.today.waiting.moments(NOW, 10)).toEqual([]);
+      // another window's Done or Later on the row as it saw it: stale
+      expect(await store.today.waiting.act({ threadId: ana.thread, since: NOW - DAY, message: ana.message, rev: 0, state: "done", until: null, now: NOW })).toBeNull();
+      expect(await store.today.waiting.act({ threadId: ana.thread, since: NOW - DAY, message: ana.message, rev: 0, state: "later", until: NOW + DAY, now: NOW })).toBeNull();
+      expect(await store.today.waiting.restore(removed!)).toBe(ana.thread);
+      expect(await rows(ana.thread, NOW - DAY)).toEqual({ message: ana.message, rev: 0, until: null });
+      expect(await rows(ana.thread, NOW - DAY, false)).toBeUndefined();
+      // removed again, then a newer message from them: the row is the new message's, never removed
+      await store.today.waiting.act({ threadId: ana.thread, since: NOW - DAY, message: ana.message, rev: 0, state: "removed", until: null, now: NOW });
+      const newer = await again(ana, NOW - 500);
+      expect(await rows(ana.thread, NOW - 500)).toEqual({ message: newer, rev: 0, until: null });
+      expect(await rows(ana.thread, NOW - 500, false)).toBeUndefined();
+    });
+
+    it("plan 216: Remove after Later and Done after Remove at their revisions; an old Undo never erases a newer choice; Done can't be removed", async () => {
+      const { store, talk, since, rows } = await setup();
+      const ana = await talk("Ana", NOW - DAY);
+      const later = await store.today.waiting.act({ threadId: ana.thread, since: NOW - DAY, message: ana.message, rev: 0, state: "later", until: NOW + DAY, now: NOW });
+      const removed = await store.today.waiting.act({ threadId: ana.thread, since: NOW - DAY, message: ana.message, rev: 1, state: "removed", until: null, now: NOW });
+      expect(removed?.before).toMatchObject({ state: "later", until: NOW + DAY });
+      expect(await rows(ana.thread, NOW - DAY)).toEqual({ message: ana.message, rev: 2, until: null, removed: true });
+      expect(await store.today.waiting.moments(NOW, 10)).toEqual([]);
+      // the Later's Undo is older than the Remove: refused
+      expect(await store.today.waiting.restore(later!)).toBeNull();
+      expect(await store.today.waiting.restore(removed!)).toBe(ana.thread);
+      expect(await rows(ana.thread, NOW - DAY)).toEqual({ message: ana.message, rev: 1, until: NOW + DAY });
+      const again = await store.today.waiting.act({ threadId: ana.thread, since: NOW - DAY, message: ana.message, rev: 1, state: "removed", until: null, now: NOW });
+      const done = await store.today.waiting.act({ threadId: ana.thread, since: NOW - DAY, message: ana.message, rev: 2, state: "done", until: null, now: NOW });
+      expect(done?.before?.state).toBe("removed");
+      expect(await since(ana.thread)).toBeNull();
+      expect(await store.today.waiting.restore(again!)).toBeNull();
+      // Done is no reply needed: no Remove (nor Later) acts on it; only its Undo reopens it
+      expect(await store.today.waiting.act({ threadId: ana.thread, since: NOW - DAY, message: ana.message, rev: 3, state: "removed", until: null, now: NOW })).toBeNull();
+      expect(await store.today.waiting.restore(done!)).toBe(ana.thread);
+      expect(await rows(ana.thread, NOW - DAY)).toEqual({ message: ana.message, rev: 2, until: null, removed: true });
+    });
+
+    it("plan 216: Remove leaves the reader's requests as they are; one read while removed is stored as any; Undo restores a Later's on those", async () => {
+      const { store, talk } = await setup();
+      const ana = await talk("Ana", NOW - DAY);
+      const bea = await talk("Bea", NOW - 2 * DAY);
+      const ask = { kind: "ask" as const, item: 0, text: "Send the deck", quote: "q", dueDay: "2026-11-18", dueAt: NOW + DAY, timed: false, dated: false, actAt: NOW };
+      const finish = async (c: typeof ana) => {
+        await store.dated.marks.queueScan([c.message], NOW);
+        expect(await store.dated.finish({ messageId: c.message, threadId: c.thread, fromScan: true, rows: [ask], settled: [], now: NOW, model: "m", provider: "p", promptVersion: 1, clearGeneration: store.dated.clearGeneration() })).toBe("written");
+      };
+      const of = async (c: typeof ana) => (await store.dated.ofThread(c.thread)).map((r) => [r.state, r.deferredUntil, r.revision]);
+      // Bea's request read before: put off with the Later, then left as it is by the Remove and by its Undo
+      await finish(bea);
+      await store.today.waiting.act({ threadId: bea.thread, since: NOW - 2 * DAY, message: bea.message, rev: 0, state: "later", until: NOW + DAY, now: NOW });
+      expect(await of(bea)).toEqual([["open", NOW + DAY, 1]]);
+      const gone = await store.today.waiting.act({ threadId: bea.thread, since: NOW - 2 * DAY, message: bea.message, rev: 1, state: "removed", until: null, now: NOW });
+      expect(gone?.items).toEqual([]);
+      expect(await of(bea)).toEqual([["open", NOW + DAY, 1]]);
+      await store.today.waiting.restore(gone!);
+      expect(await of(bea)).toEqual([["open", NOW + DAY, 1]]);
+      // Ana's read while removed (after a Later): stored open, not put off; Undo brings the Later back and puts it off with it
+      const later = await store.today.waiting.act({ threadId: ana.thread, since: NOW - DAY, message: ana.message, rev: 0, state: "later", until: NOW + DAY, now: NOW });
+      const removed = await store.today.waiting.act({ threadId: ana.thread, since: NOW - DAY, message: ana.message, rev: 1, state: "removed", until: null, now: NOW });
+      await finish(ana);
+      expect(await of(ana)).toEqual([["open", null, 0]]);
+      await store.today.waiting.restore(removed!);
+      expect(await of(ana)).toEqual([["open", NOW + DAY, 1]]);
+      expect(await store.today.waiting.restore(later!)).toBe(ana.thread);
+      // a Remove with no Later before it: its Undo touches no request
+      const plain = await store.today.waiting.act({ threadId: ana.thread, since: NOW - DAY, message: ana.message, rev: 0, state: "removed", until: null, now: NOW });
+      const before = await of(ana);
+      await store.today.waiting.restore(plain!);
+      expect(await of(ana)).toEqual(before);
+    });
+
+    it("plan 216: a Remove follows its message into the conversation it's merged into, and so does its Undo", async () => {
+      const { store, accountId, talk, rows } = await setup();
+      const ana = await talk("Ana", NOW - DAY);
+      const removed = await store.today.waiting.act({ threadId: ana.thread, since: NOW - DAY, message: ana.message, rev: 0, state: "removed", until: null, now: NOW });
+      // an older conversation of yours with Ana, joined to hers by a message that names both
+      await store.sync.ingest([msg({ accountId, date: NOW - 3 * DAY, providerMsgId: "old-out", rfcMessageId: "old-out@t", from: me, to: [ana.them], isSent: true, isRead: true, subject: "Earlier" })], { applyFilters: false, now: NOW, classifier: null });
+      await store.sync.ingest([msg({ accountId, date: NOW - 2 * DAY, providerMsgId: "bridge", rfcMessageId: "bridge@t", from: me, to: [ana.them], isSent: true, isRead: true, subject: "Re: About Ana", references: ["old-out@t", `${ana.key}-out@t`], inReplyTo: `${ana.key}-out@t` })], { applyFilters: false, now: NOW, classifier: null });
+      const merged = await threadOf(store, `${ana.key}-in`);
+      expect(merged).toBe(await threadOf(store, "old-out"));
+      expect(await rows(merged, NOW - DAY)).toEqual({ message: ana.message, rev: 1, until: null, removed: true });
+      expect(await store.today.waiting.restore(removed!)).toBe(merged);
+      expect(await rows(merged, NOW - DAY)).toEqual({ message: ana.message, rev: 0, until: null });
+    });
+
+    it("plan 216: the count reads a removed record only at its own message, and stays exact past the page's size", async () => {
+      const { store, talk, again, rows } = await setup();
+      const convs: Awaited<ReturnType<typeof talk>>[] = [];
+      for (const [i, name] of ["Ana", "Bea", "Cleo"].entries()) convs.push(await talk(name, NOW - (i + 1) * DAY));
+      const [ana, bea, cleo] = convs as [typeof convs[0], typeof convs[0], typeof convs[0]];
+      // Ana's removal goes stale (she wrote again); Bea's holds; Cleo's twin at the same moment isn't the removed one
+      await store.today.waiting.act({ threadId: ana.thread, since: NOW - DAY, message: ana.message, rev: 0, state: "removed", until: null, now: NOW });
+      const newer = await again(ana, NOW - 500);
+      await store.today.waiting.act({ threadId: bea.thread, since: NOW - 2 * DAY, message: bea.message, rev: 0, state: "removed", until: null, now: NOW });
+      await store.today.waiting.act({ threadId: cleo.thread, since: NOW - 3 * DAY, message: cleo.message, rev: 0, state: "removed", until: null, now: NOW });
+      const twin = await again(cleo, NOW - 3 * DAY);
+      const asked = [{ threadId: ana.thread, since: NOW - 500 }, { threadId: bea.thread, since: NOW - 2 * DAY }, { threadId: cleo.thread, since: NOW - 3 * DAY }];
+      const count = async (of: typeof asked) => [...(await store.today.waiting.rows(of, NOW, { messages: false }))];
+      expect(await count(asked)).toEqual([[bea.thread, { message: null, rev: 1, until: null, removed: true }]]);
+      // three removed records, a page of one: the page itself is resolved, the same answer
+      expect(await count([asked[1]!])).toEqual([[bea.thread, { message: null, rev: 1, until: null, removed: true }]]);
+      expect(await count([asked[0]!])).toEqual([]);
+      expect(await rows(cleo.thread, NOW - 3 * DAY)).toEqual({ message: twin, rev: 0, until: null });
+      expect((await rows(ana.thread, NOW - 500))?.message).toBe(newer);
+    });
+
     it("a long conversation: the act walks its newest messages only, and judges the same message", async () => {
       const { store, accountId, talk, since } = await setup();
       const ana = await talk("Ana", NOW - 3 * DAY);

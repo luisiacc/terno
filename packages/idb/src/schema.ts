@@ -41,10 +41,11 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  * Version 37 adds a kind muted from one sender in What matters (SQL v72, plan 210, iteration 5).
  * SQL v73 (plan 210, iteration 5) adds `ai_dated_mail.looked_at`: absent on older marks reads as unclaimed, so no version change.
  * Version 38 adds Done and Later on a conversation waiting on you (SQL v74, plan 215).
+ * SQL v75 (plan 216) lets a waiting record be `removed`: no CHECK here, and its index is in memory, so no version change.
  */
 export { IDB_VERSION };
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 74;
+export const LOGICAL_SCHEMA = 75;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 
@@ -134,8 +135,9 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   { name: "dated_mutes", early: true, key: ["target", "key"], indexes: { target: ["target"] } },
   // plan 210 (iteration 5): a kind muted from one sender, by sender (the reader's finish reads one sender's)
   { name: "dated_mute_pairs", early: true, key: ["sender_key", "kind"], indexes: { sender: ["sender_key"] } },
-  // plan 215: Done and Later on a conversation waiting on you, a record per message (`done`, Earlier's; `later`, the deferrals)
-  { name: "waiting_acts", key: ["message_id"], indexes: { ...fk("message_id"), done: { columns: ["state"], where: (r) => r.state === "done" }, later: { columns: ["state"], where: (r) => r.state === "later" } } },
+  // plan 215: Done and Later on a conversation waiting on you, a record per message (`done`, Earlier's; `later`, the deferrals;
+  // plan 216, `removed`, off What matters: the count's)
+  { name: "waiting_acts", key: ["message_id"], indexes: { ...fk("message_id"), done: { columns: ["state"], where: (r) => r.state === "done" }, later: { columns: ["state"], where: (r) => r.state === "later" }, removed: { columns: ["state"], where: (r) => r.state === "removed" } } },
   { name: "send_copies", early: true, key: ["opId"], indexes: fk("accountId") },
   { name: "send_copy_bytes", key: ["id"], lazy: true },
   { name: "recipient_receipts", early: true, key: ["opId"], indexes: fk("accountId") },

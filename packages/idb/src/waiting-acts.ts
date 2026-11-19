@@ -3,7 +3,7 @@ import { WAITING_CLOSED, waitingWords, type ClosedAt, type DatedSnapshot, type W
 import { recomputeContext, refreshFacts, waitingFactsOf, writeFacts } from "./facts";
 import { T, type Ctx, type R } from "./mail";
 
-/** Plan 215 on IndexedDB (version 38), as SQL's (packages/db/src/waiting-acts.ts). */
+/** Plans 215 and 216 on IndexedDB (version 38), as SQL's (packages/db/src/waiting-acts.ts). */
 
 const toRecord = (r: R): WaitingActRecord => ({ messageId: r.message_id, state: r.state, until: r.until ?? null, at: r.at, rev: r.rev, who: r.who ?? "", subject: r.subject ?? "", wrote: r.wrote === 1 });
 const recordOf = (c: Ctx, messageId: number): WaitingActRecord | null => {
@@ -19,6 +19,7 @@ const asked = (d: R): boolean => ANSWERED_KINDS.includes(d.kind as DatedKind);
 
 /** As SQL's `applyItems`: the reader's open requests from the message follow the act, each snapshot kept for its Undo. */
 function applyItems(c: Ctx, messageId: number, from: WaitingActRecord | null, to: WaitingActRecord, now: number): DatedSnapshot[] {
+  if (to.state === "removed") return [];
   const items = T(c, "dated_items");
   const changed: DatedSnapshot[] = [];
   for (const d of items.by("message", messageId)) {
@@ -39,6 +40,12 @@ function unapplyItems(c: Ctx, s: WaitingSnapshot, current: WaitingActRecord): vo
     if (d && d.revision === i.revision + 1) items.update(d, { state: i.state, deferred_until: i.deferredUntil, closed_reason: i.closedReason, closed_at: i.closedAt, revision: i.revision });
   }
   const later = s.before?.state === "later" ? s.before.until : null;
+  // (plan 216: a Remove changed none, and the requests stored since are put off with the Later restored; below,
+  // `deferred_until === current.until` would take every request with none for its)
+  if (current.state === "removed") {
+    if (later !== null) for (const d of items.by("message", s.messageId)) if (asked(d) && d.revision === 0 && d.state === "open" && (d.deferred_until ?? null) === null) items.update(d, { deferred_until: later, revision: 1 });
+    return;
+  }
   for (const d of items.by("message", s.messageId)) {
     if (!asked(d) || d.revision !== 0) continue;
     if (current.state === "done") {
@@ -93,21 +100,34 @@ export function waitingRows(c: Ctx, threads: readonly { threadId: number; since:
   const records = T(c, "waiting_acts");
   if (!threads.length) return out;
   if (!o.messages) {
-    // the count: only a deferral still ahead changes a row; walked from the few deferrals, each to its message's thread
+    // the count: only a deferral still ahead or (plan 216) a Remove changes a row; walked from those records, each to its
+    // message's thread
     const since = new Map(threads.map((t) => [t.threadId, t.since]));
     const messages = T(c, "messages");
-    for (const r of records.by("later", "later")) {
-      if (r.until <= now) continue;
+    const at = (r: R): number | null => {
       const m = messages.get(r.message_id);
-      if (m && since.get(m.thread_id) === m.date && waitingMessage(c, m.thread_id, m.date) === m.id) out.set(m.thread_id, { message: null, rev: r.rev, until: r.until });
+      return m && since.get(m.thread_id) === m.date && waitingMessage(c, m.thread_id, m.date) === m.id ? (m.thread_id as number) : null;
+    };
+    for (const r of records.by("later", "later")) {
+      const thread = r.until > now ? at(r) : null;
+      if (thread !== null) out.set(thread, { message: null, rev: r.rev, until: r.until });
     }
+    // (Removes add up: past the page's size, the page itself is resolved, as the list's read)
+    if (records.count("removed", "removed") <= threads.length) {
+      for (const r of records.by("removed", "removed")) {
+        const thread = at(r);
+        if (thread !== null) out.set(thread, { message: null, rev: r.rev, until: null, removed: true });
+      }
+      return out;
+    }
+    for (const [thread, f] of waitingRows(c, threads, now, { messages: true })) if (f.removed || f.until !== null) out.set(thread, { ...f, message: null });
     return out;
   }
   for (const t of threads) {
     const message = waitingMessage(c, t.threadId, t.since);
     if (message === null) continue;
     const r = records.size ? records.get(message) : undefined;
-    out.set(t.threadId, { message, rev: r?.rev ?? 0, until: r?.state === "later" && r.until > now ? r.until : null });
+    out.set(t.threadId, { message, rev: r?.rev ?? 0, until: r?.state === "later" && r.until > now ? r.until : null, ...(r?.state === "removed" && { removed: true as const }) });
   }
   return out;
 }

@@ -10,7 +10,8 @@ import type { ClosedAt, DatedSnapshot } from "./dated";
  * review 1, #1).
  */
 
-export type WaitingActState = "done" | "later";
+/** Plan 216: `removed` takes the row off What matters only (the fact and the Inbox untouched, no Earlier line, the reader's requests left alone). */
+export type WaitingActState = "done" | "later" | "removed";
 
 /**
  * A request the dated reader read from a message marked Done is stored closed with this reason (or closed with the Done that
@@ -66,21 +67,24 @@ export interface WaitingRowFacts {
   rev: number;
   /** Later's moment while it's ahead */
   until: number | null;
+  /** plan 216: taken off What matters (present only then) */
+  removed?: true;
 }
 
 export interface WaitingActsStore {
   /**
-   * Done or Later on a conversation waiting on you, in one transaction: its facts are walked again (bounded) for the message
-   * they judge waiting; refused (null) unless that's still `message`, waiting since `since`, and its record is still at
-   * `rev` (absent: 0). Done clears the thread's `waiting_since` (marking search) in the same write; the dated reader's
-   * requests from the message follow either choice.
+   * Done, Later or (plan 216) Remove on a conversation waiting on you, in one transaction: its facts are walked again
+   * (bounded) for the message they judge waiting; refused (null) unless that's still `message`, waiting since `since`, and
+   * its record is still at `rev` (absent: 0). Done clears the thread's `waiting_since` (marking search) in the same write;
+   * the dated reader's requests from the message follow Done and Later (Remove leaves them as they are).
    */
   act(o: { threadId: number; since: number; message: number; rev: number; state: WaitingActState; until: number | null; now: number }): Promise<WaitingSnapshot | null>;
   /** Its Undo: the previous record back (or none), the facts refreshed; the thread refreshed, or null when it changed since */
   restore(s: WaitingSnapshot): Promise<number | null>;
   /**
    * Of these waiting conversations (their waiting date), what their rows need: with `messages`, each one's waiting message
-   * (the list's; one seek a row) and its record; without, the records alone (the count's: nothing read while there's none)
+   * (the list's; one seek a row) and its record; without, only what keeps a row out of the count (a deferral still ahead, a
+   * Remove), read from those records alone (nothing read while there's none)
    */
   rows(threads: readonly { threadId: number; since: number }[], now: number, o: { messages: boolean }): Promise<Map<number, WaitingRowFacts>>;
   /** The moments of the deferrals still ahead, soonest first, at most `limit`: what the clock wakes for */

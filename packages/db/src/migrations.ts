@@ -1660,6 +1660,27 @@ CREATE TABLE waiting_acts (
 CREATE INDEX waiting_acts_done ON waiting_acts(at, message_id) WHERE state = 'done';
 CREATE INDEX waiting_acts_later ON waiting_acts(until, message_id) WHERE state = 'later';
 ` },
+  // plan 216: Remove on a "Waiting on you" row (off What matters only). A CHECK can't be altered: the table is rebuilt, which
+  // holds one row per act the user made (never the mailbox's size), its indexes recreated, and the removed records' own
+  // partial index (the count's read). Shape only
+  { version: 75, name: "What matters: Remove on a conversation waiting on you (plan 216)", sql: `
+CREATE TABLE waiting_acts_v75 (
+  message_id INTEGER PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
+  state TEXT NOT NULL CHECK (state IN ('done', 'later', 'removed')),
+  until INTEGER,
+  at INTEGER NOT NULL,
+  rev INTEGER NOT NULL,
+  who TEXT NOT NULL DEFAULT '',
+  subject TEXT NOT NULL DEFAULT '',
+  wrote INTEGER NOT NULL DEFAULT 0
+);
+INSERT INTO waiting_acts_v75 (message_id, state, until, at, rev, who, subject, wrote) SELECT message_id, state, until, at, rev, who, subject, wrote FROM waiting_acts;
+DROP TABLE waiting_acts;
+ALTER TABLE waiting_acts_v75 RENAME TO waiting_acts;
+CREATE INDEX waiting_acts_done ON waiting_acts(at, message_id) WHERE state = 'done';
+CREATE INDEX waiting_acts_later ON waiting_acts(until, message_id) WHERE state = 'later';
+CREATE INDEX waiting_acts_removed ON waiting_acts(message_id) WHERE state = 'removed';
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

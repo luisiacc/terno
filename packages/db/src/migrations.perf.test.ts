@@ -60,6 +60,8 @@ it(`each migration since v${FIRST} runs in ≤ ${STEP_MS} ms at 57,000 conversat
       stats.push({ name: `v${m.version} (${m.name}): ${ms.toFixed(0)} ms`, budgetMs: STEP_MS, p50: ms, p95: ms, max: ms, iterations: 1 });
       if (ms > STEP_MS * MULT) slow.push(`v${m.version} ${m.name}: ${ms.toFixed(0)} ms`);
       fillNewTables(db, before);
+      // plan 216: v75 rebuilds the waiting acts' table: a record for every received message, far past any history of acts
+      if (m.version === 74) db.exec("INSERT INTO waiting_acts (message_id, state, until, at, rev, who, subject) SELECT id, CASE id % 3 WHEN 0 THEN 'done' WHEN 1 THEN 'later' ELSE 'done' END, date, date, 1, 'Someone', 'A subject' FROM messages WHERE is_sent = 0");
     }
   } finally {
     db.close();

@@ -1,5 +1,5 @@
 import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, parseHandedTo, readPartOfDay, DATED_MUTE_NAME_MAX, DATED_MUTE_PAIRS_MAX, DATED_MUTES_MAX, muteKey, pairOf, senderIsPerson, THREAD_SCOPED_KINDS, waitingCutoff, type DatedMute, type DatedMuteOn, type DatedRow } from "@terno/core";
-import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, readNothingAsked, recipientList, WAITING_CLOSED, type ClosedAt, type DatedFinish, type DatedFinishOutcome, type DatedMuteAdded, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
+import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, readNothingAsked, recipientList, WAITING_CLOSED, type ClosedAt, type DatedFinish, type DatedFinishOutcome, type DatedMuteAdded, type DatedMark, type DatedSnapshot, type DatedSource, type WaitingActState } from "@terno/store";
 import { OWN_SENDER_SQL, RECEIVED_SQL } from "./ai-summaries";
 import { ownAddresses } from "./facts";
 import { remarkReplies } from "./followups";
@@ -205,8 +205,9 @@ export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
     // (iteration 5) nor are a kind's muted for this sender alone (its pairs, by the key's prefix): the rest of their mail is
     const kinds = new Set(db.all<{ key: string }>("SELECT key FROM dated_mutes WHERE target = 'kind' UNION ALL SELECT kind FROM dated_mute_pairs WHERE sender_key = ?", src.senderKey).map((r) => r.key));
     // plan 215: their message marked as needing no reply, or put off with Later on its waiting row: a request read from it
-    // follows that choice (stored closed, or put off to the same moment), so the same request never comes back as a task
-    const waiting = db.get<{ state: "done" | "later"; until: number | null }>("SELECT state, until FROM waiting_acts WHERE message_id = ?", w.messageId);
+    // follows that choice (stored closed, or put off to the same moment), so the same request never comes back as a task;
+    // plan 216: a Remove took the row off What matters alone, and its requests are stored as any message's
+    const waiting = db.get<{ state: WaitingActState; until: number | null }>("SELECT state, until FROM waiting_acts WHERE message_id = ?", w.messageId);
     for (const r of w.rows) {
       if (kinds.has(r.kind)) continue;
       if (db.get("SELECT 1 FROM dated_items WHERE message_id = ? AND item = ?", w.messageId, r.item)) continue;
