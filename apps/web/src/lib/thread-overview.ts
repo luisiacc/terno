@@ -1,4 +1,4 @@
-import type { Address, AttachmentInfo, MessageDetail, ThreadDetail } from "@terno/core";
+import { messageParts, type Address, type AttachmentInfo, type MessageDetail, type ThreadDetail } from "@terno/core";
 import { autoRecipients, identitiesIn } from "./compose-fields";
 
 /**
@@ -86,10 +86,11 @@ export interface ThreadFile {
 
 /**
  * Every file of every message, oldest message first. Never merged: a name and a size don't make two files the same (a
- * second revision of report.pdf can weigh the same), and each copy has its own message and cache state.
+ * second revision of report.pdf can weigh the same), and each copy has its own message and cache state. Plan 220: a
+ * picture the message's text shows isn't a file (a signature's logos); its message's menu offers it.
  */
 export function threadFiles(messages: readonly MessageDetail[]): ThreadFile[] {
-  return messages.flatMap((message) => message.attachments.map((attachment) => ({ message, attachment })));
+  return messages.flatMap((message) => messageParts(message.bodyHtml, message.attachments).files.map((attachment) => ({ message, attachment })));
 }
 
 /**

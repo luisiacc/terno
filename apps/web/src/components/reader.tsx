@@ -1,4 +1,4 @@
-import { DIGEST_ROW_ID } from "@terno/core";
+import { DIGEST_ROW_ID, messageParts } from "@terno/core";
 import { backToDigest, useToday } from "~/state/today";
 import "~/lib/replies";
 import { folderName } from "~/lib/account-folders";
@@ -443,6 +443,9 @@ function Message({ m, threadId, expanded, onToggle, icons, person, headless, sol
   const bodyId = `msg-body-${m.id}`;
   const open = headless || expanded;
   const date = messageDate(m.date);
+  // plan 220: the pictures its text shows aren't its files (its menu offers them); parts not known yet go by the provider's flag
+  const { files } = messageParts(m.bodyHtml, m.attachments);
+  const marked = m.attachments.length ? files.length > 0 : m.hasAttachments;
   // the only message opens nothing: a header, not a button (its ⋯ is still a Tab stop beside it)
   const Head = solo ? "div" : "button";
   const toggle = solo ? { "data-testid": "message-header", title: fullDate(m.date) } : { type: "button" as const, "aria-expanded": expanded, "aria-controls": bodyId, title: fullDate(m.date), onClick: onToggle, onBlur: onLeave, "data-testid": "message-toggle" };
@@ -484,7 +487,7 @@ function Message({ m, threadId, expanded, onToggle, icons, person, headless, sol
                 {!m.isRead && <span className="sr-only">, {t("list.row.unread")},</span>}
                 <span aria-hidden className="min-w-0 flex-1 truncate text-[length:var(--ds-text-control)] text-muted-foreground">{m.snippet}</span>
                 <span className="sr-only">{previewFor(m.snippet)}</span>
-                {m.hasAttachments && (
+                {marked && (
                   <>
                     <Paperclip aria-hidden data-testid="message-attachment-mark" className="size-3 shrink-0 text-muted-foreground" />
                     <span className="sr-only">, {t("list.row.attachments")},</span>
@@ -517,7 +520,7 @@ function Message({ m, threadId, expanded, onToggle, icons, person, headless, sol
             ) : (
               <p className="text-sm text-muted-foreground italic">{m.bodyUnavailable ? t("attachments.bodyUnavailable") : m.bodyState === "full" ? t("attachments.noBody") : t("reader.downloading")}</p>
             )}
-            {m.attachments.length > 0 && <ReaderAttachments messageId={m.id} accountId={m.accountId} attachments={m.attachments} />}
+            {files.length > 0 && <ReaderAttachments messageId={m.id} accountId={m.accountId} attachments={files} />}
             <ForwardLine messageId={m.id} />
           </div>
         </Expand>

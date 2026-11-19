@@ -62,3 +62,19 @@ it("cancels a successful encoding after its final byte read, without publishing 
     expect(call.mock.calls.filter(([m]) => m === "attachments.read")).toHaveLength(Math.ceil(size / ATTACHMENT_CHUNK));
   } finally { vi.restoreAllMocks(); }
 });
+
+it("plan 220: an invalid picture keeps its read reservation but spends no data URL, so a valid one after it still shows", async () => {
+  vi.stubGlobal("Blob", NodeBlob);
+  const good = 3 * 1024 * 1024;
+  const valid = Buffer.alloc(good);
+  valid.set([137,80,78,71,13,10,26,10]); valid.writeUInt32BE(1, 16); valid.writeUInt32BE(1, 20);
+  const parts = [part, { ...part, id: 2, assetId: "good", size: good, contentId: "good" }];
+  call.mockImplementation(async (method: string, args: { assetId: string; index: number }) => {
+    const bytes = args.assetId === "good" ? valid : Buffer.alloc(size);
+    if (method === "attachments.info") return parts.find((p) => p.assetId === args.assetId);
+    if (method === "attachments.read") return { dataBase64: bytes.subarray(args.index * ATTACHMENT_CHUNK, (args.index + 1) * ATTACHMENT_CHUNK).toString("base64") };
+    throw new Error(method);
+  });
+  const result = await resolveCidHtml('<img src="cid:photo"><img src="cid:good">', 7, parts, () => true);
+  expect(result.match(/data:image\/png;base64,/g)).toHaveLength(1);
+});

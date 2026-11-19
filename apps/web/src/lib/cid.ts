@@ -1,4 +1,4 @@
-import { attachmentCid, attachmentCidUri, bytesBase64, type AttachmentInfo } from "@terno/core";
+import { attachmentCidUri, bytesBase64, inlineImageAdmission, type AttachmentInfo } from "@terno/core";
 import { attachmentBlob } from "./attachments";
 
 /** Raster dimensions before decoding: inline mail cannot allocate an unbounded bitmap. */
@@ -60,10 +60,8 @@ async function inlineData(mime: string, bytes: Uint8Array, current: () => boolea
 async function resolve(html: string, accountId: number, attachments: AttachmentInfo[], current: () => boolean, yieldTo: () => Promise<void>): Promise<string> {
   const template = document.createElement("template");
   template.innerHTML = html;
-  const refs = new Map<string, AttachmentInfo | null>();
-  for (const a of attachments) { const cid = attachmentCid(a.contentId); if (cid) refs.set(cid, refs.has(cid) ? null : a); }
-  let budget = 8 * 1024 * 1024;
-  let renderBudget = 8 * 1024 * 1024;
+  // plan 220: the same rule decides what the reader lists as files (messageParts)
+  const admission = inlineImageAdmission(attachments);
   const resolved = new Map<string, InlineData | null>();
   const replacements = new Map<string, InlineData>();
   const nonce = crypto.randomUUID();
@@ -71,22 +69,21 @@ async function resolve(html: string, accountId: number, attachments: AttachmentI
     const src = img.getAttribute("src") ?? "";
     if (!/^cid:/i.test(src)) continue;
     img.removeAttribute("src");
-    const a = refs.get(attachmentCidUri(src) ?? "");
-    if (!current() || !a?.assetId || !Number.isSafeInteger(a.size) || a.size < 0 || a.size > 4 * 1024 * 1024 || !["image/png", "image/gif", "image/jpeg"].includes(a.mime)) continue;
-    if (!resolved.has(a.assetId)) {
-      resolved.set(a.assetId, null);
-      if (a.size > budget) continue;
-      // Failed and invalid reads consume the same reservation as successful ones.
-      budget -= a.size;
+    if (!current()) continue;
+    const a = admission.reserve(attachmentCidUri(src));
+    const assetId = a?.assetId;
+    if (!a || !assetId) continue;
+    if (!resolved.has(assetId)) {
+      // Failed and invalid reads keep their reservation, as successful ones do.
+      resolved.set(assetId, null);
       try {
-        const bytes = new Uint8Array(await (await attachmentBlob(accountId, { ...a, assetId: a.assetId })).arrayBuffer());
+        const bytes = new Uint8Array(await (await attachmentBlob(accountId, { ...a, assetId })).arrayBuffer());
         if (!current()) return html;
-        if (bytes.length === a.size && await rasterAllowed(a.mime, bytes, current, yieldTo) && `data:${a.mime};base64,`.length + 4 * Math.ceil(bytes.length / 3) <= renderBudget) resolved.set(a.assetId, await inlineData(a.mime, bytes, current, yieldTo));
+        if (bytes.length === a.size && await rasterAllowed(a.mime, bytes, current, yieldTo) && admission.fits(a)) resolved.set(assetId, await inlineData(a.mime, bytes, current, yieldTo));
       } catch { /* An unavailable inline image never replaces the readable message. */ }
     }
-    const data = resolved.get(a.assetId);
-    if (data && data.length <= renderBudget) {
-      renderBudget -= data.length;
+    const data = resolved.get(assetId);
+    if (data && admission.place(a)) {
       const marker = `terno-cid:${nonce}:${replacements.size}`;
       replacements.set(marker, data);
       img.setAttribute("src", marker);

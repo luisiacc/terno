@@ -5,7 +5,7 @@
  * no browsing context (nothing loads or runs); the HTML is written here from
  * its words, never the mail's own, so a paste can't fetch its pixels either.
  */
-import type { Address, MessageDetail, ThreadDetail } from "@terno/core";
+import { messageParts, type Address, type MessageDetail, type ThreadDetail } from "@terno/core";
 import { t } from "@terno/i18n";
 import { fullDate } from "~/lib/format";
 import { splitTextQuote } from "~/lib/quote";
@@ -406,8 +406,8 @@ const label = (key: string) => `${markOf(true, false, null)}${key}:${PLAIN} `;
 const words = (s: string) => s.replace(INVISIBLE, "");
 
 function headOf(m: MessageDetail): string[] {
-  // an image the mail shows in place isn't something it has attached
-  const attached = m.attachments.filter((a) => !(a.contentId && m.bodyHtml?.includes(`cid:${a.contentId.replace(/[<>]/g, "")}`)));
+  // an image the mail shows in place isn't something it has attached (plan 220)
+  const attached = messageParts(m.bodyHtml, m.attachments).files;
   const people = (list: Address[]) => words(list.map(person).join(", "));
   return [
     `${label(t("threadText.from"))}${words(person(m.from))}`,

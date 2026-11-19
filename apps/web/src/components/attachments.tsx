@@ -72,7 +72,7 @@ export function DraftAttachments({ d }: { d: LocalDraft }) {
 }
 
 /** a file in the reader, and where it's from */
-type FileTarget = { accountId: number; messageId: number; a: AttachmentInfo };
+export type FileTarget = { accountId: number; messageId: number; a: AttachmentInfo };
 type FileAction = "open" | "download";
 
 /** one key for a file's work (an open, a download or a retry), so aria-busy names the file it's for */
@@ -95,6 +95,9 @@ function runFileAction({ accountId, messageId, a }: FileTarget, how: FileAction,
     snack.error(error instanceof Error ? error.message : t("attachments.unavailable"), { action });
   });
 }
+
+/** Plan 220: a picture a message's text shows, saved from its menu as a file's Download is. */
+export const saveFile = (f: FileTarget): Promise<void> => runFileAction(f, "download", () => {});
 
 /**
  * What a file in the reader does when chosen, the message's tile and the conversation's strip alike (plan 177). One at
@@ -207,7 +210,7 @@ function FilesMenu({ files, busy, act, children }: { files: readonly FileTarget[
   );
 }
 
-export function ReaderAttachments({ accountId, messageId, attachments }: { accountId: number; messageId: number; attachments: AttachmentInfo[] }) {
+export function ReaderAttachments({ accountId, messageId, attachments }: { accountId: number; messageId: number; attachments: readonly AttachmentInfo[] }) {
   const { busy, act, fileProps, downloadButton } = useFileActions();
   const files = attachments.map((a) => ({ accountId, messageId, a }));
   return <FilesMenu files={files} busy={busy} act={act}>

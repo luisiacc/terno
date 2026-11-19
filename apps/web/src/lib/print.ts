@@ -32,7 +32,7 @@ export interface PrintMessage {
   date: number;
   bodyHtml: string | null;
   bodyText: string | null;
-  attachments: { filename: string; size: number }[];
+  attachments: readonly { filename: string; size: number }[];
   /** the reader's answer for this message: the setting or its "Cargar contenido", never in local mode */
   allowRemote: boolean;
 }

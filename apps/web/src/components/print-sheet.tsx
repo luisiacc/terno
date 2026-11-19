@@ -1,5 +1,5 @@
 import { captureUi, log } from "~/lib/diag";
-import type { ThreadDetail } from "@terno/core";
+import { messageParts, type ThreadDetail } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@terno/ui/components/dialog";
 import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
@@ -58,7 +58,8 @@ function printMessages(detail: ThreadDetail | undefined, scope: Scope, messageId
     date: m.date,
     bodyHtml: m.bodyHtml,
     bodyText: m.bodyText,
-    attachments: m.attachments,
+    // plan 220: a picture the text shows isn't listed as a file
+    attachments: messageParts(m.bodyHtml, m.attachments).files,
     allowRemote: remoteAllowed(m.id, { ...policy, spam: detail?.thread.inSpam === true || detail?.thread.hasSpam === true }, allowed),
   }));
 }

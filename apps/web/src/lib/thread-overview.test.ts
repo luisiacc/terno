@@ -76,6 +76,13 @@ describe("threadFiles (plan 177)", () => {
     expect(files[0]!.attachment.assetId).toBe("x1");
     expect(files[2]!.attachment.assetId).toBeUndefined();
   });
+
+  it("leaves out the pictures a message's text shows: a signature's logos aren't files (plan 220)", () => {
+    const logo: AttachmentInfo = { id: 4, filename: "image001.png", size: 900, mime: "image/png", assetId: "logo", contentId: "<image001.png@01DB>" };
+    const a = msg(ana, [me], { bodyHtml: '<p>Hi</p><img src="cid:image001.png@01DB">', attachments: [file(1, "report.pdf", 500, "x1"), logo] });
+    const b = msg(ana, [me], { bodyHtml: "<p>no picture</p>", attachments: [{ ...logo, id: 5 }] });
+    expect(threadFiles([a, b]).map((f) => f.attachment.id)).toEqual([1, 5]);
+  });
 });
 
 describe("messagePerson: whom a message's ⋯ offers (plan 194, Codex code review)", () => {

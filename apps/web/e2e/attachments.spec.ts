@@ -84,7 +84,7 @@ test("attachments attach/remove/reload/send/download exact bytes", async ({ app:
 });
 
 
-test("offline CID consent and forwarding retain exact account-owned bytes", async ({ app: page, server }) => {
+test("offline CID consent and forwarding retain exact account-owned bytes; plan 220: the picture isn't listed as a file, its message's menu saves it", async ({ app: page, server }) => {
   const [account] = await server.backend.store.accounts.list();
   const bytes = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aVuoAAAAASUVORK5CYII=", "base64");
   const now = Date.now();
@@ -92,7 +92,7 @@ test("offline CID consent and forwarding retain exact account-owned bytes", asyn
     accountId: account!.id, providerMsgId: "inline-bytes", providerThreadId: null, rfcMessageId: "inline@test.com", inReplyTo: null, references: [],
     from: { name: "Image", email: "image@test.com" }, to: [{ name: "Me", email: account!.email }], cc: [], bcc: [], subject: "Attachment fixture", date: now, snippet: "Inline image", bodyText: "Inline image", bodyHtml: '<p>Inline image</p><img src="cid:PHOTO%40TEST" alt="Local photo"><img src="https://pixel.invalid/track" alt="Remote pixel">', bodyState: "full", listId: null,
     isRead: true, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: bytes.length,
-    attachments: [{ filename: "photo.png", mime: "image/png", size: bytes.length, contentId: "photo@test", bytes }],
+    attachments: [{ filename: "photo.png", mime: "image/png", size: bytes.length, contentId: "photo@test", bytes }, { filename: "terms.pdf", mime: "application/pdf", size: 4, contentId: null, bytes: Buffer.from("%PDF") }],
   };
   const { touched } = await server.backend.store.sync.ingest([incoming], { applyFilters: false, now, classifier: null });
   await server.backend.server.invoke("settings.update", { localMode: true }, { clientId: "setup", origin: "dev" });
@@ -107,12 +107,28 @@ test("offline CID consent and forwarding retain exact account-owned bytes", asyn
   await page.getByTestId("inline-load").click();
   await expect(image).toHaveAttribute("src", /^data:image\/png;base64,/);
   expect(remote).toEqual([]);
+  // plan 220: the picture is in the text, the PDF alone is a file; the message's ⋯ saves the picture, from the keyboard
+  await expect(page.getByTestId("attachment")).toHaveText([/terms\.pdf/]);
+  await page.getByTestId("message-more").focus();
+  await page.keyboard.press("Enter");
+  await page.getByTestId("message-menu-images").focus();
+  await page.keyboard.press("ArrowRight");
+  const picture = page.getByTestId("message-menu-image");
+  await expect(picture).toHaveText(["photo.png68 B"]);
+  await expect(picture).toBeFocused();
+  await axeBothModes(page, "[data-testid=message-menu-image-list]");
+  const download = page.waitForEvent("download");
+  await page.keyboard.press("Enter");
+  const saved = await download;
+  expect(saved.suggestedFilename()).toBe("photo.png");
+  expect(readFileSync((await saved.path())!)).toEqual(bytes);
+  // Forward carries every part, the picture too
   await respond(page, "forward");
-  await expect(page.getByTestId("draft-attachment")).toHaveCount(1);
+  await expect(page.getByTestId("draft-attachment")).toHaveCount(2);
   await page.getByTestId("compose-to").fill("recipient@test.com");
   await page.getByTestId("compose-send").click();
   await expect.poll(() => server.smtp.length).toBe(1);
-  expect((await parseRaw(server.smtp[0]!.raw)).attachments[0]!.bytes).toEqual(new Uint8Array(bytes));
+  expect((await parseRaw(server.smtp[0]!.raw)).attachments.find((a) => a.filename === "photo.png")!.bytes).toEqual(new Uint8Array(bytes));
 });
 
 

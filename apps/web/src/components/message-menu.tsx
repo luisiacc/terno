@@ -5,7 +5,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { Button } from "@terno/ui/components/button";
 import { cn } from "@terno/ui/lib/utils";
 import { t } from "@terno/i18n";
-import { Copy, Ellipsis, FileDown, Forward, Printer, Reply, ReplyAll } from "@terno/ui/icons";
+import { Copy, Download, Ellipsis, FileDown, Forward, Printer, Reply, ReplyAll } from "@terno/ui/icons";
+import { messageParts } from "@terno/core";
 import { useMemo, useRef, useState, type MouseEvent, type ReactElement } from "react";
 import { composeLanding, type ComposeLanding } from "~/lib/compose";
 import { identitiesIn, reachesSeveral } from "~/lib/compose-fields";
@@ -16,6 +17,8 @@ import { setApp, useApp } from "~/state/app";
 import { useThread } from "~/state/threads";
 import { messagePerson, type ThreadPerson } from "~/lib/thread-overview";
 import { PersonItems, type PersonParts } from "./person-menu";
+import { saveFile } from "./attachments";
+import { formatBytes } from "~/lib/format";
 
 /**
  * A right-click on the reader's background is the conversation's too, so it is passed to the trigger as a mail
@@ -53,9 +56,12 @@ function useMessagePerson(threadId: number, messageId: number | null): { person:
  * then what's done about whom it's between, as their chip's menu offers (useMessagePerson)
  */
 function MessageItems({ threadId, messageId, respond, compose, parts }: { threadId: number; messageId: number | null; respond: (mode: Respond) => void; compose: (open: () => Promise<ComposeLanding>) => void; parts: PersonParts }) {
-  const { Item, Separator } = parts;
+  const { Item, Separator, Sub, SubTrigger, SubContent } = parts;
   const replyAll = useReachesSeveral(threadId, messageId);
   const detail = useThread(threadId);
+  const message = detail?.messages.find((m) => m.id === messageId);
+  // plan 220: the pictures its text shows, which its files leave out: saved from here (keyboard too, by ⋯)
+  const images = message ? messageParts(message.bodyHtml, message.attachments).images : [];
   const about = useMessagePerson(threadId, messageId);
   const print = (intent: PrintIntent) => messageId !== null && openPrint({ threadId, messageId, intent });
   return (
@@ -92,6 +98,22 @@ function MessageItems({ threadId, messageId, respond, compose, parts }: { thread
       {messageId !== null && (
         <>
           <Separator />
+          {message && images.length > 0 && (
+            <Sub>
+              <SubTrigger data-testid="message-menu-images">
+                <Download />
+                <span className="min-w-0 flex-1 truncate">{t("threadMenu.saveImage", { count: images.length })}</span>
+              </SubTrigger>
+              <SubContent className="w-max max-w-96 min-w-60" data-testid="message-menu-image-list">
+                {images.map((a) => (
+                  <Item key={a.id} data-testid="message-menu-image" onClick={() => void saveFile({ accountId: message.accountId, messageId: message.id, a })}>
+                    <span className="min-w-0 flex-1 truncate">{a.filename}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground tabular">{formatBytes(a.size)}</span>
+                  </Item>
+                ))}
+              </SubContent>
+            </Sub>
+          )}
           <Item data-testid="message-menu-print" onClick={() => print("print")}>
             <Printer />
             <span className="flex-1">{t("threadMenu.printMessage")}</span>

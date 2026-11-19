@@ -1,4 +1,4 @@
-import type { AttachmentInfo, MatchNeedle } from "@terno/core";
+import { cidImageSources, messageParts, type AttachmentInfo, type MatchNeedle } from "@terno/core";
 import DOMPurify from "dompurify";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { frameHeight, rememberHeight } from "~/lib/frame-heights";
@@ -101,7 +101,8 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
   const [cidAllowed, setCidAllowed] = useState(false);
   const [cidResult, setCidResult] = useState<{ key: string; html: string } | null>(null);
   const cidKey = `${accountId}\0${html}\0${attachments.map((a) => `${a.assetId}:${a.contentId}`).join("|")}`;
-  const hasCid = /\bsrc\s*=\s*["']?cid:/i.test(html);
+  // plan 220: the same reading as what lists its pictures, so one left out of the files is always offered here
+  const hasCid = useMemo(() => cidImageSources(html).length > 0, [html]);
   useEffect(() => {
     if (!cidAllowed || accountId === undefined) return;
     let active = true;
@@ -341,7 +342,7 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
       }}>{t("reader.full.show")}</button>}
       {view?.active === lease && view.target && createPortal(
         <FullMessageBoundary onClose={() => view.close(lease)} key={opening}>
-          <FullMessage source={source} html={visibleHtml} messageId={messageId} accountId={accountId} attachments={attachments} remoteImages={remoteImages} appearance={paper ? "paper" : appearance} onClose={() => view.close(lease)} controls={<>{inlineControl}{remoteControl}</>} copyText={() => { if (copiedText === null) throw new Error("Message selection is not ready"); return copiedText; }} />
+          <FullMessage source={source} html={visibleHtml} messageId={messageId} accountId={accountId} attachments={attachments} files={messageParts(html, attachments).files} remoteImages={remoteImages} appearance={paper ? "paper" : appearance} onClose={() => view.close(lease)} controls={<>{inlineControl}{remoteControl}</>} copyText={() => { if (copiedText === null) throw new Error("Message selection is not ready"); return copiedText; }} />
         </FullMessageBoundary>, view.target)}
     </div>
   );
