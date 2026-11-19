@@ -83,6 +83,8 @@ Round 1 (`codex exec -s read-only` on `42022a419`), six findings, all fixed:
 2. Medium: `<img alt="a>b" src="cid:…">` ended the tag at the quoted `>`, so the consent button vanished. The scanner now reads quoted values, and the consent keeps its old raw test as a floor (`cid-mime.test.tsx`: the quoted `>` and an encoded `c&#105;d:` both get the button).
 4. Low: `&commat;` and numeric references without `;` weren't decoded; 5. Low: `<img-preview>` read as `img`, `<script-x>` as a script; 6. Low: a nested `<template>` ended the skip early. All three are in the scanner's tests, which fail on the first version.
 
+Round 2 (final, on `9bfd71b88`), one medium finding, fixed: the nested-template skip counted a `<template>` written in a comment, so scanning stopped before a later picture (listed again, and an encoded `c&#105;d:` one lost its consent button). Templates are now counted by the scanner's own reading of tags, which already skips comments, quoted values and raw text. Its probe also showed `&hyphen;` decoding to `-` (a browser gives U+2010) and `&AMP;` not decoding: both fixed. The three cases are in the scanner's test.
+
 ## Tests run
 
 - Unit: `packages/core/src/attachments.test.ts`, `apps/web/src/lib/{cid,cid-budget,cid-mime,thread-overview,thread-text,print}.test.ts(x)`, `packages/mcp/src/{attachment-content,mcp}.test.ts`: 152 passed.

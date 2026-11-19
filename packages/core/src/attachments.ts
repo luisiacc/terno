@@ -43,7 +43,7 @@ export function attachmentCidUri(value: string): string | null {
 
 /** The references a Content-ID may spell (a browser knows two thousand; one missed leaves the picture listed, never lost). */
 const ENTITIES: Record<string, string> = {
-  amp: "&", quot: '"', apos: "'", lt: "<", gt: ">", commat: "@", period: ".", percnt: "%", lowbar: "_", hyphen: "-", dash: "-",
+  amp: "&", AMP: "&", quot: '"', QUOT: '"', apos: "'", lt: "<", LT: "<", gt: ">", GT: ">", commat: "@", period: ".", percnt: "%", lowbar: "_", hyphen: "\u2010", dash: "\u2010",
   colon: ":", num: "#", dollar: "$", plus: "+", equals: "=", sol: "/", excl: "!", quest: "?", tilde: "~", nbsp: "\u00a0",
 };
 const decodeReferences = (value: string) => value.replace(/&(?:#x([0-9a-f]+);?|#(\d+);?|([a-z]+);)/gi, (whole, hex?: string, dec?: string, name?: string) => {
@@ -99,6 +99,8 @@ function readTag(html: string, i: number): { end: number; src: string | null } |
  */
 export function cidImageSources(html: string): string[] {
   const found: string[] = [];
+  // inside a template (nested ones too) nothing is shown; counted by the same reading, so a comment or a quote can't fool it
+  let inert = 0;
   const tag = /<(!--|\/?[a-z][^\s/>]*)/gi;
   for (let m = tag.exec(html); m; m = tag.exec(html)) {
     const name = m[1]!.toLowerCase();
@@ -111,8 +113,10 @@ export function cidImageSources(html: string): string[] {
     const read = readTag(html, tag.lastIndex);
     if (!read) break;
     tag.lastIndex = read.end + 1;
-    if (name === "img") {
-      if (read.src !== null && /^cid:/i.test(read.src)) found.push(read.src);
+    if (name === "template") inert++;
+    else if (name === "/template") inert = Math.max(0, inert - 1);
+    else if (name === "img") {
+      if (!inert && read.src !== null && /^cid:/i.test(read.src)) found.push(read.src);
     } else if (name === "plaintext") {
       break;
     } else if (RAW.has(name)) {
@@ -120,14 +124,6 @@ export function cidImageSources(html: string): string[] {
       close.lastIndex = tag.lastIndex;
       if (!close.exec(html)) break;
       tag.lastIndex = close.lastIndex;
-    } else if (name === "template") {
-      // its content is inert, templates inside it too
-      const nested = /<(\/?)template[\s/>]/gi;
-      nested.lastIndex = tag.lastIndex;
-      let depth = 1;
-      for (let t = nested.exec(html); t && depth; t = depth ? nested.exec(html) : null) depth += t[1] ? -1 : 1;
-      if (depth) break;
-      tag.lastIndex = nested.lastIndex;
     }
   }
   return found;

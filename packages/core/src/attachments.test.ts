@@ -41,6 +41,10 @@ it("reads a tag's whole name and its quoted values, nested templates and the ref
   expect(cidImageSources(`<template><template></template><img src="cid:inert"></template><img src="cid:shown">`)).toEqual(["cid:shown"]);
   expect(cidImageSources(`<img src="cid:logo&commat;example"><img src="cid:n&#64x"><img src="cid:h&#x40;y">`)).toEqual(["cid:logo@example", "cid:n@x", "cid:h@y"]);
   expect(cidImageSources(`<p>text</p><plaintext><img src="cid:a">`)).toEqual([]);
+  // round 2: a template named in a comment, a quote or a script inside one isn't one
+  expect(cidImageSources(`<template><!-- <template> --></template><img src="c&#105;d:logo">`)).toEqual(["cid:logo"]);
+  expect(cidImageSources(`<template title="<template>"><script>"<template>"</script></template><img src="cid:logo">`)).toEqual(["cid:logo"]);
+  expect(cidImageSources(`<img src="cid:a&AMP;b"><img src="cid:a&hyphen;b">`)).toEqual(["cid:a&b", "cid:a\u2010b"]);
 });
 
 it("a picture the reader shows is not a file; anything it wouldn't show stays one", () => {
