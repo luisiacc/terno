@@ -2,7 +2,7 @@ import { cidImageSources, type AttachmentInfo, type MatchNeedle } from "@terno/c
 import DOMPurify from "dompurify";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { frameHeight, rememberHeight } from "~/lib/frame-heights";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import FullMessage from "./full-message";
 import { FullMessageBoundary, useMailReaderView } from "./mail-reader-view";
 import { resolveCidHtml } from "~/lib/cid";
@@ -79,6 +79,8 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
   // the setting or this message's "Load content", in either mode (plan 37)
   const allowRemote = useRemoteConsent((s) => remoteAllowed(messageId, { remoteImages, spam }, s.allowed));
   const [height, setHeight] = useState(() => section ? 120 : frameHeight(messageId) ?? 120);
+  // until its first height is on it, the frame shows nothing, never a slice of the mail (a rebuild keeps the frame shown)
+  const [shown, setShown] = useState(section);
   // re-rendered when the painted theme changes (the colors are literals inside the document)
   const themeKey = useAppearance((s) => s.themeKey);
   const mode = useAppearance((s) => s.mode);
@@ -161,13 +163,17 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
     let observer: ResizeObserver | null = null;
     let detach: (() => void) | null = null;
     let hydration: AbortController | null = null;
+    let setUp: Document | null = null;
+    let parsing = 0;
     const onLoad = () => {
+      const d = frame.contentDocument;
+      const flow = d?.querySelector<HTMLElement>("[data-terno-flow]");
+      // (once a document: when it's parsed, or at its load if that comes first)
+      if (!d || !flow || d === setUp) return;
+      setUp = d;
       hydration?.abort();
       observer?.disconnect();
       detach?.();
-      const d = frame.contentDocument;
-      const flow = d?.querySelector<HTMLElement>("[data-terno-flow]");
-      if (!d || !flow) return;
       const finish = () => {
         if (!active || frame.contentDocument !== d || !flow.isConnected) return;
         paint(d.documentElement, lookRef.current);
@@ -190,6 +196,7 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
         const mediaAllowance = section ? d.querySelectorAll("img:not(svg *),svg:not(svg *),video:not(svg *),canvas:not(svg *),input:not(svg *),select:not(svg *)").length * 4096 : 0;
         const clippedParents = new Set(cropped);
         const disabledStops = new Map<HTMLElement, string | null>();
+        let sized = false;
         // Measure the flow independently of the preview box, including positioned overflow.
         // Reset that box first so changed bodies and image reflows can shrink; round up fractional pixels.
         const measure = () => {
@@ -225,7 +232,8 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
           const h = section ? content : Math.min(MAX_HEIGHT, content);
           // (folded only: a frame opens folded, and opening at an unfolded height would shrink as it measures)
           if (!section && !quoteShown) rememberHeight(messageId, h);
-          setHeight(h);
+          // a document's first height lands in the paint that shows it, so the mail appears whole
+          if (!section && !sized) { sized = true; flushSync(() => { setHeight(h); setShown(true); }); } else setHeight(h);
         };
         measure();
         d.addEventListener("load", measure, true);
@@ -288,14 +296,24 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
       } else finish();
     };
     frame.addEventListener("load", onLoad);
+    // a mail (or a full message's section, its media room reserved) is measured once its document is parsed, not when its
+    // pictures arrive (the frame's load waits for each one); a few frames at most, until the new document is in (it
+    // replaces the old one asynchronously) or the load comes first
+    const parsed = () => {
+      const d = frame.contentDocument;
+      if (d?.querySelector<HTMLElement>("[data-terno-flow]")?.dataset.ternoDocument === sourceId && d.readyState !== "loading") onLoad();
+      else parsing = requestAnimationFrame(parsed);
+    };
+    parsing = requestAnimationFrame(parsed);
     return () => {
       active = false;
+      cancelAnimationFrame(parsing);
       hydration?.abort();
       frame.removeEventListener("load", onLoad);
       observer?.disconnect();
       detach?.();
     };
-  }, [doc, section]);
+  }, [doc, section, sourceId]);
 
   // a message folded away takes its marks with it
   useEffect(() => () => marksChanged(), []);
@@ -322,7 +340,7 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
           sandbox="allow-same-origin allow-popups"
           scrolling="no"
           srcDoc={doc}
-          style={{ height }}
+          style={{ height, visibility: shown ? undefined : "hidden" }}
           data-mail={paper ? "paper" : "themed"}
           className="block w-full border-0"
         />
@@ -331,7 +349,8 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
       {((clipping.source === clean && clipping.clipped) || (!section && view?.active === lease)) && <button type="button" className="mt-3 rounded-md text-sm text-muted-foreground hover:text-foreground focus-visible:ring-2" onClick={(event) => {
         const original = ref.current?.contentDocument;
         const selection = original?.getSelection();
-        if (!original?.body || !selection || original.readyState !== "complete") return;
+        // (parsed is enough: a picture still on its way doesn't hold the full message back)
+        if (!original?.body || !selection || original.readyState === "loading") return;
         const previous = Array.from({ length: selection.rangeCount }, (_, i) => selection.getRangeAt(i).cloneRange());
         try {
           const range = original.createRange(); range.selectNodeContents(original.body);

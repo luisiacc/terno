@@ -1,5 +1,7 @@
-import { expect, openRow, test, fresh, scenario } from "./fixtures";
+import { E2E_NOW } from "./constants";
+import { expect, openRow, selectThread, test, fresh, scenario } from "./fixtures";
 import { startOllamaStub } from "./ollama-stub";
+import type { Route } from "@playwright/test";
 
 /** Anything off this machine: the demo newsletters' images (answered here, never fetched). */
 const remote = (url: URL) => /^https?:$/.test(url.protocol) && url.hostname !== "127.0.0.1" && url.hostname !== "localhost";
@@ -128,7 +130,7 @@ test.describe("local mode and AI providers", () => {
     });
   });
 
-  test("remote images: “Load content”, “Always load”; an HTML mail fits its frame", async ({ app: page }) => {
+  test("remote images: “Load content”, “Always load”; an HTML mail fits its frame", async ({ app: page, server }) => {
     await scenario("plan 37: in local mode “Load content” loads the message's remote images, for the session", async () => {
       const hits: string[] = [];
       const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
@@ -186,6 +188,51 @@ test.describe("local mode and AI providers", () => {
       await expect(page.frameLocator("iframe[title^='Message']").locator("h1")).toBeVisible();
       await expect(page.getByTestId("remote-blocked")).toHaveCount(0);
       await expect.poll(() => hits.length).toBeGreaterThan(0);
+    });
+    await scenario("an HTML mail shows whole at once: measured when parsed, not when its pictures arrive, and never a slice first", async () => {
+      // its pictures never answer: the frame's load never comes
+      const pending: Route[] = [];
+      await page.unrouteAll({ behavior: "ignoreErrors" });
+      await page.route(remote, (route) => { pending.push(route); });
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      // every state the frame is shown in, from its mount (reload: no height remembered)
+      await page.evaluate(() => {
+        const seen: { visible: boolean; height: number }[] = [];
+        (window as unknown as { __frameStates: typeof seen }).__frameStates = seen;
+        new MutationObserver(() => {
+          const frame = document.querySelector<HTMLIFrameElement>("iframe[title^='Message']");
+          if (!frame) return;
+          const state = { visible: frame.style.visibility !== "hidden", height: frame.clientHeight };
+          const last = seen.at(-1);
+          if (last?.visible !== state.visible || last.height !== state.height) seen.push(state);
+        }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["style"] });
+      });
+      await openRow(page, 2);
+      const frame = page.locator("iframe[title^='Message']");
+      await expect(frame).toBeVisible();
+      await expect.poll(() => pending.length).toBeGreaterThan(0);
+      // the content's own height, read apart from the one the frame was given
+      const content = await frame.evaluate((f: HTMLIFrameElement) => {
+        const d = f.contentDocument!;
+        const pad = getComputedStyle(d.body);
+        return Math.ceil(d.querySelector("[data-terno-flow]")!.getBoundingClientRect().height + Number.parseFloat(pad.paddingTop) + Number.parseFloat(pad.paddingBottom));
+      });
+      expect(content).toBeGreaterThan(200);
+      const states = await page.evaluate(() => (window as unknown as { __frameStates: { visible: boolean; height: number }[] }).__frameStates);
+      expect(states.find((s) => s.visible)?.height).toBe(content);
+      // Codex review: a mail too tall for the reader opens whole by "Show full message" while a picture is still on its way
+      const store = server.backend.store;
+      const account = (await store.accounts.list())[0]!;
+      const tall = `<img src="https://stalled.test/hero.png" alt=""><div>${Array.from({ length: 1400 }, (_, i) => `<p style="margin:0;height:20px">Line ${i}</p>`).join("")}</div>`;
+      const { touched } = await store.sync.ingest([{ accountId: account.id, providerMsgId: "stalled-1", providerThreadId: "stalled-thread", rfcMessageId: "<stalled-1@e2e.test>", inReplyTo: null, references: [], from: { name: "Yuki", email: "yuki@acme.studio" }, replyTo: [], to: [{ name: "", email: account.email }], cc: [], bcc: [], subject: "Una larga con foto", date: E2E_NOW, snippet: "Line", bodyText: null, bodyHtml: tall, bodyState: "full", listId: null, isRead: true, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: 100 }], { applyFilters: false, now: E2E_NOW, classifier: null });
+      await selectThread(page, touched[0]!, 'subject:"Una larga con foto"');
+      await expect.poll(() => pending.some((route) => route.request().url().includes("stalled.test"))).toBe(true);
+      await page.getByRole("button", { name: "Show full message", exact: true }).click();
+      await expect(page.locator("[data-full-message-scroller] iframe").first()).toBeVisible();
+      await page.keyboard.press("Escape");
+      for (const route of pending) await route.abort().catch(() => {});
+      await page.unrouteAll({ behavior: "ignoreErrors" });
     });
   });
 
