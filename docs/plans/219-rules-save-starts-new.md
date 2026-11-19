@@ -62,3 +62,14 @@ Twelve points. Taken:
 - Existing e2e that leaned on the old behaviour (the saved rule left open, the "Rule saved" snack) now find the saved row by id and read the footer.
 
 Not taken: three races between clicking Save and its answer (editing, reopening the same AI rule, closing the dialog meanwhile). A local save answers in milliseconds, and each was already possible before; the guard that keeps a rule opened meanwhile stays. "Focus stays on Save" doesn't happen: both buttons are disabled while saving, so focus falls to `<body>` and goes to the row (the e2e asserts it). Keyboard and hidden-row reachability of the disclosure are Base UI's (a closed panel isn't rendered).
+
+## What the Codex code review changed
+
+Nothing: it found no defects in 077380ba6.
+
+## Tests run
+
+- Unit: `filters-dialog.test.tsx` (13, two new), the i18n catalog tests, `source-scan.test.ts`.
+- e2e (`--project=e2e`): `filters.spec.ts` "AI filters and learned filters", `settings.spec.ts` "Created for you…", `category-forwarding.spec.ts` "from a filter", `folder-drop.spec.ts`: all pass.
+- Screenshots and axe of the dialog (saved line, group open) in light and dark: clean.
+- Typecheck of `@terno/web` fails only in `full-message.tsx`, another series' uncommitted work.
