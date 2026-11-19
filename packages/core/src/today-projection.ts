@@ -47,6 +47,8 @@ export interface WaitingFact {
   rev?: number;
   /** put off with Later until then */
   deferredUntil?: number | null;
+  /** plan 216: taken off What matters (Remove): no waiting row anywhere, its items and your reminder as they'd be without one */
+  removed?: boolean;
 }
 
 export interface ProjectedRow {
@@ -428,7 +430,7 @@ export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFact
   // the counts (the count leaves Coming up out); at its moment it's back in Waiting on you. Any item of the conversation
   // placed, Coming up's too (the reader's request put off with it), says it already
   for (const w of f.waiting) {
-    if (represented.has(w.id)) continue;
+    if (w.removed || represented.has(w.id)) continue;
     const deferred = w.deferredUntil != null && w.deferredUntil > f.now;
     if (deferred && (o.count || anywhere.has(w.id))) continue;
     const why: TodayWhy = { kind: "waiting", wrote: w.hasSent };

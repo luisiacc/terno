@@ -1289,9 +1289,10 @@ export const contract = {
   "today.scheduleUndo": m<{ ok: true }>()(z.object({ undoId: z.string().min(1).max(64) })),
   /**
    * Plan 215: Done ("no reply needed") and Later on a "Waiting on you" row, at the conversation's waiting date, its waiting
-   * message and that message's record's revision as drawn (`TodayWhy.reply`), with an exact Undo (`today.waitingUndo`, STALE when it changed since); never MCP
+   * message and that message's record's revision as drawn (`TodayWhy.reply`), with an exact Undo (`today.waitingUndo`, STALE when it changed since); never MCP.
+   * Plan 216: and Remove, off What matters only
    */
-  "today.waitingAct": m<{ undoId: string }>()(z.object({ threadId: id, since: z.number().int(), message: id, rev: z.number().int().min(0), action: z.enum(["done", "later"]), until: z.number().int().optional() }).strict()),
+  "today.waitingAct": m<{ undoId: string }>()(z.object({ threadId: id, since: z.number().int(), message: id, rev: z.number().int().min(0), action: z.enum(["done", "later", "remove"]), until: z.number().int().optional() }).strict()),
   "today.waitingUndo": m<{ ok: true }>()(z.object({ undoId: z.string().min(1).max(64) })),
   /** a thread's open items, for the reader's line */
   /** plan 210 (iteration 2): with `include`, that item too whatever its state (a history line opened: its closed item) */

@@ -925,4 +925,28 @@ describe("plan 215: Done and Later on a conversation waiting on you", () => {
     await client.call("today.waitingUndo", { undoId });
     expect(rowOf(await client.call("today.list", { held: [] }), `waiting:${ana}`)!.why.reply!.rev).toBe(0);
   });
+
+  it("plan 216: Remove takes the row off What matters only: the list and the badge drop it, the Inbox's Waiting keeps it, no thread announced; Undo", async () => {
+    const t = await setup();
+    const { client } = t;
+    const ana = await waitingOn(t, "Ana");
+    await waitingOn(t, "Bo", 120_000);
+    const reply = rowOf(await client.call("today.list", { held: [] }), `waiting:${ana}`)!.why.reply!;
+    const changed: number[][] = [];
+    client.on("changed", (e) => changed.push(e.threadIds));
+    const { undoId } = await client.call("today.waitingAct", { threadId: ana, since: reply.since, message: reply.message, rev: 0, action: "remove" });
+    const after = await client.call("today.list", { held: [], history: { through: null } });
+    expect(rowOf(after, `waiting:${ana}`)).toBeUndefined();
+    expect(after.counts.waiting).toBe(1);
+    expect(after.history!.items).toEqual([]);
+    const counts = await client.call("counts.get", {});
+    expect([counts.inboxWaiting, counts.today]).toEqual([2, 1]);
+    // (Done's announcement would come in the same turn as the act's answer)
+    await client.call("counts.get", {});
+    expect(changed.flat()).not.toContain(ana);
+    await expect(client.call("today.waitingAct", { threadId: ana, since: reply.since, message: reply.message, rev: 0, action: "done" })).rejects.toMatchObject({ code: "STALE" });
+    await client.call("today.waitingUndo", { undoId });
+    expect(rowOf(await client.call("today.list", { held: [] }), `waiting:${ana}`)?.why.reply).toEqual(reply);
+    expect((await client.call("counts.get", {})).today).toBe(2);
+  });
 });

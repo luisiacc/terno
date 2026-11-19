@@ -68,6 +68,26 @@ describe("plan 215: a conversation waiting on you, put off with Later", () => {
   });
 });
 
+describe("plan 216: a conversation waiting on you, removed from What matters", () => {
+  const waiting = [{ id: 4, lastDate: NOW - 4, hasSent: true, waitingSince: NOW - 4, message: 40, rev: 0 }, { id: 5, lastDate: NOW - 5, hasSent: false, waitingSince: NOW - 5, message: 50, rev: 1, removed: true }];
+
+  it("has no waiting row in the list or the counts, put off or not; the other stays", () => {
+    const { rows, counts } = projectToday(facts({ waiting }));
+    expect(rows.map((r) => r.id)).toEqual(["waiting:4"]);
+    expect(counts).toEqual({ missed: 0, today: 0, waiting: 1, overdue: 0 });
+    expect(projectToday(facts({ waiting: waiting.map(({ message: _m, ...w }) => w) }), { count: true }).counts).toEqual(counts);
+    const put = waiting.map((w) => (w.id === 5 ? { ...w, deferredUntil: at(2026, 11, 20, 9) } : w));
+    expect(projectToday(facts({ waiting: put })).rows.map((r) => r.id)).toEqual(["waiting:4"]);
+  });
+
+  it("only the waiting row goes: a reminder of yours due today shows as with none, the list and the count agreeing", () => {
+    const reminders = [{ threadId: 5, dueAt: NOW + 3_600_000 }];
+    const { rows, counts } = projectToday(facts({ waiting, reminders }));
+    expect(rows.map((r) => r.id).sort()).toEqual(["reminder:5", "waiting:4"].sort());
+    expect(projectToday(facts({ waiting: waiting.map(({ message: _m, ...w }) => w), reminders }), { count: true }).counts).toEqual(counts);
+  });
+});
+
 describe("a row per item", () => {
   it("two items of one conversation are two rows, each with its own id", () => {
     const bill = dated("pay", "2026-11-18", { threadId: 7 });

@@ -629,11 +629,11 @@ export class TodayService {
     const ids = [...placedThreads(items), ...reminders.map((r) => r.threadId)];
     const page = await this.local(await store.today.waitingPage({ now, after: null, limit: NEEDS_WALK }), (w) => w.id);
     // plan 215: each row's waiting message, its record's revision and Later's moment (the list's); the count reads only the
-    // deferrals still ahead, which keep a row out of Waiting on you, and nothing while there's none
+    // deferrals still ahead and (plan 216) the Removes, which keep a row out of Waiting on you, and nothing while there's none
     const acts = await store.today.waiting.rows(page.map((w) => ({ threadId: w.id, since: w.waitingSince })), now, { messages: !o.count });
     const waiting = acts.size || !o.count ? page.map((w) => {
       const a = acts.get(w.id);
-      return a ? { ...w, message: a.message, rev: a.rev, deferredUntil: a.until } : w;
+      return a ? { ...w, message: a.message, rev: a.rev, deferredUntil: a.until, ...(a.removed && { removed: true }) } : w;
     }) : page;
     // (the zone's read only for the rows' words: an Intl formatter is dear on every count)
     const fact = { now, waiting, reminders, zone: o.count ? "" : readerZone() };
@@ -1042,17 +1042,20 @@ export class TodayService {
    * Done ("no reply needed") or Later on a "Waiting on you" row, at the waiting date and the record's revision it was drawn
    * at (stale otherwise: a newer message since, another window's choice). Done clears the conversation's waiting fact
    * everywhere (the Inbox's Waiting filter and count, search, the badge: its thread is announced changed) and stops a reply
-   * being prepared for it; Later only puts the row off in What matters, until its moment. Its Undo puts it back exactly.
+   * being prepared for it; Later only puts the row off in What matters, until its moment; plan 216, Remove takes it off What
+   * matters alone (the Inbox's Waiting, Reply ready and the reader's requests as they were). Its Undo puts it back exactly.
    */
-  async waitingAct(o: { threadId: number; since: number; message: number; rev: number; action: "done" | "later"; until?: number }): Promise<{ undoId: string }> {
+  async waitingAct(o: { threadId: number; since: number; message: number; rev: number; action: "done" | "later" | "remove"; until?: number }): Promise<{ undoId: string }> {
     const now = this.b.now();
     if (o.action === "later" && (o.until === undefined || o.until <= now)) throw new RpcError("BAD_REQUEST", L("errors.dated.later"));
-    const before = await this.b.store.today.waiting.act({ threadId: o.threadId, since: o.since, message: o.message, rev: o.rev, state: o.action, until: o.action === "later" ? o.until! : null, now });
+    const state = o.action === "remove" ? "removed" : o.action;
+    const before = await this.b.store.today.waiting.act({ threadId: o.threadId, since: o.since, message: o.message, rev: o.rev, state, until: o.action === "later" ? o.until! : null, now });
     if (!before) throw new RpcError("STALE", L("errors.dated.changed"));
     const undoId = `w${++this.undoSeq}`;
     this.waitingSnapshots.set(undoId, before);
     while (this.waitingSnapshots.size > UNDO_KEPT) this.waitingSnapshots.delete(this.waitingSnapshots.keys().next().value!);
-    this.waitingMoved(o.threadId, o.action === "done");
+    if (o.action === "remove") this.changed();
+    else this.waitingMoved(o.threadId, o.action === "done");
     return { undoId };
   }
 
