@@ -1,5 +1,5 @@
 import { addressKey, ANSWERED_KINDS, parseHandedTo, readPartOfDay, refKey, replyAnswers, replyClosedReason, replyRecipients, type FollowupRow } from "@terno/core";
-import { FOLLOWUP_CLOSED_KEEP_MS, FOLLOWUPS_ACTIVE_MAX, recipientList, SCAN_MARK_MS, SENT_MARK_MS, type ClosedAt, type FollowupFinish, type FollowupFinishOutcome, type FollowupSnapshot, type FollowupSource, type SentMark } from "@terno/store";
+import { ARCHIVED_CLOSED, FOLLOWUP_CLOSED_KEEP_MS, FOLLOWUPS_ACTIVE_MAX, recipientList, SCAN_MARK_MS, SENT_MARK_MS, type ClosedAt, type FollowupFinish, type FollowupFinishOutcome, type FollowupSnapshot, type FollowupSource, type SentMark } from "@terno/store";
 import { T, type Ctx, type R } from "./mail";
 import { scheduleFields } from "./schedule";
 
@@ -325,7 +325,8 @@ export function claimFollowupNotice(c: Ctx, ids: readonly number[], now: number)
   const rows = T(c, "followups");
   return ids.filter((id) => {
     const r = rows.get(id);
-    if (!r || r.notified_at != null) return false;
+    // (plan 218: never a closed one: an archive may have closed it since the look that's saying it)
+    if (!r || r.notified_at != null || !live(r)) return false;
     rows.update(r, { notified_at: now });
     return true;
   });
@@ -357,6 +358,48 @@ export function endFollowupTop(c: Ctx, threadIds: readonly number[]): FollowupSn
     if (!wanted.has(r.thread_id)) continue;
     out.push(snapshot(r));
     rows.update(r, { inbox_state: "seen", revision: r.revision + 1 });
+  }
+  return out;
+}
+
+/** Plan 218: as SQL's: of these conversations, those with mail from someone else (by your addresses; no draft, Spam or Trash). */
+function fromOthers(c: Ctx, threadIds: readonly number[]): Set<number> {
+  const out = new Set<number>();
+  if (!threadIds.length) return out;
+  const mine = own(c);
+  const messages = T(c, "messages");
+  for (const id of threadIds) {
+    if (messages.by("fk_thread_id", id).some((m) => !m.is_draft && !m.is_spam && !m.is_trash && !mine.has(addressKey(String(m.from_email))))) out.add(id);
+  }
+  return out;
+}
+
+/** Plan 218: as SQL's `followupsPutAway`. */
+export function followupsPutAway(c: Ctx, threadIds: readonly number[]): Set<number> {
+  const away = new Set<number>();
+  const threads = T(c, "threads");
+  const out: number[] = [];
+  for (const id of new Set(threadIds)) {
+    const t = threads.get(id);
+    if (!t) continue;
+    if (t.in_trash || t.in_spam) away.add(id);
+    else if (!t.in_inbox) out.push(id);
+  }
+  for (const id of fromOthers(c, out)) away.add(id);
+  return away;
+}
+
+/** Plan 218: as SQL's `closeArchivedFollowups`. */
+export function closeArchivedFollowups(c: Ctx, threadIds: readonly number[], now: number): FollowupSnapshot[] {
+  const rows = T(c, "followups");
+  const open = [...new Set(threadIds)].flatMap((id) => rows.by("fk_thread_id", id).filter(live));
+  if (!open.length) return [];
+  const others = fromOthers(c, [...new Set(open.map((r) => r.thread_id))]);
+  const out: FollowupSnapshot[] = [];
+  for (const r of open) {
+    if (others.has(r.thread_id)) continue;
+    out.push(snapshot(r));
+    rows.update(r, { state: "dismissed", inbox_state: "none", closed_reason: ARCHIVED_CLOSED, closed_at: now, revision: r.revision + 1 });
   }
   return out;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AWAITING_ITEM, FOLLOWUPS_ACTIVE_MAX, SCAN_MARK_MS, SENT_MARK_MS, type FollowupFinish, type FollowupWrite } from "../followups";
+import { ARCHIVED_CLOSED, AWAITING_ITEM, FOLLOWUPS_ACTIVE_MAX, SCAN_MARK_MS, SENT_MARK_MS, type FollowupFinish, type FollowupWrite } from "../followups";
 import type { MailStore } from "../mail-store";
 import type { IncomingMessage } from "../types";
 import { msg, threadOf, withAccounts } from "./fixtures";
@@ -232,6 +232,52 @@ export function defineFollowupsConformance(fresh: () => Promise<MailStore>, reop
         expect((await store.followups.ofThread(a.thread))[0]!.inboxState).toBe("onTop");
       });
 
+      it("plan 218: put away is Trash, Spam, or archived (mail from someone else, none of it in the Inbox); only your own mail never is", async () => {
+        const { store, accountId, sent } = await setup();
+        const conversation = async (key: string, theirs: Partial<IncomingMessage> | null, over: Partial<IncomingMessage> = {}) => {
+          const a = await sent({ providerMsgId: key, rfcMessageId: `${key}@x`, ...over });
+          if (theirs) await store.sync.ingest([msg({ accountId, from: tom, to: [me], providerMsgId: `${key}-in`, rfcMessageId: `${key}-in@x`, inReplyTo: `${key}@x`, references: [`${key}@x`], date: NOW - 30_000, ...theirs })], { applyFilters: false, now: NOW, classifier: null });
+          if (theirs) expect(await threadOf(store, `${key}-in`)).toBe(a.thread);
+          return a.thread;
+        };
+        const own = await conversation("own", null);
+        const inbox = await conversation("inbox", { inInbox: true });
+        const archived = await conversation("archived", { inInbox: false });
+        const trashed = await conversation("trashed", null, { isTrash: true });
+        const spam = await conversation("spam", null, { isSpam: true });
+        // a message from one of your addresses isn't someone else's, whatever its flags say
+        const alias = await conversation("alias", { inInbox: false, from: { name: "Me", email: "Me0+x@Example.com" }, isSent: false });
+        const away = await store.followups.putAway([own, inbox, archived, trashed, spam, alias, 999_999]);
+        expect([...away].sort((a, b) => a - b)).toEqual([archived, trashed, spam].sort((a, b) => a - b));
+        // back in the Inbox, it's back
+        await store.threads.act({ threadIds: [archived], action: "moveToInbox", signal: null, now: NOW });
+        expect([...(await store.followups.putAway([archived]))]).toEqual([]);
+        expect([...(await store.followups.putAway([]))]).toEqual([]);
+      });
+
+      it("plan 218: an archive closes what nothing else hides, a conversation of only your mail; Undo puts it back exactly", async () => {
+        const { store, accountId, sent, promise, wait, finish } = await setup();
+        const own = await sent({ providerMsgId: "own", rfcMessageId: "own@x" });
+        await finish(own.id, own.thread, { rows: [promise({ dueAt: NOW - 1 }), wait()] });
+        await store.followups.makeDue(NOW);
+        const theirs = await sent({ providerMsgId: "t", rfcMessageId: "t@x" });
+        await store.sync.ingest([msg({ accountId, from: tom, to: [me], providerMsgId: "t-in", rfcMessageId: "t-in@x", inReplyTo: "t@x", references: ["t@x"], date: NOW - 30_000, inInbox: true })], { applyFilters: false, now: NOW, classifier: null });
+        await finish(theirs.id, theirs.thread, { rows: [promise()] });
+        const before = await store.followups.ofThread(own.thread);
+        expect(before.map((r) => r.inboxState).sort()).toEqual(["none", "onTop"]);
+        const closed = await store.followups.closeArchived([own.thread, theirs.thread, own.thread], NOW + 5);
+        expect(closed.map((x) => x.id).sort()).toEqual(before.map((r) => r.id).sort());
+        expect(await store.followups.ofThread(own.thread)).toEqual([]);
+        expect(await store.followups.ofThread(theirs.thread)).toHaveLength(1);
+        expect(await store.followups.get(before[0]!.id)).toMatchObject({ state: "dismissed", inboxState: "none", closedReason: ARCHIVED_CLOSED, closedAt: NOW + 5 });
+        // off the top: the archive's endTop after it has nothing of these to end
+        expect(await store.followups.endTop([own.thread])).toEqual([]);
+        expect(await store.followups.closeArchived([own.thread], NOW + 6)).toEqual([]);
+        expect(await store.followups.restore(closed.map((snapshot) => ({ snapshot, expectRevision: snapshot.revision + 1 })))).toBe(2);
+        const back = await store.followups.ofThread(own.thread);
+        expect(back.map((r) => [r.id, r.state, r.inboxState, r.closedReason, r.closedAt, r.revision])).toEqual(before.map((r) => [r.id, r.state, r.inboxState, null, null, r.revision + 2]));
+      });
+
       it("notices are claimed once per row, so two on one thread each say so", async () => {
         const { store, sent, promise, finish } = await setup();
         const a = await sent();
@@ -240,6 +286,12 @@ export function defineFollowupsConformance(fresh: () => Promise<MailStore>, reop
         const ids = due.map((r) => r.id);
         expect((await store.followups.claimNotice(ids, NOW)).sort()).toEqual([...ids].sort());
         expect(await store.followups.claimNotice(ids, NOW)).toEqual([]);
+        // plan 218: never a closed one (an archive closed it since the look that's saying it)
+        const b = await sent({ subject: "Closed" });
+        await finish(b.id, b.thread, { rows: [promise({ dueAt: NOW - 1 })] });
+        const [late] = await store.followups.makeDue(NOW);
+        await store.followups.closeArchived([b.thread], NOW);
+        expect(await store.followups.claimNotice([late!.id], NOW)).toEqual([]);
       });
 
       it("a change applies only to the revision seen; Undo restores exactly, unless something changed it since", async () => {

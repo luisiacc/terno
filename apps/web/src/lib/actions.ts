@@ -18,7 +18,9 @@ import { dropFeedRows, feedBefore, feedRowsLeaving, onToFirstRow, reopenFeedRow,
 import { focusFeed } from "~/lib/feed-focus";
 
 /** Does a thread still belong in the current list after an action? */
-function staysInView(s: Pick<AppState, "view" | "gmailTab" | "categoryId" | "reviewCategoryId" | "folder" | "query">, action: ThreadAction): boolean {
+function staysInView(s: Pick<AppState, "view" | "gmailTab" | "categoryId" | "reviewCategoryId" | "folder" | "query" | "followups">, action: ThreadAction): boolean {
+  // plan 218: an archived, deleted or spam conversation's follow-ups go: it leaves the Follow-ups list
+  if (s.followups && (action === "archive" || action === "trash" || action === "spam")) return false;
   // plan 86: a Gmail tab holds its own category only; the Inbox none of the tabs (Move to Inbox takes a thread out of them)
   if (isCategoryAction(action)) return s.gmailTab ? action === TAB_ACTION[s.gmailTab] : !(inPlainInbox(s) && (action === "toPromotions" || action === "toSocial"));
   if (action === "moveToInbox" && s.gmailTab) return false;

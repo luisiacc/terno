@@ -155,6 +155,54 @@ describe("the list", () => {
     expect((await client.call("counts.get", {})).today).toBe(2);
   });
 
+  it("plan 218: archiving a conversation takes its promise out of What matters, its list and its count; Undo brings it back", async () => {
+    const { backend, client, account, clock } = await setup();
+    await client.call("settings.update", { followups: { enabled: true } });
+    const me = { name: "Me", email: account.email };
+    const m = msg({ accountId: account.id, from: me, to: [{ name: "Tom", email: "tom@acme.test" }], isSent: true, inInbox: true, date: clock.now - 86_400_000, providerMsgId: "s-1", subject: "The contract" });
+    const r = await backend.store.sync.ingest([m], { applyFilters: false, now: clock.now, classifier: null, liveSent: { wanted: true } });
+    const t = await threadOf(backend.store, "s-1");
+    await backend.store.followups.finish({ messageId: r.inserted[0]!, threadId: t, fromScan: false, now: clock.now, kept: [], model: "m", provider: "p", promptVersion: 1, clearGeneration: backend.store.followups.clearGeneration(), rows: [{ kind: "promise", item: 0, text: "send the contract", quote: "I'll send it", personName: "Tom", personEmail: "tom@acme.test", dueAt: clock.now + 1000, dated: false }] });
+    clock.now += 5000;
+    await backend.followups.look();
+    const shown = async () => (await client.call("today.list", { held: [] })).sections.flatMap((s) => s.items.map((i) => i.why.text));
+    expect(await shown()).toEqual(["send the contract"]);
+    expect((await client.call("counts.get", {})).today).toBe(1);
+    const { undoId } = await client.call("threads.act", { threadIds: [t], action: "archive" });
+    expect(await shown()).toEqual([]);
+    await expect.poll(async () => (await client.call("counts.get", {})).today ?? 0).toBe(0);
+    await client.call("threads.undo", { undoId: undoId! });
+    expect(await shown()).toEqual(["send the contract"]);
+    // their answer, archived elsewhere: the conversation is out of the Inbox, and the promise with it
+    await backend.store.threads.act({ threadIds: [t], action: "archive", signal: null, now: clock.now });
+    await backend.store.sync.ingest([msg({ accountId: account.id, from: { name: "Tom", email: "tom@acme.test" }, to: [me], inInbox: false, date: clock.now - 1000, providerMsgId: "t-1", subject: "Re: The contract", inReplyTo: m.rfcMessageId, references: [m.rfcMessageId!] })], { applyFilters: false, now: clock.now, classifier: null });
+    expect(await threadOf(backend.store, "t-1")).toBe(t);
+    await backend.followups.look();
+    expect(await shown()).toEqual([]);
+    expect((await client.call("counts.get", {})).today ?? 0).toBe(0);
+  });
+
+  it("plan 218 (Codex code review): before the follow-ups' first look, a promise in a conversation archived elsewhere isn't shown nor counted", async () => {
+    const { backend, client, account, clock } = await setup();
+    await client.call("settings.update", { followups: { enabled: true } });
+    const me = { name: "Me", email: account.email };
+    const m = msg({ accountId: account.id, from: me, to: [{ name: "Tom", email: "tom@acme.test" }], isSent: true, inInbox: false, date: clock.now - 86_400_000, providerMsgId: "s-1", subject: "The contract" });
+    const r = await backend.store.sync.ingest([m], { applyFilters: false, now: clock.now, classifier: null, liveSent: { wanted: true } });
+    await backend.store.sync.ingest([msg({ accountId: account.id, from: { name: "Tom", email: "tom@acme.test" }, to: [{ name: "Ana", email: "ana@acme.test" }], cc: [me], inInbox: false, date: clock.now - 1000, providerMsgId: "t-1", subject: "Re: The contract", inReplyTo: m.rfcMessageId, references: [m.rfcMessageId!] })], { applyFilters: false, now: clock.now, classifier: null });
+    const t = await threadOf(backend.store, "s-1");
+    expect(await threadOf(backend.store, "t-1")).toBe(t);
+    await backend.store.followups.finish({ messageId: r.inserted[0]!, threadId: t, fromScan: false, now: clock.now, kept: [], model: "m", provider: "p", promptVersion: 1, clearGeneration: backend.store.followups.clearGeneration(), rows: [{ kind: "promise", item: 0, text: "send the contract", quote: "I'll send it", personName: "Tom", personEmail: "tom@acme.test", dueAt: clock.now + 1000, dated: false }] });
+    clock.now += 5000;
+    // as on a start, What matters reading before the follow-ups' first look (here, one made before this mail was written)
+    (backend.followups as unknown as { looked: boolean }).looked = false;
+    const look = vi.spyOn(backend.followups, "look");
+    const items = (await client.call("today.list", { held: [] })).sections.flatMap((s) => s.items);
+    expect(items.map((i) => [i.why.kind, i.thread.id])).toEqual([]);
+    // the first read waited for one
+    expect(look).toHaveBeenCalledTimes(1);
+    look.mockRestore();
+  });
+
   it("plan 210 (iteration 5, revision 4): a promise for this morning is Today's until 11:59 and Missed at noon with no mail in between, the clock waking for it", async () => {
     const { backend, client, account, clock } = await setup();
     await client.call("settings.update", { followups: { enabled: true } });

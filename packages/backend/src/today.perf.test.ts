@@ -79,7 +79,8 @@ async function severalPerThread(store: MailStore, accountId: number, now: number
   const who = (i: number) => ({ name: `Board ${i}`, email: `board${i}@several.test` });
   // yours first, so the requests in what came after aren't answered by it
   const sent = Array.from({ length: SEVERAL }, (_, i) => msg({ accountId, from: me, to: [who(i)], isSent: true, isRead: true, inInbox: false, listId: null, providerMsgId: `several-${i}-out`, providerThreadId: `several-${i}`, subject: `Board ${i}`, date: now - 7_200_000 - i, bodyText: "I'll send the budget." }));
-  const came = Array.from({ length: SEVERAL }, (_, i) => msg({ accountId, from: who(i), to: [me], inInbox: false, listId: null, providerMsgId: `several-${i}-in`, providerThreadId: `several-${i}`, subject: `Re: Board ${i}`, date: now - 3_600_000 - i, bodyText: "The board meets Thursday at 9:00; the dues are due Friday." }));
+  // (plan 218: in the Inbox: out of it, with their mail, the conversation is archived, and its promises show nowhere)
+  const came = Array.from({ length: SEVERAL }, (_, i) => msg({ accountId, from: who(i), to: [me], inInbox: true, listId: null, providerMsgId: `several-${i}-in`, providerThreadId: `several-${i}`, subject: `Re: Board ${i}`, date: now - 3_600_000 - i, bodyText: "The board meets Thursday at 9:00; the dues are due Friday." }));
   const outs = (await store.sync.ingest(sent, { applyFilters: false, now, classifier: null, liveSent: { wanted: true } })).inserted;
   const ins = (await store.sync.ingest(came, { applyFilters: false, now, classifier: null, datedMail: { since: null } })).inserted;
   expect([outs.length, ins.length]).toEqual([SEVERAL, SEVERAL]);
@@ -138,7 +139,7 @@ const LINKED = FOLLOWUPS_ACTIVE_MAX - 2 * SEVERAL;
 async function linkedRequests(store: MailStore, accountId: number, now: number): Promise<{ id: number; revision: number }[]> {
   const me = { name: "Me", email: "me@perf.test" };
   const who = (i: number) => ({ name: `Parent ${i}`, email: `parent${i}@linked.test` });
-  const asked = Array.from({ length: LINKED }, (_, i) => msg({ accountId, from: who(i), to: [me], inInbox: false, listId: null, providerMsgId: `linked-${i}-in`, providerThreadId: `linked-${i}`, subject: `Form ${i}`, date: now - 5 * 3_600_000 - i, bodyText: "Could you send the signed form by Friday?" }));
+  const asked = Array.from({ length: LINKED }, (_, i) => msg({ accountId, from: who(i), to: [me], inInbox: true, listId: null, providerMsgId: `linked-${i}-in`, providerThreadId: `linked-${i}`, subject: `Form ${i}`, date: now - 5 * 3_600_000 - i, bodyText: "Could you send the signed form by Friday?" }));
   const replies = Array.from({ length: LINKED }, (_, i) => msg({ accountId, from: me, to: [who(i)], isSent: true, isRead: true, inInbox: false, listId: null, gmailLabels: ["SENT"], providerMsgId: `linked-${i}-out`, providerThreadId: `linked-${i}`, subject: `Re: Form ${i}`, date: now - 4 * 3_600_000 - i, bodyText: "I'll send it Wednesday." }));
   const ins: number[] = [];
   const outs: number[] = [];

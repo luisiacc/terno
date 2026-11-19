@@ -196,6 +196,8 @@ export function createHandlers(b: Backend): Handlers {
       b.opsQueued(r.opIds);
       b.reconcileFlags(r.flagReconcileAccounts);
       b.notifyChanged(r.threadIds);
+      // plan 218: an archive ends the conversations' follow-ups (closed first: what's closed is off the top, so endTop leaves it)
+      if (action === "archive") left.followups.push(...(await b.followups.archived(chunk)));
       if (ENDS_TOP.has(action)) gather(left, await leaveTop(b, chunk));
       progress?.((done += slice.length));
     };

@@ -310,11 +310,15 @@ function byReply(placed: readonly PlacedItem[], hidden: readonly Logical[]): Pla
  * 210, iteration 5: the panel saw one leg twice, on two clocks). Needs no store: the caller then reads which of their
  * conversations may show (`placedThreads`). `count`: Coming up is never counted nor says a conversation, so it's left out.
  */
-export function placeItems(dated: readonly DatedRow[], promises: readonly NeedingPromise[], now: number, o: { count?: boolean } = {}): PlacedItem[] {
+export function placeItems(dated: readonly DatedRow[], promises: readonly NeedingPromise[], now: number, o: { count?: boolean; away?: ReadonlySet<number> } = {}): PlacedItem[] {
   const today = dayKeyOf(now);
   // (iteration 4, the Codex review's revision 4) a promise that only holds a request is never a row: the request is
   if (promises.some((p) => p.holds != null)) promises = promises.filter((p) => p.holds == null);
   dated = withoutAnswered(dated, promises);
+  // plan 218: a promise whose conversation is put away (archived, Trash, Spam) is no row nor member of one, nor counted; the
+  // request it answers stays answered by it (the conversation was put away whole), and both come back with it
+  const away = o.away;
+  if (away?.size && promises.some((p) => away.has(p.threadId))) promises = promises.filter((p) => !away.has(p.threadId));
   // (iteration 4) a reply's promises are grouped where they're placed, then the count leaves Coming up out
   const grouping = sharesMessage(promises);
   const hidden: Logical[] = [];

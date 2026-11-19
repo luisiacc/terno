@@ -618,7 +618,9 @@ export class TodayService {
       [dated, promises] = await read();
     }
     // plan 211: a promise of an account with AI or What matters off isn't shown nor counted (the dated rows' cache did theirs)
-    const items = this.placed(dated, await this.needs(dated, await this.aiMade(promises)), now, o.count === true);
+    // plan 218: a promise whose conversation is put away shows nowhere (the follow-ups' last look says which)
+    const away = promises.length ? await this.b.followups.awayAmong(promises.map((p) => p.threadId)) : new Set<number>();
+    const items = this.placed(dated, await this.needs(dated, await this.aiMade(promises)), now, o.count === true, away);
     const endOfDay = new Date(now);
     endOfDay.setHours(23, 59, 59, 999);
     // plan 210 (iteration 4, revision 8): your reminders due today are Today's to do, drawn and counted alike; the count reads
@@ -654,15 +656,15 @@ export class TodayService {
    * are the same (the cached dated rows, the promises as read), the count reuses it: the count runs on every mailbox change.
    * The list places afresh (it's read when something changed, and finding the next moment would cost it as much again).
    */
-  private placed(dated: readonly DatedRow[], promises: readonly NeedingPromise[], now: number, count: boolean): PlacedItem[] {
-    if (!count) return placeItems(dated, promises, now);
-    const key = promises.map((r) => `${r.id}.${r.revision}.${r.state}.${r.dueAt}.${r.deferredUntil ?? ""}.${r.sameAs ?? ""}.${r.answers ?? ""}.${r.needed ?? ""}`).join();
+  private placed(dated: readonly DatedRow[], promises: readonly NeedingPromise[], now: number, count: boolean, away: ReadonlySet<number>): PlacedItem[] {
+    if (!count) return placeItems(dated, promises, now, { away });
+    const key = promises.map((r) => `${r.id}.${r.revision}.${r.state}.${r.dueAt}.${r.deferredUntil ?? ""}.${r.sameAs ?? ""}.${r.answers ?? ""}.${r.needed ?? ""}${away.has(r.threadId) ? ".away" : ""}`).join();
     const was = this.placing;
     if (was && was.dated === dated && was.promises === key && now >= was.at && now < was.until) return was.items;
     const midnight = new Date(now);
     midnight.setHours(24, 0, 0, 0);
     const until = Math.min(nextTodayChange(dated, promises, now) ?? Infinity, midnight.getTime());
-    const items = placeItems(dated, promises, now, { count });
+    const items = placeItems(dated, promises, now, { count, away });
     this.placing = { dated, promises: key, at: now, until, items };
     return items;
   }
@@ -1080,7 +1082,10 @@ export class TodayService {
   /** Earlier's "Changed" lines: the open items the user changed (shown, as the open part reads them), at most the bound's. */
   private async changedItems(settings: AppSettings): Promise<{ dated: DatedRow[]; promises: FollowupRow[] }> {
     const dated = settings.dated?.enabled ? (await this.datedRows()).filter((r) => r.changedAt != null) : [];
-    const promises = settings.followups?.enabled ? (await this.b.store.followups.active()).filter((r) => r.kind === "promise" && r.changedAt != null) : [];
+    const changed = settings.followups?.enabled ? (await this.b.store.followups.active()).filter((r) => r.kind === "promise" && r.changedAt != null) : [];
+    // plan 218: not one whose conversation is put away
+    const away = changed.length ? await this.b.followups.awayAmong(changed.map((r) => r.threadId)) : new Set<number>();
+    const promises = away.size ? changed.filter((r) => !away.has(r.threadId)) : changed;
     return { dated, promises };
   }
 

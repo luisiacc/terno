@@ -1,4 +1,4 @@
-import { DIGEST_ROW_ID, type FeedRowId, type ThreadAction } from "@terno/core";
+import { DIGEST_ROW_ID, type FeedRowId, type ThreadAction, type TodayWhy } from "@terno/core";
 import { focusedFeedItem, focusFeedItem } from "~/lib/feed-focus";
 import { closePage, currentPage, listLayout } from "~/lib/page";
 import { getApp, getSelectionWriteRevision, openedByApp, setApp, setAppOpened, useApp } from "~/state/app";
@@ -144,18 +144,21 @@ export const keysOnTo = (next: FeedRowId | undefined): void => {
 
 /**
  * What matters' rows a thread action takes out of it (plan 204): Trash and Spam end everything of the conversation (Today
- * shows nothing in them, the history neither); Archive only what's there because it's in the Inbox, a person waiting on
- * your answer. A task (a bill, a promise of yours), a reminder and a history line stay: the bill still has to be paid
- * after its mail is filed.
+ * shows nothing in them, the history neither); Archive what's there because it's in the Inbox, a person waiting on your
+ * answer, and (plan 218) a promise of yours, whose follow-up an archive ends: a row all of whose members are promises. A
+ * task (a bill), a reminder and a history line stay: the bill still has to be paid after its mail is filed.
  */
 export function feedRowsLeaving(action: ThreadAction, threadIds: readonly number[]): FeedRowId[] {
   if (action !== "archive" && action !== "trash" && action !== "spam") return [];
   const acted = new Set(threadIds);
   return useToday
     .getState()
-    .rows.filter((r) => acted.has(r.threadId) && r.threadId !== DIGEST_ROW_ID && (action !== "archive" || (!r.line && r.entry?.why.kind === "waiting")))
+    .rows.filter((r) => acted.has(r.threadId) && r.threadId !== DIGEST_ROW_ID && (action !== "archive" || (!r.line && (r.entry?.why.kind === "waiting" || archivedPromise(r.entry?.why)))))
     .map((r) => r.id);
 }
+
+/** Plan 218: a row of your promises only (a merged bill or request stays, its dated member then leads it). */
+const archivedPromise = (why: TodayWhy | undefined): boolean => why?.kind === "promise" && (why.members ?? []).every((m) => m.source === "promise");
 
 /**
  * A conversation open beside the feed that is none of its rows (opened from elsewhere), taken away by an action: on to the

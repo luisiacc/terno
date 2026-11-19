@@ -430,7 +430,7 @@ describe("when they come due", () => {
     expect(backend.followups.nextAt).toBeNull();
   });
 
-  it("archiving ends the top, the list keeps it, and Undo brings it back; a user's reminder isn't touched", async () => {
+  it("plan 218: archiving a conversation of only your mail closes its follow-up, off the top and the list; Undo brings it back exactly; a user's reminder isn't touched", async () => {
     const { backend, client, model, send, drained, clock } = await setup();
     model.answer = () => reply(says);
     const { m } = await send({ inInbox: true });
@@ -439,14 +439,97 @@ describe("when they come due", () => {
     clock.now += 10 * DAY;
     await backend.followups.look();
     const threadId = (await backend.store.debug.snapshot()).messages.find((x) => x.providerMsgId === m.providerMsgId)!.threadId;
+    const [before] = await backend.store.followups.active();
     expect((await client.call("followups.threads", { onTop: true })).items.map((t) => t.id)).toEqual([threadId]);
     await client.call("reminders.set", { threadIds: [threadId], dueAt: clock.now + DAY, kind: "always" });
     const { undoId } = await client.call("threads.act", { threadIds: [threadId], action: "archive" });
     expect((await client.call("followups.threads", { onTop: true })).items).toEqual([]);
-    expect((await client.call("followups.threads", { onTop: false })).items.map((t) => t.id)).toEqual([threadId]);
+    expect((await client.call("followups.threads", { onTop: false })).items).toEqual([]);
+    expect((await client.call("followups.list", {})).rows).toEqual([]);
     await client.call("threads.undo", { undoId: undoId! });
     expect((await client.call("followups.threads", { onTop: true })).items.map((t) => t.id)).toEqual([threadId]);
+    expect(await backend.store.followups.get(before!.id)).toMatchObject({ state: before!.state, inboxState: "onTop", closedReason: null, closedAt: null });
     expect((await client.call("reminders.list", {})).reminders.map((r) => r.threadId)).toEqual([threadId]);
+  });
+
+  it("plan 218: archiving one of only your mail that changes no message still closes it, with an Undo of its own", async () => {
+    const { backend, client, model, send, drained } = await setup();
+    model.answer = () => reply(says);
+    const { m } = await send();
+    backend.followups.wake();
+    await drained();
+    const threadId = (await backend.store.debug.snapshot()).messages.find((x) => x.providerMsgId === m.providerMsgId)!.threadId;
+    const { undoId } = await client.call("threads.act", { threadIds: [threadId], action: "archive" });
+    expect(undoId).not.toBeNull();
+    expect((await client.call("followups.list", {})).rows).toEqual([]);
+    await client.call("threads.undo", { undoId: undoId! });
+    expect((await client.call("followups.list", {})).rows.map((r) => r.threadId)).toEqual([threadId]);
+  });
+
+  it("plan 218 (Codex code review): a look still running when an archive closes the row neither says it nor has the last word", async () => {
+    const { backend, client, model, send, drained, clock, notices } = await setup();
+    model.answer = () => reply(says);
+    const { m } = await send();
+    backend.followups.wake();
+    await drained();
+    const threadId = (await backend.store.debug.snapshot()).messages.find((x) => x.providerMsgId === m.providerMsgId)!.threadId;
+    clock.now += 4 * DAY;
+    // the look stops at its first read of what's put away, after it has read the rows and made them due
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    const putAway = backend.store.followups.putAway.bind(backend.store.followups);
+    const spy = vi.spyOn(backend.store.followups, "putAway").mockImplementationOnce(async (ids) => (await held, putAway(ids)));
+    const older = backend.followups.look();
+    await expect.poll(() => spy.mock.calls.length).toBe(1);
+    const archived = client.call("threads.act", { threadIds: [threadId], action: "archive" });
+    release();
+    await Promise.all([older, archived]);
+    spy.mockRestore();
+    expect(notices).toEqual([]);
+    expect((await client.call("followups.list", {})).rows).toEqual([]);
+  });
+
+  it("plan 218 (Codex code review): an archive closes a row the worker hasn't looked at yet (off, or before its first look)", async () => {
+    const { backend, client, send, clock } = await setup({ enabled: false });
+    const { id, m } = await send();
+    const threadId = (await backend.store.debug.snapshot()).messages.find((x) => x.providerMsgId === m.providerMsgId)!.threadId;
+    await backend.store.followups.marks.queueScan([id], clock.now);
+    expect(await backend.store.followups.finish({ messageId: id, threadId, fromScan: false, now: clock.now, kept: [], model: "m", provider: "p", promptVersion: 1, clearGeneration: backend.store.followups.clearGeneration(), rows: [{ kind: "promise", item: 0, text: "send the contract", quote: "I'll send the contract", personName: "Tom", personEmail: tom.email, dueAt: clock.now + DAY, dated: false }] })).toBe("written");
+    const { undoId } = await client.call("threads.act", { threadIds: [threadId], action: "archive" });
+    expect(await backend.store.followups.active()).toEqual([]);
+    await client.call("threads.undo", { undoId: undoId! });
+    expect((await backend.store.followups.active()).map((r) => r.threadId)).toEqual([threadId]);
+  });
+
+  it("plan 218: a conversation with their mail archived anywhere, or deleted, shows nowhere and says nothing; back in the Inbox it's back", async () => {
+    const { backend, client, model, send, drained, clock, notices, account } = await setup();
+    model.answer = () => reply(says);
+    const { m } = await send({ rfcMessageId: "s@x" });
+    backend.followups.wake();
+    await drained();
+    const threadId = (await backend.store.debug.snapshot()).messages.find((x) => x.providerMsgId === m.providerMsgId)!.threadId;
+    // their answer, read and archived elsewhere (Gmail on the phone): it arrives out of the Inbox
+    await backend.ingestSliced([msg({ accountId: account.id, from: tom, to: [me], providerMsgId: "theirs", rfcMessageId: "t@x", inReplyTo: "s@x", references: ["s@x"], inInbox: false, date: clock.now - 30_000, bodyText: "Thanks!" })], true);
+    expect((await backend.store.debug.snapshot()).messages.find((x) => x.providerMsgId === "theirs")!.threadId).toBe(threadId);
+    clock.now += 4 * DAY;
+    await backend.followups.look();
+    expect((await client.call("followups.list", {})).rows).toEqual([]);
+    expect((await client.call("followups.threads", { onTop: false })).items).toEqual([]);
+    expect((await backend.followups.awayAmong([threadId])).has(threadId)).toBe(true);
+    expect(notices).toEqual([]);
+    // still open: back in the Inbox, it's back, due, and said then
+    await client.call("threads.act", { threadIds: [threadId], action: "moveToInbox" });
+    await backend.followups.look();
+    expect((await client.call("followups.list", {})).rows.map((r) => [r.threadId, r.state])).toEqual([[threadId, "due"]]);
+    expect((await client.call("followups.threads", { onTop: true })).items.map((t) => t.id)).toEqual([threadId]);
+    expect(notices).toHaveLength(1);
+    // deleted: gone again, and Undo brings it back
+    const { undoId } = await client.call("threads.act", { threadIds: [threadId], action: "trash" });
+    await backend.followups.look();
+    expect((await client.call("followups.list", {})).rows).toEqual([]);
+    await client.call("threads.undo", { undoId: undoId! });
+    await backend.followups.look();
+    expect((await client.call("followups.list", {})).rows.map((r) => r.threadId)).toEqual([threadId]);
   });
 });
 

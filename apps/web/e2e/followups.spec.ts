@@ -98,6 +98,17 @@ test.describe("follow-ups (plan 142)", () => {
       await page.locator("[data-testid=snack]").getByRole("button", { name: /undo/i }).click();
       await expect(page.getByTestId("thread-dated-item")).toBeVisible();
     });
+
+    await scenario("plan 218: archived from Follow-ups, it leaves the list and its count; Undo brings both back", async () => {
+      const count = page.getByTestId("nav-followups").locator("[data-slot=nav-count]");
+      await expect(count).toHaveText("1");
+      await page.getByTestId("action-archive").click();
+      await expect(rows(page)).toHaveCount(0);
+      await expect(count).toHaveCount(0);
+      await page.locator("[data-testid=snack]").getByRole("button", { name: /undo/i }).click();
+      await expect(rows(page)).toHaveCount(1);
+      await expect(count).toHaveText("1");
+    });
   });
 
   test("a wait: its line says how long, Nudge opens a draft on the thread and sends nothing", async ({ app: page, server }) => {

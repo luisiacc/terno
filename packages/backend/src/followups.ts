@@ -440,6 +440,12 @@ export class FollowupWorker {
   private touchTimer: ReturnType<typeof setTimeout> | null = null;
   private armedAt: number | null = null;
   private ids = new Set<number>();
+  /** plan 218: the conversations put away at the last look, whose rows show nowhere; `looked` once there's been one */
+  private away: ReadonlySet<number> = new Set();
+  private looked = false;
+  /** Codex code review (plan 218): the look running and the one queued after it: one at a time, in order */
+  private lookRun: Promise<FollowupsSnapshot> | null = null;
+  private lookNext: Promise<FollowupsSnapshot> | null = null;
   private sent = "";
   private readonly undo = new Map<string, { snapshot: FollowupSnapshot; expectRevision: number }[]>();
   private undoSeq = 0;
@@ -804,15 +810,39 @@ export class FollowupWorker {
     (this.touchTimer as { unref?: () => void }).unref?.();
   }
 
-  /** The rows now: replies end waits, what's come due comes due, and one timer for the next. */
-  async look(): Promise<FollowupsSnapshot> {
+  /**
+   * The rows now. One look at a time, in the order asked (Codex code review of plan 218): an older one finishing after an
+   * archive's would publish, and say, what the archive ended. Asked while one runs, the next one is shared.
+   */
+  look(): Promise<FollowupsSnapshot> {
+    if (this.lookNext) return this.lookNext;
+    if (!this.lookRun) return this.startLook();
+    const next = this.lookRun.catch(() => {}).then(() => {
+      this.lookNext = null;
+      return this.startLook();
+    });
+    this.lookNext = next;
+    return next;
+  }
+
+  private startLook(): Promise<FollowupsSnapshot> {
+    const run = this.lookNow();
+    this.lookRun = run;
+    void run.finally(() => {
+      if (this.lookRun === run) this.lookRun = null;
+    }).catch(() => {});
+    return run;
+  }
+
+  /** Replies end waits, what's come due comes due, and one timer for the next. */
+  private async lookNow(): Promise<FollowupsSnapshot> {
     const { store } = this.host;
     // off: nothing comes due and no timer runs; rows stay until Clear AI data, so turning it back on loses nothing
     if (!this.active) {
       if (this.timer) clearTimeout(this.timer);
       this.timer = null;
       this.armedAt = null;
-      return { rows: await store.followups.active() };
+      return { rows: await this.shown(await store.followups.active()) };
     }
     const now = this.host.now();
     const waits = (await store.followups.active()).filter((r) => r.kind === "awaiting");
@@ -820,10 +850,12 @@ export class FollowupWorker {
       await store.followups.closeAnswered(chunk, now);
     });
     await store.followups.makeDue(now);
-    const rows = await store.followups.active();
+    const all = await store.followups.active();
+    // (every row's conversation: one put away still looks again when it's back)
+    this.ids = new Set(all.map((r) => r.threadId));
+    const rows = await this.shown(all);
     // what's due and hasn't been said, not only what came due just now: a quit between the two says it on the way back
     await this.announce(rows.filter((r) => r.state === "due" && r.notifiedAt === null), now);
-    this.ids = new Set(rows.map((r) => r.threadId));
     const snapshot: FollowupsSnapshot = { rows };
     if (this.stopped) return snapshot;
     await this.arm(now);
@@ -835,6 +867,36 @@ export class FollowupWorker {
     return snapshot;
   }
 
+  /**
+   * Plan 218: what may show, anywhere (the list, its count, the Inbox's top, the notice, What matters): the rows of
+   * conversations not put away (`FollowupStore.putAway`), which this keeps for What matters until the next look.
+   */
+  private async shown(rows: FollowupRow[]): Promise<FollowupRow[]> {
+    this.away = await this.readAway(rows.map((r) => r.threadId));
+    this.looked = true;
+    return this.away.size ? rows.filter((r) => !this.away.has(r.threadId)) : rows;
+  }
+
+  /** Plan 218: which are put away, read in budgeted slices (a long conversation of your own mail has every sender read). */
+  private async readAway(threadIds: readonly number[]): Promise<Set<number>> {
+    const away = new Set<number>();
+    const ids = [...new Set(threadIds)];
+    if (ids.length) await this.host.runBudgeted(ids, async (chunk) => {
+      for (const id of await this.host.store.followups.putAway(chunk)) away.add(id);
+    });
+    return away;
+  }
+
+  /**
+   * Plan 218: of these conversations, those whose follow-ups show nowhere, for What matters' rows and count: the last look's
+   * (each look's change has it read again). What matters starts first (Codex code review): its first read waits for a look,
+   * and reads these itself only if that failed.
+   */
+  async awayAmong(threadIds: readonly number[]): Promise<ReadonlySet<number>> {
+    if (!this.looked) await this.look().catch(() => {});
+    return this.looked ? this.away : this.readAway(threadIds);
+  }
+
   /** A due promise says so, once, per row (revision 7). A nudge doesn't. */
   private async announce(due: readonly FollowupRow[], now: number): Promise<void> {
     if (this.stopped) return;
@@ -843,9 +905,11 @@ export class FollowupWorker {
     const threads = new Map((await this.host.summaries(promised.map((r) => r.threadId))).map((t) => [t.id, t]));
     // plan 211: a promise of an account with AI or What matters off isn't shown, so it isn't said either (nor claimed: back
     // on, a promise still due is said then)
+    // plan 218 (Codex code review): read again just before it's said: put away since this look read it, it isn't
+    const away = await this.readAway(promised.map((r) => r.threadId));
     const fresh = promised.filter((r) => {
       const t = threads.get(r.threadId);
-      return !t || this.host.inFeed(t.accountId);
+      return !away.has(r.threadId) && (!t || this.host.inFeed(t.accountId));
     });
     if (!fresh.length) return;
     const claimed = new Set(await this.host.store.followups.claimNotice(fresh.map((r) => r.id), now));
@@ -918,6 +982,18 @@ export class FollowupWorker {
     return ended;
   }
 
+  /**
+   * Plan 218: these conversations were archived in Terno: their follow-ups go. One with mail from someone else is out of the
+   * Inbox now, which hides them (`putAway`); one of only your own mail has nothing that could, so its rows close
+   * (`closeArchived`): what an Undo puts back. Looks again at once, so the list, its count and What matters follow.
+   */
+  async archived(threadIds: readonly number[]): Promise<FollowupSnapshot[]> {
+    // (asked of the store, not the last look's threads: off, a look reads none, and its rows still close; Codex code review)
+    const closed = await this.host.store.followups.closeArchived(threadIds, this.host.now());
+    if (closed.length || threadIds.some((id) => this.ids.has(id))) await this.look();
+    return closed;
+  }
+
   async putBack(snapshots: readonly FollowupSnapshot[]): Promise<void> {
     if (!snapshots.length) return;
     await this.host.store.followups.restore(snapshots.map((s) => ({ snapshot: s, expectRevision: s.revision + 1 })));
@@ -929,11 +1005,12 @@ export class FollowupWorker {
     const rows = (await this.host.store.followups.active()).filter((r) => !onTop || r.inboxState === "onTop");
     // the row's own order (`byUrgency`, as its line picks), so a thread is placed by the promise it shows
     const order = [...new Set(rows.sort(byUrgency).map((r) => r.threadId))];
-    const threads = new Map((await this.host.summaries(order)).map((t) => [t.id, t]));
+    // plan 218: put away (Trash, Spam, archived), it shows nowhere, and comes back with its conversation; read now, not the last look's
+    const away = await this.readAway(order);
+    const threads = new Map((await this.host.summaries(order.filter((id) => !away.has(id)))).map((t) => [t.id, t]));
     return order.flatMap((id) => {
       const t = threads.get(id);
-      // Trash and Spam hide it, and it comes back with them
-      return t && !t.inTrash && !t.inSpam && (accountId === undefined || t.accountId === accountId) ? [t] : [];
+      return t && (accountId === undefined || t.accountId === accountId) ? [t] : [];
     });
   }
 

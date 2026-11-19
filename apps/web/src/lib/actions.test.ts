@@ -365,6 +365,27 @@ describe("a search's selection spanning places (plan 64)", () => {
   });
 });
 
+describe("plan 218: the Follow-ups list", () => {
+  beforeEach(() => {
+    fake.handlers["threads.act"] = async () => ({ undoId: 1 });
+    navigate({ followups: true });
+    const items = [row(1), row(2), row(3)];
+    useList.setState({ items, index: new Map(items.map((t, i) => [t.id, i])) });
+  });
+  afterEach(() => navigate({ view: "inbox" }));
+
+  it("Archive, Delete and Spam take a row out at once (its follow-up goes with it); a star keeps it", async () => {
+    expect(getApp()).toMatchObject({ followups: true, view: "all" });
+    await act("star", [1]);
+    expect(useList.getState().items.map((t) => t.id)).toEqual([1, 2, 3]);
+    await act("archive", [1]);
+    expect(useList.getState().items.map((t) => t.id)).toEqual([2, 3]);
+    await act("trash", [2]);
+    await act("spam", [3]);
+    expect(useList.getState().items).toEqual([]);
+  });
+});
+
 describe("Gmail's Promotions and Social (plan 86)", () => {
   const account = (id: number, kind: "gmail" | "imap", separateTabs = true) => ({ id, kind, email: `${id}@x.test`, displayName: `A${id}`, color: "brown", senderName: "", signature: "", syncWindowDays: null, separateTabs, syncState: { status: "idle", syncedSince: null, bodiesPending: 0, lastError: null, lastSyncAt: null } }) as never;
   const tabbed = (id: number, accountId: number, tab: number) => ({ ...row(id), accountId, inInbox: true, inSpam: false, inTrash: false, tab }) as ThreadSummary;

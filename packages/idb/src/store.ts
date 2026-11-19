@@ -5,7 +5,7 @@ import { actOnWaiting, restoreWaiting, waitingDonePage, waitingMoments, waitingR
 import { scheduleItems, unscheduleItems } from "./schedule";
 import { clearReplies, finishReply, getReply, transitionReply } from "./replies";
 import { activeDated, addDatedMute, datedMutes, removeDatedMute, closedDatedPage, claimDatedLook, clearDated, datedMarkCount, datedPendingOn, datedMarkPage, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, datedWritten, updateDated } from "./dated";
-import { activeFollowups, closedFollowupPage, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
+import { activeFollowups, closedFollowupPage, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, closeArchivedFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupsPutAway, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
 import { findLinked, newestLinked } from "./links";
 import { addAskTurn, askAccountsOf, askCandidates, askHeaders, askNewest, askTurnCount, askTurns, clearAsk, listAskConversations, removeAskConversation, removeAskForAccount, restoreAskConversation } from "./ask";
 import { projectBodyTokens, messageBodiesReleased } from "@terno/store";
@@ -2086,6 +2086,9 @@ export class IdbMailStore implements MailStore {
     claimNotice: (ids, now) => this.command(() => claimFollowupNotice(this.c, ids, now)),
     closeAnswered: (ids, now) => this.command(() => closeAnsweredFollowups(this.c, ids, now)),
     endTop: (ids) => this.command(() => endFollowupTop(this.c, ids)),
+    // (plan 218: a message read: after the late tables)
+    putAway: (ids) => this.read(() => followupsPutAway(this.c, ids)),
+    closeArchived: (ids, now) => this.command(() => closeArchivedFollowups(this.c, ids, now)),
     update: (id, revision, patch) => this.command(() => updateFollowup(this.c, id, revision, patch)),
     restore: (rows) => this.command(() => restoreFollowups(this.c, rows)),
     prune: (now) => this.command(() => pruneFollowups(this.c, now)),

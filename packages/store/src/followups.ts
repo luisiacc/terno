@@ -17,6 +17,8 @@ export const FOLLOWUPS_ACTIVE_MAX = 1000;
 export const FOLLOWUP_CLOSED_KEEP_MS = 90 * 86_400_000;
 /** the item a wait is, beside promises 0, 1, 2: one wait a source message */
 export const AWAITING_ITEM = 100;
+/** Plan 218: archived in Terno with no mail from anyone else in it, so nothing else could take it out of sight */
+export const ARCHIVED_CLOSED = "archived";
 
 export interface SentMark {
   messageId: number;
@@ -153,12 +155,23 @@ export interface FollowupStore {
   nextDue(): Promise<number | null>;
   /** what came due by `followupWakeAt`, now `due`, on the Inbox's top unless it's from a check */
   makeDue(now: number): Promise<FollowupRow[]>;
-  /** said once each: what hadn't been said yet goes out with this */
+  /** said once each: what hadn't been said yet goes out with this; never a closed row (plan 218) */
   claimNotice(ids: readonly number[], now: number): Promise<number[]>;
   /** awaits with a reply since their source: closed. A message on the thread, or one naming the source, not from one of your addresses, not spam or trash nor a draft */
   closeAnswered(ids: readonly number[], now: number): Promise<number[]>;
   /** the threads' `onTop` rows are `seen` now; what to put back for Undo */
   endTop(threadIds: readonly number[]): Promise<FollowupSnapshot[]>;
+  /**
+   * Plan 218: of these conversations, those put away: in Trash or Spam, or archived (a message from someone else, not
+   * yours by your addresses, not a draft, Spam or Trash; and none of it in the Inbox). One of only your own mail was never
+   * in the Inbox, so it isn't archived. Read live, never written: back in the Inbox, its follow-ups are back.
+   */
+  putAway(threadIds: readonly number[]): Promise<Set<number>>;
+  /**
+   * Plan 218: an archive in Terno closes the open rows of those of these conversations with no mail from anyone else
+   * (`putAway` can't see that archive): `dismissed`, `ARCHIVED_CLOSED`, off the Inbox's top; what to put back for Undo
+   */
+  closeArchived(threadIds: readonly number[], now: number): Promise<FollowupSnapshot[]>;
   /** a change by the user, conditional on the revision they saw */
   update(id: number, revision: number, patch: Partial<Pick<FollowupRow, "state" | "dueAt" | "deferredUntil" | "inboxState" | "closedReason" | "closedAt">>): Promise<FollowupSnapshot | null>;
   /** Undo: each row only if nothing else changed it since */
