@@ -1,59 +1,57 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
+/**
+ * A message the reader was sent to (the owner, 2026-11-19): its ring's rule holds for LOCATE_MS and goes; sent to it again
+ * while it shows, the rule goes and comes back two frames later (its breaths start over), and holds a whole LOCATE_MS again.
+ */
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { LOCATE_MS, locateMessage } from "./flash";
 
-// the app's stores read the motion preference as they load
 vi.hoisted(() => {
   (globalThis as Record<string, unknown>).matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
 });
-const { useAppearance } = await import("~/lib/appearance");
-const { arrive, motionNow } = await import("~/lib/flash");
 
-/** Element.animate as jsdom lacks it: what was asked, and the running ones getAnimations reports */
-function recordAnimations() {
-  const runs: { el: Element; keyframes: Keyframe[]; options: KeyframeAnimationOptions; cancelled: boolean }[] = [];
-  Element.prototype.animate = function (this: Element, keyframes: Keyframe[], options: KeyframeAnimationOptions) {
-    const run = { el: this, keyframes, options, cancelled: false };
-    runs.push(run);
-    return { id: options.id, cancel: () => (run.cancelled = true) } as unknown as Animation;
-  } as typeof Element.prototype.animate;
-  Element.prototype.getAnimations = function (this: Element) {
-    return runs.filter((r) => r.el === this && !r.cancelled).map((r) => ({ id: r.options.id, cancel: () => (r.cancelled = true) }) as unknown as Animation);
-  };
-  return runs;
-}
+const sheet = () => document.getElementById("terno-flash")?.textContent ?? "";
+const ringed = (id: number) => sheet().includes(`article[data-message-id="${id}"]::after`);
 
-afterEach(() => {
-  useAppearance.setState({ motionMs: 75, reducedMotion: false });
-  document.documentElement.classList.remove("motion-paused");
-});
-
-describe("arrive (plans 195–198)", () => {
-  it("rises 4 px into place at --motion-slow, one at a time per element; nothing with motion off, reduced or paused", () => {
-    const runs = recordAnimations();
-    const el = document.createElement("div");
-    useAppearance.setState({ motionMs: 75, reducedMotion: false });
-    arrive(el);
-    expect(runs).toHaveLength(1);
-    expect(runs[0]!.keyframes).toEqual([{ opacity: 0, translate: "0 4px" }, { opacity: 1, translate: "0 0" }]);
-    expect(runs[0]!.options).toMatchObject({ id: "arrive", duration: 100 });
-    // again: the first gives way
-    arrive(el);
-    expect(runs[0]!.cancelled).toBe(true);
-    useAppearance.setState({ motionMs: 50 });
-    arrive(el);
-    expect(runs[2]!.options.duration).toBe(67);
-    for (const off of [() => useAppearance.setState({ motionMs: 0 }), () => useAppearance.setState({ motionMs: 75, reducedMotion: true }), () => { useAppearance.setState({ reducedMotion: false }); document.documentElement.classList.add("motion-paused"); }]) {
-      off();
-      expect(motionNow()).toBe(0);
-      arrive(el);
-    }
-    expect(runs).toHaveLength(3);
+describe("locateMessage", () => {
+  beforeEach(() => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame"] }));
+  afterEach(() => {
+    vi.runAllTimers();
+    vi.useRealTimers();
   });
 
-  it("in place of what was just there, it settles without the fade (a transparent first frame reads as a flash)", () => {
-    const runs = recordAnimations();
-    arrive(document.createElement("div"), { inPlace: true });
-    expect(runs[0]!.keyframes).toEqual([{ translate: "0 4px" }, { translate: "0 0" }]);
-    expect(runs[0]!.options).toMatchObject({ id: "arrive", duration: 100 });
+  it("rings the message for LOCATE_MS, two breaths of half that each, then drops the rule", () => {
+    locateMessage(7);
+    expect(ringed(7)).toBe(true);
+    expect(sheet()).toContain(`animation-duration:${LOCATE_MS / 2}ms`);
+    vi.advanceTimersByTime(LOCATE_MS);
+    expect(ringed(7)).toBe(true);
+    vi.advanceTimersByTime(100);
+    expect(ringed(7)).toBe(false);
+  });
+
+  it("again while it shows: off at once, back two frames later, and a whole LOCATE_MS from then", () => {
+    locateMessage(7);
+    vi.advanceTimersByTime(LOCATE_MS - 200);
+    locateMessage(7);
+    expect(ringed(7)).toBe(false);
+    vi.advanceTimersToNextFrame();
+    expect(ringed(7)).toBe(false);
+    vi.advanceTimersToNextFrame();
+    expect(ringed(7)).toBe(true);
+    // the first one's timer is gone: it doesn't cut the new ring short
+    vi.advanceTimersByTime(LOCATE_MS);
+    expect(ringed(7)).toBe(true);
+    vi.advanceTimersByTime(100);
+    expect(ringed(7)).toBe(false);
+  });
+
+  it("another message while one shows: only the new one is ringed", () => {
+    locateMessage(7);
+    locateMessage(9);
+    vi.advanceTimersToNextFrame();
+    vi.advanceTimersToNextFrame();
+    expect(ringed(9)).toBe(true);
+    expect(ringed(7)).toBe(false);
   });
 });
