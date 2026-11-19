@@ -23,6 +23,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/po
 import { reminderShort, useReminders, useRemindPopover } from "~/lib/reminders";
 import { installScrollHairline } from "~/lib/scroll-hairline";
 import { cancelReaderScroll, keepInView, revealMessage } from "~/lib/reader-scroll";
+import { locateMessage } from "~/lib/flash";
 import { takeSent } from "~/lib/sent-reveal";
 import { OpenHead, Recipients } from "./message-head";
 import { HeldMessages } from "./held-message";
@@ -450,7 +451,7 @@ function Message({ m, threadId, expanded, onToggle, icons, person, headless, sol
   const Head = solo ? "div" : "button";
   const toggle = solo ? { "data-testid": "message-header", title: fullDate(m.date) } : { type: "button" as const, "aria-expanded": expanded, "aria-controls": bodyId, title: fullDate(m.date), onClick: onToggle, onBlur: onLeave, "data-testid": "message-toggle" };
   return (
-    <article data-testid="message" data-message-id={m.id} data-expanded={open || undefined} className="hairline-b">
+    <article data-testid="message" data-message-id={m.id} data-expanded={open || undefined} className="relative hairline-b">
       {/* one heading and one button in both states, so the focused control survives expanding and collapsing; the actions sit beside it, never inside */}
       {!headless && <div className="group/mh relative">
         <h3>
@@ -557,6 +558,8 @@ function useFold(messages: MessageDetail[]) {
     useSummaries.setState({ reveal: null });
     setState((s) => ({ toggled: new Map(s.toggled).set(messageId, true), revealed: new Set([...s.revealed, messageId]) }));
     revealMessage(messageId);
+    // and says which one it is: already on screen, the scroll alone showed nothing (the owner, 2026-11-19)
+    locateMessage(messageId);
   }, [summaryReveal, messages]);
   const isOpen = (m: MessageDetail) => own.toggled.get(m.id) ?? shown.get(m.id) ?? opensAt(m);
   const allOpen = messages.every(isOpen);

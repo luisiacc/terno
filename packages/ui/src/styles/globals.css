@@ -434,6 +434,33 @@
     background-color: var(--color-drop-target);
   }
 }
+/*
+ * A message the reader was sent to (lib/flash.ts locateMessage, which gives it `content` and the breath's length): a soft
+ * ring on the shape a header's hover takes, around the whole message, breathing in and out twice. A mark, not motion
+ * through space: with motion off it holds, still, for as long.
+ */
+@keyframes located {
+  from,
+  to {
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+[data-reader-scroller] article[data-message-id]::after {
+  position: absolute;
+  inset: 0 calc(var(--spacing) * -2);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--color-primary) 45%, transparent),
+    0 0 0 3px color-mix(in oklab, var(--color-primary) 12%, transparent);
+  pointer-events: none;
+  animation-name: located;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: 2;
+  animation-fill-mode: forwards;
+}
 @keyframes dot-pop {
   from {
     transform: scale(0);

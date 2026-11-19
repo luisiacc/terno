@@ -58,6 +58,33 @@ export function flashRows(ids: readonly number[]): void {
   if (ids.length) play(`${rowSelector(ids)}{animation:drop-flash var(--motion-slow) var(--motion-ease)}`, Math.min(motionMs() * 1.33, 100));
 }
 
+/** How long a message the reader was sent to stays marked: two slow breaths of its ring (the owner, 2026-11-19). */
+export const LOCATE_MS = 2000;
+let locateTimer: ReturnType<typeof setTimeout> | null = null;
+let locateFrame = 0;
+
+/**
+ * A message the reader was sent to (a follow-up's "Your message", a summary's or Ask's source, a link to a message): its
+ * ring (globals.css) shows for LOCATE_MS, wherever the message already was on screen. Keyed by id, so it holds however
+ * the article renders meanwhile. With motion off the ring holds still for as long, then goes.
+ */
+export function locateMessage(messageId: number): void {
+  const on = () => {
+    setRule("locate", `[data-reader-scroller] article[data-message-id="${Math.trunc(messageId)}"]::after{content:"";animation-duration:${LOCATE_MS / 2}ms}`);
+    locateTimer = setTimeout(() => {
+      locateTimer = null;
+      setRule("locate", null);
+    }, LOCATE_MS + 60);
+  };
+  cancelAnimationFrame(locateFrame);
+  if (locateTimer === null) return on();
+  // marked already: its ring goes and comes back a frame later, so its breaths start over
+  clearTimeout(locateTimer);
+  locateTimer = null;
+  setRule("locate", null);
+  locateFrame = requestAnimationFrame(() => (locateFrame = requestAnimationFrame(on)));
+}
+
 let reflowTimer: ReturnType<typeof setTimeout> | null = null;
 
 /** The listbox's rows slide to their places for this window (a removal's, plan 195: an arrival's too). */

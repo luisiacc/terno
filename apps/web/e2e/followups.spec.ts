@@ -149,6 +149,17 @@ test.describe("follow-ups (plan 142)", () => {
       await page.keyboard.press("Escape");
       // one hairline under the section at most: the message's own
       expect(await page.getByTestId("thread-followups").evaluate((el) => getComputedStyle(el).borderBottomWidth)).toBe("0px");
+      // the owner, 2026-11-19: Your message marks the message it goes to, already on screen as here (the scroll alone
+      // showed nothing): a ring breathes around it, then goes
+      const ring = (el: Element) => getComputedStyle(el, "::after").content;
+      const mine = page.locator("article[data-message-id]").last();
+      expect(await mine.evaluate(ring)).toBe("none");
+      await page.getByTestId("followup-go").click();
+      await expect.poll(() => mine.evaluate(ring)).toBe('""');
+      await expect.poll(() => mine.evaluate(ring), { timeout: 4000 }).toBe("none");
+      // again: the ring comes back, its breaths starting over
+      await page.getByTestId("followup-go").click();
+      await expect.poll(() => mine.evaluate(ring)).toBe('""');
     });
   });
 
