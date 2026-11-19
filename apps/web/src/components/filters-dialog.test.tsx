@@ -104,6 +104,52 @@ it("saving one while another is opened saves only that one: the other stays unsa
   expect(($("filter-name") as HTMLInputElement).value).toBe("a.com");
 });
 
+it("plan 219: saved, the builder is a new rule, the request box open and empty, and the footer says what it saved until the first edit", async () => {
+  await ask("archive mail from a.com");
+  await answer("filters.generate", rule("a.com"));
+  await click($("filter-save"));
+  await answer("filters.save", { id: ++saved, name: "a.com", enabled: true, source: "ai", rule: rule("a.com").rule, hits: 0 });
+  expect(names()).toEqual([]);
+  expect(($("filter-name") as HTMLInputElement).value).toBe("");
+  expect(($("ai-prompt") as HTMLTextAreaElement).value).toBe("");
+  expect($("ai-explanation")).toBeNull();
+  expect($("filter-saved")!.textContent).toBe("Saved “a.com”.");
+  // Codex review: so does a word of the next request
+  const request = $("ai-prompt") as HTMLTextAreaElement;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(request, "a");
+    request.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect($("filter-saved")!.textContent).toBe("");
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(request, "");
+    request.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect($("filter-saved")!.textContent).toBe("Saved “a.com”.");
+  const name = $("filter-name") as HTMLInputElement;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(name, "b");
+    name.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect($("filter-saved")!.textContent).toBe("");
+});
+
+it("plan 219: a prefilled rule's preview note is that rule's only: New, or a rule AI writes, drops it", async () => {
+  await close();
+  setApp({ filterPrefill: { name: "a.com", rule: rule("a.com").rule as never, note: "Found in the Inbox" } });
+  await open();
+  expect($("filter-preview-note")?.textContent).toBe("Found in the Inbox");
+  await click($("new-filter"));
+  expect($("filter-preview-note")).toBeNull();
+  // Codex review: nor does a rule AI writes in its place keep it
+  await close();
+  setApp({ filterPrefill: { name: "a.com", rule: rule("a.com").rule as never, note: "Found in the Inbox" } });
+  await open();
+  await ask("archive mail from b.com");
+  await answer("filters.generate", rule("b.com"));
+  expect($("filter-preview-note")).toBeNull();
+});
+
 /** Plan 161, pass 3: Esc steps back a level before Rules closes, as in Ask and the actions. */
 const esc = (el: Element) => act(async () => el.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
 const isOpen = () => $("filters-dialog") !== null;

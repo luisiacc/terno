@@ -3,6 +3,7 @@ import { Badge } from "@terno/ui/components/badge";
 import { Button } from "@terno/ui/components/button";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { CloseButton } from "@terno/ui/components/close-button";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@terno/ui/components/collapsible";
 import { Spinner } from "@terno/ui/components/spinner";
 import { Dialog, DialogContent, DialogTitle } from "@terno/ui/components/dialog";
 import { Input } from "@terno/ui/components/input";
@@ -12,7 +13,7 @@ import { Switch } from "@terno/ui/components/switch";
 import { Textarea } from "@terno/ui/components/textarea";
 import { cn } from "@terno/ui/lib/utils";
 import { Archive, Check, Folder as FolderIcon, Forward, MailCheck, OctagonAlert, PenLine, Plus, Sparkles, Star, Tag, Trash2 } from "@terno/ui/icons";
-import { Fragment, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { t, type TextKey } from "@terno/i18n";
 import { richT } from "~/lib/i18n";
 import { snack } from "~/lib/snack";
@@ -437,14 +438,21 @@ export function FiltersDialog() {
   const [loads, setLoads] = useState(0);
   const loadsRef = useRef(0);
   loadsRef.current = loads;
+  // plan 161: what the preview of a rule prefilled from an action found; plan 219: that rule's only, so any load drops it
+  const [note, setNote] = useState(() => getApp().filterPrefill?.note ?? null);
   const load = (d: Draft) => {
     setDraft(d);
     setLoads((n) => n + 1);
     setAttempted(false);
+    setNote(null);
   };
   // opened from Ajustes → Filtros: closing goes back there
   const [returnTo] = useState(() => getApp().filterPrefill?.returnTo ?? null);
-  const [note] = useState(() => getApp().filterPrefill?.note ?? null);
+  // plan 219: Terno's rules fold under their count; open from the start only when the rule opened is one of them
+  const [autoOpen, setAutoOpen] = useState(() => draft.auto !== undefined);
+  // plan 219: what the last save saved, said in the footer over the new rule it left (the snack dock is under this
+  // dialog); tied to that draft, so the first edit, or another rule opened, quiets it
+  const [saved, setSaved] = useState<{ line: string; over: Draft } | null>(null);
   const [deleting, setDeleting] = useState(false);
   useEffect(() => {
     if (getApp().filterPrefill) setApp({ filterPrefill: null });
@@ -499,6 +507,13 @@ export function FiltersDialog() {
   useEffect(() => {
     if (open) void refresh();
   }, [open]);
+  // plan 219 (Codex review): opened on a saved rule (Settings → Edit), its row is brought into view once the list has it
+  const shownOpened = useRef(false);
+  useEffect(() => {
+    if (shownOpened.current || !filters.length) return;
+    shownOpened.current = true;
+    list.current?.querySelector("[data-current]")?.scrollIntoView({ block: "nearest" });
+  }, [filters]);
 
   const valid = filterRuleSchema.safeParse(draft.rule);
   const rule = draft.rule;
@@ -583,6 +598,8 @@ export function FiltersDialog() {
     try {
       const out = await client.call("filters.generate", { prompt });
       setDraft({ id: undefined, name: out.name, enabled: true, source: "ai", rule: out.rule });
+      // plan 219 (Codex review): a prefilled rule's note isn't this one's
+      setNote(null);
       setBuilt(prompt);
       setFolded(true);
       // pass 3: focus on what was built, not left on the dialog (a program's focus: no ring)
@@ -621,17 +638,25 @@ export function FiltersDialog() {
       // saved, it's an ordinary rule: its unsaved row goes, the others stay
       if (savingKey !== null) setParked((held) => held.filter((u) => u.key !== savingKey));
       if (applyExisting) void applyFilter(f.id, f.name);
-      else snack.success(t("filters.saved"));
-      if (loadsRef.current === loadedAt) {
+      // plan 219: saved, the builder starts a new rule, as New does, and says what it saved
+      const fresh = loadsRef.current === loadedAt;
+      if (fresh) {
         setAiKey(null);
-        load(draftOf(f));
+        const next = emptyDraft();
+        load(next);
+        setExplanation(null);
+        setPrompt("");
+        setSaved({ line: t(applyExisting ? "filters.savedApplying" : "filters.savedNamed", { name: f.name }), over: next });
       }
       await refresh();
-      // plan 162 (after ai162-r02): the keys go to the rule just saved, in the list (they fell to <body> with the button)
-      requestAnimationFrame(() => {
+      // plan 162 (after ai162-r02): the keys go to the rule just saved, in the list (they fell to <body> with the button);
+      // plan 219: brought into view, or New when it's folded away; not when another rule was opened meanwhile (Codex review)
+      if (fresh) requestAnimationFrame(() => {
+        const row = list.current?.querySelector<HTMLElement>(`[data-testid=filter-item][data-filter-id="${f.id}"]`);
+        row?.scrollIntoView({ block: "nearest" });
         const at = document.activeElement;
         if (at && at !== document.body && at.isConnected) return;
-        document.querySelector<HTMLElement>(`[data-testid=filter-item][data-filter-id="${f.id}"] button`)?.focus({ preventScroll: true });
+        (row?.querySelector<HTMLElement>("button") ?? list.current?.querySelector<HTMLElement>("[data-testid=new-filter]"))?.focus({ preventScroll: true });
       });
     } catch (error) {
       snack.error(error instanceof Error ? error.message : String(error));
@@ -639,6 +664,28 @@ export function FiltersDialog() {
       setSaving(false);
     }
   };
+
+  const autoFilters = filters.filter((f) => f.auto);
+  const filterRow = (f: Filter) => (
+    <div key={f.id} data-testid="filter-item" data-filter-id={f.id} data-auto={f.auto || undefined} data-current={draft.id === f.id || undefined} className={cn("group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted", draft.id === f.id && "bg-muted")}>
+      {/* plan 188: the open one says so, not only by its fill */}
+      <button type="button" aria-current={draft.id === f.id ? "true" : undefined} className="min-w-0 flex-1 text-left" onClick={() => (leaving(), load(draftOf(f)), setExplanation(null))}>
+        <span className="block truncate">{f.name}</span>
+        <span className="text-2xs text-muted-foreground">
+          {f.auto ? t("filters.source.auto") : f.source === "ai" ? t("filters.source.aiShort") : f.source === "learned" ? t("filters.source.learned") : t("filters.source.manual")} · {t("filters.hits", { count: f.hits })}
+        </span>
+      </button>
+      <Switch
+        size="sm"
+        aria-label={t("filters.enable", { name: f.name })}
+        checked={f.enabled}
+        onCheckedChange={async (enabled) => {
+          await client.call("filters.save", { id: f.id, name: f.name, enabled, source: f.source, rule: f.rule });
+          void refresh();
+        }}
+      />
+    </div>
+  );
 
   return (
     <Dialog
@@ -694,30 +741,16 @@ export function FiltersDialog() {
                 <CloseButton label={t("filters.unsavedDiscard")} data-testid="filter-unsaved-discard" onClick={() => discardUnsaved(u)} />
               </div>
             ))}
-            {/* plan 90: the user's, then Terno's under a heading of their own */}
-            {[...filters.filter((f) => !f.auto), ...filters.filter((f) => f.auto)].map((f, i, all) => (
-              <Fragment key={f.id}>
-              {f.auto && !all[i - 1]?.auto && <p data-testid="filters-auto-heading" className="mt-4 mb-1 px-2 text-xs font-medium text-muted-foreground">{t("filters.group.auto")}</p>}
-              <div data-testid="filter-item" data-filter-id={f.id} data-auto={f.auto || undefined} data-current={draft.id === f.id || undefined} className={cn("group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted", draft.id === f.id && "bg-muted")}>
-                {/* plan 188: the open one says so, not only by its fill */}
-                <button type="button" aria-current={draft.id === f.id ? "true" : undefined} className="min-w-0 flex-1 text-left" onClick={() => (leaving(), load(draftOf(f)), setExplanation(null))}>
-                  <span className="block truncate">{f.name}</span>
-                  <span className="text-2xs text-muted-foreground">
-                    {f.auto ? t("filters.source.auto") : f.source === "ai" ? t("filters.source.aiShort") : f.source === "learned" ? t("filters.source.learned") : t("filters.source.manual")} · {t("filters.hits", { count: f.hits })}
-                  </span>
-                </button>
-                <Switch
-                  size="sm"
-                  aria-label={t("filters.enable", { name: f.name })}
-                  checked={f.enabled}
-                  onCheckedChange={async (enabled) => {
-                    await client.call("filters.save", { id: f.id, name: f.name, enabled, source: f.source, rule: f.rule });
-                    void refresh();
-                  }}
-                />
-              </div>
-              </Fragment>
-            ))}
+            {/* plan 90: the user's, then Terno's under a heading of their own; plan 219: folded under their count */}
+            {filters.filter((f) => !f.auto).map(filterRow)}
+            {autoFilters.length > 0 && (
+              <Collapsible open={autoOpen} onOpenChange={setAutoOpen} className="mt-4" data-testid="filters-auto">
+                <CollapsibleTrigger data-testid="filters-auto-heading" className="rounded-md px-2 py-1 text-xs font-medium text-muted-foreground hover:text-foreground [&_[data-slot=collapsible-chevron]]:size-3.5">
+                  {t("filters.group.autoCount", { count: autoFilters.length })}
+                </CollapsibleTrigger>
+                <CollapsiblePanel>{autoFilters.map(filterRow)}</CollapsiblePanel>
+              </Collapsible>
+            )}
             {filters.length === 0 && <p className="px-2 py-2 text-xs text-muted-foreground">{t("filters.empty")}</p>}
             {proposals.length > 0 && (
               <>
@@ -923,6 +956,16 @@ export function FiltersDialog() {
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2 border-t border-border px-6 py-3">
+            {/* plan 219: always there, so a screen reader hears the line when it comes; empty, it gives back its gap */}
+            <p role="status" data-testid="filter-saved" className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground empty:-me-2">
+              {/* the first edit of the new rule, or of its request, quiets it (Codex review) */}
+              {saved?.over === draft && prompt === "" && (
+                <>
+                  <Check aria-hidden className="size-[1.15em] shrink-0" />
+                  <span className="truncate">{saved.line}</span>
+                </>
+              )}
+            </p>
             {/* the AI card says who wrote it while it shows the rule; a saved AI rule says it here */}
             {draft.source !== "manual" && !(draft.source === "ai" && said !== null) && <Badge variant="secondary">{draft.source === "ai" ? t("filters.source.ai") : t("filters.source.learned")}</Badge>}
             {draft.id && (

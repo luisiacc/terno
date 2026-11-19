@@ -114,16 +114,33 @@ test.describe("accounts, settings and command palette", () => {
 
       // saved in the builder without a change: still Terno's (rules compare as rules, not as text)
       await auto.getByRole("button", { name: "Edit “Uber → Facturas”" }).click();
+      // plan 219: opened on one of Terno's, their group starts open, under its count
+      const group = page.getByTestId("filters-auto-heading");
+      await expect(group).toHaveText("2 rules created for you");
+      await expect(group).toHaveAttribute("aria-expanded", "true");
       await page.getByTestId("filter-save").click();
-      await expect(page.locator("[data-testid=snack]").filter({ hasText: "Rule saved" })).toBeVisible();
+      // saved, the builder starts a new rule and says what it saved (a snack would sit under the dialog)
+      await expect(page.getByTestId("filter-saved")).toHaveText("Saved “Uber → Facturas”.");
+      await expect(page.getByTestId("filter-name")).toHaveValue("");
       expect((await server.backend.server.invoke("filters.list", {}, ctx)).find((f) => f.name === "Uber → Facturas")?.auto).toBe(true);
       // edited in the builder: the user's now
+      await page.getByTestId("filter-item").filter({ hasText: "Uber → Facturas" }).getByRole("button").first().click();
+      await expect(page.getByTestId("filter-saved")).toBeEmpty();
       await page.getByTestId("filter-name").fill("Uber receipts");
       await page.getByTestId("filter-save").click();
       await expect.poll(async () => (await server.backend.server.invoke("filters.list", {}, ctx)).find((f) => f.name === "Uber receipts")?.auto).toBe(false);
+      await expect(group).toHaveText("1 rule created for you");
       await page.keyboard.press("Escape");
       await expect(yours).toContainText("Uber receipts");
       await expect(auto.getByTestId("settings-filter")).toHaveCount(1);
+      // a new rule from here: Terno's are folded away until asked for
+      await page.getByTestId("settings-filter-new").click();
+      await expect(group).toHaveAttribute("aria-expanded", "false");
+      await expect(page.getByTestId("filter-item").filter({ hasText: "Rappi → Facturas" })).toHaveCount(0);
+      await group.click();
+      await expect(page.getByTestId("filter-item").filter({ hasText: "Rappi → Facturas" })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("tab-filters")).toHaveAttribute("aria-selected", "true");
     });
     await scenario("Settings → Filters: turn off, edit in the builder (closing comes back), delete after confirming", async () => {
       await fresh(page);

@@ -73,11 +73,24 @@ test.describe("AI filters and learned filters", () => {
       // plan 162 (after ai162-r02): each choice says its scope; Edit request is a bounded control
       await expect(page.getByTestId("filter-save")).toHaveText("Save for new mail");
       expect(await page.getByTestId("ai-edit-request").evaluate((e) => getComputedStyle(e).borderTopWidth)).not.toBe("0px");
+      const before = await page.getByTestId("filter-item").evaluateAll((rows) => rows.map((r) => r.getAttribute("data-filter-id")));
       await page.getByTestId("filter-save-apply").click();
       await expect(page.locator("[data-testid=snack]").filter({ hasText: /Rule applied to \d+ conversations/ })).toBeVisible();
+      // plan 219: saved, the builder is a new rule, and its footer says what was saved
+      await expect(page.getByTestId("filter-saved")).toHaveText(/^Saved “.+”, and started applying it to existing mail\.$/);
+      await expect(page.getByTestId("filter-name")).toHaveValue("");
+      await expect(page.getByTestId("ai-prompt")).toHaveValue("");
+      await expect(page.getByTestId("filter-delete")).toHaveCount(0);
+      await expect(page.locator("[data-testid=filter-item][data-current]")).toHaveCount(0);
       // the keys go to the rule just saved (they fell to <body>)
-      await expect(page.locator("[data-testid=filter-item][data-current] button").first()).toBeFocused();
-      await expect(page.getByTestId("filter-item")).toContainText(["AI"]);
+      await expect(page.getByTestId("filter-item")).toHaveCount(before.length + 1);
+      const id = (await page.getByTestId("filter-item").evaluateAll((rows) => rows.map((r) => r.getAttribute("data-filter-id")))).find((x) => !before.includes(x));
+      const savedRow = page.locator(`[data-testid=filter-item][data-filter-id="${id}"]`);
+      await expect(savedRow).toContainText("AI");
+      await expect(savedRow.getByRole("button")).toBeFocused();
+      // the first edit of the new rule quiets the line
+      await page.getByTestId("filter-name").fill("Next");
+      await expect(page.getByTestId("filter-saved")).toBeEmpty();
       await expect.poll(inboxUber).toBe(0);
       await page.keyboard.press("Escape");
       // nothing of theirs is left in the Inbox (a search everywhere still finds them, where the filter put them)
