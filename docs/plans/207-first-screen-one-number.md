@@ -96,18 +96,20 @@ It also covers an existing user who already has AI: they're asked at their next 
 
 **The look.** A small dialog (`Dialog`, BoardUI's Modal port), about 400 px wide, calm, in the design's tokens:
 - **A picture of the feed in miniature** (built with `tip-picture.tsx`'s pieces): a "Today" heading and three rows, each one sentence with a "when" on the right: "Reply to Ana about Friday's venue · 3 pm", "Pay the water bill · Fri", "Send Marco the deck, as you said · Tue". It is decorative (`aria-hidden`).
-- **Title:** "Start with What matters?"
-- **One line:** "It picks out what needs you from your mail, so you don't have to dig through the Inbox."
-- **Three benefits**, each a muted icon and one line:
-  - "Only what needs you: replies owed, bills due, what you promised"
-  - "Nothing slips: a date that passes shows under Missed"
-  - "One number to clear: Done takes it off"
-- **Buttons:** "Keep the Inbox" (secondary), "Open What matters first" (primary, the default focus).
-- **A quiet footnote:** "You can change this any time in Settings → General."
+- **The words** (the owner, 2026-11-19, after the first version: "they have zero context as to what this is … 5th grade reading level … frame it as a question if they would like to try it, then lay out the benefits clearly, also mention they can personalize what goes in"):
+  - **Title:** "Want to try What matters?"
+  - **Body:** "What matters is a new screen. It reads your email and shows only what you need to do. Your Inbox keeps everything."
+  - **Four reasons**, each a muted icon, a short name in medium weight, then one plain sentence:
+    - "**See what needs you first.** Emails to answer, bills to pay, and things you said you'd do."
+    - "**Never miss a date.** If something is late, it stays at the top so you don't forget."
+    - "**Finish and move on.** Mark a task Done and it leaves the list."
+    - "**Make it yours.** Remove what you don't need. Don't want bills from one store here? Hide them." (Remove, and the mute offer's sender-and-kind pair, plan 210.)
+  - **A quiet footnote:** "If you say yes, Terno opens on What matters. You can change this anytime in Settings → General."
+  - **Buttons:** "No, keep my Inbox" (secondary) and "Yes, try What matters" (primary, the default focus).
 
 **The answer.**
-- **"Open What matters first"** saves `whatMatters` and goes to What matters now, so the user sees what they chose.
-- **"Keep the Inbox"** or Esc saves `inbox`. The question never returns, and Settings is the way back. There's no close ×: the answers say it, and a × sat over the picture's corner.
+- **"Yes, try What matters"** saves `whatMatters` and goes to What matters now, so the user sees what they chose.
+- **"No, keep my Inbox"** or Esc saves `inbox`. The question never returns, and Settings is the way back. There's no close ×: the answers say it, and a × sat over the picture's corner.
 - **Saving fails:** the dialog stays open and the error says so in plain words ("Couldn't save your choice. Try again."). It isn't asked again behind the user's back.
 
 ### 5. Settings → General: "Open at launch"

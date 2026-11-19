@@ -34,10 +34,13 @@ test("asked once AI is on, after Settings closes; What matters leads the sidebar
     await page.getByTestId("dev-ai-switch").click();
     await expect(page.getByTestId("dev-ai-on")).toBeVisible();
     await expect(today).toBeVisible();
+    // the Inbox leads until asked: What matters' number is said, not drawn
+    await expect(drawn(today)).toHaveCount(0);
+    await expect(page.locator("#today-count-help")).toContainText(/\d+ needs? you/);
     await expect(question(page)).toHaveCount(0);
     await page.keyboard.press("Escape");
     await expect(question(page)).toBeVisible();
-    await expect(question(page).getByRole("heading")).toHaveText("Start with What matters?");
+    await expect(question(page).getByRole("heading")).toHaveText("Want to try What matters?");
     await expect(page.getByTestId("first-screen-choose-what-matters")).toBeFocused();
     if (SHOTS) await question(page).screenshot({ path: `${SHOTS}/question-light.png` });
     expect((await new AxeBuilder({ page }).include("[data-testid=first-screen-question]").analyze()).violations).toEqual([]);
@@ -57,6 +60,7 @@ test("asked once AI is on, after Settings closes; What matters leads the sidebar
     await expect(page.getByTestId("wm-feed")).toBeVisible();
     await expect(drawn(inbox)).toHaveCount(0);
     expect(await said(inbox)).toBe(`${unread} unread`);
+    await expect(drawn(today)).toHaveText(/^\d+$/);
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/what-matters-first.png` });
     await page.reload();
     await page.locator("[data-ready]").waitFor();

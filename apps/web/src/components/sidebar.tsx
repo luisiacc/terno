@@ -1447,6 +1447,8 @@ export function Sidebar() {
           countHelp={counts.today ? { id: "today-count-help", text: t("today.countHelp", { count: counts.today }) } : undefined}
         />
       )}
+      {/* its description, as a category's is (plan 207: the only way its number is said while the Inbox leads) */}
+      {todayShown && counts.today ? <span id="today-count-help" hidden>{t("today.countHelp", { count: counts.today })}</span> : null}
       {VIEWS.slice(0, PINNED).map(folder)}
       <FavoriteRows />
       <MoreFolders

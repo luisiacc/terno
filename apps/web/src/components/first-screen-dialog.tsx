@@ -4,7 +4,7 @@ import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@terno/ui/components/dialog";
 import { useModalHost } from "@terno/ui/components/modal-host";
-import { CalendarClock, CircleCheck, ListChecks, Sun } from "@terno/ui/icons";
+import { CalendarClock, CircleCheck, ListChecks, Settings2, Sun } from "@terno/ui/icons";
 import { todayOffered } from "~/lib/ai";
 import { client } from "~/rpc/connection";
 import { reconcileSettings } from "~/lib/appearance";
@@ -58,16 +58,18 @@ export function FirstScreenDialog() {
   return (
     <Dialog open onOpenChange={(open) => !open && void answer("inbox")}>
       {/* no ×: the two answers say it, and Esc is Keep the Inbox (a × over the picture's corner said nothing more) */}
-      <DialogContent showCloseButton={false} className="gap-5 sm:max-w-[25rem]" data-testid="first-screen-question">
+      <DialogContent showCloseButton={false} className="gap-5 sm:max-w-[27rem]" data-testid="first-screen-question">
         <FeedPicture />
         <DialogHeader>
           <DialogTitle>{t("firstScreen.ask.title")}</DialogTitle>
           <DialogDescription>{t("firstScreen.ask.body")}</DialogDescription>
         </DialogHeader>
-        <ul className="flex flex-col gap-2.5 text-sm" data-testid="first-screen-benefits">
-          <Benefit icon={<ListChecks />} text={t("firstScreen.ask.only")} />
-          <Benefit icon={<CalendarClock />} text={t("firstScreen.ask.nothingSlips")} />
-          <Benefit icon={<CircleCheck />} text={t("firstScreen.ask.oneNumber")} />
+        {/* the owner (2026-11-19): plain words a ten-year-old reads, each reason named first, then said */}
+        <ul className="flex flex-col gap-3 text-sm" data-testid="first-screen-benefits">
+          <Benefit icon={<ListChecks />} title={t("firstScreen.ask.first")} text={t("firstScreen.ask.firstText")} />
+          <Benefit icon={<CalendarClock />} title={t("firstScreen.ask.dates")} text={t("firstScreen.ask.datesText")} />
+          <Benefit icon={<CircleCheck />} title={t("firstScreen.ask.done")} text={t("firstScreen.ask.doneText")} />
+          <Benefit icon={<Settings2 />} title={t("firstScreen.ask.yours")} text={t("firstScreen.ask.yoursText")} />
         </ul>
         <p className="text-xs text-muted-foreground">{t("firstScreen.ask.change")}</p>
         {failed && (
@@ -88,13 +90,15 @@ export function FirstScreenDialog() {
   );
 }
 
-function Benefit({ icon, text }: { icon: React.ReactNode; text: string }) {
+function Benefit({ icon, title, text }: { icon: React.ReactNode; title: string; text: string }) {
   return (
     <li className="flex items-start gap-2.5">
       <span aria-hidden className="mt-[0.15em] flex shrink-0 text-muted-foreground [&_svg]:size-[1.15em]">
         {icon}
       </span>
-      <span>{text}</span>
+      <span>
+        <span className="font-medium">{title}</span> <span className="text-muted-foreground">{text}</span>
+      </span>
     </li>
   );
 }

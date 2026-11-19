@@ -623,7 +623,7 @@ test("plan 210 (iteration 3): the header says missed, today and waiting; Waiting
     await expect(page.getByTestId("today-needs")).toHaveText(/^1 missed · 1 to do today · \d+ waiting$/);
     const waiting = Number(/(\d+) waiting/.exec(await page.getByTestId("today-needs").innerText())![1]);
     expect(waiting).toBeGreaterThanOrEqual(3);
-    await expect(page.getByTestId("nav-today")).toContainText(String(2 + waiting));
+    await expect(page.locator("#today-count-help")).toContainText(`${2 + waiting} need`);
   });
 
   await scenario("Waiting on you under Today's own: the dated by their day, soonest first, keeping their time; then the asks", async () => {
@@ -731,7 +731,7 @@ test("plan 210 (iteration 4): 'to do today'; a broken promise first in Waiting o
     // (iteration 5, revision 6: the broken promise needed ahead is one of those waiting, said so, never added again)
     await expect(page.getByTestId("today-needs")).toHaveText(/^1 missed · 1 to do today · \d+ waiting, 1 overdue$/);
     const waiting = Number(/(\d+) waiting/.exec(await page.getByTestId("today-needs").innerText())![1]);
-    await expect(page.getByTestId("nav-today")).toContainText(String(2 + waiting));
+    await expect(page.locator("#today-count-help")).toContainText(`${2 + waiting} need`);
   });
 
   await scenario("Waiting on you: the broken promise first, in Missed's weight; then this week's requests; the asks; a request due later is Ahead's (iteration 5)", async () => {
@@ -962,7 +962,7 @@ test("plan 210 (iteration 5): Today's own by one key, a broken promise needed to
   await scenario("the header: the slip is to do today; the script is one of those waiting, overdue; the badge their sum", async () => {
     await expect(page.getByTestId("today-needs")).toHaveText(/^3 to do today · \d+ waiting, 1 overdue$/);
     const waiting = Number(/(\d+) waiting/.exec(await page.getByTestId("today-needs").innerText())![1]);
-    await expect(page.getByTestId("nav-today")).toContainText(String(3 + waiting));
+    await expect(page.locator("#today-count-help")).toContainText(`${3 + waiting} need`);
   });
 
   await scenario("Today: the broken promise needed today first; what you do, by its time then the untimed; then what happens, by its time", async () => {
