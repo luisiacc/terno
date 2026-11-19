@@ -48,6 +48,10 @@ interface Default {
   status: "running" | "done" | "failed";
   /** the sweep ran but its filter for new mail couldn't be saved */
   filterFailed?: boolean;
+  /** plan 217: a failed sweep left something to take back (slices that committed, or its filter, made first) */
+  kept?: boolean;
+  /** …its filter among them: new mail still goes to Spam, and the snack says so */
+  filterKept?: boolean;
   /** how many more the sweep marked */
   more: number;
   takeBack: () => Promise<void>;
@@ -106,13 +110,17 @@ function SimilarSnackbar({ id, action, targets, offers: first, undo, undoName, a
         // plan 217: the filter is made first, so a failed sweep may name it too
         const details = (error as { details?: { undoId?: unknown; filterUndo?: unknown } }).details;
         const num = (v: unknown) => (typeof v === "number" ? v : null);
-        settle({ undoId: num(details?.undoId), filterUndo: num(details?.filterUndo) });
-        setDef((d) => d && { ...d, status: "failed" });
+        const undoId = num(details?.undoId);
+        const filterUndo = num(details?.filterUndo);
+        settle({ undoId, filterUndo });
+        setDef((d) => d && { ...d, status: "failed", kept: undoId !== null || filterUndo !== null, filterKept: filterUndo !== null });
         if (current()) patchSnack(id, { message: t("offers.default.spamFailed", { name, error: error instanceof Error ? error.message : String(error) }), tone: "error" }, true);
       },
     );
   }, []);
 
+  /** what the default did can be taken back alone: it finished, or failed partway leaving some of it */
+  const takeBackable = def?.status === "done" || !!def?.kept;
   // the default's own scope isn't offered again; the rest in one order everywhere
   const lines = orderOffers(visibleOffers(action, offers.offers)).filter((o) => !(def && def.status !== "failed" && o.scope.kind === "sender"));
   const title = def?.status === "running" ? t("offers.default.spamming", { count: targets.length + def.more, name }) : def?.status === "done" ? t("offers.default.spammed", { count: targets.length + def.more, name }) : onlyDone ? t("offers.only.spamDone", { count: targets.length }) : said(action, targets.length);
@@ -146,7 +154,7 @@ function SimilarSnackbar({ id, action, targets, offers: first, undo, undoName, a
   };
   /** "No, only mark this email as spam": the sweep and its filter come back; the user's own mark stays, z takes that back. */
   const only = () => {
-    if (def?.status !== "done" || busy) return;
+    if (!takeBackable || !def || busy) return;
     setBusy(true);
     def.takeBack().then(
       () => {
@@ -177,7 +185,7 @@ function SimilarSnackbar({ id, action, targets, offers: first, undo, undoName, a
   });
 
   // said only when a filter now catches their new mail (each line says "+ new mail" for itself)
-  const note = def?.status === "done" ? t(def.filterFailed ? "offers.default.noFilter" : "offers.default.spamFuture") : null;
+  const note = def?.status === "done" ? t(def.filterFailed ? "offers.default.noFilter" : "offers.default.spamFuture") : def?.filterKept ? t("offers.default.spamFuture") : null;
   return (
     <div data-testid="similar-snackbar" data-default={def?.status}>
       <div className="flex min-h-9 items-center gap-2 py-1.5 pr-1.5 pl-3">
@@ -193,7 +201,7 @@ function SimilarSnackbar({ id, action, targets, offers: first, undo, undoName, a
           {note}
         </p>
       )}
-      {(offersOpen || def?.status === "done") && (
+      {(offersOpen || takeBackable) && (
       <div id={offersId} data-testid="similar-offers" className="flex flex-col px-1.5 pb-1.5">
         {offersOpen && lines.map((o, i) => (
           <OfferLine
@@ -209,7 +217,7 @@ function SimilarSnackbar({ id, action, targets, offers: first, undo, undoName, a
           />
         ))}
         {/* the sweep did more than was asked: taking that back is never behind a fold */}
-        {def?.status === "done" && <OnlyLine label={t("offers.only.spam", { count: targets.length })} onClick={only} disabled={busy} />}
+        {takeBackable && <OnlyLine label={t("offers.only.spam", { count: targets.length })} onClick={only} disabled={busy} />}
       </div>
       )}
     </div>

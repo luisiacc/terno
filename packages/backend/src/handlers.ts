@@ -657,8 +657,29 @@ export function createHandlers(b: Backend): Handlers {
     "similar.offers": ({ threadIds, action }) => store.similar.offers(threadIds, action),
     "similar.apply": async ({ threadIds, scope, action, jobId, filterName, always }) => {
       const targets = new Set(threadIds);
-      // plan 217: the filter first, so mail that arrives while the set is swept is caught by it (the set is fixed below);
-      // spam always makes it, archive and delete when asked (the renderer's default)
+      // resolved once, in pages of the scope's messages with a turn between them, refused as soon as it passes the cap;
+      // one sweep resolves at a time (a store keeps a few walks between pages: sweeps never crowd out each other's)
+      const { ids, skipped } = await resolving(async () => {
+        const cap = b.options.similarCap ?? SCOPE_CAP;
+        const found = new Set<number>();
+        // the valued threads left out, and only those (one found later, unstarred meanwhile, leaves it): bounded like the scope
+        const left = new Set<number>();
+        for (let cursor: number | null = null; ; ) {
+          const page = await store.similar.resolvePage(scope, action, threadIds, cursor, b.options.similarPage ?? SIMILAR_PAGE);
+          for (const id of page.ids) {
+            found.add(id);
+            left.delete(id);
+          }
+          for (const id of page.kept) if (!found.has(id) && left.size <= cap + COUNT_CAP) left.add(id);
+          if (found.size > cap) throw new RpcError("BAD_REQUEST", L("errors.tooManyThreads"));
+          if (page.next === null) break;
+          cursor = page.next;
+          await b.yieldTurn();
+        }
+        return { ids: [...found], skipped: left.size };
+      });
+      // plan 217: then the filter, before the sweep, so mail arriving while the set is swept is caught by it (a refusal
+      // above made none: nothing to take back); spam always makes it, archive and delete when asked (the renderer's default)
       let filter: { id: number; filterUndo: number | null } | null = null;
       let filterFailed = false;
       if (action === "spam" || always) {
@@ -676,27 +697,6 @@ export function createHandlers(b: Backend): Handlers {
       }
       // from here a failure still names the filter made above, so Undo takes it back
       try {
-        // resolved once, in pages of the scope's messages with a turn between them, refused as soon as it passes the cap;
-        // one sweep resolves at a time (a store keeps a few walks between pages: sweeps never crowd out each other's)
-        const { ids, skipped } = await resolving(async () => {
-          const cap = b.options.similarCap ?? SCOPE_CAP;
-          const found = new Set<number>();
-          // the valued threads left out, and only those (one found later, unstarred meanwhile, leaves it): bounded like the scope
-          const left = new Set<number>();
-          for (let cursor: number | null = null; ; ) {
-            const page = await store.similar.resolvePage(scope, action, threadIds, cursor, b.options.similarPage ?? SIMILAR_PAGE);
-            for (const id of page.ids) {
-              found.add(id);
-              left.delete(id);
-            }
-            for (const id of page.kept) if (!found.has(id) && left.size <= cap + COUNT_CAP) left.add(id);
-            if (found.size > cap) throw new RpcError("BAD_REQUEST", L("errors.tooManyThreads"));
-            if (page.next === null) break;
-            cursor = page.next;
-            await b.yieldTurn();
-          }
-          return { ids: [...found], skipped: left.size };
-        });
         const progress = progressReporter(b, jobId, ids.length);
         progress(0);
         let late = 0;
@@ -710,14 +710,7 @@ export function createHandlers(b: Backend): Handlers {
         progress(ids.length);
         return { affected: r.threads.length, skipped: Math.min(skipped + late, COUNT_CAP), undoId: r.undoId, filter, filterFailed };
       } catch (error) {
-        const filterUndo = filter?.filterUndo ?? null;
-        const swept = error instanceof RpcError && typeof (error.details as { undoId?: unknown } | undefined)?.undoId === "number";
-        // nothing swept (refused past the cap, or no slice committed): the filter it made goes too, nothing half done is left
-        if (filterUndo !== null && !swept) {
-          const undone = await similarFilters.undo(filterUndo).then(() => true, () => false);
-          if (undone) throw error;
-        }
-        throw withFilterUndo(error, filterUndo);
+        throw withFilterUndo(error, filter?.filterUndo ?? null);
       }
     },
     "similar.undo": async ({ undoId, filterUndo, jobId }) => {

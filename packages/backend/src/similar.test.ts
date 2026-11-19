@@ -72,7 +72,7 @@ describe("similar.apply", () => {
     };
     const r = await client.call("similar.apply", { threadIds: [ids[0]!], scope: sender, action: "archive", filterName: "Archive: receipts@uber.com", always: true });
     expect(r).toMatchObject({ affected: 3, filter: { id: expect.any(Number), filterUndo: expect.any(Number) }, filterFailed: false });
-    // the filter was there before the first slice: mail arriving mid-sweep is caught by it
+    // the filter was there before the first slice: mail arriving while the set is swept is caught by it
     expect(filtersAtSweep[0]).toBe(1);
     expect(await backend.store.filters.list()).toEqual([expect.objectContaining({ name: "Archive: receipts@uber.com", enabled: true, rule: { match: "all", conditions: [{ field: "from", op: "equals", value: "receipts@uber.com" }], actions: [{ type: "archive" }] } })]);
     await client.call("similar.undo", { undoId: r.undoId, filterUndo: r.filter!.filterUndo });
@@ -80,7 +80,7 @@ describe("similar.apply", () => {
     expect(inInbox(db, ids)).toEqual([1, 1, 1]);
   });
 
-  it("plan 217: a sweep that fails after some slices names its filter too; one refused before any leaves no filter", async () => {
+  it("plan 217: a sweep that fails after some slices names its filter too; one refused past the cap makes none", async () => {
     const { backend, db, client, thread } = await setup();
     const ids: number[] = [];
     for (let i = 0; i < 60; i++) ids.push(await thread());
@@ -98,9 +98,14 @@ describe("similar.apply", () => {
     expect(await backend.store.filters.list()).toEqual([]);
     expect(inInbox(db, ids)).toEqual(Array(60).fill(1));
 
-    // refused past the cap: nothing moved, and the filter made for it is gone again
+    // refused past the cap: nothing moved, and no filter was ever made (Codex review: one made first and taken back
+    // could already have filed mail arriving meanwhile, or be another sweep's reused rule)
     backend.options.similarCap = 10;
+    const save = backend.store.filters.save.bind(backend.store.filters);
+    let saves = 0;
+    backend.store.filters.save = (...a) => (saves++, save(...a));
     await expect(client.call("similar.apply", { threadIds: [], scope: sender, action: "archive", always: true })).rejects.toThrow();
+    expect(saves).toBe(0);
     expect(await backend.store.filters.list()).toEqual([]);
     expect(inInbox(db, ids)).toEqual(Array(60).fill(1));
   });

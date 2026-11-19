@@ -201,6 +201,25 @@ test.describe("plan 91: defaults and the same offers everywhere", () => {
     await expect.poll(spam).toBe(1);
     await page.keyboard.press("z");
     await expect.poll(spam).toBe(0);
+
+    // plan 217 (Codex review): the default's filter is made before its sweep; a sweep that then fails says the filter
+    // still catches their new mail, and 0 still takes it back
+    const rules = () => db.get<{ c: number }>("SELECT count(*) c FROM filters WHERE enabled = 1 AND rule_json LIKE ?", `%${g.email}%`)!.c;
+    db.exec(`CREATE TRIGGER e2e_no_sweep BEFORE UPDATE OF in_spam ON threads WHEN NEW.in_spam = 1 AND NEW.id <> ${g.target} BEGIN SELECT RAISE(ABORT, 'disk full'); END`);
+    await selectThread(page, g.target, `in:inbox from:${g.email}`);
+    await focusList(page);
+    await page.keyboard.press("!");
+    await expect(snack).toHaveAttribute("data-default", "failed");
+    db.exec("DROP TRIGGER e2e_no_sweep");
+    await expect(snack.getByTestId("similar-future")).toHaveText("Their new mail goes to Spam too.");
+    expect(rules()).toBe(1);
+    await page.keyboard.press("0");
+    await expect(snack.getByTestId("snack-message")).toHaveText("Marked only this email as spam");
+    await expect(snack.getByTestId("similar-future")).toHaveCount(0);
+    await expect.poll(rules).toBe(0);
+    await expect.poll(spam).toBe(1);
+    await page.keyboard.press("z");
+    await expect.poll(spam).toBe(0);
   });
 
   test("Codex review: a default whose filter can't be saved says new mail isn't covered; a move out of a category Terno's filter fills offers to stop it", async ({ app: page, server }) => {
