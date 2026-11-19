@@ -851,17 +851,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       const near = (all: (string | null)[]) => all.slice(Math.max(0, all.indexOf(bill) - 2), all.indexOf(bill) + 3);
       // (only the rows drawn both times: the virtualized feed may draw one more past its end)
       expect(near(await order()).filter((id) => ids.includes(id))).toEqual(near(ids));
-      // plan 215: on a conversation waiting on you, Remove (an item's) does nothing; its Done and Later are plan 215's own
-      const waiting = page.locator(`${FEED} [data-testid=wm-item][data-row-id^="waiting:"]`).first();
-      const kept = await waiting.getAttribute("data-row-id");
-      // (a second click on the open one would put it away)
-      if ((await waiting.getAttribute("data-open")) !== "true") await waiting.click();
-      await expect(waiting).toHaveAttribute("data-open", "true");
-      await focusList(page);
-      await page.keyboard.press("Shift+D");
-      await expect(page.locator(`${FEED} [data-testid=wm-item][data-row-id="${kept}"]`)).toBeVisible();
-      await expect(snack.filter({ hasText: "Removed" })).toHaveCount(0);
-      await page.keyboard.press("Escape");
+      // (⇧D on a conversation waiting on you: plan 216's, what-matters-feed.spec.ts)
 
       // Remove: out of What matters, said so (never as if the email went), with Undo
       await show(page, "Electricity bill");

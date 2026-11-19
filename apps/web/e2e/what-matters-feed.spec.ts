@@ -1329,3 +1329,114 @@ test("plan 215: Done and Later on Waiting on you's rows: Done leaves with its sn
     await axeBothModes(page, '[data-testid="wm-feed"]');
   });
 });
+
+test("plan 216: Remove on Waiting on you's rows (the right-click menu, ⇧D), the Inbox keeping it; the open waiting row's line in the reader with Done, Later and Remove; axe", async ({ app: page, server }) => {
+  await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true } }, dev);
+  const store = server.backend.store;
+  const db = sqlDb(store);
+  const me = db.get<{ email: string }>("SELECT email FROM accounts ORDER BY id LIMIT 1")!.email;
+  const waitingOn = async (key: string, who: { name: string; email: string }, subject: string, at: number) => {
+    const mine = message(server, `${key}-mine`, { name: "", email: me }, subject, "Sounds good, what works for you?", at - HOUR, { providerThreadId: key, to: [who], isSent: true });
+    const theirs = message(server, key, who, `Re: ${subject}`, subject, at, { providerThreadId: key, isRead: false, inInbox: true, inReplyTo: `<${key}-mine@e2e.test>` });
+    await store.sync.ingest([mine, theirs], { applyFilters: false, now: E2E_NOW, classifier: null });
+    return db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = ?", key)!.thread_id;
+  };
+  const lucas = await waitingOn("lucas", { name: "Lucas Fajardo Gutiérrez", email: "lucas@iuspro.test" }, "IusPro - Colombia", E2E_NOW - HOUR);
+  const ben = await waitingOn("ben", { name: "Ben Ito", email: "ben@people.test" }, "Notes from the offsite", E2E_NOW - 2 * HOUR);
+  await fresh(page);
+  await page.getByTestId("nav-today").click();
+  const row = (id: number) => feed(page).locator(`[data-row-id="waiting:${id}"]`);
+  await expect(row(lucas)).toBeVisible({ timeout: 15_000 });
+  const waitingCount = async () => Number(/(\d+) waiting/.exec(await page.getByTestId("today-needs").innerText())?.[1] ?? 0);
+  const before = await waitingCount();
+  const snack = page.getByTestId("snack");
+  const card = page.getByTestId("thread-dated");
+  const waitingSince = () => db.get<{ w: number | null }>("SELECT waiting_since AS w FROM threads WHERE id = ?", lucas)!.w;
+  const shots = process.env.WM_216_SHOTS;
+  const shoot = async (name: string) => {
+    if (!shots) return;
+    for (const mode of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: mode });
+      await page.waitForTimeout(150);
+      await page.screenshot({ path: `${shots}/216-${name}-${mode}.png` });
+    }
+    await page.emulateMedia({ colorScheme: "light" });
+  };
+  /** open it (a second click on the open one would put it away) */
+  const openRow = async () => {
+    if ((await row(lucas).getAttribute("data-open")) !== "true") await row(lucas).getByTestId("wm-item-open").click();
+    await expect(row(lucas)).toHaveAttribute("data-open", "true");
+  };
+  /** the row's way back: z, and the feed at its top */
+  const back = async () => {
+    await page.keyboard.press("z");
+    await scroller(page).evaluate((el) => (el.scrollTop = 0));
+    await expect(row(lucas)).toBeVisible();
+    await expect.poll(waitingCount).toBe(before);
+  };
+
+  await scenario("the right-click menu's Remove: off What matters with its snack and count, still waiting in the Inbox; z brings it back", async () => {
+    await row(lucas).click({ button: "right" });
+    await expect(page.getByTestId("menu-dated-dismiss")).toBeVisible();
+    await expect(page.getByTestId("menu-dated-hand")).toHaveCount(0);
+    await shoot("menu");
+    await page.getByTestId("menu-dated-dismiss").click();
+    await expect(row(lucas)).toHaveCount(0);
+    await expect(snack).toContainText("Removed from What matters: Lucas Fajardo Gutiérrez");
+    await expect.poll(waitingCount).toBe(before - 1);
+    // no Earlier line, and the conversation still waits: the Inbox's Waiting lists it
+    await expect(feed(page).locator("[data-history]").filter({ hasText: "Lucas Fajardo" })).toHaveCount(0);
+    expect(waitingSince()).not.toBeNull();
+    await page.getByTestId("nav-inbox").click();
+    await page.keyboard.press("ControlOrMeta+k");
+    await page.getByTestId("palette-filter-waiting").click();
+    await expect(page.getByTestId("thread-list")).toHaveAttribute("data-results-for", /,"waiting","[^"]*"\]$/);
+    await expect(page.locator(`[data-testid="thread-row"][data-thread-id="${lucas}"]`)).toHaveCount(1);
+    await expect(page.locator(`[data-testid="thread-row"][data-thread-id="${ben}"]`)).toHaveCount(1);
+    await page.getByTestId("nav-today").click();
+    await expect(feed(page)).toBeVisible();
+    await back();
+  });
+
+  await scenario("open, its line leads the reader's card with Done, Later and Remove; the row at rest shows none; axe", async () => {
+    await openRow();
+    await expect(card.getByTestId("thread-dated-item")).toHaveAttribute("data-source", "waiting");
+    await expect(card.getByTestId("thread-dated-text")).toHaveText(/^Lucas Fajardo Gutiérrez is waiting on your reply · since /u);
+    await expect(card.getByTestId("thread-dated-controls").getByRole("button")).toHaveText(["Done", "Later", "Remove"]);
+    await page.mouse.move(5, 5);
+    await expect(row(lucas).getByTestId("wm-controls")).toHaveCSS("opacity", "0");
+    await shoot("reader");
+    await axeBothModes(page, '[data-testid="thread-dated"]');
+  });
+
+  await scenario("the card's Remove: the row leaves, the keys go on to the feed's row; z brings it back open", async () => {
+    await card.getByTestId("thread-dated-dismiss").click();
+    await expect(row(lucas)).toHaveCount(0);
+    await expect(snack).toContainText("Removed from What matters: Lucas Fajardo Gutiérrez");
+    await expect.poll(() => page.evaluate(() => document.activeElement?.closest("[data-testid=wm-feed]") !== null)).toBe(true);
+    await back();
+  });
+
+  await scenario("⇧D on the open waiting row removes it; the card's Later to tomorrow and its Done act on it too, each with its Undo", async () => {
+    await openRow();
+    await expect(card.getByTestId("thread-dated-item")).toHaveAttribute("data-source", "waiting");
+    // the keys on it (after the card's act they went on to the next row, where they'd act)
+    await row(lucas).getByTestId("wm-item-open").focus();
+    await page.keyboard.press("Shift+D");
+    await expect(row(lucas)).toHaveCount(0);
+    await expect(snack).toContainText("Removed from What matters: Lucas Fajardo Gutiérrez");
+    await back();
+    await openRow();
+    await card.getByTestId("thread-dated-later").click();
+    await page.getByTestId("thread-dated-later-menu").getByTestId("thread-dated-later-tomorrow").click();
+    await expect(snack).toContainText(/^Later: Lucas Fajardo Gutiérrez, back tomorrow/);
+    await expect.poll(waitingCount).toBe(before - 1);
+    await back();
+    await openRow();
+    await card.getByTestId("thread-dated-done").click();
+    await expect(snack).toContainText("Done: Lucas Fajardo Gutiérrez");
+    await expect.poll(waitingSince).toBeNull();
+    await page.keyboard.press("z");
+    await expect.poll(waitingSince).not.toBeNull();
+  });
+});
