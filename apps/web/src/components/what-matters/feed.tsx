@@ -391,9 +391,10 @@ function OpenItem({ row, thread, open, cursor }: { row: FeedRow; thread: ThreadS
  * they stay at the row's end, away from its middle, where a click opens it. The second line is one line either way (who
  * truncates, when doesn't wrap), so the row's height, which the virtualizer measured, never changes under the pointer or
  * the focus. The open item at rest shows none (plan 214, after the second rating: beside the reader they cut who to
- * "To Em…"): the reader beside it carries its Done, Later and the rest on its own line, and D and B act on it.
+ * "To Em…"): the reader beside it carries its Done, Later and the rest on its own line, and D and B act on it. So the room
+ * is kept for Later's open menu only, never for the open row's own button (its `aria-expanded` is the open item's).
  */
-const ROOM = "group-hover/item:pe-(--wm-controls,7.5rem) group-has-focus-reveal/item:pe-(--wm-controls,7.5rem) group-has-[[aria-expanded=true]]/item:pe-(--wm-controls,7.5rem)";
+const ROOM = "group-hover/item:pe-(--wm-controls,7.5rem) group-has-focus-reveal/item:pe-(--wm-controls,7.5rem) group-has-[[data-testid=wm-later][aria-expanded=true]]/item:pe-(--wm-controls,7.5rem)";
 
 interface ItemProps {
   row: FeedRow;

@@ -130,3 +130,7 @@ Round 2 (one finding, fixed with a component test): the Later menu's item held t
 - Visual: the open waiting row with the reader's card, and the right-click menu on a waiting row, light and dark (`WM_216_SHOTS`).
 
 Seen, not this plan's: an open row's who is cut ("Lucas Fajard…") while its button holds the focus, the room for Done and Later kept though they're hidden at rest (plan 214's `ROOM` on `has-focus-reveal`).
+
+## After landing: the open row's who whole
+
+The "seen, not this plan's" cut above had a plainer cause than focus: `ROOM` kept the controls' room on `group-has-[[aria-expanded=true]]`, meant for Later's open menu, and the row's own open button carries `aria-expanded=true` while it's open. So every open row cut who ("Lucas Fajard…") though its controls were hidden. The room is now kept for `wm-later`'s open menu only; the open row makes room under the pointer, as its controls show. The feed spec checks the open row's second line has no end padding at rest, and measures the line against Done with the pointer on the open row. Codex review: no findings.

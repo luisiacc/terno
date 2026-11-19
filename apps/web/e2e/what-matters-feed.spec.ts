@@ -251,6 +251,8 @@ test("an item: one sentence, when in its column, who under it; its conversation 
     await expect(it.getByTestId("wm-controls")).toHaveCSS("opacity", "1");
     await page.mouse.move(0, 0);
     await expect(it.getByTestId("wm-controls")).toHaveCSS("opacity", "0");
+    // and its second line keeps no room for them: who isn't cut short (the open button's aria-expanded isn't Later's)
+    await expect(it.getByTestId("wm-meta").locator("..")).toHaveCSS("padding-right", "0px");
     await expect(page.getByTestId("thread-dated-done")).toBeVisible();
     await expect(open).toHaveAttribute("aria-expanded", "true");
     await page.keyboard.press("Escape");
@@ -508,6 +510,8 @@ test("plan 210 (iteration 1): inside a day, tasks before plans; iteration 2: a c
       await expect(page.getByTestId("wm-later-menu")).toHaveCount(0);
       await openLine(page, "Pay the deposit").getByTestId("wm-item-open").click();
       await expect(page.getByTestId("reader")).toBeVisible();
+      // the open row shows them under the pointer only (plan 214), the line making room then
+      await openLine(page, "Pay the deposit").hover();
       await clear();
       await page.keyboard.press("Escape");
       await page.mouse.move(0, 0);
