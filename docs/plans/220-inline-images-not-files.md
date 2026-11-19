@@ -18,7 +18,7 @@
 
 **One rule, in core** (`packages/core/src/attachments.ts`):
 
-- `cidImageSources(html)`: the `cid:` sources of the `<img>`s in a body, in document order, by a linear scan: comments and the content of `script`, `style`, `textarea`, `title`, `noscript`, `template` and `xmp` skipped (they show no image), each tag read only up to its `>`, references in the value decoded, the URI once. It replaces `cidReferences` (any tag's `src`).
+- `cidImageSources(html)`: the `cid:` sources of the `<img>`s in a body, in document order, by a linear scan that reads tags as a browser does (a whole tag name, quoted values, the first `src`): comments, templates (nested too) and the content of `script`, `style`, `textarea`, `title`, `noscript`, `xmp`, `iframe`, `noembed` and `noframes` skipped (they show no image, or the sanitizer drops them with their content), numeric and the usual named references decoded, the URI once. `cidReferences` (plan 185) now reads through it.
 - `inlineImageAdmission(attachments)`: the reader's admission as a stepper. `reserve(cid)` answers the part a `cid:` image may show (an unambiguous Content-ID, PNG/GIF/JPEG, at most 4 MiB, within the message's 8 MiB of bytes, spent once per part whether its read succeeds or not; a part whose bytes aren't kept here is the text's picture too, costing nothing, and the reader skips it as today); `place(part)` spends the 8 MiB of data URLs per image, only for a picture actually placed. `cid.ts` calls `reserve` before reading and `place` after its bytes pass, exactly today's order: what the reader shows doesn't change.
 - `inlineImageIds(html, attachments)`: the same stepper over `cidImageSources`, every read assumed to succeed: the parts the text shows. `messageFiles(html, attachments)` is the rest, in order, cached per attachments array (a WeakMap, keyed again on the HTML), so a conversation's strip and its messages scan each body once. A quick reject skips the scan when no part has a Content-ID.
 
@@ -28,12 +28,12 @@ A part the reader would not show (an unsupported type, too big, over the budget,
 
 **Where it applies.**
 - The reader's message (`reader.tsx`) passes `messageFiles(m.bodyHtml, m.attachments)` to `ReaderAttachments`; no strip when it is empty.
-- The full-message view: `mail-body` computes the files from the message's own HTML (not the display HTML, which may have its history folded or its sources resolved) and passes them; the view lists them only where it has the message menu (inside a conversation), else every part as today.
+- The full-message view keeps listing every part: it has no ⋯ to reach the pictures from the keyboard, and a held message shown there has no menu at all (Codex code review).
 - `threadFiles` lists `messageFiles` per message: the conversation's strip, its count and "Show all" follow.
 - The folded message's paperclip: shown when the message has files, or, while its parts aren't known yet (`attachments` empty), by the provider's flag as today.
 - Print (filtered in `print-sheet.tsx`'s projection, where the metadata is) and Copy as text (its own `includes` rule goes).
-- The "Show inline images" consent (`mail-body.tsx`) is offered when `cidImageSources` finds one, not by a raw-text test, so an encoded `c&#105;d:` source gets it too.
-- Unchanged: a held message (the user's own send, shown for Undo; no message menu there), Forward (carries every part), and the agents server's `inline` mark (`inlineParts` keeps its own meaning, a part the text names, now on `cidImageSources`).
+- The "Show inline images" consent (`mail-body.tsx`) is offered where it was (the raw-text test) and also wherever `cidImageSources` finds one, so an encoded `c&#105;d:` source gets it too.
+- Unchanged: a held message (the user's own send, shown for Undo; no message menu there), the full-message view, Forward (carries every part), and the agents server's `inline` mark (`inlineParts` keeps its own meaning, a part the text names, now on `cidImageSources`).
 
 ## Tests
 
@@ -68,3 +68,24 @@ The critique (`codex exec -s read-only`, 10 points) reshaped the design; all acc
 8. Print's projection drops the metadata: filtered in `print-sheet.tsx`.
 9. Linear scanning, each tag read to its `>` only, a cache per message.
 10. The agents' `inline` mark keeps its meaning (not the reader's admission), so its tests stand.
+
+## What was built
+
+`42022a419` and the review's fixes after it. The rule is in `packages/core/src/attachments.ts` (`cidImageSources`, `inlineImageAdmission`, `messageParts`); `lib/cid.ts` resolves through the same admission; the reader's message, the conversation's strip (`threadFiles`), the folded header's paperclip, print and Copy as text list `messageParts(...).files`; the message's ⋯ and right-click menus offer **Save image ▸** (`threadMenu.saveImage`, en and es).
+
+One change while building: a picture whose bytes aren't kept here (old mail, past the account's file limits) counts as the text's, costing no budget, and its menu item asks the server for it, as a tile does. Without it a signature's logos came back as "not kept" files whenever their bytes weren't on the Mac (the print fixture's plan in Copy as text showed it).
+
+## Codex code review
+
+Round 1 (`codex exec -s read-only` on `42022a419`), six findings, all fixed:
+
+1. Medium: a held message opened in the full-message view lost its pictures' only save path; 3. Medium: the full-message view has no ⋯, so a picture there wasn't reachable from the keyboard. Both: that view lists every part again.
+2. Medium: `<img alt="a>b" src="cid:…">` ended the tag at the quoted `>`, so the consent button vanished. The scanner now reads quoted values, and the consent keeps its old raw test as a floor (`cid-mime.test.tsx`: the quoted `>` and an encoded `c&#105;d:` both get the button).
+4. Low: `&commat;` and numeric references without `;` weren't decoded; 5. Low: `<img-preview>` read as `img`, `<script-x>` as a script; 6. Low: a nested `<template>` ended the skip early. All three are in the scanner's tests, which fail on the first version.
+
+## Tests run
+
+- Unit: `packages/core/src/attachments.test.ts`, `apps/web/src/lib/{cid,cid-budget,cid-mime,thread-overview,thread-text,print}.test.ts(x)`, `packages/mcp/src/{attachment-content,mcp}.test.ts`: 152 passed.
+- Perf: `packages/core/src/attachments.perf.test.ts` (50 × 200 KB about 61 ms with the machine loaded at 7 to 9, gate 150 ms; malformed markup ≤ 5 ms, gate 60 ms) and `apps/web/src/lib/cid.perf.test.ts` (unchanged, max slice 11 ms of 15).
+- e2e: `attachments`, `attachment-controls`, `copy-thread`, `reader-mark-read` specs and `reader.spec.ts`'s reader scenario: all passed. The submenu's light and dark screenshots were looked at; axe is clean on it in both.
+- Typecheck (web, core, mcp) and oxlint on the changed files.

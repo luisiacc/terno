@@ -287,3 +287,21 @@ it("HtmlBody remote-always does not grant inline consent and unmount cancels pen
     expect(call.mock.calls).toEqual(trace([h.refs[0]!]));
   } finally { release(); try { await pendingRead; } finally { await h.cleanup(); } }
 });
+
+// plan 220 (Codex code review): the consent is offered wherever the lists take a picture as the text's, and wherever it was before
+it.each([
+  ['<img alt="a>b" src="cid:logo@x">', true],
+  ['<img src="c&#105;d:logo@x">', true],
+  ['<img src="https://e.test/a.png">', false],
+])("HtmlBody offers inline images for %s: %s", async (html, offered) => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("matchMedia", (media: string) => ({ media, matches: false, addEventListener() {}, removeEventListener() {} }));
+  vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+  const { HtmlBody } = await import("../components/mail-body");
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(<HtmlBody html={html} messageId={90} accountId={7} attachments={[{ id: 1, assetId: "logo", filename: "logo.png", mime: "image/png", size: 9, contentId: "logo@x" }]} remoteImages="ask" appearance="auto" />));
+    expect(host.querySelector('[data-testid="inline-load"]') !== null).toBe(offered);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});

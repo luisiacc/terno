@@ -41,45 +41,93 @@ export function attachmentCidUri(value: string): string | null {
   try { return attachmentCid(decodeURIComponent(value.slice(4))); } catch { return null; }
 }
 
-const ENTITIES: Record<string, string> = { amp: "&", quot: '"', apos: "'", lt: "<", gt: ">" };
-const decodeReferences = (value: string) => value.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (whole, ref: string) => {
-  if (ref[0] !== "#") return ENTITIES[ref.toLowerCase()] ?? whole;
-  const code = ref[1] === "x" || ref[1] === "X" ? parseInt(ref.slice(2), 16) : parseInt(ref.slice(1), 10);
+/** The references a Content-ID may spell (a browser knows two thousand; one missed leaves the picture listed, never lost). */
+const ENTITIES: Record<string, string> = {
+  amp: "&", quot: '"', apos: "'", lt: "<", gt: ">", commat: "@", period: ".", percnt: "%", lowbar: "_", hyphen: "-", dash: "-",
+  colon: ":", num: "#", dollar: "$", plus: "+", equals: "=", sol: "/", excl: "!", quest: "?", tilde: "~", nbsp: "\u00a0",
+};
+const decodeReferences = (value: string) => value.replace(/&(?:#x([0-9a-f]+);?|#(\d+);?|([a-z]+);)/gi, (whole, hex?: string, dec?: string, name?: string) => {
+  if (name) return ENTITIES[name] ?? whole;
+  const code = hex ? parseInt(hex, 16) : parseInt(dec!, 10);
   return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
 });
 
-/** Elements whose content is text (or nothing shown): an `<img>` inside one is no picture. */
-const NO_IMAGES = ["script", "style", "textarea", "title", "noscript", "template", "xmp", "iframe", "noembed", "noframes"];
-const CLOSE = new Map(NO_IMAGES.map((name) => [name, new RegExp(`</${name}[\\s/>]`, "gi")]));
-const ATTRIBUTE = /([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
+/** Elements whose content shows no image: text only, or dropped by the reader's sanitizer with what's inside. */
+const RAW = new Set(["script", "style", "textarea", "title", "noscript", "xmp", "iframe", "noembed", "noframes"]);
+const isSpace = (c: number) => c === 32 || (c >= 9 && c <= 13);
+
+/** A tag's attributes from `i` (just past its name) to its `>`, as a browser reads them: a `>` in quotes doesn't end it. */
+function readTag(html: string, i: number): { end: number; src: string | null } | null {
+  let src: string | null = null;
+  const n = html.length;
+  while (i < n) {
+    const c = html.charCodeAt(i);
+    if (c === 62 /* > */) return { end: i, src };
+    if (isSpace(c) || c === 47 /* / */) { i++; continue; }
+    let j = i + 1; // a name runs to a space, /, > or =, and may start with =
+    while (j < n) { const d = html.charCodeAt(j); if (isSpace(d) || d === 47 || d === 62 || d === 61) break; j++; }
+    const name = html.slice(i, j);
+    i = j;
+    while (i < n && isSpace(html.charCodeAt(i))) i++;
+    let value = "";
+    if (html.charCodeAt(i) === 61 /* = */) {
+      i++;
+      while (i < n && isSpace(html.charCodeAt(i))) i++;
+      const q = html.charCodeAt(i);
+      if (q === 34 || q === 39) {
+        const close = html.indexOf(html[i]!, i + 1);
+        if (close < 0) return null;
+        value = html.slice(i + 1, close);
+        i = close + 1;
+      } else {
+        let k = i;
+        while (k < n) { const d = html.charCodeAt(k); if (isSpace(d) || d === 62) break; k++; }
+        value = html.slice(i, k);
+        i = k;
+      }
+    }
+    // the first src counts, as in a parsed document
+    if (src === null && name.length === 3 && name.toLowerCase() === "src") src = decodeReferences(value);
+  }
+  return null;
+}
 
 /**
  * Plan 220: the `cid:` sources of a body's `<img>`s, in document order, with their character references decoded (the URI
- * is left to `attachmentCidUri`). Without a DOM and linear: comments and elements that show no image are skipped, a tag
- * is read only to its first `>` and an unterminated one ends the scan. In doubt it finds nothing (a file stays a file).
+ * is left to `attachmentCidUri`). Without a DOM and linear: comments, templates (nested too) and elements that show no
+ * image are skipped; an unterminated tag, comment or quote ends the scan. In doubt it finds nothing (a file stays a file).
  */
 export function cidImageSources(html: string): string[] {
   const found: string[] = [];
-  const tag = /<(!--|[a-z][a-z0-9]*)/gi;
+  const tag = /<(!--|\/?[a-z][^\s/>]*)/gi;
   for (let m = tag.exec(html); m; m = tag.exec(html)) {
     const name = m[1]!.toLowerCase();
-    const close = html.indexOf(name === "!--" ? "-->" : ">", tag.lastIndex);
-    if (close < 0) break;
-    tag.lastIndex = close + 1;
-    const skip = CLOSE.get(name);
-    if (skip) {
-      skip.lastIndex = close + 1;
-      if (!skip.exec(html)) break;
-      tag.lastIndex = skip.lastIndex;
-    } else if (name === "img") {
-      const attrs = html.slice(m.index + 4, close);
-      // the first src counts, as in a parsed document
-      for (const a of attrs.matchAll(ATTRIBUTE)) {
-        if (a[1]!.toLowerCase() !== "src") continue;
-        const raw = decodeReferences(a[2] ?? a[3] ?? a[4] ?? "");
-        if (/^cid:/i.test(raw)) found.push(raw);
-        break;
-      }
+    if (name === "!--") {
+      const close = html.indexOf("-->", tag.lastIndex);
+      if (close < 0) break;
+      tag.lastIndex = close + 3;
+      continue;
+    }
+    const read = readTag(html, tag.lastIndex);
+    if (!read) break;
+    tag.lastIndex = read.end + 1;
+    if (name === "img") {
+      if (read.src !== null && /^cid:/i.test(read.src)) found.push(read.src);
+    } else if (name === "plaintext") {
+      break;
+    } else if (RAW.has(name)) {
+      const close = new RegExp(`</${name}[\\s/>]`, "gi");
+      close.lastIndex = tag.lastIndex;
+      if (!close.exec(html)) break;
+      tag.lastIndex = close.lastIndex;
+    } else if (name === "template") {
+      // its content is inert, templates inside it too
+      const nested = /<(\/?)template[\s/>]/gi;
+      nested.lastIndex = tag.lastIndex;
+      let depth = 1;
+      for (let t = nested.exec(html); t && depth; t = depth ? nested.exec(html) : null) depth += t[1] ? -1 : 1;
+      if (depth) break;
+      tag.lastIndex = nested.lastIndex;
     }
   }
   return found;

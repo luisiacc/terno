@@ -1,5 +1,4 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { AttachmentInfo } from "@terno/core";
 import { t } from "@terno/i18n";
 import { HtmlBody, type HtmlBodyProps } from "./mail-body";
 import { ReaderAttachments } from "./attachments";
@@ -10,10 +9,8 @@ import { prepareMailDisplay } from "./mail-graphic";
 import { mailSections } from "./mail-sections";
 import { announce } from "~/lib/announce";
 
-export default function FullMessage({ html, source, onClose, controls, copyText, files, ...props }: HtmlBodyProps & { source(signal: AbortSignal): Promise<{ root: HTMLElement; tabs: WeakMap<Node, string | null> }>; onClose(): void; controls: ReactNode; copyText(): string; /** plan 220: its parts but the pictures its text shows, read from the message's own HTML */ files: readonly AttachmentInfo[] }) {
+export default function FullMessage({ html, source, onClose, controls, copyText, ...props }: HtmlBodyProps & { source(signal: AbortSignal): Promise<{ root: HTMLElement; tabs: WeakMap<Node, string | null> }>; onClose(): void; controls: ReactNode; copyText(): string }) {
   const view = useMailReaderView();
-  const threadId = view?.threadId ?? null;
-  const inThread = threadId !== null;
   const [nodeBudget, setNodeBudget] = useState(64);
   const [prepared, setPrepared] = useState<{ html: string; display: Awaited<ReturnType<typeof prepareMailDisplay>> } | null>(null);
   const [failedPreparation, setFailedPreparation] = useState(false);
@@ -75,10 +72,9 @@ export default function FullMessage({ html, source, onClose, controls, copyText,
         <div className="px-3.5">{controls}</div>
         {!ready && <p role="status" className="px-3.5 py-2 text-sm text-muted-foreground">{t("reader.full.loading")}</p>}
         <div style={{ visibility: ready ? undefined : "hidden" }}>
-        {display && (threadId !== null ? <MessageMenu threadId={threadId}><div className="px-3.5 pb-8" data-message-id={props.messageId}><HtmlBody {...props} key={`${nodeBudget}:${index}`} html={sectionHtml} section onExit={onClose} onSectionHeight={measured} hydrate={display.hydrate} onHydrationError={() => setFailedLayout(true)} /></div></MessageMenu> : <div className="px-3.5 pb-8"><HtmlBody {...props} key={`${nodeBudget}:${index}`} html={sectionHtml} section onExit={onClose} onSectionHeight={measured} hydrate={display.hydrate} onHydrationError={() => setFailedLayout(true)} /></div>)}
+        {display && (view?.threadId !== null && view?.threadId !== undefined ? <MessageMenu threadId={view.threadId}><div className="px-3.5 pb-8" data-message-id={props.messageId}><HtmlBody {...props} key={`${nodeBudget}:${index}`} html={sectionHtml} section onExit={onClose} onSectionHeight={measured} hydrate={display.hydrate} onHydrationError={() => setFailedLayout(true)} /></div></MessageMenu> : <div className="px-3.5 pb-8"><HtmlBody {...props} key={`${nodeBudget}:${index}`} html={sectionHtml} section onExit={onClose} onSectionHeight={measured} hydrate={display.hydrate} onHydrationError={() => setFailedLayout(true)} /></div>)}
         </div>
-        {/* plan 220: its pictures only where its menu offers them (inside a conversation), else every part */}
-        {props.accountId !== undefined && (inThread ? files : props.attachments ?? []).length > 0 && <div className="px-3.5 pb-8"><ReaderAttachments accountId={props.accountId} messageId={props.messageId} attachments={inThread ? files : props.attachments!} /></div>}
+        {props.accountId !== undefined && Boolean(props.attachments?.length) && <div className="px-3.5 pb-8"><ReaderAttachments accountId={props.accountId} messageId={props.messageId} attachments={props.attachments!} /></div>}
       </div>
     </section>
   );

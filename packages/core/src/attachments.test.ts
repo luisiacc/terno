@@ -28,10 +28,19 @@ it("finds the cid: sources of images only, in order, skipping what shows no imag
   const html = `<p><img alt="a>b" src="cid:x"><IMG SRC='CID:One'><img data-src="cid:no" src=cid:two>`
     + `<!-- <img src="cid:comment"> --><textarea><img src="cid:text"></textarea><script>"<img src=cid:js>"</script>`
     + `<video src="cid:video"></video><img src="https://e.test/a.png"><img src="c&#105;d:enc&amp;1"><img src=" cid:space"><img/src="cid:slash"></p>`;
-  // a > inside a quoted value ends the tag early: in doubt, nothing (a file stays a file)
-  expect(cidImageSources(html)).toEqual(["CID:One", "cid:two", "cid:enc&1", "cid:slash"]);
+  expect(cidImageSources(html)).toEqual(["cid:x", "CID:One", "cid:two", "cid:enc&1", "cid:slash"]);
   expect(cidImageSources(`<img src="cid:a"><img src="cid:b"`)).toEqual(["cid:a"]);
   expect(cidImageSources(`<img src="cid:a"><style><img src="cid:b">`)).toEqual(["cid:a"]);
+  expect(cidImageSources(`<img src="cid:a"><img alt="open src="cid:b">`)).toEqual(["cid:a"]);
+});
+
+// Codex code review: as a browser reads the markup, not as a regex does
+it("reads a tag's whole name and its quoted values, nested templates and the references a Content-ID spells", () => {
+  expect(cidImageSources(`<img-preview src="cid:a"><script-x><img src="cid:b"></script-x>`)).toEqual(["cid:b"]);
+  expect(cidImageSources(`<a title="<img src=cid:inside>"><img src="cid:after"></a>`)).toEqual(["cid:after"]);
+  expect(cidImageSources(`<template><template></template><img src="cid:inert"></template><img src="cid:shown">`)).toEqual(["cid:shown"]);
+  expect(cidImageSources(`<img src="cid:logo&commat;example"><img src="cid:n&#64x"><img src="cid:h&#x40;y">`)).toEqual(["cid:logo@example", "cid:n@x", "cid:h@y"]);
+  expect(cidImageSources(`<p>text</p><plaintext><img src="cid:a">`)).toEqual([]);
 });
 
 it("a picture the reader shows is not a file; anything it wouldn't show stays one", () => {
