@@ -23,12 +23,14 @@ const TINT: Record<ReturnType<typeof avatarColor>, string> = {
  * type come from the caller (design variables). The icon lives in its own
  * memoized child, so one arriving re-renders that child, never the row.
  * `person` (plan 158): someone writing from a company's domain is that person, not the company: their photo or their
- * initials, never the company's logo on five different people.
+ * initials, never the company's logo on five different people. `drawn`: the initials are drawn, not text, for an avatar
+ * inside words (What matters' sentence), which then read, match and copy without them.
  */
-export function SenderAvatar({ name, email, className, icon = false, person = false }: { name: string; email: string; className?: string; icon?: boolean; person?: boolean }) {
+export function SenderAvatar({ name, email, className, icon = false, person = false, drawn = false }: { name: string; email: string; className?: string; icon?: boolean; person?: boolean; drawn?: boolean }) {
+  const letters = initials(name || email);
   return (
     <span aria-hidden data-testid="sender-avatar" className={cn("relative flex shrink-0 items-center justify-center overflow-hidden rounded-full font-medium select-none", TINT[avatarColor(email)], className)}>
-      {initials(name || email)}
+      {drawn ? <span data-initials={letters} className="leading-none before:content-[attr(data-initials)]" /> : letters}
       {icon && <SenderIcon email={email} person={person} />}
     </span>
   );

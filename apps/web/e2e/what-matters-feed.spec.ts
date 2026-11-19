@@ -522,6 +522,38 @@ test("plan 210 (iteration 1): inside a day, tasks before plans; iteration 2: a c
     await expect(page.getByTestId("list-title")).toHaveText("What matters");
   });
 
+  await scenario("the owner (2026-11-18): who wrote, their avatar first on the second line, the line's height, where the design's lists have avatars", async () => {
+    // the project's design, put back after (the e2e project's is macOS)
+    const was = (test.info().project.use as { design?: "lumen" | "atelier" | "luma" | "graphite" | "relief" }).design ?? "macos";
+    const design = async (d: typeof was | "lumen" | "macos") => {
+      await server.backend.server.invoke("settings.update", { design: d, lightTheme: "design", darkTheme: "design" }, dev);
+      await fresh(page);
+      await page.getByTestId("nav-today").click();
+      await expect(page.getByTestId("list-title")).toHaveText("What matters");
+    };
+    // macOS's rows are Mail's classic ones: no avatars there, nor here
+    await design("macos");
+    await expect(feed(page).getByTestId("wm-item").first()).toBeVisible();
+    await expect(feed(page).getByTestId("wm-face")).toHaveCount(0);
+    await design("lumen");
+    await reach(page, "Pay the deposit");
+    const row = openLine(page, "Pay the deposit");
+    const meta = row.getByTestId("wm-meta");
+    const avatar = meta.getByTestId("wm-face").getByTestId("sender-avatar");
+    await expect(avatar).toBeVisible();
+    // part of the line, never its words: it reads, matches and copies as before (the row's title has the line's words)
+    const title = (await row.getByTestId("wm-item-open").getAttribute("title"))!;
+    await expect(meta).toHaveText(title.split("\n")[1]!);
+    const box = (el: typeof avatar) => el.evaluate((e) => e.getBoundingClientRect().toJSON() as DOMRect);
+    const [face, words, heading] = [await box(avatar), await box(meta), await box(feed(page).getByTestId("wm-heading").first())];
+    const line = await meta.evaluate((e) => parseFloat(getComputedStyle(e).lineHeight));
+    // first on the line, on the headings' edge, no taller than the line and centred on it
+    expect(Math.abs(face.left - heading.left)).toBeLessThanOrEqual(1);
+    expect(face.height).toBeLessThanOrEqual(line);
+    expect(Math.abs(face.top + face.height / 2 - (words.top + line / 2))).toBeLessThanOrEqual(1.5);
+    await design(was);
+  });
+
   await scenario("Codex code review: the palette's Later opens the item's Later menu, which stays open once the palette has gone", async () => {
     await reach(page, "Wire payroll");
     await openLine(page, "Wire payroll").getByTestId("wm-item-open").click();

@@ -3,7 +3,7 @@ import { DIGEST_ROW_ID, localDay, type FeedRowId, type ThreadSummary, type Today
 import { getLocale, t } from "@terno/i18n";
 import { Collapsible, CollapsibleTrigger } from "@terno/ui/components/collapsible";
 import { Skeleton } from "@terno/ui/components/skeleton";
-import { Sun } from "@terno/ui/icons";
+import { Newspaper, Sun } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef } from "react";
 import type { TodayTask } from "~/lib/dated";
@@ -26,6 +26,7 @@ import { listScroller } from "~/lib/list-scroller";
 import { ThreadMenu } from "../thread-menu";
 import { WhatMattersOptions } from "./options";
 import { BriefTaskControls } from "./task-menus";
+import { SenderAvatar } from "../sender-avatar";
 import { TodayLine } from "./today-line";
 
 /** The feed's rows, what Coming up's disclosure shows more of (its rows join the feed there: no panel of its own) */
@@ -122,6 +123,19 @@ function openItem(row: FeedRow): void {
  */
 const senderOf = (thread: ThreadSummary, task: TodayTask | undefined, entry: TodayItem | undefined): string =>
   task?.kind === "promise" && task.person ? task.person.name : entry?.from ? entry.from.name || entry.from.email : thread.fromName || thread.fromEmail;
+
+/**
+ * Whose face leads an item's second line (the owner, 2026-11-18): the one it names, `senderOf`'s. Their icon as the list
+ * shows it (plan 22: never on spam). Plan 158's `person` (their photo or initials, never their company's logo): the one you
+ * promised something to is a person; another sender is one when the list knows it of the conversation's sender.
+ */
+const faceOf = (thread: ThreadSummary, task: TodayTask | undefined, entry: TodayItem | undefined): Face => {
+  const icon = !thread.inSpam && !thread.hasSpam && !thread.spamHeld;
+  const own = (email: string) => email.toLowerCase() === thread.fromEmail.toLowerCase() && thread.person === true;
+  if (task?.kind === "promise" && task.person) return { name: task.person.name, email: task.person.email, icon, person: true };
+  if (entry?.from) return { name: entry.from.name, email: entry.from.email, icon, person: own(entry.from.email) };
+  return { name: thread.fromName, email: thread.fromEmail, icon, person: thread.person === true };
+};
 
 /** The right-click menu is a conversation's: the digest's item has none (its row on the list has none either). */
 const menuId = (id: number): number | undefined => (id === DIGEST_ROW_ID ? undefined : id);
@@ -364,7 +378,7 @@ const FeedItem = memo(function FeedItem({ row, thread }: { row: FeedRow; thread:
   // plan 210: a history line: its words quiet, what happened and when in the column, nothing to act on
   if (row.line) {
     const from = thread.fromName || thread.fromEmail;
-    return <Item row={row} sentence={historySentence(row.line)} meta={from} when={historyWhen(row.line)} tone="none" task={undefined} open={open} cursor={cursor} later past />;
+    return <Item row={row} sentence={historySentence(row.line)} meta={from} when={historyWhen(row.line)} tone="none" task={undefined} open={open} cursor={cursor} later past face={faceOf(thread, undefined, undefined)} />;
   }
   return <OpenItem row={row} thread={thread} open={open} cursor={cursor} />;
 });
@@ -381,7 +395,7 @@ function OpenItem({ row, thread, open, cursor }: { row: FeedRow; thread: ThreadS
   // the briefing's second line: who (whom a promise of yours was made to), and its related detail (a return leg); never
   // the email's date, which read as the due day (after the UI panel): the right column says when
   const who = task?.kind === "promise" && task.person ? t("whatMatters.to", { name: task.person.name }) : sender;
-  return <Item row={row} sentence={sentence} meta={task?.also ? `${who} · ${task.also}` : who} when={when.text} tone={when.tone} task={task} open={open} cursor={cursor} later={ahead} />;
+  return <Item row={row} sentence={sentence} meta={task?.also ? `${who} · ${task.also}` : who} when={when.text} tone={when.tone} task={task} open={open} cursor={cursor} later={ahead} face={faceOf(thread, task, entry)} />;
 }
 
 /**
@@ -414,6 +428,16 @@ interface ItemProps {
   tone: TodayTone;
   /** the digest's way in (no conversation of its own) */
   digest?: boolean;
+  /** whose avatar leads it (the digest's: its own mark) */
+  face?: Face;
+}
+
+/** An item's avatar: who, their icon allowed (plan 22), and whether they write as a person (plan 158). */
+interface Face {
+  name: string;
+  email: string;
+  icon: boolean;
+  person: boolean;
 }
 
 /**
@@ -436,8 +460,10 @@ const WHEN_OPEN = "group-data-open/item:text-row-selected-foreground";
  * apart). Done and Later, in words, on hover, on focus and on the open item, in place of when (they take no room while
  * hidden); D and the right-click menu as on the list.
  */
-function Item({ row, sentence, meta, when, tone, task, open, cursor = false, later, past = false, digest = false }: ItemProps) {
+function Item({ row, sentence, meta, when, tone, task, open, cursor = false, later, past = false, digest = false, face }: ItemProps) {
   const textId = useId();
+  // the design's lists have avatars, so the feed has them too (Graphite, Relief and macOS have none: their rows are Mail's classic)
+  const faces = useDesign().variants.row !== "classic";
   const quiet = past ? "text-muted-foreground" : null;
   const mark = past || later ? undefined : MARK[tone];
   const whenTone = past ? null : later ? "later" : tone;
@@ -456,6 +482,19 @@ function Item({ row, sentence, meta, when, tone, task, open, cursor = false, lat
         </span>
         <span className={cn("mt-0.5 flex min-w-0 items-baseline gap-3 text-sm", task && ROOM)}>
           <span data-testid="wm-meta" className={cn("min-w-0 flex-1 truncate group-data-open/item:text-row-selected-foreground", quiet ?? "text-row-preview")}>
+            {/* the owner (2026-11-18): who, with their face first, about the line's own height and centred on it, on the
+                headings' edge. Initials drawn, not text: the line reads, matches and copies as it did */}
+            {faces && (digest || face) && (
+              <span aria-hidden data-testid="wm-face" className="me-1.5 inline-flex h-[1lh] items-center align-top">
+                {digest ? (
+                  <span className="flex size-5 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                    <Newspaper className="size-3" />
+                  </span>
+                ) : (
+                  face && <SenderAvatar name={face.name} email={face.email} icon={face.icon} person={face.person} drawn className="size-5 text-[length:calc(var(--spacing)*5*0.42)]" />
+                )}
+              </span>
+            )}
             {meta}
           </span>
           {when && (
