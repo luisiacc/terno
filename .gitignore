@@ -32,3 +32,4 @@ apps/web/.maps/
 
 # the waitlist exported by `pnpm waitlist:csv` (plan 97): people's emails, never committed
 waitlist-*.csv
+*.p12
