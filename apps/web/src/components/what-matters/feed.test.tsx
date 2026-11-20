@@ -10,7 +10,7 @@ vi.stubGlobal("IntersectionObserver", class { constructor(private cb: (e: { isIn
 vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
 vi.mock("~/rpc/connection", () => ({ client: { call: vi.fn(async () => ({})), on: () => () => {} } }));
 
-const { WhatMattersFeed } = await import("./feed");
+const { WhatMattersFeed, drawn } = await import("./feed");
 const { useToday } = await import("~/state/today");
 const { useList } = await import("~/state/list");
 
@@ -68,5 +68,18 @@ describe("plan 222: an empty, clear What matters", () => {
     expect(host.querySelector("[data-testid=wm-clear-day]")).toBeNull();
     expect(localStorage.getItem("terno.whatMatters.clearDays")).toBeNull();
     act(() => root.unmount());
+  });
+});
+
+describe("the feed's headings", () => {
+  const row = (id: number, group: "today" | "waiting") => ({ id: `${group}:${id}`, threadId: id, group }) as never;
+  const headings = (rows: never[]) => drawn(rows, 0, false).flatMap((d) => (d.type === "heading" ? [`${d.kind}${d.part ? " (part)" : ""}`] : []));
+
+  it("no empty Today above Waiting on you: with none of Today's own, Waiting on you is a group of its own (the owner)", () => {
+    expect(headings([row(1, "waiting"), row(2, "waiting")])).toEqual(["waiting"]);
+  });
+
+  it("under Today's own rows, Waiting on you is a part of Today", () => {
+    expect(headings([row(1, "today"), row(2, "waiting")])).toEqual(["today", "waiting (part)"]);
   });
 });

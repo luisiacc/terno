@@ -44,7 +44,15 @@ export const FEED_ROWS_ID = "wm-feed-rows";
  */
 
 type Drawn =
-  | { type: "heading"; key: string; kind: FeedGroupKind; /** the items under it, till the next heading */ count: number }
+  | {
+      type: "heading";
+      key: string;
+      kind: FeedGroupKind;
+      /** the items under it, till the next heading */
+      count: number;
+      /** a part of the group above it: Today's Waiting on you, Coming up's buckets */
+      part?: boolean;
+    }
   | { type: "item"; key: string; row: FeedRow }
   | { type: "digest"; key: string; row: FeedRow }
   | { type: "comingUp"; key: string }
@@ -69,7 +77,7 @@ function headingName(kind: FeedGroupKind): string {
  * coming up (`comingUp`), its buckets under it while it's open, each heading keyed by its bucket. Plan 222: a clear
  * What matters (`clear`) heads it with its horizon.
  */
-function drawn(rows: readonly FeedRow[], comingUp: number, clear: boolean): Drawn[] {
+export function drawn(rows: readonly FeedRow[], comingUp: number, clear: boolean): Drawn[] {
   const out: Drawn[] = clear ? [{ type: "clear", key: "clear" }] : [];
   let prev: FeedGroupKind | undefined;
   let disclosed = comingUp === 0;
@@ -84,16 +92,15 @@ function drawn(rows: readonly FeedRow[], comingUp: number, clear: boolean): Draw
       disclosed = true;
     }
     if (comingBucket(kind) !== null && kind !== prev) {
-      out.push({ type: "heading", key: `h-${kind}`, kind: kind!, count: 0 });
+      out.push({ type: "heading", key: `h-${kind}`, kind: kind!, count: 0, part: true });
       prev = kind;
       out.push({ type: "item", key: row.id, row });
       continue;
     }
-    // Waiting on you is a part of Today (plan 210, iteration 3): Today's heading stands above it even when Today has no
-    // rows of its own
-    if (kind === "waiting" && prev !== "today" && prev !== "waiting") out.push({ type: "heading", key: `h-today-${row.id}`, kind: "today", count: 0 });
-    // keyed by the row it stands above: a group can begin twice while the rows and their groups are on their way
-    if (kind && kind !== prev) out.push({ type: "heading", key: `h-${kind}-${row.id}`, kind, count: 0 });
+    // keyed by the row it stands above: a group can begin twice while the rows and their groups are on their way. Waiting
+    // on you is a part of Today (plan 210, iteration 3) under Today's own rows; with none, no empty Today heading above
+    // it (the owner, 2026-11-19), and it's a group of its own
+    if (kind && kind !== prev) out.push({ type: "heading", key: `h-${kind}-${row.id}`, kind, count: 0, part: kind === "waiting" && prev === "today" });
     prev = kind;
     out.push({ type: "item", key: row.id, row });
   }
@@ -326,7 +333,7 @@ export function WhatMattersFeed() {
                   <div key={v.key} data-index={v.index} ref={virtualizer.measureElement} className="absolute inset-x-0 top-0" style={{ transform: `translateY(${v.start}px)` }}>
                     {/* (a query container: a row lays its when column out by the feed's own width, plan 210, iteration 4) */}
                     <div className={cn(COLUMN, "@container py-px")}>
-                      {row.type === "clear" ? <div className="pt-6 pb-4"><ClearSky /></div> : row.type === "heading" ? <Heading kind={row.kind} count={row.count} /> : row.type === "comingUp" ? <ComingUpHeading /> : row.type === "item" ? <FeedItem row={row.row} thread={items[index.get(row.row.threadId) ?? -1]} /> : <DigestItem />}
+                      {row.type === "clear" ? <div className="pt-6 pb-4"><ClearSky /></div> : row.type === "heading" ? <Heading kind={row.kind} count={row.count} part={row.part} /> : row.type === "comingUp" ? <ComingUpHeading /> : row.type === "item" ? <FeedItem row={row.row} thread={items[index.get(row.row.threadId) ?? -1]} /> : <DigestItem />}
                     </div>
                   </div>
                 );
@@ -341,12 +348,11 @@ export function WhatMattersFeed() {
 
 /**
  * A group's heading (plan 214, Ledger): its name as a small-caps label in the quiet ink, its count beside it, on the rows'
- * text line; no hairline (the rows have theirs). Today's "Waiting on you" (plan 210, iteration 3) and Coming up's buckets
- * (iteration 4) are parts of a group: the same label, closer to what's above. The count sits outside the heading's own
+ * text line; no hairline (the rows have theirs). Today's "Waiting on you" (plan 210, iteration 3) under Today's rows and
+ * Coming up's buckets (iteration 4) are parts of a group: the same label, closer to what's above. The count sits outside the heading's own
  * words, so its name is what a screen reader's heading list and the tests read.
  */
-function Heading({ kind, count }: { kind: FeedGroupKind; count: number }) {
-  const part = kind === "waiting" || comingBucket(kind) !== null;
+function Heading({ kind, count, part }: { kind: FeedGroupKind; count: number; part?: boolean }) {
   // a part of a group is a level under it, for a screen reader's headings too
   const Tag = part ? "h3" : "h2";
   const dataKind = comingBucket(kind) !== null ? "coming" : groupDay(kind) !== null ? "day" : groupWeek(kind) !== null ? "week" : kind;

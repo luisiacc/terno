@@ -156,10 +156,11 @@ test.describe("What matters and its digest (plan 145)", () => {
     // the app still opens on the Inbox
     await expect(page.getByTestId("list-title").or(page.getByTestId("list-header")).first()).toBeVisible();
     await page.getByTestId("nav-today").click();
-    // plan 210 (the owner): by day: what needs you now is Today's
+    // plan 210 (the owner): by day: what needs you now is Today's; with only people waiting on you, their heading leads
+    // (no empty Today above it, the owner 2026-11-19)
     const first = page.locator(`${FEED} [data-testid=wm-heading]`).first();
-    await expect(first).toHaveAttribute("data-kind", "today");
-    await expect(first).toHaveText("Today");
+    await expect(first).toHaveAttribute("data-kind", "waiting");
+    await expect(first).toHaveText("Waiting on you");
     // plan 204 (after the panel): the digest's way in is the last open item, never before a person, under no heading of
     // its own; its count where an item's sentence is, what it holds under it in general words (plan 210, iteration 1: never
     // senders' names, which read as people the feed already shows)
@@ -194,8 +195,9 @@ test.describe("What matters and its digest (plan 145)", () => {
     await expect(page.getByTestId("today-line")).not.toContainText(/this week|\d+ to reply/);
     // the owner: "Your turn" and "Waiting for your reply" are the same thing: one heading, and the new conversation is
     // under it in its own words, no reason before them. Plan 210 (iteration 3, the owner's "'Waiting on you' in Today"):
-    // people waiting on you are Today's quiet "Waiting on you", Today's heading above it though Today has nothing else
-    expect((await kinds(page)).filter((k) => k !== "history")).toEqual(["today", "waiting"]);
+    // people waiting on you are Today's quiet "Waiting on you"; with nothing else today, no empty Today heading above it
+    // (the owner, 2026-11-19)
+    expect((await kinds(page)).filter((k) => k !== "history")).toEqual(["waiting"]);
     const waitingHeading = page.locator(`${FEED} [data-testid=wm-heading][data-kind=waiting]`);
     await expect(waitingHeading).toHaveText("Waiting on you");
     // a sub-heading on the rows' text line, as the headings are
@@ -453,9 +455,10 @@ test.describe("What matters and its digest (plan 145)", () => {
     await page.setViewportSize({ width: 1100, height: 700 });
     await page.getByTestId("nav-today").click();
     await expect(await digestRow(page)).toContainText("today's digest", { timeout: 15_000 });
-    // Today leads the feed; the digest's way in is its last open item (plan 204, after the panel)
+    // what's waiting on you leads the feed (nothing else today: no empty Today heading); the digest's way in is its last
+    // open item (plan 204, after the panel)
     await toTop(page);
-    await expect(page.locator(`${FEED} [data-testid=wm-heading]`).first()).toHaveAttribute("data-kind", "today");
+    await expect(page.locator(`${FEED} [data-testid=wm-heading]`).first()).toHaveAttribute("data-kind", "waiting");
     await (await digestRow(page)).click();
     await expect(page.getByTestId("digest-title")).toHaveText("Today's digest");
     const items = page.getByTestId("digest-item");
