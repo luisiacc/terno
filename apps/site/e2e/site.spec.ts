@@ -221,3 +221,34 @@ test("a picture's tools stay out of its way until it's pointed at or tabbed into
   await tools.getByRole("button").first().focus();
   await expect.poll(opacity).toBe("1");
 });
+
+test("“What matters” and Follow-ups have a real light and dark picture, and the switch shows each (plan 224)", async ({ page }) => {
+  for (const [path, scheme] of [["/designs/lumen/", "light"], ["/designs/midnight/", "dark"]] as const) {
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.goto(path);
+    for (const shot of [page.locator("#what-matters [data-shot]"), page.locator("#pro [data-shot]:has(img[src^='/shots/ai-followups-'])")]) {
+      const other = scheme === "light" ? "dark" : "light";
+      await shot.locator(`img[data-mode=${scheme}]`).scrollIntoViewIfNeeded();
+      await expect(shot.locator(`img[data-mode=${scheme}]`), path).toBeVisible();
+      await expect(shot.locator(`img[data-mode=${other}]`), path).toBeHidden();
+      await shot.getByRole("button", { name: other === "light" ? "Light" : "Dark" }).click();
+      await expect(shot.locator(`img[data-mode=${other}]`), path).toBeVisible();
+      await expect(shot.locator(`img[data-mode=${scheme}]`), path).toBeHidden();
+      // two different captures, not one picture under two names
+      const [light, dark] = await Promise.all(["light", "dark"].map(async (m) => (await page.request.get((await shot.locator(`img[data-mode=${m}]`).getAttribute("src"))!)).body()));
+      expect(light!.equals(dark!), path).toBe(false);
+    }
+  }
+});
+
+for (const colorScheme of ["light", "dark"] as const)
+  for (const width of [1440, 390, 320])
+    test(`/es/ (${colorScheme}, ${width}px) is axe-clean and fits: the longer Spanish copy (plan 224)`, async ({ page }) => {
+      await page.emulateMedia({ colorScheme, reducedMotion: "reduce" });
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/es/");
+      await expect(page.locator("#pro #what-matters h3")).toHaveText("Cientos de correos. Solo unos pocos te necesitan.");
+      const axe = await new AxeBuilder({ page }).withTags(AXE_TAGS).analyze();
+      expect(axe.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`)).toEqual([]);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    });

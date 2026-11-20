@@ -115,7 +115,7 @@ describe("Terno Pro (plan 97)", () => {
       expect(pro.textContent).toContain(copy.pro.status);
       expect(pro.textContent).toContain(copy.pro.price);
       expect(pro.textContent).toContain(copy.pro.ownKey);
-      for (const name of ["ai-reply", "ai-ask", "ai-today", "ai-digest", "ai-summary"] as const) {
+      for (const name of ["ai-reply", "ai-ask", "ai-followups", "ai-digest", "ai-summary"] as const) {
         const imgs = [...pro.querySelectorAll(`img[src^="/shots/${name}-"]`)];
         expect(imgs.map((i) => i.getAttribute("data-mode")), `${route.path} ${name}`).toEqual(["light", "dark"]);
         for (const img of imgs) expect(img.getAttribute("alt")).toBe(copy.alt[name]);
@@ -142,6 +142,52 @@ describe("Terno Pro (plan 97)", () => {
     expect(COPY.en.features.local.body).toContain("syncs between your Mac and your mail servers");
     expect(COPY.es.stats[1]!.label).toBe("servidores de Terno que guardan tu correo");
     for (const lang of ["en", "es"] as const) expect(COPY[lang].meta.description).toContain("Terno Pro");
+  });
+});
+
+describe("“What matters” (plan 224)", () => {
+  const homes = routes().filter((r) => r.page === "home");
+
+  it("every home design leads Terno Pro with it (it runs on AI): before the drafted reply, with its picture, benefits and Done", () => {
+    for (const route of homes) {
+      const copy = COPY[route.lang];
+      const page = new JSDOM(render(route).body).window.document;
+      const pro = page.querySelector("section#pro")!;
+      const wm = pro.querySelector("#what-matters")!;
+      expect(wm, route.path).not.toBeNull();
+      // under Pro's own title (h2), its title an h3 and its benefits h4s, so the outline reads Pro › What matters › each
+      const proTitle = page.getElementById(pro.getAttribute("aria-labelledby")!)!;
+      expect(proTitle.tagName).toBe("H2");
+      expect(proTitle.compareDocumentPosition(wm) & 4, route.path).toBe(4);
+      // before the drafted reply's title and picture
+      const reply = [...pro.querySelectorAll("h3")].find((h) => h.textContent === copy.pro.reply.title)!;
+      expect(wm.compareDocumentPosition(reply) & 4, route.path).toBe(4);
+      expect(wm.compareDocumentPosition(pro.querySelector('img[src^="/shots/ai-reply-"]')!) & 4, route.path).toBe(4);
+      expect(wm.querySelector("h3")?.textContent, route.path).toBe(copy.whatMatters.title);
+      expect(wm.textContent, route.path).toContain(copy.whatMatters.eyebrow);
+      const imgs = [...wm.querySelectorAll('img[src^="/shots/ai-what-matters-"]')];
+      expect(imgs.map((i) => i.getAttribute("data-mode")), route.path).toEqual(["light", "dark"]);
+      for (const img of imgs) expect(img.getAttribute("alt")).toBe(copy.alt["ai-what-matters"]);
+      // each benefit, its line right under its title
+      const benefits = Object.values(copy.whatMatters.benefits);
+      const h4s = [...wm.querySelectorAll("h4")];
+      expect(h4s.map((h) => h.textContent), route.path).toEqual(benefits.map((b) => b.title));
+      for (const [i, h4] of h4s.entries()) expect(h4.nextElementSibling?.textContent, `${route.path} ${i}`).toBe(benefits[i]!.body);
+      for (const text of [copy.whatMatters.body, copy.whatMatters.done, copy.whatMatters.foot]) expect(wm.textContent, route.path).toContain(text);
+      // Pro only: not in the hero or the header, and nowhere outside Pro
+      expect(page.querySelector('a[href="#what-matters"]'), route.path).toBeNull();
+      expect(page.querySelectorAll('img[src^="/shots/ai-what-matters-"]'), route.path).toHaveLength(2);
+      expect(copy.hero.subtitle, route.path).not.toContain(copy.whatMatters.eyebrow);
+    }
+  });
+
+  it("names the view as the app does, and nothing promises the old Today", () => {
+    for (const lang of ["en", "es"] as const) {
+      const c = COPY[lang];
+      expect(c.whatMatters.eyebrow).toBe(lang === "en" ? "What matters" : "Lo importante");
+      expect(c.meta.description).toContain(lang === "en" ? "“What matters”" : "«Lo importante»");
+      expect(JSON.stringify(c)).not.toMatch(/Twelve at most|Doce como máximo|ai-today/);
+    }
   });
 });
 

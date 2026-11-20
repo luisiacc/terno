@@ -7,6 +7,7 @@ import { Logo } from "../parts/logo";
 import { AgentSession, agentsPrivacyLink } from "../parts/agents";
 import { PRO_LEAD, PRO_MORE, Peek, ProLeadShot, proPrivacyLink } from "../parts/pro";
 import { DESIGN_SHOTS, Shot, type ShotName } from "../parts/shot";
+import { WM_BENEFITS, WM_SHOT } from "../parts/what-matters";
 import { Waitlist } from "../parts/waitlist";
 import { Window } from "../parts/window";
 import { GITHUB, LANGUAGES, LICENSE_URL, pathIn, type Route } from "../site";
@@ -90,7 +91,8 @@ function Card({ f, className = "", children }: { f: Feature; className?: string;
 
 /**
  * Terno Pro (plan 97), its own section after the features: the header with a "Coming soon" chip and the planned
- * price, the same hairline grid as the features with the drafted reply across it and the other four two by two,
+ * price, “What matters” as its lead (plan 224), then the same hairline grid as the features with the drafted reply
+ * across it and the other four two by two,
  * then what AI sends and the own-key note. Violet marks it as Pro, as quietly as the blue marks the rest.
  */
 function Pro({ copy }: { copy: SiteCopy }) {
@@ -110,7 +112,9 @@ function Pro({ copy }: { copy: SiteCopy }) {
         <p className="mt-4 font-mono text-[0.78rem] leading-relaxed text-(--mn-dim)">{p.price}</p>
       </div>
 
-      <div className="mn-grid mt-12 grid gap-px overflow-hidden rounded-2xl border border-(--mn-line) bg-(--mn-line) md:grid-cols-2">
+      <WhatMatters copy={copy} />
+
+      <div className="mn-grid mt-16 grid gap-px overflow-hidden rounded-2xl border border-(--mn-line) bg-(--mn-line) md:grid-cols-2">
         <Card f={p[PRO_LEAD.id]} className="md:col-span-2">
           <div className="relative mt-2">
             <div className="mn-glow mn-pro-glow" aria-hidden="true" />
@@ -137,6 +141,46 @@ function Pro({ copy }: { copy: SiteCopy }) {
         </p>
       </div>
     </section>
+  );
+}
+
+/**
+ * “What matters” (plan 224), Pro's lead: what it is and why, the feed large in its window, the four benefits on the
+ * features' hairline grid, then Done and the clear day. It runs on AI, so it lives in Pro, whose notes say how.
+ */
+function WhatMatters({ copy }: { copy: SiteCopy }) {
+  const w = copy.whatMatters;
+  return (
+    <div id="what-matters" className="mt-14 scroll-mt-20">
+      <div className="max-w-3xl">
+        <p className={`${mono} text-(--mn-accent)`}>{w.eyebrow}</p>
+        <h3 className="mt-4 text-2xl font-semibold tracking-[-0.025em] text-balance sm:text-4xl">{w.title}</h3>
+        <p className="mt-4 max-w-2xl text-lg leading-relaxed text-pretty text-(--mn-muted)">{w.body}</p>
+      </div>
+
+      <div className="relative mt-10">
+        <div className="mn-glow mn-pro-glow" aria-hidden="true" />
+        <Window className="mn-window site-wm-window relative rounded-xl">
+          <div className="site-wm-shot">
+            <Shot name={WM_SHOT} copy={copy} sizes="(min-width: 1200px) 1088px, (min-width: 640px) 94vw, 200vw" />
+          </div>
+        </Window>
+      </div>
+
+      <ul className="mn-grid mt-10 grid gap-px overflow-hidden rounded-2xl border border-(--mn-line) bg-(--mn-line) sm:grid-cols-2 lg:grid-cols-4">
+        {WM_BENEFITS.map((id) => (
+          <li key={id} className="bg-(--mn-bg) p-6 sm:p-7">
+            <h4 className="text-lg font-semibold tracking-tight text-balance text-(--mn-fg)">{w.benefits[id].title}</h4>
+            <p className="mt-2.5 text-[0.95rem] leading-relaxed text-pretty text-(--mn-muted)">{w.benefits[id].body}</p>
+          </li>
+        ))}
+      </ul>
+
+      <div className="mt-8 max-w-3xl">
+        <p className="text-[1.05rem] leading-relaxed text-pretty text-(--mn-fg)">{w.done}</p>
+        <p className="mt-3 text-sm leading-relaxed text-pretty text-(--mn-dim)">{w.foot}</p>
+      </div>
+    </div>
   );
 }
 

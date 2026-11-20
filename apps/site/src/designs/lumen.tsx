@@ -7,6 +7,7 @@ import { Logo } from "../parts/logo";
 import { AgentSession, agentsPrivacyLink } from "../parts/agents";
 import { PRO_LEAD, PRO_MORE, Peek, ProLeadShot, proPrivacyLink } from "../parts/pro";
 import { DESIGN_SHOTS, Shot, type ShotName } from "../parts/shot";
+import { WM_BENEFITS, WM_SHOT } from "../parts/what-matters";
 import { Waitlist } from "../parts/waitlist";
 import { Window } from "../parts/window";
 import { GITHUB, LICENSE_URL } from "../site";
@@ -77,8 +78,9 @@ function Section({ name, copy, wide = "" }: { name: ShotName; copy: SiteCopy; wi
 
 /**
  * Terno Pro (plan 97), right after the privacy band so the promise comes first: the header with its "Coming soon"
- * chip and the planned price, the drafted reply large, the other four as tiles with their pictures peeking up from
- * the bottom, then what AI sends and the own-key note. A quiet violet marks it as Pro; no button, it isn't for sale yet.
+ * chip and the planned price, “What matters” (plan 224), the drafted reply large, the other four as tiles with their
+ * pictures peeking up from the bottom, then what AI sends and the own-key note. A quiet violet marks it as Pro; no
+ * button, it isn't for sale yet.
  */
 function Pro({ copy }: { copy: SiteCopy }) {
   const p = copy.pro;
@@ -99,7 +101,9 @@ function Pro({ copy }: { copy: SiteCopy }) {
           <p className="mt-5 text-sm text-(--l-muted)">{p.price}</p>
         </div>
 
-        <div className="mx-auto mt-14 max-w-5xl">
+        <WhatMatters copy={copy} />
+
+        <div className="mx-auto mt-24 max-w-5xl">
           <Window className="lumen-window site-pro-lead-window rounded-xl">
             <ProLeadShot copy={copy} sizes="(min-width: 1024px) 1024px, (min-width: 640px) 92vw, 200vw" />
           </Window>
@@ -137,6 +141,40 @@ function Pro({ copy }: { copy: SiteCopy }) {
         </div>
       </div>
     </section>
+  );
+}
+
+/**
+ * “What matters” (plan 224), Pro's lead: centered like Pro's header, the feed large in its window, the four benefits as
+ * a row of tiles, then Done and the clear day. It runs on AI, so it lives in Pro, whose notes say how.
+ */
+function WhatMatters({ copy }: { copy: SiteCopy }) {
+  const w = copy.whatMatters;
+  return (
+    <div id="what-matters" className="mx-auto mt-16 max-w-5xl scroll-mt-6">
+      <div className="mx-auto max-w-3xl text-center">
+        <p className="text-[0.95rem] font-semibold text-(--l-accent)">{w.eyebrow}</p>
+        <h3 className={`mt-3 ${h3} sm:text-[1.9rem]`}>{w.title}</h3>
+        <p className={`mx-auto mt-4 max-w-2xl ${lead}`}>{w.body}</p>
+      </div>
+      <Window className="lumen-window site-wm-window mt-12 rounded-xl">
+        <div className="site-wm-shot">
+          <Shot name={WM_SHOT} copy={copy} sizes="(min-width: 1024px) 1024px, (min-width: 640px) 92vw, 200vw" />
+        </div>
+      </Window>
+      <ul className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        {WM_BENEFITS.map((id) => (
+          <li key={id} className="lumen-tile lumen-pro-tile rounded-2xl p-6">
+            <h4 className="text-[1.1rem] leading-snug font-semibold tracking-[-0.015em] text-balance">{w.benefits[id].title}</h4>
+            <p className="mt-2.5 text-[0.95rem] leading-relaxed text-pretty text-(--l-muted)">{w.benefits[id].body}</p>
+          </li>
+        ))}
+      </ul>
+      <div className="mx-auto mt-10 max-w-2xl text-center">
+        <p className="text-[1.05rem] leading-relaxed text-pretty">{w.done}</p>
+        <p className="mt-3 text-sm leading-relaxed text-pretty text-(--l-muted)">{w.foot}</p>
+      </div>
+    </div>
   );
 }
 

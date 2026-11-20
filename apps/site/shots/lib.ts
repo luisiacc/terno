@@ -135,14 +135,20 @@ export const pictureSettings = (mode: "light" | "dark", o: { design?: string; pa
   return { design: o.design ?? "lumen", theme: mode, senderIcons: false, motionMs: 0, ...(palette.light && { lightTheme: palette.light }), ...(palette.dark && { darkTheme: palette.dark }) };
 };
 
+/** Pictures the site no longer shows: never encoded again from an old capture. `ai-today`: the list before plan 210. */
+const RETIRED = ["ai-today"];
+
 /**
  * WebP at 2× (the capture) and 1× for every PNG in `raw`, and their 1× sizes into src/shots.json (merged with what's
  * there). `og`: the Open Graph image from the dark inbox (Midnight, the site's design, is dark).
  */
-export function encode(raw: string, o: { og?: boolean } = {}): void {
+export function encode(raw: string, o: { og?: boolean; only?: readonly string[] } = {}): void {
   const manifest: Record<string, { width: number; height: number }> = {};
   for (const png of execFileSync("ls", [raw], { encoding: "utf8" }).trim().split("\n").filter((f) => f.endsWith(".png"))) {
     const base = png.slice(0, -4);
+    const name = base.replace(/-(light|dark)$/, "");
+    // a picture the site no longer shows stays out, even with its capture still in a kept raw folder (plan 224)
+    if (RETIRED.includes(name) || (o.only && !o.only.includes(name))) continue;
     const src = join(raw, png);
     const [w, h] = execFileSync("magick", ["identify", "-format", "%w %h", src], { encoding: "utf8" }).split(" ").map(Number) as [number, number];
     execFileSync("cwebp", ["-quiet", "-q", "82", "-m", "6", src, "-o", join(out, `${base}@2x.webp`)]);

@@ -13,7 +13,7 @@ export const PRO_LEAD = { id: "reply", shot: "ai-reply" } as const satisfies { i
 /** the other four, shown smaller, in this order */
 export const PRO_MORE = [
   { id: "ask", shot: "ai-ask" },
-  { id: "today", shot: "ai-today" },
+  { id: "followups", shot: "ai-followups" },
   { id: "digest", shot: "ai-digest" },
   { id: "summaries", shot: "ai-summary" },
 ] as const satisfies readonly { id: ProFeature; shot: ShotName }[];

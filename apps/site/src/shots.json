@@ -144,12 +144,12 @@
     "height": 745
   },
   "ai-followups-dark": {
-    "width": 1191,
-    "height": 900
+    "width": 563,
+    "height": 248
   },
   "ai-followups-light": {
-    "width": 1191,
-    "height": 900
+    "width": 563,
+    "height": 248
   },
   "ai-generate-dark": {
     "width": 1440,
@@ -190,14 +190,6 @@
   "ai-summary-light": {
     "width": 696,
     "height": 486
-  },
-  "ai-today-dark": {
-    "width": 398,
-    "height": 570
-  },
-  "ai-today-light": {
-    "width": 398,
-    "height": 570
   },
   "archive-detail-dark": {
     "width": 512,
@@ -278,5 +270,13 @@
   "inbox-luma-light": {
     "width": 1440,
     "height": 900
+  },
+  "ai-what-matters-light": {
+    "width": 1200,
+    "height": 860
+  },
+  "ai-what-matters-dark": {
+    "width": 1200,
+    "height": 860
   }
 }

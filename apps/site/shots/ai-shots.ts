@@ -127,6 +127,12 @@ async function shoot(page: Page) {
     await page.getByTestId("reader-subject").filter({ hasText: subject }).waitFor();
   };
   const go = async (view: string) => {
+    // plan 207's question, asked once What matters can be shown: answered as most people would, keeping the Inbox
+    const ask = page.getByTestId("first-screen-keep-inbox");
+    if (await ask.isVisible()) {
+      await ask.click();
+      await page.getByTestId("first-screen-question").waitFor({ state: "detached" });
+    }
     await page.getByTestId(`nav-${view}`).click();
     await page.waitForTimeout(300);
   };
@@ -177,13 +183,7 @@ async function shoot(page: Page) {
   await page.getByTestId("tab-ai").click();
   await switchOn("ai-summaries-switch");
   await switchOn("ai-ask-switch");
-  await switchOn("ai-followups-switch");
-  // the offer to read the last 30 days of sent mail: taken, so the promise and the unanswered question are found
-  const offer = page.getByTestId("ai-followups-offer");
-  if (await offer.waitFor({ timeout: 10_000 }).then(() => true, () => false)) {
-    await say("follow-ups offer", offer);
-    await page.getByTestId("ai-followups-check").click();
-  }
+  // Follow-ups aren't switched on here: their pictures come from the AI demo (shots/demo-shots.ts, plan 224)
   await switchOn("replies-switch");
   await switchOn("ai-digest-switch");
   await page.keyboard.press("Escape");
@@ -310,17 +310,12 @@ async function shoot(page: Page) {
   await both("ai-rule", () => around([page.getByTestId("filters-dialog")], { pad: 20 }), ruleGood);
   await closeRules();
 
-  // --- Today: the sent-mail scan's promise and unanswered question beside what waits for a reply ---
-  for (const until = Date.now() + JOB_MS; ; await page.waitForTimeout(10_000)) {
-    await go("today");
-    await page.getByTestId("wm-heading").first().waitFor();
-    const text = await page.locator("main, body").first().innerText();
-    if (/You said/.test(text) && /No reply/.test(text)) break;
-    if (Date.now() > until) throw new Error("Today has no promise and no unanswered question after 5 minutes");
-  }
+  // --- the digest's row, at the foot of What matters (its feed's picture comes from the AI demo: shots/demo-shots.ts) ---
+  await go("today");
+  await page.getByTestId("wm-heading").first().waitFor();
   // the bar: the digest's row, once prepared, counts its newsletters. A model that put every issue under "other" leaves
   // none: the digest is turned off and on in Settings, as a person would (which prepares today's again), once. Short of
-  // it, Today and the digest keep the previous run's pictures, and what the digest's page says is printed.
+  // it, the digest keeps the previous run's picture, and what the digest's page says is printed.
   const digestRow = page.locator("[data-testid=wm-item][data-digest]").first();
   let digestGood = false;
   for (let n = 0; n < 2 && !digestGood; n++) {
@@ -342,17 +337,6 @@ async function shoot(page: Page) {
     await page.getByTestId("settings-dialog").waitFor({ state: "detached" });
     await go("today");
   }
-  await say("today", page.getByTestId("thread-list"));
-  // the list's column, down to its last row
-  await both(
-    "ai-today",
-    async () => {
-      const list = (await page.getByTestId("thread-list").boundingBox())!;
-      const last = (await rows.last().boundingBox())!;
-      return { x: Math.round(list.x), y: Math.round(list.y), width: Math.round(list.width), height: Math.round(last.y + last.height + 24 - list.y) };
-    },
-    digestGood,
-  );
 
   // --- the digest page ---
   if (digestGood) {
@@ -367,20 +351,6 @@ async function shoot(page: Page) {
     await both("ai-digest", () => around([page.getByTestId("digest-page")], { pad: 0 }));
     await page.setViewportSize(VIEWPORT);
   } else console.log("  ai-digest: below the bar, keeping the earlier picture");
-
-  // --- Follow-ups: the list, and the unanswered question open with its card ---
-  await go("followups");
-  await rows.first().waitFor({ timeout: 30_000 });
-  await open("Raw files from the workshop shoot");
-  await visible("followup-line", 30_000);
-  if (await page.getByTestId("tip-done").isVisible().catch(() => false)) await page.getByTestId("tip-done").click();
-  await say("follow-up", page.getByTestId("followup-line"));
-  // the list and the conversation: the sidebar marks All Mail beside Follow-ups while a conversation outside the Inbox is open
-  await both("ai-followups", async () => {
-    const list = (await page.getByTestId("thread-list").boundingBox())!;
-    return { x: Math.round(list.x), y: 0, width: Math.round(VIEWPORT.width - list.x), height: VIEWPORT.height };
-  });
-
 }
 
 await main().catch((error: unknown) => {

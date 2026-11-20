@@ -4,7 +4,7 @@ export const en = {
   meta: {
     title: "Terno: instant, private email for Mac",
     description:
-      "Terno is a fast, keyboard-first email client for Mac. Every account in one inbox. Instant search. Fully local, no account needed. Terno Pro adds AI that drafts your replies and finds what needs you.",
+      "Terno is a fast, keyboard-first email client for Mac. Every account in one inbox. Instant search. Fully local, no account needed. Terno Pro adds AI that drafts your replies and powers “What matters”: one view of only what needs you.",
   },
   skip: "Skip to content",
   nav: { features: "Features", pro: "Pro", privacy: "Privacy", source: "Source", download: "Download", language: "Español", languageHref: "/es/", languageMenu: "Language", sourceOnGithub: "Source code on GitHub", home: "Terno home" },
@@ -18,6 +18,35 @@ export const en = {
     macSub: "Apple silicon",
     other: "Windows & Linux",
     otherSub: "Join the waitlist",
+  },
+  /**
+   * “What matters” (plan 224): the feed of what needs you (plan 210), Terno Pro's lead (it runs on AI). Quoted
+   * mid-sentence, bare as a name (the owner's rule).
+   */
+  whatMatters: {
+    eyebrow: "What matters",
+    title: "Hundreds of emails. A handful need you.",
+    body: "“What matters” is a view that reads your email as it arrives and lists only what needs you: the bill due Friday, the client waiting on your answer, the call you said you’d make. One plain sentence each, with when. Your Inbox keeps everything else.",
+    benefits: {
+      tasks: {
+        title: "One plain line each.",
+        body: "“Review Joaquín’s draft.” “You said you’d call Emma.” “Javier wrote to you about the payments API.” Each line says what it is and when. Open it, and the email is right there.",
+      },
+      urgent: {
+        title: "The urgent stays on top.",
+        body: "What you missed comes first, then what’s due today and who’s waiting on your answer, then the week ahead. The most pressing thing is always the first line.",
+      },
+      promises: {
+        title: "Your promises, kept.",
+        body: "Write “I’ll send it Tuesday” in a reply, and it’s on the list for Tuesday, so what you said you’d do doesn’t slip your mind.",
+      },
+      quiet: {
+        title: "The rest stays quiet.",
+        body: "Newsletters and routine automated mail fold into one row at the end, and a bill that’s already paid or pays itself gets no line at all.",
+      },
+    },
+    done: "Press D when something’s done, and it moves down to Earlier. When nothing’s left, it tells you: “You’re free until 3:00 PM.”",
+    foot: "Make it the screen Terno opens on, or leave an account out of it.",
   },
   features: {
     unified: {
@@ -96,7 +125,7 @@ export const en = {
     eyebrow: "Terno Pro",
     status: "Coming soon",
     title: "Less time on email.",
-    body: "Pro drafts your replies, sums up long threads and finds what needs you today. You stay in charge: no email goes out until you send it.",
+    body: "Pro shows you what matters, drafts your replies and sums up long threads. You stay in charge: no email goes out until you send it.",
     price: "Planned: US$12 a month or $108 a year, with a 14-day free trial.",
     reply: {
       title: "Replies, already drafted.",
@@ -108,10 +137,10 @@ export const en = {
       body: "Stop digging for that one email. Ask in plain words and get an answer, with links to the messages it came from.",
       points: ["Ask a follow-up", "Or ask it to archive old mail, and check the preview first"],
     },
-    today: {
-      title: "What needs you today.",
-      body: "Promises you made, replies you owe, people who haven’t answered. One short list for the day.",
-      points: ["Twelve at most, so it stays short", "Follow-ups come back when they’re due"],
+    followups: {
+      title: "No answer? It comes back.",
+      body: "Ask someone a question and hear nothing for a few days, and Terno brings it back to you, with a follow-up one click away.",
+      points: [],
     },
     digest: {
       title: "Every newsletter, one page.",
@@ -198,7 +227,8 @@ export const en = {
     "palette-gruvbox": "Terno with the Gruvbox color theme",
     "ai-reply": "A conversation open in Terno, with a reply already drafted under the last message and one gap marked to fill in",
     "ai-ask": "Ask your mail answering “What did Isabella say about the payment?”, with numbered links to the emails it came from",
-    "ai-today": "The Today list: a promise you made, people who haven’t replied and an email waiting for your answer",
+    "ai-what-matters": "The “What matters” view: what you missed, what’s due today and who’s waiting on your answer, one plain sentence each, with when it’s due",
+    "ai-followups": "A question that got no answer, back in Follow-ups with a button to write a follow-up",
     "ai-digest": "Today’s newsletters on one page, one line each, with a button to archive them all",
     "ai-summary": "A short summary above a conversation, with a to-do and a Reply button",
   },

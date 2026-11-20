@@ -7,6 +7,7 @@ import { Kbd } from "../parts/kbd";
 import { Logo } from "../parts/logo";
 import { PRO_LEAD, PRO_MORE, Peek, ProLeadShot, proPrivacyLink } from "../parts/pro";
 import { DESIGN_SHOTS, Shot, type ShotName } from "../parts/shot";
+import { WM_BENEFITS, WM_SHOT } from "../parts/what-matters";
 import { Waitlist } from "../parts/waitlist";
 import { Window } from "../parts/window";
 import { GITHUB, LICENSE_URL } from "../site";
@@ -92,8 +93,8 @@ function ProFeature({ f, children }: { f: SiteCopy["pro"]["reply"] | SiteCopy["p
 
 /**
  * Terno Pro (plan 97), after the features: a new part of the letter with a "Coming soon" chip and the planned
- * price, the drafted reply as a wide figure, the other four in the column, each picture peeking up into a quiet
- * stage, then what AI sends and the own-key note. Violet marks the name, nothing louder.
+ * price, “What matters” (plan 224), the drafted reply as a wide figure, the other four in the column, each picture
+ * peeking up into a quiet stage, then what AI sends and the own-key note. Violet marks the name, nothing louder.
  */
 function Pro({ copy }: { copy: SiteCopy }) {
   const p = copy.pro;
@@ -109,6 +110,8 @@ function Pro({ copy }: { copy: SiteCopy }) {
       </h2>
       <p className="letter-prose letter-lead mt-6">{p.body}</p>
       <p className="mt-4 text-[14px] text-(--l-muted)">{p.price}</p>
+
+      <WhatMatters copy={copy} />
 
       <ProFeature f={p[PRO_LEAD.id]}>
         <figure className="letter-wide mt-14">
@@ -135,6 +138,37 @@ function Pro({ copy }: { copy: SiteCopy }) {
         </a>
       </p>
     </section>
+  );
+}
+
+/**
+ * “What matters” (plan 224), Pro's lead: written out in the column, the feed as a wide figure, the four benefits as
+ * short paragraphs, then Done and the clear day. It runs on AI, so it lives in Pro, whose notes say how.
+ */
+function WhatMatters({ copy }: { copy: SiteCopy }) {
+  const w = copy.whatMatters;
+  return (
+    <div id="what-matters" className="letter-sub mt-16 scroll-mt-20">
+      <p className="text-[15px] font-semibold text-(--l-link)">{w.eyebrow}</p>
+      <h3 className="mt-3 text-[1.75rem] leading-[1.15] font-semibold tracking-[-0.022em] text-balance sm:text-[2.125rem]">{w.title}</h3>
+      <p className="letter-prose mt-5">{w.body}</p>
+      <figure className="letter-wide mt-12">
+        <Window className="letter-window site-wm-window">
+          <div className="site-wm-shot">
+            <Shot name={WM_SHOT} copy={copy} sizes="(min-width: 1180px) 1088px, (min-width: 640px) calc(100vw - 2.5rem), 200vw" />
+          </div>
+        </Window>
+        <figcaption className="letter-caption">{copy.alt[WM_SHOT]}</figcaption>
+      </figure>
+      {WM_BENEFITS.map((id) => (
+        <div key={id} className="mt-10">
+          <h4 className="text-[1.2rem] leading-snug font-semibold tracking-[-0.015em] text-balance">{w.benefits[id].title}</h4>
+          <p className="letter-prose mt-3">{w.benefits[id].body}</p>
+        </div>
+      ))}
+      <p className="letter-prose mt-10">{w.done}</p>
+      <p className="mt-4 text-[14px] leading-relaxed text-(--l-muted)">{w.foot}</p>
+    </div>
   );
 }
 

@@ -5,7 +5,7 @@ export const es: SiteCopy = {
   meta: {
     title: "Terno: correo instantáneo y privado para Mac",
     description:
-      "Terno es un cliente de correo rápido para Mac, pensado para el teclado. Todas tus cuentas en una bandeja. Búsqueda instantánea. Totalmente local, sin cuenta. Terno Pro añade IA que redacta tus respuestas y encuentra lo que te necesita.",
+      "Terno es un cliente de correo rápido para Mac, pensado para el teclado. Todas tus cuentas en una bandeja. Búsqueda instantánea. Totalmente local, sin cuenta. Terno Pro añade IA que redacta tus respuestas y hace funcionar «Lo importante»: una vista con solo lo que te necesita.",
   },
   skip: "Ir al contenido",
   nav: { features: "Funciones", pro: "Pro", privacy: "Privacidad", source: "Código", download: "Descargar", language: "English", languageHref: "/", languageMenu: "Idioma", sourceOnGithub: "Código fuente en GitHub", home: "Inicio de Terno" },
@@ -19,6 +19,31 @@ export const es: SiteCopy = {
     macSub: "Apple silicon",
     other: "Windows y Linux",
     otherSub: "Únete a la lista",
+  },
+  whatMatters: {
+    eyebrow: "Lo importante",
+    title: "Cientos de correos. Solo unos pocos te necesitan.",
+    body: "«Lo importante» es una vista que lee tu correo a medida que llega y te muestra solo lo que te necesita: la factura que vence el viernes, el cliente que espera tu respuesta, la llamada que dijiste que harías. Una frase clara para cada cosa, con su fecha. Entrada sigue guardándolo todo.",
+    benefits: {
+      tasks: {
+        title: "Una línea clara para cada cosa.",
+        body: "«Revisar el borrador de Joaquín.» «Dijiste que llamarías a Emma.» «Javier te escribió sobre la API de pagos.» Cada línea dice qué es y cuándo. Ábrela y el correo está ahí.",
+      },
+      urgent: {
+        title: "Lo urgente, siempre arriba.",
+        body: "Primero lo que se te pasó, luego lo que vence hoy y quién espera tu respuesta, después la semana. Lo más urgente siempre es la primera línea.",
+      },
+      promises: {
+        title: "Lo que prometes, cumplido.",
+        body: "Escribe «te lo mando el martes» en una respuesta y estará en la lista el martes, para que no se te olvide lo que dijiste que harías.",
+      },
+      quiet: {
+        title: "Lo demás, en silencio.",
+        body: "Los boletines y el correo automático de rutina se reúnen en una sola fila al final, y una factura ya pagada o que se paga sola no tiene línea.",
+      },
+    },
+    done: "Pulsa D cuando termines algo y baja a Antes. Cuando no queda nada, te lo dice: «Estás libre hasta las 15:00.»",
+    foot: "Haz que Terno se abra en esta vista, o deja fuera una cuenta.",
   },
   features: {
     unified: {
@@ -95,7 +120,7 @@ export const es: SiteCopy = {
     eyebrow: "Terno Pro",
     status: "Próximamente",
     title: "Menos tiempo en el correo.",
-    body: "Pro redacta tus respuestas, resume los hilos largos y encuentra lo que te necesita hoy. Tú decides: ningún correo sale hasta que lo envías.",
+    body: "Pro te muestra lo importante, redacta tus respuestas y resume los hilos largos. Tú decides: ningún correo sale hasta que lo envías.",
     price: "Previsto: US$12 al mes o US$108 al año, con una prueba gratis de 14 días.",
     reply: {
       title: "Respuestas ya redactadas.",
@@ -107,10 +132,10 @@ export const es: SiteCopy = {
       body: "Deja de buscar ese correo. Pregunta con tus palabras y obtén una respuesta, con enlaces a los mensajes de donde sale.",
       points: ["Haz otra pregunta sobre lo mismo", "O pídele que archive correo antiguo, y revisa la vista previa antes"],
     },
-    today: {
-      title: "Lo que te necesita hoy.",
-      body: "Promesas que hiciste, respuestas que debes, gente que no ha contestado. Una lista corta para el día.",
-      points: ["Doce como máximo, para que siga siendo corta", "Los seguimientos vuelven cuando toca"],
+    followups: {
+      title: "¿Sin respuesta? Vuelve.",
+      body: "Si haces una pregunta y en unos días nadie contesta, Terno te la recuerda, con un seguimiento a un clic.",
+      points: [],
     },
     digest: {
       title: "Todos los boletines, en una página.",
@@ -197,7 +222,8 @@ export const es: SiteCopy = {
     "palette-gruvbox": "Terno con el tema de color Gruvbox",
     "ai-reply": "Una conversación abierta en Terno, con una respuesta ya redactada bajo el último mensaje y un hueco marcado para completar",
     "ai-ask": "Pregunta a tu correo respondiendo a «What did Isabella say about the payment?», con enlaces numerados a los correos de donde sale",
-    "ai-today": "La lista Hoy: una promesa que hiciste, personas que no han contestado y un correo que espera tu respuesta",
+    "ai-what-matters": "La vista «Lo importante»: lo que se te pasó, lo que vence hoy y quién espera tu respuesta, una frase clara para cada cosa, con su fecha",
+    "ai-followups": "Una pregunta sin respuesta, de vuelta en Seguimientos con un botón para escribir un seguimiento",
     "ai-digest": "Los boletines de hoy en una página, una línea cada uno, con un botón para archivarlos todos",
     "ai-summary": "Un resumen breve sobre una conversación, con una tarea por hacer y un botón Responder",
   },
