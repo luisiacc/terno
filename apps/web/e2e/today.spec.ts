@@ -688,11 +688,11 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       // tomorrow, at its time; a day ahead's weight is the quiet one
       await expect(flight.getByTestId("wm-when")).toHaveText(/^Tomorrow 7:40\sAM$/);
       await expect(flight).toHaveAttribute("data-tone", "later");
-      // plan 210 (the owner): by day: what needs you now under Today (iteration 3: people waiting on you its quiet part),
-      // then a heading per day ahead, in order
+      // plan 210 (the owner): by day: what needs you now (nothing of Today's own here, so no empty Today heading above the
+      // people waiting on you, the owner 2026-11-19), then a heading per day ahead, in order
       const ks = await kinds(page);
       // (iteration 4: Coming up the last heading, closed)
-      expect(ks.filter((k) => k !== "history" && k !== "missed")).toEqual(["today", "waiting", "day", "day", "comingUp"]);
+      expect(ks.filter((k) => k !== "history" && k !== "missed")).toEqual(["waiting", "day", "day", "comingUp"]);
       await expect.poll(() => groupOf(page, "Flight to Madrid")).toBe("day");
       await reach(page, "Flight to Madrid");
       const days = page.locator(`${FEED} [data-testid=wm-heading][data-kind=day]`);
