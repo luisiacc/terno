@@ -48,6 +48,7 @@ const tmp = mkdtempSync(join(tmpdir(), "terno-brand-"));
 try {
   for (const [file, { size, art: which }] of Object.entries(WEB_ICONS)) write(`${OUT.public}/${file}`, await render(art[which], size));
   write(OUT.macPng, await render(art.mac, 1024));
+  write(OUT.macDevPng, await render(art.macDev, 1024));
 
   const iconset = join(tmp, "icon.iconset");
   mkdirSync(iconset);

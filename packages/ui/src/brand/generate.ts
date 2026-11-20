@@ -125,6 +125,23 @@ export function macIconSvg(p: IconParts): string {
   ].join("\n");
 }
 
+/** The badge a dev run's Dock icon wears: system orange, so it reads apart from the shipped icon even at Dock size. */
+export const DEV_BADGE = { fill: "#FF9F0A", text: "#1D1D1F", label: "DEV" } as const;
+
+/** The macOS icon with a "DEV" pill over the tile's foot: what an unpackaged run shows in the Dock (never shipped). */
+export function macDevIconSvg(p: IconParts): string {
+  const { canvas } = MAC_GRID;
+  const w = 380;
+  const h = 150;
+  const x = (canvas - w) / 2;
+  const y = 790;
+  const badge = [
+    `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${h / 2}" fill="${DEV_BADGE.fill}" stroke="#FFFFFF" stroke-width="10" filter="url(#shadow)"/>`,
+    `<text x="${canvas / 2}" y="${y + h / 2}" text-anchor="middle" dominant-baseline="central" font-family="-apple-system, 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif" font-weight="800" font-size="104" letter-spacing="8" fill="${DEV_BADGE.text}">${DEV_BADGE.label}</text>`,
+  ].join("\n");
+  return macIconSvg(p).replace("</svg>", `${badge}\n</svg>`);
+}
+
 /** A full-bleed square (no corners: iOS and Android mask it), the mark scaled about the center. */
 export function squareIconSvg(p: IconParts, scale: number): string {
   const c = p.size / 2;
@@ -194,6 +211,8 @@ export function markModule(markSvg: string): string {
 export const OUT = {
   macSvg: "apps/desktop/resources/icon.svg",
   macPng: "apps/desktop/resources/icon.png",
+  /** the Dock icon of an unpackaged (dev) run */
+  macDevPng: "apps/desktop/resources/icon-dev.png",
   icns: "apps/desktop/resources/icon.icns",
   iconComposer: "apps/desktop/resources/icon.icon",
   assetsCar: "apps/desktop/resources/Assets.car",
@@ -267,9 +286,9 @@ export function webManifest(): string {
 }
 
 /** The art each raster is drawn from. */
-export function rasterArt(src: Sources): Record<"tile" | "square" | "maskable" | "mac", string> {
+export function rasterArt(src: Sources): Record<"tile" | "square" | "maskable" | "mac" | "macDev", string> {
   const p = iconParts(src["terno-icon.svg"]!);
-  return { tile: src["terno-icon.svg"]!, square: squareIconSvg(p, 1), maskable: squareIconSvg(p, MASKABLE_SCALE), mac: macIconSvg(p) };
+  return { tile: src["terno-icon.svg"]!, square: squareIconSvg(p, 1), maskable: squareIconSvg(p, MASKABLE_SCALE), mac: macIconSvg(p), macDev: macDevIconSvg(p) };
 }
 
 /**
@@ -283,4 +302,4 @@ export function rasterRecipe(src: Sources): string {
 }
 
 /** The binary outputs the manifest pins, by path from the repo root. */
-export const BINARY_OUTPUTS: readonly string[] = [OUT.macPng, OUT.icns, OUT.assetsCar, ...Object.keys(WEB_ICONS).map((f) => `${OUT.public}/${f}`)];
+export const BINARY_OUTPUTS: readonly string[] = [OUT.macPng, OUT.macDevPng, OUT.icns, OUT.assetsCar, ...Object.keys(WEB_ICONS).map((f) => `${OUT.public}/${f}`)];
