@@ -39,7 +39,7 @@ function notIn(page: Page, catId: number) {
 }
 
 /** A drop's title: the drag alone, or (plan 91) with its bulk sender's same-subject group. */
-const movedTo = (category: string) => new RegExp(`^Moved (to ${category}|\\d+ emails? with the same sender and subject to ${category})$`);
+const movedTo = (category: string) => new RegExp(`^Moved (to ${category}|\\d+ emails? to ${category})$`);
 
 const navCount = async (page: Page, catId: number) => Number((await page.getByTestId(`nav-category-${catId}`).locator("[data-slot=nav-count]").textContent().catch(() => "0")) || 0);
 
@@ -230,7 +230,7 @@ test.describe("drag and drop to a category", () => {
     await dragTo(page, row, page.getByTestId(`nav-category-${viajes}`));
     await page.mouse.up();
     // a newsletter's group may move with it (plan 91): one Undo takes back all of it
-    await expect(page.getByTestId("snackbar-title")).toHaveText(/^Moved (to Viajes|\d+ emails? with the same sender and subject to Viajes)$/);
+    await expect(page.getByTestId("snackbar-title")).toHaveText(/^Moved (to Viajes|\d+ emails? to Viajes)$/);
     await expect.poll(() => [inCat(viajes), inCat(lecturas)]).toEqual([true, false]);
 
     // the backend refuses the restore: the destination must keep the thread, the snackbar turns into the error with a retry

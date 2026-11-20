@@ -1,6 +1,5 @@
 import { similarValue, type SimilarAction, type SimilarOffer, type SimilarOffers } from "@terno/core";
 import { t } from "@terno/i18n";
-import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useId, useState } from "react";
 import { said } from "~/lib/actions";
 import { chainUndo, isLatest, orderOffers, unchain } from "~/lib/offers";
@@ -10,8 +9,9 @@ import { client } from "~/rpc/connection";
 import { setApp } from "~/state/app";
 import { reloadList } from "~/state/list";
 import { snackbarControls } from "./category-snackbar";
-import { OfferLine, OnlyLine } from "./offer-lines";
-import { SnackClose, SnackMore, SnackPill } from "./snack-dock";
+import { OfferLine } from "./offer-lines";
+import { OfferSnack } from "./offer-snack";
+import { SnackMore, SnackPill } from "./snack-dock";
 
 interface Shown {
   action: SimilarAction;
@@ -187,23 +187,23 @@ function SimilarSnackbar({ id, action, targets, offers: first, undo, undoName, a
   // said only when a filter now catches their new mail (each line says "+ new mail" for itself)
   const note = def?.status === "done" ? t(def.filterFailed ? "offers.default.noFilter" : "offers.default.spamFuture") : def?.filterKept ? t("offers.default.spamFuture") : null;
   return (
-    <div data-testid="similar-snackbar" data-default={def?.status}>
-      <div className="flex min-h-9 items-center gap-2 py-1.5 pr-1.5 pl-3">
-        <p className={cn("line-clamp-2 min-w-0 flex-1 text-sm", def && "font-medium")} data-testid="snack-message" title={title}>
-          {title}
-        </p>
-        {lines.length > 0 && <SnackMore open={offersOpen} onToggle={() => setOffersOpen((o) => !o)} controls={offersId} action={action} />}
-        {token.state === "ready" && <SnackPill testId="snack-action" label={t("common.undo")} name={undoName} shortcut={z ? "z" : undefined} disabled={def?.status === "running" || busy} onClick={doUndo} />}
-        <SnackClose onClick={close} />
-      </div>
-      {note && (
-        <p data-testid="similar-future" className="-mt-1.5 truncate pr-3 pb-1 pl-3 text-2xs text-muted-foreground">
-          {note}
-        </p>
-      )}
-      {(offersOpen || takeBackable) && (
-      <div id={offersId} data-testid="similar-offers" className="flex flex-col px-1.5 pb-1.5">
-        {offersOpen && lines.map((o, i) => (
+    <OfferSnack
+      testId="similar-snackbar"
+      data={{ "data-default": def?.status }}
+      title={title}
+      titleTestId="snack-message"
+      strong={!!def}
+      note={note}
+      noteTestId="similar-future"
+      more={lines.length > 0 && <SnackMore open={offersOpen} onToggle={() => setOffersOpen((o) => !o)} controls={offersId} action={action} />}
+      undo={token.state === "ready" && <SnackPill testId="snack-action" label={t("common.undo")} name={undoName} shortcut={z ? "z" : undefined} disabled={def?.status === "running" || busy} onClick={doUndo} />}
+      onClose={close}
+      offersId={offersId}
+      offersTestId="similar-offers"
+      offers={
+        offersOpen &&
+        lines.length > 0 &&
+        lines.map((o, i) => (
           <OfferLine
             key={o.scope.kind}
             n={i + 1}
@@ -215,11 +215,10 @@ function SimilarSnackbar({ id, action, targets, offers: first, undo, undoName, a
             count={shownCount(o)}
             onClick={() => run(o)}
           />
-        ))}
-        {/* the sweep did more than was asked: taking that back is never behind a fold */}
-        {takeBackable && <OnlyLine label={t("offers.only.spam", { count: targets.length })} onClick={only} disabled={busy} />}
-      </div>
-      )}
-    </div>
+        ))
+      }
+      // the sweep did more than was asked: taking that back is never behind a fold
+      only={takeBackable ? { label: t("offers.only.spam", { count: targets.length }), onClick: only, disabled: busy } : null}
+    />
   );
 }

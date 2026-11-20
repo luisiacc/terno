@@ -45,7 +45,8 @@ test.describe("the docked snackbar", () => {
       const reader = (await page.locator("main").boundingBox())!;
       const offers = (await dock(page).getByTestId("similar-offers").boundingBox())!;
       const lines = await dock(page).getByTestId("similar-offers").locator("button").count();
-      expect(bar.height - offers.height).toBeLessThanOrEqual(40);
+      // plan 223: the one-line head (≤ 40) and the hairline section's padding the offers sit in
+      expect(bar.height - offers.height).toBeLessThanOrEqual(48);
       expect(offers.height).toBeLessThanOrEqual(lines * 28 + 8);
       expect(bar.x).toBeGreaterThanOrEqual(list.x + list.width);
       expect(bar.x + bar.width).toBeLessThanOrEqual(reader.x + reader.width);

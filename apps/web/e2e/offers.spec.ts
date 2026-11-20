@@ -101,8 +101,9 @@ test.describe("plan 91: defaults and the same offers everywhere", () => {
 
       const snack = page.getByTestId("category-snackbar");
       await expect(snack).toHaveAttribute("data-default", "done");
-      await expect(snack.getByTestId("snackbar-title")).toHaveText(`Moved ${g.ids.length - before.length} emails with the same sender and subject to Facturas`);
-      await expect(snack.getByTestId("snackbar-note")).toHaveText("New mail like this goes there too.");
+      await expect(snack.getByTestId("snackbar-title")).toHaveText(`Moved ${g.ids.length - before.length} emails to Facturas`);
+      // plan 223: why, under the title
+      await expect(snack.getByTestId("snackbar-note")).toHaveText("All with this sender and subject. New ones will go there too.");
       await expect.poll(g.inCategory).toEqual(g.ids);
       // a filter of Terno's, its subject's numbers as any number
       expect(g.autoFilters()).toBe(autoBefore + 1);
@@ -231,7 +232,7 @@ test.describe("plan 91: defaults and the same offers everywhere", () => {
     await drop(page, page.locator(`[data-testid=thread-row][data-thread-id="${g.target}"]`), page.getByTestId(`nav-category-${facturas}`));
     const snack = page.getByTestId("category-snackbar");
     await expect(snack).toHaveAttribute("data-default", "done");
-    await expect(snack.getByTestId("snackbar-note")).toHaveText("Couldn’t save the rule for new mail: only the mail you have now changed.");
+    await expect(snack.getByTestId("snackbar-note")).toHaveText("All with this sender and subject. Couldn’t save the rule for new ones.");
     g.db.exec("DROP TRIGGER e2e_no_filters");
     await page.keyboard.press("Escape");
 

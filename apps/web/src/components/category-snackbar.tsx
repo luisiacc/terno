@@ -14,8 +14,9 @@ import { dismissSnack, patchSnack, pause, resume, runUndo, snack, useSnack, type
 import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp } from "~/state/app";
 import { reloadList } from "~/state/list";
-import { line, lineKey, OfferCount, OfferLine, OnlyLine, type Count } from "./offer-lines";
-import { SnackClose, SnackMore, SnackPill } from "./snack-dock";
+import { line, lineKey, OfferCount, OfferLine, type Count } from "./offer-lines";
+import { OfferSnack } from "./offer-snack";
+import { SnackMore, SnackPill } from "./snack-dock";
 
 export { formatCount } from "./offer-lines";
 
@@ -404,25 +405,32 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
   const help = topicHelp(category.name, qa ? qa.terms.filter((x) => terms.has(x.term)).map((x) => x.term) : [], custom, topic?.kind === "words" && topic.email ? (qa?.sender?.name ?? topic.email) : null);
   const senderName = offers?.senderName ?? qa?.sender?.name ?? null;
   const title = failed ?? (def?.status === "running" ? t("offers.default.moving", { count: filed.threadIds.length + def.moved, category: category.name }) : def?.status === "done" && def.moved > 0 ? t("offers.default.moved", { count: filed.threadIds.length + def.moved, category: category.name }) : onlyDone ? t("offers.only.done", { count: filed.threadIds.length, category: category.name }) : titleOf(filed, category.name));
+  // plan 223: the title says what happened; the line under it, why (the same sender and subject) and what new mail does
   const note =
-    def?.status === "done"
-      ? def.filterFailed
-        ? t("offers.default.noFilter")
-        : def.retargeted
-          ? t("offers.default.retargeted", { category: category.name, from: def.retargeted })
-          : t("offers.default.future")
-      : null;
+    def?.status === "running"
+      ? t("offers.default.scope")
+      : def?.status === "done"
+        ? def.filterFailed
+          ? t("offers.default.moveNoFilter")
+          : def.retargeted
+            ? t("offers.default.retargeted", { category: category.name, from: def.retargeted })
+            : t("offers.default.future")
+        : null;
   const onlyShown = def?.status === "done" && def.undoable;
+  const offersShown = offersOpen && (lines.length > 0 || !!stops);
   return (
-    <div data-testid="category-snackbar" data-failed={failed ? "" : undefined} data-default={def?.status}>
-      <div className="flex min-h-9 items-center gap-2 py-1 pr-1.5 pl-3 text-sm">
-        <CategoryDot color={category.color as CategoryColor} />
-        {/* a default's title is a sentence read whole: it wraps to a second line rather than cut */}
-        <span className={cn("line-clamp-2 min-w-0 flex-1", failed ? "text-destructive-ink" : "font-medium")} data-testid="snackbar-title" title={title}>
-          {title}
-        </span>
-        {(lines.length > 0 || stops) && <SnackMore open={offersOpen} onToggle={() => setOffersOpen((o) => !o)} controls={offersId} action={filed.moved ? "move" : "add"} />}
-        {(filed.batchId !== null || def) && (
+    <OfferSnack
+      testId="category-snackbar"
+      data={{ "data-failed": failed ? "" : undefined, "data-default": def?.status }}
+      lead={<CategoryDot color={category.color as CategoryColor} />}
+      title={title}
+      titleTestId="snackbar-title"
+      failed={!!failed}
+      note={failed ? null : note}
+      noteTestId="snackbar-note"
+      more={(lines.length > 0 || stops) && <SnackMore open={offersOpen} onToggle={() => setOffersOpen((o) => !o)} controls={offersId} action={filed.moved ? "move" : "add"} />}
+      undo={
+        (filed.batchId !== null || def) && (
           <SnackPill
             testId="snackbar-undo"
             label={failed ? t("common.retry") : t("common.undo")}
@@ -431,163 +439,162 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
             disabled={undoing || busy}
             onClick={doUndo}
           />
-        )}
-        <SnackClose onClick={close} />
-      </div>
-      {note && (
-        <p data-testid="snackbar-note" className="-mt-1.5 truncate pr-3 pb-1 pl-8 text-2xs text-muted-foreground">
-          {note}
-        </p>
-      )}
-      {(offersOpen ? lines.length > 0 || stops || onlyShown : onlyShown) && (
-        <div id={offersId} data-testid="snackbar-offers" className="flex flex-col px-1.5 pb-1.5">
-          {offersOpen && lines.map((l, i) =>
-            l.kind === "scope" ? (
-              <OfferLine
-                key={l.offer.scope.kind}
-                n={i + 1}
-                testId={`snackbar-${l.offer.scope.kind}`}
-                label={t(filed.moved ? "offers.line.move" : "offers.line.add", { what: offerWhat(l.offer, senderName, true), category: category.name })}
-                help={offerHelp(l.offer, senderName, category.name)}
-                future
-                disabled={busy || undoing}
-                // the sender with nothing left now: the line is about their future mail, no "0"
-                count={l.offer.count === 0 && !l.offer.capped ? undefined : l.offer}
-                onClick={() => run(l)}
-              />
-            ) : (
-              qa && (
-                // not one button: its words, More… and View are controls of their own; the words get a line of their own, under the label
-                <div key="words" className="flex min-w-0 flex-col text-xs" data-testid="snackbar-topic">
-                  <div className="flex h-7 min-w-0 items-center gap-2">
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={
-                          <button
-                            type="button"
-                            onClick={() => run(l)}
-                            // stays focusable with nothing checked, so its help is still there to read
-                            aria-disabled={!topic || busy || undoing || undefined}
-                            aria-describedby={helpId}
-                            className={cn(line, "flex-1 text-left aria-disabled:text-muted-foreground aria-disabled:hover:bg-transparent")}
-                            data-testid="snackbar-topic-apply"
-                          />
-                        }
-                      >
-                        <span className="min-w-0 flex-1 truncate">{t("category.topic")}</span>
-                        {topic?.kind === "words" && (
-                          <span data-testid="snackbar-topic-future" className="text-2xs whitespace-nowrap text-muted-foreground">
-                            {t("category.newMailToo")}
-                          </span>
-                        )}
-                        <Kbd className={lineKey}>{i + 1}</Kbd>
-                      </TooltipTrigger>
-                      <TooltipContent align="start" data-testid="snackbar-topic-help">
+        )
+      }
+      onClose={close}
+      offersId={offersId}
+      offersTestId="snackbar-offers"
+      offers={
+        offersShown && (
+          <>
+            {lines.map((l, i) =>
+              l.kind === "scope" ? (
+                <OfferLine
+                  key={l.offer.scope.kind}
+                  n={i + 1}
+                  testId={`snackbar-${l.offer.scope.kind}`}
+                  label={t(filed.moved ? "offers.line.move" : "offers.line.add", { what: offerWhat(l.offer, senderName, true), category: category.name })}
+                  help={offerHelp(l.offer, senderName, category.name)}
+                  future
+                  disabled={busy || undoing}
+                  // the sender with nothing left now: the line is about their future mail, no "0"
+                  count={l.offer.count === 0 && !l.offer.capped ? undefined : l.offer}
+                  onClick={() => run(l)}
+                />
+              ) : (
+                qa && (
+                  // not one button: its words, More… and View are controls of their own; the words get a line of their own, under the label
+                  <div key="words" className="flex min-w-0 flex-col text-xs" data-testid="snackbar-topic">
+                    <div className="flex h-7 min-w-0 items-center gap-2">
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <button
+                              type="button"
+                              onClick={() => run(l)}
+                              // stays focusable with nothing checked, so its help is still there to read
+                              aria-disabled={!topic || busy || undoing || undefined}
+                              aria-describedby={helpId}
+                              className={cn(line, "flex-1 text-left aria-disabled:text-muted-foreground aria-disabled:hover:bg-transparent")}
+                              data-testid="snackbar-topic-apply"
+                            />
+                          }
+                        >
+                          <span className="min-w-0 flex-1 truncate">{t("category.topic")}</span>
+                          {topic?.kind === "words" && (
+                            <span data-testid="snackbar-topic-future" className="text-2xs whitespace-nowrap text-muted-foreground">
+                              {t("category.newMailToo")}
+                            </span>
+                          )}
+                          <Kbd className={lineKey}>{i + 1}</Kbd>
+                        </TooltipTrigger>
+                        <TooltipContent align="start" data-testid="snackbar-topic-help">
+                          {help}
+                        </TooltipContent>
+                      </Tooltip>
+                      <span id={helpId} hidden>
                         {help}
-                      </TooltipContent>
-                    </Tooltip>
-                    <span id={helpId} hidden>
-                      {help}
-                    </span>
-                    <div className="flex shrink-0 items-center gap-2 pr-1.5 empty:hidden">
-                      {topic && (
-                        <button type="button" data-testid="snackbar-view" onClick={view} className="inline-flex h-5 items-center gap-1 rounded-full px-1.5 text-2xs text-primary hover:bg-muted">
-                          <Search className="size-3" /> {t("common.view")}
-                        </button>
+                      </span>
+                      <div className="flex shrink-0 items-center gap-2 pr-1.5 empty:hidden">
+                        {topic && (
+                          <button type="button" data-testid="snackbar-view" onClick={view} className="inline-flex h-5 items-center gap-1 rounded-full px-1.5 text-2xs text-primary hover:bg-muted">
+                            <Search className="size-3" /> {t("common.view")}
+                          </button>
+                        )}
+                        {topic && <OfferCount count={topicCount} testId="snackbar-topic-count" />}
+                      </div>
+                    </div>
+                    {/* on the label's line */}
+                    <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-1 pr-1.5 pb-1 pl-1.5">
+                      {custom === null ? (
+                        <>
+                          {qa.terms.map(({ term }) => (
+                            <button
+                              key={term}
+                              type="button"
+                              data-testid="snackbar-term"
+                              aria-pressed={terms.has(term)}
+                              onClick={() =>
+                                setTerms((s) => {
+                                  const n = new Set(s);
+                                  if (n.has(term)) n.delete(term);
+                                  else n.add(term);
+                                  return n;
+                                })
+                              }
+                              className={cn(
+                                "inline-flex h-5 max-w-full items-center gap-0.5 rounded-full px-1.5 text-2xs",
+                                terms.has(term) ? "bg-accent text-accent-foreground" : "bg-tint text-muted-foreground hover:text-foreground",
+                              )}
+                            >
+                              <span className="truncate">{term}</span>
+                              {terms.has(term) && <Check className="size-2.5 shrink-0" />}
+                            </button>
+                          ))}
+                          {qa.sender && (
+                            // plan 89: the words from this sender only, or from anyone
+                            <button
+                              type="button"
+                              data-testid="snackbar-only-from"
+                              aria-pressed={onlyFrom}
+                              onClick={() => setOnlyFrom((v) => !v)}
+                              className={cn(
+                                "inline-flex h-5 max-w-full items-center gap-0.5 rounded-full px-1.5 text-2xs",
+                                onlyFrom ? "bg-accent text-accent-foreground" : "bg-tint text-muted-foreground hover:text-foreground",
+                              )}
+                            >
+                              <span className="truncate">{t("category.onlyFrom", { name: qa.sender.name })}</span>
+                              {onlyFrom && <Check className="size-2.5 shrink-0" />}
+                            </button>
+                          )}
+                          <button ref={moreRef} type="button" data-testid="snackbar-more" onClick={() => setCustom("")} className="h-5 rounded-full px-1.5 text-2xs text-muted-foreground hover:text-foreground">
+                            {t("category.more")}
+                          </button>
+                        </>
+                      ) : (
+                        <input
+                          autoFocus
+                          data-testid="snackbar-query"
+                          aria-label={t("category.topicName")}
+                          value={custom}
+                          placeholder={t("category.topicPlaceholder")}
+                          onChange={(e) => setCustom(e.target.value)}
+                          onKeyDown={(e) => {
+                            e.stopPropagation();
+                            if (e.key === "Enter") run(l);
+                            if (e.key === "Escape") {
+                              // focus goes back to More…, not out of the snackbar
+                              refocusMore.current = true;
+                              setCustom(null);
+                            }
+                          }}
+                          className="h-5 min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+                        />
                       )}
-                      {topic && <OfferCount count={topicCount} testId="snackbar-topic-count" />}
                     </div>
                   </div>
-                  {/* on the label's line */}
-                  <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-1 pr-1.5 pb-1 pl-1.5">
-                    {custom === null ? (
-                      <>
-                        {qa.terms.map(({ term }) => (
-                          <button
-                            key={term}
-                            type="button"
-                            data-testid="snackbar-term"
-                            aria-pressed={terms.has(term)}
-                            onClick={() =>
-                              setTerms((s) => {
-                                const n = new Set(s);
-                                if (n.has(term)) n.delete(term);
-                                else n.add(term);
-                                return n;
-                              })
-                            }
-                            className={cn(
-                              "inline-flex h-5 max-w-full items-center gap-0.5 rounded-full px-1.5 text-2xs",
-                              terms.has(term) ? "bg-accent text-accent-foreground" : "bg-tint text-muted-foreground hover:text-foreground",
-                            )}
-                          >
-                            <span className="truncate">{term}</span>
-                            {terms.has(term) && <Check className="size-2.5 shrink-0" />}
-                          </button>
-                        ))}
-                        {qa.sender && (
-                          // plan 89: the words from this sender only, or from anyone
-                          <button
-                            type="button"
-                            data-testid="snackbar-only-from"
-                            aria-pressed={onlyFrom}
-                            onClick={() => setOnlyFrom((v) => !v)}
-                            className={cn(
-                              "inline-flex h-5 max-w-full items-center gap-0.5 rounded-full px-1.5 text-2xs",
-                              onlyFrom ? "bg-accent text-accent-foreground" : "bg-tint text-muted-foreground hover:text-foreground",
-                            )}
-                          >
-                            <span className="truncate">{t("category.onlyFrom", { name: qa.sender.name })}</span>
-                            {onlyFrom && <Check className="size-2.5 shrink-0" />}
-                          </button>
-                        )}
-                        <button ref={moreRef} type="button" data-testid="snackbar-more" onClick={() => setCustom("")} className="h-5 rounded-full px-1.5 text-2xs text-muted-foreground hover:text-foreground">
-                          {t("category.more")}
-                        </button>
-                      </>
-                    ) : (
-                      <input
-                        autoFocus
-                        data-testid="snackbar-query"
-                        aria-label={t("category.topicName")}
-                        value={custom}
-                        placeholder={t("category.topicPlaceholder")}
-                        onChange={(e) => setCustom(e.target.value)}
-                        onKeyDown={(e) => {
-                          e.stopPropagation();
-                          if (e.key === "Enter") run(l);
-                          if (e.key === "Escape") {
-                            // focus goes back to More…, not out of the snackbar
-                            refocusMore.current = true;
-                            setCustom(null);
-                          }
-                        }}
-                        className="h-5 min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
-                      />
-                    )}
-                  </div>
-                </div>
-              )
-            ),
-          )}
-          {offersOpen && stops && (
-            <button
-              type="button"
-              data-testid="snackbar-stop"
-              onClick={() => {
-                close();
-                void stopFiling(stops.ids, stops.name);
-              }}
-              className={cn(line, "w-full text-left text-muted-foreground hover:text-foreground")}
-            >
-              {t("filters.stop.line", { category: stops.name })}
-            </button>
-          )}
-          {/* a default moved more than was asked: taking that back is never behind a fold */}
-          {onlyShown && <OnlyLine label={t("offers.only.move", { count: filed.threadIds.length })} onClick={only} disabled={undoing} />}
-        </div>
-      )}
-    </div>
+                )
+              ),
+            )}
+            {stops && (
+              <button
+                type="button"
+                data-testid="snackbar-stop"
+                onClick={() => {
+                  close();
+                  void stopFiling(stops.ids, stops.name);
+                }}
+                className={cn(line, "w-full text-left text-muted-foreground hover:text-foreground")}
+              >
+                {t("filters.stop.line", { category: stops.name })}
+              </button>
+            )}
+          </>
+        )
+      }
+      // a default moved more than was asked: taking that back is never behind a fold
+      only={onlyShown ? { label: t("offers.only.move", { count: filed.threadIds.length }), onClick: only, disabled: undoing } : null}
+    />
   );
 }
 

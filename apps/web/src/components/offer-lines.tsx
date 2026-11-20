@@ -1,7 +1,7 @@
 /**
  * Plan 91: the lines every follow-up offer is drawn with, in the category
  * snackbar and the similar one alike: `what it will do, as a sentence … + new mail [n]`,
- * then, when a default ran, `No, only … [0]`. Plan 158: the digit is the line's
+ * then, when a default ran, `No, only … [0]` (plan 223: in the snackbar's foot, `offer-snack.tsx`). Plan 158: the digit is the line's
  * shortcut, at its end as everywhere else; the sentence says what it does.
  */
 import { formatNumber, t } from "@terno/i18n";
@@ -87,15 +87,5 @@ export function OfferLine({
         {help}
       </span>
     </>
-  );
-}
-
-/** "No, only move this email": after a default, the plain choice, last; 0 runs it. */
-export function OnlyLine({ label, onClick, disabled }: { label: string; onClick: () => void; disabled?: boolean }) {
-  return (
-    <button type="button" data-testid="snackbar-only" onClick={onClick} aria-disabled={disabled || undefined} aria-keyshortcuts="0" className={cn(line, "w-full text-left aria-disabled:opacity-60")}>
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-      <Kbd className={lineKey}>0</Kbd>
-    </button>
   );
 }
