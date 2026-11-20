@@ -80,7 +80,7 @@ describe("Done means gone (plan 204, after the second panel round; plan 210, ite
     // the same frame: not held in place as a row that leaves on its own is
     expect(shown()).toEqual(["dated:10", "dated:50", "dated:30"]);
     expect([useFeedRow.getState().opened, getApp().selectedId]).toEqual(["dated:50", 2]);
-    // Codex code review: opened by the app, as Archive's next is, so it isn't read until chosen
+    // Codex code review: opened by the app, as Archive's next is
     expect(openedByApp(2)).toBe(true);
     await vi.waitFor(() => expect(useSnack.getState().current?.message).toBe("Done: Task 2"));
     await undo();

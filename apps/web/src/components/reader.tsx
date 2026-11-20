@@ -39,14 +39,15 @@ import { closeFeedConversation } from "~/lib/feed-pane";
 import { comingHomeKey, shownDraftKey, useDrafts } from "~/lib/drafts";
 import { reachesSeveral, replyName } from "~/lib/compose-fields";
 import { composeFocusPending, composeLanding, registerReaderFocusDestination, returnDraftsTo, subscribeComposeFocus } from "~/lib/compose";
-import { act, cancelMarkRead, openCompose, readChosenThread, scheduleMarkRead, toggleStar } from "~/lib/actions";
+import { act, openCompose, toggleStar } from "~/lib/actions";
+import { useReadOnShow } from "~/lib/read-on-show";
 import { pinThreads, unpinThreads } from "~/lib/pins";
 import { usePins } from "~/state/pins";
 import { acceptSuggestion, answerReview, rejectSuggestion, removeFromCategory } from "~/lib/categorize";
 import { t } from "@terno/i18n";
 import { fullDate, listDate, messageDate, messageTime } from "~/lib/format";
 import { SenderAvatar } from "./sender-avatar";
-import { chooseOpenThread, inSeparateTab, onThreadChosen, openedByApp, setApp, useApp } from "~/state/app";
+import { chooseOpenThread, inSeparateTab, setApp, useApp } from "~/state/app";
 import { hydrateSelectedThread, useThread, useThreadGone } from "~/state/threads";
 import { conversationKeys } from "~/lib/conversation-keys";
 import { copyThreadText } from "~/lib/copy-thread";
@@ -1172,15 +1173,10 @@ function ReaderContent() {
     // the header renders from the cached row immediately; the body follows (debounced while holding j)
     let current = true;
     const t = setTimeout(() => void hydrateSelectedThread(selectedId, () => current), detail ? 0 : 40);
-    // plan 158: what the app opened by itself waits for the user to choose it
-    if (openedByApp(selectedId)) cancelMarkRead();
-    else scheduleMarkRead(selectedId);
     return () => { current = false; clearTimeout(t); };
   }, [selectedId]);
-  useEffect(() => onThreadChosen(readChosenThread), []);
-
-  // a dwell only counts while the reader shows the thread
-  useEffect(() => cancelMarkRead, []);
+  // plan 225: what the reader shows is read, however it came to be open, from when its conversation is drawn
+  useReadOnShow(selectedId, detail !== undefined);
 
   // a scroll in flight belongs to the thread it started in; focus left in a draft goes back to the list
   useEffect(

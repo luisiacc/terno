@@ -25,7 +25,7 @@ vi.mock("~/rpc/connection", () => ({
 
 const { useAppearance } = await import("~/lib/appearance");
 const { closePage, currentPage, forwardNavKey, openThread, pageOf } = await import("./page");
-const { act, scheduleMarkRead, toggleStar } = await import("./actions");
+const { act, toggleStar } = await import("./actions");
 const { extendSelection, pickRow, pressRow, releaseRow, selectAll, selectWhere, toggleCurrent } = await import("./select");
 const { loadThread, useThreads } = await import("~/state/threads");
 const { openCompose } = await import("./compose");
@@ -183,18 +183,13 @@ describe("what the Codex code review found", () => {
     expect(getApp().checked.size).toBe(4);
   });
 
-  it("a conversation the list doesn't hold (a reload on one): its star toggles from what the reader shows, and the dwell reads it", async () => {
+  it("a conversation the list doesn't hold (a reload on one): its star toggles from what the reader shows (its read: read-on-show.test)", async () => {
     const acts: string[] = [];
     fake.handlers["threads.act"] = async (p) => (acts.push((p as { action: string }).action), { undoId: null });
     useThreads.setState({ details: new Map([[99, { thread: { ...row(99), starred: true, unread: true }, messages: [] } as never]]) });
     setApp({ selectedId: 99, readerOpen: true });
     toggleStar();
     await vi.waitFor(() => expect(acts).toEqual(["unstar"]));
-    vi.useFakeTimers();
-    scheduleMarkRead(99);
-    vi.advanceTimersByTime(500);
-    vi.useRealTimers();
-    await vi.waitFor(() => expect(acts).toEqual(["unstar", "markRead"]));
   });
 
   it("Split → List lands on the list, the cursor kept (Split's open thread isn't a page)", () => {

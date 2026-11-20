@@ -166,25 +166,19 @@ export const markSelectionIntent = (): void => { selectionWriteRevision++; compo
 
 /**
  * Plan 158: the thread the app opened by itself (a list's first page: the first load, another mailbox, a search's top
- * hit). It shows, and stays as it is, until the user chooses it.
+ * hit), until the user chooses it. It decides only where the app goes next (What matters' Done, Undo), never whether
+ * it's read: what the reader shows is read either way (plan 225, lib/read-on-show).
  */
-const openedSelf: { id: number | null; chosen: (() => void) | null } = { id: null, chosen: null };
+const openedSelf: { id: number | null } = { id: null };
 export const openedByApp = (id: number): boolean => openedSelf.id === id;
 /** The user chose what's open (the row, Enter, a reply, a press in the reader): from here on it's an open like any other. */
 export function chooseOpenThread(): void {
-  if (openedSelf.id === null) return;
   openedSelf.id = null;
-  openedSelf.chosen?.();
 }
-/** A selection write: on the same thread it chooses it; anywhere else what the app opened isn't open any more. */
-function noteSelectionWrite(selectedId: number | null | undefined): void {
+/** A selection write is the user's: on the same thread it chooses it, anywhere else what the app opened isn't open any more. */
+function noteSelectionWrite(): void {
   markSelectionIntent();
-  if (selectedId === openedSelf.id) chooseOpenThread();
-  else openedSelf.id = null;
-}
-export function onThreadChosen(chosen: () => void): () => void {
-  openedSelf.chosen = chosen;
-  return () => { if (openedSelf.chosen === chosen) openedSelf.chosen = null; };
+  chooseOpenThread();
 }
 export function subscribeComposeSelectionIntent(retire: () => void): () => void {
   const registration = { retire };
@@ -197,10 +191,10 @@ export function setApp(partial: AppState | ((state: AppState) => AppState), repl
 export function setApp(partial: AppState | Partial<AppState> | ((state: AppState) => AppState | Partial<AppState>), replace?: boolean): void {
   const update = typeof partial === "function" ? (state: AppState) => {
     const next = partial(state);
-    if (!Object.is(next, useApp.getState()) && next != null && Object.hasOwn(next, "selectedId")) noteSelectionWrite(next.selectedId);
+    if (!Object.is(next, useApp.getState()) && next != null && Object.hasOwn(next, "selectedId")) noteSelectionWrite();
     return next;
   } : partial;
-  if (typeof update !== "function" && !Object.is(update, useApp.getState()) && update != null && Object.hasOwn(update, "selectedId")) noteSelectionWrite(update.selectedId);
+  if (typeof update !== "function" && !Object.is(update, useApp.getState()) && update != null && Object.hasOwn(update, "selectedId")) noteSelectionWrite();
   if (replace) useApp.setState(update as AppState | ((state: AppState) => AppState), true);
   else useApp.setState((state) => keepFolderValid(state, typeof update === "function" ? update(state) : update));
 }
@@ -270,7 +264,7 @@ function keepActionPreviewValid(state: AppState, next: AppState | Partial<AppSta
 
 /**
  * Plan 158: the app moves the selection itself (Archive or Delete going on to the next conversation, an Undo putting back
- * one it had opened): that one is opened by the app, as a first load's is, and isn't read until the user chooses it.
+ * one it had opened): that one is opened by the app, as a first load's is.
  */
 export function setAppOpened(selectedId: number | null): void {
   setApp({ selectedId });

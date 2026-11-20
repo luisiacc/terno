@@ -53,7 +53,7 @@ export function dropFeedRows(ids: readonly FeedRowId[]): boolean {
     const byUser = !openedByApp(open.threadId) || useFeedRow.getState().carried === open.id;
     if (byUser || !next) {
       useFeedRow.setState(({ moves }) => ({ opened: next?.id ?? null, carried: next?.id ?? null, moves: moves + 1 }));
-      // opened by the app, as Archive's next is: not read until chosen (Codex code review of iteration 2)
+      // opened by the app, as Archive's next is (Codex code review of iteration 2)
       setAppOpened(next ? next.threadId : null);
       if (keysLeave) keysOnTo(next?.id);
     } else {
@@ -162,7 +162,7 @@ const archivedPromise = (why: TodayWhy | undefined): boolean => why?.kind === "p
 
 /**
  * A conversation open beside the feed that is none of its rows (opened from elsewhere), taken away by an action: on to the
- * feed's first open row, opened by the app as Archive's next is (unread until chosen), else nothing open.
+ * feed's first open row, opened by the app as Archive's next is, else nothing open.
  */
 export function onToFirstRow(): void {
   const first = useToday.getState().rows.find((r) => r.threadId !== DIGEST_ROW_ID && !r.line);

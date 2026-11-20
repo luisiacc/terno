@@ -64,22 +64,19 @@ async function markedRead(page: Page, threadId: number, release: () => void): Pr
 /** Past the read's dwell: what would have been marked has been. */
 const pastDwell = (page: Page) => page.waitForTimeout(650);
 
-test.describe("what the app opens by itself (plan 158)", () => {
-  test("stays unread through a first load, a mailbox switch and a search's top hit, until the user chooses it", async ({ app: page, server }) => {
+test.describe("what the reader shows is read, however it came to be open (plan 225)", () => {
+  test("the first load's top row, a mailbox switch's and a search's top hit are read once shown; Mark as unread while it shows sticks", async ({ app: page, server }) => {
     const id = await ingestConversation(server, { subject: "Llega zzsolo", count: 1, unread: 1, now: E2E_NOW + 7_200_000 });
     await fresh(page);
     const row = page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
-    await expect(row).toHaveAttribute("data-cursor");
+    // the owner's case: the app opens the top row by itself on launch, and it shows, so it's read
     await expect(page.getByTestId("reader-subject")).toHaveText("Llega zzsolo");
-    await pastDwell(page);
-    await expect(row).toHaveAttribute("data-unread", "true");
+    await expect(row).not.toHaveAttribute("data-unread");
 
-    // a new message says nothing about what's open: leaving it, the thread is still as it was
+    // one read per showing: marked unread while it shows, it stays so
     await focusList(page);
-    await page.keyboard.press("c");
-    await expect(page.getByTestId("compose-to")).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(page.getByTestId("reader-subject")).toHaveText("Llega zzsolo");
+    await page.keyboard.press("ControlOrMeta+Shift+U");
+    await expect(row).toHaveAttribute("data-unread", "true");
     await pastDwell(page);
     await expect(row).toHaveAttribute("data-unread", "true");
 
@@ -87,64 +84,52 @@ test.describe("what the app opens by itself (plan 158)", () => {
     await expect(rows(page).first()).not.toHaveAttribute("data-thread-id", String(id));
     await navTo(page, "inbox");
     await expect(row).toHaveAttribute("data-cursor");
-    await pastDwell(page);
-    await expect(row).toHaveAttribute("data-unread", "true");
-
-    await search(page, "zzsolo");
-    await expect(page.getByTestId("reader-subject")).toHaveText("Llega zzsolo");
-    await pastDwell(page);
-    await expect(row).toHaveAttribute("data-unread", "true");
-
-    // a press on the row already open is the user choosing it
-    await row.click();
     await expect(row).not.toHaveAttribute("data-unread");
+
+    // (the same thread kept on screen by a search is the same showing: another one is the top hit)
+    const older = await ingestConversation(server, { subject: "Antes zzotro", count: 1, unread: 1, now: E2E_NOW + 3_600_000 });
+    await search(page, "zzotro");
+    await expect(page.getByTestId("reader-subject")).toHaveText("Antes zzotro");
+    await expect(page.locator(`[data-testid=thread-row][data-thread-id="${older}"]`)).not.toHaveAttribute("data-unread");
   });
 
-  test("Archive's next stays unread until chosen, and Undo puts back exactly what was there", async ({ app: page, server }) => {
-    const unread = await ingestConversation(server, { subject: "Debajo zzsolo", count: 1, unread: 1, now: E2E_NOW + 7_200_000 });
+  test("a conversation still loading isn't shown yet: its skeleton reads nothing, the conversation drawn does", async ({ app: page, server }) => {
+    const id = await ingestConversation(server, { subject: "Tarda zzsolo", count: 1, unread: 1, now: E2E_NOW + 7_200_000 });
+    const threads = server.backend.store.threads;
+    const get = threads.get.bind(threads);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    threads.get = async (...args) => {
+      if (args[0] === id) await gate;
+      return get(...args);
+    };
+    try {
+      await fresh(page);
+      const row = page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
+      await expect(row).toHaveAttribute("data-cursor");
+      await expect(page.getByTestId("reader-skeleton")).toBeVisible();
+      await pastDwell(page);
+      await expect(row).toHaveAttribute("data-unread", "true");
+      release();
+      await expect(page.getByTestId("reader-subject")).toHaveText("Tarda zzsolo");
+      await expect(row).not.toHaveAttribute("data-unread");
+    } finally {
+      release();
+      threads.get = get;
+    }
+  });
+
+  test("the conversation Archive goes on to is read once shown", async ({ app: page, server }) => {
+    const below = await ingestConversation(server, { subject: "Debajo zzsolo", count: 1, unread: 1, now: E2E_NOW + 7_200_000 });
     const top = await ingestConversation(server, { subject: "Encima zzsolo", count: 1, unread: 1, now: E2E_NOW + 7_300_000 });
     await fresh(page);
     const row = (id: number) => page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
     await expect(row(top)).toHaveAttribute("data-cursor");
-    // archived unread and unchosen (the app opened it): the next opens, by the app too
     await focusList(page);
     await page.keyboard.press("e");
     await expect(row(top)).toHaveCount(0);
-    await expect(row(unread)).toHaveAttribute("data-cursor");
-    await pastDwell(page);
-    await expect(row(unread)).toHaveAttribute("data-unread", "true");
-    // Undo: both as they were, unread, the first open again and still not read
-    await page.keyboard.press("ControlOrMeta+z");
-    await expect(row(top)).toHaveAttribute("data-cursor");
-    await pastDwell(page);
-    await expect(row(top)).toHaveAttribute("data-unread", "true");
-    await expect(row(unread)).toHaveAttribute("data-unread", "true");
-    // read by choice, then archived: its next is still the app's to show, not read
-    await row(top).click();
-    await expect(row(top)).not.toHaveAttribute("data-unread");
-    await focusList(page);
-    await page.keyboard.press("e");
-    await expect(row(unread)).toHaveAttribute("data-cursor");
-    await pastDwell(page);
-    await expect(row(unread)).toHaveAttribute("data-unread", "true");
-    // a press in the reader is reading it
-    await page.getByTestId("reader-subject").click();
-    await expect(row(unread)).not.toHaveAttribute("data-unread");
-  });
-
-  test("a press in the reader chooses it, and Enter from the search field does", async ({ app: page, server }) => {
-    const id = await ingestConversation(server, { subject: "Sigue zzsolo", count: 1, unread: 1, now: E2E_NOW + 7_200_000 });
-    await fresh(page);
-    const row = page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
-    await expect(page.getByTestId("reader-subject")).toHaveText("Sigue zzsolo");
-    await page.getByTestId("reader-subject").click();
-    await expect(row).not.toHaveAttribute("data-unread");
-
-    const other = await ingestConversation(server, { subject: "Otro zzsolo", count: 1, unread: 1, now: E2E_NOW + 7_300_000 });
-    await search(page, "Otro zzsolo");
-    await expect(page.getByTestId("reader-subject")).toHaveText("Otro zzsolo");
-    await page.keyboard.press("Enter");
-    await expect(page.locator(`[data-testid=thread-row][data-thread-id="${other}"]`)).not.toHaveAttribute("data-unread");
+    await expect(row(below)).toHaveAttribute("data-cursor");
+    await expect(row(below)).not.toHaveAttribute("data-unread");
   });
 });
 

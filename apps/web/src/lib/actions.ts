@@ -16,6 +16,7 @@ import { showSimilarSnackbar } from "~/components/similar-snackbar";
 import { leaveToDigest, reopenFromDigest, useFeedRow, useToday } from "~/state/today";
 import { dropFeedRows, feedBefore, feedRowsLeaving, onToFirstRow, reopenFeedRow, type FeedBefore } from "~/lib/feed-leave";
 import { focusFeed } from "~/lib/feed-focus";
+import { readSetByHand } from "~/lib/read-by-hand";
 
 /** Does a thread still belong in the current list after an action? */
 function staysInView(s: Pick<AppState, "view" | "gmailTab" | "categoryId" | "reviewCategoryId" | "folder" | "query" | "followups">, action: ThreadAction): boolean {
@@ -182,6 +183,8 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
   if (targets.length === 0) return;
   breadcrumb("action", "action.thread", { action, count: targets.length });
   const before = selectionBefore();
+  // plan 225: read or unread by hand is the user's; the reader's dwell leaves it so
+  if (!options.quiet && (action === "markRead" || action === "markUnread")) readSetByHand(targets);
   leaveList(action, targets, options);
   settled(before);
   // z right after the key: this action is the last one already, its undo waits for the backend's answer
@@ -241,7 +244,7 @@ interface SelectionBefore {
   selectedId: number | null;
   anchorId: number | null;
   left: number | null;
-  /** the open row was the app's (plan 158): Undo puts it back as it was, unread until chosen */
+  /** the open row was the app's (plan 158): Undo puts it back as the app's */
   byApp: boolean;
   /** the open row was the newsletter the digest opened (plan 145): an action that went back to the digest is undone by opening it from there again */
   fromDigest: boolean;
@@ -372,7 +375,7 @@ function leaveFeed(action: ThreadAction, targets: readonly number[]): void {
 
 /**
  * Superhuman-style: the open row is being removed, so the cursor moves to the next thread that isn't (or the one before).
- * The app opened it, not the user: it isn't read until they choose it (plan 158), so an Undo finds it as it was.
+ * The app opened it, not the user (plan 158): Undo puts that back as the app's.
  */
 function stepPast(targets: readonly number[]): void {
   const { selectedId } = getApp();
@@ -570,33 +573,6 @@ export function toggleRead(ids?: number[]): void {
   void act(targetRows(ids).some((t) => t.unread) ? "markRead" : "markUnread", ids);
 }
 
-/** The row or, off the list, the open conversation's thread. */
-function rowOf(id: number) {
-  const st = useList.getState();
-  return st.items[st.index.get(id) ?? -1] ?? useThreads.getState().details.get(id)?.thread;
-}
-
-let readTimer: ReturnType<typeof setTimeout> | null = null;
-/** The reader went away (the bulk bar replaced it): nothing was read. */
-export function cancelMarkRead(): void {
-  if (readTimer) clearTimeout(readTimer);
-  readTimer = null;
-}
-
-/** Opening a thread marks it read after a short dwell, so holding j doesn't mark everything read. */
-export function scheduleMarkRead(id: number): void {
-  if (id === 0) return;
-  if (readTimer) clearTimeout(readTimer);
-  readTimer = setTimeout(() => {
-    if (rowOf(id)?.unread && getApp().selectedId === id) void act("markRead", [id], { quiet: true });
-  }, 450);
-}
-
-/** Plan 158: the user chose the thread the app had opened by itself. Already read, it stays what they make of it (a press on Mark as unread starts here). */
-export function readChosenThread(): void {
-  const id = getApp().selectedId;
-  if (id !== null && rowOf(id)?.unread) scheduleMarkRead(id);
-}
 
 // ───────────────────────────── compose ─────────────────────────────
 
