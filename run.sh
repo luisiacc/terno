@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Launch a demo build of the desktop app with its own profile and Vite port.
 #   ./run.sh demo     demo mailbox        (/tmp/terno-demo,    port 5412)
-#   ./run.sh demoai   demo mailbox + AI   (/tmp/terno-demo-ai, port 5442)
+#   ./run.sh demoai   demo mailbox + AI   (dev:demo-ai's own profile, port 5430)
+#   ./run.sh personal your own accounts    (/tmp/terno-personalme, port 5423)
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -16,10 +17,11 @@ case "${1:-}" in
     TERNO_USER_DATA=/tmp/terno-personalme TERNO_VITE_PORT=5423 exec pnpm dev:desktop
     ;;
   demoai)
-    TERNO_USER_DATA=/tmp/terno-demo-ai TERNO_VITE_PORT=5430 exec pnpm dev:demo-ai
+    # not /tmp: macOS clears old files there, and a profile that lost its demo-ai.json is refused (plan 167)
+    TERNO_VITE_PORT=5430 exec pnpm dev:demo-ai
     ;;
   *)
-    echo "usage: $0 demo|demoai" >&2
+    echo "usage: $0 demo|demoai|personal" >&2
     exit 1
     ;;
 esac
