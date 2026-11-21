@@ -163,7 +163,7 @@ test("always: one scrubbed event per error, exactly what 'What gets sent' showed
   const preview = await hooks((h, a) => h.preview(a as string), id);
   expect(event).toEqual(preview!.event);
   expect(event).toMatchObject({ level: "error", tags: { proc: "main", code: "diag.selftest" }, exception: { values: [{ type: "TypeError", value: "diag.selftest" }] } });
-  expect((event.release as string).startsWith("terno@0.1.0+")).toBe(true);
+  expect(event.release).toBe(`terno@${await hooks((h) => h.view().build.id)}`);
   expect((event.debug_meta as { images: { code_file: string }[] }).images.map((i) => i.code_file)).toContain("app:///dist/main.cjs");
   const text = JSON.stringify(env);
   expect(text).not.toContain("diag selftest: a known failure");
