@@ -2,7 +2,7 @@ import type { AutocompleteSource, ContactBatch, ContactMessage } from "../autoco
 import type { Platform } from "../platform";
 import { RevisionError, sameRevision, type Revision } from "../search";
 import { SliceClock } from "../instant/slices";
-import { ContactIndex, DESKTOP_CONTACT_CAPS, type ContactCaps, type ContactHit, type SuggestOptions } from "./contacts";
+import { ContactIndex, DESKTOP_CONTACT_CAPS, type ContactCaps, type ContactHit, type OwnAddress, type SuggestOptions } from "./contacts";
 import { DESKTOP_PHRASE_CAPS, PhraseModel, type PhraseCaps, type PhraseSuggestInput } from "./phrases";
 import { namesSender } from "./senders";
 
@@ -75,7 +75,7 @@ export class Autocomplete {
   private retrySnapshotAt = 0;
   private failures = 0;
   private phrasesOn: boolean;
-  private own: string[] = [];
+  private own: OwnAddress[] = [];
   private resetWaiters: (() => void)[] | null = null;
   /** a snapshot turned out unreachable by the log: this session builds */
   private noRestore = false;
@@ -119,8 +119,8 @@ export class Autocomplete {
     if (!this.settling) this.wake();
   }
 
-  /** The user's own addresses (the accounts'). */
-  setOwn(addresses: readonly string[]): void {
+  /** The user's own addresses (the accounts'), with the names they send under. */
+  setOwn(addresses: readonly OwnAddress[]): void {
     this.own = [...addresses];
     this.contacts?.setOwn(this.own);
   }

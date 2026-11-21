@@ -1,10 +1,24 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { Autocomplete } from "../autocomplete/service";
+import { CONTACTS_SNAPSHOT } from "../autocomplete/contacts";
+import { sealSnapshot } from "../instant/snapshot";
+import { SliceClock } from "../instant/slices";
 import { SENT_SIZE_MAX, SENT_TEXT_MAX } from "../autocomplete-source";
 import { RevisionError } from "../search";
 import type { MailStore } from "../mail-store";
 import type { PlatformFiles } from "../platform";
 import { ingest, msg, withAccounts } from "./fixtures";
+
+/** A snapshot relabelled as another format (as an older build wrote it), sealed again. */
+async function asFormat(bytes: Uint8Array, format: number): Promise<Uint8Array> {
+  const out = bytes.slice();
+  const length = new DataView(out.buffer, out.byteOffset).getUint32(4, true);
+  const header = new TextDecoder().decode(out.subarray(12, 12 + length));
+  const patched = header.replace(`"format":${CONTACTS_SNAPSHOT.format},`, `"format":${format},`);
+  if (patched === header || patched.length !== header.length) throw new Error("unexpected snapshot header");
+  out.set(new TextEncoder().encode(patched), 12);
+  return sealSnapshot(out, new SliceClock({}));
+}
 
 /** Snapshots in memory: what a host's files do, without a disk. */
 export function memoryFiles(): PlatformFiles & { files: Map<string, Uint8Array> } {
@@ -108,15 +122,18 @@ export function defineAutocompleteConformance(name: string, harness: Autocomplet
       const [a] = await withAccounts(store, 1);
       await ingest(store, [
         msg({ accountId: a!, providerMsgId: "r1", from: bob, date: NOW - 5000 }),
+        // plan 228: someone's To names your address after them
+        msg({ accountId: a!, providerMsgId: "r0", from: bob, to: [{ name: "Dianela Mompie", email: "me0@example.com" }], date: NOW - 6000 }),
         ...[1, 2, 3, 4].map((i) => msg({ accountId: a!, providerMsgId: `s${i}`, from: { name: "Me", email: "me0@example.com" }, to: [ana], isSent: true, inInbox: false, bodyText: "Let me know if you have any questions.", date: NOW - 4000 + i })),
       ]);
       let ac = service(store, files);
-      ac.setOwn(["me0@example.com"]);
+      ac.setOwn([{ email: "me0@example.com", name: "Me Zero" }]);
       await ac.warm();
       expect(ac.suggestRecipients("an").items).toEqual([ana]);
       expect(ac.suggestRecipients("b").items).toEqual([bob]);
-      // own addresses: hidden unless typed in full
+      // own addresses: hidden unless typed in full, and then by the account's name (plan 228)
       expect(ac.suggestRecipients("me0").items).toEqual([]);
+      expect(ac.suggestRecipients("me0@example.com").items).toEqual([{ name: "Me Zero", email: "me0@example.com" }]);
       await ac.idle();
       expect(ac.suggestText({ before: "Let me know if" })).toBe(" you have any questions.");
       // a commit after warm: caught up after notify
@@ -136,11 +153,12 @@ export function defineAutocompleteConformance(name: string, harness: Autocomplet
       store = await harness.reopen(store);
       open.push(store);
       ac = service(store, files);
-      ac.setOwn(["me0@example.com"]);
+      ac.setOwn([{ email: "me0@example.com", name: "Me Zero" }]);
       await ac.warm();
       expect(ac.report.contacts.restore).toBeDefined();
       expect(ac.report.contacts.build).toBeUndefined();
       expect(ac.suggestRecipients("b").items.map((h) => h.email)).toEqual(["bea@bustos.cl", bob.email]);
+      expect(ac.suggestRecipients("me0@example.com").items).toEqual([{ name: "Me Zero", email: "me0@example.com" }]);
       await ac.idle();
       expect(ac.report.phrases.restore).toBeDefined();
       expect(ac.suggestText({ before: "Let me know if" })).toBe(" you have any questions.");
@@ -177,6 +195,46 @@ export function defineAutocompleteConformance(name: string, harness: Autocomplet
       await again.warm();
       expect(again.report.contacts.build).toBeDefined();
       expect(again.suggestRecipients("bob").items).toEqual([bob]);
+    });
+
+    it("an older contacts snapshot (before plan 228) is rebuilt once: your address by your name, then restored", async () => {
+      const files = memoryFiles();
+      let store = await fresh();
+      const [a] = await withAccounts(store, 1);
+      const me = { email: "me0@example.com", name: "Me Zero" };
+      await ingest(store, [
+        // their To names you after them, more often than you've sent anything
+        ...[1, 2, 3].map((i) => msg({ accountId: a!, providerMsgId: `r${i}`, from: bob, to: [{ name: "Dianela Mompie", email: me.email }], date: NOW - 5000 + i })),
+        msg({ accountId: a!, providerMsgId: "s1", from: { name: "Me", email: me.email }, to: [ana], isSent: true, inInbox: false, date: NOW - 4000 }),
+      ]);
+      let ac = service(store, files);
+      ac.setOwn([me]);
+      await ac.warm();
+      await ac.close();
+      // the snapshot as format 5 wrote it (same sections; the format is what tells the tiers apart)
+      const key = [...files.files.keys()].find((k) => k.endsWith(".contacts"))!;
+      files.files.set(key, await asFormat(files.files.get(key)!, 5));
+      store = await harness.reopen(store);
+      open.push(store);
+      ac = service(store, files);
+      ac.setOwn([me]);
+      await ac.warm();
+      expect(ac.report.contacts.build, "rebuilt, not restored").toBeDefined();
+      expect(ac.suggestRecipients(me.email).items).toEqual([me]);
+      await ac.close();
+      store = await harness.reopen(store);
+      open.push(store);
+      ac = service(store, files);
+      ac.setOwn([me]);
+      await ac.warm();
+      expect(ac.report.contacts.restore).toBeDefined();
+      expect(ac.report.contacts.build).toBeUndefined();
+      expect(ac.suggestRecipients(me.email).items).toEqual([me]);
+      // the alias you sent from: by your own From, never by their To, after the restore too
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "r9", from: bob, to: [{ name: "Dianela Mompie", email: "me.alias@example.com" }], date: NOW - 50 }), msg({ accountId: a!, providerMsgId: "s9", from: { name: "Me Alias", email: "me.alias@example.com" }, to: [ana], isSent: true, inInbox: false, date: NOW - 40 })]);
+      ac.notify();
+      await ac.idle();
+      expect(ac.suggestRecipients("me.alias@example.com").items).toEqual([{ name: "Me Alias", email: "me.alias@example.com" }]);
     });
 
     it("a page of empty sent bodies isn't the end; oversized sent mail isn't read (codex review)", async () => {

@@ -18,7 +18,7 @@ async function built(messages: ContactMessage[], later: ContactMessage[] = []): 
   for (const m of messages) c.add(m);
   await c.finishBuild(new SliceClock({}));
   for (const m of later) c.add(m);
-  c.setOwn([me.email]);
+  c.setOwn([me]);
   return c;
 }
 

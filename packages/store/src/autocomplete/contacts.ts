@@ -71,6 +71,8 @@ const DEAD = 4;
 const SPAM = 8;
 /** plan 161: someone mail you received was from (not only a co-recipient of it): a sentence's "from Uber" can name them */
 const SENDER = 16;
+/** plan 228: the shown name is one they gave themselves (their own From), which no name others gave them replaces */
+const NAMED = 32;
 
 const AUTOMATED_LOCAL = /^(no-?reply|do-?not-?reply|donotreply|mailer-daemon|postmaster|notifications?|bounces?|bounce[-+.].*|noreply[-+.].*)$/;
 const COMMON_DOMAINS = new Set(["gmail", "googlemail", "outlook", "hotmail", "live", "msn", "yahoo", "ymail", "icloud", "me", "mac", "aol", "proton", "protonmail", "pm", "gmx", "mail", "zoho", "yandex", "fastmail", "hey", "qq", "163", "126", "naver", "web", "orange", "free", "libero"]);
@@ -357,7 +359,8 @@ async function unpackStrings(s: SectionReader, name: string, clock: SliceClock):
 
 // format 4: names cleaned as plan 34 reads them (older snapshots rebuild once)
 // plan 161: tokenizer 2 indexes a domain's own label (netflix of account.netflix.com); format 5 holds SENDER
-export const CONTACTS_SNAPSHOT: Omit<SnapshotKind, "identity"> = { tokenizer: 2, format: 5 };
+// plan 228: format 6 tells names people gave themselves from names others gave them (NAMED, altSelf)
+export const CONTACTS_SNAPSHOT: Omit<SnapshotKind, "identity"> = { tokenizer: 2, format: 6 };
 
 export interface ContactIndexOptions {
   caps?: ContactCaps;
@@ -377,6 +380,12 @@ export function setContactsScanForTests(on: boolean): void {
   scanForTests = on;
 }
 
+/** A name kept searchable beside the shown one; `self`: they gave it themselves (their own From). */
+interface AltName { name: string; w: number; self: boolean }
+
+/** One of the user's own addresses and what its account calls it (the From Terno writes). */
+export interface OwnAddress { email: string; name: string }
+
 /** The per-contact typed arrays, grown and compacted together. */
 const F64 = ["sent", "recv", "last", "key", "best"] as const;
 const F32 = ["nameW"] as const;
@@ -389,7 +398,7 @@ export class ContactIndex {
   private live = 0;
   private emails: string[] = [];
   private names: string[] = [];
-  private readonly alts = new Map<number, { name: string; w: number }[]>();
+  private readonly alts = new Map<number, AltName[]>();
   private sent = new Float64Array(0);
   private recv = new Float64Array(0);
   private last = new Float64Array(0);
@@ -420,6 +429,8 @@ export class ContactIndex {
   private bulkChars = 0;
   private gen = 0;
   private own = new Set<string>();
+  /** plan 228: the accounts' own names, by address: what an own address is called, whatever others call it */
+  private ownNames = new Map<string, string>();
   private readonly seen = new Bitset();
   /** bytes held in emails, names and alternates (kept as they change: allocatedBytes is O(1)) */
   private stringsHeld = 0;
@@ -519,18 +530,23 @@ export class ContactIndex {
     this.version++;
   }
 
-  /** The user's own addresses (accounts): never suggested unless typed in full. */
-  setOwn(addresses: Iterable<string>): void {
+  /** The user's own addresses (accounts) and their names: never suggested unless typed in full, and then by that name. */
+  setOwn(addresses: Iterable<OwnAddress>): void {
     const next = new Set<string>();
+    const names = new Map<string, string>();
     for (const a of addresses) {
-      const e = normalizeEmail(a);
-      if (e) next.add(e);
+      const e = normalizeEmail(a.email);
+      if (!e) continue;
+      next.add(e);
+      const name = cleanName(a.name, e);
+      if (name) names.set(e, name);
     }
     for (const e of next) {
       const id = this.byEmail.get(e);
       if (id !== undefined) this.flags[id]! |= OWN;
     }
     this.own = next;
+    this.ownNames = names;
     this.version++;
   }
 
@@ -573,11 +589,15 @@ export class ContactIndex {
     const w = weightAt(t);
     const bit = this.accountBit(m.accountId, true);
     if (m.sent) {
-      // whoever sent it is one of us (an alias, an old address)
+      // whoever sent it is one of us (an alias, an old address), by the name we sent it under (plan 228)
       const me = normalizeEmail(m.from.email);
       if (me) {
-        const id = this.byEmail.get(me) ?? (this.frozen ? undefined : this.create(me, cleanName(m.from.name, me), 0));
-        if (id !== undefined) this.flags[id]! |= OWN;
+        const id = this.byEmail.get(me) ?? (this.frozen ? undefined : this.create(me, "", 0, false));
+        if (id !== undefined) {
+          this.flags[id]! |= OWN;
+          const name = cleanName(m.from.name, me);
+          if (name) this.addName(id, name, w, true);
+        }
       }
       for (const list of [m.to, m.cc, m.bcc]) for (const a of list) this.touch(a, w, t, bit, true, 1);
     } else {
@@ -585,7 +605,8 @@ export class ContactIndex {
       const from = normalizeEmail(m.from.email);
       const known = from === null ? undefined : this.byEmail.get(from);
       if (known !== undefined) this.flags[known]! &= ~SPAM;
-      this.touch(m.from, w, t, bit, false, 1);
+      // plan 228: the name in their own From is the one they chose; To and Cc are names others gave
+      this.touch(m.from, w, t, bit, false, 1, true);
       const sender = from === null ? undefined : this.byEmail.get(from);
       if (sender !== undefined) this.flags[sender]! |= SENDER;
       for (const list of [m.to, m.cc]) for (const a of list) this.touch(a, w, t, bit, false, CO_RECIPIENT);
@@ -597,15 +618,15 @@ export class ContactIndex {
     this.key[id] = this.sent[id]! > 0 ? base * TIER : base;
   }
 
-  private touch(a: Address, w: number, t: number, bit: number, sent: boolean, share: number): void {
+  private touch(a: Address, w: number, t: number, bit: number, sent: boolean, share: number, self = false): void {
     const email = normalizeEmail(a.email);
     if (!email) return;
     const name = cleanName(a.name, email);
     let id = this.byEmail.get(email);
     if (id === undefined) {
       if (this.frozen) return;
-      id = this.create(email, name, w);
-    } else if (name) this.addName(id, name, w);
+      id = this.create(email, name, w, self);
+    } else if (name) this.addName(id, name, w, self);
     if (sent) this.sent[id]! += w * share;
     else this.recv[id]! += w * share;
     if (t > this.last[id]!) this.last[id] = t;
@@ -614,7 +635,7 @@ export class ContactIndex {
     this.version++;
   }
 
-  private create(email: string, name: string, w: number): number {
+  private create(email: string, name: string, w: number, self: boolean): number {
     const id = this.n++;
     if (this.n > this.sent.length) this.resize(Math.max(64, this.sent.length * 2));
     this.emails[id] = email;
@@ -626,6 +647,7 @@ export class ContactIndex {
     let flags = 0;
     if (this.own.has(email)) flags |= OWN;
     if (AUTOMATED_LOCAL.test(email.slice(0, email.lastIndexOf("@")))) flags |= AUTOMATED;
+    if (name && self) flags |= NAMED;
     this.flags[id] = flags;
     const tokens = addressTokens(email);
     if (name) nameTokens(name, tokens);
@@ -633,40 +655,54 @@ export class ContactIndex {
     return id;
   }
 
-  /** Counts a name for a contact: the most used one is shown, up to two others stay searchable. */
-  private addName(id: number, name: string, w: number): void {
+  /**
+   * Counts a name for a contact: up to two others stay searchable beside the shown one. Plan 228: a name they gave
+   * themselves (`self`: their own From) is shown over any name others gave them (To, Cc), and up to two of each kind
+   * are kept. Once they use a name themselves, it's their spelling, and only their own uses of it count.
+   */
+  private addName(id: number, name: string, w: number, self: boolean): void {
     const shown = this.names[id]!;
+    const named = (this.flags[id]! & NAMED) !== 0;
     if (!shown) {
       this.stringsHeld += stringBytes(name) - stringBytes("");
       this.names[id] = name;
       this.nameW[id] = w;
+      if (self) this.flags[id]! |= NAMED;
       this.indexTokens(id, nameTokens(name));
       return;
     }
     const key = fold(name);
     if (key === fold(shown)) {
-      this.nameW[id]! += w;
+      if (self && !named) {
+        this.stringsHeld += stringBytes(name) - stringBytes(shown);
+        this.names[id] = name;
+        this.nameW[id] = w;
+        this.flags[id]! |= NAMED;
+      } else if (self || !named) this.nameW[id]! += w;
       return;
     }
     let alts = this.alts.get(id);
-    const alt = alts?.find((a) => fold(a.name) === key);
-    if (alt) {
-      alt.w += w;
-      // used more than the shown one: it becomes the shown one (both are indexed already)
-      if (alt.w > this.nameW[id]!) {
-        const shownW = this.nameW[id]!;
-        this.names[id] = alt.name;
-        this.nameW[id] = alt.w;
-        alt.name = shown;
-        alt.w = shownW;
-      }
-      return;
+    let alt = alts?.find((a) => fold(a.name) === key);
+    if (!alt) {
+      if ((alts?.filter((a) => a.self === self).length ?? 0) >= MAX_NAMES - 1) return;
+      if (!alts) this.alts.set(id, (alts = []));
+      alts.push((alt = { name, w, self }));
+      this.stringsHeld += stringBytes(name) + MAP_ENTRY / 2;
+      this.indexTokens(id, nameTokens(name));
+    } else if (self && !alt.self) {
+      this.stringsHeld += stringBytes(name) - stringBytes(alt.name);
+      Object.assign(alt, { name, w, self });
+    } else if (self || !alt.self) alt.w += w;
+    // it outranks the shown one: it becomes the shown one (both are indexed already)
+    if (alt.self === named ? alt.w > this.nameW[id]! : alt.self) {
+      const shownW = this.nameW[id]!;
+      this.names[id] = alt.name;
+      this.nameW[id] = alt.w;
+      if (alt.self) this.flags[id]! |= NAMED;
+      alt.name = shown;
+      alt.w = shownW;
+      alt.self = named;
     }
-    if ((alts?.length ?? 0) >= MAX_NAMES - 1) return;
-    if (!alts) this.alts.set(id, (alts = []));
-    alts.push({ name, w });
-    this.stringsHeld += stringBytes(name) + MAP_ENTRY / 2;
-    this.indexTokens(id, nameTokens(name));
   }
 
   private mask(id: number, tok: string, cls: number): void {
@@ -863,7 +899,17 @@ export class ContactIndex {
   }
 
   private hit(id: number): ContactHit {
-    return { name: this.names[id]!, email: this.emails[id]! };
+    return { name: this.shownName(id), email: this.emails[id]! };
+  }
+
+  /**
+   * Plan 228: your own address is called what its account calls it, else what you sent from it as (an alias); never a
+   * name others gave it (a To of theirs naming you after someone else).
+   */
+  private shownName(id: number): string {
+    const f = this.flags[id]!;
+    if (!(f & OWN)) return this.names[id]!;
+    return this.ownNames.get(this.emails[id]!) ?? (f & NAMED ? this.names[id]! : "");
   }
 
   /**
@@ -1190,7 +1236,7 @@ export class ContactIndex {
     }
     const emails: string[] = Array.from({ length: live }, () => "");
     const names: string[] = Array.from({ length: live }, () => "");
-    const alts = new Map<number, { name: string; w: number }[]>();
+    const alts = new Map<number, AltName[]>();
     const byEmail = new Map<string, number>();
     for (let id = 0; id < n; id++) {
       const to = remap[id]!;
@@ -1247,6 +1293,7 @@ export class ContactIndex {
     const altOwner: number[] = [];
     const altNames: string[] = [];
     const altW: number[] = [];
+    const altSelf: number[] = [];
     for (let id = 0; id < this.n; id++) {
       if (remap[id]! < 0) continue;
       emails.push(this.emails[id]!);
@@ -1255,6 +1302,7 @@ export class ContactIndex {
         altOwner.push(remap[id]!);
         altNames.push(a.name);
         altW.push(a.w);
+        altSelf.push(a.self ? 1 : 0);
       }
       if ((id & 16383) === 0) await clock.tick();
     }
@@ -1303,6 +1351,7 @@ export class ContactIndex {
       flags: pick(this.flags),
       altOwner: Uint32Array.from(altOwner),
       altW: Float64Array.from(altW),
+      altSelf: Uint8Array.from(altSelf),
       chars,
       len,
       ids,
@@ -1357,7 +1406,8 @@ export class ContactIndex {
       const altOwner = s.u32("altOwner");
       const altNames = await unpackStrings(s, "altNames", clock);
       const altW = s.f64("altW");
-      if (altNames.length !== altOwner.length || altW.length !== altOwner.length) return false;
+      const altSelf = s.u8("altSelf");
+      if (altNames.length !== altOwner.length || altW.length !== altOwner.length || altSelf.length !== altOwner.length) return false;
       for (let i = 0; i < altOwner.length; i++) if (altOwner[i]! >= n) return false;
       const dTok = await unpackStrings(s, "dTok", clock);
       const dId = Array.from(s.i32("dId"));
@@ -1408,7 +1458,7 @@ export class ContactIndex {
       for (let i = 0; i < altOwner.length; i++) {
         let list = this.alts.get(altOwner[i]!);
         if (!list) this.alts.set(altOwner[i]!, (list = []));
-        list.push({ name: altNames[i]!, w: altW[i]! });
+        list.push({ name: altNames[i]!, w: altW[i]!, self: altSelf[i] === 1 });
       }
       this.byEmail = new Map();
       for (let id = 0; id < n; id++) {

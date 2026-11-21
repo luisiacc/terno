@@ -5,7 +5,7 @@ import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { createAccount, sqlDb } from "@terno/db";
 import { msg } from "@terno/store/conformance";
 import type { ProviderRegistry } from "@terno/mail";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 
 /** Plan 18 through the RPC surface: warm, suggestions, the setting, account removal, MCP and the lifecycle. */
@@ -44,6 +44,24 @@ const me = { name: "Luis", email: "me@example.com" };
 const ana = { name: "Ana Martínez", email: "ana@acme.studio" };
 
 describe("autocomplete over RPC", () => {
+  it("your own address by the account's sender name, also one changed while the composer warms (plan 228)", async () => {
+    const { backend, client, accountId } = await setup();
+    // someone's To names you after them
+    await backend.ingestSliced([msg({ accountId, from: { name: "Bob Stone", email: "bob@stone.io" }, to: [{ name: "Dianela Mompie", email: me.email }] })]);
+    // the edit lands while warming waits for its settings, after it read the accounts (Codex review)
+    const setPhrases = backend.autocomplete.setPhrases.bind(backend.autocomplete);
+    let edited = false;
+    vi.spyOn(backend.autocomplete, "setPhrases").mockImplementation(async (on) => {
+      if (!edited) {
+        edited = true;
+        await client.call("accounts.update", { id: accountId, senderName: "Luis Cordero" });
+      }
+      return setPhrases(on);
+    });
+    await client.call("compose.warm", {});
+    expect((await client.call("compose.suggestRecipients", { query: me.email })).items).toEqual([{ name: "Luis Cordero", email: me.email }]);
+  });
+
   it("nothing is built until a composer warms it; then recipients and text answer from memory", async () => {
     const { backend, client, accountId } = await setup();
     await backend.ingestSliced([

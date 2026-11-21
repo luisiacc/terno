@@ -38,7 +38,7 @@ async function built(messages: ContactMessage[], o: { incremental?: boolean } = 
     for (const m of messages) c.add(m);
     await c.finishBuild(clock());
   }
-  c.setOwn([me.email]);
+  c.setOwn([me]);
   return c;
 }
 
@@ -135,7 +135,7 @@ describe("ranking", () => {
 
   it("one contact per address: the most used name shows, the others stay searchable", async () => {
     const c = await built([
-      received({ name: "Robert Smith", email: "bob@smith.io" }),
+      sent([{ name: "Robert Smith", email: "bob@smith.io" }]),
       sent([{ name: "Bobby", email: "BOB@smith.io" }]),
       sent([{ name: "bobby", email: "bob@smith.io" }]),
       // a "name" that is just the address's local part isn't one
@@ -225,6 +225,91 @@ function people(n: number, seed: number): Address[] {
   });
 }
 
+describe("names people give themselves (plan 228)", () => {
+  const dianela = { name: "Dianela Mompie", email: "dianela@mompie.cu" };
+
+  it("your own address keeps your account's name, whatever others put in their To", async () => {
+    // their To names you after themselves (a contact card of theirs, a forward), more than once
+    const c = await built([1, 2, 3].map(() => received(dianela, { to: [{ name: "Dianela Mompie", email: "LUIS@acme.studio" }] })));
+    expect(c.suggest("luis@acme.studio")).toEqual([me]);
+    // the account says what you're called: a new sender name applies at once
+    c.setOwn([{ email: me.email, name: "Luis C." }]);
+    expect(c.suggest("luis@acme.studio")).toEqual([{ name: "Luis C.", email: me.email }]);
+    // an account with no name: the bare address, never theirs
+    c.setOwn([{ email: me.email, name: "" }]);
+    expect(c.suggest("luis@acme.studio")).toEqual([{ name: "", email: me.email }]);
+  });
+
+  it("an alias is called what you sent from it as, never what others call it", async () => {
+    const alias = { name: "Luis", email: "hola@luiscordero.dev" };
+    const c = await built([
+      ...[1, 2, 3].map(() => received(dianela, { to: [{ name: "Dianela Mompie", email: alias.email }] })),
+      sent([ana], { from: alias }),
+    ]);
+    expect(c.suggest(alias.email)).toEqual([alias]);
+    // known only from others' To before you send from it: no name yet, not theirs
+    const d = await built([received(dianela, { to: [{ name: "Dianela Mompie", email: "otro@luiscordero.dev" }] }), sent([ana], { from: { name: "", email: "otro@luiscordero.dev" } })]);
+    expect(d.suggest("otro@luiscordero.dev")).toEqual([{ name: "", email: "otro@luiscordero.dev" }]);
+  });
+
+  it("the name in someone's own From beats heavier names others gave them, which stay searchable", async () => {
+    const bob = { name: "Robert Smith", email: "bob@smith.io" };
+    const c = await built([
+      // others call him Bob (Finance), often and recently; you've copied it in your replies
+      ...[1, 2, 3, 4].map((i) => received(ana, { to: [me, { name: "Bob (Finance)", email: bob.email }], date: NOW - i * 3600_000 })),
+      sent([{ name: "Bob (Finance)", email: bob.email }]),
+      // he wrote to you once, long ago, as himself
+      received(bob, { date: NOW - 300 * DAY }),
+    ]);
+    expect(c.suggest("bob")).toEqual([bob]);
+    expect(emails(c, "finance")).toEqual([bob.email]);
+    // someone who never wrote: the names others gave are all there is
+    const d = await built([sent([{ name: "Carla Ruiz", email: "carla@ruiz.mx" }])]);
+    expect(d.suggest("carla")).toEqual([{ name: "Carla Ruiz", email: "carla@ruiz.mx" }]);
+  });
+
+  it("their own name finds room when others' names fill the alternates, and the most used of their own shows", async () => {
+    const email = "eva@lund.se";
+    const c = await built([
+      sent([{ name: "Eva L", email }]), sent([{ name: "Eva Accounts", email }]), sent([{ name: "Eva from Lund", email }]),
+      received({ name: "Eva Lund", email }, { date: NOW - 2 * DAY }),
+      received({ name: "Eva Lundqvist", email }, { date: NOW - DAY }),
+      received({ name: "Eva Lundqvist", email }),
+    ]);
+    expect(c.suggest("eva")).toEqual([{ name: "Eva Lundqvist", email }]);
+    expect(emails(c, "lund")).toEqual([email]);
+  });
+
+  it("once they use a name themselves, it's their spelling, and only their own uses of it count (Codex review)", async () => {
+    const jose = "jose@garcia.es";
+    const c = await built([
+      ...[1, 2, 3].map(() => sent([{ name: "JOSE GARCIA", email: jose }])),
+      received({ name: "José García", email: jose }),
+    ]);
+    expect(c.suggest("jose")).toEqual([{ name: "José García", email: jose }]);
+    // others call him Robert a hundred times; he signs Robert once and Roberto twice: Roberto
+    const bob = "rob@x.io";
+    const d = await built([
+      ...Array.from({ length: 100 }, () => sent([{ name: "Robert", email: bob }])),
+      received({ name: "Robert", email: bob }),
+      received({ name: "Roberto", email: bob }), received({ name: "Roberto", email: bob }),
+    ]);
+    expect(d.suggest("rob")).toEqual([{ name: "Roberto", email: bob }]);
+  });
+
+  it("a snapshot keeps who named whom", async () => {
+    const bob = { name: "Robert Smith", email: "bob@smith.io" };
+    const c = await built([received(bob, { date: NOW - 300 * DAY }), sent([{ name: "Bobby", email: bob.email }])]);
+    c.revision = { epoch: "e", seq: 1 };
+    const r = new ContactIndex({ now: () => NOW });
+    expect(await r.restore(await c.snapshot("test", clock()), "test", clock())).toBe(true);
+    r.setOwn([me]);
+    // after the restore, names others give still don't replace his own
+    for (let i = 0; i < 3; i++) r.add(sent([{ name: "Bobby", email: bob.email }]));
+    expect(r.suggest("bob")).toEqual([bob]);
+  });
+});
+
 describe("the index agrees with a brute-force oracle", () => {
   it("through a build, deltas, a merge and evictions with compaction", async () => {
     const ppl = people(1500, 7);
@@ -285,7 +370,7 @@ describe("memory caps and snapshots", () => {
     const bytes = await c.snapshot("test", clock());
     const r = new ContactIndex({ now: () => NOW });
     expect(await r.restore(bytes, "test", clock())).toBe(true);
-    r.setOwn([me.email]);
+    r.setOwn([me]);
     expect(r.revision).toEqual({ epoch: "e", seq: 5 });
     for (const q of ["a", "ana", "pat", "late", "王", "lo", "luis@acme.studio"]) expect(r.suggest(q), q).toEqual(c.suggest(q));
     // the applied messages came along: serving one again doesn't count it twice

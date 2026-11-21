@@ -120,7 +120,7 @@ describe(`autocomplete on SQLite at ${N.toLocaleString("en")} messages`, () => {
         await ac.reset();
       }
       ac = service();
-      ac.setOwn([CONTACTS_ACCOUNT.email]);
+      ac.setOwn([{ email: CONTACTS_ACCOUNT.email, name: "" }]);
       let commandMs = 0;
       let lookupMs = 0;
       const run = await stalls(BUDGET.stallMs * MULT, async () => {

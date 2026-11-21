@@ -14,7 +14,7 @@ import { L } from "@terno/i18n";
 import { AWAITING_AUTH, FlagObservationError, isFolderOp, operationFlagFields, type FlagObservation, type ClassifierInput, type IncomingMessage, type MailStore, type OpRow, type Platform, type ProviderStore } from "@terno/store";
 import type { ImapAccountConfig } from "@terno/mail";
 import { IncomingPipeline, ProviderIdentityError, ProviderCooldownError, ProviderAuthError, ProviderError, RequestNotDispatchedError, type IncomingProcessor, type MailProvider, type ProviderRegistry, type RequestDescriptor, type MailAdmission, type SendPayload, type SyncSink } from "@terno/mail/portable";
-import { Autocomplete, DESKTOP_AUTOCOMPLETE_PEAK, DESKTOP_CONTACT_CAPS, DESKTOP_PHRASE_CAPS, WEB_AUTOCOMPLETE_PEAK, WEB_CONTACT_CAPS, WEB_PHRASE_CAPS } from "@terno/store/autocomplete";
+import { Autocomplete, DESKTOP_AUTOCOMPLETE_PEAK, DESKTOP_CONTACT_CAPS, DESKTOP_PHRASE_CAPS, WEB_AUTOCOMPLETE_PEAK, WEB_CONTACT_CAPS, WEB_PHRASE_CAPS, type OwnAddress } from "@terno/store/autocomplete";
 import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
 import { Connectivity, type ConnectivityOptions, type NetReason } from "./connectivity";
 import { QuickChecks, type QuickCheckOptions } from "./quick-checks";
@@ -190,6 +190,11 @@ export const SYNC_INTERVAL_MS = 40_000;
 const AUTO_NOTICE_GATHER_MS = 1500;
 /** plan 25: a window's focus rechecks a refused saved password at most this often (a refused login, again and again, locks accounts out) */
 const RECHECK_FOCUS_MS = 10 * 60_000;
+
+/** plan 228: the accounts' addresses for the recipient index, each by the name its mail goes out under */
+function ownAddresses(accounts: readonly Account[]): OwnAddress[] {
+  return accounts.map((a) => ({ email: a.email, name: a.senderName }));
+}
 
 /** plan 176: synced and healthy: no first sync or backfill under way, no failure, nothing waiting on the user or the network */
 function quickHealthy(s: AccountSyncState): boolean {
@@ -1414,7 +1419,8 @@ export class BackendCore {
     this.gate.set(stored);
     const accounts = await this.accountViews(stored);
     this.server.emit("accounts", accounts);
-    if (this.autocomplete.warmed) this.autocomplete.setOwn(accounts.map((a) => a.email));
+    // plan 228 (Codex review): warmed or not (one warming up read the accounts before this change)
+    this.autocomplete.setOwn(ownAddresses(accounts));
     // plan 17 (Codex review 1, #7): an account added or removed changed your addresses; its rescan runs now, with or
     // without mail to sync (an empty account brings no change that would wake it). Idle, a wake is one probe.
     this.facts.wake();
@@ -1460,7 +1466,7 @@ export class BackendCore {
    */
   warmAutocomplete(): Promise<void> {
     this.warming ??= (async () => {
-      this.autocomplete.setOwn((await this.store.accounts.list()).map((a) => a.email));
+      this.autocomplete.setOwn(ownAddresses(await this.store.accounts.list()));
       await this.autocomplete.setPhrases(await readComposeSuggestions(this.store));
     })();
     return this.warming.then(() => this.autocomplete.warm());
