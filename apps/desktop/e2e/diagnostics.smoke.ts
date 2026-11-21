@@ -284,10 +284,13 @@ test("a system shutdown: what it ends while Terno quits is no crash, and nothing
   expect(backendPid).not.toBeNull();
   const quitAt = Date.now();
   const gone = once(app.process(), "exit");
-  // what a restart or logout does (TERNO-4, TERNO-5): the quit begins, and every process gets SIGTERM while it runs
-  await app.evaluate(({ app: a }) => a.quit());
-  process.kill(backendPid!, "SIGTERM");
-  process.kill(rendererPid, "SIGTERM");
+  // what a restart or logout does (TERNO-4, TERNO-5): the quit begins, and every process gets SIGTERM while it runs.
+  // Sent from main's own before-quit listener, after app.ts's (it set the quit under way) and before the event loop
+  // turns: the backend can't retire on its own first, so the exits go through the new guard.
+  await app.evaluate(({ app: a }, pids) => {
+    a.once("before-quit", () => pids.forEach((pid) => process.kill(pid, "SIGTERM")));
+    a.quit();
+  }, [backendPid!, rendererPid]);
   await gone;
   const lines = readFileSync(join(logs, "main.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as { ts: number; level: string; code: string; fields?: Record<string, unknown> }).filter((l) => l.ts >= quitAt);
   // both ends reached the new guard (not the backend's own retirement), logged at info, and nothing restarted

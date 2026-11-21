@@ -1,6 +1,6 @@
 # Plan 231: a quit's ends are no crash, and an error event without an error doesn't blame our handler
 
-- **Status:** in progress (fix landed, Codex review next).
+- **Status:** shipped.
 - **Builds on:** plan 10 (diagnostics), plan 78 (error reports).
 - **Request (verbatim):** "i've had some sentry reports using the prod app myself, see them on https://luisiaccorg.sentry.io/issues/errors-outages/?project=4512346705166336&statsPeriod=14d — use codex subagent to use computer use to get that data, fix all 3 issues if they are a problem, arhive them otherwise"
 
@@ -76,3 +76,10 @@ Not taken:
 
 - Transition tests for each quit path (update deferred or failed, move cancelled). They all set the one quit state that `quitting()` reads, and the smoke test covers the reading.
 - Listener-level tests in a DOM. The listener is one line on top of the pure `windowError`.
+
+## 8. What the Codex code review changed
+
+One round, two findings, both fixed:
+
+- **The smoke test could race the backend's own retirement.** The test process sent the SIGTERMs after `app.quit()` returned, so an idle window could finish flushing and the backend retire first: the test would hit `ESRCH`, or the exit would take the retirement path and log nothing. The signals now go from main's own `before-quit` listener. It is registered after app.ts's, which has just set the quit under way, and it runs before the event loop turns, so the exits always reach the new guard. The test fails if they don't: it requires both info lines.
+- **Other children that end during a quit left no trace.** `childGone` now logs `child.gone` at info before returning.

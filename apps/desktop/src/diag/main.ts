@@ -489,10 +489,12 @@ class MainDiag implements DiagSink {
   }
 
   private childGone(d: Electron.Details): void {
-    if (d.reason === "clean-exit" || d.reason === "killed" || this.deps?.quitting()) return;
+    if (d.reason === "clean-exit" || d.reason === "killed") return;
     // the backend's own exit is handled (and deduplicated) by its supervisor
     if (d.type === "Utility" && d.serviceName === "Terno Mail Engine") return;
     const childType = (["Utility", "Zygote", "Sandbox helper", "GPU", "Pepper Plugin", "Pepper Plugin Broker", "Unknown"] as const).find((t) => t === d.type) ?? "Unknown";
+    // ended with the quit (plan 231): logged, not reported
+    if (this.deps?.quitting()) return void log.info("child.gone", { childType, reason: d.reason as FieldValueOf<"reason">, exitCode: d.exitCode });
     this.onRecord({ id: newId(), ts: Date.now(), kind: "child_gone", proc: "main", code: "child.gone", fields: { childType, reason: d.reason as FieldValueOf<"reason">, exitCode: d.exitCode }, fatal: false, crumbs: this.rings?.get("main") ?? [], context: diagContext() });
   }
 
