@@ -3,6 +3,7 @@
  * anything starts, to move itself there: in Applications it stays installed and can update itself. Pure: the
  * decision and the flow, with every Electron call injected (install-main.ts wires them).
  */
+import { basename } from "node:path";
 import { compareVersions, validVersion } from "@terno/core/updates";
 
 export type InstallFrom = "dmg" | "elsewhere";
@@ -33,6 +34,11 @@ export interface InstallProbe {
   installed(): InstalledCopy | null;
 }
 
+/** Where Electron's move puts this bundle: /Applications under the bundle's own name (a renamed copy keeps its name). */
+export function moveDestination(bundlePath: string): string {
+  return `/Applications/${basename(bundlePath)}`;
+}
+
 /** The installed copy is one this copy must not replace: a newer Terno (a downgrade), or another app under the name. */
 export function mustKeep(installed: InstalledCopy | null, ownId: string | null, version: string): boolean {
   if (!installed) return false;
@@ -50,15 +56,17 @@ export function offerMoveFrom(p: InstallProbe): InstallFrom | null {
   return p.bundlePath().startsWith("/Volumes/") && p.volumeReadOnly() ? "dmg" : "elsewhere";
 }
 
-export type InstallStep = "offered" | "moved" | "declined" | "kept" | "failed";
+export type InstallStep = "offered" | "moved" | "declined" | "kept" | "deferred" | "failed";
 
 export interface OfferDeps {
   /** the question; true: Move to Applications */
   ask(from: InstallFrom): Promise<boolean>;
   /** Electron's move: true when it moved (and the app now quits and relaunches); the handler decides a conflict */
   move(conflict: (type: "exists" | "existsAndRunning") => boolean): boolean;
-  /** what's in Applications right now (re-read at the move: the dialog may have been open a while) */
+  /** what's at the move's destination right now (re-read at the move: the dialog may have been open a while) */
   installed(): InstalledCopy | null;
+  /** a terno:// link arrived while the dialog was open: the move's relaunch would drop it */
+  linkWaiting(): boolean;
   ownId: string | null;
   version: string;
   /** after a move that threw: how to install by hand */
@@ -75,12 +83,24 @@ export async function offerMove(from: InstallFrom, d: OfferDeps): Promise<"movin
     d.log("declined", from);
     return "open";
   }
+  // the dialog may have been open a while: a link that came meanwhile, or a newer Terno installed meanwhile, wins. This
+  // check, right before the move, is the one that counts: when the move needs an admin's password, Electron replaces the
+  // destination without asking the conflict handler
+  if (d.linkWaiting()) {
+    d.log("deferred", from);
+    return "open";
+  }
+  if (mustKeep(d.installed(), d.ownId, d.version)) {
+    d.log("kept", from);
+    return "open";
+  }
   let kept = false;
   d.quitting(true);
   let moved: boolean;
   try {
     moved = d.move((type) => {
-      // a running copy takes focus and this one quits: what the user wanted, the same app open from Applications
+      // a running copy takes focus and this one quits: the same app, open from Applications (mustKeep ruled out a
+      // newer or foreign one just above)
       if (type === "existsAndRunning") return true;
       kept = mustKeep(d.installed(), d.ownId, d.version);
       return !kept;

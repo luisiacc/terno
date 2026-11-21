@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { sanitizeFields } from "@terno/core/diag";
-import { mustKeep, offerMove, offerMoveFrom, type InstallFrom, type InstallProbe, type InstallStep, type InstalledCopy, type OfferDeps } from "./install-location";
+import { moveDestination, mustKeep, offerMove, offerMoveFrom, type InstallFrom, type InstallProbe, type InstallStep, type InstalledCopy, type OfferDeps } from "./install-location";
 
 const ID = "dev.terno.mail";
 
@@ -45,6 +45,11 @@ describe("when Terno offers to move into Applications (plan 226)", () => {
     expect(offerMoveFrom(probe({ testBuild: { offerInstall: true } }))).toBe("dmg");
   });
 
+  it("checks the destination Electron moves to: /Applications under the bundle's own name", () => {
+    expect(moveDestination("/Volumes/Terno/Terno.app")).toBe("/Applications/Terno.app");
+    expect(moveDestination("/Users/x/Downloads/Terno 2.app")).toBe("/Applications/Terno 2.app");
+  });
+
   it("an installed Terno pays one check and reads no file", () => {
     const p = probe({ inApplications: () => (p.calls.push("inApplications"), true) });
     expect(offerMoveFrom(p)).toBeNull();
@@ -63,7 +68,7 @@ describe("when Terno offers to move into Applications (plan 226)", () => {
   });
 });
 
-function deps(o: { answer?: boolean; move?: OfferDeps["move"]; installed?: () => InstalledCopy | null } = {}) {
+function deps(o: { answer?: boolean; move?: OfferDeps["move"]; installed?: () => InstalledCopy | null; linkWaiting?: () => boolean } = {}) {
   const steps: InstallStep[] = [];
   const quitting: boolean[] = [];
   let failedShown = 0;
@@ -72,6 +77,7 @@ function deps(o: { answer?: boolean; move?: OfferDeps["move"]; installed?: () =>
     ask: async () => o.answer ?? true,
     move: (handler) => (moves++, (o.move ?? (() => true))(handler)),
     installed: o.installed ?? (() => null),
+    linkWaiting: o.linkWaiting ?? (() => false),
     ownId: ID,
     version: "0.4.0",
     failed: async () => void failedShown++,
@@ -105,19 +111,38 @@ describe("the offer (plan 226)", () => {
     expect(h.steps).toEqual(["offered", "failed"]);
   });
 
-  it("re-reads Applications at the move: a newer Terno installed while the dialog was open is kept", async () => {
+  it("re-reads the destination right before the move: a newer Terno installed while the dialog was open is kept", async () => {
     let installed: InstalledCopy | null = null;
-    const h = deps({ installed: () => installed, move: (conflict) => conflict("exists") });
-    installed = { id: ID, version: "0.9.0" };
+    // Electron's admin-password path replaces the destination without calling the conflict handler
+    const h = deps({ installed: () => installed, move: () => true });
+    h.d.ask = async () => ((installed = { id: ID, version: "0.9.0" }), true);
+    expect(await offerMove("dmg", h.d)).toBe("open");
+    expect(h.moves()).toBe(0);
+    expect(h.quitting).toEqual([]);
+    expect(h.steps).toEqual(["offered", "kept"]);
+  });
+
+  it("and again in the conflict handler, when Electron asks it", async () => {
+    let reads = 0;
+    const h = deps({ installed: () => (++reads > 1 ? { id: ID, version: "0.9.0" } : null), move: (conflict) => conflict("exists") });
     expect(await offerMove("dmg", h.d)).toBe("open");
     expect(h.quitting).toEqual([true, false]);
     expect(h.steps).toEqual(["offered", "kept"]);
   });
 
+  it("a terno:// link that arrives while the dialog is open wins: Terno opens with it, and asks again next launch", async () => {
+    let link = false;
+    const h = deps({ linkWaiting: () => link });
+    h.d.ask = async () => ((link = true), true);
+    expect(await offerMove("dmg", h.d)).toBe("open");
+    expect(h.moves()).toBe(0);
+    expect(h.steps).toEqual(["offered", "deferred"]);
+  });
+
   it("replaces an older copy that isn't running, and hands over to a running one", async () => {
     const older = deps({ installed: () => ({ id: ID, version: "0.1.0" }), move: (conflict) => conflict("exists") });
     expect(await offerMove("dmg", older.d)).toBe("moving");
-    const running = deps({ installed: () => ({ id: ID, version: "0.9.0" }), move: (conflict) => conflict("existsAndRunning") });
+    const running = deps({ installed: () => ({ id: ID, version: "0.4.0" }), move: (conflict) => conflict("existsAndRunning") });
     expect(await offerMove("dmg", running.d)).toBe("moving");
   });
 

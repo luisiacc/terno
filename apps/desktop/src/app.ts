@@ -859,7 +859,7 @@ if (!app.requestSingleInstanceLock()) {
     await switchLanguage(language, systemLanguages());
     // plan 226: run from outside Applications, Terno first offers to move there (in the menu's language); a move quits
     // and relaunches from Applications, so nothing else starts. The quit gate opens only while the move quits.
-    if (await offerInstall({ demo, background, linkWaiting: links.holding, quitting: (on) => void (quitState = on ? "stopped" : "running") })) return;
+    if (await offerInstall({ demo, background, linkWaiting: () => links.holding, quitting: (on) => void (quitState = on ? "stopped" : "running") })) return;
     buildMenu();
     startBackend();
     networkWatch.start();

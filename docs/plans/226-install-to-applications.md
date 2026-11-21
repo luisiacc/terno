@@ -100,3 +100,11 @@ A test build (`offerInstall: true`, profile baked into the scratch folder, signe
 - Afterwards the copy in `/Applications` was removed (bundle id checked first) and the volume detached.
 
 **Not covered here: a quarantined, translocated launch.** An app opened from a downloaded DMG runs translocated (the owner's own 0.1.0 was running from an `AppTranslocation` path during this run). That needs a notarized build, which only the release workflow makes. The next release's DMG is the check: download it, open Terno from it, Move; it should land in `/Applications` and relaunch from there. If it doesn't, the offer is limited to the cases where it does (§3).
+
+## What the code review changed
+
+Codex reviewed the series (4e1530b48..35e7e98d1) and found three problems, each fixed with a test that fails without the fix:
+
+1. **The guard read the wrong destination.** Electron moves a bundle to `/Applications/<its own name>`, so a renamed copy (`Terno 2.app`) goes to `/Applications/Terno 2.app`, while the newer-or-foreign check always read `/Applications/Terno.app`. The probe and the re-check now read `moveDestination(bundle)`.
+2. **The admin-password path skips the conflict handler.** When the destination needs authorization, Electron replaces it without asking the handler, so a newer Terno installed while the dialog was open could be downgraded. The destination is now re-read right before the move (the check that counts), and again in the handler when Electron asks.
+3. **A link that arrived while the dialog was open was lost on Move.** The launch passed a snapshot of `links.holding`; it now passes the getter, and after the answer a waiting link wins: Terno opens with it (`installStep: "deferred"`) and asks again next launch.

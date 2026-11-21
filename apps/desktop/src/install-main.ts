@@ -10,9 +10,7 @@ import { log } from "@terno/core/diag";
 import { t } from "@terno/i18n";
 import { TEST_BUILD } from "./test-build";
 import { bundleOf } from "./updates/policy";
-import { offerMove, offerMoveFrom, type InstalledCopy } from "./install-location";
-
-const INSTALLED = "/Applications/Terno.app";
+import { moveDestination, offerMove, offerMoveFrom, type InstalledCopy } from "./install-location";
 
 /** One key of a bundle's Info.plist (plutil reads XML and binary alike), or null. */
 function plistValue(bundle: string, key: string): string | null {
@@ -23,9 +21,11 @@ function plistValue(bundle: string, key: string): string | null {
   }
 }
 
-function installedCopy(): InstalledCopy | null {
-  const id = plistValue(INSTALLED, "CFBundleIdentifier");
-  return id ? { id, version: plistValue(INSTALLED, "CFBundleShortVersionString") ?? "" } : null;
+/** What's at the move's destination: /Applications under this bundle's own name, as Electron's move puts it. */
+function installedCopy(bundle: string): InstalledCopy | null {
+  const at = moveDestination(bundle);
+  const id = plistValue(at, "CFBundleIdentifier");
+  return id ? { id, version: plistValue(at, "CFBundleShortVersionString") ?? "" } : null;
 }
 
 function readOnlyVolume(bundle: string): boolean {
@@ -38,7 +38,7 @@ function readOnlyVolume(bundle: string): boolean {
 }
 
 /** true: Electron is quitting to relaunch from Applications, so nothing else may start. */
-export async function offerInstall(o: { demo: boolean; background: boolean; linkWaiting: boolean; quitting(on: boolean): void }): Promise<boolean> {
+export async function offerInstall(o: { demo: boolean; background: boolean; linkWaiting(): boolean; quitting(on: boolean): void }): Promise<boolean> {
   const bundle = bundleOf(process.execPath) ?? "";
   let ownId: string | null | undefined;
   const own = () => (ownId === undefined ? (ownId = bundle ? plistValue(bundle, "CFBundleIdentifier") : null) : ownId);
@@ -48,13 +48,13 @@ export async function offerInstall(o: { demo: boolean; background: boolean; link
     testBuild: TEST_BUILD,
     demo: o.demo,
     background: o.background,
-    linkWaiting: o.linkWaiting,
+    linkWaiting: o.linkWaiting(),
     inApplications: () => app.isInApplicationsFolder(),
     bundlePath: () => bundle,
     volumeReadOnly: () => readOnlyVolume(bundle),
     ownId: own,
     version: app.getVersion(),
-    installed: installedCopy,
+    installed: () => installedCopy(bundle),
   });
   if (!from) return false;
   const result = await offerMove(from, {
@@ -70,7 +70,8 @@ export async function offerInstall(o: { demo: boolean; background: boolean; link
       return response === 0;
     },
     move: (conflictHandler) => app.moveToApplicationsFolder({ conflictHandler }),
-    installed: installedCopy,
+    installed: () => installedCopy(bundle),
+    linkWaiting: o.linkWaiting,
     ownId: own(),
     version: app.getVersion(),
     failed: async () => {
