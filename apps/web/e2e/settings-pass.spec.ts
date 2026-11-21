@@ -9,7 +9,7 @@ import type { Page } from "@playwright/test";
 import { contrast } from "../../../packages/ui/src/themes/color";
 import { THEMES } from "../../../packages/ui/src/themes/registry";
 import { sqlDb, type DevServer } from "../../backend-dev/src/server";
-import { expect, fresh, rows, scenario, test, openReview } from "./fixtures";
+import { axeBothModes, expect, focusList, fresh, openRow, rows, scenario, test, openReview } from "./fixtures";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
 const COLOR_NAMES = { rose: "Rose", amber: "Amber", lime: "Lime", emerald: "Emerald", cyan: "Cyan", brown: "Brown", violet: "Violet", slate: "Slate" } as const;
@@ -449,7 +449,40 @@ test.describe("editable, persisted and in effect", () => {
       // its draft shows at once, and importing the same file again doesn't add it twice
       await expect(page.getByTestId("strip-item").filter({ hasText: "copia@x.dev" })).toHaveCount(1);
       await input.setInputFiles({ name: "terno.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(dump)) });
-      await expect(page.getByTestId("snack-message").getByText(/Imported: 0 new categories/)).toBeVisible();
+      // plan 232: what Settings says, it says in Settings: on the pane's foot, inside the dialog, and its time runs
+      const said = page.getByTestId("settings-dialog").getByTestId("snack");
+      await expect(said.getByText(/Imported: 0 new categories/)).toBeVisible();
+      // (the app's own card waits behind, closed, as it does between snacks)
+      await expect(page.getByTestId("snack")).toHaveCount(1);
+      const pane = (await page.getByTestId("settings-scroller").boundingBox())!;
+      const card = (await said.boundingBox())!;
+      expect(card.y + card.height).toBeLessThanOrEqual(pane.y + pane.height);
+      expect(Math.abs(card.x + card.width / 2 - (pane.x + pane.width / 2))).toBeLessThan(12);
+      await axeBothModes(page, "[data-testid=snack-room-dock]");
+      // Esc in the card closes the card, not Settings
+      await said.getByTestId("snack-close").focus();
+      await page.keyboard.press("Escape");
+      await expect(said).toHaveCount(0);
+      await expect(page.getByTestId("settings-dialog")).toBeVisible();
+      await input.setInputFiles({ name: "terno.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(dump)) });
+      await expect(said).toBeVisible();
+      await page.mouse.move(0, 0);
+      await page.clock.fastForward(4500);
+      await expect(said).toHaveCount(0);
+      // a confirmation goes with the room it was said in: none waits behind Settings for after it closes. Closed with focus
+      // in its card (a click that doesn't move focus), nothing stays held: the next snack runs out
+      await input.setInputFiles({ name: "terno.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(dump)) });
+      await said.getByTestId("snack-close").focus();
+      await page.getByTestId("settings-dialog").locator("[data-slot=dialog-close]").evaluate((el: HTMLElement) => el.click());
+      await expect(page.getByTestId("settings-dialog")).toHaveCount(0);
+      await expect(page.getByTestId("snack")).toHaveCount(0);
+      await openRow(page, 1);
+      await focusList(page);
+      await page.keyboard.press("e");
+      await expect(page.getByTestId("snack")).toContainText("Archived");
+      await page.mouse.move(0, 0);
+      await page.clock.fastForward(6500);
+      await expect(page.getByTestId("snack")).toHaveCount(0);
       await expect(page.getByTestId("strip-item").filter({ hasText: "copia@x.dev" })).toHaveCount(1);
       expect((await server.backend.server.invoke("drafts.list", {}, ctx)).filter((d) => d.subject === "Desde la copia")).toHaveLength(1);
       expect((await server.backend.server.invoke("app.bootstrap", {}, ctx)).categories.some((c) => c.name === "Desde el archivo")).toBe(true);

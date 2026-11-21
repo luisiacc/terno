@@ -6,11 +6,36 @@ import { Spinner } from "@terno/ui/components/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { CircleCheck, OctagonX, TriangleAlert } from "@terno/ui/icons";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { clock, dockReserve, dismissSnack, elapsedAt, pause, resume, runAction, staleOnMove, useSnack, zHolds, type Snack, type SnackAction } from "~/lib/snack";
+import { createPortal } from "react-dom";
+import { create } from "zustand";
+import { clock, closeRoom, dockReserve, dismissSnack, elapsedAt, openRoom, pause, resume, runAction, staleOnMove, useSnack, zHolds, type Snack, type SnackAction } from "~/lib/snack";
 import { useApp } from "~/state/app";
 import { listKey } from "~/state/list";
 import { READING_COLUMN } from "~/lib/pane-lines";
 import { CountdownPill } from "./countdown-pill";
+
+/** Plan 232: the open room's place (a SnackRoom's element), where the dock's card goes for a snack said in it. */
+const useRoomPlace = create<{ el: HTMLElement | null }>(() => ({ el: null }));
+
+/**
+ * Plan 232: a modal surface's room for the dock (Settings). While it's open, what the user's own actions say is said
+ * here, on the nearest positioned ancestor's foot, inside the modal: reachable, and its countdown runs. Open follows the
+ * surface's open state, not its mount (a closing dialog stays mounted for its exit).
+ */
+export function SnackRoom({ name, open }: { name: string; open: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!open || !el) return;
+    openRoom(name);
+    useRoomPlace.setState({ el });
+    return () => {
+      useRoomPlace.setState((s) => (s.el === el ? { el: null } : s));
+      closeRoom(name);
+    };
+  }, [name, open]);
+  return <div ref={ref} className="contents" data-snack-room={name} />;
+}
 
 /** The dock's card, for F6. */
 const dockRef: { current: HTMLDivElement | null } = { current: null };
@@ -100,7 +125,8 @@ export function SnackMore({ open, onToggle, controls, action }: { open: boolean;
 }
 
 function Row({ snack }: { snack: Snack }) {
-  const z = useSnack((s) => zHolds(s, snack.action?.undo));
+  // plan 232: z doesn't reach into a room (a dialog keeps its keys)
+  const z = useSnack((s) => !snack.room && zHolds(s, snack.action?.undo));
   const wraps = snack.tone === "error" || snack.tone === "warning";
   // the claims ledger's second batch: an action that reads as a sentence (Remove's offer) has its own line under the first
   // at any width, so the message ("Removed" and the item's words), Undo and the close button keep the card's width and the
@@ -149,29 +175,32 @@ function covered(card: HTMLElement | null): boolean {
  * preview: any modal marks the card aria-hidden), or the web's blocking
  * screen. Returns whether the app is behind that screen (announcements wait for it).
  */
-function useWatchers(card: React.RefObject<HTMLDivElement | null>): boolean {
-  const dialog = useApp((s) => s.dialog !== null);
+function useWatchers(card: React.RefObject<HTMLDivElement | null>, inRoom: boolean): boolean {
+  // plan 232: a dialog the card is in (its room) doesn't cover it
+  const dialog = useApp((s) => s.dialog !== null) && !inRoom;
   const [inert, setInert] = useState(false);
   const [modal, setModal] = useState(false);
   useEffect(() => {
     const visibility = () => (document.visibilityState === "hidden" ? pause("hidden") : resume("hidden"));
     visibility();
     document.addEventListener("visibilitychange", visibility);
+    return () => document.removeEventListener("visibilitychange", visibility);
+  }, []);
+  // read again wherever the card goes (plan 232: into a room and back)
+  useEffect(() => {
     const root = document.getElementById("root");
     const read = () => {
       setInert(!!root?.inert);
-      // (the mark lands on the card's wrapper, its column, or on the card)
+      // the mark lands on the card's wrapper, its column, or on the card; in a room, on the dialog's portal when a modal
+      // opens over it (plan 232): anywhere above the card
       setModal(!!card.current?.closest("[aria-hidden=true]"));
     };
     read();
     const mo = new MutationObserver(read);
     if (root) mo.observe(root, { attributes: true, attributeFilter: ["inert"] });
-    if (card.current) for (const el of [card.current, card.current.parentElement]) if (el) mo.observe(el, { attributes: true, attributeFilter: ["aria-hidden"] });
-    return () => {
-      document.removeEventListener("visibilitychange", visibility);
-      mo.disconnect();
-    };
-  }, []);
+    mo.observe(document.body, { attributes: true, attributeFilter: ["aria-hidden"], subtree: true });
+    return () => mo.disconnect();
+  }, [inRoom]);
   const blocked = dialog || inert || modal;
   useEffect(() => (blocked ? pause("blocked") : resume("blocked")), [blocked]);
   return inert;
@@ -191,7 +220,12 @@ export function SnackDock({ over }: { /** what it stands over: List's rows, or a
   const focused = useRef(false);
   /** the snack focus came into */
   const focusedSeq = useRef<number | undefined>(undefined);
-  const inert = useWatchers(cardRef);
+  const shown = current ?? last;
+  // plan 232: a snack said in a room (Settings) shows there, in a card of the room's own. The section, its live regions
+  // and its card stay here, mounted: a modal hides what's outside it once, as it opens, so nothing here may be new
+  const roomPlace = useRoomPlace((s) => s.el);
+  const inRoom = !!roomPlace && !!shown?.room;
+  const inert = useWatchers(cardRef, inRoom);
   // plan 158: Split's dock is over the reader; List's over its one pane. Plan 162 (after ai162-r02): it stands on a
   // page's own foot bar (the digest's Archive), so neither hides the other
   const lift = useSnack((s) => s.pageLift);
@@ -212,18 +246,21 @@ export function SnackDock({ over }: { /** what it stands over: List's rows, or a
     });
   }, []);
 
-  // the list keeps room for the dock below its last row
+  // the list keeps room for the dock below its last row (plan 232: in a room, the room's scroller does)
   const open = current !== null;
   useLayoutEffect(() => {
     const el = cardRef.current;
     if (!el) return;
-    const set = () => useSnack.setState({ inset: open ? dockReserve(el.offsetHeight) : 0 });
+    const set = () => {
+      const reserve = open ? dockReserve(el.offsetHeight) : 0;
+      useSnack.setState(inRoom ? { inset: 0, roomInset: reserve } : { inset: reserve, roomInset: 0 });
+    };
     set();
     if (!open) return;
     const ro = new ResizeObserver(set);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [open]);
+  }, [open, inRoom]);
 
   // what faded out goes once the fade is over
   useEffect(() => {
@@ -240,6 +277,8 @@ export function SnackDock({ over }: { /** what it stands over: List's rows, or a
     resume("focus");
     giveFocusBack();
   }, [current?.seq, open]);
+  // plan 232: a card taken out of its room fires a blur but no pointerleave: the pointer that held it isn't over the new one
+  useEffect(() => resume("hover"), [inRoom]);
 
   // said once, then out of the live region: browsing finds the visible text, not a second copy
   const [hushed, setHushed] = useState<number | null>(null);
@@ -250,11 +289,63 @@ export function SnackDock({ over }: { /** what it stands over: List's rows, or a
     return () => clearTimeout(t);
   }, [heard, inert]);
 
-  const shown = current ?? last;
   // behind the web's blocking screen nothing is heard: the text goes in when it lifts
   const spoken = current && !inert && hushed !== current.heard ? current.spoken : "";
   const alert = current?.tone === "error";
-  return (
+  /** the card: the live one here or in the room; the one here always mounted, closed while the room has the snack */
+  const card = (live: boolean) => (
+    <div
+      ref={
+        live
+          ? (el) => {
+              cardRef.current = el;
+              dockRef.current = el;
+            }
+          : undefined
+      }
+      data-snack-card
+      data-testid={live && current ? "snack" : undefined}
+      data-state={live && open ? "open" : "closed"}
+      data-tone={live ? shown?.tone : undefined}
+      // a new snack under a resting pointer runs (show() drops the old hover): moving over it holds it again
+      onPointerEnter={() => current && pause("hover")}
+      onPointerMove={() => current && pause("hover")}
+      onPointerLeave={() => resume("hover")}
+      onFocus={(e) => {
+        if (!focused.current) returnFocus = e.relatedTarget instanceof HTMLElement && !e.currentTarget.contains(e.relatedTarget) ? e.relatedTarget : null;
+        focused.current = true;
+        focusedSeq.current = current?.seq;
+        pause("focus");
+      }}
+      onBlur={(e) => {
+        if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+        // the browser drops focus from content that closed (hidden for its fade) before the effect above runs: same giving back
+        const gone = e.relatedTarget === null && useSnack.getState().current?.seq !== focusedSeq.current;
+        focused.current = false;
+        resume("focus");
+        if (gone) giveFocusBack();
+        else returnFocus = null;
+      }}
+      onKeyDown={(e) => {
+        if (e.key !== "Escape" || !current) return;
+        // the document's shortcuts skip a handled key; in a room, the dialog's Esc (on the document) never hears it
+        e.preventDefault();
+        if (inRoom) e.stopPropagation();
+        dismissSnack(current.id);
+      }}
+      className={cn(
+        "snack-surface relative w-[min(100%,30rem)] overflow-hidden rounded-xl transition-[opacity,translate,visibility] duration-slow ease-motion",
+        live && open ? "pointer-events-auto visible translate-y-0 opacity-100" : "invisible translate-y-1 opacity-0",
+      )}
+    >
+      {live && shown && (
+        <div key={shown.seq} className="animate-in fade-in-0 slide-in-from-bottom-1 duration-slow">
+          {shown.render ? shown.render() : <Row snack={shown} />}
+        </div>
+      )}
+    </div>
+  );
+  const section = (
     <section aria-label={t("snack.dock")} data-testid="snack-dock" data-over={overReader ? "reader" : "list"} data-undoing={undoing || undefined} style={{ "--dock-lift": `${lift}px` } as React.CSSProperties} className={cn("pointer-events-none absolute bottom-[calc(var(--float-inset)+var(--dock-lift))] z-10 flex flex-col justify-end", overReader ? "@container inset-x-0 pe-(--scrollbar-w)" : "inset-x-(--float-inset) items-center")}>
       <div role="status" aria-live="polite" aria-atomic className="sr-only" data-testid="snack-live">
         {!alert && spoken && <span key={current?.heard}>{spoken}</span>}
@@ -265,56 +356,20 @@ export function SnackDock({ over }: { /** what it stands over: List's rows, or a
       {/* what's under the dock dissolves into its pane: it reads as the pane's foot, not a card over it, across the whole
           width (plan 158): a band the conversation ends at (and scrolls clear of). Plan 160: List's rows end above the dock
           (the list's viewport stops there), so nothing is under it to fade */}
-      {overReader && <div aria-hidden className={cn("pointer-events-none absolute -top-6 -bottom-(--float-inset) inset-x-0 bg-linear-to-t from-background from-40% to-transparent transition-opacity duration-slow", open ? "opacity-100" : "opacity-0")} />}
+      {overReader && <div aria-hidden className={cn("pointer-events-none absolute -top-6 -bottom-(--float-inset) inset-x-0 bg-linear-to-t from-background from-40% to-transparent transition-opacity duration-slow", open && !inRoom ? "opacity-100" : "opacity-0")} />}
       {/* over a conversation: centred on the reader's column (plan 160: the section keeps the scroller's gutter, as the
           column's pane does); over List's rows, centred on the pane */}
       <div className={overReader ? cn(READING_COLUMN, "flex justify-center") : "contents"}>
-      <div
-        ref={(el) => {
-          cardRef.current = el;
-          dockRef.current = el;
-        }}
-        data-snack-card
-        data-testid={current ? "snack" : undefined}
-        data-state={open ? "open" : "closed"}
-        data-tone={shown?.tone}
-        // a new snack under a resting pointer runs (show() drops the old hover): moving over it holds it again
-        onPointerEnter={() => current && pause("hover")}
-        onPointerMove={() => current && pause("hover")}
-        onPointerLeave={() => resume("hover")}
-        onFocus={(e) => {
-          if (!focused.current) returnFocus = e.relatedTarget instanceof HTMLElement && !e.currentTarget.contains(e.relatedTarget) ? e.relatedTarget : null;
-          focused.current = true;
-          focusedSeq.current = current?.seq;
-          pause("focus");
-        }}
-        onBlur={(e) => {
-          if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
-          // the browser drops focus from content that closed (hidden for its fade) before the effect above runs: same giving back
-          const gone = e.relatedTarget === null && useSnack.getState().current?.seq !== focusedSeq.current;
-          focused.current = false;
-          resume("focus");
-          if (gone) giveFocusBack();
-          else returnFocus = null;
-        }}
-        onKeyDown={(e) => {
-          if (e.key !== "Escape" || !current) return;
-          // the document's shortcuts skip a handled key
-          e.preventDefault();
-          dismissSnack(current.id);
-        }}
-        className={cn(
-          "snack-surface relative w-[min(100%,30rem)] overflow-hidden rounded-xl transition-[opacity,translate,visibility] duration-slow ease-motion",
-          open ? "pointer-events-auto visible translate-y-0 opacity-100" : "invisible translate-y-1 opacity-0",
-        )}
-      >
-        {shown && (
-          <div key={shown.seq} className="animate-in fade-in-0 slide-in-from-bottom-1 duration-slow">
-            {shown.render ? shown.render() : <Row snack={shown} />}
-          </div>
-        )}
-      </div>
+      {card(!inRoom)}
       </div>
     </section>
+  );
+  return (
+    <>
+      {section}
+      {/* plan 232: in a room, on its foot and inside the modal's DOM: its focus trap holds the card, a click in it isn't
+          outside, and nothing marks it hidden. Centred, as over List's pane; no fade (Settings' foot has none, plan 162) */}
+      {roomPlace && inRoom && createPortal(<div data-testid="snack-room-dock" className="pointer-events-none absolute inset-x-(--float-inset) bottom-(--float-inset) z-10 flex justify-center">{card(true)}</div>, roomPlace)}
+    </>
   );
 }

@@ -2160,6 +2160,7 @@ const en = {
   "snack.dock": "Notifications",
   "snack.action.sr": "{action}: press F6 to reach it.",
   "snack.action.sr.undo": "{action}: press Z, or F6 to reach it.",
+  "snack.action.sr.room": "{action}: at the end of this dialog.",
   "snack.dismiss": "Dismiss",
   "snack.undoName": "Undo: {message}",
   "snack.undoFailed": "Couldn’t undo: {error}",

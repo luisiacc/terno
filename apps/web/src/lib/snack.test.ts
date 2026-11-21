@@ -7,7 +7,7 @@ import { setLocale } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ACTION_MS, clock, DEFAULT_MS, dismissSnack, elapsedAt, pause, registerUndo, remaining, resetSnacks, resume, runAction, runUndo, snack, staleOnMove, undoLast, useSnack, zHolds } from "./snack";
+import { ACTION_MS, clock, closeRoom, DEFAULT_MS, dismissSnack, openRoom, elapsedAt, pause, registerUndo, remaining, resetSnacks, resume, runAction, runUndo, snack, staleOnMove, undoLast, useSnack, zHolds } from "./snack";
 
 const current = () => useSnack.getState().current;
 const message = () => current()?.message ?? null;
@@ -154,6 +154,88 @@ describe("plan 188", () => {
     expect(current()?.spoken).toBe("Archived. Undo archive: press Z, or F6 to reach it.");
     snack("Archived");
     expect(current()?.spoken).toBe("Archived");
+  });
+});
+
+describe("plan 232: a room (Settings)", () => {
+  it("what the user does while a room is open is said there; news stays the app's; an update keeps its room", () => {
+    snack("Archived");
+    expect(current()?.room).toBeUndefined();
+    openRoom("settings");
+    snack.success("Imported 2 categories");
+    expect(current()?.room).toBe("settings");
+    const id = snack.loading("Checking…");
+    snack.success("Up to date", { id });
+    expect(current()?.room).toBe("settings");
+    // news waits behind the room's confirmation, then shows as the app's
+    snack("Sent", { background: true });
+    expect(message()).toBe("Up to date");
+    dismissSnack();
+    expect(message()).toBe("Sent");
+    expect(current()?.room).toBeUndefined();
+  });
+
+  it("a job begun in the room and displaced by news (Check for Updates): its result is still said in the room, while it's open", () => {
+    openRoom("settings");
+    snack.loading("Checking for updates…", { id: "updates" });
+    snack("Sent", { background: true });
+    expect(message()).toBe("Sent");
+    snack.success("Terno is up to date", { id: "updates" });
+    expect(message()).toBe("Terno is up to date");
+    expect(current()?.room).toBe("settings");
+    // queued behind something that holds, it keeps its room too
+    snack.loading("Checking for updates…", { id: "updates" });
+    snack.error("Couldn’t save");
+    snack.success("Terno is up to date", { id: "updates" });
+    expect(message()).toBe("Couldn’t save");
+    dismissSnack();
+    expect(message()).toBe("Terno is up to date");
+    expect(current()?.room).toBe("settings");
+    // its room closed meanwhile: the app's
+    snack.loading("Checking for updates…", { id: "updates" });
+    snack("Sent", { background: true });
+    closeRoom("settings");
+    snack.success("Terno is up to date", { id: "updates" });
+    expect(current()?.room).toBeUndefined();
+  });
+
+  it("closing the room drops its confirmation; an error or an Undo moves to the app with its time left", () => {
+    openRoom("settings");
+    snack.success("Imported");
+    closeRoom("settings");
+    expect(current()).toBeNull();
+    expect(useSnack.getState().last).toBeNull();
+    expect(useSnack.getState().room).toBeNull();
+
+    openRoom("settings");
+    snack.error("Couldn’t import");
+    vi.advanceTimersByTime(2000);
+    closeRoom("settings");
+    expect(message()).toBe("Couldn’t import");
+    expect(current()?.room).toBeUndefined();
+    vi.advanceTimersByTime(ACTION_MS - 2001);
+    expect(current()).not.toBeNull();
+    vi.advanceTimersByTime(1);
+    expect(current()).toBeNull();
+
+    openRoom("settings");
+    snack.success("Removed", { action: { label: "Undo", name: "Undo remove", onClick() {} } });
+    expect(current()?.spoken).toBe("Removed. Undo remove: at the end of this dialog.");
+    closeRoom("settings");
+    expect(message()).toBe("Removed");
+    // its hint is the app's now
+    expect(current()?.spoken).toBe("Removed. Undo remove: press F6 to reach it.");
+    // the app's own snack isn't the room's to take
+    openRoom("settings");
+    closeRoom("settings");
+    expect(message()).toBe("Removed");
+  });
+
+  it("neither z nor F6 reaches into a room: its Undo says where it is", () => {
+    const undo = registerUndo(() => {});
+    openRoom("settings");
+    snack("Removed", { action: { label: "Undo", name: "Undo remove", undo } });
+    expect(current()?.spoken).toBe("Removed. Undo remove: at the end of this dialog.");
   });
 });
 

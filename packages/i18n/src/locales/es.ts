@@ -2141,6 +2141,7 @@ const es = {
   "snack.dock": "Avisos",
   "snack.action.sr": "{action}: pulsa F6 para llegar.",
   "snack.action.sr.undo": "{action}: pulsa Z, o F6 para llegar.",
+  "snack.action.sr.room": "{action}: al final de este diálogo.",
   "snack.dismiss": "Cerrar aviso",
   "snack.undoName": "Deshacer: {message}",
   "snack.undoFailed": "No se pudo deshacer: {error}",

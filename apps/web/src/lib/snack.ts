@@ -11,6 +11,9 @@ import { getApp } from "~/state/app";
  * behind the user's own snacks. Its lifetime is a countdown that pauses
  * while the dock is hovered or focused, the window is hidden, or a dialog or
  * blocking screen covers the app. No React here: anything can call it.
+ *
+ * Plan 232: a modal surface (Settings) can open a room for the dock; what the
+ * user's own action says while it's open is said there, not behind it.
  */
 
 export type SnackTone = "neutral" | "success" | "warning" | "error" | "loading";
@@ -72,6 +75,8 @@ export interface Snack extends Omit<SnackInput, "id" | "duration" | "tone" | "ba
   render?: () => ReactNode;
   /** background news (or a late job result): other news may replace it, the user's own snacks hold against it */
   news?: boolean;
+  /** plan 232: the room it was said in (Settings): the dock shows it there while that room is open */
+  room?: string;
 }
 
 export type PauseReason = "hover" | "focus" | "hidden" | "blocked" | "busy" | "expanded";
@@ -100,8 +105,12 @@ interface SnackState {
   undo: Undo | null;
   /** undos on their way (from z or a button): what waits on the user's undo holds while one runs (plan 192) */
   undoing: number;
-  /** what the dock takes while it shows (dockReserve): the reader pads its scroll end by it, List's rows end above it */
+  /** what the dock takes while it shows in the app (dockReserve): the reader pads its scroll end by it, List's rows end above it */
   inset: number;
+  /** plan 232: the same while it shows in a room: the room's scroller pads its end by it */
+  roomInset: number;
+  /** plan 232: the room open over the app (Settings), where the user's own snacks are said */
+  room: string | null;
   /** plan 162 (after ai162-r02): what stands at the page's foot under the dock, wherever it is (the digest's decision bar) */
   pageLift: number;
 }
@@ -109,7 +118,7 @@ interface SnackState {
 /** Plan 160: the room a toast of this height takes at a pane's foot: the card and --float-inset on each side of it */
 export const dockReserve = (height: number): number => (height > 0 ? Math.ceil(height) + 2 * FLOAT_INSET : 0);
 
-export const useSnack = create<SnackState>(() => ({ current: null, last: null, countdown: { elapsed: 0, since: null }, paused: [], undo: null, undoing: 0, inset: 0, pageLift: 0 }));
+export const useSnack = create<SnackState>(() => ({ current: null, last: null, countdown: { elapsed: 0, since: null }, paused: [], undo: null, undoing: 0, inset: 0, roomInset: 0, room: null, pageLift: 0 }));
 
 let seq = 0;
 let heard = 0;
@@ -122,9 +131,11 @@ export const newsWaiting = (): boolean => queue.length > 0;
 /** Ownership changes even when newer feedback waits in the queue. */
 export const snackPublication = (): number => publication;
 let timer: ReturnType<typeof setTimeout> | null = null;
-let queue: (SnackInput & { render?: () => ReactNode })[] = [];
-/** loading snacks another one replaced: their results wait their turn instead of taking the dock back */
-const displaced = new Set<string>();
+/** what show() takes: an input, and (queued or late) the room it was said in, decided when it was */
+type Entry = SnackInput & { render?: () => ReactNode; room?: string };
+let queue: Entry[] = [];
+/** loading snacks another one replaced, and their rooms: their results wait their turn instead of taking the dock back */
+const displaced = new Map<string, string | undefined>();
 
 export function elapsedAt(c: Countdown, now: number): number {
   return c.elapsed + (c.since === null ? 0 : now - c.since);
@@ -150,10 +161,12 @@ const fresh = (paused: readonly PauseReason[]): Countdown => ({ elapsed: 0, sinc
  * What the live region says. Plan 188: a snack with an action says how to reach it, Z only when Z runs this very Undo
  * (the same rule as its keycap) and single keys are on; F6 always reaches the dock.
  */
-function spokenOf(s: { message: string; description?: string; action?: SnackAction }): string {
+function spokenOf(s: { message: string; description?: string; action?: SnackAction; room?: string }): string {
   const said = s.description ? `${s.message}. ${s.description}` : s.message;
   if (!s.action) return said;
   const action = s.action.name ?? s.action.label;
+  // plan 232: in a room (a dialog) neither z nor F6 reaches it: it's the dialog's last stop
+  if (s.room) return `${said}. ${t("snack.action.sr.room", { action })}`;
   const z = zHolds(useSnack.getState(), s.action.undo) && getApp().settings?.characterKeys !== false;
   return `${said}. ${t(z ? "snack.action.sr.undo" : "snack.action.sr", { action })}`;
 }
@@ -172,29 +185,35 @@ function holds(s: SnackState): boolean {
   return !c.news && c.tone !== "loading";
 }
 
-function show(input: SnackInput & { render?: () => ReactNode }): string {
+function show(input: Entry): string {
   publication++;
   const s = useSnack.getState();
   const tone = input.tone ?? "neutral";
-  const { id: _, duration: __, background, ...rest } = input;
+  const { id: _, duration: __, background, room: ___, ...rest } = input;
   const paused = input.steady ? [] : s.paused;
   if (input.id !== undefined && s.current?.id === input.id) {
-    // an update: same entry, the lifetime starts over (a loading snack's result gets its whole time)
-    const current: Snack = { ...s.current, description: undefined, action: undefined, secondary: undefined, ...rest, tone, duration: durationOf(input), spoken: spokenOf(input), heard: ++heard };
+    // an update: same entry (and room), the lifetime starts over (a loading snack's result gets its whole time)
+    const current: Snack = { ...s.current, description: undefined, action: undefined, secondary: undefined, ...rest, tone, duration: durationOf(input), spoken: spokenOf({ ...input, room: s.current.room }), heard: ++heard };
     useSnack.setState({ current, last: current, countdown: fresh(paused) });
     schedule();
     return input.id;
   }
   const id = input.id ?? `snack-${++ids}`;
-  const late = input.id !== undefined && displaced.delete(input.id);
+  const late = input.id !== undefined && displaced.has(input.id);
+  const lateRoom = late ? displaced.get(id) : undefined;
+  if (late) displaced.delete(id);
   const news = !!background || late;
+  // plan 232: what the user does is said in the room they did it in (a late result: the room its job began in); news
+  // about mail stays the app's, held behind the room. Only while that room is still open
+  const said = "room" in input ? input.room : late ? lateRoom : news ? undefined : (s.room ?? undefined);
+  const room = said !== undefined && said === s.room ? said : undefined;
   if (news && holds(s)) {
-    queue = [...queue.filter((q) => q.id !== id), { ...input, id, background: true }].slice(-QUEUE_MAX);
+    queue = [...queue.filter((q) => q.id !== id), { ...input, id, background: true, room }].slice(-QUEUE_MAX);
     return id;
   }
   // (one with a lifetime has no result coming under its id)
-  if (s.current?.tone === "loading" && s.current.duration === Infinity) displaced.add(s.current.id);
-  const current: Snack = { ...rest, id, seq: ++seq, tone, duration: durationOf(input), spoken: spokenOf(input), heard: ++heard, news };
+  if (s.current?.tone === "loading" && s.current.duration === Infinity) displaced.set(s.current.id, s.current.room);
+  const current: Snack = { ...rest, id, seq: ++seq, tone, duration: durationOf(input), spoken: spokenOf({ ...input, room }), heard: ++heard, news, room };
   // plan 158: a hover held the snack it was over, not the next: one that comes under a resting pointer (Undo's
   // "Restored", after a click on Undo) runs out, and the pointer moving over it holds it again (the dock's pointermove)
   const kept = s.paused.filter((r) => r !== "hover");
@@ -211,6 +230,33 @@ type Options = Omit<SnackInput, "message" | "tone">;
  */
 export function staleOnMove(c: Snack): boolean {
   return !c.action && !c.secondary && !c.render && (c.tone === "success" || c.tone === "neutral");
+}
+
+/** Plan 232: a room opens over the app (Settings): the user's snacks are said there from now on. */
+export function openRoom(name: string): void {
+  useSnack.setState({ room: name });
+}
+
+/**
+ * Plan 232: the room closed. Its confirmation was about it and goes with it; anything still worth having (an error, an
+ * Undo) moves to the app's dock with its time left.
+ */
+export function closeRoom(name: string): void {
+  const s = useSnack.getState();
+  if (s.room === name) useSnack.setState({ room: null, roomInset: 0 });
+  const c = s.current;
+  if (c?.room === name) {
+    if (staleOnMove(c)) dismissSnack(c.id);
+    else {
+      // (its hint is the app's now: z and F6 reach it)
+      const moved = { ...c, room: undefined };
+      moved.spoken = spokenOf(moved);
+      useSnack.setState({ current: moved, last: moved });
+    }
+  }
+  // (one fading out in the room is gone with it)
+  const last = useSnack.getState().last;
+  if (last?.room === name && useSnack.getState().current !== last) useSnack.setState({ last: null });
 }
 
 /** Shows a snack in the dock, replacing whatever is there; returns its id. */
@@ -356,7 +402,7 @@ export function zHolds(s: Pick<SnackState, "undo">, undo: Undo | undefined): boo
 
 /** Tests: copies of retained identities, without changing their lifetime. */
 export function snackRetentionForTests(): { queued: (string | undefined)[]; displaced: string[] } {
-  return { queued: queue.map((entry) => entry.id), displaced: [...displaced] };
+  return { queued: queue.map((entry) => entry.id), displaced: [...displaced.keys()] };
 }
 
 /** Tests: a clean slate. */
@@ -365,5 +411,5 @@ export function resetSnacks(): void {
   timer = null;
   queue = [];
   displaced.clear();
-  useSnack.setState({ current: null, last: null, countdown: { elapsed: 0, since: null }, paused: [], undo: null, undoing: 0, inset: 0 });
+  useSnack.setState({ current: null, last: null, countdown: { elapsed: 0, since: null }, paused: [], undo: null, undoing: 0, inset: 0, roomInset: 0, room: null });
 }
