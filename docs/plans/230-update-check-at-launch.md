@@ -53,3 +53,9 @@ The update path doesn't block main's thread or the renderer. What the owner saw 
 
 - A perf gate on main's event-loop stalls through a packaged update: it needs two signed builds, and section 2 measured it once by hand.
 - Patching electron-updater's `execFileSync` calls.
+
+## 7. What the Codex code review changed
+
+The review is in this session's scratchpad (`codex-review.txt`). It found one issue, and the fix has a regression test.
+
+1. **An install that didn't apply keeps its Try Again on screen.** `backendReady()` shows "not applied". The launch check then ran at once, and its `check-start` cleared that error, so the window never showed it. The 30 s delay had hidden this. Now no launch check runs after a failed install. The first automatic check is the 4-hour one, and the user's Try Again (a manual check) is the retry. The test covers a ready that comes before `start` and one that comes after it.

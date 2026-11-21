@@ -382,6 +382,21 @@ describe("main: the update controller", () => {
       expect(h.pending).toBeNull();
     });
 
+    it("plan 230 (Codex review): not applied keeps its Try Again: no launch check clears it; the 4-hour check, or the user's, is the retry", async () => {
+      for (const order of ["start-first", "ready-first"] as const) {
+        const h = harness({ version: "0.1.0", pending: record });
+        h.engine.next = null;
+        if (order === "start-first") h.ctl.start();
+        h.ctl.backendReady();
+        if (order === "ready-first") h.ctl.start();
+        await vi.advanceTimersByTimeAsync(DELAY);
+        expect(h.engine.checks).toBe(0);
+        expect(h.ctl.view).toMatchObject({ status: "error", error: { stage: "install", kind: "not-applied" } });
+        await vi.advanceTimersByTimeAsync(CHECK_EVERY_MS - DELAY);
+        expect(h.engine.checks).toBe(1);
+      }
+    });
+
     it("another version (installed by hand): nothing said, record dropped", () => {
       const h = harness({ version: "0.3.0", pending: record });
       h.ctl.backendReady();

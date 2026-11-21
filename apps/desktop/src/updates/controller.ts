@@ -66,6 +66,8 @@ export class UpdateController {
   private healthChecked = false;
   /** the launch check has run (or is running): a backend ready later doesn't start another */
   private launchChecked = false;
+  /** the last install didn't apply: its Try Again stays on screen, so no automatic check runs at launch */
+  private installFailed = false;
   private mailboxFailureSaid = false;
   private waitingForSends = false;
   /** a grant revoked while its request ran (the channel changed): its failure is a cancellation, not an error */
@@ -97,7 +99,16 @@ export class UpdateController {
   start(): void {
     if (this.started) return;
     this.started = true;
-    this.schedule(this.healthChecked && this.deps.checkWhenReady ? 0 : this.deps.checkDelayMs, () => this.autoCheck());
+    this.schedule(this.launchDelay(), () => this.autoCheck());
+  }
+
+  /**
+   * When the first automatic check runs: at once once the backend is ready, after the fallback delay until then. After
+   * an install that didn't apply, the 4-hour one: a check clears the error, and the user's Try Again is the retry.
+   */
+  private launchDelay(): number {
+    if (this.installFailed) return CHECK_EVERY_MS;
+    return this.healthChecked && this.deps.checkWhenReady ? 0 : this.deps.checkDelayMs;
   }
 
   /** Once per run: can this copy update itself? (codesign and the bundle's location) */
@@ -359,8 +370,12 @@ export class UpdateController {
   backendReady(): void {
     if (this.healthChecked) return;
     this.healthChecked = true;
+    this.settleInstall();
     // plan 230: the launch check, now the window and the mailbox are up (on a timer: it never runs inside this call)
-    if (this.started && this.deps.checkWhenReady && !this.launchChecked) this.schedule(0, () => this.autoCheck());
+    if (this.started && !this.launchChecked && (this.deps.checkWhenReady || this.installFailed)) this.schedule(this.launchDelay(), () => this.autoCheck());
+  }
+
+  private settleInstall(): void {
     const pending = this.deps.pending.read();
     if (!pending) return;
     this.deps.pending.clear();
@@ -369,6 +384,7 @@ export class UpdateController {
       this.dispatch({ type: "applied", version: pending.to });
       this.deps.log("update.applied", { fromVersion: pending.from, toVersion: pending.to });
     } else if (outcome === "not-applied") {
+      this.installFailed = true;
       this.dispatch({ type: "not-applied", version: pending.to });
       this.deps.capture(Object.assign(new Error("update not applied"), { name: "UpdateNotApplied" }), "update.not_applied", { fromVersion: pending.from, toVersion: pending.to }, false);
     }
