@@ -13,6 +13,7 @@
  */
 import { breadcrumb, captureError, installDiag, log, type Channel, type Crumb, type DiagContext, type DiagEntry, type DiagSink, type ErrorRecord } from "@terno/core/diag";
 import type { RpcError } from "@terno/core/rpc";
+import { IGNORED, windowError } from "./window-error";
 
 const bridge = typeof window !== "undefined" ? window.ternoDesktop?.diag : undefined;
 const info = bridge?.info() ?? null;
@@ -118,7 +119,8 @@ if (typeof window !== "undefined" && typeof window.addEventListener === "functio
   window.addEventListener("error", (e) => {
     // resource load errors (an image) bubble as plain Events: not ours to report
     if (!(e instanceof ErrorEvent)) return;
-    captureUi(e.error ?? new Error(e.message || "script error"), { code: "process.uncaught", fields: { source: "renderer" } });
+    const error = windowError(e);
+    if (error !== IGNORED) captureUi(error, { code: "process.uncaught", fields: { source: "renderer" } });
   });
   window.addEventListener("unhandledrejection", (e) => {
     captureUi(e.reason, { code: "process.unhandled_rejection", fields: { source: "renderer" } });
