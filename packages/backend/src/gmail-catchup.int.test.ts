@@ -22,7 +22,7 @@ async function mailbox(kind: "SQL" | "IndexedDB", retries = false) {
   const baseline = "90071992547409930000";
   let historyId = BigInt(baseline);
   const messages = new Map<string, { id: string; threadId: string; labelIds: string[]; raw: string }>();
-  const history: { id: string; messagesAdded?: { message: { id: string } }[]; messagesDeleted?: { message: { id: string } }[]; labelsRemoved?: { message: { id: string } }[] }[] = [];
+  const history: { id: string; messagesAdded?: { message: { id: string } }[]; messagesDeleted?: { message: { id: string } }[]; labelsAdded?: { message: { id: string } }[]; labelsRemoved?: { message: { id: string } }[] }[] = [];
   let abort = new AbortController();
   const requests: URL[] = [], ingested: { id: string; live: boolean }[] = [];
   let afterIngest: (() => void | Promise<void>) | undefined;
@@ -57,6 +57,13 @@ async function mailbox(kind: "SQL" | "IndexedDB", retries = false) {
     requests.push(url);
     const json = (value: unknown, status = 200) => { response.writeHead(status, { "content-type": "application/json" }); response.end(JSON.stringify(value)); };
     if (url.pathname === "/profile") return json({ historyId: String(historyId), emailAddress: "me@example.test" });
+    // plan 227: a send, which Gmail files as SENT (history: added)
+    if (request.method === "POST" && url.pathname === "/messages/send") {
+      request.resume();
+      messages.set("self", { id: "self", threadId: "self", labelIds: ["SENT"], raw: "" });
+      history.push({ id: String(++historyId), messagesAdded: [{ message: { id: "self" } }] });
+      return json({ id: "self", threadId: "self", labelIds: ["SENT"] });
+    }
     if (url.pathname === "/labels") return json({ labels: [{ id: "Label_project", name: "Project", type: "user" }] });
     if (url.pathname === "/messages") {
       if (!url.searchParams.has("pageToken")) snapshot = [...messages.keys()];
@@ -134,6 +141,8 @@ async function mailbox(kind: "SQL" | "IndexedDB", retries = false) {
     advanceTime() { now += 86_400_000; },
     historyStatus(status: number) { historyStatus = status; }, rawStatus(status: number) { rawStatus = status; },
     seed() { for (const id of ["archive", "deleted", "read", "neighbor"]) add(id); },
+    /** a message's labels change at Gmail (history: labels added) */
+    label(id: string, labelIds: string[]) { messages.get(id)!.labelIds = labelIds; history.push({ id: String(++historyId), labelsAdded: [{ message: { id } }] }); },
     async reopen() { await backend.stop(); abort = new AbortController(); backend = await open(); await backend.ready; },
     async assertFinal() {
       const rows = (await backend.store.debug.snapshot()).messages;
@@ -537,6 +546,29 @@ describe.each(["SQL", "IndexedDB"] as const)("%s Gmail catch-up failure boundari
 });
 
 
+describe.each(["SQL", "IndexedDB"] as const)("%s Gmail changes during a first sync (plan 227)", (kind) => {
+  it("a message you send to yourself while the first sync lists is in the Inbox at the next look, and an archive here holds", async () => {
+    const t = await mailbox(kind); t.seed(); t.listStatus(503);
+    // the first page is in, the next one refused: the first sync is still listing
+    await t.backend.syncAccount(t.account.id);
+    expect(phaseOf(await t.cursor())).toMatchObject({ stage: "enumerate", pages: 1 });
+    await t.backend.store.compose.queueSend({ accountId: t.account.id, to: [{ name: "", email: "me@example.test" }], cc: [], bcc: [], subject: "To myself", bodyText: "Note", recordReply: false, now: Date.now() });
+    expect(await t.backend.runWorker()).toBe(1);
+    const self = async () => (await t.backend.store.debug.snapshot()).messages.find((m) => m.providerMsgId === "self")!;
+    expect(await self()).toMatchObject({ inInbox: false });
+    // Gmail delivers it to you too
+    t.label("self", ["SENT", "INBOX", "UNREAD"]);
+    await t.backend.syncAccount(t.account.id);
+    expect(await self()).toMatchObject({ inInbox: true, gmailLabels: JSON.stringify(["SENT", "INBOX", "UNREAD"]) });
+    expect(phaseOf(await t.cursor())).toMatchObject({ stage: "enumerate", pages: 1 });
+    // archived here, not yet at Gmail: a later look that reads INBOX doesn't bring it back (a star from elsewhere does land)
+    await t.backend.store.threads.act({ threadIds: [(await self()).threadId], action: "archive", signal: null, now: Date.now() });
+    t.label("self", ["SENT", "INBOX", "UNREAD", "STARRED"]);
+    await t.backend.syncAccount(t.account.id);
+    expect(await self()).toMatchObject({ inInbox: false, isStarred: true });
+  });
+});
+
 describe.each(["SQL", "IndexedDB"] as const)("%s Gmail durable enumeration", (kind) => {
   const sqlite = onSqlite(kind);
   it.each(["initial", "expired"] as const)("resumes a committed %s list page after real close/reopen, then catches up from the original baseline", async (path) => {
@@ -769,8 +801,9 @@ describe.each(["SQL", "IndexedDB"] as const)("%s Gmail durable enumeration", (ki
     await t.reopen(); t.listStatus(200); t.requests.length = 0;
     if (boundary === "cycle") t.repeatToken();
     await t.backend.syncAccount(t.account.id);
-    // no catch-up (plan 102: a look at new mail, added/deleted only, may come first)
-    expect(t.requests.filter((u) => u.pathname === "/history" && u.searchParams.getAll("historyTypes").includes("labelAdded"))).toHaveLength(0);
+    // no catch-up: the one history read is the look at new mail that comes first (plan 102; it reads label changes
+    // too since plan 227, the same types as a catch-up)
+    expect(t.requests.filter((u) => u.pathname === "/history")).toHaveLength(1);
     expect(await t.cursor()).toEqual({ reconciliation: { version: 1, stage: "restart" } });
     expect((await t.backend.store.accounts.get(t.account.id))?.syncState.status).not.toBe("idle");
   });

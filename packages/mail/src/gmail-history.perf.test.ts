@@ -84,3 +84,43 @@ it("keeps maximal admitted history decoding and expansion within the control sli
     expect(saved).toEqual({ historyId: "11" });
   } finally { await provider.close(); await gate.close(); }
 });
+
+// plan 227: a first sync's look at new mail reads label changes too: five full pages of them (10,000 references, the
+// most a look reads), every message stored, expand and pick its share without stalling the loop
+it("keeps a first sync's look at changes within the control slice budget", async () => {
+  const pages = 5;
+  let minimal = 0, lookups = 0, saved: unknown;
+  const page = (n: number) => ({ historyId: "20", history: Array.from({ length: 4 }, (_, k) => ({ labelsRemoved: Array.from({ length: 500 }, (_, i) => ({ message: { id: `m${n}-${k}-${i}` } })) })), ...(n + 1 < pages && { nextPageToken: `p${n + 1}` }) });
+  let looked = false;
+  const fetch = async (input: string | URL) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith("/history")) {
+      // the look first; the catch-up after the listing finds nothing new
+      if (looked && !url.searchParams.has("pageToken")) return Response.json({ historyId: "20" });
+      looked = true;
+      return Response.json(page(Number(url.searchParams.get("pageToken")?.slice(1) ?? 0)));
+    }
+    if (url.pathname.endsWith("/messages")) return Response.json({});
+    if (url.pathname.endsWith("/labels")) return Response.json({ labels: [] });
+    minimal++;
+    return Response.json({ id: url.pathname.split("/").at(-1), labelIds: ["INBOX"] });
+  };
+  const ctx = { account: { id: 1, email: "reader@example.test" }, config: {}, store: {
+    messageByProviderId: async () => ({ id: ++lookups }), pendingAttachmentBodies: async () => [], syncedMessagePage: async () => ({ items: [] }),
+  }, loadCursor: async () => ({ reconciliation: { version: 1, email: "reader@example.test", intent: "days:30", after: 1, baseline: "10", stage: "enumerate", pages: 1, next: "list" } }),
+  saveCursor: async (value: unknown) => { saved = value; }, fetch } as unknown as ProviderContext;
+  const noop = async () => {};
+  const sink: SyncSink = { signal: new AbortController().signal, windowStart: 1000, windowDays: 30, ingest: noop, updateFlags: noop,
+    removeMessages: noop, setBody: noop, setSyncState: noop, pendingMessageIds: async () => new Set() };
+  const provider = createGmailApiProvider(ctx, { tokens: { get: async () => "synthetic", invalidate() {} }, buildRaw: async () => new Uint8Array() });
+  try {
+    const budget = 15 * BUDGET_MULTIPLIER, monitor = watchLoop(budget);
+    try { await provider.sync(sink); }
+    finally {
+      const timing = monitor.stop();
+      expect(timing.stall, JSON.stringify(timing)).toBeLessThanOrEqual(budget);
+    }
+    expect(minimal).toBe(250);
+    expect(saved).toEqual({ historyId: "20" });
+  } finally { await provider.close(); }
+});

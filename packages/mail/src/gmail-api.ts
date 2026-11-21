@@ -133,6 +133,12 @@ export const LONG_SYNC_MS = 10 * 60_000;
 /** plan 102: a pass's share of a first sync; then another pass, which reads new mail first */
 export const FIRST_SYNC_CHUNK_MS = 60_000;
 
+/**
+ * Plan 227: messages whose labels a look at new mail during a first sync reads again, at most: about a chunk of reads
+ * (5,000 quota units); the refresh and the catch-up read the rest, as before.
+ */
+export const PEEK_RELABEL = 250;
+
 /** Plan 68: /labels again at most this often when nothing new shows up (history doesn't report label changes). */
 export const LABELS_EVERY_MS = 15 * 60_000;
 /** a first-sync page with more new messages than this (minutes of downloads under the quota) reads the labels first */
@@ -1079,50 +1085,110 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
 
   /**
    * Plan 102: new mail while a first sync (or any reconciliation) runs, before its next chunk: what history added
-   * since it began (or since the last look) and isn't stored yet, downloaded as live mail (it notifies). Its flags,
-   * deletions and the rest stay the catch-up's at the end, which skips what this stored. History gone (a sync
-   * older than Gmail keeps it): nothing to do here, the catch-up reconciles.
+   * since it began (or since the last look) and isn't stored yet, downloaded as live mail (it notifies). Plan 227: and
+   * what changed on stored messages (your own send, which Gmail may also put in your Inbox; a label changed
+   * elsewhere), its labels read again. Deletions and the rest stay the catch-up's at the end, which skips what this
+   * stored. History gone, or more than a look reads: new mail is read from now on, the gap is the catch-up's.
    */
   async function peekArrivals(sink: SyncPass, state: Reconciliation, save: (value: Reconciliation) => Promise<void>) {
     const from = state.peek ?? state.baseline;
     const added = new Set<string>();
     const deleted = new Set<string>();
+    // in the order last changed (an id changed again moves to the end)
+    const changed = new Set<string>();
     const pages = new Set<string>();
-    let pageToken: string | undefined, latest = from, count = 0;
+    let pageToken: string | undefined, latest = from, count = 0, references = 0;
+    // (Codex review: never the same dead cursor every chunk; plan 227: nor the same too-long history)
+    const lost = async () => {
+      const now = readBaseline(await syncRead("/profile", sink));
+      if (!earlierHistory(now, from)) await save({ ...state, peek: now, gap: true });
+    };
     do {
-      if (++count > HISTORY_PAGES) return;
+      if (++count > HISTORY_PAGES) return lost();
       const q = new URLSearchParams({ startHistoryId: from, maxResults: "500" });
-      for (const t of ["messageAdded", "messageDeleted"]) q.append("historyTypes", t);
+      for (const t of ["messageAdded", "messageDeleted", "labelAdded", "labelRemoved"]) q.append("historyTypes", t);
       if (pageToken) q.set("pageToken", pageToken);
       let page: HistoryPage;
       try { page = readHistory(await syncRead(`/history?${q}`, sink)); }
       catch (error) {
-        // history gone (or too much of it): new mail is read from now on; the gap is the catch-up's (Codex review:
-        // never the same dead cursor every chunk)
-        if ((error instanceof GmailApiError && error.resource === `/history?${q}` && error.status === 404) || error instanceof HistoryOverflow) {
-          const now = readBaseline(await syncRead("/profile", sink));
-          if (!earlierHistory(now, from)) await save({ ...state, peek: now, gap: true });
-          return;
-        }
+        if ((error instanceof GmailApiError && error.resource === `/history?${q}` && error.status === 404) || error instanceof HistoryOverflow) return lost();
         throw error;
       }
-      if (page.nextPageToken !== undefined && (!nonempty(page.nextPageToken) || page.nextPageToken.length > LIST_TOKEN_MAX || pages.has(page.nextPageToken))) return;
+      references += historyReferences(page);
+      if (references > HISTORY_TOTAL_REFS) return lost();
+      if (page.nextPageToken !== undefined && !nonempty(page.nextPageToken)) throw invalidResponse();
+      if (page.nextPageToken !== undefined && (page.nextPageToken.length > LIST_TOKEN_MAX || pages.has(page.nextPageToken))) return lost();
       pageToken = continuation(page.nextPageToken, pages);
       if (earlierHistory(page.historyId, latest)) throw invalidResponse();
       for (const h of page.history ?? []) {
         for (const a of h.messagesAdded ?? []) added.add(a.message.id);
         for (const d of h.messagesDeleted ?? []) deleted.add(d.message.id);
+        for (const l of [...(h.labelsAdded ?? []), ...(h.labelsRemoved ?? [])]) { changed.delete(l.message.id); changed.add(l.message.id); }
       }
       latest = page.historyId;
+      if (pageToken) { await yieldPage(); sink.check(); }
     } while (pageToken);
+    const known = storedId(sink);
     const fresh: string[] = [];
-    for (const id of added) {
-      sink.check();
-      if (!deleted.has(id) && !(await store.messageByProviderId(id))) fresh.push(id);
+    // plan 227: what you sent (stored under Gmail's id at once) that Gmail may also have put in your Inbox: its labels
+    // first, the newest first
+    const sent = new Map<string, number>();
+    for (const id of [...added].reverse()) {
+      if (deleted.has(id)) continue;
+      const local = await known(id);
+      if (!local) fresh.push(id);
+      else if (sent.size < PEEK_RELABEL) sent.set(id, local);
     }
+    await relabel([...sent.keys()], sink, async (id) => sent.get(id), () => {});
+    fresh.reverse();
     const live: SyncPass = { ...sink, ingest: (messages) => sink.ingest(messages, { live: true }) };
     for (let i = 0; i < fresh.length; i += 50) await fetchFull(fresh.slice(i, i + 50), live);
+    // plan 227: then what changed elsewhere, the latest changes first, up to the look's share (what's left over is the
+    // refresh's and the catch-up's, as before); one this look downloaded came with its labels, a deleted one is the
+    // catch-up's (as is a 404 here)
+    const downloaded = new Set(fresh);
+    const others = new Map<string, number>();
+    for (const id of [...changed].reverse()) {
+      if (sent.size + others.size >= PEEK_RELABEL) break;
+      if (sent.has(id) || deleted.has(id) || downloaded.has(id)) continue;
+      const local = await known(id);
+      if (local) others.set(id, local);
+    }
+    await relabel([...others.keys()], sink, async (id) => others.get(id), () => {});
     if (latest !== from) await save({ ...state, peek: latest });
+  }
+
+  /** The stored message a Gmail id names (its local id), yielding every 50 lookups. */
+  function storedId(sink: SyncPass): (id: string) => Promise<number | undefined> {
+    let examined = 0;
+    return async (id) => {
+      if (++examined % 50 === 0) await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      sink.check();
+      return (await store.messageByProviderId(id))?.id;
+    };
+  }
+
+  /**
+   * Stored messages' labels read again (`format=minimal`), 50 at a time, and applied as an observation. `known` finds
+   * each one's local id (none: skipped); `gone` hears of one Gmail no longer has (404).
+   */
+  async function relabel(gids: readonly string[], sink: SyncPass, known: (gid: string) => Promise<number | undefined>, gone: (gid: string) => void) {
+    for (let i = 0; i < gids.length; i += 50) {
+      const updates: FlagUpdate[] = [];
+      await download(gids.slice(i, i + 50), async (gid) => {
+        const local = await known(gid);
+        if (!local) return;
+        try {
+          const m = readMessage(await syncRead(`/messages/${gid}?format=minimal`, sink), gid);
+          updates.push({ messageId: local, expectedProviderMsgId: gid, flags: labelState(m.labelIds ?? []), gmailLabels: m.labelIds ?? [] });
+        } catch (e) {
+          if (e instanceof GmailApiError && e.resource === `/messages/${gid}?format=minimal` && e.status === 404) gone(gid);
+          else throw e;
+        }
+      });
+      sink.check();
+      if (updates.length) await sink.updateFlags(updates);
+    }
   }
 
   /** the reconciliation a catch-up follows, as it ended (plan 104: an overflowing catch-up reads its flags again) */
@@ -1304,12 +1370,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       if (pageToken) { await new Promise<void>((resolve) => setTimeout(resolve, 0)); sink.check(); }
     } while (pageToken);
 
-    let examined = 0;
-    const known = async (id: string) => {
-      if (++examined % 50 === 0) await new Promise<void>((resolve) => setTimeout(resolve, 0));
-      sink.check();
-      return (await store.messageByProviderId(id))?.id;
-    };
+    const known = storedId(sink);
     // Authoritative deletions release bounded repair capacity before new capture admissions.
     let retired = 0;
     for (const gid of deleted) {
@@ -1323,23 +1384,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     const live: SyncPass = { ...sink, ingest: (messages) => sink.ingest(messages, { live: true }) };
     for (let i = 0; i < toFetch.length; i += 50) await fetchFull(toFetch.slice(i, i + 50), live);
 
-    const relabeled = [...changed].filter((gid) => !deleted.has(gid));
-    for (let i = 0; i < relabeled.length; i += 50) {
-      const updates: FlagUpdate[] = [];
-      await download(relabeled.slice(i, i + 50), async (gid) => {
-        const local = await known(gid);
-        if (!local) return;
-        try {
-          const m = readMessage(await syncRead(`/messages/${gid}?format=minimal`, sink), gid);
-          updates.push({ messageId: local, expectedProviderMsgId: gid, flags: labelState(m.labelIds ?? []), gmailLabels: m.labelIds ?? [] });
-        } catch (e) {
-          if (e instanceof GmailApiError && e.resource === `/messages/${gid}?format=minimal` && e.status === 404) deleted.add(gid);
-          else throw e;
-        }
-      });
-      sink.check();
-      if (updates.length) await sink.updateFlags(updates);
-    }
+    await relabel([...changed].filter((gid) => !deleted.has(gid)), sink, known, (gid) => deleted.add(gid));
     sink.check();
     let removals: number[] = [];
     for (const gid of deleted) {

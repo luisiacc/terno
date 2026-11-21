@@ -11,7 +11,7 @@ const NOW = Date.UTC(2026, 10, 1);
 const closers: (() => Promise<void>)[] = [];
 afterEach(async () => { vi.restoreAllMocks(); for (const c of closers.splice(0)) await c(); });
 
-function setup(o: { mailbox: number; cursor?: unknown; arrivals?: () => string[]; historyId?: () => string; listed?: () => string[]; historyGone?: () => boolean; estimate?: number; pageSize?: number; overflowCatchup?: () => boolean; refresh?: { labels: Record<string, string[]>; gone: Set<string> } }) {
+function setup(o: { mailbox: number; cursor?: unknown; arrivals?: () => string[]; historyId?: () => string; listed?: () => string[]; historyGone?: () => boolean; estimate?: number; pageSize?: number; overflowCatchup?: () => boolean; refresh?: { labels: Record<string, string[]>; gone: Set<string> }; history?: (url: URL) => unknown; minimalStatus?: (id: string) => number | undefined }) {
   const processor = createNodeIncomingProcessor();
   const incoming = new IncomingPipeline(processor);
   const mailbox = Array.from({ length: o.mailbox }, (_, i) => `m${String(i).padStart(5, "0")}`);
@@ -25,10 +25,12 @@ function setup(o: { mailbox: number; cursor?: unknown; arrivals?: () => string[]
   const flagged: { id: string; labels: string[] | undefined }[] = [];
   const removed: number[] = [];
   const progress: unknown[] = [];
+  let refreshed = 0;
   const ctx = {
     incoming, incomingProcessor: processor, account: { id: 1, email: "reader@example.test" }, config: {},
     store: {
-      messageByProviderId: async (id: string) => (stored.has(id) ? { id: 1 } : null), syncedMessages: async () => [], pendingAttachmentBodies: async () => [],
+      // each stored message its own local id (its place in the store)
+      messageByProviderId: async (id: string) => (stored.has(id) ? { id: [...stored].indexOf(id) + 1 } : null), syncedMessages: async () => [], pendingAttachmentBodies: async () => [],
       // the refresh reads every stored message again, 50 a page (ids by position)
       syncedMessagePage: async (after?: string) => {
         const all = [...stored].sort();
@@ -43,9 +45,12 @@ function setup(o: { mailbox: number; cursor?: unknown; arrivals?: () => string[]
       if (url.pathname.endsWith("/profile")) return Response.json({ historyId: o.historyId?.() ?? "100", emailAddress: "reader@example.test" });
       if (url.pathname.endsWith("/history")) {
         histories.push(url.searchParams.get("startHistoryId")!);
-        // the catch-up (it asks for label changes too) answering more than a page can hold: an overflow
-        if (o.overflowCatchup?.() && url.searchParams.getAll("historyTypes").includes("labelAdded")) return Response.json({ historyId: o.historyId?.() ?? "100", history: Array.from({ length: 501 }, (_, i) => ({ id: String(200 + i) })) });
+        // the catch-up (after the refresh's reads; the look at new mail asks for the same types) answering more than a
+        // page can hold: an overflow
+        if (o.overflowCatchup?.() && refreshed > 0) return Response.json({ historyId: o.historyId?.() ?? "100", history: Array.from({ length: 501 }, (_, i) => ({ id: String(200 + i) })) });
         if (o.historyGone?.()) return Response.json({ error: { code: 404 } }, { status: 404 });
+        const page = o.history?.(url);
+        if (page) return Response.json(page);
         const added = o.arrivals?.() ?? [];
         return Response.json({ historyId: o.historyId?.() ?? "100", ...(added.length && { history: [{ id: "101", messagesAdded: added.map((id) => ({ message: { id } })) }] }) });
       }
@@ -61,6 +66,9 @@ function setup(o: { mailbox: number; cursor?: unknown; arrivals?: () => string[]
       const id = url.pathname.split("/").at(-1)!;
       // a refresh's minimal read: the message's labels now, or gone
       if (url.searchParams.get("format") === "minimal") {
+        refreshed++;
+        const status = o.minimalStatus?.(id);
+        if (status) return Response.json({ error: { code: status } }, { status });
         if (o.refresh?.gone.has(id)) return Response.json({ error: { code: 404 } }, { status: 404 });
         return Response.json({ id, labelIds: o.refresh?.labels[id] ?? ["INBOX"] });
       }
@@ -258,5 +266,101 @@ describe("plan 104 (Codex review)", () => {
     await t.p.sync(t.sink);
     // it went on from its saved page: only the last 100 were downloaded
     expect(t.downloads.filter((id) => id.startsWith("m"))).toHaveLength(100);
+  });
+});
+
+describe("plan 227: changes during a first sync", () => {
+  // a first sync that is still listing: 1,200 messages, each pass stops after a batch of 50
+  const listing = (o: Omit<Parameters<typeof setup>[0], "mailbox">) => {
+    let now = NOW;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const t = setup({ mailbox: 1200, ...o });
+    const ingest = t.sink.ingest;
+    t.sink.ingest = async (batch, opts) => { await ingest(batch, opts); now += 61_000; };
+    return { ...t, pass: async () => { now += 1000; await t.p.sync(t.sink); } };
+  };
+  const added = (ids: string[]) => ({ id: "101", messagesAdded: ids.map((id) => ({ message: { id } })) });
+  const relabeled = (ids: string[]) => ({ id: "102", labelsAdded: ids.map((id) => ({ message: { id }, labelIds: ["STARRED"] })) });
+
+  it("a message you sent to yourself shows its labels (INBOX too) at the next look, while the listing still runs", async () => {
+    let history: unknown[] = [];
+    const t = listing({ history: () => ({ historyId: history.length ? "105" : "100", history }), refresh: { labels: { self: ["SENT", "INBOX", "UNREAD"] }, gone: new Set() } });
+    await t.pass();
+    // the send stored it under Gmail's id at once; Gmail's history says it was added (and delivered to you)
+    t.stored.add("self");
+    history = [added(["self"])];
+    await t.pass();
+    expect(t.flagged).toEqual([{ id: "self", labels: ["SENT", "INBOX", "UNREAD"] }]);
+    expect(t.downloads).not.toContain("self");
+    expect(t.cursor().reconciliation).toMatchObject({ stage: "enumerate", peek: "105" });
+  });
+
+  it("a stored message relabeled elsewhere is read again; one not stored yet, or deleted in the same look, is not; a 404 removes nothing", async () => {
+    let history: unknown[] = [];
+    const t = listing({ history: () => ({ historyId: history.length ? "105" : "100", history }), refresh: { labels: {}, gone: new Set(["m00002"]) } });
+    await t.pass();
+    history = [relabeled(["m00001", "m00002", "m00003", "m01100"]), { id: "103", messagesDeleted: [{ message: { id: "m00003" } }] }];
+    await t.pass();
+    // m00002 answered 404: the catch-up's to remove, as plan 102 left deletions
+    expect(t.flagged.map((f) => f.id)).toEqual(["m00001"]);
+    expect(t.removed).toEqual([]);
+    expect(t.cursor().reconciliation).toMatchObject({ stage: "enumerate", peek: "105" });
+  });
+
+  it("at most a chunk's share a look: your sends first, then the latest changes (an id changed again counts as late); the look still moves on", async () => {
+    let history: unknown[] = [];
+    const t = listing({ history: () => ({ historyId: history.length ? "105" : "100", history }) });
+    await t.pass();
+    t.stored.add("self");
+    // 300 stored messages changed, m00000 first and again last; 40 changes of messages not stored don't take a share
+    const ids = Array.from({ length: 300 }, (_, i) => `m${String(i).padStart(5, "0")}`);
+    for (const id of ids) t.stored.add(id);
+    history = [relabeled([...ids, ...Array.from({ length: 40 }, (_, i) => `elsewhere${i}`), "m00000"]), added(["self"])];
+    await t.pass();
+    const read = t.flagged.map((f) => f.id);
+    expect(read).toHaveLength(250);
+    expect(read[0]).toBe("self");
+    expect(read).toContain("m00000");
+    expect(read).toContain("m00299");
+    expect(read).not.toContain("m00051");
+    expect(t.cursor().reconciliation).toMatchObject({ peek: "105" });
+  });
+
+  it("a label read or its write that fails leaves the look where it was: the next pass reads it again", async () => {
+    let history: unknown[] = [];
+    let status: number | undefined;
+    const t = listing({ history: () => ({ historyId: history.length ? "105" : "100", history }), minimalStatus: () => status });
+    await t.pass();
+    history = [relabeled(["m00001"])];
+    status = 400;
+    await expect(t.pass()).rejects.toThrow();
+    expect(t.cursor().reconciliation).not.toHaveProperty("peek");
+    status = undefined;
+    const update = t.sink.updateFlags;
+    t.sink.updateFlags = async () => { throw new Error("synthetic write failure"); };
+    await expect(t.pass()).rejects.toThrow("synthetic write failure");
+    expect(t.cursor().reconciliation).not.toHaveProperty("peek");
+    t.sink.updateFlags = update;
+    await t.pass();
+    expect(t.flagged.map((f) => f.id)).toEqual(["m00001"]);
+    expect(t.cursor().reconciliation).toMatchObject({ peek: "105" });
+  });
+
+  it.each(["repeated page", "too many references"] as const)("history the look can't finish (%s) starts it again from now, not the same history every chunk", async (kind) => {
+    let history = false;
+    const t = listing({
+      historyId: () => (history ? "300" : "100"),
+      history: (url) => {
+        if (!history) return { historyId: "100" };
+        if (kind === "repeated page") return { historyId: "105", history: [relabeled(["m00001"])], nextPageToken: "again" };
+        // 2,000 references a page (the most a page holds), six pages: past what a look reads
+        const page = Number(url.searchParams.get("pageToken") ?? 0);
+        return { historyId: "105", history: Array.from({ length: 4 }, () => relabeled(Array.from({ length: 500 }, (_, i) => `x${page}-${i}`))), nextPageToken: String(page + 1) };
+      },
+    });
+    await t.pass();
+    history = true;
+    await t.pass();
+    expect(t.cursor().reconciliation).toMatchObject({ stage: "enumerate", peek: "300", gap: true });
   });
 });

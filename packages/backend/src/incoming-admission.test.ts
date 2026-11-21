@@ -156,11 +156,11 @@ it("retains real catchup progress and native HTTP evidence, then promotes only t
   expect((await t.backend.store.accounts.get(t.account.id))!.syncState).toMatchObject({ status: "idle", lastError: null });
   expect((await t.backend.store.accounts.get(t.account.id))!.syncState.lastSyncAt).not.toBeNull();
   expect(t.fixture.requests.filter(({ url }) => url.searchParams.get("format") === "raw")).toHaveLength(1);
-  // the catch-up reads from its baseline both times; plan 102's peek for arrivals reads once before the resumed one
+  // the catch-up reads from its baseline both times; plan 102's look at new mail (the same types since plan 227) reads
+  // once before the resumed one, from there too
   const history = t.fixture.requests.filter(({ url }) => url.pathname.endsWith("/history"));
-  const catchup = (url: URL) => url.searchParams.getAll("historyTypes").includes("labelAdded");
-  expect(history.filter(({ url }) => catchup(url)).map(({ url }) => url.searchParams.get("startHistoryId"))).toEqual(["10", "10"]);
-  expect(history.map(({ url }) => (catchup(url) ? "catchup" : "peek"))).toEqual(["catchup", "peek", "catchup"]);
+  expect(history.map(({ url }) => url.searchParams.get("startHistoryId"))).toEqual(["10", "10", "10"]);
+  expect(history.every(({ url }) => url.searchParams.getAll("historyTypes").sort().join(",") === "labelAdded,labelRemoved,messageAdded,messageDeleted")).toBe(true);
   expect(t.backend.net.googlePending()).toBe(0);
   expect(t.fixture.unexpected).toEqual([]);
 });
