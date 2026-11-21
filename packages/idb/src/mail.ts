@@ -1134,7 +1134,7 @@ function applyToMessages(c: Ctx, msgs: R[], action: ThreadAction, explicit: bool
   const whole = new Set<number>();
   if (!explicit) for (const accountId of new Set(msgs.map((m) => m.account_id))) if (T(c, "accounts").get(accountId)?.kind === "gmail") whole.add(accountId);
   recomputeThreads(c, touched);
-  return { threadIds: [...touched], targets: actionTargets(msgs as { id: number; account_id: number; thread_id: number }[], action, changed, scope, whole), before };
+  return { threadIds: [...touched], targets: actionTargets(msgs as { id: number; account_id: number; thread_id: number; date: number }[], action, changed, scope, whole), before };
 }
 
 /** plan 86: a row stored before it has no category yet: its labels say */
@@ -1730,9 +1730,10 @@ export function enqueueOp(c: Ctx, op: { accountId: number; kind: string; target:
     }
     const id = c.uuid();
     ops.insert({ id, seq: ops.peak("seq") + 1, account_id: op.accountId, kind: op.kind, target_json: targetJson, payload_json: JSON.stringify(op.payload ?? {}), state: "queued", attempts: 0, next_attempt_at: 0, last_error: null, created_at: now, updated_at: now });
+    const flagged = idbFlags(c).op(id)!;
     for (const messageId of new Set(op.target.messageIds ?? [])) {
       T(c, "op_targets").insert({ op_id: id, message_id: messageId, grp: group ?? op.kind });
-      bindFlagTarget(idbFlags(c), idbFlags(c).op(id)!, messageId, flagVersion);
+      bindFlagTarget(idbFlags(c), flagged, messageId, flagVersion);
     }
     return id;
   });

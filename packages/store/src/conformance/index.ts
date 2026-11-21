@@ -14,6 +14,7 @@ export * from "./ai-summaries-perf";
 export * from "./writing-perf";
 export * from "./ask-perf";
 export * from "./actions-perf";
+export * from "./action-targets-perf";
 export * from "./replies-perf";
 export * from "./today-perf";
 export * from "./followups-perf";

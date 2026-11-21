@@ -54,7 +54,7 @@ What a person does to a conversation is said to Gmail for the whole conversation
 
 ## Performance and quota
 
-Only conversations the action changes are named whole, so a sweep over a view mostly done already (a category marked read) adds nothing for its conversations already read. For a conversation it changes, the op names its other governed messages too: more op targets and flag intents in the same sliced command, and, once the op settles, a confirmation read (`format=minimal`, 20 units) for each named message. For an ordinary conversation of a few messages that's about 1–3× the reads of today; a long conversation marked read with one unread message costs a read per message (50 messages: 1,000 units, about 12 s of pacing in the background, the first 900 units at once). Trash posts one request per message, as before. At Gmail, one `batchModify` takes 1,000 ids (50 units). Gates run: `scope.perf.test.ts` (Gmail accounts in its mailbox: archive a whole view and undo it, a category marked read), `reconcile.perf.test.ts`, `flag-reconcile.perf.test.ts` (IndexedDB), `store.perf.test.ts`, `idb.perf.test.ts`.
+Only conversations the action changes are named whole, so a sweep over a view mostly done already (a category marked read) adds nothing for its conversations already read. For a conversation it changes, the op names its other governed messages too, its newest twenty at most (see the code review): more op targets and flag intents in the same sliced command, and, once the op settles, a confirmation read (`format=minimal`, 20 units) for each named message. For an ordinary conversation of a few messages that's about 1–3× the reads of today; a long conversation marked read with one unread message costs a read per message (50 messages: 1,000 units, about 12 s of pacing in the background, the first 900 units at once). Trash posts one request per message, as before. At Gmail, one `batchModify` takes 1,000 ids (50 units). Gates run: `scope.perf.test.ts` (Gmail accounts in its mailbox: archive a whole view and undo it, a category marked read), `reconcile.perf.test.ts`, `flag-reconcile.perf.test.ts` (IndexedDB), `store.perf.test.ts`, `idb.perf.test.ts`.
 
 ## Out of scope
 
@@ -81,3 +81,10 @@ Codex read the plan against the code (twelve points):
 10. Sweeps that skip what's done here: out of scope, written down.
 11. and 12. Cost: the first design named every governed message of every conversation acted on, which would have sent a sweep's already-done conversations and a confirmation read for each of their messages. Narrowed: only a conversation the action changes is named whole (a no-op action stays a reaffirmed intent, unsent, as the parked-work design has it). The reproduction now also asserts no transient rollback and Gmail's exact requests. The cost is written down above.
 
+
+## Codex code review
+
+Two findings, each fixed with a test that fails without it:
+
+1. **Trash named messages already in Trash.** Each Trash is its own request, and one answering 404 (a message Gmail has since deleted for good) stops the rest, so a live reply after six old deleted ones was never trashed. Trash names only what isn't in Trash here, as before. Conformance test (both stores).
+2. **Twenty long conversations went over the event loop's budget.** The backend acts on a selection of up to 20 conversations in one command; 20 conversations of 100 messages with one unread each named 2,000 messages, each with its flag intents: ~100 ms against ~18 ms before. A conversation's unchanged messages are now named up to its newest twenty (`UNCHANGED_NAMED`), where your own reply just delivered and a change made elsewhere land; older ones only when the action changes them, as before. The same act is ~33 ms. The op row is also read once per op, not once per target, in both stores' `enqueueOp`. New perf gates in both stores (`action-targets.perf.test.ts`: that act within 50 ms, 420 messages named) and a conformance test of the cap.

@@ -472,6 +472,26 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         expect(await named("notSpam")).toEqual([["m2", "m3"].map(idOf)]);
       });
 
+      it("Trash names only what isn't in Trash yet, and a long conversation only its newest messages besides what changed (plan 229, Codex code review)", async () => {
+        const store = await fresh();
+        const [a] = await withAccounts(store, 1);
+        await ingest(store, [
+          msg({ accountId: a!, providerMsgId: "x0", rfcMessageId: "x@x", date: 1000, isTrash: true, inInbox: false, isRead: true }),
+          ...Array.from({ length: 30 }, (_, i) => msg({ accountId: a!, providerMsgId: `x${i + 1}`, inReplyTo: "x@x", date: 1001 + i, isRead: i !== 0 })),
+        ]);
+        const rows = (await store.debug.snapshot()).messages;
+        const idOf = (p: string) => rows.find((m) => m.providerMsgId === p)!.id;
+        const t = await threadOf(store, "x1");
+        const target = async (action: "markRead" | "trash") => {
+          const r = await store.threads.act({ threadIds: [t], action, signal: null, now: NOW });
+          return [...(await store.debug.snapshot()).ops.find((o) => o.id === r.opIds[0])!.messageIds].sort((x, y) => x - y);
+        };
+        // x1 is the one unread (and the oldest after x0): it, and the 20 newest besides it
+        expect(await target("markRead")).toEqual([idOf("x1"), ...Array.from({ length: 20 }, (_, i) => idOf(`x${11 + i}`))].sort((x, y) => x - y));
+        // each Trash is its own request, and one Gmail no longer has stops the rest: x0 (in Trash already) isn't named
+        expect(await target("trash")).toEqual(Array.from({ length: 30 }, (_, i) => idOf(`x${i + 1}`)).sort((x, y) => x - y));
+      });
+
       describe("undo puts each message back exactly", () => {
         const state = (m: { id: number; isRead: boolean; isStarred: boolean; inInbox: boolean; isTrash: boolean; isSpam: boolean }) => ({ id: m.id, isRead: m.isRead, isStarred: m.isStarred, inInbox: m.inInbox, isTrash: m.isTrash, isSpam: m.isSpam });
         const states = async (store: MailStore) => (await store.debug.snapshot()).messages.map(state).sort((x, y) => x.id - y.id);

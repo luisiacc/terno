@@ -427,9 +427,11 @@ export function enqueueOp(
       now,
       now,
     );
+    // the op read once, not per target (plan 229, Codex code review: its targets' JSON was read again for each)
+    const flagged = operationFlagFields(op.kind).length ? getOp(db, id)! : null;
     for (const messageId of new Set(op.target.messageIds ?? [])) {
       db.run("INSERT OR IGNORE INTO op_targets (op_id, message_id, grp) VALUES (?, ?, ?)", id, messageId, group ?? op.kind);
-      if (operationFlagFields(op.kind).length) bindFlagTarget(sqlFlags(db), getOp(db, id)!, messageId, flagVersion);
+      if (flagged) bindFlagTarget(sqlFlags(db), flagged, messageId, flagVersion);
     }
     return id;
   });
