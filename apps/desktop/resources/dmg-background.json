@@ -1,0 +1,8 @@
+{
+  "note": "Written by `pnpm --filter @terno/desktop gen:dmg-background`. Do not edit.",
+  "art": "060043ee5c0490ec20caaba4ee7b7884ce0c95029f62ea2e9d38610e2270ea5d",
+  "images": {
+    "dmg-background.png": "4efbb2131d13b2b22d0f59a343bdddf7657c55d4fc1a8d8188c9a0b06c53684d",
+    "dmg-background@2x.png": "fe26673610b3c7fa7c8206daa1fad4c5ff13899726ca5b79282373e7d4cf673d"
+  }
+}

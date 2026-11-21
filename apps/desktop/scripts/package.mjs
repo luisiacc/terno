@@ -1,7 +1,8 @@
 // Packages Terno for macOS Apple Silicon: a self-contained staging app
 // (bundles only, no node_modules), electron-builder for the .app and its
 // update artifacts (zip, blockmap, latest-mac.yml / nightly-mac.yml), signed
-// with one stable identity (plan 11 §8.1), verified, then a compressed DMG.
+// with one stable identity (plan 11 §8.1), verified, then the drag-to-install
+// DMG (plan 226).
 //
 // Signing: TERNO_SIGN_IDENTITY ("-" = ad-hoc), else a "Developer ID
 // Application" identity, else "Apple Development", else ad-hoc. Squirrel
@@ -16,11 +17,12 @@
 // cache names (Squirrel's ShipIt state, electron-updater's cache) so they
 // never touch a real Terno's, a generic feed, and no DMG.
 import { execFileSync, spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdtempSync, rmSync, readdirSync } from "node:fs";
+import { copyFileSync, existsSync, lstatSync, mkdtempSync, readFileSync, readlinkSync, rmSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { build, Platform, Arch } from "electron-builder";
-import { withMounted } from "../src/dmg-mount.ts";
+import { dmgConfig } from "../src/dmg-layout.ts";
+import { dmgProblems, hasCustomIconFlag, withMounted, withRetries } from "../src/dmg-mount.ts";
 import { builderIdentity } from "./sign-identity.mjs";
 import { appId, commonConfig, commonResources, electronDist, productName, release, root, stageApp, stampMinimumVersion, testBuild, uploadReleaseMaps, version } from "./package-stage.mjs";
 
@@ -60,25 +62,27 @@ function assertCanSign(identity) {
   }
 }
 
-/** hdiutil, retried: a hosted runner's disk arbitration is sometimes briefly busy ("Resource busy"). */
-function hdiutil(args) {
-  for (let attempt = 1; ; attempt++) {
-    try {
-      return execFileSync("hdiutil", args, { stdio: "inherit", timeout: 600_000 });
-    } catch (e) {
-      if (attempt === 3) throw e;
-      console.warn(`! hdiutil ${args[0]} failed (attempt ${attempt} of 3), retrying`);
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5_000);
-    }
-  }
-}
-
 /** Plan 19: the icon macOS shows: Assets.car's "Icon" on macOS 26, the .icns elsewhere. */
 function assertIcon(app) {
   const info = JSON.parse(execFileSync("plutil", ["-convert", "json", "-o", "-", join(app, "Contents/Info.plist")], { encoding: "utf8" }));
   if (info.CFBundleIconName !== "Icon" || info.CFBundleIconFile !== "icon.icns") throw new Error(`unexpected icon keys: CFBundleIconName=${info.CFBundleIconName} CFBundleIconFile=${info.CFBundleIconFile}`);
   for (const f of ["Assets.car", "icon.icns"]) if (!existsSync(join(app, "Contents/Resources", f))) throw new Error(`${f} missing from the app's Resources`);
 }
+
+/** dmgProblems' view of a real mounted volume */
+const mountedVolume = {
+  isDir: (p) => existsSync(p) && lstatSync(p).isDirectory(),
+  link: (p) => (lstatSync(p, { throwIfNoEntry: false })?.isSymbolicLink() ? readlinkSync(p) : null),
+  exists: (p) => existsSync(p),
+  list: (p) => readdirSync(p),
+  customIcon: (p) => {
+    try {
+      return hasCustomIconFlag(execFileSync("xattr", ["-px", "com.apple.FinderInfo", p], { encoding: "utf8" }));
+    } catch {
+      return false;
+    }
+  },
+};
 
 const identity = pickIdentity();
 const developerId = identity.startsWith("Developer ID Application:");
@@ -144,26 +148,29 @@ if (!channelFile) throw new Error("no update channel file (latest-mac.yml) was w
 
 stampMinimumVersion(channelFile);
 
-if (!testBuild && process.env.TERNO_PACKAGE_DMG !== "0") {
+// a test build makes one only when asked (TERNO_PACKAGE_DMG=1, plan 226's real run of the move)
+if (process.env.TERNO_PACKAGE_DMG === "1" || (!testBuild && process.env.TERNO_PACKAGE_DMG !== "0")) {
+  // plan 226: the drag-to-install window, made from the finished app (prepackaged: nothing is packed or signed again),
+  // so a busy hdiutil on a hosted runner costs one DMG retry, never another notarization
   const dmg = join(release, `${productName}-${version}-arm64.dmg`);
-  if (existsSync("/usr/bin/SetFile")) {
-    // a writable image first, so the mounted volume can take Terno's icon, then compressed
-    const rw = join(release, "volume-rw.dmg");
-    hdiutil(["create", "-volname", productName, "-srcfolder", app, "-ov", "-format", "UDRW", "-fs", "APFS", rw]);
-    withMounted(rw, false, (volume) => {
-      copyFileSync(join(root, "resources/icon.icns"), join(volume, ".VolumeIcon.icns"));
-      execFileSync("SetFile", ["-a", "C", volume]);
-    });
-    hdiutil(["convert", rw, "-format", "UDZO", "-ov", "-o", dmg]);
-    rmSync(rw, { force: true });
-    withMounted(dmg, true, (volume) => {
-      if (!existsSync(join(volume, `${productName}.app`))) throw new Error(`the DMG has no ${productName}.app at its root`);
-      if (!existsSync(join(volume, ".VolumeIcon.icns")) || !execFileSync("GetFileInfo", ["-a", volume], { encoding: "utf8" }).includes("C")) throw new Error("the DMG volume lost its icon");
-    });
-  } else {
-    console.log("! SetFile not found (Xcode command line tools): the DMG volume keeps the generic icon");
-    hdiutil(["create", "-volname", productName, "-srcfolder", app, "-ov", "-format", "UDZO", "-fs", "APFS", dmg]);
-  }
+  const channel = readFileSync(join(release, channelFile));
+  await withRetries(
+    () =>
+      build({
+        targets: Platform.MAC.createTarget(["dmg"], Arch.arm64),
+        projectDir: stage,
+        prepackaged: app,
+        publish: "never",
+        config: { ...commonConfig(), electronDist, directories: { output: release, buildResources: join(root, "resources") }, dmg: dmgConfig(join(root, "resources")) },
+      }),
+    { tries: 3, waitMs: 5_000, label: "the DMG", cleanup: () => rmSync(dmg, { force: true }) },
+  );
+  if (!readFileSync(join(release, channelFile)).equals(channel)) throw new Error(`the DMG step changed ${channelFile}: the update contract is the zip's alone`);
+  if (existsSync(`${dmg}.blockmap`)) throw new Error("the DMG step wrote a blockmap: the DMG is a download, never an update");
+  withMounted(dmg, true, (volume) => {
+    const problems = dmgProblems(volume, productName, mountedVolume);
+    if (problems.length) throw new Error(`the DMG isn't a drag-to-install window: ${problems.join("; ")}`);
+  });
   console.log(`\n✓ ${dmg}`);
 }
 console.log(`✓ ${app}\n✓ ${join(release, channelFile)}`);
