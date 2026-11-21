@@ -70,14 +70,19 @@ describe("similar.apply", () => {
       filtersAtSweep.push((await backend.store.filters.list()).length);
       return act(c);
     };
+    let learned = 0;
+    client.on("learningChanged", () => learned++);
     const r = await client.call("similar.apply", { threadIds: [ids[0]!], scope: sender, action: "archive", filterName: "Archive: receipts@uber.com", always: true });
     expect(r).toMatchObject({ affected: 3, filter: { id: expect.any(Number), filterUndo: expect.any(Number) }, filterFailed: false });
+    // the filter holds back its learned offer, and undo may bring it back: the windows ask again (plan 234)
+    expect(learned).toBe(1);
     // the filter was there before the first slice: mail arriving while the set is swept is caught by it
     expect(filtersAtSweep[0]).toBe(1);
     expect(await backend.store.filters.list()).toEqual([expect.objectContaining({ name: "Archive: receipts@uber.com", enabled: true, rule: { match: "all", conditions: [{ field: "from", op: "equals", value: "receipts@uber.com" }], actions: [{ type: "archive" }] } })]);
     await client.call("similar.undo", { undoId: r.undoId, filterUndo: r.filter!.filterUndo });
     expect(await backend.store.filters.list()).toEqual([]);
     expect(inInbox(db, ids)).toEqual([1, 1, 1]);
+    expect(learned).toBe(2);
   });
 
   it("plan 217: a sweep that fails after some slices names its filter too; one refused past the cap makes none", async () => {

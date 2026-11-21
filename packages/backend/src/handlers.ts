@@ -169,9 +169,6 @@ export function createHandlers(b: Backend): Handlers {
     if (added.length && addedBy !== "bulk" && !(addedBy === "user" && threadIds.length > 1)) b.planForwards({ threadIds: added, filed: addedBy === "user" ? added : [] });
     return { added: added.length, addedIds: added, batchId: added.length ? batchId : null };
   };
-  /** Plan 234: the learned-filter offers may have changed (an action kept, an offer answered, a learned filter gone). */
-  const learningChanged = () => b.server.emit("learningChanged", {}, { origins: ["renderer", "dev"] });
-
   /**
    * A thread action over many threads: one store command (transaction, ops
    * per account) per slice. Explicit renderer picks are a learning signal;
@@ -559,7 +556,7 @@ export function createHandlers(b: Backend): Handlers {
       const learned = signal && ctx.origin === "renderer" ? signal : null;
       const r = await actOn([...new Set(threadIds)], action, learned);
       // plan 234: the offers read the kept actions, which can move while no count does (a read conversation archived)
-      if (learned && r.threads.length) learningChanged();
+      if (learned && r.threads.length) b.learningChanged();
       return { affected: r.threads.length, undoId: r.undoId };
     },
     "threads.scopeCount": ({ scope }) => countThreadScope(b, scope),
@@ -702,6 +699,8 @@ export function createHandlers(b: Backend): Handlers {
           if (typeof partial === "number") filter = { id: 0, filterUndo: partial };
           b.log("warn", "similar filter failed", error instanceof Error ? error.message : error);
         }
+        // the filter holds back its learned offer (plan 234)
+        b.learningChanged();
       }
       // from here a failure still names the filter made above, so Undo takes it back
       try {
@@ -723,7 +722,11 @@ export function createHandlers(b: Backend): Handlers {
     },
     "similar.undo": async ({ undoId, filterUndo, jobId }) => {
       // the filter first: no new mail is caught while the threads come back
-      if (filterUndo !== null) await similarFilters.undo(filterUndo);
+      if (filterUndo !== null) {
+        await similarFilters.undo(filterUndo);
+        // its learned offer may come back (plan 234)
+        b.learningChanged();
+      }
       if (undoId === null) return { restored: 0 };
       return { restored: await undoActs(undoId, jobId) };
     },
@@ -1006,7 +1009,7 @@ export function createHandlers(b: Backend): Handlers {
     "filters.delete": async ({ id }) => {
       await store.filters.delete(id);
       // a learned filter gone: its offer may come back
-      learningChanged();
+      b.learningChanged();
       await b.forwards.rules();
       return { ok: true as const };
     },
@@ -1068,12 +1071,12 @@ export function createHandlers(b: Backend): Handlers {
       if (!proposal) throw new RpcError("NOT_FOUND", L("errors.suggestionGone"));
       const fallback = capFilterName(L(LEARNED_FILTER_NAME[proposal.action], { value: proposal.value }).message);
       const filter = await store.filters.save({ name: name ?? fallback, enabled: true, source: "learned", rule: proposal.rule, learnedKey: key }, b.now());
-      learningChanged();
+      b.learningChanged();
       return filter;
     },
     "learning.dismiss": async ({ key }) => {
       await store.learning.dismiss(key, b.now());
-      learningChanged();
+      b.learningChanged();
       return { ok: true as const };
     },
 

@@ -13,8 +13,8 @@ import { forwardWheel } from "~/lib/wheel";
 export { LEARNED_H };
 
 /**
- * Asks for the inbox's learned-rule offers when the counts change or an action of the user's was kept for them (plan
- * 234: a read conversation archived moves no count); renders nothing (its own renders stay its own).
+ * Asks for the inbox's learned-rule offers when the counts change, when the backend says they may have (plan 234: a read
+ * conversation archived moves no count), and after a reconnect; renders nothing (its own renders stay its own).
  */
 export function LearnedSource() {
   const view = useApp((s) => s.view);
@@ -22,7 +22,16 @@ export function LearnedSource() {
   const counts = useApp((s) => s.counts);
   const hushed = useOffer((s) => s.hushed);
   const [learned, setLearned] = useState(0);
-  useEffect(() => client.on("learningChanged", () => setLearned((n) => n + 1)), []);
+  useEffect(() => {
+    const bump = () => setLearned((n) => n + 1);
+    const offEvent = client.on("learningChanged", bump);
+    // a window back from a lost connection may have missed the event (its counts can come back the same)
+    const offAttach = client.onAttach(bump);
+    return () => {
+      offEvent();
+      offAttach();
+    };
+  }, []);
   useEffect(() => {
     if (view !== "inbox" || query || hushed) return;
     let alive = true;

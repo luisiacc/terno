@@ -1,6 +1,6 @@
 # Plan 234: counts that didn't change don't wake the window
 
-- **Status:** in progress (built; Codex code review next).
+- **Status:** shipped.
 - **Builds on:** plan 231 (the error trails that showed it), plan 41 (the Dock's number), plans 158/159 (the learned-rule offer).
 - **Request (verbatim):** "whats that about asking for learnud rule suggestions" → "yes plan and build it" (the fix proposed: send counts only when they actually differ).
 
@@ -59,3 +59,13 @@ Eight points. What changed:
 - Unit: `state/counts.test.ts` (new), `rpc/reconnect*.test.ts`, and `backend.test.ts`, which gains two tests: `learningChanged` on a kept action that moves no count (not on markRead, not on a dev tool's action), and on accept, filter delete and dismiss.
 - E2E (all designs): `inbox-scan`, `filters`, `list-layout`. In `inbox-scan`, the offer's dismissal used to arrive through a list refresh plus a throttled counts push. It now comes from its own event, so the test listens for that, and un-dismissing (a database edit) emits it.
 - **A finding in that test.** With the offer gone sooner, "the mail on screen doesn't move" failed about once in 12 runs, in a different design each time (the first row 32 px up). Recording the first row in every animation frame showed no painted frame where it moved: the scroll offset and the rows change together. The failing reads came from Playwright's `evaluate` running between React's commit and the virtual list's re-measure, which runs before paint. The test now reads after two frames, as it already did at the list's end. 24 out of 24 across the six designs, and 76 passed across the three specs.
+
+## 8. What the Codex code review changed
+
+One round, three findings, each fixed with a test that fails without it:
+
+- **A reply is a learning signal too.** `queueComposeSend` keeps a reply from the window as a `reply` action, which holds back archiving its sender, and it said nothing. It now calls `learningChanged()`. The emitter moved onto `Backend`, so handlers and the send share it. `backend.test.ts`: a reply says so; a new message (no reply) doesn't.
+- **"Always … similar" and its undo.** The filter `similar.apply` makes holds back its learned offer, and `similar.undo` deletes it. Neither went through `filters.*`. Both now emit, including when making the filter fails partway. `similar.test.ts` counts both.
+- **A window back from a lost connection may have missed the event** (and its counts can come back the same). `LearnedSource` also asks again on `client.onAttach`. `components/learned-source.test.tsx` (jsdom, new): same numbers don't ask, other numbers, the event and a reattach do, and nothing listens once unmounted.
+
+Tests after the fixes: the backend's `backend`, `similar` and `similar-filters` (73), the web's unit files above, and e2e `inbox-scan`, `filters` and `similar` in every design (34 passed). Typecheck and lint are clean.

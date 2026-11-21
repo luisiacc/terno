@@ -723,12 +723,12 @@ describe("learned filters", () => {
     await backend.ingestSliced([incoming(accountId), incoming(accountId)]);
     const [a, b] = (await client.call("threads.list", { view: "inbox" })).items.map((t) => t.id);
     await client.call("threads.act", { threadIds: [a!, b!], action: "markRead" });
-    await new Promise((r) => setTimeout(r, 0));
+    await tick();
     expect(learned).toHaveLength(0); // not a learning signal
     const counts = await client.call("counts.get", {});
     // a read conversation archived: the numbers stay, the kept actions don't
     await client.call("threads.act", { threadIds: [a!], action: "archive" });
-    await new Promise((r) => setTimeout(r, 0));
+    await tick();
     expect(learned).toEqual([{}]);
     expect(await client.call("counts.get", {})).toEqual(counts);
     // only the user's own window teaches: a dev tool's action (which hears the event) says nothing
@@ -738,9 +738,25 @@ describe("learned filters", () => {
     const heard: unknown[] = [];
     dev.on("learningChanged", (p) => heard.push(p));
     await dev.call("threads.act", { threadIds: [b!], action: "archive" });
-    await new Promise((r) => setTimeout(r, 0));
+    await tick();
     expect(learned).toHaveLength(1);
     expect(heard).toHaveLength(0);
+  });
+
+  it("a reply from the window is kept as a signal, and says so (plan 234)", async () => {
+    const { backend, client, accountId } = await setup();
+    let learned = 0;
+    client.on("learningChanged", () => learned++);
+    await backend.ingestSliced([incoming(accountId, { from: { name: "Ana", email: "ana@corp.io" }, listId: null })]);
+    const [t] = (await client.call("threads.list", { view: "inbox" })).items;
+    const original = (await client.call("threads.get", { threadId: t!.id })).messages[0]!;
+    await client.call("compose.send", { accountId, to: [{ name: "Ana", email: "ana@corp.io" }], subject: "Re: hola", bodyText: "¡Gracias!", inReplyToMessageId: original.id });
+    await tick();
+    expect(learned).toBe(1);
+    // a new message (no reply) teaches nothing
+    await client.call("compose.send", { accountId, to: [{ name: "Ana", email: "ana@corp.io" }], subject: "Hola", bodyText: "Otra cosa" });
+    await tick();
+    expect(learned).toBe(1);
   });
 
   it("an offer answered or a learned filter deleted says the offers changed too (plan 234)", async () => {
@@ -750,7 +766,6 @@ describe("learned filters", () => {
     for (const id of ids.slice(0, 5)) await client.call("threads.act", { threadIds: [id], action: "archive" });
     let learned = 0;
     client.on("learningChanged", () => learned++);
-    const tick = () => new Promise((r) => setTimeout(r, 0));
     const [proposal] = await client.call("learning.proposals", {});
     const filter = await client.call("learning.accept", { key: proposal!.key });
     await tick();

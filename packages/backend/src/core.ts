@@ -1229,6 +1229,8 @@ export class BackendCore {
     try {
       this.categorizer.apply(deltas);
       this.notifyChanged([threadId]);
+      // a reply of the user's is kept as a learning signal (it holds back archiving its sender)
+      if (o.renderer && p.inReplyToMessageId !== undefined) this.learningChanged();
       this.kickWorker();
     } catch (error) {
       captureError(error, { code: "send.failed", expected: false });
@@ -1275,6 +1277,14 @@ export class BackendCore {
   /** Plan 204: Today's number moved without the mail changing (an item read or acted on, the clock). */
   countsChanged(): void {
     this.emitCounts();
+  }
+
+  /**
+   * Plan 234: the learned-filter offers may have changed with no count moving: an action or a reply of the user's kept,
+   * an offer answered, a filter that holds one back made or gone. Windows and dev tools only, never MCP.
+   */
+  learningChanged(): void {
+    this.server.emit("learningChanged", {}, { origins: ["renderer", "dev"] });
   }
 
   private emitCounts(): void {
