@@ -10,8 +10,9 @@ export const REPO = "luisiacc/terno";
 export const WORKFLOW = "release.yml";
 
 // plan 99/123: an empty TERNO_GOOGLE_DESKTOP_ID means "a fork, no client" to buildGoogleClients,
-// so without this check a missing secret would ship a release where Gmail can't connect
-const GOOGLE = ["TERNO_GOOGLE_DESKTOP_ID", "TERNO_GOOGLE_DESKTOP_SECRET", "TERNO_GOOGLE_WEB_ID"];
+// so without this check a missing secret would ship a release where Gmail can't connect. The web client
+// (TERNO_GOOGLE_WEB_ID) is only the web build's (apps/web/vite.config.ts); a desktop release never reads it
+const GOOGLE = ["TERNO_GOOGLE_DESKTOP_ID", "TERNO_GOOGLE_DESKTOP_SECRET"];
 const MAC = [
   // the Developer ID Application certificate (.p12, base64) and its export password
   "MAC_CERT_P12",
@@ -28,7 +29,7 @@ export const PHASE_SECRETS = { "build-mac": [...GOOGLE, ...MAC], "build-linux": 
 /** Secrets the `release` environment must hold, for every job. */
 export const REQUIRED_SECRETS = [...new Set(Object.values(PHASE_SECRETS).flat())];
 
-/** Optional: the dev Google client (accounts made in dev keep refreshing, plan 99) and Sentry source maps. */
+/** Optional: a dev Google client (accounts made with it keep refreshing, plan 99; none since dev builds use the release's) and Sentry source maps. */
 export const OPTIONAL_SECRETS = ["TERNO_GOOGLE_DESKTOP_DEV_ID", "TERNO_GOOGLE_DESKTOP_DEV_SECRET", "SENTRY_AUTH_TOKEN"];
 
 const SHA = /^[0-9a-f]{40}$/;

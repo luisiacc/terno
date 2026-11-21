@@ -51,7 +51,7 @@ describe("plan 126: the release preflight", () => {
   });
 
   it("plan 189: each phase checks only its own secrets: Linux the Google clients, the draft none", () => {
-    expect(preflight({ RELEASE_SHA: sha }, "build-linux")).toEqual(["TERNO_GOOGLE_DESKTOP_ID", "TERNO_GOOGLE_DESKTOP_SECRET", "TERNO_GOOGLE_WEB_ID"].map((n) => expect.stringContaining(n)));
+    expect(preflight({ RELEASE_SHA: sha }, "build-linux")).toEqual(["TERNO_GOOGLE_DESKTOP_ID", "TERNO_GOOGLE_DESKTOP_SECRET"].map((n) => expect.stringContaining(n)));
     expect(preflight({ RELEASE_SHA: sha }, "draft")).toEqual([]);
     expect(PHASE_SECRETS["build-linux"]).not.toContain("MAC_CERT_P12");
     expect(preflight({ ...full, RELEASE_SHA: sha }, "publish")).toEqual([expect.stringMatching(/unknown phase/)]);
@@ -297,10 +297,13 @@ describe("plan 126: the release workflow", () => {
     }
     expect(step("Check the version", "draft")).toContain("release-ci.mjs check draft");
     const mac = step("Build, sign and notarize");
-    for (const name of ["TERNO_GOOGLE_DESKTOP_ID", "TERNO_GOOGLE_DESKTOP_SECRET", "TERNO_GOOGLE_WEB_ID", "APPLE_API_KEY_ID", "APPLE_API_ISSUER"]) expect(mac).toContain(`${name}: \${{ secrets.${name} }}`);
+    for (const name of ["TERNO_GOOGLE_DESKTOP_ID", "TERNO_GOOGLE_DESKTOP_SECRET", "APPLE_API_KEY_ID", "APPLE_API_ISSUER"]) expect(mac).toContain(`${name}: \${{ secrets.${name} }}`);
     expect(mac).toContain("release.mjs build-mac");
     const linux = step("Build and package for Linux", "linux");
-    for (const name of ["TERNO_GOOGLE_DESKTOP_ID", "TERNO_GOOGLE_DESKTOP_SECRET", "TERNO_GOOGLE_WEB_ID"]) expect(linux).toContain(`${name}: \${{ secrets.${name} }}`);
+    for (const name of ["TERNO_GOOGLE_DESKTOP_ID", "TERNO_GOOGLE_DESKTOP_SECRET"]) expect(linux).toContain(`${name}: \${{ secrets.${name} }}`);
+    // the web client is the web build's alone: a desktop release neither needs nor receives it
+    expect(REQUIRED_SECRETS).not.toContain("TERNO_GOOGLE_WEB_ID");
+    expect(workflow).not.toContain("TERNO_GOOGLE_WEB_ID");
     expect(step("Draft the release", "draft")).toContain("GH_TOKEN: ${{ github.token }}");
   });
 
