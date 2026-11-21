@@ -264,6 +264,8 @@ test("unsaved recovery holds a packaged update restart and a deliberate copy kee
   expect((await updates<{ status: string }>("check")).status).toBe("available");
   await updates("download");
   await expect.poll(async () => (await state()).status, { timeout: 180_000 }).toBe("ready");
+  // plan 207: the demo has AI, so the first-screen question is up: Esc keeps the Inbox
+  await page.getByTestId("first-screen-question").waitFor({ timeout: 10_000 }).then(() => page.keyboard.press("Escape"), () => {});
   await page.getByRole("button", { name: "Compose", exact: true }).click();
   const body = page.getByTestId("compose-body"); await body.fill("packaged exact work");
   const db = new DatabaseSync(join(profile(), "terno.db"));
@@ -370,6 +372,8 @@ test("an update downloads, Squirrel swaps the bundle and relaunches it, the prof
   const threads = await page.locator("[data-testid=thread-row]").count();
   expect(threads).toBeGreaterThan(5);
   expect((await updates<{ status: string }>("check")).status).toBe("available");
+  // plan 207: the demo has AI, so the first-screen question is up: Esc keeps the Inbox
+  await page.getByTestId("first-screen-question").waitFor({ timeout: 10_000 }).then(() => page.keyboard.press("Escape"), () => {});
   // manual mode: the pill offers it, and downloading is the user's step
   await expect(page.getByTestId("update-pill")).toHaveText("Update 0.1.1");
   await page.getByTestId("update-pill").click();
