@@ -452,13 +452,16 @@ test.describe("editable, persisted and in effect", () => {
       // plan 232: what Settings says, it says in Settings: on the pane's foot, inside the dialog, and its time runs
       const said = page.getByTestId("settings-dialog").getByTestId("snack");
       await expect(said.getByText(/Imported: 0 new categories/)).toBeVisible();
-      // (the app's own card waits behind, closed, as it does between snacks)
+      // the app's own card waits behind, mounted and closed as between snacks, hidden by the modal as it opened
       await expect(page.getByTestId("snack")).toHaveCount(1);
+      const appCard = page.getByTestId("snack-dock").locator("[data-snack-card]");
+      await expect(appCard).toHaveAttribute("data-state", "closed");
+      expect(await appCard.evaluate((el) => el.closest("[aria-hidden=true]") !== null)).toBe(true);
       const pane = (await page.getByTestId("settings-scroller").boundingBox())!;
       const card = (await said.boundingBox())!;
       expect(card.y + card.height).toBeLessThanOrEqual(pane.y + pane.height);
       expect(Math.abs(card.x + card.width / 2 - (pane.x + pane.width / 2))).toBeLessThan(12);
-      await axeBothModes(page, "[data-testid=snack-room-dock]");
+      await axeBothModes(page, "[data-testid=settings-dialog]");
       // Esc in the card closes the card, not Settings
       await said.getByTestId("snack-close").focus();
       await page.keyboard.press("Escape");
@@ -469,6 +472,18 @@ test.describe("editable, persisted and in effect", () => {
       await page.mouse.move(0, 0);
       await page.clock.fastForward(4500);
       await expect(said).toHaveCount(0);
+      // the language switch remounts the app, Settings and its room with it: Settings stays open, and so does what it said
+      await input.setInputFiles({ name: "terno.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(dump)) });
+      await expect(said).toBeVisible();
+      await page.getByTestId("tab-general").click();
+      await page.getByTestId("language-select").click();
+      await page.getByTestId("language-es").click();
+      await expect(page.locator("html")).toHaveAttribute("lang", /^es/);
+      await expect(said).toBeVisible();
+      await page.getByTestId("language-select").click();
+      await page.getByTestId("language-en").click();
+      await expect(page.locator("html")).toHaveAttribute("lang", /^en/);
+      await page.getByTestId("tab-data").click();
       // a confirmation goes with the room it was said in: none waits behind Settings for after it closes. Closed with focus
       // in its card (a click that doesn't move focus), nothing stays held: the next snack runs out
       await input.setInputFiles({ name: "terno.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(dump)) });

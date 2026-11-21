@@ -58,7 +58,7 @@ function SettingsPane({ title, back, open, children }: { title: string; /** a pa
   const headerRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
-  // plan 232: what Settings says stands on this pane's foot; the last row scrolls clear of it
+  // plan 232: what Settings says stands on this pane's foot; the last row, and a control Tab reaches, scroll clear of it
   const snackRoom = useSnack((s) => s.roomInset);
   useEffect(() => {
     const [root, sentinel, header] = [scrollerRef.current, sentinelRef.current, headerRef.current];
@@ -78,7 +78,7 @@ function SettingsPane({ title, back, open, children }: { title: string; /** a pa
       </div>
       {/* plan 161: on the popover in dark, a tint card's edge is a ring. Plan 162 (after ai162-r05): no fade at the foot, on a
           page inside a section too (a fade over words read as disabled: four reports); it ends at the dialog's edge */}
-      <div ref={scrollerRef} data-testid="settings-scroller" className="relative min-h-0 flex-1 overflow-y-auto px-6 pt-2 pb-4 dark:[--card-ring:var(--card-ring-dialog)]" style={snackRoom ? { paddingBottom: snackRoom } : undefined}>
+      <div ref={scrollerRef} data-testid="settings-scroller" className="relative min-h-0 flex-1 overflow-y-auto px-6 pt-2 pb-4 dark:[--card-ring:var(--card-ring-dialog)]" style={snackRoom ? { paddingBottom: snackRoom, scrollPaddingBottom: snackRoom } : undefined}>
         <div ref={sentinelRef} aria-hidden className="absolute top-0 h-px w-px" />
         {children}
       </div>

@@ -191,12 +191,29 @@ describe("plan 232: a room (Settings)", () => {
     dismissSnack();
     expect(message()).toBe("Terno is up to date");
     expect(current()?.room).toBe("settings");
-    // its room closed meanwhile: the app's
+    // its room closed meanwhile, even one opened again since (a new visit): the app's
     snack.loading("Checking for updates…", { id: "updates" });
     snack("Sent", { background: true });
     closeRoom("settings");
+    openRoom("settings");
     snack.success("Terno is up to date", { id: "updates" });
     expect(current()?.room).toBeUndefined();
+  });
+
+  it("closing the room settles its queue: a confirmation waiting there goes, an error waiting there is the app's", () => {
+    openRoom("settings");
+    snack.loading("Checking for updates…", { id: "updates" });
+    snack.error("Couldn’t save");
+    snack.success("Terno is up to date", { id: "updates" });
+    snack.loading("Exporting…", { id: "export" });
+    snack.error("Couldn’t save");
+    snack.error("Couldn’t export", { id: "export" });
+    closeRoom("settings");
+    dismissSnack();
+    expect(message()).toBe("Couldn’t export");
+    expect(current()?.room).toBeUndefined();
+    dismissSnack();
+    expect(current()).toBeNull();
   });
 
   it("closing the room drops its confirmation; an error or an Undo moves to the app with its time left", () => {

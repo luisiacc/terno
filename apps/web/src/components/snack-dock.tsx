@@ -31,7 +31,10 @@ export function SnackRoom({ name, open }: { name: string; open: boolean }) {
     useRoomPlace.setState({ el });
     return () => {
       useRoomPlace.setState((s) => (s.el === el ? { el: null } : s));
-      closeRoom(name);
+      // a remount (a language change remounts the app) puts a room back in the same commit: only an empty place closes it
+      queueMicrotask(() => {
+        if (useRoomPlace.getState().el === null) closeRoom(name);
+      });
     };
   }, [name, open]);
   return <div ref={ref} className="contents" data-snack-room={name} />;
@@ -269,14 +272,15 @@ export function SnackDock({ over }: { /** what it stands over: List's rows, or a
     return () => clearTimeout(t);
   }, [open]);
 
-  // the content focus was in went away (closed, replaced, an action ran): focus goes back where it came from
+  // the content focus was in went away (closed, replaced, an action ran, plan 232: moved out of its room, which Chromium
+  // reports with a blur, not every engine): focus goes back where it came from
   useLayoutEffect(() => {
     // closing leaves the old content in place for the fade: focus is in content that's going even if it's still there
     if (!focused.current || (open && cardRef.current?.contains(document.activeElement))) return;
     focused.current = false;
     resume("focus");
     giveFocusBack();
-  }, [current?.seq, open]);
+  }, [current?.seq, open, inRoom]);
   // plan 232: a card taken out of its room fires a blur but no pointerleave: the pointer that held it isn't over the new one
   useEffect(() => resume("hover"), [inRoom]);
 

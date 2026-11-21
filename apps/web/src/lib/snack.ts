@@ -228,8 +228,9 @@ type Options = Omit<SnackInput, "message" | "tone">;
  * Plan 158: a snack that only says something happened (no action, no body of its own, nothing in progress or wrong)
  * is about the list it was said in; moving to another list makes it stale. One with Undo keeps its time (z runs it anyway).
  */
-export function staleOnMove(c: Snack): boolean {
-  return !c.action && !c.secondary && !c.render && (c.tone === "success" || c.tone === "neutral");
+export function staleOnMove(c: Pick<Snack, "action" | "secondary" | "render"> & { tone?: SnackTone }): boolean {
+  const tone = c.tone ?? "neutral";
+  return !c.action && !c.secondary && !c.render && (tone === "success" || tone === "neutral");
 }
 
 /** Plan 232: a room opens over the app (Settings): the user's snacks are said there from now on. */
@@ -244,6 +245,9 @@ export function openRoom(name: string): void {
 export function closeRoom(name: string): void {
   const s = useSnack.getState();
   if (s.room === name) useSnack.setState({ room: null, roomInset: 0 });
+  // what waits in the queue goes the same way; a job still running is the app's now (a reopened room is a new visit)
+  queue = queue.flatMap((q) => (q.room !== name ? [q] : staleOnMove(q) ? [] : [{ ...q, room: undefined }]));
+  for (const [id, room] of displaced) if (room === name) displaced.set(id, undefined);
   const c = s.current;
   if (c?.room === name) {
     if (staleOnMove(c)) dismissSnack(c.id);

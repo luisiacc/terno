@@ -1,6 +1,6 @@
 # Plan 232: what Settings says, it says in Settings
 
-- **Status:** in progress.
+- **Status:** shipped.
 - **Builds on:** plan 13 (the docked snackbar), plan 158 (where it sits), plan 188 (its keyboard and screen reader).
 - **Request (verbatim):** "when doing stuff in the settings tab, like importing / exporting, the confirmation shows as a snackbar behind it and at the bottom, lets make the confirmations for settings show inside the settings dialog."
 
@@ -53,7 +53,18 @@ Ten points; what changed:
 6. Not taken: room by operation rather than by the moment it's said (point 1). An archive's result that lands in the milliseconds after Settings opens is said in Settings, where the user is looking; a per-operation origin would touch every caller. ⌘F from the card (point 5): the card is the dialog's last stop, and ⌘F from it is a rare path. Announcements under a modal over Settings (point 6): the same as any snack under a modal today. Layout changes remounting the dock (point 8): as today.
 7. The e2e checks the import's lifetime with the controlled clock (point 10), not a ring it doesn't have.
 
-## 6. Out of scope
+## 6. What the Codex code review changed
+
+Six points, all taken:
+
+1. **A language change closed the room.** It remounts the app, Settings and its room with it, and the unmount closed the room, dropping a confirmation and putting an error behind Settings. Now an unmounted room closes only if no room took its place in the same commit (a microtask later). Tested: the import's confirmation stays through a switch to Spanish (it went without the fix).
+2. **Closing the room settles its queue.** A confirmation waiting behind an error went on to show in the app after Settings closed. Now queued entries from the room go the way the current one does: a plain confirmation goes, anything else is the app's (unit test).
+3. **A reopened Settings is a new visit.** A job begun in one visit and displaced by news had its result said in the next. Closing the room makes its running jobs the app's (unit test).
+4. **Tab under the card.** Settings' scroller also sets `scroll-padding-bottom` from the card's reserve, as the reader does, so a control Tab reaches scrolls clear of it.
+5. **Focus when the card moves.** The focus hand-back also runs when the card changes place. Chromium reports the move with a blur (the e2e passes either way), but not every engine does.
+6. **The e2e checks what it claims.** The app's card stays mounted, closed and hidden by the modal while Settings speaks, and axe scans the whole dialog with the card in it, in light and dark.
+
+## 7. Out of scope
 
 - Other dialogs (the category picker, reminders): none says anything of its own today. They can mount a `SnackRoom` when one does.
 - Writing style's in-place undo (plan 161) stays: it's undone where it happened, better than a toast.
