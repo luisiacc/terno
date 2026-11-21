@@ -75,6 +75,11 @@ export interface FeedRow {
 export interface DigestPick {
   day: string;
   toggled: ReadonlySet<number>;
+  /**
+   * Plan 235: read rows the person ticked. An opened row starts unticked on both pages; kept apart from `toggled` so a row
+   * that turns read never flips (a digest's unread row unticked, then read, stays unticked).
+   */
+  readTicked?: ReadonlySet<number>;
   scroll: number;
   /** what this page archived, an entry per Archive: those rows leave it, and its header says it's done (plan 161, pass 2) */
   done?: readonly DigestDone[] | null;
@@ -302,16 +307,16 @@ export function withoutSenders(digest: DigestRow, keys: ReadonlySet<string>): Di
   return { ...digest, items: digest.items.filter((i) => !gone.has(i.threadId)), liveIds: digest.liveIds.filter((id) => !gone.has(id)), readIds: digest.readIds?.filter((id) => !gone.has(id)) };
 }
 
-/** Plan 166: "Not a newsletter": out of the digest everywhere at once (the page, Today's header), until `letBackIn`. */
-export function leaveOut(key: string): void {
-  useToday.setState(({ notNewsletters, digest }) => ({ notNewsletters: new Set([...notNewsletters, key]), digest: digest && withoutSenders(digest, new Set([key])) }));
+/** Plan 166: "Not a newsletter" (plan 235: or Hide sender): out of the digest everywhere at once (the page, Today's header), until `letBackIn`. */
+export function leaveOut(keys: readonly string[]): void {
+  useToday.setState(({ notNewsletters, digest }) => ({ notNewsletters: new Set([...notNewsletters, ...keys]), digest: digest && withoutSenders(digest, new Set(keys)) }));
 }
 
 /** Plan 166: its Undo, or Settings' Remove: the rows come back with the next read. */
-export function letBackIn(key: string): void {
+export function letBackIn(keys: readonly string[]): void {
   useToday.setState(({ notNewsletters }) => {
     const next = new Set(notNewsletters);
-    next.delete(key);
+    for (const key of keys) next.delete(key);
     return { notNewsletters: next };
   });
 }
@@ -335,9 +340,9 @@ export const digestKeys: { current: { has: () => boolean; step: (delta: 1 | -1) 
 export const digestHasKeys = (): boolean => digestKeys.current?.has() === true;
 
 /** Plan 162 (after ai162-r02): a newsletter opened from the page: kept, where the page was kept, then shown. */
-export function openFromDigest(day: string, threadId: number, scroll: number, toggled: ReadonlySet<number>): void {
+export function openFromDigest(day: string, threadId: number, scroll: number, ticks: Pick<DigestPick, "toggled" | "readTicked">): void {
   const pick = digestPick(day);
-  keepDigestPick({ day, toggled, scroll, from: threadId, opened: new Set([...(pick.opened ?? []), threadId]) });
+  keepDigestPick({ day, ...ticks, scroll, from: threadId, opened: new Set([...(pick.opened ?? []), threadId]) });
   useToday.setState({ fromDigest: threadId });
   setApp({ selectedId: threadId });
 }

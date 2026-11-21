@@ -155,14 +155,14 @@ function NotNewslettersRow() {
     next?.focus({ preventScroll: true });
     try {
       const r = await client.call("today.newsletterAgain", { email: e.email, id: e.id });
-      letBackIn(key);
+      letBackIn([key]);
       void reloadList({ keepSelection: true });
       if (!r.removed) return;
       const removed = r.removed;
       const undo = registerUndo(async () => {
         // back as it was (its own time, so the list's order is as before), in one unit
         await client.call("today.notNewslettersUndo", { restore: [removed] });
-        leaveOut(key);
+        leaveOut([key]);
         await reloadList({ keepSelection: true });
       });
       snack.success(t("today.digest.excluded.removed", { sender: nameOf(e) }), { duration: 8000, action: undoAction(undo, t("today.digest.excluded.removeUndo", { sender: nameOf(e) })) });

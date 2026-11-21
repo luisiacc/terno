@@ -229,6 +229,25 @@ test.describe("What matters and its digest (plan 145)", () => {
     await expect(page.getByTestId("digest-page")).toBeVisible();
     await expect(page.getByTestId("digest-title")).toHaveText("Automated mail");
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-digest-off.png` });
+    // plan 235: ticked rows' senders can be hidden from the foot, and each row has a menu (⇧F10 on it) for the ticked rows
+    const digestRows = page.getByTestId("digest-item");
+    expect(await digestRows.count()).toBeGreaterThanOrEqual(2);
+    await expect(page.getByTestId("digest-hide")).toHaveCount(0);
+    await digestRows.nth(0).getByTestId("digest-tick").click();
+    await digestRows.nth(1).getByTestId("digest-tick").click();
+    await expect(page.getByTestId("digest-hide")).toHaveText(/^Hide (sender|2 senders)$/);
+    await digestRows.nth(0).getByTestId("digest-open").focus();
+    await page.keyboard.press("Shift+F10");
+    const menu = page.getByTestId("digest-item-menu");
+    await expect(menu.locator("[data-testid^=digest-menu-]")).toHaveText(["Open", "Archive 2", /^Hide (sender|2 senders)$/]);
+    for (const mode of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: mode });
+      if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-automated-menu-${mode}.png` });
+      const results = await new AxeBuilder({ page }).include("[data-testid=digest-scroller]").include("[data-testid=digest-item-menu]").analyze();
+      expect(results.violations.map((v) => `${mode} ${v.id}: ${v.nodes[0]?.html.slice(0, 120)}`)).toEqual([]);
+    }
+    await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
   });
 
   test("plan 166: Not a newsletter, by the row's control or its menu, leaves the digest at once with an exact Undo, and Settings lists the sender to let back in", async ({ app: page, server }) => {
@@ -284,7 +303,7 @@ test.describe("What matters and its digest (plan 145)", () => {
     await page.getByTestId("open-settings").click();
     await page.getByTestId("tab-ai").click();
     const excluded = page.getByTestId("ai-digest-excluded");
-    await expect(excluded).toContainText("Not newsletters");
+    await expect(excluded).toContainText("Senders left out");
     await expect(excluded.getByTestId("ai-digest-excluded-item")).toHaveText(["Morning Brewnews@morningbrew.test"]);
     await excluded.scrollIntoViewIfNeeded();
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-not-newsletter-settings.png` });

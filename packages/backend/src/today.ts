@@ -492,18 +492,27 @@ export class TodayService {
     return [...(await this.readNotNewsletters())].sort((a, b) => b.at - a.at);
   }
 
-  /** A sender out of every digest. One unit, so two at once can't lose one; at the cap the oldest go, and are said. */
-  async notNewsletter(p: { email: string; name: string }): Promise<{ added: NotNewsletter | null; evicted: NotNewsletter[] }> {
-    const key = addressKey(p.email);
+  /**
+   * Senders out of every digest and Automated mail (plan 235: several at once, from the page's ticks). One unit, so two at
+   * once can't lose one; one already listed adds nothing; at the cap the oldest go, and are said.
+   */
+  async notNewsletter(p: { senders: readonly { email: string; name: string }[] }): Promise<{ added: NotNewsletter[]; evicted: NotNewsletter[] }> {
     const now = this.b.now();
-    const r = await this.b.store.settings.update<NotNewsletter[], { added: NotNewsletter | null; evicted: NotNewsletter[] }>(NOT_NEWSLETTERS_KEY, [], (stored) => {
-      const list = entries(stored);
-      if (list.some((e) => addressKey(e.email) === key)) return { value: list, result: { added: null, evicted: [] } };
-      // after every other (Codex review, round 2): the list's order holds within a millisecond and through a clock set back,
-      // so the cap never drops the one just said
-      const at = Math.max(now, ...list.map((e) => e.at + 1));
-      const added: NotNewsletter = { id: globalThis.crypto.randomUUID(), email: p.email.trim(), name: p.name.trim().slice(0, NOT_NEWSLETTER_NAME_MAX), at };
-      const value = [...list, added];
+    const r = await this.b.store.settings.update<NotNewsletter[], { added: NotNewsletter[]; evicted: NotNewsletter[] }>(NOT_NEWSLETTERS_KEY, [], (stored) => {
+      const value = entries(stored);
+      const listed = new Set(value.map((e) => addressKey(e.email)));
+      const added: NotNewsletter[] = [];
+      for (const s of p.senders) {
+        const key = addressKey(s.email);
+        if (listed.has(key)) continue;
+        listed.add(key);
+        // after every other (Codex review, round 2): the list's order holds within a millisecond and through a clock set back,
+        // so the cap never drops one just said
+        const at = Math.max(now, ...value.map((e) => e.at + 1));
+        const entry: NotNewsletter = { id: globalThis.crypto.randomUUID(), email: s.email.trim(), name: s.name.trim().slice(0, NOT_NEWSLETTER_NAME_MAX), at };
+        value.push(entry);
+        added.push(entry);
+      }
       const evicted: NotNewsletter[] = [];
       // the oldest first (Undos putting entries back may have left it up to NOT_NEWSLETTERS_OVER over)
       while (value.length > NOT_NEWSLETTERS_MAX) {
@@ -513,7 +522,7 @@ export class TodayService {
       }
       return { value, result: { added, evicted } };
     });
-    if (r.added) this.exclusionsChanged();
+    if (r.added.length) this.exclusionsChanged();
     return r;
   }
 
@@ -533,10 +542,11 @@ export class TodayService {
    * An Undo, whole in one unit: off what it added (only that entry, an old Undo can't take off one said again since), and
    * back what it took off or the cap dropped, as they were. A sender listed again meanwhile isn't listed twice.
    */
-  async notNewslettersUndo(p: { remove?: { email: string; id: string }; restore: readonly NotNewsletter[] }): Promise<{ restored: number }> {
+  async notNewslettersUndo(p: { remove?: readonly { email: string; id: string }[]; restore: readonly NotNewsletter[] }): Promise<{ restored: number }> {
     const r = await this.b.store.settings.update<NotNewsletter[], { changed: boolean; restored: number }>(NOT_NEWSLETTERS_KEY, [], (stored) => {
       const list = entries(stored);
-      let value = p.remove ? list.filter((e) => e.id !== p.remove!.id) : [...list];
+      const off = new Set((p.remove ?? []).map((e) => e.id));
+      let value = list.filter((e) => !off.has(e.id));
       let changed = value.length !== list.length;
       let restored = 0;
       for (const e of p.restore) {
@@ -848,8 +858,11 @@ export class TodayService {
       .then(() => undefined);
   }
 
-  /** Only what the page listed, each only if it's still as the page saw it: a new message or a star since keeps it (revisions 1, 2). */
-  async archive(p: { items: readonly { threadId: number; lastDate: number; messageCount: number; fromEmail?: string }[]; jobId?: string }): Promise<{ undoId: number | null; archived: number; archivedIds: number[]; changed: number; spared: number }> {
+  /**
+   * Only what the page listed, each only if it's still as the page saw it: a new message or a star since keeps it (revisions
+   * 1, 2). Read mail only when the page showed it read and the person ticked it (`read`, plan 235).
+   */
+  async archive(p: { items: readonly { threadId: number; lastDate: number; messageCount: number; fromEmail?: string; read?: boolean }[]; jobId?: string }): Promise<{ undoId: number | null; archived: number; archivedIds: number[]; changed: number; spared: number }> {
     const { store } = this.b;
     const listed = new Map(p.items.map((i) => [i.threadId, i]));
     const targets = [...listed.keys()];
@@ -867,8 +880,9 @@ export class TodayService {
         const item = listed.get(id)!;
         if (item.fromEmail !== undefined && excluded.has(addressKey(item.fromEmail))) continue;
         if (!f || !f.inInbox || f.lastDate !== item.lastDate || f.messageCount !== item.messageCount) changed++;
-        // plan 145 archives only unread mail: one read since the page was drawn stays, and is counted as left alone (plan 161)
-        else if (f.starred || f.replied || !f.unread) spared++;
+        // plan 145 archives only unread mail: one read since the page was drawn stays, and is counted as left alone (plan 161).
+        // Plan 235: unless the page showed it read and the person ticked it anyway
+        else if (f.starred || f.replied || (!f.unread && item.read !== true)) spared++;
         else out.push(id);
       }
       archived += out.length;

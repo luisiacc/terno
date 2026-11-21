@@ -22,7 +22,7 @@ vi.mock("~/rpc/connection", () => ({
     call: vi.fn(async (method: string, params: unknown) => {
       calls.push({ method, params });
       if (method === "today.digestArchive") return archived;
-      if (method === "today.notNewsletter") return { added: { ...(params as object), id: "e7", at: 7 }, evicted: evicted };
+      if (method === "today.notNewsletter") return { added: (params as { senders: object[] }).senders.map((e, n) => ({ ...e, id: `e${7 + n}`, at: 7 })), evicted: evicted };
       if (method === "today.notNewslettersUndo") return { restored: 1 };
       if (method === "today.newsletterAgain") return { removed: { email: (params as { email: string }).email, name: "x", at: 7 } };
       if (method === "threads.undo") {
@@ -144,16 +144,124 @@ it("plan 162 (after ai162-r02): opening one keeps it at once, before the backend
   expect(states()).toEqual(["archive:", "opened:Opened · stays in Inbox", "archive:"]);
   expect(host.querySelector("[data-testid=digest-archive]")!.textContent).toBe("Archive 2");
   expect(host.querySelector("[data-testid=digest-count]")!.textContent).toContain("2 to archive · 1 stays in Inbox");
-  // back on the row it was opened from; its box can't be ticked again (opened is read and stays, plan 145)
+  // back on the row it was opened from; it starts unticked (opened is read and stays, plan 145), and plan 235: the person can
+  // tick it, and x does too
   expect(document.activeElement?.getAttribute("data-digest-open")).toBe("2");
-  expect(host.querySelectorAll<HTMLElement>("[data-testid=digest-tick]")[1]!.hasAttribute("data-disabled")).toBe(true);
+  expect(host.querySelectorAll<HTMLElement>("[data-testid=digest-tick]")[1]!.hasAttribute("data-disabled")).toBe(false);
+  await act(async () => digestKeys.current!.toggle());
+  expect(states()).toEqual(["archive:", "archive:", "archive:"]);
   await act(async () => digestKeys.current!.toggle());
   expect(ticks()).toEqual([true, false, true]);
-  // Tick all and Untick all leave it out too
+  // Untick all takes it off too; a digest's Tick all leaves it out (its hint: any you open stay)
+  await act(async () => host.querySelectorAll<HTMLElement>("[data-testid=digest-tick]")[1]!.click());
   await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-tick-all]")!.click());
   expect(ticks()).toEqual([false, false, false]);
   await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-tick-all]")!.click());
   expect(ticks()).toEqual([true, false, true]);
+  // ticked by the person, Archive takes it and says it was read, so the backend lets it go
+  await act(async () => host.querySelectorAll<HTMLElement>("[data-testid=digest-tick]")[1]!.click());
+  calls.length = 0;
+  await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-archive]")!.click());
+  const sent = (calls.find((c) => c.method === "today.digestArchive")!.params as { items: { threadId: number; read?: true }[] }).items;
+  expect(sent.map((i) => [i.threadId, i.read])).toEqual([[1, undefined], [2, true], [3, undefined]]);
+});
+
+it("plan 235: a digest's unread row unticked, then read elsewhere, stays unticked", async () => {
+  await show(digestOf("2026-10-22"));
+  await act(async () => host.querySelectorAll<HTMLElement>("[data-testid=digest-tick]")[0]!.click());
+  await act(async () => useToday.setState({ digest: { ...digestOf("2026-10-22"), liveIds: [2, 3], readIds: [1] } }));
+  expect(states()).toEqual(["opened:Opened · stays in Inbox", "archive:", "archive:"]);
+});
+
+describe("plan 235: Automated mail", () => {
+  const automatedRow = (over: Partial<DigestRow> = {}): DigestRow => ({ ...digestOf("2026-10-25", true), ...over });
+  const tick = (n: number) => act(async () => host.querySelectorAll<HTMLElement>("[data-testid=digest-tick]")[n]!.click());
+  const menuOn = async (n: number) => {
+    const row = host.querySelectorAll<HTMLElement>("[data-testid=digest-item]")[n]!;
+    await act(async () => row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10, button: 2 })));
+    return vi.waitFor(() => {
+      const menu = document.querySelector<HTMLElement>("[data-testid=digest-item-menu]");
+      expect(menu).not.toBeNull();
+      return menu!;
+    });
+  };
+  const closeMenu = () => act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  const labels = (menu: HTMLElement) => [...menu.querySelectorAll("[data-testid^=digest-menu-]")].map((e) => e.textContent);
+
+  it("an opened row ticks; a page of opened rows only can tick them all; a tick held through Mark unread stays", async () => {
+    await show(automatedRow({ liveIds: [], readIds: [1, 2, 3] }));
+    expect(states()).toEqual(["opened:Opened · stays in Inbox", "opened:Opened · stays in Inbox", "opened:Opened · stays in Inbox"]);
+    expect(host.querySelector("[data-testid=digest-count]")!.textContent).toBe("0 of 3 selected");
+    await tick(0);
+    expect(ticks()).toEqual([true, false, false]);
+    expect(host.querySelector("[data-testid=digest-count]")!.textContent).toBe("1 of 3 selected");
+    await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-tick-all]")!.click());
+    await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-tick-all]")!.click());
+    expect(ticks()).toEqual([true, true, true]);
+    // marked unread elsewhere: the person's tick stays
+    await act(async () => useToday.setState({ digest: automatedRow({ liveIds: [1], readIds: [2, 3] }) }));
+    expect(ticks()).toEqual([true, true, true]);
+  });
+
+  it("the row's menu: Open, Archive and Hide sender for the row; on one of several ticked, for the ticked rows", async () => {
+    await show(automatedRow({ liveIds: [1, 3, 4], readIds: [2], items: [1, 2, 3, 4].map((id) => ({ ...item(id), ...(id === 4 ? { fromEmail: "news@sender1.test" } : {}) })) }));
+    expect(host.querySelector("[data-testid=digest-item]")!.hasAttribute("data-context-menu")).toBe(true);
+    // no row control: nothing here said these are newsletters
+    expect(host.querySelectorAll("[data-testid=digest-not-newsletter]")).toHaveLength(0);
+    let menu = await menuOn(1);
+    expect(labels(menu)).toEqual(["Open", "Archive", "Hide sender"]);
+    // Archive on the unticked opened row: that row alone, read, the ticks as they were
+    calls.length = 0;
+    await act(async () => menu.querySelector<HTMLElement>("[data-testid=digest-menu-archive]")!.click());
+    const sent = (calls.find((c) => c.method === "today.digestArchive")!.params as { items: { threadId: number; read?: true }[] }).items;
+    expect(sent.map((i) => [i.threadId, i.read])).toEqual([[2, true]]);
+    await closeMenu();
+    await tick(0);
+    await tick(3);
+    menu = await menuOn(0);
+    expect(labels(menu)).toEqual(["Open", "Archive 2", "Hide sender"]);
+    await closeMenu();
+    // on an unticked row it's that row's
+    menu = await menuOn(2);
+    expect(labels(menu)).toEqual(["Open", "Archive", "Hide sender"]);
+    await closeMenu();
+    await tick(2);
+    menu = await menuOn(2);
+    expect(labels(menu)).toEqual(["Open", "Archive 3", "Hide 2 senders"]);
+    await closeMenu();
+  });
+
+  it("Hide senders: the ticked rows' senders, every row of theirs, in one call; Undo brings them back with their ticks", async () => {
+    const one = { ...digestOf("2026-10-25", true), items: [1, 2, 3, 4].map((id) => ({ ...item(id), ...(id === 4 ? { fromEmail: "news@sender1.test" } : {}) })), liveIds: [1, 2, 3, 4] };
+    await show(one);
+    await tick(0);
+    await tick(1);
+    expect(host.querySelector("[data-testid=digest-hide]")!.textContent).toBe("Hide 2 senders");
+    calls.length = 0;
+    await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-hide]")!.click());
+    expect(host.querySelectorAll("[data-testid=digest-item]")).toHaveLength(1);
+    expect(calls.filter((c) => c.method === "today.notNewsletter").map((c) => c.params)).toEqual([{ senders: [{ email: "news@sender1.test", name: "Sender 1" }, { email: "news@sender2.test", name: "Sender 2" }] }]);
+    expect(useSnack.getState().current!.message).toBe("2 senders won't show in Automated mail");
+    await act(async () => undoNow(useSnack.getState().current!.action!.undo!));
+    expect(calls.find((c) => c.method === "today.notNewslettersUndo")!.params).toEqual({ remove: [{ email: "news@sender1.test", id: "e7" }, { email: "news@sender2.test", id: "e8" }], restore: [] });
+    await act(async () => useToday.setState({ digest: one }));
+    expect(ticks()).toEqual([true, true, false, false]);
+  });
+
+  it("a row with no sender address offers no Hide, and isn't sent with the others", async () => {
+    await show(automatedRow({ items: [1, 2, 3].map((id) => ({ ...item(id), ...(id === 2 ? { fromEmail: "" } : {}) })) }));
+    const menu = await menuOn(1);
+    expect(labels(menu)).toEqual(["Open", "Archive"]);
+    await closeMenu();
+    await tick(1);
+    expect(host.querySelector("[data-testid=digest-hide]")).toBeNull();
+    await tick(2);
+    expect(host.querySelector("[data-testid=digest-hide]")!.textContent).toBe("Hide sender");
+    calls.length = 0;
+    await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-hide]")!.click());
+    expect(calls.find((c) => c.method === "today.notNewsletter")!.params).toEqual({ senders: [{ email: "news@sender3.test", name: "Sender 3" }] });
+    expect(useSnack.getState().current!.message).toBe("Sender 3 won't show in Automated mail");
+  });
 });
 
 it("plan 162 (after ai162-r02, Codex review): opened here, then archived elsewhere, it says archived, not that it stays", async () => {
@@ -341,7 +449,7 @@ describe("plan 166: Not a newsletter", () => {
     expect(senders()).toEqual(["Sender 1", "Sender 3"]);
     expect(host.querySelector("[data-testid=digest-archive]")!.textContent).toBe("Archive 2");
     expect(calls.map((c) => c.method).filter((m) => m !== "today.digest" && m !== "threads.list" && m !== "today.list")).toEqual(["today.notNewsletter"]);
-    expect(calls[0]!.params).toEqual({ email: "news@sender2.test", name: "Sender 2" });
+    expect(calls[0]!.params).toEqual({ senders: [{ email: "news@sender2.test", name: "Sender 2" }] });
     expect(useToday.getState().fromDigest).toBeNull();
     // Today's header counts without it at once
     expect(useToday.getState().digest!.liveIds).toEqual([1, 3]);
@@ -353,7 +461,7 @@ describe("plan 166: Not a newsletter", () => {
     await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-tick-all]")!.click());
     expect(useSnack.getState().current!.message).toBe("Sender 2 won't be in your digest");
     await undoSnack();
-    expect(calls.find((c) => c.method === "today.notNewslettersUndo")!.params).toEqual({ remove: { email: "news@sender2.test", id: "e7" }, restore: [] });
+    expect(calls.find((c) => c.method === "today.notNewslettersUndo")!.params).toEqual({ remove: [{ email: "news@sender2.test", id: "e7" }], restore: [] });
     await act(async () => useToday.setState({ digest: digestOf("2026-10-22") }));
     expect(senders()).toEqual(["Sender 1", "Sender 2", "Sender 3"]);
     expect(ticks()).toEqual([true, false, true]);
@@ -387,20 +495,14 @@ describe("plan 166: Not a newsletter", () => {
       await act(async () => useToday.setState({ digest: { ...digestOf("2026-10-22"), items: [1, 2, 3].map((id) => ({ ...item(id), from: id === 1 ? "N".repeat(300) : `Sender ${id}` })) } }));
       calls.length = 0;
       await act(async () => host.querySelectorAll<HTMLElement>("[data-testid=digest-not-newsletter]")[0]!.click());
-      expect((calls.find((c) => c.method === "today.notNewsletter")!.params as { name: string }).name).toHaveLength(200);
+      expect((calls.find((c) => c.method === "today.notNewsletter")!.params as { senders: { name: string }[] }).senders[0]!.name).toHaveLength(200);
       expect([...useToday.getState().notNewsletters]).toEqual(["news@sender1.test"]);
       await undoSnack();
-      expect(calls.find((c) => c.method === "today.notNewslettersUndo")!.params).toEqual({ remove: { email: "news@sender1.test", id: "e7" }, restore: evicted });
+      expect(calls.find((c) => c.method === "today.notNewslettersUndo")!.params).toEqual({ remove: [{ email: "news@sender1.test", id: "e7" }], restore: evicted });
       expect([...useToday.getState().notNewsletters]).toEqual(["news@sender3.test"]);
     } finally {
       evicted = [];
     }
-  });
-
-  it("automated mail has neither: nothing there has said these are newsletters", async () => {
-    await show(digestOf("2026-10-22", true));
-    expect(host.querySelectorAll("[data-testid=digest-not-newsletter]")).toHaveLength(0);
-    expect(host.querySelector("[data-testid=digest-item]")!.hasAttribute("data-context-menu")).toBe(false);
   });
 
   it("Archive names each row's sender, so one said not to be a newsletter meanwhile is left alone", async () => {

@@ -491,6 +491,23 @@ describe("the digest", () => {
     expect((await t.backend.store.filters.actionFacts([mid]))[0]!.inInbox).toBe(true);
   });
 
+  it("plan 235: a read one the page showed read and the person ticked goes; without that, read mail still stays", async () => {
+    const t = await setup();
+    const seen = await t.letter("Seen");
+    const readSince = await t.letter("Read since");
+    await on(t);
+    await vi.waitFor(async () => expect((await t.backend.store.today.digest.get(day()))?.state).toBe("ready"));
+    const row = (await t.client.call("today.digest", {}))!;
+    await t.backend.store.threads.act({ threadIds: [seen, readSince], action: "markRead", signal: null, now: NOW });
+    const asListed = (id: number) => {
+      const i = row.items.find((x) => x.threadId === id)!;
+      return { threadId: id, lastDate: i.lastDate, messageCount: i.messageCount };
+    };
+    const r = await t.client.call("today.digestArchive", { items: [{ ...asListed(seen), read: true }, asListed(readSince)] });
+    expect(r).toMatchObject({ archived: 1, spared: 1, changed: 0, archivedIds: [seen] });
+    expect((await t.backend.store.filters.actionFacts([seen, readSince])).map((f) => [f.id, f.inInbox])).toEqual(expect.arrayContaining([[seen, false], [readSince, true]]));
+  });
+
   it("the digest off shows what's automated, unticked and unsorted, and sends nothing", async () => {
     const t = await setup();
     await t.letter("Acme Store");
@@ -528,8 +545,8 @@ describe("the digest", () => {
       const events: unknown[] = [];
       const off = t.client.on("todayDigest", (e) => void events.push(e));
       // any case, any +tag: one sender
-      const r = await t.client.call("today.notNewsletter", { email: "News+weekly@Stratechery.test", name: "Stratechery" });
-      expect(r.added).toMatchObject({ email: "News+weekly@Stratechery.test", name: "Stratechery" });
+      const r = await t.client.call("today.notNewsletter", { senders: [{ email: "News+weekly@Stratechery.test", name: "Stratechery" }] });
+      expect(r.added).toMatchObject([{ email: "News+weekly@Stratechery.test", name: "Stratechery" }]);
       expect(r.evicted).toEqual([]);
       const after = (await t.client.call("today.digest", {}))!;
       expect(after.items.map((i) => i.threadId)).toEqual([brew]);
@@ -537,10 +554,10 @@ describe("the digest", () => {
       await vi.waitFor(() => expect(events.length).toBeGreaterThan(0));
       off();
       // said twice, it's one entry, and the second adds nothing for its Undo to take
-      expect((await t.client.call("today.notNewsletter", { email: "news@stratechery.test", name: "S" })).added).toBeNull();
+      expect((await t.client.call("today.notNewsletter", { senders: [{ email: "news@stratechery.test", name: "S" }] })).added).toEqual([]);
       expect((await t.client.call("today.notNewsletters", {})).senders.map((e) => e.email)).toEqual(["News+weekly@Stratechery.test"]);
       // the snack's Undo, by the entry's id
-      await t.client.call("today.notNewslettersUndo", { remove: { email: r.added!.email, id: r.added!.id }, restore: [] });
+      await t.client.call("today.notNewslettersUndo", { remove: [{ email: r.added[0]!.email, id: r.added[0]!.id }], restore: [] });
       expect((await t.client.call("today.notNewsletters", {})).senders).toEqual([]);
       expect((await t.client.call("today.digest", {}))!.items.map((i) => i.threadId)).toEqual([strat, brew]);
       // no model was asked about any of it
@@ -549,7 +566,7 @@ describe("the digest", () => {
 
     it("keeps the sender out of the next scan before any model call, and gives its place among the 40 to another", async () => {
       const t = await setup();
-      await t.client.call("today.notNewsletter", { email: "news@stratechery.test", name: "Stratechery" });
+      await t.client.call("today.notNewsletter", { senders: [{ email: "news@stratechery.test", name: "Stratechery" }] });
       await t.letter("Stratechery");
       await t.letter("Kept");
       await on(t);
@@ -569,7 +586,7 @@ describe("the digest", () => {
       limiter.host.beforeAhead = async (task) => {
         if (task === "digest" && once) {
           once = false;
-          await t.backend.today.notNewsletter({ email: "news@spammy.test", name: "Spammy" });
+          await t.backend.today.notNewsletter({ senders: [{ email: "news@spammy.test", name: "Spammy" }] });
         }
         await real(task);
       };
@@ -608,8 +625,8 @@ describe("the digest", () => {
       await digest.write({ ...(await digest.get(day()))!, items: [facts[0]!] }, g);
       // the thread's last sender isn't the newsletter's any more (a reply in it): the item's own message decides
       t.raw.run("UPDATE threads SET last_from_email = 'ana@people.test' WHERE id = ?", one);
-      await t.client.call("today.notNewsletter", { email: "news@oldletter.test", name: "Old Letter" });
-      await t.client.call("today.notNewsletter", { email: "news@stillpending.test", name: "Still Pending" });
+      await t.client.call("today.notNewsletter", { senders: [{ email: "news@oldletter.test", name: "Old Letter" }] });
+      await t.client.call("today.notNewsletter", { senders: [{ email: "news@stillpending.test", name: "Still Pending" }] });
       // the pending one is dropped before it's sent: no model call at all
       await t.client.call("settings.update", { today: { digest: true } });
       await vi.waitFor(async () => expect((await digest.get(day()))?.state).toBe("ready"));
@@ -627,7 +644,7 @@ describe("the digest", () => {
       await on(t);
       await vi.waitFor(async () => expect((await t.backend.store.today.digest.get(day()))?.state).toBe("ready"));
       const listed = (await t.client.call("today.digest", {}))!.items;
-      await t.client.call("today.notNewsletter", { email: "news@two.test", name: "Two" });
+      await t.client.call("today.notNewsletter", { senders: [{ email: "news@two.test", name: "Two" }] });
       const r = await t.client.call("today.digestArchive", { items: listed.map((i) => ({ threadId: i.threadId, lastDate: i.lastDate, messageCount: i.messageCount, fromEmail: i.fromEmail })) });
       expect(r).toMatchObject({ archived: 1, changed: 0, spared: 0, archivedIds: [a] });
       expect((await t.backend.store.filters.actionFacts([b]))[0]!.inInbox).toBe(true);
@@ -637,61 +654,72 @@ describe("the digest", () => {
       const t = await setup();
       const full = Array.from({ length: 500 }, (_, i) => ({ id: `e${i}`, email: `s${i}@x.test`, name: `S${i}`, at: 1000 + i }));
       await t.backend.store.settings.set("today:notNewsletters", full);
-      const r = await t.client.call("today.notNewsletter", { email: "new@x.test", name: "New" });
+      const r = await t.client.call("today.notNewsletter", { senders: [{ email: "new@x.test", name: "New" }] });
       expect(r.evicted).toEqual([full[0]]);
       let list = (await t.client.call("today.notNewsletters", {})).senders;
       expect(list).toHaveLength(500);
       expect(list[0]!.email).toBe("new@x.test");
       // another window says another sender meanwhile: it takes the slot New will free
-      const other = await t.client.call("today.notNewsletter", { email: "other@x.test", name: "Other" });
+      const other = await t.client.call("today.notNewsletter", { senders: [{ email: "other@x.test", name: "Other" }] });
       expect(other.evicted).toEqual([full[1]]);
       // the snack's Undo: off what it added, back what it dropped, as it was, in one unit: S0 isn't dropped again
-      expect(await t.client.call("today.notNewslettersUndo", { remove: { email: "new@x.test", id: r.added!.id }, restore: r.evicted })).toEqual({ restored: 1 });
+      expect(await t.client.call("today.notNewslettersUndo", { remove: [{ email: "new@x.test", id: r.added[0]!.id }], restore: r.evicted })).toEqual({ restored: 1 });
       list = (await t.client.call("today.notNewsletters", {})).senders;
       expect(list.some((e) => e.email === "new@x.test")).toBe(false);
       expect(list.find((e) => e.email === "s0@x.test")).toEqual(full[0]);
       expect(list).toHaveLength(500);
       // the next one said trims back to the cap, the oldest first
-      const next = await t.client.call("today.notNewsletter", { email: "next@x.test", name: "Next" });
+      const next = await t.client.call("today.notNewsletter", { senders: [{ email: "next@x.test", name: "Next" }] });
       expect(next.evicted).toEqual([full[0]]);
+    });
+
+    it("plan 235: several senders in one unit, one listed already adds nothing, and the Undo takes off exactly those it added", async () => {
+      const t = await setup();
+      const before = await t.client.call("today.notNewsletter", { senders: [{ email: "b@x.test", name: "B" }] });
+      const r = await t.client.call("today.notNewsletter", { senders: [{ email: "a@x.test", name: "A" }, { email: "B@x.test", name: "B again" }, { email: "c@x.test", name: "C" }, { email: "a+tag@x.test", name: "A twice" }] });
+      expect(r.added.map((e) => e.email)).toEqual(["a@x.test", "c@x.test"]);
+      expect(r.added[1]!.at).toBeGreaterThan(r.added[0]!.at);
+      expect((await t.client.call("today.notNewsletters", {})).senders.map((e) => e.email)).toEqual(["c@x.test", "a@x.test", "b@x.test"]);
+      await t.client.call("today.notNewslettersUndo", { remove: r.added.map((e) => ({ email: e.email, id: e.id })), restore: r.evicted });
+      expect((await t.client.call("today.notNewsletters", {})).senders.map((e) => e.id)).toEqual([before.added[0]!.id]);
     });
 
     it("an old Undo can't take off a sender removed and said again since, even within one millisecond (Codex review)", async () => {
       const t = await setup();
-      const first = await t.client.call("today.notNewsletter", { email: "a@x.test", name: "A" });
+      const first = await t.client.call("today.notNewsletter", { senders: [{ email: "a@x.test", name: "A" }] });
       // Settings' Remove, then said again from the digest, the clock unmoved
-      await t.client.call("today.newsletterAgain", { email: "a@x.test", id: first.added!.id });
-      const again = await t.client.call("today.notNewsletter", { email: "a@x.test", name: "A" });
-      expect(again.added!.id).not.toBe(first.added!.id);
-      await t.client.call("today.notNewslettersUndo", { remove: { email: "a@x.test", id: first.added!.id }, restore: [] });
-      expect((await t.client.call("today.notNewsletters", {})).senders.map((e) => e.id)).toEqual([again.added!.id]);
+      await t.client.call("today.newsletterAgain", { email: "a@x.test", id: first.added[0]!.id });
+      const again = await t.client.call("today.notNewsletter", { senders: [{ email: "a@x.test", name: "A" }] });
+      expect(again.added[0]!.id).not.toBe(first.added[0]!.id);
+      await t.client.call("today.notNewslettersUndo", { remove: [{ email: "a@x.test", id: first.added[0]!.id }], restore: [] });
+      expect((await t.client.call("today.notNewsletters", {})).senders.map((e) => e.id)).toEqual([again.added[0]!.id]);
       // and a Remove's Undo doesn't list a sender twice
-      expect(await t.client.call("today.notNewslettersUndo", { restore: [first.added!] })).toEqual({ restored: 0 });
+      expect(await t.client.call("today.notNewslettersUndo", { restore: [first.added[0]!] })).toEqual({ restored: 0 });
     });
 
     it("Codex review, round 2: one millisecond keeps the order, a clock set back can't drop the one just said, Undos can't grow it without bound, and an entry stored without an id still has one", async () => {
       const t = await setup();
-      const a = await t.client.call("today.notNewsletter", { email: "a@x.test", name: "A" });
-      const b = await t.client.call("today.notNewsletter", { email: "b@x.test", name: "B" });
-      expect(b.added!.at).toBeGreaterThan(a.added!.at);
+      const a = await t.client.call("today.notNewsletter", { senders: [{ email: "a@x.test", name: "A" }] });
+      const b = await t.client.call("today.notNewsletter", { senders: [{ email: "b@x.test", name: "B" }] });
+      expect(b.added[0]!.at).toBeGreaterThan(a.added[0]!.at);
       // a full list whose times are all after now (the clock set back): the new one is the newest, never the one dropped
       const ahead = Array.from({ length: 500 }, (_, i) => ({ id: `f${i}`, email: `f${i}@x.test`, name: `F${i}`, at: NOW + 1_000_000 + i }));
       await t.backend.store.settings.set("today:notNewsletters", ahead);
-      const late = await t.client.call("today.notNewsletter", { email: "late@x.test", name: "Late" });
+      const late = await t.client.call("today.notNewsletter", { senders: [{ email: "late@x.test", name: "Late" }] });
       expect(late.evicted.map((e) => e.id)).toEqual(["f0"]);
       expect((await t.client.call("today.notNewsletters", {})).senders[0]!.email).toBe("late@x.test");
       // window A says X (S dropped); window B lets X back in and says Y; A's Undo puts S back: 501, at most NOT_NEWSLETTERS_OVER over
       for (let i = 0; i < 15; i++) {
-        const x = await t.client.call("today.notNewsletter", { email: `x${i}@x.test`, name: "X" });
+        const x = await t.client.call("today.notNewsletter", { senders: [{ email: `x${i}@x.test`, name: "X" }] });
         await t.client.call("today.newsletterAgain", { email: `x${i}@x.test` });
-        await t.client.call("today.notNewsletter", { email: `y${i}@x.test`, name: "Y" });
-        await t.client.call("today.notNewslettersUndo", { remove: { email: x.added!.email, id: x.added!.id }, restore: x.evicted });
+        await t.client.call("today.notNewsletter", { senders: [{ email: `y${i}@x.test`, name: "Y" }] });
+        await t.client.call("today.notNewslettersUndo", { remove: [{ email: x.added[0]!.email, id: x.added[0]!.id }], restore: x.evicted });
       }
       expect((await t.client.call("today.notNewsletters", {})).senders.length).toBeLessThanOrEqual(510);
       // the next addition trims it back, and its Undo still passes the RPC's check
-      const next = await t.client.call("today.notNewsletter", { email: "next@x.test", name: "Next" });
+      const next = await t.client.call("today.notNewsletter", { senders: [{ email: "next@x.test", name: "Next" }] });
       expect((await t.client.call("today.notNewsletters", {})).senders).toHaveLength(500);
-      await expect(t.client.call("today.notNewslettersUndo", { remove: { email: "next@x.test", id: next.added!.id }, restore: next.evicted })).resolves.toBeDefined();
+      await expect(t.client.call("today.notNewslettersUndo", { remove: [{ email: "next@x.test", id: next.added[0]!.id }], restore: next.evicted })).resolves.toBeDefined();
       // stored before ids: named by the address, removable, and its Undo accepted
       await t.backend.store.settings.set("today:notNewsletters", [{ email: "Old@x.test", name: "Old", at: 5 }]);
       const [old] = (await t.client.call("today.notNewsletters", {})).senders;
@@ -702,10 +730,10 @@ describe("the digest", () => {
 
     it("two said at once are both kept; a name past 200 characters is kept to 200", async () => {
       const t = await setup();
-      await Promise.all([t.client.call("today.notNewsletter", { email: "a@x.test", name: "A" }), t.client.call("today.notNewsletter", { email: "b@x.test", name: "B" })]);
+      await Promise.all([t.client.call("today.notNewsletter", { senders: [{ email: "a@x.test", name: "A" }] }), t.client.call("today.notNewsletter", { senders: [{ email: "b@x.test", name: "B" }] })]);
       expect((await t.client.call("today.notNewsletters", {})).senders.map((e) => e.email).sort()).toEqual(["a@x.test", "b@x.test"]);
-      const long = await t.client.call("today.notNewsletter", { email: "c@x.test", name: "N".repeat(400) });
-      expect(long.added!.name).toHaveLength(200);
+      const long = await t.client.call("today.notNewsletter", { senders: [{ email: "c@x.test", name: "N".repeat(400) }] });
+      expect(long.added[0]!.name).toHaveLength(200);
     });
 
     it("with the digest off, Automated mail leaves it too, and a scan begun before isn't kept", async () => {
@@ -714,7 +742,7 @@ describe("the digest", () => {
       await t.letter("Other Shop");
       await t.client.call("today.list", { held: [] });
       await vi.waitFor(async () => expect((await t.client.call("today.digest", {}))?.items).toHaveLength(2));
-      await t.client.call("today.notNewsletter", { email: "news@acmestore.test", name: "Acme Store" });
+      await t.client.call("today.notNewsletter", { senders: [{ email: "news@acmestore.test", name: "Acme Store" }] });
       expect((await t.client.call("today.digest", {}))!.items.map((i) => i.from)).toEqual(["Other Shop"]);
       // a scan underway when the list changes isn't kept: it was read with the list as it was
       const service = t.backend.today as unknown as { candidates(since: null, keep: (accountId: number) => boolean): Promise<unknown>; automated: { at: number; candidates: { items: { from: string }[] } } | null };
@@ -735,7 +763,7 @@ describe("the digest", () => {
       await t.client.call("today.newsletterAgain", { email: "news@acmestore.test" });
       await t.client.call("today.digest", {});
       await scanning;
-      await t.client.call("today.notNewsletter", { email: "news@othershop.test", name: "Other Shop" });
+      await t.client.call("today.notNewsletter", { senders: [{ email: "news@othershop.test", name: "Other Shop" }] });
       const held = service.automated;
       release();
       await idle();

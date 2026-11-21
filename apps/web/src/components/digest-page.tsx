@@ -5,7 +5,7 @@ import { Checkbox } from "@terno/ui/components/checkbox";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@terno/ui/components/context-menu";
 import { IconButton } from "@terno/ui/components/icon-button";
 import { Spinner } from "@terno/ui/components/spinner";
-import { Ban, ChevronRight, Mail } from "@terno/ui/icons";
+import { Archive, Ban, ChevronRight, EyeOff, Mail } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getApp } from "~/state/app";
@@ -34,9 +34,11 @@ const STATE_LABEL: Partial<Record<DigestRowState, () => string>> = { keep: () =>
  * Plan 145 §4: the digest in the reader's column. Plain text, never links: a line is a model's rewording of mail. With the
  * digest off nothing has said what these are, so they're automated mail, unticked (revision 3).
  */
-/** Plan 166: a digest row's menu, the row's own (right-click, or ⇧F10 on it); none for automated mail. */
-function DigestRowMenu({ on, onOpen, onNotNewsletter, children }: { on: boolean; onOpen: () => void; onNotNewsletter: () => void; children: React.ReactElement }) {
-  if (!on) return children;
+/**
+ * Plan 166: a row's menu, the row's own (right-click, or ⇧F10 on it). A digest's: Open, Not a newsletter. Plan 235:
+ * Automated mail's: Open, Archive, Hide sender, for the ticked rows when it's opened on one of several ticked.
+ */
+function DigestRowMenu({ onOpen, archive, leave, children }: { onOpen: () => void; archive: { label: string; run: () => void } | null; leave: { label: string; icon: React.ReactNode; testId: string; run: () => void } | null; children: React.ReactElement }) {
   return (
     <ContextMenu onOpenChange={(open) => setApp({ menuOpen: open })}>
       <ContextMenuTrigger data-context-menu render={children} />
@@ -46,18 +48,28 @@ function DigestRowMenu({ on, onOpen, onNotNewsletter, children }: { on: boolean;
           <Mail />
           {t("common.open")}
         </ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem
-          data-testid="digest-menu-not-newsletter"
-          onClick={() => {
-            // the row (and this menu with it) goes at once: its close never comes, so the keys come back to the page now
-            setApp({ menuOpen: false });
-            onNotNewsletter();
-          }}
-        >
-          <Ban />
-          {t("today.digest.notNewsletter")}
-        </ContextMenuItem>
+        {archive && (
+          <ContextMenuItem data-testid="digest-menu-archive" onClick={archive.run}>
+            <Archive />
+            {archive.label}
+          </ContextMenuItem>
+        )}
+        {leave && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem
+              data-testid={leave.testId}
+              onClick={() => {
+                // the rows (and this menu with them) go at once: its close never comes, so the keys come back to the page now
+                setApp({ menuOpen: false });
+                leave.run();
+              }}
+            >
+              {leave.icon}
+              {leave.label}
+            </ContextMenuItem>
+          </>
+        )}
       </ContextMenuContent>
     </ContextMenu>
   );
@@ -96,6 +108,7 @@ export default function DigestPage() {
   // Kept by digest: its day and what kind it is (a set means the unticked in one, the ticked in automated mail)
   const day = row ? `${row.day}|${automated ? "automated" : "digest"}` : "";
   const [toggled, setToggled] = useState<ReadonlySet<number>>(() => digestPick(day).toggled);
+  const [readTicked, setReadTicked] = useState<ReadonlySet<number>>(() => digestPick(day).readTicked ?? new Set());
   // pass 2: what this page archived (its rows leave, the header says it's done), held with the rest of the pick
   const batches = useToday((s) => (s.pick?.day === day ? (s.pick.done ?? null) : null));
   // plan 162 (after ai162-r02): what was opened from here, kept the moment it opened, whichever way the page is come back to
@@ -131,6 +144,7 @@ export default function DigestPage() {
   if (pickOf !== day) {
     setPickOf(day);
     setToggled(digestPick(day).toggled);
+    setReadTicked(digestPick(day).readTicked ?? new Set());
   }
   useLayoutEffect(() => {
     if (restored.current === day || !scroller.current || !row?.items.length) return;
@@ -143,11 +157,11 @@ export default function DigestPage() {
     const at = (pick.from != null && scroller.current.querySelector<HTMLElement>(`[data-digest-open="${pick.from}"]`)) || scroller.current.querySelector<HTMLElement>("[data-digest-open]");
     const elsewhere = document.activeElement && document.activeElement !== document.body && !document.activeElement.closest("[data-testid=list-header], [data-testid=thread-list], [data-testid=wm-feed]");
     if (at && (pick.from != null || !elsewhere)) at.focus({ preventScroll: true });
-    if (pick.from != null) keepDigestPick({ day, toggled: pick.toggled, scroll: pick.scroll, from: null });
+    if (pick.from != null) keepDigestPick({ day, toggled: pick.toggled, readTicked: pick.readTicked, scroll: pick.scroll, from: null });
   }, [row, day]);
   useEffect(() => {
-    if (day && restored.current === day) keepDigestPick({ day, toggled, scroll: scrollAt.current });
-  }, [day, toggled]);
+    if (day && restored.current === day) keepDigestPick({ day, toggled, readTicked, scroll: scrollAt.current });
+  }, [day, toggled, readTicked]);
   const ticked = (i: DigestItem) => (automated ? toggled.has(i.threadId) : !toggled.has(i.threadId));
   // the list's refresh brings what changed anywhere: an Undo, a read in another window
   useEffect(() => {
@@ -161,34 +175,43 @@ export default function DigestPage() {
   const movedTo = useToday((s) => s.movedTo);
   const live = (i: DigestItem) => liveIds === null || liveIds.has(i.threadId);
   const opened = (i: DigestItem) => openedHere?.has(i.threadId) === true;
-  // one keep state: unticked or opened stays (plan 145: opened is read), and Archive takes only what's ticked
-  // (out of the Inbox is archived whatever was opened here: the backend's read state says which stayed, Codex review)
-  const stateOf = (i: DigestItem): DigestRowState => (live(i) ? (opened(i) ? "opened" : ticked(i) ? "archive" : "keep") : readIds.has(i.threadId) ? "opened" : "archived");
-  const tickable = (i: DigestItem) => live(i) && !opened(i);
   // pass 2: what this page archived leaves it; what was archived elsewhere stays, muted and said so (plan 145)
   const archivedHere = new Set((batches ?? []).flatMap((b) => b.ids));
+  // read and still in the Inbox: opened here, or read anywhere (out of the Inbox is archived whatever was opened here: the
+  // backend's read state says which stayed, Codex review); archived here is archived before the next read says so
+  const read = (i: DigestItem) => (live(i) ? opened(i) : readIds.has(i.threadId) && !archivedHere.has(i.threadId));
+  // plan 235: an opened row starts unticked, and the person can tick it. Automated mail's ticks are all the person's, read or
+  // not (so one kept through a read or a Mark unread stays); a digest's read rows are apart from its pre-ticked unread ones
+  const pickedRead = (i: DigestItem) => (automated ? toggled : readTicked).has(i.threadId);
+  // one keep state: unticked or opened stays (plan 145: opened is read), and Archive takes only what's ticked
+  const stateOf = (i: DigestItem): DigestRowState => (read(i) ? (pickedRead(i) ? "archive" : "opened") : live(i) ? (ticked(i) ? "archive" : "keep") : "archived");
+  const tickable = (i: DigestItem) => live(i) || read(i);
   const shown = items.filter((i) => !(archivedHere.has(i.threadId) && stateOf(i) === "archived"));
   const chosen = items.filter((i) => stateOf(i) === "archive");
   const staying = shown.filter((i) => stateOf(i) === "keep" || stateOf(i) === "opened").length;
+  const readNow = new Set(shown.filter(read).map((i) => i.threadId));
   const toggle = (id: number) =>
-    setToggled((held) => {
+    (!automated && readNow.has(id) ? setReadTicked : setToggled)((held) => {
       const next = new Set(held);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-  // plan 162: the ticks reset at once, both ways (Atelier codex): every live row ticked, or none
+  // plan 162: the ticks reset at once, both ways (Atelier codex): every live row ticked, or none. Plan 235: Automated mail's
+  // Tick all takes the opened ones too (the person picks everything there); a digest's leaves them (opened stays, its hint says)
   const anyTicked = chosen.length > 0;
+  const allTickable = shown.filter((i) => (automated ? tickable(i) : live(i) && !read(i)));
   const tickAll = (on: boolean) => {
-    const ids = shown.filter(tickable).map((i) => i.threadId);
+    const ids = allTickable.map((i) => i.threadId);
     // a set means the unticked ones in a digest and the ticked ones in automated mail. Plan 166 (Codex critique): only the
     // rows shown change; one left out as not a newsletter keeps its tick, so its Undo brings it back as it was
     const here = new Set(shown.map((i) => i.threadId));
     setToggled((held) => new Set([...[...held].filter((id) => !here.has(id)), ...(on === automated ? ids : [])]));
+    if (!on) setReadTicked((held) => new Set([...held].filter((id) => !here.has(id))));
   };
   const heading = useRef<HTMLHeadingElement>(null);
   const open = (threadId: number) => {
-    openFromDigest(day, threadId, scroller.current?.scrollTop ?? scrollAt.current, toggled);
+    openFromDigest(day, threadId, scroller.current?.scrollTop ?? scrollAt.current, { toggled, readTicked });
     // plan 162 (after ai162-r02): opened from here is read now (plan 145), not after the reader's dwell: that's for j held
     // down a list, and back in under it the newsletter stayed unread while the page said it was opened
     if (liveIds?.has(threadId) !== false) void act("markRead", [threadId], { quiet: true });
@@ -238,8 +261,9 @@ export default function DigestPage() {
       digestKeys.current = null;
     };
   }, []);
-  const archive = async () => {
-    if (!row || !chosen.length) return;
+  /** The ticked rows (the foot's Archive), or the menu's. A read one goes only because the person picked it (plan 235). */
+  const archive = async (targets: readonly DigestItem[] = chosen) => {
+    if (!row || !targets.length) return;
     const job = trackJob(t("today.digest.archiving"));
     const pickDay = day;
     // pressed before the answer is in, it waits for it; run here or from the snack, it ends the finished state
@@ -255,11 +279,11 @@ export default function DigestPage() {
       }),
     );
     try {
-      const r = await client.call("today.digestArchive", { items: chosen.map((i) => ({ threadId: i.threadId, lastDate: i.lastDate, messageCount: i.messageCount, ...(i.fromEmail !== undefined ? { fromEmail: i.fromEmail } : {}) })), jobId: job.jobId });
+      const r = await client.call("today.digestArchive", { items: targets.map((i) => ({ threadId: i.threadId, lastDate: i.lastDate, messageCount: i.messageCount, ...(i.fromEmail !== undefined ? { fromEmail: i.fromEmail } : {}), ...(read(i) ? { read: true as const } : {}) })), jobId: job.jobId });
       undoId.resolve({ id: r.undoId, n: r.archived });
       const notes = r.changed + r.spared > 0 ? t("today.digest.leftAlone", { count: r.changed + r.spared }) : undefined;
       snack.success(t(automated ? "today.digest.archivedSelected" : "today.digest.archived", { count: r.archived }), { id: job.snackId, duration: 8000, description: notes, action: r.undoId !== null ? undoAction(undo, t("today.digest.undoName")) : undefined });
-      setLive((held) => new Set([...(held ?? items.map((i) => i.threadId))].filter((id) => !chosen.some((i) => i.threadId === id))));
+      setLive((held) => new Set([...(held ?? items.map((i) => i.threadId))].filter((id) => !targets.some((i) => i.threadId === id))));
       // plan 162: the keys stay on the page (the button that had them is gone): the first row still here, else the title
       requestAnimationFrame(() => {
         const at = document.activeElement;
@@ -281,18 +305,23 @@ export default function DigestPage() {
   /**
    * Plan 166: "Not a newsletter": every row from that sender leaves the page, its Archive and Today's header at once, and
    * the sender stays out of the digests to come (the backend's list, on this machine). No model, no check. Exact Undo.
+   * Plan 235: Automated mail's Hide sender is the same list, for one row's sender or the ticked rows', in one unit.
    */
-  const notNewsletter = async (item: DigestItem) => {
-    const email = item.fromEmail;
-    if (!email) return;
-    const key = senderKey(item);
-    // the keys stay on the page: the next row still there (after it, else before it), else the title
-    const rest = shown.filter((i) => senderKey(i) !== key);
-    const at = shown.findIndex((i) => i.threadId === item.threadId);
+  const leaveOutSenders = async (targets: readonly DigestItem[]) => {
+    const senders = [...new Map(targets.filter((i) => i.fromEmail).map((i) => [senderKey(i), i])).values()];
+    if (!senders.length) return;
+    const keys = senders.map(senderKey);
+    const gone = new Set(keys);
+    const one = senders.length === 1 ? senders[0]!.from : undefined;
+    const copy = (key: "Done" | "Undo" | "Failed") =>
+      automated ? t(`today.digest.hide${key}`, { count: senders.length, sender: one ?? "" }) : t(`today.digest.notNewsletter${key}`, { sender: senders[0]!.from });
+    // the keys stay on the page: the next row still there (after the first one going, else before it), else the title
+    const rest = shown.filter((i) => !gone.has(senderKey(i)));
+    const at = shown.findIndex((i) => gone.has(senderKey(i)));
     const next = rest.find((i) => shown.indexOf(i) > at) ?? rest.findLast((i) => shown.indexOf(i) < at);
     const had = document.activeElement;
     const inRow = had instanceof HTMLElement && had.closest("[data-testid=digest-item]") !== null;
-    leaveOut(key);
+    leaveOut(keys);
     requestAnimationFrame(() => {
       const now = document.activeElement;
       if (!inRow && now && now !== document.body && now.isConnected) return;
@@ -301,23 +330,27 @@ export default function DigestPage() {
     });
     try {
       // a sender's name is kept to its first 200 characters (a longer one was refused, Codex review)
-      const r = await client.call("today.notNewsletter", { email, name: item.from.slice(0, NOT_NEWSLETTER_NAME_MAX) });
+      const r = await client.call("today.notNewsletter", { senders: senders.map((i) => ({ email: i.fromEmail!, name: i.from.slice(0, NOT_NEWSLETTER_NAME_MAX) })) });
       // what the cap dropped is in the digest again: it isn't hidden here any more either (Codex review)
-      for (const e of r.evicted) letBackIn(senderKey({ fromEmail: e.email }));
+      const evicted = r.evicted.map((e) => senderKey({ fromEmail: e.email }));
+      letBackIn(evicted);
       const undo = registerUndo(async () => {
-        // in one unit: only the entry this added (one said again since stays), and what the cap dropped back as it was
-        await client.call("today.notNewslettersUndo", { ...(r.added ? { remove: { email: r.added.email, id: r.added.id } } : {}), restore: r.evicted });
-        letBackIn(key);
-        for (const e of r.evicted) leaveOut(senderKey({ fromEmail: e.email }));
+        // in one unit: only the entries this added (one said again since stays), and what the cap dropped back as it was
+        await client.call("today.notNewslettersUndo", { remove: r.added.map((e) => ({ email: e.email, id: e.id })), restore: r.evicted });
+        letBackIn(keys);
+        leaveOut(evicted);
         await reloadList({ keepSelection: true });
       });
-      snack.success(t("today.digest.notNewsletterDone", { sender: item.from }), { duration: 8000, action: undoAction(undo, t("today.digest.notNewsletterUndo", { sender: item.from })) });
+      snack.success(copy("Done"), { duration: 8000, action: undoAction(undo, copy("Undo")) });
     } catch {
-      letBackIn(key);
+      letBackIn(keys);
       void reloadList({ keepSelection: true });
-      snack.error(t("today.digest.notNewsletterFailed", { sender: item.from }));
+      snack.error(copy("Failed"));
     }
   };
+  /** Plan 235: what a row's menu acts on: the ticked rows when it's one of several ticked, else the row. */
+  const menuTargets = (i: DigestItem) => (stateOf(i) === "archive" && chosen.length > 1 ? chosen : [i]);
+  const sendersIn = (targets: readonly DigestItem[]) => new Set(targets.filter((i) => i.fromEmail).map(senderKey)).size;
   if (!row) return <div className="p-8 text-sm text-muted-foreground" data-testid="digest-page">{t("today.digest.none")}</div>;
   const done = batches?.length ? { count: batches.reduce((n, b) => n + b.ids.length, 0), undo: batches.at(-1)!.undo } : null;
   const finished = done !== null;
@@ -399,10 +432,26 @@ export default function DigestPage() {
             const moved = state === "archived" ? movedTo.get(i.threadId) : undefined;
             const label = moved ? () => t(moved === "trash" ? "actions.done.trash" : "actions.done.spam") : automated && state === "keep" ? undefined : STATE_LABEL[state];
             const quiet = state === "opened" || state === "archived";
+            // plan 235: Automated mail's menu acts on the ticked rows when it's opened on one of several ticked
+            const targets = automated ? menuTargets(i) : [i];
+            const archivable = targets.filter(tickable);
+            const hidden = sendersIn(targets);
             return (
-              // plan 166: each row of a digest has a menu ("Open", "Not a newsletter"), as rows do; automated mail has claimed
-              // nothing is a newsletter, so it has neither the menu nor the control
-              <DigestRowMenu key={i.threadId} on={!automated} onOpen={() => open(i.threadId)} onNotNewsletter={() => void notNewsletter(i)}>
+              // plan 166: each row has a menu, as rows do: a digest's says "Not a newsletter"; Automated mail has claimed
+              // nothing is a newsletter, so its menu hides the sender instead (plan 235), and it has no row control
+              <DigestRowMenu
+                key={i.threadId}
+                onOpen={() => open(i.threadId)}
+                archive={automated && archivable.length ? { label: archivable.length > 1 ? t("today.digest.archiveAll", { count: archivable.length }) : t("actions.archive"), run: () => void archive(archivable) } : null}
+                leave={
+                  // an item stored with no sender address has nothing to keep out
+                  !hidden
+                    ? null
+                    : automated
+                      ? { label: t("today.digest.hideSender", { count: hidden }), icon: <EyeOff />, testId: "digest-menu-hide", run: () => void leaveOutSenders(targets) }
+                      : { label: t("today.digest.notNewsletter"), icon: <Ban />, testId: "digest-menu-not-newsletter", run: () => void leaveOutSenders([i]) }
+                }
+              >
               <li data-testid="digest-item" data-live={live(i)} data-state={state} className="group/item relative flex items-start gap-1 border-b border-hairline py-1">
                 {/* pass 2: a 24 px box of its own, so a near miss doesn't open the newsletter beside it */}
                 <Checkbox target="quiet" data-testid="digest-tick" aria-label={t("today.digest.tick", { subject: i.subject })} checked={state === "archive"} disabled={!tickable(i)} className="mt-1.5" onCheckedChange={() => toggle(i.threadId)} />
@@ -430,7 +479,7 @@ export default function DigestPage() {
                     data-not-newsletter=""
                     data-testid="digest-not-newsletter"
                     className="absolute top-1.5 right-8 opacity-0 group-hover/item:opacity-100 focus-reveal:opacity-100"
-                    onClick={() => void notNewsletter(i)}
+                    onClick={() => void leaveOutSenders([i])}
                   >
                     <Ban />
                   </IconButton>
@@ -454,7 +503,7 @@ export default function DigestPage() {
         ) : (
           <p className="me-auto text-sm text-muted-foreground tabular" data-testid="digest-count">
             {automated ? (
-              chosen.length < shown.filter(live).length ? t("today.digest.countSelected", { count: shown.filter(live).length, selected: chosen.length }) : t("today.digest.automatedCount", { count: shown.filter(live).length })
+              chosen.length < allTickable.length ? t("today.digest.countSelected", { count: allTickable.length, selected: chosen.length }) : t("today.digest.automatedCount", { count: allTickable.length })
             ) : (
               <>
                 {/* pass 2: what Archive will do, in words: how many go, and how many stay; a status, not a button */}
@@ -464,7 +513,7 @@ export default function DigestPage() {
             )}
           </p>
         )}
-        {shown.some(live) && (
+        {allTickable.length > 0 && (
           <Button size="sm" variant="outline" className="text-foreground" data-testid="digest-tick-all" onClick={() => tickAll(!anyTicked)}>
             {t(anyTicked ? "today.digest.untickAll" : "today.digest.tickAll")}
           </Button>
@@ -473,6 +522,12 @@ export default function DigestPage() {
         {finished && done.undo && !undoInSnack && (
           <Button size="sm" variant="outline" className="text-foreground" data-testid="digest-undo" aria-label={t("today.digest.undoName")} onClick={() => undoNow(done.undo!)}>
             {t("common.undo")}
+          </Button>
+        )}
+        {automated && sendersIn(chosen) > 0 && (
+          // plan 235: the ticked rows' senders out of Automated mail, as the row's menu does it
+          <Button size="sm" variant="outline" className="text-foreground" data-testid="digest-hide" onClick={() => void leaveOutSenders(chosen)}>
+            {t("today.digest.hideSender", { count: sendersIn(chosen) })}
           </Button>
         )}
         {(!finished || chosen.length > 0) && (

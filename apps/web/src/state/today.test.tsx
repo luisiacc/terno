@@ -144,8 +144,8 @@ describe("plan 161, pass 2: the digest's way in", () => {
   it("plan 162 (after ai162-r02): a newsletter opened from the page is kept in its pick at once, beside what was unticked", async () => {
     const { openFromDigest } = await import("./today");
     keepDigestPick({ day: "k", toggled: new Set([3]), scroll: 0 });
-    openFromDigest("k", 5, 120, new Set([3]));
-    openFromDigest("k", 6, 80, new Set([3]));
+    openFromDigest("k", 5, 120, { toggled: new Set([3]) });
+    openFromDigest("k", 6, 80, { toggled: new Set([3]) });
     expect([...(digestPick("k").opened ?? [])]).toEqual([5, 6]);
     expect([...digestPick("k").toggled]).toEqual([3]);
     expect(digestPick("k").from).toBe(6);
