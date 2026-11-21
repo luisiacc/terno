@@ -297,6 +297,34 @@ describe("names people give themselves (plan 228)", () => {
     expect(d.suggest("rob")).toEqual([{ name: "Roberto", email: bob }]);
   });
 
+  it("a name others gave that becomes their own keeps the alternates bounded (Codex review)", async () => {
+    const email = "kai@x.io";
+    const msgs = [received({ name: "Kai Berg", email })];
+    for (let i = 0; i < 50; i++) msgs.push(sent([{ name: `Alias ${i}`, email }]), received({ name: `Alias ${i}`, email }));
+    const c = await built(msgs);
+    const alts = (c as unknown as { alts: Map<number, unknown[]> }).alts;
+    expect(Math.max(...[...alts.values()].map((a) => a.length))).toBeLessThanOrEqual(4);
+    expect(emails(c, "alias 49")).toEqual([]);
+  });
+
+  it("an account's sender name that is its address's local part is still its name (Codex review)", async () => {
+    const john = { name: "John", email: "john@example.com" };
+    const c = await built([received(dianela, { to: [{ name: "John Smith", email: john.email }] })]);
+    c.setOwn([john]);
+    expect(c.suggest(john.email)).toEqual([john]);
+    // the address itself is no name
+    c.setOwn([{ email: john.email, name: john.email }]);
+    expect(c.suggest(john.email)).toEqual([{ name: "", email: john.email }]);
+  });
+
+  it("their spelling, once theirs, is found by its own words (Codex review)", async () => {
+    const email = "sq@mail.ie";
+    const c = await built([sent([{ name: "Sean O\uFF07Brien", email }]), received({ name: "Sean O'Brien", email })]);
+    expect(c.suggest("obrien")).toEqual([{ name: "Sean O'Brien", email }]);
+    const d = await built([received({ name: "Seán Ó Briain", email }), sent([{ name: "Sean O\uFF07Brien", email }]), received({ name: "Sean O'Brien", email }), received({ name: "Sean O'Brien", email })]);
+    expect(d.suggest("obrien")).toEqual([{ name: "Sean O'Brien", email }]);
+  });
+
   it("a snapshot keeps who named whom", async () => {
     const bob = { name: "Robert Smith", email: "bob@smith.io" };
     const c = await built([received(bob, { date: NOW - 300 * DAY }), sent([{ name: "Bobby", email: bob.email }])]);

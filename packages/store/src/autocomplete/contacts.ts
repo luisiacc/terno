@@ -57,6 +57,8 @@ const SAME_ACCOUNT = 1.25;
 const TIER = 2 ** 500;
 const MAX_TOKEN = 32;
 const MAX_NAMES = 3;
+/** plan 228: alternates kept, at most: two of each kind (their own names, names others gave), never more in all */
+const MAX_ALTS = 2 * (MAX_NAMES - 1);
 const MAX_NAME_TOKENS = 12;
 const DELTA_MAX = 4096;
 const SHORT_CACHE = 32;
@@ -90,11 +92,16 @@ export function normalizeEmail(email: string): string | null {
   return e.length <= 320 && VALID.test(e) ? e : null;
 }
 
-/** A display name worth showing: unquoted, collapsed, not an address (and what other clients mangle undone: plan 34). */
-export function cleanName(name: string, email: string): string {
+/** A name unquoted and collapsed (and what other clients mangle undone: plan 34). */
+function tidyName(name: string): string {
   let n = cleanFromName(name).trim();
   if (n.length >= 2 && ((n.startsWith('"') && n.endsWith('"')) || (n.startsWith("'") && n.endsWith("'")))) n = n.slice(1, -1).trim();
-  n = n.replace(/\s+/g, " ").slice(0, 200);
+  return n.replace(/\s+/g, " ").slice(0, 200);
+}
+
+/** A display name worth showing: tidy, not an address, nor the address's local part (a header's placeholder). */
+export function cleanName(name: string, email: string): string {
+  const n = tidyName(name);
   const lower = n.toLowerCase();
   if (!n || n.includes("@") || lower === email || lower === email.slice(0, email.lastIndexOf("@"))) return "";
   return n;
@@ -538,8 +545,9 @@ export class ContactIndex {
       const e = normalizeEmail(a.email);
       if (!e) continue;
       next.add(e);
-      const name = cleanName(a.name, e);
-      if (name) names.set(e, name);
+      // the account's own choice: "John" for john@… is a name here (Codex review), the address itself isn't
+      const name = tidyName(a.name);
+      if (name && !name.includes("@")) names.set(e, name);
     }
     for (const e of next) {
       const id = this.byEmail.get(e);
@@ -675,6 +683,7 @@ export class ContactIndex {
     if (key === fold(shown)) {
       if (self && !named) {
         this.stringsHeld += stringBytes(name) - stringBytes(shown);
+        this.respelled(id, shown, name);
         this.names[id] = name;
         this.nameW[id] = w;
         this.flags[id]! |= NAMED;
@@ -684,13 +693,15 @@ export class ContactIndex {
     let alts = this.alts.get(id);
     let alt = alts?.find((a) => fold(a.name) === key);
     if (!alt) {
-      if ((alts?.filter((a) => a.self === self).length ?? 0) >= MAX_NAMES - 1) return;
+      // a kind's two, and never more in all (a name others gave that became their own keeps its place: Codex review)
+      if (alts && (alts.length >= MAX_ALTS || alts.filter((a) => a.self === self).length >= MAX_NAMES - 1)) return;
       if (!alts) this.alts.set(id, (alts = []));
       alts.push((alt = { name, w, self }));
       this.stringsHeld += stringBytes(name) + MAP_ENTRY / 2;
       this.indexTokens(id, nameTokens(name));
     } else if (self && !alt.self) {
       this.stringsHeld += stringBytes(name) - stringBytes(alt.name);
+      this.respelled(id, alt.name, name);
       Object.assign(alt, { name, w, self });
     } else if (self || !alt.self) alt.w += w;
     // it outranks the shown one: it becomes the shown one (both are indexed already)
@@ -703,6 +714,13 @@ export class ContactIndex {
       alt.w = shownW;
       alt.self = named;
     }
+  }
+
+  /** A name now spelled their way: its tokens the old spelling didn't have (O＇Brien and O'Brien fold alike, split apart). */
+  private respelled(id: number, before: string, after: string): void {
+    const old = nameTokens(before);
+    const added: Tokens = new Map([...nameTokens(after)].filter(([t, c]) => (old.get(t) ?? 0) < c));
+    if (added.size) this.indexTokens(id, added);
   }
 
   private mask(id: number, tok: string, cls: number): void {

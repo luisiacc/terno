@@ -72,3 +72,15 @@ Codex read the plan against the code (eight points):
 6. **An account never seen in any header** has no contact to suggest; typed in full, the address is taken as typed, with no name. Out of scope: no wrong name results.
 7. **Perf fixtures** use one name per address. The added work is one fold compare per name and a filter over at most four alternates; the build and catch-up gates stay as they are. Memory: a boolean per alternate, a map of the accounts' names.
 8. **The upgrade path through both stores**: new conformance case (SQLite and IndexedDB): a contacts snapshot of format 5 is rebuilt (not restored), names your address by the account, is saved as format 6 and restored on the next start, and an alias seen after the restore is named by your From.
+
+## Codex code review
+
+Three findings, each fixed with a test that fails without it:
+
+1. **A name others gave that became their own escaped the alternates' bound.** Its promotion freed a place for another of the other kind, so a To then From of a new name each time grew the list without end (and own addresses are never evicted). The alternates now also stop at four in all (`MAX_ALTS`). Test: fifty names given then used, at most four kept.
+2. **An account's sender name equal to its address's local part was dropped** ("John" for john@example.com), as a header's placeholder would be. The account's own name only has to be a name, not an address. Test: "John" is kept; the address itself isn't a name.
+3. **A name respelled their way could lose its words.** Spellings that fold alike can split into different tokens (O＇Brien with a fullwidth apostrophe is one word, O'Brien another), and only the first spelling was indexed. The tokens the new spelling adds are indexed when it takes over, as the shown name or an alternate. Test: "obrien" finds Sean O'Brien after "Sean O＇Brien" was the name others used.
+
+## Tests run
+
+Typecheck (store, mail, backend, db, idb) and lint on the touched files. Unit: `contacts.test.ts`, `resolve-exact.test.ts`, the rest of `packages/store/src/autocomplete`, `apps/web/src/lib/recipients.test.ts`, `backend/src/autocomplete.test.ts` (the warm-up race, over RPC). Conformance in SQLite and IndexedDB (`autocomplete.conformance.test.ts`). Perf: `autocomplete.perf.test.ts` in both stores (build, cold start, catch-up) pass.
