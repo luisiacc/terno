@@ -137,6 +137,7 @@ export const CODES = {
   "nav.view": c("view"),
   "nav.thread": c("threadId"),
   "action.thread": c("action", "count"),
+  "action.folder_move": c("moveStep", "count"),
   "action.send": c(),
   "action.failed": c("action", "count", "rpcCode", "errorClass"),
   "compose.send_failed": c("errorClass", "rpcCode", "expected"),

@@ -57,6 +57,8 @@ export const FIELD_TYPES = {
   model: enumOf("contacts", "phrases"),
   /** plan 20: why the network was looked at again */
   netReason: enumOf("network", "wake", "online", "offline", "user", "focus", "other"),
+  /** plan 229: how far a move to a folder got (a missing "Moved" told apart: no answer, another connection, an undo taken) */
+  moveStep: enumOf("asked", "answered", "connection-changed", "undo-taken", "failed"),
   ok: bool,
   /** plan 20: what the host says about the network */
   online: bool,

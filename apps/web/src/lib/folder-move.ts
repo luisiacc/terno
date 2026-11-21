@@ -7,6 +7,7 @@ import { RpcError } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { deferred, targetRows, undoAction, undoActions } from "~/lib/actions";
 import { leaveView } from "~/lib/categorize";
+import { breadcrumb } from "~/lib/diag";
 import { flashRows } from "~/lib/flash";
 import { keptNote, leavesList, sourceFolder, staysInInbox } from "~/lib/folder-rules";
 import { registerUndo, snack } from "~/lib/snack";
@@ -36,6 +37,9 @@ export async function moveToFolder(to: FolderDrop, threadIds: readonly number[])
   const undo = registerUndo(() => undoIds.promise.then((list) => (list.length ? undoActions(list, ids.length) : undefined)));
   const connection = client.connectionVersion;
   const list: number[] = [];
+  // plan 229: each step leaves a crumb (counts only), so a move that never says "Moved" can be told apart
+  const step = (moveStep: "asked" | "answered" | "connection-changed" | "undo-taken" | "failed") => breadcrumb("action", "action.folder_move", { moveStep, count: ids.length });
+  step("asked");
   try {
     let kept = 0;
     // the contract takes ≤ 5,000 ids a call; each can be undone exactly
@@ -46,7 +50,9 @@ export async function moveToFolder(to: FolderDrop, threadIds: readonly number[])
     }
     undoIds.resolve(list);
     invalidateThreads(ids);
-    if (connection !== client.connectionVersion || undo.state !== "ready") return;
+    step("answered");
+    if (connection !== client.connectionVersion) return step("connection-changed");
+    if (undo.state !== "ready") return step("undo-taken");
     const note = keptNote(kept, rows, s.categories);
     const undoName = t("folder.move.undo", { folder: to.name });
     const id = snack(t("folder.move.done", { count: ids.length, folder: to.name }), { description: note, action: list.length ? undoAction(undo, undoName) : undefined });
@@ -62,7 +68,8 @@ export async function moveToFolder(to: FolderDrop, threadIds: readonly number[])
     const partial = error instanceof RpcError ? (error.details as { undoId?: number } | undefined)?.undoId : undefined;
     if (typeof partial === "number") list.push(partial);
     undoIds.resolve(list);
-    if (connection !== client.connectionVersion) return;
+    step("failed");
+    if (connection !== client.connectionVersion) return step("connection-changed");
     snack.error(t("folder.move.failed", { folder: to.name, error: error instanceof Error ? error.message : String(error) }), { action: list.length && undo.state === "ready" ? undoAction(undo, t("folder.move.undo", { folder: to.name })) : undefined });
     void reloadList({ keepSelection: true });
   }

@@ -31,6 +31,8 @@ vi.mock("~/lib/actions", () => ({
   undoActions: async (ids: number[]) => void undone.push(ids),
 }));
 vi.mock("~/lib/categorize", () => ({ leaveView: () => undefined }));
+const crumbs: { code: string; fields: unknown }[] = [];
+vi.mock("~/lib/diag", () => ({ breadcrumb: (_channel: string, code: string, fields: unknown) => void crumbs.push({ code, fields }) }));
 vi.mock("~/lib/flash", () => ({ flashRows: () => undefined }));
 vi.mock("~/state/app", () => ({ getApp: () => ({ accountId: 1, folder: null, view: "inbox", query: "", categories: [], checked: new Set() }), setApp: () => undefined }));
 vi.mock("~/state/list", () => ({ patchRows: () => undefined, reloadList: () => Promise.resolve() }));
@@ -38,12 +40,14 @@ vi.mock("~/state/threads", () => ({ invalidateThreads: () => undefined }));
 
 const { moveToFolder } = await import("./folder-move");
 const { resetSnacks, runUndo, useSnack } = await import("./snack");
+const { client } = await import("~/rpc/connection");
 
 setLocale("en", en);
 const to = { accountId: 1, key: "Label_A", name: "Recibos" };
 
 beforeEach(() => {
   calls.length = 0;
+  crumbs.length = 0;
   undone.length = 0;
   handlers = {};
   resetSnacks();
@@ -80,5 +84,36 @@ describe("a drop on a folder that fails partway (plan 127, Codex review)", () =>
     };
     await moveToFolder(to, [1]);
     expect(useSnack.getState().current!.action).toBeUndefined();
+  });
+});
+
+describe("plan 229: a move leaves crumbs, so a missing \"Moved\" can be told apart", () => {
+  const steps = () => crumbs.filter((c) => c.code === "action.folder_move").map((c) => (c.fields as { moveStep: string; count: number }).moveStep);
+
+  it("asked, then answered (counts only), and says Moved", async () => {
+    handlers["folders.moveThreads"] = async () => ({ affected: 2, kept: 0, undoId: 4 });
+    handlers["offers.forAction"] = async () => ({ offers: [] });
+    await moveToFolder(to, [1, 2]);
+    expect(steps()).toEqual(["asked", "answered"]);
+    expect(crumbs[0]!.fields).toEqual({ moveStep: "asked", count: 2 });
+    expect(useSnack.getState().current!.message).toBe("2 conversations moved to Recibos");
+  });
+
+  it("an answer over another connection says nothing, and the crumb says why", async () => {
+    handlers["folders.moveThreads"] = async () => {
+      (client as { connectionVersion: number }).connectionVersion++;
+      return { affected: 1, kept: 0, undoId: 5 };
+    };
+    await moveToFolder(to, [1]);
+    expect(steps()).toEqual(["asked", "answered", "connection-changed"]);
+    expect(useSnack.getState().current).toBeNull();
+  });
+
+  it("a failure", async () => {
+    handlers["folders.moveThreads"] = async () => {
+      throw new Error("offline");
+    };
+    await moveToFolder(to, [1]);
+    expect(steps()).toEqual(["asked", "failed"]);
   });
 });
