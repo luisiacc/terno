@@ -2812,6 +2812,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "today.digest.notNewsletterUndo": "Deshacer y volver a incluir a {sender} en el resumen",
   "today.digest.notNewsletterFailed": "No se pudo dejar a {sender} fuera del resumen. Inténtalo de nuevo.",
   "today.digest.hideSender": { one: "Ocultar remitente", other: "Ocultar # remitentes" },
+  "today.digest.hideHelp": { one: "El correo de este remitente deja de aparecer aquí, ahora y en el futuro. Sigue en tu bandeja de entrada. Vuelve a incluirlo desde Ajustes → IA → Resumen de boletines.", other: "El correo de estos remitentes deja de aparecer aquí, ahora y en el futuro. Sigue en tu bandeja de entrada. Vuelve a incluirlos desde Ajustes → IA → Resumen de boletines." },
   "today.digest.hideDone": { one: "{sender} no aparecerá en Correo automático", other: "# remitentes no aparecerán en Correo automático" },
   "today.digest.hideUndo": { one: "Deshacer y volver a mostrar a {sender} aquí", other: "Deshacer y volver a mostrar estos remitentes aquí" },
   "today.digest.hideFailed": { one: "No se pudo ocultar a {sender}. Inténtalo de nuevo.", other: "No se pudieron ocultar estos remitentes. Inténtalo de nuevo." },

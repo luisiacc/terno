@@ -208,7 +208,7 @@ describe("plan 235: Automated mail", () => {
     });
   };
   const closeMenu = () => act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
-  const labels = (menu: HTMLElement) => [...menu.querySelectorAll("[data-testid^=digest-menu-]")].map((e) => e.textContent);
+  const labels = (menu: HTMLElement) => [...menu.querySelectorAll("[role=menuitem]")].map((e) => e.textContent);
 
   it("an opened row ticks; a page of opened rows only can tick them all; a tick held through Mark unread stays", async () => {
     await show(automatedRow({ liveIds: [], readIds: [1, 2, 3] }));
@@ -232,6 +232,14 @@ describe("plan 235: Automated mail", () => {
     expect(host.querySelectorAll("[data-testid=digest-not-newsletter]")).toHaveLength(0);
     let menu = await menuOn(1);
     expect(labels(menu)).toEqual(["Open", "Archive", "Hide sender"]);
+    // Hide's help: it says the sender's mail to come stays out too, read with the row; a click on it hides nothing
+    const hide = menu.querySelector<HTMLElement>("[data-testid=digest-menu-hide]")!;
+    expect(document.getElementById(hide.getAttribute("aria-describedby")!)!.textContent).toBe("Mail from this sender stops showing here, now and in the future. It stays in your Inbox. Let it back in from Settings → AI → Newsletter digest.");
+    calls.length = 0;
+    await act(async () => hide.querySelector<HTMLElement>("[data-testid=digest-menu-hide-help]")!.click());
+    expect(calls.filter((c) => c.method === "today.notNewsletter")).toEqual([]);
+    expect(host.querySelectorAll("[data-testid=digest-item]")).toHaveLength(4);
+    expect(document.querySelector("[data-testid=digest-item-menu]")).not.toBeNull();
     // Archive on the unticked opened row: that row alone, read, the ticks as they were
     calls.length = 0;
     await act(async () => menu.querySelector<HTMLElement>("[data-testid=digest-menu-archive]")!.click());

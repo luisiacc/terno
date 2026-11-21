@@ -2,12 +2,13 @@ import { NOT_NEWSLETTER_NAME_MAX, type DigestItem, type DigestRow } from "@terno
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Checkbox } from "@terno/ui/components/checkbox";
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@terno/ui/components/context-menu";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuTrigger } from "@terno/ui/components/context-menu";
 import { IconButton } from "@terno/ui/components/icon-button";
 import { Spinner } from "@terno/ui/components/spinner";
-import { Archive, Ban, ChevronRight, EyeOff, Mail } from "@terno/ui/icons";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
+import { Archive, Ban, ChevronRight, EyeOff, Info, Mail } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getApp } from "~/state/app";
 import { modelName, routeOf } from "~/lib/ai";
 import { listDate } from "~/lib/format";
@@ -38,7 +39,8 @@ const STATE_LABEL: Partial<Record<DigestRowState, () => string>> = { keep: () =>
  * Plan 166: a row's menu, the row's own (right-click, or ⇧F10 on it). A digest's: Open, Not a newsletter. Plan 235:
  * Automated mail's: Open, Archive, Hide sender, for the ticked rows when it's opened on one of several ticked.
  */
-function DigestRowMenu({ onOpen, archive, leave, children }: { onOpen: () => void; archive: { label: string; run: () => void } | null; leave: { label: string; icon: React.ReactNode; testId: string; run: () => void } | null; children: React.ReactElement }) {
+function DigestRowMenu({ onOpen, archive, leave, children }: { onOpen: () => void; archive: { label: string; run: () => void } | null; leave: { label: string; icon: React.ReactNode; testId: string; help?: string; run: () => void } | null; children: React.ReactElement }) {
+  const helpId = useId();
   return (
     <ContextMenu onOpenChange={(open) => setApp({ menuOpen: open })}>
       <ContextMenuTrigger data-context-menu render={children} />
@@ -59,6 +61,7 @@ function DigestRowMenu({ onOpen, archive, leave, children }: { onOpen: () => voi
             <ContextMenuSeparator />
             <ContextMenuItem
               data-testid={leave.testId}
+              aria-describedby={leave.help ? helpId : undefined}
               onClick={() => {
                 // the rows (and this menu with them) go at once: its close never comes, so the keys come back to the page now
                 setApp({ menuOpen: false });
@@ -67,7 +70,21 @@ function DigestRowMenu({ onOpen, archive, leave, children }: { onOpen: () => voi
             >
               {leave.icon}
               {leave.label}
+              {leave.help && (
+                // plan 235: what Hide does to mail still to come, on the row's end where a shortcut would be; hovered, it
+                // explains and does nothing (a click on it isn't the row's)
+                <Tooltip>
+                  <TooltipTrigger
+                    render={<ContextMenuShortcut className="flex" data-testid="digest-menu-hide-help" onClick={(e) => (e.preventDefault(), e.stopPropagation())} onPointerUp={(e) => e.stopPropagation()} onMouseUp={(e) => e.stopPropagation()} />}
+                  >
+                    <Info aria-hidden />
+                  </TooltipTrigger>
+                  <TooltipContent side="right">{leave.help}</TooltipContent>
+                </Tooltip>
+              )}
             </ContextMenuItem>
+            {/* read with the row by a screen reader: the tooltip is the pointer's */}
+            {leave.help && <span id={helpId} hidden>{leave.help}</span>}
           </>
         )}
       </ContextMenuContent>
@@ -455,7 +472,7 @@ export default function DigestPage() {
                   !hidden
                     ? null
                     : automated
-                      ? { label: t("today.digest.hideSender", { count: hidden }), icon: <EyeOff />, testId: "digest-menu-hide", run: () => void leaveOutSenders(targets) }
+                      ? { label: t("today.digest.hideSender", { count: hidden }), icon: <EyeOff />, testId: "digest-menu-hide", help: t("today.digest.hideHelp", { count: hidden }), run: () => void leaveOutSenders(targets) }
                       : { label: t("today.digest.notNewsletter"), icon: <Ban />, testId: "digest-menu-not-newsletter", run: () => void leaveOutSenders([i]) }
                 }
               >
@@ -533,9 +550,13 @@ export default function DigestPage() {
         )}
         {automated && sendersIn(chosen) > 0 && (
           // plan 235: the ticked rows' senders out of Automated mail, as the row's menu does it
-          <Button size="sm" variant="outline" className="text-foreground" data-testid="digest-hide" onClick={() => void leaveOutSenders(chosen)}>
-            {t("today.digest.hideSender", { count: sendersIn(chosen) })}
-          </Button>
+          // what it does to mail still to come, in its tooltip, as the menu's Hide says it
+          <Tooltip>
+            <TooltipTrigger render={<Button size="sm" variant="outline" className="text-foreground" data-testid="digest-hide" onClick={() => void leaveOutSenders(chosen)} />}>
+              {t("today.digest.hideSender", { count: sendersIn(chosen) })}
+            </TooltipTrigger>
+            <TooltipContent>{t("today.digest.hideHelp", { count: sendersIn(chosen) })}</TooltipContent>
+          </Tooltip>
         )}
         {(!finished || chosen.length > 0) && (
           // the count is what goes, always: what was opened or unticked isn't in it, and its row says so

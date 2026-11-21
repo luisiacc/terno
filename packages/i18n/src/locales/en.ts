@@ -2854,6 +2854,7 @@ It contains none of your mail, contacts, settings or keys.
   "today.digest.notNewsletterFailed": "Couldn't keep {sender} out of the digest. Try again.",
   // plan 235: Automated mail's row menu and foot: the same list as "Not a newsletter"
   "today.digest.hideSender": { one: "Hide sender", other: "Hide # senders" },
+  "today.digest.hideHelp": { one: "Mail from this sender stops showing here, now and in the future. It stays in your Inbox. Let it back in from Settings → AI → Newsletter digest.", other: "Mail from these senders stops showing here, now and in the future. It stays in your Inbox. Let them back in from Settings → AI → Newsletter digest." },
   "today.digest.hideDone": { one: "{sender} won't show in Automated mail", other: "# senders won't show in Automated mail" },
   "today.digest.hideUndo": { one: "Undo, and show {sender} here again", other: "Undo, and show these senders here again" },
   "today.digest.hideFailed": { one: "Couldn't hide {sender}. Try again.", other: "Couldn't hide these senders. Try again." },

@@ -239,7 +239,10 @@ test.describe("What matters and its digest (plan 145)", () => {
     await digestRows.nth(0).getByTestId("digest-open").focus();
     await page.keyboard.press("Shift+F10");
     const menu = page.getByTestId("digest-item-menu");
-    await expect(menu.locator("[data-testid^=digest-menu-]")).toHaveText(["Open", "Archive 2", /^Hide (sender|2 senders)$/]);
+    await expect(menu.getByRole("menuitem")).toHaveText(["Open", "Archive 2", /^Hide (sender|2 senders)$/]);
+    // what Hide does to mail still to come, on its help icon's hover
+    await menu.getByTestId("digest-menu-hide-help").hover();
+    await expect(page.locator("[data-slot=tooltip-content]")).toContainText("now and in the future");
     for (const mode of ["light", "dark"] as const) {
       await page.emulateMedia({ colorScheme: mode });
       if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-automated-menu-${mode}.png` });

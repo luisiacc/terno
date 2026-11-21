@@ -108,3 +108,14 @@ screenshots; the owner can ask for a run.
 - A digest's opened row ticked (or unticked) by the person keeps that choice when it's marked unread: its toggle sets
   `toggled` to match. Tested both ways.
 - A digest of opened rows only shows Untick all once one is ticked (Tick all still leaves opened rows out). Tested.
+
+## Follow-up: what Hide does to mail still to come (owner, 2026-11-21)
+
+> I think we need to clarify that, for the hide-to-centers, it also has them in the future. From this list let's have some
+> kind of a help icon where you can hover over it and see a tooltip with that information so they know that in that
+> right-click menu
+
+The menu's Hide row ends with a muted info icon (in the row's shortcut slot, `ContextMenuShortcut`); its tooltip says mail
+from the sender stops showing here now and in the future, stays in the Inbox, and where to let it back in. A click on the
+icon does nothing (it isn't the row's). The row is described by the same text for screen readers (`aria-describedby`), and
+the foot's Hide senders button has it as its tooltip. Copy `today.digest.hideHelp`, en + es.
