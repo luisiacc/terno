@@ -150,6 +150,8 @@ export interface TestBuild {
   appName: string;
   /** the first check's delay (a release waits STARTUP_CHECK_DELAY_MS) */
   checkDelayMs?: number;
+  /** plan 226: the launch offer to move into Applications, which every other test build skips */
+  offerInstall?: boolean;
 }
 
 /**

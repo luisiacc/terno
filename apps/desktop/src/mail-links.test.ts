@@ -14,7 +14,10 @@ describe("links reaching main (plan 201)", () => {
     app.emit("open-url", { preventDefault: () => (prevented = true) }, LINK);
     expect(prevented).toBe(true);
     expect(opened).toEqual([]);
+    // plan 226: while one waits, the launch doesn't offer the move (its relaunch would drop the link)
+    expect(r.holding).toBe(true);
     r.ready();
+    expect(r.holding).toBe(false);
     expect(opened).toEqual(["caf3x+9@mail.gmail.com"]);
     app.emit("open-url", { preventDefault() {} }, "terno://message/second%40x");
     expect(opened).toEqual(["caf3x+9@mail.gmail.com", "second@x"]);

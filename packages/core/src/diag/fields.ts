@@ -72,6 +72,9 @@ export const FIELD_TYPES = {
   retryable: bool,
   rpcCode: enumOf(...RPC_CODES),
   stage: enumOf("check", "download", "verify", "install", "other"),
+  /** plan 226: the launch offer to move Terno into Applications, and where the copy that asked ran from */
+  installStep: enumOf("offered", "moved", "declined", "kept", "failed"),
+  installFrom: enumOf("dmg", "elsewhere"),
   /** plan 212: where opening an attachment stopped (its private folder, writing the copy, marking it, the OS) */
   openStep: enumOf("root", "write", "mark", "open"),
   source: enumOf("backend", "store", "search", "categorizer", "keychain", "main", "renderer", "worker", "mcp", "other"),

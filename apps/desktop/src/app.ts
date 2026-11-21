@@ -57,6 +57,7 @@ import { BackendRetirement } from "./backend-retirement";
 import { NativeReloads, nativeReloadKey } from "./native-reload";
 import type { UpdateController } from "./updates/controller";
 import { startUpdates } from "./updates/main";
+import { offerInstall } from "./install-main";
 import { MailboxHost } from "./mailbox/host";
 import { EngineCache } from "./code-cache";
 import type { MailboxGate } from "@terno/core/mailbox";
@@ -856,6 +857,9 @@ if (!app.requestSingleInstanceLock()) {
     registerMboxExport({ trusted, testDir: testPdfDir(process.env, app.isPackaged, demo) });
     registerAttachmentOpen({ trusted, testDir: testPdfDir(process.env, app.isPackaged, demo) });
     await switchLanguage(language, systemLanguages());
+    // plan 226: run from outside Applications, Terno first offers to move there (in the menu's language); a move quits
+    // and relaunches from Applications, so nothing else starts. The quit gate opens only while the move quits.
+    if (await offerInstall({ demo, background, linkWaiting: links.holding, quitting: (on) => void (quitState = on ? "stopped" : "running") })) return;
     buildMenu();
     startBackend();
     networkWatch.start();

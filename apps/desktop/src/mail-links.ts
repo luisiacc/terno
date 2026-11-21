@@ -25,6 +25,11 @@ export class LinkReceiver {
     }
   }
 
+  /** a link is waiting for the first window (plan 226: a move's relaunch would drop it) */
+  get holding(): boolean {
+    return this.held !== null;
+  }
+
   /** a window exists: what came before goes now, and every later link at once */
   ready(): void {
     this.live = true;

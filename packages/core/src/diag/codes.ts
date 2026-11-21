@@ -34,6 +34,8 @@ export const CODES = {
   "keychain.secret_failed": c("op", "errorClass"),
   "appearance.save_failed": c("errno"),
   "legacy.storage_failed": c("errorClass"),
+  // plan 226: the launch offer to move Terno into Applications (no path, folder or error text)
+  "install.offer": c("installStep", "installFrom"),
   "export.done": c("count", "durationMs"),
   "export.failed": c("errno", "errorClass"),
   "report.sent": c("count"),
