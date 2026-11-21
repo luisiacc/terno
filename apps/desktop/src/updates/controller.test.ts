@@ -45,7 +45,7 @@ interface FakeEngine extends Engine {
 
 const release = (version: string): EngineInfo => ({ version, releaseNotes: "<p>Faster</p>", releaseDate: null, size: 1000 });
 
-function harness(o: { prefs?: Partial<UpdatePrefs>; unsupported?: "dmg" | null; shutdown?: InstallShutdown[]; pending?: PendingInstall | null; version?: string; pendingFailure?: boolean } = {}): Harness {
+function harness(o: { prefs?: Partial<UpdatePrefs>; unsupported?: "dmg" | null; shutdown?: InstallShutdown[]; pending?: PendingInstall | null; version?: string; pendingFailure?: boolean; checkWhenReady?: boolean } = {}): Harness {
   const engine: FakeEngine = {
     handlers: null,
     allowed: null,
@@ -102,6 +102,7 @@ function harness(o: { prefs?: Partial<UpdatePrefs>; unsupported?: "dmg" | null; 
     feed: { provider: "github", owner: "luisiacc", repo: "terno" },
     testFeed: null,
     checkDelayMs: DELAY,
+    checkWhenReady: o.checkWhenReady ?? true,
     loadEngine: ({ allowed, handlers }) => {
       h.loads++;
       engine.allowed = allowed;
@@ -132,7 +133,58 @@ function harness(o: { prefs?: Partial<UpdatePrefs>; unsupported?: "dmg" | null; 
 const flush = () => vi.advanceTimersByTimeAsync(0);
 
 describe("main: the update controller", () => {
-  it("does nothing at launch: no engine loaded, no request, until the startup delay", async () => {
+  it("plan 230: checks at launch, as soon as the backend is ready, never inside the ready call; a backend restart doesn't check again", async () => {
+    const h = harness();
+    h.engine.next = null;
+    h.ctl.start();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(h.loads).toBe(0);
+    h.ctl.backendReady();
+    // on a timer: the backend's message handler returns before anything of the check runs
+    expect(h.loads).toBe(0);
+    await flush();
+    expect(h.engine.checks).toBe(1);
+    expect(h.ctl.view.status).toBe("up-to-date");
+    // the next check is the 4-hour one; the startup delay's timer is gone
+    expect(vi.getTimerCount()).toBe(1);
+    h.ctl.backendReady();
+    await vi.advanceTimersByTimeAsync(DELAY);
+    expect(h.engine.checks).toBe(1);
+    await vi.advanceTimersByTimeAsync(CHECK_EVERY_MS);
+    expect(h.engine.checks).toBe(2);
+  });
+
+  it("plan 230: a backend ready before start checks at start; one ready after the delay's check doesn't check again", async () => {
+    const early = harness();
+    early.engine.next = null;
+    early.ctl.backendReady();
+    expect(early.engine.checks).toBe(0); // not started: nothing yet
+    early.ctl.start();
+    await flush();
+    expect(early.engine.checks).toBe(1);
+
+    const late = harness();
+    late.engine.next = null;
+    late.ctl.start();
+    await vi.advanceTimersByTimeAsync(DELAY);
+    expect(late.engine.checks).toBe(1);
+    late.ctl.backendReady();
+    await flush();
+    expect(late.engine.checks).toBe(1);
+  });
+
+  it("a test build (checkWhenReady off) waits out its own delay, backend ready or not", async () => {
+    const h = harness({ checkWhenReady: false });
+    h.engine.next = null;
+    h.ctl.start();
+    h.ctl.backendReady();
+    await vi.advanceTimersByTimeAsync(DELAY - 1);
+    expect(h.loads).toBe(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(h.engine.checks).toBe(1);
+  });
+
+  it("a backend that never gets ready: no engine loaded, no request, until the startup delay", async () => {
     const h = harness();
     h.engine.next = null;
     h.ctl.start();

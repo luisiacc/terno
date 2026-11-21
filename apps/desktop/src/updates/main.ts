@@ -82,6 +82,8 @@ export function startUpdates(deps: UpdatesMainDeps): UpdateController {
       feed: resolveFeed(TEST_BUILD),
       testFeed: TEST_BUILD?.feed ?? null,
       checkDelayMs: TEST_BUILD?.checkDelayMs ?? STARTUP_CHECK_DELAY_MS,
+      // a test build checks only when its test asks (its baked delay is the only automatic check)
+      checkWhenReady: TEST_BUILD?.checkDelayMs === undefined,
       loadEngine: createEngine,
       probe,
       prefs: { read: () => parsePrefs(readJson(prefsFile)), write: writePrefs },

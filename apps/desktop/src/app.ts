@@ -865,7 +865,7 @@ if (!app.requestSingleInstanceLock()) {
     networkWatch.start();
     // sockets from before a sleep are suspect, whatever the network does next
     powerMonitor.on("resume", () => networkWatch.wake());
-    // nothing runs before its startup delay (no engine loaded, no request)
+    // the launch check runs once the backend is ready (plan 230), off this thread like every step of an update
     updates = startUpdates({
       trusted,
       windows: () => windows,

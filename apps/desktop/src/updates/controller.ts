@@ -5,18 +5,19 @@
  * electron-updater and the disk come in as deps, so the whole flow is
  * unit-tested in Node.
  *
- * Idle means idle: nothing runs until the startup delay, then one check
- * every 4 hours (a timer, not polling the network in between), and
- * electron-updater isn't even loaded before the first check. Local mode
- * doesn't stop updates (plan 97).
+ * Idle means idle: one check at launch, as soon as the backend is ready
+ * (the window is up and the mailbox open; plan 230), then one every 4
+ * hours (a timer, not polling the network in between). Every step is
+ * asynchronous: main's thread never waits on the network, codesign or
+ * Squirrel. Local mode doesn't stop updates (plan 97).
  */
 import type { MailboxGate } from "@terno/core/mailbox";
 import { compareVersions, initialUpdateState, notesText, reduceUpdate, type UnsupportedReason, type UpdateChannel, type UpdateEvent, type UpdateMode, type UpdateState } from "@terno/core/updates";
 import type { Engine, EngineHandlers, EngineInfo } from "./engine";
 import { errorKind, expectedKind, feedMinimum, Grants, installOutcome, mayDownload, updateRequestAllowed, type FeedConfig, type PendingInstall, type Trigger, type UpdatePrefs } from "./policy";
 
-/** the first check waits this long after launch, so a cold start never pays for it */
-export const STARTUP_CHECK_DELAY_MS = 30_000;
+/** plan 230: the launch check runs when the backend is ready; this long at most if it never is (a mailbox that won't open) */
+export const STARTUP_CHECK_DELAY_MS = 10_000;
 export const CHECK_EVERY_MS = 4 * 60 * 60 * 1000;
 
 export type InstallShutdown = "closed" | "forced" | "sending" | "timeout" | "unsaved";
@@ -27,6 +28,8 @@ export interface ControllerDeps {
   /** a test build's own feed (its origin is allowed besides GitHub's) */
   testFeed: string | null;
   checkDelayMs: number;
+  /** plan 230: the launch check runs once the backend is ready, before the delay (a test build waits out its own delay) */
+  checkWhenReady: boolean;
   loadEngine(o: { feed: FeedConfig; allowed(url: string): boolean; handlers: EngineHandlers }): Engine;
   /** why this copy can't update itself (codesign, location), or null */
   probe(): Promise<UnsupportedReason | null>;
@@ -61,6 +64,8 @@ export class UpdateController {
   private checkGrant: number | null = null;
   private downloadStartedAt = 0;
   private healthChecked = false;
+  /** the launch check has run (or is running): a backend ready later doesn't start another */
+  private launchChecked = false;
   private mailboxFailureSaid = false;
   private waitingForSends = false;
   /** a grant revoked while its request ran (the channel changed): its failure is a cancellation, not an error */
@@ -85,11 +90,14 @@ export class UpdateController {
     return this.state;
   }
 
-  /** After launch: nothing now; the location probe (local, no network) and the first automatic check after the delay. */
+  /**
+   * After launch: the location probe (local, no network) and the first automatic check, as soon as the backend is
+   * ready (backendReady), or after the delay if it never is.
+   */
   start(): void {
     if (this.started) return;
     this.started = true;
-    this.schedule(this.deps.checkDelayMs, () => this.autoCheck());
+    this.schedule(this.healthChecked && this.deps.checkWhenReady ? 0 : this.deps.checkDelayMs, () => this.autoCheck());
   }
 
   /** Once per run: can this copy update itself? (codesign and the bundle's location) */
@@ -121,6 +129,7 @@ export class UpdateController {
 
   /** The background check, then the next one in 4 hours (none for a copy that can't update itself). */
   private async autoCheck(): Promise<void> {
+    this.launchChecked = true;
     if (!(await this.supported())) return;
     await this.check("auto");
     if (this.state.status !== "unsupported") this.schedule(CHECK_EVERY_MS, () => this.autoCheck());
@@ -350,6 +359,8 @@ export class UpdateController {
   backendReady(): void {
     if (this.healthChecked) return;
     this.healthChecked = true;
+    // plan 230: the launch check, now the window and the mailbox are up (on a timer: it never runs inside this call)
+    if (this.started && this.deps.checkWhenReady && !this.launchChecked) this.schedule(0, () => this.autoCheck());
     const pending = this.deps.pending.read();
     if (!pending) return;
     this.deps.pending.clear();
