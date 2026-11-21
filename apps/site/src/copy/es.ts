@@ -237,7 +237,7 @@ export const es: SiteCopy = {
     privacy: {
       title: "Privacidad",
       intro: "Terno guarda tu correo en tu Mac. No hay cuenta de Terno ni ningún servidor de Terno que guarde tu correo. Esta página explica exactamente qué hacen con tus datos la app y este sitio web.",
-      updated: "Última actualización: 2 de noviembre de 2026",
+      updated: "Última actualización: 20 de noviembre de 2026",
       contents: "En esta página",
       sections: [
         {
@@ -283,7 +283,7 @@ export const es: SiteCopy = {
           ],
           after: [
             "Terno usa estos datos solo para ofrecerte las funciones que ves en la app. Se guardan en tu Mac y nunca se nos envían. No los vendemos, no los usamos para publicidad ni para crear perfiles tuyos, ni para desarrollar, mejorar o entrenar modelos de IA, y nadie en Luisiacc LLC los lee.",
-            "Terno solo pasa datos de usuario de Google a otros cuando tú se lo pides: al proveedor de IA que elijas, cuando activas una función de IA (solo lo que esa función necesita, descrito más abajo), y a las herramientas de IA de tu Mac que conectes a Terno.",
+            "Terno solo pasa datos de usuario de Google a otros en dos casos, ambos elegidos por ti: al proveedor de IA que configures, para las funciones de IA descritas [más abajo](#ai) (algunas funcionan solas una vez configurado un proveedor, y puedes desactivar cada una o desactivar la IA para una cuenta), y a las herramientas de IA de tu Mac que conectes a Terno.",
             "El uso y la transferencia a cualquier otra app, por parte de Terno, de la información recibida de las API de Google se ajustarán a la [Política de datos de usuario de los servicios de API de Google](https://developers.google.com/terms/api-services-user-data-policy), incluidos los requisitos de uso limitado.",
             "Eliminar la cuenta en Ajustes → Cuentas borra su correo y sus tokens de tu Mac y retira el acceso de Terno en Google, para Terno en cualquier sitio donde uses esa cuenta. Si Google no lo confirma, Terno te avisa, y puedes quitar Terno tú mismo en [myaccount.google.com/permissions](https://myaccount.google.com/permissions).",
           ],
@@ -292,12 +292,22 @@ export const es: SiteCopy = {
           id: "ai",
           title: "Proveedores de IA",
           body: [
-            "La IA está desactivada hasta que eliges un proveedor en Ajustes → IA: Anthropic, OpenAI, un servicio compatible con OpenAI (como OpenRouter, Groq, Together o Azure OpenAI) o un modelo que se ejecuta en tu Mac (Ollama, LM Studio). Tu clave se queda en tu Mac, y las peticiones van directamente de tu Mac a ese proveedor, bajo sus condiciones de privacidad. Con un modelo en tu Mac, nada sale de él.",
+            "La IA está desactivada hasta que eliges un proveedor en Ajustes → IA: Anthropic, OpenAI, un servicio compatible con OpenAI (como OpenRouter, Groq, Together o Azure OpenAI) o un modelo que se ejecuta en tu Mac (Ollama, LM Studio). Tu clave se queda en tu Mac, y las peticiones van directamente de tu Mac a ese proveedor, bajo sus condiciones de privacidad. Nada pasa por nosotros. Con un modelo en tu Mac, nada sale de él. Si guardas una clave de Anthropic y otra de OpenAI, Terno reparte el trabajo entre ambas, así que tu correo puede llegar a las dos.",
+            "Con un proveedor configurado, algunas funciones trabajan solas a medida que llega el correo; abajo aparecen como **automáticas**. Puedes desactivar cada una en Ajustes → IA, y desactivar la IA para una cuenta con «Usar IA con esta cuenta» en Ajustes → Cuentas. El correo de esa cuenta ya no se envía nunca, aunque su nombre y su dirección pueden aparecer cuando escribes un filtro o una acción. Las funciones automáticas nunca leen el correo de Spam ni de la Papelera, y se detienen en el límite mensual que fijas en Ajustes → IA. Nunca se envían adjuntos ni imágenes, solo nombres de archivo donde se indica.",
             "Qué envía cada función:",
           ],
           points: [
+            "**Resúmenes** (automáticos para el correo nuevo de tu Bandeja de entrada, o cuando pides uno): el asunto, tu nombre y tu dirección, el remitente, los nombres de los destinatarios y la fecha de cada mensaje, el texto del mensaje más reciente y fragmentos más cortos de los mensajes anteriores de la conversación.",
+            "**«Lo importante»** (automático para el correo nuevo que recibes, y una revisión única de los últimos 14 días de cada cuenta, hasta 300 mensajes): el texto del mensaje sin las respuestas citadas, su asunto y su hora, los nombres del remitente y los destinatarios, y los asuntos pendientes de esa conversación.",
+            "**Seguimientos** (automáticos para cada mensaje que envías, y una revisión única de los últimos 30 días de correo enviado de cada cuenta, hasta 300 mensajes): tu texto sin citas ni firma, su asunto y su hora, los nombres de tus destinatarios, los nombres de los adjuntos, el mensaje al que respondías, y las promesas y peticiones pendientes de esa conversación.",
+            "**Pregunta a tu correo** (cuando preguntas): tu pregunta y tus últimas preguntas, la fecha de hoy y tu zona horaria, los nombres y direcciones de tus cuentas y los nombres de tus categorías; después, fragmentos de hasta 30 mensajes relacionados, cada uno con su remitente, su fecha y su asunto.",
+            "**Acciones escritas** (cuando escribes una orden como «archiva los boletines de la semana pasada»): lo que escribiste, la fecha de hoy y tu zona horaria, los nombres y direcciones de tus cuentas, y los nombres de tus categorías y carpetas; después, para comprobar a qué correo se refiere, los nombres de remitente, los dominios y los asuntos de ese correo, nunca su texto.",
+            "**Escribir con IA** (cuando pides un borrador): tu instrucción, el borrador hasta ahora, sus destinatarios y su asunto, tu firma, tus instrucciones de escritura y notas de estilo, los nombres de los adjuntos y la conversación que respondes. Con «Aprender de mi correo enviado» activado, también algunos de tus mensajes anteriores a esa persona.",
+            "**Respuesta lista** (desactivada por defecto): al abrir una conversación que espera tu respuesta, su último mensaje y tu último mensaje en ella, para decidir si hace falta responder; después, lo que envía Escribir con IA.",
+            "**Notas sobre tu tono** (cuando pides a Terno que estudie cómo escribes, y luego de vez en cuando): muestras de tu correo enviado sin citas ni firmas, con los destinatarios cambiados por etiquetas anónimas.",
+            "**Resumen de boletines** (desactivado por defecto, una vez al día): el nombre del remitente, el asunto y el texto inicial de hasta 40 boletines sin leer de los últimos 3 días.",
+            "**Ayuda para clasificar en categorías** (desactivada por defecto, automática una vez activada): para un mensaje nuevo que Terno no sabe clasificar por sí solo, el nombre y la dirección del remitente, el asunto, los primeros 600 caracteres del texto, los nombres de tus categorías y algunos ejemplos de cada una (nombre del remitente, dominio y asunto). Si añades una clave de TypeSafe AI (JEV) en Ajustes → Categorías, esto va a TypeSafe AI.",
             "**Crear un filtro a partir de tus palabras:** lo que escribiste, la fecha de hoy, las direcciones y nombres de tus cuentas, y los nombres de tus categorías.",
-            "**Ayuda para clasificar en categorías** (un interruptor aparte): para un mensaje que Terno no sabe clasificar por sí solo, el nombre y la dirección del remitente, el asunto, los primeros 600 caracteres del texto y los nombres de tus categorías.",
           ],
         },
         {

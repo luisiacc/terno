@@ -242,7 +242,7 @@ export const en = {
     privacy: {
       title: "Privacy",
       intro: "Terno keeps your mail on your Mac. There is no Terno account, and no Terno server that stores your mail. This page says exactly what the app and this website do with your data.",
-      updated: "Last updated: November 2, 2026",
+      updated: "Last updated: November 20, 2026",
       contents: "On this page",
       sections: [
         {
@@ -288,7 +288,7 @@ export const en = {
           ],
           after: [
             "Terno uses this data only to provide the features you see in the app. It is stored on your Mac and is never sent to us. We don’t sell it, use it for advertising, use it to build profiles of you, or use it to develop, improve or train AI models, and no person at Luisiacc LLC reads it.",
-            "Terno passes Google user data to someone else only when you ask it to: to the AI provider you choose, when you turn on an AI feature (only what that feature needs, described below), and to AI tools on your Mac that you connect to Terno.",
+            "Terno passes Google user data to someone else only in two cases, both your choice: to the AI provider you set up, for the AI features described [below](#ai) (some run on their own once a provider is set up, and you can turn each one off, or turn AI off for one account), and to AI tools on your Mac that you connect to Terno.",
             "Terno’s use and transfer to any other app of information received from Google APIs will adhere to the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including the Limited Use requirements.",
             "Removing the account in Settings → Accounts deletes its mail and sign-in tokens from your Mac and withdraws Terno’s access at Google, for Terno everywhere you use that account. If Google doesn’t confirm it, Terno tells you, and you can remove Terno yourself at [myaccount.google.com/permissions](https://myaccount.google.com/permissions).",
           ],
@@ -297,12 +297,22 @@ export const en = {
           id: "ai",
           title: "AI providers",
           body: [
-            "AI is off until you choose a provider in Settings → AI: Anthropic, OpenAI, an OpenAI-compatible service (such as OpenRouter, Groq, Together or Azure OpenAI) or a model running on your Mac (Ollama, LM Studio). Your key stays on your Mac, and requests go straight from your Mac to that provider, under its privacy terms. With a model on your Mac, nothing leaves it.",
+            "AI is off until you choose a provider in Settings → AI: Anthropic, OpenAI, an OpenAI-compatible service (such as OpenRouter, Groq, Together or Azure OpenAI) or a model running on your Mac (Ollama, LM Studio). Your key stays on your Mac, and requests go straight from your Mac to that provider, under its privacy terms. Nothing passes through us. With a model on your Mac, nothing leaves it. If you save both an Anthropic and an OpenAI key, Terno divides the work between them, so your mail can reach both.",
+            "Once a provider is set up, some features run on their own as mail arrives, marked **automatic** below. You can turn each one off in Settings → AI, and turn AI off for one account with “Use AI with this account” in Settings → Accounts. That account’s mail is then never sent, though its name and address can still appear when you write a filter or a typed action. Automatic features never read mail in Spam or Trash, and they stop at the monthly limit you set in Settings → AI. Attachments and images are never sent, only file names where noted.",
             "What each feature sends:",
           ],
           points: [
+            "**Summaries** (automatic for new mail in your Inbox, or when you ask for one): the subject, your name and address, each message’s sender, recipients’ names and date, the newest message’s text, and shorter extracts of the earlier messages in the conversation.",
+            "**“What matters”** (automatic for new mail you receive, plus a one-time look at each account’s last 14 days, up to 300 messages): the message’s text without quoted replies, its subject and time, the names of its sender and recipients, and the items already open in that conversation.",
+            "**Follow-ups** (automatic for each message you send, plus a one-time look at each account’s last 30 days of sent mail, up to 300 messages): your text without quotes or signature, its subject and time, your recipients’ names, attachment file names, the message you were answering, and the promises and requests already open in that conversation.",
+            "**Ask your mail** (when you ask): your question and your last few questions, today’s date and time zone, your accounts’ names and addresses and your category names; then passages from up to 30 matching messages, each with its sender, date and subject.",
+            "**Typed actions** (when you type a command such as “archive the newsletters from last week”): what you typed, today’s date and time zone, your accounts’ names and addresses, and your category and folder names; then, to check what it matches, the sender names, domains and subjects of the matching mail, never its text.",
+            "**Writing with AI** (when you ask for a draft): your instruction, the draft so far, its recipients and subject, your signature, writing instructions and style notes, attachment file names, and the conversation you’re answering. With “Learn from my sent mail” on, also a few of your earlier messages to the same person.",
+            "**Reply ready** (off by default): when you open a conversation waiting for your reply, its latest message and your last message there, to decide whether a reply is needed; then what Writing with AI sends.",
+            "**Notes on your tone** (when you ask Terno to study your writing, then refreshed from time to time): samples of your sent mail without quotes or signatures, with recipients replaced by anonymous labels.",
+            "**Newsletter digest** (off by default, once a day): the sender’s name, the subject and the opening text of up to 40 unread newsletters from the last 3 days.",
+            "**Help sorting into categories** (off by default, automatic once on): for a new message Terno can’t sort on its own, the sender’s name and address, the subject, the first 600 characters of the text, your category names and a few examples of each category (sender name, domain and subject). If you add a TypeSafe AI (JEV) key in Settings → Categories, this goes to TypeSafe AI instead.",
             "**Writing a filter from your words:** what you typed, today’s date, your accounts’ addresses and names, and your category names.",
-            "**Help sorting into categories** (a separate switch): for a message Terno can’t sort on its own, the sender’s name and address, the subject, the first 600 characters of the text and your category names.",
           ],
         },
         {
