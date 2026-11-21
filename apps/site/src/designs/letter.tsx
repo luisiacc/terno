@@ -235,9 +235,9 @@ export const Letter: HomeDesign = ({ copy }) => {
           <Detail copy={copy} name="code-detail" />
         </Feature>
         <Feature copy={copy} id="themes">
-          {/* the five designs and one palette pair: three by two, two by three on a phone */}
+          {/* the six designs: three by two, two by three on a phone (the palettes are named in the text above) */}
           <ul className="letter-wide mt-14 grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 sm:gap-5">
-            {[...DESIGN_SHOTS.map(([, name]) => name), "palette-dracula" as const].map((name) => (
+            {DESIGN_SHOTS.map(([, name]) => (
               <li key={name}>
                 <figure>
                   <Window className="letter-window letter-window-small">

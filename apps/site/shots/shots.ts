@@ -71,6 +71,7 @@ const SHOTS: Shot[] = [
   { name: "inbox-atelier", design: "atelier", setup: (p) => open(p, "Homepage concepts, round two") },
   { name: "inbox-luma", design: "luma", setup: (p) => open(p, "Homepage concepts, round two") },
   { name: "inbox-graphite", design: "graphite", setup: (p) => open(p, "Homepage concepts, round two") },
+  { name: "inbox-relief", design: "relief", setup: (p) => open(p, "Homepage concepts, round two") },
   // color themes, each a light and dark pair, in a design that isn't theirs: any palette works with any design
   { name: "palette-dracula", design: "macos", palette: { light: "apple-light", dark: "dracula" }, setup: (p) => open(p, "Lisbon offsite: flights and the plan") },
   { name: "palette-nord", design: "lumen", palette: { light: "terno-light", dark: "nord" }, setup: (p) => open(p, "Lisbon offsite: flights and the plan") },

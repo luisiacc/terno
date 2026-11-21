@@ -331,13 +331,13 @@ export const Midnight: HomeDesign = ({ copy, route }) => {
               </a>
             </Card>
             <Card f={f.themes} className="md:col-span-2 lg:col-span-6">
-              {/* the five designs, named, above the palettes; on a phone Lumen across, the others two by two */}
-              <ul className="grid grid-cols-2 gap-x-3 gap-y-4 sm:grid-cols-5">
-                {DESIGN_SHOTS.map(([design, s], i) => (
-                  <li key={s} className={i === 0 ? "max-sm:col-span-2" : ""}>
+              {/* the six designs, named, above the palettes: one row on wide screens, three by two, then two by three on a phone */}
+              <ul className="grid grid-cols-2 gap-x-3 gap-y-4 sm:grid-cols-3 lg:grid-cols-6">
+                {DESIGN_SHOTS.map(([design, s]) => (
+                  <li key={s}>
                     <figure>
                       <div className="mn-thumb relative overflow-hidden rounded-lg border border-(--mn-line)">
-                        <Shot name={s} copy={copy} sizes={`(min-width: 1024px) 200px, (min-width: 640px) 18vw, ${i === 0 ? "90vw" : "45vw"}`} />
+                        <Shot name={s} copy={copy} sizes="(min-width: 1024px) 170px, (min-width: 640px) 30vw, 45vw" />
                       </div>
                       <figcaption className="mt-2.5 font-mono text-[0.75rem] text-(--mn-muted)">{copy.designs[design]}</figcaption>
                     </figure>

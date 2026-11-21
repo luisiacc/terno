@@ -278,5 +278,13 @@
   "ai-what-matters-dark": {
     "width": 1200,
     "height": 860
+  },
+  "inbox-relief-dark": {
+    "width": 1440,
+    "height": 900
+  },
+  "inbox-relief-light": {
+    "width": 1440,
+    "height": 900
   }
 }

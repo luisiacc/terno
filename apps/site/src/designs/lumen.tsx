@@ -401,12 +401,12 @@ export const Lumen: HomeDesign = ({ copy }) => {
               </h2>
               <p className={`mx-auto mt-5 max-w-2xl ${lead}`}>{f.themes.body}</p>
             </div>
-            {/* the five designs: two over three on wide screens; on a phone Lumen across, the others two by two */}
-            <div className="mt-14 grid grid-cols-2 gap-x-4 gap-y-6 md:grid-cols-6 md:gap-6">
-              {DESIGN_SHOTS.map(([design, name], i) => (
-                <figure key={name} className={i === 0 ? "col-span-2 md:col-span-3" : i === 1 ? "md:col-span-3" : "md:col-span-2"}>
+            {/* the six designs: three by two on wide screens, two by three on a phone */}
+            <div className="mt-14 grid grid-cols-2 gap-x-4 gap-y-6 md:grid-cols-3 md:gap-6">
+              {DESIGN_SHOTS.map(([design, name]) => (
+                <figure key={name}>
                   <Window className="lumen-window rounded-xl">
-                    <Shot name={name} copy={copy} sizes={i === 0 ? "(min-width: 1024px) 530px, (min-width: 768px) 46vw, 92vw" : i === 1 ? "(min-width: 1024px) 530px, (min-width: 768px) 46vw, 45vw" : "(min-width: 1024px) 350px, (min-width: 768px) 30vw, 45vw"} />
+                    <Shot name={name} copy={copy} sizes="(min-width: 1024px) 350px, (min-width: 768px) 30vw, 45vw" />
                   </Window>
                   <figcaption className="mt-3 text-center text-sm font-medium text-(--l-muted)">{copy.designs[design]}</figcaption>
                 </figure>

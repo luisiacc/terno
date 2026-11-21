@@ -4,12 +4,13 @@ import { Maximize, Moon, Sun } from "./icons";
 
 export type ShotName = keyof SiteCopy["alt"];
 
-/** The app's five designs and their pictures (plan 97), in the app's order (plan 173): Lumen, the default, first; macOS last. */
+/** The app's six designs and their pictures (plan 97), in the app's order (plan 173): Lumen, the default, first; macOS last. */
 export const DESIGN_SHOTS = [
   ["lumen", "inbox"],
   ["graphite", "inbox-graphite"],
   ["atelier", "inbox-atelier"],
   ["luma", "inbox-luma"],
+  ["relief", "inbox-relief"],
   ["macos", "inbox-macos"],
 ] as const satisfies readonly (readonly [keyof SiteCopy["designs"], ShotName])[];
 
