@@ -102,3 +102,9 @@ Codex read the plan against the code and made ten points; what changed:
 
 UI rating (plan 158) is not run for this series: one foot button and a row menu on the digest page, both checked in
 screenshots; the owner can ask for a run.
+
+## What the Codex code review changed
+
+- A digest's opened row ticked (or unticked) by the person keeps that choice when it's marked unread: its toggle sets
+  `toggled` to match. Tested both ways.
+- A digest of opened rows only shows Untick all once one is ticked (Tick all still leaves opened rows out). Tested.

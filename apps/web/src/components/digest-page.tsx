@@ -190,13 +190,20 @@ export default function DigestPage() {
   const chosen = items.filter((i) => stateOf(i) === "archive");
   const staying = shown.filter((i) => stateOf(i) === "keep" || stateOf(i) === "opened").length;
   const readNow = new Set(shown.filter(read).map((i) => i.threadId));
-  const toggle = (id: number) =>
-    (!automated && readNow.has(id) ? setReadTicked : setToggled)((held) => {
-      const next = new Set(held);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  const flip = (id: number) => (held: ReadonlySet<number>) => {
+    const next = new Set(held);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  };
+  const toggle = (id: number) => {
+    if (automated || !readNow.has(id)) return setToggled(flip(id));
+    // a digest's read row: the person's choice holds if it's marked unread again (Codex review), so `toggled` (its unticked
+    // unread rows) says the same
+    const on = !readTicked.has(id);
+    setReadTicked(flip(id));
+    setToggled((held) => new Set(on ? [...held].filter((x) => x !== id) : [...held, id]));
+  };
   // plan 162: the ticks reset at once, both ways (Atelier codex): every live row ticked, or none. Plan 235: Automated mail's
   // Tick all takes the opened ones too (the person picks everything there); a digest's leaves them (opened stays, its hint says)
   const anyTicked = chosen.length > 0;
@@ -513,7 +520,7 @@ export default function DigestPage() {
             )}
           </p>
         )}
-        {allTickable.length > 0 && (
+        {(anyTicked || allTickable.length > 0) && (
           <Button size="sm" variant="outline" className="text-foreground" data-testid="digest-tick-all" onClick={() => tickAll(!anyTicked)}>
             {t(anyTicked ? "today.digest.untickAll" : "today.digest.tickAll")}
           </Button>

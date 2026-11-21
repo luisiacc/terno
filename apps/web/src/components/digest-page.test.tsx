@@ -173,6 +173,28 @@ it("plan 235: a digest's unread row unticked, then read elsewhere, stays unticke
   expect(states()).toEqual(["opened:Opened · stays in Inbox", "archive:", "archive:"]);
 });
 
+it("plan 235 (Codex review): a digest's opened row the person ticks or unticks keeps that choice when marked unread", async () => {
+  await show(digestOf("2026-10-22"));
+  await act(async () => host.querySelectorAll<HTMLElement>("[data-testid=digest-tick]")[0]!.click());
+  await act(async () => useToday.setState({ digest: { ...digestOf("2026-10-22"), liveIds: [2, 3], readIds: [1] } }));
+  await act(async () => host.querySelectorAll<HTMLElement>("[data-testid=digest-tick]")[0]!.click());
+  await act(async () => host.querySelectorAll<HTMLElement>("[data-testid=digest-tick]")[1]!.click());
+  await act(async () => useToday.setState({ digest: { ...digestOf("2026-10-22"), liveIds: [3], readIds: [1, 2] } }));
+  await act(async () => host.querySelectorAll<HTMLElement>("[data-testid=digest-tick]")[1]!.click());
+  expect(ticks()).toEqual([true, true, true]);
+  await act(async () => host.querySelectorAll<HTMLElement>("[data-testid=digest-tick]")[1]!.click());
+  await act(async () => useToday.setState({ digest: digestOf("2026-10-22") }));
+  expect(ticks()).toEqual([true, false, true]);
+});
+
+it("plan 235 (Codex review): a digest of opened rows only can Untick all what the person ticked", async () => {
+  await show({ ...digestOf("2026-10-22"), liveIds: [], readIds: [1, 2, 3] });
+  expect(host.querySelector("[data-testid=digest-tick-all]")).toBeNull();
+  await act(async () => host.querySelectorAll<HTMLElement>("[data-testid=digest-tick]")[0]!.click());
+  await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-tick-all]")!.click());
+  expect(ticks()).toEqual([false, false, false]);
+});
+
 describe("plan 235: Automated mail", () => {
   const automatedRow = (over: Partial<DigestRow> = {}): DigestRow => ({ ...digestOf("2026-10-25", true), ...over });
   const tick = (n: number) => act(async () => host.querySelectorAll<HTMLElement>("[data-testid=digest-tick]")[n]!.click());
