@@ -119,3 +119,8 @@ The menu's Hide row ends with a muted info icon (in the row's shortcut slot, `Co
 from the sender stops showing here now and in the future, stays in the Inbox, and where to let it back in. A click on the
 icon does nothing (it isn't the row's). The row is described by the same text for screen readers (`aria-describedby`), and
 the foot's Hide senders button has it as its tooltip. Copy `today.digest.hideHelp`, en + es.
+
+What the Codex code review of the follow-up changed: a click on the tooltip itself (portaled, but the row's child for
+React's events) hid the sender; the stop now sits on the row-end wrapper that holds both icon and tooltip. And a keyboard
+has no hover: the help also shows while the arrows have the Hide row (the menu notes whether a key or the pointer moved
+last). Both tested (unit and e2e).

@@ -243,6 +243,13 @@ test.describe("What matters and its digest (plan 145)", () => {
     // what Hide does to mail still to come, on its help icon's hover
     await menu.getByTestId("digest-menu-hide-help").hover();
     await expect(page.locator("[data-slot=tooltip-content]")).toContainText("now and in the future");
+    // and by the keys alone: the pointer away, the arrows reach Hide and its help shows (a keyboard has no hover)
+    await page.mouse.move(0, 0);
+    await expect(page.locator("[data-slot=tooltip-content]")).toHaveCount(0);
+    const hideItem = menu.getByTestId("digest-menu-hide");
+    for (let n = 0; n < 4 && !(await hideItem.evaluate((el) => el === document.activeElement)); n++) await page.keyboard.press("ArrowDown");
+    await expect(hideItem).toBeFocused();
+    await expect(page.locator("[data-slot=tooltip-content]")).toContainText("now and in the future");
     for (const mode of ["light", "dark"] as const) {
       await page.emulateMedia({ colorScheme: mode });
       if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-automated-menu-${mode}.png` });

@@ -240,6 +240,21 @@ describe("plan 235: Automated mail", () => {
     expect(calls.filter((c) => c.method === "today.notNewsletter")).toEqual([]);
     expect(host.querySelectorAll("[data-testid=digest-item]")).toHaveLength(4);
     expect(document.querySelector("[data-testid=digest-item-menu]")).not.toBeNull();
+    // Codex review: the keys reaching the row show it too, and a click on the tooltip itself hides nothing either
+    const archiveItem = menu.querySelector<HTMLElement>("[data-testid=digest-menu-archive]")!;
+    await act(async () => archiveItem.focus());
+    await act(async () => archiveItem.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })));
+    expect(document.activeElement).toBe(hide);
+    const tip = await vi.waitFor(() => {
+      const el = document.querySelector<HTMLElement>("[data-slot=tooltip-content]");
+      expect(el?.textContent).toContain("now and in the future");
+      return el!;
+    });
+    await act(async () => tip.click());
+    expect(calls.filter((c) => c.method === "today.notNewsletter")).toEqual([]);
+    expect(host.querySelectorAll("[data-testid=digest-item]")).toHaveLength(4);
+    await act(async () => menu.querySelector<HTMLElement>("[data-testid=digest-menu-open]")!.focus());
+    await vi.waitFor(() => expect(document.querySelector("[data-slot=tooltip-content]")).toBeNull());
     // Archive on the unticked opened row: that row alone, read, the ticks as they were
     calls.length = 0;
     await act(async () => menu.querySelector<HTMLElement>("[data-testid=digest-menu-archive]")!.click());

@@ -41,10 +41,15 @@ const STATE_LABEL: Partial<Record<DigestRowState, () => string>> = { keep: () =>
  */
 function DigestRowMenu({ onOpen, archive, leave, children }: { onOpen: () => void; archive: { label: string; run: () => void } | null; leave: { label: string; icon: React.ReactNode; testId: string; help?: string; run: () => void } | null; children: React.ReactElement }) {
   const helpId = useId();
+  // the help shows on the icon's hover, and while the row is reached by the keys (Codex review: a keyboard has no hover)
+  const [hoverHelp, setHoverHelp] = useState(false);
+  const [keyHelp, setKeyHelp] = useState(false);
+  // what last moved in the menu: a key (seen before the menu moves focus for it) or the pointer
+  const viaKeys = useRef(false);
   return (
     <ContextMenu onOpenChange={(open) => setApp({ menuOpen: open })}>
       <ContextMenuTrigger data-context-menu render={children} />
-      <ContextMenuContent className="w-52" data-testid="digest-item-menu">
+      <ContextMenuContent className="w-52" data-testid="digest-item-menu" onKeyDownCapture={() => (viaKeys.current = true)} onPointerMove={() => (viaKeys.current = false)}>
         {/* each row with its icon, so the labels share one column */}
         <ContextMenuItem data-testid="digest-menu-open" onClick={onOpen}>
           <Mail />
@@ -62,6 +67,8 @@ function DigestRowMenu({ onOpen, archive, leave, children }: { onOpen: () => voi
             <ContextMenuItem
               data-testid={leave.testId}
               aria-describedby={leave.help ? helpId : undefined}
+              onFocus={() => setKeyHelp(viaKeys.current)}
+              onBlur={() => setKeyHelp(false)}
               onClick={() => {
                 // the rows (and this menu with them) go at once: its close never comes, so the keys come back to the page now
                 setApp({ menuOpen: false });
@@ -71,16 +78,17 @@ function DigestRowMenu({ onOpen, archive, leave, children }: { onOpen: () => voi
               {leave.icon}
               {leave.label}
               {leave.help && (
-                // plan 235: what Hide does to mail still to come, on the row's end where a shortcut would be; hovered, it
-                // explains and does nothing (a click on it isn't the row's)
-                <Tooltip>
-                  <TooltipTrigger
-                    render={<ContextMenuShortcut className="flex" data-testid="digest-menu-hide-help" onClick={(e) => (e.preventDefault(), e.stopPropagation())} onPointerUp={(e) => e.stopPropagation()} onMouseUp={(e) => e.stopPropagation()} />}
-                  >
-                    <Info aria-hidden />
-                  </TooltipTrigger>
-                  <TooltipContent side="right">{leave.help}</TooltipContent>
-                </Tooltip>
+                // plan 235: what Hide does to mail still to come, on the row's end where a shortcut would be. Neither the icon
+                // nor its tooltip (portaled, but the row's child for React's events: Codex review) is the row: a click there
+                // hides nothing
+                <ContextMenuShortcut className="flex" data-testid="digest-menu-hide-help" onClick={(e) => (e.preventDefault(), e.stopPropagation())} onPointerUp={(e) => e.stopPropagation()} onMouseUp={(e) => e.stopPropagation()}>
+                  <Tooltip open={hoverHelp || keyHelp} onOpenChange={setHoverHelp}>
+                    <TooltipTrigger render={<span className="flex" />}>
+                      <Info aria-hidden />
+                    </TooltipTrigger>
+                    <TooltipContent side="right">{leave.help}</TooltipContent>
+                  </Tooltip>
+                </ContextMenuShortcut>
               )}
             </ContextMenuItem>
             {/* read with the row by a screen reader: the tooltip is the pointer's */}
