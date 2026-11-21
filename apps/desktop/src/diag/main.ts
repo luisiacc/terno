@@ -71,6 +71,8 @@ export interface MainDiagDeps {
   windows(): Iterable<BrowserWindow>;
   demo: boolean;
   restartEngine(): void;
+  /** a quit is under way (app.ts's quit state): a child ending now is the quit, not a crash (plan 231) */
+  quitting(): boolean;
 }
 
 const MAX_RECENT_SEND_DAYS = 7;
@@ -434,8 +436,11 @@ class MainDiag implements DiagSink {
 
   /** The utility process exited on its own (a deliberate stop never gets here). */
   backendExited(instance: number, exitCode: number, attempt: number): void {
-    log.warn("backend.exited", { exitCode, attempt, deliberate: false });
-    const reported = Date.now() - (this.backendFatalAt.get(instance) ?? 0) < 5000;
+    // a system restart or logout signals every process while main quits: the quit's end, not a crash (plan 231)
+    const quitting = this.deps?.quitting() ?? false;
+    if (quitting) log.info("backend.exited", { exitCode, attempt, deliberate: true });
+    else log.warn("backend.exited", { exitCode, attempt, deliberate: false });
+    const reported = quitting || Date.now() - (this.backendFatalAt.get(instance) ?? 0) < 5000;
     if (!reported) {
       const ctx = diagContext();
       this.onRecord({
@@ -458,7 +463,9 @@ class MainDiag implements DiagSink {
   private rendererGone(wc: WebContents, reason: string, exitCode: number): void {
     if (reason === "clean-exit") return;
     const id = wc.id;
-    this.onRecord({
+    // ended with the quit (plan 231): logged, not reported; the reload below stays, for a quit that's called off
+    if (this.deps?.quitting()) log.info("renderer.gone", { reason: reason as FieldValueOf<"reason">, exitCode });
+    else this.onRecord({
       id: newId(),
       ts: Date.now(),
       kind: "renderer_gone",
@@ -482,7 +489,7 @@ class MainDiag implements DiagSink {
   }
 
   private childGone(d: Electron.Details): void {
-    if (d.reason === "clean-exit" || d.reason === "killed") return;
+    if (d.reason === "clean-exit" || d.reason === "killed" || this.deps?.quitting()) return;
     // the backend's own exit is handled (and deduplicated) by its supervisor
     if (d.type === "Utility" && d.serviceName === "Terno Mail Engine") return;
     const childType = (["Utility", "Zygote", "Sandbox helper", "GPU", "Pepper Plugin", "Pepper Plugin Broker", "Unknown"] as const).find((t) => t === d.type) ?? "Unknown";

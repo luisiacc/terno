@@ -348,6 +348,9 @@ function startBackend() {
       if (!backend) mainDiag.setEngine("stopped");
       return;
     }
+    // plan 231: it ended with a quit under way (a restart or logout signals every process): logged, not a crash, so
+    // the bytecode cache stays and nothing restarts it
+    if (quitState !== "running") return void mainDiag.backendExited(instance, code, restarts.attempt);
     cache.crashed();
     mainDiag.backendExited(instance, code, restarts.attempt);
     const delay = restarts.exited(Date.now());
@@ -835,7 +838,7 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   // the run marker and crash dumps belong to the instance that holds the lock
-  mainDiag.open(app.getPath("userData"), { trusted, windows: () => windows, demo, restartEngine });
+  mainDiag.open(app.getPath("userData"), { trusted, windows: () => windows, demo, restartEngine, quitting: () => quitState !== "running" });
   app.on("second-instance", (_event, argv) => {
     // plan 201: a second launch with a link (Linux, a dev or test run) opens it here (and brings this window forward)
     links.argv(argv);

@@ -275,6 +275,32 @@ test("the export is Terno's diagnostics only, scrubbed; native dumps only when a
   expect(execFileSync("unzip", ["-Z1", withNative]).toString()).toMatch(/^native\/.*\.dmp$/m);
 });
 
+test("a system shutdown: what it ends while Terno quits is no crash, and nothing restarts (plan 231)", async () => {
+  test.setTimeout(90_000);
+  const { crashes, diag, logs } = await hooks((h) => h.paths());
+  const before = new Set(readdirSync(crashes));
+  const backendPid = await app.evaluate(({ app: a }) => a.getAppMetrics().find((m) => m.type === "Utility" && (m.serviceName === "Terno Mail Engine" || m.name === "Terno Mail Engine"))?.pid ?? null);
+  const rendererPid = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.isVisible())!.webContents.getOSProcessId());
+  expect(backendPid).not.toBeNull();
+  const quitAt = Date.now();
+  const gone = once(app.process(), "exit");
+  // what a restart or logout does (TERNO-4, TERNO-5): the quit begins, and every process gets SIGTERM while it runs
+  await app.evaluate(({ app: a }) => a.quit());
+  process.kill(backendPid!, "SIGTERM");
+  process.kill(rendererPid, "SIGTERM");
+  await gone;
+  const lines = readFileSync(join(logs, "main.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as { ts: number; level: string; code: string; fields?: Record<string, unknown> }).filter((l) => l.ts >= quitAt);
+  // both ends reached the new guard (not the backend's own retirement), logged at info, and nothing restarted
+  expect(lines.find((l) => l.code === "backend.exited")).toMatchObject({ level: "info", fields: { exitCode: 15, deliberate: true } });
+  expect(lines.find((l) => l.code === "renderer.gone")).toMatchObject({ level: "info", fields: { reason: "killed" } });
+  expect(lines.some((l) => l.code === "backend.restart_scheduled")).toBe(false);
+  expect(lines.some((l) => l.code === "app.quit")).toBe(true);
+  expect(readdirSync(crashes).filter((f) => !before.has(f) && f.endsWith(".json") && f !== "rings.json")).toEqual([]);
+  expect(existsSync(join(diag, "running"))).toBe(false);
+  await launch();
+  expect((await hooks((h) => h.records())).some((r) => r.kind === "unclean_exit")).toBe(false);
+});
+
 test("killed outright: the next start finds the marker and says Terno quit unexpectedly; with Never nothing goes", async () => {
   // "always" sends what earlier tests left pending (so the row is about this exit alone), then "never"
   await setReports("always");
