@@ -1,5 +1,5 @@
 import { categoryAction, categoryOfJson, CATEGORY_ACTIONS, isCategoryAction, type MessageCategory, type ThreadAction } from "@terno/core";
-import { reaffirmFlagIntent, restoreLocationOps, sameLocation, type MessageState } from "@terno/store";
+import { actionTargets, reaffirmFlagIntent, restoreLocationOps, sameLocation, type MessageState } from "@terno/store";
 import { sqlFlags } from "./flag-intents";
 import { recomputeThreads } from "./ingest";
 import { placeholders, type Db } from "./sqlite";
@@ -94,7 +94,7 @@ function plan(action: ThreadAction, msgs: Msg[], explicit = false): { ids: numbe
 /**
  * Applies a thread action locally (optimistic, in one transaction) and returns
  * the exact messages it changed, grouped by account, for the provider ops.
- * Messages already in the target state are not touched (and not re-sent).
+ * Messages already in the target state are not touched here (a Gmail op still names them: plan 229).
  */
 export function applyThreadAction(db: Db, threadIds: readonly number[], action: ThreadAction): ActionResult {
   return db.tx(() => {
@@ -154,22 +154,18 @@ function applyToMessages(db: Db, msgs: Msg[], action: ThreadAction, explicit: bo
   reaffirmFlagIntent(sqlFlags(db), (scope ?? msgs.map((m) => m.id)).filter((id) => !changed.has(id)), action);
   const byId = new Map(msgs.map((m) => [m.id, m]));
   const touched = new Set<number>();
-  const byAccount = new Map<number, number[]>();
   for (let i = 0; i < ids.length; i += 500) {
     const chunk = ids.slice(i, i + 500);
     db.run(`UPDATE messages SET ${set} WHERE id IN (${placeholders(chunk.length)})`, ...chunk);
   }
-  for (const id of ids) {
-    const m = byId.get(id)!;
-    touched.add(m.thread_id);
-    const list = byAccount.get(m.account_id) ?? [];
-    list.push(id);
-    byAccount.set(m.account_id, list);
-  }
+  for (const id of ids) touched.add(byId.get(id)!.thread_id);
+  // plan 229: Gmail hears a conversation's action for every message it governs, not only those this copy saw differ
+  const whole = new Set<number>();
+  if (!explicit) for (const accountId of new Set(msgs.map((m) => m.account_id))) if (db.get<{ kind: string }>("SELECT kind FROM accounts WHERE id = ?", accountId)?.kind === "gmail") whole.add(accountId);
   recomputeThreads(db, touched);
   return {
     threadIds: [...touched],
-    targets: [...byAccount].map(([accountId, messageIds]) => ({ accountId, messageIds })),
+    targets: actionTargets(msgs, action, changed, scope, whole),
     // plan 86: only a category move's undo puts a category back (an archive's never touches one Gmail changed since)
     before: ids.map((id) => stateOf(byId.get(id)!, isCategoryAction(action))),
   };

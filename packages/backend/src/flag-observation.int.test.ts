@@ -318,7 +318,7 @@ describe.each(["SQL", "IDB"] as const)("%s settled flag observation", (kind) => 
     expect(t.mutations).toEqual([]);
   });
 
-  it("committed inverse cancellation wakes reconciliation even with no new operation", async () => {
+  it("a committed inverse supersedes the queued one and wakes reconciliation (plan 229: never cancelled out)", async () => {
     const t = await setup(kind, true);
     vi.spyOn(t.backend, "kickWorker").mockImplementation(() => {});
     await t.backend.store.threads.act({ threadIds: [t.threadId], action: "markRead", signal: null, now: 1 });
@@ -326,7 +326,7 @@ describe.each(["SQL", "IDB"] as const)("%s settled flag observation", (kind) => 
     await t.backend.store.threads.act({ threadIds: [t.threadId], action: "markUnread", signal: null, now: 3 });
     const sync = vi.spyOn(t.backend, "syncAccount").mockResolvedValue();
     await t.client.call("threads.act", { threadIds: [t.threadId], action: "markRead" });
-    expect((await t.backend.store.debug.snapshot()).ops.filter((op) => op.state === "queued")).toEqual([]);
+    expect((await t.backend.store.debug.snapshot()).ops.filter((op) => op.state === "queued").map((op) => op.kind)).toEqual(["markRead"]);
     expect(sync).toHaveBeenCalledWith(t.account.id);
   });
 

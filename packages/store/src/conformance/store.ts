@@ -422,20 +422,54 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
     });
 
     describe("actions", () => {
-      it("archive captures only the messages that were in the inbox at action time", async () => {
+      it("archive: Gmail hears it for the whole conversation it changes, IMAP for the messages that were in the inbox (plan 229)", async () => {
         const store = await fresh();
-        const [a] = await withAccounts(store);
+        const [gmail, imap] = await withAccounts(store);
+        for (const [a, p] of [[gmail!, "g"], [imap!, "i"]] as const) {
+          await ingest(store, [
+            msg({ accountId: a, providerMsgId: `${p}-in`, rfcMessageId: `${p}@x`, inInbox: true, date: 1000 }),
+            // your reply, as this copy stored it: Gmail may have put it in your Inbox since
+            msg({ accountId: a, providerMsgId: `${p}-sent`, inReplyTo: `${p}@x`, inInbox: false, isSent: true, date: 2000 }),
+            msg({ accountId: a, providerMsgId: `${p}-trash`, inReplyTo: `${p}@x`, inInbox: false, isTrash: true, date: 3000 }),
+          ]);
+        }
+        const rows = (await store.debug.snapshot()).messages;
+        const idOf = (p: string) => rows.find((m) => m.providerMsgId === p)!.id;
+        for (const [a, p, named] of [[gmail!, "g", ["g-in", "g-sent", "g-trash"]], [imap!, "i", ["i-in"]]] as const) {
+          const t = await threadOf(store, `${p}-in`);
+          const r = await store.threads.act({ threadIds: [t], action: "archive", signal: null, now: NOW });
+          expect(r.opIds).toHaveLength(1);
+          expect((await store.ops.get(r.opIds[0]!))!).toMatchObject({ account_id: a, kind: "archive", target_json: JSON.stringify({ messageIds: named.map(idOf) }) });
+          // only what changed here is journaled (an undo puts back what Terno showed)
+          expect(r.before.map((m) => m.id)).toEqual([idOf(`${p}-in`)]);
+          // a second archive is a no-op: nothing changes here, nothing is sent
+          expect(await store.threads.act({ threadIds: [t], action: "archive", signal: null, now: NOW })).toEqual({ threadIds: [], opIds: [], before: [] });
+        }
+      });
+
+      it("Gmail's whole conversation keeps each action's own reach: unread and star the latest, Not spam its spam, Move to Inbox the mail received (plan 229)", async () => {
+        const store = await fresh();
+        const [a] = await withAccounts(store, 1);
         await ingest(store, [
-          msg({ accountId: a!, providerMsgId: "in1", rfcMessageId: "r@x", inInbox: true }),
-          msg({ accountId: a!, providerMsgId: "sent", inReplyTo: "r@x", inInbox: false, isSent: true }),
+          msg({ accountId: a!, providerMsgId: "m1", rfcMessageId: "m@x", date: 1000, isRead: true, inInbox: false }),
+          msg({ accountId: a!, providerMsgId: "m2", inReplyTo: "m@x", date: 2000, isRead: false, inInbox: false, isSent: true }),
+          msg({ accountId: a!, providerMsgId: "m3", inReplyTo: "m@x", date: 3000, isRead: true, inInbox: false }),
         ]);
-        const t = await threadOf(store, "in1");
-        const r = await store.threads.act({ threadIds: [t], action: "archive", signal: null, now: NOW });
-        const inboxMsg = (await store.debug.snapshot()).messages.find((m) => m.providerMsgId === "in1")!.id;
-        expect(r.opIds).toHaveLength(1);
-        expect((await store.ops.get(r.opIds[0]!))!).toMatchObject({ account_id: a, kind: "archive", target_json: JSON.stringify({ messageIds: [inboxMsg] }) });
-        // a second archive is a no-op: nothing to send to the provider
-        expect(await store.threads.act({ threadIds: [t], action: "archive", signal: null, now: NOW })).toEqual({ threadIds: [], opIds: [], before: [] });
+        const rows = (await store.debug.snapshot()).messages;
+        const idOf = (p: string) => rows.find((m) => m.providerMsgId === p)!.id;
+        const t = await threadOf(store, "m1");
+        const named = async (action: Parameters<MailStore["threads"]["act"]>[0]["action"]) => {
+          const r = await store.threads.act({ threadIds: [t], action, signal: null, now: NOW });
+          return Promise.all(r.opIds.map(async (id) => (JSON.parse((await store.ops.get(id))!.target_json) as { messageIds: number[] }).messageIds));
+        };
+        expect(await named("markRead")).toEqual([["m1", "m2", "m3"].map(idOf)]);
+        expect(await named("markUnread")).toEqual([[idOf("m3")]]);
+        expect(await named("star")).toEqual([[idOf("m3")]]);
+        expect(await named("moveToInbox")).toEqual([["m1", "m3"].map(idOf)]);
+        await store.threads.act({ threadIds: [t], action: "spam", signal: null, now: NOW });
+        await store.threads.restore({ messages: [{ id: idOf("m1"), isRead: true, isStarred: false, inInbox: false, isTrash: false, isSpam: false }], now: NOW });
+        // m1 is out of Spam here: Not spam moves to the Inbox only what's in Spam
+        expect(await named("notSpam")).toEqual([["m2", "m3"].map(idOf)]);
       });
 
       describe("undo puts each message back exactly", () => {
@@ -459,8 +493,10 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
           expect(await states(store)).toEqual(before);
           expect(back.threadIds).toEqual([ts[0]]);
           const ops = (await store.debug.snapshot()).ops;
-          // the markRead never reached the provider: its exact opposite cancels it
-          expect(ops.filter((o) => o.kind === "markRead" || o.kind === "markUnread")).toEqual([]);
+          // plan 229: the read named the whole conversation; the undo's unread takes back its changed message: Gmail
+          // hears each message as Terno shows it, whatever it held
+          const ids = new Map((await store.debug.snapshot()).messages.map((m) => [m.providerMsgId, m.id]));
+          expect(ops.filter((o) => o.kind === "markRead" || o.kind === "markUnread").map((o) => [o.kind, o.messageIds])).toEqual([["markRead", [ids.get("a1")]], ["markUnread", [ids.get("a2")]]]);
         });
 
         it("archived then trashed: the undo returns them to the archive, not the inbox, with ops in order", async () => {
@@ -733,16 +769,19 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         expect(await store.ops.fail(id, "Mailbox does not exist", false, 0)).toBe("failed");
       });
 
-      it("cancels a queued flag op exactly undone before sync (read → unread), but not one already attempted or running", async () => {
+      it("a queued flag op undone before sync is superseded by the newest (read → unread), as is one in backoff, never one running (plan 229)", async () => {
         const { store, threads, act } = await mailbox(2);
         expect(await act(threads[0]!, "markRead")).toBeTruthy();
-        expect(await act(threads[0]!, "markUnread")).toBeNull();
-        expect((await store.debug.snapshot()).ops).toEqual([]);
+        const unread = await act(threads[0]!, "markUnread");
+        expect(unread).toBeTruthy();
+        expect((await store.debug.snapshot()).ops.map((o) => o.kind)).toEqual(["markUnread"]);
+        await store.ops.claimReady(0, 20);
+        await store.ops.complete(unread!, undefined, 0);
         const star = (await act(threads[1]!, "star"))!;
         await store.ops.claimReady(0, 20);
         expect(await act(threads[1]!, "unstar", 1)).toBeTruthy(); // running: the server may already be starred
         await store.ops.fail(star, "response lost", true, 2);
-        expect((await store.debug.snapshot()).ops.map((o) => o.kind)).toEqual(["unstar"]); // the retry yields to the newer intent
+        expect((await store.debug.snapshot()).ops.filter((o) => o.state !== "succeeded").map((o) => o.kind)).toEqual(["unstar"]); // the retry yields to the newer intent
       });
 
       it("a newer op supersedes the overlapping part of an older op waiting in backoff", async () => {

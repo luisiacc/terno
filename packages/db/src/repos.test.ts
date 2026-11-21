@@ -5,15 +5,13 @@ import { enqueueOp } from "./repos";
 import { msg, testDb, withAccounts } from "./test/helpers";
 
 describe("ops state machine", () => {
-  it("cancels a queued flag op exactly undone before sync (read → unread)", () => {
+  it("a queued flag op undone before sync is superseded, never cancelled out: the newest goes (plan 229)", () => {
     const db = testDb();
     const [a] = withAccounts(db);
     expect(enqueueOp(db, { accountId: a!, kind: "markRead", target: { messageIds: [5, 6] } })).toBeTruthy();
-    expect(enqueueOp(db, { accountId: a!, kind: "markUnread", target: { messageIds: [5, 6] } })).toBeNull();
-    expect(db.get<{ c: number }>("SELECT count(*) c FROM ops")!.c).toBe(0);
-    // a different target set is not cancelled
-    enqueueOp(db, { accountId: a!, kind: "markRead", target: { messageIds: [5] } });
-    expect(enqueueOp(db, { accountId: a!, kind: "markUnread", target: { messageIds: [5, 6] } })).toBeTruthy();
+    const unread = enqueueOp(db, { accountId: a!, kind: "markUnread", target: { messageIds: [5, 6] } });
+    expect(unread).toBeTruthy();
+    expect(db.all<{ id: string; kind: string }>("SELECT id, kind FROM ops")).toEqual([{ id: unread, kind: "markUnread" }]);
   });
 });
 

@@ -4,7 +4,7 @@ import { readRuleState } from "@terno/store";
 import { saveFilterForward } from "./forwards";
 import { folderPage, folderScopeIds, folderUnreadCounts, refreshFolders } from "./folders";
 import { requireGmailRefresh, copyOpAdmission, ThreadMerges, type OpAdmission } from "@terno/store";
-import { assetError, linkAssets, reaffirmFlagIntent, restoreLocationOps, sameLocation, validateAssets } from "@terno/store";
+import { actionTargets, assetError, linkAssets, reaffirmFlagIntent, restoreLocationOps, sameLocation, validateAssets } from "@terno/store";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import { idbAssets, replaceAttachments } from "./attachments";
@@ -1122,7 +1122,6 @@ function applyToMessages(c: Ctx, msgs: R[], action: ThreadAction, explicit: bool
   reaffirmFlagIntent(idbFlags(c), (scope ?? msgs.map((m) => m.id as number)).filter((id) => !changed.has(id)), action);
   const messages = T(c, "messages");
   const touched = new Set<number>();
-  const byAccount = new Map<number, number[]>();
   const before: MessageState[] = [];
   for (const id of ids) {
     const m = messages.get(id)!;
@@ -1130,12 +1129,12 @@ function applyToMessages(c: Ctx, msgs: R[], action: ThreadAction, explicit: bool
     before.push(stateOf(m, isCategoryAction(action)));
     messages.update(m, set);
     touched.add(m.thread_id);
-    let targets = byAccount.get(m.account_id);
-    if (!targets) byAccount.set(m.account_id, (targets = []));
-    targets.push(id);
   }
+  // plan 229: Gmail hears a conversation's action for every message it governs, not only those this copy saw differ
+  const whole = new Set<number>();
+  if (!explicit) for (const accountId of new Set(msgs.map((m) => m.account_id))) if (T(c, "accounts").get(accountId)?.kind === "gmail") whole.add(accountId);
   recomputeThreads(c, touched);
-  return { threadIds: [...touched], targets: [...byAccount].map(([accountId, messageIds]) => ({ accountId, messageIds })), before };
+  return { threadIds: [...touched], targets: actionTargets(msgs as { id: number; account_id: number; thread_id: number }[], action, changed, scope, whole), before };
 }
 
 /** plan 86: a row stored before it has no category yet: its labels say */
@@ -1692,7 +1691,6 @@ export function findRuleMatches(c: Ctx, rule: FilterRule, now: number, messageId
 
 // ───────────────────────────── ops ─────────────────────────────
 
-const OPPOSITE: Record<string, string> = { markRead: "markUnread", markUnread: "markRead", star: "unstar", unstar: "star" };
 const SUPERSEDABLE = new Set(["read", "star"]);
 const GROUP: Record<string, string> = { markRead: "read", markUnread: "read", star: "star", unstar: "star", archive: "location", trash: "location", spam: "location", notSpam: "location", moveToInbox: "location", moveToFolder: "location", leaveFolder: "location" };
 export const MAX_OP_ATTEMPTS = 8;
@@ -1711,16 +1709,6 @@ export function enqueueOp(c: Ctx, op: { accountId: number; kind: string; target:
   const group = GROUP[op.kind];
   return c.db.tx(() => {
     const flagVersion = localFlagIntent(idbFlags(c), op.accountId, op.target.messageIds ?? [], op.kind, intentVersion);
-    const opposite = OPPOSITE[op.kind];
-    if (opposite) {
-      const cancel = ops.by("fk_account_id", op.accountId).filter((o) => o.kind === opposite && o.state === "queued" && o.attempts === 0 && o.target_json === targetJson);
-      for (const o of cancel) {
-        for (const messageId of op.target.messageIds ?? []) bindFlagTarget(idbFlags(c), idbFlags(c).op(o.id)!, messageId, null);
-        settleFlagEffects(idbFlags(c), idbFlags(c).op(o.id)!, "removed");
-        ops.deleteRow(o);
-      }
-      if (cancel.length > 0) return null;
-    }
     if (group && SUPERSEDABLE.has(group) && op.target.messageIds?.length) {
       const mine = new Set(op.target.messageIds);
       const overlapping = new Set<string>();

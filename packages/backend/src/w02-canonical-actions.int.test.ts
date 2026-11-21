@@ -146,7 +146,9 @@ describe.each(["SQL", "IDB"] as const)("W02 independent canonical actions: %s", 
     expect(t.mutations.find((m) => m.remove.includes("INBOX"))?.ids).toEqual(["m0", "m1", "sent"]);
     await t.client.call("threads.act", { threadIds: [threadId], action: "moveToInbox" });
     const restore = (await t.backend.store.debug.snapshot()).ops.find((op) => op.kind === "moveToInbox")!;
-    expect(restore.messageIds).toEqual(t.selected.map((m) => m.id));
+    // plan 229: Gmail hears it for the whole conversation's mail received, the arrival already there now included
+    const lateId = (await t.backend.store.debug.snapshot()).messages.find((m) => m.providerMsgId === "late")!.id;
+    expect(restore.messageIds).toEqual([...t.selected.map((m) => m.id), lateId]);
     await t.drain(); await t.backend.syncAccount(accountId);
     const after = await t.backend.store.debug.snapshot();
     expect(after.messages.find((m) => m.id === sentId)).toMatchObject({ inInbox: false, isStarred: true, isRead: false, isSent: true });

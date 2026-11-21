@@ -350,7 +350,6 @@ export function claimFilterApplications(db: Db, filterId: number, messageIds: re
 // ───────────────────────────── ops ─────────────────────────────
 
 
-const OPPOSITE: Record<string, string> = { markRead: "markUnread", markUnread: "markRead", star: "unstar", unstar: "star" };
 /**
  * Ops in the same group touch the same provider state. "read" and "star" set an
  * absolute value, so the newest intent supersedes older ones. "location" ops have
@@ -378,8 +377,8 @@ export const MAX_OP_ATTEMPTS = 8;
 /**
  * Persists a provider operation. Older *queued* ops of the same group lose the
  * overlapping messages (superseded), so a retry in backoff can never overwrite a
- * newer intent. An exactly-opposite op that was never attempted cancels out with
- * the new one: the provider was never touched and still holds the original state.
+ * newer intent. The newest always goes, an exact opposite's too (plan 229: the
+ * provider may not hold what this copy last saw, so nothing is cancelled out).
  */
 export function enqueueOp(
   db: Db,
@@ -392,20 +391,6 @@ export function enqueueOp(
   const group = GROUP[op.kind];
   return db.tx(() => {
     const flagVersion = localFlagIntent(sqlFlags(db), op.accountId, op.target.messageIds ?? [], op.kind, intentVersion);
-    const opposite = OPPOSITE[op.kind];
-    if (opposite) {
-      for (const older of db.all<OpRow>("SELECT * FROM ops WHERE account_id=? AND kind=? AND state='queued' AND attempts=0 AND target_json=?", op.accountId, opposite, targetJson)) {
-        for (const id of op.target.messageIds ?? []) bindFlagTarget(sqlFlags(db), older, id, null);
-        settleFlagEffects(sqlFlags(db), older, "removed");
-      }
-      const cancelled = db.run(
-        "DELETE FROM ops WHERE account_id = ? AND kind = ? AND state = 'queued' AND attempts = 0 AND target_json = ?",
-        op.accountId,
-        opposite,
-        targetJson,
-      );
-      if (cancelled.changes > 0) return null;
-    }
     if (group && SUPERSEDABLE.has(group) && op.target.messageIds?.length) {
       const mine = new Set(op.target.messageIds);
       const overlapping = db.all<{ id: string; target_json: string }>(

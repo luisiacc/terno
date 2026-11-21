@@ -121,23 +121,77 @@ export function defineDurableFlagIntentConformance(name: string, harness: StoreH
       await expect(observe(store, accountId!, false)).rejects.toMatchObject({ code: "AUTHORITATIVE_FLAGS_UNAVAILABLE" });
     });
 
-    it("returns committed snapshot wakeups when an unattempted inverse creates no operation", async () => {
+    describe("plan 229: a Gmail conversation's message the action names without changing it", () => {
+      const conversation = async () => {
+        const store = await harness.open(); stores.push(store);
+        const [a] = await withAccounts(store, 1);
+        // the first in the Inbox; your reply, as this copy stored it (Gmail has since put it in your Inbox)
+        await ingest(store, [msg({ accountId: a!, providerMsgId: "first", rfcMessageId: "f@x", inInbox: true, date: 1000 }), msg({ accountId: a!, providerMsgId: "reply", inReplyTo: "f@x", inInbox: false, isSent: true, date: 2000 })]);
+        const rows = (await store.debug.snapshot()).messages;
+        const id = (p: string) => rows.find((m) => m.providerMsgId === p)!.id;
+        const inInbox = async (p: string) => (await store.debug.snapshot()).messages.find((m) => m.providerMsgId === p)!.inInbox;
+        const gmailSays = (o: FlagObservation | null, p: string, value: boolean) => store.sync.updateFlags(a!, [{ messageId: id(p), expectedProviderMsgId: p, flags: { inInbox: value } }], o ?? undefined);
+        return { store, a: a!, id, inInbox, gmailSays, threadId: await threadOf(store, "first") };
+      };
+
+      it("is held like the changed ones: a read from before the action, while it's on its way, or from before it's confirmed, can't bring it back", async () => {
+        const { store, a, inInbox, gmailSays, threadId } = await conversation();
+        const before = await observe(store, a);
+        await store.threads.act({ threadIds: [threadId], action: "archive", signal: null, now: 1 });
+        const during = await observe(store, a);
+        for (const o of [before, during]) await gmailSays(o, "reply", true);
+        expect(await inInbox("reply")).toBe(false);
+        const [op] = await store.ops.claimReady(2, 20);
+        await store.ops.complete(op!.id, undefined, 3);
+        await gmailSays(during, "reply", true);
+        expect(await inInbox("reply")).toBe(false);
+        // confirmed by a fresh read, as Gmail holds it now
+        expect((await store.providerStore(a).pendingFlagSnapshots({ limit: 50 })).items.map((m) => m.providerMsgId).sort()).toEqual(["first", "reply"]);
+        const fresh = await observe(store, a);
+        for (const p of ["first", "reply"]) await gmailSays(fresh, p, false);
+        expect((await store.providerStore(a).pendingFlagSnapshots({ limit: 50 })).items).toEqual([]);
+      });
+
+      it("an undo before it's sent puts back only what changed here; nothing stays pending once the ops settle", async () => {
+        const { store, a, id, inInbox, gmailSays, threadId } = await conversation();
+        const r = await store.threads.act({ threadIds: [threadId], action: "archive", signal: null, now: 1 });
+        expect(r.before.map((m) => m.id)).toEqual([id("first")]);
+        await store.threads.restore({ messages: r.before, now: 2 });
+        expect([await inInbox("first"), await inInbox("reply")]).toEqual([true, false]);
+        // in order: the archive Gmail heard for both, then the first back in the Inbox
+        const ops = (await store.debug.snapshot()).ops.map((o) => [o.kind, [...o.messageIds].sort((x, y) => x - y)]);
+        expect(ops).toEqual([["archive", [id("first"), id("reply")]], ["moveToInbox", [id("first")]]]);
+        for (let claimed = await store.ops.claimReady(3, 20); claimed.length; claimed = await store.ops.claimReady(3, 20)) for (const op of claimed) await store.ops.complete(op.id, undefined, 4);
+        const fresh = await observe(store, a);
+        await gmailSays(fresh, "first", true);
+        await gmailSays(fresh, "reply", false);
+        expect((await store.providerStore(a).pendingFlagSnapshots({ limit: 50 })).items).toEqual([]);
+        expect([await inInbox("first"), await inInbox("reply")]).toEqual([true, false]);
+      });
+    });
+
+    it("an unattempted inverse supersedes its predecessor: the newest goes, and holds until it's confirmed (plan 229)", async () => {
       const store = await harness.open(); stores.push(store);
       const [a] = await withAccounts(store, 1);
       await ingest(store, [msg({ accountId: a!, providerMsgId: "cancel" })]);
       const threadId = await threadOf(store, "cancel");
       const old = await observe(store, a!);
-      await store.threads.act({ threadIds: [threadId], action: "markRead", signal: null, now: 1 });
+      const read = await store.threads.act({ threadIds: [threadId], action: "markRead", signal: null, now: 1 });
       const undone = await store.threads.act({ threadIds: [threadId], action: "markUnread", signal: null, now: 2 });
-      expect(undone.opIds).toEqual([]);
+      // the provider may not hold what this copy last saw: the final state is said, the older op is gone
+      expect(undone.opIds).toHaveLength(1);
+      expect(await store.ops.get(read.opIds[0]!)).toBeNull();
       expect(undone.flagReconcileAccounts).toEqual([a]);
       const id = (await store.debug.snapshot()).messages[0]!.id;
       await store.sync.updateFlags(a!, [{ messageId: id, expectedProviderMsgId: "cancel", flags: { isRead: true } }], old!);
       expect((await store.debug.snapshot()).messages[0]!.isRead).toBe(false);
+      const [op] = await store.ops.claimReady(3, 20);
+      expect(op!.id).toBe(undone.opIds[0]);
+      await store.ops.complete(op!.id, undefined, 4);
       expect((await store.providerStore(a!).pendingFlagSnapshots({ limit: 50 })).items).toEqual([{ id, providerMsgId: "cancel" }]);
     });
 
-    it("a surviving predecessor raises the newer cancellation barrier without acknowledging it", async () => {
+    it("a surviving predecessor and a newer read: older observations stay refused until the newest settles", async () => {
       const store = await harness.open(); stores.push(store);
       const [a] = await withAccounts(store, 1);
       await ingest(store, [msg({ accountId: a!, providerMsgId: "survivor" })]);
@@ -146,12 +200,16 @@ export function defineDurableFlagIntentConformance(name: string, harness: StoreH
       await store.threads.act({ threadIds: [threadId], action: "markRead", signal: null, now: 1 });
       const [older] = await store.ops.claimReady(2, 20);
       await store.threads.act({ threadIds: [threadId], action: "markUnread", signal: null, now: 3 });
-      await store.threads.act({ threadIds: [threadId], action: "markRead", signal: null, now: 4 });
+      const newest = await store.threads.act({ threadIds: [threadId], action: "markRead", signal: null, now: 4 });
       const middle = await observe(store, a!);
       await store.ops.complete(older!.id, undefined, 5);
       const id = (await store.debug.snapshot()).messages[0]!.id;
       await store.sync.updateFlags(a!, [{ messageId: id, expectedProviderMsgId: "survivor", flags: { isRead: false } }], middle!);
       expect((await store.debug.snapshot()).messages[0]!.isRead).toBe(true);
+      // plan 229: the newest read goes too (the unread between was superseded), and is the one confirmed
+      const [last] = await store.ops.claimReady(6, 20);
+      expect(last!.id).toBe(newest.opIds[0]);
+      await store.ops.complete(last!.id, undefined, 7);
       const fresh = await observe(store, a!);
       await store.sync.updateFlags(a!, [{ messageId: id, expectedProviderMsgId: "survivor", flags: { isRead: false } }], fresh!);
       expect((await store.debug.snapshot()).messages[0]!.isRead).toBe(false);

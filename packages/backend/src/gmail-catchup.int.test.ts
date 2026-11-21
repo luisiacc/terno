@@ -36,11 +36,15 @@ async function mailbox(kind: "SQL" | "IndexedDB", retries = false) {
   let minimalPayload: ((payload: unknown) => unknown) | undefined;
   let historyPayload: ((payload: unknown) => unknown) | undefined;
   let holdHistory: ((send: () => void) => void) | undefined;
-  const add = (id: string, record = false) => {
-    const raw = ["From: Synthetic <sender@example.test>", "To: me@example.test", `Subject: ${id}`, `Message-ID: <${id}@example.test>`,
+  // plan 229: user labels at Gmail, a label's creation that can be held, and label changes (batchModify)
+  const labels = [{ id: "Label_project", name: "Project", type: "user" }];
+  let holdLabel: ((send: () => void) => void) | undefined;
+  const modified: { ids: string[]; add: string[]; remove: string[] }[] = [];
+  const add = (id: string, record = false, thread = id) => {
+    const raw = ["From: Synthetic <sender@example.test>", "To: me@example.test", `Subject: ${thread}`, `Message-ID: <${id}@example.test>`, ...(thread !== id ? [`In-Reply-To: <${thread}@example.test>`] : []),
       "MIME-Version: 1.0", 'Content-Type: multipart/mixed; boundary="b"', "", "--b", "Content-Type: text/plain", "", `Body ${id}`,
       "--b", "Content-Type: application/octet-stream", 'Content-Disposition: attachment; filename="exact.bin"', "Content-Transfer-Encoding: base64", "", "AP+ADQo=", "--b--", ""].join("\r\n");
-    messages.set(id, { id, threadId: id, labelIds: ["INBOX", "UNREAD"], raw: Buffer.from(raw).toString("base64url") });
+    messages.set(id, { id, threadId: thread, labelIds: ["INBOX", "UNREAD"], raw: Buffer.from(raw).toString("base64url") });
     if (record) history.push({ id: String(++historyId), messagesAdded: [{ message: { id } }] });
   };
   const mutate = () => {
@@ -64,7 +68,30 @@ async function mailbox(kind: "SQL" | "IndexedDB", retries = false) {
       history.push({ id: String(++historyId), messagesAdded: [{ message: { id: "self" } }] });
       return json({ id: "self", threadId: "self", labelIds: ["SENT"] });
     }
-    if (url.pathname === "/labels") return json({ labels: [{ id: "Label_project", name: "Project", type: "user" }] });
+    if (request.method === "POST" && (url.pathname === "/labels" || url.pathname === "/messages/batchModify")) {
+      const chunks: Buffer[] = [];
+      request.on("data", (c: Buffer) => chunks.push(c));
+      request.on("end", () => {
+        const body = JSON.parse(Buffer.concat(chunks).toString()) as Record<string, unknown>;
+        if (url.pathname === "/labels") {
+          const send = () => { const label = { id: `Label_${labels.length}`, name: String(body.name), type: "user" }; labels.push(label); json(label); };
+          const hold = holdLabel; holdLabel = undefined;
+          return hold ? hold(send) : send();
+        }
+        const change = { ids: body.ids as string[], add: (body.addLabelIds as string[]) ?? [], remove: (body.removeLabelIds as string[]) ?? [] };
+        modified.push(change);
+        for (const id of change.ids) {
+          const m = messages.get(id);
+          if (!m) continue;
+          m.labelIds = [...new Set([...m.labelIds.filter((l) => !change.remove.includes(l)), ...change.add])];
+          if (change.add.length) history.push({ id: String(++historyId), labelsAdded: [{ message: { id } }] });
+          if (change.remove.length) history.push({ id: String(++historyId), labelsRemoved: [{ message: { id } }] });
+        }
+        response.writeHead(204); response.end();
+      });
+      return;
+    }
+    if (url.pathname === "/labels") return json({ labels });
     if (url.pathname === "/messages") {
       if (!url.searchParams.has("pageToken")) snapshot = [...messages.keys()];
       const next = url.searchParams.get("pageToken");
@@ -141,6 +168,11 @@ async function mailbox(kind: "SQL" | "IndexedDB", retries = false) {
     advanceTime() { now += 86_400_000; },
     historyStatus(status: number) { historyStatus = status; }, rawStatus(status: number) { rawStatus = status; },
     seed() { for (const id of ["archive", "deleted", "read", "neighbor"]) add(id); },
+    /** a second message in a conversation */
+    reply(id: string, thread: string) { add(id, false, thread); },
+    /** the next label creation waits at Gmail until `send` is called */
+    holdLabel(hook: (send: () => void) => void) { holdLabel = hook; },
+    modified,
     /** a message's labels change at Gmail (history: labels added) */
     label(id: string, labelIds: string[]) { messages.get(id)!.labelIds = labelIds; history.push({ id: String(++historyId), labelsAdded: [{ message: { id } }] }); },
     async reopen() { await backend.stop(); abort = new AbortController(); backend = await open(); await backend.ready; },
@@ -545,6 +577,91 @@ describe.each(["SQL", "IndexedDB"] as const)("%s Gmail catch-up failure boundari
   });
 });
 
+
+describe.each(["SQL", "IndexedDB"] as const)("%s actions taken while a new label is being created (plan 229)", (kind) => {
+  it("read and archive taken while Gmail creates a label stay done when it's created, and reach Gmail", async () => {
+    const t = await mailbox(kind, true);
+    t.seed();
+    await t.backend.syncAccount(t.account.id);
+    expect(await t.cursor()).toEqual({ historyId: t.terminal });
+    const [remote, local] = createMemoryTransportPair();
+    t.backend.connect(remote, { clientId: "synthetic", origin: "renderer" });
+    const rpc = new RpcClient(local);
+    const row = async () => (await t.backend.store.debug.snapshot()).messages.find((m) => m.providerMsgId === "neighbor")!;
+    const threadId = (await row()).threadId;
+    expect(await row()).toMatchObject({ inInbox: true, isRead: false });
+    // New label: Gmail takes its time
+    let release!: () => void;
+    const reached = new Promise<void>((resolve) => t.holdLabel((send) => { release = send; resolve(); }));
+    const creating = rpc.call("folders.create", { accountId: t.account.id, parent: null, name: "Terno review" });
+    await reached;
+    // meanwhile: unread, read, archive
+    for (const action of ["markUnread", "markRead", "archive"] as const) await rpc.call("threads.act", { threadIds: [threadId], action });
+    expect(await row()).toMatchObject({ inInbox: false, isRead: true });
+    release();
+    const label = await creating;
+    // whatever runs now (the pass the change asks for, the ops it held back): nothing the person did is undone
+    const states: unknown[] = [];
+    for (let i = 0; i < 200; i++) {
+      const r = await row();
+      states.push({ inInbox: r.inInbox, isRead: r.isRead });
+      if ((await t.backend.store.debug.snapshot()).ops.every((o) => o.state === "succeeded") && !(t.backend as unknown as { syncing: Map<number, unknown> }).syncing.has(t.account.id)) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(states.filter((s) => JSON.stringify(s) !== JSON.stringify({ inInbox: false, isRead: true }))).toEqual([]);
+    expect(t.messages.get("neighbor")!.labelIds).toEqual([]);
+    // and the move to the new label
+    await rpc.call("folders.moveThreads", { accountId: t.account.id, folder: label.key, from: null, threadIds: [threadId] });
+    expect(await row()).toMatchObject({ inInbox: false, isRead: true });
+  });
+});
+
+describe.each(["SQL", "IndexedDB"] as const)("%s actions on a conversation Gmail changed before Terno read it back (plan 229)", (kind) => {
+  it("unread, read and archive while a label is created: Gmail's newer Inbox and unread don't come back", async () => {
+    const t = await mailbox(kind, true);
+    t.seed();
+    // a conversation of two: the first in the Inbox, read; the reply read and archived when Terno synced (your own
+    // reply, as Terno stored it when it sent it)
+    t.messages.get("neighbor")!.labelIds = ["INBOX"];
+    t.reply("neighbor-re", "neighbor");
+    t.messages.get("neighbor-re")!.labelIds = [];
+    await t.backend.syncAccount(t.account.id);
+    const rows = async () => (await t.backend.store.debug.snapshot()).messages.filter((m) => m.providerMsgId?.startsWith("neighbor"));
+    const row = async () => (await rows()).find((m) => m.providerMsgId === "neighbor-re")!;
+    expect((await rows()).map((m) => m.threadId)).toEqual([(await row()).threadId, (await row()).threadId]);
+    expect(await row()).toMatchObject({ inInbox: false, isRead: true });
+    // Gmail puts the reply in the Inbox, unread (your own mail delivered to you): not read back yet
+    t.label("neighbor-re", ["INBOX", "UNREAD"]);
+    const [remote, local] = createMemoryTransportPair();
+    t.backend.connect(remote, { clientId: "synthetic", origin: "renderer" });
+    const rpc = new RpcClient(local);
+    const threadId = (await row()).threadId;
+    let release!: () => void;
+    const reached = new Promise<void>((resolve) => t.holdLabel((send) => { release = send; resolve(); }));
+    const creating = rpc.call("folders.create", { accountId: t.account.id, parent: null, name: "Terno review" });
+    await reached;
+    for (const action of ["markUnread", "markRead", "archive"] as const) await rpc.call("threads.act", { threadIds: [threadId], action });
+    release();
+    await creating;
+    // the pass the change asks for and the ops it held back run now: never a moment back in the Inbox or unread
+    const seen = new Set<string>();
+    for (let i = 0; i < 300; i++) {
+      for (const m of await rows()) seen.add(JSON.stringify({ inInbox: m.inInbox, isRead: m.isRead }));
+      const ops = (await t.backend.store.debug.snapshot()).ops;
+      if (ops.every((o) => o.state === "succeeded") && !(t.backend as unknown as { syncing: Map<number, unknown> }).syncing.has(t.account.id)) break;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    await t.backend.syncAccount(t.account.id);
+    for (const m of await rows()) seen.add(JSON.stringify({ inInbox: m.inInbox, isRead: m.isRead }));
+    expect([...seen]).toEqual([JSON.stringify({ inInbox: false, isRead: true })]);
+    // Gmail heard read and archive for the whole conversation (the unread before it was superseded, never sent)
+    expect(t.modified.map((m) => ({ ...m, ids: [...m.ids].sort() }))).toEqual([{ ids: ["neighbor", "neighbor-re"], add: [], remove: ["UNREAD"] }, { ids: ["neighbor", "neighbor-re"], add: [], remove: ["INBOX"] }]);
+    // what the person did is what Terno shows, and what Gmail holds
+    for (const m of await rows()) expect(m).toMatchObject({ inInbox: false, isRead: true });
+    expect(t.messages.get("neighbor")!.labelIds).toEqual([]);
+    expect(t.messages.get("neighbor-re")!.labelIds).toEqual([]);
+  });
+});
 
 describe.each(["SQL", "IndexedDB"] as const)("%s Gmail changes during a first sync (plan 227)", (kind) => {
   it("a message you send to yourself while the first sync lists is in the Inbox at the next look, and an archive here holds", async () => {
