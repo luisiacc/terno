@@ -247,9 +247,6 @@ export const test = base.extend<Fixtures>({
     // a project's design in its own colors, as its baselines show it (plan 98's GitHub defaults are a new install's: `design: null`)
     if (design) await server.backend.server.invoke("settings.update", { design, lightTheme: "design", darkTheme: "design" }, { clientId: "setup", origin: "dev" as const });
     if (layout) await server.backend.server.invoke("settings.update", { layout }, { clientId: "setup", origin: "dev" as const });
-    // a fresh install's setup looks for a model on this Mac as it opens: never the machine's own (a real Ollama answering
-    // first became the test's AI). A test that wants one points discovery at its stub and reloads
-    if (backendOptions.empty) await isolateLocalDiscovery(server);
     await page.goto(`/?backend=${encodeURIComponent(server.url)}&token=e2e`);
     await page.locator("[data-ready]").waitFor();
     // (plan 207: a launch on What matters shows the feed, not the Inbox's rows)
@@ -526,17 +523,6 @@ export async function navTo(page: Page, view: "inbox" | "starred" | "sent" | "ar
     if ((await more.getAttribute("aria-expanded")) !== "true") await more.click();
   }
   await item.click();
-}
-
-/**
- * First-run discovery probes Ollama and LM Studio on their default ports. Point both at
- * known places (a stub, or a closed port) so a real server on the test machine can't leak in.
- */
-export async function isolateLocalDiscovery(server: DevServer, ollamaUrl?: string): Promise<void> {
-  const ctx = { clientId: "setup", origin: "dev" as const };
-  await server.backend.server.invoke("settings.update", { ai: { provider: "lmstudio", baseURL: "http://127.0.0.1:9/v1" } }, ctx);
-  await server.backend.server.invoke("settings.update", { ai: { provider: "ollama", baseURL: ollamaUrl ? `${ollamaUrl}/v1` : "http://127.0.0.1:9/v1" } }, ctx);
-  await server.backend.server.invoke("settings.update", { ai: { provider: "none" } }, ctx);
 }
 
 /**

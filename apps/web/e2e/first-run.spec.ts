@@ -3,8 +3,7 @@
  * each previewed as the whole app in sample mail, then the first account.
  */
 import type { Page } from "@playwright/test";
-import { axeBothModes, expect, isolateLocalDiscovery, test } from "./fixtures";
-import { startOllamaStub } from "./ollama-stub";
+import { axeBothModes, expect, test } from "./fixtures";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
 
@@ -12,8 +11,7 @@ async function settings(server: { backend: { server: { invoke: (m: string, p: un
   return ((await server.backend.server.invoke("app.bootstrap", {}, ctx)) as { settings: Record<string, unknown> }).settings;
 }
 
-async function open(page: Page, server: Parameters<typeof isolateLocalDiscovery>[0]) {
-  await isolateLocalDiscovery(server);
+async function open(page: Page) {
   await page.reload();
   await expect(page.getByTestId("first-run")).toBeVisible();
 }
@@ -25,8 +23,8 @@ test.describe("first-run setup", () => {
   // a new install: its own defaults (Lumen in the GitHub palettes), not a project's design
   test.use({ backendOptions: { empty: true, ownerClaims: true }, design: null });
 
-  test("the preview's sidebar is spaced as Graphite's real one (plan 137)", async ({ app: page, server }) => {
-    await open(page, server);
+  test("the preview's sidebar is spaced as Graphite's real one (plan 137)", async ({ app: page }) => {
+    await open(page);
     await page.getByTestId("first-run-continue").click();
     await page.getByTestId("first-run-design-graphite").click();
     await expect(preview(page)).toHaveAttribute("data-design", "graphite");
@@ -40,8 +38,8 @@ test.describe("first-run setup", () => {
     await expect(section.locator("..")).toHaveCSS("min-height", "26px");
   });
 
-  test("the style tiles: one box each, one specimen size and baseline, names clear of the edges, in every style (plan 137)", async ({ app: page, server }) => {
-    await open(page, server);
+  test("the style tiles: one box each, one specimen size and baseline, names clear of the edges, in every style (plan 137)", async ({ app: page }) => {
+    await open(page);
     await page.getByTestId("first-run-continue").click();
     const tiles = page.locator('[data-testid^="first-run-design-"]');
     const measure = () =>
@@ -80,7 +78,7 @@ test.describe("first-run setup", () => {
   });
 
   test("layout, then style and colors, each live in the app and the preview; Back keeps the picks", async ({ app: page, server }) => {
-    await open(page, server);
+    await open(page);
     await expect(step(page)).toHaveAttribute("data-step", "layout");
     // the defaults: Lumen in GitHub Light, Split, with the sample mail and its open conversation
     await expect(preview(page)).toHaveAttribute("data-design", "lumen");
@@ -161,8 +159,8 @@ test.describe("first-run setup", () => {
     await expect(page.getByTestId("first-run-preview-lines")).toContainText("Compact rows are one line");
   });
 
-  test("the account step adds the first mailbox in the same window; what's typed survives Back", async ({ app: page, server }) => {
-    await open(page, server);
+  test("the account step adds the first mailbox in the same window; what's typed survives Back", async ({ app: page }) => {
+    await open(page);
     await page.getByTestId("first-run-continue").click();
     await page.getByTestId("first-run-continue").click();
     await expect(step(page)).toHaveAttribute("data-step", "account");
@@ -183,8 +181,8 @@ test.describe("first-run setup", () => {
     await expect(step(page)).toHaveCount(0);
   });
 
-  test("a reload resumes on the same step; Skip ends the setup for good and keeps the picks", async ({ app: page, server }) => {
-    await open(page, server);
+  test("a reload resumes on the same step; Skip ends the setup for good and keeps the picks", async ({ app: page }) => {
+    await open(page);
     await page.getByTestId("first-run-continue").click();
     await page.getByTestId("first-run-design-macos").click();
     await expect(page.locator("html")).toHaveAttribute("data-design", "macos");
@@ -198,8 +196,8 @@ test.describe("first-run setup", () => {
     await expect(step(page)).toHaveCount(0);
   });
 
-  test("the preview is a picture: nothing in it is focusable, announced or fetched", async ({ app: page, server }) => {
-    await open(page, server);
+  test("the preview is a picture: nothing in it is focusable, announced or fetched", async ({ app: page }) => {
+    await open(page);
     const frame = page.locator("[inert]").filter({ has: preview(page) });
     await expect(frame).toHaveAttribute("aria-hidden", "true");
     await expect(preview(page).locator("img, [data-testid=sender-icon]")).toHaveCount(0);
@@ -210,8 +208,8 @@ test.describe("first-run setup", () => {
     }
   });
 
-  test("keyboard: arrows move the choice, Enter on a choice selects it and doesn't advance; a new step is announced by its heading", async ({ app: page, server }) => {
-    await open(page, server);
+  test("keyboard: arrows move the choice, Enter on a choice selects it and doesn't advance; a new step is announced by its heading", async ({ app: page }) => {
+    await open(page);
     await page.getByTestId("first-run-layout-split").focus();
     await page.keyboard.press("ArrowDown");
     await expect(page.getByTestId("first-run-layout-list")).toBeFocused();
@@ -225,7 +223,7 @@ test.describe("first-run setup", () => {
   });
 
   test("two quick style picks end on the second, in the app, the preview and the settings", async ({ app: page, server }) => {
-    await open(page, server);
+    await open(page);
     await page.getByTestId("first-run-continue").click();
     await page.getByTestId("first-run-design-atelier").click();
     await page.getByTestId("first-run-design-macos").click();
@@ -235,7 +233,7 @@ test.describe("first-run setup", () => {
   });
 
   test("a style brings its own palettes back, in view, wherever the list was scrolled (plan 138)", async ({ app: page, server }) => {
-    await open(page, server);
+    await open(page);
     await page.getByTestId("first-run-continue").click();
     await expect(page.getByTestId("theme-card-github-light")).toHaveAttribute("aria-checked", "true");
     await expect(page.getByTestId("theme-card-github-light")).toBeInViewport();
@@ -252,7 +250,7 @@ test.describe("first-run setup", () => {
 
   test("motion off: a new step comes in without animating", async ({ app: page, server }) => {
     await server.backend.server.invoke("settings.update", { motionMs: 0 }, ctx);
-    await open(page, server);
+    await open(page);
     await page.getByTestId("first-run-continue").click();
     await expect(step(page)).toHaveAttribute("data-step", "look");
     const running = await step(page).evaluate((el) => el.getAnimations({ subtree: true }).filter((a) => a.playState === "running").length);
@@ -260,8 +258,8 @@ test.describe("first-run setup", () => {
   });
 
   // Codex code review #1: a detour to Settings unmounts the setup; what was typed comes back with it
-  test("a detour to Settings keeps what was typed for the account", async ({ app: page, server }) => {
-    await open(page, server);
+  test("a detour to Settings keeps what was typed for the account", async ({ app: page }) => {
+    await open(page);
     await page.getByTestId("first-run-continue").click();
     await page.getByTestId("first-run-continue").click();
     await page.getByTestId("imap-email").fill("ana@icloud.com");
@@ -272,34 +270,11 @@ test.describe("first-run setup", () => {
     await expect(page.getByTestId("imap-email")).toHaveValue("ana@icloud.com");
   });
 
-  // Codex code review round 2: coming back from the detour doesn't run the local-model discovery again over a choice made meanwhile
-  test("the detour back from Settings keeps an AI chosen there", async ({ app: page, server }) => {
-    const ollama = await startOllamaStub();
-    try {
-      await isolateLocalDiscovery(server, ollama.url);
-      await page.reload();
-      await expect(step(page)).toBeVisible();
-      await expect.poll(async () => ((await settings(server)).ai as { provider: string }).provider).toBe("ollama");
-      await page.getByTestId("first-run-continue").click();
-      await page.getByTestId("first-run-continue").click();
-      await page.keyboard.press("ControlOrMeta+Comma");
-      await expect(page.getByTestId("settings-dialog")).toBeVisible();
-      await server.backend.server.invoke("settings.update", { ai: { provider: "none" } }, ctx);
-      await page.keyboard.press("Escape");
-      await expect(step(page)).toHaveAttribute("data-step", "account");
-      // what a second discovery would have written by now (the stub answers at once)
-      await page.waitForTimeout(500);
-      expect(((await settings(server)).ai as { provider: string }).provider).toBe("none");
-    } finally {
-      await ollama.close();
-    }
-  });
-
   // Codex code review #2: a short window still reaches every palette and the footer
   test.describe("a short window", () => {
     test.use({ viewport: { width: 900, height: 400 } });
-    test("every palette can be scrolled to and picked; the footer stays in view", async ({ app: page, server }) => {
-      await open(page, server);
+    test("every palette can be scrolled to and picked; the footer stays in view", async ({ app: page }) => {
+      await open(page);
       await page.getByTestId("first-run-continue").click();
       const last = page.getByTestId("theme-card-catppuccin-latte");
       await last.scrollIntoViewIfNeeded();
@@ -311,8 +286,8 @@ test.describe("first-run setup", () => {
   });
 
   // Codex code review #3: the chips hold the whole filter set in both layouts; List has no category tabs (categories are the sidebar's)
-  test("the preview's list header is the real one: the design's filter chips in Split and List, the title, no tabs", async ({ app: page, server }) => {
-    await open(page, server);
+  test("the preview's list header is the real one: the design's filter chips in Split and List, the title, no tabs", async ({ app: page }) => {
+    await open(page);
     await expect(preview(page).getByTestId("first-run-preview-chips")).toContainText("With attachments");
     await page.getByTestId("first-run-layout-list").click();
     await expect(preview(page)).toHaveAttribute("data-layout", "list");
@@ -321,8 +296,8 @@ test.describe("first-run setup", () => {
     await expect(preview(page).getByTestId("first-run-preview-chips")).toContainText("Unread");
   });
 
-  test("every step is axe-clean, light and dark", async ({ app: page, server }) => {
-    await open(page, server);
+  test("every step is axe-clean, light and dark", async ({ app: page }) => {
+    await open(page);
     for (const s of ["layout", "look", "account"]) {
       await expect(step(page)).toHaveAttribute("data-step", s);
       await axeBothModes(page, "[data-testid=first-run]");

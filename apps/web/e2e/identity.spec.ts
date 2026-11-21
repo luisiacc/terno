@@ -1,4 +1,4 @@
-import { expect, isolateLocalDiscovery, test } from "./fixtures";
+import { expect, test } from "./fixtures";
 import { startOllamaStub } from "./ollama-stub";
 import type { Page } from "@playwright/test";
 
@@ -80,10 +80,15 @@ test.describe("owner identity", () => {
 test.describe("first run", () => {
   test.use({ backendOptions: { empty: true, ownerClaims: true } });
 
-  test("fresh install: no mode step (local by default, the Ollama model we found becomes the AI); the setup ends by adding the first account", async ({ app: page, server }) => {
+  // plan 233: AI is off on a fresh install, even with a model running on this Mac; it is found only once chosen in Settings
+  test("fresh install: no mode step, and the AI stays off with Ollama or LM Studio running; the setup ends by adding the first account", async ({ app: page, server }) => {
     const ollama = await startOllamaStub();
     try {
-      await isolateLocalDiscovery(server, ollama.url);
+      // Ollama and LM Studio answering where Terno would look for them (the stub, never this machine's own)
+      const ctx = { clientId: "setup", origin: "dev" as const };
+      await server.backend.server.invoke("settings.update", { ai: { provider: "lmstudio", baseURL: `${ollama.url}/v1` } }, ctx);
+      await server.backend.server.invoke("settings.update", { ai: { provider: "ollama", baseURL: `${ollama.url}/v1` } }, ctx);
+      await server.backend.server.invoke("settings.update", { ai: { provider: "none" } }, ctx);
       await page.reload();
       const dialog = page.getByTestId("first-run");
       await expect(dialog).toContainText("How do you like to read?");
@@ -100,8 +105,9 @@ test.describe("first run", () => {
 
       await page.getByTestId("open-settings").click();
       await page.getByTestId("tab-ai").click();
-      await expect(page.getByTestId("ai-provider")).toContainText("Ollama");
-      await expect(page.getByTestId("ai-model")).toHaveValue("qwen3:8b");
+      await expect(page.getByTestId("ai-provider")).toHaveText("Off");
+      // nothing asked either for its models: no probe until one is chosen
+      expect(ollama.requests).toEqual([]);
       await page.getByTestId("tab-accounts").click();
       await expect(page.getByTestId("owner-email")).toHaveText("ana@icloud.com");
 

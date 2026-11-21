@@ -2,7 +2,7 @@
  * Visual regression of the key screens (light + dark). Baselines live in
  * e2e/__screenshots__; regenerate with `pnpm test:e2e --update-snapshots`.
  */
-import { expect, focusList, forgetOffer, isolateLocalDiscovery, openRow, search, stabilize, test, freshStart, scenario } from "./fixtures";
+import { expect, focusList, forgetOffer, openRow, search, stabilize, test, freshStart, scenario } from "./fixtures";
 import { startOllamaStub } from "./ollama-stub";
 import type { Page } from "@playwright/test";
 import { sqlDb } from "../../backend-dev/src/server";
@@ -213,10 +213,7 @@ for (const scheme of ["light", "dark"] as const) {
     // plan 98: a new install's own look (Lumen in the GitHub palettes)
     test.use({ backendOptions: { empty: true, ownerClaims: true }, design: null, colorScheme: scheme });
 
-    test("setup: layout, style and colors, account", async ({ app: page, server }) => {
-      // no real Ollama / LM Studio on the test machine may change what this screen shows
-      await isolateLocalDiscovery(server);
-      await page.reload();
+    test("setup: layout, style and colors, account", async ({ app: page }) => {
       const dialog = page.getByTestId("first-run");
       const suffix = scheme === "dark" ? "-dark" : "";
       for (const step of ["layout", "look", "account"]) {

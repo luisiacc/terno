@@ -1,4 +1,4 @@
-import { DESIGN_PALETTE, type AiProviderId, type ThemeMode } from "@terno/core";
+import { DESIGN_PALETTE, type ThemeMode } from "@terno/core";
 import type { AppSettings, PreviewLines } from "@terno/core/rpc";
 import { Button } from "@terno/ui/components/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@terno/ui/components/dialog";
@@ -11,10 +11,8 @@ import { cn } from "@terno/ui/lib/utils";
 import { Columns2, Laptop, Moon, Rows3, Sun } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { snack } from "~/lib/snack";
-import { client } from "~/rpc/connection";
-import { getApp, setApp, useApp } from "~/state/app";
-import { baseId, reconcileSettings, resolveTheme, updateAppearance, useAppearance } from "~/lib/appearance";
+import { useApp } from "~/state/app";
+import { baseId, resolveTheme, updateAppearance, useAppearance } from "~/lib/appearance";
 import { designDescription, designName } from "~/lib/design";
 import { OnboardingNudge } from "~/lib/web-parts";
 import { AddAccountForm, EMPTY_ACCOUNT_DRAFT } from "./add-account-dialog";
@@ -36,26 +34,9 @@ function savedStep(): Step {
 /**
  * What's typed for the account while the setup is away (unmounted, as behind
  * Settings): it comes back with this. Memory only (a password may be in it),
- * dropped when the setup ends. `discovered`: the local-model discovery ran in
- * this session (coming back never runs it again over an AI chosen meanwhile).
+ * dropped when the setup ends.
  */
-const kept = { draft: EMPTY_ACCOUNT_DRAFT, discovered: false };
-
-/** A local server we found on this Mac, offered as the AI in local mode. */
-type Found = { provider: AiProviderId; label: string; model: string };
-
-async function findLocalModel(): Promise<Found | null> {
-  const probes = [
-    { provider: "ollama" as const, label: "Ollama" },
-    { provider: "lmstudio" as const, label: "LM Studio" },
-  ].map(async (p) => {
-    const { models } = await client.call("ai.listModels", { provider: p.provider });
-    const model = models.find((m) => m.loaded) ?? models[0];
-    if (!model) throw new Error("no models");
-    return { ...p, model: model.id };
-  });
-  return Promise.any(probes).catch(() => null);
-}
+const kept = { draft: EMPTY_ACCOUNT_DRAFT };
 
 function Choice({ value, mark, title, body, testId }: { value: string; mark: React.ReactNode; title: string; body: string; testId: string }) {
   return (
@@ -92,22 +73,6 @@ export function FirstRun() {
   const sample = useMemo(() => sampleMailbox(), []);
   const heading = useRef<HTMLHeadingElement>(null);
   const moved = useRef(false);
-
-  // a model already running on this Mac becomes the AI (no key, nothing leaves the machine), only while no AI is
-  // chosen yet when discovery answers: a provider picked meanwhile is the user's (plan 97, Codex review)
-  useEffect(() => {
-    if (kept.discovered) return;
-    kept.discovered = true;
-    void findLocalModel().then(async (found) => {
-      if (!found || (getApp().settings?.ai.provider ?? "none") !== "none") return;
-      try {
-        const next = await client.call("settings.update", { ai: { provider: found.provider, model: found.model } });
-        setApp({ settings: reconcileSettings(next) });
-      } catch (error) {
-        snack.error(error instanceof Error ? error.message : String(error));
-      }
-    });
-  }, []);
 
   useEffect(() => {
     kept.draft = draft;
