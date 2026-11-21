@@ -110,6 +110,31 @@ export interface AppState {
 
 export const EMPTY_COUNTS: Counts = { inboxUnread: 0, inboxUnreadByAccount: {}, categoryUnread: {}, categoryTotal: {}, categorySuggestions: {} };
 
+/** The same numbers, field by field (a record by its keys, in any order; an absent field differs from null and from 0). */
+export function sameCounts(a: Counts, b: Counts): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]) as Set<keyof Counts>;
+  for (const k of keys) {
+    const x = a[k];
+    const y = b[k];
+    if (x === y) continue;
+    if (typeof x !== "object" || typeof y !== "object" || x === null || y === null) return false;
+    const xs = Object.keys(x);
+    if (xs.length !== Object.keys(y).length) return false;
+    for (const id of xs) if (!Object.hasOwn(y, id) || (x as Record<string, number>)[id] !== (y as Record<string, number>)[id]) return false;
+  }
+  return true;
+}
+
+/**
+ * The backend's counts (a push or an answer), published only when a number differs from what the window shows (plan
+ * 234): the backend says "counts" whenever they may have moved, mostly with the same numbers, and every reader of
+ * `counts` would render again for nothing. Compared with what's on screen, so an optimistic guess the backend doesn't
+ * confirm is corrected, and one it does stays as it is.
+ */
+export function publishCounts(counts: Counts): void {
+  if (!sameCounts(useApp.getState().counts, counts)) setApp({ counts });
+}
+
 export const useApp = create<AppState>(() => ({
   ready: false,
   fatal: null,

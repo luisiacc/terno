@@ -178,3 +178,40 @@ it("detail entries and stale marks remain bounded through eviction and repeated 
     expect(client.pendingCount).toBe(0);
   }
 });
+
+it("plan 234: a push with the numbers on screen changes nothing; a different one, or one correcting a guess, lands", async () => {
+  const { installQueryRecovery } = await import("./reconnect");
+  const { getApp, EMPTY_COUNTS } = await import("~/state/app");
+  const peer = attach();
+  const stop = installQueryRecovery({ covered: () => true, readerShown: () => false });
+  try {
+    const a = () => ({ ...EMPTY_COUNTS, inboxUnread: 4, categoryUnread: { 1: 2 }, today: null });
+    peer.event("counts", a()); await tick();
+    const shown = getApp().counts;
+    expect(shown.inboxUnread).toBe(4);
+    // the same numbers, three times, each a fresh object: every reader keeps the very same counts (nothing renders)
+    for (let i = 0; i < 3; i++) { peer.event("counts", a()); await tick(); }
+    expect(getApp().counts).toBe(shown);
+    peer.event("counts", { ...a(), today: 2 }); await tick();
+    expect(getApp().counts.today).toBe(2);
+    // an optimistic guess the backend doesn't confirm: its unchanged numbers put the guess right
+    setApp({ counts: { ...getApp().counts, categoryUnread: { 1: 1 } } });
+    peer.event("counts", { ...a(), today: 2 }); await tick();
+    expect(getApp().counts.categoryUnread).toEqual({ 1: 2 });
+  } finally { stop(); }
+});
+
+it("plan 234: a dropped push still outranks a reattach's older answer", async () => {
+  const { installQueryRecovery } = await import("./reconnect");
+  const { getApp, EMPTY_COUNTS } = await import("~/state/app");
+  attach();
+  const stop = installQueryRecovery({ covered: () => true, readerShown: () => false });
+  try {
+    setApp({ counts: { ...EMPTY_COUNTS, inboxUnread: 5 } });
+    const replacement = attach(); await tick();
+    expect(replacement.requests.map((r) => r.m)).toEqual(["counts.get"]);
+    replacement.event("counts", { ...EMPTY_COUNTS, inboxUnread: 5 }); await tick();
+    replacement.reply(replacement.requests[0]!, { ...EMPTY_COUNTS, inboxUnread: 9 }); await tick();
+    expect(getApp().counts.inboxUnread).toBe(5);
+  } finally { stop(); }
+});

@@ -21,7 +21,7 @@ import { create } from "zustand";
 import { formatNumber, t } from "@terno/i18n";
 import { viewLabel } from "~/lib/format";
 import { useActionPreview } from "~/state/action-preview";
-import { getApp, navigate, setApp, useApp } from "~/state/app";
+import { getApp, navigate, publishCounts, setApp, useApp } from "~/state/app";
 import { installDragController } from "~/lib/drag-install";
 import { currentScope, inboxTop, listKey, loadMore, searchOfKey, useList } from "~/state/list";
 import { wantExcerpts } from "~/state/excerpts";
@@ -482,7 +482,7 @@ function CoverageNote({ className, style }: { className?: string; style?: React.
  * back, besides every change. No timer of its own.
  */
 function refreshCounts(): void {
-  void client.call("counts.get", {}).then((counts) => setApp({ counts }), () => {});
+  void client.call("counts.get", {}).then(publishCounts, () => {});
 }
 
 /** The part of the day a greeting names, re-read at its next boundary and when the window comes back (no polling). */

@@ -1,5 +1,5 @@
 import { client } from "./connection";
-import { getApp, setApp } from "~/state/app";
+import { getApp, publishCounts } from "~/state/app";
 import { invalidateListConnection, refreshList } from "~/state/list";
 import { invalidateThreadConnection, loadThread } from "~/state/threads";
 
@@ -9,7 +9,7 @@ export function installQueryRecovery(visibility: { covered(): boolean; readerSho
   let countsRevision = 0;
   const offCounts = client.on("counts", (counts) => {
     countsRevision++;
-    setApp({ counts });
+    publishCounts(counts);
   });
   const offAttach = client.onAttach(() => {
     const connection = client.connectionVersion;
@@ -20,7 +20,7 @@ export function installQueryRecovery(visibility: { covered(): boolean; readerSho
     const selected = getApp().selectedId;
     if (selected !== null && visibility.readerShown()) void loadThread(selected);
     void client.call("counts.get", {}).then((counts) => {
-      if (active && connection === client.connectionVersion && revision === countsRevision) setApp({ counts });
+      if (active && connection === client.connectionVersion && revision === countsRevision) publishCounts(counts);
     }).catch(() => { /* the next event or reattachment can recover counts */ });
   });
   return () => { active = false; offAttach(); offCounts(); };

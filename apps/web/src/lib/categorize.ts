@@ -7,7 +7,7 @@ import { exclusivelyIn } from "~/lib/drag";
 import { reflowRemoval } from "~/lib/flash";
 import { patchRows, reloadList, useList } from "~/state/list";
 import { invalidateThreads, loadThread } from "~/state/threads";
-import { getApp, inPlainInbox, setApp, setCategories, type ScopeSelection } from "~/state/app";
+import { getApp, inPlainInbox, publishCounts, setApp, setCategories, type ScopeSelection } from "~/state/app";
 import { deferred, trackJob, undoAction } from "~/lib/actions";
 import { scopeRows } from "~/lib/select";
 import { dismissSnack, patchSnack, registerUndo, snack, useSnack, type Undo } from "~/lib/snack";
@@ -180,7 +180,7 @@ function bumpUnread(delta: Bump): Bump {
 async function reconcileCounts(b: Bump): Promise<void> {
   bumpUnread(Object.fromEntries(Object.entries(b).map(([c, n]) => [c, -n])));
   try {
-    setApp({ counts: await client.call("counts.get", {}) });
+    publishCounts(await client.call("counts.get", {}));
   } catch {
     /* the reverted value stands until the next counts event */
   }
@@ -354,7 +354,7 @@ async function recover(): Promise<void> {
   // (awaited: Review's work isn't done until the row is back, plan 192)
   const reload = reloadList({ keepSelection: true });
   try {
-    setApp({ counts: await client.call("counts.get", {}) });
+    publishCounts(await client.call("counts.get", {}));
   } catch {
     /* the next counts event corrects them */
   }
