@@ -16,7 +16,7 @@
  * anything else is put back as it was.
  */
 import { closeSync, existsSync, fsyncSync, openSync, readFileSync, renameSync, rmSync, statfsSync, statSync, utimesSync, writeFileSync } from "node:fs";
-import { copyFile } from "node:fs/promises";
+import { copyFile, open } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import { dirname } from "node:path";
 import type { BackupInfo } from "@terno/db/backups";
@@ -65,6 +65,17 @@ function syncFile(path: string, fsync: (fd: number) => void): void {
     fsync(fd);
   } finally {
     closeSync(fd);
+  }
+  onSynced?.(path);
+}
+
+/** The same, off main's thread: a mailbox just copied in full can take seconds to reach the disk (plan 230). */
+async function syncFileAsync(path: string): Promise<void> {
+  const file = await open(path, "r");
+  try {
+    await file.sync();
+  } finally {
+    await file.close();
   }
   onSynced?.(path);
 }
@@ -147,7 +158,7 @@ async function restore(db: string, backup: BackupInfo, deps: RestoreDeps): Promi
       // cp copies in full where it can't clone: the margin is checked again before anything moves (Codex code review #3)
       if (freeBytes(dirname(db)) < 64 * MiB) throw Object.assign(new Error("no room left after the copy"), { code: "ENOSPC" });
     } else await copyFile(backup.file, p.restoring);
-    syncFile(p.restoring, fsync);
+    await syncFileAsync(p.restoring);
     const check = new DatabaseSync(p.restoring, { readOnly: true });
     try {
       const v = (check.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;

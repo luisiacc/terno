@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, fstatSync, mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -195,6 +195,21 @@ describe("restoring a backup (plan 95)", () => {
     expect(events.indexOf("step:aside-wal")).toBeGreaterThan(journal + 1);
     // and the moves are durable before the copy takes the mailbox's place
     expect(events.lastIndexOf("sync:dir", events.indexOf("step:swap"))).toBeGreaterThan(events.indexOf("step:aside"));
+  });
+
+  it("plan 230: the copied mailbox reaches the disk without blocking main's thread (no fsyncSync on it), before the check", async () => {
+    const w = world();
+    const blocking: number[] = [];
+    const events: string[] = [];
+    // the sync seam is main's own blocking fsync: only the small files (journal, marker) and folders may go through it
+    const fsync = (fd: number) => void blocking.push(fstatSync(fd).ino);
+    await restoreFromBackup(w.db, w.backup, { ...roomy, fsync, synced: (path) => events.push(path.split("/").pop()!), fault: (s) => void events.push(`step:${s}`) });
+    w.live.close();
+    expect(events.indexOf(restorePaths(w.db).restoring.split("/").pop()!)).toBeGreaterThan(-1);
+    expect(events.indexOf(restorePaths(w.db).restoring.split("/").pop()!)).toBeLessThan(events.indexOf("step:journal"));
+    // the restored file is the copy, renamed into place: its inode never went through the blocking fsync
+    expect(blocking).not.toContain(statSync(w.db).ino);
+    expect(value(w.db)).toBe("backup");
   });
 
   it("the old mailbox is kept 14 days from the restore, not from when it was last written (Codex review R9)", async () => {
