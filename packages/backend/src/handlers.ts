@@ -169,6 +169,9 @@ export function createHandlers(b: Backend): Handlers {
     if (added.length && addedBy !== "bulk" && !(addedBy === "user" && threadIds.length > 1)) b.planForwards({ threadIds: added, filed: addedBy === "user" ? added : [] });
     return { added: added.length, addedIds: added, batchId: added.length ? batchId : null };
   };
+  /** Plan 234: the learned-filter offers may have changed (an action kept, an offer answered, a learned filter gone). */
+  const learningChanged = () => b.server.emit("learningChanged", {}, { origins: ["renderer", "dev"] });
+
   /**
    * A thread action over many threads: one store command (transaction, ops
    * per account) per slice. Explicit renderer picks are a learning signal;
@@ -553,7 +556,10 @@ export function createHandlers(b: Backend): Handlers {
     "threads.act": async ({ threadIds, action }, ctx) => {
       const signal = Backend.learningSignal(action);
       // only explicit renderer actions feed learned filters
-      const r = await actOn([...new Set(threadIds)], action, signal && ctx.origin === "renderer" ? signal : null);
+      const learned = signal && ctx.origin === "renderer" ? signal : null;
+      const r = await actOn([...new Set(threadIds)], action, learned);
+      // plan 234: the offers read the kept actions, which can move while no count does (a read conversation archived)
+      if (learned && r.threads.length) learningChanged();
       return { affected: r.threads.length, undoId: r.undoId };
     },
     "threads.scopeCount": ({ scope }) => countThreadScope(b, scope),
@@ -999,6 +1005,8 @@ export function createHandlers(b: Backend): Handlers {
     },
     "filters.delete": async ({ id }) => {
       await store.filters.delete(id);
+      // a learned filter gone: its offer may come back
+      learningChanged();
       await b.forwards.rules();
       return { ok: true as const };
     },
@@ -1059,10 +1067,13 @@ export function createHandlers(b: Backend): Handlers {
       const proposal = proposeLearnedFilters(await store.learning.actionsSince(b.now() - 60 * 86_400_000), { now: b.now() }).find((p) => p.key === key);
       if (!proposal) throw new RpcError("NOT_FOUND", L("errors.suggestionGone"));
       const fallback = capFilterName(L(LEARNED_FILTER_NAME[proposal.action], { value: proposal.value }).message);
-      return store.filters.save({ name: name ?? fallback, enabled: true, source: "learned", rule: proposal.rule, learnedKey: key }, b.now());
+      const filter = await store.filters.save({ name: name ?? fallback, enabled: true, source: "learned", rule: proposal.rule, learnedKey: key }, b.now());
+      learningChanged();
+      return filter;
     },
     "learning.dismiss": async ({ key }) => {
       await store.learning.dismiss(key, b.now());
+      learningChanged();
       return { ok: true as const };
     },
 

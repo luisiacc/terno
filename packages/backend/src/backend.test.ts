@@ -716,6 +716,54 @@ describe("learned filters", () => {
     expect(await client.call("learning.proposals", {})).toEqual([]);
   });
 
+  it("says the offers may have changed when an explicit action is kept, even one that moves no count (plan 234)", async () => {
+    const { backend, client, accountId } = await setup();
+    const learned: unknown[] = [];
+    client.on("learningChanged", (p) => learned.push(p));
+    await backend.ingestSliced([incoming(accountId), incoming(accountId)]);
+    const [a, b] = (await client.call("threads.list", { view: "inbox" })).items.map((t) => t.id);
+    await client.call("threads.act", { threadIds: [a!, b!], action: "markRead" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(learned).toHaveLength(0); // not a learning signal
+    const counts = await client.call("counts.get", {});
+    // a read conversation archived: the numbers stay, the kept actions don't
+    await client.call("threads.act", { threadIds: [a!], action: "archive" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(learned).toEqual([{}]);
+    expect(await client.call("counts.get", {})).toEqual(counts);
+    // only the user's own window teaches: a dev tool's action (which hears the event) says nothing
+    const [c, s] = createMemoryTransportPair();
+    backend.connect(s, { clientId: "dev", origin: "dev" });
+    const dev = new RpcClient(c);
+    const heard: unknown[] = [];
+    dev.on("learningChanged", (p) => heard.push(p));
+    await dev.call("threads.act", { threadIds: [b!], action: "archive" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(learned).toHaveLength(1);
+    expect(heard).toHaveLength(0);
+  });
+
+  it("an offer answered or a learned filter deleted says the offers changed too (plan 234)", async () => {
+    const { backend, client, accountId } = await setup();
+    await backend.ingestSliced(Array.from({ length: 6 }, () => incoming(accountId)));
+    const ids = (await client.call("threads.list", { view: "inbox" })).items.map((t) => t.id);
+    for (const id of ids.slice(0, 5)) await client.call("threads.act", { threadIds: [id], action: "archive" });
+    let learned = 0;
+    client.on("learningChanged", () => learned++);
+    const tick = () => new Promise((r) => setTimeout(r, 0));
+    const [proposal] = await client.call("learning.proposals", {});
+    const filter = await client.call("learning.accept", { key: proposal!.key });
+    await tick();
+    expect(learned).toBe(1);
+    await client.call("filters.delete", { id: filter.id });
+    await tick();
+    expect(learned).toBe(2);
+    expect(await client.call("learning.proposals", {})).toHaveLength(1);
+    await client.call("learning.dismiss", { key: proposal!.key });
+    await tick();
+    expect(learned).toBe(3);
+  });
+
   it("names the filter in the user's language when the renderer says how", async () => {
     const { backend, client, accountId } = await setup();
     await backend.ingestSliced(Array.from({ length: 6 }, () => incoming(accountId)));

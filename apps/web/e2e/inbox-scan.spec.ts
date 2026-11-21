@@ -121,15 +121,18 @@ test.describe("the inbox list", { tag: "@design" }, () => {
         return [row.dataset.threadId, Math.round(row.getBoundingClientRect().top)];
       });
       const was = await firstRow();
+      // what's painted: the list re-measures before the frame's paint, which a read right after the commit can come ahead of
+      const painted = () => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+      // (the dismissal says the offers changed, plan 234: no count moves)
       await server.backend.server.invoke("learning.dismiss", { key: proposal[0]!.key }, { clientId: "setup", origin: "dev" });
-      const someRow = Number(await rows(page).first().getAttribute("data-thread-id"));
-      server.backend.notifyChanged([someRow]);
       await expect(banner).toHaveCount(0);
+      await painted();
       expect(await firstRow()).toEqual(was);
       // back while scrolled: nothing on screen moves either
       sqlDb(server.backend.store).run("DELETE FROM dismissed_suggestions WHERE key = ?", proposal[0]!.key);
-      server.backend.notifyChanged([someRow]);
+      server.backend.server.emit("learningChanged", {});
       await expect(banner).toHaveCount(1);
+      await painted();
       expect(await firstRow()).toEqual(was);
       // reached by Tab while partly scrolled away, it comes back whole (second Codex review)
       await list.evaluate((el) => el.scrollTo(0, 20));
@@ -137,9 +140,8 @@ test.describe("the inbox list", { tag: "@design" }, () => {
       await expect(banner).toBeVisible();
       await page.getByTestId("learned-accept").focus();
       await expect.poll(() => list.evaluate((el) => el.scrollTop)).toBe(0);
-      // gone at the list's very end, where the shorter list clamps the offset first (second Codex review). Lumen's greeting
-      // asks for the counts again when the window comes back, so the offer is asked for again with no refresh of the rows
-      // (a refresh at the end of a long list moves it on its own)
+      // gone at the list's very end, where the shorter list clamps the offset first (second Codex review): the dismissal's
+      // event asks for the offer again with no refresh of the rows (a refresh at the end of a long list moves it on its own)
       if (design === "lumen") {
         const loaded = () => page.evaluate(() => (window as unknown as { __terno: { loadedIds(): number[] } }).__terno.loadedIds().length);
         for (let i = 0, same = 0, count = -1; i < 120 && same < 3; i++) {
@@ -150,7 +152,7 @@ test.describe("the inbox list", { tag: "@design" }, () => {
           count = n;
         }
         await list.evaluate((el) => el.scrollTo(0, el.scrollHeight));
-        await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+        await painted();
         // the last row in view (the rendered ones run past it)
         const lastRow = () => list.evaluate((el) => {
           const bottom = el.getBoundingClientRect().bottom;
@@ -159,8 +161,8 @@ test.describe("the inbox list", { tag: "@design" }, () => {
         });
         const end = await lastRow();
         await server.backend.server.invoke("learning.dismiss", { key: proposal[0]!.key }, { clientId: "setup", origin: "dev" });
-        await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
         await expect(banner).toHaveCount(0);
+        await painted();
         expect(await lastRow()).toEqual(end);
       }
     });

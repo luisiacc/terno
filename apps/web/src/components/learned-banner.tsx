@@ -3,7 +3,7 @@ import { Button } from "@terno/ui/components/button";
 import { Announcement } from "@terno/ui/components/announcement";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { t } from "@terno/i18n";
-import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { hush, LEARNED_H, learnedCreated, learnedLine, learnedWhy, noteShown, offerOf, setOfferHeight, setProposals, unhush, useOffer } from "~/lib/learned";
 import { registerUndo, snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
@@ -12,12 +12,17 @@ import { forwardWheel } from "~/lib/wheel";
 
 export { LEARNED_H };
 
-/** Asks for the inbox's learned-rule offers whenever the counts change; renders nothing (its own renders stay its own). */
+/**
+ * Asks for the inbox's learned-rule offers when the counts change or an action of the user's was kept for them (plan
+ * 234: a read conversation archived moves no count); renders nothing (its own renders stay its own).
+ */
 export function LearnedSource() {
   const view = useApp((s) => s.view);
   const query = useApp((s) => s.query);
   const counts = useApp((s) => s.counts);
   const hushed = useOffer((s) => s.hushed);
+  const [learned, setLearned] = useState(0);
+  useEffect(() => client.on("learningChanged", () => setLearned((n) => n + 1)), []);
   useEffect(() => {
     if (view !== "inbox" || query || hushed) return;
     let alive = true;
@@ -25,7 +30,7 @@ export function LearnedSource() {
     return () => {
       alive = false;
     };
-  }, [view, query, counts, hushed]);
+  }, [view, query, counts, hushed, learned]);
   return null;
 }
 

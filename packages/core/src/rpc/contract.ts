@@ -1631,6 +1631,8 @@ export interface Events {
   todayDigest: { day: string };
   /** plan 204: what Today holds changed by itself (an item read, settled, acted on, or the clock): never MCP */
   todayChanged: Record<string, never>;
+  /** plan 234: the learned-filter offers may have changed (an action of the user's kept, an offer answered, a learned filter deleted): never MCP */
+  learningChanged: Record<string, never>;
   /** plan 204: the dated reader stopped, or it's going again */
   datedStatus: { blockedBy: { kind: AiErrorKind; message: string } | null };
   /** plan 144: a prepared reply as it comes, only to the windows reading that conversation; never MCP */
