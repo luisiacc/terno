@@ -29,8 +29,8 @@ function setup(o: { mailbox: number; cursor?: unknown; arrivals?: () => string[]
   const ctx = {
     incoming, incomingProcessor: processor, account: { id: 1, email: "reader@example.test" }, config: {},
     store: {
-      // each stored message its own local id (its place in the store)
-      messageByProviderId: async (id: string) => (stored.has(id) ? { id: [...stored].indexOf(id) + 1 } : null), syncedMessages: async () => [], pendingAttachmentBodies: async () => [],
+      // each stored message its own local id (its place in the store); "self…" ones are yours
+      messageByProviderId: async (id: string) => (stored.has(id) ? { id: [...stored].indexOf(id) + 1, subject: "Mail", fromEmail: id.startsWith("self") ? "Reader@example.test" : "sender@example.test" } : null), syncedMessages: async () => [], pendingAttachmentBodies: async () => [],
       // the refresh reads every stored message again, 50 a page (ids by position)
       syncedMessagePage: async (after?: string) => {
         const all = [...stored].sort();
@@ -293,6 +293,28 @@ describe("plan 227: changes during a first sync", () => {
     expect(t.flagged).toEqual([{ id: "self", labels: ["SENT", "INBOX", "UNREAD"] }]);
     expect(t.downloads).not.toContain("self");
     expect(t.cursor().reconciliation).toMatchObject({ stage: "enumerate", peek: "105" });
+  });
+
+  it("your send that Gmail puts in your Inbox a look later still goes before the look's downloads (Codex review)", async () => {
+    let history: unknown[] = [];
+    const labels: Record<string, string[]> = { self: ["SENT"] };
+    const t = listing({ history: () => ({ historyId: history.length ? "105" : "100", history }), refresh: { labels, gone: new Set() } });
+    await t.pass();
+    t.stored.add("self");
+    history = [added(["self"])];
+    await t.pass();
+    expect(t.flagged).toEqual([{ id: "self", labels: ["SENT"] }]);
+    // delivered to you, with a hundred new messages and other changes in the same look
+    labels.self = ["SENT", "INBOX"];
+    history = [added(Array.from({ length: 100 }, (_, i) => `fresh${i}`)), relabeled(["self", "m00001", "m00002"])];
+    const before = t.downloads.length;
+    let downloadsThen = -1;
+    const update = t.sink.updateFlags;
+    t.sink.updateFlags = async (updates) => { if (updates.some((u) => u.expectedProviderMsgId === "self")) downloadsThen = t.downloads.length; await update(updates); };
+    await t.pass();
+    expect(t.flagged.at(-1)?.id).not.toBe("self");
+    expect(t.flagged.find((f) => f.id === "self" && f.labels?.includes("INBOX"))).toBeDefined();
+    expect(downloadsThen).toBe(before);
   });
 
   it("a stored message relabeled elsewhere is read again; one not stored yet, or deleted in the same look, is not; a 404 removes nothing", async () => {

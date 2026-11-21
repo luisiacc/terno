@@ -1128,43 +1128,46 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       latest = page.historyId;
       if (pageToken) { await yieldPage(); sink.check(); }
     } while (pageToken);
-    const known = storedId(sink);
+    const lookup = storedMessage(sink);
     const fresh: string[] = [];
-    // plan 227: what you sent (stored under Gmail's id at once) that Gmail may also have put in your Inbox: its labels
-    // first, the newest first
-    const sent = new Map<string, number>();
+    // plan 227: the labels of stored messages history names, up to the look's share (what's past it is the refresh's
+    // and the catch-up's, as before), the latest first. Yours first, before the downloads: what you sent (stored under
+    // Gmail's id at once), added now or relabeled later (Gmail put it in your Inbox: Codex review). One deleted in this
+    // look is the catch-up's (as is a 404 here), one about to download comes with its labels.
+    const yours = new Map<string, number>();
+    const others: [string, number][] = [];
     for (const id of [...added].reverse()) {
       if (deleted.has(id)) continue;
-      const local = await known(id);
-      if (!local) fresh.push(id);
-      else if (sent.size < PEEK_RELABEL) sent.set(id, local);
+      const stored = await lookup(id);
+      if (!stored) fresh.push(id);
+      else if (yours.size < PEEK_RELABEL) yours.set(id, stored.id);
     }
-    await relabel([...sent.keys()], sink, async (id) => sent.get(id), () => {});
+    const downloading = new Set(fresh);
+    const me = ctx.account.email.toLowerCase();
+    for (const id of [...changed].reverse()) {
+      if (yours.size >= PEEK_RELABEL) break;
+      if (yours.has(id) || deleted.has(id) || downloading.has(id)) continue;
+      const stored = await lookup(id);
+      if (!stored) continue;
+      if (stored.fromEmail.toLowerCase() === me) yours.set(id, stored.id);
+      else if (others.length < PEEK_RELABEL) others.push([id, stored.id]);
+    }
+    await relabel([...yours.keys()], sink, async (id) => yours.get(id), () => {});
     fresh.reverse();
     const live: SyncPass = { ...sink, ingest: (messages) => sink.ingest(messages, { live: true }) };
     for (let i = 0; i < fresh.length; i += 50) await fetchFull(fresh.slice(i, i + 50), live);
-    // plan 227: then what changed elsewhere, the latest changes first, up to the look's share (what's left over is the
-    // refresh's and the catch-up's, as before); one this look downloaded came with its labels, a deleted one is the
-    // catch-up's (as is a 404 here)
-    const downloaded = new Set(fresh);
-    const others = new Map<string, number>();
-    for (const id of [...changed].reverse()) {
-      if (sent.size + others.size >= PEEK_RELABEL) break;
-      if (sent.has(id) || deleted.has(id) || downloaded.has(id)) continue;
-      const local = await known(id);
-      if (local) others.set(id, local);
-    }
-    await relabel([...others.keys()], sink, async (id) => others.get(id), () => {});
+    const rest = new Map(others.slice(0, PEEK_RELABEL - yours.size));
+    await relabel([...rest.keys()], sink, async (id) => rest.get(id), () => {});
     if (latest !== from) await save({ ...state, peek: latest });
   }
 
-  /** The stored message a Gmail id names (its local id), yielding every 50 lookups. */
-  function storedId(sink: SyncPass): (id: string) => Promise<number | undefined> {
+  /** The stored message a Gmail id names, yielding every 50 lookups. */
+  function storedMessage(sink: SyncPass): (id: string) => Promise<{ id: number; fromEmail: string } | null> {
     let examined = 0;
     return async (id) => {
       if (++examined % 50 === 0) await new Promise<void>((resolve) => setTimeout(resolve, 0));
       sink.check();
-      return (await store.messageByProviderId(id))?.id;
+      return store.messageByProviderId(id);
     };
   }
 
@@ -1370,7 +1373,8 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       if (pageToken) { await new Promise<void>((resolve) => setTimeout(resolve, 0)); sink.check(); }
     } while (pageToken);
 
-    const known = storedId(sink);
+    const lookup = storedMessage(sink);
+    const known = async (id: string) => (await lookup(id))?.id;
     // Authoritative deletions release bounded repair capacity before new capture admissions.
     let retired = 0;
     for (const gid of deleted) {

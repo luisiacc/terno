@@ -106,7 +106,7 @@ it("keeps a first sync's look at changes within the control slice budget", async
     return Response.json({ id: url.pathname.split("/").at(-1), labelIds: ["INBOX"] });
   };
   const ctx = { account: { id: 1, email: "reader@example.test" }, config: {}, store: {
-    messageByProviderId: async () => ({ id: ++lookups }), pendingAttachmentBodies: async () => [], syncedMessagePage: async () => ({ items: [] }),
+    messageByProviderId: async () => ({ id: ++lookups, subject: "", fromEmail: "sender@example.test" }), pendingAttachmentBodies: async () => [], syncedMessagePage: async () => ({ items: [] }),
   }, loadCursor: async () => ({ reconciliation: { version: 1, email: "reader@example.test", intent: "days:30", after: 1, baseline: "10", stage: "enumerate", pages: 1, next: "list" } }),
   saveCursor: async (value: unknown) => { saved = value; }, fetch } as unknown as ProviderContext;
   const noop = async () => {};

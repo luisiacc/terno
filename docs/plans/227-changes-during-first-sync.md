@@ -69,3 +69,11 @@ Codex read the plan against the code (eight points); each changed the design or 
 8. **Failures mid-look**: a failed label read or a failed write leaves the look's cursor where it was, and the next pass reads the change again (test).
 
 Also: the fakes that told the look from the catch-up by its history types (`gmail-catchup.int`, `gmail-refresh-invocation.int`, `incoming-admission`, the arrivals fake's overflow) now tell them apart by order or count; `gmail-refresh-invocation`'s history case reads the admitted message once more (the resumed refresh's look).
+
+## Codex code review
+
+One finding, fixed with a test that fails without it: **a send whose INBOX came a look later lost its place.** The first look read the send's labels (SENT only); when Gmail then added INBOX, the next look saw a label change and read it after its downloads (minutes behind 500 new messages), or not at all behind 250 newer changes. Stored messages from your own address (`fromEmail`, which the store's lookup already gives) now go with your sends, before the downloads, whether history added or relabeled them. Test: SENT in one look, then INBOX with a hundred arrivals and other changes in the next: your send's labels are read before any download.
+
+## Tests run
+
+Typecheck (store, mail, backend, db, idb) and lint on the touched files. Unit and integration: `gmail-first-sync-arrivals`, `gmail-history-expansion`, `gmail-quick-pass`, `gmail-history-bounds`, `gmail-history-ownership`, `gmail-backfill`, `gmail-refresh`, `gmail-flag-snapshots`, `gmail-catchup.int`, `gmail-refresh-invocation.int`, `gmail-deletion-observation.int`, `incoming-admission`, `durable-message-repair.int` (IndexedDB), `backfill-requests`. Perf: `gmail-history.perf.test.ts` (both cases) and `gmail-batches.perf.test.ts` pass.
