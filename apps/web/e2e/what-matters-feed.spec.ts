@@ -134,7 +134,25 @@ test("the open part, the automated section and the history under Earlier, paged 
     await expect(newest.getByTestId("wm-when")).toHaveText("Done today");
     // nothing to act on in a history line
     await expect(newest.getByTestId("wm-done")).toHaveCount(0);
+    // plan 244 (the owner): finished, it reads faded: its words and face at reduced opacity, its face grey, the focus ring
+    // whole; an open line's aren't. Axe below reads it for everything but contrast
+    const look = (el: Element) => [getComputedStyle(el).opacity, getComputedStyle(el).filter];
+    const button = newest.getByTestId("wm-item-open");
+    await expect(button).toHaveAttribute("data-faded", "true");
+    expect(await button.evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
+    for (const id of ["wm-sentence", "wm-meta"]) expect(await newest.getByTestId(id).evaluate((el) => Number(getComputedStyle(el.closest("[data-testid=wm-item-open] > *")!).opacity)), id).toBeLessThan(0.7);
+    const face = newest.getByTestId("wm-face");
+    if (await face.count()) expect((await face.evaluate(look))[1]).toBe("grayscale(1)");
     await axeBothModes(page, '[data-testid="wm-feed"]');
+    // open (Codex's critique): in full, as any open row; put away, faded again
+    await button.click();
+    await expect(newest).toHaveAttribute("data-open", "true");
+    await expect(button).not.toHaveAttribute("data-faded");
+    expect(await newest.getByTestId("wm-sentence").evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
+    if (await face.count()) expect((await face.evaluate(look))[1]).toBe("none");
+    await page.keyboard.press("Escape");
+    await expect(newest).not.toHaveAttribute("data-open");
+    await expect(button).toHaveAttribute("data-faded", "true");
   });
 
   await scenario("Codex code review: back from the Inbox to a deep line, the history comes back whole, the Inbox's conversations too", async () => {

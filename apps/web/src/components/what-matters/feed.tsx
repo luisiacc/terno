@@ -471,7 +471,7 @@ interface Face {
  * Plan 214 (Ledger, the owner's pick of five): what's pressing reads first. Missed and today's items: the sentence in a
  * medium weight, a mark in the gutter (Mail's unread dot: red for Missed, the design's unread color for today), Missed's when
  * in the destructive ink (CONTRAST_PAIRS: on the pane and a row's hover). Everything else: the sentence in the ink, its
- * when quiet; Coming up's too (plan 210, iteration 3: no fade), the history muted. Plan 210 (iteration 1, Codex's critique point 10): who and a quiet when are the row's preview
+ * when quiet; Coming up's too (plan 210, iteration 3: no fade), the history faded (plan 244). Plan 210 (iteration 1, Codex's critique point 10): who and a quiet when are the row's preview
  * ink, held to AA on every fill a row has (CONTRAST_PAIRS' row-preview); on the open item, every word is the selection's.
  */
 const SENTENCE_INK: Record<TodayTone, string> = { missed: "font-medium text-foreground", today: "font-medium text-foreground", later: "text-foreground", none: "text-foreground" };
@@ -492,13 +492,17 @@ function Item({ row, sentence, meta, when, tone, task, open, cursor = false, lat
   // the design's lists have avatars, so the feed has them too (Graphite, Relief and macOS have none: their rows are Mail's classic)
   const faces = useDesign().variants.row !== "classic";
   const quiet = past ? "text-muted-foreground" : null;
+  // plan 244 (the owner): a finished item is faded, plainly apart from what's still to do: its words and its face (grey too),
+  // under the pointer as well, never the focus ring. Below AA on purpose, the owner's call: axe skips `data-faded`'s contrast,
+  // nothing else. The open one, as every open row, in the selection's ink and in full
+  const faded = past && !open;
   const mark = past || later ? undefined : MARK[tone];
   const whenTone = past ? null : later ? "later" : tone;
   const whenInk = whenTone === null ? "text-muted-foreground group-data-open/item:text-row-selected-foreground" : cn(WHEN_INK[whenTone], WHEN_OPEN);
   return (
     // the right-click menu is the conversation's, its task this row's (plan 210, iteration 2: `menuRow`)
     <div data-thread-id={menuId(row.threadId)} data-row-id={row.id} data-held={row.held || undefined} data-testid="wm-item" onContextMenu={() => useToday.setState({ menuRow: row.id })} data-open={open || undefined} data-cursor={cursor || undefined} data-history={past || undefined} data-digest={digest || undefined} data-ahead={(later && !past) || undefined} data-tone={tone} className="group/item relative rounded-lg not-data-open:hover:bg-row-hover data-cursor:bg-row-hover data-open:bg-row-selected">
-      <button type="button" data-testid="wm-item-open" title={`${sentence}\n${meta}`} aria-expanded={open} onFocus={() => placeFeedKeys(row.id)} onClick={() => openItem(row)} className="relative flex w-full min-w-0 flex-col rounded-lg ps-4 pe-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      <button type="button" data-testid="wm-item-open" title={`${sentence}\n${meta}`} aria-expanded={open} data-faded={faded || undefined} onFocus={() => placeFeedKeys(row.id)} onClick={() => openItem(row)} className="relative flex w-full min-w-0 flex-col rounded-lg ps-4 pe-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring data-faded:*:opacity-55">
         {/* what's pressing, marked in the row's leading padding, inside its fill, in every state (plan 214, after the first
             rating: it hung over the fill's edge and went on the open row); the text line stays the headings' */}
         {mark && <span aria-hidden data-testid="wm-mark" className={cn("absolute top-[calc(0.5rem+0.75em-3px)] start-1 size-1.5 rounded-full", mark)} />}
@@ -512,7 +516,7 @@ function Item({ row, sentence, meta, when, tone, task, open, cursor = false, lat
             {/* the owner (2026-11-18): who, with their face first, about the line's own height and centred on it, on the
                 headings' edge. Initials drawn, not text: the line reads, matches and copies as it did */}
             {faces && (digest || face) && (
-              <span aria-hidden data-testid="wm-face" className="me-1.5 inline-flex h-[1lh] items-center align-top">
+              <span aria-hidden data-testid="wm-face" className={cn("me-1.5 inline-flex h-[1lh] items-center align-top", faded && "grayscale")}>
                 {digest ? (
                   <span className="flex size-5 items-center justify-center rounded-full bg-muted text-muted-foreground">
                     <Newspaper className="size-3" />

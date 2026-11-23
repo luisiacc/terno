@@ -340,6 +340,9 @@ export async function freshNoDrafts(page: Page, server: DevServer): Promise<void
   await fresh(page);
 }
 
+/** plan 244: faded below AA on purpose, the owner's call; never a way around a contrast failure */
+const FADED = "[data-faded]";
+
 /**
  * Axe on what's on screen, or these parts of it (mail frames aside: legacy mode, which doesn't open a page per call). Names,
  * roles and structure can't change between light and dark, so dark reads contrast alone. The app must be following the OS.
@@ -347,9 +350,18 @@ export async function freshNoDrafts(page: Page, server: DevServer): Promise<void
 export async function axeBothModes(page: Page, ...scopes: string[]): Promise<void> {
   const read = async (axe: AxeBuilder, mode: string) => {
     for (const scope of scopes) axe = axe.include(scope);
-    const { violations } = await axe.exclude("iframe").setLegacyMode().analyze();
+    // plan 244: what's faded below AA on purpose (the owner's call: What matters' finished items) is read for everything but contrast
+    const { violations } = await axe.exclude("iframe").exclude(FADED).setLegacyMode().analyze();
     expect(violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 160)).join(", ")}`), mode).toEqual([]);
   };
+  const faded = async () => {
+    if (!(await page.locator(scopes.map((s) => `${s} ${FADED}`).join(", ") || FADED).count())) return;
+    let axe = new AxeBuilder({ page }).disableRules(["color-contrast"]);
+    for (const scope of scopes.length ? scopes : [""]) axe = axe.include(`${scope} ${FADED}`.trim());
+    const { violations } = await axe.setLegacyMode().analyze();
+    expect(violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 160)).join(", ")}`), "faded").toEqual([]);
+  };
+  await faded();
   const html = page.locator("html");
   await read(new AxeBuilder({ page }), "light");
   await page.emulateMedia({ colorScheme: "dark" });
