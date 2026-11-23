@@ -34,6 +34,19 @@ export interface ProjectionFacts {
   live: (threadId: number) => boolean;
   /** the reader's zone: a promise's stated time in another is said in brackets */
   zone: string;
+  /** plan 248: the user's words (absent: none, the empty box, and nothing here runs) */
+  visibility?: RowVisibility;
+}
+
+/**
+ * Plan 248 (the Codex review's revision 4): what the user's words say of a row, applied after the facts are resolved (links,
+ * answered requests, a reply's promises): a hidden item's conversation still counts as represented, so it never comes back
+ * as a waiting row; a first row sorts first within its own section.
+ */
+export interface RowVisibility {
+  /** hidden when the words hide every entry of it; first when they put any first */
+  item(item: Logical): { hide: boolean; first: boolean };
+  waiting(w: WaitingFact): { hide: boolean; first: boolean };
 }
 
 /** Plan 215: a conversation waiting on you as the projection reads it (`ProjectionFacts.waiting`). */
@@ -71,6 +84,8 @@ export interface ProjectedRow {
   bucket?: string;
   /** plan 210 (iteration 3, revision 10): a dated item's own message and its sender's `addressKey`, whom the row names */
   source?: { messageId: number; senderKey: string };
+  /** plan 248: the user's words put it first within its section */
+  first?: boolean;
 }
 
 /** One item, or the true duplicates of one: its id the canonical's key, shown as `lead`. */
@@ -367,7 +382,7 @@ export function projectToday(f: ProjectionFacts, o: { count?: boolean } = {}): {
 }
 
 /** The projection's second step: placed items, what's waiting and your reminders as rows, and the counts' buckets. */
-export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFacts, "now" | "waiting" | "reminders" | "live" | "zone">, o: { count?: boolean } = {}): { rows: ProjectedRow[]; counts: TodayCounts } {
+export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFacts, "now" | "waiting" | "reminders" | "live" | "zone" | "visibility">, o: { count?: boolean } = {}): { rows: ProjectedRow[]; counts: TodayCounts } {
   const today = dayKeyOf(f.now);
   const placed: Placed[] = [];
   // each day's heading once (most rows share a few days)
@@ -396,6 +411,9 @@ export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFact
     if (!plan && at.group !== "comingUp") represented.add(lead.row.threadId);
     // (every member's conversation: a merged row stands for each of them, Codex code review 2, #6)
     if (!plan) for (const e of item.entries) anywhere.add(e.row.threadId);
+    // plan 248: hidden by the user's words, after its conversation is counted as represented (no waiting row says it instead)
+    const seen = f.visibility?.item(item);
+    if (seen?.hide) continue;
     const early = lead.source === "dated" && at.group === "today" && shownEarly(lead.row, today);
     // the count needs only what `todayCounted` and `waitsOnYou` read: no words made
     const why: TodayWhy = o.count
@@ -409,6 +427,7 @@ export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFact
     const came = lead.source === "dated" ? lead.row.arrivedAt : lead.row.sentAt;
     // (fields set as they apply, not spread: this runs over the 1,000-item bound on every read)
     const row: Placed = { id: item.id, threadId: lead.row.threadId, group: at.group, day: at.day, why, dueAt: why.dueAt ?? lead.row.dueAt, came };
+    if (seen?.first) row.first = true;
     // (plan 210, iteration 4, revision 8: someone waits on a promise broken with a live day, in the list and the count alike;
     // iteration 5, revision 6: needed today, it's Today's own, a thing to do now; needed ahead, Waiting on you's, overdue)
     const broken = at.group === "today" && lead.source === "promise" ? promiseBroken(lead.row, f.now) : null;
@@ -435,15 +454,22 @@ export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFact
   // placed, Coming up's too (the reader's request put off with it), says it already
   for (const w of f.waiting) {
     if (w.removed || represented.has(w.id)) continue;
+    // plan 248: the user's words
+    const seen = f.visibility?.waiting(w);
+    if (seen?.hide) continue;
     const deferred = w.deferredUntil != null && w.deferredUntil > f.now;
     if (deferred && (o.count || anywhere.has(w.id))) continue;
     const why: TodayWhy = { kind: "waiting", wrote: w.hasSent };
     if (!o.count && w.waitingSince !== undefined && w.message != null) why.reply = { since: w.waitingSince, rev: w.rev ?? 0, message: w.message };
-    if (deferred) {
-      const day = dayKeyOf(w.deferredUntil!);
-      why.back = w.deferredUntil!;
-      waiting.push({ id: waitingRowId(w.id), threadId: w.id, group: "comingUp", day, bucket: bucketOf(day), why, waiting: true, dueAt: w.deferredUntil!, came: w.lastDate });
-    } else waiting.push({ id: waitingRowId(w.id), threadId: w.id, group: "today", day: null, why, waiting: true, part: "waiting", dueAt: w.lastDate, came: w.lastDate });
+    const row: Placed = deferred
+      ? (() => {
+          const day = dayKeyOf(w.deferredUntil!);
+          why.back = w.deferredUntil!;
+          return { id: waitingRowId(w.id), threadId: w.id, group: "comingUp" as const, day, bucket: bucketOf(day), why, waiting: true, dueAt: w.deferredUntil!, came: w.lastDate };
+        })()
+      : { id: waitingRowId(w.id), threadId: w.id, group: "today", day: null, why, waiting: true, part: "waiting", dueAt: w.lastDate, came: w.lastDate };
+    if (seen?.first) row.first = true;
+    waiting.push(row);
   }
   const all = placed.concat(waiting);
   // your reminder on a conversation with no row of its own (one that has one already brings it to you); plan 210
@@ -458,6 +484,12 @@ export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFact
   const counts = countsOf(rows);
   if (o.count) return { rows: [], counts };
   return { rows: ordered(rows), counts };
+}
+
+/** Plan 248: the rows the user's words put first, then the rest, each in the order it had. */
+function firstUp<T extends { first?: boolean }>(list: T[]): T[] {
+  if (!list.some((r) => r.first)) return list;
+  return list.filter((r) => r.first).concat(list.filter((r) => !r.first));
 }
 
 /**
@@ -502,8 +534,24 @@ function ordered(rows: readonly Placed[]): ProjectedRow[] {
   const broken = todays.filter((r) => r.broken === "ahead").sort(soonest);
   const dated = todays.filter((r) => r.part === "waiting" && !r.broken && r.why.item?.early).sort(soonest);
   const undated = todays.filter((r) => r.part === "waiting" && !r.broken && !r.why.item?.early).sort((a, b) => b.came - a.came);
-  const today = sortToday(own, (r) => r.why, (r) => r.broken === "today").concat(broken, dated, undated);
   const byItsDay = (list: Placed[]) => sortInDay(list, (r) => r.why, (r) => r.day!);
+  // plan 248: what the user's words put first leads its own section (Today's own, its waiting part, a day), each keeping its order
+  if (rows.some((r) => r.first)) {
+    const today = firstUp(sortToday(own, (r) => r.why, (r) => r.broken === "today")).concat(firstUp(broken.concat(dated, undated)));
+    const perDay = (list: Placed[]) => {
+      const sorted = byItsDay(list);
+      const out: Placed[] = [];
+      for (let i = 0; i < sorted.length; ) {
+        let j = i;
+        while (j < sorted.length && sorted[j]!.bucket === sorted[i]!.bucket && sorted[j]!.day === sorted[i]!.day) j++;
+        out.push(...firstUp(sorted.slice(i, j)));
+        i = j;
+      }
+      return out;
+    };
+    return firstUp(missed).concat(today, perDay(of("day")), perDay(of("ahead")), perDay(of("comingUp")));
+  }
+  const today = sortToday(own, (r) => r.why, (r) => r.broken === "today").concat(broken, dated, undated);
   // (the ordering's own fields ride along, unread: no copy of every row at the 1,000-item bound)
   return missed.concat(today, byItsDay(of("day")), byItsDay(of("ahead")), byItsDay(of("comingUp")));
 }

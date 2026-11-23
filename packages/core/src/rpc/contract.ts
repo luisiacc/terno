@@ -27,6 +27,7 @@ import { FOLLOWUP_REPLY_MAX, type FollowupRow, type FollowupsSetting, type Follo
 import type { DatedRow, DatedSetting } from "../dated";
 import { HANDOFF_ITEMS_MAX, type Handoff, type HandoffItem } from "../handoff";
 import type { DatedMute, MuteOffer } from "../dated-mutes";
+import { PREFERENCES_TEXT_MAX, type WhatMattersPreferences } from "../preferences";
 import { DIGEST_CANDIDATES_MAX, HISTORY_PAGE, NOT_NEWSLETTERS_OVER, type DigestRow, type NotNewsletter, type ShownSender, type TodayHistoryPage, type TodayList, type TodaySetting } from "../today";
 import type { AiPrepareReply, AiReplyEvent, PreparedReply, RepliesSetting } from "../replies";
 import type { ActionPreviewInfo, ActionRowTag, AiActionApplied, AiActionCheck, AiActionEvent, AiActionStart } from "../actions";
@@ -68,10 +69,13 @@ import {
 } from "../types";
 
 const id = z.number().int().positive();
+/** plan 248: a dated item's id, or (negative) one the user's words brought */
+const datedId = z.number().int().refine((n) => n !== 0);
 /** plan 210: a history line's key (`HistoryKey`) */
 const historyKey = z.object({ at: z.number().int().nonnegative(), src: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3), z.literal(4)]), id });
 /** plan 210 (iteration 2): a What matters row's id ("dated:42", "promise:7", "waiting:12", "reminder:12") */
-const feedRowId = z.string().regex(/^(?:dated|promise|waiting|reminder):\d{1,15}$/);
+// plan 248: an item the user's words brought is a dated row with a negative id
+const feedRowId = z.string().regex(/^(?:dated:-?|promise:|waiting:|reminder:)\d{1,15}$/);
 /** plan 210 (iteration 4): a hand-off saved with its forward's draft (`parseHandoff` reads it back the same way) */
 const handoff = z.object({ items: z.array(z.object({ source: z.enum(["dated", "promise"]), id, revision: z.number().int().min(0), named: z.boolean().optional(), answered: z.boolean().optional(), row: z.number().int().min(0).max(HANDOFF_ITEMS_MAX - 1).optional() }).strict()).min(1).max(HANDOFF_ITEMS_MAX) }).strict();
 /** days of mail an account downloads (settings, an account, connecting one) */
@@ -94,6 +98,17 @@ const assetRequest = z.object({ accountId: id, assetId: z.string().uuid() }).str
 const draftAddress = z.object({ name: z.string().max(300), email: z.string().max(320), auto: z.literal(true).optional() });
 
 /** Plan 185: a kept file an agent may read (its place checked), by the asset the sidecar reads it with. */
+/** Plan 248: what the windows show of the words (Settings' row, the gear): the record, the draft, the background work. */
+export interface WhatMattersWordsState {
+  preferences: WhatMattersPreferences;
+  draft: { text: string | null; seq: number } | null;
+  status: {
+    applying: { left: number; total: number } | null;
+    looking: { left: number } | null;
+    blockedBy: { kind: AiErrorKind; message: string; i18n?: I18nRef } | null;
+  };
+}
+
 export interface AgentAttachment {
   accountId: number;
   assetId: string;
@@ -1292,7 +1307,7 @@ export const contract = {
   /** plan 210 (iteration 2): one promise of yours whatever its state (a history line opened: its closed promise) */
   "followups.get": m<{ row: FollowupRow | null }>()(z.object({ id })),
   /** plan 204: Done, Dismiss and Later on a dated item, each with an exact Undo; never MCP */
-  "dated.act": m<{ undoId: string | null; row: DatedRow | null }>()(z.object({ id, revision: z.number().int().min(0), action: z.enum(["done", "dismiss", "later"]), until: z.number().int().optional() })),
+  "dated.act": m<{ undoId: string | null; row: DatedRow | null }>()(z.object({ id: datedId, revision: z.number().int().min(0), action: z.enum(["done", "dismiss", "later"]), until: z.number().int().optional() })),
   "dated.undo": m<{ ok: true }>()(z.object({ undoId: z.string().min(1).max(64) })),
   /**
    * Plan 210 (iteration 4, Change…): a dated item's or a promise's new day (`day`, local) and, when `time` ("HH:MM"), its
@@ -1319,6 +1334,19 @@ export const contract = {
   /** plan 239: `limit`, stopped by the day's guard or the monthly ceiling (its message says which), not by the provider */
   "dated.status": m<{ blockedBy: { kind: AiErrorKind; message: string; i18n?: I18nRef; limit?: "daily" | "monthly" } | null }>()(empty),
   /** the 14-day check: how many, and what it would cost; then the yes */
+  /**
+   * Plan 248: What matters in the user's words. Renderer only, never MCP (the words can hold names and addresses). `save`
+   * compiles them with the user's provider and saves against `revision` (another window's save since: `stale`); empty
+   * words are a Clear. `clear` needs no AI; its Undo puts the words and their rules back.
+   */
+  "whatMatters.words": m<WhatMattersWordsState>()(empty),
+  "whatMatters.words.draft": m<{ kept: boolean }>()(z.object({ text: z.string().max(PREFERENCES_TEXT_MAX), seq: z.number().int().min(0) })),
+  "whatMatters.words.save": m<{ preferences: WhatMattersPreferences } | { stale: true }>()(z.object({ text: z.string().max(PREFERENCES_TEXT_MAX), revision: z.number().int().min(0) })),
+  "whatMatters.words.clear": m<{ preferences: WhatMattersPreferences; undoId: string | null } | { stale: true }>()(z.object({ revision: z.number().int().min(0) })),
+  "whatMatters.words.undoClear": m<{ preferences: WhatMattersPreferences } | { stale: true }>()(z.object({ undoId: z.string().min(1).max(64), revision: z.number().int().min(0) })),
+  /** how many of the last 14 days' messages the show rules may want, and the tokens reading them would take (null: no show rule) */
+  "whatMatters.words.lookOffer": m<{ offer: { count: number; usd: number | null } | null }>()(empty),
+  "whatMatters.words.look": m<{ queued: number }>()(empty),
   /** plan 210 (iteration 4): what's muted in What matters, newest first; never MCP */
   "dated.mutes": m<{ mutes: DatedMute[] }>()(empty),
   /** after Remove on this item: what its snack offers to mute, once per kind from a sender (iteration 5: a pair) or per automated sender (null: nothing) */
@@ -1653,6 +1681,8 @@ export interface Events {
   learningChanged: Record<string, never>;
   /** plan 204: the dated reader stopped, or it's going again */
   datedStatus: { blockedBy: { kind: AiErrorKind; message: string; i18n?: I18nRef; limit?: "daily" | "monthly" } | null };
+  /** plan 248: What matters in the user's words: the record, the draft and the background work's status */
+  whatMattersWords: WhatMattersWordsState;
   /** plan 144: a prepared reply as it comes, only to the windows reading that conversation; never MCP */
   aiReply: AiReplyEvent;
   /** plan 143: a preview's count as it grows, or why it ended; only to the connection that asked */

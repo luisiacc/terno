@@ -56,6 +56,11 @@ export interface DatedHost {
   /** work over a list in the backend's slices */
   runBudgeted<T>(items: readonly T[], work: (chunk: T[]) => void | Promise<void>): Promise<void>;
   log(level: "info" | "warn" | "error", message: string, extra?: unknown): void;
+  /**
+   * Plan 248: live mail past the hard gates, offered to the user's words (their second reader marks it when a show rule may
+   * want it). Changes nothing of this reading; absent or with no show rule, nothing happens.
+   */
+  wantedMark?(m: { messageId: number; threadId: number; arrivedAt: number }): Promise<void>;
 }
 
 /** HH:MM, local: an open item's time as the model reads it (prompt v7) */
@@ -64,7 +69,7 @@ const clockOf = (ms: number): string => {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 };
 
-const inWords = (ms: number, language: string): string => {
+export const inWords = (ms: number, language: string): string => {
   try {
     return new Intl.DateTimeFormat(language === "es" ? "es" : "en-GB", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(ms);
   } catch {
@@ -73,7 +78,7 @@ const inWords = (ms: number, language: string): string => {
 };
 
 /** prompt v10: the reader's zone, the machine's, in which `inWords`, `clockOf` and `datedTiming` read days and times, and a time the mail gives in another is converted to; read each time, as a trip changes it */
-const readerZone = (): string => {
+export const readerZone = (): string => {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   } catch {
@@ -1393,6 +1398,8 @@ export class DatedWorker {
     if (heldSenders.has(src.senderKey)) return { hold: src.senderKey };
     // what came before it went on is read only with the check's yes
     if (mark.source === "live" && settings.dated.enabledAt !== null && src.date < settings.dated.enabledAt) return drop();
+    // plan 248: the words' second reader gets its own mark, whatever this reading then does (it waits for this one)
+    if (mark.source === "live") await this.host.wantedMark?.({ messageId: src.id, threadId: src.threadId, arrivedAt: src.date });
     // revision 5: what could settle an open item is read before any cost filter
     const open = await store.dated.openFor({ threadId: src.threadId, senderKey: src.senderKey, before: src.date, limit: DATED_OPEN_SHOWN, excludeAccounts: this.host.gate.readsOff });
     // plan 210 (iteration 5, revision 8): Social and Promotions only for a person's ask a service relays (its body tells)

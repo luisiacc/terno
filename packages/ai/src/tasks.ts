@@ -10,6 +10,7 @@ import { planAskTask, runAnswerFromMail } from "./ask";
 import { checkCandidatesTask, countedTransport, planActionTask } from "./actions";
 import { readSentMailTask } from "./followups";
 import { readDatesTask } from "./dated";
+import { compilePreferencesTask, matchPreferencesTask, readWantedTask } from "./preferences";
 import { digestTask } from "./digest";
 import { needsReplyTask } from "./replies";
 import { summarizeTask } from "./summarize";
@@ -154,6 +155,20 @@ export function createAi(config: ProviderConfig, options: AiOptions = {}): AiTas
 
     readDates(input, signal) {
       return run(readDatesTask(input), signal);
+    },
+
+    compilePreferences(input, signal) {
+      return run(compilePreferencesTask(input), signal);
+    },
+
+    matchPreferences(input, signal) {
+      // nothing to judge: no request
+      if (!input.rules.length || !input.targets.length) return Promise.resolve([]);
+      return run(matchPreferencesTask(input), signal);
+    },
+
+    readWanted(input, signal) {
+      return run(readWantedTask(input), signal);
     },
 
     planAsk(input, signal) {

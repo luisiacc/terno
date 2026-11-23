@@ -77,7 +77,8 @@ export const NO_PREFERENCES: WhatMattersPreferences = { revision: 0, text: "", r
 
 /** Words typed and not saved (`whatMatters:preferencesDraft`): never lost, never the saved words; an older `seq` is ignored. */
 export interface PreferencesDraft {
-  text: string;
+  /** null: no draft (the saved words are what's shown) */
+  text: string | null;
   seq: number;
 }
 
@@ -94,6 +95,13 @@ export function ruleKey(r: Pick<PreferenceRule, "effect" | "kinds" | "senders" |
   const parts = [r.effect, [...(r.kinds ?? [])].sort().join(","), [...(r.senders ?? [])].sort().join(","), squash(r.about ?? ""), squash(r.unless ?? "")];
   return `${r.effect[0]}${fnv1a(parts.join("\u0001")).toString(36)}`;
 }
+
+/**
+ * What a row said when it was judged (the Codex review's revision 8): its kind, words, quote and day. A verdict counts only
+ * for the same print, so a row a later mail rewrote or moved is judged again, while Done, Later or a merge (which change its
+ * revision, not its words) keep it: the history reads the same verdict as the open part.
+ */
+export const rowPrint = (...parts: readonly (string | number | null | undefined)[]): string => fnv1a(parts.map((p) => String(p ?? "")).join("\u0001")).toString(36);
 
 /** The semantic rules a verdict was judged against, as one key: a verdict counts only while it's the current one. */
 export function verdictBasis(rules: readonly PreferenceRule[]): string {

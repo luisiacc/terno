@@ -30,6 +30,7 @@ import { FollowupWorker } from "./followups";
 import { DatedWorker } from "./dated";
 import { DatedMutes } from "./dated-mutes";
 import { ShownSenders } from "./shown-senders";
+import { WhatMattersWords } from "./preferences";
 import { SummaryWorker } from "./summaries";
 import { WritingService } from "./writing";
 import { Attention, type AttentionHost } from "./attention";
@@ -320,6 +321,8 @@ export class BackendCore {
   readonly mutes: DatedMutes;
   /** plan 240: the senders always shown in What matters */
   readonly shown: ShownSenders;
+  /** plan 248: What matters in the user's words, and its background worker (idle with no rules) */
+  readonly words: WhatMattersWords;
   /** plan 133: drafting: what goes into a draft, and the learner, asleep until the feature is used */
   readonly writing: WritingService;
   /** plan 18: recipient and body suggestions, in memory, built on first use */
@@ -427,6 +430,19 @@ export class BackendCore {
       replies: () => (this.followups.isActive ? { since: this.followups.since } : undefined),
       caughtUp: () => this.followups.wake(),
       statusChanged: (status) => this.server.emit("datedStatus", status, { origins: ["renderer", "dev"] }),
+      runBudgeted: (items, work) => this.runBudgeted(items, work),
+      log: (level, message, extra) => this.log(level, message, extra),
+      wantedMark: (m) => this.wantedMark(m),
+    });
+    this.words = new WhatMattersWords({
+      store: this.store,
+      now: () => this.now(),
+      settings: () => readSettings(this.store),
+      allowed: async (settings) => aiFeaturesAvailable(settings) && (await aiAllowed(this.store)),
+      gate: this.gate,
+      forTask: (o) => this.aiService.forTask("dated", o),
+      changed: () => this.today.changed(),
+      emit: (state) => this.server.emit("whatMattersWords", state, { origins: ["renderer", "dev"] }),
       runBudgeted: (items, work) => this.runBudgeted(items, work),
       log: (level, message, extra) => this.log(level, message, extra),
     });
@@ -722,6 +738,12 @@ export class BackendCore {
   }
 
   /** Starts background work (model rebuild, unfinished moves, sync loops, the ops worker); resolves once they are scheduled. */
+  /** Plan 248: live mail the dated reader passed its hard gates, marked for the words' second reader when a show rule exists. */
+  private async wantedMark(m: { messageId: number; threadId: number; arrivedAt: number }): Promise<void> {
+    if (!(await this.words.rules()).some((r) => r.effect === "show")) return;
+    if (await this.store.whatMatters.wanted.marks.add({ ...m, source: "live" }, this.now())) this.words.worker.wake();
+  }
+
   async start(): Promise<void> {
     await this.ready;
     if (this.stopped) return;
@@ -1111,6 +1133,7 @@ export class BackendCore {
     this.summaries.stop();
     this.followups.stop();
     this.dated.stop();
+    void this.words.worker.stop();
     this.incoming.close();
     const retirement = (async () => {
       let failed: { error: unknown } | undefined;
@@ -1602,6 +1625,8 @@ export class BackendCore {
       if (live) this.followups.wake();
       // plan 204: what it marked, and any body it completed for what waits
       this.dated.wake();
+      // plan 248: a body the words' second reader waits on
+      this.words.worker.wake();
       // plan 134: after commit, outside the slice
       this.aiAssist.wake();
     });

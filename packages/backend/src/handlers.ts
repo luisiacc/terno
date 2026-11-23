@@ -1,7 +1,8 @@
+import { costAt, priceOf } from "@terno/ai";
 import { RpcError, type Draft, type DraftAddress, type Handlers } from "@terno/core/rpc";
 import { agentsMaySend, nextColor, parseHandoff, capFilterName, categoryRule, folderRule, isFilterable, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, matchExcerpt, parseSearch, resolveSearch, rowMatchOf, searchWithFilter, type ThreadAction, type AccountPrefs, PINS_MAX, REMINDERS_MAX, SCHEDULED_MAX, FORWARD_ADDRESSES_MAX_CHARS } from "@terno/core";
 import { L } from "@terno/i18n";
-import { movedNothing, SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, type FolderMoved, type MessageState } from "@terno/store";
+import { movedNothing, SearchCancelledError, StaleCursorError, wantedAsDated, type AddedBy, type DraftRow, type FolderMoved, type MessageState } from "@terno/store";
 import { GMAIL_SCOPES } from "@terno/mail/portable";
 import type { GmailAccountConfig, ImapAccountConfig } from "@terno/mail";
 import { BackendCore as Backend } from "./core";
@@ -1556,6 +1557,8 @@ export function createHandlers(b: Backend): Handlers {
       b.actions.invalidate(null);
       await b.followups.clear();
       await b.dated.clear();
+      // plan 248: what AI made of the words (verdicts, wanted items); the words themselves stay
+      await b.words.clearAiData();
       await b.replies.clear();
       await b.today.clear();
       return { ok: true };
@@ -1589,6 +1592,11 @@ export function createHandlers(b: Backend): Handlers {
     // plan 210 (iteration 2): an item is acted on with every item it's the same thing as, all or none (What matters' one act)
     "dated.act": async ({ id, revision, action, until }) => {
       const { undoId } = await b.today.act([{ source: "dated", id, revision }], action, until);
+      // plan 248: an item the user's words brought, by its negative id
+      if (id < 0) {
+        const wanted = await b.store.whatMatters.wanted.get(-id);
+        return { undoId, row: wanted ? wantedAsDated(wanted) : null };
+      }
       return { undoId, row: await b.store.dated.get(id) };
     },
     "dated.undo": async ({ undoId }) => {
@@ -1607,9 +1615,25 @@ export function createHandlers(b: Backend): Handlers {
       await b.today.undoSchedule(undoId);
       return { ok: true };
     },
-    "dated.ofThread": async ({ threadId, include }) => ({ rows: await b.dated.ofThread(threadId, include) }),
+    "dated.ofThread": async ({ threadId, include }) => ({ rows: await b.today.conversationItems(threadId, include) }),
     "dated.status": () => b.dated.status(),
     // plan 210 (iteration 4): renderer only, as the rest of What matters
+    // plan 248: What matters in the user's words (renderer only)
+    "whatMatters.words": () => b.words.state(),
+    "whatMatters.words.draft": async ({ text, seq }) => ({ kept: await b.words.saveDraft(text, seq) }),
+    "whatMatters.words.save": ({ text, revision }) => b.words.save(text, revision),
+    "whatMatters.words.clear": ({ revision }) => b.words.clear(revision),
+    "whatMatters.words.undoClear": ({ undoId, revision }) => b.words.undoClear(undoId, revision),
+    "whatMatters.words.lookOffer": async () => {
+      const offer = await b.words.lookOffer();
+      if (!offer) return { offer: null };
+      const target = await b.aiService.modelFor("dated").catch(() => null);
+      // a local model costs nothing; a cloud one we don't know the price of says no amount
+      const price = target && !target.local ? priceOf(target.model) : null;
+      const usd = !target ? null : target.local ? 0 : price ? costAt(price, { inputTokens: offer.tokensIn, outputTokens: offer.tokensOut }) : null;
+      return { offer: { count: offer.count, usd } };
+    },
+    "whatMatters.words.look": async () => ({ queued: await b.words.look() }),
     "dated.mutes": async () => ({ mutes: await b.mutes.list() }),
     "dated.muteOffer": async ({ id }) => ({ offer: await b.mutes.offer(id) }),
     "dated.mute": async ({ on, key, name, at }) => ({ mute: await b.mutes.mute({ on, key, ...(name !== undefined ? { name } : {}), ...(at !== undefined ? { at } : {}) }) }),

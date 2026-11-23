@@ -4,6 +4,7 @@ import { fakeAnswer, fakeAskPlan, isAnswerRequest } from "./ask";
 import { fakeActionPlan, fakeCheck } from "./actions";
 import { fakeSentMail } from "./followups";
 import { fakeDates } from "./dated";
+import { fakeCompile, fakeMatch, fakeWanted } from "./preferences";
 import { fakeDigest } from "./digest";
 import { fakeNeedsReply } from "./replies";
 import { fakeSummary } from "./summarize";
@@ -117,6 +118,9 @@ export function fakeTransport(options: { failFirstAttempt?: boolean } = {}): Mod
       if (schema?.name === "action_check") return { text: JSON.stringify(fakeCheck(prompt)), stop: "end" };
       if (schema?.name === "sent_mail") return { text: JSON.stringify(fakeSentMail(prompt)), stop: "end" };
       if (schema?.name === "dated_mail") return { text: JSON.stringify(fakeDates(prompt)), stop: "end" };
+      if (schema?.name === "what_matters_preferences") return { text: JSON.stringify(fakeCompile(prompt)), stop: "end" };
+      if (schema?.name === "preference_matches") return { text: JSON.stringify(fakeMatch(prompt)), stop: "end" };
+      if (schema?.name === "wanted_mail") return { text: JSON.stringify(fakeWanted(prompt)), stop: "end" };
       if (schema?.name === "ask_plan") return { text: JSON.stringify(fakeAskPlan(prompt)), stop: "end" };
       if (schema?.name === "voice_judgment") return { text: JSON.stringify(fakeJudgment(prompt)), stop: "end" };
       if (schema?.name === "parse_intent") return { text: JSON.stringify(fakeIntent(prompt)), stop: "end" };

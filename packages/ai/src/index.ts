@@ -22,3 +22,23 @@ export * from "./spend";
 export * from "./stream";
 // plan 210 (iteration 2): a promise's stated time in another zone, read in the reader's as an item's is
 export { inZone, wallHolds } from "./dated";
+export {
+  MATCH_BATCH,
+  MATCH_EXCERPT_CHARS,
+  PREFERENCES_COMPILER_VERSION,
+  PREFERENCES_MATCH_VERSION,
+  WANTED_PROMPT_VERSION,
+  WANTED_TEXT_CHARS,
+  compilePreferencesTask,
+  matchPreferencesTask,
+  readWantedTask,
+  wantedPrompt,
+  type CompilePreferencesInput,
+  type MatchInput,
+  type MatchResult,
+  type MatchRule,
+  type MatchTarget,
+  type WantedInput,
+  type WantedResult,
+  type WantedRule,
+} from "./preferences";

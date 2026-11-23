@@ -101,7 +101,8 @@ export class AiService {
       store: b.store,
       now: () => b.now(),
       monthlyLimitUsd: async () => (await readSettings(b.store)).ai.monthlyLimitUsd,
-      beforeAhead: (task) => (task === "digest" ? b.today.holdingUp() : task === "dated" ? b.dated.holdingUp() : b.replies.holdingUp()),
+      // plan 248: the words' worker sends on the dated task too, each with its own sources (the Codex review's revision 7)
+      beforeAhead: (task) => (task === "digest" ? b.today.holdingUp() : task === "dated" ? Promise.all([b.dated.holdingUp(), b.words.worker.holdingUp()]).then(() => {}) : b.replies.holdingUp()),
     });
   }
 
@@ -226,6 +227,12 @@ export class AiService {
    * under (the configured provider as set up, another with its own saved endpoint). Never another provider without the
    * user having set it up: a key or the configured provider.
    */
+  /** Plan 248: the model a job runs on now, and whether it's local (an estimate's price; null when none is set up) */
+  async modelFor(job: AiJob): Promise<{ model: string; local: boolean }> {
+    const target = await this.targetFor(job, await readSettings(this.b.store));
+    return { model: target.model, local: isLocalProvider({ id: target.provider, baseURL: target.baseURL, preset: target.preset }) };
+  }
+
   private async targetFor(job: AiJob, settings: AppSettings): Promise<Target> {
     const route = routeFor(job, settings.ai);
     // Claude or OpenAI chosen with no key yet: config says which key to save, not that nothing is set up

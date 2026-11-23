@@ -343,6 +343,8 @@ export interface TodayList {
   counts: TodayCounts;
   /** plan 210: the history's first page (or down to the line asked for), when asked for (What matters drawn as the feed) */
   history?: TodayHistoryPage;
+  /** plan 248: held rows (asked as `held`) the user's words now hide: the feed lets them go */
+  hidden?: FeedRowId[];
 }
 
 /**

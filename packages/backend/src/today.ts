@@ -45,11 +45,13 @@ import {
   HISTORY_PAGE,
   type HistoryKey,
   type TodayHistoryPage,
+  type RowVisibility,
+  waitingRowId,
 } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import { RpcError, type AppSettings } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
-import { ANSWERED_WITH_PROMISE, NEEDS_WALK, WAITING_MOMENTS_MAX, type DigestStored, type ItemChanges, type ItemSnapshots, type ScheduleSnapshots, type WaitingSnapshot } from "@terno/store";
+import { ANSWERED_WITH_PROMISE, NEEDS_WALK, WAITING_MOMENTS_MAX, wantedAsDated, type WantedSnapshot, type DigestStored, type ItemChanges, type ItemSnapshots, type ScheduleSnapshots, type WaitingSnapshot } from "@terno/store";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import type { BackendCore as Backend } from "./core";
 import { readerZone } from "./promise-time";
@@ -58,6 +60,7 @@ import { aiAllowed, readSettings } from "./settings";
 import { withoutQuotes } from "./summaries";
 import { withoutMuted } from "./dated-mutes";
 import { historyPage } from "./today-history";
+import { datedTarget, promiseTarget, waitingTarget, type RowTarget } from "./preferences";
 import { TodayLinks } from "./today-links";
 import { scheduleChanges, type ScheduleAsk } from "./today-schedule";
 import { suspiciousSender, untrustedSenders, withoutUntrusted, type WrittenTo } from "./suspicious-sender";
@@ -110,6 +113,8 @@ const firstSentence = (text: string): string => (/^.*?[.!?](?:\s|$)/su.exec(text
 /** Plan 161: the page in time order, newest first, as its dates read: not the order the model's batches came back in. */
 const newestFirst = (items: readonly DigestItem[]): DigestItem[] => [...items].sort((a, b) => b.lastDate - a.lastDate || b.threadId - a.threadId);
 
+const EMPTY_IDS: ReadonlySet<FeedRowId> = new Set();
+
 export class TodayService {
   private ops: TodayOps | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -133,6 +138,8 @@ export class TodayService {
   private placing: { dated: readonly DatedRow[]; promises: string; at: number; until: number; items: PlacedItem[] } | null = null;
   /** plan 210 (iteration 2): what each act on items changed, for its Undo */
   private readonly undo = new Map<string, ItemSnapshots>();
+  /** plan 248: Undo of an act on an item the user's words brought */
+  private readonly wantedUndo = new Map<string, WantedSnapshot[]>();
   private undoSeq = 0;
   /** plan 210 (iteration 4): what each change of a day and time changed, for its Undo (Change… is its own act) */
   private readonly scheduleUndo = new Map<string, ScheduleSnapshots>();
@@ -140,6 +147,8 @@ export class TodayService {
   private readonly waitingSnapshots = new Map<string, WaitingSnapshot>();
   /** plan 204: the open dated items, until something changes them */
   private datedCache: { generation: number; rows: readonly DatedRow[] } | null = null;
+  /** plan 248: v16's rows with the words' wanted ones after them, as last built */
+  private wantedCache: { generation: number; dated: readonly DatedRow[]; rows: readonly DatedRow[] } | null = null;
   private datedGeneration = 0;
   private clockSeq = 0;
 
@@ -624,7 +633,7 @@ export class TodayService {
    * conversations are in Spam or Trash; then rows and the counts' buckets (`projectRows`). The list reads its rows'
    * conversations once, what says Spam and Trash too (`threads`); the count asks only that (`liveAmong`).
    */
-  private async project(now: number, settings: AppSettings, o: { count?: boolean } = {}): Promise<{ rows: ProjectedRow[]; counts: TodayCounts; threads: ReadonlyMap<number, ThreadSummary> }> {
+  private async project(now: number, settings: AppSettings, o: { count?: boolean } = {}): Promise<{ rows: ProjectedRow[]; counts: TodayCounts; threads: ReadonlyMap<number, ThreadSummary>; hidden?: ReadonlySet<FeedRowId> }> {
     const { store } = this.b;
     const read = async () => [settings.dated?.enabled ? await this.datedRows() : [], settings.followups?.enabled ? (await store.followups.active()).filter((r) => r.kind === "promise") : []] as const;
     const version = this.links.version;
@@ -638,7 +647,9 @@ export class TodayService {
     // plan 211: a promise of an account with AI or What matters off isn't shown nor counted (the dated rows' cache did theirs)
     // plan 218: a promise whose conversation is put away shows nowhere (the follow-ups' last look says which)
     const away = promises.length ? await this.b.followups.awayAmong(promises.map((p) => p.threadId)) : new Set<number>();
-    const items = this.placed(dated, await this.needs(dated, await this.aiMade(promises)), now, o.count === true, away);
+    // plan 248: what the user's words brought joins after the links are reconciled (it's never linked, answered or merged)
+    const placing = settings.dated?.enabled ? await this.withWanted(dated) : dated;
+    const items = this.placed(placing, await this.needs(dated, await this.aiMade(promises)), now, o.count === true, away);
     const endOfDay = new Date(now);
     endOfDay.setHours(23, 59, 59, 999);
     // plan 210 (iteration 4, revision 8): your reminders due today are Today's to do, drawn and counted alike; the count reads
@@ -655,8 +666,10 @@ export class TodayService {
       const a = acts.get(w.id);
       return a ? { ...w, message: a.message, rev: a.rev, deferredUntil: a.until, ...(a.removed && { removed: true }) } : w;
     }) : page;
+    // plan 248: the user's words, applied after the facts (none for the empty box: nothing is built)
+    const visibility = await this.visibility(items, page);
     // (the zone's read only for the rows' words: an Intl formatter is dear on every count)
-    const fact = { now, waiting, reminders, zone: o.count ? "" : readerZone() };
+    const fact = { now, waiting, reminders, zone: o.count ? "" : readerZone(), ...(visibility && { visibility: visibility.rows }) };
     if (o.count) {
       const live = await store.today.liveAmong([...new Set(ids)]);
       return { ...projectRows(items, { ...fact, live: (id) => live.has(id) }, o), threads: new Map() };
@@ -666,7 +679,104 @@ export class TodayService {
       const t = threads.get(id);
       return !!t && !t.inSpam && !t.inTrash;
     };
-    return { ...projectRows(items, { ...fact, live }, o), threads };
+    return { ...projectRows(items, { ...fact, live }, o), threads, hidden: visibility?.hidden ?? EMPTY_IDS };
+  }
+
+  /**
+   * Plan 248: the open wanted items whose rules are current (a show of the words now), as dated rows (negative ids), after
+   * v16's; the same array while nothing changed, so the count's cache holds. None (and nothing read) with no show rule.
+   */
+  private async withWanted(dated: readonly DatedRow[]): Promise<readonly DatedRow[]> {
+    const rules = await this.b.words.rules();
+    if (!rules.some((r) => r.effect === "show")) return dated;
+    const generation = this.datedGeneration;
+    if (this.wantedCache?.generation === generation && this.wantedCache.dated === dated) return this.wantedCache.rows;
+    const shows = new Set(rules.filter((r) => r.effect === "show").map((r) => r.key));
+    const open = (await this.b.store.whatMatters.wanted.active()).filter((w) => w.rules.some((k) => shows.has(k))).map(wantedAsDated);
+    // as v16's are: a muted sender's or kind's hidden, an untrusted sender's never shown, an account not reading none
+    const mine = open.length ? await this.aiMade(await withoutUntrusted(withoutMuted(open, await this.b.mutes.muted()), (keys) => this.b.store.dated.trusted(keys))) : [];
+    const rows = mine.length ? [...dated, ...mine] : dated;
+    if (generation === this.datedGeneration) this.wantedCache = { generation, dated, rows };
+    return rows;
+  }
+
+  /**
+   * Plan 248: the projection's view of the user's words: each placed item hidden when the words hide every entry of it and
+   * first when they put one first; each waiting conversation by its own message. Null for the empty box.
+   */
+  private async visibility(items: readonly PlacedItem[], page: readonly { id: number; waitingSince: number }[]): Promise<{ rows: RowVisibility; hidden: Set<FeedRowId> } | null> {
+    const rules = await this.b.words.rules();
+    if (!rules.length) return null;
+    const targets = new Map<string, RowTarget>();
+    const ofEntry = new Map<object, RowTarget>();
+    for (const p of items)
+      for (const e of p.item.entries) {
+        const t = e.source === "dated" ? datedTarget(e.row) : promiseTarget(e.row);
+        targets.set(t.key, t);
+        ofEntry.set(e.row, t);
+      }
+    // a waiting conversation by its sender and subject, read (one batch) only when a rule may reach one
+    const ofWaiting = new Map<number, RowTarget>();
+    if (page.length && rules.some((r) => r.effect !== "show" && (!r.kinds?.length || r.kinds.includes("waiting")))) {
+      const threads = new Map((await this.b.store.threads.summaries(page.map((w) => w.id))).map((t) => [t.id, t]));
+      for (const w of page) {
+        const thread = threads.get(w.id);
+        if (!thread) continue;
+        const t = waitingTarget({ id: w.id, waitingSince: w.waitingSince, from: thread.fromEmail, subject: thread.subject });
+        targets.set(t.key, t);
+        ofWaiting.set(w.id, t);
+      }
+    }
+    const seen = await this.b.words.visibility([...targets.values()], { ask: true });
+    if (!seen) return null;
+    const hidden = new Set<FeedRowId>();
+    return {
+      hidden,
+      rows: {
+        item: (l) => {
+          let hide = true;
+          let first = false;
+          for (const e of l.entries) {
+            const d = seen.decide(ofEntry.get(e.row)!);
+            hide &&= d.hide;
+            first ||= d.first;
+          }
+          if (hide) hidden.add(l.id);
+          return { hide, first: !hide && first };
+        },
+        waiting: (w) => {
+          const t = ofWaiting.get(w.id);
+          const d = t ? seen.decide(t) : { hide: false, first: false };
+          if (d.hide) hidden.add(waitingRowId(w.id));
+          return d;
+        },
+      },
+    };
+  }
+
+  /**
+   * Plan 248: a conversation's items as its reader line shows them (`dated.ofThread`): v16's, then what the user's words
+   * brought there (a show still current), less what the words hide (a history line's own closed item stays).
+   */
+  async conversationItems(threadId: number, include?: number): Promise<DatedRow[]> {
+    const rows = await this.b.dated.ofThread(threadId, include);
+    const rules = await this.b.words.rules();
+    if (!rules.length) return rows;
+    const shows = new Set(rules.filter((r) => r.effect === "show").map((r) => r.key));
+    const wanted = shows.size ? (await this.b.store.whatMatters.wanted.ofThread(threadId)).filter((w) => w.rules.some((k) => shows.has(k))).map(wantedAsDated) : [];
+    const mine = wanted.length ? await withoutUntrusted(withoutMuted(wanted, await this.b.mutes.muted()), (keys) => this.b.store.dated.trusted(keys)) : [];
+    const all = [...rows, ...mine];
+    const targets = all.map(datedTarget);
+    const seen = await this.b.words.visibility(targets, { ask: false });
+    return seen ? all.filter((r, i) => r.state !== "open" || r.id === include || !seen.decide(targets[i]!).hide) : all;
+  }
+
+  /** Plan 248: the history's rows the user's words keep (verdicts read a batch at a time; never withheld). */
+  private async historyKept<R extends DatedRow | FollowupRow>(source: "dated" | "promise", rows: R[]): Promise<R[]> {
+    const targets = rows.map((r) => (source === "dated" ? datedTarget(r as DatedRow) : promiseTarget(r as FollowupRow)));
+    const seen = await this.b.words.visibility(targets, { ask: false });
+    if (!seen) return rows;
+    return rows.filter((_, i) => !seen.decide({ ...targets[i]!, since: 0 }).hide);
   }
 
   /**
@@ -745,7 +855,7 @@ export class TodayService {
     // plan 211: every history line is an item the AI made: an account with AI or What matters off has none; plan 215, but a
     // waiting conversation's Done, What matters' own, which follows its switch alone (as its row did)
     const { gate } = this.b;
-    return historyPage(store, { now, after: o.after, through: o.through ?? null, limit: o.limit ?? HISTORY_PAGE, held: new Set(o.held), dated: settings.dated?.enabled === true, promises: settings.followups?.enabled === true, waiting: true, changed: await this.changedItems(settings), shows: (accountId) => gate.reads(accountId), showsWaiting: (accountId) => gate.feed(accountId), yieldTurn: () => this.b.yieldTurn(), sliceMs: this.b.options.sliceBudgetMs });
+    return historyPage(store, { now, after: o.after, through: o.through ?? null, limit: o.limit ?? HISTORY_PAGE, held: new Set(o.held), dated: settings.dated?.enabled === true, promises: settings.followups?.enabled === true, waiting: true, changed: await this.changedItems(settings), shows: (accountId) => gate.reads(accountId), showsWaiting: (accountId) => gate.feed(accountId), yieldTurn: () => this.b.yieldTurn(), sliceMs: this.b.options.sliceBudgetMs, ...((await this.b.words.rules()).length && { keep: (source, rows) => this.historyKept(source, rows) }) });
   }
 
   /**
@@ -760,7 +870,7 @@ export class TodayService {
     const none = { missed: 0, today: 0, waiting: 0, overdue: 0 };
     if (!(await this.available(settings))) return { sections: [], digest: null, now, counts: none };
     // Trash and Spam hide a row, and it comes back with its thread (the projection read it from these summaries)
-    const { rows: shown, counts, threads } = await this.project(now, settings);
+    const { rows: shown, counts, threads, hidden } = await this.project(now, settings);
     // a waiting row's line is its current summary, read together, for the first rows only
     const lined = shown.filter((r) => r.waiting).slice(0, SUMMARY_LINES_MAX).map((r) => r.threadId);
     const lines = new Map(await Promise.all(lined.map(async (id) => [id, await this.summaryLine(id)] as const)));
@@ -796,7 +906,9 @@ export class TodayService {
       }
     }
     const history = ask.history && settings.today?.finished !== false ? await this.history({ after: null, through: ask.history.through, held }) : undefined;
-    return { sections, digest: await this.digestRow(), now, counts, ...(history ? { history } : {}) };
+    // plan 248 (the Codex review's revision 5): held rows the user's words now hide, so the feed lets them go
+    const gone = hidden?.size ? held.filter((id) => hidden.has(id)) : [];
+    return { sections, digest: await this.digestRow(), now, counts, ...(history ? { history } : {}), ...(gone.length ? { hidden: gone } : {}) };
   }
 
   private async summaryLine(threadId: number): Promise<{ summary?: string }> {
@@ -950,6 +1062,8 @@ export class TodayService {
   async act(seen: readonly ItemSeen[], action: "done" | "dismiss" | "later", until?: number): Promise<{ undoId: string | null }> {
     const { store } = this.b;
     const now = this.b.now();
+    // plan 248: an item the user's words brought (a negative id) is its own, linked to nothing: the wanted store acts on it
+    if (seen.some((r) => r.source === "dated" && r.id < 0)) return this.actWanted(seen, action, until);
     const stale = () => new RpcError("STALE", L(seen[0]?.source === "promise" ? "errors.followups.changed" : "errors.dated.changed"));
     if (action === "later" && (until === undefined || until <= now)) throw new RpcError("BAD_REQUEST", L("errors.dated.later"));
     // (Codex code review of iteration 2) alone with the matcher: no member joins between reading the members and the write
@@ -985,6 +1099,7 @@ export class TodayService {
   async handoff(seen: ItemSeen, others: readonly ItemSeen[] = []): Promise<{ threadId: number; messageId: number; items: HandoffItem[]; text: string; dueAt: number | null; timed: boolean; partOfDay: NonNullable<DatedRow["partOfDay"]> | null }> {
     const { store } = this.b;
     const stale = () => new RpcError("STALE", L(seen.source === "promise" ? "errors.followups.changed" : "errors.dated.changed"));
+    if (seen.source === "dated" && seen.id < 0) throw new RpcError("BAD_REQUEST", L("errors.whatMatters.wantedFixed"));
     return this.links.exclusive(async () => {
       const { at, datedNow, promisesNow, answered } = await this.rowItems([seen, ...others], true);
       const own = seen.source === "dated" ? datedNow.find((r) => r.id === seen.id) : promisesNow.find((r) => r.id === seen.id);
@@ -1012,8 +1127,32 @@ export class TodayService {
     void this.b.followups.look().catch((error: unknown) => captureError(error, { code: "ai.failed" }));
   }
 
+  /** Plan 248: Done, Remove or Later on items the user's words brought, each at the revision seen, all or none, with Undo. */
+  private async actWanted(seen: readonly ItemSeen[], action: "done" | "dismiss" | "later", until?: number): Promise<{ undoId: string | null }> {
+    const now = this.b.now();
+    const stale = () => new RpcError("STALE", L("errors.dated.changed"));
+    if (action === "later" && (until === undefined || until <= now)) throw new RpcError("BAD_REQUEST", L("errors.dated.later"));
+    if (seen.some((r) => r.source !== "dated" || r.id >= 0)) throw stale();
+    const state = action === "done" ? "done" : "dismissed";
+    const patch = action === "later" ? { deferredUntil: until! } : { state, closedReason: "user", closedAt: now } as const;
+    const before = await this.b.store.whatMatters.wanted.act(seen.map((r) => ({ id: -r.id, revision: r.revision, patch })));
+    if (!before) throw stale();
+    const undoId = `n${++this.undoSeq}`;
+    this.wantedUndo.set(undoId, before);
+    while (this.wantedUndo.size > UNDO_KEPT) this.wantedUndo.delete(this.wantedUndo.keys().next().value!);
+    this.changed();
+    return { undoId };
+  }
+
   /** An act's Undo: every item back as it was, or none when one changed since. */
   async undoAct(undoId: string): Promise<void> {
+    const wanted = this.wantedUndo.get(undoId);
+    if (wanted) {
+      this.wantedUndo.delete(undoId);
+      if (!(await this.b.store.whatMatters.wanted.restore(wanted))) throw new RpcError("STALE", L("errors.dated.changed"));
+      this.changed();
+      return;
+    }
     const before = this.undo.get(undoId);
     if (!before) return;
     this.undo.delete(undoId);
@@ -1034,6 +1173,8 @@ export class TodayService {
     const { store } = this.b;
     const now = this.b.now();
     const stale = () => new RpcError("STALE", L(seen.source === "promise" ? "errors.followups.changed" : "errors.dated.changed"));
+    // plan 248: an item the words brought keeps the mail's day (Later moves when it shows)
+    if (seen.source === "dated" && seen.id < 0) throw new RpcError("BAD_REQUEST", L("errors.whatMatters.wantedFixed"));
     // alone with the matcher, as an act: no member joins between reading the members and the write
     const before = await this.links.exclusive(async () => {
       const named = seen.source === "dated" ? await store.dated.get(seen.id) : await store.followups.get(seen.id);
