@@ -43,3 +43,7 @@ Nothing on a hot path: one flag on a request made by hand.
 4. **The block opens.** A collapsed card opens when the button is pressed, as it did, and then the summary is written again.
 5. **The e2e proves the request, not reuse.** Its stored row is from an old prompt, so reuse is proven in the backend's tests (asked although `reusable()` holds), and the e2e shows the click asks and the stored one comes back.
 6. **Recovery is tested.** Stop, a cancel, an error and its dismissal, starting from a shown summary, in the window's store; in the backend, a cancelled Summarize again leaves the stored summary as it was.
+
+## Revisions after the Codex code review
+
+1. **The toolbar's button on a failed Summarize again handed back the stored summary.** `again` was read only off a shown summary, so pressing the button on the error (rather than Try again) asked without it, and the backend reused what's stored. A request now keeps the `again` of the state it starts from, whichever control asks, and the button is named Summarize again there too. Test: the window's store, the button pressed on the error, both requests carry `again`.

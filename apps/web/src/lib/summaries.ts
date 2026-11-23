@@ -112,7 +112,9 @@ export async function summarize(threadId: number, o: { again?: boolean } = {}): 
     useSummaries.setState({ open: true });
     if (!o.again) return;
   }
-  const asked: Asked = { was: wasOf(before), ...(o.again ? { again: true as const } : {}) };
+  // an error or a wait from Summarize again stays one, whichever control asks next (Codex review)
+  const again = o.again || (!!before && "again" in before && before.again === true);
+  const asked: Asked = { was: wasOf(before), ...(again ? { again: true as const } : {}) };
   const requestId = globalThis.crypto.randomUUID();
   forgetReads(threadId);
   put(threadId, { kind: "running", requestId, ...asked });

@@ -84,7 +84,8 @@ import ThreadSummary from "./thread-summary";
 function SummarizeButton({ threadId }: { threadId: number }) {
   const kind = useSummaries((s) => s.byThread.get(threadId)?.kind);
   const updates = useApp((s) => kind === "stale" && !s.settings?.summaries.enabled);
-  const again = useApp((s) => kind === "ready" && s.devAi !== null);
+  const remembered = useSummaries((s) => { const ui = s.byThread.get(threadId); return !!ui && "again" in ui && ui.again === true; });
+  const again = useApp((s) => (kind === "ready" || remembered) && s.devAi !== null);
   const offered = useApp(summariesOffered);
   if (!offered) return null;
   const label = again ? t("actions.summarizeAgain") : updates ? t("actions.updateSummary") : t("actions.summarize");

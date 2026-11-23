@@ -76,6 +76,9 @@ describe("plan 242: Summarize again", () => {
     rpc.answer = (method) => (method === "ai.summarize" ? Promise.reject({ message: "Down", details: { aiErrorKind: "unavailable" } }) : Promise.resolve({ state: "ready", summary: STORED }));
     await summarize(T, { again: true });
     expect(ui()).toMatchObject({ kind: "error", again: true, was: "none" });
+    // the toolbar's button, pressed on the error rather than Try again, still asks again (Codex review)
+    await summarize(T);
+    expect(asked("ai.summarize").map((c) => c.params.again)).toEqual([true, true]);
     dismissSummary(T);
     await settle();
     expect(ui()).toEqual({ kind: "ready", summary: STORED });
