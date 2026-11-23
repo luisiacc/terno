@@ -58,6 +58,17 @@ The first design dropped a code mail before any model read it, with an exception
 7. Consuming the mark alone would leave a person-like sender's conversation waiting in Needs you. The code's request is
    removed before it's counted, so "nothing asked" is written and the conversation leaves Needs you; tested.
 
+## What the Codex code review changed
+
+1. A customer code beside a later deadline ("suspended on November 20" under "customer code 482913") lost the deadline.
+   A code is used now: an item with a day past the mail's own is never the code's step.
+2. "Send me the source code before the 20th" in a login-code mail lost the request: kept by the same rule.
+3. The code's digits matched inside an id ("contract A482913"): `namesCode` reads digits with `findCode`'s own boundaries.
+4. A code laid out one digit per box ("4 8 2 9 1 3"), which `findCode` reads, wasn't named: now it is.
+5. "Confirm by replying with your code" became a confirmation's ask before the rule ran: the rule now runs first.
+
+Each has a case in "Codex code review: …" under plan 243, and each fails on the first commit.
+
 ## Out of scope
 
 Login notices ("Inicio de sesión en Banca en Línea") with no code: the model decides those as before.

@@ -995,6 +995,11 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   const confirming = new Set(candidates.filter((i) => (i.kind === "ask" || (i.kind === "respond" && (!i.due || i.due <= nextDay(day)))) && confirmsByReply(`${i.quote}\n${contextOf(i.quote, sentences)}`)));
   for (const item of [...candidates.filter((i) => !confirming.has(i)), ...confirming]) {
     if (!KINDS.has(item.kind) || !item.text.trim() || !quoted(item.quote)) continue;
+    // plan 243 (the owner's bank code, "it should not be in 'what matters'"): mail carrying a one-time code asks nothing of the
+    // reader about that code: an alert, request or expiry whose own words name it, with no day past the mail's own (a code is
+    // used now), is the code's step, and before a confirmation's ask is taken; a bill, a later deadline (a customer code's
+    // suspension on the 20th) and anything else the mail says stay, and so does "nothing asked"
+    if (code && PRESSED.has(item.kind) && !(item.due && item.due > day) && namesCode(`${item.text}\n${item.quote}`, code)) continue;
     const events = confirming.has(item) ? rows.filter((r) => r.kind === "event") : [];
     if (events.length === 1 && !rows.some((r) => r.confirmsItem !== undefined) && (input.reader?.addressed === "to" || askAllowed(item.quote, said, input.text, input))) {
       asked = true;
@@ -1022,10 +1027,6 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     if (PRESSED.has(kind) && scamPressure(`${input.subject}\n${tiedWords(item.quote).slice(0, FACT_WORDS_MAX)}\n${item.quote}`)) continue;
     // round 17 (Jordan's CEO from a gmail address): gift cards whose codes are wanted back are the gift-card scam, any kind of to-do
     if (kind !== "event" && kind !== "delivery" && giftCardScam(`${item.text}\n${item.quote}\n${contextOf(item.quote, sentences)}`)) continue;
-    // plan 243 (the owner's bank code, "it should not be in 'what matters'"): mail carrying a one-time code asks nothing of the
-    // reader about that code: an alert, request or expiry whose own words name it is the code's step, done now or never; a
-    // bill, a plan and anything else the mail says stay, and so does "nothing asked"
-    if (code && PRESSED.has(kind) && namesCode(`${item.text}\n${item.quote}`, code)) continue;
     // plan 210 (the Codex code review of iteration 2): a request of the reader, kept below or not (a day already past or
     // over in a scan, a duplicate, past the bound): never "nothing asked"
     if (kind === "ask" || kind === "respond") asked = true;

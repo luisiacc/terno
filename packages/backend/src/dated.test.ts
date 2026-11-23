@@ -3864,6 +3864,23 @@ describe("plan 243: a one-time code's mail asks nothing about the code", () => {
     expect(checkDates({ items: [suspended], settled: [] }, { ...base, subject: "Aviso", text }).rows.map((r) => r.kind)).toEqual(["alert"]);
   });
 
+  it("Codex code review: a later deadline naming a customer code, the word in another sense, a code inside an id stay; a code one digit per box and a confirmation by it go", () => {
+    const kinds = (text: string, items: Item[], o: Partial<typeof base> & { reader?: { name: string; addressed: "to" | "cc" | "none" } } = {}) => checkDates({ items, settled: [] }, { ...base, ...o, text }).rows.map((r) => r.kind);
+    // 1: a customer code's suspension on the 20th is a deadline, not a code's step
+    const customer = "Customer code 482913. Your service under customer code 482913 will be suspended on November 20, 2026 unless you update your billing details.";
+    expect(kinds(customer, [{ kind: "alert", text: "Service suspended on November 20", quote: "Your service under customer code 482913 will be suspended on November 20, 2026", due: "2026-11-20", time: null }])).toEqual(["alert"]);
+    // 2: "source code", asked for by a day
+    expect(kinds("Your login code is 482913.\n\nPlease send me the source code before November 20, 2026.", [{ kind: "respond", text: "Send the source code", quote: "Please send me the source code before November 20, 2026", due: "2026-11-20", time: null }])).toEqual(["respond"]);
+    // 3: the code's digits inside an id aren't the code
+    expect(kinds("Your verification code is 482913.\n\nPlease sign contract A482913 today.", [{ kind: "respond", text: "Sign contract A482913", quote: "Please sign contract A482913 today", due: "2026-11-10", time: null }])).toEqual(["respond"]);
+    // 4: a code laid out one digit per box, as findCode reads it
+    expect(kinds("Enter 4 8 2 9 1 3 to continue.", [{ kind: "respond", text: "Enter 4 8 2 9 1 3", quote: "Enter 4 8 2 9 1 3 to continue", due: "2026-11-10", time: null }], { subject: "Verification code" })).toEqual([]);
+    // 5: "confirm by replying with your code" is no confirmation's ask; the appointment stays
+    const appointment = "Your login code is 482913.\n\nOur appointment is November 20, 2026 at 9:00 AM. Confirm by replying with your code.";
+    const items: Item[] = [{ kind: "event", text: "Appointment", quote: "Our appointment is November 20, 2026 at 9:00 AM", due: "2026-11-20", time: "09:00" }, { kind: "respond", text: "Confirm by replying with your code", quote: "Confirm by replying with your code", due: null, time: null }];
+    expect(kinds(appointment, items, { subject: "Appointment", reader: { name: "Me", addressed: "to" } })).toEqual(["event"]);
+  });
+
   it("the owner's bank code, from an address that reads as a person's: read, nothing kept, and its conversation isn't waiting on you", async () => {
     const { backend, client, model, receive, read, raw, clock } = await setup();
     model.answer = () => reply([verify]);

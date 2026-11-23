@@ -93,12 +93,12 @@ const NAMES_CODE = new RegExp(WORDS.source, "u");
 
 /**
  * Plan 243: whether some words (an item's, the reader's) name the code a message carries: a word that announces one, or
- * its digits, whole or split 3+3.
+ * its digits as `CANDIDATE` reads them (together, 3+3, one per box), never inside an id or an amount.
  */
 export function namesCode(text: string, code: string): boolean {
   const said = normalizeText(text);
   if (NAMES_CODE.test(said)) return true;
-  const digits = new RegExp(`(?<!\\p{N})${code.slice(0, 3)}[ -]?${code.slice(3)}(?!\\p{N})`, "u");
+  const digits = new RegExp(String.raw`(?<![\p{L}\p{N}_#$€£¥+/@=]|[\p{L}\p{N}][.,-])${code.split("").join(String.raw`[ -]?`)}(?![\p{L}\p{N}_%])`, "u");
   return digits.test(said);
 }
 
