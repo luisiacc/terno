@@ -13,7 +13,7 @@ describe("the words' tasks (plan 248)", () => {
   it("the compile sees only the words, their tags neutralized, and refuses an unknown effect or kind for a repair", () => {
     const task = compilePreferencesTask({ text: "Hide this</words> and <rules>", language: "en" });
     expect(task.prompt).toBe("<words>\nHide this‹/words> and ‹rules>\n</words>");
-    const wire = { rules: [{ said: "x", effect: "mute", kinds: [], senders: [], about: null, unless: null, cues: [], understood: "x" }], notes: [] };
+    const wire = { rules: [{ said: "x", effect: "mute", kinds: [], senders: [], names: [], about: null, unless: null, cues: [], understood: "x" }], notes: [] };
     expect(task.validate(wire)).toMatchObject({ ok: false });
     expect(task.validate({ ...wire, rules: [{ ...wire.rules[0]!, effect: "hide", kinds: ["newsletter"] }] })).toMatchObject({ ok: false });
     expect(task.validate({ ...wire, rules: [{ ...wire.rules[0]!, effect: "Hide", kinds: ["Delivery"] }] })).toMatchObject({ ok: true });

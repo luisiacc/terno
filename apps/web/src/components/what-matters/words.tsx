@@ -3,7 +3,7 @@ import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Spinner } from "@terno/ui/components/spinner";
 import { Textarea } from "@terno/ui/components/textarea";
-import { ArrowUp, Eye, EyeOff } from "@terno/ui/icons";
+import { ArrowUp, Eye, EyeOff, Filter } from "@terno/ui/icons";
 import { useEffect, useId, useRef, useState } from "react";
 import { usd } from "~/lib/ai";
 import { snack } from "~/lib/snack";
@@ -16,7 +16,7 @@ const DRAFT_DEBOUNCE_MS = 600;
 /** the count shows from here on, before the limit stops more */
 const COUNT_FROM = PREFERENCES_TEXT_MAX - 200;
 
-const EFFECT_ICON = { show: Eye, hide: EyeOff, first: ArrowUp } as const;
+const EFFECT_ICON = { show: Eye, hide: EyeOff, first: ArrowUp, only: Filter } as const;
 
 /** One rule said back: its effect as a quiet icon (named for screen readers), its words, and what a show looks for. */
 function RuleLine({ rule }: { rule: PreferenceRule }) {

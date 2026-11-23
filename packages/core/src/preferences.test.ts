@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { activeRules, checkPreferences, cueIn, exactlyReaches, NO_PREFERENCES, preferenceDecision, ruleKey, rowPrint, senderMatches, senderSelector, verdictBasis, wantedBy, type CompiledPreferences, type PreferenceRule } from "./preferences";
 
 const unclear = (said: string) => `unclear: ${said}`;
-const rule = (r: Partial<CompiledPreferences["rules"][number]> & { said: string; effect: string }): CompiledPreferences["rules"][number] => ({ kinds: [], senders: [], about: null, unless: null, cues: [], understood: r.said, ...r });
+const rule = (r: Partial<CompiledPreferences["rules"][number]> & { said: string; effect: string }): CompiledPreferences["rules"][number] => ({ kinds: [], senders: [], names: [], about: null, unless: null, cues: [], understood: r.said, ...r });
 const ok = (r: Partial<PreferenceRule> & Pick<PreferenceRule, "effect">): PreferenceRule => {
   const out = { id: "r1", key: "", said: "x", understood: "x", ...r } as PreferenceRule;
   out.key = ruleKey(out);
@@ -122,5 +122,48 @@ describe("show admission (plan 248 §5)", () => {
     expect(wantedBy([rei], { senderKey: "a@b.test", subject: "Freight", text: "trips" })).toEqual([]);
     expect(wantedBy([domain, rei], { senderKey: "office@mail.school.test", subject: "Hello" })).toEqual([domain]);
     expect(wantedBy([ok({ effect: "hide", about: "REI", kinds: ["pay"] })], { senderKey: "x@y.z", subject: "REI" })).toEqual([]);
+  });
+});
+
+describe("names and stems (plan 248, the eval's first run)", () => {
+  it("a name matches the sender's name as whole words, its domain or local part, or its first distinctive word as a domain label", async () => {
+    const { nameMatches } = await import("./preferences");
+    expect(nameMatches("LinkedIn", { senderKey: "messages-noreply@linkedin.com" })).toBe(true);
+    expect(nameMatches("Quizlet", { senderKey: "billing@quizlet.com" })).toBe(true);
+    expect(nameMatches("Greenview Property Management", { senderKey: "office@greenview.test" })).toBe(true);
+    expect(nameMatches("Ms. Alvarez", { senderKey: "alvarez@lincoln.test", senderName: "Ms. Alvarez" })).toBe(true);
+    expect(nameMatches("LinkedIn", { senderKey: "news@linkedinlearning-promo.test" })).toBe(false);
+    expect(nameMatches("Property Management", { senderKey: "office@management.test" })).toBe(false);
+    expect(exactlyReaches(ok({ effect: "hide", names: ["LinkedIn"] }), { kind: "ask", senderKey: "x@linkedin.com" })).toBe(true);
+    expect(exactlyReaches(ok({ effect: "hide", names: ["LinkedIn"], senders: ["@x.test"] }), { kind: "ask", senderKey: "y@x.test" })).toBe(true);
+  });
+  it("a cue's last long word is a stem; a short one stays whole", () => {
+    expect(cueIn("renews automatically", " your plan will renew automatically ")).toBe(false);
+    expect(cueIn("renewal", " your renewals are ")).toBe(true);
+    expect(cueIn("automatic renewal", " automatic renewals ")).toBe(true);
+    expect(cueIn("REI", " reina ")).toBe(false);
+  });
+  it("names a model added aren't kept", () => {
+    const { rules } = checkPreferences({ rules: [rule({ said: "Nothing from LinkedIn", effect: "hide", names: ["LinkedIn", "Facebook"] })], notes: [] }, "Nothing from LinkedIn", unclear);
+    expect(rules[0]!.names).toEqual(["LinkedIn"]);
+  });
+});
+
+describe("only (plan 248, the eval's second run)", () => {
+  it("keeps a row one of the only rules applies to, hides the rest; a semantic one is judged by what the row is", () => {
+    const bills = ok({ effect: "only", kinds: ["pay"] });
+    const dana = ok({ effect: "only", senders: ["dana@kestrel.test"] });
+    const school = ok({ effect: "only", about: "the reader's school" });
+    const exact = [bills, dana];
+    const basis = verdictBasis(exact);
+    expect(preferenceDecision(exact, { kind: "pay", senderKey: "x@power.test" }, undefined, basis).hide).toBe(false);
+    expect(preferenceDecision(exact, { kind: "event", senderKey: "dana@kestrel.test" }, undefined, basis).hide).toBe(false);
+    expect(preferenceDecision(exact, { kind: "event", senderKey: "x@dentist.test" }, undefined, basis).hide).toBe(true);
+    const all = [bills, school];
+    const b = verdictBasis(all);
+    // unjudged: pending, not hidden; judged as the school's: kept; judged as nothing: hidden
+    expect(preferenceDecision(all, { kind: "event", senderKey: "a@b.test" }, undefined, b)).toEqual({ hide: false, first: false, pending: true });
+    expect(preferenceDecision(all, { kind: "event", senderKey: "a@b.test" }, { basis: b, rules: [school.key] }, b).hide).toBe(false);
+    expect(preferenceDecision(all, { kind: "event", senderKey: "a@b.test" }, { basis: b, rules: [] }, b).hide).toBe(true);
   });
 });

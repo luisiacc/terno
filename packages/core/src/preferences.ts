@@ -26,8 +26,12 @@ export type PreferenceKind = (typeof PREFERENCE_KINDS)[number];
 const KINDS: ReadonlySet<string> = new Set(PREFERENCE_KINDS);
 export const isPreferenceKind = (k: string): k is PreferenceKind => KINDS.has(k);
 
-export type PreferenceEffect = "show" | "hide" | "first";
-export const PREFERENCE_EFFECTS: readonly PreferenceEffect[] = ["show", "hide", "first"];
+/**
+ * `only` (the eval's second run): "only bills and Dana's mail" is a list of what to keep, a rule each; a row none of them
+ * matches is hidden. The matcher then looks for what a row is (a bill), never for proof of what it isn't.
+ */
+export type PreferenceEffect = "show" | "hide" | "first" | "only";
+export const PREFERENCE_EFFECTS: readonly PreferenceEffect[] = ["show", "hide", "first", "only"];
 
 export interface PreferenceRule {
   /** r1, r2…: this compile's label */
@@ -41,6 +45,11 @@ export interface PreferenceRule {
   kinds?: PreferenceKind[];
   /** exact `addressKey`s, or "@domain" (the domain and its subdomains); absent: anyone */
   senders?: string[];
+  /**
+   * senders by the names the words give them ("LinkedIn", "Greenview Property Management"), matched locally against the
+   * sender's name and address (`nameMatches`): the eval's LinkedIn, which a judgment alone missed
+   */
+  names?: string[];
   /** English, for a classifier: what the rows it's about are; absent: the exact parts alone decide */
   about?: string | null;
   /** English, for a classifier: when it doesn't apply */
@@ -91,8 +100,8 @@ export const isSemantic = (r: Pick<PreferenceRule, "about" | "unless">): boolean
 const squash = (s: string) => normalizeText(s).replace(/\s+/g, " ").trim();
 
 /** What a rule means, as a key: its effect, kinds, senders and criteria, normalized; its words and labels don't count. */
-export function ruleKey(r: Pick<PreferenceRule, "effect" | "kinds" | "senders" | "about" | "unless">): string {
-  const parts = [r.effect, [...(r.kinds ?? [])].sort().join(","), [...(r.senders ?? [])].sort().join(","), squash(r.about ?? ""), squash(r.unless ?? "")];
+export function ruleKey(r: Pick<PreferenceRule, "effect" | "kinds" | "senders" | "names" | "about" | "unless">): string {
+  const parts = [r.effect, [...(r.kinds ?? [])].sort().join(","), [...(r.senders ?? [])].sort().join(","), squash(r.about ?? ""), squash(r.unless ?? ""), [...(r.names ?? [])].map(squash).sort().join(",")];
   return `${r.effect[0]}${fnv1a(parts.join("\u0001")).toString(36)}`;
 }
 
@@ -133,14 +142,53 @@ export interface PreferenceTarget {
   kind: PreferenceKind;
   /** the item's sender, the promise's person, the waiting message's sender: an `addressKey`, "" when none */
   senderKey: string;
+  /** that sender's name, when the row knows it (a name rule matches the address alone without it) */
+  senderName?: string;
 }
 
 /** Whether a rule's exact parts let it reach this row (all of a rule that has no criterion; the pre-filter of one that has). */
-export function exactlyReaches(r: Pick<PreferenceRule, "kinds" | "senders">, t: PreferenceTarget): boolean {
+export function exactlyReaches(r: Pick<PreferenceRule, "kinds" | "senders" | "names">, t: PreferenceTarget): boolean {
   if (r.kinds?.length && !r.kinds.includes(t.kind)) return false;
-  if (r.senders?.length && !r.senders.some((s) => senderMatches(s, t.senderKey))) return false;
+  // senders and names are one selector: either says who
+  if ((r.senders?.length || r.names?.length) && !r.senders?.some((s) => senderMatches(s, t.senderKey)) && !r.names?.some((n) => nameMatches(n, t))) return false;
   return true;
 }
+
+const LETTERS = (s: string) => squash(s).replace(/[^\p{L}\p{N}]+/gu, "");
+/** a name's words worth matching alone: four letters or more, not a company's suffix */
+const NAME_STOP = new Set(["the", "and", "inc", "llc", "ltd", "corp", "company", "group", "team", "management", "property", "services", "service", "support", "news", "mail", "store", "shop", "official", "club", "school", "office", "bank", "billing"]);
+
+/**
+ * A sender by a name the words give: the sender's own name holds it as whole words ("Greenview Property Management", "Ms.
+ * Alvarez"), or the address's domain or local part is it ("LinkedIn" → linkedin.com, "Quizlet" → billing@quizlet.com), or
+ * its first distinctive word is a domain label ("Greenview Property Management" → greenview.test). A display name can lie;
+ * a hide of it is no harm, and a show only admits mail to the second reader and its safety checks.
+ */
+export function nameMatches(name: string, t: Pick<PreferenceTarget, "senderKey" | "senderName">): boolean {
+  const flatName = words(name).trim();
+  if (flatName.length < 2) return false;
+  // the distinctive words of a name: what's left of "Riverside Rovers soccer club" is "riverside rovers"
+  const distinct = (s: string) => words(s).trim().split(" ").filter((w) => w.length >= 3 && !NAME_STOP.has(w) && !NAME_EXTRA.has(w));
+  if (t.senderName) {
+    const sender = words(t.senderName);
+    if (sender.includes(` ${flatName} `)) return true;
+    // the sender's own distinctive words all in the name ("Riverside Rovers" for "the Riverside Rovers soccer club")
+    const theirs = distinct(t.senderName);
+    const named = new Set(distinct(name));
+    if (theirs.length && theirs.some((w) => w.length >= 4) && theirs.every((w) => named.has(w))) return true;
+  }
+  const at = t.senderKey.lastIndexOf("@");
+  if (at < 0) return false;
+  const labels = t.senderKey.slice(at + 1).split(".").slice(0, -1);
+  const local = t.senderKey.slice(0, at).split(/[._+-]+/u);
+  const compact = LETTERS(name);
+  if (compact.length >= 3 && (labels.includes(compact) || local.includes(compact))) return true;
+  // a distinctive word of the name as the domain's own label ("Greenview Property Management" → greenview.com)
+  return distinct(name).some((w) => w.length >= 4 && labels.includes(LETTERS(w)));
+}
+
+/** words a name holds that say what kind of sender it is, never which */
+const NAME_EXTRA = new Set(["soccer", "football", "futbol", "elementary", "high", "university", "dental", "airlines", "airline", "my", "mi", "from", "del", "las", "los"]);
 
 /** A verdict as stored: which semantic rules apply to a row, by key, against the current `verdictBasis`. */
 export interface PreferenceVerdict {
@@ -164,23 +212,35 @@ export function preferenceDecision(rules: readonly PreferenceRule[], t: Preferen
   let hide = false;
   let first = false;
   let pending = false;
+  // `only` rules: kept when one of them applies, hidden when none can; unknown while a semantic one waits for its verdict
+  let onlies = 0;
+  let kept = false;
+  let keepUnknown = false;
   for (const r of rules) {
-    if (r.effect === "show" || !exactlyReaches(r, t)) continue;
+    if (r.effect === "show") continue;
+    if (r.effect === "only") onlies++;
+    if (!exactlyReaches(r, t)) continue;
     let applies: boolean;
     if (!isSemantic(r)) applies = true;
     else if (judged) applies = judged.has(r.key);
     else {
       if (r.effect === "hide") pending = true;
+      if (r.effect === "only") keepUnknown = true;
       continue;
     }
     if (!applies) continue;
     if (r.effect === "hide") hide = true;
+    else if (r.effect === "only") kept = true;
     else first = true;
   }
-  return hide ? { hide, first: false, pending: false } : { hide, first, pending: pending && !hide };
+  if (onlies && !kept) {
+    if (keepUnknown) pending = true;
+    else hide = true;
+  }
+  return hide ? { hide, first: false, pending: false } : { hide, first, pending };
 }
 
-/** The semantic rules (hide or first) whose exact parts reach a row: what a verdict for it is asked about. */
+/** The semantic rules (hide, first or only) whose exact parts reach a row: what a verdict for it is asked about. */
 export const semanticReaching = (rules: readonly PreferenceRule[], t: PreferenceTarget): PreferenceRule[] =>
   rules.filter((r) => r.effect !== "show" && isSemantic(r) && exactlyReaches(r, t));
 
@@ -188,10 +248,21 @@ export const semanticReaching = (rules: readonly PreferenceRule[], t: Preference
 
 const words = (s: string) => ` ${squash(s).replace(/[^\p{L}\p{N}@.]+/gu, " ").replace(/\s+/g, " ").trim()} `;
 
-/** A cue as a phrase of whole words, so "art" never matches "party" (an empty cue matches nothing). */
+/**
+ * A cue as a phrase of whole words, so "art" never matches "party" (an empty cue matches nothing); a cue's last word of five
+ * letters or more is a stem too, so "renewal" finds "renewals" and "renew automatically" finds "renewed automatically" (the
+ * eval's automatic renewal, its cue a phrase the mail didn't say word for word).
+ */
 export function cueIn(cue: string, said: string): boolean {
   const c = words(cue).trim();
-  return c.length >= 2 && said.includes(` ${c} `);
+  if (c.length < 2) return false;
+  if (said.includes(` ${c} `)) return true;
+  const parts = c.split(" ");
+  const last = parts.at(-1)!;
+  if (last.length < 5) return false;
+  const stem = last.slice(0, Math.max(5, last.length - 2));
+  const head = parts.slice(0, -1).join(" ");
+  return said.includes(` ${head ? `${head} ` : ""}${stem}`);
 }
 
 /**
@@ -205,10 +276,13 @@ export function wantedBy(rules: readonly PreferenceRule[], m: { senderKey: strin
   let said: string | null = null;
   const out: PreferenceRule[] = [];
   for (const r of shows) {
-    if (r.senders?.length) {
-      if (r.senders.some((s) => senderMatches(s, m.senderKey))) out.push(r);
+    // who it's from, or (a cost filter, not a judgment: the second reader decides) one of its cues
+    if (r.senders?.some((s) => senderMatches(s, m.senderKey)) || r.names?.some((n) => nameMatches(n, { senderKey: m.senderKey, ...(m.fromName ? { senderName: m.fromName } : {}) }))) {
+      out.push(r);
       continue;
     }
+    // a rule for one sender (an address, a domain) admits theirs only
+    if (r.senders?.length && !r.names?.length) continue;
     said ??= words(`${m.fromName ?? ""}\n${m.subject}\n${m.text ?? ""}`);
     if (r.cues?.some((c) => cueIn(c, said!))) out.push(r);
   }
@@ -218,7 +292,7 @@ export function wantedBy(rules: readonly PreferenceRule[], m: { senderKey: strin
 // ─── the compile's local checks ────────────────────────────────────────────
 
 export interface CompiledPreferences {
-  rules: readonly { effect: string; kinds?: readonly string[] | null; senders?: readonly string[] | null; about?: string | null; unless?: string | null; cues?: readonly string[] | null; said: string; understood: string }[];
+  rules: readonly { effect: string; kinds?: readonly string[] | null; senders?: readonly string[] | null; names?: readonly string[] | null; about?: string | null; unless?: string | null; cues?: readonly string[] | null; said: string; understood: string }[];
   notes: readonly { said: string; kind: string; text: string }[];
 }
 
@@ -267,9 +341,11 @@ export function checkPreferences(compiled: CompiledPreferences, text: string, un
       fail();
       continue;
     }
+    // a name only as the words write it (a model can't add one), at most as many as senders
+    const names = [...new Set((r.names ?? []).map((n) => trimTo(n, 80)).filter((n) => n.length >= 2 && inText(n)))].slice(0, PREFERENCE_SENDERS_MAX);
     const about = trimTo(r.about, PREFERENCE_CRITERION_CHARS) || null;
     const unless = trimTo(r.unless, PREFERENCE_CRITERION_CHARS) || null;
-    if (!about && !kinds.length && !senders.length) {
+    if (!about && !kinds.length && !senders.length && !names.length) {
       fail();
       continue;
     }
@@ -281,6 +357,7 @@ export function checkPreferences(compiled: CompiledPreferences, text: string, un
       effect: effect as PreferenceEffect,
       ...(kinds.length ? { kinds: kinds as PreferenceKind[] } : {}),
       ...(senders.length ? { senders } : {}),
+      ...(names.length ? { names } : {}),
       ...(about ? { about } : {}),
       ...(unless ? { unless } : {}),
       ...(cues.length ? { cues } : {}),

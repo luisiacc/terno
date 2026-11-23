@@ -33,7 +33,7 @@ const dated = (items: Item[] = []): Completion => ({ text: JSON.stringify({ item
 const json = (value: unknown): Completion => ({ text: JSON.stringify(value), stop: "end" });
 type Rule = { said: string; effect: string; kinds?: string[]; senders?: string[]; about?: string | null; unless?: string | null; cues?: string[]; understood?: string };
 const compiled = (rules: Rule[], notes: { said: string; kind: string; text: string }[] = []) =>
-  json({ rules: rules.map((r) => ({ kinds: [], senders: [], about: null, unless: null, cues: [], understood: r.said, ...r })), notes });
+  json({ rules: rules.map((r) => ({ kinds: [], senders: [], names: [], about: null, unless: null, cues: [], understood: r.said, ...r })), notes });
 
 const BILL = { subject: "Your bill", bodyText: "Your electricity bill of $54.20 is due on November 20." };
 const billItem: Item = { kind: "pay", text: "Pay the electricity bill", quote: "due on November 20", due: "2026-11-20", time: null };

@@ -118,11 +118,11 @@ export function datedTarget(r: DatedRow): RowTarget {
 }
 
 export function promiseTarget(p: FollowupRow): RowTarget {
-  return { key: `p:${p.id}:${rowPrint(p.text, p.quote, p.dueAt)}`, source: "promise", id: p.id, threadId: p.threadId, messageId: p.messageId, kind: "promise", senderKey: p.personEmail ? addressKey(p.personEmail) : "", since: p.createdAt, text: p.text, quote: p.quote ?? "" };
+  return { key: `p:${p.id}:${rowPrint(p.text, p.quote, p.dueAt)}`, source: "promise", id: p.id, threadId: p.threadId, messageId: p.messageId, kind: "promise", senderKey: p.personEmail ? addressKey(p.personEmail) : "", ...(p.personName ? { senderName: p.personName } : {}), since: p.createdAt, text: p.text, quote: p.quote ?? "" };
 }
 
-export function waitingTarget(w: { id: number; waitingSince: number; from: string; subject: string }): RowTarget {
-  return { key: `w:${w.id}:${w.waitingSince}`, source: "waiting", id: w.id, threadId: w.id, messageId: null, kind: "waiting", senderKey: addressKey(w.from), since: w.waitingSince, text: w.subject, quote: "", waitingSince: w.waitingSince };
+export function waitingTarget(w: { id: number; waitingSince: number; from: string; fromName?: string; subject: string }): RowTarget {
+  return { key: `w:${w.id}:${w.waitingSince}`, source: "waiting", id: w.id, threadId: w.id, messageId: null, kind: "waiting", senderKey: addressKey(w.from), ...(w.fromName ? { senderName: w.fromName } : {}), since: w.waitingSince, text: w.subject, quote: "", waitingSince: w.waitingSince };
 }
 
 /** The words as the projection applies them: their rules and basis, read once per projection. */

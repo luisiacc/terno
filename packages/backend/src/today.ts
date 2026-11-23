@@ -722,7 +722,7 @@ export class TodayService {
       for (const w of page) {
         const thread = threads.get(w.id);
         if (!thread) continue;
-        const t = waitingTarget({ id: w.id, waitingSince: w.waitingSince, from: thread.fromEmail, subject: thread.subject });
+        const t = waitingTarget({ id: w.id, waitingSince: w.waitingSince, from: thread.fromEmail, fromName: thread.fromName, subject: thread.subject });
         targets.set(t.key, t);
         ofWaiting.set(w.id, t);
       }

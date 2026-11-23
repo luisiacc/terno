@@ -3267,6 +3267,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "whatMatters.words.understood": "Lo que Terno entendió",
   "whatMatters.words.show": "Muestra",
   "whatMatters.words.hide": "Oculta",
+  "whatMatters.words.only": "Solo deja",
   "whatMatters.words.first": "Pone primero",
   "whatMatters.words.watching": "Busca: {cues}",
   "whatMatters.words.applying": "Aplicando tus palabras a «Lo importante»… faltan {left}",

@@ -3316,6 +3316,7 @@ It contains none of your mail, contacts, settings or keys.
   "whatMatters.words.understood": "What Terno understood",
   "whatMatters.words.show": "Shows",
   "whatMatters.words.hide": "Hides",
+  "whatMatters.words.only": "Keeps only",
   "whatMatters.words.first": "Puts first",
   "whatMatters.words.watching": "Looks for: {cues}",
   "whatMatters.words.applying": "Applying your words to “What matters”… {left} left",
