@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { addressKey } from "../../packages/core/src/people";
 import { checkWanted, excerptAround } from "../../packages/backend/src/preferences";
 import { realTasks, spendReport, type RealTarget } from "./harness";
+import { HELDOUT } from "./corpus/preferences/heldout";
 import { PROFILES, type Expect, type Mail, type Profile } from "./corpus/preferences/profiles";
 
 /**
@@ -16,12 +17,15 @@ import { PROFILES, type Expect, type Mail, type Profile } from "./corpus/prefere
  * unrelated row lost, a first not first, and anything unsafe brought in.
  *
  * Run alone with TERNO_AI_REAL=1 TERNO_AI_WORDS=1 (fictional mail only); TERNO_AI_WORDS_MODEL picks the model (GPT Luna
- * by default; a `claude-` model runs on Anthropic), TERNO_AI_WORDS_REPEAT reads each profile that many times, and
- * TERNO_AI_WORDS_OUT names a directory for the report.
+ * by default; a `claude-` model runs on Anthropic), TERNO_AI_WORDS_REPEAT reads each profile that many times,
+ * TERNO_AI_WORDS_OUT names a directory for the report, and TERNO_AI_WORDS_SET=heldout runs the held-out profiles (written
+ * blind to the prompts, never tuned against) instead of the tuning corpus.
  */
 const MODEL = process.env.TERNO_AI_WORDS_MODEL ?? "gpt-6-luna";
 const TARGET: RealTarget = { provider: MODEL.startsWith("claude-") ? "anthropic" : "openai", model: MODEL };
 const REPEAT = Number(process.env.TERNO_AI_WORDS_REPEAT ?? 1);
+const HELD_OUT = process.env.TERNO_AI_WORDS_SET === "heldout";
+const SET = HELD_OUT ? HELDOUT : PROFILES;
 const NOW = new Date(2026, 10, 10, 12).getTime();
 
 type Outcome = { mail: string; expect: Expect; got: "shown" | "hidden" | "first" | "wanted" | "none"; ok: boolean; note: string; detail?: string };
@@ -100,7 +104,7 @@ describe.runIf(process.env.TERNO_AI_WORDS === "1")(`plan 248: What matters in th
     const report: string[] = [];
     const totals = { mails: 0, ok: 0, forbidden: 0, missed: 0, lost: 0, firstMissed: 0, overreach: 0, notesMissed: 0 };
     for (let n = 0; n < REPEAT; n++)
-      for (const profile of PROFILES) {
+      for (const profile of SET) {
         const { rules, notes, outcomes } = await run(profile, `words:${profile.id}`);
         report.push(`## ${profile.id} (${profile.language}) #${n + 1}`, `> ${profile.words}`, "", ...rules.map((r) => `- ${r.effect}${r.kinds ? ` [${r.kinds.join(",")}]` : ""}${r.senders ? ` {${r.senders.join(",")}}` : ""}${r.names ? ` names: ${r.names.join(", ")}` : ""}${r.about ? ` about: ${r.about}` : ""}${r.unless ? ` unless: ${r.unless}` : ""}${r.cues ? ` cues: ${r.cues.join(", ")}` : ""} — "${r.understood}"`), ...notes.map((k) => `- note: ${k}`), "");
         for (const want of profile.notes ?? []) if (!notes.includes(want)) totals.notesMissed++;
@@ -122,7 +126,7 @@ describe.runIf(process.env.TERNO_AI_WORDS === "1")(`plan 248: What matters in th
     const out = process.env.TERNO_AI_WORDS_OUT;
     if (out) {
       mkdirSync(out, { recursive: true });
-      writeFileSync(join(out, `words-${MODEL}.md`), text);
+      writeFileSync(join(out, `words-${MODEL}${HELD_OUT ? "-heldout" : ""}.md`), text);
     }
     // the shipping bar: nothing forbidden shown, nothing unrelated lost, nothing unsafe brought in
     expect({ forbidden: totals.forbidden, lost: totals.lost, overreach: totals.overreach }).toEqual({ forbidden: 0, lost: 0, overreach: 0 });
