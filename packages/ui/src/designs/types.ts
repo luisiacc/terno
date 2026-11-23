@@ -1,4 +1,4 @@
-import type { BuiltinThemeId, DesignId, ThemeMode } from "@terno/core";
+import type { BuiltinThemeId, DesignId, FontId, ThemeMode } from "@terno/core";
 import type { DepthId } from "./depth";
 
 /**
@@ -15,6 +15,8 @@ export interface DesignDefinition {
   /** may the macOS sidebar show the window's vibrancy (ANDed with the palette's own flag) */
   vibrancy: boolean;
   fonts: {
+    /** the catalog font the stacks and faces come from (typefaces.ts; plan 245: what a user's choice replaces) */
+    typeface: FontId;
     /** the UI font stack */
     sans: string;
     /** titles: the list title, the greeting, the reader subject, section labels where a design wants them */

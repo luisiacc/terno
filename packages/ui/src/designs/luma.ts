@@ -1,6 +1,6 @@
 import type { DesignDefinition } from "./types";
+import { typefaceFonts } from "./typefaces";
 
-const INTER = '"Inter Variable", ui-sans-serif, system-ui, sans-serif';
 
 /**
  * Luma (plan 117): between Lumen and macOS. Lumen's avatars, pill compose and category pills; macOS's title, search
@@ -12,7 +12,7 @@ export const luma: DesignDefinition = {
   palette: { light: "luma-light", dark: "luma-dark" },
   vibrancy: false,
   // Inter as designed: no stylistic sets (the others' cv11 would give Inter a single-storey a)
-  fonts: { sans: INTER, display: INTER, features: '"kern"', faces: ['400 1em "Inter Variable"', '500 1em "Inter Variable"', '600 1em "Inter Variable"'] },
+  fonts: { ...typefaceFonts("inter"), features: '"kern"' },
   weights: { semibold: 600, bold: 700 },
   controlText: "0.8rem",
   // 11 · 12 · 13 · 14 · 16 · 18 · 24 (caption 2, caption 1, body 2, body, headline, title 3, title 1)

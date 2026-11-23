@@ -1,13 +1,14 @@
 /// <reference types="node" />
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { DEFAULT_DESIGN, DESIGN_IDS } from "@terno/core";
+import { DEFAULT_DESIGN, DESIGN_IDS, FONT_IDS } from "@terno/core";
 import { describe, expect, it } from "vitest";
 import { oklchToRgb, parseColor } from "../themes/color";
 import { builtinTheme } from "../themes/registry";
 import { DEPTHS, DEPTH_VARS } from "./depth";
 import { designVars, generateDesignsCss, generateTypeRolesCss } from "./generate";
-import { designById, DESIGNS } from "./index";
+import { designById, DESIGNS, fontAttr, withFont } from "./index";
+import { TYPEFACES } from "./typefaces";
 import { NO_PREVIEW_GAP, rowHeight } from "./rows";
 import { TEXT_STEPS, TYPE_ROLES } from "./types";
 
@@ -220,5 +221,40 @@ describe("designs (plan 15)", () => {
     expect(globals).toMatch(/--text-sm: var\(--ds-text-sm\);/);
     expect(globals).toMatch(/--radius-md: var\(--ds-radius-md\);/);
     expect(globals).toMatch(/--font-sans: var\(--ds-font-sans\);/);
+  });
+});
+
+describe("plan 245: a style takes another font", () => {
+  it("the catalog is core's ids, and every design draws its catalog font's stacks and faces", () => {
+    expect(Object.keys(TYPEFACES)).toEqual([...FONT_IDS]);
+    for (const d of DESIGNS) {
+      const t = TYPEFACES[d.fonts.typeface];
+      expect([d.fonts.sans, d.fonts.display, d.fonts.faces], d.id).toEqual([t.stack, t.stack, t.faces]);
+    }
+  });
+
+  it("withFont: another font's stacks, faces and features, everything else the design's; its own or an unknown one is the design", () => {
+    const lumen = designById("lumen");
+    const inter = withFont(lumen, "inter");
+    expect(inter.fonts).toEqual({ typeface: "inter", sans: TYPEFACES.inter.stack, display: TYPEFACES.inter.stack, features: TYPEFACES.inter.features, faces: TYPEFACES.inter.faces });
+    expect({ ...inter, fonts: lumen.fonts }).toEqual(lumen);
+    // one object per pair: a component's design stays the same between renders
+    expect(withFont(lumen, "inter")).toBe(inter);
+    expect(withFont(lumen, "figtree")).toBe(lumen);
+    expect(withFont(lumen, "comic-sans")).toBe(lumen);
+    expect(withFont(lumen, undefined)).toBe(lumen);
+    expect([fontAttr(inter), fontAttr(lumen)]).toEqual(["inter", undefined]);
+  });
+
+  it("the roles read the font variables, and each font is a block that outranks a design's", () => {
+    const css = generateDesignsCss();
+    expect(css).toContain("--type-list-title-family: var(--ds-font-display);");
+    expect(css).toContain("--type-body-family: var(--ds-font-sans);");
+    expect(css).not.toMatch(/--type-[a-z-]+-family: [^v]/);
+    for (const t of Object.values(TYPEFACES)) {
+      expect(css).toContain(`[data-design][data-font="${t.id}"] {\n  --ds-font-sans: ${t.stack};\n  --ds-font-display: ${t.stack};\n  --ds-font-features: ${t.features};\n  font-feature-settings: ${t.features};\n}`);
+    }
+    // after every design block, so equal specificity could never let a design win either
+    expect(css.lastIndexOf("[data-design=")).toBeLessThan(css.indexOf("[data-design][data-font="));
   });
 });

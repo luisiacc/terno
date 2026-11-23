@@ -1,9 +1,9 @@
-import { CUSTOM_PREFIX, DEFAULT_DESIGN, DEFAULT_THEME, DESIGN_PALETTE, isDesignId, switchDesign, type DesignId, type ThemeMode } from "@terno/core";
+import { CUSTOM_PREFIX, DEFAULT_DESIGN, DEFAULT_THEME, DESIGN_PALETTE, isDesignId, isFontId, switchDesign, type DesignFonts, type DesignId, type FontId, type ThemeMode } from "@terno/core";
 import type { AppSettings, PreviewLines, SettingsPatch } from "@terno/core/rpc";
 import { applyCustomTheme, clampMotion, motionOff, motionVars, opaqueBackground } from "@terno/ui/themes/apply";
 import { toHex } from "@terno/ui/themes/color";
 import { builtinTheme, resolveCustomTheme, type Theme } from "@terno/ui/themes/registry";
-import { designById } from "@terno/ui/designs/index";
+import { designById, withFont, type DesignDefinition } from "@terno/ui/designs/index";
 import { flushSync } from "react-dom";
 import { captureDesignAnchors, loadDesignFaces } from "~/lib/design";
 import { t } from "@terno/i18n";
@@ -12,7 +12,7 @@ import { create } from "zustand";
 import { client } from "~/rpc/connection";
 import { getApp, setApp } from "~/state/app";
 
-type Appearance = Pick<AppSettings, "theme" | "design" | "lightTheme" | "darkTheme" | "motionMs" | "customThemes"> & Partial<Pick<AppSettings, "layout" | "density" | "previewLines">>;
+type Appearance = Pick<AppSettings, "theme" | "design" | "lightTheme" | "darkTheme" | "motionMs" | "customThemes"> & Partial<Pick<AppSettings, "layout" | "density" | "previewLines" | "designFonts">>;
 export type Layout = AppSettings["layout"];
 export const isLayout = (v: unknown): v is Layout => v === "split" || v === "list";
 
@@ -23,6 +23,8 @@ export interface CachedAppearance {
   v: 2;
   mode: AppSettings["theme"];
   design: DesignId;
+  /** plan 245: the font the style was given (absent: its own); theme.js paints data-font from it */
+  font?: FontId;
   light: string;
   dark: string;
   motion: number;
@@ -35,10 +37,12 @@ export interface CachedAppearance {
 }
 
 /** The resolved mode (anything that needs "light" | "dark"). */
-export const useAppearance = create<{ mode: ThemeMode; design: DesignId; layout: Layout; density: AppSettings["density"]; previewLines: PreviewLines; reducedMotion: boolean; motionMs: number; themeKey: string }>(() => ({
+export const useAppearance = create<{ mode: ThemeMode; design: DesignId; font: FontId | null; layout: Layout; density: AppSettings["density"]; previewLines: PreviewLines; reducedMotion: boolean; motionMs: number; themeKey: string }>(() => ({
   mode: document.documentElement.classList.contains("dark") ? "dark" : "light",
   /** what theme.js painted, so the first render matches it */
   design: isDesignId(document.documentElement.dataset.design) ? document.documentElement.dataset.design : DEFAULT_DESIGN,
+  /** plan 245: the font theme.js painted, when the style was given one */
+  font: isFontId(document.documentElement.dataset.font) ? document.documentElement.dataset.font : null,
   /** plan 24: what theme.js painted too */
   layout: isLayout(document.documentElement.dataset.layout) ? document.documentElement.dataset.layout : "split",
   /** plan 187: the rows' shape, set with the settings (nothing draws rows before them) */
@@ -77,6 +81,24 @@ export function resolveTheme(a: Pick<Appearance, "design" | "lightTheme" | "dark
   return own;
 }
 
+/** Plan 245: the font a style was given, or null when it draws its own (no entry, or the entry is its own). */
+export function styleFont(a: Partial<Pick<Appearance, "designFonts">>, design: DesignDefinition): FontId | null {
+  const font = a.designFonts?.[design.id];
+  return isFontId(font) && font !== design.fonts.typeface ? font : null;
+}
+
+/**
+ * Waits (at most `capMs`) for the faces these settings draw in when they aren't what's painted: a launch cache that's
+ * behind (another window, an import) would otherwise paint the first frame in a fallback font (Codex critique #5).
+ */
+export function settingsFaces(s: Pick<AppSettings, "design" | "designFonts">, capMs: number): Promise<void> {
+  const html = document.documentElement;
+  const design = designById(s.design);
+  const font = styleFont(s, design);
+  if (html.dataset.design === design.id && (html.dataset.font ?? null) === font) return Promise.resolve();
+  return loadDesignFaces(withFont(design, font), capMs);
+}
+
 export function baseId(theme: Theme, a: Pick<Appearance, "customThemes">): string {
   if (!theme.id.startsWith(CUSTOM_PREFIX)) return theme.id;
   return a.customThemes.find((t) => `${CUSTOM_PREFIX}${t.id}` === theme.id)?.extends ?? DEFAULT_THEME[theme.mode];
@@ -107,13 +129,15 @@ export function applyAppearance(a: Appearance): void {
   const ms = clampMotion(a.motionMs);
   const custom = theme.id.startsWith(CUSTOM_PREFIX);
   const design = designById(a.design);
+  const font = styleFont(a, design);
   const layout: Layout = a.layout ?? "split";
   const density = a.density ?? "comfortable";
   const previewLines = a.previewLines ?? 1;
   // the design may keep its sidebar opaque (Atelier's and Lumen's paper) whatever the palette allows
   const vibrancy = sidebarVibrancy(isMacDesktop(), theme.vibrancy && design.vibrancy, matchMedia(REDUCED_TRANSPARENCY).matches);
-  const key = JSON.stringify([mode, design.id, theme.id, custom ? theme.tokens : null, ms, reduced, vibrancy, layout, density, previewLines]);
-  const designChanged = useAppearance.getState().design !== design.id || html.dataset.design !== design.id;
+  const key = JSON.stringify([mode, design.id, font, theme.id, custom ? theme.tokens : null, ms, reduced, vibrancy, layout, density, previewLines]);
+  // plan 245: a font change reflows text like a design change, and keeps the same anchors
+  const designChanged = useAppearance.getState().design !== design.id || html.dataset.design !== design.id || useAppearance.getState().font !== font || (html.dataset.font ?? null) !== font;
   // a layout switch (plan 24) changes the list's width and row heights: the same capture and restore as a design switch
   const layoutChanged = useAppearance.getState().layout !== layout || html.dataset.layout !== layout;
   // plan 187: so do density and the preview's lines (the first row on screen and the open one stay put)
@@ -125,6 +149,8 @@ export function applyAppearance(a: Appearance): void {
     html.setAttribute("data-theme-switching", "");
     // CSS first, so the structure React commits below is measured with its own tokens
     html.dataset.design = design.id;
+    if (font) html.dataset.font = font;
+    else delete html.dataset.font;
     html.dataset.layout = layout;
     html.classList.toggle("dark", mode === "dark");
     html.dataset.theme = baseId(theme, a);
@@ -138,7 +164,7 @@ export function applyAppearance(a: Appearance): void {
     else html.removeAttribute("data-vibrancy");
     if (restore) {
       // the variants' structure commits in this same task, before paint: one frame, styles and structure in agreement
-      flushSync(() => useAppearance.setState({ design: design.id, layout, density, previewLines }));
+      flushSync(() => useAppearance.setState({ design: design.id, font, layout, density, previewLines }));
       restore();
     }
     // the first frame paints the new colors with transitions off; the next re-enables them
@@ -149,11 +175,11 @@ export function applyAppearance(a: Appearance): void {
   }
 
   // after the DOM: listeners (the mail iframe) read the painted colors
-  useAppearance.setState({ mode, design: design.id, layout, density, previewLines, reducedMotion: reduced, motionMs: ms, themeKey: `${theme.id}:${custom ? JSON.stringify(theme.tokens) : ""}` });
+  useAppearance.setState({ mode, design: design.id, font, layout, density, previewLines, reducedMotion: reduced, motionMs: ms, themeKey: `${theme.id}:${custom ? JSON.stringify(theme.tokens) : ""}` });
 
   const light = resolveTheme(a, "light");
   const dark = resolveTheme(a, "dark");
-  const cache: CachedAppearance = { v: 2, mode: a.theme, design: design.id, layout, light: light.id, dark: dark.id, motion: ms, vibrancy: { light: light.vibrancy && design.vibrancy, dark: dark.vibrancy && design.vibrancy } };
+  const cache: CachedAppearance = { v: 2, mode: a.theme, design: design.id, ...(font && { font }), layout, light: light.id, dark: dark.id, motion: ms, vibrancy: { light: light.vibrancy && design.vibrancy, dark: dark.vibrancy && design.vibrancy } };
   for (const t of [light, dark]) {
     if (t.id.startsWith(CUSTOM_PREFIX)) (cache.custom ??= {})[t.mode] = { base: baseId(t, a), tokens: t.tokens };
   }
@@ -207,11 +233,27 @@ export function installAppearanceListeners(): () => void {
   };
 }
 
-type AppearancePatch = Pick<SettingsPatch, "theme" | "design" | "lightTheme" | "darkTheme" | "designPalettes" | "motionMs" | "customThemes" | "htmlMailAppearance" | "layout" | "density" | "previewLines">;
-const APPEARANCE_FIELDS = ["theme", "design", "lightTheme", "darkTheme", "designPalettes", "motionMs", "customThemes", "htmlMailAppearance", "layout", "density", "previewLines"] as const;
+type AppearancePatch = Pick<SettingsPatch, "theme" | "design" | "lightTheme" | "darkTheme" | "designPalettes" | "designFonts" | "motionMs" | "customThemes" | "htmlMailAppearance" | "layout" | "density" | "previewLines">;
+const APPEARANCE_FIELDS = ["theme", "design", "lightTheme", "darkTheme", "designPalettes", "designFonts", "motionMs", "customThemes", "htmlMailAppearance", "layout", "density", "previewLines"] as const;
 
-/** Appearance changes not yet acknowledged, oldest first (each one is sent after the previous answered). */
-const pending: { patch: AppearancePatch }[] = [];
+/**
+ * Appearance changes not yet acknowledged, oldest first (each one is sent after the previous answered). A font choice
+ * (plan 245) is kept as what was asked, one style's font, and becomes the map only when it's sent or laid over a
+ * snapshot: a refused choice never comes back inside a later one's map (Codex critique #4).
+ */
+type FontChoice = { design: DesignId; font: FontId | null };
+type Pending = { patch: AppearancePatch } | { font: FontChoice };
+const pending: Pending[] = [];
+
+/** A style's font in the map: null takes the entry away (the style draws its own). */
+function setFontIn(map: DesignFonts, { design, font }: FontChoice): DesignFonts {
+  const { [design]: _old, ...others } = map;
+  return font ? { ...others, [design]: font } : others;
+}
+
+function overlay(s: AppSettings, p: Pending): AppSettings {
+  return "font" in p ? { ...s, designFonts: setFontIn(s.designFonts, p.font) } : ({ ...s, ...p.patch } as AppSettings);
+}
 let queue: Promise<unknown> = Promise.resolve();
 /** The appearance the backend last confirmed (bootstrap, or an answer to settings.update). */
 let confirmed: Pick<AppSettings, (typeof APPEARANCE_FIELDS)[number]> | null = null;
@@ -223,7 +265,7 @@ let confirmed: Pick<AppSettings, (typeof APPEARANCE_FIELDS)[number]> | null = nu
  */
 export function reconcileSettings(settings: AppSettings): AppSettings {
   confirmed = Object.fromEntries(APPEARANCE_FIELDS.map((k) => [k, settings[k]])) as typeof confirmed;
-  return pending.reduce<AppSettings>((s, p) => ({ ...s, ...p.patch }) as AppSettings, settings);
+  return pending.reduce(overlay, settings);
 }
 
 function show(settings: AppSettings): void {
@@ -246,27 +288,48 @@ let designSeq = 0;
 /** How long a design switch waits for its faces (local files; normally a few ms). */
 export const DESIGN_FONT_WAIT_MS = 300;
 
-export async function updateAppearance(patch: AppearancePatch): Promise<AppSettings | null> {
+/** The fonts are changed only through setStyleFont. */
+export async function updateAppearance(patch: Omit<AppearancePatch, "designFonts">): Promise<AppSettings | null> {
   if (patch.design !== undefined) {
     // every choice counts, back to the current design included: it cancels one still waiting for its faces
     const seq = ++designSeq;
-    if (patch.design !== getApp().settings?.design) await loadDesignFaces(designById(patch.design), DESIGN_FONT_WAIT_MS);
+    // in the font the style was given (plan 245)
+    const settings = getApp().settings;
+    if (patch.design !== settings?.design) await loadDesignFaces(withFont(designById(patch.design), settings?.designFonts[patch.design]), DESIGN_FONT_WAIT_MS);
     if (seq !== designSeq) return null;
   }
   return commitAppearance(patch);
 }
 
-function commitAppearance(asked: AppearancePatch): Promise<AppSettings | null> {
+/** Plan 245: the latest font choice per style; a slower face wait finishes after a newer choice for the same style is dropped. */
+const fontSeq = new Map<DesignId, number>();
+
+/**
+ * Gives a style a font (plan 245); its own font, or null, takes the choice away. The style in use waits for the faces
+ * first, as a style switch does. The map is read at commit, so choices for different styles never undo each other.
+ */
+export async function setStyleFont(design: DesignId, font: FontId | null): Promise<AppSettings | null> {
+  const seq = (fontSeq.get(design) ?? 0) + 1;
+  fontSeq.set(design, seq);
+  const own = designById(design);
+  const chosen = font === own.fonts.typeface ? null : font;
+  if (design === getApp().settings?.design) await loadDesignFaces(withFont(own, chosen), DESIGN_FONT_WAIT_MS);
+  if (fontSeq.get(design) !== seq) return null;
+  return commitAppearance({ font: { design, font: chosen } });
+}
+
+function commitAppearance(asked: AppearancePatch | { font: FontChoice }): Promise<AppSettings | null> {
   const current = getApp().settings;
   if (!current) return Promise.resolve(null);
   // plan 138: here, after the font wait, so a palette picked during it stays with the style it was picked in. The whole
   // change is what's pending: an older answer can't paint the old palette over the new style. A palette named in the patch wins.
-  const patch: AppearancePatch = asked.design !== undefined && asked.design !== current.design ? { ...switchDesign(current, asked.design), ...asked } : asked;
-  const entry = { patch };
+  const entry: Pending = "font" in asked ? asked : { patch: asked.design !== undefined && asked.design !== current.design ? { ...switchDesign(current, asked.design), ...asked } : asked };
   pending.push(entry);
-  show({ ...current, ...patch } as AppSettings);
+  show(overlay(current, entry));
   const done = queue.then(async () => {
     try {
+      // a font choice goes as the map the backend last confirmed with this one style changed
+      const patch = "font" in entry ? { designFonts: setFontIn((confirmed ?? current).designFonts, entry.font) } : entry.patch;
       const next = await client.call("settings.update", patch);
       pending.splice(pending.indexOf(entry), 1);
       show(reconcileSettings(next));
@@ -274,7 +337,7 @@ function commitAppearance(asked: AppearancePatch): Promise<AppSettings | null> {
     } catch (error) {
       pending.splice(pending.indexOf(entry), 1);
       const base = { ...getApp().settings!, ...confirmed } as AppSettings;
-      show(pending.reduce<AppSettings>((s, p) => ({ ...s, ...p.patch }) as AppSettings, base));
+      show(pending.reduce(overlay, base));
       snack.error(t("settings.appearance.failed", { error: error instanceof Error ? error.message : String(error) }));
       return null;
     }

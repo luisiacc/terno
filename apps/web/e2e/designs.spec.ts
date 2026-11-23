@@ -420,6 +420,55 @@ test.describe("switching designs", () => {
 
 });
 
+test.describe("plan 245: each style keeps the font it was given", () => {
+  test("from Settings, by keyboard: Lumen takes Inter, Graphite keeps its own, Lumen has Inter again, and a load paints it before React", async ({ app: page, server }) => {
+    const html = page.locator("html");
+    const family = () => page.getByTestId("list-title").evaluate((el) => getComputedStyle(el).fontFamily);
+    const select = page.getByTestId("font-select");
+    await scenario("Lumen in Figtree takes Inter", async () => {
+      await server.backend.server.invoke("settings.update", { design: "lumen" }, ctx);
+      await reload(page);
+      expect(await family()).toMatch(/^"Figtree Variable"/);
+      await page.getByTestId("open-settings").click();
+      await page.getByTestId("tab-appearance").click();
+      await expect(select).toHaveAccessibleName(en["settings.appearance.font"]);
+      await expect(select).toHaveAccessibleDescription(en["settings.appearance.font.hint"].replace("{style}", en["design.lumen"]));
+      await expect(select).toHaveText("Figtree");
+      // the list opens on Figtree: System, Inter, Geist, Figtree, Instrument Sans
+      await select.focus();
+      await page.keyboard.press("Enter");
+      await expect(page.getByRole("option", { name: "Figtree" })).toBeVisible();
+      await page.keyboard.press("ArrowUp");
+      await page.keyboard.press("ArrowUp");
+      await page.keyboard.press("Enter");
+      await expect(html).toHaveAttribute("data-font", "inter");
+      await expect(select).toHaveText("Inter");
+      expect(await family()).toMatch(/^"Inter Variable"/);
+      await expect.poll(async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).settings.designFonts).toEqual({ lumen: "inter" });
+    });
+    await scenario("Graphite in its own font; back on Lumen, Inter again", async () => {
+      await page.getByTestId("design-card-graphite").click();
+      await expect(html).toHaveAttribute("data-design", "graphite");
+      await expect(html).not.toHaveAttribute("data-font");
+      await expect(select).toHaveText(en["settings.appearance.font.system"]);
+      await page.getByTestId("design-card-lumen").click();
+      await expect(html).toHaveAttribute("data-design", "lumen");
+      await expect(html).toHaveAttribute("data-font", "inter");
+      await expect(select).toHaveText("Inter");
+      // its card draws it too
+      await expect(page.getByTestId("design-card-lumen").locator("[data-design]")).toHaveAttribute("data-font", "inter");
+    });
+    await scenario("after a reload the font is painted before React mounts", async () => {
+      await page.addInitScript(() => {
+        document.addEventListener("DOMContentLoaded", () => ((window as unknown as { __early: string | null }).__early = document.documentElement.getAttribute("data-font")), { once: true });
+      });
+      await reload(page);
+      expect(await page.evaluate(() => (window as unknown as { __early: string | null }).__early)).toBe("inter");
+      expect(await family()).toMatch(/^"Inter Variable"/);
+    });
+  });
+});
+
 test.describe("Lumen: search behind a button", () => {
   test.use({ design: "lumen" });
   test("/ opens it focused; it stays open while focus steps away; Esc in an empty field closes it, back on the button", async ({ app: page }) => {

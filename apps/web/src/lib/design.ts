@@ -5,19 +5,23 @@
  * a new variant value doesn't compile until every component handles it.
  */
 import type { DesignDefinition } from "@terno/ui/designs/index";
-import { designById } from "@terno/ui/designs/index";
+import { designById, withFont } from "@terno/ui/designs/index";
 import { useAppearance } from "~/lib/appearance";
-import type { DesignId } from "@terno/core";
+import type { DesignId, FontId } from "@terno/core";
+import { TYPEFACES } from "@terno/ui/designs/typefaces";
 import { t } from "@terno/i18n";
 
 /** The design in effect; components re-render when it changes. */
 export function useDesign(): DesignDefinition {
-  return designById(useAppearance((s) => s.design));
+  const design = useAppearance((s) => s.design);
+  const font = useAppearance((s) => s.font);
+  return withFont(designById(design), font);
 }
 
 /** The design in effect, outside React. */
 export function currentDesign(): DesignDefinition {
-  return designById(useAppearance.getState().design);
+  const { design, font } = useAppearance.getState();
+  return withFont(designById(design), font);
 }
 
 /** Picks the implementation for a variant value: the map must cover every value. */
@@ -67,4 +71,9 @@ export function designName(id: DesignId): string {
 
 export function designDescription(id: DesignId): string {
   return id === "macos" ? t("design.macos.description") : id === "atelier" ? t("design.atelier.description") : id === "luma" ? t("design.luma.description") : id === "graphite" ? t("design.graphite.description") : id === "relief" ? t("design.relief.description") : t("design.lumen.description");
+}
+
+/** A font's name (plan 245): the bundled ones by their own names, the system font in the active language. */
+export function fontName(id: FontId): string {
+  return TYPEFACES[id].name ?? t("settings.appearance.font.system");
 }

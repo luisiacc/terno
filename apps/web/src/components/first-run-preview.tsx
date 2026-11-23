@@ -1,6 +1,6 @@
 import { CUSTOM_PREFIX, THEME_TOKENS, type ThemeMode } from "@terno/core";
 import type { AppSettings } from "@terno/core/rpc";
-import type { DesignDefinition } from "@terno/ui/designs/index";
+import { fontAttr, type DesignDefinition } from "@terno/ui/designs/index";
 import { rowHeight, type RowLines } from "@terno/ui/designs/rows";
 import type { Theme } from "@terno/ui/themes/registry";
 import { CategoryDot } from "@terno/ui/components/category-dot";
@@ -70,6 +70,7 @@ export function FirstRunPreview({ design, theme, base, mode, layout, density, pr
       <div
         data-testid="first-run-preview"
         data-design={design.id}
+        data-font={fontAttr(design)}
         data-theme={base}
         data-layout={layout}
         data-mode={mode}

@@ -1,13 +1,13 @@
 import type { DesignDefinition } from "./types";
+import { typefaceFonts } from "./typefaces";
 
-const SF = '-apple-system, BlinkMacSystemFont, "Geist Variable", ui-sans-serif, system-ui, sans-serif';
 
 /** macOS: the app as it was before designs (plans 01, 07): Apple Mail-like, dense, SF. */
 export const macos: DesignDefinition = {
   id: "macos",
   palette: { light: "terno-light", dark: "terno-dark" },
   vibrancy: true,
-  fonts: { sans: SF, display: SF, features: '"cv11", "ss01"', faces: [] },
+  fonts: { ...typefaceFonts("system"), features: '"cv11", "ss01"' },
   weights: { semibold: 600, bold: 700 },
   controlText: "0.8rem",
   // 11 · 12 · 13 · 14 · 15 · 17 · 20

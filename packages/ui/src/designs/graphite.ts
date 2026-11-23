@@ -1,7 +1,6 @@
 import type { DesignDefinition, TypeRole, TypeSpec } from "./types";
+import { typefaceFonts } from "./typefaces";
 
-/** SF on a Mac (the system's own, in its optical sizes); the bundled Geist where SF can't go (the web build elsewhere) */
-const SF = '-apple-system, BlinkMacSystemFont, "Geist Variable", ui-sans-serif, system-ui, sans-serif';
 const TRACKING = "-0.15px";
 
 /** [size, leading, weight, strong]: the only sizes are 12, 13, 14 and 24 */
@@ -41,7 +40,7 @@ export const graphite: DesignDefinition = {
   id: "graphite",
   palette: { light: "graphite-light", dark: "graphite-dark" },
   vibrancy: false,
-  fonts: { sans: SF, display: SF, features: '"kern"', faces: [] },
+  fonts: { ...typefaceFonts("system"), features: '"kern"' },
   weights: { semibold: 500, bold: 500 },
   controlText: "0.8125rem",
   // 12 · 12 · 13 · 14 · 14 · 14 · 24

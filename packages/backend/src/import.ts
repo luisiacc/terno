@@ -17,6 +17,7 @@ const GENERAL_KEYS = [
   "previousLightTheme",
   "previousDarkTheme",
   "designPalettes",
+  "designFonts",
   "motionMs",
   "htmlMailAppearance",
   "customThemes",

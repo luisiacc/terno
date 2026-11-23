@@ -232,6 +232,20 @@ export function isDesignId(v: unknown): v is DesignId {
   return typeof v === "string" && (DESIGN_IDS as readonly string[]).includes(v);
 }
 
+/**
+ * Plan 245: the fonts a style can take instead of its own, all bundled (the
+ * stacks live in @terno/ui/designs/typefaces; tests keep both lists and
+ * public/theme.js's copy in sync).
+ */
+export const FONT_IDS = ["system", "inter", "geist", "figtree", "instrument-sans"] as const;
+export type FontId = (typeof FONT_IDS)[number];
+/** Plan 245: the font each style was given; a style without an entry draws its own. */
+export type DesignFonts = Partial<Record<DesignId, FontId>>;
+
+export function isFontId(v: unknown): v is FontId {
+  return typeof v === "string" && (FONT_IDS as readonly string[]).includes(v);
+}
+
 /** The mode a theme id belongs to, or null when it names nothing (unknown or deleted custom theme). */
 export function themeMode(id: string, custom: readonly CustomTheme[]): ThemeMode | null {
   if (id.startsWith(CUSTOM_PREFIX)) return custom.find((t) => t.id === id.slice(CUSTOM_PREFIX.length))?.mode ?? null;

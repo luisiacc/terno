@@ -1,6 +1,7 @@
 import { DEFAULT_DESIGN, type DesignId } from "@terno/core";
 import { DEPTHS, DEPTH_VARS } from "./depth";
 import { DESIGNS } from "./index";
+import { TYPEFACES, type Typeface } from "./typefaces";
 import { RADIUS_STEPS, TEXT_STEPS, TYPE_ROLES, type DesignDefinition, type TypeRole } from "./types";
 
 export const GENERATED_HEADER = "/* Generated from packages/ui/src/designs/*.ts by `pnpm --filter @terno/ui gen:designs`. Do not edit. */";
@@ -30,7 +31,8 @@ export function designVars(d: DesignDefinition): [string, string][] {
     const t = d.type[role as TypeRole];
     const p = `--type-${kebab(role)}`;
     out.push(
-      [`${p}-family`, t.family === "display" ? d.fonts.display : d.fonts.sans],
+      // plan 245: through the font variables, so a chosen font ([data-font]) reaches every role
+      [`${p}-family`, t.family === "display" ? "var(--ds-font-display)" : "var(--ds-font-sans)"],
       [`${p}-size`, t.size],
       [`${p}-leading`, t.leading],
       [`${p}-weight`, String(t.weight)],
@@ -101,11 +103,20 @@ function block(d: DesignDefinition, selector: string): string {
  * `:root[…]`) so a Settings preview can nest any design; `:root` takes the
  * fallback design's values before theme.js has run.
  */
-export function generateDesignsCss(designs: readonly DesignDefinition[] = DESIGNS, fallback: DesignId = DEFAULT_DESIGN): string {
+export function generateDesignsCss(designs: readonly DesignDefinition[] = DESIGNS, fallback: DesignId = DEFAULT_DESIGN, fonts: readonly Typeface[] = Object.values(TYPEFACES)): string {
   const first = designs.find((d) => d.id === fallback) ?? designs[0];
   if (!first) return `${GENERATED_HEADER}\n`;
   const rest = designs.filter((d) => d !== first);
-  return [GENERATED_HEADER, block(first, `:root,\n[data-design="${first.id}"]`), ...rest.map((d) => block(d, `[data-design="${d.id}"]`))].join("\n\n") + "\n";
+  return [GENERATED_HEADER, block(first, `:root,\n[data-design="${first.id}"]`), ...rest.map((d) => block(d, `[data-design="${d.id}"]`)), ...fonts.map(fontBlock)].join("\n\n") + "\n";
+}
+
+/**
+ * Plan 245: a font the user gave the style, as `data-font` beside `data-design` (on <html>, or a Settings preview). Two
+ * attributes outrank the design's one, so the font wins wherever it is set; every other value stays the design's.
+ */
+function fontBlock(t: Typeface): string {
+  // the features themselves too: html sets them once, and a nested preview would inherit the page's (Codex critique #7)
+  return `[data-design][data-font="${t.id}"] {\n  --ds-font-sans: ${t.stack};\n  --ds-font-display: ${t.stack};\n  --ds-font-features: ${t.features};\n  font-feature-settings: ${t.features};\n}`;
 }
 
 /**

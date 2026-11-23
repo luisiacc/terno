@@ -25,6 +25,7 @@ const SETTINGS = {
   previousLightTheme: null,
   previousDarkTheme: null,
   designPalettes: {},
+  designFonts: {},
   customThemes: [],
   motionMs: 75,
   htmlMailAppearance: "auto",

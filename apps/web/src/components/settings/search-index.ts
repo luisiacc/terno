@@ -100,6 +100,7 @@ export const SETTINGS_INDEX = [
   { id: "appearance.density", tab: "appearance", group: "settings.appearance.list", label: "settings.appearance.density", hint: "settings.appearance.density.hint", words: "settings.find.words.density" },
   { id: "appearance.preview", tab: "appearance", group: "settings.appearance.list", label: "settings.appearance.preview", hint: "settings.appearance.preview.hint", under: "appearance.layout" },
   { id: "appearance.style", tab: "appearance", label: "settings.appearance.style", hint: "settings.appearance.style.hint", words: "settings.find.words.style" },
+  { id: "appearance.font", tab: "appearance", label: "settings.appearance.font", words: "settings.find.words.font" },
   { id: "appearance.mode", tab: "appearance", label: "settings.appearance.mode", hint: "settings.appearance.mode.hint", words: "settings.find.words.mode" },
   { id: "appearance.lightTheme", tab: "appearance", label: "settings.appearance.lightTheme", words: "settings.find.words.theme" },
   { id: "appearance.darkTheme", tab: "appearance", label: "settings.appearance.darkTheme", words: "settings.find.words.theme" },

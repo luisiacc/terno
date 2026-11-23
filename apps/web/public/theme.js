@@ -38,6 +38,8 @@
     var COLOR = new RegExp("^(?:#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})|oklch\\(\\s*" + N + "%?\\s+" + N + "\\s+" + N + "(?:deg)?\\s*(?:\\/\\s*" + N + "%?\\s*)?\\))$", "i");
     // plan 15: designs (@terno/core DESIGN_IDS) and the default's own palettes
     var DESIGNS = ["macos", "atelier", "lumen", "luma", "graphite", "relief"];
+    // plan 245: the fonts a style can be given (@terno/core FONT_IDS)
+    var FONTS = ["system", "inter", "geist", "figtree", "instrument-sans"];
     var LUMEN = { v: 2, design: "lumen", light: "lumen-light", dark: "lumen-dark", vibrancy: { light: false, dark: false } };
     // plan 98: a new install's defaults (the backend's DEFAULT_SETTINGS); LUMEN above stays what older caches move to
     var FRESH = { design: "lumen", light: "github-light", dark: "github-dark" };
@@ -59,6 +61,8 @@
       a = { v: 2, mode: a.mode, design: LUMEN.design, light: LUMEN.light, dark: LUMEN.dark, motion: a.motion, vibrancy: LUMEN.vibrancy };
     }
     html.setAttribute("data-design", DESIGNS.indexOf(a.design) >= 0 ? a.design : LUMEN.design);
+    // in the font the style was given, so the first frame never draws in the style's own and swaps
+    if (FONTS.indexOf(a.font) >= 0) html.setAttribute("data-font", a.font);
     // plan 24: the layout (split, or the list full width), so the first frame has the right grid
     html.setAttribute("data-layout", a.layout === "list" ? "list" : "split");
     var mode = MODES.indexOf(a.mode) >= 0 ? a.mode : "system";

@@ -361,6 +361,22 @@ describe("app.import: each style's palettes (plan 138)", () => {
   });
 });
 
+describe("app.import: each style's font (plan 245)", () => {
+  it("a backup brings them back as they were, a style on its own font included; a file from before them changes nothing", async () => {
+    const from = setup();
+    await from.client.call("settings.update", { designFonts: { graphite: "inter" } });
+    const dump = await from.client.call("app.export", {});
+    const to = setup();
+    await to.client.call("settings.update", { designFonts: { lumen: "geist" } });
+    await to.client.call("app.import", { data: dump });
+    expect((await to.client.call("app.bootstrap", {})).settings.designFonts).toEqual({ graphite: "inter" });
+    const { designFonts: _none, ...older } = dump.settings;
+    await to.client.call("settings.update", { designFonts: { lumen: "geist" } });
+    await to.client.call("app.import", { data: { ...dump, settings: older as never } });
+    expect((await to.client.call("app.bootstrap", {})).settings.designFonts).toEqual({ lumen: "geist" });
+  });
+});
+
 describe("AI keys are bound to the endpoint they were saved for", () => {
   const exportWith = (ai: object) => ({ format: "terno-export" as const, version: 1 as const, exportedAt: NOW, app: "t", accounts: [], categories: [], filters: [], drafts: [], ops: [], settings: { ai } });
 

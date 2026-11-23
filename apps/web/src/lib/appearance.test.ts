@@ -36,7 +36,7 @@ vi.mock("~/rpc/connection", () => ({
 }));
 vi.mock("~/lib/snack", () => ({ snack: Object.assign(() => "", { error: vi.fn(), success: () => "" }) }));
 
-const { reconcileSettings, resolveTheme, sidebarVibrancy, updateAppearance, useAppearance, APPEARANCE_KEY } = await import("./appearance");
+const { reconcileSettings, resolveTheme, setStyleFont, sidebarVibrancy, updateAppearance, useAppearance, APPEARANCE_KEY } = await import("./appearance");
 const { getApp, setApp } = await import("~/state/app");
 const { snack } = await import("~/lib/snack");
 
@@ -69,6 +69,7 @@ const SERVER: AppSettings = {
   previousLightTheme: null,
   previousDarkTheme: null,
   designPalettes: {},
+  designFonts: {},
   motionMs: 75,
   htmlMailAppearance: "auto",
   customThemes: [],
@@ -263,6 +264,79 @@ describe("designs (plan 15)", () => {
     await tick();
     expect(JSON.parse(fake.stored.get(APPEARANCE_KEY)!).vibrancy).toEqual({ light: true, dark: true });
     await answer();
+  });
+
+  describe("plan 245: each style keeps the font it was given", () => {
+    const cached = () => JSON.parse(fake.stored.get(APPEARANCE_KEY)!) as { font?: string };
+
+    it("a font for the style in use is painted, cached for theme.js and saved; the style's own font takes it away", async () => {
+      void setStyleFont("macos", "inter");
+      await tick();
+      expect(fake.html.dataset.font).toBe("inter");
+      expect(useAppearance.getState().font).toBe("inter");
+      expect(cached().font).toBe("inter");
+      expect(fake.calls[0]!.patch).toEqual({ designFonts: { macos: "inter" } });
+      await answer();
+      // macOS's own is the system font: no entry, no attribute, nothing cached
+      void setStyleFont("macos", "system");
+      await tick();
+      expect(fake.html.dataset.font).toBeUndefined();
+      expect(cached().font).toBeUndefined();
+      expect(fake.calls[0]!.patch).toEqual({ designFonts: {} });
+      await answer();
+      expect(server.designFonts).toEqual({});
+    });
+
+    it("a switch draws the next style in its own font or the one it was given, and waits for that font's faces", async () => {
+      server = { ...server, designFonts: { lumen: "inter" } };
+      setApp({ settings: reconcileSettings(server) });
+      const faces = vi.spyOn(await import("~/lib/design"), "loadDesignFaces");
+      void updateAppearance({ design: "lumen" });
+      await tick();
+      expect(faces.mock.calls.at(-1)![0].fonts.typeface).toBe("inter");
+      expect(fake.html.dataset.design).toBe("lumen");
+      expect(fake.html.dataset.font).toBe("inter");
+      await answer();
+      void updateAppearance({ design: "atelier" });
+      await tick();
+      expect(faces.mock.calls.at(-1)![0].fonts.typeface).toBe("instrument-sans");
+      expect(fake.html.dataset.font).toBeUndefined();
+      await answer();
+      faces.mockRestore();
+    });
+
+    it("a font waiting for its faces isn't dropped by a style switch or by another style's font (Codex critique #3)", async () => {
+      const faces = vi.spyOn(await import("~/lib/design"), "loadDesignFaces");
+      let release!: () => void;
+      faces.mockImplementationOnce(() => new Promise<void>((r) => (release = r)));
+      void setStyleFont("macos", "geist");
+      await tick();
+      void updateAppearance({ design: "lumen" });
+      await tick();
+      void setStyleFont("graphite", "figtree");
+      await answer();
+      await answer();
+      release();
+      await answer();
+      expect(server.design).toBe("lumen");
+      expect(server.designFonts).toEqual({ macos: "geist", graphite: "figtree" });
+      // the style in use is Lumen, in its own font
+      expect(fake.html.dataset.font).toBeUndefined();
+      faces.mockRestore();
+    });
+
+    it("a refused font doesn't come back inside a later choice's map (Codex critique #4)", async () => {
+      void setStyleFont("lumen", "inter");
+      void setStyleFont("graphite", "figtree");
+      await tick();
+      expect(getApp().settings!.designFonts).toEqual({ lumen: "inter", graphite: "figtree" });
+      await answer(false);
+      expect(getApp().settings!.designFonts).toEqual({ graphite: "figtree" });
+      expect(fake.calls[0]!.patch).toEqual({ designFonts: { graphite: "figtree" } });
+      await answer();
+      expect(server.designFonts).toEqual({ graphite: "figtree" });
+      expect(getApp().settings!.designFonts).toEqual({ graphite: "figtree" });
+    });
   });
 });
 

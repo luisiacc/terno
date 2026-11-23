@@ -1,13 +1,13 @@
 import type { DesignDefinition } from "./types";
+import { typefaceFonts } from "./typefaces";
 
-const FIGTREE = '"Figtree Variable", ui-sans-serif, system-ui, sans-serif';
 
 /** Lumen (plan 15, picture 2; the default): warm and people-first. Figtree, avatars, a greeting in the subtitle, filter chips, soft round shapes. */
 export const lumen: DesignDefinition = {
   id: "lumen",
   palette: { light: "lumen-light", dark: "lumen-dark" },
   vibrancy: false,
-  fonts: { sans: FIGTREE, display: FIGTREE, features: '"cv11", "ss01"', faces: ['400 1em "Figtree Variable"', '600 1em "Figtree Variable"', '700 1em "Figtree Variable"'] },
+  fonts: { ...typefaceFonts("figtree"), features: '"cv11", "ss01"' },
 
   weights: { semibold: 600, bold: 700 },
   controlText: "0.8rem",

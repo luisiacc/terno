@@ -1,13 +1,13 @@
 import type { DesignDefinition } from "./types";
+import { typefaceFonts } from "./typefaces";
 
-const SANS = '"Instrument Sans Variable", ui-sans-serif, system-ui, sans-serif';
 
 /** Atelier (plan 15, picture 1): editorial. Ink and paper, Instrument Sans throughout, upright and plain, avatars in rows. */
 export const atelier: DesignDefinition = {
   id: "atelier",
   palette: { light: "atelier-light", dark: "atelier-dark" },
   vibrancy: false,
-  fonts: { sans: SANS, display: SANS, features: '"cv11", "ss01"', faces: ['400 1em "Instrument Sans Variable"', '600 1em "Instrument Sans Variable"'] },
+  fonts: { ...typefaceFonts("instrument-sans"), features: '"cv11", "ss01"' },
 
   weights: { semibold: 600, bold: 700 },
   controlText: "0.8rem",

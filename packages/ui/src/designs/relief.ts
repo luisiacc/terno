@@ -1,7 +1,6 @@
 import type { DesignDefinition, TypeRole, TypeSpec } from "./types";
+import { typefaceFonts } from "./typefaces";
 
-/** SF on a Mac (the system's own, in its optical sizes); the bundled Geist where SF can't go (the web build elsewhere) */
-const SF = '-apple-system, BlinkMacSystemFont, "Geist Variable", ui-sans-serif, system-ui, sans-serif';
 const TRACKING = "-0.15px";
 
 const role = (size: string, leading: string, weight: number, strong: number): TypeSpec => ({ family: "sans", size, leading, weight, strong, tracking: TRACKING, style: "normal" });
@@ -38,7 +37,7 @@ export const relief: DesignDefinition = {
   id: "relief",
   palette: { light: "relief-light", dark: "relief-dark" },
   vibrancy: false,
-  fonts: { sans: SF, display: SF, features: '"kern"', faces: [] },
+  fonts: { ...typefaceFonts("system"), features: '"kern"' },
   weights: { semibold: 550, bold: 600 },
   controlText: "0.8125rem",
   text: {

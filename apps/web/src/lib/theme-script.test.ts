@@ -6,6 +6,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { runInNewContext } from "node:vm";
+import { FONT_IDS } from "@terno/core";
 import { motionVars } from "@terno/ui/themes/apply";
 import { describe, expect, it } from "vitest";
 
@@ -127,6 +128,15 @@ describe("theme.js", () => {
       expect(r.attrs.get("data-design")).toBe(design);
       expect(r.attrs.get("data-theme")).toBe("github-light");
     }
+  });
+
+  it("plan 245: paints the font the style was given; an unknown one, or none, leaves the style's own", () => {
+    const cache = (font?: unknown) => ({ storage: { "terno:appearance": JSON.stringify({ v: 2, design: "lumen", mode: "light", light: "github-light", dark: "nord", motion: 75, font }) } });
+    expect(run(cache("inter")).attrs.get("data-font")).toBe("inter");
+    expect(run(cache("comic-sans")).attrs.has("data-font")).toBe(false);
+    expect(run(cache()).attrs.has("data-font")).toBe(false);
+    // its copy of the ids is core's
+    expect(JSON.parse(SOURCE.match(/var FONTS = (\[[^\]]*\]);/)![1]!)).toEqual([...FONT_IDS]);
   });
 
   it("flags the macOS shell and vibrancy only for themes that allow it", () => {

@@ -218,6 +218,17 @@ describe("designs (plan 15)", () => {
     expect(await errorOf(client.call("settings.update", { designPalettes: { brutalist: { light: "design", dark: "design" } } as never }))).toMatchObject({ code: "BAD_REQUEST" });
   });
 
+  it("plan 245: each style's font persists; a style or font that's gone reads as the style's own, and an unknown one is refused", async () => {
+    const { backend, client } = await setup();
+    expect((await client.call("app.bootstrap", {})).settings.designFonts).toEqual({});
+    expect(await client.call("settings.update", { designFonts: { lumen: "inter", graphite: "figtree" } })).toMatchObject({ designFonts: { lumen: "inter", graphite: "figtree" } });
+    expect((await client.call("app.bootstrap", {})).settings.designFonts).toEqual({ lumen: "inter", graphite: "figtree" });
+    setSetting(sqlDb(backend.store), "app", { appearanceVersion: 3, designFonts: { lumen: "comic-sans", retired: "inter", atelier: "geist" } });
+    expect((await client.call("app.bootstrap", {})).settings.designFonts).toEqual({ atelier: "geist" });
+    expect(await errorOf(client.call("settings.update", { designFonts: { lumen: "comic-sans" } as never }))).toMatchObject({ code: "BAD_REQUEST" });
+    expect(await errorOf(client.call("settings.update", { designFonts: { brutalist: "inter" } as never }))).toMatchObject({ code: "BAD_REQUEST" });
+  });
+
   it("a remembered palette of the wrong mode is forgotten", async () => {
     const { client } = await setup();
     expect(await client.call("settings.update", { previousLightTheme: "dracula", previousDarkTheme: "nord" })).toMatchObject({ previousLightTheme: null, previousDarkTheme: "nord" });

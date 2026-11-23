@@ -18,7 +18,7 @@ import { refreshList, reloadList, useList } from "~/state/list";
 import { bootPage, installPage, listCovered, readerShown, reloadsConversation } from "~/lib/page";
 import { invalidateThreads, loadThread, useThreads } from "~/state/threads";
 import { snack } from "~/lib/snack";
-import { applyAppearance, installAppearanceListeners, reconcileSettings, updateAppearance } from "~/lib/appearance";
+import { applyAppearance, installAppearanceListeners, reconcileSettings, settingsFaces, updateAppearance } from "~/lib/appearance";
 import { exposeForTests, regressions } from "~/lib/render-probe";
 import { captureUi } from "~/lib/diag";
 import { startDiag } from "~/state/diag";
@@ -52,7 +52,10 @@ export async function boot(): Promise<void> {
   try {
     await connectBackend();
     const b = await client.call("app.bootstrap", {});
-    applyAppearance(reconcileSettings(b.settings));
+    const settings = reconcileSettings(b.settings);
+    // what theme.js painted from the launch cache is normally these settings already; when not, their faces first
+    await settingsFaces(settings, 150);
+    applyAppearance(settings);
     acceptNextFavorites();
     // plan 207: the first screen, in the same change as the rest (one first list, never the Inbox's and then the feed's).
     // A reload that brings a conversation back (List's address) keeps it; a remembered focus on an account waits for the
