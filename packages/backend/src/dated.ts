@@ -1,5 +1,5 @@
 import { AiError, DATED_PROMPT_VERSION, DATED_SUBJECT_CHARS, DATED_TEXT_CHARS, datedBudget, fitDates, inZone, wallHolds, type AiTasks, type DatedResult } from "@terno/ai";
-import { addressKey, automatedSender, mutedOf, canLapse, namesDayFrom, saysClock, saysDay, withEventEnds, lapsesUnlessRenewed, localDay, needsPresence, saysNoReplyNeeded, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, dayKeyOf, datedTiming, dayEnd, dueCutoff, hasTimeCue, partMoment, partOfDayIn, type PartOfDay, normalizeText, withoutQuotes, type SettledHow, type AiErrorKind, type DatedKind, type DatedRow, type DatedTiming, type DatedWall } from "@terno/core";
+import { addressKey, automatedSender, findCode, namesCode, mutedOf, canLapse, namesDayFrom, saysClock, saysDay, withEventEnds, lapsesUnlessRenewed, localDay, needsPresence, saysNoReplyNeeded, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, dayKeyOf, datedTiming, dayEnd, dueCutoff, hasTimeCue, partMoment, partOfDayIn, type PartOfDay, normalizeText, withoutQuotes, type SettledHow, type AiErrorKind, type DatedKind, type DatedRow, type DatedTiming, type DatedWall } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import type { AppSettings, I18nRef } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
@@ -987,6 +987,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     return at.length > 0 && at.every(proposed);
   };
   let asked = false;
+  const code = findCode(input.subject, input.text);
   // plan 210 (iteration 4, revision 11): "Reply C to confirm" is an ask that waits on the reader from its mail's day and ends
   // with the event it confirms (this mail's one event), whatever day the model gave it (v13 dated it on the mail's own day,
   // so it was dropped as past); read after every other item, so that event's row is known
@@ -1021,6 +1022,10 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     if (PRESSED.has(kind) && scamPressure(`${input.subject}\n${tiedWords(item.quote).slice(0, FACT_WORDS_MAX)}\n${item.quote}`)) continue;
     // round 17 (Jordan's CEO from a gmail address): gift cards whose codes are wanted back are the gift-card scam, any kind of to-do
     if (kind !== "event" && kind !== "delivery" && giftCardScam(`${item.text}\n${item.quote}\n${contextOf(item.quote, sentences)}`)) continue;
+    // plan 243 (the owner's bank code, "it should not be in 'what matters'"): mail carrying a one-time code asks nothing of the
+    // reader about that code: an alert, request or expiry whose own words name it is the code's step, done now or never; a
+    // bill, a plan and anything else the mail says stay, and so does "nothing asked"
+    if (code && PRESSED.has(kind) && namesCode(`${item.text}\n${item.quote}`, code)) continue;
     // plan 210 (the Codex code review of iteration 2): a request of the reader, kept below or not (a day already past or
     // over in a scan, a duplicate, past the bound): never "nothing asked"
     if (kind === "ask" || kind === "respond") asked = true;

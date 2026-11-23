@@ -89,6 +89,19 @@ export function findCode(subject: string, body: string | null): string | null {
   return head.announced && own.codes.size === 1 ? [...own.codes][0]! : null;
 }
 
+const NAMES_CODE = new RegExp(WORDS.source, "u");
+
+/**
+ * Plan 243: whether some words (an item's, the reader's) name the code a message carries: a word that announces one, or
+ * its digits, whole or split 3+3.
+ */
+export function namesCode(text: string, code: string): boolean {
+  const said = normalizeText(text);
+  if (NAMES_CODE.test(said)) return true;
+  const digits = new RegExp(`(?<!\\p{N})${code.slice(0, 3)}[ -]?${code.slice(3)}(?!\\p{N})`, "u");
+  return digits.test(said);
+}
+
 /** Whether a message is recent enough to offer its code. */
 export function codeFresh(date: number, now: number): boolean {
   const age = now - date;

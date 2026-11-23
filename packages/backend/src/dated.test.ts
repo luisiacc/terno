@@ -3840,3 +3840,38 @@ describe("plan 240: always show a sender in What matters", () => {
     expect(readings(model.requests).map((r) => promptText(r.messages[0]!.content).includes("scanner") ? "promo" : "desk").sort()).toEqual(["desk", "promo"]);
   });
 });
+
+describe("plan 243: a one-time code's mail asks nothing about the code", () => {
+  const bank = { name: "BN Contacto", email: "bncontacto@banconacional.test" };
+  const CODE_MAIL = "¡Hola LUISA!\n\nUsted está realizando la transacción Incluir cuentas favoritas por la banca en línea que requiere ser confirmada mediante un código de verificación.\n\n482913\n\nPor favor digite el código en el espacio que se solicita. Este código es para un único uso.";
+  const verify: Item = { kind: "alert", text: "Favorite accounts transaction awaiting verification", quote: "requiere ser confirmada mediante un código de verificación", due: null, time: null };
+  const base = { subject: "Comprobación Seguridad", arrivedAt: NOW, open: new Map<string, DatedRow>(), fromScan: false, now: NOW };
+
+  it("the code's alert and request are no items, and nothing's asked; a bill and another request in that mail stay", () => {
+    const enter: Item = { kind: "respond", text: "Enter the code 482 913 in online banking", quote: "Por favor digite el código en el espacio que se solicita", due: "2026-11-10", time: null };
+    expect(checkDates({ items: [verify, enter], settled: [] }, { ...base, text: CODE_MAIL })).toMatchObject({ rows: [], asked: false });
+    const text = `${CODE_MAIL}\n\nRecuerde: su tarjeta vence. Total a pagar: ₡25.000 antes del 20 de noviembre de 2026.\nFirme el contrato de renovación antes del 20 de noviembre de 2026.`;
+    const pay: Item = { kind: "pay", text: "Pagar ₡25.000 de la tarjeta", quote: "Total a pagar: ₡25.000 antes del 20 de noviembre de 2026", due: "2026-11-20", time: null };
+    const sign: Item = { kind: "respond", text: "Firmar el contrato de renovación", quote: "Firme el contrato de renovación antes del 20 de noviembre de 2026", due: "2026-11-20", time: null };
+    const out = checkDates({ items: [verify, pay, sign], settled: [] }, { ...base, text });
+    expect(out.rows.map((r) => r.kind)).toEqual(["pay", "respond"]);
+    expect(out.asked).toBe(true);
+  });
+
+  it("a customer code isn't a one-time code's step: an alert that doesn't name it stays", () => {
+    const text = "Código de cliente 482913.\n\nSu servicio será suspendido el 20 de noviembre de 2026 si no actualiza sus datos.";
+    const suspended: Item = { kind: "alert", text: "Servicio suspendido el 20 de noviembre", quote: "Su servicio será suspendido el 20 de noviembre de 2026", due: "2026-11-20", time: null };
+    expect(checkDates({ items: [suspended], settled: [] }, { ...base, subject: "Aviso", text }).rows.map((r) => r.kind)).toEqual(["alert"]);
+  });
+
+  it("the owner's bank code, from an address that reads as a person's: read, nothing kept, and its conversation isn't waiting on you", async () => {
+    const { backend, client, model, receive, read, raw, clock } = await setup();
+    model.answer = () => reply([verify]);
+    const thread = await receive({ from: bank, gmailLabels: ["IMPORTANT", "CATEGORY_PERSONAL", "INBOX"], subject: "Comprobación Seguridad", bodyText: CODE_MAIL, providerThreadId: "bn" });
+    await read();
+    expect(readings(model.requests)).toHaveLength(1);
+    expect(await backend.store.dated.active()).toEqual([]);
+    raw.run("UPDATE threads SET waiting_since = ?, has_sent = 1 WHERE id = ?", clock.now - 60_000, thread);
+    expect((await client.call("today.list", { held: [] })).sections.flatMap((x) => x.items.map((i) => i.thread.id))).not.toContain(thread);
+  });
+});
