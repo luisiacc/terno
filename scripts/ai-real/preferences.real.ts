@@ -91,7 +91,7 @@ function score(mail: Mail, decisions: { hide: boolean; first: boolean }[], wante
 describe.runIf(process.env.TERNO_AI_WORDS === "1")(`plan 248: What matters in the user's words, end to end (${MODEL})`, () => {
   it("compiles each profile's words and scores what the feed would show", { timeout: 1_800_000 }, async () => {
     const report: string[] = [];
-    const totals = { mails: 0, ok: 0, forbidden: 0, missed: 0, lost: 0, firstMissed: 0, overreach: 0, notesMissed: 0 };
+    const totals = { mails: 0, ok: 0, forbidden: 0, missed: 0, lost: 0, firstMissed: 0, firstExtra: 0, overreach: 0, notesMissed: 0 };
     for (let n = 0; n < REPEAT; n++)
       for (const profile of SET) {
         const { rules, notes, outcomes } = await run(profile, `words:${profile.id}`);
@@ -104,12 +104,14 @@ describe.runIf(process.env.TERNO_AI_WORDS === "1")(`plan 248: What matters in th
           else if (o.expect === "wanted") totals.missed++;
           else if (o.expect === "first") totals.firstMissed++;
           else if (o.expect === "none") totals.overreach++;
+          // shown but put first by a rule that shouldn't have: an order slip, never a row lost
+          else if (o.got === "first") totals.firstExtra++;
           else totals.lost++;
           report.push(`${o.ok ? "✓" : "✗"} ${o.mail}: expected ${o.expect}, got ${o.got}${o.detail ? ` (${o.detail})` : ""} — ${o.note}`);
         }
         report.push("");
       }
-    report.push(`**${totals.ok} of ${totals.mails}**: forbidden shown ${totals.forbidden}, wanted missed ${totals.missed}, unrelated lost ${totals.lost}, first missed ${totals.firstMissed}, over-reach ${totals.overreach}, notes missed ${totals.notesMissed}. ${spendReport()}`);
+    report.push(`**${totals.ok} of ${totals.mails}**: forbidden shown ${totals.forbidden}, wanted missed ${totals.missed}, unrelated lost ${totals.lost}, first missed ${totals.firstMissed}, first extra ${totals.firstExtra}, over-reach ${totals.overreach}, notes missed ${totals.notesMissed}. ${spendReport()}`);
     const text = report.join("\n");
     console.log(text);
     const out = process.env.TERNO_AI_WORDS_OUT;
