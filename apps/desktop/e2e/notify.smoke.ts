@@ -70,6 +70,8 @@ test.beforeAll(async () => {
   // you wrote to Valeria once; an old message of hers is already there (the first sync's: no news)
   imap.control.addMessage("Sent", { raw: raw({ from: `Smoke <${ME}>`, to: "Valeria Núñez <valeria@studio.example>", subject: "Hola Valeria" }), flags: ["\\Seen"] });
   imap.control.addMessage("INBOX", { raw: raw({ from: "Valeria Núñez <valeria@studio.example>", subject: "Ya estaba aquí" }) });
+  // plan 238: and to Marta (two people, for a notice of several senders)
+  imap.control.addMessage("Sent", { raw: raw({ from: `Smoke <${ME}>`, to: "Marta Ruiz <marta@studio.example>", subject: "Hola Marta" }), flags: ["\\Seen"] });
   smtp = new SMTPServer({ authOptional: true, disabledCommands: ["STARTTLS"], logger: false, onAuth: (_a, _s, cb) => cb(null, { user: "smoke" }), onData: (s, _x, cb) => (s.resume(), s.on("end", () => cb())) });
   smtp.server.on("connection", (socket) => {
     smtpSockets.add(socket);
@@ -180,4 +182,24 @@ test("after an IMAP account's first sync, a person's mail through IDLE makes one
   await expect(page.getByTestId("reader-subject")).toHaveText("¿Comemos el jueves?");
   await page.waitForTimeout(2000);
   expect(await notices()).toHaveLength(1);
+});
+
+test("plan 238: an account out of the all-accounts Inbox: a notice of several senders opens its own Inbox, with the mail", async () => {
+  const ids = await page.locator('[data-testid^="nav-account-"]').evaluateAll((els) => els.map((el) => Number(el.getAttribute("data-testid")!.slice("nav-account-".length))).filter((n) => Number.isSafeInteger(n)));
+  // the IMAP account the last test added: the newest
+  const id = Math.max(...ids);
+  await page.getByTestId(`nav-account-${id}`).click({ button: "right" });
+  await page.getByTestId("account-menu-all-inbox").click();
+  await expect(page.getByTestId(`nav-account-hidden-${id}`)).toHaveCount(1);
+  await page.getByTestId("nav-inbox").click();
+  const shown = (await notices()).length;
+  imap.control.addMessage("INBOX", { raw: raw({ from: "Valeria Núñez <valeria@studio.example>", subject: "El jueves a las dos", body: "Reservo para dos." }) });
+  imap.control.addMessage("INBOX", { raw: raw({ from: "Marta Ruiz <marta@studio.example>", subject: "Planos de la oficina", body: "Te los mando mañana." }) });
+  await expect.poll(async () => (await notices()).length, { timeout: 30_000 }).toBeGreaterThan(shown);
+  // both told (one notice of several senders, which opens no conversation of its own, or one each)
+  await page.waitForTimeout(1500);
+  await app.evaluate((_electron, n) => (globalThis as unknown as { __smokeNotices: Electron.Notification[] }).__smokeNotices[n]!.emit("click"), (await notices()).length - 1);
+  // its own Inbox, where the mail is (the all-accounts one doesn't have it)
+  await expect(page.getByTestId(`nav-account-${id}`)).toHaveAttribute("data-active", "true");
+  await expect(page.getByTestId("thread-row").filter({ hasText: "Planos de la oficina" })).toHaveCount(1);
 });

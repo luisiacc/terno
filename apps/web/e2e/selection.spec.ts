@@ -666,6 +666,9 @@ test.describe("multi-selection", () => {
         // its rows leave the list (the selection no longer covers what's loaded); ⌘A again offers the Inbox as it is now
         await server.backend.server.invoke("accounts.update", { id: out, unified: false }, dev);
         await expect.poll(() => page.getByTestId(`nav-account-hidden-${out}`).count()).toBe(1);
+        // the list has reloaded without its rows before ⌘A (a slow reload would otherwise prune what ⌘A checked)
+        const accountOf = (thread: number) => db(server).get<{ a: number }>("SELECT account_id AS a FROM threads WHERE id = ?", thread)!.a;
+        await expect.poll(async () => (await rows(page).evaluateAll((els) => els.map((el) => Number(el.getAttribute("data-thread-id"))))).map(accountOf).includes(out)).toBe(false);
         await focusList(page);
         await page.keyboard.press("ControlOrMeta+a");
         await expect(offer).toHaveText(`Select all ${left.toLocaleString("en-US")} conversations in “Inbox”`);

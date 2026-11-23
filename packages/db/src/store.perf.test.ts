@@ -339,14 +339,15 @@ describe("a delete's count (plan 107)", () => {
 
 describe("an account out of the all-accounts Inbox (plan 238)", () => {
   it("holding the newest 95% of the Inbox, or all of it: pages, filters, scopes and counts within the navigation budgets", async () => {
-    const inbox = store.db.all<{ id: number; account_id: number }>("SELECT id, account_id FROM threads WHERE in_inbox = 1 ORDER BY last_date DESC, id DESC");
+    const inbox = store.db.all<{ id: number; account_id: number; provider_thread_id: string | null }>("SELECT id, account_id, provider_thread_id FROM threads WHERE in_inbox = 1 ORDER BY last_date DESC, id DESC");
     const out = accountIds[0]!;
     // the worst case for a page: everything newest is the hidden account's, so the walk passes all of it first
     const top = inbox.slice(0, Math.floor(inbox.length * 0.95)).map((r) => r.id);
     const rest = inbox.slice(top.length).filter((r) => r.account_id === out).map((r) => r.id);
     const other = accountIds.find((id) => id !== out)!;
+    // a provider's thread id is unique within its account: a moved thread wears its own key meanwhile
     const move = (ids: number[], to: number) => {
-      for (let i = 0; i < ids.length; i += 500) store.db.run(`UPDATE threads SET account_id = ? WHERE id IN (${ids.slice(i, i + 500).join()})`, to);
+      for (let i = 0; i < ids.length; i += 500) store.db.run(`UPDATE threads SET account_id = ?, provider_thread_id = 'p238:' || id WHERE id IN (${ids.slice(i, i + 500).join()})`, to);
     };
     move(top, out);
     move(rest, other);
@@ -373,9 +374,9 @@ describe("an account out of the all-accounts Inbox (plan 238)", () => {
       await gate("every account out: inbox unread filter (empty)", 5, () => store.threads.list({ view: "inbox", filter: "unread", limit: 100 }));
     } finally {
       for (const id of accountIds) await store.accounts.update(id, { unified: true });
-      const back = new Map<number, number[]>();
-      for (const r of inbox) back.set(r.account_id, [...(back.get(r.account_id) ?? []), r.id]);
-      for (const [to, ids] of back) move(ids, to);
+      store.db.tx(() => {
+        for (const r of inbox) store.db.run("UPDATE threads SET account_id = ?, provider_thread_id = ? WHERE id = ?", r.account_id, r.provider_thread_id, r.id);
+      });
     }
   });
 });

@@ -46,6 +46,10 @@ describe("a notification's click (plan 41)", () => {
     expect(getApp()).toMatchObject({ view: "inbox", accountId: 2 });
     openFromNotice(42, 2);
     expect(getApp()).toMatchObject({ view: "inbox", accountId: 2, selectedId: 42 });
+    // from its Promotions: its Inbox, not the tab (Codex code review, round 2)
+    setApp({ gmailTab: "promotions" });
+    openFromNotice(null, 2);
+    expect(getApp()).toMatchObject({ view: "inbox", accountId: 2, gmailTab: null });
     openFromNotice(null, 1);
     expect(getApp()).toMatchObject({ view: "inbox", accountId: null });
     openFromNotice(null);
