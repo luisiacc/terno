@@ -699,7 +699,7 @@ export class PreferenceWorker {
 
 // ─── pure parts ────────────────────────────────────────────────────────────
 
-const squash = (s: string) => normalizeText(s).replace(/[“”«»"']/gu, "").replace(/\s+/gu, " ").trim();
+const squash = (s: string) => normalizeText(s).replace(/[“”‘’«»"'`]/gu, "").replace(/\s+/gu, " ").trim();
 
 /** The mail around a quote (its paragraph's neighbourhood), else its start: what the matcher sees of a row's mail. */
 export function excerptAround(text: string, quote: string, max: number): string {

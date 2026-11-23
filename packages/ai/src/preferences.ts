@@ -40,7 +40,7 @@ const languageOf = (l: string) => LANGUAGE_NAME[l] ?? "English";
 
 /** The tags of these prompts, neutralized wherever words that aren't ours go in (a mail, a rule, the user's text). */
 const dataText = (text: string) => text.replace(/<(\s*\/?\s*)(words|rules|rows|row|subject|from|mail|open_items)\b/giu, "‹$1$2");
-const flat = (s: string) => normalizeText(s).replace(/[“”«»"']/gu, "").replace(/\s+/gu, " ").trim();
+const flat = (s: string) => normalizeText(s).replace(/[“”‘’«»"'`]/gu, "").replace(/\s+/gu, " ").trim();
 
 // ─── compile ───────────────────────────────────────────────────────────────
 
