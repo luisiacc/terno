@@ -84,5 +84,6 @@ test("plan 240: Always show in What matters from a sender's menu, with Undo; Sto
     await page.keyboard.press("Enter");
     await expect(snack(page)).toContainText("back to its usual rules for ESOF");
     await expect(list).toHaveCount(0);
+    await expect(page.getByTestId("today-shown-list-empty")).toHaveText("No one yet. Right-click a sender’s mail and choose More, then Always show.");
   });
 });

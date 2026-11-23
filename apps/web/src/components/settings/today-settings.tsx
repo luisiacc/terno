@@ -38,7 +38,7 @@ export default function TodaySettings({ settings, update }: { settings: AppSetti
       </SettingsRow>
       {/* plan 240: the senders always shown, with Stop; the hint says how one comes to be shown */}
       <SettingsRow find="general.todayShown" label={t("shown.title")} hint={t("shown.hint")} stacked testId="today-shown">
-        {(a) => <ShownList testId="today-shown-list" labelledBy={a["aria-labelledby"]} describedBy={a["aria-describedby"]} fallback={() => document.querySelector<HTMLElement>("[data-testid=today-finished]")} />}
+        {(a) => <ShownList testId="today-shown-list" labelledBy={a["aria-labelledby"]} describedBy={a["aria-describedby"]} fallback={() => document.querySelector<HTMLElement>("[data-testid=today-finished]")} empty />}
       </SettingsRow>
       {/* plan 210 (iteration 4): what's muted, with Unmute; empty, how muting comes about */}
       <SettingsRow find="general.todayMuted" label={t("dated.mute.title")} hint={t("dated.mute.hint")} stacked testId="today-muted">

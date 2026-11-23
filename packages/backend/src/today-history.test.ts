@@ -28,7 +28,7 @@ function fakeStore(datedRows: Closed[], promiseRows: Closed[] = [], spam: Readon
     promises: promises.filter((r) => keys.includes(`promise:${r.id}`) || (r.sameAs != null && keys.includes(r.sameAs))),
   });
   const store = {
-    dated: { closedPage: page(dated), written: async () => new Set<string>(), ofThread: async (id: number) => dated.filter((r) => r.threadId === id && r.state === "open") },
+    dated: { closedPage: page(dated), trusted: async () => new Set<string>(), ofThread: async (id: number) => dated.filter((r) => r.threadId === id && r.state === "open") },
     followups: { closedPage: page(promises) },
     today: { members },
     threads: { summaries: async (ids: readonly number[]) => ids.map((id) => ({ id, inSpam: spam.has(id), inTrash: false }) as ThreadSummary) },

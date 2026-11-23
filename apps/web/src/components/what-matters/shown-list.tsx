@@ -8,14 +8,15 @@ import { readShownSenders, useShownSenders } from "~/state/shown-senders";
 /**
  * Plan 240: the senders always shown in What matters, each with Stop (Undo in the snack), where What matters' settings are.
  * A sender's name, their address beside it (never twice). Stop takes the row off at once and keeps the keys in the list: the
- * next row's button, else the previous, else `fallback`. Nothing shown: nothing drawn (a sender's menu is the way in).
+ * next row's button, else the previous, else `fallback`. Nothing shown: with `empty`, how a sender comes to be shown.
  */
-export function ShownList({ testId, labelledBy, describedBy, fallback }: { testId: string; labelledBy?: string; describedBy?: string; fallback?: () => HTMLElement | null }) {
+export function ShownList({ testId, labelledBy, describedBy, fallback, empty }: { testId: string; labelledBy?: string; describedBy?: string; fallback?: () => HTMLElement | null; /** say how one comes to be shown when none is (Settings) */ empty?: boolean }) {
   const senders = useShownSenders((s) => s.senders);
   const list = useRef<HTMLUListElement>(null);
   const baseId = useId();
   useEffect(() => void readShownSenders(), []);
-  if (!senders?.length) return null;
+  if (senders === null) return null;
+  if (!senders.length) return empty ? <p className="text-sm text-muted-foreground" data-testid={`${testId}-empty`}>{t("shown.empty")}</p> : null;
   const stop = async (s: ShownSender, at: number) => {
     const buttons = [...(list.current?.querySelectorAll<HTMLElement>(`[data-testid=${testId}-stop]`) ?? [])];
     const next = buttons[at + 1] ?? buttons[at - 1] ?? fallback?.() ?? null;
