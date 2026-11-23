@@ -1,6 +1,7 @@
 import { useAiDraftUi } from "~/lib/ai-draft-state";
 import { closeSnippetEditor } from "~/lib/snippet-editor-state";
 import { getApp, setApp, useApp } from "~/state/app";
+import { endReturn } from "~/lib/settings-place";
 import type { FindTarget } from "./search-index";
 import { leaveStyleEditors } from "./writing-style";
 
@@ -132,6 +133,8 @@ function seek(target: FindTarget) {
 export function openFound(target: FindTarget) {
   cancel?.();
   cancel = null;
+  // plan 246: the setting is where the pane goes, not back to where Settings was left
+  endReturn();
   const style = target.tab === "ai" && target.page === "style";
   const go = () => {
     setApp({ settingsTab: target.tab });

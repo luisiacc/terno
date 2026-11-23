@@ -26,6 +26,7 @@ import { needsSignIn } from "~/lib/sign-in";
 import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
+import { openSettings } from "~/lib/settings-place";
 import { openSignInMarker } from "./sign-in-notice";
 import { AccountRemoveDialog } from "./account-remove-dialog";
 
@@ -134,7 +135,7 @@ export function AccountMenu({ account, unread, onRename, solo = false, children 
               </ContextMenuRadioGroup>
             </ContextMenuSubContent>
           </ContextMenuSub>
-          <ContextMenuItem data-testid="account-menu-settings" onClick={away(() => setApp({ dialog: "settings", settingsTab: "accounts", settingsAccount: account.id }))}>
+          <ContextMenuItem data-testid="account-menu-settings" onClick={away(() => openSettings("accounts", account.id))}>
             <Settings2 />
             <span className="flex-1">{t("account.menu.settings")}</span>
           </ContextMenuItem>

@@ -1,6 +1,6 @@
 import { Dialog, DialogContent, DialogTitle } from "@terno/ui/components/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@terno/ui/components/tabs";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { installScrollHairline } from "~/lib/scroll-hairline";
 import { snack, useSnack } from "~/lib/snack";
 import { SnackRoom } from "./snack-dock";
@@ -17,7 +17,8 @@ import { AgentsTab } from "./settings/agents-tab";
 import { DataTab } from "./settings/data-tab";
 import { FiltersTab } from "./settings/filters-tab";
 import { SnippetsTab } from "./settings/snippets-tab";
-import { closeSnippetEditor, setDeletedSnippet } from "~/lib/snippet-editor-state";
+import { closeSnippetEditor, setDeletedSnippet, useSnippetEditor } from "~/lib/snippet-editor-state";
+import { trackSettingsPane, type PaneState } from "~/lib/settings-place";
 import { GeneralTab } from "./settings/general-tab";
 import { StorageTab } from "./settings/storage-tab";
 import { settingsTabLabel, settingsTabs } from "./settings/tabs";
@@ -60,10 +61,30 @@ function initialFocus(): boolean | HTMLElement {
  * A section: its title on a row of its own, level with the sheet's close, and the content scrolling below it, so nothing
  * runs under the close. The padding around the row's edge keeps the first control's focus ring from being clipped.
  */
-function SettingsPane({ title, back, open, children }: { title: string; /** a page inside a section (plan 161): its way back, on the title's line */ back?: { label: string; onClick: () => void; testId: string }; /** the sheet is open (its room is, plan 232) */ open: boolean; children: React.ReactNode }) {
+function SettingsPane({ title, back, open, tab, page, children }: { title: string; /** a page inside a section (plan 161): its way back, on the title's line */ back?: { label: string; onClick: () => void; testId: string }; /** the sheet is open (its room is, plan 232) */ open: boolean; tab: SettingsTab; /** on a page inside the section (Writing style, a snippet's editor) */ page: boolean; children: React.ReactNode }) {
   const headerRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
+  // plan 246: Settings comes back to where it was left; the pane says where that is as it scrolls
+  const live = useRef<PaneState>({ tab, page, open });
+  const tracker = useRef<ReturnType<typeof trackSettingsPane>>(null);
+  const shown = useRef(tab);
+  useLayoutEffect(() => {
+    live.current = { tab, page, open };
+  });
+  useLayoutEffect(() => {
+    const t = trackSettingsPane(scrollerRef.current!, () => live.current);
+    tracker.current = t;
+    return () => {
+      tracker.current = null;
+      t.dispose();
+    };
+  }, []);
+  useLayoutEffect(() => {
+    if (shown.current === tab) return;
+    shown.current = tab;
+    tracker.current?.sectionChanged();
+  }, [tab]);
   // plan 232: what Settings says stands on this pane's foot; the last row, and a control Tab reaches, scroll clear of it
   const snackRoom = useSnack((s) => s.roomInset);
   useEffect(() => {
@@ -111,6 +132,7 @@ export function SettingsDialog() {
   // plan 184: accounts that need a sign-in (the Accounts entry says so)
   const signIns = useApp((s) => s.accounts.filter(needsSignIn).length);
   const stylePage = useAiDraftUi((s) => s.stylePage) && tab === "ai";
+  const snippetPage = useSnippetEditor((s) => s.editing !== null) && tab === "snippets";
 
   // back to Drafting, focus on the button that opened Writing style (pass 3), as the palette's pages go back
   const backFromStyle = () => {
@@ -200,6 +222,8 @@ export function SettingsDialog() {
             title={stylePage ? t("aiDraft.style.title") : settingsTabLabel(tab)}
             back={stylePage ? { label: t("aiDraft.style.back"), onClick: backFromStyle, testId: "writing-style-back" } : undefined}
             open={open && !fatalModal}
+            tab={tab}
+            page={stylePage || snippetPage}
           >
             {/* a section that fails to render stays a section: the sheet and the other tabs keep working */}
             <PaneBoundary area="settings" resetKey={tab} title={t("settings.sectionError")}>

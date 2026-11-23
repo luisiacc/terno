@@ -17,7 +17,8 @@ import { keepInView } from "~/lib/reader-scroll";
 import { AiErrorNotice, AiProvenance, aiErrorCopy, aiWritten, errorTarget } from "../ai-card";
 import { useAiDraftUi } from "~/lib/ai-draft-state";
 import { useDrafts } from "~/lib/drafts";
-import { setApp, useApp } from "~/state/app";
+import { useApp } from "~/state/app";
+import { openSettings } from "~/lib/settings-place";
 import { useController } from "./controller";
 
 
@@ -43,7 +44,7 @@ function Frame({ draftKey, htmlFor, children }: { draftKey: string; htmlFor?: st
 const line = "flex min-h-[38px] min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1 py-1.5 text-sm text-muted-foreground";
 const quiet = "font-normal text-muted-foreground hover:text-foreground";
 
-const openSettings = () => setApp({ dialog: "settings", settingsTab: "ai" });
+const openAiSettings = () => openSettings("ai");
 
 /** A person as the strip says them: the first To's first name. */
 function whoOf(toText: string): string {
@@ -223,7 +224,7 @@ function StatusPopover({ s, strip, toText }: { s: AiSession; strip: AiStrip; toT
         data-testid="ai-voice-style"
         onClick={() => {
           useAiDraftUi.setState({ stylePage: true });
-          openSettings();
+          openAiSettings();
         }}
       >
         {t("aiDraft.style.title")}
@@ -494,7 +495,7 @@ function NoProvider({ s }: { s: AiSession }) {
   return (
     <div className={line} data-testid="ai-no-provider" role="status">
       <span>{t("aiDraft.noProvider")}</span>
-      <Button type="button" variant="outline" size="xs" className="font-normal" data-ai-default data-testid="ai-no-provider-settings" onClick={() => { closeRow(s.key); openSettings(); }}>
+      <Button type="button" variant="outline" size="xs" className="font-normal" data-ai-default data-testid="ai-no-provider-settings" onClick={() => { closeRow(s.key); openAiSettings(); }}>
         {t("aiDraft.openAiSettings")}
       </Button>
       <CloseButton className="ml-auto" label={t("common.close")} onClick={() => closeRow(s.key)} data-testid="ai-row-close" />
@@ -527,7 +528,7 @@ function ErrorLine({ s }: { s: AiSession }) {
               </Button>
             )}
             {copy.settings && (
-              <Button type="button" variant="ghost" size="sm" className={quiet} data-testid="ai-error-settings" onClick={() => { closeRow(s.key, { keepDraft: true }); openSettings(); }}>
+              <Button type="button" variant="ghost" size="sm" className={quiet} data-testid="ai-error-settings" onClick={() => { closeRow(s.key, { keepDraft: true }); openAiSettings(); }}>
                 {t("ai.error.settings")}
               </Button>
             )}

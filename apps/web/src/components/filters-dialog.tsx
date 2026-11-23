@@ -25,6 +25,7 @@ import { client } from "~/rpc/connection";
 import { learnedRule } from "~/lib/learned";
 import { BROAD_COUNT, broadRule, describeRule, ruleGaps, ruleMisses, sensedOp, withSensedOp, type SensedOp } from "~/lib/rule-words";
 import { getApp, setApp, useApp } from "~/state/app";
+import { openSettings } from "~/lib/settings-place";
 import { ConfirmDialog } from "./settings/parts";
 import { AI_CARD, AI_HEADER, AI_PAD, AI_TITLE } from "./ai-card";
 import { AiProvenance } from "./ai-provenance";
@@ -615,7 +616,7 @@ export function FiltersDialog() {
       const copy = aiErrorCopy({ message: e.message ?? String(error), kind, key: e.i18n?.key }, ai ? errorTarget(routeOf("filter", ai).provider, ai) : null);
       snack.error(copy.title, {
         description: copy.help ?? undefined,
-        action: copy.settings || kind === "not_configured" || kind === "blocked" ? { label: t("filters.aiSettings"), onClick: () => setApp({ dialog: "settings", settingsTab: "ai" }) } : undefined,
+        action: copy.settings || kind === "not_configured" || kind === "blocked" ? { label: t("filters.aiSettings"), onClick: () => openSettings("ai") } : undefined,
       });
     } finally {
       setGenerating(false);
@@ -694,7 +695,9 @@ export function FiltersDialog() {
         if (o) return;
         const list = [...parked, ...(aiDraft ? [aiDraft] : [])];
         kept.current = list.length ? { list, open: aiDraft?.key ?? null } : null;
-        setApp(returnTo === "settings" ? { dialog: "settings", settingsTab: "filters" } : { dialog: null });
+        // back to Settings where it was (plan 246: Filters, as it came from there)
+        if (returnTo === "settings") openSettings();
+        else setApp({ dialog: null });
       }}
     >
       <DialogContent

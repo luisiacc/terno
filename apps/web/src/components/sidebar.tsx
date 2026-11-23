@@ -12,6 +12,7 @@ import { useDesign, variant } from "~/lib/design";
 import { formatNumber, t } from "@terno/i18n";
 import { viewLabel } from "~/lib/format";
 import { getApp, navigate, setApp, useApp, type AppState } from "~/state/app";
+import { openSettings } from "~/lib/settings-place";
 import { useReminders } from "~/lib/reminders";
 import { followupsOffered, todayOffered } from "~/lib/ai";
 import { useFollowups } from "~/state/followups";
@@ -1643,7 +1644,7 @@ export function Sidebar() {
         <Tooltip>
           <TooltipTrigger
             render={
-              <Button data-testid="open-settings" variant="ghost" size="icon-sm" aria-label={t("common.settings")} onClick={() => setApp({ dialog: "settings", settingsTab: "general" })}>
+              <Button data-testid="open-settings" variant="ghost" size="icon-sm" aria-label={t("common.settings")} onClick={() => openSettings()}>
                 <Settings2 />
               </Button>
             }

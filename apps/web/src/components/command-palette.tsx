@@ -7,7 +7,7 @@ import { CategoryDot } from "@terno/ui/components/category-dot";
 import { cn } from "@terno/ui/lib/utils";
 import { Chip } from "@terno/ui/components/chip";
 import { Command, CommandDescription, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
-import { Archive, AtSign, Ban, AlarmClock, AlarmClockOff, ListChecks, BookmarkPlus, CalendarClock, CalendarDays, CheckCheck, CircleCheck, Clock, Copy, FileDown, Focus, FolderInput, Forward, Keyboard, Link, Mail, MailOpen, Moon, OctagonAlert, Palette, Paperclip, Pin, PinOff, PinTop, Inbox, Layers, ListFilter, Mails, PenLine, Plus, Printer, RefreshCw, Reply, ReplyAll, RotateCw, Search, Send, Sparkles, Star, Sun, Tag, NotepadText, Trash2, Undo2, Users } from "@terno/ui/icons";
+import { Archive, AtSign, Ban, AlarmClock, AlarmClockOff, ListChecks, BookmarkPlus, CalendarClock, CalendarDays, CheckCheck, CircleCheck, Clock, Copy, FileDown, Focus, FolderInput, Forward, Keyboard, Link, Mail, MailOpen, Moon, OctagonAlert, Palette, Paperclip, Pin, PinOff, PinTop, Inbox, Layers, ListFilter, Mails, PenLine, Plus, Printer, RefreshCw, Reply, ReplyAll, RotateCw, Search, Send, Settings2, Sparkles, Star, Sun, Tag, NotepadText, Trash2, Undo2, Users } from "@terno/ui/icons";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { fitWholeRows, markMore } from "@terno/ui/lib/whole-rows";
 import { act, openCompose, targetRows, toggleStar, undoLast } from "~/lib/actions";
@@ -28,6 +28,7 @@ import { openAiDraft } from "~/lib/ai-draft";
 import { checkForUpdates, installUpdate, useHasUpdates, useUpdates } from "~/lib/updates";
 import { englishWords as english } from "~/lib/palette-words";
 import { getApp, navigate, setApp, useApp } from "~/state/app";
+import { openSettings } from "~/lib/settings-place";
 import { openRemind, presetLabel, presetWhen, setReminder, clearReminder, useReminders } from "~/lib/reminders";
 import { useReaderHeld, useToday, useTodayTask, type FeedRow } from "~/state/today";
 import { actOnReaderItem, actOnTodayRow, openLater, openReaderLater, remindLimit } from "~/lib/today-task";
@@ -398,7 +399,7 @@ export function CommandPalette() {
     if (!inDraftNow) add({ id: "snippet.newMessage", group: "actions", label: t("palette.newFromSnippet"), icon: <NotepadText />, shortcut: keysOf("snippets.open"), testId: "palette-new-from-snippet", ...synonyms("palette.alias.snippet", english("palette.newFromSnippet")), page: "snippets" });
     const newSnippet = () => {
       openSnippetEditor(newSnippetId(), { fresh: true });
-      setApp({ dialog: "settings", settingsTab: "snippets" });
+      openSettings("snippets");
     };
     // most used first, then by name
     const used = (s: Snippet) => usage.get(`snippet:${s.id}`)?.n ?? 0;
@@ -616,6 +617,8 @@ export function CommandPalette() {
     if (readyVersion) add({ id: "updates.restart", group: "actions", label: t("updates.pill.restart"), search: `${t("updates.pill.restart")} ${readyVersion}`, icon: <RotateCw />, testId: "palette-restart-update", keywords: english("updates.pill.restart"), run: () => void installUpdate() });
 
     // ── settings
+    // plan 246: Settings where it was left, as ⌘, and the sidebar's gear open it; plan 158: "preferences" finds it
+    add({ id: "settings:open", group: "settings", label: t("common.settings"), icon: <Settings2 />, shortcut: keysOf("settings.open"), testId: "palette-settings", ...synonyms("palette.alias.settings", english("common.settings")), run: () => openSettings() });
     for (const { value: tab, label, icon: Icon } of settingsTabs({ whatMatters: canAi, dev: hasDevMode })) {
       add({
         id: `settings:${tab}`,
@@ -627,13 +630,11 @@ export function CommandPalette() {
           </>
         ),
         icon: <Icon />,
-        shortcut: tab === "general" ? keysOf("settings.open") : undefined,
         testId: `palette-settings-${tab}`,
         // Rules were Filters: the old word still finds them
         ...(tab === "filters" ? { aliases: words(t("palette.alias.aiFilter")).map((w) => `${t("common.settings")} ${w}`) } : {}),
-        // plan 158: "preferences" finds where they start
-        ...(tab === "general" ? synonyms("palette.alias.settings", english("common.settings")) : { keywords: english("common.settings") }),
-        run: () => setApp({ dialog: "settings", settingsTab: tab }),
+        keywords: english("common.settings"),
+        run: () => openSettings(tab),
       });
     }
     add({ id: "settings.newSnippet", group: "settings", label: t("palette.newSnippet"), icon: <Plus />, testId: "palette-settings-new-snippet", keywords: english("palette.newSnippet"), run: newSnippet });

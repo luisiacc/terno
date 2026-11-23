@@ -21,13 +21,14 @@ import { AiErrorNotice, aiErrorCopy, errorTarget } from "~/components/ai-error";
 import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
 import { openFound } from "./settings/find-open";
+import { openSettings } from "~/lib/settings-place";
 import { reloadList } from "~/state/list";
 import { digestKeys, digestPick, keepDigestPick, leaveOut, letBackIn, openFromDigest, senderKey, useToday, withoutSenders } from "~/state/today";
 import { AiProvenance } from "~/components/ai-provenance";
 
 /** Plan 247: the digest's switch is What matters' (Once a day): Settings opens there, at the switch. */
 function openDigestSettings() {
-  setApp({ dialog: "settings", settingsTab: "whatMatters" });
+  openSettings("whatMatters");
   requestAnimationFrame(() => openFound({ id: "whatMatters.digest", tab: "whatMatters", page: null, scope: null, under: null }));
 }
 
@@ -473,7 +474,7 @@ export default function DigestPage() {
                 <Button size="sm" variant="outline" data-testid="digest-retry" onClick={() => void client.call("today.digestRetry", {}).catch(() => {})}>{t("ask.tryAgain")}</Button>
                 {/* when the fix is in Settings (a key, a model), the way there, as every AI error offers it (Codex review) */}
                 {failure!.settings && (
-                  <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-foreground" data-testid="digest-error-settings" onClick={() => setApp({ dialog: "settings", settingsTab: "ai" })}>{t("ai.error.settings")}</Button>
+                  <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-foreground" data-testid="digest-error-settings" onClick={() => openSettings("ai")}>{t("ai.error.settings")}</Button>
                 )}
               </>
             }

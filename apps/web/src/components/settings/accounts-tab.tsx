@@ -21,6 +21,7 @@ import { canStart, clearAttemptError, needsGoogleScript, needsSignIn, prepareGoo
 import SignInPanel from "../sign-in-panel";
 import { retryIn } from "../connection-pill";
 import { getApp, setApp, useApp } from "~/state/app";
+import { reopenedRows } from "~/lib/settings-place";
 import { patchAccount, setAccountFeed, type AccountEdit } from "~/lib/accounts";
 import { aiFeaturesOffered } from "~/lib/ai";
 import { DaysField } from "./general-tab";
@@ -321,6 +322,7 @@ export function AccountsTab({ settings, update }: { settings: AppSettings; updat
   const accounts = useApp((s) => s.accounts);
   const owner = useApp((s) => s.owner);
   const demo = useApp((s) => s.demo);
+  const [reopen] = useState(reopenedRows);
   return (
     <div data-testid="accounts-tab">
       {/* plan 207 (the owner): first here, off until turned on */}
@@ -331,8 +333,9 @@ export function AccountsTab({ settings, update }: { settings: AppSettings; updat
       </SettingsGroup>
       <OwnerCard owner={owner} demo={demo} accounts={accounts} />
       <SettingsGroup title={t("account.list")} testId="accounts-group">
-        {/* plan 106: Settings opened on an account (the sidebar's Account Settings…) opens it; later events leave it be */}
-        <Accordion multiple defaultValue={accounts.filter((a) => a.id === getApp().settingsAccount).map((a) => a.id)} className="hairline-divide">
+        {/* plan 106: Settings opened on an account (the sidebar's Account Settings…) opens it; later events leave it be.
+            Plan 246: come back to, the ones open when Settings was left */}
+        <Accordion multiple defaultValue={accounts.filter((a) => a.id === getApp().settingsAccount || reopen.has(`account:${a.id}`)).map((a) => a.id)} className="hairline-divide">
           {accounts.map((a) => (
             <AccountItem key={a.id} account={a} generalWindow={settings.syncWindowDays} isOwner={owner?.accountId === a.id} />
           ))}

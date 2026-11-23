@@ -9,6 +9,7 @@ import { announce } from "~/lib/announce";
 import { clearSelection, extendSelection, isMac, keyThread, selectAll, selectWhere, toggleCurrent } from "~/lib/select";
 import { openFocusedMenu, openMenuForSelection } from "~/components/thread-menu";
 import { chooseOpenThread, getApp, markSelectionIntent, navigate, setApp } from "~/state/app";
+import { openSettings } from "~/lib/settings-place";
 import { loadMore, useList } from "~/state/list";
 import { useThreads } from "~/state/threads";
 import { warmNext } from "~/lib/warm";
@@ -288,7 +289,8 @@ const HANDLERS: Partial<Record<Command, () => void>> = {
   "go.trash": () => goToFolder("trash"),
   "go.reminders": () => navigate({ reminders: true }),
   "help.shortcuts": () => setApp({ dialog: "shortcuts" }),
-  "settings.open": () => setApp({ dialog: "settings", settingsTab: "general" }),
+  // plan 246: where Settings was left
+  "settings.open": () => openSettings(),
   "suggestion.accept": () => answerSuggestion(true),
   "suggestion.reject": () => answerSuggestion(false),
   "snackbar.action1": () => snackbarControls.current?.action(1),

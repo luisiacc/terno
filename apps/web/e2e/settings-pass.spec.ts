@@ -51,9 +51,14 @@ async function openVia(page: Page, how: "gear" | "palette" | "keyboard", tab: Ta
   } else {
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     await page.keyboard.press("Meta+Comma");
-    await expect(page.getByTestId("tab-general")).toBeFocused();
-    // ↓ through the tab list: each tab activates as it gets focus
-    for (let i = 0; i < TABS.findIndex(([t]) => t === tab); i++) await page.keyboard.press("ArrowDown");
+    // plan 246: Settings comes back to the section it was left at, its tab focused
+    await expect(dialog(page)).toBeVisible();
+    const at = await dialog(page).locator("[role=tab][aria-selected=true]").getAttribute("data-settings-tab");
+    await expect(page.getByTestId(`tab-${at}`)).toBeFocused();
+    // ↓↑ through the tab list from there: each tab activates as it gets focus
+    const from = TABS.findIndex(([t]) => t === at);
+    const to = TABS.findIndex(([t]) => t === tab);
+    for (let i = 0; i < Math.abs(to - from); i++) await page.keyboard.press(to > from ? "ArrowDown" : "ArrowUp");
   }
   await expect(page.getByTestId(`tab-${tab}`)).toHaveAttribute("aria-selected", "true");
   await expect(panel(page)).toBeVisible();
@@ -316,9 +321,10 @@ test.describe("editable, persisted and in effect", () => {
       await page.getByTestId("compose-button").click();
       await expect(page.getByTestId("compose-signature")).toHaveText("-- \nLuis Cordero\nhola@luiscordero.dev");
 
+      // plan 246: ⌘, comes back to Accounts with the account still open
       await page.keyboard.press("Meta+Comma");
-      await page.getByTestId("tab-accounts").click();
-      await item.getByTestId("account-toggle").click();
+      await expect(page.getByTestId("tab-accounts")).toHaveAttribute("aria-selected", "true");
+      await expect(item.getByTestId("account-toggle")).toHaveAttribute("aria-expanded", "true");
       await item.getByTestId("account-remove").click();
       await expect(page.getByTestId("account-remove-dialog")).toContainText(`Remove ${imap.email}?`);
       await page.getByTestId("account-remove-dialog-confirm").click();

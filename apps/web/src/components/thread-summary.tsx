@@ -13,7 +13,8 @@ import { repeatsItem } from "~/lib/reader-items";
 import { messageDate } from "~/lib/format";
 import { bodyArrivedForSummary, dismissSummary, loadSummary, revealSummaryMessage, setSummaryOpen, stopSummary, summarizable, summarize, useSummaries } from "~/lib/summaries";
 import { replyFromItem } from "~/lib/summary-reply";
-import { setApp, useApp } from "~/state/app";
+import { useApp } from "~/state/app";
+import { openSettings } from "~/lib/settings-place";
 import { announce } from "~/lib/announce";
 import { AI_CARD, AI_GLYPH, AI_HEADER, AI_INSET, AI_PAD, AI_TITLE, AiCopyButton, AiErrorNotice, AiProvenance, aiErrorCopy, errorTarget, messageSource, messageSourceShort } from "./ai-card";
 
@@ -145,7 +146,7 @@ function Line({ state, status, icon, actions, children }: { state: string; statu
   );
 }
 
-const openSettings = () => setApp({ dialog: "settings", settingsTab: "ai" });
+const openAiSettings = () => openSettings("ai");
 
 /**
  * Plan 132 §6 and plan 148: a thread's summary, on a card between the header and the conversation, so it never reads
@@ -221,7 +222,7 @@ export default function ThreadSummary({ detail, said = [] }: { detail: ThreadDet
           <Line
             state="no-provider"
             actions={
-              <Button size="sm" variant="outline" data-testid="summary-settings" onClick={() => { dismissSummary(threadId); openSettings(); }}>
+              <Button size="sm" variant="outline" data-testid="summary-settings" onClick={() => { dismissSummary(threadId); openAiSettings(); }}>
                 {t("common.settings")}
               </Button>
             }
@@ -245,7 +246,7 @@ export default function ThreadSummary({ detail, said = [] }: { detail: ThreadDet
                     {t("summary.tryAgain")}
                   </Button>
                   {copy.settings && (
-                    <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-foreground" data-testid="summary-error-settings" onClick={() => { dismissSummary(threadId); openSettings(); }}>
+                    <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-foreground" data-testid="summary-error-settings" onClick={() => { dismissSummary(threadId); openAiSettings(); }}>
                       {t("ai.error.settings")}
                     </Button>
                   )}

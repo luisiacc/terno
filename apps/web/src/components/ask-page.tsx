@@ -23,7 +23,8 @@ import { getLocale } from "@terno/i18n";
 import { boundaryDay } from "~/lib/when";
 import { askFrom, paletteBack, paletteKeys, setPalettePage, usePalettePage } from "~/lib/palette-open";
 import { chordLabel } from "@terno/ui/components/shortcut";
-import { useApp, setApp } from "~/state/app";
+import { useApp } from "~/state/app";
+import { openSettings } from "~/lib/settings-place";
 import { AiCopyButton, AiProvenance } from "~/components/ai-provenance";
 import { AiErrorNotice, aiErrorCopy, errorTarget, type AiErrorCopy } from "~/components/ai-error";
 
@@ -405,7 +406,7 @@ function Failure() {
           <>
             <Button size="sm" variant="outline" data-testid="ask-retry" onKeyDown={stopKeys} onClick={() => askQuestion(error.question)}>{t("ask.tryAgain")}</Button>
             {copy.settings && (
-              <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-foreground" data-testid="ask-error-settings" onKeyDown={stopKeys} onClick={() => setApp({ dialog: "settings", settingsTab: "ai" })}>{t("ai.error.settings")}</Button>
+              <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-foreground" data-testid="ask-error-settings" onKeyDown={stopKeys} onClick={() => openSettings("ai")}>{t("ai.error.settings")}</Button>
             )}
           </>
         }
@@ -869,7 +870,7 @@ function NoProvider() {
   return (
     <div className="space-y-3 px-[18px] py-5" data-testid="ask-no-provider">
       <p className="text-sm">{t("ask.noProvider")}</p>
-      <Button size="sm" data-testid="ask-open-settings" onKeyDown={stopKeys} onClick={() => setApp({ dialog: "settings", settingsTab: "ai" })}>{t("ask.noProvider.open")}</Button>
+      <Button size="sm" data-testid="ask-open-settings" onKeyDown={stopKeys} onClick={() => openSettings("ai")}>{t("ask.noProvider.open")}</Button>
     </div>
   );
 }

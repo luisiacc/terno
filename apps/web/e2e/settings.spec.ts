@@ -50,7 +50,63 @@ test.describe("accounts, settings and command palette", () => {
       }
       await page.getByTestId("search-input").focus();
       await page.keyboard.press("Meta+Comma");
+      // plan 246: where Settings was left (Storage, from the palette)
+      await expect(page.getByTestId("tab-storage")).toHaveAttribute("aria-selected", "true");
+    });
+    await scenario("plan 246: the gear and ⌘, come back to the section, scroll and open rows Settings was left at; a link starts at the top; a reload forgets", async () => {
+      await fresh(page);
+      const dialog = page.getByTestId("settings-dialog");
+      const scroller = page.getByTestId("settings-scroller");
+      const top = () => scroller.evaluate((el) => el.scrollTop);
+      // the pane's scroll is written as it scrolls (a frame after the wheel)
+      const settle = () => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+      const close = async () => {
+        await page.keyboard.press("Escape");
+        await expect(dialog).toHaveCount(0);
+      };
+      await page.getByTestId("open-settings").click();
+      await page.getByTestId("tab-ai").click();
+      await scroller.hover();
+      await page.mouse.wheel(0, 500);
+      await expect.poll(top).toBeGreaterThan(300);
+      await settle();
+      const at = await top();
+      await close();
+      await page.getByTestId("open-settings").click();
+      await expect(page.getByTestId("tab-ai")).toHaveAttribute("aria-selected", "true");
+      expect(Math.abs((await top()) - at)).toBeLessThanOrEqual(1);
+      await close();
+      await page.keyboard.press("Meta+Comma");
+      await expect(page.getByTestId("tab-ai")).toHaveAttribute("aria-selected", "true");
+      expect(Math.abs((await top()) - at)).toBeLessThanOrEqual(1);
+      await close();
+      // a link names its section: from the top, and it's then the place
+      await page.keyboard.press("Meta+k");
+      await page.getByTestId("palette-input").fill("settings Storage");
+      await expect(page.getByRole("option", { selected: true })).toHaveAttribute("data-testid", "palette-settings-storage");
+      await page.keyboard.press("Enter");
+      await expect(page.getByTestId("tab-storage")).toHaveAttribute("aria-selected", "true");
+      expect(await top()).toBe(0);
+      // the rows open come back open
+      await page.getByTestId("tab-accounts").click();
+      const account = page.getByTestId("settings-account").first();
+      await account.getByTestId("account-toggle").click();
+      await expect(account.getByTestId("account-toggle")).toHaveAttribute("aria-expanded", "true");
+      await close();
+      // the palette's plain Settings is the gear's
+      await page.keyboard.press("Meta+k");
+      await page.getByTestId("palette-input").fill("settings");
+      await expect(page.getByRole("option", { selected: true })).toHaveAttribute("data-testid", "palette-settings");
+      await page.keyboard.press("Enter");
+      await expect(page.getByTestId("tab-accounts")).toHaveAttribute("aria-selected", "true");
+      await expect(account.getByTestId("account-toggle")).toHaveAttribute("aria-expanded", "true");
+      await close();
+      // a new window (here, a reload) starts again at General
+      await fresh(page);
+      await page.getByTestId("open-settings").click();
       await expect(page.getByTestId("tab-general")).toHaveAttribute("aria-selected", "true");
+      expect(await top()).toBe(0);
+      await close();
     });
     await scenario("⌘K jumps to a category and runs a search", async () => {
       await fresh(page);

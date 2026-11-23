@@ -38,7 +38,7 @@ test.describe("palette", () => {
       await input(page).fill("new");
       await expect(selected(page)).toContainText("New message");
       await expect(selected(page).getByTestId("palette-alias")).toHaveCount(0);
-      for (const [word, command] of [["respond", "compose.reply"], ["fwd", "compose.forward"], ["done", "thread.archive"], ["preferences", "settings:general"], ["search", "search.focus"]]) {
+      for (const [word, command] of [["respond", "compose.reply"], ["fwd", "compose.forward"], ["done", "thread.archive"], ["preferences", "settings:open"], ["search", "search.focus"]]) {
         await input(page).fill(word!);
         await expect(selected(page), word).toHaveAttribute("data-command", command!);
       }

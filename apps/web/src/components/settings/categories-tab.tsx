@@ -19,6 +19,7 @@ import { offerTip } from "~/lib/tips";
 import { reorderCategories } from "~/lib/reorder";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp } from "~/state/app";
+import { reopenedRows } from "~/lib/settings-place";
 import { ColorPicker, CommitInput, ConfirmDialog, findAttrs, SettingsGroup, SettingsNote, SettingsRow, type SettingsUpdate } from "./parts";
 
 const modes = () =>
@@ -60,11 +61,11 @@ function statsLine(s: CategoryModelStats | undefined): React.ReactNode {
   );
 }
 
-function CategoryItem({ category, stats, index, count, autoMode }: { category: Category; stats: CategoryModelStats | undefined; index: number; count: number; autoMode: boolean }) {
+function CategoryItem({ category, stats, index, count, autoMode, defaultOpen }: { category: Category; stats: CategoryModelStats | undefined; index: number; count: number; autoMode: boolean; /** plan 246: open when Settings was left */ defaultOpen: boolean }) {
   const [deleting, setDeleting] = useState(false);
   const name = category.name;
   return (
-    <Collapsible data-testid={`category-stats-${category.id}`} data-category-id={category.id} data-setting-scope={`category:${category.id}`}>
+    <Collapsible defaultOpen={defaultOpen} data-testid={`category-stats-${category.id}`} data-category-id={category.id} data-setting-scope={`category:${category.id}`}>
       <div className="flex items-center gap-2">
         <CollapsibleTrigger data-testid="category-toggle" data-setting-open className="-ml-2 min-w-0 flex-1 rounded-md py-2.5 pl-2">
           <CategoryDot color={category.color as CategoryColor} />
@@ -266,6 +267,8 @@ export function CategoriesTab({ settings, update }: { settings: AppSettings; upd
   const noAi = categorizer === "none";
   // plan 134: said once, on the first look after it happened; it stays for that visit
   const [widened] = useState(settings.aiCategorizeWidened);
+  // plan 246: come back to, the categories open when Settings was left
+  const [reopen] = useState(reopenedRows);
   useEffect(() => {
     if (settings.aiCategorizeWidened) void update({ aiCategorizeWidened: false });
   }, [settings.aiCategorizeWidened, update]);
@@ -305,7 +308,7 @@ export function CategoriesTab({ settings, update }: { settings: AppSettings; upd
         footer={settings.autoCategorize === "auto" ? t("settings.categories.footer.auto") : t("settings.categories.footer")}
       >
         {categories.map((c, i) => (
-          <CategoryItem key={c.id} category={c} stats={stats.find((s) => s.categoryId === c.id)} index={i} count={categories.length} autoMode={settings.autoCategorize === "auto"} />
+          <CategoryItem key={c.id} category={c} stats={stats.find((s) => s.categoryId === c.id)} index={i} count={categories.length} autoMode={settings.autoCategorize === "auto"} defaultOpen={reopen.has(`category:${c.id}`)} />
         ))}
         <NewCategory />
       </SettingsGroup>

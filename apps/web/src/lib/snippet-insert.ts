@@ -2,7 +2,8 @@ import { fillText, nameParts, parseAddressList, SNIPPET_HTML_MAX, SNIPPET_TEXT_M
 import { t } from "@terno/i18n";
 import { controllerFor } from "~/components/composer/controller";
 import { filledBody } from "~/components/composer/rich";
-import { getApp, setApp } from "~/state/app";
+import { getApp } from "~/state/app";
+import { openSettings } from "~/lib/settings-place";
 import { openCompose } from "./compose";
 import { editDraft, editDraftRecipients, useDrafts, type LocalDraft } from "./drafts";
 import { registerUndo, snack } from "./snack";
@@ -118,7 +119,7 @@ export async function saveDraftAsSnippet(key: string): Promise<void> {
       bcc: isNew ? d.bccText.trim().slice(0, 2000) : "",
     });
     openSnippetEditor(saved.id, { selectName: true });
-    setApp({ dialog: "settings", settingsTab: "snippets" });
+    openSettings("snippets");
   } catch (error) {
     snack.error(t("snippets.saveFailed", { error: error instanceof Error ? error.message : String(error) }));
   }

@@ -11,6 +11,7 @@ import { reconcileSettings } from "~/lib/appearance";
 import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
+import { openSettings } from "~/lib/settings-place";
 import { openFound } from "../settings/find-open";
 import { MutedList } from "./muted-list";
 
@@ -54,7 +55,7 @@ export function WhatMattersOptions() {
   const hintId = useId();
   const more = () => {
     setOpen(false);
-    setApp({ dialog: "settings", settingsTab: "whatMatters" });
+    openSettings("whatMatters");
     // once Settings is there, at the row itself
     requestAnimationFrame(() => openFound({ id: "whatMatters.finished", tab: "whatMatters", page: null, scope: null, under: null }));
   };
