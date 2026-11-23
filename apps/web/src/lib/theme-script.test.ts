@@ -6,7 +6,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { runInNewContext } from "node:vm";
-import { FONT_IDS } from "@terno/core";
+import { FONT_IDS, LOCAL_FAMILY_RE } from "@terno/core";
 import { motionVars } from "@terno/ui/themes/apply";
 import { describe, expect, it } from "vitest";
 
@@ -137,6 +137,18 @@ describe("theme.js", () => {
     expect(run(cache()).attrs.has("data-font")).toBe(false);
     // its copy of the ids is core's
     expect(JSON.parse(SOURCE.match(/var FONTS = (\[[^\]]*\]);/)![1]!)).toEqual([...FONT_IDS]);
+  });
+
+  it("plan 248: paints an installed family by name; one that isn't a plain name paints nothing", () => {
+    const cache = (font: string) => ({ storage: { "terno:appearance": JSON.stringify({ v: 2, design: "lumen", mode: "light", light: "github-light", dark: "nord", motion: 75, font }) } });
+    const r = run(cache("local:Times New Roman"));
+    expect([r.attrs.get("data-font"), r.props.get("--local-font")]).toEqual(["local", '"Times New Roman"']);
+    for (const bad of ['local:a"; color: red', "local: x", "local:", "local:a}b"]) {
+      const t = run(cache(bad));
+      expect([t.attrs.has("data-font"), t.props.has("--local-font")], bad).toEqual([false, false]);
+    }
+    // its copy of the rule is core's
+    expect(SOURCE.match(/var FAMILY = (\/.*\/);/)![1]).toBe(String(LOCAL_FAMILY_RE));
   });
 
   it("flags the macOS shell and vibrancy only for themes that allow it", () => {

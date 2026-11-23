@@ -5,14 +5,14 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@terno/ui
 import { RadioCard, RadioDot, RadioGroup } from "@terno/ui/components/radio-group";
 import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
 import { TernoMark } from "@terno/ui/brand/terno-mark";
-import { DESIGNS, designById, withFont } from "@terno/ui/designs/index";
+import { DESIGNS, designById, fontPaint, withFont, type DesignDefinition } from "@terno/ui/designs/index";
 import { builtinTheme, themesFor } from "@terno/ui/themes/registry";
 import { cn } from "@terno/ui/lib/utils";
 import { Columns2, Laptop, Moon, Rows3, Sun } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useApp } from "~/state/app";
-import { baseId, resolveTheme, styleFont, updateAppearance, useAppearance } from "~/lib/appearance";
+import { baseId, resolveTheme, updateAppearance, useAppearance } from "~/lib/appearance";
 import { designDescription, designName } from "~/lib/design";
 import { OnboardingNudge } from "~/lib/web-parts";
 import { AddAccountForm, EMPTY_ACCOUNT_DRAFT } from "./add-account-dialog";
@@ -104,6 +104,8 @@ export function FirstRun() {
   const index = STEPS.indexOf(step);
   // in the font the style was given (plan 245)
   const design = withFont(designById(settings.design), settings.designFonts[settings.design]);
+  /** a style's specimen in the font it was given (plan 248: an installed family too) */
+  const paint = (d: DesignDefinition) => fontPaint(withFont(d, settings.designFonts[d.id]));
   const following = settings.theme === "system";
   const previewMode = step === "look" && following ? (pickedMode ?? systemMode) : systemMode;
   const theme = resolveTheme(settings, previewMode);
@@ -172,7 +174,7 @@ export function FirstRun() {
               {/* the style's own type, in its own design: the line outside it sets one size and one baseline for all, so only the type differs */}
               <span aria-hidden className="block h-5.5 text-[22px] leading-none">
                 {/* no line height of its own: a font's taller ascent would push the shared baseline down */}
-                <span data-design={d.id} data-font={styleFont(settings, d) ?? undefined} className="leading-0" style={{ fontFamily: "var(--type-list-title-family)", fontWeight: "var(--type-list-title-weight)", fontStyle: "var(--type-list-title-style)" }}>
+                <span data-design={d.id} data-font={paint(d)["data-font"]} className="leading-0" style={{ ...paint(d).style, fontFamily: "var(--type-list-title-family)", fontWeight: "var(--type-list-title-weight)", fontStyle: "var(--type-list-title-style)" }}>
                   {/* i18n-ignore: aria-hidden typography specimen, identical in every language */}
                   Aa
                 </span>

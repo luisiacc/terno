@@ -15,8 +15,10 @@ export interface DesignDefinition {
   /** may the macOS sidebar show the window's vibrancy (ANDed with the palette's own flag) */
   vibrancy: boolean;
   fonts: {
-    /** the catalog font the stacks and faces come from (typefaces.ts; plan 245: what a user's choice replaces) */
-    typeface: FontId;
+    /** the catalog font the stacks and faces come from (typefaces.ts; plan 245: what a user's choice replaces); "local": a family installed on the computer (plan 248) */
+    typeface: FontId | "local";
+    /** plan 248: that family's name, when typeface is "local" */
+    family?: string;
     /** the UI font stack */
     sans: string;
     /** titles: the list title, the greeting, the reader subject, section labels where a design wants them */

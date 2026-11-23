@@ -7,7 +7,7 @@ import {
   type Capabilities,
   type CompatiblePreset,
 } from "@terno/ai";
-import { AI_PROVIDER_IDS, canonicalThemeId, COMPATIBLE_PRESETS, DEFAULT_DESIGN, DESIGN_IDS, DESIGN_PALETTE, DEV_AI_PROVIDERS, fitsMode, isDesignId, isFontId, JEV_DEFAULT_MODEL, SUMMARY_DEFAULT_MODEL, textRef, type DevAiKeys, themeMode, upgradeThemeTokens, type AiTaskName, type AiTaskTarget, type CustomTheme, type TextRef, type ThemeMode } from "@terno/core";
+import { AI_PROVIDER_IDS, canonicalThemeId, COMPATIBLE_PRESETS, DEFAULT_DESIGN, DESIGN_IDS, DESIGN_PALETTE, DEV_AI_PROVIDERS, fitsMode, isDesignId, isStyleFont, JEV_DEFAULT_MODEL, SUMMARY_DEFAULT_MODEL, textRef, type DevAiKeys, themeMode, upgradeThemeTokens, type AiTaskName, type AiTaskTarget, type CustomTheme, type TextRef, type ThemeMode } from "@terno/core";
 import type { AiProfile, AiSettings, AppSettings, SettingsPatch } from "@terno/core/rpc";
 import { DEFAULT_AGENTS, DEFAULT_DATED, DEFAULT_TODAY, FAVORITES_MAX, NUDGE_DEFAULT, UNDO_SEND_DEFAULT, type AgentAccess, type AgentsSetting, type FavoriteFolder } from "@terno/core";
 import { isLanguageSetting, L, type Localized } from "@terno/i18n";
@@ -503,8 +503,8 @@ function resolveThemes(g: General): General {
         return kept ? [[d, { light: pick(kept.light, "light"), dark: pick(kept.dark, "dark") }]] : [];
       }),
     ),
-    // plan 245: a style or font that's gone goes; the style draws its own
-    designFonts: Object.fromEntries(DESIGN_IDS.flatMap((d) => (isFontId(g.designFonts?.[d]) ? [[d, g.designFonts[d]]] : []))),
+    // plan 245: a style or font that's gone goes, as does a family that isn't a plain name (plan 248); the style draws its own
+    designFonts: Object.fromEntries(DESIGN_IDS.flatMap((d) => (isStyleFont(g.designFonts?.[d]) ? [[d, g.designFonts[d]]] : []))),
   };
 }
 

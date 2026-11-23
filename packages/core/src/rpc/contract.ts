@@ -43,7 +43,7 @@ import { REMOVABLE_BUCKETS, STORAGE_AGES, type StorageReport } from "../storage"
 import { filterRuleSchema, type Filter, type FilterRule } from "../rules/schema";
 import { LIST_FILTERS, type ListFilter } from "../list-filter";
 import { snippetFieldsSchema, snippetIdSchema, type Snippet } from "../snippets";
-import { customThemesSchema, DESIGN_IDS, FONT_IDS, type CustomTheme, type DesignFonts, type DesignId, type DesignPalettes, type MotionMs } from "../themes";
+import { customThemesSchema, DESIGN_IDS, isStyleFont, type CustomTheme, type DesignFonts, type DesignId, type DesignPalettes, type MotionMs } from "../themes";
 import {
   CATEGORY_COLORS,
   RETIRED_COLORS,
@@ -531,7 +531,8 @@ const settingsPatch = z.object({
   previousLightTheme: z.string().trim().min(1).max(60).nullable().optional(),
   previousDarkTheme: z.string().trim().min(1).max(60).nullable().optional(),
   designPalettes: z.partialRecord(z.enum(DESIGN_IDS), z.object({ light: z.string().trim().min(1).max(60), dark: z.string().trim().min(1).max(60) }).strict()).optional(),
-  designFonts: z.partialRecord(z.enum(DESIGN_IDS), z.enum(FONT_IDS)).optional(),
+  // plan 248: or an installed family, `local:<name>`, a name and never CSS
+  designFonts: z.partialRecord(z.enum(DESIGN_IDS), z.string().refine(isStyleFont, "not a font")).optional(),
   htmlMailAppearance: z.enum(["auto", "paper"]).optional(),
   customThemes: customThemesSchema.optional(),
   density: z.enum(["comfortable", "compact"]).optional(),

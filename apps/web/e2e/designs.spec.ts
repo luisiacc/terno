@@ -420,52 +420,124 @@ test.describe("switching designs", () => {
 
 });
 
-test.describe("plan 245: each style keeps the font it was given", () => {
-  test("from Settings, by keyboard: Lumen takes Inter, Graphite keeps its own, Lumen has Inter again, and a load paints it before React", async ({ app: page, server }) => {
+test.describe("plans 245 and 248: each style keeps the font it was given, any font on the computer", () => {
+  // the computer's fonts, the same on every machine: a few real Mac families and enough to need the list virtualized
+  const FAMILIES = ["Georgia", "Menlo", "Times New Roman", "Avenir Next", ...Array.from({ length: 400 }, (_, i) => `Fake Family ${String(i).padStart(3, "0")}`)];
+  const stub = (page: Page) => page.addInitScript((f) => Object.assign(window, { queryLocalFonts: async () => f.map((family) => ({ family })) }), FAMILIES);
+
+  test("from Settings: open, look, put back, choose, the style's font back; kept per style and painted before React", async ({ app: page, server }) => {
     const html = page.locator("html");
     const family = () => page.getByTestId("list-title").evaluate((el) => getComputedStyle(el).fontFamily);
-    const select = page.getByTestId("font-select");
-    await scenario("Lumen in Figtree takes Inter", async () => {
+    const field = page.getByTestId("font-field");
+    const saved = async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).settings.designFonts;
+    await stub(page);
+    await scenario("the field names Lumen's font, by the row's label and hint", async () => {
       await server.backend.server.invoke("settings.update", { design: "lumen" }, ctx);
       await reload(page);
       expect(await family()).toMatch(/^"Figtree Variable"/);
       await page.getByTestId("open-settings").click();
       await page.getByTestId("tab-appearance").click();
-      await expect(select).toHaveAccessibleName(en["settings.appearance.font"]);
-      await expect(select).toHaveAccessibleDescription(en["settings.appearance.font.hint"].replace("{style}", en["design.lumen"]));
-      await expect(select).toHaveText("Figtree");
-      // the list opens on Figtree: System, Inter, Geist, Figtree, Instrument Sans
-      await select.focus();
-      await page.keyboard.press("Enter");
-      await expect(page.getByRole("option", { name: "Figtree" })).toBeVisible();
-      await page.keyboard.press("ArrowUp");
-      await page.keyboard.press("ArrowUp");
-      await page.keyboard.press("Enter");
-      await expect(html).toHaveAttribute("data-font", "inter");
-      await expect(select).toHaveText("Inter");
-      expect(await family()).toMatch(/^"Inter Variable"/);
-      await expect.poll(async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).settings.designFonts).toEqual({ lumen: "inter" });
+      await expect(field).toHaveAccessibleName(en["settings.appearance.font"]);
+      await expect(field).toHaveAccessibleDescription(en["settings.appearance.font.hint"].replace("{style}", en["design.lumen"]));
+      await expect(field).toHaveValue("Figtree");
+      await expect(page.getByTestId("font-reset")).toHaveCount(0);
     });
-    await scenario("Graphite in its own font; back on Lumen, Inter again", async () => {
+    await scenario("opened, it lists every font, few of them drawn, on Lumen's own; the arrows look at each on the whole app; Esc puts Figtree back", async () => {
+      await field.focus();
+      await page.keyboard.press("ArrowDown");
+      const list = page.getByTestId("font-list");
+      await expect(list).toBeVisible();
+      // 5 built in + 400: only what's in view is drawn
+      expect(await page.getByTestId("font-option").count()).toBeLessThan(30);
+      await expect(page.locator('[data-font-option="figtree"]')).toHaveAttribute("data-highlighted", "");
+      await page.keyboard.press("ArrowDown");
+      await expect(page.locator('[data-font-option="instrument-sans"]')).toHaveAttribute("data-highlighted", "");
+      await expect(html).toHaveAttribute("data-font", "instrument-sans");
+      await page.keyboard.press("ArrowDown");
+      await expect(html).toHaveAttribute("data-font", "local");
+      expect(await html.evaluate((el) => el.style.getPropertyValue("--local-font"))).toBe('"Avenir Next"');
+      // far down the list, past what was drawn: the highlighted row is drawn and is the field's active option
+      for (let i = 0; i < 40; i++) await page.keyboard.press("ArrowDown");
+      const active = await field.getAttribute("aria-activedescendant");
+      expect(active).toBeTruthy();
+      await expect(page.locator(`[id="${active}"]`)).toBeInViewport();
+      // nothing is saved while looking
+      expect(await saved()).toEqual({});
+      await page.keyboard.press("Escape");
+      await expect(list).toBeHidden();
+      await expect(html).not.toHaveAttribute("data-font");
+      await expect(field).toHaveValue("Figtree");
+      expect(await family()).toMatch(/^"Figtree Variable"/);
+      // the Esc closed the list, not Settings
+      await expect(page.getByTestId("settings-dialog")).toBeVisible();
+    });
+    await scenario("typing finds a family, accents and case aside; Enter keeps it for Lumen", async () => {
+      await field.click();
+      await expect(field).toBeFocused();
+      await page.keyboard.type("GEÓR");
+      await expect(page.getByTestId("font-option")).toHaveCount(1);
+      await expect(html).toHaveAttribute("data-font", "local");
+      await page.keyboard.press("Enter");
+      await expect(field).toHaveValue("Georgia");
+      await expect.poll(saved).toEqual({ lumen: "local:Georgia" });
+      expect(await family()).toMatch(/^"?Georgia"?, "Figtree Variable"/);
+      await expect(page.getByTestId("design-card-lumen").locator("[data-design]")).toHaveAttribute("data-font", "local");
+    });
+    await scenario("a name the computer doesn't have: nothing to choose", async () => {
+      await field.click();
+      await page.keyboard.type("Comic Nonsense");
+      await expect(page.getByTestId("font-option")).toHaveCount(0);
+      await expect(page.getByTestId("font-list")).toContainText(en["settings.appearance.font.none"].replace("{name}", "Comic Nonsense"));
+      await page.keyboard.press("Escape");
+      await expect(field).toHaveValue("Georgia");
+    });
+    await scenario("Graphite in its own font; back on Lumen, Georgia again", async () => {
       await page.getByTestId("design-card-graphite").click();
       await expect(html).toHaveAttribute("data-design", "graphite");
       await expect(html).not.toHaveAttribute("data-font");
-      await expect(select).toHaveText(en["settings.appearance.font.system"]);
+      await expect(field).toHaveValue(en["settings.appearance.font.system"]);
       await page.getByTestId("design-card-lumen").click();
-      await expect(html).toHaveAttribute("data-design", "lumen");
-      await expect(html).toHaveAttribute("data-font", "inter");
-      await expect(select).toHaveText("Inter");
-      // its card draws it too
-      await expect(page.getByTestId("design-card-lumen").locator("[data-design]")).toHaveAttribute("data-font", "inter");
+      await expect(html).toHaveAttribute("data-font", "local");
+      await expect(field).toHaveValue("Georgia");
     });
-    await scenario("after a reload the font is painted before React mounts", async () => {
+    await scenario("after a reload the family is painted before React mounts", async () => {
       await page.addInitScript(() => {
-        document.addEventListener("DOMContentLoaded", () => ((window as unknown as { __early: string | null }).__early = document.documentElement.getAttribute("data-font")), { once: true });
+        document.addEventListener("DOMContentLoaded", () => Object.assign(window, { __early: [document.documentElement.getAttribute("data-font"), document.documentElement.style.getPropertyValue("--local-font")] }), { once: true });
       });
       await reload(page);
-      expect(await page.evaluate(() => (window as unknown as { __early: string | null }).__early)).toBe("inter");
-      expect(await family()).toMatch(/^"Inter Variable"/);
+      expect(await page.evaluate(() => (window as unknown as { __early: string[] }).__early)).toEqual(["local", '"Georgia"']);
+      expect(await family()).toMatch(/^"?Georgia"?,/);
     });
+    await scenario("the button beside the field brings the style's font back", async () => {
+      await page.getByTestId("open-settings").click();
+      await page.getByTestId("tab-appearance").click();
+      await expect(page.getByTestId("font-reset")).toHaveText(en["settings.appearance.font.reset"].replace("{font}", "Figtree"));
+      await page.getByTestId("font-reset").click();
+      await expect(html).not.toHaveAttribute("data-font");
+      await expect(field).toHaveValue("Figtree");
+      await expect(page.getByTestId("font-reset")).toHaveCount(0);
+      await expect.poll(saved).toEqual({});
+    });
+  });
+
+  test("a browser that can't list the computer's fonts takes a typed name, shown before it's kept", async ({ app: page, server }) => {
+    const html = page.locator("html");
+    const field = page.getByTestId("font-field");
+    await server.backend.server.invoke("settings.update", { design: "lumen" }, ctx);
+    await page.addInitScript(() => delete (window as { queryLocalFonts?: unknown }).queryLocalFonts);
+    await reload(page);
+    await page.getByTestId("open-settings").click();
+    await page.getByTestId("tab-appearance").click();
+    await field.click();
+    await page.keyboard.type("Menlo");
+    const use = page.getByTestId("font-option");
+    await expect(use).toHaveCount(1);
+    await expect(use).toContainText(en["settings.appearance.font.use"].replace("{name}", "Menlo"));
+    await expect(use).toContainText(en["settings.appearance.font.ifInstalled"]);
+    await expect(html).toHaveAttribute("data-font", "local");
+    await page.keyboard.press("Enter");
+    await expect(field).toHaveValue("Menlo");
+    await expect.poll(async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).settings.designFonts).toEqual({ lumen: "local:Menlo" });
   });
 });
 

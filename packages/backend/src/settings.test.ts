@@ -229,6 +229,15 @@ describe("designs (plan 15)", () => {
     expect(await errorOf(client.call("settings.update", { designFonts: { brutalist: "inter" } as never }))).toMatchObject({ code: "BAD_REQUEST" });
   });
 
+  it("plan 248: an installed family persists by name; one that isn't a plain name is refused, and reads as the style's own", async () => {
+    const { backend, client } = await setup();
+    expect(await client.call("settings.update", { designFonts: { lumen: "local:Times New Roman" } })).toMatchObject({ designFonts: { lumen: "local:Times New Roman" } });
+    expect((await client.call("app.bootstrap", {})).settings.designFonts).toEqual({ lumen: "local:Times New Roman" });
+    expect(await errorOf(client.call("settings.update", { designFonts: { lumen: 'local:a"b' } as never }))).toMatchObject({ code: "BAD_REQUEST" });
+    setSetting(sqlDb(backend.store), "app", { appearanceVersion: 3, designFonts: { lumen: "local:a;b", atelier: "local:Georgia" } });
+    expect((await client.call("app.bootstrap", {})).settings.designFonts).toEqual({ atelier: "local:Georgia" });
+  });
+
   it("a remembered palette of the wrong mode is forgotten", async () => {
     const { client } = await setup();
     expect(await client.call("settings.update", { previousLightTheme: "dracula", previousDarkTheme: "nord" })).toMatchObject({ previousLightTheme: null, previousDarkTheme: "nord" });

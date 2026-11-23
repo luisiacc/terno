@@ -1,6 +1,6 @@
 import { CUSTOM_PREFIX, THEME_TOKENS, type ThemeMode } from "@terno/core";
 import type { AppSettings } from "@terno/core/rpc";
-import { fontAttr, type DesignDefinition } from "@terno/ui/designs/index";
+import { fontPaint, type DesignDefinition } from "@terno/ui/designs/index";
 import { rowHeight, type RowLines } from "@terno/ui/designs/rows";
 import type { Theme } from "@terno/ui/themes/registry";
 import { CategoryDot } from "@terno/ui/components/category-dot";
@@ -70,12 +70,12 @@ export function FirstRunPreview({ design, theme, base, mode, layout, density, pr
       <div
         data-testid="first-run-preview"
         data-design={design.id}
-        data-font={fontAttr(design)}
+        data-font={fontPaint(design)["data-font"]}
         data-theme={base}
         data-layout={layout}
         data-mode={mode}
         className={cn("absolute top-1/2 left-1/2 overflow-hidden rounded-2xl bg-background font-sans text-foreground shadow-modal", mode === "dark" && "dark")}
-        style={{ ...custom, colorScheme: mode, width: CANVAS_W, height: fit.h, transform: `translate(-50%, -50%) scale(${fit.scale})`, visibility: fit.scale ? undefined : "hidden" } as React.CSSProperties}
+        style={{ ...custom, ...fontPaint(design).style, colorScheme: mode, width: CANVAS_W, height: fit.h, transform: `translate(-50%, -50%) scale(${fit.scale})`, visibility: fit.scale ? undefined : "hidden" } as React.CSSProperties}
       >
         <div className="grid h-full" style={{ gridTemplateColumns: split ? "var(--sidebar-w) max(var(--list-min), var(--list-max)) minmax(0, 1fr)" : "var(--sidebar-w) minmax(0, 1fr)" }}>
           <Sidebar design={design} sample={sample} />

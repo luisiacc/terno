@@ -1,13 +1,13 @@
 /// <reference types="node" />
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { DEFAULT_DESIGN, DESIGN_IDS, FONT_IDS } from "@terno/core";
+import { DEFAULT_DESIGN, DESIGN_IDS, FONT_IDS, type FontId } from "@terno/core";
 import { describe, expect, it } from "vitest";
 import { oklchToRgb, parseColor } from "../themes/color";
 import { builtinTheme } from "../themes/registry";
 import { DEPTHS, DEPTH_VARS } from "./depth";
 import { designVars, generateDesignsCss, generateTypeRolesCss } from "./generate";
-import { designById, DESIGNS, fontAttr, withFont } from "./index";
+import { designById, DESIGNS, fontPaint, withFont } from "./index";
 import { TYPEFACES } from "./typefaces";
 import { NO_PREVIEW_GAP, rowHeight } from "./rows";
 import { TEXT_STEPS, TYPE_ROLES } from "./types";
@@ -228,7 +228,8 @@ describe("plan 245: a style takes another font", () => {
   it("the catalog is core's ids, and every design draws its catalog font's stacks and faces", () => {
     expect(Object.keys(TYPEFACES)).toEqual([...FONT_IDS]);
     for (const d of DESIGNS) {
-      const t = TYPEFACES[d.fonts.typeface];
+      const t = TYPEFACES[d.fonts.typeface as FontId];
+      expect(FONT_IDS, d.id).toContain(d.fonts.typeface);
       expect([d.fonts.sans, d.fonts.display, d.fonts.faces], d.id).toEqual([t.stack, t.stack, t.faces]);
     }
   });
@@ -243,7 +244,18 @@ describe("plan 245: a style takes another font", () => {
     expect(withFont(lumen, "figtree")).toBe(lumen);
     expect(withFont(lumen, "comic-sans")).toBe(lumen);
     expect(withFont(lumen, undefined)).toBe(lumen);
-    expect([fontAttr(inter), fontAttr(lumen)]).toEqual(["inter", undefined]);
+    expect([fontPaint(inter), fontPaint(lumen)]).toEqual([{ "data-font": "inter" }, {}]);
+  });
+
+  it("plan 248: an installed family leads the style's own stack and keeps its faces; a name that isn't plain is the design", () => {
+    const lumen = designById("lumen");
+    const georgia = withFont(lumen, "local:Georgia");
+    expect(georgia.fonts).toEqual({ typeface: "local", family: "Georgia", sans: `"Georgia", ${lumen.fonts.sans}`, display: `"Georgia", ${lumen.fonts.display}`, features: "normal", faces: lumen.fonts.faces });
+    expect(withFont(lumen, "local:Georgia")).toBe(georgia);
+    expect(fontPaint(georgia)).toEqual({ "data-font": "local", style: { "--local-font": '"Georgia"' } });
+    for (const bad of ['local:Geo"rgia', "local:a;b", "local: Georgia", "local:", `local:${"x".repeat(101)}`]) expect(withFont(lumen, bad), bad).toBe(lumen);
+    // a design given a font is resolved from its own, never from another font
+    expect(withFont(georgia, "inter")).toBe(withFont(lumen, "inter"));
   });
 
   it("the roles read the font variables, and each font is a block that outranks a design's", () => {
@@ -255,6 +267,12 @@ describe("plan 245: a style takes another font", () => {
       expect(css).toContain(`[data-design][data-font="${t.id}"] {\n  --ds-font-sans: ${t.stack};\n  --ds-font-display: ${t.stack};\n  --ds-font-features: ${t.features};\n  font-feature-settings: ${t.features};\n}`);
     }
     // after every design block, so equal specificity could never let a design win either
-    expect(css.lastIndexOf("[data-design=")).toBeLessThan(css.indexOf("[data-design][data-font="));
+    const designBlocks = css.slice(0, css.indexOf("[data-design][data-font="));
+    for (const d of DESIGNS) expect(designBlocks, d.id).toContain(`[data-design="${d.id}"] {`);
+    expect(css.slice(css.indexOf("[data-design][data-font="))).not.toMatch(/\[data-design="[a-z]+"\] \{/);
+    // plan 248: per design, an installed family ahead of the design's own stack, which is also what shows without a name
+    for (const d of DESIGNS) {
+      expect(css).toContain(`[data-design="${d.id}"][data-font="local"] {\n  --ds-font-sans: var(--local-font, ${d.fonts.sans}), ${d.fonts.sans};\n  --ds-font-display: var(--local-font, ${d.fonts.display}), ${d.fonts.display};\n  --ds-font-features: normal;\n  font-feature-settings: normal;\n}`);
+    }
   });
 });

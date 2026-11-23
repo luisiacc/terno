@@ -1,8 +1,7 @@
-import { CUSTOM_PREFIX, DESIGN_PALETTE, customThemeSchema, FONT_IDS, MAX_CUSTOM_THEMES, type CustomTheme, type FontId, type ThemeMode } from "@terno/core";
+import { CUSTOM_PREFIX, DESIGN_PALETTE, customThemeSchema, MAX_CUSTOM_THEMES, type CustomTheme, type StyleFont, type ThemeMode } from "@terno/core";
 import type { AppSettings } from "@terno/core/rpc";
 import { Button, GHOST_DANGER_PRESS } from "@terno/ui/components/button";
 import { RadioCard, RadioGroup } from "@terno/ui/components/radio-group";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Textarea } from "@terno/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
 import { contrastFailures } from "@terno/ui/themes/contrast";
@@ -13,10 +12,11 @@ import { t } from "@terno/i18n";
 import { useId, useRef, useState } from "react";
 import { ThemeCard } from "./appearance-cards";
 import { snack } from "~/lib/snack";
-import { DESIGNS, designById, type DesignDefinition } from "@terno/ui/designs/index";
-import { designDescription, designName, fontName } from "~/lib/design";
+import { DESIGNS, designById, fontPaint, withFont, type DesignDefinition } from "@terno/ui/designs/index";
+import { designDescription, designName } from "~/lib/design";
 import { viewLabel } from "~/lib/format";
-import { resolvedMode, resolveTheme, setStyleFont, styleFont, updateAppearance, useAppearance } from "~/lib/appearance";
+import { resolvedMode, resolveTheme, styleFont, updateAppearance, useAppearance } from "~/lib/appearance";
+import { FontField } from "./font-field";
 import { ConfirmDialog, SettingsGroup, SettingsRow, type RowA11y, type SettingsUpdate } from "./parts";
 import { ListSettings } from "./list-settings";
 import { SenderPictures } from "./sender-pictures";
@@ -29,11 +29,11 @@ const APPLIES_IN = { light: "settings.appearance.appliesLight", dark: "settings.
  * its own colors (the current mode), nested in its own [data-design] and
  * [data-theme], so every style shows next to the others whatever is applied.
  */
-function DesignPreview({ design, font, mode }: { design: DesignDefinition; font: FontId | null; mode: ThemeMode }) {
+function DesignPreview({ design, font, mode }: { design: DesignDefinition; font: StyleFont | null; mode: ThemeMode }) {
   const v = design.variants;
   const title = { fontFamily: "var(--type-list-title-family)", fontWeight: "var(--type-list-title-weight)", fontStyle: "var(--type-list-title-style)", letterSpacing: "var(--type-list-title-tracking)" } as const;
   return (
-    <div data-design={design.id} data-font={font ?? undefined} data-theme={design.palette[mode]} aria-hidden className="flex h-[72px] w-full overflow-hidden rounded-md border border-border bg-background font-sans text-foreground">
+    <div data-design={design.id} {...fontPaint(withFont(design, font))} data-theme={design.palette[mode]} aria-hidden className="flex h-[72px] w-full overflow-hidden rounded-md border border-border bg-background font-sans text-foreground">
       <div className="flex w-[30%] shrink-0 flex-col gap-[3px] bg-sidebar p-1">
         {v.compose === "sidebar-pill" && <span className="h-1.5 rounded-full bg-primary" />}
         {v.compose === "sidebar-outline" && <span className="h-1.5 rounded-[2px] bg-card shadow-hairline" />}
@@ -76,39 +76,12 @@ function DesignPreview({ design, font, mode }: { design: DesignDefinition; font:
 }
 
 /** A design as one of the styles: a radio card (in the Style `RadioGroup`, whose value is the design's id). */
-function StyleCard({ design, font, mode }: { design: DesignDefinition; font: FontId | null; mode: ThemeMode }) {
+function StyleCard({ design, font, mode }: { design: DesignDefinition; font: StyleFont | null; mode: ThemeMode }) {
   return (
     <RadioCard value={design.id} data-testid={`design-card-${design.id}`} className="min-w-0 flex-col items-center gap-1 p-1 pb-1.5">
       <DesignPreview design={design} font={font} mode={mode} />
       <span className="max-w-full truncate px-0.5 text-xs font-medium">{designName(design.id)}</span>
     </RadioCard>
-  );
-}
-
-/**
- * The font the style in use draws in (plan 245): each name in its own font, the style's own one marked. Picking the
- * style's own font takes the choice away.
- */
-function FontSelect({ settings, a }: { settings: AppSettings; a: RowA11y }) {
-  const design = designById(settings.design);
-  const own = design.fonts.typeface;
-  return (
-    <Select value={styleFont(settings, design) ?? own} onValueChange={(v) => void setStyleFont(design.id, v as FontId)} items={FONT_IDS.map((id) => ({ value: id, label: fontName(id) }))}>
-      <SelectTrigger {...a} size="sm" className="w-44" data-testid="font-select">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {FONT_IDS.map((id) => (
-          <SelectItem key={id} value={id} label={fontName(id)} data-testid={`font-${id}`}>
-            {/* the name in its own font, inside the style's design (its sizes and the font's features) */}
-            <span data-design={design.id} data-font={id} className="font-sans">
-              {fontName(id)}
-            </span>
-            {id === own && <span className="ml-auto pl-3 text-xs text-muted-foreground">{t("settings.appearance.font.own")}</span>}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
   );
 }
 
@@ -344,7 +317,7 @@ export function AppearanceTab({ settings, update }: { settings: AppSettings; upd
           )}
         </SettingsRow>
         <SettingsRow find="appearance.font" label={t("settings.appearance.font")} hint={t("settings.appearance.font.hint", { style: designName(settings.design) })}>
-          {(a) => <FontSelect settings={settings} a={a} />}
+          {(a) => <FontField settings={settings} a={a} />}
         </SettingsRow>
       </SettingsGroup>
       <SettingsGroup>

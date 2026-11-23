@@ -377,6 +377,17 @@ describe("app.import: each style's font (plan 245)", () => {
   });
 });
 
+describe("app.import: installed families (plan 248)", () => {
+  it("a backup carries them by name; an entry that isn't a font drops only itself (Codex critique #11)", async () => {
+    const from = setup();
+    await from.client.call("settings.update", { designFonts: { lumen: "local:Georgia", graphite: "inter" } });
+    const dump = await from.client.call("app.export", {});
+    const to = setup();
+    await to.client.call("app.import", { data: { ...dump, settings: { ...dump.settings, designFonts: { ...dump.settings.designFonts, atelier: 'local:x"y', brutalist: "inter" } } as never } });
+    expect((await to.client.call("app.bootstrap", {})).settings.designFonts).toEqual({ lumen: "local:Georgia", graphite: "inter" });
+  });
+});
+
 describe("AI keys are bound to the endpoint they were saved for", () => {
   const exportWith = (ai: object) => ({ format: "terno-export" as const, version: 1 as const, exportedAt: NOW, app: "t", accounts: [], categories: [], filters: [], drafts: [], ops: [], settings: { ai } });
 

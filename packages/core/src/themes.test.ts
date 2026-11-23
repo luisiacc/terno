@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BUILTIN_THEMES, canonicalThemeId, customThemeSchema, customThemesSchema, MAX_CUSTOM_THEMES, switchDesign, THEME_COLOR_RE, THEME_TOKENS, type CustomTheme } from "./themes";
+import { BUILTIN_THEMES, canonicalThemeId, customThemeSchema, customThemesSchema, isStyleFont, localFamily, MAX_CUSTOM_THEMES, switchDesign, THEME_COLOR_RE, THEME_TOKENS, type CustomTheme } from "./themes";
 
 const valid = { id: "mi-tema", name: "Mi tema", mode: "dark", extends: "dracula", tokens: { primary: "#ff79c6", background: "oklch(0.25 0.02 280)" } };
 
@@ -98,6 +98,14 @@ describe("switchDesign (plan 138)", () => {
     const designPalettes = { graphite: { light: "dracula", dark: "custom:mine" } };
     expect(switchDesign({ ...lumen, designPalettes, customThemes: [mine] }, "graphite")).toMatchObject({ lightTheme: "design", darkTheme: "custom:mine" });
     expect(switchDesign({ ...lumen, designPalettes }, "graphite")).toMatchObject({ lightTheme: "design", darkTheme: "design" });
+  });
+});
+
+describe("a style's font (plans 245, 248)", () => {
+  it("is a bundled id or an installed family whose name is only a name", () => {
+    for (const ok of ["inter", "system", "local:Georgia", "local:Times New Roman", "local:ヒラギノ角ゴシック", "local:Avenir Next Condensed", "local:I.M. Fell", `local:${"x".repeat(100)}`]) expect(isStyleFont(ok), ok).toBe(true);
+    for (const bad of ["comic-sans", "local:", "local: Georgia", "local:Georgia ", 'local:Geo"rgia', "local:Geo'rgia", "local:a\\b", "local:a;b", "local:a{b}", "local:<b>", "local:a\nb", `local:${"x".repeat(101)}`, 42, null]) expect(isStyleFont(bad), String(bad)).toBe(false);
+    expect([localFamily("local:Georgia"), localFamily("inter")]).toEqual(["Georgia", null]);
   });
 });
 

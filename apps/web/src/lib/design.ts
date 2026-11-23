@@ -7,8 +7,7 @@
 import type { DesignDefinition } from "@terno/ui/designs/index";
 import { designById, withFont } from "@terno/ui/designs/index";
 import { useAppearance } from "~/lib/appearance";
-import type { DesignId, FontId } from "@terno/core";
-import { TYPEFACES } from "@terno/ui/designs/typefaces";
+import type { DesignId } from "@terno/core";
 import { t } from "@terno/i18n";
 
 /** The design in effect; components re-render when it changes. */
@@ -73,7 +72,3 @@ export function designDescription(id: DesignId): string {
   return id === "macos" ? t("design.macos.description") : id === "atelier" ? t("design.atelier.description") : id === "luma" ? t("design.luma.description") : id === "graphite" ? t("design.graphite.description") : id === "relief" ? t("design.relief.description") : t("design.lumen.description");
 }
 
-/** A font's name (plan 245): the bundled ones by their own names, the system font in the active language. */
-export function fontName(id: FontId): string {
-  return TYPEFACES[id].name ?? t("settings.appearance.font.system");
-}

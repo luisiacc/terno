@@ -107,13 +107,22 @@ export function generateDesignsCss(designs: readonly DesignDefinition[] = DESIGN
   const first = designs.find((d) => d.id === fallback) ?? designs[0];
   if (!first) return `${GENERATED_HEADER}\n`;
   const rest = designs.filter((d) => d !== first);
-  return [GENERATED_HEADER, block(first, `:root,\n[data-design="${first.id}"]`), ...rest.map((d) => block(d, `[data-design="${d.id}"]`)), ...fonts.map(fontBlock)].join("\n\n") + "\n";
+  return [GENERATED_HEADER, block(first, `:root,\n[data-design="${first.id}"]`), ...rest.map((d) => block(d, `[data-design="${d.id}"]`)), ...fonts.map(fontBlock), ...designs.map(localBlock)].join("\n\n") + "\n";
 }
 
 /**
  * Plan 245: a font the user gave the style, as `data-font` beside `data-design` (on <html>, or a Settings preview). Two
  * attributes outrank the design's one, so the font wins wherever it is set; every other value stays the design's.
  */
+/**
+ * Plan 248: a family installed on the computer, per design: its name (`--local-font`, set beside `data-font="local"`)
+ * leads the design's own stack, so a family that's gone falls back to the style's font with no script.
+ */
+function localBlock(d: DesignDefinition): string {
+  // without the name (a preview's first frame), the own stack twice draws the same
+  return `[data-design="${d.id}"][data-font="local"] {\n  --ds-font-sans: var(--local-font, ${d.fonts.sans}), ${d.fonts.sans};\n  --ds-font-display: var(--local-font, ${d.fonts.display}), ${d.fonts.display};\n  --ds-font-features: normal;\n  font-feature-settings: normal;\n}`;
+}
+
 function fontBlock(t: Typeface): string {
   // the features themselves too: html sets them once, and a nested preview would inherit the page's (Codex critique #7)
   return `[data-design][data-font="${t.id}"] {\n  --ds-font-sans: ${t.stack};\n  --ds-font-display: ${t.stack};\n  --ds-font-features: ${t.features};\n  font-feature-settings: ${t.features};\n}`;

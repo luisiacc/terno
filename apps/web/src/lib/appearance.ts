@@ -1,9 +1,9 @@
-import { CUSTOM_PREFIX, DEFAULT_DESIGN, DEFAULT_THEME, DESIGN_PALETTE, isDesignId, isFontId, switchDesign, type DesignFonts, type DesignId, type FontId, type ThemeMode } from "@terno/core";
+import { CUSTOM_PREFIX, DEFAULT_DESIGN, DEFAULT_THEME, DESIGN_PALETTE, isDesignId, isFontId, isLocalFamily, isStyleFont, localFont, switchDesign, type DesignFonts, type DesignId, type StyleFont, type ThemeMode } from "@terno/core";
 import type { AppSettings, PreviewLines, SettingsPatch } from "@terno/core/rpc";
 import { applyCustomTheme, clampMotion, motionOff, motionVars, opaqueBackground } from "@terno/ui/themes/apply";
 import { toHex } from "@terno/ui/themes/color";
 import { builtinTheme, resolveCustomTheme, type Theme } from "@terno/ui/themes/registry";
-import { designById, withFont, type DesignDefinition } from "@terno/ui/designs/index";
+import { designById, fontPaint, withFont, type DesignDefinition } from "@terno/ui/designs/index";
 import { flushSync } from "react-dom";
 import { captureDesignAnchors, loadDesignFaces } from "~/lib/design";
 import { t } from "@terno/i18n";
@@ -23,8 +23,8 @@ export interface CachedAppearance {
   v: 2;
   mode: AppSettings["theme"];
   design: DesignId;
-  /** plan 245: the font the style was given (absent: its own); theme.js paints data-font from it */
-  font?: FontId;
+  /** plan 245: the font the style was given (absent: its own); theme.js paints data-font from it (plan 248: and an installed family's name) */
+  font?: StyleFont;
   light: string;
   dark: string;
   motion: number;
@@ -37,12 +37,12 @@ export interface CachedAppearance {
 }
 
 /** The resolved mode (anything that needs "light" | "dark"). */
-export const useAppearance = create<{ mode: ThemeMode; design: DesignId; font: FontId | null; layout: Layout; density: AppSettings["density"]; previewLines: PreviewLines; reducedMotion: boolean; motionMs: number; themeKey: string }>(() => ({
+export const useAppearance = create<{ mode: ThemeMode; design: DesignId; font: StyleFont | null; layout: Layout; density: AppSettings["density"]; previewLines: PreviewLines; reducedMotion: boolean; motionMs: number; themeKey: string }>(() => ({
   mode: document.documentElement.classList.contains("dark") ? "dark" : "light",
   /** what theme.js painted, so the first render matches it */
   design: isDesignId(document.documentElement.dataset.design) ? document.documentElement.dataset.design : DEFAULT_DESIGN,
   /** plan 245: the font theme.js painted, when the style was given one */
-  font: isFontId(document.documentElement.dataset.font) ? document.documentElement.dataset.font : null,
+  font: paintedFont(),
   /** plan 24: what theme.js painted too */
   layout: isLayout(document.documentElement.dataset.layout) ? document.documentElement.dataset.layout : "split",
   /** plan 187: the rows' shape, set with the settings (nothing draws rows before them) */
@@ -82,9 +82,56 @@ export function resolveTheme(a: Pick<Appearance, "design" | "lightTheme" | "dark
 }
 
 /** Plan 245: the font a style was given, or null when it draws its own (no entry, or the entry is its own). */
-export function styleFont(a: Partial<Pick<Appearance, "designFonts">>, design: DesignDefinition): FontId | null {
-  const font = a.designFonts?.[design.id];
-  return isFontId(font) && font !== design.fonts.typeface ? font : null;
+export function styleFont(a: Partial<Pick<Appearance, "designFonts">>, design: DesignDefinition): StyleFont | null {
+  return ownOrChosen(a.designFonts?.[design.id], design);
+}
+
+/** A font as a style's choice: its own (or nothing valid) is null. */
+function ownOrChosen(font: string | null | undefined, design: DesignDefinition): StyleFont | null {
+  return isStyleFont(font) && font !== designById(design.id).fonts.typeface ? font : null;
+}
+
+/** The font painted on <html> (plan 248: an installed family is `data-font="local"` and its quoted name). */
+export function paintedFont(): StyleFont | null {
+  const html = document.documentElement;
+  const attr = html.dataset.font;
+  if (attr !== "local") return isFontId(attr) ? attr : null;
+  const family = html.style.getPropertyValue("--local-font").trim().replace(/^"|"$/g, "");
+  return isLocalFamily(family) ? localFont(family) : null;
+}
+
+/** Paints a style's font on <html>: `data-font`, and an installed family's name (fontPaint). */
+function paintFont(design: DesignDefinition, font: StyleFont | null): void {
+  const html = document.documentElement;
+  const paint = fontPaint(withFont(design, font));
+  if (paint["data-font"]) html.dataset.font = paint["data-font"];
+  else delete html.dataset.font;
+  const family = (paint.style as Record<string, string> | undefined)?.["--local-font"];
+  if (family) html.style.setProperty("--local-font", family);
+  else html.style.removeProperty("--local-font");
+}
+
+/**
+ * Plan 248: a font shown on the whole app while the user looks through the list, never saved or cached. Only the style
+ * it was picked in shows it; an apply meanwhile (an unrelated change) keeps showing it.
+ */
+let preview: { design: DesignId; font: StyleFont | null } | null = null;
+
+/**
+ * Shows a font for the style in use without saving it (null: its own); undefined puts the saved one back. Text reflows
+ * as on a real change, so the list's and the reader's places are kept the same way (Codex critique #4).
+ */
+export function previewStyleFont(font: StyleFont | null | undefined): void {
+  const settings = getApp().settings;
+  if (!settings) return;
+  const design = designById(settings.design);
+  if (font === undefined && !preview) return;
+  preview = font === undefined ? null : { design: design.id, font: ownOrChosen(font, design) };
+  const next = preview ? preview.font : styleFont(settings, design);
+  if (paintedFont() === next) return;
+  const restore = captureDesignAnchors();
+  paintFont(design, next);
+  restore();
 }
 
 /**
@@ -95,7 +142,7 @@ export function settingsFaces(s: Pick<AppSettings, "design" | "designFonts">, ca
   const html = document.documentElement;
   const design = designById(s.design);
   const font = styleFont(s, design);
-  if (html.dataset.design === design.id && (html.dataset.font ?? null) === font) return Promise.resolve();
+  if (html.dataset.design === design.id && paintedFont() === font) return Promise.resolve();
   return loadDesignFaces(withFont(design, font), capMs);
 }
 
@@ -130,14 +177,17 @@ export function applyAppearance(a: Appearance): void {
   const custom = theme.id.startsWith(CUSTOM_PREFIX);
   const design = designById(a.design);
   const font = styleFont(a, design);
+  // what's on screen: a preview while one is on (plan 248); another style ends it (Codex critique #6)
+  if (preview && preview.design !== design.id) preview = null;
+  const shown = preview ? preview.font : font;
   const layout: Layout = a.layout ?? "split";
   const density = a.density ?? "comfortable";
   const previewLines = a.previewLines ?? 1;
   // the design may keep its sidebar opaque (Atelier's and Lumen's paper) whatever the palette allows
   const vibrancy = sidebarVibrancy(isMacDesktop(), theme.vibrancy && design.vibrancy, matchMedia(REDUCED_TRANSPARENCY).matches);
-  const key = JSON.stringify([mode, design.id, font, theme.id, custom ? theme.tokens : null, ms, reduced, vibrancy, layout, density, previewLines]);
+  const key = JSON.stringify([mode, design.id, shown, theme.id, custom ? theme.tokens : null, ms, reduced, vibrancy, layout, density, previewLines]);
   // plan 245: a font change reflows text like a design change, and keeps the same anchors
-  const designChanged = useAppearance.getState().design !== design.id || html.dataset.design !== design.id || useAppearance.getState().font !== font || (html.dataset.font ?? null) !== font;
+  const designChanged = useAppearance.getState().design !== design.id || html.dataset.design !== design.id || useAppearance.getState().font !== font || paintedFont() !== shown;
   // a layout switch (plan 24) changes the list's width and row heights: the same capture and restore as a design switch
   const layoutChanged = useAppearance.getState().layout !== layout || html.dataset.layout !== layout;
   // plan 187: so do density and the preview's lines (the first row on screen and the open one stay put)
@@ -149,8 +199,7 @@ export function applyAppearance(a: Appearance): void {
     html.setAttribute("data-theme-switching", "");
     // CSS first, so the structure React commits below is measured with its own tokens
     html.dataset.design = design.id;
-    if (font) html.dataset.font = font;
-    else delete html.dataset.font;
+    paintFont(design, shown);
     html.dataset.layout = layout;
     html.classList.toggle("dark", mode === "dark");
     html.dataset.theme = baseId(theme, a);
@@ -172,6 +221,9 @@ export function applyAppearance(a: Appearance): void {
     unswitch = requestAnimationFrame(() => {
       unswitch = requestAnimationFrame(() => html.removeAttribute("data-theme-switching"));
     });
+  } else if (paintedFont() !== shown) {
+    // a look painted outside this (plan 248) that has since ended: the font alone goes back
+    paintFont(design, shown);
   }
 
   // after the DOM: listeners (the mail iframe) read the painted colors
@@ -241,7 +293,7 @@ const APPEARANCE_FIELDS = ["theme", "design", "lightTheme", "darkTheme", "design
  * (plan 245) is kept as what was asked, one style's font, and becomes the map only when it's sent or laid over a
  * snapshot: a refused choice never comes back inside a later one's map (Codex critique #4).
  */
-type FontChoice = { design: DesignId; font: FontId | null };
+type FontChoice = { design: DesignId; font: StyleFont | null };
 type Pending = { patch: AppearancePatch } | { font: FontChoice };
 const pending: Pending[] = [];
 
@@ -285,6 +337,8 @@ export async function launchSettings(snapshot: AppSettings, capMs: number): Prom
 
 /** Settings changed outside this window's edits (an import, a storage switch): stored, reconciled and painted. */
 export function adoptSettings(settings: AppSettings): void {
+  // settings from elsewhere (an import, a storage switch) end a preview: it was a look at the old ones (Codex critique #6)
+  preview = null;
   show(reconcileSettings(settings));
 }
 
@@ -318,13 +372,16 @@ const fontSeq = new Map<DesignId, number>();
  * Gives a style a font (plan 245); its own font, or null, takes the choice away. The style in use waits for the faces
  * first, as a style switch does. The map is read at commit, so choices for different styles never undo each other.
  */
-export async function setStyleFont(design: DesignId, font: FontId | null): Promise<AppSettings | null> {
+export async function setStyleFont(design: DesignId, font: StyleFont | null): Promise<AppSettings | null> {
   const seq = (fontSeq.get(design) ?? 0) + 1;
   fontSeq.set(design, seq);
   const own = designById(design);
-  const chosen = font === own.fonts.typeface ? null : font;
+  const chosen = ownOrChosen(font, own);
   if (design === getApp().settings?.design) await loadDesignFaces(withFont(own, chosen), DESIGN_FONT_WAIT_MS);
   if (fontSeq.get(design) !== seq) return null;
+  // the choice paints from here on (plan 248): a preview of it ends as it commits, with no frame of the old font between.
+  // A preview of something else (the list opened again meanwhile) is the user's newer look and stays (Codex critique #5)
+  if (preview?.design === design && preview.font === chosen) preview = null;
   return commitAppearance({ font: { design, font: chosen } });
 }
 

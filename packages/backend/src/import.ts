@@ -1,7 +1,7 @@
 import { attachmentFingerprint, portableAttachmentFingerprint, exportAttachment, importAttachments, validateExportedAttachments } from "./attachments";
 import { RpcError, type ExportedAttachment } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
-import { attachmentFilename, attachmentMime, attachmentCid, decodeText, MAX_RECIPIENTS, snippetSchema, switchDesign, type DesignId, type DesignPalettes, type Snippet, type Condition, type FilterAction, type FilterRule } from "@terno/core";
+import { attachmentFilename, attachmentMime, attachmentCid, decodeText, isDesignId, isStyleFont, MAX_RECIPIENTS, snippetSchema, switchDesign, type DesignId, type DesignPalettes, type Snippet, type Condition, type FilterAction, type FilterRule } from "@terno/core";
 import { draftAddressSchema, exportCategorySchema, exportDraftSchema, exportFilterSchema, settingsPatchSchema, type ExportCategory, type ExportDraftItem, type ExportFilter, type DraftAddress, type ExportedDraft, type ExportFile, type ImportResult, type MailboxExport, type SettingsPatch } from "@terno/core/rpc";
 import type { DraftInput, DraftRow } from "@terno/store";
 import { GAP, textToHtmlChunks } from "@terno/richtext/quote";
@@ -53,6 +53,10 @@ async function exportedSettings(store: SettingsStore) {
 
 function settingsFrom(raw: Record<string, unknown>, current: Parameters<typeof switchDesign>[0] & { localMode: boolean; agents: { enabled: boolean }; errorReports: string; senderIcons: boolean; remoteImages: string; notifications: boolean; notificationPreview: boolean }): { general: SettingsPatch; ai: SettingsPatch["ai"] } {
   const general: Record<string, unknown> = {};
+  // plan 248 (Codex critique #11): a style's font that isn't one (a family with a quote, a style this build doesn't
+  // know) drops only itself, not every style's
+  const fonts = raw.designFonts;
+  if (fonts && typeof fonts === "object" && !Array.isArray(fonts)) raw = { ...raw, designFonts: Object.fromEntries(Object.entries(fonts).filter(([d, f]) => isDesignId(d) && isStyleFont(f))) };
   for (const key of GENERAL_KEYS) {
     // plan 207: a file never asked carries no answer (null would undo this install's)
     if (raw[key] === undefined || (key === "firstScreen" && raw[key] === null)) continue;

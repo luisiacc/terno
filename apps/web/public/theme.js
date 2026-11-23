@@ -40,6 +40,9 @@
     var DESIGNS = ["macos", "atelier", "lumen", "luma", "graphite", "relief"];
     // plan 245: the fonts a style can be given (@terno/core FONT_IDS)
     var FONTS = ["system", "inter", "geist", "figtree", "instrument-sans"];
+    // plan 248: or a family installed on the computer, "local:<name>", a plain name (@terno/core LOCAL_FAMILY_RE)
+    // oxlint-disable-next-line no-control-regex -- a family's name refuses control characters
+    var FAMILY = /^(?! )[^"'\\;{}<>\u0000-\u001f\u007f]{1,100}(?<! )$/;
     var LUMEN = { v: 2, design: "lumen", light: "lumen-light", dark: "lumen-dark", vibrancy: { light: false, dark: false } };
     // plan 98: a new install's defaults (the backend's DEFAULT_SETTINGS); LUMEN above stays what older caches move to
     var FRESH = { design: "lumen", light: "github-light", dark: "github-dark" };
@@ -63,6 +66,10 @@
     html.setAttribute("data-design", DESIGNS.indexOf(a.design) >= 0 ? a.design : LUMEN.design);
     // in the font the style was given, so the first frame never draws in the style's own and swaps
     if (FONTS.indexOf(a.font) >= 0) html.setAttribute("data-font", a.font);
+    else if (typeof a.font === "string" && a.font.indexOf("local:") === 0 && FAMILY.test(a.font.slice(6))) {
+      html.setAttribute("data-font", "local");
+      html.style.setProperty("--local-font", '"' + a.font.slice(6) + '"');
+    }
     // plan 24: the layout (split, or the list full width), so the first frame has the right grid
     html.setAttribute("data-layout", a.layout === "list" ? "list" : "split");
     var mode = MODES.indexOf(a.mode) >= 0 ? a.mode : "system";

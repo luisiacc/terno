@@ -1109,3 +1109,45 @@
   --ds-font-features: "cv11", "ss01";
   font-feature-settings: "cv11", "ss01";
 }
+
+[data-design="lumen"][data-font="local"] {
+  --ds-font-sans: var(--local-font, "Figtree Variable", ui-sans-serif, system-ui, sans-serif), "Figtree Variable", ui-sans-serif, system-ui, sans-serif;
+  --ds-font-display: var(--local-font, "Figtree Variable", ui-sans-serif, system-ui, sans-serif), "Figtree Variable", ui-sans-serif, system-ui, sans-serif;
+  --ds-font-features: normal;
+  font-feature-settings: normal;
+}
+
+[data-design="graphite"][data-font="local"] {
+  --ds-font-sans: var(--local-font, -apple-system, BlinkMacSystemFont, "Geist Variable", ui-sans-serif, system-ui, sans-serif), -apple-system, BlinkMacSystemFont, "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --ds-font-display: var(--local-font, -apple-system, BlinkMacSystemFont, "Geist Variable", ui-sans-serif, system-ui, sans-serif), -apple-system, BlinkMacSystemFont, "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --ds-font-features: normal;
+  font-feature-settings: normal;
+}
+
+[data-design="relief"][data-font="local"] {
+  --ds-font-sans: var(--local-font, -apple-system, BlinkMacSystemFont, "Geist Variable", ui-sans-serif, system-ui, sans-serif), -apple-system, BlinkMacSystemFont, "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --ds-font-display: var(--local-font, -apple-system, BlinkMacSystemFont, "Geist Variable", ui-sans-serif, system-ui, sans-serif), -apple-system, BlinkMacSystemFont, "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --ds-font-features: normal;
+  font-feature-settings: normal;
+}
+
+[data-design="atelier"][data-font="local"] {
+  --ds-font-sans: var(--local-font, "Instrument Sans Variable", ui-sans-serif, system-ui, sans-serif), "Instrument Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  --ds-font-display: var(--local-font, "Instrument Sans Variable", ui-sans-serif, system-ui, sans-serif), "Instrument Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  --ds-font-features: normal;
+  font-feature-settings: normal;
+}
+
+[data-design="luma"][data-font="local"] {
+  --ds-font-sans: var(--local-font, "Inter Variable", ui-sans-serif, system-ui, sans-serif), "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --ds-font-display: var(--local-font, "Inter Variable", ui-sans-serif, system-ui, sans-serif), "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --ds-font-features: normal;
+  font-feature-settings: normal;
+}
+
+[data-design="macos"][data-font="local"] {
+  --ds-font-sans: var(--local-font, -apple-system, BlinkMacSystemFont, "Geist Variable", ui-sans-serif, system-ui, sans-serif), -apple-system, BlinkMacSystemFont, "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --ds-font-display: var(--local-font, -apple-system, BlinkMacSystemFont, "Geist Variable", ui-sans-serif, system-ui, sans-serif), -apple-system, BlinkMacSystemFont, "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --ds-font-features: normal;
+  font-feature-settings: normal;
+}

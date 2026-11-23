@@ -239,12 +239,39 @@ export function isDesignId(v: unknown): v is DesignId {
  */
 export const FONT_IDS = ["system", "inter", "geist", "figtree", "instrument-sans"] as const;
 export type FontId = (typeof FONT_IDS)[number];
-/** Plan 245: the font each style was given; a style without an entry draws its own. */
-export type DesignFonts = Partial<Record<DesignId, FontId>>;
-
 export function isFontId(v: unknown): v is FontId {
   return typeof v === "string" && (FONT_IDS as readonly string[]).includes(v);
 }
+
+/** Plan 248: a font installed on the computer, by its family name. */
+export const LOCAL_FONT_PREFIX = "local:";
+export type LocalFont = `local:${string}`;
+/** A style's font (plan 248): a bundled one, or a family installed on the computer. */
+export type StyleFont = FontId | LocalFont;
+/** Plan 245: the font each style was given; a style without an entry draws its own. */
+export type DesignFonts = Partial<Record<DesignId, StyleFont>>;
+
+/**
+ * A family's name is only ever a name, never CSS (it is quoted into a font stack): 1–100 characters, none of
+ * `"'\;{}<>` or control characters, no space at either end. public/theme.js keeps a copy (a test compares them).
+ */
+// oxlint-disable-next-line no-control-regex -- a family's name refuses control characters
+export const LOCAL_FAMILY_RE = /^(?! )[^"'\\;{}<>\u0000-\u001f\u007f]{1,100}(?<! )$/;
+
+export function isLocalFamily(v: unknown): v is string {
+  return typeof v === "string" && LOCAL_FAMILY_RE.test(v);
+}
+
+export function isStyleFont(v: unknown): v is StyleFont {
+  return isFontId(v) || (typeof v === "string" && v.startsWith(LOCAL_FONT_PREFIX) && isLocalFamily(v.slice(LOCAL_FONT_PREFIX.length)));
+}
+
+/** The family a style font names, or null for a bundled one. */
+export function localFamily(font: StyleFont): string | null {
+  return font.startsWith(LOCAL_FONT_PREFIX) ? font.slice(LOCAL_FONT_PREFIX.length) : null;
+}
+
+export const localFont = (family: string): LocalFont => `${LOCAL_FONT_PREFIX}${family}`;
 
 /** The mode a theme id belongs to, or null when it names nothing (unknown or deleted custom theme). */
 export function themeMode(id: string, custom: readonly CustomTheme[]): ThemeMode | null {

@@ -37,6 +37,7 @@ Terno's shared controls (`src/components/`) are BoardUI's free **Base** componen
 | Close Button | `close-button.tsx` | |
 | Color Picker | `color-swatches.tsx` | only the preset row, on RadioGroup |
 | Combobox | `combobox.tsx` | on Base UI's Autocomplete (plan 203: Settings' search); the recipient field is a widget of its own (`recipient-input.tsx`) |
+| Combobox, picker form | `combobox-picker.tsx` | on Base UI's Combobox (plan 248: Settings → Appearance → Font): one value, chosen from a list that finds as you type |
 | Command Palette | `command.tsx` | cmdk underneath |
 | Context Menu | `context-menu.tsx` | rows from `menu-styles.ts` |
 | Date Calendar | `calendar.tsx` | react-day-picker; no ranges yet |
@@ -102,5 +103,6 @@ Each item says what differs from BoardUI and why.
 - **A composer's header rows (plan 161):** To and Subject are bare fields on the row's hairline, Apple Mail's form, not the filled Input or Textarea: the row is the field, and its label and text sit on To's lines.
 - **The AI strip's change field (plan 164):** the input group (a textarea and an icon-only submit as its inline-end addon) at the strip's 28 px instead of 32, one line that grows (`field-sizing: content`), its focus ring 2 px at a fifth of the ring color rather than 3 px solid: it sits on a 38 px row between quiet icons, where the full ring read as an alert.
 - **Combobox (plan 203):** a search, not a picker. The field is the search field's (the glyph at the start, the round clear at the end), with no toggle: with nothing typed there is nothing to list. The list can be wider than the field (Settings' field is the sidebar's width; a result carries its placement and why it matched), and a row runs to as many lines as it says, at the menu row's padding. A choice keeps what was typed (Base UI would put the item's text in the field), and the first result is highlighted as results come, so Enter opens it.
+- **Combobox, picker form (plan 248):** a field that shows the value, with BoardUI's chevron at its end; focused, its text is selected so typing replaces it. The list opens on the chosen value (the arrows go on from it), the caller filters and ranks (`filteredItems`) and may virtualize it (rows placed with their `index`). No clear button: a picker always has a value.
 - **Depth is the design's (plan 208):** the controls' shadows, sheens, raised borders and pressed-in words read `--depth-*` variables from the design (`designs/depth.ts`) rather than BoardUI's literals. `flat`, every design but Relief, is BoardUI's look as ported; Relief's `relief` rings raised controls in a dark rim with a white one inside, sinks tracks and fields, drops the switch thumb's chip and pales its off track (the 3:1 edge becomes its rim).
 - **Announcement's `wrap` (plan 159):** an inline announcement may wrap its title instead of truncating it, so a learned rule's condition is read whole before it's accepted. BoardUI's inline announcement truncates.
