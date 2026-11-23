@@ -167,3 +167,13 @@ describe("only (plan 248, the eval's second run)", () => {
     expect(preferenceDecision(all, { kind: "event", senderKey: "a@b.test" }, { basis: b, rules: [] }, b).hide).toBe(true);
   });
 });
+
+describe("a failed verdict (the Codex code review)", () => {
+  it("fails open: no judged hide applies, and a judged only keeps the row", () => {
+    const only = ok({ effect: "only", about: "school" });
+    const hide = ok({ effect: "hide", about: "a newsletter" });
+    const rules = [only, hide];
+    const b = verdictBasis(rules);
+    expect(preferenceDecision(rules, { kind: "event", senderKey: "a@b.test" }, { basis: b, rules: [], failed: true }, b)).toEqual({ hide: false, first: false, pending: false });
+  });
+});

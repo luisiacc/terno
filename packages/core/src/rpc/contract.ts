@@ -1330,7 +1330,7 @@ export const contract = {
   "today.waitingUndo": m<{ ok: true }>()(z.object({ undoId: z.string().min(1).max(64) })),
   /** a thread's open items, for the reader's line */
   /** plan 210 (iteration 2): with `include`, that item too whatever its state (a history line opened: its closed item) */
-  "dated.ofThread": m<{ rows: DatedRow[] }>()(z.object({ threadId: id, include: id.optional() })),
+  "dated.ofThread": m<{ rows: DatedRow[] }>()(z.object({ threadId: id, include: datedId.optional() })),
   /** plan 239: `limit`, stopped by the day's guard or the monthly ceiling (its message says which), not by the provider */
   "dated.status": m<{ blockedBy: { kind: AiErrorKind; message: string; i18n?: I18nRef; limit?: "daily" | "monthly" } | null }>()(empty),
   /** the 14-day check: how many, and what it would cost; then the yes */

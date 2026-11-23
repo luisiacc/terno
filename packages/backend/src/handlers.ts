@@ -1474,6 +1474,7 @@ export function createHandlers(b: Backend): Handlers {
             b.summaries.settingsChanged(next);
             b.followups.settingsChanged(next);
             b.dated.settingsChanged(next);
+            void b.words.settingsChanged(next);
             b.ask.settingsChanged(next.ask.enabled);
             b.aiAssist.targetChanged();
             // plan 150: the jobs added after plan 146 hear of it too
@@ -1490,7 +1491,11 @@ export function createHandlers(b: Backend): Handlers {
           if (patch.ai || patch.replies) b.replies.settingsChanged();
           if (patch.ai || patch.today) b.today.settingsChanged();
           if (patch.ai || patch.followups) b.followups.settingsChanged(next);
-          if (patch.ai || patch.dated) b.dated.settingsChanged(next);
+          if (patch.ai || patch.dated) {
+            b.dated.settingsChanged(next);
+            // plan 248: the words' worker resumes or stops with the reader and AI
+            void b.words.settingsChanged(next);
+          }
           if (next.localMode !== was.localMode || next.errorReports !== was.errorReports || next.language !== was.language) await b.publishPolicy();
           if (next.composeSuggestions !== was.composeSuggestions) await b.autocomplete.setPhrases(next.composeSuggestions);
           // plan 22: website icons turned off: nothing in flight lands, windows forget them
@@ -1523,6 +1528,7 @@ export function createHandlers(b: Backend): Handlers {
       b.summaries.settingsChanged(next);
       b.followups.settingsChanged(next);
       b.dated.settingsChanged(next);
+      void b.words.settingsChanged(next);
       b.ask.settingsChanged(next.ask.enabled);
       // plan 134: a JEV key chooses where categorization runs
       b.aiAssist.targetChanged();
@@ -1541,6 +1547,7 @@ export function createHandlers(b: Backend): Handlers {
       b.summaries.settingsChanged(next);
       b.followups.settingsChanged(next);
       b.dated.settingsChanged(next);
+      void b.words.settingsChanged(next);
       void b.writing.learner.aiChanged();
       return next;
     },

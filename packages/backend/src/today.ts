@@ -716,8 +716,9 @@ export class TodayService {
         ofEntry.set(e.row, t);
       }
     // a waiting conversation by its sender and subject, read (one batch) only when a rule may reach one
+    // (an `only` reaches every row, a waiting conversation included: one it doesn't keep is hidden, the Codex code review)
     const ofWaiting = new Map<number, RowTarget>();
-    if (page.length && rules.some((r) => r.effect !== "show" && (!r.kinds?.length || r.kinds.includes("waiting")))) {
+    if (page.length && rules.some((r) => r.effect === "only" || (r.effect !== "show" && (!r.kinds?.length || r.kinds.includes("waiting"))))) {
       const threads = new Map((await this.b.store.threads.summaries(page.map((w) => w.id))).map((t) => [t.id, t]));
       for (const w of page) {
         const thread = threads.get(w.id);
@@ -759,7 +760,8 @@ export class TodayService {
    * brought there (a show still current), less what the words hide (a history line's own closed item stays).
    */
   async conversationItems(threadId: number, include?: number): Promise<DatedRow[]> {
-    const rows = await this.b.dated.ofThread(threadId, include);
+    // (a wanted row opened names itself by its negative id: the words' own rows below hold it)
+    const rows = await this.b.dated.ofThread(threadId, include !== undefined && include > 0 ? include : undefined);
     const rules = await this.b.words.rules();
     if (!rules.length) return rows;
     const shows = new Set(rules.filter((r) => r.effect === "show").map((r) => r.key));
@@ -769,6 +771,12 @@ export class TodayService {
     const targets = all.map(datedTarget);
     const seen = await this.b.words.visibility(targets, { ask: false });
     return seen ? all.filter((r, i) => r.state !== "open" || r.id === include || !seen.decide(targets[i]!).hide) : all;
+  }
+
+  /** Plan 248: the "Changed" lines of rows the user's words hide aren't lines either (the Codex code review) */
+  private async keptChanged(changed: Awaited<ReturnType<TodayService["changedItems"]>>): Promise<Awaited<ReturnType<TodayService["changedItems"]>>> {
+    if (!changed || !(await this.b.words.rules()).length) return changed;
+    return { dated: await this.historyKept("dated", [...changed.dated]), promises: await this.historyKept("promise", [...changed.promises]) };
   }
 
   /** Plan 248: the history's rows the user's words keep (verdicts read a batch at a time; never withheld). */
@@ -855,7 +863,7 @@ export class TodayService {
     // plan 211: every history line is an item the AI made: an account with AI or What matters off has none; plan 215, but a
     // waiting conversation's Done, What matters' own, which follows its switch alone (as its row did)
     const { gate } = this.b;
-    return historyPage(store, { now, after: o.after, through: o.through ?? null, limit: o.limit ?? HISTORY_PAGE, held: new Set(o.held), dated: settings.dated?.enabled === true, promises: settings.followups?.enabled === true, waiting: true, changed: await this.changedItems(settings), shows: (accountId) => gate.reads(accountId), showsWaiting: (accountId) => gate.feed(accountId), yieldTurn: () => this.b.yieldTurn(), sliceMs: this.b.options.sliceBudgetMs, ...((await this.b.words.rules()).length && { keep: (source, rows) => this.historyKept(source, rows) }) });
+    return historyPage(store, { now, after: o.after, through: o.through ?? null, limit: o.limit ?? HISTORY_PAGE, held: new Set(o.held), dated: settings.dated?.enabled === true, promises: settings.followups?.enabled === true, waiting: true, changed: await this.keptChanged(await this.changedItems(settings)), shows: (accountId) => gate.reads(accountId), showsWaiting: (accountId) => gate.feed(accountId), yieldTurn: () => this.b.yieldTurn(), sliceMs: this.b.options.sliceBudgetMs, ...((await this.b.words.rules()).length && { keep: (source, rows) => this.historyKept(source, rows) }) });
   }
 
   /**
@@ -1285,8 +1293,10 @@ export class TodayService {
     const { store } = this.b;
     const settings = await readSettings(store);
     if (!(await this.available(settings))) return;
-    const items = settings.dated?.enabled ? await this.datedRows() : [];
-    const promises = settings.followups?.enabled ? await this.needs(items, await store.followups.active()) : [];
+    const v16 = settings.dated?.enabled ? await this.datedRows() : [];
+    const promises = settings.followups?.enabled ? await this.needs(v16, await store.followups.active()) : [];
+    // plan 248: what the words brought changes by the clock too (a Later's return, a Plan's end)
+    const items = settings.dated?.enabled ? await this.withWanted(v16) : v16;
     const now = this.b.now();
     // plan 210 (Codex code review): midnight too, whatever shows: what's waiting says "since Wed", the history "Done today",
     // and neither is an item the clock knows. Once a day, never a poll
@@ -1302,6 +1312,8 @@ export class TodayService {
       this.clockAt = null;
       // a day's bounds with nothing to read: what's over is retired (Codex code review); a promise too (plan 210, iteration 3)
       void this.b.dated.daily().catch(() => {});
+      // plan 248: and what the user's words brought
+      void this.b.words.daily().catch(() => {});
       void this.b.followups.retire().catch(() => {});
       this.changed();
     }, Math.min(MAX_DELAY, Math.max(0, next - now)));

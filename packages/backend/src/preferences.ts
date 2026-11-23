@@ -3,6 +3,7 @@ import {
   activeRules,
   addressKey,
   checkPreferences,
+  datedOver,
   datedTiming,
   isSemantic,
   normalizeText,
@@ -26,7 +27,7 @@ import {
 import { captureError } from "@terno/core/diag";
 import type { AppSettings, I18nRef } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
-import { WANTED_LOOK_MAX, type MailStore, type WantedMark, type WantedWrite } from "@terno/store";
+import { WANTED_LOOK_MAX, wantedAsDated, type MailStore, type WantedMark, type WantedWrite } from "@terno/store";
 import type { AccountGate } from "./account-gate";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import { asksForSecrets, inWords, readerZone } from "./dated";
@@ -83,6 +84,8 @@ export const WITHHOLD_MS = 10 * 60_000;
 const LOOK_DAYS = 14;
 const LOOK_WALK = 3000;
 const MARKS_PAGE = 50;
+/** the revision whose words the look back's yes was given for */
+const LOOK_REVISION_KEY = "whatMatters:lookRevision";
 /** what a message costs the second reader, for the look back's estimate: ~900 tokens in, ~150 out */
 export const WANTED_TOKENS_IN = 900;
 export const WANTED_TOKENS_OUT = 150;
@@ -151,6 +154,11 @@ export class WhatMattersWords {
 
   async record(): Promise<WhatMattersPreferences> {
     return (this.cache ??= await this.host.store.whatMatters.preferences.get());
+  }
+
+  /** The words are known (read once) and empty: the worker has nothing to wake for, with no read at all (§9). */
+  knownEmpty(): boolean {
+    return this.cache !== null && !activeRules(this.cache).length;
   }
 
   /** The rules in force: none for the empty box (§9) */
@@ -273,7 +281,8 @@ export class WhatMattersWords {
       shows: new Set(rules.filter((r) => r.effect === "show").map((r) => r.key)),
       decide: (t) => {
         const v = verdicts.get(t.key);
-        const d = preferenceDecision(rules, t, v?.failed ? { rules: [], basis } : v, basis);
+        // a row that couldn't be judged is shown: a failure never hides mail (an `only` keeps it too)
+        const d = preferenceDecision(rules, t, v, basis);
         // withheld while it's judged: new since the words were saved, recent, and the worker able to judge it
         if (d.pending && t.since > savedAt && now - t.since < WITHHOLD_MS && !blocked) return { hide: true, first: false };
         return d;
@@ -291,17 +300,34 @@ export class WhatMattersWords {
     return { count: picks.length, tokensIn: picks.length * WANTED_TOKENS_IN, tokensOut: picks.length * WANTED_TOKENS_OUT };
   }
 
-  /** The user's yes: the picks marked for the second reader, after new mail */
+  /**
+   * The user's yes: the picks marked for the second reader, after new mail. The yes is for these words (the Codex code
+   * review): it's recorded with their revision, and the worker reads the look's marks only while that's still the words'
+   * (a Clear or another Save meanwhile drops them, never reads old mail under new rules).
+   */
   async look(): Promise<number> {
+    const { revision } = await this.record();
     const rules = (await this.rules()).filter((r) => r.effect === "show");
     if (!rules.length) return 0;
     const picks = await this.lookPicks(rules);
+    if ((await this.host.store.whatMatters.preferences.get()).revision !== revision) return 0;
+    await this.host.store.settings.set(LOOK_REVISION_KEY, revision);
     const now = this.host.now();
     let n = 0;
     for (const p of picks) if (await this.host.store.whatMatters.wanted.marks.add({ messageId: p.id, threadId: p.threadId, arrivedAt: p.date, source: "look" }, now)) n++;
     this.worker.wake();
     this.host.emit(await this.state());
     return n;
+  }
+
+  /** Settings moved: the worker resumes or stops (a provider, a key, a limit, the reader's switch, AI's gate). */
+  async settingsChanged(settings: AppSettings): Promise<void> {
+    this.worker.settingsChanged(settings, await this.host.allowed(settings));
+  }
+
+  /** Plan 248's daily bounds: what the words brought that's over is closed, so their open bound holds only what can show. */
+  async daily(): Promise<void> {
+    await this.worker.retire();
   }
 
   private async lookPicks(rules: readonly PreferenceRule[]) {
@@ -328,6 +354,8 @@ export class WhatMattersWords {
 /** What's on its way to the provider: what the limiter's last check re-reads before it leaves (revision 7). */
 interface Leaving {
   revision: number;
+  /** the second reader's (mail read for a show): stops with the reader's switch too */
+  reading: boolean;
   /** each source's message (dated, wanted, a waiting message) or thread (a promise's) */
   sources: { messageId: number | null; threadId: number; senderKey: string }[];
   stop: AbortController;
@@ -401,15 +429,37 @@ export class PreferenceWorker {
   }
 
   wake(): void {
+    // the empty box (known): nothing to do and nothing read (§9)
+    if (this.words.knownEmpty() && !this.queue.size) return;
     if (this.host.now() < this.heldUntil) return;
     void this.drain().catch((error: unknown) => captureError(error instanceof Error ? error : new Error(String(error)), { code: "ai.failed" }));
   }
 
-  /** a provider or its key changed, AI came back: a pause ends */
-  resume(): void {
+  /**
+   * Settings moved (a provider, a key, the limits, the reader's switch: the Codex code review): a pause ends and the work
+   * starts again; the reader turned off or AI gone stops what's on its way (its marks wait for it to come back on).
+   */
+  settingsChanged(settings: AppSettings, allowed: boolean): void {
     this.paused = null;
     this.heldUntil = 0;
+    if (!allowed || !settings.dated?.enabled) {
+      this.generation.abort();
+      this.generation = new AbortController();
+      this.leaving?.stop.abort();
+      if (!allowed) this.queue.clear();
+    }
     this.wake();
+  }
+
+  /** What the words brought that's over (a Plan ended, a deadline past Missed's days) is closed as expired. */
+  async retire(): Promise<number> {
+    const { store } = this.host;
+    const now = this.host.now();
+    const over = (await store.whatMatters.wanted.active()).filter((w) => datedOver(wantedAsDated(w), now));
+    if (!over.length) return 0;
+    const done = await store.whatMatters.wanted.act(over.map((w) => ({ id: w.id, revision: w.revision, patch: { state: "dismissed" as const, closedReason: "expired", closedAt: now } })));
+    if (done) this.host.changed();
+    return done?.length ?? 0;
   }
 
   /**
@@ -421,6 +471,9 @@ export class PreferenceWorker {
     if (!leaving || leaving.stop.signal.aborted) return;
     const { store } = this.host;
     if ((await store.whatMatters.preferences.get()).revision !== leaving.revision) return leaving.stop.abort();
+    // the reader's own switch for what it reads, AI's for anything (the Codex code review)
+    const settings = await this.host.settings();
+    if (!(await this.host.allowed(settings)) || (leaving.reading && !settings.dated?.enabled)) return leaving.stop.abort();
     const silence = await silenceOf(store);
     for (const s of leaving.sources) {
       if (s.messageId !== null) {
@@ -439,6 +492,7 @@ export class PreferenceWorker {
       return;
     }
     this.running = true;
+    let worked = false;
     try {
       do {
         this.again = false;
@@ -452,6 +506,7 @@ export class PreferenceWorker {
           return;
         }
         if (this.paused || this.host.now() < this.heldUntil) return;
+        worked = true;
         if (settings.dated?.enabled && rules.some((r) => r.effect === "show")) {
           if ((await this.wantedPass(record, rules, settings, generation)) === "stop") return;
         }
@@ -459,7 +514,8 @@ export class PreferenceWorker {
       } while (this.again);
     } finally {
       this.running = false;
-      this.host.emit(await this.words.state());
+      // the windows hear only when there was work (idle stays quiet)
+      if (worked) this.host.emit(await this.words.state());
     }
   }
 
@@ -487,7 +543,7 @@ export class PreferenceWorker {
         matchRules.push({ id, effect: r.effect, about: r.about ?? null, unless: r.unless ?? null, ...(r.kinds?.length ? { kinds: r.kinds } : {}) });
       }
       const stop = new AbortController();
-      this.leaving = { revision: record.revision, sources: built.targets.map((b) => b.source), stop };
+      this.leaving = { revision: record.revision, reading: false, sources: built.targets.map((b) => b.source), stop };
       try {
         const ai = await this.host.forTask({ foreground: false });
         const signal = AbortSignal.any([generation.signal, stop.signal]);
@@ -577,29 +633,40 @@ export class PreferenceWorker {
 
   // ─── the second reader ───────────────────────────────────────────────────
 
-  private async wantedPass(record: WhatMattersPreferences, rules: readonly PreferenceRule[], settings: AppSettings, generation: AbortController): Promise<"next" | "stop"> {
+  private async wantedPass(record: WhatMattersPreferences, rules: readonly PreferenceRule[], _settings: AppSettings, generation: AbortController): Promise<"next" | "stop"> {
     const { store } = this.host;
     await store.whatMatters.wanted.marks.prune(this.host.now());
+    // the look back's marks only for the words it was said yes to (the Codex code review)
+    if ((await store.whatMatters.wanted.marks.count("look")) && (await store.settings.get<number | null>(LOOK_REVISION_KEY, null)) !== record.revision) await store.whatMatters.wanted.marks.clearLook();
     const shows = rules.filter((r) => r.effect === "show");
-    const marks = await store.whatMatters.wanted.marks.page(MARKS_PAGE);
-    this.lookLeft = await store.whatMatters.wanted.marks.count("look");
-    for (const mark of marks) {
-      if (generation.signal.aborted) return "stop";
-      const next = await this.readOne(mark, record, shows, settings, generation);
-      if (next === "stop") return "stop";
+    // page after page while something moves (a 300-message look back is six pages); what waits (its body, v16) stays
+    const waiting = new Set<number>();
+    for (;;) {
+      const marks = (await store.whatMatters.wanted.marks.page(MARKS_PAGE + waiting.size)).filter((m) => !waiting.has(m.messageId));
+      this.lookLeft = (await store.whatMatters.wanted.marks.count("look")) || null;
+      if (!marks.length) break;
+      for (const mark of marks) {
+        if (generation.signal.aborted) return "stop";
+        // the reader's switch, read again before each: turned off, nothing more is read
+        const settings = await this.host.settings();
+        if (!settings.dated?.enabled || !(await this.host.allowed(settings))) return "stop";
+        const next = await this.readOne(mark, record, shows, settings, generation);
+        if (next === "stop") return "stop";
+        if (next === "waits") waiting.add(mark.messageId);
+      }
     }
-    this.lookLeft = (await store.whatMatters.wanted.marks.count("look")) || null;
+    this.lookLeft = null;
     return "next";
   }
 
-  private async readOne(mark: WantedMark, record: WhatMattersPreferences, shows: readonly PreferenceRule[], settings: AppSettings, generation: AbortController): Promise<"next" | "stop"> {
+  private async readOne(mark: WantedMark, record: WhatMattersPreferences, shows: readonly PreferenceRule[], settings: AppSettings, generation: AbortController): Promise<"next" | "stop" | "waits"> {
     const { store } = this.host;
     const consume = async () => {
       await store.whatMatters.wanted.marks.consume(mark.messageId);
       return "next" as const;
     };
-    // v16 first: its items are what this one mustn't repeat
-    if (await store.dated.marks.pendingOn(mark.threadId, mark.arrivedAt + 1)) return "next";
+    // v16 first: its items are what this one mustn't repeat (its pass's end wakes this one again: `caughtUp`)
+    if (await store.dated.marks.pendingOn(mark.threadId, mark.arrivedAt + 1)) return "waits";
     const src = await store.dated.source(mark.messageId);
     // the owner's rule: Spam reaches no AI, the whole thread's; nor an account not reading, a muted sender, an untrusted one
     if (!src || src.draft || src.sent || src.own || src.spam || src.trash || src.threadSpam) return consume();
@@ -608,16 +675,18 @@ export class PreferenceWorker {
     const accounts = await store.accounts.list();
     if ((await untrustedSenders([src.fromEmail], (keys) => store.dated.trusted(keys), accounts.map((a) => a.email))).size) return consume();
     // its body first (it may come later: the mark waits, at most its 3 days)
-    if (src.bodyState !== "full" && !src.bodyUnavailable) return "next";
+    if (src.bodyState !== "full" && !src.bodyUnavailable) return "waits";
     const raw = (await store.aiSummaries.text([{ messageId: src.id, limit: WANTED_TEXT_CHARS * 2 }])).get(src.id) ?? "";
     const text = withoutQuotes(raw);
     const wanting = wantedBy(shows, { senderKey: src.senderKey, subject: src.subject, fromName: src.fromName, text });
     if (!wanting.length || (!text.trim() && !src.subject.trim())) return consume();
     const language = await readerLanguage(store, settings);
     const ids = new Map(wanting.map((r, i) => [`r${i + 1}`, r]));
-    const already = [...(await store.dated.ofThread(src.threadId)).filter((r) => r.messageId === src.id), ...(await store.whatMatters.wanted.ofThread(src.threadId)).filter((r) => r.messageId === src.id)];
+    // v16's items aren't repeated; one the words brought before is, so its finish adds this rule as a reason too (the Codex
+    // code review: an item two shows want shows while either does)
+    const already = (await store.dated.ofThread(src.threadId)).filter((r) => r.messageId === src.id);
     const stop = new AbortController();
-    this.leaving = { revision: record.revision, sources: [{ messageId: src.id, threadId: src.threadId, senderKey: src.senderKey }], stop };
+    this.leaving = { revision: record.revision, reading: true, sources: [{ messageId: src.id, threadId: src.threadId, senderKey: src.senderKey }], stop };
     try {
       const ai = await this.host.forTask({ foreground: false });
       const signal = AbortSignal.any([generation.signal, stop.signal]);
@@ -718,6 +787,9 @@ export function excerptAround(text: string, quote: string, max: number): string 
  */
 export function checkWanted(result: WantedResult, o: { text: string; subject: string; arrivedAt: number; rules: ReadonlyMap<string, PreferenceRule>; already: readonly { kind: DatedKind; text: string; dueDay?: string; quote?: string }[] }): WantedWrite[] {
   const mail = squash(`${o.subject}\n${o.text}`);
+  // a scam's pressure or gift cards anywhere in the mail: nothing from it at all (the Codex code review: a quoted offer
+  // beside a demand for codes in the next sentence). A show brings in what the app leaves out, never what it keeps out
+  if (scamPressure(`${o.subject}\n${o.text}`) || giftCardScam(`${o.subject}\n${o.text}`)) return [];
   const rows: WantedWrite[] = [];
   for (const item of result.items) {
     const rule = o.rules.get(item.rule);
@@ -725,13 +797,18 @@ export function checkWanted(result: WantedResult, o: { text: string; subject: st
     const quote = squash(item.quote);
     if (quote.length < 3 || !mail.includes(quote)) continue;
     if (rule.kinds?.length && !rule.kinds.includes(item.kind as PreferenceKind)) continue;
-    if (scamPressure(`${o.subject}\n${item.quote}`) || giftCardScam(`${item.text}\n${item.quote}`) || asksForSecrets({ text: item.text, quote: item.quote })) continue;
+    if (asksForSecrets({ text: item.text, quote: item.quote }) || asksForSecrets({ text: o.subject, quote: o.text })) continue;
     // an item with no day is news the user asked to see: shown for its week, as an alert is (never Missed)
     const kind: DatedKind = item.due ? item.kind : "alert";
     const timing = datedTiming({ kind, due: item.due, time: item.time, arrivedAt: o.arrivedAt });
     if (!timing) continue;
     if (o.already.some((a) => a.kind === kind && (squash(a.text) === squash(item.text) || (a.quote && squash(a.quote) === quote)))) continue;
-    if (rows.some((r) => r.kind === kind && r.dueDay === timing.dueDay && squash(r.quote) === quote)) continue;
+    // the same item for two rules: one item, both reasons
+    const same = rows.find((r) => r.kind === kind && r.dueDay === timing.dueDay && squash(r.quote) === quote);
+    if (same) {
+      if (!same.rules.includes(rule.key)) same.rules.push(rule.key);
+      continue;
+    }
     rows.push({ kind, text: item.text.trim(), quote: item.quote.trim(), dueDay: timing.dueDay, dueAt: timing.dueAt, timed: timing.timed, dated: timing.dated, actAt: timing.actAt, rules: [rule.key] });
   }
   return rows;

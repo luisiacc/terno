@@ -1399,7 +1399,8 @@ export class DatedWorker {
     // what came before it went on is read only with the check's yes
     if (mark.source === "live" && settings.dated.enabledAt !== null && src.date < settings.dated.enabledAt) return drop();
     // plan 248: the words' second reader gets its own mark, whatever this reading then does (it waits for this one)
-    if (mark.source === "live") await this.host.wantedMark?.({ messageId: src.id, threadId: src.threadId, arrivedAt: src.date });
+    // (its failure is the words' own: this reading goes on whatever it does, the Codex code review)
+    if (mark.source === "live" && this.host.wantedMark) await this.host.wantedMark({ messageId: src.id, threadId: src.threadId, arrivedAt: src.date }).catch((error: unknown) => captureError(error instanceof Error ? error : new Error(String(error)), { code: "ai.failed" }));
     // revision 5: what could settle an open item is read before any cost filter
     const open = await store.dated.openFor({ threadId: src.threadId, senderKey: src.senderKey, before: src.date, limit: DATED_OPEN_SHOWN, excludeAccounts: this.host.gate.readsOff });
     // plan 210 (iteration 5, revision 8): Social and Promotions only for a person's ask a service relays (its body tells)

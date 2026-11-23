@@ -96,22 +96,42 @@ function LookBack() {
 export function WhatMattersWords({ labelledBy, describedBy, autoFocus }: { labelledBy?: string; describedBy?: string; autoFocus?: boolean }) {
   const [state] = useWords();
   const reading = useApp((s) => s.settings?.dated?.enabled === true);
-  const saved = state?.preferences.text ?? "";
   const [text, setText] = useState<string | null>(null);
+  // the saved words the box was typed on, and their revision: Save is against it, so another window's save since is
+  // refused rather than overwritten (the Codex code review), and an untouched box follows a change made elsewhere
+  const [base, setBase] = useState<{ revision: number; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pending = useRef<{ text: string; seq: number } | null>(null);
   const field = useRef<HTMLTextAreaElement>(null);
   const understoodId = useId();
   const countId = useId();
-  // the first read: the draft if there is one, else the saved words; afterwards what's typed stays the user's
+  const saved = base?.text ?? "";
+  // the first read: the draft if there is one, else the saved words; afterwards what's typed stays the user's, and a box
+  // with nothing typed in it follows the saved words when they change (another window, Clear's Undo)
   useEffect(() => {
-    if (state && text === null) setText(state.draft?.text ?? state.preferences.text);
-  }, [state, text]);
-  useEffect(() => () => void (draftTimer.current && clearTimeout(draftTimer.current)), []);
+    if (!state) return;
+    const now = { revision: state.preferences.revision, text: state.preferences.text };
+    if (text === null) {
+      setText(state.draft?.text ?? now.text);
+      setBase(now);
+    } else if (base && now.revision !== base.revision && text === base.text) {
+      setText(now.text);
+      setBase(now);
+    }
+  }, [state, text, base]);
+  // a draft still on its way is kept when Settings closes (never lost to the debounce)
+  const flush = () => {
+    if (draftTimer.current) clearTimeout(draftTimer.current);
+    draftTimer.current = null;
+    if (pending.current) saveDraft(pending.current.text, pending.current.seq);
+    pending.current = null;
+  };
+  useEffect(() => () => flush(), []);
   useEffect(() => {
     if (autoFocus && text !== null) field.current?.focus({ preventScroll: false });
   }, [autoFocus, text === null]);
-  if (!state || text === null) return null;
+  if (!state || text === null || !base) return null;
   const rules = activeRules(state.preferences);
   const notes = state.preferences.text.trim() ? state.preferences.notes : [];
   const changed = text !== saved;
@@ -119,21 +139,28 @@ export function WhatMattersWords({ labelledBy, describedBy, autoFocus }: { label
   const typed = (next: string) => {
     setText(next);
     if (draftTimer.current) clearTimeout(draftTimer.current);
-    const seq = draftSeq();
-    draftTimer.current = setTimeout(() => saveDraft(next, seq), DRAFT_DEBOUNCE_MS);
+    pending.current = { text: next, seq: draftSeq() };
+    draftTimer.current = setTimeout(flush, DRAFT_DEBOUNCE_MS);
   };
   const save = async () => {
     if (saving || !changed) return;
-    if (draftTimer.current) clearTimeout(draftTimer.current);
+    // the draft first: a failed compile keeps what was typed, across closing Settings too
+    flush();
     setSaving(true);
-    const r = await saveWords(text, state.preferences.revision);
+    const r = await saveWords(text, base.revision);
     setSaving(false);
-    // another window saved: show what's saved now (its words), the typed ones are in the snack's past
-    if (r.stale) setText(null);
+    // another window saved: show what's saved now (its words); the typed ones stay in the draft until typed over
+    if (r.stale) {
+      setText(null);
+      setBase(null);
+    } else if (r.saved) setBase({ revision: base.revision + 1, text });
   };
   const clear = async () => {
-    if (draftTimer.current) clearTimeout(draftTimer.current);
-    if (await clearWords(state.preferences.revision)) setText("");
+    flush();
+    if (await clearWords(base.revision)) {
+      setText("");
+      setBase({ revision: base.revision + 1, text: "" });
+    }
   };
   const { status } = state;
   return (

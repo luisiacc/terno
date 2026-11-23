@@ -206,9 +206,12 @@ const SHOWN: PreferenceDecision = { hide: false, first: false, pending: false };
  * Where a row stands under the rules: hidden, first, or `pending` (a semantic hide could reach it and it has no current
  * verdict yet). A hide wins over a first. `verdict` absent or of another basis: no semantic rule is known to apply.
  */
-export function preferenceDecision(rules: readonly PreferenceRule[], t: PreferenceTarget, verdict: Pick<PreferenceVerdict, "rules" | "basis"> | undefined, basis: string): PreferenceDecision {
+export function preferenceDecision(rules: readonly PreferenceRule[], t: PreferenceTarget, verdict: (Pick<PreferenceVerdict, "rules" | "basis"> & { failed?: boolean }) | undefined, basis: string): PreferenceDecision {
   if (!rules.length) return SHOWN;
   const judged = verdict && verdict.basis === basis ? new Set(verdict.rules) : null;
+  // a row the matcher couldn't judge (refused, out of attempts, an account that sends nothing to AI) fails open: no judged
+  // hide or first applies, and a judged `only` keeps it (the Codex code review: never hide mail on a failure)
+  const failed = !!judged && verdict!.failed === true;
   let hide = false;
   let first = false;
   let pending = false;
@@ -222,6 +225,7 @@ export function preferenceDecision(rules: readonly PreferenceRule[], t: Preferen
     if (!exactlyReaches(r, t)) continue;
     let applies: boolean;
     if (!isSemantic(r)) applies = true;
+    else if (failed) applies = r.effect === "only";
     else if (judged) applies = judged.has(r.key);
     else {
       if (r.effect === "hide") pending = true;

@@ -428,7 +428,11 @@ export class BackendCore {
       changed: () => this.today.changed(),
       promisesMoved: () => void this.followups.look().catch(() => {}),
       replies: () => (this.followups.isActive ? { since: this.followups.since } : undefined),
-      caughtUp: () => this.followups.wake(),
+      // plan 248: what the words' second reader waited on (v16's reading of the same message) is done
+      caughtUp: () => {
+        this.followups.wake();
+        this.words.worker.wake();
+      },
       statusChanged: (status) => this.server.emit("datedStatus", status, { origins: ["renderer", "dev"] }),
       runBudgeted: (items, work) => this.runBudgeted(items, work),
       log: (level, message, extra) => this.log(level, message, extra),
