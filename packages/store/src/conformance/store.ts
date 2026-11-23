@@ -31,6 +31,7 @@ import { defineScheduleConformance } from "./schedule";
 import { defineHandoffConformance } from "./handoff";
 import { defineDatedMutesConformance } from "./dated-mutes";
 import { defineShownSendersConformance } from "./shown-senders";
+import { defineWhatMattersConformance } from "./what-matters";
 import { defineWritingConformance } from "./writing";
 import { defineUnsubscribeConformance } from "./unsubscribe";
 import { defineHiddenInboxConformance } from "./hidden-inbox";
@@ -180,6 +181,11 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
       return next;
     });
     defineShownSendersConformance(fresh, async (s) => {
+      const next = await harness.reopen(s);
+      open.push(next);
+      return next;
+    });
+    defineWhatMattersConformance(fresh, async (s) => {
       const next = await harness.reopen(s);
       open.push(next);
       return next;

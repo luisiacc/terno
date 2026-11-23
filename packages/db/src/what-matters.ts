@@ -111,7 +111,8 @@ const sameQuote = (q: string) => q.replace(/\s+/g, " ").trim().toLowerCase();
 
 export function finishWanted(db: Db, w: WantedFinish): "written" | "stale" | "gone" {
   return db.tx(() => {
-    if (!db.get("SELECT 1 FROM wanted_marks WHERE message_id = ?", w.messageId)) return "gone";
+    const mark = db.get<{ thread_id: number }>("SELECT thread_id FROM wanted_marks WHERE message_id = ?", w.messageId);
+    if (!mark) return "gone";
     if (revisionOf(db) !== w.revision) return "stale";
     let open = db.get<{ n: number }>("SELECT count(*) AS n FROM wanted_items INDEXED BY wanted_open WHERE state = 'open'")!.n;
     for (const row of w.rows) {
@@ -127,7 +128,8 @@ export function finishWanted(db: Db, w: WantedFinish): "written" | "stale" | "go
       db.run(
         `INSERT INTO wanted_items (thread_id, message_id, kind, text, quote, sender_key, due_day, due_at, timed, dated, act_at, arrived_at, state, rules, from_look, model, provider, prompt_version, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?)`,
-        w.threadId, w.messageId, row.kind, row.text, row.quote, w.senderKey, row.dueDay, row.dueAt, row.timed ? 1 : 0, row.dated ? 1 : 0, row.actAt, w.arrivedAt, JSON.stringify([...new Set(row.rules)]), w.fromLook ? 1 : 0, w.model, w.provider, w.promptVersion, w.now,
+        // the mark's thread: a merge since the read moved it (the caller's may be gone, and the insert would fail its key)
+        mark.thread_id, w.messageId, row.kind, row.text, row.quote, w.senderKey, row.dueDay, row.dueAt, row.timed ? 1 : 0, row.dated ? 1 : 0, row.actAt, w.arrivedAt, JSON.stringify([...new Set(row.rules)]), w.fromLook ? 1 : 0, w.model, w.provider, w.promptVersion, w.now,
       );
       open++;
     }
