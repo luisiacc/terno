@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 import { REMINDERS_MAX } from "@terno/core";
 import { generateDataset } from "@terno/mock-data";
-import type { FolderCountCursor, FolderExportCursor, Platform } from "@terno/store";
+import { markOrder, type FolderCountCursor, type FolderExportCursor, type Platform } from "@terno/store";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { machineBusy, sampleAsync, sampleSync, settle, watchLoop, type Sample } from "../../db/src/test/timing";
 import { confirmRebuilt, countFolderMessages, rebuildFolders } from "./folders";
@@ -116,18 +116,27 @@ async function medianOfRuns(fn: () => Promise<unknown>): Promise<number> {
   return [...ms].sort((a, b) => a - b)[Math.floor(ms.length / 2)]!;
 }
 
-// plan 239: a busy queue (9 accounts' checks and three days of new mail), ordered once a pass and once a wake while it runs
-it("plan 239: the dated reader's queue of 3,000 marks (a third live) in reading order, new mail first, within a frame", async () => {
+// plan 239 (the Codex code review): days of new mail while a provider was down: the reader reads the queue a chunk at a time
+// and orders it in one linear step, each within a frame
+it("plan 239: a queue of 12,000 marks (a third live): a chunk of 1,000 read, and the whole ordered, each within a frame", async () => {
   const c = (store as unknown as { c: Ctx }).c;
   const marks = T(c, "ai_dated_mail");
-  const received = [...T(c, "messages").all()].filter((m) => !m.is_sent && !m.is_draft).slice(0, 3000);
+  const received = [...T(c, "messages").all()].filter((m) => !m.is_sent && !m.is_draft).slice(0, 12_000);
   c.db.tx(() => {
     for (const m of received) marks.insert({ message_id: m.id, thread_id: m.thread_id, arrived_at: m.date, queued_at: NOW, source: (m.id as number) % 3 === 0 ? "live" : "scan" });
   });
   try {
-    expect(await store.dated.marks.page(null, Infinity)).toHaveLength(received.length);
-    const ms = await medianOfRuns(() => store.dated.marks.page(null, Infinity));
-    expect(ms, `the whole queue: ${ms.toFixed(2)}ms`).toBeLessThanOrEqual(FRAME * MULT);
+    const raw = await store.dated.marks.raw(null, Infinity);
+    expect(raw).toHaveLength(received.length);
+    const mid = raw[Math.floor(raw.length / 2)]!;
+    const checks: [string, () => Promise<unknown>][] = [
+      ["a chunk of 1,000", () => store.dated.marks.raw({ arrivedAt: mid.arrivedAt, messageId: mid.messageId }, 1000)],
+      ["the whole in reading order", async () => markOrder(raw)],
+    ];
+    for (const [label, fn] of checks) {
+      const ms = await medianOfRuns(fn);
+      expect(ms, `${label}: ${ms.toFixed(2)}ms`).toBeLessThanOrEqual(FRAME * MULT);
+    }
   } finally {
     c.db.tx(() => {
       for (const m of received) marks.delete(m.id);

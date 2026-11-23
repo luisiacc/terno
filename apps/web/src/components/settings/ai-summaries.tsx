@@ -1,5 +1,5 @@
 import { aiCanRun, NUDGE_DAYS, type AiErrorKind, type AiSummariesStatus, type NotNewsletter } from "@terno/core";
-import type { AiUsageReport, AppSettings } from "@terno/core/rpc";
+import type { AiUsageReport, AppSettings, I18nRef } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { CloseButton } from "@terno/ui/components/close-button";
 import { NumberField } from "@terno/ui/components/number-field";
@@ -103,7 +103,7 @@ export function DatedGroup({ settings, update }: { settings: AppSettings; update
   const { ai, dated } = settings;
   const target = routeOf("dated", ai);
   const ready = aiCanRun("dated", ai);
-  const [status, setStatus] = useState<{ blockedBy: { kind: AiErrorKind; message: string; limit?: "daily" | "monthly" } | null } | null>(null);
+  const [status, setStatus] = useState<{ blockedBy: { kind: AiErrorKind; message: string; i18n?: I18nRef; limit?: "daily" | "monthly" } | null } | null>(null);
   useEffect(() => {
     if (!dated.enabled) return setStatus(null);
     let current = true;
@@ -119,7 +119,7 @@ export function DatedGroup({ settings, update }: { settings: AppSettings; update
       {dated.enabled && status?.blockedBy && (
         <SettingsNote testId="ai-dated-status">
           {/* plan 239: stopped by the day's guard or the monthly ceiling, its own sentence says why and until when */}
-          <span role="status" className="text-destructive-ink">{status.blockedBy.limit ? status.blockedBy.message : t("ai.dated.paused")}</span>
+          <span role="status" className="text-destructive-ink">{status.blockedBy.limit ? localized(status.blockedBy.message, status.blockedBy.i18n) : t("ai.dated.paused")}</span>
           {!status.blockedBy.limit && errorHelp(status.blockedBy.kind, ai) && <span> {errorHelp(status.blockedBy.kind, ai)}</span>}
         </SettingsNote>
       )}

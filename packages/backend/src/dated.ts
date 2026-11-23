@@ -1,9 +1,9 @@
 import { AiError, DATED_PROMPT_VERSION, DATED_SUBJECT_CHARS, DATED_TEXT_CHARS, datedBudget, fitDates, inZone, wallHolds, type AiTasks, type DatedResult } from "@terno/ai";
 import { addressKey, automatedSender, mutedOf, canLapse, namesDayFrom, saysClock, saysDay, withEventEnds, lapsesUnlessRenewed, localDay, needsPresence, saysNoReplyNeeded, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, dayKeyOf, datedTiming, dayEnd, dueCutoff, hasTimeCue, partMoment, partOfDayIn, type PartOfDay, normalizeText, withoutQuotes, type SettledHow, type AiErrorKind, type DatedKind, type DatedRow, type DatedTiming, type DatedWall } from "@terno/core";
 import { captureError } from "@terno/core/diag";
-import type { AppSettings } from "@terno/core/rpc";
+import type { AppSettings, I18nRef } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
-import { readNothingAsked, type DatedMark, type DatedSource, type DatedWrite, type MailStore } from "@terno/store";
+import { markOrder, readNothingAsked, type DatedMark, type DatedSource, type DatedWrite, type MailStore, type RawMark, type RawMarkKey } from "@terno/store";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import { silenced, silenceOf, withoutMuted } from "./dated-mutes";
 import { secondLook } from "./dated-second-look";
@@ -23,6 +23,8 @@ import { AccountChecks, DATED_CHECKED_KEY } from "./account-checks";
  */
 
 const MAX_ATTEMPTS = 3;
+/** plan 239: the queue is read this many marks at a time to order a pass */
+const MARKS_CHUNK = 1000;
 const RETRY_WAIT_MS = 60_000;
 /** what a message costs to read, for the check's estimate: ~600 tokens in, ~100 out */
 /** the 14-day check walks this many received messages at most, to find the `DATED_SCAN_MAX` worth reading (Codex code review) */
@@ -50,7 +52,7 @@ export interface DatedHost {
   replies(): { since: number | null } | undefined;
   /** Plan 210 (iteration 3): the reader read what it could: a reply of yours waiting on it (or marked again) may be read */
   caughtUp(): void;
-  statusChanged(status: { blockedBy: { kind: AiErrorKind; message: string; limit?: "daily" | "monthly" } | null }): void;
+  statusChanged(status: { blockedBy: { kind: AiErrorKind; message: string; i18n?: I18nRef; limit?: "daily" | "monthly" } | null }): void;
   /** work over a list in the backend's slices */
   runBudgeted<T>(items: readonly T[], work: (chunk: T[]) => void | Promise<void>): Promise<void>;
   log(level: "info" | "warn" | "error", message: string, extra?: unknown): void;
@@ -1093,7 +1095,7 @@ export class DatedWorker {
   private generation = new AbortController();
   private paused: { kind: AiErrorKind; message: string } | null = null;
   /** a day stopped by the guard or the monthly ceiling, and why (plan 239: said in its status) */
-  private limited: { day: string; because: { kind: AiErrorKind; message: string; limit: "daily" | "monthly" } } | null = null;
+  private limited: { day: string; because: { kind: AiErrorKind; message: string; i18n?: I18nRef; limit: "daily" | "monthly" } } | null = null;
   private heldUntil = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly attempts = new Map<number, number>();
@@ -1309,7 +1311,7 @@ export class DatedWorker {
    * whole queue: Codex review 5) and walked as read; a mark gone meanwhile is consumed already or cleared with the generation.
    */
   private async pass(generation: AbortController): Promise<void> {
-    const order: DatedMark[] = await this.host.store.dated.marks.page(null, Infinity);
+    const order = await this.ordered();
     const queued = new Set(order.map((m) => m.messageId));
     const heldThreads = new Set<number>();
     const heldSenders = new Set<string>();
@@ -1340,7 +1342,23 @@ export class DatedWorker {
    */
   private async newMailBefore(next: DatedMark, seen: ReadonlySet<number>, queued: ReadonlySet<number>): Promise<boolean> {
     const before = (m: DatedMark) => m.lane < next.lane || (m.lane === next.lane && (m.arrivedAt < next.arrivedAt || (m.arrivedAt === next.arrivedAt && m.messageId < next.messageId)));
-    return (await this.host.store.dated.marks.page(null, Infinity)).some((m) => m.lane === 0 && !seen.has(m.messageId) && (!queued.has(m.messageId) || before(m)));
+    return (await this.ordered()).some((m) => m.lane === 0 && !seen.has(m.messageId) && (!queued.has(m.messageId) || before(m)));
+  }
+
+  /**
+   * Plan 239 (the Codex code review): the queue in reading order, read a chunk at a time (each read its own turn of the
+   * loop), ordered in one linear step: a queue of tens of thousands (days of mail while a provider was down) never holds it.
+   */
+  private async ordered(): Promise<DatedMark[]> {
+    const raw: RawMark[] = [];
+    let after: RawMarkKey | null = null;
+    for (;;) {
+      const chunk = await this.host.store.dated.marks.raw(after, MARKS_CHUNK);
+      raw.push(...chunk);
+      const last = chunk.at(-1);
+      if (chunk.length < MARKS_CHUNK || !last) return markOrder(raw);
+      after = { arrivedAt: last.arrivedAt, messageId: last.messageId };
+    }
   }
 
   private async consider(mark: DatedMark, generation: AbortController, heldSenders: ReadonlySet<string>): Promise<"next" | "stop" | { hold: string }> {
@@ -1480,7 +1498,7 @@ export class DatedWorker {
   private async failed(mark: DatedMark | null, error: unknown): Promise<"next" | "stop"> {
     const { store } = this.host;
     if (error instanceof DailyLimitError || error instanceof MonthlyLimitError) {
-      this.limited = { day: new Date(this.host.now()).toDateString(), because: { kind: error.kind, message: error.message, limit: error instanceof DailyLimitError ? "daily" : "monthly" } };
+      this.limited = { day: new Date(this.host.now()).toDateString(), because: { kind: error.kind, message: error.message, ...(error.i18n ? { i18n: error.i18n } : {}), limit: error instanceof DailyLimitError ? "daily" : "monthly" } };
       this.host.statusChanged(this.status());
       return "stop";
     }
@@ -1598,7 +1616,7 @@ export class DatedWorker {
   }
 
   /** plan 239: a day's guard or the monthly ceiling says so too, not only a provider's pause */
-  status(): { blockedBy: { kind: AiErrorKind; message: string; limit?: "daily" | "monthly" } | null } {
+  status(): { blockedBy: { kind: AiErrorKind; message: string; i18n?: I18nRef; limit?: "daily" | "monthly" } | null } {
     return { blockedBy: this.paused ?? this.limited?.because ?? null };
   }
 

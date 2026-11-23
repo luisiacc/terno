@@ -43,16 +43,24 @@ export interface MarkKey {
   messageId: number;
 }
 
+/** Plan 239: a mark as a store reads it for ordering, with its message's sender (oldest first: `(arrivedAt, messageId)`). */
+export type RawMark = Omit<DatedMark, "lane"> & { fromEmail: string | null };
+
+/** Plan 239: where a chunk of raw marks starts after, in date order. */
+export interface RawMarkKey {
+  arrivedAt: number;
+  messageId: number;
+}
+
 /**
  * Plan 239 (the owner: "lets do the new email first"): the marks in reading order, both stores. New mail first: every live
  * mark, and with it every mark joined to one by its conversation or its sender (`addressKey`, as the reader settles by),
  * through any chain of them (Codex review 1: A and B in one conversation, B and a live C from one sender), so what may settle
- * an item is still read after it (revision 5); then the rest of a check. Oldest first within each. The table is small (3
- * days of live mail, `DATED_SCAN_MAX` an account): each page orders it whole, so a mark whose lane moved is still read once.
+ * an item is still read after it (revision 5); then the rest of a check. `marks` come oldest first (the stores read them by
+ * their date index), so each lane keeps that order: linear, no sort (the Codex code review: a queue of tens of thousands).
  */
-export function markPage(marks: readonly (Omit<DatedMark, "lane"> & { fromEmail: string | null })[], after: MarkKey | null, limit: number): DatedMark[] {
-  // one set per chain: a mark's conversation and its sender are joined (union-find over numbered nodes: conversations, then
-  // senders), each address read once
+export function markOrder(marks: readonly RawMark[]): DatedMark[] {
+  // one set per chain: a mark's conversation and its sender are joined (union-find over numbered nodes), each address read once
   const node = new Map<string, number>();
   const parent: number[] = [];
   const of = (key: string): number => {
@@ -81,13 +89,21 @@ export function markPage(marks: readonly (Omit<DatedMark, "lane"> & { fromEmail:
   });
   const fresh = new Set<number>();
   marks.forEach((m, i) => m.source === "live" && fresh.add(root(threadOf[i]!)));
-  const order = (a: MarkKey, b: MarkKey) => a.lane - b.lane || a.arrivedAt - b.arrivedAt || a.messageId - b.messageId;
-  const out: DatedMark[] = [];
+  const first: DatedMark[] = [];
+  const rest: DatedMark[] = [];
   marks.forEach((m, i) => {
-    const mark: DatedMark = { messageId: m.messageId, threadId: m.threadId, arrivedAt: m.arrivedAt, queuedAt: m.queuedAt, source: m.source, lane: fresh.has(root(threadOf[i]!)) ? 0 : 1 };
-    if (!after || order(mark, after) > 0) out.push(mark);
+    const lane = fresh.has(root(threadOf[i]!)) ? 0 : 1;
+    (lane === 0 ? first : rest).push({ messageId: m.messageId, threadId: m.threadId, arrivedAt: m.arrivedAt, queuedAt: m.queuedAt, source: m.source, lane });
   });
-  return out.sort(order).slice(0, limit);
+  return first.concat(rest);
+}
+
+/** `markOrder` strictly after a key, at most `limit` (a store's `page`). */
+export function markPage(marks: readonly RawMark[], after: MarkKey | null, limit: number): DatedMark[] {
+  const order = (a: MarkKey, b: MarkKey) => a.lane - b.lane || a.arrivedAt - b.arrivedAt || a.messageId - b.messageId;
+  return markOrder(marks)
+    .filter((m) => !after || order(m, after) > 0)
+    .slice(0, limit);
 }
 
 /** What the reader needs of one received message, no body. */
@@ -292,9 +308,14 @@ export interface DatedStore {
   marks: {
     /**
      * plan 239: new mail first, then the rest, oldest first within each (`markPage`), strictly after `after`. Each call orders
-     * the whole queue: the reader asks once a pass (`limit` Infinity) and walks what it got, never a page at a time
+     * the whole queue (the reader orders it from `raw`'s chunks instead)
      */
     page(after: MarkKey | null, limit: number): Promise<DatedMark[]>;
+    /**
+     * plan 239 (the Codex code review): the marks with their senders, oldest first, strictly after `after`, at most `limit`:
+     * what the reader orders a pass by (`markOrder`), read in chunks so a long queue never holds the loop
+     */
+    raw(after: RawMarkKey | null, limit: number): Promise<RawMark[]>;
     count(): Promise<number>;
     /** the 14-day check (plan 211: the backend's, per account); idempotent on the message */
     queueScan(messageIds: readonly number[], now: number): Promise<number>;

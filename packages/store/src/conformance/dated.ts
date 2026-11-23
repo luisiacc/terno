@@ -94,6 +94,24 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         expect((await store.dated.marks.page(null, 10)).map((m) => [m.messageId, m.lane])).toEqual([[shopOld.id, 1], [anaOld.id, 1], [bankOld.id, 1], [inThread.id, 1]]);
       });
 
+      it("plan 239 (the Codex code review): a chain joins through any link: A and B one conversation, B and new mail C one sender", async () => {
+        const { store, got } = await setup();
+        const alice = { name: "Alice", email: "alice@a.test" };
+        const bob = { name: "Bob", email: "bob@b.test" };
+        const a = await got({ from: alice, date: NOW - 5 * DAY, providerThreadId: "x" }, null);
+        const b = await got({ from: bob, date: NOW - 4 * DAY, providerThreadId: "x" }, null);
+        const other = await got({ from: shop, date: NOW - 6 * DAY }, null);
+        await store.dated.marks.queueScan([a.id, b.id, other.id], NOW);
+        const c = await got({ from: bob, date: NOW - 60_000, providerThreadId: "y" });
+        expect(a.thread).toBe(b.thread);
+        expect(c.thread).not.toBe(b.thread);
+        expect((await store.dated.marks.page(null, 10)).map((m) => [m.messageId, m.lane])).toEqual([[a.id, 0], [b.id, 0], [c.id, 0], [other.id, 1]]);
+        // the raw read: oldest first, with each sender, strictly after a key
+        const raw = await store.dated.marks.raw(null, 2);
+        expect(raw.map((m) => [m.messageId, m.fromEmail?.toLowerCase()])).toEqual([[other.id, shop.email], [a.id, alice.email]]);
+        expect((await store.dated.marks.raw({ arrivedAt: raw[1]!.arrivedAt, messageId: raw[1]!.messageId }, 10)).map((m) => m.messageId)).toEqual([b.id, c.id]);
+      });
+
       it("a check takes received mail nothing was read from, newest first, once; its marks keep 14 days and a live one 3", async () => {
         const { store, accountId, other, got, item, finish, marked } = await setup();
         const live = await got();

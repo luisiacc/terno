@@ -3744,7 +3744,8 @@ describe("plan 239: new mail first", () => {
     (backend.aiService.limiter as unknown as { book: unknown }).book = null;
     await receive();
     backend.dated.wake();
-    await expect.poll(async () => (await client.call("dated.status", {})).blockedBy).toMatchObject({ limit: "daily" });
+    // said in the reader's language (the Codex code review): its words travel with their key
+    await expect.poll(async () => (await client.call("dated.status", {})).blockedBy).toMatchObject({ limit: "daily", i18n: { key: "errors.ai.dailyLimit" } });
     expect(model.requests).toHaveLength(0);
     clock.now += DAY;
     await backend.dated.daily();

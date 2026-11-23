@@ -4,7 +4,7 @@
  * plus write latency and ingestion throughput of store commands.
  */
 import { generateDataset } from "@terno/mock-data";
-import type { IncomingMessage } from "@terno/store";
+import { markOrder, type IncomingMessage } from "@terno/store";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -46,17 +46,20 @@ async function gate(name: string, budgetMs: number, fn: (i: number) => Promise<u
 }
 
 describe("plan 239: the dated reader's queue", () => {
-  // a busy queue: 9 accounts' checks (DATED_SCAN_MAX each) and three days of new mail (plan 239: the reader orders it once a
-  // pass and once a wake while it runs; it grows linearly, 5,000 marks ~10 ms)
-  it("orders 3,000 marks (a third live), new mail first, within the slice's budget", async () => {
+  // plan 239 (the Codex code review): days of new mail while a provider was down: the reader reads the queue a chunk at a
+  // time and orders it in one linear step, each within the slice's budget
+  it("a queue of 12,000 marks (a third live): a chunk of 1,000 read, and the whole ordered, each within the slice's budget", async () => {
     store.db.run(
       `INSERT INTO ai_dated_mail (message_id, thread_id, arrived_at, queued_at, source)
-       SELECT id, thread_id, date, ?, CASE WHEN id % 3 = 0 THEN 'live' ELSE 'scan' END FROM messages WHERE is_sent = 0 AND is_draft = 0 ORDER BY id LIMIT 3000`,
+       SELECT id, thread_id, date, ?, CASE WHEN id % 3 = 0 THEN 'live' ELSE 'scan' END FROM messages WHERE is_sent = 0 AND is_draft = 0 ORDER BY id LIMIT 12000`,
       NOW,
     );
     try {
-      expect(await store.dated.marks.page(null, Infinity)).toHaveLength(3000);
-      await gate("dated marks: the whole queue of 3,000 in reading order", 8, () => store.dated.marks.page(null, Infinity));
+      const raw = await store.dated.marks.raw(null, Infinity);
+      expect(raw.length).toBeGreaterThan(10_000);
+      const mid = raw[Math.floor(raw.length / 2)]!;
+      await gate("dated marks: a chunk of 1,000 from the middle of 12,000", 8, () => store.dated.marks.raw({ arrivedAt: mid.arrivedAt, messageId: mid.messageId }, 1000));
+      await gate("dated marks: 12,000 in reading order (markOrder)", 8, async () => markOrder(raw));
     } finally {
       store.db.run("DELETE FROM ai_dated_mail");
     }

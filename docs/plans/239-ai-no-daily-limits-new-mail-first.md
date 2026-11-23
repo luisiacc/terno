@@ -74,3 +74,11 @@ Codex (read-only) raised 8 points against the plan; all but one are taken.
 - `conformance/dated.ts` (both stores): new mail first with its conversation's and sender's older marks (a `+`-free spelling of the same address), strictly after a key, and back to the check's order once the new mail is read.
 - `dated.test.ts`: new mail arriving while a check's first mail is being read is read before the rest; a sender's older mail is read before their new mail (fails without the sender chain); the guard's status and the next day's start with no mail.
 - Perf: `store.perf.test.ts` and `idb.perf.test.ts`, the queue's ordering.
+
+## What the Codex code review changed
+
+Codex reviewed the three commits (read-only) and found three things; all are fixed, each with a test that fails without it.
+
+1. **The limit's sentence was English for every reader.** `L()` gives English words plus a key; the reader kept only the words. The status now carries the key (`i18n`), and Settings renders it with `localized`, as the summaries' status does. Test: the status names `errors.ai.dailyLimit`.
+2. **Ordering a long queue held the loop.** Codex measured about 19 ms at 10,000 marks and 60 ms at 30,000 (days of new mail while a provider is down: live marks have an age limit, not a count). Now the reader reads the queue in chunks of 1,000 (`marks.raw`, oldest first by the date index, each read its own turn of the loop), and `markOrder` orders it in one linear step: union-find, then a stable split into the two lanes, with no sort. Gates: at 12,000 marks a chunk reads in about 2.3 ms and the ordering takes about 2.7 ms on SQLite, both within the slice's 8 ms, and within a frame on IndexedDB.
+3. **The conformance case wasn't transitive.** Its bridge was itself new mail. A new case: A and B in one conversation, B and a live C from one sender, a stranger's mark apart. All three are in lane 0, oldest first, and the stranger's mark is after them.
