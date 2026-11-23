@@ -103,6 +103,8 @@ export interface MailNotice {
   snippet: string;
   /** plan 87: what it says: reminders that came due, plan 142: promises that came due (absent: new mail) */
   kind?: "reminder" | "followup" | "brief";
+  /** plan 238: new mail all in one account: a click on an account out of the all-accounts Inbox opens its own */
+  accountId?: number;
 }
 
 export const NOTICE_SENDERS = 3;
@@ -151,6 +153,7 @@ export function summarize(rows: readonly ArrivalRow[], id: string): MailNotice |
   if (rows.length === 0) return null;
   const sorted = [...rows].sort((a, b) => b.date - a.date || b.id - a.id);
   const newest = sorted[0]!;
+  const accounts = new Set(sorted.map((m) => m.accountId));
   const seen = new Set<string>();
   const senders: string[] = [];
   for (const m of sorted) {
@@ -167,6 +170,7 @@ export function summarize(rows: readonly ArrivalRow[], id: string): MailNotice |
     senderCount: seen.size,
     subject: clip(newest.subject, MAX_FIELD),
     snippet: sorted.length === 1 ? clip(newest.snippet, NOTICE_SNIPPET) : "",
+    ...(accounts.size === 1 ? { accountId: newest.accountId } : {}),
   };
 }
 

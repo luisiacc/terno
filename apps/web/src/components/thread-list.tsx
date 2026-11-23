@@ -21,7 +21,7 @@ import { create } from "zustand";
 import { formatNumber, t } from "@terno/i18n";
 import { viewLabel } from "~/lib/format";
 import { useActionPreview } from "~/state/action-preview";
-import { getApp, navigate, publishCounts, setApp, useApp } from "~/state/app";
+import { getApp, inboxShape, navigate, publishCounts, setApp, useApp } from "~/state/app";
 import { installDragController } from "~/lib/drag-install";
 import { currentScope, inboxTop, listKey, loadMore, searchOfKey, useList } from "~/state/list";
 import { wantExcerpts } from "~/state/excerpts";
@@ -816,7 +816,10 @@ function SelectAllBanner() {
   const filter = useApp(activeFilter);
   const show = scope !== null || (all && more && loaded > 0);
   const [count, setCount] = useState<{ key: string; n: number; capped: boolean } | null>(null);
-  const key = show ? listKey() : "";
+  // plan 238 (Codex code review #1): what the Inbox holds can change under the same list (an account taken out of it):
+  // the count is asked again
+  const shape = useApp(() => inboxShape.rev);
+  const key = show ? `${listKey()}#${shape}` : "";
   useEffect(() => {
     if (!show || count?.key === key) return;
     const scopeNow = currentScope();

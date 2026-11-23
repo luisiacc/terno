@@ -5,7 +5,7 @@
  * installed app's icon where the browser has setAppBadge, and a notification
  * for the backend's `notify` event while this tab is hidden.
  */
-import { BRIEF_NOTICE_THREAD } from "@terno/core";
+import { BRIEF_NOTICE_THREAD, inAllInbox } from "@terno/core";
 import { todayOffered } from "~/lib/ai";
 import { badgeCount, noticeText, type MailNotice } from "@terno/core";
 import { client } from "~/rpc/connection";
@@ -31,9 +31,10 @@ export const pageNotificationsSupported = (): boolean => !desktop() && typeof No
 /**
  * A notification's click: the unified Inbox with that conversation open (or
  * just the Inbox). One operation: dialogs close, the Inbox loads, and the
- * reload keeps this selection instead of picking the first row.
+ * reload keeps this selection instead of picking the first row. Plan 238: mail
+ * of an account out of the all-accounts Inbox opens that account's Inbox instead.
  */
-export function openFromNotice(threadId: number | null): void {
+export function openFromNotice(threadId: number | null, accountId?: number): void {
   const s = getApp();
   // plan 145: the brief's notice opens Today
   if (threadId === BRIEF_NOTICE_THREAD) {
@@ -45,7 +46,9 @@ export function openFromNotice(threadId: number | null): void {
     threadId = null;
   }
   if (s.dialog) setApp({ dialog: null });
-  if (s.view !== "inbox" || s.accountId !== null || s.categoryId !== null || s.reviewCategoryId !== null || s.query !== "") navigate({ view: "inbox", accountId: null, categoryId: null, reviewCategoryId: null });
+  const account = accountId === undefined ? undefined : s.accounts.find((a) => a.id === accountId);
+  const inbox = account && !inAllInbox(account) ? account.id : null;
+  if (s.view !== "inbox" || s.accountId !== inbox || s.categoryId !== null || s.reviewCategoryId !== null || s.query !== "") navigate({ view: "inbox", accountId: inbox, categoryId: null, reviewCategoryId: null });
   // a selection (Split shows its bar in the reader) ends: the conversation is what was asked for (Codex code review #7)
   else if (s.checked.size || s.scope) setApp({ checked: new Set(), scope: null });
   if (threadId === null) {
@@ -92,7 +95,7 @@ function show(notice: MailNotice): void {
   n.onclick = () => {
     window.focus();
     n.close();
-    openFromNotice(notice.threadId);
+    openFromNotice(notice.threadId, notice.accountId);
   };
   n.onclose = () => live.delete(n);
 }
@@ -132,7 +135,7 @@ export function startAttention(): void {
     window.ternoDesktop?.onOpen?.((target) => {
       if (target.kind === "link") return void openMailLink(target.id);
       supersedeMailLink();
-      openFromNotice(target.threadId);
+      openFromNotice(target.threadId, target.accountId);
     });
     return;
   }

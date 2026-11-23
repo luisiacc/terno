@@ -110,6 +110,9 @@ describe("summarize and noticeText", () => {
     expect(n).toMatchObject({ count: 5, threadId: null, senders: ["Ana", "bob@x.test", "Carla"], senderCount: 4 });
     expect(noticeText(n)).toEqual({ title: "5 new messages", subtitle: "", body: "From Ana, bob@x.test and 2 others" });
     expect(noticeText(summarize(rows.slice(0, 2), "n4")!).body).toBe("From Ana and bob@x.test");
+    // plan 238: all in one account, it says which (a click on an account out of the all-accounts Inbox opens its own)
+    expect(n.accountId).toBe(rows[0]!.accountId);
+    expect(summarize([...rows, row({ id: 6, accountId: rows[0]!.accountId + 1 })], "n4b")!.accountId).toBeUndefined();
   });
 
   it("an empty subject reads as (no subject); a long snippet is clipped on one line", () => {

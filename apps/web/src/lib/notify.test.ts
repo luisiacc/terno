@@ -39,6 +39,20 @@ beforeEach(async () => {
 });
 
 describe("a notification's click (plan 41)", () => {
+  it("plan 238: mail all in an account out of the all-accounts Inbox opens that account's Inbox; one in it, the unified one", () => {
+    const account = (id: number, unified: boolean) => ({ id, kind: "imap", email: `${id}@x.test`, displayName: `A${id}`, color: "brown", unified, syncState: {} }) as never;
+    setApp({ accounts: [account(1, true), account(2, false)] });
+    openFromNotice(null, 2);
+    expect(getApp()).toMatchObject({ view: "inbox", accountId: 2 });
+    openFromNotice(42, 2);
+    expect(getApp()).toMatchObject({ view: "inbox", accountId: 2, selectedId: 42 });
+    openFromNotice(null, 1);
+    expect(getApp()).toMatchObject({ view: "inbox", accountId: null });
+    openFromNotice(null);
+    expect(getApp().accountId).toBeNull();
+    setApp({ accounts: [] });
+  });
+
   it("from another mailbox, with Settings open: the unified Inbox, the conversation open, the dialog closed", async () => {
     setApp({ view: "archive", accountId: 2, dialog: "settings" });
     openFromNotice(42);

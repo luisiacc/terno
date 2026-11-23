@@ -135,10 +135,12 @@ contextBridge.exposeInMainWorld("ternoDesktop", {
   // canonical Message-ID). Main holds it until the page listens.
   onOpen: (listener: (target: OpenTarget) => void) => {
     const relay = (_e: unknown, target: unknown) => {
-      const t = target as { kind?: unknown; threadId?: unknown; id?: unknown } | null;
+      const t = target as { kind?: unknown; threadId?: unknown; id?: unknown; accountId?: unknown } | null;
       if (t?.kind === "link") return isMailLinkId(t.id) ? listener({ kind: "link", id: t.id }) : undefined;
       const threadId = t?.kind === "thread" ? t.threadId : null;
-      listener({ kind: "thread", threadId: Number.isSafeInteger(threadId) && ((threadId as number) > 0 || threadId === -1 /* plan 145: the brief, BRIEF_NOTICE_THREAD: opens Today */) ? (threadId as number) : null });
+      // plan 238: the one account the notice's mail is in
+      const accountId = t?.kind === "thread" && Number.isSafeInteger(t.accountId) && (t.accountId as number) > 0 ? (t.accountId as number) : undefined;
+      listener({ kind: "thread", threadId: Number.isSafeInteger(threadId) && ((threadId as number) > 0 || threadId === -1 /* plan 145: the brief, BRIEF_NOTICE_THREAD: opens Today */) ? (threadId as number) : null, ...(accountId !== undefined && { accountId }) });
     };
     ipcRenderer.on("terno:open", relay);
     ipcRenderer.send("terno:open-ready");

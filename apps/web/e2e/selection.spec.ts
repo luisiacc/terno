@@ -650,6 +650,34 @@ test.describe("multi-selection", () => {
       await expect(page.getByTestId("category-snackbar")).toHaveCount(0);
       expect(db(server).get<{ c: number }>("SELECT count(*) AS c FROM thread_categories WHERE category_id = ?", viajes)!.c).toBe(before);
     });
+    await scenario("plan 238 (Codex code review #1): an account taken out of the all-accounts Inbox while its loaded rows are checked: the offer counts again", async () => {
+      await fresh(page);
+      const count = (where = "") => db(server).get<{ c: number }>(`SELECT count(*) AS c FROM threads WHERE in_inbox = 1 AND tab = 0${where}`)!.c;
+      const total = count();
+      const out = db(server).get<{ a: number }>("SELECT account_id AS a FROM threads WHERE in_inbox = 1 AND tab = 0 GROUP BY account_id ORDER BY count(*) LIMIT 1")!.a;
+      const left = total - count(` AND account_id = ${out}`);
+      expect(left).toBeGreaterThan(100);
+      await focusList(page);
+      await page.keyboard.press("ControlOrMeta+a");
+      const offer = page.getByTestId("select-all-scope-button");
+      await expect(offer).toHaveText(`Select all ${total.toLocaleString("en-US")} conversations in “Inbox”`);
+      const dev = { clientId: "setup", origin: "dev" as const };
+      try {
+        // its rows leave the list (the selection no longer covers what's loaded); ⌘A again offers the Inbox as it is now
+        await server.backend.server.invoke("accounts.update", { id: out, unified: false }, dev);
+        await expect.poll(() => page.getByTestId(`nav-account-hidden-${out}`).count()).toBe(1);
+        await focusList(page);
+        await page.keyboard.press("ControlOrMeta+a");
+        await expect(offer).toHaveText(`Select all ${left.toLocaleString("en-US")} conversations in “Inbox”`);
+      } finally {
+        await server.backend.server.invoke("accounts.update", { id: out, unified: true }, dev);
+      }
+      await expect(page.getByTestId(`nav-account-hidden-${out}`)).toHaveCount(0);
+      await focusList(page);
+      await page.keyboard.press("ControlOrMeta+a");
+      await expect(offer).toHaveText(`Select all ${total.toLocaleString("en-US")} conversations in “Inbox”`);
+      await page.keyboard.press("Escape");
+    });
     await scenario("select all N of the view: the banner, a backend archive with progress, and its undo", async () => {
       await fresh(page);
       // plan 86: what the Inbox shows (Gmail's Promotions and Social live apart)

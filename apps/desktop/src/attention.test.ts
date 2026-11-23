@@ -34,17 +34,18 @@ function setup(supported = true) {
   FakeNotification.made = [];
   const badges: string[] = [];
   const opened: (number | null)[] = [];
+  const accounts: (number | undefined)[] = [];
   const shown: number[] = [];
   let failed = 0;
   const a = new DesktopAttention({
     setBadge: (t) => badges.push(t),
     supported: () => supported,
     create: (o) => new FakeNotification(o),
-    open: (id) => opened.push(id),
+    open: (id, account) => (opened.push(id), accounts.push(account)),
     shown: (n) => shown.push(n),
     failed: () => void failed++,
   });
-  return { a, badges, opened, shown, failed: () => failed };
+  return { a, badges, opened, accounts, shown, failed: () => failed };
 }
 
 describe("validation of what the backend reports", () => {
@@ -108,6 +109,13 @@ describe("DesktopAttention", () => {
     expect(FakeNotification.made[0]!.options).toEqual({ title: "3 new messages", body: "From Ana and Bob", silent: false });
     FakeNotification.made[0]!.emit("click");
     expect(t.opened).toEqual([null]);
+    // plan 238: its one account goes with the click; an invalid one is dropped
+    expect(parseNotice({ ...notice(), accountId: 3 })).toMatchObject({ accountId: 3 });
+    expect(parseNotice({ ...notice(), accountId: -1 })).not.toHaveProperty("accountId");
+    t.a.notify(notice({ id: "b", count: 2, threadId: null, senders: ["Ana", "Bob"], senderCount: 2, snippet: "", accountId: 3 }));
+    FakeNotification.made.at(-1)!.emit("click");
+    expect(t.opened.at(-1)).toBe(null);
+    expect(t.accounts.at(-1)).toBe(3);
   });
 
   it("invalid notices and unsupported systems show nothing; a failure lets go of it", () => {

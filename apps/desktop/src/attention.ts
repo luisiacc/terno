@@ -40,7 +40,9 @@ export function parseNotice(v: unknown): MailNotice | null {
   if (senders.some((s) => s === null)) return null;
   // plan 87: a reminder's notice says so; anything else reads as new mail
   const kind = n.kind === "reminder" || n.kind === "followup" || n.kind === "brief" ? n.kind : undefined;
-  return { id, count: n.count as number, threadId: n.threadId as number | null, senders: senders as string[], senderCount: n.senderCount as number, subject, snippet, ...(kind && { kind }) };
+  // plan 238: the one account its mail is in (absent: several, or an older backend)
+  const accountId = isId(n.accountId) ? (n.accountId as number) : undefined;
+  return { id, count: n.count as number, threadId: n.threadId as number | null, senders: senders as string[], senderCount: n.senderCount as number, subject, snippet, ...(kind && { kind }), ...(accountId !== undefined && { accountId }) };
 }
 
 export interface NotificationLike {
@@ -53,8 +55,8 @@ export interface DesktopAttentionDeps {
   setBadge(text: string): void;
   supported(): boolean;
   create(options: { title: string; subtitle?: string; body: string; silent: boolean }): NotificationLike;
-  /** a click: bring a window forward and open the conversation (null: the Inbox) */
-  open(threadId: number | null): void;
+  /** a click: bring a window forward and open the conversation (null: the Inbox; plan 238: of its one account, if any) */
+  open(threadId: number | null, accountId?: number): void;
   /** diagnostics: how many messages a shown notice stood for */
   shown?(count: number): void;
   /** diagnostics: the system refused to show one */
@@ -89,7 +91,7 @@ export class DesktopAttention {
     const forget = () => this.live.delete(n);
     n.on("click", () => {
       forget();
-      this.deps.open(notice.threadId);
+      this.deps.open(notice.threadId, notice.accountId);
     });
     n.on("close", forget);
     n.on("show", () => this.deps.shown?.(notice.count));

@@ -581,7 +581,7 @@ const attention = new DesktopAttention({
   setBadge: (text) => app.dock?.setBadge(text),
   supported: () => Notification.isSupported(),
   create: (options) => new Notification(options),
-  open: (threadId) => openInWindow({ kind: "thread", threadId }),
+  open: (threadId, accountId) => openInWindow({ kind: "thread", threadId, ...(accountId !== undefined && { accountId }) }),
   shown: (count) => diagLog.info("notify.shown", { count }),
   failed: () => diagLog.warn("notify.failed", { errorClass: "NotificationFailed" }),
 });

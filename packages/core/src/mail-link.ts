@@ -49,4 +49,4 @@ export function parseMailLink(url: unknown): string | null {
 }
 
 /** What main asks a window to open (plan 41's notification: a conversation, null for the Inbox; plan 201: a link's message). */
-export type OpenTarget = { kind: "thread"; threadId: number | null } | { kind: "link"; id: string };
+export type OpenTarget = { kind: "thread"; threadId: number | null; /** plan 238: the one account its mail is in */ accountId?: number } | { kind: "link"; id: string };

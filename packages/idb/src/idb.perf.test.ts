@@ -925,16 +925,19 @@ it("plan 238: an account out of the all-accounts Inbox holding its newest 95%, o
       "select all": () => store.threads.scopeCount({ view: "inbox", limit: 1_000_000 }),
       "its own Inbox": () => store.threads.list({ view: "inbox", accountId: out, limit: 100 }),
     };
-    const first = (await store.threads.list({ view: "inbox", limit: 100 })).items;
+    const page = await store.threads.list({ view: "inbox", limit: 100 });
+    const first = page.items;
     expect(first.length).toBeGreaterThan(0);
     expect(first.every((t) => t.accountId !== out)).toBe(true);
+    reads["next page"] = () => store.threads.list({ view: "inbox", limit: 100, cursor: page.nextCursor ?? undefined });
+    reads["select all (ids)"] = () => store.threads.scopeIds({ view: "inbox", limit: 500 });
     for (const [label, read] of Object.entries(reads)) {
       const r = await warm(read);
       console.log(`account out 95%: ${label} ${r.ms.toFixed(1)} ms`);
       expect(r.ms, label).toBeLessThanOrEqual(FRAME * MULT);
     }
     for (const id of accounts) await store.accounts.update(id, { unified: false });
-    for (const label of ["inbox page", "unread page", "select all"]) {
+    for (const label of ["inbox page", "unread page", "select all", "select all (ids)"]) {
       const r = await warm(reads[label]!);
       console.log(`every account out: ${label} ${r.ms.toFixed(1)} ms`);
       expect(r.ms, `every account out: ${label}`).toBeLessThanOrEqual(FRAME * MULT);
