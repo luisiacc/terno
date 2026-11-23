@@ -256,7 +256,7 @@ test.describe("What matters and its digest (plan 145)", () => {
     await menu.getByTestId("digest-menu-hide-help").hover();
     await expect(page.locator("[data-slot=tooltip-content]")).toContainText("now and in the future");
     // plan 247 (Codex code review): where to let them back in
-    await expect(page.locator("[data-slot=tooltip-content]")).toContainText("Settings → What matters → Each morning");
+    await expect(page.locator("[data-slot=tooltip-content]")).toContainText("Settings → What matters → Once a day");
     // and by the keys alone: the pointer away, the arrows reach Hide and its help shows (a keyboard has no hover)
     await page.mouse.move(0, 0);
     await expect(page.locator("[data-slot=tooltip-content]")).toHaveCount(0);
@@ -330,7 +330,7 @@ test.describe("What matters and its digest (plan 145)", () => {
     await page.keyboard.press("j");
     await expect(page.locator("[data-digest-open]:focus")).toHaveCount(1);
     await page.getByTestId("open-settings").click();
-    // plan 247: the digest's settings are What matters' (Each morning)
+    // plan 247: the digest's settings are What matters' (Once a day)
     await page.getByTestId("tab-whatMatters").click();
     const excluded = page.getByTestId("ai-digest-excluded");
     await expect(excluded).toContainText("Senders left out");

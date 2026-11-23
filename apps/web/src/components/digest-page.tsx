@@ -25,7 +25,7 @@ import { reloadList } from "~/state/list";
 import { digestKeys, digestPick, keepDigestPick, leaveOut, letBackIn, openFromDigest, senderKey, useToday, withoutSenders } from "~/state/today";
 import { AiProvenance } from "~/components/ai-provenance";
 
-/** Plan 247: the digest's switch is What matters' (Each morning): Settings opens there, at the switch. */
+/** Plan 247: the digest's switch is What matters' (Once a day): Settings opens there, at the switch. */
 function openDigestSettings() {
   setApp({ dialog: "settings", settingsTab: "whatMatters" });
   requestAnimationFrame(() => openFound({ id: "whatMatters.digest", tab: "whatMatters", page: null, scope: null, under: null }));

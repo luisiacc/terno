@@ -262,7 +262,7 @@ describe("plan 235: Automated mail", () => {
     expect(labels(menu)).toEqual(["Open", "Archive", "Hide sender"]);
     // Hide's help: it says the sender's mail to come stays out too, read with the row; a click on it hides nothing
     const hide = menu.querySelector<HTMLElement>("[data-testid=digest-menu-hide]")!;
-    expect(document.getElementById(hide.getAttribute("aria-describedby")!)!.textContent).toBe("Mail from this sender stops showing here, now and in the future. It stays in your Inbox. Let it back in from Settings → What matters → Each morning.");
+    expect(document.getElementById(hide.getAttribute("aria-describedby")!)!.textContent).toBe("Mail from this sender stops showing here, now and in the future. It stays in your Inbox. Let it back in from Settings → What matters → Once a day.");
     calls.length = 0;
     await act(async () => hide.querySelector<HTMLElement>("[data-testid=digest-menu-hide-help]")!.click());
     expect(calls.filter((c) => c.method === "today.notNewsletter")).toEqual([]);

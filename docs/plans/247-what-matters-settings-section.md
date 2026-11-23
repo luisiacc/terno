@@ -124,3 +124,15 @@ Codex's critique (7 points) changed or confirmed:
 ### Revisions after the Codex code review (iteration 2)
 
 - **A re-read could fold away the row the keys are on** (an Undo putting a sender back above it, or another window's change): the re-read now opens the rest when the focused sender would land past the fold, so the keys stay where they were. `what-matters-tab.test.tsx` fires the list's event with a newer sender above the focused row (fails without the fix).
+
+## Iteration 3: “Each morning” wasn't true
+
+> also we are saying that we do some things 'each morning' is this even true? don't we show things as they appear on the inbox?
+
+What the backend does (`packages/backend/src/today.ts`): What matters itself is live (new mail is read as it arrives, replies owed and promises are local and live). Only two things wait for a time: the digest (`tick` → `begin(day)`: one a day, at the chosen time or the first open after it, covering newsletters since the last one; later ones wait for the next) and the notification (once a day, within two hours of the time, only when something needs you). The time is the user's, so it needn't be a morning.
+
+- The group is **Once a day** (“Una vez al día”), not “Each morning”; **Daily notification** (“Aviso diario”), not “Morning notification”. Both hints start from the time below.
+- *Show in the sidebar*'s hint says the view **updates as mail arrives**, so the once-a-day group can't be read as the view's own rhythm.
+- The digest page's Hide help names Settings → What matters → Once a day.
+
+Codex's review of the words: the digest takes recent unread newsletters (the last three days, `DIGEST_WINDOW_MS`), not every one since the last digest, so its hint says “each recent unread newsletter” (“cada boletín reciente sin leer”).

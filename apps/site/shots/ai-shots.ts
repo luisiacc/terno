@@ -185,7 +185,7 @@ async function shoot(page: Page) {
   await switchOn("ai-ask-switch");
   // Follow-ups aren't switched on here: their pictures come from the AI demo (shots/demo-shots.ts, plan 224)
   await switchOn("replies-switch");
-  // plan 247: the digest is What matters' (Each morning)
+  // plan 247: the digest is What matters' (Once a day)
   await page.getByTestId("tab-whatMatters").click();
   await switchOn("ai-digest-switch");
   await page.keyboard.press("Escape");

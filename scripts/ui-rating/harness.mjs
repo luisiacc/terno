@@ -73,7 +73,7 @@ async function backgroundSwitches(page) {
   const notNow = page.getByTestId("ai-followups-notnow");
   if (await notNow.isVisible().catch(() => false)) await notNow.click();
   await switchOn(page, "replies-switch");
-  // plan 247: the digest is What matters' (Each morning)
+  // plan 247: the digest is What matters' (Once a day)
   await openTab(page, "whatMatters");
   await switchOn(page, "ai-digest-switch");
 }

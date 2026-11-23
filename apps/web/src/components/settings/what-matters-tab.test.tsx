@@ -50,8 +50,11 @@ describe("plan 247: Settings → What matters", () => {
     const s = settings();
     const host = await render(<WhatMattersTab settings={s} update={vi.fn() as never} />);
     const titles = [...host.querySelectorAll("section > h3")].map((h) => h.textContent);
-    expect(titles).toEqual(["What it looks for", "Shown and hidden", "Each morning"]);
+    expect(titles).toEqual(["What it looks for", "Shown and hidden", "Once a day"]);
     expect(byId(host, "wm-settings-view")!.textContent).toMatch(/^Show in the sidebar.*Open at launch.*Show finished items/);
+    // the view is live; only the digest and the notification wait for the time (iteration 3)
+    expect(byId(host, "wm-settings-view")!.textContent).toContain("It updates as mail arrives");
+    expect(byId(host, "ai-digest")!.textContent).toMatch(/Daily notificationAt the time below/);
     // the reader says who reads its mail beside its switch, and in full under its group
     const finds = byId(host, "ai-dated")!;
     expect(finds.textContent).toContain("Read by Claude (Anthropic).");

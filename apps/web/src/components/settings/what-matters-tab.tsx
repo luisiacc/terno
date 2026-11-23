@@ -26,7 +26,7 @@ import { openSettingsTab, PrivacyNote, SettingsGroup, SettingsNote, SettingsRow,
 /**
  * Plan 247: What matters' own section, where it can exist (AI can run; settingsTabs), even while it's hidden from the
  * sidebar (its first switch is how it comes back). Its groups go by what you can do: the view, what it looks for, senders,
- * each morning, and which accounts feed it.
+ * once a day (the digest and the notification; the view itself is live), and which accounts feed it.
  */
 export function WhatMattersTab({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
   return (
@@ -166,7 +166,7 @@ function SendersGroup() {
 }
 
 /**
- * Plan 145 §4–5: what comes each morning, at one time: the newsletter digest (its own opt-in, since it sends mail with no
+ * Plan 145 §4–5: what comes once a day, at one time: the newsletter digest (its own opt-in, since it sends mail with no
  * click) and the notification. The time is theirs alone (no timer runs without one of them: today.ts `arm`), so with both
  * off it waits, saying why (as Undo send's window does, plan 188).
  */
