@@ -12,7 +12,7 @@ import { E2E_NOW } from "./constants";
 import { inEveryLook, wheelsTo } from "./helpers/looks";
 import { unclipped } from "./helpers/unclipped";
 import { DIGEST, digestRow } from "./helpers/today";
-import { expect, focusList, fresh, ingestConversation, scenario, test, type DevServerFixture } from "./fixtures";
+import { axeBothModes, expect, focusList, fresh, ingestConversation, scenario, test, type DevServerFixture } from "./fixtures";
 
 test.use({ backendOptions: { network: true }, today: true });
 
@@ -348,6 +348,33 @@ test.describe("What matters and its digest (plan 145)", () => {
     await expect(page.getByTestId("ai-digest-excluded")).toHaveCount(0);
     await expect(page.getByTestId("ai-digest-switch")).toBeFocused();
     await expect(page.getByTestId("snack").filter({ hasText: "Morning Brew can be in the digest again" })).toBeVisible();
+    // plan 247 (iteration 2): seven left out show the newest four and +3 more, which opens the rest by keyboard and folds
+    // them back, focus staying on it; axe in light and dark both ways
+    const senders = Array.from({ length: 7 }, (_, i) => ({ email: `list${i}@lists.test`, name: `List ${i}` }));
+    await server.backend.server.invoke("today.notNewsletter", { senders }, { clientId: "setup", origin: "dev" as const });
+    await page.getByTestId("tab-general").click();
+    await page.getByTestId("tab-whatMatters").click();
+    await expect(excluded.getByTestId("ai-digest-excluded-item")).toHaveCount(4);
+    const more = excluded.getByTestId("ai-digest-excluded-more");
+    await expect(more).toHaveText("+3 more");
+    await expect(more).toHaveAttribute("aria-expanded", "false");
+    await more.scrollIntoViewIfNeeded();
+    if (SHOTS) for (const mode of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: mode });
+      await page.getByTestId("ai-digest").screenshot({ path: `${SHOTS}/${test.info().project.name}-left-out-folded-${mode}.png` });
+    }
+    await page.emulateMedia({ colorScheme: "light" });
+    await axeBothModes(page, "[data-testid=ai-digest]");
+    await more.focus();
+    await page.keyboard.press("Enter");
+    await expect(excluded.getByTestId("ai-digest-excluded-item")).toHaveCount(7);
+    await expect(more).toHaveText("Show fewer");
+    await expect(more).toHaveAttribute("aria-expanded", "true");
+    await expect(more).toBeFocused();
+    await axeBothModes(page, "[data-testid=ai-digest]");
+    await page.keyboard.press("Enter");
+    await expect(excluded.getByTestId("ai-digest-excluded-item")).toHaveCount(4);
+    await expect(more).toBeFocused();
   });
 
   test("the digest off lists unticked and sends nothing; on, it sorts them, Archive all has one Undo", async ({ app: page, server }) => {

@@ -2805,6 +2805,8 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "settings.whatMatters.time.offHint": "Activa el resumen o el aviso para elegir una hora.",
   "settings.whatMatters.accounts": "Cuentas",
   "settings.whatMatters.accounts.footer": "Desactivada, nada de esa cuenta aparece en «Lo importante».",
+  "settings.list.more": { one: "+# más", other: "+# más" },
+  "settings.list.fewer": "Mostrar menos",
   "today.digest.title": "El resumen de hoy",
   "today.digest.automatedTitle": "Correo automático",
   "today.digest.row": { one: "# boletín · el resumen de hoy", other: "# boletines · el resumen de hoy" },

@@ -102,3 +102,70 @@ describe("plan 247: Settings → What matters", () => {
     expect(byId(host2, "keep-inbox-count-row")).not.toBeNull();
   });
 });
+
+describe("plan 247, iteration 2: the senders left out, folded past four", () => {
+  const left = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `s${i}`, email: `news${i}@list.test`, name: `List ${i}`, at: 1000 - i }));
+  const mount = async (n: number) => {
+    let senders = left(n);
+    vi.mocked(client.call).mockImplementation((async (method: string, p: { id?: string }) => {
+      if (method === "today.notNewsletters") return { senders };
+      if (method === "today.newsletterAgain") return (senders = senders.filter((s) => s.id !== p.id)), { removed: null };
+      if (method === "today.shownSenders") return { senders: [] };
+      if (method === "dated.mutes") return { mutes: [] };
+      return {};
+    }) as never);
+    useApp.setState({ devAi: null, settings: settings({ digest: true }), accounts: [account(1, "Work", "me@work.test")] } as never);
+    const host = await render(<WhatMattersTab settings={settings({ digest: true })} update={vi.fn() as never} />);
+    const names = () => [...host.querySelectorAll("[data-testid=ai-digest-excluded-item] .font-medium")].map((e) => e.textContent);
+    return { host, names, more: () => byId(host, "ai-digest-excluded-more") };
+  };
+
+  it("six: the newest four and +2 more, which opens the rest and folds them back, keeping focus", async () => {
+    const { names, more } = await mount(6);
+    expect(names()).toEqual(["List 0", "List 1", "List 2", "List 3"]);
+    const toggle = more()!;
+    expect(toggle.textContent).toBe("+2 more");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(document.getElementById(toggle.getAttribute("aria-controls")!)?.tagName).toBe("UL");
+    toggle.focus();
+    await act(async () => toggle.click());
+    expect(names()).toHaveLength(6);
+    expect(more()!.textContent).toBe("Show fewer");
+    expect(more()!.getAttribute("aria-expanded")).toBe("true");
+    expect(document.activeElement).toBe(more());
+    await act(async () => more()!.click());
+    expect(names()).toHaveLength(4);
+  });
+
+  it("five: all five, no toggle", async () => {
+    const { names, more } = await mount(5);
+    expect(names()).toHaveLength(5);
+    expect(more()).toBeNull();
+  });
+
+  it("removing the fourth while folded: the fifth comes into view and takes the keys; the count follows", async () => {
+    const { host, names, more } = await mount(7);
+    const removes = () => [...host.querySelectorAll<HTMLElement>("[data-testid=ai-digest-excluded-remove]")];
+    await act(async () => removes()[3]!.click());
+    expect(names()).toEqual(["List 0", "List 1", "List 2", "List 4"]);
+    expect(document.activeElement).toBe(removes()[3]);
+    expect(more()!.textContent).toBe("+2 more");
+  });
+
+  it("Codex code review: a re-read that would fold away the row the keys are on opens the rest, the keys staying", async () => {
+    let fire: (() => void) | null = null;
+    vi.mocked(client.on).mockImplementation(((event: string, fn: () => void) => ((event === "todayDigest" && (fire = fn)), () => {})) as never);
+    const { host, names, more } = await mount(7);
+    const third = host.querySelectorAll<HTMLElement>("[data-testid=ai-digest-excluded-remove]")[3]!;
+    third.focus();
+    // one put back above it (an Undo, another window): the row moves to fifth
+    const earlier = vi.mocked(client.call).getMockImplementation()!;
+    vi.mocked(client.call).mockImplementation((async (method: string, p: unknown) => (method === "today.notNewsletters" ? { senders: [{ id: "new", email: "new@list.test", name: "Newest", at: 5000 }, ...left(7)] } : earlier(method as never, p as never))) as never);
+    await act(async () => fire!());
+    expect(names()).toHaveLength(8);
+    expect(more()!.getAttribute("aria-expanded")).toBe("true");
+    expect(document.activeElement).toBe(third);
+    vi.mocked(client.on).mockImplementation((() => () => {}) as never);
+  });
+});
+

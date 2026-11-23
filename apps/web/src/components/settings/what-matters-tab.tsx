@@ -7,7 +7,8 @@ import { Switch } from "@terno/ui/components/switch";
 import { Time, TimeField } from "@terno/ui/components/time-field";
 import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
 import { Inbox, Sun } from "@terno/ui/icons";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { setAccountFeed } from "~/lib/accounts";
 import { undoAction } from "~/lib/actions";
 import { aiAllowed, datedReaderLine, errorHelp, providerLabel, routeOf, todayOffered } from "~/lib/ai";
@@ -204,16 +205,32 @@ function MorningGroup({ settings, update }: { settings: AppSettings; update: Set
   );
 }
 
+/** Plan 247, iteration 2: the senders left out show this many, newest first, the rest behind "+N more". */
+const LEFT_OUT_SHOWN = 4;
+
 /**
  * Plan 166: the senders said not to be newsletters, where the digest's settings are: each can be let back in, with Undo.
  * Shown whenever there's one, the digest on or off (they're out of Automated mail too). Nothing here leaves the machine.
+ * Plan 247 (iteration 2): folded past four, the reader's people's way (one toggle that stays, so focus does); with five,
+ * all five (a "+1 more" would take the room of the row it hides).
  */
 function NotNewslettersRow() {
   const [senders, setSenders] = useState<NotNewsletter[] | null>(null);
+  const [all, setAll] = useState(false);
   const list = useRef<HTMLUListElement>(null);
+  const listId = useId();
   useEffect(() => {
     let current = true;
-    const read = () => void client.call("today.notNewsletters", {}).then((r) => current && setSenders(r.senders), () => {});
+    const read = () =>
+      void client.call("today.notNewsletters", {}).then((r) => {
+        if (!current) return;
+        // the row the keys are on stays in view (Codex code review): a re-read that would fold it away (an Undo putting one
+        // back above it, another window's) opens the rest
+        const el = document.activeElement;
+        const focused = el && list.current?.contains(el) ? el.closest<HTMLElement>("[data-sender-id]")?.dataset.senderId : undefined;
+        if (focused && r.senders.length > LEFT_OUT_SHOWN + 1 && r.senders.findIndex((x) => x.id === focused) >= LEFT_OUT_SHOWN) setAll(true);
+        setSenders(r.senders);
+      }, () => {});
     read();
     const off = client.on("todayDigest", read);
     return () => {
@@ -225,11 +242,11 @@ function NotNewslettersRow() {
   const nameOf = (e: NotNewsletter) => e.name || e.email;
   const remove = async (e: NotNewsletter, at: number) => {
     const key = senderKey({ fromEmail: e.email });
-    // the keys go to the next sender's Remove (else the one before): the row they were on is gone
+    // drawn without it at once, so the keys go to the sender now in its place (folded, the one just come into view), else
+    // the one before; the last one gone, the list goes with it: the digest's switch above it (Codex review: not the dialog)
+    flushSync(() => setSenders((held) => held && held.filter((x) => x !== e)));
     const buttons = [...(list.current?.querySelectorAll<HTMLElement>("[data-testid=ai-digest-excluded-remove]") ?? [])];
-    // the last one gone, the list goes with it: the digest's switch above it (Codex review: focus fell to the dialog)
-    const next = buttons[at + 1] ?? buttons[at - 1] ?? document.querySelector<HTMLElement>("[data-testid=ai-digest-switch]");
-    setSenders((held) => held && held.filter((x) => x !== e));
+    const next = buttons[at] ?? buttons[at - 1] ?? document.querySelector<HTMLElement>("[data-testid=ai-digest-switch]");
     next?.focus({ preventScroll: true });
     try {
       const r = await client.call("today.newsletterAgain", { email: e.email, id: e.id });
@@ -249,20 +266,30 @@ function NotNewslettersRow() {
       snack.error(error instanceof Error ? error.message : String(error));
     }
   };
+  const folds = senders.length > LEFT_OUT_SHOWN + 1;
+  const hidden = senders.length - LEFT_OUT_SHOWN;
+  const shown = folds && !all ? senders.slice(0, LEFT_OUT_SHOWN) : senders;
   return (
     <SettingsRow find="whatMatters.digestExcluded" label={t("today.digest.excluded.title")} hint={t("today.digest.excluded.hint")} stacked testId="ai-digest-excluded">
       {(a) => (
-        <ul ref={list} aria-labelledby={a["aria-labelledby"]} aria-describedby={a["aria-describedby"]} className="flex flex-col">
-          {senders.map((e, i) => (
-            <li key={e.id} className="flex min-h-9 items-center gap-3 border-b border-hairline py-1 last:border-b-0" data-testid="ai-digest-excluded-item">
-              <span className="min-w-0 flex-1 truncate text-sm">
-                <span className="font-medium">{nameOf(e)}</span>
-                {e.name && e.name !== e.email && <span className="ml-2 text-xs text-muted-foreground">{e.email}</span>}
-              </span>
-              <CloseButton size="sm" label={t("today.digest.excluded.remove", { sender: nameOf(e) })} className="relative after:absolute after:-inset-1 after:content-['']" data-testid="ai-digest-excluded-remove" onClick={() => void remove(e, i)} />
-            </li>
-          ))}
-        </ul>
+        <div className="flex flex-col gap-1.5">
+          <ul ref={list} id={listId} aria-labelledby={a["aria-labelledby"]} aria-describedby={a["aria-describedby"]} className="flex flex-col">
+            {shown.map((e, i) => (
+              <li key={e.id} className="flex min-h-9 items-center gap-3 border-b border-hairline py-1 last:border-b-0" data-testid="ai-digest-excluded-item" data-sender-id={e.id}>
+                <span className="min-w-0 flex-1 truncate text-sm">
+                  <span className="font-medium">{nameOf(e)}</span>
+                  {e.name && e.name !== e.email && <span className="ml-2 text-xs text-muted-foreground">{e.email}</span>}
+                </span>
+                <CloseButton size="sm" label={t("today.digest.excluded.remove", { sender: nameOf(e) })} className="relative after:absolute after:-inset-1 after:content-['']" data-testid="ai-digest-excluded-remove" onClick={() => void remove(e, i)} />
+              </li>
+            ))}
+          </ul>
+          {folds && (
+            <Button variant="link-secondary" size="xs" className="self-start" data-testid="ai-digest-excluded-more" aria-expanded={all} aria-controls={listId} onClick={() => setAll(!all)}>
+              {all ? t("settings.list.fewer") : t("settings.list.more", { count: hidden })}
+            </Button>
+          )}
+        </div>
       )}
     </SettingsRow>
   );

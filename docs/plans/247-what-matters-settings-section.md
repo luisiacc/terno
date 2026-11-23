@@ -102,3 +102,25 @@ Codex's review (3 findings) changed:
 - **The left-out senders' search entry** lost its `under` when it moved: with nobody left out its row isn't drawn, so a search for it opens the digest's switch again (`under: "whatMatters.digest"`, asserted in `settings-search.test.ts`).
 
 Also found while testing: Settings learns of settings only from its own calls (no event from another window), so the section can only go while Settings is on another section (AI's provider set to None). The e2e takes that path; the fallback to General stays for a stored section that isn't there any more.
+
+## Iteration 2: the senders left out, folded
+
+> this 'senders left out' list should be collapsed, only showing the first 4 or something then sayng '+15 more' and then those can be expanded.
+
+- **Folded**: *Senders left out* (Each morning) shows its newest four; under them a quiet link, “+15 more”, opens the rest in place, and then reads “Show fewer”. With five or fewer there's no link (“+1 more” takes the room of the row it hides). It's the reader's people's pattern (`thread-people.tsx`: `link-secondary`, `aria-expanded`), not a new control: one toggle that stays put, so focus stays on it both ways; its name is its words (“+15 more”, so a voice user can say what they see), `aria-expanded` says whether the rest is open, and it controls the list (`aria-controls`), which is named *Senders left out*. No motion (rows appear, as the reader's people do). Opened, it stays open while the section is shown; it starts folded each time.
+- **Remove** keeps the keys in the list: the row that slides up into the removed one's place (a folded one coming into view included) takes focus, else the one before, else the digest's switch. The count follows.
+- **Words**: `settings.list.more` (“+# more”), `settings.list.fewer` (“Show fewer”), en and es.
+- **Tests**: unit (`what-matters-tab.test.tsx`): 6 senders → 4 rows and “+2 more”, opened → 6 and “Show fewer”, focus stays on the toggle; 5 → no toggle; removing the fourth while folded focuses the fifth, now shown. e2e: the existing left-out scenario (`today.spec.ts`) has one sender, unchanged.
+- **Out of scope**: the other two lists in the section (Always shown, Hidden) stay as they are unless asked.
+
+### Revisions after the Codex review (iteration 2)
+
+Codex's critique (7 points) changed or confirmed:
+
+- **Focus after Remove** (#1): the list is drawn without the sender first (`flushSync`), then the Remove in its place takes the keys, so a folded sender just come into view gets them (tested: it fails with the old capture-before-update order).
+- **Five or fewer show all** (#2), the count from the folded slice; **one toggle element** both ways (#4), outside the `<ul>`, which keeps the row's name and description (#3); **aligned on the names' line** (#5: `link-secondary` has no padding, `self-start`), looked at in light and dark; **`#` only in plural messages** (#6): `settings.list.more` is `{ one, other }`.
+- **e2e** (#7): the left-out scenario in `today.spec.ts` adds seven senders: four and “+3 more”, opened and folded by keyboard with focus kept, axe in light and dark both ways, screenshots.
+
+### Revisions after the Codex code review (iteration 2)
+
+- **A re-read could fold away the row the keys are on** (an Undo putting a sender back above it, or another window's change): the re-read now opens the rest when the focused sender would land past the fold, so the keys stay where they were. `what-matters-tab.test.tsx` fires the list's event with a newer sender above the focused row (fails without the fix).

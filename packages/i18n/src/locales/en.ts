@@ -2847,6 +2847,8 @@ It contains none of your mail, contacts, settings or keys.
   "settings.whatMatters.time.offHint": "Turn on the digest or the notification to choose a time.",
   "settings.whatMatters.accounts": "Accounts",
   "settings.whatMatters.accounts.footer": "Off, nothing from that account appears in “What matters”.",
+  "settings.list.more": { one: "+# more", other: "+# more" },
+  "settings.list.fewer": "Show fewer",
   "today.digest.title": "Today's digest",
   "today.digest.automatedTitle": "Automated mail",
   "today.digest.row": { one: "# newsletter · today's digest", other: "# newsletters · today's digest" },
