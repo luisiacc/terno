@@ -43,10 +43,11 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  * Version 38 adds Done and Later on a conversation waiting on you (SQL v74, plan 215).
  * SQL v75 (plan 216) lets a waiting record be `removed`: no CHECK here, and its index is in memory, so no version change.
  * Version 39 adds the senders always shown in What matters (SQL v76, plan 240).
+ * Version 40 adds What matters in the user's words: verdicts, wanted items and their marks (SQL v77, plan 248).
  */
 export { IDB_VERSION };
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 76;
+export const LOGICAL_SCHEMA = 77;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 
@@ -138,6 +139,11 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   { name: "dated_mute_pairs", early: true, key: ["sender_key", "kind"], indexes: { sender: ["sender_key"] } },
   // plan 240: the senders always shown in What matters (the facts and Needs you's walk read it, so it loads early)
   { name: "shown_senders", early: true, key: ["key"], indexes: {} },
+  // plan 248: the words' verdicts and what a show rule brought load early (the first screen places by them); the marks hang off
+  // messages. `open` holds only open items (SQL's partial index); a memory index has no order, so the pages sort
+  { name: "preference_verdicts", early: true, key: ["target"], indexes: {} },
+  { name: "wanted_items", early: true, key: ["id"], autoId: true, indexes: { ...fk("thread_id"), open: { columns: ["state"], where: (r) => r.state === "open" }, message: ["message_id"] } },
+  { name: "wanted_marks", key: ["message_id"], indexes: { ...fk("message_id"), thread: ["thread_id"], source: ["source"] } },
   // plan 215: Done and Later on a conversation waiting on you, a record per message (`done`, Earlier's; `later`, the deferrals;
   // plan 216, `removed`, off What matters: the count's)
   { name: "waiting_acts", key: ["message_id"], indexes: { ...fk("message_id"), done: { columns: ["state"], where: (r) => r.state === "done" }, later: { columns: ["state"], where: (r) => r.state === "later" }, removed: { columns: ["state"], where: (r) => r.state === "removed" } } },
@@ -225,6 +231,8 @@ export const FOREIGN_KEYS: readonly ForeignKey[] = [
   c("dated_items", "thread_id", "threads"),
   c("dated_nothing_asked", "message_id", "messages"),
   c("waiting_acts", "message_id", "messages"),
+  c("wanted_items", "thread_id", "threads"),
+  c("wanted_marks", "message_id", "messages"),
   c("writing_profiles", "account_id", "accounts"),
   c("writing_generations", "account_id", "accounts"),
   c("writing_generations", "draft_id", "drafts"),
@@ -428,6 +436,8 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
       if (event.oldVersion >= 1 && event.oldVersion < 38 && !db.objectStoreNames.contains("waiting_acts")) db.createObjectStore("waiting_acts");
       // plan 240 (likewise)
       if (event.oldVersion >= 1 && event.oldVersion < 39 && !db.objectStoreNames.contains("shown_senders")) db.createObjectStore("shown_senders");
+      // plan 248 (likewise)
+      if (event.oldVersion >= 1 && event.oldVersion < 40) for (const name of ["preference_verdicts", "wanted_items", "wanted_marks"]) if (!db.objectStoreNames.contains(name)) db.createObjectStore(name);
       // plan 144 (likewise)
       if (event.oldVersion >= 1 && event.oldVersion < 31 && !db.objectStoreNames.contains("ai_prepared_replies")) db.createObjectStore("ai_prepared_replies");
       // plan 142 (likewise)

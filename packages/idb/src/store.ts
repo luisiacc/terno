@@ -5,6 +5,7 @@ import { actOnWaiting, restoreWaiting, waitingDonePage, waitingMoments, waitingR
 import { scheduleItems, unscheduleItems } from "./schedule";
 import { clearReplies, finishReply, getReply, transitionReply } from "./replies";
 import { addShown, listShown, removeShown, trustedSenders } from "./shown-senders";
+import { activeWanted, actWanted, addWantedMark, clearLookMarks, clearVerdicts, clearWanted, countWantedMarks, finishWanted, getDraft, getPreferences, getVerdicts, getWanted, pruneVerdicts, pruneWantedMarks, putDraft, putVerdicts, reconcileWanted, restoreWanted, savePreferences, threadWanted, wantedLookCandidates, wantedMarkPage } from "./what-matters";
 import { activeDated, addDatedMute, datedMutes, removeDatedMute, closedDatedPage, claimDatedLook, clearDated, datedMarkCount, datedPendingOn, datedMarkPage, datedMarksRaw, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, datedWritten, updateDated } from "./dated";
 import { activeFollowups, closedFollowupPage, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, closeArchivedFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupsPutAway, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
 import { findLinked, newestLinked } from "./links";
@@ -2148,6 +2149,43 @@ export class IdbMailStore implements MailStore {
       return this.command(() => clearDated(this.c));
     },
     clearGeneration: () => this.datedClears,
+  };
+
+  // plan 248: the record, the verdicts and the items are early tables; what reads or writes a mark waits for the messages
+  readonly whatMatters: MailStore["whatMatters"] = {
+    preferences: {
+      get: () => this.early(() => getPreferences(this.c)),
+      save: (next, expect) => this.command(() => savePreferences(this.c, next, expect), { early: true }),
+      draft: {
+        get: () => this.early(() => getDraft(this.c)),
+        put: (draft) => this.command(() => putDraft(this.c, draft), { early: true }),
+      },
+    },
+    verdicts: {
+      get: (targets) => this.early(() => getVerdicts(this.c, targets)),
+      put: (rows, expect) => this.command(() => putVerdicts(this.c, rows, expect), { early: true }),
+      prune: (basis, keep, max) => this.command(() => pruneVerdicts(this.c, basis, keep, max), { early: true }),
+      clear: () => this.command(() => clearVerdicts(this.c), { early: true }),
+    },
+    wanted: {
+      active: () => this.early(() => activeWanted(this.c)),
+      get: (id) => this.early(() => getWanted(this.c, id)),
+      ofThread: (id) => this.early(() => threadWanted(this.c, id)),
+      finish: (w) => this.command(() => finishWanted(this.c, w)),
+      act: (changes) => this.command(() => actWanted(this.c, changes), { early: true }),
+      restore: (before) => this.command(() => restoreWanted(this.c, before), { early: true }),
+      reconcile: (current, now) => this.command(() => reconcileWanted(this.c, current, now), { early: true }),
+      clear: () => this.command(() => clearWanted(this.c)),
+      marks: {
+        add: (m, now) => this.command(() => addWantedMark(this.c, m, now)),
+        page: (limit) => this.read(() => wantedMarkPage(this.c, limit)),
+        consume: (id) => this.command(() => void T(this.c, "wanted_marks").delete(id)),
+        prune: (now) => this.command(() => pruneWantedMarks(this.c, now)),
+        clearLook: () => this.command(() => clearLookMarks(this.c)),
+        count: (source) => this.read(() => countWantedMarks(this.c, source)),
+      },
+      lookCandidates: (from, walk) => this.read(() => wantedLookCandidates(this.c, from, walk)),
+    },
   };
 
   private askClears = 0;

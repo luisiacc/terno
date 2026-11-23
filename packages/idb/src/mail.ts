@@ -86,6 +86,7 @@ import { mergeReminder } from "./reminders";
 import { mergePin } from "./pins";
 import { mergeFollowups } from "./followups";
 import { mergeDated } from "./dated";
+import { mergeWanted } from "./what-matters";
 import { mergeSummaries } from "./ai-summaries";
 
 /**
@@ -765,6 +766,7 @@ export function mergeThreads(c: Ctx, into: number, from: number, result: IngestR
   mergeSummaries(c, into, from);
   mergeFollowups(c, into, from);
   mergeDated(c, into, from);
+  mergeWanted(c, into, from);
   T(c, "threads").delete(from);
   result.touchedThreads.delete(from);
   result.touchedThreads.add(into);
