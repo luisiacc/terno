@@ -446,6 +446,7 @@ export class BackendCore {
       gate: this.gate,
       forTask: (o) => this.aiService.forTask("dated", o),
       changed: () => this.today.changed(),
+      shown: () => this.today.verdictsChanged(),
       emit: (state) => this.server.emit("whatMattersWords", state, { origins: ["renderer", "dev"] }),
       runBudgeted: (items, work) => this.runBudgeted(items, work),
       log: (level, message, extra) => this.log(level, message, extra),
@@ -741,13 +742,13 @@ export class BackendCore {
     return this.server.connect(transport, ctx);
   }
 
-  /** Starts background work (model rebuild, unfinished moves, sync loops, the ops worker); resolves once they are scheduled. */
   /** Plan 248: live mail the dated reader passed its hard gates, marked for the words' second reader when a show rule exists. */
   private async wantedMark(m: { messageId: number; threadId: number; arrivedAt: number }): Promise<void> {
     if (!(await this.words.rules()).some((r) => r.effect === "show")) return;
     if (await this.store.whatMatters.wanted.marks.add({ ...m, source: "live" }, this.now())) this.words.worker.wake();
   }
 
+  /** Starts background work (model rebuild, unfinished moves, sync loops, the ops worker); resolves once they are scheduled. */
   async start(): Promise<void> {
     await this.ready;
     if (this.stopped) return;

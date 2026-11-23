@@ -45,7 +45,7 @@ async function run(profile: Profile, label: string): Promise<{ rules: Preference
   for (let i = 0; i < reaching.length; i += 25) {
     const batch = reaching.slice(i, i + 25);
     const judged = await judgeRows(ai, rules, batch.map((r, j) => ({ row: { ...r.target, key: r.key }, target: { id: `t${j + 1}`, kind: r.item.kind, text: r.item.text, from: r.mail.from.name, subject: r.mail.subject, excerpt: excerptAround(r.mail.text, r.item.quote, 600) } })));
-    for (const [key, keys] of judged) verdicts.set(key, keys);
+    for (const [key, keys] of judged.rules) verdicts.set(key, judged.failed.has(key) ? [] : keys);
   }
   const shows = rules.filter((r) => r.effect === "show");
   const outcomes: Outcome[] = [];

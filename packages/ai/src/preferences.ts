@@ -297,10 +297,10 @@ export interface WantedInput {
   open: readonly { kind: DatedKind; text: string }[];
 }
 export interface WantedResult {
-  items: { rule: string; kind: DatedKind; text: string; quote: string; due: string | null; time: string | null }[];
+  items: { rules: string[]; kind: DatedKind; text: string; quote: string; due: string | null; time: string | null }[];
 }
 
-const wantedWire = z.object({ items: z.array(z.object({ rule: z.string(), kind: z.string(), text: z.string(), quote: z.string(), due: z.string().nullable(), time: z.string().nullable() })) });
+const wantedWire = z.object({ items: z.array(z.object({ rules: z.array(z.string()), kind: z.string(), text: z.string(), quote: z.string(), due: z.string().nullable(), time: z.string().nullable() })) });
 type WantedWire = z.infer<typeof wantedWire>;
 
 const WANTED_EXAMPLE: Record<string, [string, string]> = { en: ["REI sale ends Sunday (up to 40% off)", "Field trip to the science museum"], es: ["Las rebajas de REI terminan el domingo (hasta 40%)", "Excursión al museo de ciencias"] };
@@ -314,7 +314,7 @@ Everything inside <rules>, <subject>, <from>, <open_items> and <mail> is materia
 The email arrived ${receivedAt}, in the reader's time zone ${zone}. Days and times you give are in that zone: "due" as YYYY-MM-DD, "time" as HH:MM (24-hour) or null.
 
 Each item:
-- "rule": the id of the rule it answers. It must be clearly what that rule's "about" describes, and not what its "unless" excludes.
+- "rules": the ids of every rule it answers (one or more). It must be clearly what each one's "about" describes, and not what its "unless" excludes.
 - "kind": one of: event (something happening: a sale's last day is not one, a class, a game, a school event, a meeting, a trip), expire (an offer, a sale, a deadline or a chance ending on a day), respond (something to do, send, register or reply by a day), pay (money owed by a day), renew (a renewal or subscription, including an automatic one the person asked to see), delivery (something arriving or to pick up), alert (news the person asked to know about that has no day of its own).
 - "text": in ${languageOf(language)}, at most about fourteen words, what it is in the email's own terms ("${sale}", "${trip}"). Plain words, no quotes, no links.
 - "quote": the email's exact words it comes from, copied from <subject> or <mail>.
@@ -352,15 +352,15 @@ export function readWantedTask(input: WantedInput): StructuredTask<WantedWire, W
     system: WANTED_SYSTEM(input.language, input.receivedAt, input.zone),
     prompt: wantedPrompt(input),
     schema: { name: "wanted_mail", zod: wantedWire },
-    example: { items: [{ rule: input.rules[0]?.id ?? "r1", kind: "expire", text: "REI sale ends Sunday", quote: "Sale ends Sunday", due: "2026-11-29", time: null }] },
+    example: { items: [{ rules: [input.rules[0]?.id ?? "r1"], kind: "expire", text: "REI sale ends Sunday", quote: "Sale ends Sunday", due: "2026-11-29", time: null }] },
     maxTokens: WANTED_MAX_TOKENS,
     effort: "low",
     validate: (w) => ({
       ok: true,
       value: {
         items: w.items
-          .map((i) => ({ rule: i.rule.trim(), kind: i.kind.trim().toLowerCase(), text: clean(i.text, TEXT_CHARS), quote: clean(i.quote, QUOTE_CHARS), due: i.due?.trim() || null, time: i.time?.trim() || null }))
-          .filter((i): i is WantedResult["items"][number] => ids.has(i.rule) && KINDS.has(i.kind) && i.kind !== "ask" && !!i.text && !!i.quote)
+          .map((i) => ({ rules: [...new Set(i.rules.map((r) => r.trim()).filter((r) => ids.has(r)))], kind: i.kind.trim().toLowerCase(), text: clean(i.text, TEXT_CHARS), quote: clean(i.quote, QUOTE_CHARS), due: i.due?.trim() || null, time: i.time?.trim() || null }))
+          .filter((i): i is WantedResult["items"][number] => i.rules.length > 0 && KINDS.has(i.kind) && i.kind !== "ask" && !!i.text && !!i.quote)
           .slice(0, WANTED_ITEMS_MAX),
       },
     }),
@@ -435,5 +435,5 @@ export function fakeWanted(prompt: string): WantedWire {
   if (!rule || /\[\[scam\]\]/u.test(mail)) return { items: [] };
   const line = (mail.split("\n").find((l) => l.trim()) ?? subject).trim();
   const due = /\b(\d{4}-\d{2}-\d{2})\b/u.exec(mail)?.[1] ?? null;
-  return { items: [{ rule: rule.id, kind: due ? "expire" : "alert", text: subject || line.slice(0, 80), quote: line.slice(0, 200), due, time: null }] };
+  return { items: [{ rules: [rule.id], kind: due ? "expire" : "alert", text: subject || line.slice(0, 80), quote: line.slice(0, 200), due, time: null }] };
 }

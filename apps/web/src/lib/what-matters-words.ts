@@ -39,12 +39,12 @@ const message = (error: unknown): string => (error instanceof Error && error.mes
  * Save: the words compiled and saved against the revision they were typed on. True when saved. Another window's save
  * since says so and the caller shows the saved words; a failure keeps the typed words and says the earlier ones still apply.
  */
-export async function saveWords(text: string, revision: number): Promise<{ saved: boolean; stale?: boolean }> {
+export async function saveWords(text: string, revision: number): Promise<{ saved: boolean; stale?: { revision: number; text: string } }> {
   try {
     const r = await client.call("whatMatters.words.save", { text, revision });
     if ("stale" in r) {
       snack.error(t("whatMatters.words.stale"));
-      return { saved: false, stale: true };
+      return { saved: false, stale: { revision: r.preferences.revision, text: r.preferences.text } };
     }
     snack.success(text.trim() ? t("whatMatters.words.saved") : t("whatMatters.words.cleared"));
     return { saved: true };

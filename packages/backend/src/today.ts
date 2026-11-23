@@ -47,6 +47,8 @@ import {
   type TodayHistoryPage,
   type RowVisibility,
   waitingRowId,
+  isSemantic,
+  datedGroup,
 } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import { RpcError, type AppSettings } from "@terno/core/rpc";
@@ -114,6 +116,8 @@ const firstSentence = (text: string): string => (/^.*?[.!?](?:\s|$)/su.exec(text
 const newestFirst = (items: readonly DigestItem[]): DigestItem[] => [...items].sort((a, b) => b.lastDate - a.lastDate || b.threadId - a.threadId);
 
 const EMPTY_IDS: ReadonlySet<FeedRowId> = new Set();
+/** plan 248: waiting conversations' senders kept (twice the waiting walk) */
+const WAITING_WHO_MAX = 2 * NEEDS_WALK;
 
 export class TodayService {
   private ops: TodayOps | null = null;
@@ -147,6 +151,8 @@ export class TodayService {
   private readonly waitingSnapshots = new Map<string, WaitingSnapshot>();
   /** plan 204: the open dated items, until something changes them */
   private datedCache: { generation: number; rows: readonly DatedRow[] } | null = null;
+  /** plan 248: each waiting conversation's sender and subject at its waiting moment, for the words' rules */
+  private readonly waitingWho = new Map<string, { from: string; fromName: string; subject: string }>();
   /** plan 248: v16's rows with the words' wanted ones after them, as last built */
   private wantedCache: { generation: number; dated: readonly DatedRow[]; rows: readonly DatedRow[] } | null = null;
   private datedGeneration = 0;
@@ -667,14 +673,18 @@ export class TodayService {
       return a ? { ...w, message: a.message, rev: a.rev, deferredUntil: a.until, ...(a.removed && { removed: true }) } : w;
     }) : page;
     // plan 248: the user's words, applied after the facts (none for the empty box: nothing is built)
-    const visibility = await this.visibility(items, page);
+    const visibility = await this.visibility(items, waiting, o.count === true);
     // (the zone's read only for the rows' words: an Intl formatter is dear on every count)
     const fact = { now, waiting, reminders, zone: o.count ? "" : readerZone(), ...(visibility && { visibility: visibility.rows }) };
     if (o.count) {
       const live = await store.today.liveAmong([...new Set(ids)]);
       return { ...projectRows(items, { ...fact, live: (id) => live.has(id) }, o), threads: new Map() };
     }
-    const threads = new Map((await store.threads.summaries([...new Set([...ids, ...waiting.map((w) => w.id)])])).map((t) => [t.id, t]));
+    // (the waiting conversations' summaries the words read already are used, not read twice: the Astra review)
+    const known = visibility?.threads ?? new Map<number, ThreadSummary>();
+    const threads = new Map(known);
+    const toRead = [...new Set([...ids, ...waiting.map((w) => w.id)])].filter((id) => !known.has(id));
+    for (const t of toRead.length ? await store.threads.summaries(toRead) : []) threads.set(t.id, t);
     const live = (id: number) => {
       const t = threads.get(id);
       return !!t && !t.inSpam && !t.inTrash;
@@ -704,7 +714,7 @@ export class TodayService {
    * Plan 248: the projection's view of the user's words: each placed item hidden when the words hide every entry of it and
    * first when they put one first; each waiting conversation by its own message. Null for the empty box.
    */
-  private async visibility(items: readonly PlacedItem[], page: readonly { id: number; waitingSince: number }[]): Promise<{ rows: RowVisibility; hidden: Set<FeedRowId> } | null> {
+  private async visibility(items: readonly PlacedItem[], waiting: readonly { id: number; waitingSince: number; removed?: boolean }[], count: boolean): Promise<{ rows: RowVisibility; hidden: Set<FeedRowId>; threads: Map<number, ThreadSummary> } | null> {
     const rules = await this.b.words.rules();
     // shows alone hide and order nothing: no row is looked at (most of what a projection does here is skipped)
     if (!rules.some((r) => r.effect !== "show")) return null;
@@ -716,24 +726,43 @@ export class TodayService {
         targets.set(t.key, t);
         ofEntry.set(e.row, t);
       }
-    // a waiting conversation by its sender and subject, read (one batch) only when a rule may reach one
-    // (an `only` reaches every row, a waiting conversation included: one it doesn't keep is hidden, the Codex code review)
+    // a waiting conversation the rules may reach (an `only` reaches every row, the Codex code review), but none a placed item
+    // already stands for or that was removed: those never show as waiting rows, so they're never judged (the Astra review)
     const ofWaiting = new Map<number, RowTarget>();
-    if (page.length && rules.some((r) => r.effect === "only" || (r.effect !== "show" && (!r.kinds?.length || r.kinds.includes("waiting"))))) {
-      const threads = new Map((await this.b.store.threads.summaries(page.map((w) => w.id))).map((t) => [t.id, t]));
-      for (const w of page) {
-        const thread = threads.get(w.id);
-        if (!thread) continue;
-        const t = waitingTarget({ id: w.id, waitingSince: w.waitingSince, from: thread.fromEmail, fromName: thread.fromName, subject: thread.subject });
+    const threads = new Map<number, ThreadSummary>();
+    const reachWaiting = rules.filter((r) => r.effect === "only" || (r.effect !== "show" && (!r.kinds?.length || r.kinds.includes("waiting"))));
+    // (as `projectRows` counts a conversation represented: an item that isn't a Plan, placed outside Coming up)
+    const placedThreads = new Set(items.filter((p) => p.at.group !== "comingUp" && !(p.item.lead.source === "dated" && datedGroup(p.item.lead.row.kind) === "plans")).map((p) => p.item.lead.row.threadId));
+    const candidates = reachWaiting.length ? waiting.filter((w) => !w.removed && !placedThreads.has(w.id)) : [];
+    if (candidates.length) {
+      // their sender and subject only when a rule asks who or what (kinds alone don't: the count stays without summaries)
+      const needs = reachWaiting.some((r) => r.senders?.length || r.names?.length || isSemantic(r));
+      // a waiting conversation's sender and subject are its waiting message's: kept by that moment across projections,
+      // read only for the new ones (the Fable review: the count read 2,000 summaries each time)
+      const at = (w: { id: number; waitingSince: number }) => `${w.id}:${w.waitingSince}`;
+      const missing = needs ? candidates.filter((w) => !this.waitingWho.has(at(w))) : [];
+      if (missing.length) {
+        if (this.waitingWho.size + missing.length > WAITING_WHO_MAX) this.waitingWho.clear();
+        const since = new Map(missing.map((w) => [w.id, w.waitingSince]));
+        for (const t of await this.b.store.threads.summaries(missing.map((w) => w.id))) {
+          threads.set(t.id, t);
+          this.waitingWho.set(at({ id: t.id, waitingSince: since.get(t.id)! }), { from: t.fromEmail, fromName: t.fromName, subject: t.subject });
+        }
+      }
+      for (const w of candidates) {
+        const who = needs ? this.waitingWho.get(at(w)) : undefined;
+        if (needs && !who) continue;
+        const t = waitingTarget({ id: w.id, waitingSince: w.waitingSince, from: who?.from ?? "", ...(who?.fromName ? { fromName: who.fromName } : {}), subject: who?.subject ?? "" });
         targets.set(t.key, t);
         ofWaiting.set(w.id, t);
       }
     }
-    const seen = await this.b.words.visibility([...targets.values()], { ask: true });
+    const seen = await this.b.words.visibility([...targets.values()], { ask: true, from: count ? "count" : "list" });
     if (!seen) return null;
     const hidden = new Set<FeedRowId>();
     return {
       hidden,
+      threads,
       rows: {
         item: (l) => {
           let hide = true;
@@ -916,7 +945,9 @@ export class TodayService {
     }
     const history = ask.history && settings.today?.finished !== false ? await this.history({ after: null, through: ask.history.through, held }) : undefined;
     // plan 248 (the Codex review's revision 5): held rows the user's words now hide, so the feed lets them go
-    const gone = hidden?.size ? held.filter((id) => hidden.has(id)) : [];
+    // and a held row the words brought that isn't shown any more (its last show rule went: it's never projected to be hidden)
+    const shownIds = new Set(shown.map((r) => r.id));
+    const gone = held.filter((id) => hidden?.has(id) || (id.startsWith("dated:-") && !shownIds.has(id)));
     return { sections, digest: await this.digestRow(), now, counts, ...(history ? { history } : {}), ...(gone.length ? { hidden: gone } : {}) };
   }
 
@@ -1270,6 +1301,16 @@ export class TodayService {
     this.b.server.emit("todayChanged", {}, { origins: ["renderer", "dev"] });
     this.b.countsChanged();
     void this.armClock().catch((error: unknown) => captureError(error, { code: "ai.failed" }));
+  }
+
+  /**
+   * Plan 248: the user's words judged rows: only what shows changed, so the list and the count project again (no item
+   * re-read, the clock untouched: the Astra review).
+   */
+  verdictsChanged(): void {
+    if (this.stopped) return;
+    this.b.server.emit("todayChanged", {}, { origins: ["renderer", "dev"] });
+    this.b.countsChanged();
   }
 
   /**

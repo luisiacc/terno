@@ -1341,12 +1341,13 @@ export const contract = {
    */
   "whatMatters.words": m<WhatMattersWordsState>()(empty),
   "whatMatters.words.draft": m<{ kept: boolean }>()(z.object({ text: z.string().max(PREFERENCES_TEXT_MAX), seq: z.number().int().min(0) })),
-  "whatMatters.words.save": m<{ preferences: WhatMattersPreferences } | { stale: true }>()(z.object({ text: z.string().max(PREFERENCES_TEXT_MAX), revision: z.number().int().min(0) })),
+  "whatMatters.words.save": m<{ preferences: WhatMattersPreferences } | { stale: true; preferences: WhatMattersPreferences }>()(z.object({ text: z.string().max(PREFERENCES_TEXT_MAX), revision: z.number().int().min(0) })),
   "whatMatters.words.clear": m<{ preferences: WhatMattersPreferences; undoId: string | null } | { stale: true }>()(z.object({ revision: z.number().int().min(0) })),
   "whatMatters.words.undoClear": m<{ preferences: WhatMattersPreferences } | { stale: true }>()(z.object({ undoId: z.string().min(1).max(64), revision: z.number().int().min(0) })),
   /** how many of the last 14 days' messages the show rules may want, and the tokens reading them would take (null: no show rule) */
-  "whatMatters.words.lookOffer": m<{ offer: { count: number; usd: number | null } | null }>()(empty),
-  "whatMatters.words.look": m<{ queued: number }>()(empty),
+  "whatMatters.words.lookOffer": m<{ offer: { count: number; usd: number | null; revision: number; looked: boolean } | null }>()(empty),
+  /** the yes, for the words the offer was counted for (`revision`); words saved since: `stale`, offered again */
+  "whatMatters.words.look": m<{ queued: number } | { stale: true }>()(z.object({ revision: z.number().int().min(0) })),
   /** plan 210 (iteration 4): what's muted in What matters, newest first; never MCP */
   "dated.mutes": m<{ mutes: DatedMute[] }>()(empty),
   /** after Remove on this item: what its snack offers to mute, once per kind from a sender (iteration 5: a pair) or per automated sender (null: nothing) */

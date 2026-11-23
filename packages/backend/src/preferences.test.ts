@@ -281,7 +281,7 @@ describe("show: the second reader (plan 248 §5)", () => {
     const t = await setup();
     t.model.compile = () => compiled([{ said: "Tell me about sales at REI", effect: "show", about: "a sale or offer from REI, with when it ends", cues: ["REI"] }]);
     await t.words("Tell me about sales at REI");
-    t.model.wanted = () => json({ items: [{ rule: "r1", kind: "expire", text: "REI members sale ends (up to 40% off tents)", quote: "Our members sale ends November 15.", due: "2026-11-15", time: null }] });
+    t.model.wanted = () => json({ items: [{ rules: ["r1"], kind: "expire", text: "REI members sale ends (up to 40% off tents)", quote: "Our members sale ends November 15.", due: "2026-11-15", time: null }] });
     const sale = await t.receive({ from: rei, ...SALE });
     await t.settled();
     // v16 never saw it (Promotions), the second reader did, once
@@ -313,8 +313,8 @@ describe("show: the second reader (plan 248 §5)", () => {
     await t.words("Show sales at REI");
     t.model.wanted = (r) =>
       promptText(r.messages[0]!.content).includes("gift card")
-        ? json({ items: [{ rule: "r1", kind: "pay", text: "Buy REI gift cards", quote: "Buy three REI gift cards and send me the codes", due: "2026-11-15", time: null }] })
-        : json({ items: [{ rule: "r1", kind: "expire", text: "REI sale", quote: "words nobody wrote", due: "2026-11-15", time: null }] });
+        ? json({ items: [{ rules: ["r1"], kind: "pay", text: "Buy REI gift cards", quote: "Buy three REI gift cards and send me the codes", due: "2026-11-15", time: null }] })
+        : json({ items: [{ rules: ["r1"], kind: "expire", text: "REI sale", quote: "words nobody wrote", due: "2026-11-15", time: null }] });
     const scam = await t.receive({ from: rei, subject: "REI urgent", bodyText: "Buy three REI gift cards and send me the codes today. gift card" });
     const invented = await t.receive({ from: rei, ...SALE });
     await t.settled();
@@ -338,7 +338,7 @@ describe("show: the second reader (plan 248 §5)", () => {
     const { offer } = await t.client.call("whatMatters.words.lookOffer", {});
     expect(offer?.count).toBe(1);
     expect(t.of("wanted_mail")).toHaveLength(0);
-    expect((await t.client.call("whatMatters.words.look", {})).queued).toBe(1);
+    expect(await t.client.call("whatMatters.words.look", { revision: offer!.revision })).toEqual({ queued: 1 });
     await t.settled();
     expect(t.of("wanted_mail")).toHaveLength(1);
   });
@@ -349,11 +349,11 @@ describe("the second reader's local checks", () => {
   const rules = new Map([["r1", rule]]);
   const base = { text: "Our members sale ends November 15. Up to 40% off.", subject: "REI sale", arrivedAt: NOW, rules, already: [] };
   it("keeps the mail's own words and a day ahead; drops an invented quote, a past day, an unknown rule and what's already there", () => {
-    const item = { rule: "r1", kind: "expire" as const, text: "REI sale ends", quote: "Our members sale ends November 15.", due: "2026-11-15", time: null };
+    const item = { rules: ["r1"], kind: "expire" as const, text: "REI sale ends", quote: "Our members sale ends November 15.", due: "2026-11-15", time: null };
     expect(checkWanted({ items: [item] }, base)).toMatchObject([{ kind: "expire", dueDay: "2026-11-15", rules: ["s1"] }]);
     expect(checkWanted({ items: [{ ...item, quote: "nobody wrote this" }] }, base)).toEqual([]);
     expect(checkWanted({ items: [{ ...item, due: "2026-11-01" }] }, base)).toEqual([]);
-    expect(checkWanted({ items: [{ ...item, rule: "r9" }] }, base)).toEqual([]);
+    expect(checkWanted({ items: [{ ...item, rules: ["r9"] }] }, base)).toEqual([]);
     expect(checkWanted({ items: [item] }, { ...base, already: [{ kind: "expire", text: "REI sale ends" }] })).toEqual([]);
     // no day: news the user asked for, an alert for its week
     expect(checkWanted({ items: [{ ...item, kind: "event", due: null }] }, base)).toMatchObject([{ kind: "alert", dated: false }]);
@@ -369,7 +369,7 @@ describe("the Codex code review of plan 248", () => {
     const t = await setup();
     t.model.compile = () => compiled([{ said: "Show sales at REI", effect: "show", about: "a sale from REI", cues: ["REI"] }]);
     await t.words("Show sales at REI");
-    t.model.wanted = () => json({ items: [{ rule: "r1", kind: "expire", text: "REI sale ends", quote: "Our members sale ends November 15.", due: "2026-11-15", time: null }] });
+    t.model.wanted = () => json({ items: [{ rules: ["r1"], kind: "expire", text: "REI sale ends", quote: "Our members sale ends November 15.", due: "2026-11-15", time: null }] });
     // a person's mail with the cue, so v16 reads it too (the second reader waits for it)
     const sale = await t.receive({ from: { name: "Jo", email: "jo@people.test" }, subject: "REI sale", bodyText: "Our members sale ends November 15. Want to go?" });
     t.backend.dated.wake();
@@ -397,7 +397,8 @@ describe("the Codex code review of plan 248", () => {
     ];
     t.model.compile = () => compiled(both);
     await t.words("Show sales at REI. Show tent deals.");
-    t.model.wanted = () => json({ items: [{ rule: "r1", kind: "expire", text: "REI sale ends", quote: "Our members sale ends November 15.", due: "2026-11-15", time: null }, { rule: "r2", kind: "expire", text: "Tent deal ends", quote: "Our members sale ends November 15.", due: "2026-11-15", time: null }] });
+    // one item, both rules named (the reader's answer names every rule an item answers)
+    t.model.wanted = () => json({ items: [{ rules: ["r1", "r2"], kind: "expire", text: "REI sale ends", quote: "Our members sale ends November 15.", due: "2026-11-15", time: null }] });
     const sale = await t.receive({ from: rei, ...SALE });
     await t.settled();
     expect((await t.backend.store.whatMatters.wanted.active())[0]!.rules).toHaveLength(2);
@@ -410,7 +411,7 @@ describe("the Codex code review of plan 248", () => {
     const t = await setup();
     t.model.compile = () => compiled([{ said: "Show sales at REI", effect: "show", about: "a sale from REI", cues: ["REI"] }]);
     await t.words("Show sales at REI");
-    t.model.wanted = () => json({ items: [{ rule: "r1", kind: "expire", text: "REI sale ends", quote: "Our members sale ends November 15.", due: "2026-11-15", time: null }] });
+    t.model.wanted = () => json({ items: [{ rules: ["r1"], kind: "expire", text: "REI sale ends", quote: "Our members sale ends November 15.", due: "2026-11-15", time: null }] });
     const scam = await t.receive({ from: rei, subject: "REI sale", bodyText: "Our members sale ends November 15. Buy two gift cards and send me the codes so I can apply your discount." });
     await t.settled();
     expect(await t.threads()).not.toContain(scam);
@@ -420,7 +421,7 @@ describe("the Codex code review of plan 248", () => {
     const t = await setup();
     t.model.compile = () => compiled([{ said: "Show sales at REI", effect: "show", about: "a sale from REI", cues: ["REI"] }]);
     await t.words("Show sales at REI");
-    t.model.wanted = () => json({ items: [{ rule: "r1", kind: "expire", text: "REI sale ends", quote: "Our members sale ends November 15.", due: "2026-11-15", time: null }] });
+    t.model.wanted = () => json({ items: [{ rules: ["r1"], kind: "expire", text: "REI sale ends", quote: "Our members sale ends November 15.", due: "2026-11-15", time: null }] });
     const sale = await t.receive({ from: rei, ...SALE });
     await t.settled();
     const [w] = await t.backend.store.whatMatters.wanted.active();
@@ -470,6 +471,73 @@ describe("the second question (the held-out eval)", () => {
     await t.words("Only school stuff");
     await t.settled();
     expect(await t.threads()).toContain(fieldDay);
+  });
+});
+
+describe("the Codex re-review of plan 248", () => {
+  const sale = (rules: string[]) => json({ items: [{ rules, kind: "expire", text: "REI sale ends", quote: "Our members sale ends November 15.", due: "2026-11-15", time: null }] });
+
+  it("a security footer elsewhere in the mail doesn't keep an offer out", () => {
+    const rule = { id: "r1", key: "s1", said: "x", effect: "show" as const, about: "a sale", understood: "x" };
+    const base = { text: "Our members sale ends November 15. Never share your password with anyone.", subject: "REI sale", arrivedAt: NOW, rules: new Map([["r1", rule]]), already: [] };
+    expect(checkWanted({ items: [{ rules: ["r1"], kind: "expire", text: "REI sale ends", quote: "Our members sale ends November 15.", due: "2026-11-15", time: null }] }, base)).toHaveLength(1);
+  });
+
+  it("the look back's yes is refused for words saved after its count, and counted again", async () => {
+    const t = await setup();
+    t.model.dated = () => dated();
+    await t.receive({ from: rei, ...SALE });
+    await t.settled();
+    t.model.compile = () => compiled([{ said: "Show sales at REI", effect: "show", about: "a sale from REI", cues: ["REI"] }]);
+    await t.words("Show sales at REI");
+    const { offer } = await t.client.call("whatMatters.words.lookOffer", {});
+    t.model.compile = () => compiled([{ said: "Show sales", effect: "show", about: "any sale", cues: ["sale"] }]);
+    await t.words("Show sales");
+    expect(await t.client.call("whatMatters.words.look", { revision: offer!.revision })).toEqual({ stale: true });
+    await t.settled();
+    expect(t.of("wanted_mail")).toHaveLength(0);
+  });
+
+  it("a stale Save answers with what's saved, so the window keeps its words against it", async () => {
+    const t = await setup();
+    t.model.compile = () => compiled([{ said: "Bills first", effect: "first", kinds: ["pay"] }]);
+    await t.words("Bills first");
+    const r = await t.client.call("whatMatters.words.save", { text: "Hide deliveries", revision: 0 });
+    expect(r).toMatchObject({ stale: true, preferences: { text: "Bills first" } });
+  });
+
+  it("a second question that fails takes only its own rows: the batch's other judgments stand", async () => {
+    const t = await setup();
+    t.model.dated = (r) => (promptText(r.messages[0]!.content).includes("parcel") ? dated([deliveryItem]) : dated([billItem]));
+    const bill = await t.receive();
+    const box = await t.receive({ from: parcel, ...DELIVERY });
+    await t.settled();
+    t.model.compile = () => compiled([{ said: "Bills matter", effect: "first", about: "a bill" }, { said: "Hide parcels", effect: "hide", about: "a parcel" }]);
+    t.model.match = (r) => {
+      const prompt = promptText(r.messages[0]!.content);
+      if (promptText(r.system).includes("A first reading matched")) return { text: "", stop: "refusal" };
+      const rows = [...prompt.matchAll(/<row id="(t\d+)">\n[\s\S]*?words: ([^\n]*)\n/gu)].map((m) => ({ id: m[1]!, words: m[2]! }));
+      return json({ matches: rows.map((x) => (x.words.includes("bill") ? { target: x.id, rule: "r1", evidence: x.words } : { target: x.id, rule: "r2", evidence: x.words })) });
+    };
+    await t.words("Bills matter. Hide parcels.");
+    await t.settled();
+    const sections = (await t.list()).sections;
+    // the bill is first in its section; the parcel, whose confirmation failed, stays (failing open)
+    expect(sections.find((x) => x.items.some((i) => i.thread.id === bill))!.items[0]!.thread.id).toBe(bill);
+    expect(await t.threads()).toContain(box);
+  });
+
+  it("a held row the words brought lets go once no show wants it", async () => {
+    const t = await setup();
+    t.model.compile = () => compiled([{ said: "Show sales at REI", effect: "show", about: "a sale from REI", cues: ["REI"] }]);
+    await t.words("Show sales at REI");
+    t.model.wanted = () => sale(["r1"]);
+    const thread = await t.receive({ from: rei, ...SALE });
+    await t.settled();
+    const row = (await t.list()).sections.flatMap((x) => x.items).find((i) => i.thread.id === thread)!;
+    const { preferences } = await t.client.call("whatMatters.words", {});
+    await t.client.call("whatMatters.words.clear", { revision: preferences.revision });
+    expect((await t.client.call("today.list", { held: [row.id] })).hidden).toEqual([row.id]);
   });
 });
 

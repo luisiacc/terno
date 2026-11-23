@@ -66,6 +66,8 @@ export interface PreferenceNote {
   kind: PreferenceNoteKind;
   /** the app's language */
   text: string;
+  /** a note the app wrote (not the compile): its catalog message, so each window says it in its own language */
+  i18n?: { key: string; params?: Readonly<Record<string, string | number>> };
 }
 
 /** The record (`whatMatters:preferences`, the store's small values), written only through `whatMatters.save` (revision-checked). */
@@ -95,7 +97,13 @@ export interface PreferencesDraft {
 export const activeRules = (p: WhatMattersPreferences | null | undefined): readonly PreferenceRule[] => (p && p.text.trim() ? p.rules : []);
 
 /** A rule needs a model's judgment (a criterion or an exception), or its exact parts decide. */
-export const isSemantic = (r: Pick<PreferenceRule, "about" | "unless">): boolean => !!r.about?.trim() || !!r.unless?.trim();
+const semantic = new WeakMap<object, boolean>();
+/** (once per rule object: it's asked for every row, for every rule, on every projection) */
+export const isSemantic = (r: Pick<PreferenceRule, "about" | "unless">): boolean => {
+  let v = semantic.get(r);
+  if (v === undefined) semantic.set(r, (v = !!r.about?.trim() || !!r.unless?.trim()));
+  return v;
+};
 
 const squash = (s: string) => normalizeText(s).replace(/\s+/g, " ").trim();
 
@@ -164,35 +172,90 @@ const NAME_STOP = new Set(["the", "and", "inc", "llc", "ltd", "corp", "company",
  * its first distinctive word is a domain label ("Greenview Property Management" → greenview.test). A display name can lie;
  * a hide of it is no harm, and a show only admits mail to the second reader and its safety checks.
  */
-export function nameMatches(name: string, t: Pick<PreferenceTarget, "senderKey" | "senderName">): boolean {
-  const flatName = words(name).trim();
-  if (flatName.length < 2) return false;
-  // the distinctive words of a name: what's left of "Riverside Rovers soccer club" is "riverside rovers", of "mr. Okafor" "okafor"
-  const distinct = (s: string) => words(s).trim().split(" ").map((w) => w.replace(/\.$/u, "")).filter((w) => w.length >= 3 && !NAME_STOP.has(w) && !NAME_EXTRA.has(w) && !TITLES.has(w));
-  // a person by a title and one name ("mr. Okafor", "Dra. Ferrer"): that name, a whole word of the sender's name or address
-  const titled = words(name).trim().split(" ").map((w) => w.replace(/\.$/u, ""));
-  if (titled.length === 2 && TITLES.has(titled[0]!) && titled[1]!.length >= 3) {
-    const surname = titled[1]!;
-    if (t.senderName && words(t.senderName).includes(` ${surname} `)) return true;
-    const at = t.senderKey.lastIndexOf("@");
-    if (at > 0 && t.senderKey.slice(0, at).split(/[._+-]+/u).includes(surname)) return true;
-  }
-  if (t.senderName) {
-    const sender = words(t.senderName);
-    if (sender.includes(` ${flatName} `)) return true;
-    // the sender's own distinctive words all in the name ("Riverside Rovers" for "the Riverside Rovers soccer club")
-    const theirs = distinct(t.senderName);
-    const named = new Set(distinct(name));
-    if (theirs.length && theirs.some((w) => w.length >= 4) && theirs.every((w) => named.has(w))) return true;
+/** A name as the rules match it, normalized once (the Astra review: names were split and normalized per row, per rule). */
+interface CompiledName {
+  flat: string;
+  /** a title and one name ("mr. Okafor"): that name */
+  surname: string | null;
+  /** its distinctive words, as a set */
+  named: ReadonlySet<string>;
+  compact: string;
+  /** its distinctive words of four letters or more, letters only: a domain's own label may be one */
+  labelWords: readonly string[];
+}
+/** A row's sender, normalized once. */
+interface CompiledSender {
+  /** the sender's name as whole words, padded */
+  name: string | null;
+  theirs: readonly string[];
+  labels: readonly string[];
+  local: readonly string[];
+  /** each name's answer for this sender, worked out once */
+  hits: Map<string, boolean>;
+}
+
+const distinctWords = (s: string): string[] => words(s).trim().split(" ").map((w) => w.replace(/\.$/u, "")).filter((w) => w.length >= 3 && !NAME_STOP.has(w) && !NAME_EXTRA.has(w) && !TITLES.has(w));
+const compiledNames = new Map<string, CompiledName>();
+function compileName(name: string): CompiledName {
+  let c = compiledNames.get(name);
+  if (c) return c;
+  const flat = words(name).trim();
+  const titled = flat.split(" ").map((w) => w.replace(/\.$/u, ""));
+  const distinct = distinctWords(name);
+  c = { flat, surname: titled.length === 2 && TITLES.has(titled[0]!) && titled[1]!.length >= 3 ? titled[1]! : null, named: new Set(distinct), compact: LETTERS(name), labelWords: distinct.filter((w) => w.length >= 4).map(LETTERS) };
+  // (bounded: the names of at most 20 rules, kept across saves; cleared well past what any words hold)
+  if (compiledNames.size > 500) compiledNames.clear();
+  compiledNames.set(name, c);
+  return c;
+}
+// by sender, across projections: most rows share a few senders, and each projection would otherwise work them out again
+const compiledSenders = new Map<string, CompiledSender>();
+const SENDERS_KEPT = 10_000;
+/** a row's own (its target object), before the shared one by sender: no key built per call */
+const sendersOf = new WeakMap<object, CompiledSender>();
+function compileSender(t: Pick<PreferenceTarget, "senderKey" | "senderName">): CompiledSender {
+  let c = sendersOf.get(t);
+  if (c) return c;
+  const key = `${t.senderKey}\u0001${t.senderName ?? ""}`;
+  c = compiledSenders.get(key);
+  if (c) {
+    sendersOf.set(t, c);
+    return c;
   }
   const at = t.senderKey.lastIndexOf("@");
-  if (at < 0) return false;
-  const labels = t.senderKey.slice(at + 1).split(".").slice(0, -1);
-  const local = t.senderKey.slice(0, at).split(/[._+-]+/u);
-  const compact = LETTERS(name);
-  if (compact.length >= 3 && (labels.includes(compact) || local.includes(compact))) return true;
+  c = {
+    name: t.senderName ? words(t.senderName) : null,
+    theirs: t.senderName ? distinctWords(t.senderName) : [],
+    labels: at < 0 ? [] : t.senderKey.slice(at + 1).split(".").slice(0, -1),
+    local: at <= 0 ? [] : t.senderKey.slice(0, at).split(/[._+-]+/u),
+    hits: new Map(),
+  };
+  if (compiledSenders.size >= SENDERS_KEPT) compiledSenders.clear();
+  compiledSenders.set(key, c);
+  sendersOf.set(t, c);
+  return c;
+}
+
+export function nameMatches(name: string, t: Pick<PreferenceTarget, "senderKey" | "senderName">): boolean {
+  const s = compileSender(t);
+  let hit = s.hits.get(name);
+  if (hit === undefined) s.hits.set(name, (hit = matchName(compileName(name), s)));
+  return hit;
+}
+
+function matchName(n: CompiledName, s: CompiledSender): boolean {
+  if (n.flat.length < 2) return false;
+  // a person by a title and one name ("mr. Okafor", "Dra. Ferrer"): that name, a whole word of the sender's name or address
+  if (n.surname && ((s.name && s.name.includes(` ${n.surname} `)) || s.local.includes(n.surname))) return true;
+  if (s.name) {
+    if (s.name.includes(` ${n.flat} `)) return true;
+    // the sender's own distinctive words all in the name ("Riverside Rovers" for "the Riverside Rovers soccer club")
+    if (s.theirs.length && s.theirs.some((w) => w.length >= 4) && s.theirs.every((w) => n.named.has(w))) return true;
+  }
+  if (!s.labels.length && !s.local.length) return false;
+  if (n.compact.length >= 3 && (s.labels.includes(n.compact) || s.local.includes(n.compact))) return true;
   // a distinctive word of the name as the domain's own label ("Greenview Property Management" → greenview.com)
-  return distinct(name).some((w) => w.length >= 4 && labels.includes(LETTERS(w)));
+  return n.labelWords.some((w) => s.labels.includes(w));
 }
 
 /** a person's titles, read past ("mr. Okafor" is Okafor) */
@@ -319,7 +382,11 @@ const NOTE_KINDS: ReadonlySet<string> = new Set(["unsupported", "conflict", "unc
  * domain only when the text writes it (a model can't invent one); kinds and effect from the closed sets; at least one
  * selector; cues only on a show. A rule that fails becomes an "unclear" note with its words, in `unclear`'s language.
  */
-export function checkPreferences(compiled: CompiledPreferences, text: string, unclear: (said: string) => string): { rules: PreferenceRule[]; notes: PreferenceNote[] } {
+export function checkPreferences(compiled: CompiledPreferences, text: string, unclear: (said: string) => string | Pick<PreferenceNote, "text" | "i18n">): { rules: PreferenceRule[]; notes: PreferenceNote[] } {
+  const unclearNote = (s: string): PreferenceNote => {
+    const u = unclear(s);
+    return { said: s, kind: "unclear", ...(typeof u === "string" ? { text: u } : u) };
+  };
   const flat = squash(text);
   const inText = (s: string) => {
     const w = squash(s).replace(/^["'“”«»]+|["'“”«».,;:!?]+$/gu, "");
@@ -334,7 +401,7 @@ export function checkPreferences(compiled: CompiledPreferences, text: string, un
   for (const r of compiled.rules) {
     const said = trimTo(r.said, PREFERENCES_TEXT_MAX);
     const effect = r.effect.trim().toLowerCase();
-    const fail = () => said && inText(said) && note({ said, kind: "unclear", text: unclear(said) });
+    const fail = () => said && inText(said) && note(unclearNote(said));
     if (!said || !inText(said) || !PREFERENCE_EFFECTS.includes(effect as PreferenceEffect)) {
       fail();
       continue;
@@ -382,7 +449,7 @@ export function checkPreferences(compiled: CompiledPreferences, text: string, un
     if (seen.has(rule.key)) continue;
     seen.add(rule.key);
     if (rules.length < PREFERENCE_RULES_MAX) rules.push(rule);
-    else note({ said, kind: "unclear", text: unclear(said) });
+    else note(unclearNote(said));
   }
   for (const n of compiled.notes) {
     const kind = n.kind.trim().toLowerCase();

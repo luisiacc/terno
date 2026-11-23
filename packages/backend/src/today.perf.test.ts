@@ -41,11 +41,14 @@ async function words(store: MailStore, now: number) {
     rule.key = ruleKey(rule);
     return rule;
   };
+  // (the judged ones reach the items, which get verdicts below; the names reach every row, the 2,000 waiting conversations too,
+  // whose senders and subjects the count then reads: the Astra review's costliest case)
+  const items = [...DATED_KINDS];
   const rules: PreferenceRule[] = [
     ...Array.from({ length: 5 }, (_, i) => make({ effect: "hide", senders: [`@nobody${i}.test`] }, i)),
-    ...Array.from({ length: 5 }, (_, i) => make({ effect: "first", names: [`Nobody ${i} Inc`] }, 5 + i)),
-    ...Array.from({ length: 5 }, (_, i) => make({ effect: "hide", about: `mail about topic ${i}` }, 10 + i)),
-    ...Array.from({ length: 4 }, (_, i) => make({ effect: "first", about: `mail about subject ${i}` }, 15 + i)),
+    ...Array.from({ length: 5 }, (_, i) => make({ effect: "first", names: [`Nobody ${i} Holdings Inc`] }, 5 + i)),
+    ...Array.from({ length: 5 }, (_, i) => make({ effect: "hide", kinds: items, about: `mail about topic ${i}` }, 10 + i)),
+    ...Array.from({ length: 4 }, (_, i) => make({ effect: "first", kinds: items, about: `mail about subject ${i}` }, 15 + i)),
     make({ effect: "show", about: "a sale from nobody", cues: ["nobody sale"] }, 19),
   ];
   const saved = await store.whatMatters.preferences.save({ text: "twenty rules", rules, notes: [], compiledWith: null, savedAt: now, language: "en" }, (await store.whatMatters.preferences.get()).revision);
@@ -330,7 +333,12 @@ async function run(kind: "SQLite" | "IndexedDB", budget: { spread: Gate; bound: 
     // for every row the judged ones reach, so the projection reads them in one batch and asks the worker nothing. Last:
     // the verdicts it writes would weigh on the scenarios above (their history is without them)
     await words(backend.store, NOW + 2 * DAY);
+    backend.words.reload();
+    // the rules are the service's: 20 of them, and every row they reach already judged
+    expect(await backend.words.rules()).toHaveLength(20);
     backend.today.changed();
+    await backend.today.list([]);
+    await backend.today.withCount(await backend.store.threads.counts(NOW + 2 * DAY));
     await measure("Combined bounds, 20 rules of the user's words", NOW + 2 * DAY, budget.linked);
     expect(backend.words.worker.status().applying).toBeNull();
   } finally {

@@ -54,8 +54,10 @@ export interface WordsHost {
   /** plan 211: an account's mail is read only where both AI and What matters are on */
   readonly gate: Pick<AccountGate, "reads">;
   forTask(o: { foreground: boolean }): Promise<AiTasks>;
-  /** what What matters holds or shows changed: the list and the count read again */
+  /** what What matters holds changed (items came, closed or moved): the list and the count read again */
   changed(): void;
+  /** only what shows changed (verdicts): the list and the count project again, nothing re-read (the Astra review) */
+  shown(): void;
   /** the words' record, the draft or the status changed: the windows read them again */
   emit(state: PreferencesState): void;
   runBudgeted<T>(items: readonly T[], work: (chunk: T[]) => void | Promise<void>): Promise<void>;
@@ -78,8 +80,15 @@ export interface PreferencesStatus {
   blockedBy: { kind: AiErrorKind; message: string; i18n?: I18nRef } | null;
 }
 
-const MAX_ATTEMPTS = 3;
 const RETRY_WAIT_MS = 60_000;
+/** a failed verdict (refused, gated off) holds this long, then the row is asked again */
+const FAILED_KEPT_MS = 60 * 60_000;
+/** the matcher's queue at most (rows a projection found unjudged, newest kept) */
+const QUEUE_MAX = 4000;
+/** the second reader's marks read for one drain */
+const MARKS_READ = 1000;
+/** status to the windows at most this often while work runs */
+const STATUS_EVERY_MS = 1000;
 /** a new row a semantic hide could reach waits this long for its verdict at most (the Codex review's revision 8) */
 export const WITHHOLD_MS = 10 * 60_000;
 const LOOK_DAYS = 14;
@@ -115,13 +124,28 @@ export interface RowTarget extends PreferenceTarget {
   waitingSince?: number;
 }
 
+/** a row's target, made once per row object (the projection's rows are cached between changes: no hash each time) */
+const targetsOfRows = new WeakMap<object, RowTarget>();
+
 export function datedTarget(r: DatedRow): RowTarget {
+  let t = targetsOfRows.get(r);
+  if (!t) targetsOfRows.set(r, (t = makeDatedTarget(r)));
+  return t;
+}
+
+function makeDatedTarget(r: DatedRow): RowTarget {
   const wanted = r.id < 0;
   const id = wanted ? -r.id : r.id;
   return { key: `${wanted ? "n" : "d"}:${id}:${rowPrint(r.kind, r.text, r.quote, r.dueDay)}`, source: wanted ? "wanted" : "dated", id, threadId: r.threadId, messageId: r.messageId, kind: r.kind, senderKey: r.senderKey, since: r.createdAt, text: r.text, quote: r.quote };
 }
 
 export function promiseTarget(p: FollowupRow): RowTarget {
+  let t = targetsOfRows.get(p);
+  if (!t) targetsOfRows.set(p, (t = makePromiseTarget(p)));
+  return t;
+}
+
+function makePromiseTarget(p: FollowupRow): RowTarget {
   return { key: `p:${p.id}:${rowPrint(p.text, p.quote, p.dueAt)}`, source: "promise", id: p.id, threadId: p.threadId, messageId: p.messageId, kind: "promise", senderKey: p.personEmail ? addressKey(p.personEmail) : "", ...(p.personName ? { senderName: p.personName } : {}), since: p.createdAt, text: p.text, quote: p.quote ?? "" };
 }
 
@@ -189,24 +213,28 @@ export class WhatMattersWords {
    * Save: the words compiled (the user's provider, sees no mail), checked against the words themselves, and saved against
    * the revision they were typed on. Words over the limit are refused, never cut; empty words are Clear.
    */
-  async save(text: string, expect: number, signal?: AbortSignal): Promise<{ preferences: WhatMattersPreferences } | { stale: true }> {
+  async save(text: string, expect: number, signal?: AbortSignal): Promise<{ preferences: WhatMattersPreferences } | { stale: true; preferences: WhatMattersPreferences }> {
     if (text.length > PREFERENCES_TEXT_MAX) throw new AiError(L("errors.whatMatters.wordsTooLong", { max: PREFERENCES_TEXT_MAX }), "invalid_output");
     if (!text.trim()) {
       const cleared = await this.clear(expect);
-      return "stale" in cleared ? cleared : { preferences: cleared.preferences };
+      return "stale" in cleared ? { stale: true, preferences: await this.record() } : { preferences: cleared.preferences };
     }
     const settings = await this.host.settings();
     const language = await readerLanguage(this.host.store, settings);
     const ai = await this.host.forTask({ foreground: true });
     const compiled = await ai.compilePreferences({ text, language }, signal);
-    const { rules, notes } = checkPreferences(compiled, text, (said) => L("whatMatters.words.unclear", { said: said.slice(0, 80) }).message);
+    // the app's own note in each window's language (its catalog message, the Fable review), the compile's in the words'
+    const { rules, notes } = checkPreferences(compiled, text, (said) => {
+      const l = L("whatMatters.words.unclear", { said: said.slice(0, 80) });
+      return { text: l.message, i18n: { key: l.key, ...(l.params ? { params: l.params } : {}) } };
+    });
     const saved = await this.host.store.whatMatters.preferences.save(
       { text, rules, notes, compiledWith: { version: PREFERENCES_COMPILER_VERSION, provider: ai.providerId, model: ai.model }, savedAt: this.host.now(), language },
       expect,
     );
     if (!saved) {
       this.cache = null;
-      return { stale: true };
+      return { stale: true, preferences: await this.record() };
     }
     await this.dropDraft();
     await this.changed(saved);
@@ -251,8 +279,44 @@ export class WhatMattersWords {
     return { preferences: saved };
   }
 
+  // ─── verdicts, kept in memory for the projection (only the worker writes them) ───
+
+  private verdictCache = new Map<string, PreferenceVerdict & { failed: boolean }>();
+  private verdictBasisCached = "";
+
+  /** One store read for the keys the cache hasn't seen (the projection runs on every mailbox change: the Fable review). */
+  private async verdictsOf(keys: readonly string[], basis: string): Promise<Map<string, PreferenceVerdict & { failed: boolean }>> {
+    if (basis !== this.verdictBasisCached) {
+      this.verdictCache.clear();
+      this.verdictBasisCached = basis;
+    }
+    const missing = keys.filter((k) => !this.verdictCache.has(k));
+    if (missing.length) {
+      const read = await this.host.store.whatMatters.verdicts.get(missing);
+      if (this.verdictCache.size + read.size > PREFERENCE_VERDICTS_MAX) this.verdictCache.clear();
+      for (const [k, v] of read) this.verdictCache.set(k, v);
+    }
+    const out = new Map<string, PreferenceVerdict & { failed: boolean }>();
+    for (const k of keys) {
+      const v = this.verdictCache.get(k);
+      if (v) out.set(k, v);
+    }
+    return out;
+  }
+
+  /** The worker wrote verdicts: the cache takes them as written. */
+  noteVerdicts(rows: readonly (PreferenceVerdict & { failed?: boolean })[]): void {
+    for (const v of rows) if (v.basis === this.verdictBasisCached) this.verdictCache.set(v.target, { ...v, failed: v.failed === true });
+  }
+
+  /** verdicts pruned or cleared: read again from the store */
+  forgetVerdicts(): void {
+    this.verdictCache.clear();
+  }
+
   /** Clear AI data: what AI made of the words goes (verdicts, wanted items, marks); the words stay, they're the user's */
   async clearAiData(): Promise<void> {
+    this.forgetVerdicts();
     await this.worker.stop();
     await this.host.store.whatMatters.verdicts.clear();
     await this.host.store.whatMatters.wanted.clear();
@@ -263,18 +327,22 @@ export class WhatMattersWords {
    * The projection's view of the words: none (null) for the empty box, so nothing else runs. The verdicts for `targets` are
    * read in one batch; those a semantic rule could reach and that have no current verdict are handed to the worker.
    */
-  async visibility(targets: readonly RowTarget[], o: { ask: boolean }): Promise<Visibility | null> {
+  async visibility(targets: readonly RowTarget[], o: { ask: boolean; from?: "list" | "count" }): Promise<Visibility | null> {
     const record = await this.record();
     const rules = activeRules(record);
     if (!rules.length) return null;
     const basis = verdictBasis(rules);
-    const reaching = targets.filter((t) => semanticReaching(rules, t).length);
-    const verdicts = reaching.length ? await this.host.store.whatMatters.verdicts.get(reaching.map((t) => t.key)) : new Map<string, PreferenceVerdict & { failed: boolean }>();
     const now = this.host.now();
+    // a row an exact hide already takes away isn't asked about (no verdict could bring it back: the Fable review)
+    const exactHides = rules.filter((r) => r.effect === "hide" && !isSemantic(r));
+    const reaching = targets.filter((t) => semanticReaching(rules, t).length && !exactHides.some((r) => exactlyReaches(r, t)));
+    const verdicts = reaching.length ? await this.verdictsOf(reaching.map((t) => t.key), basis) : new Map<string, PreferenceVerdict & { failed: boolean }>();
+    // a failure is a verdict for a while only: then it's asked again (an outage never ends a rule for good, the Fable review)
+    for (const [key, v] of verdicts) if (v.failed && now - v.at > FAILED_KEPT_MS) verdicts.delete(key);
     const savedAt = record.savedAt ?? 0;
     const blocked = this.worker.blocked();
     const unjudged = reaching.filter((t) => verdicts.get(t.key)?.basis !== basis);
-    if (o.ask && (unjudged.length || reaching.length)) this.worker.want(unjudged, reaching.map((t) => t.key));
+    if (o.ask && reaching.length) this.worker.want(unjudged, reaching.map((t) => t.key), o.from ?? "list");
     return {
       rules,
       basis,
@@ -294,24 +362,37 @@ export class WhatMattersWords {
   // ─── the look back ───────────────────────────────────────────────────────
 
   /** How many of the last 14 days' messages the show rules may want, and what reading them would cost (input and output tokens). */
-  async lookOffer(): Promise<{ count: number; tokensIn: number; tokensOut: number } | null> {
+  async lookOffer(): Promise<{ count: number; tokensIn: number; tokensOut: number; revision: number; looked: boolean } | null> {
+    const { revision } = await this.record();
     const rules = (await this.rules()).filter((r) => r.effect === "show");
     if (!rules.length) return null;
+    // looked already for these words: a second yes would buy the same readings again (the Astra and Fable reviews)
+    if ((await this.host.store.settings.get<number | null>(LOOK_REVISION_KEY, null)) === revision) return { count: 0, tokensIn: 0, tokensOut: 0, revision, looked: true };
     const picks = await this.lookPicks(rules);
-    return { count: picks.length, tokensIn: picks.length * WANTED_TOKENS_IN, tokensOut: picks.length * WANTED_TOKENS_OUT };
+    // the yes reads what was counted, without walking the mailbox again
+    this.offered = { revision, picks };
+    return { count: picks.length, tokensIn: picks.length * WANTED_TOKENS_IN, tokensOut: picks.length * WANTED_TOKENS_OUT, revision, looked: false };
   }
+
+  /** the last offer's picks, for its words */
+  private offered: { revision: number; picks: Awaited<ReturnType<WhatMattersWords["lookPicks"]>> } | null = null;
 
   /**
    * The user's yes: the picks marked for the second reader, after new mail. The yes is for these words (the Codex code
    * review): it's recorded with their revision, and the worker reads the look's marks only while that's still the words'
    * (a Clear or another Save meanwhile drops them, never reads old mail under new rules).
    */
-  async look(): Promise<number> {
+  async look(offered: number): Promise<number | "stale"> {
+    // the yes is for the words and the count it was shown with: words saved since (another window) are asked again
     const { revision } = await this.record();
+    if (revision !== offered) return "stale";
     const rules = (await this.rules()).filter((r) => r.effect === "show");
     if (!rules.length) return 0;
-    const picks = await this.lookPicks(rules);
-    if ((await this.host.store.whatMatters.preferences.get()).revision !== revision) return 0;
+    // a yes is once per words: a second (a double click, another window) queues nothing more
+    if ((await this.host.store.settings.get<number | null>(LOOK_REVISION_KEY, null)) === revision) return 0;
+    const picks = this.offered?.revision === revision ? this.offered.picks : await this.lookPicks(rules);
+    this.offered = null;
+    if ((await this.host.store.whatMatters.preferences.get()).revision !== revision) return "stale";
     await this.host.store.settings.set(LOOK_REVISION_KEY, revision);
     const now = this.host.now();
     let n = 0;
@@ -328,7 +409,17 @@ export class WhatMattersWords {
 
   /** Plan 248's daily bounds: what the words brought that's over is closed, so their open bound holds only what can show. */
   async daily(): Promise<void> {
+    const shows = (await this.rules()).filter((r) => r.effect === "show");
+    if (!shows.length) return;
     await this.worker.retire();
+    // and what's done or no show wants any more goes past its days, with the words unchanged too (the Astra review)
+    await this.host.store.whatMatters.wanted.reconcile(new Set(shows.map((r) => r.key)), this.host.now());
+  }
+
+  /** The record read again from the store (a test that writes it directly; nothing in the app does). */
+  reload(): void {
+    this.cache = null;
+    this.forgetVerdicts();
   }
 
   private async lookPicks(rules: readonly PreferenceRule[]) {
@@ -337,10 +428,14 @@ export class WhatMattersWords {
     const walked = await store.whatMatters.wanted.lookCandidates(now - LOOK_DAYS * 86_400_000, LOOK_WALK);
     const silence = await silenceOf(store);
     const picks: typeof walked = [];
+    // the bodies only when a cue may be in one (a rule by sender or name alone decides on the headers)
+    const needsText = rules.some((r) => r.cues?.length);
     await this.host.runBudgeted(walked, async (chunk) => {
+      // the cap reached, nothing more is read (the Astra review)
+      if (picks.length >= WANTED_LOOK_MAX) return;
       const open = chunk.filter((m) => this.host.gate.reads(m.accountId) && !silenced({ senderKey: addressKey(m.fromEmail), date: m.date }, silence));
       if (!open.length) return;
-      const texts = await store.aiSummaries.text(open.map((m) => ({ messageId: m.id, limit: WANTED_TEXT_CHARS })));
+      const texts = needsText ? await store.aiSummaries.text(open.map((m) => ({ messageId: m.id, limit: WANTED_TEXT_CHARS }))) : new Map<number, string>();
       for (const m of open) {
         if (picks.length >= WANTED_LOOK_MAX) return;
         if (wantedBy(rules, { senderKey: addressKey(m.fromEmail), subject: m.subject, fromName: m.fromName, text: withoutQuotes(texts.get(m.id) ?? "") }).length) picks.push(m);
@@ -367,15 +462,20 @@ export class PreferenceWorker {
   private again = false;
   private generation = new AbortController();
   private queue = new Map<string, RowTarget>();
-  private asked = new Set<string>();
+  /** the rows the last list and the last count reached: kept from the verdicts' prune (the Astra review) */
+  private asked = { list: new Set<string>(), count: new Set<string>() };
   private total = 0;
-  private attempts = new Map<string, number>();
-  private wantedAttempts = new Map<number, number>();
+  private lastStatus = "";
+  private statusAt = 0;
+  /** this drain's marks, read once (the Astra review: never re-read and re-sorted a page at a time) */
+  private markQueue: WantedMark[] | null = null;
   private leaving: Leaving | null = null;
   private paused: { kind: AiErrorKind; message: string; i18n?: I18nRef } | null = null;
   private heldUntil = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private lookLeft: number | null = null;
+  /** this drain's marks that wait (a body, v16's reading): passed over until the next wake */
+  private wantedChecked = false;
 
   constructor(
     private readonly host: WordsHost,
@@ -396,16 +496,34 @@ export class PreferenceWorker {
    * until the words change), the unjudged queued once each and the worker woken. Nothing queued, nothing runs; a pause or
    * a hold wakes nothing either (each mailbox change projects).
    */
-  want(targets: readonly RowTarget[], reaching: readonly string[]): void {
-    if (this.asked.size < PREFERENCE_VERDICTS_MAX) for (const key of reaching) this.asked.add(key);
+  want(targets: readonly RowTarget[], reaching: readonly string[], from: "list" | "count"): void {
+    this.asked[from] = new Set(reaching);
     let added = false;
     for (const t of targets) {
-      if (this.queue.has(t.key) || (this.attempts.get(t.key) ?? 0) >= MAX_ATTEMPTS) continue;
+      if (this.queue.has(t.key)) continue;
       this.queue.set(t.key, t);
       added = true;
     }
+    // bounded: the oldest asked go first (a later projection asks again for what still shows)
+    for (const key of this.queue.keys()) {
+      if (this.queue.size <= QUEUE_MAX) break;
+      this.queue.delete(key);
+    }
     this.total = Math.max(reaching.length, this.queue.size);
-    if (added && !this.blocked()) this.wake();
+    if (added) {
+      this.tick();
+      if (!this.blocked()) this.wake();
+    }
+  }
+
+  /** The status to the windows when it changed, at most every second while work runs (`force`: now). */
+  private tick(force = false): void {
+    const status = JSON.stringify(this.status());
+    if (status === this.lastStatus) return;
+    if (!force && this.host.now() - this.statusAt < STATUS_EVERY_MS) return;
+    this.lastStatus = status;
+    this.statusAt = this.host.now();
+    void this.words.state().then((s) => this.host.emit(s), () => {});
   }
 
   /** The words changed: work for the old ones stops; marks the new ones don't want go; wanted items' reasons are brought in step. */
@@ -414,9 +532,9 @@ export class PreferenceWorker {
     this.generation = new AbortController();
     this.leaving?.stop.abort();
     this.queue.clear();
-    this.attempts.clear();
-    this.asked.clear();
+    this.asked = { list: new Set(), count: new Set() };
     this.paused = null;
+    this.words.forgetVerdicts();
     const { store } = this.host;
     const shows = rules.filter((r) => r.effect === "show");
     if (!shows.length) await store.whatMatters.wanted.marks.clearLook();
@@ -448,12 +566,12 @@ export class PreferenceWorker {
   settingsChanged(settings: AppSettings, allowed: boolean): void {
     this.paused = null;
     this.heldUntil = 0;
-    if (!allowed || !settings.dated?.enabled) {
-      this.generation.abort();
-      this.generation = new AbortController();
-      this.leaving?.stop.abort();
-      if (!allowed) this.queue.clear();
-    }
+    // what's in flight stops, whatever moved: a provider switched mid-judgment must never get the follow-up question (the
+    // Codex re-review); what's queued is asked again on the provider now set
+    this.generation.abort();
+    this.generation = new AbortController();
+    this.leaving?.stop.abort();
+    if (!allowed) this.queue.clear();
     this.wake();
   }
 
@@ -498,13 +616,12 @@ export class PreferenceWorker {
       return;
     }
     this.running = true;
-    let worked = false;
+    this.markQueue = null;
+    this.wantedChecked = false;
     try {
       do {
         this.again = false;
         const generation = this.generation;
-        const settings = await this.host.settings();
-        if (!(await this.host.allowed(settings))) return;
         const record = await this.words.record();
         const rules = activeRules(record);
         if (!rules.length) {
@@ -512,16 +629,26 @@ export class PreferenceWorker {
           return;
         }
         if (this.paused || this.host.now() < this.heldUntil) return;
-        worked = true;
-        if (settings.dated?.enabled && rules.some((r) => r.effect === "show")) {
-          if ((await this.wantedPass(record, rules, settings, generation)) === "stop") return;
+        // nothing to judge and (for a show) nothing marked: done before any other read (the Astra and Fable reviews)
+        const shows = rules.some((r) => r.effect === "show");
+        if (!this.queue.size && (!shows || !(await this.host.store.whatMatters.wanted.marks.count()))) return;
+        const settings = await this.host.settings();
+        if (!(await this.host.allowed(settings))) return;
+        let more = false;
+        if (settings.dated?.enabled && shows) {
+          const read = await this.wantedPass(record, rules, settings, generation);
+          if (read === "stop") return;
+          more = read === "more";
         }
         if ((await this.matchPass(record, rules, generation)) === "stop") return;
+        // a page at a time: what's judged waits for no more than a page of a look back (the Codex re-review)
+        if (more) this.again = true;
       } while (this.again);
     } finally {
       this.running = false;
-      // the windows hear only when there was work (idle stays quiet)
-      if (worked) this.host.emit(await this.words.state());
+      this.markQueue = null;
+      // the windows hear only when what they show changed (idle stays quiet)
+      this.tick(true);
     }
   }
 
@@ -529,14 +656,34 @@ export class PreferenceWorker {
 
   private async matchPass(record: WhatMattersPreferences, rules: readonly PreferenceRule[], generation: AbortController): Promise<"next" | "stop"> {
     const basis = verdictBasis(rules);
+    const savedAt = record.savedAt ?? 0;
+    const { store } = this.host;
+    let wrote = false;
+    // what shows changes only with a verdict that applies a rule, or one for a row withheld meanwhile; the rest wait for the
+    // pass's end, one refresh for all of them (the Astra review: each batch re-read the whole of Today)
+    let owed = false;
+    const put = async (rows: (PreferenceVerdict & { failed?: boolean })[], urgent: boolean) => {
+      if (!(await store.whatMatters.verdicts.put(rows, record.revision))) return false;
+      this.words.noteVerdicts(rows);
+      wrote = true;
+      if (urgent) {
+        this.host.shown();
+        owed = false;
+      } else owed = true;
+      return true;
+    };
+    const fresh = (t: RowTarget) => t.since > savedAt && this.host.now() - t.since < WITHHOLD_MS;
     while (this.queue.size && !generation.signal.aborted) {
-      const batch = [...this.queue.values()].slice(0, MATCH_BATCH);
+      const batch: RowTarget[] = [];
+      for (const t of this.queue.values()) {
+        batch.push(t);
+        if (batch.length >= MATCH_BATCH) break;
+      }
       const built = await this.targetsOf(batch, rules);
-      const { store } = this.host;
-      // rows nothing can be sent for (Spam, Trash, an account not reading, gone) get a failed verdict: shown, never withheld
       const now = this.host.now();
+      // rows nothing can be sent for (Spam, Trash, an account not reading, gone): a failed verdict, shown, asked again later
       if (built.skipped.length) {
-        await store.whatMatters.verdicts.put(built.skipped.map((t) => ({ target: t.key, basis, rules: [], at: now, failed: true })), record.revision);
+        if (!(await put(built.skipped.map((t) => ({ target: t.key, basis, rules: [], at: now, failed: true })), built.skipped.some(fresh)))) return "stop";
         for (const t of built.skipped) this.queue.delete(t.key);
       }
       if (!built.targets.length) continue;
@@ -547,110 +694,93 @@ export class PreferenceWorker {
         const signal = AbortSignal.any([generation.signal, stop.signal]);
         const judged = await judgeRows(ai, rules, built.targets.map((b) => ({ row: b.row, target: b.target })), signal);
         if (signal.aborted) return "next";
-        const byTarget = judged;
-        const verdicts = built.targets.map((b) => ({ target: b.row.key, basis, rules: byTarget.get(b.row.key) ?? [], at: this.host.now() }));
-        if (!(await store.whatMatters.verdicts.put(verdicts, record.revision))) return "stop";
-        for (const b of built.targets) {
-          this.queue.delete(b.row.key);
-          this.attempts.delete(b.row.key);
-        }
-        this.host.changed();
+        const verdicts = built.targets.map((b) => ({ target: b.row.key, basis, rules: judged.rules.get(b.row.key) ?? [], at: this.host.now(), ...(judged.failed.has(b.row.key) && { failed: true }) }));
+        if (!(await put(verdicts, verdicts.some((v) => v.rules.length) || built.targets.some((b) => fresh(b.row))))) return "stop";
+        for (const b of built.targets) this.queue.delete(b.row.key);
+        this.tick();
       } catch (error) {
         if (stop.signal.aborted && !generation.signal.aborted) continue;
         if (generation.signal.aborted) return "stop";
         const verdict = await this.failed(error);
         if (verdict === "drop") {
-          // what can never be judged: shown, and not asked again until the words change
-          await store.whatMatters.verdicts.put(built.targets.map((b) => ({ target: b.row.key, basis, rules: [], at: this.host.now(), failed: true })), record.revision);
+          // what can never be judged (refused, invalid): shown, and asked again only after a while
+          if (!(await put(built.targets.map((b) => ({ target: b.row.key, basis, rules: [], at: this.host.now(), failed: true })), built.targets.some((b) => fresh(b.row))))) return "stop";
           for (const b of built.targets) this.queue.delete(b.row.key);
           continue;
         }
-        if (verdict === "retry") {
-          for (const b of built.targets) {
-            const tries = (this.attempts.get(b.row.key) ?? 0) + 1;
-            this.attempts.set(b.row.key, tries);
-            if (tries >= MAX_ATTEMPTS) {
-              await store.whatMatters.verdicts.put([{ target: b.row.key, basis, rules: [], at: this.host.now(), failed: true }], record.revision);
-              this.queue.delete(b.row.key);
-            }
-          }
-        }
-        this.host.changed();
+        // a provider's hiccup or a pause: the rows stay queued, asked when it's back (never a verdict: the Fable review)
+        if (owed) this.host.shown();
         return "stop";
       } finally {
         if (this.leaving?.stop === stop) this.leaving = null;
       }
     }
-    await this.host.store.whatMatters.verdicts.prune(basis, this.asked);
+    if (owed) this.host.shown();
+    if (wrote) {
+      await store.whatMatters.verdicts.prune(basis, new Set([...this.asked.list, ...this.asked.count]));
+      this.words.forgetVerdicts();
+    }
     return "next";
   }
 
-  /** Each row's words for the matcher, read locally, and only for a row whose source may go to AI now. */
+  /** Each row's words for the matcher, read locally (bodies in one batch), and only for a row whose source may go to AI now. */
   private async targetsOf(batch: readonly RowTarget[], rules: readonly PreferenceRule[]): Promise<{ targets: { row: RowTarget; target: MatchTarget; source: Leaving["sources"][number] }[]; skipped: RowTarget[] }> {
     const { store } = this.host;
     const silence = await silenceOf(store);
-    const targets: { row: RowTarget; target: MatchTarget; source: Leaving["sources"][number] }[] = [];
     const skipped: RowTarget[] = [];
+    const waiting = batch.filter((r) => r.source === "waiting");
+    const messages = waiting.length ? await store.today.waiting.rows(waiting.map((r) => ({ threadId: r.threadId, since: r.waitingSince ?? 0 })), this.host.now(), { messages: true }) : new Map();
+    const ready: { row: RowTarget; src: NonNullable<Awaited<ReturnType<MailStore["dated"]["source"]>>> }[] = [];
     for (const row of batch) {
-      if (!semanticReaching(rules, row).length) {
-        skipped.push(row);
-        continue;
-      }
-      let messageId = row.messageId;
-      if (row.source === "waiting") {
-        const acts = await store.today.waiting.rows([{ threadId: row.threadId, since: row.waitingSince ?? 0 }], this.host.now(), { messages: true });
-        messageId = acts.get(row.threadId)?.message ?? null;
-      }
-      if (messageId === null) {
-        skipped.push(row);
-        continue;
-      }
-      const src = await store.dated.source(messageId);
-      if (!src || src.spam || src.trash || src.threadSpam || !this.host.gate.reads(src.accountId) || silenced(src, silence)) {
-        skipped.push(row);
-        continue;
-      }
-      const text = withoutQuotes((await store.aiSummaries.text([{ messageId, limit: MATCH_EXCERPT_CHARS * 4 }])).get(messageId) ?? "");
-      const excerpt = excerptAround(text, row.quote, MATCH_EXCERPT_CHARS);
-      const id = `t${targets.length + 1}`;
-      targets.push({
-        row,
-        target: { id, kind: row.kind, text: row.source === "waiting" ? src.subject : row.text, from: src.fromName || src.fromEmail.split("@")[0]!, subject: src.subject, excerpt },
-        source: { messageId, threadId: row.threadId, senderKey: src.senderKey },
-      });
+      const messageId = row.source === "waiting" ? (messages.get(row.threadId)?.message ?? null) : row.messageId;
+      const src = semanticReaching(rules, row).length && messageId !== null ? await store.dated.source(messageId) : null;
+      if (!src || src.spam || src.trash || src.threadSpam || !this.host.gate.reads(src.accountId) || silenced(src, silence)) skipped.push(row);
+      else ready.push({ row, src });
     }
+    const texts = ready.length ? await store.aiSummaries.text(ready.map((r) => ({ messageId: r.src.id, limit: MATCH_EXCERPT_CHARS * 4 }))) : new Map<number, string>();
+    const targets = ready.map(({ row, src }, i) => ({
+      row,
+      target: { id: `t${i + 1}`, kind: row.kind, text: row.source === "waiting" ? src.subject : row.text, from: src.fromName || src.fromEmail.split("@")[0]!, subject: src.subject, excerpt: excerptAround(withoutQuotes(texts.get(src.id) ?? ""), row.quote, MATCH_EXCERPT_CHARS) },
+      source: { messageId: src.id, threadId: row.threadId, senderKey: src.senderKey },
+    }));
     return { targets, skipped };
   }
 
   // ─── the second reader ───────────────────────────────────────────────────
 
-  private async wantedPass(record: WhatMattersPreferences, rules: readonly PreferenceRule[], _settings: AppSettings, generation: AbortController): Promise<"next" | "stop"> {
+  /** A page of this drain's marks ("more": another waits); what waits (its body, v16's reading) waits for the next wake. */
+  private async wantedPass(record: WhatMattersPreferences, rules: readonly PreferenceRule[], _settings: AppSettings, generation: AbortController): Promise<"next" | "more" | "stop"> {
     const { store } = this.host;
-    await store.whatMatters.wanted.marks.prune(this.host.now());
-    // the look back's marks only for the words it was said yes to (the Codex code review)
-    if ((await store.whatMatters.wanted.marks.count("look")) && (await store.settings.get<number | null>(LOOK_REVISION_KEY, null)) !== record.revision) await store.whatMatters.wanted.marks.clearLook();
-    const shows = rules.filter((r) => r.effect === "show");
-    // page after page while something moves (a 300-message look back is six pages); what waits (its body, v16) stays
-    const waiting = new Set<number>();
-    for (;;) {
-      const marks = (await store.whatMatters.wanted.marks.page(MARKS_PAGE + waiting.size)).filter((m) => !waiting.has(m.messageId));
-      this.lookLeft = (await store.whatMatters.wanted.marks.count("look")) || null;
-      if (!marks.length) break;
-      for (const mark of marks) {
-        if (generation.signal.aborted) return "stop";
-        // the reader's switch, read again before each: turned off, nothing more is read
-        const settings = await this.host.settings();
-        if (!settings.dated?.enabled || !(await this.host.allowed(settings))) return "stop";
-        const next = await this.readOne(mark, record, shows, settings, generation);
-        if (next === "stop") return "stop";
-        if (next === "waits") waiting.add(mark.messageId);
-      }
+    if (!this.wantedChecked) {
+      // once a drain: marks past their days go, and what's over is retired so the open bound never refuses for old items
+      // (the Codex re-review: expired while the app was closed)
+      this.wantedChecked = true;
+      await store.whatMatters.wanted.marks.prune(this.host.now());
+      await this.retire();
     }
-    this.lookLeft = null;
-    return "next";
+    if (!this.markQueue) {
+      // the look back's marks only for the words it was said yes to (the Codex code review), read then with the rest
+      if ((await store.whatMatters.wanted.marks.count("look")) && (await store.settings.get<number | null>(LOOK_REVISION_KEY, null)) !== record.revision) await store.whatMatters.wanted.marks.clearLook();
+      this.markQueue = await store.whatMatters.wanted.marks.page(MARKS_READ);
+    }
+    this.lookLeft = this.markQueue.filter((m) => m.source === "look").length || null;
+    const marks = this.markQueue.splice(0, MARKS_PAGE);
+    if (!marks.length) return "next";
+    const shows = rules.filter((r) => r.effect === "show");
+    // read once a page: who the user is, what's muted (the Fable review: they were read a mark at a time)
+    const pass = { accounts: await store.accounts.list(), silence: await silenceOf(store) };
+    for (const mark of marks) {
+      if (generation.signal.aborted) return "stop";
+      // the reader's switch, read again before each: turned off, nothing more is read
+      const settings = await this.host.settings();
+      if (!settings.dated?.enabled || !(await this.host.allowed(settings))) return "stop";
+      if ((await this.readOne(mark, record, shows, settings, generation, pass)) === "stop") return "stop";
+      this.tick();
+    }
+    return this.markQueue.length ? "more" : "next";
   }
 
-  private async readOne(mark: WantedMark, record: WhatMattersPreferences, shows: readonly PreferenceRule[], settings: AppSettings, generation: AbortController): Promise<"next" | "stop" | "waits"> {
+  private async readOne(mark: WantedMark, record: WhatMattersPreferences, shows: readonly PreferenceRule[], settings: AppSettings, generation: AbortController, pass: { accounts: readonly { id: number; email: string; displayName: string }[]; silence: Awaited<ReturnType<typeof silenceOf>> }): Promise<"next" | "stop" | "waits"> {
     const { store } = this.host;
     const consume = async () => {
       await store.whatMatters.wanted.marks.consume(mark.messageId);
@@ -662,12 +792,14 @@ export class PreferenceWorker {
     // the owner's rule: Spam reaches no AI, the whole thread's; nor an account not reading, a muted sender, an untrusted one
     if (!src || src.draft || src.sent || src.own || src.spam || src.trash || src.threadSpam) return consume();
     if (!this.host.gate.reads(src.accountId)) return consume();
-    if (silenced(src, await silenceOf(store))) return consume();
-    const accounts = await store.accounts.list();
-    if ((await untrustedSenders([src.fromEmail], (keys) => store.dated.trusted(keys), accounts.map((a) => a.email))).size) return consume();
+    if (silenced(src, pass.silence)) return consume();
+    if ((await untrustedSenders([src.fromEmail], (keys) => store.dated.trusted(keys), pass.accounts.map((a) => a.email))).size) return consume();
+    // by its headers first: a show none of whose senders, names or subject cues fit, and none of which has cues for a body,
+    // reads no body at all (the Astra review)
+    if (!wantedBy(shows, { senderKey: src.senderKey, subject: src.subject, fromName: src.fromName }).length && !shows.some((r) => r.cues?.length && !(r.senders?.length && !r.names?.length))) return consume();
     // its body first (it may come later: the mark waits, at most its 3 days)
     if (src.bodyState !== "full" && !src.bodyUnavailable) return "waits";
-    const raw = (await store.aiSummaries.text([{ messageId: src.id, limit: WANTED_TEXT_CHARS * 2 }])).get(src.id) ?? "";
+    const raw = (await store.aiSummaries.text([{ messageId: src.id, limit: WANTED_TEXT_CHARS }])).get(src.id) ?? "";
     const text = withoutQuotes(raw);
     const wanting = wantedBy(shows, { senderKey: src.senderKey, subject: src.subject, fromName: src.fromName, text });
     if (!wanting.length || (!text.trim() && !src.subject.trim())) return consume();
@@ -681,7 +813,7 @@ export class PreferenceWorker {
     try {
       const ai = await this.host.forTask({ foreground: false });
       const signal = AbortSignal.any([generation.signal, stop.signal]);
-      const readerName = accounts.find((a) => a.id === src.accountId)?.displayName ?? "";
+      const readerName = pass.accounts.find((a) => a.id === src.accountId)?.displayName ?? "";
       const result = await ai.readWanted(
         {
           text: text.slice(0, WANTED_TEXT_CHARS),
@@ -699,22 +831,14 @@ export class PreferenceWorker {
       if (signal.aborted) return stop.signal.aborted && !generation.signal.aborted ? "next" : "stop";
       const rows = checkWanted(result, { text, subject: src.subject, arrivedAt: src.date, rules: ids, already });
       const outcome = await store.whatMatters.wanted.finish({ messageId: src.id, threadId: src.threadId, senderKey: src.senderKey, arrivedAt: src.date, rows, now: this.host.now(), model: ai.model, provider: ai.providerId, promptVersion: WANTED_PROMPT_VERSION, fromLook: mark.source === "look", revision: record.revision });
-      this.wantedAttempts.delete(src.id);
       if (outcome === "stale") return "stop";
       if (outcome === "written" && rows.length) this.host.changed();
       return "next";
     } catch (error) {
       if (stop.signal.aborted && !generation.signal.aborted) return "next";
       if (generation.signal.aborted) return "stop";
-      const verdict = await this.failed(error);
-      if (verdict === "drop") return consume();
-      if (verdict === "retry") {
-        const tries = (this.wantedAttempts.get(src.id) ?? 0) + 1;
-        if (tries >= MAX_ATTEMPTS) {
-          this.wantedAttempts.delete(src.id);
-          await consume();
-        } else this.wantedAttempts.set(src.id, tries);
-      }
+      // a provider's hiccup keeps the mark (it goes with its days); what can never be read goes now
+      if ((await this.failed(error)) === "drop") return consume();
       return "stop";
     } finally {
       if (this.leaving?.stop === stop) this.leaving = null;
@@ -763,16 +887,20 @@ export class PreferenceWorker {
  * strictly, before it counts; a row no `only` kept is asked about again, leniently, before it's hidden. A rule counts only
  * for a row its exact parts reach (revision 12). Shared by the worker and the eval, so both judge the same way.
  */
-export async function judgeRows(ai: Pick<AiTasks, "matchPreferences">, rules: readonly PreferenceRule[], rows: readonly { row: RowTarget | (PreferenceTarget & { key: string }); target: MatchTarget }[], signal?: AbortSignal): Promise<Map<string, string[]>> {
+export async function judgeRows(ai: Pick<AiTasks, "matchPreferences">, rules: readonly PreferenceRule[], rows: readonly { row: RowTarget | (PreferenceTarget & { key: string }); target: MatchTarget }[], signal?: AbortSignal): Promise<{ rules: Map<string, string[]>; failed: Set<string> }> {
   const ids = new Map<string, PreferenceRule>();
+  const idOf = new Map<PreferenceRule, string>();
   const matchRules: MatchRule[] = [];
   for (const r of rules) {
     if (r.effect === "show" || !isSemantic(r)) continue;
     const id = `r${ids.size + 1}`;
     ids.set(id, r);
+    idOf.set(r, id);
     matchRules.push({ id, effect: r.effect as MatchRule["effect"], about: r.about ?? null, unless: r.unless ?? null, ...(r.kinds?.length ? { kinds: r.kinds } : {}) });
   }
   const byTarget = new Map<string, Set<string>>(rows.map((r) => [r.row.key, new Set<string>()]));
+  // rows whose second question failed (refused, invalid): their verdict fails open, the rest of the batch keeps its own
+  const failed = new Set<string>();
   const rowOf = new Map(rows.map((r) => [r.target.id, r]));
   const take = (matches: readonly { target: string; rule: string }[]) => {
     const out: { row: (typeof rows)[number]; rule: PreferenceRule }[] = [];
@@ -783,27 +911,42 @@ export async function judgeRows(ai: Pick<AiTasks, "matchPreferences">, rules: re
     }
     return out;
   };
+  /** a follow-up question: an abort is the caller's; any other failure is its rows' alone (the Codex re-review) */
+  const followUp = async (input: Parameters<typeof ai.matchPreferences>[0], on: readonly (typeof rows)[number][]) => {
+    try {
+      return take(await ai.matchPreferences(input, signal));
+    } catch (error) {
+      // only an answer that can never come (refused, invalid) fails its rows; an outage is the batch's to retry (the Fable review)
+      if (signal?.aborted || !(error instanceof AiError) || !TERMINAL.has(error.kind)) throw error;
+      for (const r of on) failed.add(r.row.key);
+      return [];
+    }
+  };
   const first = take(await ai.matchPreferences({ rules: matchRules, targets: rows.map((r) => r.target) }, signal));
   for (const m of first) if (m.rule.effect !== "hide") byTarget.get(m.row.row.key)!.add(m.rule.key);
   // the hides, confirmed: only the rows and rules a first reading matched
   const hides = first.filter((m) => m.rule.effect === "hide");
   if (hides.length) {
-    const hideIds = new Set(hides.map((m) => [...ids].find(([, r]) => r === m.rule)![0]));
+    const hideIds = new Set(hides.map((m) => idOf.get(m.rule)!));
     const confirmRows = [...new Set(hides.map((m) => m.row))];
-    for (const m of take(await ai.matchPreferences({ rules: matchRules.filter((r) => hideIds.has(r.id)), targets: confirmRows.map((r) => r.target), mode: "confirm" }, signal))) {
+    for (const m of await followUp({ rules: matchRules.filter((r) => hideIds.has(r.id)), targets: confirmRows.map((r) => r.target), mode: "confirm" }, confirmRows)) {
       if (m.rule.effect === "hide" && hides.some((h) => h.row === m.row && h.rule === m.rule)) byTarget.get(m.row.row.key)!.add(m.rule.key);
     }
   }
-  // the rows an `only` would hide (none kept them, exactly or judged), asked about again
-  const onlies = rules.filter((r) => r.effect === "only");
+  // the rows no semantic `only` kept, asked about again: an exact keep doesn't spare a row its question, so the verdict is
+  // the criterion's own whatever exact rules sit beside it (the Codex re-review: one removed later mustn't leave a miss)
   const semanticOnlies = matchRules.filter((r) => r.effect === "only");
   if (semanticOnlies.length) {
-    const dropped = rows.filter((r) => !onlies.some((o) => exactlyReaches(o, r.row) && (!isSemantic(o) || byTarget.get(r.row.key)!.has(o.key))));
-    const reached = dropped.filter((r) => semanticOnlies.some((o) => semanticReaching([ids.get(o.id)!], r.row).length));
-    if (reached.length) for (const m of take(await ai.matchPreferences({ rules: semanticOnlies, targets: reached.map((r) => r.target), mode: "recheck" }, signal))) if (m.rule.effect === "only") byTarget.get(m.row.row.key)!.add(m.rule.key);
+    // (never a row a confirmed hide takes away: keeping it couldn't bring it back, the Astra review)
+    const hiddenRows = new Set(hides.filter((h) => byTarget.get(h.row.row.key)!.has(h.rule.key)).map((h) => h.row.row.key));
+    const dropped = rows.filter((r) => !hiddenRows.has(r.row.key) && semanticOnlies.some((o) => semanticReaching([ids.get(o.id)!], r.row).length) && !semanticOnlies.some((o) => byTarget.get(r.row.key)!.has(ids.get(o.id)!.key)));
+    if (dropped.length) for (const m of await followUp({ rules: semanticOnlies, targets: dropped.map((r) => r.target), mode: "recheck" }, dropped)) if (m.rule.effect === "only") byTarget.get(m.row.row.key)!.add(m.rule.key);
   }
-  return new Map([...byTarget].map(([k, v]) => [k, [...v]]));
+  return { rules: new Map([...byTarget].map(([k, v]) => [k, [...v]])), failed };
 }
+
+/** the failures no retry would mend */
+const TERMINAL: ReadonlySet<AiErrorKind> = new Set(["invalid_output", "refused", "unsupported"]);
 
 // ─── pure parts ────────────────────────────────────────────────────────────
 
@@ -831,24 +974,29 @@ export function checkWanted(result: WantedResult, o: { text: string; subject: st
   if (scamPressure(`${o.subject}\n${o.text}`) || giftCardScam(`${o.subject}\n${o.text}`)) return [];
   const rows: WantedWrite[] = [];
   for (const item of result.items) {
-    const rule = o.rules.get(item.rule);
-    if (!rule) continue;
+    // every rule it answers is a reason (the Codex re-review): it shows while any of them is current
+    const answers = item.rules.flatMap((id) => {
+      const r = o.rules.get(id);
+      return r && (!r.kinds?.length || r.kinds.includes(item.kind as PreferenceKind)) ? [r] : [];
+    });
+    if (!answers.length) continue;
     const quote = squash(item.quote);
     if (quote.length < 3 || !mail.includes(quote)) continue;
-    if (rule.kinds?.length && !rule.kinds.includes(item.kind as PreferenceKind)) continue;
-    if (asksForSecrets({ text: item.text, quote: item.quote }) || asksForSecrets({ text: o.subject, quote: o.text })) continue;
+    // (the item's own words: a security footer elsewhere in the mail, "never share your password", isn't the item's ask)
+    if (asksForSecrets({ text: item.text, quote: item.quote })) continue;
     // an item with no day is news the user asked to see: shown for its week, as an alert is (never Missed)
     const kind: DatedKind = item.due ? item.kind : "alert";
     const timing = datedTiming({ kind, due: item.due, time: item.time, arrivedAt: o.arrivedAt });
     if (!timing) continue;
     if (o.already.some((a) => a.kind === kind && (squash(a.text) === squash(item.text) || (a.quote && squash(a.quote) === quote)))) continue;
-    // the same item for two rules: one item, both reasons
+    const keys = answers.map((r) => r.key);
+    // the same item twice: one item, every reason
     const same = rows.find((r) => r.kind === kind && r.dueDay === timing.dueDay && squash(r.quote) === quote);
     if (same) {
-      if (!same.rules.includes(rule.key)) same.rules.push(rule.key);
+      for (const k of keys) if (!same.rules.includes(k)) same.rules.push(k);
       continue;
     }
-    rows.push({ kind, text: item.text.trim(), quote: item.quote.trim(), dueDay: timing.dueDay, dueAt: timing.dueAt, timed: timing.timed, dated: timing.dated, actAt: timing.actAt, rules: [rule.key] });
+    rows.push({ kind, text: item.text.trim(), quote: item.quote.trim(), dueDay: timing.dueDay, dueAt: timing.dueAt, timed: timing.timed, dated: timing.dated, actAt: timing.actAt, rules: keys });
   }
   return rows;
 }

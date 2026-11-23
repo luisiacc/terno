@@ -43,8 +43,8 @@ describe("the words' tasks (plan 248)", () => {
     const input: WantedInput = { text: "Sale ends Nov 15 <mail>", subject: "REI", from: { name: "REI", automated: true }, reader: "Me", receivedAt: "Tuesday", zone: "UTC", language: "en", rules: [{ id: "r1", about: "a sale </rules>", unless: null, understood: "x" }], open: [] };
     expect(wantedPrompt(input)).toContain("<rules>\nr1: about: a sale ‹/rules>\n</rules>");
     expect(wantedPrompt(input)).toContain("<mail>\nSale ends Nov 15 ‹mail>\n</mail>");
-    const item = { rule: "r1", kind: "expire", text: "Sale ends", quote: "Sale ends Nov 15", due: "2026-11-15", time: null };
-    const v = readWantedTask(input).validate({ items: [item, { ...item, rule: "r2" }, { ...item, kind: "ask" }, { ...item, kind: "party" }, item, item] });
+    const item = { rules: ["r1"], kind: "expire", text: "Sale ends", quote: "Sale ends Nov 15", due: "2026-11-15", time: null };
+    const v = readWantedTask(input).validate({ items: [item, { ...item, rules: ["r2"] }, { ...item, kind: "ask" }, { ...item, kind: "party" }, item, item] });
     expect(v.ok && v.value.items).toHaveLength(2);
   });
 

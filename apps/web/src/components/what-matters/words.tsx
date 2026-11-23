@@ -37,52 +37,65 @@ function RuleLine({ rule }: { rule: PreferenceRule }) {
 function NoteLine({ note }: { note: PreferenceNote }) {
   return (
     <li className="py-0.5 text-xs text-muted-foreground" data-testid="wm-words-note" data-kind={note.kind}>
-      <span className="font-medium">{t(`whatMatters.words.note.${note.kind}`)}</span> · {note.text}
+      <span className="font-medium">{t(`whatMatters.words.note.${note.kind}`)}</span> · {localized(note.text, note.i18n)}
     </li>
   );
 }
 
-/** Plan 248 §6: the look back, asked for only when the user opens it (counting reads the last 14 days' mail locally). */
+/**
+ * Plan 248 §6: the look back, asked for only when the user opens it (counting reads the last 14 days' mail locally). One
+ * status line holds the focus's place as it moves on (the Fable review): the count, the yes, then what's queued.
+ */
 function LookBack() {
-  const [offer, setOffer] = useState<{ count: number; usd: number | null } | "asking" | null>(null);
-  const [queued, setQueued] = useState(false);
+  const [offer, setOffer] = useState<{ count: number; usd: number | null; revision: number; looked: boolean } | "asking" | null>(null);
+  const [state, setState] = useState<"idle" | "sending" | "queued">("idle");
+  const yes = useRef<HTMLButtonElement>(null);
+  const said = useRef<HTMLParagraphElement>(null);
   const ask = async () => {
     setOffer("asking");
     try {
       const r = await client.call("whatMatters.words.lookOffer", {});
-      setOffer(r.offer ?? { count: 0, usd: null });
+      setOffer(r.offer ?? { count: 0, usd: null, revision: -1, looked: false });
+      requestAnimationFrame(() => (yes.current ?? said.current)?.focus({ preventScroll: true }));
     } catch (error) {
       setOffer(null);
       snack.error(error instanceof Error ? error.message : String(error));
     }
   };
-  const look = async () => {
+  const look = async (revision: number) => {
+    // once: a second click while the first is on its way buys nothing twice (the Astra review)
+    if (state !== "idle") return;
+    setState("sending");
     try {
-      await client.call("whatMatters.words.look", {});
-      setQueued(true);
+      // the words changed since this was counted (another window): counted again, for them
+      if ("stale" in (await client.call("whatMatters.words.look", { revision }))) {
+        setState("idle");
+        return void ask();
+      }
+      setState("queued");
+      requestAnimationFrame(() => said.current?.focus({ preventScroll: true }));
     } catch (error) {
+      setState("idle");
       snack.error(error instanceof Error ? error.message : String(error));
     }
   };
-  if (queued) return null;
   if (offer === null || offer === "asking")
     return (
       <Button variant="link-secondary" size="xs" className="self-start" data-testid="wm-words-look-ask" disabled={offer === "asking"} onClick={() => void ask()}>
         {t("whatMatters.words.look")}
       </Button>
     );
-  if (!offer.count)
-    return (
-      <p className="text-xs text-muted-foreground" data-testid="wm-words-look-none">
-        {t("whatMatters.words.lookNone")}
-      </p>
-    );
+  const line = state === "queued" ? t("whatMatters.words.lookQueued") : offer.looked ? t("whatMatters.words.looked") : !offer.count ? t("whatMatters.words.lookNone") : offer.usd !== null && offer.usd > 0 ? t("whatMatters.words.lookOffer", { count: offer.count, cost: usd(offer.usd) }) : t("whatMatters.words.lookOfferFree", { count: offer.count });
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1" data-testid="wm-words-look-offer">
-      <p className="text-xs text-muted-foreground">{offer.usd !== null && offer.usd > 0 ? t("whatMatters.words.lookOffer", { count: offer.count, cost: usd(offer.usd) }) : t("whatMatters.words.lookOfferFree", { count: offer.count })}</p>
-      <Button variant="outline" size="xs" data-testid="wm-words-look" onClick={() => void look()}>
-        {t("whatMatters.words.look")}
-      </Button>
+      <p ref={said} tabIndex={-1} role="status" className="text-xs text-muted-foreground outline-none" data-testid={offer.count || state === "queued" ? "wm-words-look-line" : "wm-words-look-none"}>
+        {line}
+      </p>
+      {!!offer.count && state !== "queued" && (
+        <Button ref={yes} variant="outline" size="xs" data-testid="wm-words-look" disabled={state === "sending"} onClick={() => void look(offer.revision)}>
+          {t("whatMatters.words.look")}
+        </Button>
+      )}
     </div>
   );
 }
@@ -93,7 +106,7 @@ function LookBack() {
  * Under it, what Terno understood (a line per rule, what each show looks for), what it couldn't do, and the work on its
  * way. An empty box changes nothing in What matters.
  */
-export function WhatMattersWords({ labelledBy, describedBy, autoFocus }: { labelledBy?: string; describedBy?: string; autoFocus?: boolean }) {
+export function WhatMattersWords({ labelledBy, describedBy }: { labelledBy?: string; describedBy?: string }) {
   const [state] = useWords();
   const reading = useApp((s) => s.settings?.dated?.enabled === true);
   const [text, setText] = useState<string | null>(null);
@@ -128,9 +141,6 @@ export function WhatMattersWords({ labelledBy, describedBy, autoFocus }: { label
     pending.current = null;
   };
   useEffect(() => () => flush(), []);
-  useEffect(() => {
-    if (autoFocus && text !== null) field.current?.focus({ preventScroll: false });
-  }, [autoFocus, text === null]);
   if (!state || text === null || !base) return null;
   const rules = activeRules(state.preferences);
   const notes = state.preferences.text.trim() ? state.preferences.notes : [];
@@ -144,15 +154,18 @@ export function WhatMattersWords({ labelledBy, describedBy, autoFocus }: { label
   };
   const save = async () => {
     if (saving || !changed) return;
+    // emptied and saved is Clear, with its Undo (the Fable review)
+    if (!text.trim()) return void clear();
     // the draft first: a failed compile keeps what was typed, across closing Settings too
     flush();
     setSaving(true);
     const r = await saveWords(text, base.revision);
     setSaving(false);
-    // another window saved: show what's saved now (its words); the typed ones stay in the draft until typed over
+    // another window saved: these words stay in the box (and the draft), now against what's saved there, so a second Save
+    // is the user's choice and nothing typed is lost (the Codex re-review)
     if (r.stale) {
-      setText(null);
-      setBase(null);
+      setBase({ revision: r.stale.revision, text: r.stale.text });
+      typed(text);
     } else if (r.saved) setBase({ revision: base.revision + 1, text });
   };
   const clear = async () => {
@@ -160,6 +173,8 @@ export function WhatMattersWords({ labelledBy, describedBy, autoFocus }: { label
     if (await clearWords(base.revision)) {
       setText("");
       setBase({ revision: base.revision + 1, text: "" });
+      // Clear goes with the words: the focus to the box (the Fable review)
+      field.current?.focus({ preventScroll: true });
     }
   };
   const { status } = state;
@@ -172,7 +187,8 @@ export function WhatMattersWords({ labelledBy, describedBy, autoFocus }: { label
         value={text}
         maxLength={PREFERENCES_TEXT_MAX}
         placeholder={t("whatMatters.words.placeholder")}
-        disabled={saving}
+        readOnly={saving}
+        aria-busy={saving}
         rows={3}
         className="max-h-64"
         data-testid="wm-words-field"

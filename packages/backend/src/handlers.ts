@@ -1638,9 +1638,12 @@ export function createHandlers(b: Backend): Handlers {
       // a local model costs nothing; a cloud one we don't know the price of says no amount
       const price = target && !target.local ? priceOf(target.model) : null;
       const usd = !target ? null : target.local ? 0 : price ? costAt(price, { inputTokens: offer.tokensIn, outputTokens: offer.tokensOut }) : null;
-      return { offer: { count: offer.count, usd } };
+      return { offer: { count: offer.count, usd, revision: offer.revision, looked: offer.looked } };
     },
-    "whatMatters.words.look": async () => ({ queued: await b.words.look() }),
+    "whatMatters.words.look": async ({ revision }) => {
+      const queued = await b.words.look(revision);
+      return queued === "stale" ? { stale: true as const } : { queued };
+    },
     "dated.mutes": async () => ({ mutes: await b.mutes.list() }),
     "dated.muteOffer": async ({ id }) => ({ offer: await b.mutes.offer(id) }),
     "dated.mute": async ({ on, key, name, at }) => ({ mute: await b.mutes.mute({ on, key, ...(name !== undefined ? { name } : {}), ...(at !== undefined ? { at } : {}) }) }),
