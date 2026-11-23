@@ -108,10 +108,11 @@ When it isn't clear the reader is the one asked, it isn't an item.
 const ONLY_ASKED =
   "Only what was asked of the reader, by name or in mail addressed to them, or what they promised themselves: an item citing their own message has to be their promise. Not what they asked of someone else, not what other people on the mail were asked, and not what a list or a forwarded notice asks unless it's clearly meant for them.";
 const CHECK =
-  'Before you answer, check each action and question: whose message is it, and who does it ask? Drop any that "Who has to act" doesn\'t give the reader, and any action that\'s a later step, a how-to or an option rather than the reader\'s next. Then check the summary says nothing the reader has to do or answer now, and no item repeats the summary.';
+  'Before you answer, check each action and question: whose message is it, and who does it ask? Drop any that "Who has to act" doesn\'t give the reader, and any action that can only come once another is done, or is a how-to or an option. Then check the summary says nothing the reader has to do or answer now, and no item repeats the summary.';
 /**
  * Plan 241: which of the things a mail describes are asked of the reader. A reminder that laid out a five-step process
- * came back as six to-dos. Only in the full prompt: the compact one is at its window's floor (`summaryBudget`).
+ * came back as six to-dos. Plan 241's words are in the full prompt only: the compact one is at its window's floor
+ * (`summaryBudget`), so it keeps version 7's.
  */
 const NEXT_STEP = `
   - Not every step a mail describes is an action. When a mail lays out a process, a checklist or instructions, the action is the reader's next step: what can only come once it's done, how to do it, tips, what's optional, and what's only for if something happens that hasn't are never actions. Things asked in one message, done at once, for the same person and the same deadline, are one action ("Bring the tape, the boxes and the ladder"); separate requests stay separate, each with its own date.`;
@@ -139,7 +140,7 @@ Accuracy comes first: never state what you aren't sure of, and never lose what t
 
 ${full ? WHO_ACTS : ""}Return:
 - "summary": one to three plain sentences on where things stand: what happened, what was decided, and what the reader is waiting on from others. What the reader has to do or answer${full ? " now" : ""} goes in the items and isn't mentioned here at all, not even as pending or awaited${full ? LATER : ""}.
-- "items": at most four things the summary leaves out, each with a short "text", under 15 words, and "message", the id of the message that says it:
+- "items": ${full ? "usually at most four things the summary leaves out (up to six when there are more separate requests)" : "at most six things the summary leaves out"}, each with a short "text", under 15 words, and "message", the id of the message that says it:
   - "action" (something the reader has to do) and "question" (a question waiting for the reader's answer), one thing each. ${full ? 'Only what "Who has to act" gives the reader.' : ONLY_ASKED} What a scam or a suspicious message demands isn't something the reader has to do: say in the summary that it asks for it.${full ? NEXT_STEP : ""}
   - Write a "question" as the question was asked, ending in "?" ("Can you make the 19th?"), never as an instruction ("Share your thoughts on…"); write an "action" as what to do, starting with the verb ("Send the signed contract").
   - "date" (a date or deadline that matters) and "decision" (something settled), when the summary doesn't already say it.

@@ -1,6 +1,6 @@
 # Plan 241: a summary's to-dos are what's asked now, not every step
 
-- **Status:** built. Prompt version 8, with variant D's words (below). "Revisions after the Codex review" and "What was measured" override the Design where they differ: `validate` still keeps six, and the action rule doesn't define an action.
+- **Status:** built. Prompt version 8: variant D's words (below) with the code review's three fixes. The later sections override the Design where they differ: `validate` still keeps six, the prompt asks for "usually at most four", the action rule doesn't define an action, and the compact prompt keeps version 7's words.
 - **Builds on:** plans 132 (summaries), 148 (rows), 151 (the corpus), 153 (facts), 162 (the card), 202 (who has to act, prompt v7).
 
 ## The request
@@ -107,6 +107,24 @@ Round two is the contested set by construction, so a tie there is the expected f
 **The reader named.** The judges noticed summaries calling the reader by name. Counted over the corpus: v7 25 of 513, B 24, C 24, D 32, the first wording (no "you for the reader") 52. D is within B and C's spread; the "you" clause is what holds it. "The sender" was rare already (v7: 2); it's the case the owner hit, a display name of just "ESOF -", which the address fallback covers.
 
 **Cut-offs.** A long thread (`enron-01ba7278fc`) is at the 3,000-token answer budget's edge: D was cut off on it in 2 of 4 tries, at 22 s when it finished. v7 had two other cut-offs in its run. Not new to v8.
+
+## Revisions after the Codex code review
+
+1. **"At most four" would make a model leave out a fifth real ask.** The full prompt asks for "usually at most four things … (up to six when there are more separate requests)". Case `steps-014`: five separate dated requests from one person.
+2. **The check could drop an independent dated request** ("a later step rather than the reader's next": sign Monday, *pay Tuesday*). It now drops "any action that can only come once another is done, or is a how-to or an option", the main rule's own words.
+3. **`steps-008`'s answer key** asked whether Raúl is coming; the mail asks whether *she* is coming with him.
+
+The longer count would have put the compact prompt over its window again, so the compact prompt now keeps version 7's words exactly ("at most six"), and a test says it has none of plan 241's.
+
+**The final code over the corpus** (516, with `steps-014`):
+
+| | Rows per card | Most rows | Cards with 3+ actions | Own-message actions | Rows repeating the summary | Cut off (all fine on a retry) |
+|---|---:|---:|---:|---:|---:|---:|
+| v7 | 0.51 | 6 | 14 | 9 | 18 | 2 |
+| D | 0.40 | 4 | 6 | 13 | 8 | 1 |
+| **Shipped** | 0.41 | 5 | 7 | 8 | 11 | 3 |
+
+Every `steps` case as intended: one to-do for each process mail, the summary naming what follows; all three of Rob's asks, all five of Lena's, both of Bea's and Hal's, both of the lettings agent's dated steps.
 
 ## Follow-ups
 

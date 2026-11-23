@@ -51,11 +51,12 @@ describe("the prompt", () => {
     expect(full).toMatch(/Things asked in one message, done at once, for the same person and the same deadline, are one action/);
     expect(full).toMatch(/What the reader has to do or answer now goes in the items[^\n]*the steps that only come after it can be named in a few words, with any deadline or amount they carry/);
     expect(full).toMatch(/"you" for the reader, never "the sender"/);
-    expect(full).toMatch(/and any action that's a later step, a how-to or an option rather than the reader's next\. Then check the summary says nothing the reader has to do or answer now,/);
-    // the compact prompt is at its window's floor: it asks for four and adds nothing else
+    expect(full).toMatch(/and any action that can only come once another is done, or is a how-to or an option\. Then check the summary says nothing the reader has to do or answer now,/);
+    expect(full).toMatch(/usually at most four things the summary leaves out \(up to six when there are more separate requests\)/);
+    // the compact prompt is at its window's floor: it keeps version 7's words
     const compact = summarizeTask(input("x", { compact: true })).system;
-    expect(compact).toMatch(/at most four things/);
-    expect(compact).not.toMatch(/Not every step|steps that only come after|the sender/);
+    expect(compact).toMatch(/at most six things the summary leaves out/);
+    expect(compact).not.toMatch(/Not every step|steps that only come after|the sender|at most four/);
   });
 
   it("names the reader's language, not the mail's", () => {
