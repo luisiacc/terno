@@ -124,3 +124,15 @@ What the Codex code review of the follow-up changed: a click on the tooltip itse
 React's events) hid the sender; the stop now sits on the row-end wrapper that holds both icon and tooltip. And a keyboard
 has no hover: the help also shows while the arrows have the Hide row (the menu notes whether a key or the pointer moved
 last). Both tested (unit and e2e).
+
+## Follow-up: Shift with a tick (owner, 2026-11-22)
+
+> we need to make the shift_click in here work so i can select multiple with shift and checking one
+
+Shift with a tick gives every row from the last one ticked or unticked (by click or `x`) to it that row's new state, up or
+down, as a list's range does; with no earlier one it is a plain tick. The range takes the rows Tick all takes (in Automated
+mail every tickable row; in a digest its opened rows stay out unless they are the one pressed), so one `setTicks(ids, on)`
+now serves a tick, a range and the keys. The anchor resets with the day. Shift's mousedown on a tick is prevented so it
+selects no text. Base UI forwards the click's modifiers to the change event (`dispatchClickWithModifiers`), which is where
+Shift is read. Tested in the unit (both pages, both directions, unticking, an opened row) and in today.spec (real Shift
+click, no text selected).

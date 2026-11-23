@@ -231,10 +231,14 @@ test.describe("What matters and its digest (plan 145)", () => {
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-digest-off.png` });
     // plan 235: ticked rows' senders can be hidden from the foot, and each row has a menu (⇧F10 on it) for the ticked rows
     const digestRows = page.getByTestId("digest-item");
-    expect(await digestRows.count()).toBeGreaterThanOrEqual(2);
+    expect(await digestRows.count()).toBeGreaterThanOrEqual(3);
     await expect(page.getByTestId("digest-hide")).toHaveCount(0);
+    // Shift with a tick takes the rows between, and selects no text on the way
     await digestRows.nth(0).getByTestId("digest-tick").click();
-    await digestRows.nth(1).getByTestId("digest-tick").click();
+    await digestRows.nth(2).getByTestId("digest-tick").click({ modifiers: ["Shift"] });
+    for (const n of [0, 1, 2]) await expect(digestRows.nth(n).getByTestId("digest-tick")).toBeChecked();
+    expect(await page.evaluate(() => getSelection()?.toString() ?? "")).toBe("");
+    await digestRows.nth(2).getByTestId("digest-tick").click();
     await expect(page.getByTestId("digest-hide")).toHaveText(/^Hide (sender|2 senders)$/);
     await digestRows.nth(0).getByTestId("digest-open").focus();
     await page.keyboard.press("Shift+F10");

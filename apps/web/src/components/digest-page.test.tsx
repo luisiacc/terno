@@ -107,6 +107,34 @@ it("plan 161 (Codex review): a new day starts afresh, its scroll too; automated 
   expect(ticks()).toEqual([true, true, true]);
 });
 
+/** a click with Shift held, as the pointer sends it */
+const shiftClick = (n: number) => act(async () => host.querySelectorAll<HTMLElement>("[data-testid=digest-tick]")[n]!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, shiftKey: true })));
+
+it("Shift with a tick gives the rows from the last one ticked to it that row's new state, either way, in both pages", async () => {
+  const five = (automated: boolean): DigestRow => ({ ...digestOf("2026-10-25", automated), items: [1, 2, 3, 4, 5].map(item), liveIds: [1, 2, 3, 4, 5] });
+  await show(five(true));
+  // nothing ticked before: Shift alone is one tick
+  await shiftClick(3);
+  expect(ticks()).toEqual([false, false, false, true, false]);
+  await act(async () => host.querySelectorAll<HTMLElement>("[data-testid=digest-tick]")[0]!.click());
+  await shiftClick(2);
+  expect(ticks()).toEqual([true, true, true, true, false]);
+  // upward, and unticking: from the last one pressed (row 3) to row 2, whatever each was
+  await act(async () => host.querySelectorAll<HTMLElement>("[data-testid=digest-tick]")[4]!.click());
+  await act(async () => host.querySelectorAll<HTMLElement>("[data-testid=digest-tick]")[4]!.click());
+  await shiftClick(1);
+  expect(ticks()).toEqual([true, false, false, false, false]);
+  // a digest starts ticked; its opened row stays out of a range (as Tick all leaves it) unless it's the one pressed
+  await unmount();
+  await show({ ...five(false), liveIds: [1, 2, 4, 5], readIds: [3] });
+  expect(ticks()).toEqual([true, true, false, true, true]);
+  await act(async () => host.querySelectorAll<HTMLElement>("[data-testid=digest-tick]")[0]!.click());
+  await shiftClick(4);
+  expect(ticks()).toEqual([false, false, false, false, false]);
+  await shiftClick(1);
+  expect(ticks()).toEqual([false, true, false, true, true]);
+});
+
 const states = () => [...host.querySelectorAll<HTMLElement>("[data-testid=digest-item]")].map((li) => `${li.dataset.state}:${li.querySelector("[data-testid=digest-state]")?.textContent ?? ""}`);
 
 it("pass 2: each row says what it is; what was opened isn't counted, and the button's count is what goes", async () => {

@@ -166,8 +166,11 @@ export default function DigestPage() {
   // back where it was left, once its rows are there: once a digest
   const restored = useRef<string | null>(null);
   const [pickOf, setPickOf] = useState(day);
+  // Shift with a tick gives the rows from the last one ticked to it that row's new state, as a list's range does
+  const [anchor, setAnchor] = useState<number | null>(null);
   if (pickOf !== day) {
     setPickOf(day);
+    setAnchor(null);
     setToggled(digestPick(day).toggled);
     setReadTicked(digestPick(day).readTicked ?? new Set());
   }
@@ -215,24 +218,30 @@ export default function DigestPage() {
   const chosen = items.filter((i) => stateOf(i) === "archive");
   const staying = shown.filter((i) => stateOf(i) === "keep" || stateOf(i) === "opened").length;
   const readNow = new Set(shown.filter(read).map((i) => i.threadId));
-  const flip = (id: number) => (held: ReadonlySet<number>) => {
-    const next = new Set(held);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    return next;
+  // the rows Tick all and a Shift range take: a digest's opened ones stay unless ticked one by one
+  const rangeable = (i: DigestItem) => (automated ? tickable(i) : live(i) && !read(i));
+  /** Ticks (or unticks) these rows. A set means the ticked ones in automated mail and the unticked ones in a digest; a
+   * digest's read row is in both, so the person's choice holds if it's marked unread again (Codex review). */
+  const setTicks = (ids: readonly number[], on: boolean) => {
+    const add = on === automated;
+    setToggled((held) => new Set(add ? [...held, ...ids] : [...held].filter((id) => !ids.includes(id))));
+    if (automated) return;
+    const readOnes = ids.filter((id) => readNow.has(id));
+    if (readOnes.length) setReadTicked((held) => new Set(on ? [...held, ...readOnes] : [...held].filter((id) => !readOnes.includes(id))));
   };
-  const toggle = (id: number) => {
-    if (automated || !readNow.has(id)) return setToggled(flip(id));
-    // a digest's read row: the person's choice holds if it's marked unread again (Codex review), so `toggled` (its unticked
-    // unread rows) says the same
-    const on = !readTicked.has(id);
-    setReadTicked(flip(id));
-    setToggled((held) => new Set(on ? [...held].filter((x) => x !== id) : [...held, id]));
+  const toggle = (id: number, range = false) => {
+    const at = shown.findIndex((i) => i.threadId === id);
+    if (at < 0) return;
+    const on = stateOf(shown[at]!) !== "archive";
+    const from = range && anchor !== null ? shown.findIndex((i) => i.threadId === anchor) : -1;
+    const ids = from < 0 ? [id] : shown.slice(Math.min(from, at), Math.max(from, at) + 1).filter((i) => i.threadId === id || rangeable(i)).map((i) => i.threadId);
+    setAnchor(id);
+    setTicks(ids, on);
   };
   // plan 162: the ticks reset at once, both ways (Atelier codex): every live row ticked, or none. Plan 235: Automated mail's
   // Tick all takes the opened ones too (the person picks everything there); a digest's leaves them (opened stays, its hint says)
   const anyTicked = chosen.length > 0;
-  const allTickable = shown.filter((i) => (automated ? tickable(i) : live(i) && !read(i)));
+  const allTickable = shown.filter(rangeable);
   const tickAll = (on: boolean) => {
     const ids = allTickable.map((i) => i.threadId);
     // a set means the unticked ones in a digest and the ticked ones in automated mail. Plan 166 (Codex critique): only the
@@ -486,7 +495,7 @@ export default function DigestPage() {
               >
               <li data-testid="digest-item" data-live={live(i)} data-state={state} className="group/item relative flex items-start gap-1 border-b border-hairline py-1">
                 {/* pass 2: a 24 px box of its own, so a near miss doesn't open the newsletter beside it */}
-                <Checkbox target="quiet" data-testid="digest-tick" aria-label={t("today.digest.tick", { subject: i.subject })} checked={state === "archive"} disabled={!tickable(i)} className="mt-1.5" onCheckedChange={() => toggle(i.threadId)} />
+                <Checkbox target="quiet" data-testid="digest-tick" aria-label={t("today.digest.tick", { subject: i.subject })} checked={state === "archive"} disabled={!tickable(i)} className="mt-1.5" onMouseDown={(e) => e.shiftKey && e.preventDefault()} onCheckedChange={(_, how) => toggle(i.threadId, (how.event as MouseEvent).shiftKey === true)} />
                 {/* plan 161: reading is as plain as archiving: the whole row opens the newsletter, and says so on hover */}
                 <button type="button" data-digest-open={i.threadId} className="group/open flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors group-has-[[data-not-newsletter]:hover]/item:bg-row-hover hover:bg-row-hover focus:bg-row-selected focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" data-testid="digest-open" onClick={() => open(i.threadId)}>
                   <span className="min-w-0 flex-1">
