@@ -7,7 +7,7 @@ import "fake-indexeddb/auto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DATED_KINDS, DATED_MUTE_PAIRS_MAX, DATED_MUTES_MAX, todayKey } from "@terno/core";
+import { DATED_KINDS, DATED_MUTE_PAIRS_MAX, DATED_MUTES_MAX, ruleKey, todayKey, verdictBasis, type PreferenceRule } from "@terno/core";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { IdbMailStore } from "@terno/idb";
 import { demoRegistry } from "@terno/mail";
@@ -18,6 +18,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { copyMailbox, LARGE_MAILBOX } from "../../db/src/test/perf-mailbox";
 import { watchLoop } from "../../db/src/test/timing";
 import { Backend, plaintextCipher } from "./backend";
+import { datedTarget, promiseTarget } from "./preferences";
 
 const NOW = Date.UTC(2026, 10, 1, 12);
 const DAY = 86_400_000;
@@ -29,6 +30,32 @@ afterAll(() => rmSync(dir, { recursive: true, force: true }));
 type Gate = { listMs: number; addedMs: number; needsMs: number; countMs: number; /** this scenario's longest turn, when not the run's */ busyMs?: number };
 
 const p95 = (times: number[]) => [...times].sort((a, b) => a - b)[Math.floor(times.length * 0.95) - 1]!;
+
+/**
+ * Plan 248: 20 rules, none hiding anything here (senders nobody is, kinds with nobody's names), half judged; a verdict for each
+ * open item those reach, against the rules' basis, so a projection has everything it needs.
+ */
+async function words(store: MailStore, now: number) {
+  const make = (r: Omit<PreferenceRule, "id" | "key" | "said" | "understood">, i: number): PreferenceRule => {
+    const rule = { id: `r${i + 1}`, key: "", said: `words ${i}`, understood: `words ${i}`, ...r } as PreferenceRule;
+    rule.key = ruleKey(rule);
+    return rule;
+  };
+  const rules: PreferenceRule[] = [
+    ...Array.from({ length: 5 }, (_, i) => make({ effect: "hide", senders: [`@nobody${i}.test`] }, i)),
+    ...Array.from({ length: 5 }, (_, i) => make({ effect: "first", names: [`Nobody ${i} Inc`] }, 5 + i)),
+    ...Array.from({ length: 5 }, (_, i) => make({ effect: "hide", about: `mail about topic ${i}` }, 10 + i)),
+    ...Array.from({ length: 4 }, (_, i) => make({ effect: "first", about: `mail about subject ${i}` }, 15 + i)),
+    make({ effect: "show", about: "a sale from nobody", cues: ["nobody sale"] }, 19),
+  ];
+  const saved = await store.whatMatters.preferences.save({ text: "twenty rules", rules, notes: [], compiledWith: null, savedAt: now, language: "en" }, (await store.whatMatters.preferences.get()).revision);
+  const basis = verdictBasis(rules);
+  const open = await store.dated.active();
+  const verdicts = open.map((r) => ({ target: datedTarget(r).key, basis, rules: [] as string[], at: now }));
+  for (let i = 0; i < verdicts.length; i += 500) expect(await store.whatMatters.verdicts.put(verdicts.slice(i, i + 500), saved!.revision)).toBe(true);
+  const promises = await store.followups.active();
+  await store.whatMatters.verdicts.put(promises.map((p) => ({ target: promiseTarget(p).key, basis, rules: [], at: now })), saved!.revision);
+}
 
 /** NEEDS_WALK conversations newer than the mailbox's, each waiting on the reader, as above. */
 async function needsAtBound(store: MailStore, client: RpcClient, accountId: number, now: number) {
@@ -299,6 +326,13 @@ async function run(kind: "SQLite" | "IndexedDB", budget: { spread: Gate; bound: 
     // them about an older message: the count reads them without walking the page's every conversation
     await removedAtBound(backend.store, accountId, NOW + 2 * DAY);
     await measure("Linked requests at the combined bounds, 4,000 Removes (3,000 stale)", NOW + 2 * DAY, budget.linked);
+    // plan 248: the user's words at their bound (20 rules, every effect, exact and judged) on the combined bounds, a verdict
+    // for every row the judged ones reach, so the projection reads them in one batch and asks the worker nothing. Last:
+    // the verdicts it writes would weigh on the scenarios above (their history is without them)
+    await words(backend.store, NOW + 2 * DAY);
+    backend.today.changed();
+    await measure("Combined bounds, 20 rules of the user's words", NOW + 2 * DAY, budget.linked);
+    expect(backend.words.worker.status().applying).toBeNull();
   } finally {
     await backend.stop();
   }

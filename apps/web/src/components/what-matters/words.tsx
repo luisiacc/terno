@@ -6,6 +6,7 @@ import { Textarea } from "@terno/ui/components/textarea";
 import { ArrowUp, Eye, EyeOff, Filter } from "@terno/ui/icons";
 import { useEffect, useId, useRef, useState } from "react";
 import { usd } from "~/lib/ai";
+import { localized } from "~/lib/i18n";
 import { snack } from "~/lib/snack";
 import { clearWords, draftSeq, saveDraft, saveWords, useWords } from "~/lib/what-matters-words";
 import { client } from "~/rpc/connection";
@@ -200,7 +201,7 @@ export function WhatMattersWords({ labelledBy, describedBy, autoFocus }: { label
           )}
           {status.blockedBy && (
             <p className="text-xs text-muted-foreground" data-testid="wm-words-blocked">
-              {t("whatMatters.words.blocked", { message: status.blockedBy.message })}
+              {t("whatMatters.words.blocked", { message: localized(status.blockedBy.message, status.blockedBy.i18n) })}
             </p>
           )}
           {shows && reading && !status.looking && <LookBack key={state.preferences.revision} />}
