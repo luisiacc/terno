@@ -861,6 +861,38 @@ describe("migration v75: Remove on a conversation waiting on you (plan 216)", ()
   });
 });
 
+describe("migration v77: What matters in your words (plan 248)", () => {
+  it("adds three empty tables with their indexes, every thread, message, dated item and setting kept as it was; a mark goes with its message and an item with its thread", () => {
+    const { db } = legacyMail(76, { threads: 3, seed: 19 });
+    const [first, second] = db.all<{ id: number; thread_id: number; date: number }>("SELECT id, thread_id, date FROM messages ORDER BY id LIMIT 2");
+    db.run("INSERT INTO settings (key, value_json) VALUES ('theme', '\"dark\"')");
+    db.run("INSERT INTO dated_items (thread_id, message_id, item, kind, text, quote, sender_key, due_day, due_at, act_at, arrived_at, state, created_at) VALUES (?, ?, 0, 'pay', 'Pay', 'due', 'a@x.mx', '2026-11-30', 9, 8, 7, 'open', 6)", first!.thread_id, first!.id);
+    const kept = () => ["threads", "messages", "dated_items", "settings"].map((t) => db.all<Record<string, unknown>>(`SELECT * FROM ${t} ORDER BY 1`));
+    const before = kept();
+    expect(migrate(db)).toEqual({ from: 76, to: SCHEMA_VERSION });
+    expect(kept()).toEqual(before);
+    for (const t of ["preference_verdicts", "wanted_items", "wanted_marks"]) expect(db.all(`SELECT * FROM ${t}`)).toEqual([]);
+    expect(db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name IN ('preference_verdicts', 'wanted_items', 'wanted_marks') AND sql IS NOT NULL ORDER BY name").map((r) => r.name)).toEqual(["preference_verdicts_at", "wanted_marks_order", "wanted_message", "wanted_open", "wanted_thread"]);
+    const item = (thread: number, message: number, state: string) =>
+      db.run("INSERT INTO wanted_items (thread_id, message_id, kind, text, quote, sender_key, due_day, due_at, act_at, arrived_at, state, rules, created_at) VALUES (?, ?, 'renew', 'Renew', 'renews', 'a@x.mx', '2026-11-30', 9, 8, 7, ?, '[\"s1\"]', 6)", thread, message, state);
+    item(first!.thread_id, first!.id, "open");
+    item(second!.thread_id, second!.id, "done");
+    // only the states and sources there are; an item needs its thread, a mark its message
+    expect(() => item(first!.thread_id, first!.id, "settled")).toThrow();
+    expect(() => item(999_999, first!.id, "open")).toThrow();
+    db.run("INSERT INTO wanted_marks (message_id, thread_id, arrived_at, queued_at, source) VALUES (?, ?, 1, 2, 'look')", first!.id, first!.thread_id);
+    expect(() => db.run("INSERT INTO wanted_marks (message_id, thread_id, arrived_at, queued_at, source) VALUES (?, ?, 1, 2, 'scan')", second!.id, second!.thread_id)).toThrow();
+    expect(() => db.run("INSERT INTO wanted_marks (message_id, thread_id, arrived_at, queued_at, source) VALUES (999999, 1, 1, 2, 'live')")).toThrow();
+    expect(db.get<{ n: number }>("SELECT count(*) AS n FROM wanted_items INDEXED BY wanted_open WHERE state = 'open'")!.n).toBe(1);
+    expect(db.get("SELECT timed, dated, revision, from_look, deferred_until, orphaned_at FROM wanted_items WHERE state = 'open'")).toEqual({ timed: 0, dated: 1, revision: 0, from_look: 0, deferred_until: null, orphaned_at: null });
+    db.run("INSERT INTO preference_verdicts (target, basis, at) VALUES ('d:1:0', 'b', 5)");
+    expect(db.get("SELECT rules, failed FROM preference_verdicts")).toEqual({ rules: "[]", failed: 0 });
+    db.run("DELETE FROM threads WHERE id = ?", first!.thread_id);
+    expect(db.all<{ thread_id: number }>("SELECT thread_id FROM wanted_items").map((r) => r.thread_id)).toEqual([second!.thread_id]);
+    expect(db.all("SELECT * FROM wanted_marks")).toEqual([]);
+  });
+});
+
 describe("migration v74: Done and Later on a conversation waiting on you (plan 215)", () => {
   it("adds an empty table with its two partial indexes, every message and thread kept as it was; a record goes with its message", () => {
     const { db } = legacyMail(73, { threads: 3, seed: 17 });
