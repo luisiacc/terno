@@ -6,12 +6,13 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator,
 import { IconButton } from "@terno/ui/components/icon-button";
 import { Spinner } from "@terno/ui/components/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
-import { Archive, Ban, ChevronRight, EyeOff, Info, Mail } from "@terno/ui/icons";
+import { Archive, Ban, ChevronRight, EyeOff, Info, Mail, X } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { type MouseEvent, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getApp } from "~/state/app";
 import { modelName, routeOf } from "~/lib/ai";
 import { listDate } from "~/lib/format";
+import { closeDigestPage } from "~/lib/page";
 import { PANE_TITLE, PANE_TITLE_TOP } from "~/lib/pane-lines";
 import { act, deferred, trackJob, undoAction, undoActions } from "~/lib/actions";
 import { registerUndo, snack, snackPublication, undoNow, useSnack } from "~/lib/snack";
@@ -398,7 +399,13 @@ export default function DigestPage() {
   /** Plan 235: what a row's menu acts on: the ticked rows when it's one of several ticked, else the row. */
   const menuTargets = (i: DigestItem) => (stateOf(i) === "archive" && chosen.length > 1 ? chosen : [i]);
   const sendersIn = (targets: readonly DigestItem[]) => new Set(targets.filter((i) => i.fromEmail).map(senderKey)).size;
-  if (!row) return <div className="p-8 text-sm text-muted-foreground" data-testid="digest-page">{t("today.digest.none")}</div>;
+  if (!row)
+    return (
+      <div className="relative p-8 text-sm text-muted-foreground" data-testid="digest-page">
+        <DigestClose />
+        {t("today.digest.none")}
+      </div>
+    );
   const done = batches?.length ? { count: batches.reduce((n, b) => n + b.ids.length, 0), undo: batches.at(-1)!.undo } : null;
   const finished = done !== null;
   // plan 162 (Codex review): a provider that answered with an error is stored apart from one out of reach
@@ -426,8 +433,9 @@ export default function DigestPage() {
       data-testid="digest-page"
       data-finished={finished || undefined}
       aria-label={t("today.digest.title")}
-      className="@container mx-auto flex min-h-full w-full max-w-(--reader-max,48rem) flex-col gap-3 px-8"
+      className="@container relative mx-auto flex min-h-full w-full max-w-(--reader-max,48rem) flex-col gap-3 px-8"
     >
+      <DigestClose />
       {/* plan 162 (after ai162-r01): the title on every pane title's line (it sat 15 px low), what the batch is and who wrote
           its lines under it; the decision is at the pane's foot, after the list, where reading ends */}
       <header className={cn(PANE_TITLE_TOP, "space-y-1")} data-testid="digest-header">
@@ -589,6 +597,20 @@ export default function DigestPage() {
         )}
       </footer>
     </section>
+    </div>
+  );
+}
+
+/**
+ * The page's Close, as Esc (and the reader's ×): on the pane's bar at the column's right edge, where the reader's sits, full
+ * or emptied.
+ */
+function DigestClose() {
+  return (
+    <div className="absolute top-0 right-6 flex h-(--pane-bar) items-center">
+      <IconButton label={t("common.close")} shortcut="escape" aria-keyshortcuts="Escape" data-testid="digest-close" onClick={closeDigestPage}>
+        <X />
+      </IconButton>
     </div>
   );
 }

@@ -68,6 +68,14 @@ let restoreFocus = false;
 let returnTo: HTMLElement | null = null;
 
 /** Back to the list (List only). The history follows (§2.3); `focus` puts focus back where it was in the list. */
+/** The digest's page's Close, as Esc: beside What matters' feed it goes and the feed has the room again; in List, the page
+ * over the feed closes, back on its way in. */
+export function closeDigestPage(): void {
+  if (closeFeedConversation() || !listLayout()) return;
+  markSelectionIntent();
+  closePage({ focus: true });
+}
+
 export function closePage(options: { focus?: boolean } = {}): void {
   const s = getApp();
   // what's open, not what the page says: the cursor may already be gone (the list's last thread just archived)

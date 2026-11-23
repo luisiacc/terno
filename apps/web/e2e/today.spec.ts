@@ -264,6 +264,11 @@ test.describe("What matters and its digest (plan 145)", () => {
     }
     await page.keyboard.press("Escape");
     await expect(menu).toHaveCount(0);
+    // its × at the top right closes it as Esc does: the feed has the room again
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-automated-close.png` });
+    await page.getByTestId("digest-close").click();
+    await expect(page.getByTestId("digest-page")).toHaveCount(0);
+    await expect(page.locator(DIGEST)).toBeVisible();
   });
 
   test("plan 166: Not a newsletter, by the row's control or its menu, leaves the digest at once with an exact Undo, and Settings lists the sender to let back in", async ({ app: page, server }) => {
@@ -663,6 +668,12 @@ test.describe("What matters in List (plan 162, after ai162-r02, Codex review)", 
       await expect(page.locator(FEED)).toBeVisible();
       await expect(page.locator(DIGEST)).toBeInViewport();
       if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-list-digest-end.png` });
+    });
+    await scenario("its × closes it the same way", async () => {
+      await (await digestRow(page)).click();
+      await page.getByTestId("digest-close").click();
+      await expect(page.getByTestId("digest-page")).toHaveCount(0);
+      await expect(page.locator(DIGEST)).toBeInViewport();
     });
   });
 });

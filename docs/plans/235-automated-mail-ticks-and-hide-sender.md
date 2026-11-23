@@ -139,3 +139,14 @@ click, no text selected).
 
 What the Codex code review changed: preventing Shift's mousedown also kept the focus on the last tick, so Space then toggled
 that one; the press now focuses its own tick (a program's focus: no ring). Tested in today.spec.
+
+## Follow-up: a Close on the page (owner, 2026-11-22)
+
+> also when that list becomes empty, and when its not empty, that panel for list of newsletters should have a close button
+> on the top right to clsoe it
+
+Automated mail and the digest have a × at the top right, full, emptied or with no digest at all: on the pane's bar at the
+column's right edge, where the reader's × sits for an open conversation, with the same name and tooltip (Close, Esc). It
+does what Esc does there, through one `closeDigestPage()` in `lib/page.ts`: beside What matters' feed the page goes and
+the feed has its room back, on its way in; in List the page over the feed closes. It scrolls with the title (the page has
+no fixed bar, and a floating × would sit over the rows' dates). Tested in today.spec, Split and List.
