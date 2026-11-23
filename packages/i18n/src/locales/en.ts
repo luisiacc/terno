@@ -2612,7 +2612,7 @@ It contains none of your mail, contacts, settings or keys.
   "errors.ai.refused": "The AI declined this request.",
   "errors.ai.truncated": "The AI’s answer was cut off before it finished.",
   "errors.ai.invalidOutput": "The AI didn’t produce a valid result: {detail}",
-  "errors.ai.dailyLimit": "Terno stopped today’s automatic AI at its daily limit, so nothing more is spent on your key. It continues tomorrow.",
+  "errors.ai.dailyLimit": "Terno paused automatic AI for today after an unusually large amount of work, so a fault can’t keep spending on your key. It continues tomorrow.",
   "errors.ai.monthlyLimit": "Automatic AI reached your monthly limit in Settings → AI, so nothing more is spent on your key.",
   "errors.ai.usageNotSaved": "Terno couldn’t save what this request would cost, so it didn’t send it. Automatic AI tries again later.",
   "errors.ai.summaryBlocked": "This conversation is in Spam or Trash, so it can’t be summarized. Move it out and try again.",

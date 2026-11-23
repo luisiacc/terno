@@ -12,7 +12,7 @@ import { msg } from "@terno/store/conformance";
 import type { IncomingMessage } from "@terno/store";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
-import { DAILY_REQUESTS } from "./ai-limiter";
+import { DAILY_GUARD } from "./ai-limiter";
 import { withoutQuotes } from "./summaries";
 
 const START = new Date(2026, 10, 4, 12).getTime();
@@ -453,10 +453,10 @@ describe("the queue's states", () => {
     await expect(backend.summaries.status()).resolves.toMatchObject({ pending: 0, blockedBy: null });
   });
 
-  it("the day's limit stops it with no attempt spent, and the next day's first wake-up goes on; the month's likewise", async () => {
+  it("the day's guard (plan 239) stops it with no attempt spent, and the next day's first wake-up goes on; the month's likewise", async () => {
     const { client, backend, model, arrive, row, clock } = await setup({ enabled: false });
     const day = (ms: number) => { const d = new Date(ms); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
-    await backend.store.settings.set("ai:usage", { [day(clock.now)]: { summary: { requests: DAILY_REQUESTS.summary, inputTokens: 0, outputTokens: 0, usd: 0 } } });
+    await backend.store.settings.set("ai:usage", { [day(clock.now)]: { summary: { requests: DAILY_GUARD.requests, inputTokens: 0, outputTokens: 0, usd: 0 } } });
     await client.call("settings.update", { summaries: { enabled: true } });
     const a = await arrive();
     await settle();

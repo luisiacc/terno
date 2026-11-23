@@ -8,7 +8,7 @@ import { AiError, type CompletionRequest, type ModelTransport, type StreamEvent,
  * Until it settles the reservation counts as spent, so concurrent requests, and
  * a process that dies mid-request, can't pass the cap.
  *
- * Not used by the shipped app, which has daily limits of its own (ai-limiter).
+ * Not used by the shipped app, which has its own guard and monthly ceiling (ai-limiter).
  * On disk: file-ledger.ts, so this module stays free of node:fs for the web build.
  */
 export interface SpendLedger {

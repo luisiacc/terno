@@ -12,7 +12,6 @@ import { demoRegistry } from "@terno/mail";
 import { msg } from "@terno/store/conformance";
 import type { IncomingMessage } from "@terno/store";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DAILY_REQUESTS } from "./ai-limiter";
 import { Backend, plaintextCipher } from "./backend";
 import { checkSentMail, scanKeeps } from "./followups";
 
@@ -223,9 +222,8 @@ describe("the worker", () => {
     await expect.poll(() => backend.store.followups.marks.count()).toBe(0);
   });
 
-  it("the daily ceiling holds it, and turning it off mid-drain sends nothing further", async () => {
+  it("turning it off mid-drain sends nothing further", async () => {
     const { backend, client, model, send } = await setup();
-    expect(DAILY_REQUESTS.followup).toBe(200);
     let release!: (c: Completion) => void;
     model.answer = () => new Promise((r) => (release = r));
     await send();

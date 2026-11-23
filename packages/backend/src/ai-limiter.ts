@@ -6,10 +6,15 @@ import type { MailStore } from "@terno/store";
 
 /** A background task's share of the provider, across all of them. */
 const BACKGROUND_PER_MINUTE = 20;
-/** What one day may spend by itself, per task: nobody asked for each of these requests. */
-export const DAILY_REQUESTS: Readonly<Record<BackgroundTask, number>> = { summary: 300, categorize: 200, voice: 60, followup: 200, reply: 100, digest: 10, dated: 300 };
-/** A second ceiling, in input tokens, because a request's size varies. */
-export const DAILY_INPUT_TOKENS: Readonly<Record<BackgroundTask, number>> = { summary: 1_500_000, categorize: 400_000, voice: 400_000, followup: 400_000, reply: 800_000, digest: 60_000, dated: 600_000 };
+/**
+ * Plan 239 (the owner: "lets completely remove these daily limits … make it something very big"): no task has a daily
+ * budget; every background task reads all it's given. What's left is a guard against a fault (a loop asking the same mail
+ * again and again), the same for each task and far past anything a mailbox does on purpose. Money's limit is the user's
+ * own monthly ceiling (Settings → AI).
+ */
+export const DAILY_GUARD = { requests: 10_000, inputTokens: 100_000_000 } as const;
+/** What runs by itself: what the guard and the monthly ceiling apply to. */
+export const BACKGROUND_TASKS: readonly BackgroundTask[] = ["summary", "categorize", "voice", "followup", "reply", "digest", "dated"];
 /** How much background work may wait for a permit, so a burst can't pile up in memory. */
 const MAX_WAITING = 64;
 
@@ -108,7 +113,7 @@ const reported = (usage: Usage | undefined): usage is Usage => !!usage && usage.
 /**
  * Every request to a provider passes here. It keeps background work within its
  * share, keeps a local model to one request at a time (foreground first), and
- * counts what was spent, so a daily or monthly ceiling can stop work nobody is
+ * counts what was spent, so the daily guard or the monthly ceiling can stop work nobody is
  * watching. A person's own request is never refused, only counted.
  *
  * The count is a reservation: a request is charged its worst case, durably,
@@ -128,7 +133,7 @@ export class AiLimiter {
   constructor(private readonly host: AiLimiterHost) {}
 
   wrap(transport: ModelTransport, o: WrapOptions): ModelTransport {
-    const counted = o.foreground && o.task in DAILY_REQUESTS ? "byHand" : o.task;
+    const counted = o.foreground && (BACKGROUND_TASKS as readonly string[]).includes(o.task) ? "byHand" : o.task;
     const wrapped: ModelTransport = {
       ...transport,
       complete: async (req) => {
@@ -214,7 +219,7 @@ export class AiLimiter {
 
   private checkCeilings(book: UsageBook, task: BackgroundTask, worst: Pick<Reservation, "inputTokens" | "usd">, ceiling: number): void {
     const today = book[dayOf(this.host.now())]?.[task] ?? emptyTally();
-    if (today.requests + 1 > DAILY_REQUESTS[task] || today.inputTokens + worst.inputTokens > DAILY_INPUT_TOKENS[task]) throw new DailyLimitError();
+    if (today.requests + 1 > DAILY_GUARD.requests || today.inputTokens + worst.inputTokens > DAILY_GUARD.inputTokens) throw new DailyLimitError();
     if (ceiling > 0 && this.monthBackgroundUsd(book) + worst.usd > ceiling) throw new MonthlyLimitError();
   }
 
@@ -361,7 +366,7 @@ export class AiLimiter {
     for (const [day, tasks] of Object.entries(book)) {
       if (!day.startsWith(month)) continue;
       // whatever runs by itself: the registry above, so a new background task can't spend past the ceiling unseen
-      for (const task of Object.keys(DAILY_REQUESTS) as BackgroundTask[]) usd += tasks[task]?.usd ?? 0;
+      for (const task of BACKGROUND_TASKS) usd += tasks[task]?.usd ?? 0;
     }
     return usd;
   }

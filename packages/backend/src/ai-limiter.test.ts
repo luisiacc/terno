@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { AiError, type CompletionRequest, type ModelTransport } from "@terno/ai";
-import { AiLimiter, DAILY_REQUESTS, DailyLimitError, MonthlyLimitError } from "./ai-limiter";
+import { AiLimiter, DAILY_GUARD, DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 
 const dayKey = (ms: number) => {
   const d = new Date(ms);
@@ -29,20 +29,31 @@ const req = (signal = new AbortController().signal): CompletionRequest => ({ sys
 const free: ModelTransport = { complete: async () => ({ text: "", stop: "end", usage: { inputTokens: 1, outputTokens: 1 } }) };
 
 describe("AiLimiter", () => {
-  it("stops a background task at its daily limit, and starts again the next day", async () => {
+  it("plan 239: no daily budget: background tasks go on past the old ceilings (300 summaries, 600k tokens of What matters' reading)", async () => {
     const h = host();
     const limiter = new AiLimiter(h);
-    const t = limiter.wrap(free, { task: "summary", model: "gpt-6-luna", local: false, foreground: false });
-    // only the daily ceiling is under test: an hour between requests keeps clear of the per-minute share
-    for (let i = 0; i < DAILY_REQUESTS.summary; i++) {
-      await t.complete(req());
-      h.clock.now += 1;
+    const summary = limiter.wrap(free, { task: "summary", model: "gpt-6-luna", local: false, foreground: false });
+    for (let i = 0; i < 301; i++) {
+      await summary.complete(req());
+      // the pace (20 a minute) isn't under test
       if (i % 19 === 18) h.clock.now += 61_000;
     }
-    h.clock.now += 61_000;
-    await expect(t.complete(req())).rejects.toBeInstanceOf(DailyLimitError);
+    // the day that stopped What matters at 01:11: 72 reads, 590k tokens of 600k
+    const other = host();
+    await other.store.settings.set("ai:usage", { [dayKey(other.clock.now)]: { dated: { requests: 72, inputTokens: 700_000, outputTokens: 0, usd: 0 } } });
+    await expect(new AiLimiter(other).wrap(free, { task: "dated", model: "gpt-6-luna", local: false, foreground: false }).complete(req())).resolves.toBeTruthy();
+  });
+
+  it("plan 239: the guard stops a runaway task, by requests or by tokens, and it starts again the next day", async () => {
+    const h = host();
+    await h.store.settings.set("ai:usage", { [dayKey(h.clock.now)]: { summary: { requests: DAILY_GUARD.requests, inputTokens: 0, outputTokens: 0, usd: 0 }, dated: { requests: 1, inputTokens: DAILY_GUARD.inputTokens, outputTokens: 0, usd: 0 } } });
+    const limiter = new AiLimiter(h);
+    await expect(limiter.wrap(free, { task: "summary", model: "gpt-6-luna", local: false, foreground: false }).complete(req())).rejects.toBeInstanceOf(DailyLimitError);
+    await expect(limiter.wrap(free, { task: "dated", model: "gpt-6-luna", local: false, foreground: false }).complete(req())).rejects.toBeInstanceOf(DailyLimitError);
+    // one task's guard is its own
+    await expect(limiter.wrap(free, { task: "categorize", model: "gpt-6-luna", local: false, foreground: false }).complete(req())).resolves.toBeTruthy();
     h.clock.now += 86_400_000;
-    await expect(t.complete(req())).resolves.toBeTruthy();
+    await expect(limiter.wrap(free, { task: "summary", model: "gpt-6-luna", local: false, foreground: false }).complete(req())).resolves.toBeTruthy();
   });
 
   it("stops background work at the monthly ceiling but never a person's own request", async () => {
@@ -59,9 +70,9 @@ describe("AiLimiter", () => {
     const limiter = new AiLimiter(h);
     const big: ModelTransport = { complete: async () => ({ text: "", stop: "end", usage: { inputTokens: 1_000_000, outputTokens: 0 } }) };
     const byHand = limiter.wrap(big, { task: "summary", model: "gpt-6-luna", local: false, foreground: true });
-    for (let i = 0; i < DAILY_REQUESTS.summary + 1; i++) await byHand.complete(req());
+    for (let i = 0; i < 301; i++) await byHand.complete(req());
     const report = await limiter.report();
-    expect(report.today.requests).toBe(DAILY_REQUESTS.summary + 1);
+    expect(report.today.requests).toBe(301);
     expect(report.month.usd).toBeGreaterThan(0);
     expect(report.monthBackgroundUsd).toBe(0);
     await expect(limiter.wrap(free, { task: "summary", model: "gpt-6-luna", local: false, foreground: false }).complete(req())).resolves.toBeTruthy();
@@ -241,9 +252,9 @@ describe("AiLimiter", () => {
   describe("admission (plan 131 review)", () => {
     const usage = { complete: async () => ({ text: "", stop: "end" as const, usage: { inputTokens: 1, outputTokens: 1 } }) };
 
-    it("concurrent callers can't pass one remaining request: the one that reproduced 301 at a ceiling of 300", async () => {
+    it("concurrent callers can't pass one remaining request: the one that reproduced 301 at a ceiling of 300 (now the guard's)", async () => {
       const h = host();
-      await h.store.settings.set("ai:usage", { [dayKey(h.clock.now)]: { summary: { requests: DAILY_REQUESTS.summary - 1, inputTokens: 0, outputTokens: 0, usd: 0 } } });
+      await h.store.settings.set("ai:usage", { [dayKey(h.clock.now)]: { summary: { requests: DAILY_GUARD.requests - 1, inputTokens: 0, outputTokens: 0, usd: 0 } } });
       const limiter = new AiLimiter(h);
       let sent = 0;
       const counting: ModelTransport = { complete: async () => (sent++, await usage.complete()) };
@@ -251,7 +262,7 @@ describe("AiLimiter", () => {
       const results = await Promise.allSettled(Array.from({ length: 5 }, () => t.complete(req())));
       expect(sent).toBe(1);
       expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
-      expect((await limiter.report()).today.requests).toBe(DAILY_REQUESTS.summary);
+      expect((await limiter.report()).today.requests).toBe(DAILY_GUARD.requests);
     });
 
     it("concurrent callers can't pass one remaining dollar: the incoming worst case counts, in flight", async () => {
@@ -323,14 +334,14 @@ describe("AiLimiter", () => {
 
     it("rechecks after waiting for a local slot: what got ahead of it used the last request", async () => {
       const h = host();
-      await h.store.settings.set("ai:usage", { [dayKey(h.clock.now)]: { summary: { requests: DAILY_REQUESTS.summary - 2, inputTokens: 0, outputTokens: 0, usd: 0 } } });
+      await h.store.settings.set("ai:usage", { [dayKey(h.clock.now)]: { summary: { requests: DAILY_GUARD.requests - 2, inputTokens: 0, outputTokens: 0, usd: 0 } } });
       const limiter = new AiLimiter(h);
       let release!: () => void;
       const hold = new Promise<void>((r) => (release = r));
       const slow: ModelTransport = { complete: async () => (await hold, { text: "", stop: "end" }) };
       // holds the local model, and takes 299 of 300
       const holding = limiter.wrap(slow, { task: "summary", model: "m", local: true, foreground: false }).complete(req());
-      await vi.waitFor(async () => expect((await limiter.report()).today.requests).toBe(DAILY_REQUESTS.summary - 1));
+      await vi.waitFor(async () => expect((await limiter.report()).today.requests).toBe(DAILY_GUARD.requests - 1));
       let sent = 0;
       const waiting = limiter.wrap({ complete: async () => (sent++, await usage.complete()) }, { task: "summary", model: "m", local: true, foreground: false }).complete(req());
       await new Promise((r) => setTimeout(r));
