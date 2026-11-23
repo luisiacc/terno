@@ -31,3 +31,15 @@ export function tabHiddenTest(db: MemDb): ((t: Row & Record<string, any>) => boo
   const s = separated;
   return (t) => !!t.tab && s.has(t.account_id as number);
 }
+
+/**
+ * Plan 238 (SQLite's inboxHiding().accountsOff): the accounts out of the
+ * all-accounts Inbox (an account's own Inbox keeps them), or null when none is.
+ */
+export function accountsOutOfInbox(db: MemDb): Set<number> | null {
+  let out: Set<number> | null = null;
+  for (const a of db.table<Row & Record<string, any>>("accounts").all()) {
+    if ((JSON.parse(a.provider_config as string) as { unified?: boolean }).unified === false) (out ??= new Set()).add(a.id as number);
+  }
+  return out;
+}

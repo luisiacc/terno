@@ -80,7 +80,7 @@ import { acceptFlagObservation, bindFlagTarget, flagObservationValid, localFlagI
 import { bindIdbPromotedFlags, idbFlags } from "./flag-intents";
 import { AWAITING_AUTH, AWAITING_NETWORK, AWAITING_IDENTITY, DEFERRED_RETRY_MS, keepInPage, operationFlagFields, type LocalFlagField, type OpPark, type DraftInput, type DraftRow, type IncomingMessage, type ListParams, type ModelDelta, type OpRow, type OwnerClaim, type MessageState, type Page, type ScopeParams, type SearchMessageDoc, type SearchThreadDoc } from "@terno/store";
 import type { MemDb, Row, Table } from "./mem";
-import { hiddenCategories, tabHiddenTest } from "./inbox-hidden";
+import { accountsOutOfInbox, hiddenCategories, tabHiddenTest } from "./inbox-hidden";
 import { answeredThreads, factsReady, noteSentMail, ownAddresses, ownMailChanged, recomputeContext, referencesOfOwn, type FactsQueue } from "./facts";
 import { mergeReminder } from "./reminders";
 import { mergePin } from "./pins";
@@ -1213,9 +1213,17 @@ export function inboxHiddenTest(c: Ctx): ((threadId: number) => boolean) | null 
   };
 }
 
-/** What the view leaves out: the plain Inbox's hidden threads (not a category's tab of it, plan 67, a folder nor a Gmail tab), else nothing. */
+/**
+ * What the view leaves out: the plain Inbox's hidden threads (not a category's tab of it, plan 67, a folder nor a
+ * Gmail tab), and in the all-accounts one plan 238's accounts too; else nothing.
+ */
 function hiddenFor(c: Ctx, p: ScopeParams): ((threadId: number) => boolean) | null {
-  return p.view === "inbox" && p.categoryId === undefined && p.folder === undefined && p.tab === undefined ? inboxHiddenTest(c) : null;
+  if (p.view !== "inbox" || p.categoryId !== undefined || p.folder !== undefined || p.tab !== undefined) return null;
+  const hidden = inboxHiddenTest(c);
+  const out = p.accountId === undefined ? accountsOutOfInbox(c.db) : null;
+  if (!out) return hidden;
+  const threads = T(c, "threads");
+  return (id) => out.has(threads.get(id)?.account_id as number) || !!hidden?.(id);
 }
 
 /** Does a thread pass a tab list's view, account and filter (Waiting: inside its window)? */
@@ -1456,6 +1464,8 @@ export function getCounts(c: Ctx, now: number): Counts {
   let inboxUnread = 0;
   const threads = T(c, "threads");
   const hidden = inboxHiddenTest(c);
+  // plan 238: an account out of the all-accounts Inbox keeps its own count, not a share of the total
+  const out = accountsOutOfInbox(c.db);
   // plan 86: unread threads per Gmail tab, from the tab's unread index (its buckets' sizes)
   const tabUnread: Record<string, number> = {};
   // unread threads in each account's Archive and Spam
@@ -1464,7 +1474,7 @@ export function getCounts(c: Ctx, now: number): Counts {
     if (!(t.unread_count > 0)) continue;
     if (t.in_inbox === 1 && !hidden?.(t.id)) {
       byAccount[t.account_id] = (byAccount[t.account_id] ?? 0) + 1;
-      inboxUnread++;
+      if (!out?.has(t.account_id)) inboxUnread++;
     }
     for (const v of COUNTED_VIEWS) if (VIEW_TEST[v](t)) viewUnread[viewRef(t.account_id, v)] = (viewUnread[viewRef(t.account_id, v)] ?? 0) + 1;
   }
@@ -1494,12 +1504,13 @@ export function waitingCounts(c: Ctx, now: number): Pick<Counts, "inboxWaiting" 
   const byAccount: Record<number, number> = {};
   let total = 0;
   const hidden = inboxHiddenTest(c);
+  const out = accountsOutOfInbox(c.db);
   for (const id of c.filterOrders.waiting.current(threads)) {
     const t = threads.get(id)!;
     if (t.last_date < cutoff) break;
     if (t.waiting_since < cutoff || t.in_inbox !== 1 || hidden?.(id)) continue;
     byAccount[t.account_id] = (byAccount[t.account_id] ?? 0) + 1;
-    total++;
+    if (!out?.has(t.account_id)) total++;
   }
   return { inboxWaiting: total, inboxWaitingByAccount: byAccount };
 }

@@ -336,3 +336,46 @@ describe("a delete's count (plan 107)", () => {
     expect(ms.length).toBeLessThanOrEqual(Math.ceil((n + 2 * keys.length) / limit) + keys.length + 2);
   });
 });
+
+describe("an account out of the all-accounts Inbox (plan 238)", () => {
+  it("holding the newest 95% of the Inbox, or all of it: pages, filters, scopes and counts within the navigation budgets", async () => {
+    const inbox = store.db.all<{ id: number; account_id: number }>("SELECT id, account_id FROM threads WHERE in_inbox = 1 ORDER BY last_date DESC, id DESC");
+    const out = accountIds[0]!;
+    // the worst case for a page: everything newest is the hidden account's, so the walk passes all of it first
+    const top = inbox.slice(0, Math.floor(inbox.length * 0.95)).map((r) => r.id);
+    const rest = inbox.slice(top.length).filter((r) => r.account_id === out).map((r) => r.id);
+    const other = accountIds.find((id) => id !== out)!;
+    const move = (ids: number[], to: number) => {
+      for (let i = 0; i < ids.length; i += 500) store.db.run(`UPDATE threads SET account_id = ? WHERE id IN (${ids.slice(i, i + 500).join()})`, to);
+    };
+    move(top, out);
+    move(rest, other);
+    meta.accountOutOfInbox = `${top.length} of ${inbox.length}`;
+    try {
+      const control = await measureAsync("account out control (shown): sidebar counts", 10, () => store.threads.counts(NOW));
+      stats.push(control);
+      await store.accounts.update(out, { unified: false });
+      const page = await store.threads.list({ view: "inbox", limit: 100 });
+      expect(page.items.length).toBeGreaterThan(0);
+      expect(page.items.every((t) => t.accountId !== out)).toBe(true);
+      await gate("account out 95%: list inbox, first page (100)", 5, () => store.threads.list({ view: "inbox", limit: 100 }));
+      await gate("account out 95%: list inbox, next page", 5, () => store.threads.list({ view: "inbox", limit: 100, cursor: page.nextCursor ?? undefined }));
+      await gate("account out 95%: inbox unread filter, first page", 5, () => store.threads.list({ view: "inbox", filter: "unread", limit: 100 }));
+      await gate("account out 95%: select all in the Inbox (ids, first page)", 10, () => store.threads.scopeIds({ view: "inbox", limit: 500 }));
+      await gate("account out 95%: select all in the Inbox (count)", 10, () => store.threads.scopeCount({ view: "inbox", limit: 100_000 }));
+      const counts = await gate("account out 95%: sidebar counts", 5, () => store.threads.counts(NOW));
+      expect(counts.p50 - control.p50, `the account test adds ${(counts.p50 - control.p50).toFixed(2)} ms to the counts`).toBeLessThanOrEqual(1 * BUDGET_MULTIPLIER);
+      // its own Inbox is as it was
+      await gate("account out 95%: its own Inbox, first page (100)", 5, () => store.threads.list({ view: "inbox", accountId: out, limit: 100 }));
+      for (const id of accountIds) await store.accounts.update(id, { unified: false });
+      expect((await store.threads.list({ view: "inbox", limit: 100 })).items).toEqual([]);
+      await gate("every account out: list inbox, first page (empty)", 5, () => store.threads.list({ view: "inbox", limit: 100 }));
+      await gate("every account out: inbox unread filter (empty)", 5, () => store.threads.list({ view: "inbox", filter: "unread", limit: 100 }));
+    } finally {
+      for (const id of accountIds) await store.accounts.update(id, { unified: true });
+      const back = new Map<number, number[]>();
+      for (const r of inbox) back.set(r.account_id, [...(back.get(r.account_id) ?? []), r.id]);
+      for (const [to, ids] of back) move(ids, to);
+    }
+  });
+});

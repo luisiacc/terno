@@ -44,6 +44,8 @@ export interface Account {
   ai?: boolean;
   /** plan 211: "Show in What matters": off, nothing of it is in the feed; absent: on */
   feed?: boolean;
+  /** plan 238: in the all-accounts Inbox and its unread count; absent: on */
+  unified?: boolean;
   syncState: AccountSyncState;
 }
 
@@ -60,6 +62,8 @@ export interface AccountPatch {
   /** plan 211: absent: on */
   ai?: boolean;
   feed?: boolean;
+  /** plan 238: absent: on */
+  unified?: boolean;
   /** plan 211: backend only (never in the RPC schema): when a switch turned off is recorded as this moment (ms) */
   offAt?: number;
   /**
@@ -89,6 +93,8 @@ export interface AccountPrefs {
   ai?: boolean;
   /** plan 211: false: nothing of this account is in What matters; absent: on */
   feed?: boolean;
+  /** plan 238: false: out of the all-accounts Inbox and its unread count (its own Inbox keeps it); absent: on */
+  unified?: boolean;
   /** plan 211: when `ai` last went from on to off (ms); kept when it's turned back on (the check of mail already here reads from it) */
   aiOffAt?: number;
   /** plan 211: when `feed` last went from on to off (ms), likewise */
@@ -99,13 +105,19 @@ export interface AccountPrefs {
 
 /** Whether a patch changes anything kept in the provider config (the stores' one test, so a new preference can't miss one). */
 export function patchesAccountPrefs(patch: AccountPatch): boolean {
-  return patch.senderName !== undefined || patch.signature !== undefined || patch.syncWindowDays !== undefined || patch.separateTabs !== undefined || patch.followups !== undefined || patch.ai !== undefined || patch.feed !== undefined || patch.backfill !== undefined;
+  return patch.senderName !== undefined || patch.signature !== undefined || patch.syncWindowDays !== undefined || patch.separateTabs !== undefined || patch.followups !== undefined || patch.ai !== undefined || patch.feed !== undefined || patch.unified !== undefined || patch.backfill !== undefined;
 }
 
 /** An account's preferences as the renderer sees them, from its stored config. */
-export function accountPrefs(config: AccountPrefs, displayName: string): Pick<Account, "senderName" | "signature" | "syncWindowDays" | "separateTabs" | "followups" | "ai" | "feed" | "backfillSince"> {
-  return { senderName: config.senderName || displayName, signature: config.signature ?? "", syncWindowDays: config.syncWindowDays ?? null, separateTabs: config.separateTabs !== false, followups: config.followups !== false, ai: config.ai !== false, feed: config.feed !== false, backfillSince: config.backfill?.since ?? null };
+export function accountPrefs(config: AccountPrefs, displayName: string): Pick<Account, "senderName" | "signature" | "syncWindowDays" | "separateTabs" | "followups" | "ai" | "feed" | "unified" | "backfillSince"> {
+  return { senderName: config.senderName || displayName, signature: config.signature ?? "", syncWindowDays: config.syncWindowDays ?? null, separateTabs: config.separateTabs !== false, followups: config.followups !== false, ai: config.ai !== false, feed: config.feed !== false, unified: config.unified !== false, backfillSince: config.backfill?.since ?? null };
 }
+
+/** Plan 238: the account's mail is in the all-accounts Inbox and its unread count (unless the user took it out). */
+export const inAllInbox = (account: { unified?: boolean }) => account.unified !== false;
+
+/** Plan 238: the choice is offered with more than one account (with one, the Inbox is that account's), or while it's off. */
+export const allInboxOffered = (account: { unified?: boolean }, accounts: number) => accounts > 1 || !inAllInbox(account);
 
 /** The config with a patch's preferences applied (the rest of the patch lives in columns). */
 export function withAccountPrefs<T extends AccountPrefs>(config: T, patch: AccountPatch): T {
@@ -123,6 +135,10 @@ export function withAccountPrefs<T extends AccountPrefs>(config: T, patch: Accou
   if (patch.separateTabs !== undefined) {
     if (patch.separateTabs) delete next.separateTabs;
     else next.separateTabs = false;
+  }
+  if (patch.unified !== undefined) {
+    if (patch.unified) delete next.unified;
+    else next.unified = false;
   }
   // plan 211: absent is on; turning one off records when (only from on: off again keeps the first moment)
   if (patch.ai !== undefined) {

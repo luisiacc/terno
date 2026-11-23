@@ -166,7 +166,7 @@ export function listSql(p: ListParams, only?: readonly number[], hidden: InboxHi
     params.push(TAB_CODE[p.tab]);
   }
   if (plainInbox(p)) {
-    const h = hidingSql("t", hidden);
+    const h = hidingSql("t", hidden, p.accountId === undefined);
     where.push(...h.where);
     params.push(...h.params);
   }
@@ -257,7 +257,7 @@ function scopeFrom(p: ScopeParams, paged = false, hidden: InboxHiding = NO_HIDIN
     params.push(...f.params);
   }
   if (plainInbox(p)) {
-    const h = hidingSql("t", hidden);
+    const h = hidingSql("t", hidden, p.accountId === undefined);
     where.push(...h.where);
     params.push(...h.params);
   }
@@ -397,6 +397,8 @@ export function getCounts(db: Db, now: number): Counts {
   let inboxUnread = 0;
   // read once for every count (plans 83, 86)
   const hiding = inboxHiding(db);
+  // plan 238: an account out of the all-accounts Inbox keeps its own count, not a share of the total
+  const out = new Set(hiding.accountsOff);
   let tabUnread: Record<string, number>;
   if (!hiding.categories.length) {
     // plan 86: one walk of the unread Inbox's (account, tab) index gives the Inbox's counts and each tab's
@@ -409,7 +411,7 @@ export function getCounts(db: Db, now: number): Counts {
       if (tab) tabUnread[tabRef(r.account_id, tab)] = r.c;
       if (tab && hiding.tabsOff !== null && !off.has(r.account_id)) continue;
       byAccount[r.account_id] = (byAccount[r.account_id] ?? 0) + r.c;
-      inboxUnread += r.c;
+      if (!out.has(r.account_id)) inboxUnread += r.c;
     }
   } else {
     const shown = shownSql(hiding);
@@ -418,7 +420,7 @@ export function getCounts(db: Db, now: number): Counts {
       ...shown.params,
     )) {
       byAccount[r.account_id] = r.c;
-      inboxUnread += r.c;
+      if (!out.has(r.account_id)) inboxUnread += r.c;
     }
     tabUnread = tabUnreadCounts(db);
   }
@@ -486,6 +488,7 @@ export function waitingCounts(db: Db, now: number, hiding = inboxHiding(db)): Pi
   const byAccount: Record<number, number> = {};
   let total = 0;
   const shown = shownSql(hiding);
+  const out = new Set(hiding.accountsOff);
   // threads_waiting_inbox holds only the inbox's waiting threads: the window is its range (waiting_since <= last_date, so no date test)
   for (const r of db.all<{ account_id: number; c: number }>(
     // plan 86: with Gmail's tabs apart, the index that also holds the tab (never a row read per waiting thread)
@@ -494,7 +497,7 @@ export function waitingCounts(db: Db, now: number, hiding = inboxHiding(db)): Pi
     ...shown.params,
   )) {
     byAccount[r.account_id] = r.c;
-    total += r.c;
+    if (!out.has(r.account_id)) total += r.c;
   }
   return { inboxWaiting: total, inboxWaitingByAccount: byAccount };
 }

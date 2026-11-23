@@ -33,6 +33,7 @@ import { defineDatedMutesConformance } from "./dated-mutes";
 import { defineWritingConformance } from "./writing";
 import { defineUnsubscribeConformance } from "./unsubscribe";
 import { defineHiddenInboxConformance } from "./hidden-inbox";
+import { defineAccountOutOfInboxConformance } from "./account-out-of-inbox";
 import { defineTabsConformance } from "./tabs";
 import { defineImapAdoptConformance } from "./imap-adopt";
 import { defineViewUnreadConformance } from "./view-unread";
@@ -119,6 +120,11 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
       return next;
     });
     defineTabsConformance(fresh, async (s) => {
+      const next = await harness.reopen(s);
+      open.push(next);
+      return next;
+    });
+    defineAccountOutOfInboxConformance(fresh, async (s) => {
       const next = await harness.reopen(s);
       open.push(next);
       return next;

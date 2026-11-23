@@ -183,6 +183,22 @@ describe("local-first actions", () => {
     expect(live.some((p) => p.arrived?.length === 1 && p.threadIds.includes(p.arrived[0]!))).toBe(true);
   });
 
+  it("plan 238: taking an account out of the all-accounts Inbox tells the lists and counts, and the total leaves it out", async () => {
+    const { backend, client, accountId, events } = await setup();
+    const other = createAccount(sqlDb(backend.store), { kind: "imap", email: "work@example.com", displayName: "Work", color: "teal", providerConfig: {} }).id;
+    await backend.ingestSliced([incoming(accountId), incoming(other)]);
+    expect((await client.call("counts.get", {})).inboxUnread).toBe(2);
+    await tick();
+    events.length = 0;
+    expect(await client.call("accounts.update", { id: other, unified: false })).toMatchObject({ id: other, unified: false });
+    await tick();
+    expect(events.some((e) => e.name === "changed")).toBe(true);
+    const counts = await client.call("counts.get", {});
+    expect(counts.inboxUnread).toBe(1);
+    expect(counts.inboxUnreadByAccount[other]).toBe(1);
+    expect((await client.call("threads.list", { view: "inbox" })).items.map((t) => t.accountId)).toEqual([accountId]);
+  });
+
   it("retryable provider failures back off; non-retryable ones fail", async () => {
     const { backend, client, providers, accountId } = await setup();
     await backend.ingestSliced([incoming(accountId)]);

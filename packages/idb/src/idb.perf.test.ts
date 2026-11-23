@@ -899,6 +899,52 @@ it("plan 83: a category hidden from the Inbox holding 95% of it: Inbox pages, un
   }
 }, 900_000);
 
+it("plan 238: an account out of the all-accounts Inbox holding its newest 95%, or every account out: Inbox pages, unread, select all and counts within a frame", async () => {
+  const db = (store as unknown as { db: { tx(fn: () => void): void; takeCommit(): unknown; confirm(): void; table(n: string): { all(): Iterable<Record<string, unknown>>; update(r: Record<string, unknown>, p: Record<string, unknown>): void } } }).db;
+  const accounts = (await store.accounts.list()).map((a) => a.id);
+  const out = accounts[0]!;
+  // the worst case for a page: everything newest is the hidden account's, so the walk passes all of it first
+  const inbox = [...db.table("threads").all()].filter((t) => t.in_inbox === 1).sort((x, y) => (y.last_date as number) - (x.last_date as number) || (y.id as number) - (x.id as number));
+  const top = new Set(inbox.slice(0, Math.floor(inbox.length * 0.95)).map((t) => t.id as number));
+  const was = new Map(inbox.map((t) => [t.id as number, t.account_id as number]));
+  const rewrite = (to: (t: Record<string, unknown>) => number) => {
+    db.tx(() => {
+      const threads = db.table("threads");
+      for (const t of threads.all()) if (was.has(t.id as number)) threads.update(t, { account_id: to(t) });
+    });
+    db.takeCommit();
+    db.confirm();
+  };
+  rewrite((t) => (top.has(t.id as number) ? out : was.get(t.id as number) === out ? accounts[1]! : was.get(t.id as number)!));
+  try {
+    await store.accounts.update(out, { unified: false });
+    const reads: Record<string, () => Promise<unknown>> = {
+      "inbox page": () => store.threads.list({ view: "inbox", limit: 100 }),
+      "unread page": () => store.threads.list({ view: "inbox", filter: "unread", limit: 100 }),
+      counts: () => store.threads.counts(NOW),
+      "select all": () => store.threads.scopeCount({ view: "inbox", limit: 1_000_000 }),
+      "its own Inbox": () => store.threads.list({ view: "inbox", accountId: out, limit: 100 }),
+    };
+    const first = (await store.threads.list({ view: "inbox", limit: 100 })).items;
+    expect(first.length).toBeGreaterThan(0);
+    expect(first.every((t) => t.accountId !== out)).toBe(true);
+    for (const [label, read] of Object.entries(reads)) {
+      const r = await warm(read);
+      console.log(`account out 95%: ${label} ${r.ms.toFixed(1)} ms`);
+      expect(r.ms, label).toBeLessThanOrEqual(FRAME * MULT);
+    }
+    for (const id of accounts) await store.accounts.update(id, { unified: false });
+    for (const label of ["inbox page", "unread page", "select all"]) {
+      const r = await warm(reads[label]!);
+      console.log(`every account out: ${label} ${r.ms.toFixed(1)} ms`);
+      expect(r.ms, `every account out: ${label}`).toBeLessThanOrEqual(FRAME * MULT);
+    }
+  } finally {
+    for (const id of accounts) await store.accounts.update(id, { unified: true });
+    rewrite((t) => was.get(t.id as number)!);
+  }
+}, 900_000);
+
 it("plan 107: a renamed folder's threads carried to its new key a slice at a time: every slice within a frame, the whole folder once (Codex code review round 3 #5)", async () => {
   const all = seeded.threads;
   const { account, size } = fileBiggestAccount("Label_carry", all);

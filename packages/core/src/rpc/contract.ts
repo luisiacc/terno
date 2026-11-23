@@ -1169,6 +1169,8 @@ export const contract = {
       ai: z.boolean().optional(),
       /** plan 211: "Show in What matters" */
       feed: z.boolean().optional(),
+      /** plan 238: in the all-accounts Inbox and its unread count */
+      unified: z.boolean().optional(),
     }),
   ),
   /** plan 169: the sidebar's order (dragged); accounts left out keep theirs after the given ones */
