@@ -520,6 +520,75 @@ test.describe("plans 245 and 248: each style keeps the font it was given, any fo
     });
   });
 
+  test("Codex code review of plan 248: typing after scrolling, a second Esc, typing into the closed field, the saved family on first opening, leaving mid-choice", async ({ app: page, server }) => {
+    const html = page.locator("html");
+    const field = page.getByTestId("font-field");
+    const saved = async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).settings.designFonts;
+    await stub(page);
+    await server.backend.server.invoke("settings.update", { design: "lumen", designFonts: { lumen: "local:Georgia" } }, ctx);
+    await reload(page);
+    await page.getByTestId("open-settings").click();
+    await page.getByTestId("tab-appearance").click();
+    await scenario("#4: the first opening after a launch opens on the saved family, highlighted", async () => {
+      await field.focus();
+      await page.keyboard.press("ArrowDown");
+      await expect(page.locator('[data-font-option="local:Georgia"]')).toHaveAttribute("data-highlighted", "");
+      await page.keyboard.press("ArrowDown");
+      await expect(page.locator('[data-font-option="local:Menlo"]')).toHaveAttribute("data-highlighted", "");
+    });
+    await scenario("#1: scrolled far down, typing brings its first match into view, and Enter keeps it", async () => {
+      for (let i = 0; i < 60; i++) await page.keyboard.press("ArrowDown");
+      await page.keyboard.type("fake");
+      await expect(page.locator('[data-font-option="local:Fake Family 000"]')).toBeInViewport();
+      await page.keyboard.press("Enter");
+      await expect(field).toHaveValue("Fake Family 000");
+      await expect.poll(saved).toEqual({ lumen: "local:Fake Family 000" });
+    });
+    await scenario("#3: typing into the closed field finds from the first letter", async () => {
+      await expect(page.getByTestId("font-list")).toBeHidden();
+      // after a choice the name is selected: typing replaces it
+      await page.keyboard.type("Geo");
+      await expect(field).toHaveValue("Geo");
+      await page.keyboard.press("Escape");
+      // and coming to the closed field from elsewhere, the first letter already finds
+      await page.getByTestId("tab-appearance").focus();
+      await field.focus();
+      await page.keyboard.type("Geo");
+      await expect(field).toHaveValue("Geo");
+      await expect(page.getByTestId("font-option")).toHaveCount(1);
+      await expect(page.locator('[data-font-option="local:Georgia"]')).toBeVisible();
+    });
+    await scenario("#2: Esc closes the list, a second Esc closes Settings, and the font stays", async () => {
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("font-list")).toBeHidden();
+      await expect(field).toHaveValue("Fake Family 000");
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("settings-dialog")).toBeHidden();
+      expect(await saved()).toEqual({ lumen: "local:Fake Family 000" });
+    });
+    await scenario("#5: leaving Appearance while a choice waits for its faces keeps the choice on screen", async () => {
+      let arrive!: () => void;
+      const held = new Promise<void>((r) => (arrive = r));
+      await page.route(/inter.*\.woff2$/, async (route) => {
+        await held;
+        await route.continue();
+      });
+      await page.getByTestId("open-settings").click();
+      await page.getByTestId("tab-appearance").click();
+      await field.click();
+      await page.keyboard.type("Inter");
+      await expect(html).toHaveAttribute("data-font", "inter");
+      await page.keyboard.press("Enter");
+      await page.getByTestId("tab-general").click();
+      // the field is gone and Inter is still waiting: what was chosen stays, never the font before it
+      expect(await html.getAttribute("data-font")).toBe("inter");
+      arrive();
+      await expect.poll(saved).toEqual({ lumen: "inter" });
+      await expect(html).toHaveAttribute("data-font", "inter");
+      await page.unroute(/inter.*\.woff2$/);
+    });
+  });
+
   test("a browser that can't list the computer's fonts takes a typed name, shown before it's kept", async ({ app: page, server }) => {
     const html = page.locator("html");
     const field = page.getByTestId("font-field");

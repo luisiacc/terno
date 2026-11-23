@@ -95,3 +95,15 @@ Twelve points. What changed:
 - `@terno/ui`: `withFont` and `fontPaint` for families, the per-design local blocks, and the Combobox's picker form (`combobox-picker.tsx`, on Base UI's Combobox; BOARDUI.md).
 - `apps/web`: `lib/local-fonts.ts` (the computer's families, read once), `lib/fonts.ts` (the list and how typing finds), `previewStyleFont` in `appearance.ts`, and `settings/font-field.tsx`, which replaces plan 245's Select.
 - Tests: core, ui, web unit (`appearance`, `local-fonts`, `fonts`, `theme-script`), backend (`settings`, `settings-edits`), e2e (`designs.spec`: the whole flow with a stubbed list of 404 families, and the browser without a list), and a packaged smoke (`fonts.smoke.ts`: this Mac's own list, Helvetica typed and kept). The Appearance baselines moved for the field.
+
+## The Codex code review
+
+One round, five findings, all fixed, each with an e2e regression that fails without its fix (`designs.spec.ts`, "Codex code review of plan 248"):
+
+1. **Typing after scrolling far down left Enter with nothing to press.** Base UI presses the highlighted row, which must be drawn; typing's highlight (reason "none") wasn't scrolled to. Every highlight but the pointer's is now brought into view.
+2. **A second Esc never closed Settings.** Base UI clears a closed combobox on Esc and stops the key; the field keeps its font, so every later Esc was swallowed. The clear is cancelled and the key allowed through.
+3. **Typing into the closed field lost the first letter**: opening reset the query to the saved name. An opening by typing keeps what was typed; a choice leaves the name selected, so typing again starts a new search.
+4. **The first opening after a launch didn't open on a saved family**: the list held only Terno's fonts when it opened. The first opening waits for the computer's list (read on focus, so normally already there), then opens on the font in use, highlighted.
+5. **Leaving Appearance while a choice waited for its faces painted the old font for a moment.** The field's cleanup now ends only a look that wasn't chosen; a chosen one is the choice's, which paints it as it commits.
+
+Found while fixing #4: Base UI mounts the popup after React's commit, so the virtualizer could miss its scroll box and draw no rows. The scroll box is now state (a callback ref), so its arrival draws the rows and scrolls to the font in use.
