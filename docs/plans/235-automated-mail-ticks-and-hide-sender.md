@@ -136,3 +136,6 @@ now serves a tick, a range and the keys. The anchor resets with the day. Shift's
 selects no text. Base UI forwards the click's modifiers to the change event (`dispatchClickWithModifiers`), which is where
 Shift is read. Tested in the unit (both pages, both directions, unticking, an opened row) and in today.spec (real Shift
 click, no text selected).
+
+What the Codex code review changed: preventing Shift's mousedown also kept the focus on the last tick, so Space then toggled
+that one; the press now focuses its own tick (a program's focus: no ring). Tested in today.spec.

@@ -238,6 +238,8 @@ test.describe("What matters and its digest (plan 145)", () => {
     await digestRows.nth(2).getByTestId("digest-tick").click({ modifiers: ["Shift"] });
     for (const n of [0, 1, 2]) await expect(digestRows.nth(n).getByTestId("digest-tick")).toBeChecked();
     expect(await page.evaluate(() => getSelection()?.toString() ?? "")).toBe("");
+    // and the tick pressed has the focus, so Space is that one's (Codex review)
+    await expect(digestRows.nth(2).getByTestId("digest-tick")).toBeFocused();
     await digestRows.nth(2).getByTestId("digest-tick").click();
     await expect(page.getByTestId("digest-hide")).toHaveText(/^Hide (sender|2 senders)$/);
     await digestRows.nth(0).getByTestId("digest-open").focus();

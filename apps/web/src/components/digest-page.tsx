@@ -8,7 +8,7 @@ import { Spinner } from "@terno/ui/components/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { Archive, Ban, ChevronRight, EyeOff, Info, Mail } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type MouseEvent, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getApp } from "~/state/app";
 import { modelName, routeOf } from "~/lib/ai";
 import { listDate } from "~/lib/format";
@@ -237,6 +237,12 @@ export default function DigestPage() {
     const ids = from < 0 ? [id] : shown.slice(Math.min(from, at), Math.max(from, at) + 1).filter((i) => i.threadId === id || rangeable(i)).map((i) => i.threadId);
     setAnchor(id);
     setTicks(ids, on);
+  };
+  // Shift's press selects no text, and still focuses the tick it pressed (Codex review: Space then toggled the last one)
+  const shiftDown = (e: MouseEvent<HTMLElement>) => {
+    if (!e.shiftKey) return;
+    e.preventDefault();
+    e.currentTarget.focus({ preventScroll: true });
   };
   // plan 162: the ticks reset at once, both ways (Atelier codex): every live row ticked, or none. Plan 235: Automated mail's
   // Tick all takes the opened ones too (the person picks everything there); a digest's leaves them (opened stays, its hint says)
@@ -495,7 +501,7 @@ export default function DigestPage() {
               >
               <li data-testid="digest-item" data-live={live(i)} data-state={state} className="group/item relative flex items-start gap-1 border-b border-hairline py-1">
                 {/* pass 2: a 24 px box of its own, so a near miss doesn't open the newsletter beside it */}
-                <Checkbox target="quiet" data-testid="digest-tick" aria-label={t("today.digest.tick", { subject: i.subject })} checked={state === "archive"} disabled={!tickable(i)} className="mt-1.5" onMouseDown={(e) => e.shiftKey && e.preventDefault()} onCheckedChange={(_, how) => toggle(i.threadId, (how.event as MouseEvent).shiftKey === true)} />
+                <Checkbox target="quiet" data-testid="digest-tick" aria-label={t("today.digest.tick", { subject: i.subject })} checked={state === "archive"} disabled={!tickable(i)} className="mt-1.5" onMouseDown={shiftDown} onCheckedChange={(_, how) => toggle(i.threadId, (how.event as { shiftKey?: boolean }).shiftKey === true)} />
                 {/* plan 161: reading is as plain as archiving: the whole row opens the newsletter, and says so on hover */}
                 <button type="button" data-digest-open={i.threadId} className="group/open flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors group-has-[[data-not-newsletter]:hover]/item:bg-row-hover hover:bg-row-hover focus:bg-row-selected focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" data-testid="digest-open" onClick={() => open(i.threadId)}>
                   <span className="min-w-0 flex-1">
