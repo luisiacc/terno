@@ -177,3 +177,13 @@ describe("a failed verdict (the Codex code review)", () => {
     expect(preferenceDecision(rules, { kind: "event", senderKey: "a@b.test" }, { basis: b, rules: [], failed: true }, b)).toEqual({ hide: false, first: false, pending: false });
   });
 });
+
+describe("a title and a name (the held-out set)", () => {
+  it("mr. Okafor is any Okafor by name or address; a bare first name alone isn't widened", async () => {
+    const { nameMatches } = await import("./preferences");
+    expect(nameMatches("mr. Okafor", { senderKey: "chidi.okafor@okaforproperties.test", senderName: "Chidi Okafor" })).toBe(true);
+    expect(nameMatches("mr. Okafor", { senderKey: "chidi.okafor@okaforproperties.test" })).toBe(true);
+    expect(nameMatches("Dra. Ferrer", { senderKey: "citas@clinica.test", senderName: "Dra. Ana Ferrer" })).toBe(true);
+    expect(nameMatches("mr. Okafor", { senderKey: "x@y.test", senderName: "Okafordo" })).toBe(false);
+  });
+});

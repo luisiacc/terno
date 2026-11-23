@@ -212,7 +212,9 @@ describe("hide and first (plan 248 §4)", () => {
     await t.words("No deliveries unless I have to sign");
     await t.settled();
     expect(await t.threads()).toEqual([signed]);
-    expect(t.of("preference_matches")).toHaveLength(1);
+    // the first reading, then the hide confirmed before the row goes
+    expect(t.of("preference_matches")).toHaveLength(2);
+    expect(promptText(t.of("preference_matches")[1]!.system)).toContain("A first reading matched these rows to these hide rules");
     // the rows went with the mail's words around them, never another conversation's
     const prompt = promptText(t.of("preference_matches")[0]!.messages[0]!.content);
     expect(prompt).toContain("An adult signature is required");
@@ -441,6 +443,33 @@ describe("the Codex code review of plan 248", () => {
     await t.settled();
     expect(t.of("wanted_mail")).toHaveLength(0);
     expect(await t.backend.store.whatMatters.wanted.marks.count("look")).toBe(0);
+  });
+});
+
+describe("the second question (the held-out eval)", () => {
+  it("a hide the confirmation doesn't stand by isn't applied: the row stays", async () => {
+    const t = await setup();
+    t.model.dated = () => dated([{ kind: "renew", text: "Cancel Tasklet Pro before Nov 15 or pay $9.99/month", quote: "Your Tasklet Pro trial ends on November 15.", due: "2026-11-15", time: null }]);
+    const trial = await t.receive({ from: { name: "Tasklet", email: "billing@tasklet.test" }, subject: "Your trial ends Sunday", bodyText: "Your Tasklet Pro trial ends on November 15. After that we'll charge $9.99/month unless you cancel." });
+    await t.settled();
+    t.model.compile = () => compiled([{ said: "Hide promos", effect: "hide", about: "promotional or marketing email" }]);
+    // the first reading calls the trial marketing; the strict second question doesn't
+    t.model.match = (r) => (promptText(r.system).includes("A first reading matched") ? json({ matches: [] }) : json({ matches: [{ target: "t1", rule: "r1", evidence: "Your trial ends Sunday" }] }));
+    await t.words("Hide promos");
+    await t.settled();
+    expect(await t.threads()).toContain(trial);
+  });
+
+  it("a row no only kept is asked again, leniently, and kept when it could be one", async () => {
+    const t = await setup();
+    t.model.dated = () => dated([{ kind: "event", text: "Field day", quote: "Field day is on November 13.", due: "2026-11-13", time: null }]);
+    const fieldDay = await t.receive({ from: school, subject: "Field day", bodyText: "Field day is on November 13." });
+    await t.settled();
+    t.model.compile = () => compiled([{ said: "Only school stuff", effect: "only", about: "mail about the reader's child's school" }]);
+    t.model.match = (r) => (promptText(r.system).includes("none of these keep rules applies") ? json({ matches: [{ target: "t1", rule: "r1", evidence: "Field day" }] }) : json({ matches: [] }));
+    await t.words("Only school stuff");
+    await t.settled();
+    expect(await t.threads()).toContain(fieldDay);
   });
 });
 

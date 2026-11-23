@@ -167,8 +167,16 @@ const NAME_STOP = new Set(["the", "and", "inc", "llc", "ltd", "corp", "company",
 export function nameMatches(name: string, t: Pick<PreferenceTarget, "senderKey" | "senderName">): boolean {
   const flatName = words(name).trim();
   if (flatName.length < 2) return false;
-  // the distinctive words of a name: what's left of "Riverside Rovers soccer club" is "riverside rovers"
-  const distinct = (s: string) => words(s).trim().split(" ").filter((w) => w.length >= 3 && !NAME_STOP.has(w) && !NAME_EXTRA.has(w));
+  // the distinctive words of a name: what's left of "Riverside Rovers soccer club" is "riverside rovers", of "mr. Okafor" "okafor"
+  const distinct = (s: string) => words(s).trim().split(" ").map((w) => w.replace(/\.$/u, "")).filter((w) => w.length >= 3 && !NAME_STOP.has(w) && !NAME_EXTRA.has(w) && !TITLES.has(w));
+  // a person by a title and one name ("mr. Okafor", "Dra. Ferrer"): that name, a whole word of the sender's name or address
+  const titled = words(name).trim().split(" ").map((w) => w.replace(/\.$/u, ""));
+  if (titled.length === 2 && TITLES.has(titled[0]!) && titled[1]!.length >= 3) {
+    const surname = titled[1]!;
+    if (t.senderName && words(t.senderName).includes(` ${surname} `)) return true;
+    const at = t.senderKey.lastIndexOf("@");
+    if (at > 0 && t.senderKey.slice(0, at).split(/[._+-]+/u).includes(surname)) return true;
+  }
   if (t.senderName) {
     const sender = words(t.senderName);
     if (sender.includes(` ${flatName} `)) return true;
@@ -186,6 +194,9 @@ export function nameMatches(name: string, t: Pick<PreferenceTarget, "senderKey" 
   // a distinctive word of the name as the domain's own label ("Greenview Property Management" → greenview.com)
   return distinct(name).some((w) => w.length >= 4 && labels.includes(LETTERS(w)));
 }
+
+/** a person's titles, read past ("mr. Okafor" is Okafor) */
+const TITLES = new Set(["mr", "mrs", "ms", "miss", "dr", "prof", "sr", "sra", "srta", "dra", "don", "dona", "doña"]);
 
 /** words a name holds that say what kind of sender it is, never which */
 const NAME_EXTRA = new Set(["soccer", "football", "futbol", "elementary", "high", "university", "dental", "airlines", "airline", "my", "mi", "from", "del", "las", "los"]);

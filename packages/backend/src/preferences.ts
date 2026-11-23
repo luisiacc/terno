@@ -5,6 +5,7 @@ import {
   checkPreferences,
   datedOver,
   datedTiming,
+  exactlyReaches,
   isSemantic,
   normalizeText,
   PREFERENCES_TEXT_MAX,
@@ -534,29 +535,14 @@ export class PreferenceWorker {
         for (const t of built.skipped) this.queue.delete(t.key);
       }
       if (!built.targets.length) continue;
-      const matchRules: MatchRule[] = [];
-      const ids = new Map<string, PreferenceRule>();
-      for (const r of rules) {
-        if (r.effect === "show" || !isSemantic(r)) continue;
-        const id = `r${ids.size + 1}`;
-        ids.set(id, r);
-        matchRules.push({ id, effect: r.effect, about: r.about ?? null, unless: r.unless ?? null, ...(r.kinds?.length ? { kinds: r.kinds } : {}) });
-      }
       const stop = new AbortController();
       this.leaving = { revision: record.revision, reading: false, sources: built.targets.map((b) => b.source), stop };
       try {
         const ai = await this.host.forTask({ foreground: false });
         const signal = AbortSignal.any([generation.signal, stop.signal]);
-        const result = await ai.matchPreferences({ rules: matchRules, targets: built.targets.map((b) => b.target) }, signal);
+        const judged = await judgeRows(ai, rules, built.targets.map((b) => ({ row: b.row, target: b.target })), signal);
         if (signal.aborted) return "next";
-        const byTarget = new Map<string, string[]>();
-        for (const m of result) {
-          const row = built.targets.find((b) => b.target.id === m.target);
-          const rule = ids.get(m.rule);
-          // a rule applies only to a row its exact parts reach (revision 12), mixed batches included
-          if (!row || !rule || !semanticReaching([rule], row.row).length) continue;
-          byTarget.set(row.row.key, [...(byTarget.get(row.row.key) ?? []), rule.key]);
-        }
+        const byTarget = judged;
         const verdicts = built.targets.map((b) => ({ target: b.row.key, basis, rules: byTarget.get(b.row.key) ?? [], at: this.host.now() }));
         if (!(await store.whatMatters.verdicts.put(verdicts, record.revision))) return "stop";
         for (const b of built.targets) {
@@ -764,6 +750,54 @@ export class PreferenceWorker {
         return "retry";
     }
   }
+}
+
+/**
+ * Which semantic rules apply to each row (rule keys by row key), as the projection reads them: the matcher's first reading,
+ * then a second question where a mistake would cost the person a row (the held-out eval): a hide it matched is confirmed,
+ * strictly, before it counts; a row no `only` kept is asked about again, leniently, before it's hidden. A rule counts only
+ * for a row its exact parts reach (revision 12). Shared by the worker and the eval, so both judge the same way.
+ */
+export async function judgeRows(ai: Pick<AiTasks, "matchPreferences">, rules: readonly PreferenceRule[], rows: readonly { row: RowTarget | (PreferenceTarget & { key: string }); target: MatchTarget }[], signal?: AbortSignal): Promise<Map<string, string[]>> {
+  const ids = new Map<string, PreferenceRule>();
+  const matchRules: MatchRule[] = [];
+  for (const r of rules) {
+    if (r.effect === "show" || !isSemantic(r)) continue;
+    const id = `r${ids.size + 1}`;
+    ids.set(id, r);
+    matchRules.push({ id, effect: r.effect as MatchRule["effect"], about: r.about ?? null, unless: r.unless ?? null, ...(r.kinds?.length ? { kinds: r.kinds } : {}) });
+  }
+  const byTarget = new Map<string, Set<string>>(rows.map((r) => [r.row.key, new Set<string>()]));
+  const rowOf = new Map(rows.map((r) => [r.target.id, r]));
+  const take = (matches: readonly { target: string; rule: string }[]) => {
+    const out: { row: (typeof rows)[number]; rule: PreferenceRule }[] = [];
+    for (const m of matches) {
+      const row = rowOf.get(m.target);
+      const rule = ids.get(m.rule);
+      if (row && rule && semanticReaching([rule], row.row).length) out.push({ row, rule });
+    }
+    return out;
+  };
+  const first = take(await ai.matchPreferences({ rules: matchRules, targets: rows.map((r) => r.target) }, signal));
+  for (const m of first) if (m.rule.effect !== "hide") byTarget.get(m.row.row.key)!.add(m.rule.key);
+  // the hides, confirmed: only the rows and rules a first reading matched
+  const hides = first.filter((m) => m.rule.effect === "hide");
+  if (hides.length) {
+    const hideIds = new Set(hides.map((m) => [...ids].find(([, r]) => r === m.rule)![0]));
+    const confirmRows = [...new Set(hides.map((m) => m.row))];
+    for (const m of take(await ai.matchPreferences({ rules: matchRules.filter((r) => hideIds.has(r.id)), targets: confirmRows.map((r) => r.target), mode: "confirm" }, signal))) {
+      if (m.rule.effect === "hide" && hides.some((h) => h.row === m.row && h.rule === m.rule)) byTarget.get(m.row.row.key)!.add(m.rule.key);
+    }
+  }
+  // the rows an `only` would hide (none kept them, exactly or judged), asked about again
+  const onlies = rules.filter((r) => r.effect === "only");
+  const semanticOnlies = matchRules.filter((r) => r.effect === "only");
+  if (semanticOnlies.length) {
+    const dropped = rows.filter((r) => !onlies.some((o) => exactlyReaches(o, r.row) && (!isSemantic(o) || byTarget.get(r.row.key)!.has(o.key))));
+    const reached = dropped.filter((r) => semanticOnlies.some((o) => semanticReaching([ids.get(o.id)!], r.row).length));
+    if (reached.length) for (const m of take(await ai.matchPreferences({ rules: semanticOnlies, targets: reached.map((r) => r.target), mode: "recheck" }, signal))) if (m.rule.effect === "only") byTarget.get(m.row.row.key)!.add(m.rule.key);
+  }
+  return new Map([...byTarget].map(([k, v]) => [k, [...v]]));
 }
 
 // ─── pure parts ────────────────────────────────────────────────────────────

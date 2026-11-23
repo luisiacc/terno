@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { checkPreferences, isSemantic, preferenceDecision, semanticReaching, verdictBasis, wantedBy, type PreferenceRule, type PreferenceTarget } from "@terno/core";
 import { describe, expect, it } from "vitest";
 import { addressKey } from "../../packages/core/src/people";
-import { checkWanted, excerptAround } from "../../packages/backend/src/preferences";
+import { checkWanted, excerptAround, judgeRows } from "../../packages/backend/src/preferences";
 import { realTasks, spendReport, type RealTarget } from "./harness";
 import { HELDOUT } from "./corpus/preferences/heldout";
 import { PROFILES, type Expect, type Mail, type Profile } from "./corpus/preferences/profiles";
@@ -39,24 +39,13 @@ async function run(profile: Profile, label: string): Promise<{ rules: Preference
   const basis = verdictBasis(rules);
   // v16's items, as targets the rules see
   const rows = profile.mails.flatMap((m) => m.items.map((item, i) => ({ mail: m, item, key: `${m.id}:${i}`, target: { kind: item.kind, senderKey: addressKey(m.from.email), senderName: m.from.name } as PreferenceTarget })));
-  // the matcher, as the worker asks it: the rows a semantic hide or first reaches, in batches of 25
+  // the matcher, as the worker asks it (`judgeRows`: a first reading, hides confirmed, rows an only drops asked again), 25 a batch
   const reaching = rows.filter((r) => semanticReaching(rules, r.target).length);
-  const ids = new Map<string, PreferenceRule>();
-  const matchRules = rules.filter((r) => r.effect !== "show" && isSemantic(r)).map((r, i) => {
-    ids.set(`r${i + 1}`, r);
-    return { id: `r${i + 1}`, effect: r.effect as "hide" | "first" | "only", about: r.about ?? null, unless: r.unless ?? null, ...(r.kinds?.length ? { kinds: r.kinds } : {}) };
-  });
   const verdicts = new Map<string, string[]>();
   for (let i = 0; i < reaching.length; i += 25) {
     const batch = reaching.slice(i, i + 25);
-    const targets = batch.map((r, j) => ({ id: `t${j + 1}`, kind: r.item.kind, text: r.item.text, from: r.mail.from.name, subject: r.mail.subject, excerpt: excerptAround(r.mail.text, r.item.quote, 600) }));
-    const matches = await ai.matchPreferences({ rules: matchRules, targets });
-    for (const r of batch) verdicts.set(r.key, []);
-    for (const m of matches) {
-      const row = batch[Number(m.target.slice(1)) - 1];
-      const rule = ids.get(m.rule);
-      if (row && rule && semanticReaching([rule], row.target).length) verdicts.get(row.key)!.push(rule.key);
-    }
+    const judged = await judgeRows(ai, rules, batch.map((r, j) => ({ row: { ...r.target, key: r.key }, target: { id: `t${j + 1}`, kind: r.item.kind, text: r.item.text, from: r.mail.from.name, subject: r.mail.subject, excerpt: excerptAround(r.mail.text, r.item.quote, 600) } })));
+    for (const [key, keys] of judged) verdicts.set(key, keys);
   }
   const shows = rules.filter((r) => r.effect === "show");
   const outcomes: Outcome[] = [];
