@@ -69,6 +69,15 @@ The first design dropped a code mail before any model read it, with an exception
 
 Each has a case in "Codex code review: …" under plan 243, and each fails on the first commit.
 
+Round 2 (the review cap stops here):
+
+- Digits running on into a reference ("contract 482913/789") were read as the code: `namesCode` takes `CANDIDATE`'s
+  trailing guard too. Fixed, with a case.
+- A code one digit per line ("4\n8\n2…"), which `findCode` reads, wasn't named: any one whitespace between digits now is.
+  Fixed, with a case.
+- Not changed, as rare: in a code mail, a same-day request using "code" in another sense ("send me the source code by 5 PM
+  today") is still taken for the code's; and a code's own deadline past midnight ("before 00:05" on a mail at 23:58) is kept.
+
 ## Out of scope
 
 Login notices ("Inicio de sesión en Banca en Línea") with no code: the model decides those as before.

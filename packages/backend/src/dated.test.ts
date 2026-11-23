@@ -3875,6 +3875,9 @@ describe("plan 243: a one-time code's mail asks nothing about the code", () => {
     expect(kinds("Your verification code is 482913.\n\nPlease sign contract A482913 today.", [{ kind: "respond", text: "Sign contract A482913", quote: "Please sign contract A482913 today", due: "2026-11-10", time: null }])).toEqual(["respond"]);
     // 4: a code laid out one digit per box, as findCode reads it
     expect(kinds("Enter 4 8 2 9 1 3 to continue.", [{ kind: "respond", text: "Enter 4 8 2 9 1 3", quote: "Enter 4 8 2 9 1 3 to continue", due: "2026-11-10", time: null }], { subject: "Verification code" })).toEqual([]);
+    // round 2: digits that run on into a reference aren't the code; a code one digit per line is
+    expect(kinds("Your verification code is 482913.\n\nPlease sign contract 482913/789 today.", [{ kind: "respond", text: "Sign contract 482913/789", quote: "Please sign contract 482913/789 today", due: "2026-11-10", time: null }])).toEqual(["respond"]);
+    expect(kinds("Enter 4\n8\n2\n9\n1\n3 to continue.", [{ kind: "respond", text: "Enter the six digits", quote: "Enter 4\n8\n2\n9\n1\n3 to continue", due: "2026-11-10", time: null }], { subject: "Verification code" })).toEqual([]);
     // 5: "confirm by replying with your code" is no confirmation's ask; the appointment stays
     const appointment = "Your login code is 482913.\n\nOur appointment is November 20, 2026 at 9:00 AM. Confirm by replying with your code.";
     const items: Item[] = [{ kind: "event", text: "Appointment", quote: "Our appointment is November 20, 2026 at 9:00 AM", due: "2026-11-20", time: "09:00" }, { kind: "respond", text: "Confirm by replying with your code", quote: "Confirm by replying with your code", due: null, time: null }];
