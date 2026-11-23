@@ -173,6 +173,32 @@ describe("accounts in the sidebar's order (plan 169)", () => {
   });
 });
 
+describe("a new one's color (plan 237)", () => {
+  it("a category without a color takes the next after the last one's, also once that one is recolored; a named color is kept", async () => {
+    const { client } = setup();
+    const color = async (name: string, c?: "lime") => (await client.call("categories.create", { name, ...(c && { color: c }) })).color;
+    expect([await color("Uno"), await color("Dos")]).toEqual(["rose", "amber"]);
+    const dos = (await client.call("app.bootstrap", {})).categories.at(-1)!;
+    await client.call("categories.update", { id: dos.id, color: "cyan" });
+    expect(await color("Tres")).toBe("brown");
+    expect(await color("Cuatro", "lime")).toBe("lime");
+    expect(await color("Cinco")).toBe("emerald");
+    // the last in the sidebar's order (Uno, rose, moved to the end), not the newest (emerald, whose next free is violet)
+    const ids = (await client.call("app.bootstrap", {})).categories.map((c) => c.id);
+    await client.call("categories.reorder", { ids: [...ids.slice(1), ids[0]!] });
+    expect(await color("Seis")).toBe("amber");
+  });
+
+  it("accounts cycle too, from the last one's color", async () => {
+    const { client } = setup();
+    const a = await client.call("accounts.addImap", imap("uno@fastmail.com"));
+    const b = await client.call("accounts.addImap", imap("dos@fastmail.com"));
+    expect([a.color, b.color]).toEqual(["rose", "amber"]);
+    await client.call("accounts.update", { id: b.id, color: "emerald" });
+    expect((await client.call("accounts.addImap", imap("tres@fastmail.com"))).color).toBe("cyan");
+  });
+});
+
 describe("categories from Ajustes", () => {
   it("rename, recolor, reorder and delete are announced to every window; agents can't reorder or delete", async () => {
     const { client, mcp } = setup();

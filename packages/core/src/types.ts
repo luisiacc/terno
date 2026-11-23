@@ -401,6 +401,22 @@ export function categoryColor(raw: unknown): CategoryColor {
   return KNOWN_COLORS.has(raw) ? (raw as CategoryColor) : (RETIRED_COLORS[raw] ?? "slate");
 }
 
+/**
+ * Plan 237: the color a new category (or account) takes, given those there now in sidebar order. New ones cycle
+ * through the palette from the last one's color, so a new one never matches the one above it, even recolored;
+ * a color nobody uses comes first while there is one.
+ */
+export function nextColor(taken: readonly string[]): CategoryColor {
+  const n = CATEGORY_COLORS.length;
+  const start = taken.length ? CATEGORY_COLORS.indexOf(categoryColor(taken.at(-1))) + 1 : 0;
+  const used = new Set(taken.map(categoryColor));
+  for (let i = 0; i < n; i++) {
+    const c = CATEGORY_COLORS[(start + i) % n]!;
+    if (!used.has(c)) return c;
+  }
+  return CATEGORY_COLORS[start % n]!;
+}
+
 export interface Counts {
   /** unread THREADS per view (only inbox is tracked as unread count) */
   inboxUnread: number;

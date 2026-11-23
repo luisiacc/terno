@@ -89,6 +89,8 @@ describe("Google connection RPC validation", () => {
     desktop.answer({ ...identity, email: "ana@a.example", sub: "s4", refreshToken: "r" });
     await desktop.client.call("accounts.connectGmail", {});
     expect(await names(desktop)).toEqual(["luis@a.example", "luis@b.example", "luis@c.example", "ana"]);
+    // plan 237: each takes the next color
+    expect((await desktop.client.call("app.bootstrap", {})).accounts.map((a) => a.color)).toEqual(["rose", "amber", "lime", "emerald"]);
 
     const web = await setup();
     web.answer({ ...identity, email: "luis@a.example", sub: "s1" });
@@ -96,6 +98,7 @@ describe("Google connection RPC validation", () => {
     web.answer({ ...identity, email: "luis@b.example", sub: "s2" });
     await web.client.call("accounts.connectGmailToken", { accessToken: "a2", expiresIn: 3600 });
     expect(await names(web)).toEqual(["luis@a.example", "luis@b.example"]);
+    expect((await web.client.call("app.bootstrap", {})).accounts.map((a) => a.color)).toEqual(["rose", "amber"]);
   });
 
   it("a name the user gave keeps; the new luis@ still shows its address", async () => {

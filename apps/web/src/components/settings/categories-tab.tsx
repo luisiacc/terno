@@ -1,4 +1,4 @@
-import { CATEGORY_COLORS, JEV_DEFAULT_MODEL, type Category, type CategoryColor, type CategoryModelStats } from "@terno/core";
+import { JEV_DEFAULT_MODEL, type Category, type CategoryColor, type CategoryModelStats } from "@terno/core";
 import type { AiTestResult, AppSettings } from "@terno/core/rpc";
 import { Button, GHOST_DANGER_PRESS } from "@terno/ui/components/button";
 import { cn } from "@terno/ui/lib/utils";
@@ -151,12 +151,11 @@ function CategoryItem({ category, stats, index, count, autoMode }: { category: C
 function NewCategory() {
   const [name, setName] = useState("");
   const inputId = useId();
-  const categories = useApp((s) => s.categories);
   const create = async () => {
     const value = name.trim();
     if (!value) return;
     try {
-      const c = await client.call("categories.create", { name: value, color: CATEGORY_COLORS[categories.length % CATEGORY_COLORS.length]! });
+      const c = await client.call("categories.create", { name: value });
       setApp((s) => ({ categories: s.categories.some((x) => x.id === c.id) ? s.categories : [...s.categories, c] }));
       setName("");
       snack.success(t("settings.categories.created", { name: c.name }));

@@ -1,5 +1,5 @@
 import { RpcError, type Draft, type DraftAddress, type Handlers } from "@terno/core/rpc";
-import { agentsMaySend, parseHandoff, capFilterName, categoryRule, folderRule, isFilterable, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, matchExcerpt, parseSearch, resolveSearch, rowMatchOf, searchWithFilter, type ThreadAction, type AccountPrefs, PINS_MAX, REMINDERS_MAX, SCHEDULED_MAX, FORWARD_ADDRESSES_MAX_CHARS } from "@terno/core";
+import { agentsMaySend, nextColor, parseHandoff, capFilterName, categoryRule, folderRule, isFilterable, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, matchExcerpt, parseSearch, resolveSearch, rowMatchOf, searchWithFilter, type ThreadAction, type AccountPrefs, PINS_MAX, REMINDERS_MAX, SCHEDULED_MAX, FORWARD_ADDRESSES_MAX_CHARS } from "@terno/core";
 import { L } from "@terno/i18n";
 import { movedNothing, SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, type FolderMoved, type MessageState } from "@terno/store";
 import { GMAIL_SCOPES } from "@terno/mail/portable";
@@ -37,8 +37,8 @@ const ENDS_TOP: ReadonlySet<ThreadAction> = new Set(["archive", "trash", "spam"]
 /** Messages a similar sweep reads per page while resolving its scope (plan 63). */
 const SIMILAR_PAGE = 2000;
 
-/** Plan 158: color belongs to categories; an account is neutral until its owner picks one (Settings, or its menu). */
-const NEW_ACCOUNT_COLOR = "slate";
+/** Plan 237 (it reverses plan 158's neutral slate): a new account takes the next color after the last one's, as a category does. */
+const newAccountColor = (accounts: readonly { color: string }[]) => nextColor(accounts.map((a) => a.color));
 
 const ADDED_BY = { picker: "user", dnd: "user", suggestion: "suggestion", snackbar: "bulk" } as const;
 
@@ -731,7 +731,7 @@ export function createHandlers(b: Backend): Handlers {
       return { restored: await undoActs(undoId, jobId) };
     },
     "categories.create": async ({ name, color, showInInbox }) => {
-      const c = await store.categories.create(name, color, { showInInbox });
+      const c = await store.categories.create(name, color ?? nextColor((await store.categories.list()).map((x) => x.color)), { showInInbox });
       b.server.emit("categories", await store.categories.list());
       return c;
     },
@@ -1256,12 +1256,13 @@ export function createHandlers(b: Backend): Handlers {
       const claim = p.verify && b.canClaimOwner();
       // encrypt first, so the account, its password and the ownership commit together
       const blob = await b.options.cipher.encrypt(p.password);
-      const label = accountLabel(p.displayName || p.email, p.email, await store.accounts.list());
+      const accounts = await store.accounts.list();
+      const label = accountLabel(p.displayName || p.email, p.email, accounts);
       const { account, claimed } = await store.accounts.create({
         kind: "imap",
         email: p.email,
         displayName: label.displayName,
-        color: NEW_ACCOUNT_COLOR,
+        color: newAccountColor(accounts),
         providerConfig: config,
         secret: { key: "password", blob },
         ownerClaim: claim ? imapClaim({ email: p.email }, config, p.displayName || p.email) : undefined,
@@ -1308,8 +1309,9 @@ export function createHandlers(b: Backend): Handlers {
       if (existing) throw new RpcError("BAD_REQUEST", L("errors.alreadyConnected", { email: result.email }));
       const config: GmailAccountConfig & AccountPrefs = { senderName: result.name || result.email, googleSubject: result.sub!, googleClientId: oauth.clientId, ...(syncWindowDays !== undefined && { syncWindowDays }) };
       const blob = await b.options.cipher.encrypt(result.refreshToken);
-      const color = NEW_ACCOUNT_COLOR;
-      const label = accountLabel(result.email.split("@")[0]!, result.email, await store.accounts.list());
+      const accounts = await store.accounts.list();
+      const color = newAccountColor(accounts);
+      const label = accountLabel(result.email.split("@")[0]!, result.email, accounts);
       googleFlowActive(b);
       const { account, claimed } = await store.accounts.create({
         kind: "gmail",
@@ -1373,8 +1375,9 @@ export function createHandlers(b: Backend): Handlers {
         }
         // a new mailbox only: one already here (reconnected above) keeps its window
         const config: GmailAccountConfig & AccountPrefs = { senderName: who.name || who.email, googleSubject: who.sub!, ...(syncWindowDays !== undefined && { syncWindowDays }) };
-        const color = NEW_ACCOUNT_COLOR;
-        const label = accountLabel(who.email.split("@")[0]!, who.email, await store.accounts.list());
+        const accounts = await store.accounts.list();
+        const color = newAccountColor(accounts);
+        const label = accountLabel(who.email.split("@")[0]!, who.email, accounts);
         googleFlowActive(b);
         if (expiresAt <= b.now()) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
         const { account, claimed } = await store.accounts.create({

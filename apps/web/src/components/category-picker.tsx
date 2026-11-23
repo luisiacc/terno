@@ -1,4 +1,4 @@
-import { CATEGORY_COLORS, normalizeText, type CategoryColor } from "@terno/core";
+import { normalizeText, type CategoryColor } from "@terno/core";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@terno/ui/components/command";
 import { Dialog, DialogContent, DialogTitle } from "@terno/ui/components/dialog";
@@ -13,10 +13,9 @@ import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp } from "~/state/app";
 import { useList } from "~/state/list";
 
-/** Creates a category (the next palette color) and adds it to the sidebar right away. */
+/** Creates a category (the backend picks the next color, plan 237) and adds it to the sidebar right away. */
 export async function createCategory(name: string): Promise<number> {
-  const categories = getApp().categories;
-  const c = await client.call("categories.create", { name, color: CATEGORY_COLORS[categories.length % CATEGORY_COLORS.length]! });
+  const c = await client.call("categories.create", { name });
   setApp({ categories: [...getApp().categories.filter((x) => x.id !== c.id), c] });
   if (!c.showInInbox) offerTip("category-inbox", c.id);
   return c.id;

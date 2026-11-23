@@ -33,12 +33,12 @@ beforeEach(() => {
 });
 
 describe("a new category", () => {
-  it("is made with the next color and opened; a refusal is said, nothing opens", async () => {
+  it("is made by name (the backend picks its color, plan 237) and opened; a refusal is said, nothing opens", async () => {
     setApp({ categories: [{ id: 1, name: "A", color: "rose" }] as never });
     let asked: unknown;
     fake.handlers["categories.create"] = async (p) => ((asked = p), { id: 9, name: "Recibos" });
     expect(await createCategory("  Recibos ")).toBe(true);
-    expect(asked).toMatchObject({ name: "Recibos" });
+    expect(asked).toEqual({ name: "Recibos" });
     expect(getApp().categoryId).toBe(9);
     expect(await createCategory("   ")).toBe(false);
     fake.handlers["categories.create"] = async () => {

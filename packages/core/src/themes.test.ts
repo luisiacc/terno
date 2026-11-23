@@ -110,6 +110,23 @@ describe("category colors (plan 194)", () => {
     expect(categoryColor(undefined)).toBe("slate");
     expect(CATEGORY_COLORS).not.toContain("indigo");
   });
+  it("plan 237: a new one takes the next color after the last one's, skipping used ones while any is free", async () => {
+    const { nextColor, CATEGORY_COLORS } = await import("./types");
+    expect(nextColor([])).toBe("rose");
+    expect(nextColor(["rose", "amber"])).toBe("lime");
+    // the last one recolored: the new one follows it, never matches it
+    expect(nextColor(["rose", "cyan"])).toBe("brown");
+    expect(nextColor(["rose", "rose"])).toBe("amber");
+    // wraps, and skips what's taken
+    expect(nextColor(["amber", "slate"])).toBe("rose");
+    expect(nextColor(["rose", "lime", "amber"])).toBe("emerald");
+    // all eight taken: the one after the last's
+    expect(nextColor([...CATEGORY_COLORS.slice(3), ...CATEGORY_COLORS.slice(0, 3)])).toBe("emerald");
+    expect(nextColor([...CATEGORY_COLORS, "violet"])).toBe("slate");
+    // a retired color counts as its successor, junk as slate
+    expect(nextColor(["indigo"])).toBe("violet");
+    expect(nextColor(["blue"])).toBe("rose");
+  });
   it("lets an older backup's indigo category in, as brown; still refuses junk", async () => {
     const { exportCategorySchema } = await import("./rpc/contract");
     expect(exportCategorySchema.parse({ id: 1, name: "Dev", color: "indigo" }).color).toBe("brown");

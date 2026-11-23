@@ -335,9 +335,11 @@ onBoth(() => describe("one Undo", () => {
   it("a category it made goes only while empty and as it was made; one z takes the filter with it", async () => {
     const { client, backend, put, preview, apply } = await setup();
     const a = await put();
+    // plan 237: its color follows the last category's (cyan), not the first free one (amber)
+    for (const [name, color] of [["Uno", "rose"], ["Dos", "cyan"]] as const) await client.call("categories.create", { name, color });
     const made = await apply(await preview({ actionType: "createCategory", categoryName: "Recruiting", lookIn: "everywhere", future: true }), true);
     const named = async () => (await backend.store.categories.list()).find((c) => c.name === "Recruiting");
-    expect(await named()).toMatchObject({ showInInbox: false });
+    expect(await named()).toMatchObject({ showInInbox: false, color: "brown" });
     expect(made.filterSaved).toBe(true);
     expect((await backend.store.filters.list()).map((f) => f.source)).toEqual(["ai"]);
     await client.call("ai.actionUndo", { token: made.undoToken! });

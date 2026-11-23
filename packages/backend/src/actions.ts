@@ -7,7 +7,6 @@ import {
   redactAddresses,
   subjectKey,
   CONSUMER_DOMAINS,
-  CATEGORY_COLORS,
   type ActionKeep,
   type ActionPlan,
   type ActionRowTag,
@@ -20,6 +19,7 @@ import {
   type FilterRule,
   type ThreadSummary,
   savesRuleOnly,
+  nextColor,
 } from "@terno/core";
 import { RpcError, type ParsedParamsOf } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
@@ -689,8 +689,7 @@ export class ActionsService {
         const same = list.find((c) => c.name.toLowerCase() === action.name.toLowerCase());
         if (same) categoryId = same.id;
         else {
-          const used = new Set(list.map((c) => c.color));
-          const color = CATEGORY_COLORS.find((c) => !used.has(c)) ?? CATEGORY_COLORS[list.length % CATEGORY_COLORS.length]!;
+          const color = nextColor(list.map((c) => c.color));
           // as a category made by hand is: its mail leaves the Inbox, and the preview said so
           const made = await store.categories.create(action.name, color, { showInInbox: false });
           categoryId = made.id;

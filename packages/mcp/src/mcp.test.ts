@@ -9,7 +9,7 @@ import { AppConnection } from "./connection";
 import { createMcpServer } from "./server";
 import { sqlDb } from "@terno/db";
 import { msg } from "@terno/store/conformance";
-import { canonicalMessageId, parseMailLink } from "@terno/core";
+import { canonicalMessageId, nextColor, parseMailLink } from "@terno/core";
 
 let dir: string;
 let backend: Backend;
@@ -307,8 +307,11 @@ describe("terno MCP server", () => {
     expect((await call("update_threads", { threadIds: ids, action: "archive" })).json.affected).toBe(3);
     const after = await call("list_threads", { view: "inbox", limit: 50 });
     expect(after.json.threads.map((t: { threadId: number }) => t.threadId)).not.toContain(ids[0]);
+    const before = (await app.call("app.bootstrap", {})).categories.map((c) => c.color);
     const cat = await call("categorize", { threadIds: ids, categoryName: "Agente" });
     expect(cat.json.added).toBe(3);
+    // plan 237: a category it makes takes the next color, as one made by hand does
+    expect((await app.call("app.bootstrap", {})).categories.find((c) => c.name === "Agente")?.color).toBe(nextColor(before));
     expect(sqlDb(backend.store).get("SELECT count(*) c FROM thread_categories WHERE added_by = 'agent'")).toEqual({ c: 3 });
     expect(sqlDb(backend.store).get("SELECT count(*) c FROM user_actions WHERE at > ?", Date.now() - 60_000)).toEqual({ c: 0 });
   });
