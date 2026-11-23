@@ -140,8 +140,11 @@ export interface TodayStore {
   shown: {
     list(): Promise<ShownSender[]>;
     add(s: Omit<ShownSender, "key">): Promise<ShownAdded>;
-    /** `id`: only that entry (an Undo of its Show) */
-    remove(key: string, id?: string): Promise<ShownRemoved>;
+    /**
+     * `id`: only that entry (an Undo of its Show); `mute`: the sender mute that Show ended, put back in the same command
+     * (an exact Undo, past the mutes' bound if it must: Codex code review)
+     */
+    remove(key: string, id?: string, mute?: { name: string; at: number }): Promise<ShownRemoved>;
   };
   /** What needs you (`needsYou`), newest first, among the newest `NEEDS_WALK` waiting: plan 17's "a person" holds any plain address, and on real mail most of it was a bank's and a service's notices. `after` is the last id of the page before */
   waitingPage(o: { now: number; after: { lastDate: number; id: number } | null; limit: number }): Promise<{ id: number; lastDate: number; /** why `needsYou` let it in: you've written in it (else: new, from someone you write to) */ hasSent: boolean; /** plan 215: its `waiting_since`, what Done and Later on its row name */ waitingSince: number }[]>;

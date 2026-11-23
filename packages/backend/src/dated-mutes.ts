@@ -39,8 +39,8 @@ export interface DatedMutesHost {
   now(): number;
   /** a mute or an Unmute: What matters reads its items again, and the reader stops a reading of a sender just muted */
   changed(muted: DatedMuted): void;
-  /** plan 240: a sender mute ended a Show: those threads' facts were recomputed, and the list moved */
-  shownStopped?(threadIds: readonly number[]): void;
+  /** plan 240: a sender mute ended a Show: their threads' facts were recomputed, and the list moved */
+  shownStopped?(): void;
 }
 
 export class DatedMutes {
@@ -99,31 +99,36 @@ export class DatedMutes {
     if (sender !== null && m.at === undefined && (await store.dated.written([sender])).has(sender)) {
       throw new RpcError("BAD_REQUEST", L("errors.dated.muteWritten", { sender: m.name?.trim() || sender }));
     }
-    // plan 240: one sender is never both hidden and always shown: muting them ends the Show (an Unmute's Undo; Remove's
-    // snack never offers to mute a shown sender)
-    if (m.on === "sender") {
-      const r = await store.today.shown.remove(key);
-      if (r.removed) this.host.shownStopped?.(r.threadIds);
-    }
+    // plan 240: one sender is never both hidden and always shown: their mute ends the Show, in the store's same command (an
+    // Unmute's Undo; Remove's snack never offers to mute a shown sender)
+    const wasShown = m.on === "sender" && (await store.today.shown.list()).some((s) => s.key === key);
     const now = this.host.now();
     // an Undo of an Unmute puts it back where it was in the list
     const mute: DatedMute = { on: m.on, key, name: m.on === "kind" ? "" : (m.name ?? ""), at: m.at !== undefined && m.at <= now ? m.at : now };
     const added = await store.dated.mutes.add(mute);
     if (added === "full") throw new RpcError("BAD_REQUEST", m.on === "pair" ? L("errors.dated.mutePairsFull", { count: DATED_MUTE_PAIRS_MAX }) : L("errors.dated.mutesFull", { count: DATED_MUTES_MAX }));
     if (added === "already") return null;
+    if (wasShown) this.host.shownStopped?.();
     this.host.changed(await this.muted());
     return mute;
+  }
+
+  /**
+   * Before a sender's mute ends (an Unmute, or plan 240's Show, Codex code review): from now on, so what came meanwhile,
+   * queued or not, stays unread. Written first, so the reader never sees the sender unmuted without it; a mute that then
+   * doesn't end keeps the sender silent anyway.
+   */
+  async unmutedFrom(sender: string): Promise<void> {
+    if (!(await this.muted()).senders.has(sender)) return;
+    const at = this.host.now();
+    await this.host.store.settings.update<[string, number][], void>(UNMUTED_KEY, [], (was) => ({ value: [...was.filter(([k]) => k !== sender), [sender, at] as [string, number]].slice(-UNMUTED_MAX), result: undefined }));
   }
 
   /** What's muted shows again, as it is; mail from then on is read again (what came meanwhile stays unread). */
   async unmute(on: DatedMuteOn, key: string): Promise<DatedMute | null> {
     const { store } = this.host;
-    // the boundary first, so the reader never sees the sender unmuted without it
     const sender = on === "sender" ? muteKey(on, key) : null;
-    if (sender !== null && (await this.muted()).senders.has(sender)) {
-      const at = this.host.now();
-      await store.settings.update<[string, number][], void>(UNMUTED_KEY, [], (was) => ({ value: [...was.filter(([k]) => k !== sender), [sender, at] as [string, number]].slice(-UNMUTED_MAX), result: undefined }));
-    }
+    if (sender !== null) await this.unmutedFrom(sender);
     const removed = await store.dated.mutes.remove(on, key);
     if (!removed) return null;
     this.host.changed(await this.muted());

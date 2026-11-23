@@ -437,12 +437,13 @@ export class BackendCore {
         this.dated.mutesChanged(muted);
         this.today.changed();
       },
-      shownStopped: (threadIds) => void this.shownChanged(threadIds),
+      shownStopped: () => void this.shownChanged(),
     });
     this.shown = new ShownSenders({
       store: this.store,
       now: () => this.now(),
       uuid: () => globalThis.crypto.randomUUID(),
+      unmuting: (key) => this.mutes.unmutedFrom(key),
       threadsChanged: (threadIds) => this.notifyChanged(threadIds),
       listChanged: (senders, mutes) => {
         this.server.emit("shownSenders", { senders: [...senders] }, { origins: ["renderer", "dev"] });
@@ -1257,8 +1258,8 @@ export class BackendCore {
 
   /** Coalesces change notifications within one turn of the event loop. */
   /** Plan 240: a sender mute ended a Show (the store recomputed these threads): every window and What matters hear it. */
-  private async shownChanged(threadIds: readonly number[]): Promise<void> {
-    this.notifyChanged(threadIds);
+  private async shownChanged(): Promise<void> {
+    this.notifyChanged([]);
     this.server.emit("shownSenders", { senders: await this.shown.list() }, { origins: ["renderer", "dev"] });
     this.today.shownChanged();
   }

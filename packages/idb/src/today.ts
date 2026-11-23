@@ -3,6 +3,7 @@ import { DATED_NOTHING_ASKED_SINCE, NEEDS_WALK, needsYou, summaryAsksNothing, ty
 import { datedRow, mutedSenders, restoreDated, updateDated } from "./dated";
 import { followupRow, restoreFollowups, updateFollowup } from "./followups";
 import { inboxHiddenTest, T, type Ctx, type R } from "./mail";
+import { ownAddresses } from "./facts";
 import { shownKeys } from "./shown-senders";
 
 /** Plan 145 on IndexedDB, like SQL's (packages/db/src/today.ts). */
@@ -30,12 +31,22 @@ export function needsWalk(c: Ctx, now: number): NeedsWalk {
   // plan 240: a sender said to be always shown outranks the Inbox's hiding, as SQL's
   const always = shownKeys(c);
   const isShown = (from: unknown) => always.size > 0 && always.has(addressKey(String(from)));
+  // as SQL's (Codex code review): who it waits on is the waiting message's sender, the thread's last being yours when a
+  // synced draft is newest (asked only then, and only with a sender shown)
+  const own = always.size ? ownAddresses(c.db) : null;
+  const waitingFrom = (id: number, t: R): string => {
+    if (!own?.has(addressKey(String(t.last_from_email)))) return String(t.last_from_email);
+    const m = T(c, "messages").by("fk_thread_id", id).filter((x) => x.date === t.waiting_since && !x.is_draft && !x.is_sent).sort((a, b) => b.id - a.id)[0];
+    return String(m?.from_email ?? t.last_from_email);
+  };
   const rows: WaitingRow[] = [];
   for (const id of c.filterOrders.waiting.current(threads)) {
     const t = threads.get(id)!;
     if (t.last_date < cutoff) break;
-    if (t.waiting_since < cutoff || t.in_inbox !== 1 || (hidden?.(id) && !isShown(t.last_from_email))) continue;
-    rows.push({ id, lastDate: t.last_date, waitingSince: t.waiting_since, from: String(t.last_from_email), subject: String(t.subject), hasSent: t.has_sent === 1 });
+    if (t.waiting_since < cutoff || t.in_inbox !== 1) continue;
+    const from = waitingFrom(id, t);
+    if (hidden?.(id) && !isShown(from)) continue;
+    rows.push({ id, lastDate: t.last_date, waitingSince: t.waiting_since, from, subject: String(t.subject), hasSent: t.has_sent === 1 });
     if (rows.length >= NEEDS_WALK) break;
   }
   // plan 210 (iteration 4): as SQL's, a muted sender's conversations aren't waiting on you, nothing recorded for them; left

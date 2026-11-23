@@ -2,6 +2,7 @@ import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, par
 import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, readNothingAsked, recipientList, WAITING_CLOSED, type ClosedAt, type DatedFinish, type DatedFinishOutcome, type DatedMuteAdded, type DatedMark, type DatedSnapshot, markPage, type MarkKey, type RawMark, type RawMarkKey, type DatedSource, type WaitingActState } from "@terno/store";
 import { received, receivedOwn } from "./ai-summaries";
 import { remarkReplies } from "./followups";
+import { requeueSender } from "./facts";
 import { T, type Ctx, type R } from "./mail";
 import { proposedMove, scheduleFields, wallRecord } from "./schedule";
 
@@ -188,6 +189,8 @@ export function addDatedMute(c: Ctx, m: DatedMute): DatedMuteAdded {
   if (mutes.has(m.on, key)) return "already";
   if (mutes.size >= DATED_MUTES_MAX) return "full";
   mutes.insert({ target: m.on, key, name, created_at: m.at });
+  // plan 240: their mute ends their Show, in the same command (as SQL's)
+  if (m.on === "sender" && T(c, "shown_senders").delete(key)) requeueSender(c.db, key);
   return "added";
 }
 

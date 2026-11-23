@@ -37,11 +37,13 @@ export function addShown(db: Db, s: Omit<ShownSender, "key">): ShownAdded {
 }
 
 /** The entry gone (only that `id`'s, when one is named: an Undo never removes a later Show), the facts recomputed. */
-export function removeShown(db: Db, key: string, id?: string): ShownRemoved {
+export function removeShown(db: Db, key: string, id?: string, mute?: { name: string; at: number }): ShownRemoved {
   return db.tx((): ShownRemoved => {
     const r = db.get<Raw>("SELECT * FROM shown_senders WHERE key = ?", key);
     if (!r || (id !== undefined && r.id !== id)) return { removed: null, threadIds: [] };
     db.run("DELETE FROM shown_senders WHERE key = ?", key);
+    // Show's Undo: the mute it ended, back as it was, whatever the bound (Codex code review)
+    if (mute) db.run("INSERT OR IGNORE INTO dated_mutes (target, key, name, created_at) VALUES ('sender', ?, ?, ?)", key, mute.name, mute.at);
     const touched = new Set<number>();
     requeueSender(db, key, touched);
     return { removed: toShown(r), threadIds: [...touched] };

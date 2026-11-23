@@ -3786,6 +3786,29 @@ describe("plan 240: always show a sender in What matters", () => {
     expect((await client.call("today.shownSenders", {})).senders).toEqual([again.added]);
   });
 
+  it("the Codex code review: a Show that ends a mute is an Unmute for the reader: their mail queued while muted is never read", async () => {
+    const { backend, client, model, clock, receive, read } = await setup();
+    // the reader busy with another sender's mail, so theirs waits in the queue
+    let release!: () => void;
+    model.gate = new Promise((r) => (release = r));
+    model.answer = () => reply([bill]);
+    await receive({ from: { name: "Shop", email: "orders@shop.test" }, subject: "Order", bodyText: BILL_TEXT });
+    await expect.poll(() => model.requests.length).toBe(1);
+    await client.call("dated.mute", { on: "sender", key: casa.email, name: "ESOF" });
+    await receive(lov({ bodyText: BILL_TEXT }));
+    await client.call("today.showSender", { email: casa.email, name: "ESOF" });
+    expect(await backend.store.dated.marks.count()).toBe(2);
+    model.gate = null;
+    release();
+    await read();
+    expect(readings(model.requests)).toHaveLength(1);
+    // theirs from then on is read
+    clock.now += 120_000;
+    await receive(lov({ subject: "Another reminder", bodyText: BILL_TEXT, providerThreadId: "lov-2" }));
+    await read();
+    expect(readings(model.requests)).toHaveLength(2);
+  });
+
   it("muting a shown sender (an Unmute's Undo) ends the Show; Remove's snack never offers to mute one", async () => {
     const { backend, client, model, receive, read } = await setup();
     await client.call("today.showSender", { email: casa.email, name: "ESOF" });

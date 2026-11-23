@@ -301,6 +301,7 @@ export interface DatedStore {
   mutes: {
     /** newest first, every target together: at most `DATED_MUTES_MAX` senders and kinds and `DATED_MUTE_PAIRS_MAX` pairs */
     list(): Promise<DatedMute[]>;
+    /** plan 240: a sender's own mute ends their Show (and recomputes their facts) in the same command */
     add(m: DatedMute): Promise<DatedMuteAdded>;
     /** the mute removed, or null if there was none */
     remove(on: DatedMuteOn, key: string): Promise<DatedMute | null>;

@@ -2,6 +2,7 @@ import { addressKey, isAcknowledgment, looksLikeAcknowledgment, parseRef, refKey
 import { DATED_NOTHING_ASKED_SINCE, NEEDS_WALK, needsYou, summaryAsksNothing, type DigestFact, type DigestStored, type ItemChanges, type ItemSnapshots, type WaitingRow } from "@terno/store";
 import { datedRow, mutedSenders, restoreDated, updateDated, type DatedRaw } from "./dated";
 import { followupRow, restoreFollowups, updateFollowup, type FollowupRaw } from "./followups";
+import { ownAddresses } from "./facts";
 import { shownKeys } from "./shown-senders";
 import { inboxHiding, shownSql } from "./queries";
 import type { Db } from "./sqlite";
@@ -14,7 +15,8 @@ function needsRows(db: Db, now: number): WaitingRow[] {
   const hiding = shownSql(inboxHiding(db));
   // plan 240: a sender said to be always shown outranks the Inbox's hiding (a Gmail tab kept apart, a hidden category)
   const shown = shownKeys(db);
-  const hidden = hiding.where && shown.size ? ` AND ((1${hiding.where}) OR terno_address_key(last_from_email) IN (SELECT key FROM shown_senders))` : hiding.where;
+  // (by the waiting message's sender, never the thread's last: a synced draft of yours on top is the last, Codex code review)
+  const hidden = hiding.where && shown.size ? ` AND ((1${hiding.where}) OR EXISTS (SELECT 1 FROM messages m INDEXED BY messages_thread WHERE m.thread_id = threads.id AND m.date = threads.waiting_since AND m.is_draft = 0 AND m.is_sent = 0 AND terno_address_key(m.from_email) IN (SELECT key FROM shown_senders)))` : hiding.where;
   const rows = db.all<{ id: number; last_date: number; last_from_email: string; subject: string; has_sent: number; snippet: string | null; waiting_since: number }>(
     `SELECT id, last_date, last_from_email, subject, has_sent, snippet, waiting_since FROM threads INDEXED BY threads_waiting
      WHERE waiting_since IS NOT NULL AND last_date >= ? AND waiting_since >= ? AND in_inbox = 1${hidden}
@@ -26,8 +28,15 @@ function needsRows(db: Db, now: number): WaitingRow[] {
   );
   const snippets = new Map(rows.map((r) => [r.id, r.snippet]));
   const isShown = (key: string) => shown.has(key);
+  // plan 240 (Codex code review): who it waits on is the waiting message's sender; the thread's last is yours when a synced
+  // draft is newest (asked only then, and only with a sender shown)
+  const own = shown.size ? ownAddresses(db) : null;
+  const waitingFrom = (r: { id: number; waiting_since: number; last_from_email: string }) =>
+    own?.has(addressKey(r.last_from_email))
+      ? (db.get<{ from_email: string }>("SELECT from_email FROM messages INDEXED BY messages_thread WHERE thread_id = ? AND date = ? AND is_draft = 0 AND is_sent = 0 ORDER BY id DESC LIMIT 1", r.id, r.waiting_since)?.from_email ?? r.last_from_email)
+      : r.last_from_email;
   const needs = needsYou(
-    rows.map((r) => ({ id: r.id, lastDate: r.last_date, waitingSince: r.waiting_since, from: r.last_from_email, subject: r.subject, hasSent: r.has_sent === 1 })),
+    rows.map((r) => ({ id: r.id, lastDate: r.last_date, waitingSince: r.waiting_since, from: waitingFrom(r), subject: r.subject, hasSent: r.has_sent === 1 })),
     (key) => db.get<{ written: number; own: number }>("SELECT written, own FROM correspondents WHERE email = ?", key),
     isShown,
   );

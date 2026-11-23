@@ -1,7 +1,7 @@
 import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, parseHandedTo, readPartOfDay, DATED_MUTE_NAME_MAX, DATED_MUTE_PAIRS_MAX, DATED_MUTES_MAX, muteKey, pairOf, senderIsPerson, THREAD_SCOPED_KINDS, waitingCutoff, type DatedMute, type DatedMuteOn, type DatedRow } from "@terno/core";
 import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, readNothingAsked, recipientList, WAITING_CLOSED, type ClosedAt, type DatedFinish, type DatedFinishOutcome, type DatedMuteAdded, type DatedMark, type DatedSnapshot, markPage, type MarkKey, type RawMark, type RawMarkKey, type DatedSource, type WaitingActState } from "@terno/store";
 import { OWN_SENDER_SQL, RECEIVED_SQL } from "./ai-summaries";
-import { ownAddresses } from "./facts";
+import { ownAddresses, requeueSender } from "./facts";
 import { remarkReplies } from "./followups";
 import { proposedMove, scheduleFields, wallJson, wallOf } from "./schedule";
 import type { Db } from "./sqlite";
@@ -176,6 +176,8 @@ export function addDatedMute(db: Db, m: DatedMute): DatedMuteAdded {
     if (db.get("SELECT 1 FROM dated_mutes WHERE target = ? AND key = ?", m.on, key)) return "already";
     if (db.get<{ n: number }>("SELECT count(*) AS n FROM dated_mutes")!.n >= DATED_MUTES_MAX) return "full";
     db.run("INSERT INTO dated_mutes (target, key, name, created_at) VALUES (?, ?, ?, ?)", m.on, key, name, m.at);
+    // plan 240: one sender is never both hidden and always shown: their mute ends their Show, here (Codex code review)
+    if (m.on === "sender" && db.run("DELETE FROM shown_senders WHERE key = ?", key).changes) requeueSender(db, key);
     return "added";
   });
 }

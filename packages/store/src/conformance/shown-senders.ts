@@ -1,4 +1,4 @@
-import { SHOWN_SENDERS_MAX } from "@terno/core";
+import { DATED_MUTES_MAX, SHOWN_SENDERS_MAX } from "@terno/core";
 import { describe, expect, it } from "vitest";
 import type { MailStore } from "../mail-store";
 import type { IncomingMessage } from "../types";
@@ -76,6 +76,45 @@ export function defineShownSendersConformance(fresh: () => Promise<MailStore>, r
       const r = await store.today.shown.add({ id: "e", email: esof.email, name: esof.name, at: NOW });
       expect(r).toMatchObject({ unmuted: { on: "sender", key: "casa@tacsecurity.test", name: "ESOF", at: NOW - DAY } });
       expect((await store.dated.mutes.list()).map((m) => m.on)).toEqual(["pair"]);
+    });
+
+    it("the Codex code review: a synced draft of yours on top doesn't hide their conversation, nor take it past the Inbox's hiding", async () => {
+      const { store, put, needs, waiting } = await setup();
+      const plain = await put({ providerThreadId: "conv-a", subject: "Plain" });
+      const hidden = await put({ providerThreadId: "conv-b", subject: "Hidden" });
+      const category = await store.categories.create("Security", "rose", {});
+      await store.categories.add({ categoryId: category.id, threadIds: [hidden], addedBy: "user", now: NOW });
+      await store.categories.update(category.id, { showInInbox: false });
+      for (const [thread, key] of [[plain, "conv-a"], [hidden, "conv-b"]] as const) {
+        await put({ providerThreadId: key, from: me, to: [esof], isDraft: true, inInbox: false, listId: null, subject: "Re: draft", date: NOW - 100 });
+        expect(await threadOf(store, `s-${thread === plain ? 2 : 3}`)).toBe(thread);
+      }
+      await store.today.shown.add({ id: "e", email: esof.email, name: esof.name, at: NOW });
+      expect(await waiting(plain)).toBe(true);
+      expect(new Set(await needs())).toEqual(new Set([plain, hidden]));
+    });
+
+    it("the Codex code review: a sender's mute ends their Show in its own command, a refused one ends nothing; Show's Undo puts the mute back past the bound", async () => {
+      const { store, put, waiting } = await setup();
+      const thread = await put();
+      await store.today.shown.add({ id: "e", email: esof.email, name: esof.name, at: NOW });
+      for (let i = 0; i < DATED_MUTES_MAX; i++) expect(await store.dated.mutes.add({ on: "sender", key: `s${i}@x.test`, name: "", at: i })).toBe("added");
+      expect(await store.dated.mutes.add({ on: "sender", key: "casa@tacsecurity.test", name: "ESOF", at: NOW })).toBe("full");
+      expect((await store.today.shown.list()).map((e) => e.id)).toEqual(["e"]);
+      expect(await waiting(thread)).toBe(true);
+      // Show's Undo, the mutes full: the mute back all the same, with the Show gone
+      const r = await store.today.shown.remove("casa@tacsecurity.test", "e", { name: "ESOF", at: NOW - DAY });
+      expect(r.removed).toMatchObject({ id: "e" });
+      expect((await store.dated.mutes.list()).find((m) => m.key === "casa@tacsecurity.test")).toMatchObject({ on: "sender", name: "ESOF", at: NOW - DAY });
+      expect(await waiting(thread)).toBe(false);
+      // a mute taken while shown ends the Show and their waiting, together
+      await store.dated.mutes.remove("sender", "casa@tacsecurity.test");
+      await store.dated.mutes.remove("sender", "s1@x.test");
+      await store.today.shown.add({ id: "f", email: esof.email, name: esof.name, at: NOW });
+      expect(await waiting(thread)).toBe(true);
+      expect(await store.dated.mutes.add({ on: "sender", key: "casa@tacsecurity.test", name: "ESOF", at: NOW })).toBe("added");
+      expect(await store.today.shown.list()).toEqual([]);
+      expect(await waiting(thread)).toBe(false);
     });
 
     it("past the Inbox's hiding (a category hidden from it) and the readings of their words; never past what was handled, nor the waiting window", async () => {

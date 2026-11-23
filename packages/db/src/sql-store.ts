@@ -1112,7 +1112,7 @@ export class SqlMailStore implements MailStore {
     shown: {
       list: async () => listShown(this.db),
       add: async (s) => addShown(this.db, s),
-      remove: async (key, id) => removeShown(this.db, key, id),
+      remove: async (key, id, mute) => removeShown(this.db, key, id, mute),
     },
     waitingPage: async (o) => waitingPage(this.db, o),
     waitingAmong: async (ids, now) => waitingAmong(this.db, ids, now),

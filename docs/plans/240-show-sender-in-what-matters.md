@@ -88,3 +88,13 @@ Codex (read-only) raised 12 points; all are taken, some by narrowing.
 10. **The copy.** Taken: "Always show in “What matters”" / "Stop always showing in “What matters”" ("Mostrar siempre en «Lo importante»" / "Dejar de mostrar siempre en «Lo importante»"). The snacks say "“What matters” will always show mail from {sender}" and "“What matters” is back to its usual rules for {sender}".
 11. **One line a conversation.** Narrowed: the projection's placement stays authoritative. A shown conversation with dated items shows them as anyone's do (an invoice with two days, two lines), and Needs you's line is its waiting conversation when no item represents it.
 12. **IndexedDB read acknowledgments' bodies for nothing.** Taken: a shown sender's conversation skips the acknowledgment's body read ahead, as it skips the check.
+
+## What the Codex code review changed
+
+Codex reviewed the two commits (read-only) and found five things; all are fixed, each with a test that fails without it.
+
+1. **A synced draft hid a shown conversation.** Both walks read the thread's last sender, which is you when a draft of yours is newest, while the facts rightly ignore drafts. The walks now take who it waits on from the waiting message (`date = waiting_since`, not a draft or a send), asked only when a sender is shown and the last sender is yours; the Inbox-hiding override reads the same message in SQL. Conformance: a draft on a plain and on a hidden conversation.
+2. **A mute refused at its bound still ended the Show**, and two windows could interleave. The sender mute and the end of the Show are now one store command (`dated.mutes.add`, both stores), so a refused mute changes nothing. The backend only tells the windows.
+3. **Show's Undo could lose the mute** when the mutes filled meanwhile. `shown.remove(key, id, mute)` puts the mute back in the same command, past the bound if it must, as exact Undos do.
+4. **Show skipped the Unmute boundary**, so mail queued while muted reached the reader. Show now records it first (`DatedMutes.unmutedFrom`, shared with Unmute). Backend test: mail queued while muted stays unread after Show; mail from then on is read.
+5. **The menu went stale after a reconnection.** The client store reads again on `onAttach` once it has been read, and an answer that left before a newer event is dropped. Web state test.

@@ -31,11 +31,13 @@ export function addShown(c: Ctx, s: Omit<ShownSender, "key">): ShownAdded {
 }
 
 /** As SQL's: only that `id`'s entry when one is named. */
-export function removeShown(c: Ctx, key: string, id?: string): ShownRemoved {
+export function removeShown(c: Ctx, key: string, id?: string, mute?: { name: string; at: number }): ShownRemoved {
   const shown = T(c, "shown_senders");
   const r = shown.get(key);
   if (!r || (id !== undefined && r.id !== id)) return { removed: null, threadIds: [] };
   shown.delete(key);
+  const mutes = T(c, "dated_mutes");
+  if (mute && !mutes.has("sender", key)) mutes.insert({ target: "sender", key, name: mute.name, created_at: mute.at });
   const touched = new Set<number>();
   requeueSender(c.db, key, touched);
   return { removed: toShown(r), threadIds: [...touched] };

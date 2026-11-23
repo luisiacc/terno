@@ -2010,7 +2010,7 @@ export class IdbMailStore implements MailStore {
     shown: {
       list: () => this.early(() => listShown(this.c)),
       add: (s) => this.command(() => addShown(this.c, s)),
-      remove: (key, id) => this.command(() => removeShown(this.c, key, id)),
+      remove: (key, id, mute) => this.command(() => removeShown(this.c, key, id, mute)),
     },
     waitingPage: (o) => this.needs(o.now, (walk) => waitingPage(this.c, o, walk)),
     waitingAmong: (ids, now) => this.needs(now, (walk) => waitingAmong(this.c, ids, walk)),
