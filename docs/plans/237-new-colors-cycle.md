@@ -54,3 +54,6 @@ The critique made eight points; what changed:
 7. The sweep (`actions.test.ts`: after rose, cyan → brown; the old first-free rule gave amber) and the MCP server (`mcp.test.ts`) assert the color they create; both fail with the old rules.
 8. No screenshots or UI rating: nothing is drawn differently, only which of the existing palette colors a new item starts with.
 
+## 7. What the Codex code review changed
+
+One finding: the account test never reordered, so a rule that followed the newest account would have passed. It now moves the first account to the end and expects the color after that one's (amber), not after the newest's (brown).

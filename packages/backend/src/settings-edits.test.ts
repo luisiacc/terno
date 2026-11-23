@@ -195,7 +195,11 @@ describe("a new one's color (plan 237)", () => {
     const b = await client.call("accounts.addImap", imap("dos@fastmail.com"));
     expect([a.color, b.color]).toEqual(["rose", "amber"]);
     await client.call("accounts.update", { id: b.id, color: "emerald" });
-    expect((await client.call("accounts.addImap", imap("tres@fastmail.com"))).color).toBe("cyan");
+    const c = await client.call("accounts.addImap", imap("tres@fastmail.com"));
+    expect(c.color).toBe("cyan");
+    // the last in the sidebar's order (rose, moved to the end), not the newest (cyan, whose next is brown)
+    await client.call("accounts.reorder", { ids: [b.id, c.id, a.id] });
+    expect((await client.call("accounts.addImap", imap("cuatro@fastmail.com"))).color).toBe("amber");
   });
 });
 
