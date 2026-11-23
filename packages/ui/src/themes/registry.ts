@@ -172,6 +172,10 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
   def("mail-ink", () => "0.24 0.01 265");
   def("mail-link", () => "0.5 0.18 265");
   def("sidebar-translucent", () => withAlpha(o("sidebar"), light ? 0.72 : 0.62));
+  // plan 250: the shell's ground is the sidebar's; in dark a touch deeper, as the same step under the cards reads as less
+  // there (only the ground moves: the cards keep their fills, and ink on the sidebar gains contrast)
+  def("shell", () => (light ? o("sidebar") : { ...o("sidebar"), l: Math.max(0, Math.round((o("sidebar").l - 0.02) * 1000) / 1000) }));
+  def("shell-translucent", () => withAlpha(o("shell"), light ? 0.72 : 0.62));
   // plan 66: the selected fill at 60% of its opacity, so it stays translucent over vibrancy like the fill it echoes
   def("sidebar-hover", () => withAlpha(o("sidebar-accent"), Math.round(o("sidebar-accent").alpha * 0.6 * 1000) / 1000));
   // plan 07

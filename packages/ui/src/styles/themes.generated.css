@@ -80,6 +80,8 @@
   --shadow-color: oklch(0 0 0 / 0.1);
   --ink-anchor: oklch(0.2 0.01 265);
   --sidebar-translucent: oklch(0.986 0.002 68 / 0.72);
+  --shell: oklch(0.986 0.002 68);
+  --shell-translucent: oklch(0.986 0.002 68 / 0.72);
   --sidebar-hover: oklch(0.944 0.006 75 / 0.6);
   --primary-hover: oklch(0.321 0.004 68);
   --destructive-foreground: oklch(1 0 0);
@@ -171,6 +173,8 @@
   --shadow-color: oklch(0 0 0 / 0.1);
   --ink-anchor: oklch(0.2 0.01 265);
   --sidebar-translucent: oklch(0.965 0.004 85 / 0.72);
+  --shell: oklch(0.965 0.004 85);
+  --shell-translucent: oklch(0.965 0.004 85 / 0.72);
   --sidebar-hover: oklch(0.22 0.01 265 / 0.038);
   --primary-hover: oklch(0.5 0.19 268);
   --destructive-foreground: oklch(1 0 0);
@@ -262,6 +266,8 @@
   --shadow-color: oklch(0 0 0 / 0.1);
   --ink-anchor: oklch(0.2 0.01 265);
   --sidebar-translucent: oklch(0.943 0 0 / 0.72);
+  --shell: oklch(0.943 0 0);
+  --shell-translucent: oklch(0.943 0 0 / 0.72);
   --sidebar-hover: oklch(0 0 0 / 0.035);
   --primary-hover: oklch(0.513 0.218 257);
   --destructive-foreground: oklch(1 0 0);
@@ -353,6 +359,8 @@
   --shadow-color: oklch(0 0 0 / 0.1);
   --ink-anchor: oklch(0.2 0.01 265);
   --sidebar-translucent: oklch(0.931 0.026 92 / 0.72);
+  --shell: oklch(0.931 0.026 92);
+  --shell-translucent: oklch(0.931 0.026 92 / 0.72);
   --sidebar-hover: oklch(0.891 0.029 92 / 0.6);
   --primary-hover: oklch(0.485 0.139 245);
   --destructive-foreground: oklch(1 0 0);
@@ -444,6 +452,8 @@
   --shadow-color: oklch(0 0 0 / 0.1);
   --ink-anchor: oklch(0.2 0.01 265);
   --sidebar-translucent: oklch(0.922 0.055 93 / 0.72);
+  --shell: oklch(0.922 0.055 93);
+  --shell-translucent: oklch(0.922 0.055 93 / 0.72);
   --sidebar-hover: oklch(0.883 0.057 89 / 0.6);
   --primary-hover: oklch(0.524 0.07 211.7);
   --destructive-foreground: oklch(1 0 0);
@@ -535,6 +545,8 @@
   --shadow-color: oklch(0 0 0 / 0.1);
   --ink-anchor: oklch(0.2 0.01 265);
   --sidebar-translucent: oklch(0.978 0.003 248 / 0.72);
+  --shell: oklch(0.978 0.003 248);
+  --shell-translucent: oklch(0.978 0.003 248 / 0.72);
   --sidebar-hover: oklch(0.936 0.007 248 / 0.6);
   --primary-hover: oklch(0.568 0.18 257);
   --destructive-foreground: oklch(1 0 0);
@@ -626,6 +638,8 @@
   --shadow-color: oklch(0 0 0 / 0.1);
   --ink-anchor: oklch(0.2 0.01 265);
   --sidebar-translucent: oklch(0.933 0.009 265 / 0.72);
+  --shell: oklch(0.933 0.009 265);
+  --shell-translucent: oklch(0.933 0.009 265 / 0.72);
   --sidebar-hover: oklch(0.893 0.012 265 / 0.6);
   --primary-hover: oklch(0.495 0.25 297);
   --destructive-foreground: oklch(1 0 0);
@@ -717,6 +731,8 @@
   --shadow-color: oklch(0 0 0 / 0.1);
   --ink-anchor: oklch(0.2 0.01 265);
   --sidebar-translucent: oklch(0.97 0.004 91 / 0.72);
+  --shell: oklch(0.97 0.004 91);
+  --shell-translucent: oklch(0.97 0.004 91 / 0.72);
   --sidebar-hover: oklch(0.929 0.007 89 / 0.6);
   --primary-hover: oklch(0.42 0.052 256);
   --destructive-foreground: oklch(1 0 0);
@@ -808,6 +824,8 @@
   --shadow-color: oklch(0 0 0 / 0.1);
   --ink-anchor: oklch(0.2 0.01 265);
   --sidebar-translucent: oklch(0.975 0 0 / 0.72);
+  --shell: oklch(0.975 0 0);
+  --shell-translucent: oklch(0.975 0 0 / 0.72);
   --sidebar-hover: oklch(0 0 0 / 0.035);
   --primary-hover: oklch(0.573 0.23 263);
   --destructive-foreground: oklch(1 0 0);
@@ -899,6 +917,8 @@
   --shadow-color: oklch(0 0 0 / 0.1);
   --ink-anchor: oklch(0.2 0.01 265);
   --sidebar-translucent: oklch(1 0 0 / 0.72);
+  --shell: oklch(1 0 0);
+  --shell-translucent: oklch(1 0 0 / 0.72);
   --sidebar-hover: oklch(0.957 0 0 / 0.6);
   --primary-hover: oklch(0.316 0 0);
   --destructive-foreground: oklch(1 0 0);
@@ -990,6 +1010,8 @@
   --shadow-color: oklch(0 0 0 / 0.16);
   --ink-anchor: oklch(0.2 0.01 265);
   --sidebar-translucent: oklch(0.97 0 0 / 0.72);
+  --shell: oklch(0.97 0 0);
+  --shell-translucent: oklch(0.97 0 0 / 0.72);
   --sidebar-hover: oklch(0.916 0 0 / 0.6);
   --primary-hover: oklch(0.335 0 0);
   --destructive-foreground: oklch(1 0 0);
@@ -1081,6 +1103,8 @@
   --shadow-color: oklch(0 0 0 / 0.4);
   --ink-anchor: oklch(0.98 0 0);
   --sidebar-translucent: oklch(0.225 0.006 265 / 0.62);
+  --shell: oklch(0.205 0.006 265);
+  --shell-translucent: oklch(0.205 0.006 265 / 0.62);
   --sidebar-hover: oklch(1 0 0 / 0.066);
   --primary-hover: oklch(0.624 0.142 268);
   --destructive-foreground: oklch(0.24 0.005 265);
@@ -1172,6 +1196,8 @@
   --shadow-color: oklch(0 0 0 / 0.4);
   --ink-anchor: oklch(0.98 0 0);
   --sidebar-translucent: oklch(0.255 0.019 280 / 0.62);
+  --shell: oklch(0.235 0.019 280);
+  --shell-translucent: oklch(0.235 0.019 280 / 0.62);
   --sidebar-hover: oklch(0.343 0.027 276 / 0.6);
   --primary-hover: oklch(0.678 0.131 301.5);
   --destructive-foreground: oklch(0.288 0.022 278);
@@ -1263,6 +1289,8 @@
   --shadow-color: oklch(0 0 0 / 0.4);
   --ink-anchor: oklch(0.98 0 0);
   --sidebar-translucent: oklch(0.237 0.006 122 / 0.62);
+  --shell: oklch(0.217 0.006 122);
+  --shell-translucent: oklch(0.217 0.006 122 / 0.62);
   --sidebar-hover: oklch(0.357 0.018 103 / 0.6);
   --primary-hover: oklch(0.762 0.177 126.9);
   --destructive-foreground: oklch(0.274 0.011 115);
@@ -1354,6 +1382,8 @@
   --shadow-color: oklch(0 0 0 / 0.4);
   --ink-anchor: oklch(0.98 0 0);
   --sidebar-translucent: oklch(0.204 0.016 285 / 0.62);
+  --shell: oklch(0.184 0.016 285);
+  --shell-translucent: oklch(0.184 0.016 285 / 0.62);
   --sidebar-hover: oklch(0.309 0.037 273 / 0.6);
   --primary-hover: oklch(0.65 0.116 264.4);
   --destructive-foreground: oklch(0.226 0.021 280);
@@ -1445,6 +1475,8 @@
   --shadow-color: oklch(0 0 0 / 0.4);
   --ink-anchor: oklch(0.98 0 0);
   --sidebar-translucent: oklch(0.241 0.005 220 / 0.62);
+  --shell: oklch(0.221 0.005 220);
+  --shell-translucent: oklch(0.221 0.005 220 / 0.62);
   --sidebar-hover: oklch(0.344 0.007 49 / 0.6);
   --primary-hover: oklch(0.643 0.037 170.8);
   --destructive-foreground: oklch(0.277 0 0);
@@ -1536,6 +1568,8 @@
   --shadow-color: oklch(0 0 0 / 0.4);
   --ink-anchor: oklch(0.98 0 0);
   --sidebar-translucent: oklch(0.301 0.021 266 / 0.62);
+  --shell: oklch(0.281 0.021 266);
+  --shell-translucent: oklch(0.281 0.021 266 / 0.62);
   --sidebar-hover: oklch(0.379 0.029 266 / 0.6);
   --primary-hover: oklch(0.712 0.056 219.4);
   --destructive-foreground: oklch(0.324 0.023 264);
@@ -1627,6 +1661,8 @@
   --shadow-color: oklch(0 0 0 / 0.4);
   --ink-anchor: oklch(0.98 0 0);
   --sidebar-translucent: oklch(0.176 0.016 252 / 0.62);
+  --shell: oklch(0.156 0.016 252);
+  --shell-translucent: oklch(0.156 0.016 252 / 0.62);
   --sidebar-hover: oklch(0.3 0.015 257 / 0.6);
   --primary-hover: oklch(0.593 0.193 255);
   --destructive-foreground: oklch(0.191 0.014 258);
@@ -1718,6 +1754,8 @@
   --shadow-color: oklch(0 0 0 / 0.4);
   --ink-anchor: oklch(0.98 0 0);
   --sidebar-translucent: oklch(0.216 0.025 284 / 0.62);
+  --shell: oklch(0.196 0.025 284);
+  --shell-translucent: oklch(0.196 0.025 284 / 0.62);
   --sidebar-hover: oklch(0.324 0.032 282 / 0.6);
   --primary-hover: oklch(0.711 0.106 304.2);
   --destructive-foreground: oklch(0.243 0.03 284);
@@ -1809,6 +1847,8 @@
   --shadow-color: oklch(0 0 0 / 0.4);
   --ink-anchor: oklch(0.98 0 0);
   --sidebar-translucent: oklch(0.24 0.006 70 / 0.62);
+  --shell: oklch(0.22 0.006 70);
+  --shell-translucent: oklch(0.22 0.006 70 / 0.62);
   --sidebar-hover: oklch(1 0 0 / 0.063);
   --primary-hover: oklch(0.835 0.006 82.9);
   --destructive-foreground: oklch(0.255 0.006 70);
@@ -1900,6 +1940,8 @@
   --shadow-color: oklch(0 0 0 / 0.4);
   --ink-anchor: oklch(0.98 0 0);
   --sidebar-translucent: oklch(0.244 0 0 / 0.62);
+  --shell: oklch(0.224 0 0);
+  --shell-translucent: oklch(0.224 0 0 / 0.62);
   --sidebar-hover: oklch(0.344 0 0 / 0.6);
   --primary-hover: oklch(0.848 0 0);
   --destructive-foreground: oklch(0.26 0 0);
@@ -1991,6 +2033,8 @@
   --shadow-color: oklch(0 0 0 / 0.4);
   --ink-anchor: oklch(0.98 0 0);
   --sidebar-translucent: oklch(0.23 0 0 / 0.62);
+  --shell: oklch(0.21 0 0);
+  --shell-translucent: oklch(0.21 0 0 / 0.62);
   --sidebar-hover: oklch(1 0 0 / 0.066);
   --primary-hover: oklch(0.624 0.14 256.1);
   --destructive-foreground: oklch(0.245 0 0);
@@ -2082,6 +2126,8 @@
   --shadow-color: oklch(0 0 0 / 0.4);
   --ink-anchor: oklch(0.98 0 0);
   --sidebar-translucent: oklch(0.244 0 0 / 0.62);
+  --shell: oklch(0.224 0 0);
+  --shell-translucent: oklch(0.224 0 0 / 0.62);
   --sidebar-hover: oklch(0.344 0 0 / 0.6);
   --primary-hover: oklch(0.848 0 0);
   --destructive-foreground: oklch(0.26 0 0);
@@ -2173,6 +2219,8 @@
   --shadow-color: oklch(0 0 0 / 0.55);
   --ink-anchor: oklch(0.98 0 0);
   --sidebar-translucent: oklch(0.213 0 0 / 0.62);
+  --shell: oklch(0.193 0 0);
+  --shell-translucent: oklch(0.193 0 0 / 0.62);
   --sidebar-hover: oklch(0.321 0 0 / 0.6);
   --primary-hover: oklch(0.826 0 0);
   --destructive-foreground: oklch(0.235 0 0);

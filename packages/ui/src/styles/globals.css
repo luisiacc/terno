@@ -236,6 +236,7 @@
 @media (prefers-reduced-transparency: no-preference) {
   :root[data-vibrancy] {
     --sidebar: var(--sidebar-translucent);
+    --shell: var(--shell-translucent);
   }
 }
 
@@ -518,6 +519,26 @@
 @utility app-panes-list {
   --pane-sidebar-eff: clamp(200px, min(360px, var(--pane-sidebar, min(var(--sidebar-w), 19vw))), 100vw - var(--reader-min) - 300px);
   grid-template-columns: var(--pane-sidebar-eff) minmax(0, 1fr);
+}
+/*
+ * The carded shell: the window's ground is the sidebar's, and the list and the reader sit on it as cards,
+ * --pane-gap apart and from the window's edges (plan 250). The ground is --shell: the sidebar's, a touch deeper in the dark.
+ * The sidebar has no fill of its own (one translucent layer under vibrancy, never two).
+ */
+@utility app-panes-carded {
+  --pane-gap: 2px;
+  background-color: var(--shell);
+  column-gap: var(--pane-gap);
+  /* a little more room above and below than beside: the window's title band and foot */
+  padding-block: calc(var(--pane-gap) + 2px);
+  padding-right: var(--pane-gap);
+}
+/* a card keeps the background its pane paints; its hairline is drawn inside the edge, so the gap stays the ground's */
+@utility pane-card {
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  outline: var(--hairline-w) solid var(--hairline);
+  outline-offset: calc(-1 * var(--hairline-w));
 }
 /* a pane edge being dragged: its cursor everywhere, no text selection, and mail frames don't catch the pointer */
 :root[data-resizing],

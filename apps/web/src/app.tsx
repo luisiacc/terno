@@ -185,7 +185,7 @@ export function App() {
       {gate}
       {/* plan 24: Split is three panes; List is the sidebar and one content pane (the list, or a page over it). The tree keeps its
           shape across a switch, so the list (and its scroll) survives it. */}
-      <div className={cn("relative grid h-screen overflow-hidden", list ? "app-panes-list" : "app-panes")} data-ready={ready || undefined}>
+      <div className={cn("relative grid h-screen overflow-hidden app-panes-carded", list ? "app-panes-list" : "app-panes")} data-ready={ready || undefined}>
         {/* plan 158: the first Tab stop, seen only then: past the sidebar, straight to the mail (while the list is what shows) */}
         {!covered && <button type="button" data-testid="skip-to-list" onClick={skipToList} className="absolute top-2 left-2 z-50 rounded-md bg-popover px-3 py-1.5 text-sm text-popover-foreground opacity-0 shadow-menu outline-none pointer-events-none focus-reveal:pointer-events-auto focus-reveal:opacity-100 focus-visible:ring-2 focus-visible:ring-ring">
           {t("list.skipTo")}
@@ -193,7 +193,7 @@ export function App() {
         <Sidebar />
         {/* plan 188: the one polite voice for what changes where focus isn't */}
         <Announcer />
-        <section id="app-list" role={list || feedWide ? "main" : undefined} aria-label={list || feedWide ? undefined : t("list.label")} className={cn("hairline-l relative min-h-0", !list && !feedWide && "hairline-r hairline-strong", feedWide && "col-span-2")}>
+        <section id="app-list" role={list || feedWide ? "main" : undefined} aria-label={list || feedWide ? undefined : t("list.label")} className={cn("pane-card relative min-h-0", feedWide && "col-span-2")}>
           {/* under a page the list stays laid out (scroll, measured rows, mounted rows) but isn't painted or reachable */}
           <div
             // test builds only: the perf gate's injected regression (a list remounted by every page change) must fail it
@@ -215,7 +215,7 @@ export function App() {
           {feedWide && <SnackDock over="list" />}
         </section>
         {!list && !feedWide && (
-          <main className="relative min-h-0" style={composeInset ? { paddingBottom: composeInset } : undefined}>
+          <main className="pane-card relative min-h-0" style={composeInset ? { paddingBottom: composeInset } : undefined}>
             {/* the reader pane: a bulk selection, else a new message being written, else the conversation; one that fails to render is that pane only */}
             <PaneBoundary area="reader" resetKey={selectedId} readerThreadId={!many && !composing && !heldView ? selectedId : null}>
               {many ? <SelectionBar /> : composing ? <NewMessage /> : heldView ? <HeldNewMessage /> : <Reader />}

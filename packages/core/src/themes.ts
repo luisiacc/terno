@@ -96,6 +96,9 @@ export const THEME_TOKENS = [
   "shadow-color",
   "ink-anchor",
   "sidebar-translucent",
+  // plan 250: the shell's ground the list and the reader rest on as cards, and its vibrancy
+  "shell",
+  "shell-translucent",
   // plan 66: a sidebar row under the pointer, a step softer than the selected one
   "sidebar-hover",
   // plan 94: a filled (primary) button under the pointer, a visible step whose text still reads

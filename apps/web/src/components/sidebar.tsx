@@ -1620,7 +1620,7 @@ export function Sidebar() {
   return (
     // chrome, as Mail's: nothing here is text to select, and Chromium keeps a selection through clicks on buttons and
     // unselectable panes (nearly every press in the app), so one started here would stay until a click in mail text
-    <aside id="app-sidebar" data-testid="sidebar" className="flex h-full min-h-0 w-full flex-col bg-sidebar text-sidebar-foreground select-none">
+    <aside id="app-sidebar" data-testid="sidebar" className="flex h-full min-h-0 w-full flex-col text-sidebar-foreground select-none">
       <div className="drag-region h-(--pane-bar) shrink-0" />
       {/* plan 169: where a moved category or account now is, for a screen reader */}
       <div role="status" aria-live="polite" aria-atomic className="sr-only" data-testid="sidebar-reorder-live" />
@@ -1629,15 +1629,16 @@ export function Sidebar() {
         {/* keyed: another account focused is another sidebar (Codex code review #1: never the last one's rows) */}
         {soloAccount ? <SoloSidebar key={soloAccount.id} account={soloAccount} countTone={inboxTone} /> : all}
       </nav>
-      {/* The last pill stands clear of the footer's hairline; empty, the stack takes no room. */}
+      {/* The last pill stands clear of the footer; empty, the stack takes no room. */}
       <div className="flex shrink-0 flex-col pb-2 empty:hidden">
         <SignInNotice />
         <ConnectionPill />
         <FirstSyncPill />
         <UpdatePill />
       </div>
-      {/* the left stays put: a ghost button's own padding puts Rules' icon on the rows' icon line in the wider inset */}
-      <div className="hairline-t hairline-strong flex shrink-0 items-center gap-1 py-2 pr-(--sidebar-pad) pl-2">
+      {/* no line above it: on the shell's ground the footer is part of the sidebar. The left stays put: a ghost button's own
+          padding puts Rules' icon on the rows' icon line in the wider inset */}
+      <div className="flex shrink-0 items-center gap-1 py-2 pr-(--sidebar-pad) pl-2">
         <Button data-testid="open-filters" variant="ghost" size="sm" className="flex-1 justify-start gap-2 text-sidebar-foreground" onClick={() => setApp({ dialog: "filters" })}>
           <Route className="text-sidebar-glyph" /> {t("sidebar.filters")}
         </Button>
