@@ -2,7 +2,7 @@
 
 Two sets, for the evals in `scripts/ai-real/`. They're not used by `pnpm test`.
 
-- **`synthetic/*.jsonl`, in this repo.** Conversations written by agents with different personalities. Every person, company and address is invented. The repo is public, so nothing real goes here.
+- **`synthetic/*.jsonl`, in this repo.** Conversations written by agents with different personalities. Every person, company and address is invented. The repo is public, so nothing real goes here. `steps.jsonl` (plan 241) is mail that lays out a process around one ask, and multi-asks a fix for it could over-merge.
 - **`dated/dated.jsonl`, in this repo.** Plan 204's cases for `readDates`, invented the same way: one message each, in the shape below plus `dated` (when it arrived, whether the sender is automated, the open items it could settle, and the `items`, acceptable extra items `also` and `settled` labels a right answer has; a kind or a day may be a list of acceptable ones; a `moved` entry's `text` and `textNot` are patterns a move's new words must and mustn't match, and `keep` what any words it gives must still say). Kept out of `synthetic/`, so the summary evals read the same 150.
 - **Real mail, never in this repo.** Public archives, rebuilt by `fetch-real.py` into `~/.terno-evals/real-mail/`. They hold real people's words: they stay on this machine, and their text is never pasted into a plan, a commit or a test.
 
