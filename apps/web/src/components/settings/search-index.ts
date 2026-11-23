@@ -67,6 +67,7 @@ export const SETTINGS_INDEX = [
   { id: "general.keepInboxCount", tab: "general", label: "firstScreen.keepInboxCount", hint: "firstScreen.keepInboxCount.hint", words: "settings.find.words.keepInboxCount", when: (c) => ai(c) && (!c.devMode || c.settings.devAi === true) && c.settings.today?.show !== false && c.settings.firstScreen === "whatMatters" },
   { id: "general.today", tab: "general", group: "today.title", label: "today.settings.show", when: ai },
   { id: "general.todayFinished", tab: "general", group: "today.title", label: "today.settings.finished", hint: "today.settings.finishedHint", words: "settings.find.words.finished", when: ai },
+  { id: "general.todayShown", tab: "general", group: "today.title", label: "shown.title", hint: "shown.hint", words: "settings.find.words.shown", when: ai },
   { id: "general.todayMuted", tab: "general", group: "today.title", label: "dated.mute.title", hint: "dated.mute.hint", words: "settings.find.words.muted", when: ai },
   { id: "general.todayAt", tab: "general", group: "today.title", label: "today.settings.prepareAt", hint: "today.settings.prepareAtHint", when: ai },
   { id: "general.todayNotify", tab: "general", group: "today.title", label: "today.settings.notify", hint: "today.settings.notifyHint", when: ai },

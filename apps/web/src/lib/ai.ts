@@ -135,8 +135,8 @@ export function writingTarget(ai: AiSettings | null | undefined): { ready: boole
 interface AiOffer {
   devAi: unknown;
   settings: AppSettings | null;
-  /** plan 211: each account's "Use AI with this account" */
-  accounts?: readonly Pick<Account, "id" | "ai">[];
+  /** plan 211: each account's "Use AI with this account" (and "Show in What matters") */
+  accounts?: readonly Pick<Account, "id" | "ai" | "feed">[];
 }
 
 /** Plan 211: the account lets the AI read its mail (an account not known here, or none named, is on, its default). */
@@ -160,6 +160,8 @@ export const aiFeaturesOffered = (s: AiOffer): boolean => aiAllowed(s) && aiFeat
 /** Today's own rule (plan 145), with the switch. `todayOffered` adds its row's setting. */
 export const todayAvailable = aiFeaturesOffered;
 export const todayOffered = (s: AiOffer): boolean => todayAvailable(s) && s.settings?.today?.show !== false;
+/** Plan 240: What matters is there for this account's mail (its own "Show in What matters" on): what a sender's menu offers to it. */
+export const whatMattersFor = (s: AiOffer, accountId: number | null | undefined): boolean => todayOffered(s) && (accountId == null || s.accounts?.find((a) => a.id === accountId)?.feed !== false);
 /** These two need a provider to turn on, and what they found stays readable when a key goes. */
 export const followupsOffered = (s: AiOffer, accountId?: number | null): boolean => aiAllowed(s, accountId) && s.settings?.followups?.enabled === true;
 export const repliesOffered = (s: AiOffer, accountId?: number | null): boolean => aiAllowed(s, accountId) && s.settings?.replies?.enabled === true;

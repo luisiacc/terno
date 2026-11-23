@@ -48,6 +48,8 @@ export const ICONS = {
   Download: "Download01Icon",
   Ellipsis: "MoreHorizontalIcon",
   ExternalLink: "Share05Icon",
+  // plan 240: "Always show in What matters"
+  Eye: "ViewIcon",
   EyeOff: "ViewOffSlashIcon",
   FileDown: "FileDownloadIcon",
   Filter: "FilterIcon",

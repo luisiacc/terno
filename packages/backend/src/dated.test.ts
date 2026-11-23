@@ -3754,3 +3754,66 @@ describe("plan 239: new mail first", () => {
     expect((await client.call("dated.status", {})).blockedBy).toBeNull();
   });
 });
+
+describe("plan 240: always show a sender in What matters", () => {
+  const casa = { name: "ESOF", email: "casa@tacsecurity.test" };
+  const lov = (over: Partial<IncomingMessage> = {}): Partial<IncomingMessage> => ({ from: casa, listId: "<casa.list>", subject: "Reminder to Complete LOV Form Submission", bodyText: "Your account was created. Please complete the LOV form.", ...over });
+  const inFeed = async (client: RpcClient) => (await client.call("today.list", { held: [] })).sections.flatMap((x) => x.items.map((i) => i.thread.id));
+
+  it("Show puts their unanswered conversation in Needs you and ends their mute, every window hears it; each Undo is exact", async () => {
+    const { client, receive } = await setup();
+    const thread = await receive(lov(), false);
+    expect(await inFeed(client)).not.toContain(thread);
+    await client.call("dated.mute", { on: "sender", key: casa.email, name: "ESOF" });
+    const heard: { senders: unknown[] }[] = [];
+    const off = client.on("shownSenders", (e) => void heard.push(e));
+    const r = await client.call("today.showSender", { email: "CASA+x@TacSecurity.test", name: "ESOF" });
+    expect(r).toMatchObject({ added: { key: casa.email, name: "ESOF" }, unmuted: { on: "sender", key: casa.email, name: "ESOF" } });
+    expect((await client.call("dated.mutes", {})).mutes).toEqual([]);
+    expect(await inFeed(client)).toContain(thread);
+    await expect.poll(() => heard.at(-1)?.senders.length).toBe(1);
+    // Show's Undo: that entry off (never a later one), the mute back as it was
+    expect((await client.call("today.stopShowingSender", { email: casa.email, id: "another" })).removed).toBeNull();
+    await client.call("today.stopShowingSender", { email: casa.email, id: r.added!.id, mute: { name: r.unmuted!.name, at: r.unmuted!.at } });
+    expect((await client.call("dated.mutes", {})).mutes).toMatchObject([{ on: "sender", key: casa.email, at: r.unmuted!.at }]);
+    expect(await inFeed(client)).not.toContain(thread);
+    await expect.poll(() => heard.at(-1)?.senders.length).toBe(0);
+    off();
+    // a Stop's Undo puts back the same entry
+    const again = await client.call("today.showSender", { email: casa.email, name: "ESOF" });
+    const { removed } = await client.call("today.stopShowingSender", { email: casa.email });
+    await client.call("today.showSender", { email: removed!.email, name: removed!.name, id: removed!.id, at: removed!.at });
+    expect((await client.call("today.shownSenders", {})).senders).toEqual([again.added]);
+  });
+
+  it("muting a shown sender (an Unmute's Undo) ends the Show; Remove's snack never offers to mute one", async () => {
+    const { backend, client, model, receive, read } = await setup();
+    await client.call("today.showSender", { email: casa.email, name: "ESOF" });
+    model.answer = () => reply([bill]);
+    await receive(lov({ bodyText: BILL_TEXT }));
+    await read();
+    const [row] = await backend.store.dated.active();
+    expect(row).toBeDefined();
+    await client.call("dated.act", { id: row!.id, revision: row!.revision, action: "dismiss" });
+    expect((await client.call("dated.muteOffer", { id: row!.id })).offer).toBeNull();
+    await client.call("dated.mute", { on: "sender", key: casa.email, name: "ESOF", at: NOW });
+    expect((await client.call("today.shownSenders", {})).senders).toEqual([]);
+  });
+
+  it("the reader reads a shown sender's mail in full: Promotions' with no time cue, and a sender named like a security desk", async () => {
+    const { model, receive, read, client } = await setup();
+    const promo = { name: "Scanner", email: "news@scanner.test" };
+    const desk = { name: "Desk", email: "alerts@acme-security.test" };
+    const promotions = (from: typeof promo, n: number) => ({ from, listId: "<p.list>", gmailLabels: ["CATEGORY_PROMOTIONS", "INBOX"], subject: `New ${n}`, bodyText: "Our new scanner is out.", providerThreadId: `p-${from.email}-${n}` });
+    await receive(promotions(promo, 1));
+    await receive({ from: desk, subject: "Account notice", bodyText: "Please review your account by Friday.", providerThreadId: "desk-1" });
+    await read();
+    expect(readings(model.requests)).toHaveLength(0);
+    await client.call("today.showSender", { email: promo.email, name: promo.name });
+    await client.call("today.showSender", { email: desk.email, name: desk.name });
+    await receive(promotions(promo, 2));
+    await receive({ from: desk, subject: "Account notice", bodyText: "Please review your account by Friday.", providerThreadId: "desk-2" });
+    await read();
+    expect(readings(model.requests).map((r) => promptText(r.messages[0]!.content).includes("scanner") ? "promo" : "desk").sort()).toEqual(["desk", "promo"]);
+  });
+});

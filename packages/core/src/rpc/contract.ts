@@ -27,7 +27,7 @@ import { FOLLOWUP_REPLY_MAX, type FollowupRow, type FollowupsSetting, type Follo
 import type { DatedRow, DatedSetting } from "../dated";
 import { HANDOFF_ITEMS_MAX, type Handoff, type HandoffItem } from "../handoff";
 import type { DatedMute, MuteOffer } from "../dated-mutes";
-import { DIGEST_CANDIDATES_MAX, HISTORY_PAGE, NOT_NEWSLETTERS_OVER, type DigestRow, type NotNewsletter, type TodayHistoryPage, type TodayList, type TodaySetting } from "../today";
+import { DIGEST_CANDIDATES_MAX, HISTORY_PAGE, NOT_NEWSLETTERS_OVER, type DigestRow, type NotNewsletter, type ShownSender, type TodayHistoryPage, type TodayList, type TodaySetting } from "../today";
 import type { AiPrepareReply, AiReplyEvent, PreparedReply, RepliesSetting } from "../replies";
 import type { ActionPreviewInfo, ActionRowTag, AiActionApplied, AiActionCheck, AiActionEvent, AiActionStart } from "../actions";
 import { ASK_QUESTION_MAX, ASK_SOURCES_MAX, type AiAskEvent, type AiAskResult, type AskConversationSummary, type AskOlderOffer, type AskSourceView, type AskTurn } from "../ask";
@@ -1365,6 +1365,13 @@ export const contract = {
   "today.notNewslettersUndo": m<{ restored: number }>()(z.object({ remove: z.array(z.object({ email: z.string().max(320), id: z.string().min(1).max(400) })).max(DIGEST_CANDIDATES_MAX).optional(), restore: z.array(z.object({ id: z.string().min(1).max(400), email: z.string().trim().min(3).max(320), name: z.string().max(2000), at: z.number().int() })).max(DIGEST_CANDIDATES_MAX + NOT_NEWSLETTERS_OVER).default([]) })),
   /** Plan 166: the senders kept out, newest first: Settings → AI → Newsletter digest */
   "today.notNewsletters": m<{ senders: NotNewsletter[] }>()(empty),
+  // plan 240: senders always shown in What matters. Renderer-only (not in MCP_ALLOWED): the menus, Settings and Undo's
+  /** newest first */
+  "today.shownSenders": m<{ senders: ShownSender[] }>()(empty),
+  /** "Always show in What matters". `id` and `at`: a Stop's Undo puts back that same entry. `unmuted`: the sender mute it ended */
+  "today.showSender": m<{ added: ShownSender | null; unmuted: DatedMute | null }>()(z.object({ email: z.string().trim().min(3).max(320), /** kept to its first 200 characters */ name: z.string().max(2000), id: z.string().min(1).max(400).optional(), at: z.number().int().optional() })),
+  /** "Stop always showing". `id`: only that entry (a Show's Undo); `mute`: the sender mute that Show ended, put back as it was */
+  "today.stopShowingSender": m<{ removed: ShownSender | null }>()(z.object({ email: z.string().trim().min(3).max(320), id: z.string().min(1).max(400).optional(), mute: z.object({ name: z.string().max(2000), at: z.number().int() }).optional() })),
   /**
    * Plan 144: a conversation that waits for an answer stayed open. It reads the switch, the thread and what's stored
    * again, whatever the window thought, and goes on in `aiReply`. Never MCP. Nothing is ever sent from here.
@@ -1635,6 +1642,8 @@ export interface Events {
   todayDigest: { day: string };
   /** plan 204: what Today holds changed by itself (an item read, settled, acted on, or the clock): never MCP */
   todayChanged: Record<string, never>;
+  /** plan 240: the senders always shown in What matters, newest first (every window's menus) */
+  shownSenders: { senders: ShownSender[] };
   /** plan 234: the learned-filter offers may have changed (an action of the user's kept, an offer answered, a learned filter deleted): never MCP */
   learningChanged: Record<string, never>;
   /** plan 204: the dated reader stopped, or it's going again */

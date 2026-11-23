@@ -95,7 +95,7 @@ export async function historyPage(store: MailStore, o: HistoryAsk): Promise<Toda
   // plan 211: a conversation whose line may show: here, in neither Spam nor Trash, of an account that's in
   const visible = (t: ThreadSummary | null | undefined): t is ThreadSummary => !!t && !t.inSpam && !t.inTrash && (!o.shows || o.shows(t.accountId));
   // an item from an untrusted sender isn't shown (as in the open part, Codex's second pass of plan 204)
-  const trusted = (rows: DatedRow[]) => withoutUntrusted(rows, (keys) => store.dated.written(keys));
+  const trusted = (rows: DatedRow[]) => withoutUntrusted(rows, (keys) => store.dated.trusted(keys));
   // each table strictly after the key, translated: at the key's moment a dated item comes before a promise
   const start = (src: HistorySource): ClosedAt | null => (o.after ? historyAfter(o.after, src) : null);
   const dated: Source<Row> = { src: 0, after: start(0), buf: [], done: !o.dated, read: async (after) => (await store.dated.closedPage({ since, after, limit: READ_BATCH })).map((r) => ({ ...r, src: 0 as const })) };

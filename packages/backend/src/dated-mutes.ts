@@ -39,6 +39,8 @@ export interface DatedMutesHost {
   now(): number;
   /** a mute or an Unmute: What matters reads its items again, and the reader stops a reading of a sender just muted */
   changed(muted: DatedMuted): void;
+  /** plan 240: a sender mute ended a Show: those threads' facts were recomputed, and the list moved */
+  shownStopped?(threadIds: readonly number[]): void;
 }
 
 export class DatedMutes {
@@ -65,7 +67,8 @@ export class DatedMutes {
     const row = await store.dated.get(id);
     if (!row || row.state !== "dismissed" || row.closedReason !== "user" || muteKey("sender", row.senderKey) === null) return null;
     const [muted, written, src, from] = await Promise.all([this.muted(), store.dated.written([row.senderKey]), store.dated.source(row.messageId), store.today.fromOf([row.messageId])]);
-    if (written.has(row.senderKey) || muted.senders.has(row.senderKey)) return null;
+    // plan 240: never to hide a sender the user said to always show
+    if (written.has(row.senderKey) || muted.senders.has(row.senderKey) || (await store.today.shown.list()).some((s) => s.key === row.senderKey)) return null;
     const pair = pairKey(row.kind, row.senderKey);
     const alone = !!src && src.senderKey === row.senderKey && automatedSender(src);
     const sent = from.get(row.messageId);
@@ -95,6 +98,12 @@ export class DatedMutes {
     const sender = m.on === "sender" ? key : m.on === "pair" ? pairOf(key)!.sender : null;
     if (sender !== null && m.at === undefined && (await store.dated.written([sender])).has(sender)) {
       throw new RpcError("BAD_REQUEST", L("errors.dated.muteWritten", { sender: m.name?.trim() || sender }));
+    }
+    // plan 240: one sender is never both hidden and always shown: muting them ends the Show (an Unmute's Undo; Remove's
+    // snack never offers to mute a shown sender)
+    if (m.on === "sender") {
+      const r = await store.today.shown.remove(key);
+      if (r.removed) this.host.shownStopped?.(r.threadIds);
     }
     const now = this.host.now();
     // an Undo of an Unmute puts it back where it was in the list

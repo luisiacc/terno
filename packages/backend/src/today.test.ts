@@ -576,6 +576,17 @@ describe("the digest", () => {
       expect((await t.backend.store.today.digest.get(day()))!.items.map((i) => i.from)).toEqual(["Kept"]);
     });
 
+    it("plan 240: a sender always shown is out of the digest's scan too (their conversations are in Needs you), before any model call", async () => {
+      const t = await setup();
+      await t.client.call("today.showSender", { email: "News+daily@Stratechery.test", name: "Stratechery" });
+      await t.letter("Stratechery");
+      await t.letter("Kept");
+      await on(t);
+      await vi.waitFor(async () => expect((await t.backend.store.today.digest.get(day()))?.state).toBe("ready"));
+      expect(sent(t)).toContain("Kept");
+      expect(sent(t)).not.toContain("Stratechery");
+    });
+
     it("said while a request waits to leave: that sender doesn't go, and the rest are asked about without it", async () => {
       const t = await setup();
       await t.letter("Spammy");

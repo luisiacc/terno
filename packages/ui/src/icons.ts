@@ -37,6 +37,7 @@ export { Database } from "./iconset/generated/Database";
 export { Download } from "./iconset/generated/Download";
 export { Ellipsis } from "./iconset/generated/Ellipsis";
 export { ExternalLink } from "./iconset/generated/ExternalLink";
+export { Eye } from "./iconset/generated/Eye";
 export { EyeOff } from "./iconset/generated/EyeOff";
 export { FileDown } from "./iconset/generated/FileDown";
 export { Filter } from "./iconset/generated/Filter";

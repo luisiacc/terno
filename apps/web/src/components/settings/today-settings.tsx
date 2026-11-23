@@ -7,6 +7,7 @@ import { aiAllowed, datedReaderLine } from "~/lib/ai";
 import { useDatedMutes } from "~/lib/dated-mutes";
 import { useApp } from "~/state/app";
 import { HideWholeKind, MutedList } from "../what-matters/muted-list";
+import { ShownList } from "../what-matters/shown-list";
 import { openSettingsTab, SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
 
 /** Plan 145 §5: Settings → General → Today. */
@@ -34,6 +35,10 @@ export default function TodaySettings({ settings, update }: { settings: AppSetti
       </SettingsRow>
       <SettingsRow find="general.todayFinished" label={t("today.settings.finished")} hint={t("today.settings.finishedHint")}>
         {(a) => <Switch {...a} checked={today?.finished !== false} data-testid="today-finished" onCheckedChange={(finished) => void update({ today: { finished } })} />}
+      </SettingsRow>
+      {/* plan 240: the senders always shown, with Stop; the hint says how one comes to be shown */}
+      <SettingsRow find="general.todayShown" label={t("shown.title")} hint={t("shown.hint")} stacked testId="today-shown">
+        {(a) => <ShownList testId="today-shown-list" labelledBy={a["aria-labelledby"]} describedBy={a["aria-describedby"]} fallback={() => document.querySelector<HTMLElement>("[data-testid=today-finished]")} />}
       </SettingsRow>
       {/* plan 210 (iteration 4): what's muted, with Unmute; empty, how muting comes about */}
       <SettingsRow find="general.todayMuted" label={t("dated.mute.title")} hint={t("dated.mute.hint")} stacked testId="today-muted">

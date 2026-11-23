@@ -1382,14 +1382,17 @@ export class DatedWorker {
     // unless you've written to them (Codex's second pass)
     // plan 210 (iteration 4's code review): and one named like the reader's own organization's ("lumora-io.co" for lumora.io)
     const accounts = await store.accounts.list();
-    if ((await untrustedSenders([src.fromEmail], (keys) => store.dated.written(keys), accounts.map((a) => a.email))).size) return drop();
+    // plan 240: and a sender always shown is trusted as one you've written to
+    if ((await untrustedSenders([src.fromEmail], (keys) => store.dated.trusted(keys), accounts.map((a) => a.email))).size) return drop();
     if (heldSenders.has(src.senderKey)) return { hold: src.senderKey };
     // what came before it went on is read only with the check's yes
     if (mark.source === "live" && settings.dated.enabledAt !== null && src.date < settings.dated.enabledAt) return drop();
     // revision 5: what could settle an open item is read before any cost filter
     const open = await store.dated.openFor({ threadId: src.threadId, senderKey: src.senderKey, before: src.date, limit: DATED_OPEN_SHOWN, excludeAccounts: this.host.gate.readsOff });
     // plan 210 (iteration 5, revision 8): Social and Promotions only for a person's ask a service relays (its body tells)
-    const filtered = !open.length && (src.tab === "social" || src.tab === "promotions");
+    // plan 240: a sender always shown is read in full, whatever their tab or their words
+    const always = (await store.today.shown.list()).some((s) => s.key === src.senderKey);
+    const filtered = !always && !open.length && (src.tab === "social" || src.tab === "promotions");
     if (filtered && !mayRelay(src.subject) && src.bodyState !== "full") return drop();
     if (src.bodyState !== "full" && !src.bodyUnavailable) return { hold: src.senderKey };
     const { text, whole } = await this.text(src);
@@ -1399,7 +1402,7 @@ export class DatedWorker {
     const relay = person ? null : relayedAsk(src.subject, text, src.fromName || src.fromEmail.split("@")[0]!, readerName);
     if (filtered && !relay) return drop();
     // a cost filter, not a judgment (§3): a person's mail is read whatever its words, and so is a person's relayed ask
-    if (!open.length && src.automated && !relay && !hasTimeCue(text, src.subject)) return drop();
+    if (!open.length && src.automated && !relay && !always && !hasTimeCue(text, src.subject)) return drop();
     if (!text.trim() && !src.subject.trim()) return drop();
     const asked = this.host.begin(`dated:${mark.messageId}`, "dated-worker");
     const stop = new AbortController();
@@ -1559,7 +1562,7 @@ export class DatedWorker {
     // (an ask's event is found before anything is hidden, as in the list)
     const muted = await this.muted();
     const shown = withEventEnds(rows).filter((r) => r.state !== "open" || withoutMuted([r], muted).length);
-    return [...(await withoutUntrusted(shown, (keys) => dated.written(keys)))];
+    return [...(await withoutUntrusted(shown, (keys) => dated.trusted(keys)))];
   }
 
   // ─── §6: the check of mail already here (plan 211: the backend's, one account at a time) ─────

@@ -1625,6 +1625,9 @@ export function createHandlers(b: Backend): Handlers {
     "today.newsletterAgain": (p) => b.today.newsletterAgain(p),
     "today.notNewslettersUndo": (p) => b.today.notNewslettersUndo(p),
     "today.notNewsletters": async () => ({ senders: await b.today.notNewsletters() }),
+    "today.shownSenders": async () => ({ senders: await b.shown.list() }),
+    "today.showSender": (p) => b.shown.show({ email: p.email, name: p.name, ...(p.id !== undefined ? { id: p.id } : {}), ...(p.at !== undefined ? { at: p.at } : {}) }),
+    "today.stopShowingSender": (p) => b.shown.stop({ email: p.email, ...(p.id !== undefined ? { id: p.id } : {}), ...(p.mute ? { mute: p.mute } : {}) }),
     "ai.prepareReply": (p, ctx) => b.replies.prepare(p, ctx.clientId),
     "ai.replyLeave": async (p, ctx) => {
       b.replies.leave(p.threadId, ctx.clientId);

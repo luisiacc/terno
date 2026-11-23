@@ -781,6 +781,8 @@ function MenuItems() {
   const anyPinned = !scope && rows.some((t) => pins.has(t.id));
   const anyUnpinned = !scope && rows.some((t) => !pins.has(t.id));
   const sender = scope ? null : sharedSender(rows);
+  // plan 240: the account their mail here is in, when it's one (What matters' own switch is the account's)
+  const senderAccount = sender && rows.every((r) => r.accountId === rows[0]!.accountId) ? rows[0]!.accountId : null;
   const filedIn = sender ? categories.filter((c) => rows.some((r) => r.categoryIds.includes(c.id))) : [];
   const reply = (mode: "reply" | "replyAll" | "forward") => {
     if (!single) return;
@@ -883,7 +885,7 @@ function MenuItems() {
       </ContextMenuSub>
       <ContextMenuSeparator />
       {nested ? (
-        <MoreItems spam={spam} single={single} code={code} view={view} ids={ids} scope={scope !== null} sender={sender} categories={categories} filedIn={filedIn} />
+        <MoreItems spam={spam} single={single} code={code} view={view} ids={ids} scope={scope !== null} sender={sender} senderAccount={senderAccount} categories={categories} filedIn={filedIn} />
       ) : (
         <ContextMenuSub>
           <ContextMenuSubTrigger data-testid="menu-more">
@@ -892,7 +894,7 @@ function MenuItems() {
           </ContextMenuSubTrigger>
           {/* plan 158: everything else, under small labels; a row with several answers opens them beside it */}
           <ContextMenuSubContent className="w-80" data-testid="menu-more-list">
-            <MoreItems spam={spam} single={single} code={code} view={view} ids={ids} scope={scope !== null} sender={sender} categories={categories} filedIn={filedIn} />
+            <MoreItems spam={spam} single={single} code={code} view={view} ids={ids} scope={scope !== null} sender={sender} senderAccount={senderAccount} categories={categories} filedIn={filedIn} />
           </ContextMenuSubContent>
         </ContextMenuSub>
       )}
@@ -965,7 +967,7 @@ function MenuItems() {
 const CONTEXT_PARTS: MenuParts = { Item: ContextMenuItem, Sub: ContextMenuSub, SubTrigger: ContextMenuSubTrigger, SubContent: ContextMenuSubContent };
 
 /** "More ▸": what a row is rarely right-clicked for; a row with several answers opens them beside it. */
-function MoreItems({ spam, single, code, view, ids, scope, sender, categories, filedIn }: { spam: MenuEntry | undefined; single: ThreadSummary | undefined; code: string | null; view: View; ids: number[]; scope: boolean; sender: { email: string; name: string } | null; categories: readonly Category[]; filedIn: readonly Category[] }) {
+function MoreItems({ spam, single, code, view, ids, scope, sender, senderAccount, categories, filedIn }: { spam: MenuEntry | undefined; single: ThreadSummary | undefined; code: string | null; view: View; ids: number[]; scope: boolean; sender: { email: string; name: string } | null; senderAccount: number | null; categories: readonly Category[]; filedIn: readonly Category[] }) {
   return (
     <>
       {spam && <Item {...spam} />}
@@ -989,7 +991,7 @@ function MoreItems({ spam, single, code, view, ids, scope, sender, categories, f
       {!scope && ids.length <= 200 && <SimilarSection view={view} ids={ids} />}
       {sender && (
         <Section label={t("threadMenu.from", { name: sender.name })} testId="menu-sender">
-          <SenderItems sender={sender} categories={categories} filedIn={filedIn} parts={CONTEXT_PARTS} />
+          <SenderItems sender={sender} accountId={senderAccount} categories={categories} filedIn={filedIn} parts={CONTEXT_PARTS} />
           <Item icon={<Search />} label={t("threadMenu.searchSender")} testId="menu-search-sender" onClick={() => setApp({ query: `from:${sender.email}`, view: "all", categoryId: null, reviewCategoryId: null, checked: new Set(), scope: null })} />
           <Item icon={<Copy />} label={t("threadMenu.copyAddress")} testId="menu-copy" onClick={() => copyAddress(sender.email)} />
           {/* keyed: a menu moved onto another row never shows (or opens) the last row's offer while its own loads */}

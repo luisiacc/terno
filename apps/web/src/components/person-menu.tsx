@@ -54,7 +54,7 @@ export function PersonItems({ person, detail, offerReplyOnly, compose, parts }: 
       {person.wrote && (
         <>
           <Separator />
-          <SenderItems sender={{ email: person.email, name: person.name }} categories={categories} filedIn={filedIn} parts={parts} />
+          <SenderItems sender={{ email: person.email, name: person.name }} accountId={detail.thread.accountId} categories={categories} filedIn={filedIn} parts={parts} />
         </>
       )}
     </>

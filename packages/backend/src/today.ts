@@ -453,7 +453,7 @@ export class TodayService {
   }
 
   /** As listed, and (plan 166) from a sender still allowed in: run as each request leaves, repairs included. Each with its sender. */
-  private readonly writtenTo: WrittenTo = (keys) => this.b.store.dated.written(keys);
+  private readonly writtenTo: WrittenTo = (keys) => this.b.store.dated.trusted(keys);
 
   private async stillListed(listed: readonly DigestItem[]): Promise<DigestItem[]> {
     if (!listed.length) return [];
@@ -483,8 +483,16 @@ export class TodayService {
     return entries(await this.b.store.settings.get<NotNewsletter[]>(NOT_NEWSLETTERS_KEY, []));
   }
 
+  /** Plan 240: a sender always shown is out of the digest and Automated mail too: their conversations are in Needs you. */
   private async excludedKeys(): Promise<Set<string>> {
-    return new Set((await this.readNotNewsletters()).map((e) => addressKey(e.email)));
+    const [not, shown] = await Promise.all([this.readNotNewsletters(), this.b.store.today.shown.list()]);
+    return new Set([...not.map((e) => addressKey(e.email)), ...shown.map((s) => s.key)]);
+  }
+
+  /** Plan 240: the senders always shown moved: the digest's exclusions, and What matters' rows (who's trusted) read again. */
+  shownChanged(): void {
+    this.exclusionsChanged();
+    this.changed();
   }
 
   /** Newest first. */
@@ -713,7 +721,7 @@ export class TodayService {
     // an ask's event is found among every open item before any is hidden: muting events never ends their "Reply C to
     // confirm" (Codex's code review of iteration 4); plan 211: an account with AI or What matters off shows none (its
     // switch moving bumps the generation)
-    const rows = await this.aiMade(await withoutUntrusted(withoutMuted(withEventEnds(open), muted), (keys) => dated.written(keys)));
+    const rows = await this.aiMade(await withoutUntrusted(withoutMuted(withEventEnds(open), muted), (keys) => dated.trusted(keys)));
     if (generation === this.datedGeneration) this.datedCache = { generation, rows };
     return rows;
   }

@@ -29,6 +29,7 @@ import { AskService } from "./ask";
 import { FollowupWorker } from "./followups";
 import { DatedWorker } from "./dated";
 import { DatedMutes } from "./dated-mutes";
+import { ShownSenders } from "./shown-senders";
 import { SummaryWorker } from "./summaries";
 import { WritingService } from "./writing";
 import { Attention, type AttentionHost } from "./attention";
@@ -317,6 +318,8 @@ export class BackendCore {
   readonly dated: DatedWorker;
   /** plan 210 (iteration 4): the senders and kinds muted in What matters */
   readonly mutes: DatedMutes;
+  /** plan 240: the senders always shown in What matters */
+  readonly shown: ShownSenders;
   /** plan 133: drafting: what goes into a draft, and the learner, asleep until the feature is used */
   readonly writing: WritingService;
   /** plan 18: recipient and body suggestions, in memory, built on first use */
@@ -433,6 +436,19 @@ export class BackendCore {
       changed: (muted) => {
         this.dated.mutesChanged(muted);
         this.today.changed();
+      },
+      shownStopped: (threadIds) => void this.shownChanged(threadIds),
+    });
+    this.shown = new ShownSenders({
+      store: this.store,
+      now: () => this.now(),
+      uuid: () => globalThis.crypto.randomUUID(),
+      threadsChanged: (threadIds) => this.notifyChanged(threadIds),
+      listChanged: (senders, mutes) => {
+        this.server.emit("shownSenders", { senders: [...senders] }, { origins: ["renderer", "dev"] });
+        if (mutes) void this.mutes.muted().then((muted) => this.dated.mutesChanged(muted), () => {});
+        // What matters reads its rows again (the dated rows' trust, the digest's senders), the digest's exclusions too
+        this.today.shownChanged();
       },
     });
     this.facts = new FactsBackfill(this);
@@ -1240,6 +1256,13 @@ export class BackendCore {
   }
 
   /** Coalesces change notifications within one turn of the event loop. */
+  /** Plan 240: a sender mute ended a Show (the store recomputed these threads): every window and What matters hear it. */
+  private async shownChanged(threadIds: readonly number[]): Promise<void> {
+    this.notifyChanged(threadIds);
+    this.server.emit("shownSenders", { senders: await this.shown.list() }, { origins: ["renderer", "dev"] });
+    this.today.shownChanged();
+  }
+
   notifyChanged(threadIds: Iterable<number>, views = true, arrived: Iterable<number> = []): void {
     for (const id of threadIds) this.pendingThreadIds.add(id);
     for (const id of arrived) this.pendingArrived.add(id);
