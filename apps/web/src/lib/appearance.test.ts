@@ -36,7 +36,7 @@ vi.mock("~/rpc/connection", () => ({
 }));
 vi.mock("~/lib/snack", () => ({ snack: Object.assign(() => "", { error: vi.fn(), success: () => "" }) }));
 
-const { reconcileSettings, resolveTheme, setStyleFont, sidebarVibrancy, updateAppearance, useAppearance, APPEARANCE_KEY } = await import("./appearance");
+const { adoptSettings, launchSettings, reconcileSettings, resolveTheme, setStyleFont, sidebarVibrancy, updateAppearance, useAppearance, APPEARANCE_KEY } = await import("./appearance");
 const { getApp, setApp } = await import("~/state/app");
 const { snack } = await import("~/lib/snack");
 
@@ -322,6 +322,22 @@ describe("designs (plan 15)", () => {
       expect(server.designFonts).toEqual({ macos: "geist", graphite: "figtree" });
       // the style in use is Lumen, in its own font
       expect(fake.html.dataset.font).toBeUndefined();
+      faces.mockRestore();
+    });
+
+    it("launch waits for the bootstrap's faces, and settings adopted meanwhile win over its snapshot (Codex code review #1)", async () => {
+      const faces = vi.spyOn(await import("~/lib/design"), "loadDesignFaces");
+      let release!: () => void;
+      faces.mockImplementationOnce(() => new Promise<void>((r) => (release = r)));
+      fake.html.dataset.design = "macos";
+      setApp({ settings: null });
+      const launched = launchSettings({ ...server, designFonts: { macos: "inter" } }, 150);
+      await tick();
+      expect(faces).toHaveBeenCalledTimes(1);
+      // a storage switch's carry-over lands during the wait
+      adoptSettings({ ...server, designFonts: { macos: "geist" } });
+      release();
+      expect((await launched).designFonts).toEqual({ macos: "geist" });
       faces.mockRestore();
     });
 

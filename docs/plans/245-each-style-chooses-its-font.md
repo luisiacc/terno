@@ -70,3 +70,9 @@ As designed above, with the revisions. The Font row sits in the Style group unde
 Tests: `designs.test.ts` (catalog, `withFont`, `fontAttr`, generated blocks), `appearance.test.ts` (four cases above), `theme-script.test.ts`, `settings.test.ts`, `settings-edits.test.ts`, and `designs.spec.ts` (the request through Settings by keyboard, across a switch and a reload). The Settings → Appearance baselines moved for the new row: `designs.spec` in all six styles, `themes.spec` light and dark, and `visual.spec`'s Spanish one. Every other baseline is unchanged, so the role families through `var()` draw as before.
 
 Failures seen while testing that `main` has without this change: `packages/i18n/src/scan.test.ts` (`packages/ui/src/brand/generate.ts:129`), `visual.spec`'s owner card, category picker and AI filter builder baselines, and `design-axe.spec`'s composer check (flaky by style).
+
+## The Codex code review
+
+One round, one finding, fixed:
+
+1. **Boot's font wait could paint over settings adopted during it.** On the web build a storage switch's carry-over imports and adopts settings without boot waiting for it; if that landed during the new face wait, boot went on to paint and store its older bootstrap snapshot. The wait now lives in `launchSettings()` (`appearance.ts`), which returns whatever was adopted meanwhile, and boot paints and stores that. Regression test in `appearance.test.ts`, which fails without the fix.

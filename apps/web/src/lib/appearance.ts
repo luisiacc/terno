@@ -273,6 +273,16 @@ function show(settings: AppSettings): void {
   applyAppearance(settings);
 }
 
+/**
+ * The settings a launch paints (bootstrap's snapshot), once their faces have had their wait (`settingsFaces`). Settings
+ * adopted during that wait (a storage switch carrying over, plan 245's Codex code review #1) are newer and win.
+ */
+export async function launchSettings(snapshot: AppSettings, capMs: number): Promise<AppSettings> {
+  const settings = reconcileSettings(snapshot);
+  await settingsFaces(settings, capMs);
+  return getApp().settings ?? settings;
+}
+
 /** Settings changed outside this window's edits (an import, a storage switch): stored, reconciled and painted. */
 export function adoptSettings(settings: AppSettings): void {
   show(reconcileSettings(settings));

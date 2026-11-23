@@ -18,7 +18,7 @@ import { refreshList, reloadList, useList } from "~/state/list";
 import { bootPage, installPage, listCovered, readerShown, reloadsConversation } from "~/lib/page";
 import { invalidateThreads, loadThread, useThreads } from "~/state/threads";
 import { snack } from "~/lib/snack";
-import { applyAppearance, installAppearanceListeners, reconcileSettings, settingsFaces, updateAppearance } from "~/lib/appearance";
+import { applyAppearance, installAppearanceListeners, launchSettings, updateAppearance } from "~/lib/appearance";
 import { exposeForTests, regressions } from "~/lib/render-probe";
 import { captureUi } from "~/lib/diag";
 import { startDiag } from "~/state/diag";
@@ -52,17 +52,16 @@ export async function boot(): Promise<void> {
   try {
     await connectBackend();
     const b = await client.call("app.bootstrap", {});
-    const settings = reconcileSettings(b.settings);
     // what theme.js painted from the launch cache is normally these settings already; when not, their faces first
-    await settingsFaces(settings, 150);
+    const settings = await launchSettings(b.settings, 150);
     applyAppearance(settings);
     acceptNextFavorites();
     // plan 207: the first screen, in the same change as the rest (one first list, never the Inbox's and then the feed's).
     // A reload that brings a conversation back (List's address) keeps it; a remembered focus on an account waits for the
     // next launch on the Inbox (What matters is every account's)
-    const launch = leadScreen(b.settings.firstScreen, todayOffered({ settings: b.settings, devAi: b.devAi ?? null })) === "whatMatters" && !reloadsConversation();
+    const launch = leadScreen(settings.firstScreen, todayOffered({ settings, devAi: b.devAi ?? null })) === "whatMatters" && !reloadsConversation();
     const place: Partial<AppState> = launch ? { today: true, view: "all", accountId: null } : restoredFocus(b.accounts);
-    setApp({ ready: true, accounts: b.accounts, categories: b.categories, folders: b.folders ?? [], counts: b.counts, settings: b.settings, owner: b.owner, demo: b.demo, devAi: b.devAi ?? null, version: b.version, host: b.host, supportedFilters: supportedFilters(b.filters), ...place });
+    setApp({ ready: true, accounts: b.accounts, categories: b.categories, folders: b.folders ?? [], counts: b.counts, settings, owner: b.owner, demo: b.demo, devAi: b.devAi ?? null, version: b.version, host: b.host, supportedFilters: supportedFilters(b.filters), ...place });
     // plan 108: focus on an account is remembered however it changes (the menu, the back arrow, leaving for another)
     rememberFocus();
     // a remembered open account that's no longer there (plan 67)
