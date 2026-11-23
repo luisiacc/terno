@@ -134,22 +134,18 @@ test("the open part, the automated section and the history under Earlier, paged 
     await expect(newest.getByTestId("wm-when")).toHaveText("Done today");
     // nothing to act on in a history line
     await expect(newest.getByTestId("wm-done")).toHaveCount(0);
-    // plan 244 (the owner): finished, it reads faded: its words and face at reduced opacity, its face grey, the focus ring
-    // whole; an open line's aren't. Axe below reads it for everything but contrast
-    const look = (el: Element) => [getComputedStyle(el).opacity, getComputedStyle(el).filter];
+    // plan 244 (the owner): finished, it reads faded: its words and who at reduced opacity, the focus ring whole (its face
+    // grey: the avatars scenario, macOS has none); an open line's aren't. Axe below reads it for everything but contrast
     const button = newest.getByTestId("wm-item-open");
     await expect(button).toHaveAttribute("data-faded", "true");
     expect(await button.evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
     for (const id of ["wm-sentence", "wm-meta"]) expect(await newest.getByTestId(id).evaluate((el) => Number(getComputedStyle(el.closest("[data-testid=wm-item-open] > *")!).opacity)), id).toBeLessThan(0.7);
-    const face = newest.getByTestId("wm-face");
-    if (await face.count()) expect((await face.evaluate(look))[1]).toBe("grayscale(1)");
     await axeBothModes(page, '[data-testid="wm-feed"]');
     // open (Codex's critique): in full, as any open row; put away, faded again
     await button.click();
     await expect(newest).toHaveAttribute("data-open", "true");
     await expect(button).not.toHaveAttribute("data-faded");
     expect(await newest.getByTestId("wm-sentence").evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
-    if (await face.count()) expect((await face.evaluate(look))[1]).toBe("none");
     await page.keyboard.press("Escape");
     await expect(newest).not.toHaveAttribute("data-open");
     await expect(button).toHaveAttribute("data-faded", "true");
@@ -633,6 +629,21 @@ test("plan 210 (iteration 1): inside a day, tasks before plans; iteration 2: a c
     expect(Math.abs(face.left - heading.left)).toBeLessThanOrEqual(1);
     expect(face.height).toBeLessThanOrEqual(line);
     expect(Math.abs(face.top + face.height / 2 - (words.top + line / 2))).toBeLessThanOrEqual(1.5);
+    // plan 244 (Codex code review): in colour while it's to do; done, under Earlier, faded with the rest of its row and grey
+    expect(await avatar.evaluate((e) => getComputedStyle(e.parentElement!).filter)).toBe("none");
+    await row.getByTestId("wm-item-open").focus();
+    await page.keyboard.press("d");
+    await expect(page.getByTestId("snack")).toContainText("Done: Pay the deposit");
+    const finished = feed(page).locator("[data-history]").filter({ has: page.locator('[data-testid="wm-sentence"]', { hasText: "Pay the deposit" }) });
+    for (let i = 0; i < 60 && !(await finished.count()); i++) {
+      await scroller(page).evaluate((el) => (el.scrollTop += el.clientHeight * 0.7));
+      await page.waitForTimeout(60);
+    }
+    await expect(finished.getByTestId("wm-face")).toHaveCSS("filter", "grayscale(1)");
+    await expect(finished.getByTestId("wm-sentence")).toHaveCSS("opacity", "0.55");
+    await page.getByTestId("snack").getByRole("button", { name: "Undo" }).click();
+    await reach(page, "Pay the deposit");
+    await expect(openLine(page, "Pay the deposit")).toBeVisible();
     await design(was);
   });
 

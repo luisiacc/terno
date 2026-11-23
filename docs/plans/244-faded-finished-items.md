@@ -42,3 +42,13 @@ The first pass (an AA-bound `row-faded` token, the quiet ink stepped toward the 
 - **Open and put away** are checked by computed style, not class names: open is in full, put away is faded again.
 - **The focus ring stays whole** (the fade is on the children, not the button).
 - **Visual check in a design with faces and a classic one**, light and dark.
+
+## Revisions after the Codex code review
+
+Three findings, two taken:
+
+- **The axe helper's faded pass built selectors by appending `[data-faded]` to each scope**, which doesn't hold for a comma-separated scope ("#a, #b" became "#a, #b [data-faded]") and dropped the iframe exclusion. Now: when anything is faded, one pass with every rule but contrast on the same scopes, then contrast with `[data-faded]` excluded; the iframe exclusion in both. Nothing faded, one pass as before.
+- **The face check never ran**: the scenario's default design (macOS) draws no faces, so `if (await face.count())` skipped it. It moved to the avatars scenario, which switches to Lumen: the deposit's face in colour while it's to do, done (D) under Earlier its face grey and its words at 0.55, Undo after.
+- Not taken (rare): a scope that is itself a faded row (axe lets an include win over the same node's exclusion). No caller passes one.
+
+`today.spec`'s "header offers nothing" scenario failed during this work (Done on "Electricity bill" left the row); it fails the same with this plan's two files reverted, on the shared checkout's other in-progress edits, so not this change.

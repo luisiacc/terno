@@ -348,25 +348,23 @@ const FADED = "[data-faded]";
  * roles and structure can't change between light and dark, so dark reads contrast alone. The app must be following the OS.
  */
 export async function axeBothModes(page: Page, ...scopes: string[]): Promise<void> {
-  const read = async (axe: AxeBuilder, mode: string) => {
+  const read = async (axe: AxeBuilder, mode: string, exempt = false) => {
     for (const scope of scopes) axe = axe.include(scope);
-    // plan 244: what's faded below AA on purpose (the owner's call: What matters' finished items) is read for everything but contrast
-    const { violations } = await axe.exclude("iframe").exclude(FADED).setLegacyMode().analyze();
+    const { violations } = await (exempt ? axe.exclude(FADED) : axe).exclude("iframe").setLegacyMode().analyze();
     expect(violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 160)).join(", ")}`), mode).toEqual([]);
   };
-  const faded = async () => {
-    if (!(await page.locator(scopes.map((s) => `${s} ${FADED}`).join(", ") || FADED).count())) return;
-    let axe = new AxeBuilder({ page }).disableRules(["color-contrast"]);
-    for (const scope of scopes.length ? scopes : [""]) axe = axe.include(`${scope} ${FADED}`.trim());
-    const { violations } = await axe.setLegacyMode().analyze();
-    expect(violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 160)).join(", ")}`), "faded").toEqual([]);
-  };
-  await faded();
+  // plan 244: what's faded below AA on purpose (the owner's call: What matters' finished items) is read for everything but
+  // contrast: every other rule on the same parts, then contrast without it (one pass, as before, when nothing is faded)
+  const faded = (await page.locator(FADED).count()) > 0;
+  if (faded) {
+    await read(new AxeBuilder({ page }).disableRules(["color-contrast"]), "light");
+    await read(new AxeBuilder({ page }).withRules(["color-contrast"]), "light", true);
+  }
   const html = page.locator("html");
-  await read(new AxeBuilder({ page }), "light");
+  if (!faded) await read(new AxeBuilder({ page }), "light");
   await page.emulateMedia({ colorScheme: "dark" });
   await expect(html).toHaveClass(/\bdark\b/);
-  await read(new AxeBuilder({ page }).withRules(["color-contrast"]), "dark");
+  await read(new AxeBuilder({ page }).withRules(["color-contrast"]), "dark", faded);
   await page.emulateMedia({ colorScheme: "light" });
   await expect(html).not.toHaveClass(/\bdark\b/);
 }
