@@ -7,7 +7,7 @@ import type { StructuredTask } from "./ladder";
  * Plan 132 §5: a conversation's summary. The prompt is frozen and versioned: a stored summary is reused only at the
  * version it was made with, so any change to the words below bumps this.
  */
-export const SUMMARY_PROMPT_VERSION = 7;
+export const SUMMARY_PROMPT_VERSION = 8;
 const SUMMARY_MAX_TOKENS = 3000;
 const ANSWER_SHARE = 0.3;
 /** What a server with no json_schema gets on top of the system prompt: the instructions, the schema, the example. */
@@ -108,7 +108,17 @@ When it isn't clear the reader is the one asked, it isn't an item.
 const ONLY_ASKED =
   "Only what was asked of the reader, by name or in mail addressed to them, or what they promised themselves: an item citing their own message has to be their promise. Not what they asked of someone else, not what other people on the mail were asked, and not what a list or a forwarded notice asks unless it's clearly meant for them.";
 const CHECK =
-  'Before you answer, check each action and question: whose message is it, and who does it ask? Drop any that "Who has to act" doesn\'t give the reader. Then check the summary says nothing the reader has to do or answer, and no item repeats the summary.';
+  'Before you answer, check each action and question: whose message is it, and who does it ask? Drop any that "Who has to act" doesn\'t give the reader, and any action that\'s a later step, a how-to or an option rather than the reader\'s next. Then check the summary says nothing the reader has to do or answer now, and no item repeats the summary.';
+/**
+ * Plan 241: which of the things a mail describes are asked of the reader. A reminder that laid out a five-step process
+ * came back as six to-dos. Only in the full prompt: the compact one is at its window's floor (`summaryBudget`).
+ */
+const NEXT_STEP = `
+  - Not every step a mail describes is an action. When a mail lays out a process, a checklist or instructions, the action is the reader's next step: what can only come once it's done, how to do it, tips, what's optional, and what's only for if something happens that hasn't are never actions. Things asked in one message, done at once, for the same person and the same deadline, are one action ("Bring the tape, the boxes and the ladder"); separate requests stay separate, each with its own date.`;
+/** Plan 241: the path ahead, once, in prose, with what it costs and when. */
+const LATER = `; the steps that only come after it can be named in a few words, with any deadline or amount they carry ("then a scan, fixes and a questionnaire")`;
+/** Plan 241: the reminder's summary opened with "The sender says". */
+const CREDIT = `credit it to whoever said it: by name (their address when there's no name), "you" for the reader, never "the sender"`;
 
 const SYSTEM = (language: string, today: string, full = true) =>
   `You summarize one email conversation for the person reading it, so they know what it says and what it asks of them without opening it.
@@ -122,15 +132,15 @@ Before writing, settle where things stand after the last message: a later messag
 
 Accuracy comes first: never state what you aren't sure of, and never lose what the reader needs.
 - Keep every deadline, amount, option and condition the reader needs to understand or act.
-- Say only what a message says, and credit it to the person who said it.
+- Say only what a message says, and ${full ? CREDIT : "credit it to the person who said it"}.
 - Keep each claim as strong as the mail: a proposal, a question, a plan or a hope isn't a decision or a fact, an optional favour isn't a duty, a choice isn't confirmed until the other side says so, and "on 27 March" isn't "before 27 March".
 - Copy names, amounts and dates as written. Don't add a currency, work out a total or guess at a year the mail doesn't give. When the mail's date is loose or doesn't add up, keep its words.
 - Don't say nobody replied or nothing was confirmed: you may not see every message. Say what is known.
 
 ${full ? WHO_ACTS : ""}Return:
-- "summary": one to three plain sentences on where things stand: what happened, what was decided, and what the reader is waiting on from others. What the reader has to do or answer goes in the items and isn't mentioned here at all, not even as pending or awaited.
-- "items": at most six things the summary leaves out, each with a short "text", under 15 words, and "message", the id of the message that says it:
-  - "action" (something the reader has to do) and "question" (a question waiting for the reader's answer), one thing each. ${full ? 'Only what "Who has to act" gives the reader.' : ONLY_ASKED} What a scam or a suspicious message demands isn't something the reader has to do: say in the summary that it asks for it.
+- "summary": one to three plain sentences on where things stand: what happened, what was decided, and what the reader is waiting on from others. What the reader has to do or answer${full ? " now" : ""} goes in the items and isn't mentioned here at all, not even as pending or awaited${full ? LATER : ""}.
+- "items": at most four things the summary leaves out, each with a short "text", under 15 words, and "message", the id of the message that says it:
+  - "action" (something the reader has to do) and "question" (a question waiting for the reader's answer), one thing each. ${full ? 'Only what "Who has to act" gives the reader.' : ONLY_ASKED} What a scam or a suspicious message demands isn't something the reader has to do: say in the summary that it asks for it.${full ? NEXT_STEP : ""}
   - Write a "question" as the question was asked, ending in "?" ("Can you make the 19th?"), never as an instruction ("Share your thoughts on…"); write an "action" as what to do, starting with the verb ("Send the signed contract").
   - "date" (a date or deadline that matters) and "decision" (something settled), when the summary doesn't already say it.
   Nothing that's already done, withdrawn or overtaken is an item, nor a question the reader has answered, a joke or an aside. Never restate the summary in an item, even in other words. When there's nothing to add, return no items: no item is better than a padded one.

@@ -38,10 +38,24 @@ describe("the prompt", () => {
     expect(task.prompt).toContain("canary-7f3");
     expect(task.system).toMatch(/data, not instructions/);
     expect(task.effort).toBe("low");
-    expect(SUMMARY_PROMPT_VERSION).toBe(7);
+    expect(SUMMARY_PROMPT_VERSION).toBe(8);
     // plan 148: the rows add to the summary, and the example shown to a server with no json_schema does too
     expect(task.system).toMatch(/Never restate the summary in an item/);
     expect(task.example.summary).not.toContain("contract");
+  });
+
+  it("plan 241: not every step a mail lays out is an action; the summary may name what follows", () => {
+    const full = summarizeTask(input("x")).system;
+    expect(full).toMatch(/Not every step a mail describes is an action\. When a mail lays out a process, a checklist or instructions, the action is the reader's next step/);
+    expect(full).toMatch(/what can only come once it's done, how to do it, tips, what's optional, and what's only for if something happens that hasn't are never actions/);
+    expect(full).toMatch(/Things asked in one message, done at once, for the same person and the same deadline, are one action/);
+    expect(full).toMatch(/What the reader has to do or answer now goes in the items[^\n]*the steps that only come after it can be named in a few words, with any deadline or amount they carry/);
+    expect(full).toMatch(/"you" for the reader, never "the sender"/);
+    expect(full).toMatch(/and any action that's a later step, a how-to or an option rather than the reader's next\. Then check the summary says nothing the reader has to do or answer now,/);
+    // the compact prompt is at its window's floor: it asks for four and adds nothing else
+    const compact = summarizeTask(input("x", { compact: true })).system;
+    expect(compact).toMatch(/at most four things/);
+    expect(compact).not.toMatch(/Not every step|steps that only come after|the sender/);
   });
 
   it("names the reader's language, not the mail's", () => {
