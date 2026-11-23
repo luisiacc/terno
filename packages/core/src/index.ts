@@ -23,6 +23,7 @@ export * from "./part-of-day";
 export * from "./dated-days";
 export * from "./schedule";
 export * from "./dated-mutes";
+export * from "./preferences";
 export * from "./themes";
 export * from "./list-filter";
 export * from "./people";

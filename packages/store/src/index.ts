@@ -27,6 +27,7 @@ export * from "./ai-summaries";
 export * from "./ask";
 export * from "./followups";
 export * from "./dated";
+export * from "./what-matters";
 export * from "./replies";
 export * from "./today";
 export * from "./waiting-acts";

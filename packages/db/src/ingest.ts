@@ -11,6 +11,7 @@ import { mergeReminder } from "./reminders";
 import { mergePin } from "./pins";
 import { mergeFollowups } from "./followups";
 import { mergeDated } from "./dated";
+import { mergeWanted } from "./what-matters";
 import { mergeSummaries } from "./ai-summaries";
 import { answeredThreads, FACT_COLUMNS, noteSentMail, noteSentMailPrepared, ownAddresses, ownMailChanged, recomputeContext, referencesOfOwn } from "./facts";
 
@@ -197,6 +198,7 @@ export function mergeThreads(db: Db, into: number, from: number, result: IngestR
   mergeSummaries(db, into, from);
   mergeFollowups(db, into, from);
   mergeDated(db, into, from);
+  mergeWanted(db, into, from);
   db.run("DELETE FROM threads WHERE id = ?", from);
   result.touchedThreads.delete(from);
   result.touchedThreads.add(into);

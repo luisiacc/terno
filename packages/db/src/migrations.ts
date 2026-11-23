@@ -1692,6 +1692,58 @@ CREATE TABLE shown_senders (
   created_at INTEGER NOT NULL
 ) WITHOUT ROWID;
 ` },
+  // plan 248: What matters in the user's words: which semantic rules apply to a row (`preference_verdicts`, keyed by the row
+  // and its revision), what a show rule brought (`wanted_items`, apart from `dated_items`, which the dated reader reads as
+  // evidence: the Codex review's revision 1) and the messages admitted for the second reader (`wanted_marks`). New tables:
+  // shape only
+  { version: 77, name: "What matters: in your words (plan 248)", sql: `
+CREATE TABLE preference_verdicts (
+  target TEXT PRIMARY KEY,
+  basis TEXT NOT NULL,
+  rules TEXT NOT NULL DEFAULT '[]',
+  failed INTEGER NOT NULL DEFAULT 0,
+  at INTEGER NOT NULL
+) WITHOUT ROWID;
+CREATE INDEX preference_verdicts_at ON preference_verdicts(at);
+CREATE TABLE wanted_items (
+  id INTEGER PRIMARY KEY,
+  thread_id INTEGER NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+  message_id INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  text TEXT NOT NULL,
+  quote TEXT NOT NULL,
+  sender_key TEXT NOT NULL,
+  due_day TEXT NOT NULL,
+  due_at INTEGER NOT NULL,
+  timed INTEGER NOT NULL DEFAULT 0,
+  dated INTEGER NOT NULL DEFAULT 1,
+  act_at INTEGER NOT NULL,
+  deferred_until INTEGER,
+  arrived_at INTEGER NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('open', 'done', 'dismissed')),
+  closed_reason TEXT,
+  closed_at INTEGER,
+  rules TEXT NOT NULL,
+  orphaned_at INTEGER,
+  from_look INTEGER NOT NULL DEFAULT 0,
+  revision INTEGER NOT NULL DEFAULT 0,
+  model TEXT,
+  provider TEXT,
+  prompt_version INTEGER,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX wanted_open ON wanted_items(act_at, id) WHERE state = 'open';
+CREATE INDEX wanted_thread ON wanted_items(thread_id, state);
+CREATE INDEX wanted_message ON wanted_items(message_id);
+CREATE TABLE wanted_marks (
+  message_id INTEGER PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
+  thread_id INTEGER NOT NULL,
+  arrived_at INTEGER NOT NULL,
+  queued_at INTEGER NOT NULL,
+  source TEXT NOT NULL CHECK (source IN ('live', 'look'))
+);
+CREATE INDEX wanted_marks_order ON wanted_marks(source, arrived_at);
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

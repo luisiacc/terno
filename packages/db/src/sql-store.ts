@@ -9,6 +9,7 @@ import { actOnWaiting, restoreWaiting, waitingDonePage, waitingMoments, waitingR
 import { clearReplies, finishReply, getReply, transitionReply } from "./replies";
 import { scheduleItems, unscheduleItems } from "./schedule";
 import { addShown, listShown, removeShown, trustedSenders } from "./shown-senders";
+import { actWanted, activeWanted, addWantedMark, clearWanted, countWantedMarks, finishWanted, getDraft, getPreferences, getVerdicts, getWanted, pruneVerdicts, pruneWantedMarks, putDraft, putVerdicts, reconcileWanted, restoreWanted, savePreferences, threadWanted, wantedLookCandidates, wantedMarkPage } from "./what-matters";
 import { activeDated, addDatedMute, datedMutes, removeDatedMute, closedDatedPage, claimDatedLook, clearDated, datedMarkCount, datedPendingOn, datedMarkPage, datedMarksRaw, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, datedWritten, updateDated } from "./dated";
 import { activeFollowups, closedFollowupPage, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, closeArchivedFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupsPutAway, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
 import { addAskTurn, askAccountsOf, askHeaders, askMatching, askNewest, askText, askTurnCount, askTurns, clearAsk, listAskConversations, removeAskConversation, removeAskForAccount, restoreAskConversation } from "./ask";
@@ -1238,6 +1239,43 @@ export class SqlMailStore implements MailStore {
       clearDated(this.db);
     },
     clearGeneration: () => this.datedClears,
+  };
+
+  // plan 248
+  readonly whatMatters: MailStore["whatMatters"] = {
+    preferences: {
+      get: async () => getPreferences(this.db),
+      save: async (next, expect) => savePreferences(this.db, next, expect),
+      draft: {
+        get: async () => getDraft(this.db),
+        put: async (draft) => putDraft(this.db, draft),
+      },
+    },
+    verdicts: {
+      get: async (targets) => getVerdicts(this.db, targets),
+      put: async (rows, expect) => putVerdicts(this.db, rows, expect),
+      prune: async (basis, keep, max) => pruneVerdicts(this.db, basis, keep, max),
+      clear: async () => void this.db.run("DELETE FROM preference_verdicts"),
+    },
+    wanted: {
+      active: async () => activeWanted(this.db),
+      get: async (id) => getWanted(this.db, id),
+      ofThread: async (id) => threadWanted(this.db, id),
+      finish: async (w) => finishWanted(this.db, w),
+      act: async (changes) => actWanted(this.db, changes),
+      restore: async (before) => restoreWanted(this.db, before),
+      reconcile: async (current, now) => reconcileWanted(this.db, current, now),
+      clear: async () => clearWanted(this.db),
+      marks: {
+        add: async (m, now) => addWantedMark(this.db, m, now),
+        page: async (limit) => wantedMarkPage(this.db, limit),
+        consume: async (id) => void this.db.run("DELETE FROM wanted_marks WHERE message_id = ?", id),
+        prune: async (now) => pruneWantedMarks(this.db, now),
+        clearLook: async () => void this.db.run("DELETE FROM wanted_marks WHERE source = 'look'"),
+        count: async (source) => countWantedMarks(this.db, source),
+      },
+      lookCandidates: async (from, walk) => wantedLookCandidates(this.db, from, walk),
+    },
   };
 
   private askClears = 0;
