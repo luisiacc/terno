@@ -69,3 +69,8 @@
 10. **React Compiler.** Nothing is read and cleared during render: sections take the rows to reopen with a lazy `useState` initializer (as Filters' fold does), and the pane's layout effect ends the returning mount.
 11. **No wrapper.** The observer watches the scroller's element children, so the pane's DOM doesn't change and tests that read a panel's parent as the scroller still hold.
 12. **Tests that assumed General.** `settings.spec.ts` (⌘, after Storage), `settings-pass.spec.ts` (the keyboard's arrows from General; toggling an account) and `palette.spec.ts` (preferences) are updated; the rest of the specs that open Settings are run.
+
+## Revisions after the Codex code review
+
+1. **Back from a snippet's editor wrote nothing.** The pane heard a section switch but not a page closing, and a snippet's Back doesn't focus a button (Writing style's does), so no scroll came: the list showed where the editor had left the pane, and the next open went back to where it was before the editor. The pane now tells the tracker when a page opens or closes too (`changed()`), and the list's place is where it shows. Tests: `settings-place.test.ts`, and `snippets.spec.ts` (24 snippets, down to the last one's editor and back, ⌘,), which fails without the fix.
+2. **New snippet on the section Settings was left at kept its old place.** A section first shown on a page was written at its top only when it was another section. A link's mount on a page now writes the top whatever the section. Test: `settings-place.test.ts`.

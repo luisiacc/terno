@@ -68,7 +68,7 @@ function SettingsPane({ title, back, open, tab, page, children }: { title: strin
   // plan 246: Settings comes back to where it was left; the pane says where that is as it scrolls
   const live = useRef<PaneState>({ tab, page, open });
   const tracker = useRef<ReturnType<typeof trackSettingsPane>>(null);
-  const shown = useRef(tab);
+  const shown = useRef({ tab, page });
   useLayoutEffect(() => {
     live.current = { tab, page, open };
   });
@@ -80,11 +80,12 @@ function SettingsPane({ title, back, open, tab, page, children }: { title: strin
       t.dispose();
     };
   }, []);
+  // another section, or a page opened or closed (back from a snippet's editor the list shows where the pane is)
   useLayoutEffect(() => {
-    if (shown.current === tab) return;
-    shown.current = tab;
-    tracker.current?.sectionChanged();
-  }, [tab]);
+    if (shown.current.tab === tab && shown.current.page === page) return;
+    shown.current = { tab, page };
+    tracker.current?.changed();
+  }, [tab, page]);
   // plan 232: what Settings says stands on this pane's foot; the last row, and a control Tab reaches, scroll clear of it
   const snackRoom = useSnack((s) => s.roomInset);
   useEffect(() => {

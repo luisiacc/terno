@@ -100,7 +100,7 @@ describe("where Settings opens", () => {
     p.scroll(300);
     setApp({ settingsTab: "storage" });
     state.tab = "storage";
-    p.tracker.sectionChanged();
+    p.tracker.changed();
     close(p);
     openSettings();
     expect(getApp().settingsTab).toBe("storage");
@@ -255,7 +255,7 @@ describe("a return waits for its section's rows", () => {
     const p = mount(600);
     setApp({ settingsTab: "general" });
     state.tab = "general";
-    p.tracker.sectionChanged();
+    p.tracker.changed();
     expect(observers.size).toBe(0);
     close(p);
     openSettings();
@@ -304,6 +304,34 @@ describe("what isn't the place", () => {
     state.page = false;
     openSettings();
     expect(getApp().settingsTab).toBe("snippets");
+    expect(mount().el.scrollTop).toBe(0);
+  });
+
+  it("back from a snippet's editor, the list where it shows is the place, with no scroll event (Codex review)", () => {
+    openSettings("snippets");
+    const p = mount();
+    p.scroll(600);
+    // a short editor clamps the pane; its scrolls aren't the place
+    state.page = true;
+    p.tracker.changed();
+    p.scroll(200);
+    state.page = false;
+    p.tracker.changed();
+    close(p);
+    openSettings();
+    expect(mount().el.scrollTop).toBe(200);
+  });
+
+  it("New snippet on the section Settings was left at starts it at its top (Codex review)", () => {
+    openSettings("snippets");
+    const left = mount();
+    left.scroll(600);
+    close(left);
+    openSettings("snippets");
+    state.page = true;
+    close(mount());
+    state.page = false;
+    openSettings();
     expect(mount().el.scrollTop).toBe(0);
   });
 

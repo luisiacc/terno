@@ -48,19 +48,21 @@ export interface PaneState {
 
 /**
  * Settings' pane mounted: comes back to the place if this open asked for it, and keeps the place as the pane scrolls
- * (one passive listener while Settings is open, writing two fields). `sectionChanged` after a section switch,
- * `dispose` as the pane unmounts (its DOM still there): the rows open then are kept, and nothing is left running.
+ * (one passive listener while Settings is open, writing two fields). `changed` after a section switch or a page
+ * opening or closing (no scroll event need come), `dispose` as the pane unmounts (its DOM still there): the rows open
+ * then are kept, and nothing is left running.
  */
-export function trackSettingsPane(scroller: HTMLElement, state: () => PaneState): { sectionChanged(): void; dispose(): void } {
+export function trackSettingsPane(scroller: HTMLElement, state: () => PaneState): { changed(): void; dispose(): void } {
   let back: ((write: boolean) => void) | null = null;
-  const note = () => {
+  const note = (fresh = false) => {
     const s = state();
     if (back || !s.open) return;
-    // on a page the section keeps where its button was; a section first shown on one starts at its top
+    // on a page the section keeps where its button was; a section first shown on one (a link: New snippet) starts at its top
     if (!s.page) place.top = scroller.scrollTop;
-    else if (place.tab !== s.tab) place.top = 0;
+    else if (fresh || place.tab !== s.tab) place.top = 0;
     place.tab = s.tab;
   };
+  const onScroll = () => note();
   const start = state();
   if (next.returning && place.tab === start.tab && place.top > 0 && !start.page) {
     back = scrollBack(scroller, place.top, (write) => {
@@ -68,17 +70,17 @@ export function trackSettingsPane(scroller: HTMLElement, state: () => PaneState)
       if (write) note();
     });
   }
-  if (!back) note();
+  if (!back) note(!next.returning);
   next.returning = false;
-  scroller.addEventListener("scroll", note, { passive: true });
+  scroller.addEventListener("scroll", onScroll, { passive: true });
   return {
-    sectionChanged() {
+    changed() {
       back?.(false);
       note();
     },
     dispose() {
       back?.(false);
-      scroller.removeEventListener("scroll", note);
+      scroller.removeEventListener("scroll", onScroll);
       place.open = [...scroller.querySelectorAll("[data-setting-open][aria-expanded=true]")].flatMap((el) => el.closest("[data-setting-scope]")?.getAttribute("data-setting-scope") ?? []);
       next.returning = true;
     },

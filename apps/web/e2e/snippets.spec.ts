@@ -175,6 +175,51 @@ test.describe("snippets", () => {
     await expect(page.getByTestId("settings-snippet")).toHaveAttribute("data-snippet-id", intro.id);
   });
 
+  test("plan 246: back from a snippet's editor, Settings comes back to the list where it showed; New snippet starts it at the top", async ({ app: page, server }) => {
+    for (let i = 0; i < 24; i++) await seed(server, { id: `s_many${String(i).padStart(4, "0")}`, name: `Snippet ${String(i).padStart(2, "0")}`, bodyHtml: "<p>Hi</p>", bodyText: "Hi" });
+    await fresh(page);
+    const scroller = page.getByTestId("settings-scroller");
+    const top = () => scroller.evaluate((el) => el.scrollTop);
+    const close = async () => {
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("settings-dialog")).toHaveCount(0);
+    };
+    await page.getByTestId("open-settings").click();
+    await page.getByTestId("tab-snippets").click();
+    await expect(page.getByTestId("settings-snippet")).toHaveCount(24);
+    await scroller.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+    await expect.poll(top).toBeGreaterThan(300);
+    const bottom = await top();
+    // the last one's editor, then back: the list shows wherever the editor left the pane
+    await page.getByTestId("settings-snippet-edit").last().click();
+    await expect(page.getByTestId("snippet-back")).toBeVisible();
+    await page.getByTestId("snippet-back").click();
+    await expect(page.getByTestId("settings-snippet")).toHaveCount(24);
+    const shown = await top();
+    expect(shown).toBeLessThan(bottom);
+    await close();
+    await page.keyboard.press("ControlOrMeta+Comma");
+    await expect(page.getByTestId("tab-snippets")).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByTestId("settings-snippet")).toHaveCount(24);
+    expect(Math.abs((await top()) - shown)).toBeLessThanOrEqual(1);
+    // down again, closed there; New snippet opens on its editor, and the list behind it is at its top
+    await scroller.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+    await expect.poll(top).toBeGreaterThan(300);
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    await close();
+    await page.keyboard.press("ControlOrMeta+k");
+    await input(page).fill("New snippet");
+    await expect(selected(page)).toHaveAttribute("data-testid", "palette-settings-new-snippet");
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("snippet-back")).toBeVisible();
+    await page.getByTestId("snippet-back").click();
+    await expect(page.getByTestId("settings-snippet")).toHaveCount(24);
+    await close();
+    await page.keyboard.press("ControlOrMeta+Comma");
+    await expect(page.getByTestId("settings-snippet")).toHaveCount(24);
+    expect(await top()).toBe(0);
+  });
+
   test("in Spanish they're Plantillas, and the English words still find them", async ({ app: page, server }) => {
     await seed(server, intro);
     await page.keyboard.press("ControlOrMeta+Comma");
