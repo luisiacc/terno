@@ -189,7 +189,7 @@ export interface WhatMattersStore {
     marks: {
       /** idempotent per message; false when it was there already */
       add(m: Omit<WantedMark, "queuedAt">, now: number): Promise<boolean>;
-      /** oldest first within a source, live before the look back */
+      /** newest first within a source, live before the look back */
       page(limit: number): Promise<WantedMark[]>;
       consume(messageId: number): Promise<void>;
       /** live marks past `WANTED_MARK_MS`, look marks past `WANTED_LOOK_MARK_MS` */

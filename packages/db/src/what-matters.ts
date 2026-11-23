@@ -221,7 +221,7 @@ export function wantedLookCandidates(db: Db, from: number, walk: number): Wanted
   return db
     .all<{ id: number; thread_id: number; account_id: number; subject: string; from_name: string; from_email: string; date: number }>(
       `SELECT m.id, m.thread_id, m.account_id, m.subject, m.from_name, m.from_email, m.date FROM messages m INDEXED BY messages_date
-       WHERE m.date >= ? AND ${RECEIVED_SQL} ORDER BY m.date DESC LIMIT ?`,
+       WHERE m.date >= ? AND ${RECEIVED_SQL} ORDER BY m.date DESC, m.id DESC LIMIT ?`,
       from,
       walk,
     )

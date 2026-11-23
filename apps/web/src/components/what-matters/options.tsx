@@ -59,6 +59,15 @@ export function WhatMattersOptions() {
     // once Settings is there, at the row itself
     requestAnimationFrame(() => openFound({ id: "whatMatters.finished", tab: "whatMatters", page: null, scope: null, under: null }));
   };
+  // plan 248: the user's words, where their result is seen: Settings at the box, its field focused
+  const words = () => {
+    setOpen(false);
+    openSettings("whatMatters");
+    requestAnimationFrame(() => {
+      openFound({ id: "whatMatters.words", tab: "whatMatters", page: null, scope: null, under: null });
+      requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>("[data-testid=wm-words-field]")?.focus({ preventScroll: true }));
+    });
+  };
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <Tooltip>
@@ -100,6 +109,9 @@ export function WhatMattersOptions() {
             {reader}
           </p>
         )}
+        <Button variant="link" size="xs" className="self-start" data-testid="wm-options-words" onClick={words}>
+          {t("whatMatters.words.gear")}
+        </Button>
         <Button variant="link" size="xs" className="self-start" data-testid="wm-options-more" onClick={more}>
           {t("whatMatters.moreSettings")}
         </Button>

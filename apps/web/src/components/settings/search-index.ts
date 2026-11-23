@@ -86,6 +86,7 @@ export const SETTINGS_INDEX = [
   { id: "whatMatters.keepInboxCount", tab: "whatMatters", label: "firstScreen.keepInboxCount", hint: "firstScreen.keepInboxCount.hint", words: "settings.find.words.keepInboxCount", when: (c) => shows(c) && c.settings.firstScreen === "whatMatters" },
   { id: "whatMatters.finished", tab: "whatMatters", label: "today.settings.finished", hint: "today.settings.finishedHint", words: "settings.find.words.finished", when: ai },
   { id: "whatMatters.dated", tab: "whatMatters", group: "settings.whatMatters.finds", label: "ai.dated.switch", words: "settings.find.words.dated", when: ai },
+  { id: "whatMatters.words", tab: "whatMatters", group: "settings.whatMatters.finds", label: "whatMatters.words.title", hint: "whatMatters.words.hint", words: "settings.find.words.whatMattersWords", when: ai },
   { id: "whatMatters.shown", tab: "whatMatters", group: "settings.whatMatters.senders", label: "settings.whatMatters.shown", hint: "settings.whatMatters.shown.hint", words: "settings.find.words.shown", when: ai },
   { id: "whatMatters.muted", tab: "whatMatters", group: "settings.whatMatters.senders", label: "settings.whatMatters.muted", hint: "settings.whatMatters.muted.hint", words: "settings.find.words.muted", when: ai },
   { id: "whatMatters.digest", tab: "whatMatters", group: "settings.whatMatters.morning", label: "settings.whatMatters.digest", words: "settings.find.words.digest", when: ai },

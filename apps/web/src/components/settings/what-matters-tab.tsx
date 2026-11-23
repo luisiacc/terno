@@ -21,6 +21,7 @@ import { reloadList } from "~/state/list";
 import { leaveOut, letBackIn, senderKey } from "~/state/today";
 import { HideWholeKind, MutedList } from "../what-matters/muted-list";
 import { ShownList } from "../what-matters/shown-list";
+import { WhatMattersWords } from "../what-matters/words";
 import { openSettingsTab, PrivacyNote, SettingsGroup, SettingsNote, SettingsRow, type SettingsUpdate } from "./parts";
 
 /**
@@ -130,6 +131,10 @@ function FindsGroup({ settings, update }: { settings: AppSettings; update: Setti
           runs, so only while settings settle): a switch that's on can still go off */}
       <SettingsRow find="whatMatters.dated" label={t("ai.dated.switch")} hint={ready ? t("settings.whatMatters.dated.hint", { provider: providerLabel(routeOf("dated", ai).provider, ai) }) : t("settings.whatMatters.dated.noProvider")}>
         {(a) => <Switch {...a} checked={dated.enabled} disabled={!ready && !dated.enabled} data-testid="ai-dated-switch" onCheckedChange={(enabled) => void update({ dated: { enabled } })} />}
+      </SettingsRow>
+      {/* plan 249: what the user wants there and what they don't, in their own words */}
+      <SettingsRow find="whatMatters.words" label={t("whatMatters.words.title")} hint={t("whatMatters.words.hint")} stacked testId="today-words">
+        {(a) => <WhatMattersWords labelledBy={a["aria-labelledby"]} describedBy={a["aria-describedby"]} />}
       </SettingsRow>
       {dated.enabled && status?.blockedBy && (
         <SettingsNote testId="ai-dated-status">
