@@ -128,6 +128,11 @@ export interface FactContext {
    * only of a newest message that would otherwise wait (one primary-key lookup); a newer one from them isn't, so it waits again
    */
   cleared?(messageId: number): boolean;
+  /**
+   * plan 240: a sender the user said to always show in What matters (an addressKey): their newest unanswered message waits
+   * on you as a person's does, whatever their mail looks like; who is a person (`person`) doesn't change
+   */
+  shown?(key: string): boolean;
 }
 
 /** Is an inbound message's sender a person (plan 17 §2.2)? */
@@ -167,14 +172,17 @@ const visibleOf = (m: FactRow) => !m.is_trash && !m.is_spam;
 /** The facts from the newest visible message and the newest inbound one of the right pool. */
 function decide(newest: FactRow | null, inbound: FactRow | null, ctx: FactContext): WaitingFacts {
   const person = inbound !== null && senderIsPerson(inbound, ctx);
+  // plan 240: a shown sender's message may wait too (never Spam's: the inbound pool leaves it out)
+  const waits = person || (inbound !== null && !inbound.is_spam && ctx.shown?.(addressKey(inbound.from_email)) === true);
   // the newest visible message is inbound only if it is also the newest inbound one
-  if (!newest || newest !== inbound || !person) return { person: person ? 1 : 0, waitingSince: null, waitingMessageId: null };
+  if (!newest || newest !== inbound || !waits) return { person: person ? 1 : 0, waitingSince: null, waitingMessageId: null };
   const d = newest.to_json === undefined && ctx.details ? ctx.details(newest.id) : { to_json: newest.to_json ?? "[]", cc_json: newest.cc_json ?? "[]", rfc_message_id: newest.rfc_message_id ?? null };
   const to = addressesOf(d.to_json);
   const ccOnly = !to.some(ctx.own) && addressesOf(d.cc_json).some(ctx.own);
   // plan 215: "no reply needed", said by hand, is answered (asked last: only of a message that would wait)
   const waiting = !ccOnly && !(d.rfc_message_id && ctx.answered(d.rfc_message_id)) && !ctx.cleared?.(newest.id);
-  return waiting ? { person: 1, waitingSince: newest.date, waitingMessageId: newest.id } : { person: 1, waitingSince: null, waitingMessageId: null };
+  const p = person ? 1 : 0;
+  return waiting ? { person: p, waitingSince: newest.date, waitingMessageId: newest.id } : { person: p, waitingSince: null, waitingMessageId: null };
 }
 
 /** The stored facts alone: what's computed beside them never reaches a thread's row. */

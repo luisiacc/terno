@@ -1,4 +1,4 @@
-import { addressKey, CALENDAR_ANSWER_PREFIXES, SUMMARY_WHO_ACTS_SINCE, type DatedRow, type DigestItem, type DigestState, type FollowupRow, type ItemRef } from "@terno/core";
+import { addressKey, CALENDAR_ANSWER_PREFIXES, SUMMARY_WHO_ACTS_SINCE, type DatedMute, type DatedRow, type DigestItem, type DigestState, type FollowupRow, type ItemRef, type ShownSender } from "@terno/core";
 import type { DatedSnapshot } from "./dated";
 import type { FollowupSnapshot } from "./followups";
 import type { ScheduleChanges, ScheduleSnapshots } from "./schedule";
@@ -83,9 +83,10 @@ export interface WaitingRow {
 
 /**
  * Needs you: a waiting conversation they've written in, or the single new conversation from someone they've written to
- * who isn't themselves; never a calendar's answer. Both stores come here, so they can't disagree.
+ * who isn't themselves; never a calendar's answer. Plan 240: every waiting conversation of a sender they said to always show
+ * (`shown`). Both stores come here, so they can't disagree.
  */
-export function needsYou(rows: readonly WaitingRow[], known: (key: string) => { written: number; own: number } | undefined): WaitingRow[] {
+export function needsYou(rows: readonly WaitingRow[], known: (key: string) => { written: number; own: number } | undefined, shown: (key: string) => boolean = () => false): WaitingRow[] {
   const answerless = (r: WaitingRow) => CALENDAR_ANSWER_PREFIXES.some((p) => r.subject.toLowerCase().startsWith(p));
   const unanswered = new Map<string, number>();
   for (const r of rows) {
@@ -97,6 +98,7 @@ export function needsYou(rows: readonly WaitingRow[], known: (key: string) => { 
     if (answerless(r)) return false;
     if (r.hasSent) return true;
     const key = addressKey(r.from);
+    if (shown(key)) return true;
     if (unanswered.get(key) !== 1) return false;
     const who = known(key);
     return who?.written === 1 && who.own !== 1;
@@ -121,7 +123,26 @@ export function summaryAsksNothing(row: { state: string; prompt_version: number 
   }
 }
 
+/** Plan 240: a Show taken (`added` null: shown already), the sender's own mute it removed, the threads whose facts it recomputed. */
+export type ShownAdded = { added: ShownSender | null; unmuted: DatedMute | null; threadIds: number[] } | "full";
+/** Plan 240: a Stop taken (`removed` null: nothing, or another entry than the one named), the threads recomputed. */
+export interface ShownRemoved {
+  removed: ShownSender | null;
+  threadIds: number[];
+}
+
 export interface TodayStore {
+  /**
+   * Plan 240: the senders always shown in What matters (at most `SHOWN_SENDERS_MAX`, newest first). Each change is one
+   * command: the entry, the sender's own mute (`add` removes it), and their threads' facts (plan 17: a shown sender's newest
+   * unanswered message waits), recomputed inline when few, else by the facts' sender job
+   */
+  shown: {
+    list(): Promise<ShownSender[]>;
+    add(s: Omit<ShownSender, "key">): Promise<ShownAdded>;
+    /** `id`: only that entry (an Undo of its Show) */
+    remove(key: string, id?: string): Promise<ShownRemoved>;
+  };
   /** What needs you (`needsYou`), newest first, among the newest `NEEDS_WALK` waiting: plan 17's "a person" holds any plain address, and on real mail most of it was a bank's and a service's notices. `after` is the last id of the page before */
   waitingPage(o: { now: number; after: { lastDate: number; id: number } | null; limit: number }): Promise<{ id: number; lastDate: number; /** why `needsYou` let it in: you've written in it (else: new, from someone you write to) */ hasSent: boolean; /** plan 215: its `waiting_since`, what Done and Later on its row name */ waitingSince: number }[]>;
   /** which of these threads the Inbox holds as waiting (a due follow-up may be one too: it counts once) */

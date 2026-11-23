@@ -1681,6 +1681,17 @@ CREATE INDEX waiting_acts_done ON waiting_acts(at, message_id) WHERE state = 'do
 CREATE INDEX waiting_acts_later ON waiting_acts(until, message_id) WHERE state = 'later';
 CREATE INDEX waiting_acts_removed ON waiting_acts(message_id) WHERE state = 'removed';
 ` },
+  // plan 240: the senders the user said to always show in What matters, at most SHOWN_SENDERS_MAX (by hand, one at a time).
+  // A new table: shape only
+  { version: 76, name: "What matters: senders always shown (plan 240)", sql: `
+CREATE TABLE shown_senders (
+  key TEXT PRIMARY KEY,
+  id TEXT NOT NULL,
+  email TEXT NOT NULL,
+  name TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL
+) WITHOUT ROWID;
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

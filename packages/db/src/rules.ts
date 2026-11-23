@@ -1,4 +1,4 @@
-import { BODY_TAIL_TOKENS, bodyMatches, fromIsAddress, openingText, patternMatches, ruleValue, subjectKey, tokenize, type Condition, type FilterRule, type TextOp } from "@terno/core";
+import { addressKey, BODY_TAIL_TOKENS, bodyMatches, fromIsAddress, openingText, patternMatches, ruleValue, subjectKey, tokenize, type Condition, type FilterRule, type TextOp } from "@terno/core";
 import type { Db, Param } from "./sqlite";
 
 const DAY_MS = 86_400_000;
@@ -147,6 +147,8 @@ export function registerFunctions(db: Db): void {
   db.function("terno_matches", { deterministic: true }, (pattern, text) => (patternMatches(String(pattern), String(text ?? "")) ? 1 : 0));
   db.function("terno_opening", { deterministic: true }, (pattern, subject, snippet) => (patternMatches(String(pattern), openingText(String(subject ?? ""), String(snippet ?? ""))) ? 1 : 0));
   db.function("terno_subject_key", { deterministic: true }, (subject) => subjectKey(String(subject ?? "")));
+  // plan 240: an address as both stores compare senders (lowercased, a +tag dropped)
+  db.function("terno_address_key", { deterministic: true }, (email) => addressKey(String(email ?? "")));
 }
 
 export interface RuleMatches {

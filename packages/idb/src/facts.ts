@@ -197,6 +197,8 @@ export function factContext(db: MemDb, own: ReadonlySet<string>): FactContext {
     failedSend: (id) => failedSend(db, id),
     // plan 215: Done on its waiting row (a key lookup, for a newest message that would otherwise wait)
     cleared: (id) => t(db, "waiting_acts").get(id)?.state === "done",
+    // plan 240: a sender always shown in What matters (a key lookup; the store is early, empty on most mailboxes)
+    shown: (key) => t(db, "shown_senders").get(key) !== undefined,
     answered: (rfcMessageId) => {
       for (const a of t(db, "accounts").all()) {
         for (const ref of t(db, "message_refs").by("ref", a.id, rfcMessageId)) {
@@ -329,7 +331,7 @@ function setSenderJobs(db: MemDb, jobs: SenderJob[]): void {
  * recomputed now; more go to a job the backfill runs in slices (Codex
  * review 1, #2). Their facts stay as they were meanwhile.
  */
-export function requeueSender(db: MemDb, key: string): void {
+export function requeueSender(db: MemDb, key: string, touched?: Set<number>): void {
   if (factsPhase(db).phase === "senders") return;
   const messages = t(db, "messages");
   const senders = sendersLike(db, key);
@@ -338,7 +340,10 @@ export function requeueSender(db: MemDb, key: string): void {
   if (rows === 0) return;
   if (rows <= INLINE_REQUEUE) {
     const ctx = factContext(db, ownAddresses(db));
-    for (const id of new Set(senders.flatMap((s) => messages.by("from", s).map((m) => m.thread_id as number)))) computeOrDefer(db, id, ctx);
+    for (const id of new Set(senders.flatMap((s) => messages.by("from", s).map((m) => m.thread_id as number)))) {
+      computeOrDefer(db, id, ctx);
+      touched?.add(id);
+    }
     return;
   }
   setSenderJobs(db, [...senderJobs(db).filter((j) => j.email !== key), { email: key, senders, i: 0, seq: 0 }]);

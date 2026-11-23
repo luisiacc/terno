@@ -368,6 +368,8 @@ export interface DatedStore {
    * lookup each. After the fourth panel round, a sender named like a security desk you correspond with is trusted.
    */
   written(senderKeys: readonly string[]): Promise<Set<string>>;
+  /** plan 240: those the security-desk guard trusts: written to, or shown in What matters (`today.shown`), by key */
+  trusted(senderKeys: readonly string[]): Promise<Set<string>>;
   get(id: number): Promise<DatedRow | null>;
   /**
    * a change by the user, conditional on the revision they saw; with `schedule`, also on the day it was decided on (a move

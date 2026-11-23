@@ -217,6 +217,36 @@ describe("a thread's facts (plan 17 §2.3)", () => {
   });
 });
 
+describe("plan 240: a sender always shown in What matters", () => {
+  const shown = (k: string) => k === "news@list.shop.com";
+  it("their newest unanswered message waits whatever it looks like, and who is a person doesn't change", () => {
+    // a list's mail (never a person), Promotions', a no-reply's: each waits once shown
+    for (const over of [{ list_id: "l.shop.com" }, { is_bulk: 1 }, { gmail_labels: JSON.stringify(["CATEGORY_PROMOTIONS"]) }]) {
+      const m = msg({ date: 5, from: "News+deals@List.Shop.com", ...over });
+      expect(threadFacts([m], ctx())).toEqual({ person: 0, waitingSince: null });
+      expect(threadFacts([m], ctx({ shown }))).toEqual({ person: 0, waitingSince: 5 });
+    }
+  });
+
+  it("never Spam's, nor one answered, cleared, or that only copied you", () => {
+    const from = "news@list.shop.com";
+    expect(threadFacts([msg({ date: 5, from, is_spam: 1 })], ctx({ shown }))).toEqual({ person: 0, waitingSince: null });
+    expect(threadFacts([msg({ date: 5, from, list_id: "l" }), msg({ date: 6, from: ME, is_sent: 1, to: [from] })], ctx({ shown }))).toEqual({ person: 0, waitingSince: null });
+    const asked = msg({ date: 5, from, list_id: "l", rfc_message_id: "q@x" });
+    expect(threadFacts([asked], ctx({ shown, answered: (id) => id === "q@x" }))).toEqual({ person: 0, waitingSince: null });
+    expect(threadFacts([asked], ctx({ shown, cleared: (id) => id === asked.id }))).toEqual({ person: 0, waitingSince: null });
+    expect(threadFacts([msg({ date: 5, from, to: ["boss@acme.com"], cc: [ME] })], ctx({ shown }))).toEqual({ person: 0, waitingSince: null });
+  });
+
+  it("the newest-first walk agrees", () => {
+    const rows = [msg({ date: 4, from: "ana@friends.com" }), msg({ date: 5, from: "news@list.shop.com", list_id: "l" })];
+    const ordered = [...rows].sort((a, b) => b.date - a.date || b.id - a.id);
+    let i = 0;
+    expect(threadFactsNewestFirst(() => ordered[i++], ctx({ shown }))).toEqual(threadFacts(rows, ctx({ shown })));
+    expect(threadFacts(rows, ctx({ shown }))).toEqual({ person: 0, waitingSince: 5 });
+  });
+});
+
 describe("threadFactsNewestFirst (Codex R10)", () => {
   /** mulberry32 */
   const prng = (seed: number) => () => {
@@ -247,7 +277,7 @@ describe("threadFactsNewestFirst (Codex R10)", () => {
           provider_msg_id: r() < 0.2 ? "local:1" : "p",
         }),
       );
-      const c = ctx({ written: (key) => key === "support@shop.com", answered: (id) => id.length % 3 === 0, failedSend: (id) => id % 2 === 0 });
+      const c = ctx({ written: (key) => key === "support@shop.com", answered: (id) => id.length % 3 === 0, failedSend: (id) => id % 2 === 0, shown: (key) => key === "noreply@x.com" });
       const ordered = newestFirst(rows);
       let i = 0;
       expect(threadFactsNewestFirst(() => ordered[i++], c), JSON.stringify(rows)).toEqual(threadFacts(rows, c));

@@ -42,10 +42,11 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  * SQL v73 (plan 210, iteration 5) adds `ai_dated_mail.looked_at`: absent on older marks reads as unclaimed, so no version change.
  * Version 38 adds Done and Later on a conversation waiting on you (SQL v74, plan 215).
  * SQL v75 (plan 216) lets a waiting record be `removed`: no CHECK here, and its index is in memory, so no version change.
+ * Version 39 adds the senders always shown in What matters (SQL v76, plan 240).
  */
 export { IDB_VERSION };
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 75;
+export const LOGICAL_SCHEMA = 76;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 
@@ -135,6 +136,8 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   { name: "dated_mutes", early: true, key: ["target", "key"], indexes: { target: ["target"] } },
   // plan 210 (iteration 5): a kind muted from one sender, by sender (the reader's finish reads one sender's)
   { name: "dated_mute_pairs", early: true, key: ["sender_key", "kind"], indexes: { sender: ["sender_key"] } },
+  // plan 240: the senders always shown in What matters (the facts and Needs you's walk read it, so it loads early)
+  { name: "shown_senders", early: true, key: ["key"], indexes: {} },
   // plan 215: Done and Later on a conversation waiting on you, a record per message (`done`, Earlier's; `later`, the deferrals;
   // plan 216, `removed`, off What matters: the count's)
   { name: "waiting_acts", key: ["message_id"], indexes: { ...fk("message_id"), done: { columns: ["state"], where: (r) => r.state === "done" }, later: { columns: ["state"], where: (r) => r.state === "later" }, removed: { columns: ["state"], where: (r) => r.state === "removed" } } },
@@ -423,6 +426,8 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
       if (event.oldVersion >= 1 && event.oldVersion < 37 && !db.objectStoreNames.contains("dated_mute_pairs")) db.createObjectStore("dated_mute_pairs");
       // plan 215 (likewise)
       if (event.oldVersion >= 1 && event.oldVersion < 38 && !db.objectStoreNames.contains("waiting_acts")) db.createObjectStore("waiting_acts");
+      // plan 240 (likewise)
+      if (event.oldVersion >= 1 && event.oldVersion < 39 && !db.objectStoreNames.contains("shown_senders")) db.createObjectStore("shown_senders");
       // plan 144 (likewise)
       if (event.oldVersion >= 1 && event.oldVersion < 31 && !db.objectStoreNames.contains("ai_prepared_replies")) db.createObjectStore("ai_prepared_replies");
       // plan 142 (likewise)

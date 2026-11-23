@@ -2,6 +2,7 @@ import { addressKey, isAcknowledgment, looksLikeAcknowledgment, parseRef, refKey
 import { DATED_NOTHING_ASKED_SINCE, NEEDS_WALK, needsYou, summaryAsksNothing, type DigestFact, type DigestStored, type ItemChanges, type ItemSnapshots, type WaitingRow } from "@terno/store";
 import { datedRow, mutedSenders, restoreDated, updateDated, type DatedRaw } from "./dated";
 import { followupRow, restoreFollowups, updateFollowup, type FollowupRaw } from "./followups";
+import { shownKeys } from "./shown-senders";
 import { inboxHiding, shownSql } from "./queries";
 import type { Db } from "./sqlite";
 
@@ -11,9 +12,12 @@ import type { Db } from "./sqlite";
 function needsRows(db: Db, now: number): WaitingRow[] {
   const cutoff = waitingCutoff(now);
   const hiding = shownSql(inboxHiding(db));
+  // plan 240: a sender said to be always shown outranks the Inbox's hiding (a Gmail tab kept apart, a hidden category)
+  const shown = shownKeys(db);
+  const hidden = hiding.where && shown.size ? ` AND ((1${hiding.where}) OR terno_address_key(last_from_email) IN (SELECT key FROM shown_senders))` : hiding.where;
   const rows = db.all<{ id: number; last_date: number; last_from_email: string; subject: string; has_sent: number; snippet: string | null; waiting_since: number }>(
     `SELECT id, last_date, last_from_email, subject, has_sent, snippet, waiting_since FROM threads INDEXED BY threads_waiting
-     WHERE waiting_since IS NOT NULL AND last_date >= ? AND waiting_since >= ? AND in_inbox = 1${hiding.where}
+     WHERE waiting_since IS NOT NULL AND last_date >= ? AND waiting_since >= ? AND in_inbox = 1${hidden}
      ORDER BY last_date DESC, id DESC LIMIT ?`,
     cutoff,
     cutoff,
@@ -21,15 +25,17 @@ function needsRows(db: Db, now: number): WaitingRow[] {
     NEEDS_WALK,
   );
   const snippets = new Map(rows.map((r) => [r.id, r.snippet]));
+  const isShown = (key: string) => shown.has(key);
   const needs = needsYou(
     rows.map((r) => ({ id: r.id, lastDate: r.last_date, waitingSince: r.waiting_since, from: r.last_from_email, subject: r.subject, hasSent: r.has_sent === 1 })),
     (key) => db.get<{ written: number; own: number }>("SELECT written, own FROM correspondents WHERE email = ?", key),
+    isShown,
   );
   // plan 210 (iteration 4): a muted sender's conversations aren't waiting on you in What matters, read once a walk; nothing
   // is recorded for them (`dated_nothing_asked`), so Unmute brings them back as they are
   const muted = mutedSenders(db);
   // plan 204, the second panel round (plan 145's rule, tighter): on what needsYou let in, never widening it
-  return needs.filter((r) => !(muted.size && muted.has(addressKey(r.from))) && stillWaiting(db, r.id, snippets.get(r.id) ?? null, now));
+  return needs.filter((r) => !(muted.size && muted.has(addressKey(r.from))) && stillWaiting(db, r.id, snippets.get(r.id) ?? null, now, shown.size > 0 && isShown(addressKey(r.from))));
 }
 
 /**
@@ -37,10 +43,11 @@ function needsRows(db: Db, now: number): WaitingRow[] {
  * packages/store/src/today.ts). Handled (Codex code review): a dated item read from their latest message is done, not a
  * task, settled or put off till later; it's read from the item, so the item's Undo brings the conversation back as it was.
  */
-function stillWaiting(db: Db, threadId: number, snippet: string | null, now: number): boolean {
-  // the fourth panel read: they said no answer is needed ("No action needed!"), in its first words
-  if (saysNoReplyNeeded(snippet)) return false;
-  const ack = looksLikeAcknowledgment(snippet);
+function stillWaiting(db: Db, threadId: number, snippet: string | null, now: number, shown = false): boolean {
+  // the fourth panel read: they said no answer is needed ("No action needed!"), in its first words; plan 240: not for a
+  // sender always shown (the user's word outranks a reading of their words, here and below: only what was handled counts)
+  if (!shown && saysNoReplyNeeded(snippet)) return false;
+  const ack = !shown && looksLikeAcknowledgment(snippet);
   // their latest message, looked up once and only when a rule below needs it; its text in the same statement when the
   // snippet starts like a thanks
   let latest: { id: number; date: number; text: string | null } | null | undefined;
@@ -56,7 +63,7 @@ function stillWaiting(db: Db, threadId: number, snippet: string | null, now: num
           ) ?? null);
   // plan 210 (iteration 2, the owner: "only when something is asked"): the dated reader read their latest message and found
   // nothing asked of the reader. Mail it hasn't read (off, older, still queued) keeps plan 145's rule; newer mail isn't the one read
-  const read = db.all<{ message_id: number }>("SELECT message_id FROM dated_nothing_asked INDEXED BY dated_nothing_asked_thread WHERE thread_id = ? AND prompt_version >= ?", threadId, DATED_NOTHING_ASKED_SINCE);
+  const read = shown ? [] : db.all<{ message_id: number }>("SELECT message_id FROM dated_nothing_asked INDEXED BY dated_nothing_asked_thread WHERE thread_id = ? AND prompt_version >= ?", threadId, DATED_NOTHING_ASKED_SINCE);
   if (read.length && read.some((r) => r.message_id === last()?.id)) return false;
   // the thread's items (most have none): a dated item read from their latest message, handled
   const handled = db.all<{ message_id: number }>("SELECT message_id FROM dated_items INDEXED BY dated_thread WHERE thread_id = ? AND (state IN ('done', 'dismissed', 'settled') OR deferred_until > ?)", threadId, now);
@@ -75,6 +82,7 @@ function stillWaiting(db: Db, threadId: number, snippet: string | null, now: num
     if (m && kept.at >= m.date) return false;
   }
   if (ack && isAcknowledgment(last()?.text)) return false;
+  if (shown) return true;
   const summary = db.get<{ state: string; prompt_version: number | null; body_json: string | null; generated_at: number | null }>("SELECT state, prompt_version, body_json, generated_at FROM ai_summaries WHERE thread_id = ?", threadId);
   if (!summaryAsksNothing(summary)) return true;
   // current: nothing the thread shows arrived after it was written

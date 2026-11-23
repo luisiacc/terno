@@ -3,6 +3,7 @@ import { DATED_NOTHING_ASKED_SINCE, NEEDS_WALK, needsYou, summaryAsksNothing, ty
 import { datedRow, mutedSenders, restoreDated, updateDated } from "./dated";
 import { followupRow, restoreFollowups, updateFollowup } from "./followups";
 import { inboxHiddenTest, T, type Ctx, type R } from "./mail";
+import { shownKeys } from "./shown-senders";
 
 /** Plan 145 on IndexedDB, like SQL's (packages/db/src/today.ts). */
 
@@ -16,6 +17,8 @@ export interface NeedsWalk {
   rows: WaitingRow[];
   /** thread → its last message from someone else, for those whose snippet starts like an acknowledgment */
   acks: Map<number, number>;
+  /** plan 240: the threads of senders always shown, which only what was handled takes out */
+  always: Set<number>;
 }
 
 /** The newest waiting threads, in the Waiting filter's own date order (revision 11). */
@@ -24,44 +27,49 @@ export function needsWalk(c: Ctx, now: number): NeedsWalk {
   const correspondents = T(c, "correspondents");
   const cutoff = waitingCutoff(now);
   const hidden = inboxHiddenTest(c);
+  // plan 240: a sender said to be always shown outranks the Inbox's hiding, as SQL's
+  const always = shownKeys(c);
+  const isShown = (from: unknown) => always.size > 0 && always.has(addressKey(String(from)));
   const rows: WaitingRow[] = [];
   for (const id of c.filterOrders.waiting.current(threads)) {
     const t = threads.get(id)!;
     if (t.last_date < cutoff) break;
-    if (t.waiting_since < cutoff || t.in_inbox !== 1 || hidden?.(id)) continue;
+    if (t.waiting_since < cutoff || t.in_inbox !== 1 || (hidden?.(id) && !isShown(t.last_from_email))) continue;
     rows.push({ id, lastDate: t.last_date, waitingSince: t.waiting_since, from: String(t.last_from_email), subject: String(t.subject), hasSent: t.has_sent === 1 });
     if (rows.length >= NEEDS_WALK) break;
   }
   // plan 210 (iteration 4): as SQL's, a muted sender's conversations aren't waiting on you, nothing recorded for them; left
   // out here, before any acknowledgment's body is read ahead for them (Codex's code review)
   const muted = mutedSenders(c);
-  const needs = needsYou(rows, (key) => correspondents.get(key) as { written: number; own: number } | undefined).filter((r) => !(muted.size && muted.has(addressKey(r.from))));
+  const needs = needsYou(rows, (key) => correspondents.get(key) as { written: number; own: number } | undefined, (key) => always.has(key)).filter((r) => !(muted.size && muted.has(addressKey(r.from))));
   const acks = new Map<number, number>();
   for (const r of needs) {
-    if (!looksLikeAcknowledgment(threads.get(r.id)?.snippet as string | null | undefined)) continue;
+    // plan 240 (Codex review 12): a shown sender's isn't judged an acknowledgment, so its body isn't read ahead
+    if (isShown(r.from) || !looksLikeAcknowledgment(threads.get(r.id)?.snippet as string | null | undefined)) continue;
     const last = shown(c, r.id).filter((m) => !m.is_sent).sort((a, b) => b.date - a.date || b.id - a.id)[0];
     if (last) acks.set(r.id, last.id as number);
   }
-  return { now, rows: needs, acks };
+  return { now, rows: needs, acks, always: new Set(needs.filter((r) => isShown(r.from)).map((r) => r.id)) };
 }
 
 /** What a walk lets in that's still waiting on the reader, its acknowledgments' bodies read ahead: never wider than `needsYou`. */
 function needsRows(c: Ctx, walk: NeedsWalk): WaitingRow[] {
-  return walk.rows.filter((r) => stillWaiting(c, r.id, walk.acks.get(r.id), walk.now));
+  return walk.rows.filter((r) => stillWaiting(c, r.id, walk.acks.get(r.id), walk.now, walk.always.has(r.id)));
 }
 
 const shown = (c: Ctx, threadId: number): R[] => T(c, "messages").by("fk_thread_id", threadId).filter((m) => !m.is_draft && !m.is_spam && !m.is_trash);
 
 /** As SQL's (packages/db/src/today.ts): not read with nothing asked, not handled, not an acknowledgment, and no current summary that gives the reader nothing to do. */
-function stillWaiting(c: Ctx, threadId: number, ack: number | undefined, now: number): boolean {
-  // the fourth panel read: they said no answer is needed ("No action needed!"), in its first words
-  if (saysNoReplyNeeded(T(c, "threads").get(threadId)?.snippet as string | null | undefined)) return false;
+function stillWaiting(c: Ctx, threadId: number, ack: number | undefined, now: number, always = false): boolean {
+  // the fourth panel read: they said no answer is needed ("No action needed!"), in its first words; plan 240: not for a
+  // sender always shown, as SQL's (only what was handled counts)
+  if (!always && saysNoReplyNeeded(T(c, "threads").get(threadId)?.snippet as string | null | undefined)) return false;
   // their latest message, found once and only when a rule below needs it
   let latest: R | null | undefined;
   const last = () => (latest !== undefined ? latest : (latest = shown(c, threadId).filter((m) => !m.is_sent).sort((a, b) => b.date - a.date || b.id - a.id)[0] ?? null));
   // plan 210 (iteration 2, the owner: "only when something is asked"): the dated reader read it with nothing asked of the
   // reader, as SQL's
-  const read = T(c, "dated_nothing_asked").by("thread", threadId).filter((r) => r.prompt_version >= DATED_NOTHING_ASKED_SINCE);
+  const read = always ? [] : T(c, "dated_nothing_asked").by("thread", threadId).filter((r) => r.prompt_version >= DATED_NOTHING_ASKED_SINCE);
   if (read.length && read.some((r) => r.message_id === last()?.id)) return false;
   const items = T(c, "dated_items").by("fk_thread_id", threadId).filter((d) => d.state === "done" || d.state === "dismissed" || d.state === "settled" || (d.deferred_until ?? 0) > now);
   if (items.length && items.some((d) => d.message_id === last()?.id)) return false;
@@ -80,6 +88,7 @@ function stillWaiting(c: Ctx, threadId: number, ack: number | undefined, now: nu
     const body = c.body(ack);
     if (isAcknowledgment(body?.body_text ?? body?.body_preview ?? null)) return false;
   }
+  if (always) return true;
   const summary = T(c, "ai_summaries").get(threadId) as { state: string; prompt_version: number | null; body_json: string | null; generated_at: number | null } | undefined;
   if (!summaryAsksNothing(summary)) return true;
   return shown(c, threadId).some((m) => m.created_at >= summary!.generated_at!);

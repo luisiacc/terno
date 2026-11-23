@@ -68,9 +68,14 @@ export function factContext(db: Db, own: ReadonlySet<string>): FactContext {
   // would wait: most mailboxes have none, and a slice of the backfill then asks nothing a thread. A schema before v74 has none
   // (a mailbox is migrated before any write; legacy fixtures write mail at the version they stand for)
   let acts: boolean | undefined;
+  // plan 240: whether any sender is shown, once a context, the same way (a schema before v76 has none)
+  let shownAny: boolean | undefined;
   return {
     own: (key) => own.has(key),
     written: (key) => db.get<{ written: number }>("SELECT written FROM correspondents WHERE email = ?", key)?.written === 1,
+    shown: (key) =>
+      (shownAny ??= db.get("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'shown_senders'") !== undefined && db.get("SELECT 1 FROM shown_senders LIMIT 1") !== undefined) &&
+      db.get("SELECT 1 FROM shown_senders WHERE key = ?", key) !== undefined,
     failedSend: (id) => failedSend(db, id),
     details: (id) => db.get<{ to_json: string; cc_json: string; rfc_message_id: string | null }>("SELECT to_json, cc_json, rfc_message_id FROM messages WHERE id = ?", id) ?? { to_json: "[]", cc_json: "[]", rfc_message_id: null },
     // plan 215: Done on its waiting row, one primary-key lookup for a newest message that would otherwise wait
@@ -208,7 +213,7 @@ function setSenderJobs(db: Db, jobs: SenderJob[]): void {
  * were meanwhile, and the waiting count reads unknown. Returns whether a job
  * was queued.
  */
-export function requeueSender(db: Db, key: string): boolean {
+export function requeueSender(db: Db, key: string, touched?: Set<number>): boolean {
   if (factsPhase(db).phase === "senders") return false; // nothing is computed yet: nothing to correct
   const exact = messagesFrom(db, key, 0, { from: "", id: 0 }, INLINE_REQUEUE + 1);
   // the +tagged range may hold other domains' rows too: its raw length decides, the domain filters after
@@ -218,7 +223,10 @@ export function requeueSender(db: Db, key: string): boolean {
     const ids = new Set([...exact, ...tagged.filter((m) => m.from_email.endsWith(domain))].map((m) => m.thread_id));
     if (ids.size === 0) return false;
     const ctx = factContext(db, ownAddresses(db));
-    for (const id of ids) writeFacts(db, id, factsOf(db, id, ctx));
+    for (const id of ids) {
+      writeFacts(db, id, factsOf(db, id, ctx));
+      touched?.add(id);
+    }
     return false;
   }
   setSenderJobs(db, [...senderJobs(db).filter((j) => j.email !== key), { email: key, stage: 0, from: "", id: 0 }]);

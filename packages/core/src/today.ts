@@ -292,6 +292,22 @@ export interface NotNewsletter {
   at: number;
 }
 
+/**
+ * Plan 240: a sender the user said to always show in What matters ("Always show in What matters"): each of their unanswered
+ * conversations waits on you whatever their mail looks like. `key` is the `addressKey`; `id` this entry, what an Undo names.
+ */
+export interface ShownSender {
+  id: string;
+  key: string;
+  email: string;
+  name: string;
+  /** when it was said: the list's order, newest first */
+  at: number;
+}
+
+/** Plan 240: the most senders shown at once (adding past it is refused in words, as mutes are). */
+export const SHOWN_SENDERS_MAX = 500;
+
 /** Plan 166: how much of a sender's name the list keeps. */
 export const NOT_NEWSLETTER_NAME_MAX = 200;
 

@@ -4,6 +4,7 @@ import { actOnItems, fromOf, itemMembers, linkItems, liveAmong, restoreItems, ne
 import { actOnWaiting, restoreWaiting, waitingDonePage, waitingMoments, waitingRows } from "./waiting-acts";
 import { scheduleItems, unscheduleItems } from "./schedule";
 import { clearReplies, finishReply, getReply, transitionReply } from "./replies";
+import { addShown, listShown, removeShown, trustedSenders } from "./shown-senders";
 import { activeDated, addDatedMute, datedMutes, removeDatedMute, closedDatedPage, claimDatedLook, clearDated, datedMarkCount, datedPendingOn, datedMarkPage, datedMarksRaw, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, datedWritten, updateDated } from "./dated";
 import { activeFollowups, closedFollowupPage, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, closeArchivedFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupsPutAway, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
 import { findLinked, newestLinked } from "./links";
@@ -2005,6 +2006,12 @@ export class IdbMailStore implements MailStore {
   }
 
   readonly today: MailStore["today"] = {
+    // plan 240: the facts it recomputes read messages, so the commands wait for them as any command does
+    shown: {
+      list: () => this.early(() => listShown(this.c)),
+      add: (s) => this.command(() => addShown(this.c, s)),
+      remove: (key, id) => this.command(() => removeShown(this.c, key, id)),
+    },
     waitingPage: (o) => this.needs(o.now, (walk) => waitingPage(this.c, o, walk)),
     waitingAmong: (ids, now) => this.needs(now, (walk) => waitingAmong(this.c, ids, walk)),
     liveAmong: (ids) => this.read(() => liveAmong(this.c, ids)),
@@ -2130,6 +2137,7 @@ export class IdbMailStore implements MailStore {
     ofThread: (id) => this.early(() => threadDated(this.c, id)),
     closedPage: (o) => this.early(() => closedDatedPage(this.c, o)),
     written: (keys) => this.early(() => datedWritten(this.c, keys)),
+    trusted: (keys) => this.early(() => trustedSenders(this.c, keys)),
     get: (id) => this.early(() => getDated(this.c, id)),
     update: (id, revision, patch, schedule) => this.command(() => updateDated(this.c, id, revision, patch, schedule)),
     restore: (rows) => this.command(() => restoreDated(this.c, rows)),

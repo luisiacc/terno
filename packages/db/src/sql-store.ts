@@ -8,6 +8,7 @@ import { actOnItems, fromOf, itemMembers, linkItems, liveAmong, needsCount, rest
 import { actOnWaiting, restoreWaiting, waitingDonePage, waitingMoments, waitingRows } from "./waiting-acts";
 import { clearReplies, finishReply, getReply, transitionReply } from "./replies";
 import { scheduleItems, unscheduleItems } from "./schedule";
+import { addShown, listShown, removeShown, trustedSenders } from "./shown-senders";
 import { activeDated, addDatedMute, datedMutes, removeDatedMute, closedDatedPage, claimDatedLook, clearDated, datedMarkCount, datedPendingOn, datedMarkPage, datedMarksRaw, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, datedWritten, updateDated } from "./dated";
 import { activeFollowups, closedFollowupPage, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, closeArchivedFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupsPutAway, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
 import { addAskTurn, askAccountsOf, askHeaders, askMatching, askNewest, askText, askTurnCount, askTurns, clearAsk, listAskConversations, removeAskConversation, removeAskForAccount, restoreAskConversation } from "./ask";
@@ -1107,6 +1108,12 @@ export class SqlMailStore implements MailStore {
 
   private digestClears = 0;
   readonly today: MailStore["today"] = {
+    // plan 240
+    shown: {
+      list: async () => listShown(this.db),
+      add: async (s) => addShown(this.db, s),
+      remove: async (key, id) => removeShown(this.db, key, id),
+    },
     waitingPage: async (o) => waitingPage(this.db, o),
     waitingAmong: async (ids, now) => waitingAmong(this.db, ids, now),
     needsCount: async (now) => needsCount(this.db, now),
@@ -1221,6 +1228,7 @@ export class SqlMailStore implements MailStore {
     ofThread: async (id) => threadDated(this.db, id),
     closedPage: async (o) => closedDatedPage(this.db, o),
     written: async (keys) => datedWritten(this.db, keys),
+    trusted: async (keys) => trustedSenders(this.db, keys),
     get: async (id) => getDated(this.db, id),
     update: async (id, revision, patch, schedule) => updateDated(this.db, id, revision, patch, schedule),
     restore: async (rows) => restoreDated(this.db, rows),
