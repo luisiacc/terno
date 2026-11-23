@@ -3,11 +3,15 @@
  * edges and remembered on this device. CSS does the layout (globals.css
  * `app-panes` clamps these variables against the window on every frame);
  * this module keeps the limits, the stored widths and the math a drag or a
- * key press needs. Unset, each pane is its design's default.
+ * key press needs. Unset, each pane is its design's default. Plan 236: the
+ * list's column keeps a width for each thing that fills it (the mail list,
+ * What matters' feed), behind the one edge and the one variable.
  */
 import { create } from "zustand";
 
 export type Pane = "sidebar" | "list";
+/** what fills the list's column (plan 236): each has its own width */
+export type Column = "list" | "feed";
 
 /** px; globals.css repeats them in `app-panes` (a unit test keeps the two in step). The reader's minimum is the design's (`layout.readerMin`). */
 export const LIMITS: Record<Pane, { min: number; max: number }> = {
@@ -22,18 +26,20 @@ export const PANES_KEY = "terno:panes";
 /** the CSS variable each pane's chosen width goes in (on <html>) */
 export const PANE_VAR: Record<Pane, string> = { sidebar: "--pane-sidebar", list: "--pane-list" };
 
-export type PaneWidths = Record<Pane, number | null>;
+export type PaneWidths = Record<"sidebar" | Column, number | null>;
+const NONE: PaneWidths = { sidebar: null, list: null, feed: null };
 
 const valid = (pane: Pane, v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) && v >= LIMITS[pane].min && v <= LIMITS[pane].max ? Math.round(v) : null);
 
 /** What was stored, each pane on its own: anything unreadable or out of range is that pane's default. */
 export function parsePanes(raw: string | null): PaneWidths {
   try {
-    const v = (raw === null ? null : JSON.parse(raw)) as { v?: unknown; sidebar?: unknown; list?: unknown } | null;
-    if (!v || typeof v !== "object" || v.v !== 1) return { sidebar: null, list: null };
-    return { sidebar: valid("sidebar", v.sidebar), list: valid("list", v.list) };
+    const v = (raw === null ? null : JSON.parse(raw)) as { v?: unknown; sidebar?: unknown; list?: unknown; feed?: unknown } | null;
+    if (!v || typeof v !== "object" || v.v !== 1) return NONE;
+    // `feed` came later (plan 236): a value stored before it has none, the design's width
+    return { sidebar: valid("sidebar", v.sidebar), list: valid("list", v.list), feed: valid("list", v.feed) };
   } catch {
-    return { sidebar: null, list: null };
+    return NONE;
   }
 }
 
@@ -50,14 +56,14 @@ export function loadPanes(storage: Pick<Storage, "getItem"> | null = local()): P
   try {
     return parsePanes(storage?.getItem(PANES_KEY) ?? null);
   } catch {
-    return { sidebar: null, list: null };
+    return NONE;
   }
 }
 
 export function savePanes(w: PaneWidths, storage: Pick<Storage, "setItem" | "removeItem"> | null = local()): void {
   try {
-    if (w.sidebar === null && w.list === null) storage?.removeItem(PANES_KEY);
-    else storage?.setItem(PANES_KEY, JSON.stringify({ v: 1, sidebar: w.sidebar, list: w.list }));
+    if (w.sidebar === null && w.list === null && w.feed === null) storage?.removeItem(PANES_KEY);
+    else storage?.setItem(PANES_KEY, JSON.stringify({ v: 1, sidebar: w.sidebar, list: w.list, feed: w.feed }));
   } catch {
     // full or unavailable storage: the width holds for this session
   }
@@ -89,6 +95,22 @@ export function keyWidth(key: string, shift: boolean, now: number, max: number, 
 
 export const usePanes = create<PaneWidths>(() => loadPanes());
 
+/** what fills the list's column now: its edge reads and writes this one's width */
+let column: Column = "list";
+
+/** where a pane's width is kept: the list's edge, the column's showing now */
+export const widthKey = (pane: Pane): "sidebar" | Column => (pane === "list" ? column : pane);
+
+/** the width stored for a pane as it shows now (null: the design's) */
+export const storedWidth = (pane: Pane): number | null => usePanes.getState()[widthKey(pane)];
+
+/** Plan 236: the column now shows `next`, at its own width (the variable written before the paint that shows it). */
+export function showColumn(next: Column): void {
+  if (next === column) return;
+  column = next;
+  previewWidth("list", usePanes.getState()[next]);
+}
+
 /** Writes a pane's width to its variable (null: the design's default). The layout follows in the next frame; nothing renders. */
 export function previewWidth(pane: Pane, width: number | null): void {
   const style = document.documentElement.style;
@@ -96,13 +118,15 @@ export function previewWidth(pane: Pane, width: number | null): void {
   else style.setProperty(PANE_VAR[pane], `${width}px`);
 }
 
-/** The pane's width from now on (null: back to the design's default): applied, kept and stored once. */
+/** The pane's width from now on (null: back to the design's default): applied, kept and stored once, for what it shows now. */
 export function commitWidth(pane: Pane, width: number | null): void {
   previewWidth(pane, width);
-  if (usePanes.getState()[pane] === width) return;
-  usePanes.setState({ [pane]: width });
+  const key = widthKey(pane);
+  if (usePanes.getState()[key] === width) return;
+  usePanes.setState({ [key]: width });
   savePanes(usePanes.getState());
 }
 
-// the stored widths are on <html> before React's first commit: no frame at the default
-if (typeof document !== "undefined") for (const pane of ["sidebar", "list"] as const) previewWidth(pane, usePanes.getState()[pane]);
+// the stored widths are on <html> before React's first commit: no frame at the default (the column starts as the list;
+// What matters' own is written by showColumn in the commit that shows it)
+if (typeof document !== "undefined") for (const pane of ["sidebar", "list"] as const) previewWidth(pane, storedWidth(pane));

@@ -1069,6 +1069,7 @@ const es = {
   "sidebar.moreFolders": "Más carpetas",
   "panes.resizeSidebar": "Cambiar el ancho de la barra lateral",
   "panes.resizeList": "Cambiar el ancho de la lista de mensajes",
+  "panes.resizeFeed": "Cambiar el ancho de «Lo importante»",
   "panes.sizes": "Ancho de los paneles",
   "sidebar.filters": "Reglas",
   "list.label": "Conversaciones",

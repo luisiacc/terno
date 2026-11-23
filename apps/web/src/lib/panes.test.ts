@@ -6,24 +6,28 @@ import { DESIGNS } from "@terno/ui/designs/index";
 import { BIG_STEP, clampWidth, keyWidth, LIMITS, loadPanes, maxWidth, PANES_KEY, parsePanes, savePanes, STEP } from "./panes";
 
 describe("stored widths (plan 21)", () => {
+  const none = { sidebar: null, list: null, feed: null };
   it("reads each pane on its own; anything unreadable or out of range is that pane's default", () => {
-    expect(parsePanes(null)).toEqual({ sidebar: null, list: null });
-    expect(parsePanes("{nope")).toEqual({ sidebar: null, list: null });
-    expect(parsePanes("[]")).toEqual({ sidebar: null, list: null });
-    expect(parsePanes(JSON.stringify({ v: 2, sidebar: 260, list: 420 }))).toEqual({ sidebar: null, list: null });
-    expect(parsePanes(JSON.stringify({ v: 1, sidebar: 260.4, list: 420 }))).toEqual({ sidebar: 260, list: 420 });
-    expect(parsePanes(JSON.stringify({ v: 1, sidebar: 120, list: "420" }))).toEqual({ sidebar: null, list: null });
-    expect(parsePanes(JSON.stringify({ v: 1, sidebar: 9999, list: 640 }))).toEqual({ sidebar: null, list: 640 });
+    expect(parsePanes(null)).toEqual(none);
+    expect(parsePanes("{nope")).toEqual(none);
+    expect(parsePanes("[]")).toEqual(none);
+    expect(parsePanes(JSON.stringify({ v: 2, sidebar: 260, list: 420 }))).toEqual(none);
+    // plan 236: stored before What matters had its own width, the feed is at the design's
+    expect(parsePanes(JSON.stringify({ v: 1, sidebar: 260.4, list: 420 }))).toEqual({ sidebar: 260, list: 420, feed: null });
+    expect(parsePanes(JSON.stringify({ v: 1, sidebar: 120, list: "420", feed: 200 }))).toEqual(none);
+    expect(parsePanes(JSON.stringify({ v: 1, sidebar: 9999, list: 640, feed: 500.6 }))).toEqual({ sidebar: null, list: 640, feed: 501 });
     // a huge exponent parses as Infinity
-    expect(parsePanes(`{"v":1,"sidebar":null,"list":1e999}`)).toEqual({ sidebar: null, list: null });
+    expect(parsePanes(`{"v":1,"sidebar":null,"list":1e999,"feed":1e999}`)).toEqual(none);
   });
 
-  it("round-trips through storage; both defaults remove the key; a storage that throws changes nothing", () => {
+  it("round-trips through storage; all at the default removes the key; a storage that throws changes nothing", () => {
     const m = new Map<string, string>();
     const storage = { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), removeItem: (k: string) => void m.delete(k) };
-    savePanes({ sidebar: 280, list: null }, storage);
-    expect(loadPanes(storage)).toEqual({ sidebar: 280, list: null });
-    savePanes({ sidebar: null, list: null }, storage);
+    savePanes({ sidebar: 280, list: null, feed: 520 }, storage);
+    expect(loadPanes(storage)).toEqual({ sidebar: 280, list: null, feed: 520 });
+    savePanes({ sidebar: null, list: null, feed: 520 }, storage);
+    expect(loadPanes(storage)).toEqual({ sidebar: null, list: null, feed: 520 });
+    savePanes(none, storage);
     expect(m.has(PANES_KEY)).toBe(false);
     const broken = {
       getItem: () => {
@@ -36,8 +40,8 @@ describe("stored widths (plan 21)", () => {
         throw new Error("denied");
       },
     };
-    expect(() => savePanes({ sidebar: 280, list: 400 }, broken)).not.toThrow();
-    expect(loadPanes(broken)).toEqual({ sidebar: null, list: null });
+    expect(() => savePanes({ sidebar: 280, list: 400, feed: null }, broken)).not.toThrow();
+    expect(loadPanes(broken)).toEqual(none);
   });
 });
 

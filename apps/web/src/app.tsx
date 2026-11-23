@@ -1,7 +1,7 @@
 import { t } from "@terno/i18n";
 import { TooltipProvider } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect } from "react";
 import { Announcer } from "~/lib/announce";
 import { installListSpeech } from "~/lib/list-speech";
 import { reviewDrafts, useDraftRecovery } from "~/lib/draft-recovery-ui";
@@ -34,6 +34,7 @@ import { SelectionBar } from "./components/selection-bar";
 import { SnackDock } from "./components/snack-dock";
 import { Sidebar } from "./components/sidebar";
 import { PaneHandle } from "./components/pane-handle";
+import { showColumn } from "~/lib/panes";
 import { skipToList, ThreadList } from "./components/thread-list";
 import { WhatMattersFeed } from "./components/what-matters/feed";
 import { EngineStopped } from "./components/diag/engine-stopped";
@@ -147,6 +148,8 @@ export function App() {
   // the reader's room too, and a conversation opened from it comes in on the right as the reader always does
   const feed = useApp((s) => s.today);
   const feedWide = feed && !list && selectedId === null && !many && !composing && !heldView && !pinned && !pinnedAsk;
+  // plan 236: the feed beside the reader keeps a width of its own, apart from the mail list's (set before the paint)
+  useLayoutEffect(() => showColumn(feed ? "feed" : "list"), [feed]);
   useEffect(() => installKeyboard(), []);
   // plan 188: the list's news where focus isn't (a mailbox opened from the sidebar, the selection's size)
   useEffect(() => installListSpeech(), []);
@@ -228,7 +231,7 @@ export function App() {
             all content is (a box-less one: they're still placed on the grid) */}
         <div role="region" aria-label={t("panes.sizes")} className="contents">
           <PaneHandle pane="sidebar" />
-          {!list && !feedWide && <PaneHandle pane="list" />}
+          {!list && !feedWide && <PaneHandle pane="list" column={feed ? "feed" : "list"} />}
         </div>
       </div>
       <CommandPalette />

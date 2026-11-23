@@ -2,7 +2,7 @@ import { t } from "@terno/i18n";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useDesign } from "~/lib/design";
-import { clampWidth, commitWidth, keyWidth, LIMITS, maxWidth, previewWidth, usePanes, type Pane } from "~/lib/panes";
+import { clampWidth, commitWidth, keyWidth, LIMITS, maxWidth, previewWidth, storedWidth, widthKey, type Column, type Pane } from "~/lib/panes";
 
 /** the element whose width each handle sets (and names in aria-controls) */
 const PANE_ID: Record<Pane, string> = { sidebar: "app-sidebar", list: "app-list" };
@@ -14,8 +14,8 @@ interface Drag {
   pointer: number;
   x: number;
   start: number;
-  /** what was stored before (Esc puts it back) */
-  stored: number | null;
+  /** whose width this drag sets (plan 236): the view changing under it ends what it can change */
+  key: ReturnType<typeof widthKey>;
   /** the sidebar's width, fixed while the list's edge moves */
   sidebar: number;
   next: number;
@@ -30,9 +30,10 @@ interface Drag {
  * Dragging writes the width to a CSS variable once a frame and commits it on
  * release, so nothing renders while it moves (the list included); a
  * double-click goes back to the design's width. Only this handle renders
- * when a pane's width changes (its aria values).
+ * when a pane's width changes (its aria values). `column`: what fills the
+ * list's column, which names its edge (plan 236).
  */
-export function PaneHandle({ pane }: { pane: Pane }) {
+export function PaneHandle({ pane, column = "list" }: { pane: Pane; column?: Column }) {
   const ref = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
   const [m, setM] = useState(() => ({ now: 0, max: LIMITS[pane].max }));
@@ -62,9 +63,10 @@ export function PaneHandle({ pane }: { pane: Pane }) {
       if (ref.current.hasPointerCapture(d.pointer)) ref.current.releasePointerCapture(d.pointer);
     }
     delete document.documentElement.dataset.resizing;
-    // a click (or a double-click's two) that didn't move stores nothing
-    if (commit && d.moved) commitWidth(pane, d.next);
-    else previewWidth(pane, d.stored);
+    // a click (or a double-click's two) that didn't move stores nothing; Esc puts back what's stored for what shows now
+    // (the other view's width, if it changed under the drag: this one's isn't for it)
+    if (commit && d.moved && widthKey(pane) === d.key) commitWidth(pane, d.next);
+    else previewWidth(pane, storedWidth(pane));
   };
 
   // unmounted mid-drag (a crash boundary resetting): nothing left behind on <html> or the window
@@ -96,7 +98,7 @@ export function PaneHandle({ pane }: { pane: Pane }) {
       pointer: e.pointerId,
       x: e.clientX,
       start,
-      stored: usePanes.getState()[pane],
+      key: widthKey(pane),
       sidebar: widthOf(PANE_ID.sidebar),
       next: start,
       moved: false,
@@ -112,7 +114,7 @@ export function PaneHandle({ pane }: { pane: Pane }) {
 
   const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const d = drag.current;
-    if (!d || e.pointerId !== d.pointer) return;
+    if (!d || e.pointerId !== d.pointer || widthKey(pane) !== d.key) return;
     const next = clampWidth(pane, d.start + e.clientX - d.x, innerWidth, d.sidebar, readerMin);
     if (next === d.next) return;
     d.next = next;
@@ -120,7 +122,8 @@ export function PaneHandle({ pane }: { pane: Pane }) {
     // one write a frame, however fast the pointer reports
     d.frame ||= requestAnimationFrame(() => {
       d.frame = 0;
-      previewWidth(pane, d.next);
+      // the view changed before this frame: the variable is the other view's now (Codex's review of plan 236)
+      if (widthKey(pane) === d.key) previewWidth(pane, d.next);
     });
   };
 
@@ -139,7 +142,7 @@ export function PaneHandle({ pane }: { pane: Pane }) {
       ref={ref}
       role="separator"
       aria-orientation="vertical"
-      aria-label={pane === "sidebar" ? t("panes.resizeSidebar") : t("panes.resizeList")}
+      aria-label={pane === "sidebar" ? t("panes.resizeSidebar") : column === "feed" ? t("panes.resizeFeed") : t("panes.resizeList")}
       aria-controls={PANE_ID[pane]}
       aria-valuenow={m.now}
       aria-valuemin={LIMITS[pane].min}

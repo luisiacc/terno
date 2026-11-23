@@ -1081,6 +1081,7 @@ const en = {
   "sidebar.moreFolders": "More folders",
   "panes.resizeSidebar": "Resize sidebar",
   "panes.resizeList": "Resize message list",
+  "panes.resizeFeed": "Resize “What matters”",
   "panes.sizes": "Pane sizes",
   "sidebar.filters": "Rules",
   "list.label": "Conversations",

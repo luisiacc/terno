@@ -299,6 +299,70 @@ test("an item: one sentence, when in its column, who under it; its conversation 
     await expect(feed(page)).toBeVisible();
   });
 
+  await scenario("plan 236: the feed beside the reader keeps a width of its own, apart from the Inbox's list, named for it; both after a reload", async () => {
+    const width = async () => Math.round((await page.locator("#app-list").boundingBox())!.width);
+    const handle = page.getByTestId("pane-handle-list");
+    const inboxOpen = async () => {
+      await page.getByTestId("nav-inbox").click();
+      await page.getByTestId("thread-row").first().click();
+      await expect(page.getByTestId("reader")).toBeVisible();
+    };
+    // the feed's conversation put away before leaving it: coming back, nothing is open and a click opens it
+    const feedOpen = async () => {
+      await page.getByTestId("nav-today").click();
+      await open.click();
+      await expect(page.getByTestId("reader")).toBeVisible();
+    };
+    const feedClose = async () => {
+      await page.getByTestId("reader-close").click();
+      await expect(page.getByTestId("reader")).toHaveCount(0);
+    };
+    await inboxOpen();
+    const inbox = await width();
+    await expect(handle).toHaveAccessibleName("Resize message list");
+    // never resized, the feed starts at the design's width, the list's
+    await feedOpen();
+    expect(await width()).toBe(inbox);
+    await expect(handle).toHaveAccessibleName("Resize “What matters”");
+    await handle.focus();
+    await page.keyboard.press("Shift+ArrowRight");
+    await expect.poll(width).toBe(inbox + 64);
+    await expect(handle).toHaveAttribute("aria-valuenow", String(inbox + 64));
+    await feedClose();
+    // the Inbox's list didn't follow; narrowed, the feed doesn't follow it
+    await inboxOpen();
+    expect(await width()).toBe(inbox);
+    await expect(handle).toHaveAttribute("aria-valuenow", String(inbox));
+    await handle.focus();
+    await page.keyboard.press("Shift+ArrowLeft");
+    await expect.poll(width).toBe(inbox - 64);
+    await feedOpen();
+    expect(await width()).toBe(inbox + 64);
+    expect(JSON.parse((await page.evaluate(() => localStorage.getItem("terno:panes")))!)).toMatchObject({ list: inbox - 64, feed: inbox + 64 });
+    // each after a reload: the view it comes back on, at its own width, then the other
+    await page.reload();
+    await expect(page.getByTestId("reader")).toBeVisible();
+    const onFeed = await feed(page).isVisible();
+    expect(await width()).toBe(onFeed ? inbox + 64 : inbox - 64);
+    if (onFeed) await feedClose();
+    await feedOpen();
+    expect(await width()).toBe(inbox + 64);
+    await feedClose();
+    await inboxOpen();
+    expect(await width()).toBe(inbox - 64);
+    // Enter resets the one showing: the Inbox's, then the feed's
+    await handle.focus();
+    await page.keyboard.press("Enter");
+    await expect.poll(width).toBe(inbox);
+    await feedOpen();
+    expect(await width()).toBe(inbox + 64);
+    await handle.focus();
+    await page.keyboard.press("Enter");
+    await expect.poll(width).toBe(inbox);
+    expect(await page.evaluate(() => localStorage.getItem("terno:panes"))).toBeNull();
+    await feedClose();
+  });
+
   await scenario("D on the open item is its Done, and z brings it back", async () => {
     if (await page.getByTestId("reader").count()) await page.keyboard.press("Escape");
     await open.click();
