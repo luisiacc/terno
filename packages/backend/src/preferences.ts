@@ -38,7 +38,7 @@ import { UI_LOCALE_KEY } from "./forwarding";
 import { untrustedSenders } from "./suspicious-sender";
 
 /**
- * Plan 248: What matters, in the user's words. `WhatMattersWords` keeps the words (Save compiles them, Clear and its Undo,
+ * Plan 249: What matters, in the user's words. `WhatMattersWords` keeps the words (Save compiles them, Clear and its Undo,
  * the draft), and `PreferenceWorker` does what they need in the background: the matcher (which semantic hide and first
  * rules apply to the rows the projection found unjudged) and the second reader (what a show rule asked for in mail the
  * words admitted). Neither touches the dated reader's prompt, its store or its marks: with no rules there's nothing here to
@@ -407,7 +407,7 @@ export class WhatMattersWords {
     this.worker.settingsChanged(settings, await this.host.allowed(settings));
   }
 
-  /** Plan 248's daily bounds: what the words brought that's over is closed, so their open bound holds only what can show. */
+  /** Plan 249's daily bounds: what the words brought that's over is closed, so their open bound holds only what can show. */
   async daily(): Promise<void> {
     const shows = (await this.rules()).filter((r) => r.effect === "show");
     if (!shows.length) return;

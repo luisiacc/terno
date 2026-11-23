@@ -157,11 +157,11 @@ export interface AiTasks {
   readSentMail(input: SentMailInput, signal?: AbortSignal): Promise<SentMailResult>;
   /** plan 204: what a message you got has with a date that matters to you, and which of your open items it settles */
   readDates(input: DatedInput, signal?: AbortSignal): Promise<DatedResult>;
-  /** plan 248: the What matters box's words into checked rules (sees no mail) */
+  /** plan 249: the What matters box's words into checked rules (sees no mail) */
   compilePreferences(input: import("./preferences").CompilePreferencesInput, signal?: AbortSignal): Promise<import("@terno/core").CompiledPreferences>;
-  /** plan 248: which semantic rules apply to which of a few rows, each with evidence from the row */
+  /** plan 249: which semantic rules apply to which of a few rows, each with evidence from the row */
   matchPreferences(input: import("./preferences").MatchInput, signal?: AbortSignal): Promise<import("./preferences").MatchResult>;
-  /** plan 248: what a show rule asked for in one admitted message */
+  /** plan 249: what a show rule asked for in one admitted message */
   readWanted(input: import("./preferences").WantedInput, signal?: AbortSignal): Promise<import("./preferences").WantedResult>;
   /** plan 145: which of these are newsletters, with a line on each */
   digestNewsletters(input: DigestInput, signal?: AbortSignal): Promise<DigestOutputItem[]>;

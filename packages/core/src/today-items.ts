@@ -18,7 +18,7 @@ export interface ItemRef {
 export const refKey = (r: ItemRef): string => `${r.source}:${r.id}`;
 
 export function parseRef(key: string): ItemRef | null {
-  // plan 248: an item the user's words brought is a dated one with a negative id
+  // plan 249: an item the user's words brought is a dated one with a negative id
   const m = /^(dated:-?|promise:)(\d+)$/.exec(key);
   if (m?.[1] === "dated:-") return { source: "dated", id: -Number(m[2]) };
   return m ? { source: m[1]!.slice(0, -1) as ItemSource, id: Number(m[2]) } : null;

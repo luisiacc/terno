@@ -123,7 +123,7 @@ export const waitingLine = (name: string, when: string): string => t("whatMatter
 export function readerLine(item: ReaderItem, now = Date.now()): string {
   if (item.source === "dated") {
     const words = item.open ? datedLine({ ...item.row, mailDay: mailDay(item.row) }, item.missed, now) : datedText(item.row);
-    // plan 248: what the user's words brought says why it's there
+    // plan 249: what the user's words brought says why it's there
     return item.row.wanted ? `${words} · ${t("whatMatters.words.because")}` : words;
   }
   const words = followupLine(item.row, now, { short: true });

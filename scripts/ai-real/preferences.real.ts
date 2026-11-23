@@ -9,7 +9,7 @@ import { HELDOUT } from "./corpus/preferences/heldout";
 import { PROFILES, type Expect, type Mail, type Profile } from "./corpus/preferences/profiles";
 
 /**
- * Plan 248's eval, end to end on real models (the Codex review's revision 11): each profile's raw words are compiled
+ * Plan 249's eval, end to end on real models (the Codex review's revision 11): each profile's raw words are compiled
  * (`compilePreferences`) and checked as Save does; then each of its mails goes the way the app takes it: v16's items (given:
  * the words never change v16) are judged by the matcher for the semantic hide and first rules; mail a show rule admits by
  * its sender or cues gets the second reader, and its answer the app's own checks; what the feed would show is scored
@@ -88,7 +88,7 @@ function score(mail: Mail, decisions: { hide: boolean; first: boolean }[], wante
   return { mail: mail.id, expect: mail.expect, got, ok, note: mail.note, ...(admitted ? { detail: "admitted" } : {}) };
 }
 
-describe.runIf(process.env.TERNO_AI_WORDS === "1")(`plan 248: What matters in the user's words, end to end (${MODEL})`, () => {
+describe.runIf(process.env.TERNO_AI_WORDS === "1")(`plan 249: What matters in the user's words, end to end (${MODEL})`, () => {
   it("compiles each profile's words and scores what the feed would show", { timeout: 1_800_000 }, async () => {
     const report: string[] = [];
     const totals = { mails: 0, ok: 0, forbidden: 0, missed: 0, lost: 0, firstMissed: 0, firstExtra: 0, overreach: 0, notesMissed: 0 };

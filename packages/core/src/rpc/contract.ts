@@ -69,12 +69,12 @@ import {
 } from "../types";
 
 const id = z.number().int().positive();
-/** plan 248: a dated item's id, or (negative) one the user's words brought */
+/** plan 249: a dated item's id, or (negative) one the user's words brought */
 const datedId = z.number().int().refine((n) => n !== 0);
 /** plan 210: a history line's key (`HistoryKey`) */
 const historyKey = z.object({ at: z.number().int().nonnegative(), src: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3), z.literal(4)]), id });
 /** plan 210 (iteration 2): a What matters row's id ("dated:42", "promise:7", "waiting:12", "reminder:12") */
-// plan 248: an item the user's words brought is a dated row with a negative id
+// plan 249: an item the user's words brought is a dated row with a negative id
 const feedRowId = z.string().regex(/^(?:dated:-?|promise:|waiting:|reminder:)\d{1,15}$/);
 /** plan 210 (iteration 4): a hand-off saved with its forward's draft (`parseHandoff` reads it back the same way) */
 const handoff = z.object({ items: z.array(z.object({ source: z.enum(["dated", "promise"]), id, revision: z.number().int().min(0), named: z.boolean().optional(), answered: z.boolean().optional(), row: z.number().int().min(0).max(HANDOFF_ITEMS_MAX - 1).optional() }).strict()).min(1).max(HANDOFF_ITEMS_MAX) }).strict();
@@ -98,7 +98,7 @@ const assetRequest = z.object({ accountId: id, assetId: z.string().uuid() }).str
 const draftAddress = z.object({ name: z.string().max(300), email: z.string().max(320), auto: z.literal(true).optional() });
 
 /** Plan 185: a kept file an agent may read (its place checked), by the asset the sidecar reads it with. */
-/** Plan 248: what the windows show of the words (Settings' row, the gear): the record, the draft, the background work. */
+/** Plan 249: what the windows show of the words (Settings' row, the gear): the record, the draft, the background work. */
 export interface WhatMattersWordsState {
   preferences: WhatMattersPreferences;
   draft: { text: string | null; seq: number } | null;
@@ -1335,7 +1335,7 @@ export const contract = {
   "dated.status": m<{ blockedBy: { kind: AiErrorKind; message: string; i18n?: I18nRef; limit?: "daily" | "monthly" } | null }>()(empty),
   /** the 14-day check: how many, and what it would cost; then the yes */
   /**
-   * Plan 248: What matters in the user's words. Renderer only, never MCP (the words can hold names and addresses). `save`
+   * Plan 249: What matters in the user's words. Renderer only, never MCP (the words can hold names and addresses). `save`
    * compiles them with the user's provider and saves against `revision` (another window's save since: `stale`); empty
    * words are a Clear. `clear` needs no AI; its Undo puts the words and their rules back.
    */
@@ -1682,7 +1682,7 @@ export interface Events {
   learningChanged: Record<string, never>;
   /** plan 204: the dated reader stopped, or it's going again */
   datedStatus: { blockedBy: { kind: AiErrorKind; message: string; i18n?: I18nRef; limit?: "daily" | "monthly" } | null };
-  /** plan 248: What matters in the user's words: the record, the draft and the background work's status */
+  /** plan 249: What matters in the user's words: the record, the draft and the background work's status */
   whatMattersWords: WhatMattersWordsState;
   /** plan 144: a prepared reply as it comes, only to the windows reading that conversation; never MCP */
   aiReply: AiReplyEvent;

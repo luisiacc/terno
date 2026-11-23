@@ -1,7 +1,7 @@
 import type { DatedKind, DatedRow, PreferenceVerdict, PreferencesDraft, WhatMattersPreferences } from "@terno/core";
 
 /**
- * Plan 248: What matters, in the user's own words, as both stores keep it.
+ * Plan 249: What matters, in the user's own words, as both stores keep it.
  *
  * - The record (`whatMatters:preferences`, the small values): the words, their compiled rules and notes, a revision. Written
  *   only through `preferences.save`, one transaction that checks the revision (the Codex review's revision 3). The draft is

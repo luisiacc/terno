@@ -551,7 +551,7 @@ export interface MailStore {
   followups: import("./followups").FollowupStore;
   /** Plan 204: dated items from mail the user got. */
   dated: import("./dated").DatedStore;
-  /** Plan 248: What matters in the user's words: the record, verdicts, wanted items and their marks. */
+  /** Plan 249: What matters in the user's words: the record, verdicts, wanted items and their marks. */
   whatMatters: import("./what-matters").WhatMattersStore;
   replies: import("./replies").ReplyStore;
   today: import("./today").TodayStore;

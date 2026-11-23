@@ -9,7 +9,7 @@ const ok = (r: Partial<PreferenceRule> & Pick<PreferenceRule, "effect">): Prefer
   return out;
 };
 
-describe("checkPreferences (plan 248 §2)", () => {
+describe("checkPreferences (plan 249 §2)", () => {
   const text = "Never show package deliveries unless I have to sign. Hide everything from @promo.shopmart.com. Show sales at REI.";
   it("keeps what holds against the words: their own words, a written domain, known kinds; numbers and keys them", () => {
     const { rules, notes } = checkPreferences(
@@ -75,7 +75,7 @@ describe("the empty box", () => {
   });
 });
 
-describe("matching (plan 248 §4)", () => {
+describe("matching (plan 249 §4)", () => {
   it("senders by address or domain and its subdomains, never a lookalike", () => {
     expect(senderSelector("Orders+eu@Shop.test")).toBe("orders@shop.test");
     expect(senderSelector("@shop.test")).toBe("@shop.test");
@@ -112,7 +112,7 @@ describe("matching (plan 248 §4)", () => {
   });
 });
 
-describe("show admission (plan 248 §5)", () => {
+describe("show admission (plan 249 §5)", () => {
   const rei = ok({ effect: "show", about: "a sale at REI", cues: ["REI", "field trip"] });
   const domain = ok({ effect: "show", senders: ["@school.test"] });
   it("a cue as whole words in the sender's name, subject or text; a sender by its selector", () => {
@@ -125,7 +125,7 @@ describe("show admission (plan 248 §5)", () => {
   });
 });
 
-describe("names and stems (plan 248, the eval's first run)", () => {
+describe("names and stems (plan 249, the eval's first run)", () => {
   it("a name matches the sender's name as whole words, its domain or local part, or its first distinctive word as a domain label", async () => {
     const { nameMatches } = await import("./preferences");
     expect(nameMatches("LinkedIn", { senderKey: "messages-noreply@linkedin.com" })).toBe(true);
@@ -149,7 +149,7 @@ describe("names and stems (plan 248, the eval's first run)", () => {
   });
 });
 
-describe("only (plan 248, the eval's second run)", () => {
+describe("only (plan 249, the eval's second run)", () => {
   it("keeps a row one of the only rules applies to, hides the rest; a semantic one is judged by what the row is", () => {
     const bills = ok({ effect: "only", kinds: ["pay"] });
     const dana = ok({ effect: "only", senders: ["dana@kestrel.test"] });

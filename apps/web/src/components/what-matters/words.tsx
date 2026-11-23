@@ -43,7 +43,7 @@ function NoteLine({ note }: { note: PreferenceNote }) {
 }
 
 /**
- * Plan 248 §6: the look back, asked for only when the user opens it (counting reads the last 14 days' mail locally). One
+ * Plan 249 §6: the look back, asked for only when the user opens it (counting reads the last 14 days' mail locally). One
  * status line holds the focus's place as it moves on (the Fable review): the count, the yes, then what's queued.
  */
 function LookBack() {
@@ -101,7 +101,7 @@ function LookBack() {
 }
 
 /**
- * Plan 248: "In your words", where What matters' settings are. The box is the user's words, kept as typed (the draft) and
+ * Plan 249: "In your words", where What matters' settings are. The box is the user's words, kept as typed (the draft) and
  * applied only on Save (one request to their provider, which compiles them into rules); Clear needs nothing and has Undo.
  * Under it, what Terno understood (a line per rule, what each show looks for), what it couldn't do, and the work on its
  * way. An empty box changes nothing in What matters.

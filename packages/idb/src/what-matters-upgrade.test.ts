@@ -5,7 +5,7 @@ import { databaseName, IDB_VERSION, LOGICAL_SCHEMA } from "./schema";
 import { IdbMailStore } from "./store";
 import { legacyBodyUpgrade, physicalImage } from "./test/legacy-stores";
 
-/** Plan 248: version 40 adds `preference_verdicts`, `wanted_items` and `wanted_marks`. A version-39 mailbox opens with them empty, the rest kept. */
+/** Plan 249: version 40 adds `preference_verdicts`, `wanted_items` and `wanted_marks`. A version-39 mailbox opens with them empty, the rest kept. */
 
 const platform = { uuid: () => crypto.randomUUID(), yield: async () => {} };
 const request = <T,>(r: IDBRequest<T>) => new Promise<T>((resolve, reject) => { r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });

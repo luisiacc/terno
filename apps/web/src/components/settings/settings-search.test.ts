@@ -156,7 +156,7 @@ describe("the entries a search runs on", async () => {
     const withAi = { ...ctx, settings: { ...settings, ai: { provider: "anthropic", model: "claude-sonnet-5-5", local: false, hasKey: true, keyConfirmed: true, keys: { anthropic: { hasKey: true, keyHint: null } }, profiles: {}, fromEnv: false } } as typeof settings };
     const entries = findEntries(withAi, accounts, []);
     const mine = entries.filter((e) => e.data.tab === "whatMatters").map((e) => e.data.id);
-    expect(mine).toEqual(["whatMatters.show", "whatMatters.firstScreen", "whatMatters.finished", "whatMatters.dated", "whatMatters.shown", "whatMatters.muted", "whatMatters.digest", "whatMatters.digestExcluded", "whatMatters.notify", "whatMatters.time", "whatMatters.accounts"]);
+    expect(mine).toEqual(["whatMatters.show", "whatMatters.firstScreen", "whatMatters.finished", "whatMatters.dated", "whatMatters.words", "whatMatters.shown", "whatMatters.muted", "whatMatters.digest", "whatMatters.digestExcluded", "whatMatters.notify", "whatMatters.time", "whatMatters.accounts"]);
     // nothing of it is left in General or AI
     expect(entries.filter((e) => /^(general|ai)\.(today|firstScreen|keepInboxCount|digest|dated)/.test(e.data.id))).toEqual([]);
     expect(findSettings(entries, "digest")[0]?.entry.data.id).toBe("whatMatters.digest");

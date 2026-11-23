@@ -5,7 +5,7 @@ import { registerUndo, snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 
 /**
- * Plan 248: What matters in the user's words, as the windows see them. The backend keeps the words, their rules and the
+ * Plan 249: What matters in the user's words, as the windows see them. The backend keeps the words, their rules and the
  * draft (`whatMatters.words*`) and says when any changed (`whatMattersWords`); read only while a view of them is open.
  * Nothing here is stored or sent anywhere else.
  */

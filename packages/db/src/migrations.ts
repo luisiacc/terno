@@ -1692,11 +1692,11 @@ CREATE TABLE shown_senders (
   created_at INTEGER NOT NULL
 ) WITHOUT ROWID;
 ` },
-  // plan 248: What matters in the user's words: which semantic rules apply to a row (`preference_verdicts`, keyed by the row
+  // plan 249: What matters in the user's words: which semantic rules apply to a row (`preference_verdicts`, keyed by the row
   // and its revision), what a show rule brought (`wanted_items`, apart from `dated_items`, which the dated reader reads as
   // evidence: the Codex review's revision 1) and the messages admitted for the second reader (`wanted_marks`). New tables:
   // shape only
-  { version: 77, name: "What matters: in your words (plan 248)", sql: `
+  { version: 77, name: "What matters: in your words (plan 249)", sql: `
 CREATE TABLE preference_verdicts (
   target TEXT PRIMARY KEY,
   basis TEXT NOT NULL,

@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { StructuredTask } from "./ladder";
 
 /**
- * Plan 248: What matters, in the user's own words. Three frozen, versioned tasks around the dated reading (prompt v16), which
+ * Plan 249: What matters, in the user's own words. Three frozen, versioned tasks around the dated reading (prompt v16), which
  * never sees any of this:
  *
  * - `compilePreferences`: the box's words, once, on Save, into rules a classifier can apply and a local filter can use
@@ -13,11 +13,11 @@ import type { StructuredTask } from "./ladder";
  * - `readWanted`: what a show rule asked for in one admitted message, as v16-shaped items, under the same material rule.
  */
 
-/** 1: plan 248 */
+/** 1: plan 249 */
 export const PREFERENCES_COMPILER_VERSION = 1;
-/** 1: plan 248 */
+/** 1: plan 249 */
 export const PREFERENCES_MATCH_VERSION = 1;
-/** 1: plan 248 */
+/** 1: plan 249 */
 export const WANTED_PROMPT_VERSION = 1;
 
 export const PREFERENCES_MAX_TOKENS = 4000;

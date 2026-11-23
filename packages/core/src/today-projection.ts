@@ -34,12 +34,12 @@ export interface ProjectionFacts {
   live: (threadId: number) => boolean;
   /** the reader's zone: a promise's stated time in another is said in brackets */
   zone: string;
-  /** plan 248: the user's words (absent: none, the empty box, and nothing here runs) */
+  /** plan 249: the user's words (absent: none, the empty box, and nothing here runs) */
   visibility?: RowVisibility;
 }
 
 /**
- * Plan 248 (the Codex review's revision 4): what the user's words say of a row, applied after the facts are resolved (links,
+ * Plan 249 (the Codex review's revision 4): what the user's words say of a row, applied after the facts are resolved (links,
  * answered requests, a reply's promises): a hidden item's conversation still counts as represented, so it never comes back
  * as a waiting row; a first row sorts first within its own section.
  */
@@ -84,7 +84,7 @@ export interface ProjectedRow {
   bucket?: string;
   /** plan 210 (iteration 3, revision 10): a dated item's own message and its sender's `addressKey`, whom the row names */
   source?: { messageId: number; senderKey: string };
-  /** plan 248: the user's words put it first within its section */
+  /** plan 249: the user's words put it first within its section */
   first?: boolean;
 }
 
@@ -411,7 +411,7 @@ export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFact
     if (!plan && at.group !== "comingUp") represented.add(lead.row.threadId);
     // (every member's conversation: a merged row stands for each of them, Codex code review 2, #6)
     if (!plan) for (const e of item.entries) anywhere.add(e.row.threadId);
-    // plan 248: hidden by the user's words, after its conversation is counted as represented (no waiting row says it instead)
+    // plan 249: hidden by the user's words, after its conversation is counted as represented (no waiting row says it instead)
     const seen = f.visibility?.item(item);
     if (seen?.hide) continue;
     const early = lead.source === "dated" && at.group === "today" && shownEarly(lead.row, today);
@@ -454,7 +454,7 @@ export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFact
   // placed, Coming up's too (the reader's request put off with it), says it already
   for (const w of f.waiting) {
     if (w.removed || represented.has(w.id)) continue;
-    // plan 248: the user's words
+    // plan 249: the user's words
     const seen = f.visibility?.waiting(w);
     if (seen?.hide) continue;
     const deferred = w.deferredUntil != null && w.deferredUntil > f.now;
@@ -486,7 +486,7 @@ export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFact
   return { rows: ordered(rows), counts };
 }
 
-/** Plan 248: the rows the user's words put first, then the rest, each in the order it had. */
+/** Plan 249: the rows the user's words put first, then the rest, each in the order it had. */
 function firstUp<T extends { first?: boolean }>(list: T[]): T[] {
   if (!list.some((r) => r.first)) return list;
   return list.filter((r) => r.first).concat(list.filter((r) => !r.first));
@@ -535,7 +535,7 @@ function ordered(rows: readonly Placed[]): ProjectedRow[] {
   const dated = todays.filter((r) => r.part === "waiting" && !r.broken && r.why.item?.early).sort(soonest);
   const undated = todays.filter((r) => r.part === "waiting" && !r.broken && !r.why.item?.early).sort((a, b) => b.came - a.came);
   const byItsDay = (list: Placed[]) => sortInDay(list, (r) => r.why, (r) => r.day!);
-  // plan 248: what the user's words put first leads its own section (Today's own, its waiting part, a day), each keeping its order
+  // plan 249: what the user's words put first leads its own section (Today's own, its waiting part, a day), each keeping its order
   if (rows.some((r) => r.first)) {
     const today = firstUp(sortToday(own, (r) => r.why, (r) => r.broken === "today")).concat(firstUp(broken.concat(dated, undated)));
     const perDay = (list: Placed[]) => {

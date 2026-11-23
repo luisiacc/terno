@@ -1,5 +1,5 @@
 /**
- * Plan 248 through the real backend (RPC, settings, limiter, SQLite), with a scripted model and clock: the user's words
+ * Plan 249 through the real backend (RPC, settings, limiter, SQLite), with a scripted model and clock: the user's words
  * around the dated reader. Its first test is the owner's bar: an empty box (never saved, or cleared) and words that reach
  * nothing leave every request of the dated reader byte for byte what it was.
  */
@@ -117,7 +117,7 @@ async function setup() {
 /** A dated reading as sent: its system words, its prompt and its schema's name, nothing else. */
 const sent = (r: CompletionRequest) => ({ system: promptText(r.system), prompt: promptText(r.messages[0]!.content), schema: r.schema?.name, maxTokens: r.maxTokens, effort: r.effort });
 
-describe("the empty box (plan 248 §9: the owner's bar)", () => {
+describe("the empty box (plan 249 §9: the owner's bar)", () => {
   /** the same mail through a fresh backend, the words as `prepare` leaves them; what the dated reader sent */
   async function readings(prepare: (t: Awaited<ReturnType<typeof setup>>) => Promise<void>) {
     const t = await setup();
@@ -172,7 +172,7 @@ describe("the empty box (plan 248 §9: the owner's bar)", () => {
   });
 });
 
-describe("hide and first (plan 248 §4)", () => {
+describe("hide and first (plan 249 §4)", () => {
   it("an exact hide takes a kind out of the list and the count at once, with no request; Clear brings it back and its Undo hides it again", async () => {
     const t = await setup();
     t.model.dated = (r) => (promptText(r.messages[0]!.content).includes("parcel") ? dated([deliveryItem]) : dated([billItem]));
@@ -276,7 +276,7 @@ describe("hide and first (plan 248 §4)", () => {
   });
 });
 
-describe("show: the second reader (plan 248 §5)", () => {
+describe("show: the second reader (plan 249 §5)", () => {
   it("brings in a Promotions sale the user asked for, which the dated reader never reads, as an item of its own with Done and Undo", async () => {
     const t = await setup();
     t.model.compile = () => compiled([{ said: "Tell me about sales at REI", effect: "show", about: "a sale or offer from REI, with when it ends", cues: ["REI"] }]);
@@ -364,7 +364,7 @@ describe("the second reader's local checks", () => {
   });
 });
 
-describe("the Codex code review of plan 248", () => {
+describe("the Codex code review of plan 249", () => {
   it("the second reader comes back by itself once v16 has read the same message (never only on an outside wake)", async () => {
     const t = await setup();
     t.model.compile = () => compiled([{ said: "Show sales at REI", effect: "show", about: "a sale from REI", cues: ["REI"] }]);
@@ -474,7 +474,7 @@ describe("the second question (the held-out eval)", () => {
   });
 });
 
-describe("the Codex re-review of plan 248", () => {
+describe("the Codex re-review of plan 249", () => {
   const sale = (rules: string[]) => json({ items: [{ rules, kind: "expire", text: "REI sale ends", quote: "Our members sale ends November 15.", due: "2026-11-15", time: null }] });
 
   it("a security footer elsewhere in the mail doesn't keep an offer out", () => {

@@ -2151,7 +2151,7 @@ export class IdbMailStore implements MailStore {
     clearGeneration: () => this.datedClears,
   };
 
-  // plan 248: the record, the verdicts and the items are early tables; what reads or writes a mark waits for the messages
+  // plan 249: the record, the verdicts and the items are early tables; what reads or writes a mark waits for the messages
   readonly whatMatters: MailStore["whatMatters"] = {
     preferences: {
       get: () => this.early(() => getPreferences(this.c)),

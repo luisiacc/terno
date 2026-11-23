@@ -861,7 +861,7 @@ describe("migration v75: Remove on a conversation waiting on you (plan 216)", ()
   });
 });
 
-describe("migration v77: What matters in your words (plan 248)", () => {
+describe("migration v77: What matters in your words (plan 249)", () => {
   it("adds three empty tables with their indexes, every thread, message, dated item and setting kept as it was; a mark goes with its message and an item with its thread", () => {
     const { db } = legacyMail(76, { threads: 3, seed: 19 });
     const [first, second] = db.all<{ id: number; thread_id: number; date: number }>("SELECT id, thread_id, date FROM messages ORDER BY id LIMIT 2");

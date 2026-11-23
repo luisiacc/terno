@@ -1,7 +1,7 @@
 import type { Profile } from "./profiles";
 
 /**
- * Plan 248's held-out profiles: written without reading the compiler's, the matcher's or the second reader's prompts, or
+ * Plan 249's held-out profiles: written without reading the compiler's, the matcher's or the second reader's prompts, or
  * the profiles they were tuned on, so a score here says how the words generalize: to rambling, lists, typos, fragments,
  * a long paragraph, conditions, a person named by relationship, mixed languages and Spanish. Run with
  * TERNO_AI_WORDS_SET=heldout. Never tune a prompt against these: a case that fails is reported, and a new one is written.

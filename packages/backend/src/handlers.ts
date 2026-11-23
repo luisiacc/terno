@@ -1493,7 +1493,7 @@ export function createHandlers(b: Backend): Handlers {
           if (patch.ai || patch.followups) b.followups.settingsChanged(next);
           if (patch.ai || patch.dated) {
             b.dated.settingsChanged(next);
-            // plan 248: the words' worker resumes or stops with the reader and AI
+            // plan 249: the words' worker resumes or stops with the reader and AI
             void b.words.settingsChanged(next);
           }
           if (next.localMode !== was.localMode || next.errorReports !== was.errorReports || next.language !== was.language) await b.publishPolicy();
@@ -1564,7 +1564,7 @@ export function createHandlers(b: Backend): Handlers {
       b.actions.invalidate(null);
       await b.followups.clear();
       await b.dated.clear();
-      // plan 248: what AI made of the words (verdicts, wanted items); the words themselves stay
+      // plan 249: what AI made of the words (verdicts, wanted items); the words themselves stay
       await b.words.clearAiData();
       await b.replies.clear();
       await b.today.clear();
@@ -1599,7 +1599,7 @@ export function createHandlers(b: Backend): Handlers {
     // plan 210 (iteration 2): an item is acted on with every item it's the same thing as, all or none (What matters' one act)
     "dated.act": async ({ id, revision, action, until }) => {
       const { undoId } = await b.today.act([{ source: "dated", id, revision }], action, until);
-      // plan 248: an item the user's words brought, by its negative id
+      // plan 249: an item the user's words brought, by its negative id
       if (id < 0) {
         const wanted = await b.store.whatMatters.wanted.get(-id);
         return { undoId, row: wanted ? wantedAsDated(wanted) : null };
@@ -1625,7 +1625,7 @@ export function createHandlers(b: Backend): Handlers {
     "dated.ofThread": async ({ threadId, include }) => ({ rows: await b.today.conversationItems(threadId, include) }),
     "dated.status": () => b.dated.status(),
     // plan 210 (iteration 4): renderer only, as the rest of What matters
-    // plan 248: What matters in the user's words (renderer only)
+    // plan 249: What matters in the user's words (renderer only)
     "whatMatters.words": () => b.words.state(),
     "whatMatters.words.draft": async ({ text, seq }) => ({ kept: await b.words.saveDraft(text, seq) }),
     "whatMatters.words.save": ({ text, revision }) => b.words.save(text, revision),

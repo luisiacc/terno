@@ -32,7 +32,7 @@ type Gate = { listMs: number; addedMs: number; needsMs: number; countMs: number;
 const p95 = (times: number[]) => [...times].sort((a, b) => a - b)[Math.floor(times.length * 0.95) - 1]!;
 
 /**
- * Plan 248: 20 rules, none hiding anything here (senders nobody is, kinds with nobody's names), half judged; a verdict for each
+ * Plan 249: 20 rules, none hiding anything here (senders nobody is, kinds with nobody's names), half judged; a verdict for each
  * open item those reach, against the rules' basis, so a projection has everything it needs.
  */
 async function words(store: MailStore, now: number) {
@@ -329,7 +329,7 @@ async function run(kind: "SQLite" | "IndexedDB", budget: { spread: Gate; bound: 
     // them about an older message: the count reads them without walking the page's every conversation
     await removedAtBound(backend.store, accountId, NOW + 2 * DAY);
     await measure("Linked requests at the combined bounds, 4,000 Removes (3,000 stale)", NOW + 2 * DAY, budget.linked);
-    // plan 248: the user's words at their bound (20 rules, every effect, exact and judged) on the combined bounds, a verdict
+    // plan 249: the user's words at their bound (20 rules, every effect, exact and judged) on the combined bounds, a verdict
     // for every row the judged ones reach, so the projection reads them in one batch and asks the worker nothing. Last:
     // the verdicts it writes would weigh on the scenarios above (their history is without them)
     await words(backend.store, NOW + 2 * DAY);

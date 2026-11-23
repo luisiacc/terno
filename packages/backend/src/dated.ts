@@ -57,7 +57,7 @@ export interface DatedHost {
   runBudgeted<T>(items: readonly T[], work: (chunk: T[]) => void | Promise<void>): Promise<void>;
   log(level: "info" | "warn" | "error", message: string, extra?: unknown): void;
   /**
-   * Plan 248: live mail past the hard gates, offered to the user's words (their second reader marks it when a show rule may
+   * Plan 249: live mail past the hard gates, offered to the user's words (their second reader marks it when a show rule may
    * want it). Changes nothing of this reading; absent or with no show rule, nothing happens.
    */
   wantedMark?(m: { messageId: number; threadId: number; arrivedAt: number }): Promise<void>;
@@ -1398,7 +1398,7 @@ export class DatedWorker {
     if (heldSenders.has(src.senderKey)) return { hold: src.senderKey };
     // what came before it went on is read only with the check's yes
     if (mark.source === "live" && settings.dated.enabledAt !== null && src.date < settings.dated.enabledAt) return drop();
-    // plan 248: the words' second reader gets its own mark, whatever this reading then does (it waits for this one)
+    // plan 249: the words' second reader gets its own mark, whatever this reading then does (it waits for this one)
     // (its failure is the words' own: this reading goes on whatever it does, the Codex code review)
     if (mark.source === "live" && this.host.wantedMark) await this.host.wantedMark({ messageId: src.id, threadId: src.threadId, arrivedAt: src.date }).catch((error: unknown) => captureError(error instanceof Error ? error : new Error(String(error)), { code: "ai.failed" }));
     // revision 5: what could settle an open item is read before any cost filter

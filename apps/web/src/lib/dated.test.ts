@@ -213,7 +213,7 @@ describe("the conversation's line keeps the whole wording (plan 204, after the s
     expect(datedLine({ ...alert, dated: true }, false, now)).toBe("Due Monday\u00a0·\u00a0Debit card frozen after a $412.18 charge, the email says");
     // only an alert's
     expect(datedText({ kind: "pay", text: "Pay $187.42 for the utility bill" })).toBe("Pay $187.42 for the utility bill");
-    // plan 248: news the user's words asked for isn't an alert the mail raised
+    // plan 249: news the user's words asked for isn't an alert the mail raised
     expect(datedText({ kind: "alert", text: "Stairwell painting next week", wanted: true })).toBe("Stairwell painting next week");
     setLocale("es", es);
     try {

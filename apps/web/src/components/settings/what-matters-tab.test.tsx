@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { NO_PREFERENCES } from "@terno/core";
 import type { AppSettings } from "@terno/core/rpc";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -37,12 +38,14 @@ const settings = (today: Partial<NonNullable<AppSettings["today"]>> = {}) =>
   }) as unknown as AppSettings;
 
 const account = (id: number, displayName: string, email: string) => ({ id, displayName, email, feed: true, ai: true, kind: "gmail" });
+// plan 249: the user's words, empty
+const words = { preferences: NO_PREFERENCES, draft: null, status: { applying: null, looking: null, blockedBy: null } };
 const byId = (host: HTMLElement, id: string) => host.querySelector<HTMLElement>(`[data-testid="${id}"]`);
 const describedBy = (host: HTMLElement, el: Element) => (el.getAttribute("aria-describedby") ?? "").split(" ").map((id) => host.querySelector(`[id="${id}"]`)?.textContent ?? "").join(" ");
 
 describe("plan 247: Settings → What matters", () => {
   beforeEach(() => {
-    vi.mocked(client.call).mockImplementation((async (method: string) => (method === "today.notNewsletters" || method === "today.shownSenders" ? { senders: [] } : method === "dated.mutes" ? { mutes: [] } : method === "dated.status" ? { blockedBy: null } : {})) as never);
+    vi.mocked(client.call).mockImplementation((async (method: string) => (method === "today.notNewsletters" || method === "today.shownSenders" ? { senders: [] } : method === "dated.mutes" ? { mutes: [] } : method === "dated.status" ? { blockedBy: null } : method === "whatMatters.words" ? words : {})) as never);
     useApp.setState({ devAi: null, settings: settings(), accounts: [account(1, "Work", "me@work.test")] } as never);
   });
 
@@ -58,6 +61,8 @@ describe("plan 247: Settings → What matters", () => {
     // the reader says who reads its mail beside its switch, and in full under its group
     const finds = byId(host, "ai-dated")!;
     expect(finds.textContent).toContain("Read by Claude (Anthropic).");
+    // plan 249: the user's words are part of what it looks for
+    expect(finds.querySelector("[data-testid=today-words] [data-testid=wm-words-field]")).not.toBeNull();
     expect(byId(host, "today-privacy")!.textContent).toMatch(/^Privacy\. To find bills, trips and requests, Terno sends each new message/);
     // the digest names where its mail goes
     expect(byId(host, "ai-digest")!.textContent).toContain("to Claude (Anthropic)");
@@ -115,6 +120,7 @@ describe("plan 247, iteration 2: the senders left out, folded past four", () => 
       if (method === "today.newsletterAgain") return (senders = senders.filter((s) => s.id !== p.id)), { removed: null };
       if (method === "today.shownSenders") return { senders: [] };
       if (method === "dated.mutes") return { mutes: [] };
+      if (method === "whatMatters.words") return words;
       return {};
     }) as never);
     useApp.setState({ devAi: null, settings: settings({ digest: true }), accounts: [account(1, "Work", "me@work.test")] } as never);

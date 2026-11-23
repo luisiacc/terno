@@ -19,7 +19,7 @@ import { received, receivedOwn } from "./ai-summaries";
 import { getSetting, setSetting, T, type Ctx, type R } from "./mail";
 
 /**
- * Plan 248 on IndexedDB (version 40), like SQL's (packages/db/src/what-matters.ts). The record, the verdicts and the wanted
+ * Plan 249 on IndexedDB (version 40), like SQL's (packages/db/src/what-matters.ts). The record, the verdicts and the wanted
  * items are early (the first screen places by them); the marks hang off messages, so what reads or writes them waits for
  * those. A command is one unit, as a SQLite transaction: a refusal writes nothing.
  */

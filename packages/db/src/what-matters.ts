@@ -20,7 +20,7 @@ import { RECEIVED_SQL } from "./ai-summaries";
 import { getSetting, setSetting } from "./repos";
 import type { Db } from "./sqlite";
 
-/** Plan 248 on SQLite (v77): the words' record, verdicts, wanted items and their marks. See packages/store/src/what-matters.ts. */
+/** Plan 249 on SQLite (v77): the words' record, verdicts, wanted items and their marks. See packages/store/src/what-matters.ts. */
 
 const revisionOf = (db: Db): number => getSetting<WhatMattersPreferences>(db, PREFERENCES_KEY, NO_PREFERENCES).revision;
 

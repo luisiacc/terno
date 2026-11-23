@@ -1,7 +1,7 @@
 import type { DatedKind } from "@terno/core";
 
 /**
- * Plan 248's eval corpus: fictional people's words for What matters and fictional mail they get. Each mail carries what
+ * Plan 249's eval corpus: fictional people's words for What matters and fictional mail they get. Each mail carries what
  * the dated reader (v16, untouched by the words) would have noted, so what's measured is the words' own work: the compile,
  * the show's admission, the matcher and the second reader, and what the feed then shows.
  *

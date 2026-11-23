@@ -1,5 +1,5 @@
 /**
- * Plan 248: What matters in the user's words. Settings' box, typed and saved (the fake provider compiles each sentence into a
+ * Plan 249: What matters in the user's words. Settings' box, typed and saved (the fake provider compiles each sentence into a
  * rule), says back what it understood; the feed follows at once (a kind hidden, bills first); Clear brings everything back
  * and its Undo hides it again; the gear on What matters goes straight to the box. Axe in light and dark.
  */
@@ -39,7 +39,7 @@ async function openWords(page: Page) {
   await expect(page.getByTestId("wm-words-field")).toBeFocused();
 }
 
-test("plan 248: the words saved say what they understood, the feed follows at once, Clear and its Undo, the gear's way in; axe", async ({ app: page, server }) => {
+test("plan 249: the words saved say what they understood, the feed follows at once, Clear and its Undo, the gear's way in; axe", async ({ app: page, server }) => {
   await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true } }, dev);
   await item(server, "rally", "School rally", "event", { name: "Lincoln Elementary", email: "office@lincoln.test" }, 11);
   await item(server, "box", "Parcel arrives", "delivery", { name: "Parcelo", email: "track@parcelo.test" }, 14);

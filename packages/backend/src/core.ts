@@ -321,7 +321,7 @@ export class BackendCore {
   readonly mutes: DatedMutes;
   /** plan 240: the senders always shown in What matters */
   readonly shown: ShownSenders;
-  /** plan 248: What matters in the user's words, and its background worker (idle with no rules) */
+  /** plan 249: What matters in the user's words, and its background worker (idle with no rules) */
   readonly words: WhatMattersWords;
   /** plan 133: drafting: what goes into a draft, and the learner, asleep until the feature is used */
   readonly writing: WritingService;
@@ -428,7 +428,7 @@ export class BackendCore {
       changed: () => this.today.changed(),
       promisesMoved: () => void this.followups.look().catch(() => {}),
       replies: () => (this.followups.isActive ? { since: this.followups.since } : undefined),
-      // plan 248: what the words' second reader waited on (v16's reading of the same message) is done
+      // plan 249: what the words' second reader waited on (v16's reading of the same message) is done
       caughtUp: () => {
         this.followups.wake();
         this.words.worker.wake();
@@ -742,7 +742,7 @@ export class BackendCore {
     return this.server.connect(transport, ctx);
   }
 
-  /** Plan 248: live mail the dated reader passed its hard gates, marked for the words' second reader when a show rule exists. */
+  /** Plan 249: live mail the dated reader passed its hard gates, marked for the words' second reader when a show rule exists. */
   private async wantedMark(m: { messageId: number; threadId: number; arrivedAt: number }): Promise<void> {
     if (!(await this.words.rules()).some((r) => r.effect === "show")) return;
     if (await this.store.whatMatters.wanted.marks.add({ ...m, source: "live" }, this.now())) this.words.worker.wake();
@@ -1630,7 +1630,7 @@ export class BackendCore {
       if (live) this.followups.wake();
       // plan 204: what it marked, and any body it completed for what waits
       this.dated.wake();
-      // plan 248: a body the words' second reader waits on
+      // plan 249: a body the words' second reader waits on
       this.words.worker.wake();
       // plan 134: after commit, outside the slice
       this.aiAssist.wake();

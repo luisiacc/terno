@@ -101,7 +101,7 @@ export class AiService {
       store: b.store,
       now: () => b.now(),
       monthlyLimitUsd: async () => (await readSettings(b.store)).ai.monthlyLimitUsd,
-      // plan 248: the words' worker sends on the dated task too, each with its own sources (the Codex review's revision 7)
+      // plan 249: the words' worker sends on the dated task too, each with its own sources (the Codex review's revision 7)
       beforeAhead: (task) => (task === "digest" ? b.today.holdingUp() : task === "dated" ? Promise.all([b.dated.holdingUp(), b.words.worker.holdingUp()]).then(() => {}) : b.replies.holdingUp()),
     });
   }
@@ -222,7 +222,7 @@ export class AiService {
     return { provider: ai.provider, model: ai.model, baseURL: ai.baseURL ?? undefined, preset: ai.preset ?? undefined };
   }
 
-  /** Plan 248: the model a job runs on now, and whether it's local (an estimate's price; null when none is set up) */
+  /** Plan 249: the model a job runs on now, and whether it's local (an estimate's price; null when none is set up) */
   async modelFor(job: AiJob): Promise<{ model: string; local: boolean }> {
     const target = await this.targetFor(job, await readSettings(this.b.store));
     return { model: target.model, local: isLocalProvider({ id: target.provider, baseURL: target.baseURL, preset: target.preset }) };

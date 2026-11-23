@@ -4,7 +4,7 @@ import { addressKey } from "./people";
 import { normalizeText } from "./text";
 
 /**
- * Plan 248: What matters, in the user's own words. The box's text is compiled once, on Save, into rules (`compilePreferences`
+ * Plan 249: What matters, in the user's own words. The box's text is compiled once, on Save, into rules (`compilePreferences`
  * in `@terno/ai`), checked here, then applied around the reading, never inside it: a hide or a first acts on the projection,
  * a show brings in what a second reader finds. An empty box is no rules, and no rules is the code path that ran before
  * (§9): every caller returns early on `activeRules(...)` being empty.
@@ -344,7 +344,7 @@ export function cueIn(cue: string, said: string): boolean {
 }
 
 /**
- * Plan 248 §5: the show rules that may want a message (its sender by a rule's senders, or one of its cues in its subject or
+ * Plan 249 §5: the show rules that may want a message (its sender by a rule's senders, or one of its cues in its subject or
  * text). A local filter, not a judgment: the second reader decides. The hard gates (Spam, mutes, the account's switches…)
  * are the caller's, before this.
  */
@@ -378,7 +378,7 @@ const trimTo = (s: string | null | undefined, max: number): string => (s ?? "").
 const NOTE_KINDS: ReadonlySet<string> = new Set(["unsupported", "conflict", "unclear", "safety"]);
 
 /**
- * Plan 248 §2: only what holds against the user's own text is kept. A rule's words must be in the text; an address or a
+ * Plan 249 §2: only what holds against the user's own text is kept. A rule's words must be in the text; an address or a
  * domain only when the text writes it (a model can't invent one); kinds and effect from the closed sets; at least one
  * selector; cues only on a show. A rule that fails becomes an "unclear" note with its words, in `unclear`'s language.
  */

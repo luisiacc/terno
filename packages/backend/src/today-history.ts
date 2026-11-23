@@ -44,7 +44,7 @@ export interface HistoryAsk {
   changed?: { dated: readonly DatedRow[]; promises: readonly FollowupRow[] };
   /** plan 211: an account whose lines show (AI and What matters on); absent: every account's */
   shows?: (accountId: number) => boolean;
-  /** plan 248: the rows the user's words keep (hidden ones have no line), read a batch at a time; absent: every one */
+  /** plan 249: the rows the user's words keep (hidden ones have no line), read a batch at a time; absent: every one */
   keep?: <R extends DatedRow | FollowupRow>(source: "dated" | "promise", rows: R[]) => Promise<R[]>;
   /** plan 215: an account whose waiting Done lines show (What matters on, as its waiting rows); absent: every account's */
   showsWaiting?: (accountId: number) => boolean;
@@ -100,7 +100,7 @@ export async function historyPage(store: MailStore, o: HistoryAsk): Promise<Toda
   const trusted = (rows: DatedRow[]) => withoutUntrusted(rows, (keys) => store.dated.trusted(keys));
   // each table strictly after the key, translated: at the key's moment a dated item comes before a promise
   const start = (src: HistorySource): ClosedAt | null => (o.after ? historyAfter(o.after, src) : null);
-  // plan 248: what the user's words hide has no line (the read's own key still moves past it, so pages never repeat)
+  // plan 249: what the user's words hide has no line (the read's own key still moves past it, so pages never repeat)
   const kept = async <R extends DatedRow | FollowupRow>(source: "dated" | "promise", rows: R[]): Promise<R[]> => (o.keep && rows.length ? o.keep(source, rows) : rows);
   const dated: Source<Row> = { src: 0, after: start(0), buf: [], done: !o.dated, read: async (after) => (await store.dated.closedPage({ since, after, limit: READ_BATCH })).map((r) => ({ ...r, src: 0 as const })) };
   const promises: Source<Row> = { src: 1, after: start(1), buf: [], done: !o.promises, read: async (after) => (await store.followups.closedPage({ since, after, limit: READ_BATCH })).map((r) => ({ ...r, src: 1 as const })) };

@@ -508,7 +508,7 @@ export function todayAnswer(list: TodayList, before: readonly ThreadSummary[]): 
   const prior = useToday.getState().rows;
   const keep = new Set(heldRows());
   const here = new Set(rows.map((r) => r.id));
-  // plan 248: a held row the user's words now hide lets go, but for the one open in the reader (its place is kept while read)
+  // plan 249: a held row the user's words now hide lets go, but for the one open in the reader (its place is kept while read)
   const hidden = new Set(list.hidden ?? []);
   const reading = hidden.size ? feedRow(useFeedRow.getState().opened)?.id : undefined;
   prior.forEach((was, i) => {

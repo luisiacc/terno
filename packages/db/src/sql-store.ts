@@ -1241,7 +1241,7 @@ export class SqlMailStore implements MailStore {
     clearGeneration: () => this.datedClears,
   };
 
-  // plan 248
+  // plan 249
   readonly whatMatters: MailStore["whatMatters"] = {
     preferences: {
       get: async () => getPreferences(this.db),

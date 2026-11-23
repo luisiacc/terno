@@ -1,4 +1,4 @@
-# Plan 248: What matters, in your words
+# Plan 249: What matters, in your words
 
 - **Status:** built on `t3/what-matters-preferences`. "Revisions after the Codex review" override the sections before them, and "As built" overrides both.
 - **Builds on:** plan 204 (dated items; its decision table gave "the user's own words" to plan 206, which was never written), plan 210 (the feed, mutes by sender, kind and pair, the reading prompt v16), plan 211 (per-account switches), plan 240 (Always shown), plan 239 (the reader's order), plan 247 (What matters' own Settings section, on another branch).
@@ -96,7 +96,7 @@ interface PreferenceNote { said: string; kind: "unsupported" | "conflict" | "unc
 
 ### 7. Settings and the feed
 
-- **Settings → What matters** (General's group today; plan 247 moves the group to its own section, and this row moves with it): **"In your words"**, stacked:
+- **Settings → What matters**, in "What it looks for" (plan 247's section): **"In your words"**, stacked:
   - a text area (BoardUI's textarea), placeholder: *"For example: Never show package deliveries unless they need a signature. Anything about Ava's school matters. Put bills first."*, its own count only near the 2,000 limit;
   - **Save** (⌘↩ in the field) and, with saved words, **Clear**; a draft not saved says so quietly ("Not saved"). The draft is kept as it's typed (in the record's `draft`, debounced), so closing Settings or the app loses nothing;
   - **What Terno understood:** a line per rule in the user's language with a quiet icon (shown, hidden, first), and how many rows it's hiding or bringing now; then the notes, muted; while matching, "Applying to What matters… 40 of 120"; with show rules, the look-back offer;
@@ -154,7 +154,7 @@ Codex (gpt-6.2-astra, xhigh) read the plan against the code and made twelve poin
 
 ## As built
 
-**The words.** Settings → General → What matters (plan 247 moves the group to its own section; the row moves with it), "In your words": the box (BoardUI's textarea, 2,000 characters, the count near the end), Save (⌘↩) and Clear (Undo in the snack), "Not saved" while typed words differ from the saved ones, then "What Terno understood": a line per rule in the app's language with a quiet icon (shows, hides, puts first, keeps only), what a show looks for, the notes (can't do, conflict, unclear, stays out), the work on its way ("Applying your words… 12 left", "Looking through older mail…"), a pause and why, and with a show rule, "Look in the last 14 days" (counted only when asked, then the count and the cost). The gear on What matters has "Your words…", which opens Settings at the box with its field focused. en and es; Settings' search finds it by "words, preferences, customize, personalize, prompt, rules, filter, show, hide, priority".
+**The words.** Settings → What matters → What it looks for (plan 247's section), "In your words": the box (BoardUI's textarea, 2,000 characters, the count near the end), Save (⌘↩) and Clear (Undo in the snack), "Not saved" while typed words differ from the saved ones, then "What Terno understood": a line per rule in the app's language with a quiet icon (shows, hides, puts first, keeps only), what a show looks for, the notes (can't do, conflict, unclear, stays out), the work on its way ("Applying your words… 12 left", "Looking through older mail…"), a pause and why, and with a show rule, "Look in the last 14 days" (counted only when asked, then the count and the cost). The gear on What matters has "Your words…", which opens Settings at the box with its field focused. en and es; Settings' search finds it by "words, preferences, customize, personalize, prompt, rules, filter, show, hide, priority".
 
 **The compile** (`compilePreferences`, `packages/ai/src/preferences.ts`) is the meta-prompt: one request on Save, the words only, into rules with four effects (`show`, `hide`, `first`, `only`), their selectors (`kinds`, exact `senders`, `names` as the words give them), an English criterion (`about`) and exception (`unless`) written for a classifier, a show's `cues` (short words and stems, en, es and the user's own), and the rule said back. "Matters" is a show and a first; "only X" is a keep list; "don't hide X" a show; anything vague an unclear note, never a guess; texts, schedules and timing unsupported notes; Spam and scams a safety note. `checkPreferences` (`packages/core`) keeps only what holds against the words themselves: their own words, an address or a domain the words write, names the words write, closed kinds and effects. The empty box is no rules (`activeRules`), and every new path returns on that before it reads anything else.
 
@@ -193,3 +193,6 @@ Four reviews, each read against the code, each finding fixed (with a test that f
 
 **Known limit added:** a change to one judged rule re-judges every row it reaches (verdicts are by the whole set of judged rules); at Luna's or Haiku's price that's about $0.12 for 4,000 rows.
 
+## Landing
+
+Rebased onto main on 2026-11-23. Main had taken plan 248 (any installed font) meanwhile, so this plan is now 249; the commits made before the rebase still say 248. Plan 247 had moved What matters' settings into its own section, so the row moved there, under the dated switch in "What it looks for" (`whatMatters.words` in Settings' search). The gear's "Your words…" opens that section.

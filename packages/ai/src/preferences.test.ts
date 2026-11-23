@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { compilePreferencesTask, fakeCompile, matchPreferencesTask, PREFERENCES_COMPILER_VERSION, PREFERENCES_MATCH_VERSION, readWantedTask, WANTED_PROMPT_VERSION, wantedPrompt, type WantedInput } from "./preferences";
 import { readDatesTask } from "./dated";
 
-describe("the words' tasks (plan 248)", () => {
+describe("the words' tasks (plan 249)", () => {
   it("are frozen and versioned", () => {
     expect([PREFERENCES_COMPILER_VERSION, PREFERENCES_MATCH_VERSION, WANTED_PROMPT_VERSION]).toEqual([1, 1, 1]);
     expect(compilePreferencesTask({ text: "x", language: "en" }).system).toMatchSnapshot("compile system en");

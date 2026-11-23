@@ -89,7 +89,7 @@ export interface DatedRow {
   text: string;
   /** the mail's words that say it */
   quote: string;
-  /** `addressKey` of who sent it: what can settle it, and plan 248's rules */
+  /** `addressKey` of who sent it: what can settle it, and plan 249's rules */
   senderKey: string;
   /** YYYY-MM-DD, local: the day it's due or happens */
   dueDay: string;
@@ -170,7 +170,7 @@ export interface DatedRow {
    */
   partOfDay?: PartOfDay | null;
   /**
-   * Plan 248: brought by a show rule of the user's words (`wanted_items`, its id here negative): placed like any item, acted
+   * Plan 249: brought by a show rule of the user's words (`wanted_items`, its id here negative): placed like any item, acted
    * on through the wanted store, never linked, answered or merged. Absent: one of the dated reader's.
    */
   wanted?: boolean;

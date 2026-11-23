@@ -11,13 +11,13 @@ const me = { name: "Me", email: "me0@example.com" };
 const gym = { name: "Gym", email: "hello@gym.test" };
 
 /**
- * Plan 248: What matters in the user's words. The record is written by a compare-and-swap on its revision, and every
+ * Plan 249: What matters in the user's words. The record is written by a compare-and-swap on its revision, and every
  * worker's write (a verdict, the second reader's finish) is refused in its own unit when the record has moved on; the wanted
  * items are apart from the dated ones (their own bound, their own Clear), follow their thread through a merge and go with
  * it; a mark is only ever for received mail. The same in both stores.
  */
 export function defineWhatMattersConformance(fresh: () => Promise<MailStore>, reopen: (store: MailStore) => Promise<MailStore>): void {
-  describe("What matters in your words (plan 248)", () => {
+  describe("What matters in your words (plan 249)", () => {
     const words = (text: string): Omit<WhatMattersPreferences, "revision"> => ({ text, rules: [], notes: [], compiledWith: { version: 1, provider: "p", model: "m" }, savedAt: NOW, language: "en" });
     const row = (over: Partial<WantedWrite> = {}): WantedWrite => ({ kind: "renew", text: "Renew the gym", quote: "renews on November 30", dueDay: "2026-11-30", dueAt: NOW + 7 * DAY, timed: false, dated: true, actAt: NOW + 4 * DAY, rules: ["s1"], ...over });
 

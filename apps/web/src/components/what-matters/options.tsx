@@ -59,7 +59,7 @@ export function WhatMattersOptions() {
     // once Settings is there, at the row itself
     requestAnimationFrame(() => openFound({ id: "whatMatters.finished", tab: "whatMatters", page: null, scope: null, under: null }));
   };
-  // plan 248: the user's words, where their result is seen: Settings at the box, its field focused
+  // plan 249: the user's words, where their result is seen: Settings at the box, its field focused
   const words = () => {
     setOpen(false);
     openSettings("whatMatters");
