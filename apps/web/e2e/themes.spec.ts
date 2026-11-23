@@ -58,9 +58,10 @@ test.describe("the Appearance choices", () => {
     await scenario("the vibrancy sidebar turns opaque when the OS asks for reduced transparency", async () => {
       await fresh(page);
       const cdp = await page.context().newCDPSession(page);
+      // plan 250: the sidebar sits on the shell's ground, which is what turns translucent
       const sidebarAlpha = () =>
         page.getByTestId("sidebar").evaluate((el) => {
-          const m = getComputedStyle(el).backgroundColor.match(/\/\s*([\d.]+)\)|rgba\([^)]*,\s*([\d.]+)\)/);
+          const m = getComputedStyle(el.parentElement!).backgroundColor.match(/\/\s*([\d.]+)\)|rgba\([^)]*,\s*([\d.]+)\)/);
           return m ? Number(m[1] ?? m[2]) : 1;
         });
       // what theme.js / applyAppearance set on macOS desktop

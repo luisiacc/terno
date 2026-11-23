@@ -41,6 +41,17 @@ describe("theme registry", () => {
     expect(parseColor(dark["sidebar-translucent"]).alpha).toBe(0.62);
   });
 
+  it("the shell's ground is always the sidebar's, a touch deeper in dark, never a theme's own (plan 250)", () => {
+    const light = builtinTheme("lumen-light")!.tokens;
+    const dark = builtinTheme("lumen-dark")!.tokens;
+    expect(light.shell).toBe(light.sidebar);
+    expect(parseColor(dark.shell).l).toBeCloseTo(parseColor(dark.sidebar).l - 0.02, 3);
+    expect(parseColor(dark["shell-translucent"]).alpha).toBe(0.62);
+    // a custom theme can't set it to something its sidebar ink wasn't checked on
+    const custom = resolveCustomTheme({ id: "custom-x", name: "x", extends: "lumen-dark", mode: "dark", tokens: { shell: "oklch(0.9 0 0)" } } as never);
+    expect(parseColor(custom.tokens.shell).l).toBeCloseTo(parseColor(custom.tokens.sidebar).l - 0.02, 3);
+  });
+
   it("only Terno and Apple sit on the native vibrancy; fonts belong to designs, not palettes (plan 15)", () => {
     expect(THEMES.filter((t) => t.vibrancy).map((t) => t.id)).toEqual(["terno-light", "apple-light", "terno-dark"]);
     expect(THEMES.every((t) => !("font" in t))).toBe(true);

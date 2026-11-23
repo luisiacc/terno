@@ -158,7 +158,7 @@ export function PaneHandle({ pane, column = "list" }: { pane: Pane; column?: Col
       onKeyDown={onKeyDown}
       // plan 158: drawn from the end of the page (last in Tab order, after the reader), on the panes' edges from the
       // grid's own widths
-      className={cn("group/handle no-drag absolute inset-y-0 z-20 w-2 cursor-col-resize touch-none outline-none", pane === "sidebar" ? "left-[calc(var(--pane-sidebar-eff)-4px)]" : "left-[calc(var(--pane-sidebar-eff)+var(--pane-list-eff)-4px)]")}
+      className={cn("group/handle no-drag absolute inset-y-0 z-20 w-2 cursor-col-resize touch-none outline-none", pane === "sidebar" ? "left-[calc(var(--pane-sidebar-eff)+var(--pane-gap)/2-4px)]" : "left-[calc(var(--pane-sidebar-eff)+var(--pane-list-eff)+var(--pane-gap)*1.5-4px)]")}
     >
       <span className="pointer-events-none absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 bg-ring opacity-0 transition-opacity duration-fast group-hover/handle:opacity-50 group-focus-visible/handle:opacity-100 group-data-dragging/handle:opacity-100" />
     </div>

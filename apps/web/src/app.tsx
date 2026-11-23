@@ -190,10 +190,12 @@ export function App() {
         {!covered && <button type="button" data-testid="skip-to-list" onClick={skipToList} className="absolute top-2 left-2 z-50 rounded-md bg-popover px-3 py-1.5 text-sm text-popover-foreground opacity-0 shadow-menu outline-none pointer-events-none focus-reveal:pointer-events-auto focus-reveal:opacity-100 focus-visible:ring-2 focus-visible:ring-ring">
           {t("list.skipTo")}
         </button>}
+        {/* plan 250: the strip above the cards drags the window, as the title bands do */}
+        <div aria-hidden className="shell-drag" />
         <Sidebar />
         {/* plan 188: the one polite voice for what changes where focus isn't */}
         <Announcer />
-        <section id="app-list" role={list || feedWide ? "main" : undefined} aria-label={list || feedWide ? undefined : t("list.label")} className={cn("pane-card relative min-h-0", feedWide && "col-span-2")}>
+        <section id="app-list" role={list || feedWide ? "main" : undefined} aria-label={list || feedWide ? undefined : t("list.label")} className={cn("pane-card relative min-h-0 overflow-hidden", feedWide && "col-span-2")}>
           {/* under a page the list stays laid out (scroll, measured rows, mounted rows) but isn't painted or reachable */}
           <div
             // test builds only: the perf gate's injected regression (a list remounted by every page change) must fail it
@@ -217,9 +219,12 @@ export function App() {
         {!list && !feedWide && (
           <main className="pane-card relative min-h-0" style={composeInset ? { paddingBottom: composeInset } : undefined}>
             {/* the reader pane: a bulk selection, else a new message being written, else the conversation; one that fails to render is that pane only */}
-            <PaneBoundary area="reader" resetKey={selectedId} readerThreadId={!many && !composing && !heldView ? selectedId : null}>
-              {many ? <SelectionBar /> : composing ? <NewMessage /> : heldView ? <HeldNewMessage /> : <Reader />}
-            </PaneBoundary>
+            {/* plan 250: the reader clips to the card's corners; what floats over it (a pinned Ask may reach over the list) doesn't */}
+            <div className="pane-card-clip h-full min-h-0">
+              <PaneBoundary area="reader" resetKey={selectedId} readerThreadId={!many && !composing && !heldView ? selectedId : null}>
+                {many ? <SelectionBar /> : composing ? <NewMessage /> : heldView ? <HeldNewMessage /> : <Reader />}
+              </PaneBoundary>
+            </div>
             {pinnedAsk && <PinnedAsk />}
             {pinned && <PinnedDraft key={pinned} overList={false} beside={pinnedAsk} />}
             {/* Split: over the reader's foot, never over the rows being triaged (the reader's end scrolls clear of it) */}

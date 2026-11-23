@@ -77,7 +77,7 @@ export function FirstRunPreview({ design, theme, base, mode, layout, density, pr
         className={cn("absolute top-1/2 left-1/2 overflow-hidden rounded-2xl bg-background font-sans text-foreground shadow-modal", mode === "dark" && "dark")}
         style={{ ...custom, ...fontPaint(design).style, colorScheme: mode, width: CANVAS_W, height: fit.h, transform: `translate(-50%, -50%) scale(${fit.scale})`, visibility: fit.scale ? undefined : "hidden" } as React.CSSProperties}
       >
-        <div className="grid h-full" style={{ gridTemplateColumns: split ? "var(--sidebar-w) max(var(--list-min), var(--list-max)) minmax(0, 1fr)" : "var(--sidebar-w) minmax(0, 1fr)" }}>
+        <div className="app-panes-carded grid h-full" style={{ gridTemplateColumns: split ? "var(--sidebar-w) max(var(--list-min), var(--list-max)) minmax(0, 1fr)" : "var(--sidebar-w) minmax(0, 1fr)" }}>
           <Sidebar design={design} sample={sample} />
           <List design={design} sample={sample} wide={!split} compact={density === "compact"} lines={previewLines} selected={split ? sample.open.thread.id : null} />
           {split && <Reader design={design} sample={sample} />}
@@ -99,7 +99,7 @@ function Sidebar({ design, sample }: { design: DesignDefinition; sample: SampleM
     </div>
   );
   return (
-    <aside className="flex h-full min-h-0 flex-col bg-sidebar text-sidebar-foreground">
+    <aside className="flex h-full min-h-0 flex-col text-sidebar-foreground">
       <div className="h-(--pane-bar) shrink-0" />
       {variant(design.variants.compose, {
         "list-header": null,
@@ -191,7 +191,7 @@ function List({ design, sample, wide, compact, lines, selected }: { design: Desi
   // List's full-width list keeps its chrome on one line where the design's filters are a menu (thread-list.tsx's Header)
   const oneRow = wide && quick === "menu";
   return (
-    <section className="flex h-full min-h-0 flex-col bg-pane">
+    <section className="pane-card flex h-full min-h-0 flex-col overflow-hidden bg-pane">
       <div className="shrink-0 pr-4 pb-2 pl-2">
         {oneRow ? (
           // the title, then what the row leaves empty: the controls keep the right edge
@@ -270,7 +270,7 @@ function Reader({ design, sample }: { design: DesignDefinition; sample: SampleMa
   const subject = <h2 className="type-reader-subject">{thread.subject}</h2>;
   const column = READING_COLUMN;
   return (
-    <section className="flex h-full min-h-0 flex-col bg-background">
+    <section className="pane-card flex h-full min-h-0 flex-col overflow-hidden">
       <div className={cn(column, "flex h-(--pane-bar) shrink-0 items-center gap-2 [&>:first-child]:-ml-2")}>
         <div className="flex items-center gap-0.5">
           {tool(<Archive />)}

@@ -49,7 +49,8 @@ test("a hovered sidebar row is lighter than the selected one, in light and dark"
 
       const sidebar = page.locator("#app-sidebar");
       await expect(page.getByTestId("nav-inbox")).toHaveAttribute("data-active", "true");
-      await expectSofterHover(page, sidebar, page.getByTestId("nav-starred"), page.getByTestId("nav-inbox"));
+      // plan 250: the sidebar has no fill of its own; its rows sit on the shell's ground
+      await expectSofterHover(page, sidebar.locator("xpath=.."), page.getByTestId("nav-starred"), page.getByTestId("nav-inbox"));
 
       // dragging is pointer-driven, so the drop target is hovered too: its drop fill must still win
       const starred = page.getByTestId("nav-starred");

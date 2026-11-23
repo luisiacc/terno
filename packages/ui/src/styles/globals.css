@@ -511,13 +511,13 @@
  * chosen widths back. The numbers are apps/web/src/lib/panes.ts's LIMITS.
  */
 @utility app-panes {
-  --pane-sidebar-eff: clamp(200px, min(360px, var(--pane-sidebar, min(var(--sidebar-w), 19vw))), 100vw - var(--reader-min) - 300px);
-  --pane-list-eff: clamp(300px, min(640px, var(--pane-list, max(var(--list-min), var(--list-max)))), 100vw - var(--reader-min) - var(--pane-sidebar-eff));
+  --pane-sidebar-eff: clamp(200px, min(360px, var(--pane-sidebar, min(var(--sidebar-w), 19vw))), 100vw - var(--shell-chrome) - var(--reader-min) - 300px);
+  --pane-list-eff: clamp(300px, min(640px, var(--pane-list, max(var(--list-min), var(--list-max)))), 100vw - var(--shell-chrome) - var(--reader-min) - var(--pane-sidebar-eff));
   grid-template-columns: var(--pane-sidebar-eff) var(--pane-list-eff) minmax(0, 1fr);
 }
 /* plan 24, the List layout: the same sidebar (its width, its clamp), then one pane for the list or the page over it; the list's own width is Split's */
 @utility app-panes-list {
-  --pane-sidebar-eff: clamp(200px, min(360px, var(--pane-sidebar, min(var(--sidebar-w), 19vw))), 100vw - var(--reader-min) - 300px);
+  --pane-sidebar-eff: clamp(200px, min(360px, var(--pane-sidebar, min(var(--sidebar-w), 19vw))), 100vw - var(--shell-chrome) - var(--reader-min) - 300px);
   grid-template-columns: var(--pane-sidebar-eff) minmax(0, 1fr);
 }
 /*
@@ -527,18 +527,36 @@
  */
 @utility app-panes-carded {
   --pane-gap: 2px;
+  /* what the shell keeps outside the panes, out of the reader's room: a gap after the sidebar and the list, and the right
+     inset (panes.ts SHELL_CHROME, a unit test keeps the two in step) */
+  --shell-chrome: calc(3 * var(--pane-gap));
   background-color: var(--shell);
   column-gap: var(--pane-gap);
   /* a little more room above and below than beside: the window's title band and foot */
   padding-block: calc(var(--pane-gap) + 2px);
+  /* the strip above the panes is the title bar too (shell-drag below) */
   padding-right: var(--pane-gap);
 }
-/* a card keeps the background its pane paints; its hairline is drawn inside the edge, so the gap stays the ground's */
+/* a card: the page's fill under whatever its pane paints (an empty reader, a page's foot), its hairline drawn inside the
+   edge so the gap stays the ground's. It doesn't clip: what a pane lays over its neighbour (a pinned Ask beside a pinned
+   draft) can leave it, so the pane's own content clips itself to the corners (`pane-card-clip`) */
 @utility pane-card {
   border-radius: var(--radius-sm);
-  overflow: hidden;
+  background-color: var(--background);
   outline: var(--hairline-w) solid var(--hairline);
   outline-offset: calc(-1 * var(--hairline-w));
+}
+/* that strip, over the whole width: the window's drag area, as the panes' title bands below it are */
+@utility shell-drag {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: calc(var(--pane-gap) + 2px);
+  -webkit-app-region: drag;
+}
+@utility pane-card-clip {
+  border-radius: inherit;
+  overflow: hidden;
 }
 /* a pane edge being dragged: its cursor everywhere, no text selection, and mail frames don't catch the pointer */
 :root[data-resizing],

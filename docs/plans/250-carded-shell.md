@@ -27,6 +27,19 @@ List card ends at 634, reader starts at 636 and ends at 1438; cards span 4 → 8
 
 Screenshot baselines updated (the shell's look changed everywhere); the e2e flows that measure the shell (panes, list layout, precision) run as before.
 
+## Revisions after the Codex code review
+
+1. A pinned Ask beside a pinned draft reaches left over the list: the reader's card no longer clips (`pane-card` has no `overflow`); the reader clips itself to the corners (`pane-card-clip` around the pane boundary), what floats over it doesn't. The list's card still clips (nothing leaves it).
+2. Reader states that paint nothing (the welcome screen, an empty search, the digest, a composer's reserved foot) showed the ground: `pane-card` fills with `--background`, as the body did before.
+3. A custom theme could set `shell` to something its sidebar ink was never checked on: `shell` and `shell-translucent` are always derived (`set`, not `def`), a registry test holds it.
+4. The reader could lose 6px under its minimum: the clamps (`--shell-chrome`) and `maxWidth` (`SHELL_CHROME`) take the gaps out of its room; panes.test keeps the CSS and the math in step.
+5. The handles sat at the old edges: they're centred in the gaps (233 and 635 at 1440 in macOS).
+6. The first-run preview showed the old shell: it uses the same ground, gaps and cards.
+7. The 4px strip above the panes wasn't a drag area: `shell-drag` makes it one.
+8. themes.spec's reduced-transparency check and sidebar-hover.spec read the sidebar's own fill, now transparent: they read the ground.
+
+Left as is: a custom theme's launch cache from before this version has no `shell`, so its first frame after the update can show the base palette's ground until the theme is applied (a frame, once, custom themes only).
+
 ## Out of scope
 
 A per-style switch for the carded shell; changing the palettes' sidebar tokens.

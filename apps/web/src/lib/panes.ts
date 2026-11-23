@@ -74,8 +74,13 @@ export function savePanes(w: PaneWidths, storage: Pick<Storage, "setItem" | "rem
  * reader its room (the sidebar also leaves the list its min). Never below the
  * pane's min (a window narrower than all three mins shrinks the reader).
  */
+/** px: the carded shell's gap between panes and to the window (plan 250); globals.css `--pane-gap` */
+export const SHELL_GAP = 2;
+/** what the shell keeps outside the panes, out of the reader's room: a gap after the sidebar and the list, and the right inset */
+export const SHELL_CHROME = 3 * SHELL_GAP;
+
 export function maxWidth(pane: Pane, viewport: number, sidebarNow: number, readerMin: number): number {
-  const room = pane === "sidebar" ? viewport - readerMin - LIMITS.list.min : viewport - readerMin - sidebarNow;
+  const room = (pane === "sidebar" ? viewport - readerMin - LIMITS.list.min : viewport - readerMin - sidebarNow) - SHELL_CHROME;
   return Math.max(LIMITS[pane].min, Math.min(LIMITS[pane].max, Math.floor(room)));
 }
 

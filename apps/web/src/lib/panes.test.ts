@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { DESIGNS } from "@terno/ui/designs/index";
-import { BIG_STEP, clampWidth, keyWidth, LIMITS, loadPanes, maxWidth, PANES_KEY, parsePanes, savePanes, STEP } from "./panes";
+import { BIG_STEP, clampWidth, keyWidth, LIMITS, loadPanes, maxWidth, PANES_KEY, parsePanes, SHELL_CHROME, SHELL_GAP, savePanes, STEP } from "./panes";
 
 describe("stored widths (plan 21)", () => {
   const none = { sidebar: null, list: null, feed: null };
@@ -55,10 +55,11 @@ describe("how wide a pane may be", () => {
   });
 
   it("the reader keeps its room: the sidebar leaves the list its min, the list leaves the reader its min", () => {
-    // 980: the sidebar can take what the list (at 300) and the reader (340) leave
-    expect(maxWidth("sidebar", 980, 232, readerMin)).toBe(980 - 340 - 300);
-    expect(maxWidth("list", 980, 232, readerMin)).toBe(980 - 340 - 232);
-    expect(maxWidth("list", 980, 232, 380)).toBe(980 - 380 - 232);
+    // 980: the sidebar can take what the list (at 300) and the reader (340) leave, past the shell's gaps (plan 250)
+    expect(SHELL_CHROME).toBe(6);
+    expect(maxWidth("sidebar", 980, 232, readerMin)).toBe(980 - SHELL_CHROME - 340 - 300);
+    expect(maxWidth("list", 980, 232, readerMin)).toBe(980 - SHELL_CHROME - 340 - 232);
+    expect(maxWidth("list", 980, 232, 380)).toBe(980 - SHELL_CHROME - 380 - 232);
     // narrower than the three mins: never below a pane's own min
     expect(maxWidth("list", 700, 232, readerMin)).toBe(LIMITS.list.min);
     expect(clampWidth("sidebar", 300, 700, 232, readerMin)).toBe(LIMITS.sidebar.min);
@@ -82,8 +83,13 @@ describe("the layout and the math agree", () => {
   const rule = css.slice(css.indexOf("@utility app-panes"), css.indexOf("}", css.indexOf("@utility app-panes")));
   it("globals.css clamps with the same limits", () => {
     expect(rule).toContain(`clamp(${LIMITS.sidebar.min}px, min(${LIMITS.sidebar.max}px,`);
-    expect(rule).toContain(`100vw - var(--reader-min) - ${LIMITS.list.min}px)`);
+    expect(rule).toContain(`100vw - var(--shell-chrome) - var(--reader-min) - ${LIMITS.list.min}px)`);
     expect(rule).toContain(`clamp(${LIMITS.list.min}px, min(${LIMITS.list.max}px,`);
+  });
+  it("the shell's gaps are the ones the math takes out of the reader's room (plan 250)", () => {
+    const shell = css.slice(css.indexOf("@utility app-panes-carded"), css.indexOf("}", css.indexOf("@utility app-panes-carded")));
+    expect(shell).toContain(`--pane-gap: ${SHELL_GAP}px;`);
+    expect(shell).toContain(`--shell-chrome: calc(${SHELL_CHROME / SHELL_GAP} * var(--pane-gap));`);
   });
   it("every design's defaults sit inside the limits, and at the minimum window (980) nothing changes from before", () => {
     for (const d of DESIGNS) {
@@ -94,7 +100,7 @@ describe("the layout and the math agree", () => {
       // the default list at 980 (max(listMin, listMax), listMax possibly 32vw) still leaves the reader its min
       const listMax = d.layout.listMax.includes("vw") ? Math.min(parseFloat(d.layout.listMax.replace("min(", "")), 0.32 * 980) : parseFloat(d.layout.listMax);
       const list = Math.max(parseFloat(d.layout.listMin), listMax);
-      expect(980 - sidebar - list, d.id).toBeGreaterThanOrEqual(d.layout.readerMin);
+      expect(980 - SHELL_CHROME - sidebar - list, d.id).toBeGreaterThanOrEqual(d.layout.readerMin);
     }
   });
 });
