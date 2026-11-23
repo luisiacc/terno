@@ -1,5 +1,5 @@
 import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, parseHandedTo, readPartOfDay, DATED_MUTE_NAME_MAX, DATED_MUTE_PAIRS_MAX, DATED_MUTES_MAX, muteKey, pairKey, pairOf, senderIsPerson, THREAD_SCOPED_KINDS, waitingCutoff, type DatedMute, type DatedMuteOn, readWall, type DatedRow } from "@terno/core";
-import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, readNothingAsked, recipientList, WAITING_CLOSED, type ClosedAt, type DatedFinish, type DatedFinishOutcome, type DatedMuteAdded, type DatedMark, type DatedSnapshot, type DatedSource, type WaitingActState } from "@terno/store";
+import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, readNothingAsked, recipientList, WAITING_CLOSED, type ClosedAt, type DatedFinish, type DatedFinishOutcome, type DatedMuteAdded, type DatedMark, type DatedSnapshot, markPage, type MarkKey, type DatedSource, type WaitingActState } from "@terno/store";
 import { received, receivedOwn } from "./ai-summaries";
 import { remarkReplies } from "./followups";
 import { T, type Ctx, type R } from "./mail";
@@ -51,14 +51,11 @@ export function mergeDated(c: Ctx, into: number, from: number): void {
   for (const r of rows.by("fk_thread_id", from)) rows.update(r, { thread_id: into, revision: r.revision + 1 });
 }
 
-const toMark = (r: R): DatedMark => ({ messageId: r.message_id, threadId: r.thread_id, arrivedAt: r.arrived_at, queuedAt: r.queued_at, source: r.source });
-
-export function datedMarkPage(c: Ctx, after: { arrivedAt: number; messageId: number } | null, limit: number): DatedMark[] {
-  return [...T(c, "ai_dated_mail").all()]
-    .filter((r) => !after || r.arrived_at > after.arrivedAt || (r.arrived_at === after.arrivedAt && r.message_id > after.messageId))
-    .sort((a, b) => a.arrived_at - b.arrived_at || a.message_id - b.message_id)
-    .slice(0, limit)
-    .map(toMark);
+/** Plan 239: as SQL's, ordered by `markPage` (each mark's sender read from its message by key). */
+export function datedMarkPage(c: Ctx, after: MarkKey | null, limit: number): DatedMark[] {
+  const messages = T(c, "messages");
+  const marks = [...T(c, "ai_dated_mail").all()].map((r) => ({ messageId: r.message_id, threadId: r.thread_id, arrivedAt: r.arrived_at, queuedAt: r.queued_at, source: r.source, fromEmail: (messages.get(r.message_id)?.from_email as string | undefined) ?? null }));
+  return markPage(marks, after, limit);
 }
 
 export const datedMarkCount = (c: Ctx): number => T(c, "ai_dated_mail").size;

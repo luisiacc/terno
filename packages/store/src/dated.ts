@@ -32,6 +32,62 @@ export interface DatedMark {
   arrivedAt: number;
   queuedAt: number;
   source: "live" | "scan";
+  /** plan 239: 0, new mail and what came before it from its conversation or its sender; 1, the rest of a check */
+  lane: 0 | 1;
+}
+
+/** Plan 239: where a page of marks starts after (`marks.page`): the last mark's lane, date and id. */
+export interface MarkKey {
+  lane: 0 | 1;
+  arrivedAt: number;
+  messageId: number;
+}
+
+/**
+ * Plan 239 (the owner: "lets do the new email first"): the marks in reading order, both stores. New mail first: every live
+ * mark, and with it every mark joined to one by its conversation or its sender (`addressKey`, as the reader settles by),
+ * through any chain of them (Codex review 1: A and B in one conversation, B and a live C from one sender), so what may settle
+ * an item is still read after it (revision 5); then the rest of a check. Oldest first within each. The table is small (3
+ * days of live mail, `DATED_SCAN_MAX` an account): each page orders it whole, so a mark whose lane moved is still read once.
+ */
+export function markPage(marks: readonly (Omit<DatedMark, "lane"> & { fromEmail: string | null })[], after: MarkKey | null, limit: number): DatedMark[] {
+  // one set per chain: a mark's conversation and its sender are joined (union-find over numbered nodes: conversations, then
+  // senders), each address read once
+  const node = new Map<string, number>();
+  const parent: number[] = [];
+  const of = (key: string): number => {
+    let n = node.get(key);
+    if (n === undefined) {
+      node.set(key, (n = parent.length));
+      parent.push(n);
+    }
+    return n;
+  };
+  const root = (x: number): number => {
+    while (parent[x] !== x) x = parent[x] = parent[parent[x]!]!;
+    return x;
+  };
+  const senders = new Map<string, string>();
+  const threadOf = marks.map((m) => {
+    const t = of(`t${m.threadId}`);
+    if (m.fromEmail) {
+      let key = senders.get(m.fromEmail);
+      if (key === undefined) senders.set(m.fromEmail, (key = `s${addressKey(m.fromEmail)}`));
+      const a = root(of(key));
+      const b = root(t);
+      if (a !== b) parent[a] = b;
+    }
+    return t;
+  });
+  const fresh = new Set<number>();
+  marks.forEach((m, i) => m.source === "live" && fresh.add(root(threadOf[i]!)));
+  const order = (a: MarkKey, b: MarkKey) => a.lane - b.lane || a.arrivedAt - b.arrivedAt || a.messageId - b.messageId;
+  const out: DatedMark[] = [];
+  marks.forEach((m, i) => {
+    const mark: DatedMark = { messageId: m.messageId, threadId: m.threadId, arrivedAt: m.arrivedAt, queuedAt: m.queuedAt, source: m.source, lane: fresh.has(root(threadOf[i]!)) ? 0 : 1 };
+    if (!after || order(mark, after) > 0) out.push(mark);
+  });
+  return out.sort(order).slice(0, limit);
 }
 
 /** What the reader needs of one received message, no body. */
@@ -234,8 +290,11 @@ export interface DatedStore {
     remove(on: DatedMuteOn, key: string): Promise<DatedMute | null>;
   };
   marks: {
-    /** oldest first, by the message's date */
-    page(after: { arrivedAt: number; messageId: number } | null, limit: number): Promise<DatedMark[]>;
+    /**
+     * plan 239: new mail first, then the rest, oldest first within each (`markPage`), strictly after `after`. Each call orders
+     * the whole queue: the reader asks once a pass (`limit` Infinity) and walks what it got, never a page at a time
+     */
+    page(after: MarkKey | null, limit: number): Promise<DatedMark[]>;
     count(): Promise<number>;
     /** the 14-day check (plan 211: the backend's, per account); idempotent on the message */
     queueScan(messageIds: readonly number[], now: number): Promise<number>;

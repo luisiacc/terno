@@ -13,6 +13,7 @@ import { msg, threadOf } from "@terno/store/conformance";
 import { DATED_NOTHING_ASKED_SINCE, type IncomingMessage } from "@terno/store";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
+import { DAILY_GUARD } from "./ai-limiter";
 import { checkDates, personAtRole, settledHow } from "./dated";
 import { relayedAsk } from "./dated-relay";
 
@@ -3696,5 +3697,59 @@ describe("plan 211 (Codex code review): a reading that carries another account's
     release();
     await expect.poll(() => backend.store.dated.marks.count()).toBe(0);
     expect(promptText(model.requests.at(-1)!.messages[0]!.content)).not.toContain("Pay the water bill");
+  });
+});
+
+describe("plan 239: new mail first", () => {
+  /** which of these words each reading's mail carried, in the order read */
+  const order = (requests: readonly CompletionRequest[], words: readonly string[]) => readings(requests).map((r) => words.find((w) => promptText(r.messages[0]!.content).includes(w)) ?? "?");
+
+  it("a check's older mail waits for new mail, also new mail that arrives while the check is being read; then it's read oldest first", async () => {
+    const { backend, model, clock, receive, check } = await setup();
+    const shops = ["Shop A", "Shop B", "Shop C"];
+    for (const [i, name] of shops.entries()) await receive({ from: { name, email: `orders@shop${i}.test` }, date: clock.now - (5 - i) * DAY, bodyText: `${name}: your order is due on November 20.` }, false);
+    // the reader holds its first request (the check's oldest), while new mail arrives behind it
+    let release!: () => void;
+    model.gate = new Promise((r) => (release = r));
+    expect(await check()).toBe(3);
+    await expect.poll(() => model.requests.length).toBe(1);
+    await receive({ from: { name: "Ana", email: "ana@people.test" }, bodyText: "Ana: could you send the form by November 20?" });
+    await receive({ from: { name: "Bo", email: "bo@people.test" }, bodyText: "Bo: could you sign it by November 20?" });
+    model.gate = null;
+    release();
+    await expect.poll(() => backend.store.dated.marks.count()).toBe(0);
+    expect(order(model.requests, ["Shop A", "Shop B", "Shop C", "Ana:", "Bo:"])).toEqual(["Shop A", "Ana:", "Bo:", "Shop B", "Shop C"]);
+  });
+
+  it("a sender's older mail from a check is read before their new mail (what settles it comes after), the rest after both", async () => {
+    const { backend, model, clock, receive, check } = await setup();
+    await receive({ from: { name: "Shop", email: "orders@shop.test" }, date: clock.now - 6 * DAY, bodyText: "Shop: your order is due on November 20." }, false);
+    await receive({ date: clock.now - 5 * DAY, bodyText: "Power old: your bill is due on November 20." }, false);
+    let release!: () => void;
+    model.gate = new Promise((r) => (release = r));
+    // the check queued, the reader held on its first (the shop's), the power company writes again
+    expect(await check()).toBe(2);
+    await expect.poll(() => model.requests.length).toBe(1);
+    await receive({ bodyText: "Power new: your bill was paid in full." });
+    model.gate = null;
+    release();
+    await expect.poll(() => backend.store.dated.marks.count()).toBe(0);
+    expect(order(model.requests, ["Shop:", "Power old:", "Power new:"])).toEqual(["Shop:", "Power old:", "Power new:"]);
+  });
+
+  it("the day's guard stops it, says so in its status, and the next day starts it with no mail to wake it", async () => {
+    const { backend, model, clock, receive, client } = await setup();
+    const day = (ms: number) => { const d = new Date(ms); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+    await backend.store.settings.set("ai:usage", { [day(clock.now)]: { dated: { requests: DAILY_GUARD.requests, inputTokens: 0, outputTokens: 0, usd: 0 } } });
+    (backend.aiService.limiter as unknown as { book: unknown }).book = null;
+    await receive();
+    backend.dated.wake();
+    await expect.poll(async () => (await client.call("dated.status", {})).blockedBy).toMatchObject({ limit: "daily" });
+    expect(model.requests).toHaveLength(0);
+    clock.now += DAY;
+    await backend.dated.daily();
+    await expect.poll(() => backend.store.dated.marks.count()).toBe(0);
+    expect(readings(model.requests)).toHaveLength(1);
+    expect((await client.call("dated.status", {})).blockedBy).toBeNull();
   });
 });

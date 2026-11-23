@@ -1,5 +1,5 @@
 import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, parseHandedTo, readPartOfDay, DATED_MUTE_NAME_MAX, DATED_MUTE_PAIRS_MAX, DATED_MUTES_MAX, muteKey, pairOf, senderIsPerson, THREAD_SCOPED_KINDS, waitingCutoff, type DatedMute, type DatedMuteOn, type DatedRow } from "@terno/core";
-import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, readNothingAsked, recipientList, WAITING_CLOSED, type ClosedAt, type DatedFinish, type DatedFinishOutcome, type DatedMuteAdded, type DatedMark, type DatedSnapshot, type DatedSource, type WaitingActState } from "@terno/store";
+import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, readNothingAsked, recipientList, WAITING_CLOSED, type ClosedAt, type DatedFinish, type DatedFinishOutcome, type DatedMuteAdded, type DatedMark, type DatedSnapshot, markPage, type MarkKey, type DatedSource, type WaitingActState } from "@terno/store";
 import { OWN_SENDER_SQL, RECEIVED_SQL } from "./ai-summaries";
 import { ownAddresses } from "./facts";
 import { remarkReplies } from "./followups";
@@ -50,11 +50,12 @@ export function mergeDated(db: Db, into: number, from: number): void {
   db.run("UPDATE OR IGNORE dated_items SET thread_id = ?, revision = revision + 1 WHERE thread_id = ?", into, from);
 }
 
-const toMark = (r: { message_id: number; thread_id: number; arrived_at: number; queued_at: number; source: "live" | "scan" }): DatedMark => ({ messageId: r.message_id, threadId: r.thread_id, arrivedAt: r.arrived_at, queuedAt: r.queued_at, source: r.source });
-
-export function datedMarkPage(db: Db, after: { arrivedAt: number; messageId: number } | null, limit: number): DatedMark[] {
-  const from = after ? " WHERE arrived_at > ? OR (arrived_at = ? AND message_id > ?)" : "";
-  return db.all<Parameters<typeof toMark>[0]>(`SELECT * FROM ai_dated_mail${from} ORDER BY arrived_at, message_id LIMIT ?`, ...(after ? [after.arrivedAt, after.arrivedAt, after.messageId] : []), limit).map(toMark);
+/** Plan 239: the whole (small) table with each mark's sender, ordered by `markPage` (one rule for both stores). */
+export function datedMarkPage(db: Db, after: MarkKey | null, limit: number): DatedMark[] {
+  const rows = db.all<{ message_id: number; thread_id: number; arrived_at: number; queued_at: number; source: "live" | "scan"; from_email: string | null }>(
+    "SELECT d.message_id, d.thread_id, d.arrived_at, d.queued_at, d.source, m.from_email FROM ai_dated_mail d LEFT JOIN messages m ON m.id = d.message_id",
+  );
+  return markPage(rows.map((r) => ({ messageId: r.message_id, threadId: r.thread_id, arrivedAt: r.arrived_at, queuedAt: r.queued_at, source: r.source, fromEmail: r.from_email })), after, limit);
 }
 
 export const datedMarkCount = (db: Db): number => db.get<{ n: number }>("SELECT COUNT(*) AS n FROM ai_dated_mail")!.n;

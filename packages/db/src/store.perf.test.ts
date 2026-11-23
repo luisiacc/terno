@@ -45,6 +45,24 @@ async function gate(name: string, budgetMs: number, fn: (i: number) => Promise<u
   return s;
 }
 
+describe("plan 239: the dated reader's queue", () => {
+  // a busy queue: 9 accounts' checks (DATED_SCAN_MAX each) and three days of new mail (plan 239: the reader orders it once a
+  // pass and once a wake while it runs; it grows linearly, 5,000 marks ~10 ms)
+  it("orders 3,000 marks (a third live), new mail first, within the slice's budget", async () => {
+    store.db.run(
+      `INSERT INTO ai_dated_mail (message_id, thread_id, arrived_at, queued_at, source)
+       SELECT id, thread_id, date, ?, CASE WHEN id % 3 = 0 THEN 'live' ELSE 'scan' END FROM messages WHERE is_sent = 0 AND is_draft = 0 ORDER BY id LIMIT 3000`,
+      NOW,
+    );
+    try {
+      expect(await store.dated.marks.page(null, Infinity)).toHaveLength(3000);
+      await gate("dated marks: the whole queue of 3,000 in reading order", 8, () => store.dated.marks.page(null, Infinity));
+    } finally {
+      store.db.run("DELETE FROM ai_dated_mail");
+    }
+  });
+});
+
 describe("reads", () => {
   it("lists, pages, counts and opens within the navigation budgets", async () => {
     await gate("list inbox, first page (100)", 5, () => store.threads.list({ view: "inbox", limit: 100 }));

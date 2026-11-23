@@ -27,7 +27,7 @@ export function FollowupsGroup({ settings, update }: { settings: AppSettings; up
   // plan 168: Terno picks where it runs (`routeFor`); the hint names who receives it
   const target = routeOf("followup", ai);
   const ready = aiCanRun("followup", ai);
-  const [status, setStatus] = useState<{ blockedBy: { kind: AiErrorKind; message: string } | null } | null>(null);
+  const [status, setStatus] = useState<{ blockedBy: { kind: AiErrorKind; message: string; limit?: "daily" | "monthly" } | null } | null>(null);
   useEffect(() => {
     if (!followups.enabled) return setStatus(null);
     let current = true;
@@ -103,7 +103,7 @@ export function DatedGroup({ settings, update }: { settings: AppSettings; update
   const { ai, dated } = settings;
   const target = routeOf("dated", ai);
   const ready = aiCanRun("dated", ai);
-  const [status, setStatus] = useState<{ blockedBy: { kind: AiErrorKind; message: string } | null } | null>(null);
+  const [status, setStatus] = useState<{ blockedBy: { kind: AiErrorKind; message: string; limit?: "daily" | "monthly" } | null } | null>(null);
   useEffect(() => {
     if (!dated.enabled) return setStatus(null);
     let current = true;
@@ -118,8 +118,9 @@ export function DatedGroup({ settings, update }: { settings: AppSettings; update
       </SettingsRow>
       {dated.enabled && status?.blockedBy && (
         <SettingsNote testId="ai-dated-status">
-          <span role="status" className="text-destructive-ink">{t("ai.dated.paused")}</span>
-          {errorHelp(status.blockedBy.kind, ai) && <span> {errorHelp(status.blockedBy.kind, ai)}</span>}
+          {/* plan 239: stopped by the day's guard or the monthly ceiling, its own sentence says why and until when */}
+          <span role="status" className="text-destructive-ink">{status.blockedBy.limit ? status.blockedBy.message : t("ai.dated.paused")}</span>
+          {!status.blockedBy.limit && errorHelp(status.blockedBy.kind, ai) && <span> {errorHelp(status.blockedBy.kind, ai)}</span>}
         </SettingsNote>
       )}
     </SettingsGroup>

@@ -1311,7 +1311,8 @@ export const contract = {
   /** a thread's open items, for the reader's line */
   /** plan 210 (iteration 2): with `include`, that item too whatever its state (a history line opened: its closed item) */
   "dated.ofThread": m<{ rows: DatedRow[] }>()(z.object({ threadId: id, include: id.optional() })),
-  "dated.status": m<{ blockedBy: { kind: AiErrorKind; message: string } | null }>()(empty),
+  /** plan 239: `limit`, stopped by the day's guard or the monthly ceiling (its message says which), not by the provider */
+  "dated.status": m<{ blockedBy: { kind: AiErrorKind; message: string; limit?: "daily" | "monthly" } | null }>()(empty),
   /** the 14-day check: how many, and what it would cost; then the yes */
   /** plan 210 (iteration 4): what's muted in What matters, newest first; never MCP */
   "dated.mutes": m<{ mutes: DatedMute[] }>()(empty),
@@ -1637,7 +1638,7 @@ export interface Events {
   /** plan 234: the learned-filter offers may have changed (an action of the user's kept, an offer answered, a learned filter deleted): never MCP */
   learningChanged: Record<string, never>;
   /** plan 204: the dated reader stopped, or it's going again */
-  datedStatus: { blockedBy: { kind: AiErrorKind; message: string } | null };
+  datedStatus: { blockedBy: { kind: AiErrorKind; message: string; limit?: "daily" | "monthly" } | null };
   /** plan 144: a prepared reply as it comes, only to the windows reading that conversation; never MCP */
   aiReply: AiReplyEvent;
   /** plan 143: a preview's count as it grows, or why it ended; only to the connection that asked */

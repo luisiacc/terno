@@ -48,7 +48,7 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         expect((await store.newMail.page("category", null, 100)).map((m) => m.messageId)).toEqual([fresh]);
         expect(await marked()).toEqual([a.id, fresh]);
         const [mark] = await store.dated.marks.page(null, 1);
-        expect(mark).toEqual({ messageId: a.id, threadId: a.thread, arrivedAt: a.m.date, queuedAt: NOW, source: "live" });
+        expect(mark).toEqual({ messageId: a.id, threadId: a.thread, arrivedAt: a.m.date, queuedAt: NOW, source: "live", lane: 0 });
         // re-ingesting the same message doesn't double it
         await store.sync.ingest([a.m], { applyFilters: false, now: NOW, classifier: null, datedMail: { since: null } });
         expect(await store.dated.marks.count()).toBe(2);
@@ -67,8 +67,31 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         const r = await store.sync.ingest(dates.map((date) => msg({ accountId, from: bank, to: [me], date })), { applyFilters: false, now: NOW, classifier: null, datedMail: { since: null } });
         const want = r.inserted.map((id, i) => ({ id, date: dates[i]! })).sort((x, y) => x.date - y.date || x.id - y.id).map((x) => x.id);
         const first = await store.dated.marks.page(null, 2);
-        const rest = await store.dated.marks.page({ arrivedAt: first[1]!.arrivedAt, messageId: first[1]!.messageId }, 10);
+        const rest = await store.dated.marks.page({ lane: first[1]!.lane, arrivedAt: first[1]!.arrivedAt, messageId: first[1]!.messageId }, 10);
         expect([...first, ...rest].map((m) => m.messageId)).toEqual(want);
+      });
+
+      it("plan 239: new mail first, with what came before it from its conversation or its sender; then a check's rest; oldest first in each", async () => {
+        const { store, got } = await setup();
+        const pal = { name: "Pal", email: "pal@else.test" };
+        // a check's marks: a shop's, a colleague's, the bank's (by another spelling of its address) and the bank's
+        // conversation's older message from someone else; then the bank's new mail
+        const shopOld = await got({ from: shop, date: NOW - 9 * DAY }, null);
+        const anaOld = await got({ from: colleague, date: NOW - 8 * DAY }, null);
+        const bankOld = await got({ from: { name: "Bank", email: "bills@bank.test" }, date: NOW - 7 * DAY }, null);
+        const inThread = await got({ from: pal, date: NOW - 6 * DAY, providerThreadId: "conv-1" }, null);
+        await store.dated.marks.queueScan([shopOld.id, anaOld.id, bankOld.id, inThread.id], NOW);
+        const live = await got({ date: NOW - 60_000 });
+        const reply = await got({ from: colleague, date: NOW - 30_000, providerThreadId: "conv-1" });
+        const page = await store.dated.marks.page(null, 10);
+        expect(page.map((m) => [m.messageId, m.lane])).toEqual([[anaOld.id, 0], [bankOld.id, 0], [inThread.id, 0], [live.id, 0], [reply.id, 0], [shopOld.id, 1]]);
+        // strictly after a key, lanes included
+        const first = await store.dated.marks.page(null, 4);
+        const last = first.at(-1)!;
+        expect((await store.dated.marks.page({ lane: last.lane, arrivedAt: last.arrivedAt, messageId: last.messageId }, 10)).map((m) => m.messageId)).toEqual([reply.id, shopOld.id]);
+        // the new mail read, what it brought along is the check's rest again, still oldest first
+        for (const id of [live.id, reply.id]) await store.dated.marks.consume(id);
+        expect((await store.dated.marks.page(null, 10)).map((m) => [m.messageId, m.lane])).toEqual([[shopOld.id, 1], [anaOld.id, 1], [bankOld.id, 1], [inThread.id, 1]]);
       });
 
       it("a check takes received mail nothing was read from, newest first, once; its marks keep 14 days and a live one 3", async () => {

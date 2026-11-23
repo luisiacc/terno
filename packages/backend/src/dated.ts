@@ -22,7 +22,6 @@ import { AccountChecks, DATED_CHECKED_KEY } from "./account-checks";
  * empty, a minute's hold after a provider fails, Clear AI data refuses late writes. Nothing logged carries mail.
  */
 
-const PAGE = 50;
 const MAX_ATTEMPTS = 3;
 const RETRY_WAIT_MS = 60_000;
 /** what a message costs to read, for the check's estimate: ~600 tokens in, ~100 out */
@@ -51,7 +50,7 @@ export interface DatedHost {
   replies(): { since: number | null } | undefined;
   /** Plan 210 (iteration 3): the reader read what it could: a reply of yours waiting on it (or marked again) may be read */
   caughtUp(): void;
-  statusChanged(status: { blockedBy: { kind: AiErrorKind; message: string } | null }): void;
+  statusChanged(status: { blockedBy: { kind: AiErrorKind; message: string; limit?: "daily" | "monthly" } | null }): void;
   /** work over a list in the backend's slices */
   runBudgeted<T>(items: readonly T[], work: (chunk: T[]) => void | Promise<void>): Promise<void>;
   log(level: "info" | "warn" | "error", message: string, extra?: unknown): void;
@@ -1089,9 +1088,12 @@ export class DatedWorker {
   private stopped = false;
   private running = false;
   private again = false;
+  /** plan 239: woken while a pass ran: new mail may be behind its cursor */
+  private woken = false;
   private generation = new AbortController();
   private paused: { kind: AiErrorKind; message: string } | null = null;
-  private limited: string | null = null;
+  /** a day stopped by the guard or the monthly ceiling, and why (plan 239: said in its status) */
+  private limited: { day: string; because: { kind: AiErrorKind; message: string; limit: "daily" | "monthly" } } | null = null;
   private heldUntil = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly attempts = new Map<number, number>();
@@ -1148,6 +1150,8 @@ export class DatedWorker {
     if (!this.running) await this.bounds();
     // round 2: at every moment the clock wakes for, not only the day's first: a Plan ends at 9:40 too
     await this.retire();
+    // plan 239 (Codex review 8): stopped for a day, the next one starts it with no mail needed to wake it
+    if (this.limited && this.limited.day !== new Date(this.host.now()).toDateString()) this.wake();
   }
 
   stop(): void {
@@ -1168,8 +1172,9 @@ export class DatedWorker {
     if (this.host.now() < this.heldUntil) return;
     const today = new Date(this.host.now()).toDateString();
     if (this.limited) {
-      if (this.limited === today) return;
+      if (this.limited.day === today) return;
       this.limited = null;
+      this.host.statusChanged(this.status());
     }
     void this.drain().catch((error: unknown) => {
       captureError(error, { code: "ai.failed" });
@@ -1181,10 +1186,10 @@ export class DatedWorker {
     const on = settings.dated.enabled;
     const off = this.active && !on;
     this.active = on;
-    const wasPaused = this.paused !== null;
+    const wasBlocked = this.paused !== null || this.limited !== null;
     this.paused = null;
-    if (wasPaused) this.host.statusChanged(this.status());
     this.limited = null;
+    if (wasBlocked) this.host.statusChanged(this.status());
     this.heldUntil = 0;
     this.clearRetry();
     if (off) {
@@ -1256,12 +1261,14 @@ export class DatedWorker {
   private async drain(): Promise<void> {
     if (this.running) {
       this.again = true;
+      this.woken = true;
       return;
     }
     this.running = true;
     try {
       do {
         this.again = false;
+        this.woken = false;
         await this.bounds();
         await this.pass(this.generation);
       } while (this.again && this.isActive && !this.paused && !this.limited);
@@ -1296,26 +1303,44 @@ export class DatedWorker {
     return n;
   }
 
-  /** Oldest first; a message waiting for its body holds later ones from its thread and its sender (revision 5). */
+  /**
+   * New mail first, oldest first within it and within the rest (plan 239, `markPage`); a message waiting for its body holds
+   * later ones from its thread and its sender (revision 5). The queue is ordered once a pass (ordering it costs a read of the
+   * whole queue: Codex review 5) and walked as read; a mark gone meanwhile is consumed already or cleared with the generation.
+   */
   private async pass(generation: AbortController): Promise<void> {
-    let after: { arrivedAt: number; messageId: number } | null = null;
+    const order: DatedMark[] = await this.host.store.dated.marks.page(null, Infinity);
+    const queued = new Set(order.map((m) => m.messageId));
     const heldThreads = new Set<number>();
     const heldSenders = new Set<string>();
-    for (;;) {
-      const page: DatedMark[] = await this.host.store.dated.marks.page(after, PAGE);
-      if (!page.length) return;
-      for (const mark of page) {
-        if (generation !== this.generation || !this.isActive) return;
-        after = { arrivedAt: mark.arrivedAt, messageId: mark.messageId };
-        if (heldThreads.has(mark.threadId)) continue;
-        const next = await this.consider(mark, generation, heldSenders);
-        if (next === "stop") return;
-        if (typeof next === "object") {
-          heldThreads.add(mark.threadId);
-          heldSenders.add(next.hold);
-        }
+    const seen = new Set<number>();
+    for (const mark of order) {
+      if (generation !== this.generation || !this.isActive) return;
+      // plan 239: new mail that came during the pass, or an older mark it joined to new mail, reads before what's left: the
+      // pass starts over (the drain goes again) and reads it next. Asked once a wake, and only for a mark this pass hasn't
+      // seen, so a stream of wakes (bodies arriving) can't keep the rest from being read
+      if (this.woken) {
+        this.woken = false;
+        if (await this.newMailBefore(mark, seen, queued)) return;
+      }
+      seen.add(mark.messageId);
+      if (heldThreads.has(mark.threadId)) continue;
+      const next = await this.consider(mark, generation, heldSenders);
+      if (next === "stop") return;
+      if (typeof next === "object") {
+        heldThreads.add(mark.threadId);
+        heldSenders.add(next.hold);
       }
     }
+  }
+
+  /**
+   * Plan 239: new mail (lane 0) this pass hasn't seen that it would come to after `next` or not at all: a mark that arrived
+   * since it began, or one an arrival joined to new mail, behind its cursor (Codex review 3).
+   */
+  private async newMailBefore(next: DatedMark, seen: ReadonlySet<number>, queued: ReadonlySet<number>): Promise<boolean> {
+    const before = (m: DatedMark) => m.lane < next.lane || (m.lane === next.lane && (m.arrivedAt < next.arrivedAt || (m.arrivedAt === next.arrivedAt && m.messageId < next.messageId)));
+    return (await this.host.store.dated.marks.page(null, Infinity)).some((m) => m.lane === 0 && !seen.has(m.messageId) && (!queued.has(m.messageId) || before(m)));
   }
 
   private async consider(mark: DatedMark, generation: AbortController, heldSenders: ReadonlySet<string>): Promise<"next" | "stop" | { hold: string }> {
@@ -1455,7 +1480,8 @@ export class DatedWorker {
   private async failed(mark: DatedMark | null, error: unknown): Promise<"next" | "stop"> {
     const { store } = this.host;
     if (error instanceof DailyLimitError || error instanceof MonthlyLimitError) {
-      this.limited = new Date(this.host.now()).toDateString();
+      this.limited = { day: new Date(this.host.now()).toDateString(), because: { kind: error.kind, message: error.message, limit: error instanceof DailyLimitError ? "daily" : "monthly" } };
+      this.host.statusChanged(this.status());
       return "stop";
     }
     if (!(error instanceof AiError)) captureError(error instanceof Error ? new Error(error.name) : new Error("error"), { code: "ai.failed" });
@@ -1571,8 +1597,9 @@ export class DatedWorker {
     return true;
   }
 
-  status(): { blockedBy: { kind: AiErrorKind; message: string } | null } {
-    return { blockedBy: this.paused };
+  /** plan 239: a day's guard or the monthly ceiling says so too, not only a provider's pause */
+  status(): { blockedBy: { kind: AiErrorKind; message: string; limit?: "daily" | "monthly" } | null } {
+    return { blockedBy: this.paused ?? this.limited?.because ?? null };
   }
 
   /** Clear AI data: nothing in flight may bring back what was cleared. */

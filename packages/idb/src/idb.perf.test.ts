@@ -6,7 +6,7 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import { machineBusy, sampleAsync, sampleSync, settle, watchLoop, type Sample } from "../../db/src/test/timing";
 import { confirmRebuilt, countFolderMessages, rebuildFolders } from "./folders";
 import { exportIds, pendingAfter, stretch } from "./folder-export";
-import type { Ctx } from "./mail";
+import { T, type Ctx } from "./mail";
 import { IdbMailStore } from "./store";
 
 /**
@@ -115,6 +115,25 @@ async function medianOfRuns(fn: () => Promise<unknown>): Promise<number> {
   const { ms } = settle(samples);
   return [...ms].sort((a, b) => a - b)[Math.floor(ms.length / 2)]!;
 }
+
+// plan 239: a busy queue (9 accounts' checks and three days of new mail), ordered once a pass and once a wake while it runs
+it("plan 239: the dated reader's queue of 3,000 marks (a third live) in reading order, new mail first, within a frame", async () => {
+  const c = (store as unknown as { c: Ctx }).c;
+  const marks = T(c, "ai_dated_mail");
+  const received = [...T(c, "messages").all()].filter((m) => !m.is_sent && !m.is_draft).slice(0, 3000);
+  c.db.tx(() => {
+    for (const m of received) marks.insert({ message_id: m.id, thread_id: m.thread_id, arrived_at: m.date, queued_at: NOW, source: (m.id as number) % 3 === 0 ? "live" : "scan" });
+  });
+  try {
+    expect(await store.dated.marks.page(null, Infinity)).toHaveLength(received.length);
+    const ms = await medianOfRuns(() => store.dated.marks.page(null, Infinity));
+    expect(ms, `the whole queue: ${ms.toFixed(2)}ms`).toBeLessThanOrEqual(FRAME * MULT);
+  } finally {
+    c.db.tx(() => {
+      for (const m of received) marks.delete(m.id);
+    });
+  }
+}, 900_000);
 
 it("plan 87: 1,000 reminders on the longest conversations: the list, a slice of the answered check and the summaries within a frame", async () => {
   const ids = [...seeded.threads].sort((a, b) => b.messageCount - a.messageCount || a.id - b.id).slice(0, REMINDERS_MAX).map((t) => t.id);
