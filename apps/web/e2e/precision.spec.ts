@@ -220,9 +220,10 @@ async function menuOnItsRow(page: Page, id: string, design: string, where: strin
     const fits = el.scrollHeight <= el.clientHeight + 1;
     // the window holds the whole menu (then it must show whole, over its row if need be: revision 4)
     const holds = el.scrollHeight + 2 * inset <= innerHeight;
-    // room for the whole menu under the row or over it, an inset from the window's edge
+    // room for the whole menu under the row or over it, an inset from the window's edge (and the 2 px the positioner's
+    // flip asks past its padding, as thread-menu.tsx's placeWhole: plan 250's shell landed a row on that exact tie)
     const b = row.getBoundingClientRect();
-    const room = Math.max(innerHeight - b.bottom, b.top) - inset - 4 >= el.scrollHeight;
+    const room = Math.max(innerHeight - b.bottom, b.top) - inset - 4 - 2 >= el.scrollHeight;
     return { over, fits, holds, room, left: r.left, top: r.top, right: innerWidth - r.right, bottom: innerHeight - r.bottom };
   }, [id, inset] as const);
   note(`${where} menu (over its row, edge gaps l/t/r/b)`, `${m.over}, ${[m.left, m.top, m.right, m.bottom].map(fmt).join("/")}`);

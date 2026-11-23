@@ -469,8 +469,9 @@ test.describe("What matters and its digest (plan 145)", () => {
   test("owner's decisions (2): Archive, e, Trash and Spam on a newsletter opened from the digest go back to it, where it was, with Undo", async ({ app: page, server }) => {
     const { db } = await withMail(server);
     await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, today: { digest: true, prepareAt: "00:00" } });
-    // short, so the digest scrolls and where it was can be held
-    await page.setViewportSize({ width: 1100, height: 340 });
+    // short, so the digest scrolls and where it was can be held (348: plan 250's shell keeps 8 px above and below the
+    // panes, so the reader keeps the 340 px this was written for; at 332 the row's focus nudge alone is 18 px)
+    await page.setViewportSize({ width: 1100, height: 348 });
     await page.getByTestId("nav-today").click();
     await expect(await digestRow(page)).toContainText("today's digest", { timeout: 15_000 });
     await (await digestRow(page)).click();

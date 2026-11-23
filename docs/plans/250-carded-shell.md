@@ -38,6 +38,10 @@ Screenshot baselines updated (the shell's look changed everywhere); the e2e flow
 7. The 4px strip above the panes wasn't a drag area: `shell-drag` makes it one.
 8. themes.spec's reduced-transparency check and sidebar-hover.spec read the sidebar's own fill, now transparent: they read the ground.
 
+9. (Found by e2e) In List the pinned Ask can reach past the list too: the list's card doesn't clip either; its list (or feed) and the page over it clip themselves (`pane-card-clip`).
+
+Tests the shell's 8 px of height and 6 px of width moved: the panes' clamp expectations count the gaps; inbox-scan's macOS rows at 1100×700 go from 9 to 8 (the row the 4 px above and below cost); the digest's place test keeps its reader at 340 px tall (viewport 348); precision's "room for the menu" counts the 2 px the positioner asks past its padding (the row landed on that exact tie). 124 baselines updated and looked at. A full e2e pass (all six projects) fails only what main fails at e2c2d345f (account-errors, provider-errors, first-sync, settings-pass axe, print-quality, what-matters-feed:1218, today:737) plus two flakes that pass on a rerun.
+
 Left as is: a custom theme's launch cache from before this version has no `shell`, so its first frame after the update can show the base palette's ground until the theme is applied (a frame, once, custom themes only).
 
 ## Out of scope

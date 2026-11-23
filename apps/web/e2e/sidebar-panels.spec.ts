@@ -10,6 +10,7 @@ import type { Locator, Page } from "@playwright/test";
 import { DESIGNS } from "../../../packages/ui/src/designs/index";
 import type { DesignDefinition } from "../../../packages/ui/src/designs/types";
 import { sqlDb } from "../../backend-dev/src/server";
+import { SHELL_CHROME } from "../src/lib/panes";
 import { expect, focusList, navTo, openRow, selectedRow, test, scenario, openReview } from "./fixtures";
 
 // plan 87: Reminders too (shown closed only while one is due)
@@ -758,9 +759,9 @@ test.describe("Part B: resizable panes", () => {
       await page.keyboard.press("End");
       expect(await width(list(page))).toBeCloseTo(640, 0);
       const before = await stored(page);
-      // the list's max follows the window though neither pane changes width yet (1440 → 1300: 1300 − reader − 360)
+      // the list's max follows the window though neither pane changes width yet (1440 → 1300: 1300 − the shell's gaps − reader − 360)
       await page.setViewportSize({ width: 1300, height: 900 });
-      await expect(handle(page, "list")).toHaveAttribute("aria-valuemax", String(Math.min(640, 1300 - d.layout.readerMin - 360)));
+      await expect(handle(page, "list")).toHaveAttribute("aria-valuemax", String(Math.min(640, 1300 - SHELL_CHROME - d.layout.readerMin - 360)));
 
       await page.setViewportSize({ width: 980, height: 600 });
       await openRow(page, 2);

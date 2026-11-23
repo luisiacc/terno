@@ -10,8 +10,9 @@ import { expect, focusList, forgetOffer, fresh, freshNoDrafts, pickFilter, rows,
 /** Whole rows at 1440x900 with a suggestion and no drafts, the plan's bar. */
 // Lumen and Atelier trade a row for more air in each (the owner's call): 76 px rows; Graphite too, at 84 (plan 174)
 const WHOLE_ROWS = { lumen: 9, atelier: 9, macos: 12, graphite: 9, luma: 10, relief: 9 } as const;
-/** And at 1100x700 (plan 158: the header gives its spare room to the rows there; the offer is the list's first item) */
-const SMALL_ROWS = { lumen: 7, atelier: 7, macos: 9, graphite: 6, luma: 8, relief: 6 } as const;
+/** And at 1100x700 (plan 158: the header gives its spare room to the rows there; the offer is the list's first item).
+ *  Plan 250: the carded shell keeps 8 px above and below the panes, and macOS's ninth row there is the one it costs */
+const SMALL_ROWS = { lumen: 7, atelier: 7, macos: 8, graphite: 6, luma: 8, relief: 6 } as const;
 const box = async (l: Locator) => (await l.boundingBox())!;
 const weight = (l: Locator) => l.evaluate((el) => Number(getComputedStyle(el).fontWeight));
 

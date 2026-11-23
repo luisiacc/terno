@@ -115,7 +115,7 @@ function PageLayer({ page }: { page: "thread" | "compose" }) {
   const pinnedInset = usePinnedInset(page === "compose");
   const inset = bottomInset(snackInset, pinnedInset);
   return (
-    <div data-testid="list-page" data-page={page} className="absolute inset-0 z-[5] flex flex-col bg-background animate-in fade-in-0 slide-in-from-right-1 duration-base" style={inset ? { paddingBottom: inset } : undefined}>
+    <div data-testid="list-page" data-page={page} className="pane-card-clip absolute inset-0 z-[5] flex flex-col bg-background animate-in fade-in-0 slide-in-from-right-1 duration-base" style={inset ? { paddingBottom: inset } : undefined}>
       <PaneBoundary area="reader" resetKey={selectedId} readerThreadId={page === "thread" ? selectedId : null}>
         {page === "compose" ? <ComposePage /> : <Reader />}
       </PaneBoundary>
@@ -195,13 +195,14 @@ export function App() {
         <Sidebar />
         {/* plan 188: the one polite voice for what changes where focus isn't */}
         <Announcer />
-        <section id="app-list" role={list || feedWide ? "main" : undefined} aria-label={list || feedWide ? undefined : t("list.label")} className={cn("pane-card relative min-h-0 overflow-hidden", feedWide && "col-span-2")}>
+        <section id="app-list" role={list || feedWide ? "main" : undefined} aria-label={list || feedWide ? undefined : t("list.label")} className={cn("pane-card relative min-h-0", feedWide && "col-span-2")}>
           {/* under a page the list stays laid out (scroll, measured rows, mounted rows) but isn't painted or reachable */}
           <div
             // test builds only: the perf gate's injected regression (a list remounted by every page change) must fail it
             key={import.meta.env.VITE_RENDER_PROBE && regressions.remountList ? page : undefined}
             data-list-section
-            className="h-full min-h-0 data-covered:invisible"
+            // plan 250: the list clips itself to the card's corners; what floats over it (a pinned Ask in List) doesn't
+            className="pane-card-clip h-full min-h-0 data-covered:invisible"
             inert={covered}
             data-covered={covered || undefined}
           >
