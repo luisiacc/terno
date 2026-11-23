@@ -150,3 +150,6 @@ column's right edge, where the reader's × sits for an open conversation, with t
 does what Esc does there, through one `closeDigestPage()` in `lib/page.ts`: beside What matters' feed the page goes and
 the feed has its room back, on its way in; in List the page over the feed closes. It scrolls with the title (the page has
 no fixed bar, and a floating × would sit over the rows' dates). Tested in today.spec, Split and List.
+
+The Codex code review found one difference from Esc, kept on purpose: with feed items ticked, Esc clears the ticks first,
+while the × closes the page and leaves them ticked. A click on × asks for the page to go, and the reader's × does the same.
