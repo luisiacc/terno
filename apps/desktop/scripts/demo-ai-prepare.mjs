@@ -170,6 +170,8 @@ const STEPS = {
       await page.getByTestId("ai-followups-check").click();
     }
     await d.switchOn("replies-switch");
+    // plan 247: the digest is What matters' (Each morning)
+    await d.settings("whatMatters");
     await d.switchOn("ai-digest-switch");
     await d.closeSettings();
   },

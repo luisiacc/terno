@@ -20,7 +20,9 @@ import { SnippetsTab } from "./settings/snippets-tab";
 import { closeSnippetEditor, setDeletedSnippet } from "~/lib/snippet-editor-state";
 import { GeneralTab } from "./settings/general-tab";
 import { StorageTab } from "./settings/storage-tab";
-import { DEV_TAB, SETTINGS_TABS, settingsTabLabel } from "./settings/tabs";
+import { settingsTabLabel, settingsTabs } from "./settings/tabs";
+import { WhatMattersTab } from "./settings/what-matters-tab";
+import { aiFeaturesAvailable } from "@terno/core";
 import { DevTab } from "./settings/dev-tab";
 import { endFind } from "./settings/find-open";
 import { SettingsSearch } from "./settings/settings-search";
@@ -43,7 +45,8 @@ import { isMac } from "~/lib/select";
  */
 function initialFocus(): boolean | HTMLElement {
   const id = getApp().settingsAccount;
-  if (id === null) return switchFocus() && (document.querySelector<HTMLElement>(`[data-settings-tab="${getApp().settingsTab}"]`) ?? true);
+  // (a section that isn't here, What matters without AI, shows General: its tab, plan 247)
+  if (id === null) return switchFocus() && (document.querySelector<HTMLElement>(`[data-settings-tab="${getApp().settingsTab}"]`) ?? document.querySelector<HTMLElement>('[data-settings-tab="general"]') ?? true);
   const row = document.querySelector<HTMLElement>(`[data-testid=settings-account][data-account-id="${id}"] [data-testid=account-toggle]`);
   // its row stands at the pane's top with its settings below, not wherever focus would scroll it (the row, not the
   // item: the hairline above the item stays out of sight under the header's own)
@@ -93,9 +96,18 @@ function SettingsPane({ title, back, open, children }: { title: string; /** a pa
 export function SettingsDialog() {
   const open = useApp((s) => s.dialog === "settings");
   const fatalModal = useNativeReload((s) => s.modalHost !== null);
-  const tab = useApp((s) => s.settingsTab);
   const settings = useApp((s) => s.settings);
   const hasDevMode = useApp((s) => s.devAi !== null);
+  // plan 247: What matters' section only where What matters can exist; asked for where it can't, General shows
+  const whatMatters = aiFeaturesAvailable(settings);
+  const tab = useApp((s) => (s.settingsTab === "whatMatters" && !whatMatters ? "general" : s.settingsTab));
+  // asked for where it isn't (an earlier visit, AI removed since): the stored section is General's too, so a search waiting
+  // there stops, and keys that were on its tab go to General's (the store is outside React: an effect)
+  useEffect(() => {
+    if (whatMatters || getApp().settingsTab !== "whatMatters") return;
+    setApp({ settingsTab: "general" });
+    if (getApp().dialog === "settings" && (document.activeElement === document.body || !document.activeElement)) document.querySelector<HTMLElement>('[data-settings-tab="general"]')?.focus();
+  }, [whatMatters]);
   // plan 184: accounts that need a sign-in (the Accounts entry says so)
   const signIns = useApp((s) => s.accounts.filter(needsSignIn).length);
   const stylePage = useAiDraftUi((s) => s.stylePage) && tab === "ai";
@@ -167,7 +179,7 @@ export function SettingsDialog() {
             <SettingsSearch />
             {/* a 1 px gap: a hovered row's fill never runs into the selected one's */}
             <TabsList activateOnFocus className="h-auto w-full items-stretch gap-px rounded-none bg-transparent p-0 dark:bg-transparent">
-              {(hasDevMode ? [...SETTINGS_TABS, DEV_TAB] : SETTINGS_TABS).map(({ value, label, icon: Icon }) => (
+              {settingsTabs({ whatMatters, dev: hasDevMode }).map(({ value, label, icon: Icon }) => (
                 <TabsTrigger
                   key={value}
                   value={value}
@@ -200,6 +212,12 @@ export function SettingsDialog() {
               <TabsContent value="general">
                 <GeneralTab settings={settings} update={update} />
               </TabsContent>
+
+              {whatMatters && (
+                <TabsContent value="whatMatters">
+                  <WhatMattersTab settings={settings} update={update} />
+                </TabsContent>
+              )}
 
               <TabsContent value="appearance">
                 <AppearanceTab settings={settings} update={update} />

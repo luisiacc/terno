@@ -25,9 +25,10 @@ test.describe("accounts, settings and command palette", () => {
       const general = page.getByTestId("tab-general");
       await expect(page.getByRole("tablist")).toHaveAttribute("aria-orientation", "vertical");
       await general.focus();
+      // plan 247: with the demo's AI, What matters is the second section
       await page.keyboard.press("ArrowDown");
-      await expect(page.getByTestId("tab-appearance")).toBeFocused();
-      await expect(page.getByTestId("tab-appearance")).toHaveAttribute("aria-selected", "true");
+      await expect(page.getByTestId("tab-whatMatters")).toBeFocused();
+      await expect(page.getByTestId("tab-whatMatters")).toHaveAttribute("aria-selected", "true");
       await page.keyboard.press("ArrowUp");
       await expect(general).toBeFocused();
       await page.keyboard.press("Escape");

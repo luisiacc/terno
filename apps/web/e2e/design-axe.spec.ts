@@ -474,10 +474,11 @@ test.describe("axe", { tag: ["@variant", "@variant-relief"] }, () => {
       await clean(page, "Rules, a rule AI built", "[data-testid=filters-dialog]");
       await page.keyboard.press("Escape");
       await page.getByTestId("open-settings").click();
-      await page.getByTestId("tab-ai").click();
+      // plan 247: What matters' own section, then AI's
+      await page.getByTestId("tab-whatMatters").click();
       await page.getByTestId("ai-digest-excluded").waitFor();
-      await clean(page, "Settings, the senders that aren't newsletters", "[data-testid=ai-digest]");
-      await clean(page, "Settings, bills, renewals and trips", "[data-testid=ai-dated]");
+      await clean(page, "Settings → What matters", "[data-testid=what-matters-tab]");
+      await page.getByTestId("tab-ai").click();
       await page.getByTestId("ai-drafting-style-open").click();
       await expect(page.getByTestId("style-status")).toContainText(/Learned from/, { timeout: 20_000 });
       await clean(page, "Writing style", "[data-testid=writing-style]");

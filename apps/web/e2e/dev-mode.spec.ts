@@ -97,14 +97,15 @@ test("Plan 147: the switch off, no AI feature shows, whatever the profile has sa
 
   // Today's settings stay, and say why it isn't in the sidebar: the way to the switch is right there
   await page.getByTestId("open-settings").click();
-  await page.getByTestId("tab-general").click();
+  // plan 247: in What matters' own section
+  await page.getByTestId("tab-whatMatters").click();
   await expect(page.getByTestId("today-pro-note")).toContainText("Today is a Pro feature");
   // from the keyboard, focus lands on Dev mode's tab rather than falling to the page as the button goes
   await page.getByTestId("today-dev-open").focus();
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("tab-dev")).toBeFocused();
   await page.getByTestId("dev-ai-switch").click();
-  await page.getByTestId("tab-general").click();
+  await page.getByTestId("tab-whatMatters").click();
   await expect(page.getByTestId("today-show")).toBeVisible();
   await expect(page.getByTestId("today-pro-note")).toHaveCount(0);
   await page.keyboard.press("Escape");

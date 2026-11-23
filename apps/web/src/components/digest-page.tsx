@@ -20,14 +20,22 @@ import { whenDay } from "~/lib/when";
 import { AiErrorNotice, aiErrorCopy, errorTarget } from "~/components/ai-error";
 import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
+import { openFound } from "./settings/find-open";
 import { reloadList } from "~/state/list";
 import { digestKeys, digestPick, keepDigestPick, leaveOut, letBackIn, openFromDigest, senderKey, useToday, withoutSenders } from "~/state/today";
 import { AiProvenance } from "~/components/ai-provenance";
+
+/** Plan 247: the digest's switch is What matters' (Each morning): Settings opens there, at the switch. */
+function openDigestSettings() {
+  setApp({ dialog: "settings", settingsTab: "whatMatters" });
+  requestAnimationFrame(() => openFound({ id: "whatMatters.digest", tab: "whatMatters", page: null, scope: null, under: null }));
+}
 
 /**
  * Plan 161, pass 2: what each row is, said on it. To archive (ticked), kept (unticked), opened (read: plan 145 archives
  * only unread mail, so it stays), or archived (out of the Inbox).
  */
+
 export type DigestRowState = "archive" | "keep" | "opened" | "archived";
 
 const STATE_LABEL: Partial<Record<DigestRowState, () => string>> = { keep: () => t("today.digest.state.kept"), opened: () => t("today.digest.state.opened"), archived: () => t("today.digest.state.archived") };
@@ -475,7 +483,7 @@ export default function DigestPage() {
       {automated && (
         <p className="text-xs text-muted-foreground" data-testid="digest-off">
           {t("today.digest.offHint")}{" "}
-          <Button variant="link-secondary" size="xs" data-testid="digest-turn-on" onClick={() => void setApp({ dialog: "settings", settingsTab: "ai" })}>{t("today.digest.offLink")}</Button>
+          <Button variant="link-secondary" size="xs" data-testid="digest-turn-on" onClick={openDigestSettings}>{t("today.digest.offLink")}</Button>
         </p>
       )}
       {finished && shown.length > 0 && <h2 className="pt-2 text-xs font-medium text-muted-foreground" data-testid="digest-still-here">{t("today.digest.stillHere")}</h2>}

@@ -21,7 +21,7 @@ import { canStart, clearAttemptError, needsGoogleScript, needsSignIn, prepareGoo
 import SignInPanel from "../sign-in-panel";
 import { retryIn } from "../connection-pill";
 import { getApp, setApp, useApp } from "~/state/app";
-import { patchAccount, type AccountEdit } from "~/lib/accounts";
+import { patchAccount, setAccountFeed, type AccountEdit } from "~/lib/accounts";
 import { aiFeaturesOffered } from "~/lib/ai";
 import { DaysField } from "./general-tab";
 import { AccountWriting } from "./ai-drafting";
@@ -199,7 +199,7 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
             {(a) => <Switch {...a} data-testid="account-ai" checked={aiOn} onCheckedChange={(on) => void client.call("accounts.update", { id: account.id, ai: on })} />}
           </SettingsRow>
           <SettingsRow find="account.feed" label={t("account.feed")} hint={t("account.feed.hint")}>
-            {(a) => <Switch {...a} data-testid="account-feed" checked={account.feed !== false} onCheckedChange={(on) => void client.call("accounts.update", { id: account.id, feed: on })} />}
+            {(a) => <Switch {...a} data-testid="account-feed" checked={account.feed !== false} onCheckedChange={(on) => void setAccountFeed(account.id, on)} />}
           </SettingsRow>
         </>
       )}

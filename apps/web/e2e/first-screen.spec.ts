@@ -99,16 +99,21 @@ test("asked once AI is on, after Settings closes; What matters leads the sidebar
     await page.locator("[data-ready]").waitFor();
   });
 
-  await scenario("Settings → General → Open at launch: found by the search; the Inbox again, its number back, and the launch", async () => {
+  await scenario("Settings → What matters → Open at launch: found by the search in its own section; the Inbox again, its number back, and the launch", async () => {
     await settings(page, "settings general", "general");
-    await page.getByTestId("settings-find").fill("launch");
-    await expect(page.getByTestId("settings-find-result").first().getByTestId("settings-find-name")).toHaveText("Open at launch");
-    await page.getByTestId("settings-find").fill("");
-    await expect(page.getByTestId("first-screen-what-matters")).toHaveAttribute("aria-pressed", "true");
-    // the badge's switch says which number it shows
+    // plan 247: nothing of What matters is left in General; the app icon's switch says which number it shows
+    await expect(page.getByTestId("first-screen-row")).toHaveCount(0);
+    await expect(page.getByTestId("today-show")).toHaveCount(0);
     await expect(page.getByTestId("badge-row")).toContainText("Show the “What matters” number on the app icon");
     await expect(page.getByTestId("badge-row")).toContainText("What needs you in “What matters”, the same number as in the sidebar.");
-    if (SHOTS) await page.getByTestId("first-screen-group").screenshot({ path: `${SHOTS}/setting-light.png` });
+    await page.getByTestId("settings-find").fill("launch");
+    const result = page.getByTestId("settings-find-result").first();
+    await expect(result.getByTestId("settings-find-name")).toHaveText("Open at launch");
+    await result.click();
+    await expect(page.getByTestId("tab-whatMatters")).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByTestId("first-screen-what-matters")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("first-screen-what-matters")).toBeInViewport();
+    if (SHOTS) await page.getByTestId("wm-settings-view").screenshot({ path: `${SHOTS}/setting-light.png` });
     // the Inbox's number, hidden while What matters leads, kept by its switch; the app icon stays What matters'
     const keep = page.getByTestId("keep-inbox-count");
     await expect(keep).not.toBeChecked();
@@ -123,6 +128,7 @@ test("asked once AI is on, after Settings closes; What matters leads the sidebar
     // the switch is What matters-first's alone
     await expect(page.getByTestId("keep-inbox-count-row")).toHaveCount(0);
     await expect(page.getByTestId("first-screen-inbox")).toHaveAttribute("aria-pressed", "true");
+    await page.getByTestId("tab-general").click();
     await expect(page.getByTestId("badge-row")).toContainText("Show unread count on the app icon");
     await expect.poll(() => appBadge(page)).toBe(Number(unread));
     await page.keyboard.press("Escape");

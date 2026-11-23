@@ -1,17 +1,12 @@
-import { aiCanRun, NUDGE_DAYS, type AiErrorKind, type AiSummariesStatus, type NotNewsletter } from "@terno/core";
-import type { AiUsageReport, AppSettings, I18nRef } from "@terno/core/rpc";
+import { aiCanRun, NUDGE_DAYS, type AiErrorKind, type AiSummariesStatus } from "@terno/core";
+import type { AiUsageReport, AppSettings } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
-import { CloseButton } from "@terno/ui/components/close-button";
 import { NumberField } from "@terno/ui/components/number-field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Switch } from "@terno/ui/components/switch";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { errorHelp, providerLabel, routeOf, summariesOffered, usd } from "~/lib/ai";
 import { localized } from "~/lib/i18n";
-import { undoAction } from "~/lib/actions";
-import { registerUndo, snack } from "~/lib/snack";
-import { reloadList } from "~/state/list";
-import { leaveOut, letBackIn, senderKey } from "~/state/today";
 import { client } from "~/rpc/connection";
 import { useApp } from "~/state/app";
 import { SettingsGroup, SettingsNote, SettingsRow, type SettingsUpdate } from "./parts";
@@ -77,117 +72,6 @@ export function AskGroup({ settings, update }: { settings: AppSettings; update: 
         {(a) => <Switch {...a} checked={ask.enabled} data-testid="ai-ask-switch" onCheckedChange={(enabled) => void update({ ask: { enabled } })} />}
       </SettingsRow>
     </SettingsGroup>
-  );
-}
-
-/** Plan 145 §4: its own opt-in, since it sends mail with no click. Only for someone who has Today. */
-export function DigestGroup({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
-  const { ai, today } = settings;
-  const target = routeOf("digest", ai);
-  const on = today?.digest === true;
-  return (
-    <SettingsGroup title={t("today.digest.settingsTitle")} testId="ai-digest">
-      <SettingsRow find="ai.digest" label={t("today.digest.settingsSwitch")} hint={t("today.digest.settingsHint", { provider: providerLabel(target.provider, ai) })}>
-        {(a) => <Switch {...a} checked={on} data-testid="ai-digest-switch" onCheckedChange={(digest) => void update({ today: { digest } })} />}
-      </SettingsRow>
-      <NotNewslettersRow />
-    </SettingsGroup>
-  );
-}
-
-/**
- * Plan 204 §6: dates in new mail, for What matters. On by default since plan 211 wherever AI runs (a switch off stays off);
- * the last 14 days are the backend's to check, each account once, with no offer. It says when it has stopped.
- */
-export function DatedGroup({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
-  const { ai, dated } = settings;
-  const target = routeOf("dated", ai);
-  const ready = aiCanRun("dated", ai);
-  const [status, setStatus] = useState<{ blockedBy: { kind: AiErrorKind; message: string; i18n?: I18nRef; limit?: "daily" | "monthly" } | null } | null>(null);
-  useEffect(() => {
-    if (!dated.enabled) return setStatus(null);
-    let current = true;
-    void client.call("dated.status", {}).then((r) => current && setStatus(r), () => {});
-    const off = client.on("datedStatus", setStatus);
-    return () => { current = false; off(); };
-  }, [dated.enabled, ai]);
-  return (
-    <SettingsGroup title={t("ai.dated.title")} testId="ai-dated">
-      <SettingsRow find="ai.dated" label={t("ai.dated.switch")} hint={ready ? t("ai.dated.hint", { provider: providerLabel(target.provider, ai) }) : t("ai.dated.hintNoProvider")}>
-        {(a) => <Switch {...a} checked={dated.enabled} disabled={!ready && !dated.enabled} data-testid="ai-dated-switch" onCheckedChange={(enabled) => void update({ dated: { enabled } })} />}
-      </SettingsRow>
-      {dated.enabled && status?.blockedBy && (
-        <SettingsNote testId="ai-dated-status">
-          {/* plan 239: stopped by the day's guard or the monthly ceiling, its own sentence says why and until when */}
-          <span role="status" className="text-destructive-ink">{status.blockedBy.limit ? localized(status.blockedBy.message, status.blockedBy.i18n) : t("ai.dated.paused")}</span>
-          {!status.blockedBy.limit && errorHelp(status.blockedBy.kind, ai) && <span> {errorHelp(status.blockedBy.kind, ai)}</span>}
-        </SettingsNote>
-      )}
-    </SettingsGroup>
-  );
-}
-
-/**
- * Plan 166: the senders said not to be newsletters, where the digest's settings are: each can be let back in, with Undo.
- * Shown whenever there's one, the digest on or off (they're out of Automated mail too). Nothing here leaves the machine.
- */
-function NotNewslettersRow() {
-  const [senders, setSenders] = useState<NotNewsletter[] | null>(null);
-  const list = useRef<HTMLUListElement>(null);
-  useEffect(() => {
-    let current = true;
-    const read = () => void client.call("today.notNewsletters", {}).then((r) => current && setSenders(r.senders), () => {});
-    read();
-    const off = client.on("todayDigest", read);
-    return () => {
-      current = false;
-      off();
-    };
-  }, []);
-  if (!senders?.length) return null;
-  const nameOf = (e: NotNewsletter) => e.name || e.email;
-  const remove = async (e: NotNewsletter, at: number) => {
-    const key = senderKey({ fromEmail: e.email });
-    // the keys go to the next sender's Remove (else the one before): the row they were on is gone
-    const buttons = [...(list.current?.querySelectorAll<HTMLElement>("[data-testid=ai-digest-excluded-remove]") ?? [])];
-    // the last one gone, the list goes with it: the digest's switch above it (Codex review: focus fell to the dialog)
-    const next = buttons[at + 1] ?? buttons[at - 1] ?? document.querySelector<HTMLElement>("[data-testid=ai-digest-switch]");
-    setSenders((held) => held && held.filter((x) => x !== e));
-    next?.focus({ preventScroll: true });
-    try {
-      const r = await client.call("today.newsletterAgain", { email: e.email, id: e.id });
-      letBackIn([key]);
-      void reloadList({ keepSelection: true });
-      if (!r.removed) return;
-      const removed = r.removed;
-      const undo = registerUndo(async () => {
-        // back as it was (its own time, so the list's order is as before), in one unit
-        await client.call("today.notNewslettersUndo", { restore: [removed] });
-        leaveOut([key]);
-        await reloadList({ keepSelection: true });
-      });
-      snack.success(t("today.digest.excluded.removed", { sender: nameOf(e) }), { duration: 8000, action: undoAction(undo, t("today.digest.excluded.removeUndo", { sender: nameOf(e) })) });
-    } catch (error) {
-      setSenders((held) => held && [...held, e].sort((a, b) => b.at - a.at));
-      snack.error(error instanceof Error ? error.message : String(error));
-    }
-  };
-  return (
-    <SettingsRow find="ai.digestExcluded" label={t("today.digest.excluded.title")} hint={t("today.digest.excluded.hint")} stacked testId="ai-digest-excluded">
-      {(a) => (
-        <ul ref={list} aria-labelledby={a["aria-labelledby"]} aria-describedby={a["aria-describedby"]} className="flex flex-col">
-          {senders.map((e, i) => (
-            <li key={e.id} className="flex min-h-9 items-center gap-3 border-b border-hairline py-1 last:border-b-0" data-testid="ai-digest-excluded-item">
-              <span className="min-w-0 flex-1 truncate text-sm">
-                <span className="font-medium">{nameOf(e)}</span>
-                {e.name && e.name !== e.email && <span className="ml-2 text-xs text-muted-foreground">{e.email}</span>}
-              </span>
-              <CloseButton size="sm" label={t("today.digest.excluded.remove", { sender: nameOf(e) })} className="relative after:absolute after:-inset-1 after:content-['']" data-testid="ai-digest-excluded-remove" onClick={() => void remove(e, i)} />
-            </li>
-          ))}
-        </ul>
-      )}
-    </SettingsRow>
   );
 }
 

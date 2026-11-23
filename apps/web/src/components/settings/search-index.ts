@@ -52,6 +52,8 @@ export interface IndexEntry {
 const ai = (ctx: FindContext) => aiFeaturesAvailable(ctx.settings);
 const ownAi = (ctx: FindContext) => !ctx.settings.ai.fromEnv;
 const accountAi = (_ctx: FindContext, account?: Account) => account?.ai !== false;
+/** What matters is in the sidebar (todayOffered: a local build's Dev mode switch too) */
+const shows = (c: FindContext) => ai(c) && (!c.devMode || c.settings.devAi === true) && c.settings.today?.show !== false;
 
 /**
  * Plan 203: every setting Settings shows, in its order (sections as the sidebar has them, rows as each section draws
@@ -61,16 +63,6 @@ export const SETTINGS_INDEX = [
   // General
   { id: "general.remoteImages", tab: "general", label: "settings.general.remoteImages", hint: "settings.general.remoteImages.hint", words: "settings.find.words.remoteImages" },
   { id: "general.language", tab: "general", label: "language.label", hint: "language.hint", words: "settings.find.words.language" },
-  // plan 207: where What matters shows (the row's own rule, todayOffered: a local build's Dev mode switch too)
-  { id: "general.firstScreen", tab: "general", label: "firstScreen.setting", hint: "firstScreen.setting.hint", words: "settings.find.words.firstScreen", when: (c) => ai(c) && (!c.devMode || c.settings.devAi === true) && c.settings.today?.show !== false },
-  // (only while What matters opens first: the Inbox's number is hidden then)
-  { id: "general.keepInboxCount", tab: "general", label: "firstScreen.keepInboxCount", hint: "firstScreen.keepInboxCount.hint", words: "settings.find.words.keepInboxCount", when: (c) => ai(c) && (!c.devMode || c.settings.devAi === true) && c.settings.today?.show !== false && c.settings.firstScreen === "whatMatters" },
-  { id: "general.today", tab: "general", group: "today.title", label: "today.settings.show", when: ai },
-  { id: "general.todayFinished", tab: "general", group: "today.title", label: "today.settings.finished", hint: "today.settings.finishedHint", words: "settings.find.words.finished", when: ai },
-  { id: "general.todayShown", tab: "general", group: "today.title", label: "shown.title", hint: "shown.hint", words: "settings.find.words.shown", when: ai },
-  { id: "general.todayMuted", tab: "general", group: "today.title", label: "dated.mute.title", hint: "dated.mute.hint", words: "settings.find.words.muted", when: ai },
-  { id: "general.todayAt", tab: "general", group: "today.title", label: "today.settings.prepareAt", hint: "today.settings.prepareAtHint", when: ai },
-  { id: "general.todayNotify", tab: "general", group: "today.title", label: "today.settings.notify", hint: "today.settings.notifyHint", when: ai },
   { id: "general.syncWindow", tab: "general", group: "settings.general.sync", label: "settings.general.syncWindow", hint: "settings.general.syncWindow.hint", words: "settings.find.words.syncWindow" },
   { id: "general.notify", tab: "general", group: "settings.general.notifications", label: "settings.general.notify", words: "settings.find.words.notify", when: (c) => c.notifications },
   { id: "general.notifyPreview", tab: "general", group: "settings.general.notifications", label: "settings.general.notifyPreview", hint: "settings.general.notifyPreview.hint", when: (c) => c.notifications },
@@ -85,6 +77,23 @@ export const SETTINGS_INDEX = [
   { id: "general.reports", tab: "general", group: "diag.settings.title", label: "diag.settings.reports", words: "settings.find.words.reports" },
   { id: "general.reportContents", tab: "general", group: "diag.settings.title", label: "diag.settings.contains", hint: "diag.settings.containsHint" },
   { id: "general.logs", tab: "general", group: "diag.settings.title", label: "diag.settings.logs", hint: "diag.settings.logsHint" },
+
+  // What matters (plan 247): its own section, where it can exist; the rows' own rules
+  { id: "whatMatters.show", tab: "whatMatters", label: "settings.whatMatters.show", hint: "settings.whatMatters.show.hint", words: "settings.find.words.whatMattersShow", when: ai },
+  // plan 207: only while What matters shows (the row's own rule, todayOffered: a local build's Dev mode switch too)
+  { id: "whatMatters.firstScreen", tab: "whatMatters", label: "firstScreen.setting", hint: "firstScreen.setting.hint", words: "settings.find.words.firstScreen", when: (c) => shows(c) },
+  // (only while What matters opens first: the Inbox's number is hidden then)
+  { id: "whatMatters.keepInboxCount", tab: "whatMatters", label: "firstScreen.keepInboxCount", hint: "firstScreen.keepInboxCount.hint", words: "settings.find.words.keepInboxCount", when: (c) => shows(c) && c.settings.firstScreen === "whatMatters" },
+  { id: "whatMatters.finished", tab: "whatMatters", label: "today.settings.finished", hint: "today.settings.finishedHint", words: "settings.find.words.finished", when: ai },
+  { id: "whatMatters.dated", tab: "whatMatters", group: "settings.whatMatters.finds", label: "ai.dated.switch", words: "settings.find.words.dated", when: ai },
+  { id: "whatMatters.shown", tab: "whatMatters", group: "settings.whatMatters.senders", label: "settings.whatMatters.shown", hint: "settings.whatMatters.shown.hint", words: "settings.find.words.shown", when: ai },
+  { id: "whatMatters.muted", tab: "whatMatters", group: "settings.whatMatters.senders", label: "settings.whatMatters.muted", hint: "settings.whatMatters.muted.hint", words: "settings.find.words.muted", when: ai },
+  { id: "whatMatters.digest", tab: "whatMatters", group: "settings.whatMatters.morning", label: "settings.whatMatters.digest", words: "settings.find.words.digest", when: ai },
+  { id: "whatMatters.digestExcluded", tab: "whatMatters", group: "settings.whatMatters.morning", label: "today.digest.excluded.title", hint: "today.digest.excluded.hint", under: "whatMatters.digest", when: ai },
+  { id: "whatMatters.notify", tab: "whatMatters", group: "settings.whatMatters.morning", label: "settings.whatMatters.notify", hint: "settings.whatMatters.notify.hint", words: "settings.find.words.morningNotify", when: ai },
+  { id: "whatMatters.time", tab: "whatMatters", group: "settings.whatMatters.morning", label: "settings.whatMatters.time", words: "settings.find.words.morningTime", when: ai },
+  // with two accounts or more (with one, Accounts' own switch)
+  { id: "whatMatters.accounts", tab: "whatMatters", label: "settings.whatMatters.accounts", hint: "settings.whatMatters.accounts.footer", words: "settings.find.words.feedAccounts", when: (c) => ai(c) && c.accounts > 1 },
 
   // Appearance
   { id: "appearance.layout", tab: "appearance", group: "settings.appearance.list", label: "settings.appearance.layout", hint: "settings.appearance.layout.hint" },
@@ -158,9 +167,6 @@ export const SETTINGS_INDEX = [
   { id: "ai.ask", tab: "ai", group: "ai.ask.title", label: "ai.ask.switch", words: "settings.find.words.ask" },
   { id: "ai.followups", tab: "ai", group: "followups.title", label: "ai.followups.switch", words: "settings.find.words.followups" },
   { id: "ai.nudge", tab: "ai", group: "followups.title", label: "ai.followups.nudge", hint: "ai.followups.nudgeHint", under: "ai.followups" },
-  { id: "ai.digest", tab: "ai", group: "today.digest.settingsTitle", label: "today.digest.settingsSwitch", words: "settings.find.words.digest", when: ai },
-  { id: "ai.digestExcluded", tab: "ai", group: "today.digest.settingsTitle", label: "today.digest.excluded.title", hint: "today.digest.excluded.hint", under: "ai.digest", when: ai },
-  { id: "ai.dated", tab: "ai", group: "ai.dated.title", label: "ai.dated.switch", words: "settings.find.words.dated", when: ai },
   { id: "ai.usage", tab: "ai", label: "ai.usage.label", hint: "ai.usage.hint", words: "settings.find.words.usage" },
   { id: "ai.limit", tab: "ai", label: "ai.limit.label", hint: "ai.limit.hint", words: "settings.find.words.usage" },
   // Writing style, a page of Drafting's

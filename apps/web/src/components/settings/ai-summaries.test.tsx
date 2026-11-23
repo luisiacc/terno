@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { client } from "~/rpc/connection";
 import { useApp } from "~/state/app";
-import { AiUseGroup, AskGroup, DatedGroup, DigestGroup, FollowupsGroup, SummariesGroup } from "./ai-summaries";
+import { AiUseGroup, AskGroup, FollowupsGroup, SummariesGroup } from "./ai-summaries";
 
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 vi.mock("~/rpc/connection", () => ({ client: { call: vi.fn(), on: vi.fn(() => () => {}) } }));
@@ -35,30 +35,20 @@ describe("plan 168: no feature chooses its provider or model", () => {
     useApp.setState({ devAi: null, settings: settings() } as never);
   });
 
-  it("summaries, Ask, follow-ups and the digest show their switch and name where they run, with no select and no model field", async () => {
+  it("summaries, Ask and follow-ups show their switch and name where they run, with no select and no model field", async () => {
     const s = settings();
     const host = await render(
       <>
         <SummariesGroup settings={s} update={vi.fn() as never} />
         <AskGroup settings={s} update={vi.fn() as never} />
         <FollowupsGroup settings={s} update={vi.fn() as never} />
-        <DigestGroup settings={s} update={vi.fn() as never} />
       </>,
     );
-    for (const id of ["ai-summaries-switch", "ai-ask-switch", "ai-followups-switch", "ai-digest-switch"]) expect(host.querySelector(`[data-testid="${id}"]`), id).not.toBeNull();
+    for (const id of ["ai-summaries-switch", "ai-ask-switch", "ai-followups-switch"]) expect(host.querySelector(`[data-testid="${id}"]`), id).not.toBeNull();
     expect(host.querySelectorAll('[role="combobox"]')).toHaveLength(1); // the nudge's days, which chooses no model
     expect(host.querySelector('[data-testid$="-target"], [data-testid$="-model"], [data-testid$="-model-input"], [data-testid$="-provider"]')).toBeNull();
     expect(host.textContent).toContain("Sends the text of each new conversation to OpenAI");
     expect(vi.mocked(client.call).mock.calls.some(([method]) => method === "ai.listModels")).toBe(false);
-  });
-
-  it("plan 210 (iteration 3): What matters' group names the feature and who reads its mail in one line, never the digest or the keys' choice", async () => {
-    const s = { ...settings(), dated: { enabled: true, enabledAt: null } } as AppSettings;
-    useApp.setState({ settings: s } as never);
-    const host = await render(<DatedGroup settings={s} update={vi.fn() as never} />);
-    const group = host.querySelector('[data-testid="ai-dated"]')!;
-    expect(group.textContent).toContain("“What matters”: OpenAI.");
-    expect(group.textContent).not.toMatch(/digest|Claude or OpenAI/);
   });
 
   it("without AI, summaries' group isn't there: the provider group above is the way in", async () => {

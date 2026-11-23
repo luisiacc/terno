@@ -1,8 +1,8 @@
 import { localized } from "~/lib/i18n";
 import type { AiProviderId, CompatiblePreset, ModelInfo, PresetDescriptor, ProviderDescriptor } from "@terno/core";
 import type { AiSettings, AiTestResult, AppSettings } from "@terno/core/rpc";
-import { AI_JOBS, aiFeaturesAvailable, routeFor } from "@terno/core";
-import { AiUseGroup, AskGroup, DatedGroup, DigestGroup, FollowupsGroup, SummariesGroup } from "./ai-summaries";
+import { AI_JOBS, routeFor } from "@terno/core";
+import { AiUseGroup, AskGroup, FollowupsGroup, SummariesGroup } from "./ai-summaries";
 import { DraftingGroup } from "./ai-drafting";
 import { useAiDraftUi } from "~/lib/ai-draft-state";
 import { findAttrs, openSettingsTab, PrivacyNote, SettingsGroup, SettingsNote, SettingsRow, type RowA11y, type SettingsUpdate } from "./parts";
@@ -268,8 +268,6 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
       <SummariesGroup settings={settings} update={update} />
       <AskGroup settings={settings} update={update} />
       <FollowupsGroup settings={settings} update={update} />
-      {aiFeaturesAvailable(settings) && <DigestGroup settings={settings} update={update} />}
-      {aiFeaturesAvailable(settings) && <DatedGroup settings={settings} update={update} />}
       <AiUseGroup settings={settings} update={update} />
     </>
   );

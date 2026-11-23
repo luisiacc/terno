@@ -1271,6 +1271,37 @@ test("plan 211: an account's switches in Settings → Accounts: out of What matt
     await expect(page.getByTestId("account-followups")).toBeVisible();
     await feedShows(true, true);
   });
+
+  await scenario("plan 247: Settings → What matters lists the accounts with the same switch, in step with Accounts'; axe on the section; without AI, no section and no palette command", async () => {
+    await page.getByTestId("open-settings").click();
+    await page.getByTestId("tab-whatMatters").click();
+    const group = page.getByTestId("wm-settings-accounts");
+    const first = group.getByTestId("wm-account-feed").first();
+    const name = await group.getByTestId("wm-account").first().locator("p").first().innerText();
+    await expect(first).toHaveAccessibleName(name);
+    await expect(first).toHaveAttribute("aria-checked", "true");
+    await first.click();
+    await expect(first).toHaveAttribute("aria-checked", "false");
+    await feedShows(false, false);
+    await settings();
+    await expect(page.getByTestId("account-feed")).toHaveAttribute("aria-checked", "false");
+    await page.getByTestId("account-feed").click();
+    await page.getByTestId("tab-whatMatters").click();
+    await expect(first).toHaveAttribute("aria-checked", "true");
+    await axeBothModes(page, '[data-testid="what-matters-tab"]');
+    // no provider: no What matters, so no section, and none in the palette
+    await page.getByTestId("tab-ai").click();
+    await page.getByTestId("ai-provider").click();
+    await page.getByTestId("ai-choice-none").click();
+    await expect(page.getByTestId("tab-whatMatters")).toHaveCount(0);
+    await expect(page.getByTestId("tab-ai")).toHaveAttribute("aria-selected", "true");
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("settings-dialog")).toHaveCount(0);
+    await page.keyboard.press("Meta+k");
+    await page.getByTestId("palette-input").fill("settings what matters");
+    await expect(page.getByTestId("palette-settings-whatMatters")).toHaveCount(0);
+    await page.keyboard.press("Escape");
+  });
 });
 
 test("the list's keys on What matters' rows: e, # and r on the row the keys are on with nothing open; e on the open one moves on; a task stays, its mail filed; z exact", async ({ app: page, server }) => {

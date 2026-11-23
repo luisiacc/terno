@@ -1,9 +1,10 @@
 import { t } from "@terno/i18n";
-import { AtSign, Bot, Database, HardDrive, Info, ListFilter, Palette, SlidersHorizontal, Sparkles, Tag, Terminal, NotepadText } from "@terno/ui/icons";
+import { AtSign, Bot, Database, HardDrive, Info, ListFilter, Palette, SlidersHorizontal, Sparkles, Sun, Tag, Terminal, NotepadText } from "@terno/ui/icons";
 import type { SettingsTab } from "~/state/app";
 
 const LABEL_KEYS = {
   general: "settings.tab.general",
+  whatMatters: "today.title",
   appearance: "settings.tab.appearance",
   accounts: "settings.tab.accounts",
   categories: "settings.tab.categories",
@@ -36,6 +37,8 @@ type TabEntry = { readonly value: SettingsTab; readonly label: string; readonly 
 
 export const SETTINGS_TABS: readonly TabEntry[] = [
   tab("general", SlidersHorizontal),
+  // plan 247: only where What matters can exist (settingsTabs)
+  tab("whatMatters", Sun),
   tab("appearance", Palette),
   tab("accounts", AtSign),
   tab("categories", Tag),
@@ -50,3 +53,12 @@ export const SETTINGS_TABS: readonly TabEntry[] = [
 
 /** Plan 146: a local build's own section, last. */
 export const DEV_TAB: TabEntry = tab("dev", Terminal);
+
+/**
+ * Plan 247: the sections that exist here, in sidebar order: What matters only where it can exist (AI can run: the same rule
+ * as its search entries), Dev mode last on a local build. The sidebar and the palette both read it.
+ */
+export function settingsTabs({ whatMatters, dev }: { whatMatters: boolean; dev: boolean }): readonly TabEntry[] {
+  const tabs = whatMatters ? SETTINGS_TABS : SETTINGS_TABS.filter((e) => e.value !== "whatMatters");
+  return dev ? [...tabs, DEV_TAB] : tabs;
+}

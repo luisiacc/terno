@@ -54,7 +54,7 @@ import { summarizable, summarize } from "~/lib/summaries";
 import { useThread } from "~/state/threads";
 import { createCategory } from "./category-picker";
 import { snack } from "~/lib/snack";
-import { DEV_TAB, SETTINGS_TABS } from "./settings/tabs";
+import { settingsTabs } from "./settings/tabs";
 import AskPages from "./ask-page";
 
 const NONE: readonly never[] = [];
@@ -616,7 +616,7 @@ export function CommandPalette() {
     if (readyVersion) add({ id: "updates.restart", group: "actions", label: t("updates.pill.restart"), search: `${t("updates.pill.restart")} ${readyVersion}`, icon: <RotateCw />, testId: "palette-restart-update", keywords: english("updates.pill.restart"), run: () => void installUpdate() });
 
     // ── settings
-    for (const { value: tab, label, icon: Icon } of hasDevMode ? [...SETTINGS_TABS, DEV_TAB] : SETTINGS_TABS) {
+    for (const { value: tab, label, icon: Icon } of settingsTabs({ whatMatters: canAi, dev: hasDevMode })) {
       add({
         id: `settings:${tab}`,
         group: "settings",

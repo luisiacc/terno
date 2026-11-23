@@ -185,6 +185,8 @@ async function shoot(page: Page) {
   await switchOn("ai-ask-switch");
   // Follow-ups aren't switched on here: their pictures come from the AI demo (shots/demo-shots.ts, plan 224)
   await switchOn("replies-switch");
+  // plan 247: the digest is What matters' (Each morning)
+  await page.getByTestId("tab-whatMatters").click();
   await switchOn("ai-digest-switch");
   await page.keyboard.press("Escape");
   await page.getByTestId("settings-dialog").waitFor({ state: "detached" });
@@ -329,7 +331,7 @@ async function shoot(page: Page) {
     if (n) break;
     await blur();
     await page.keyboard.press("Meta+,");
-    await page.getByTestId("tab-ai").click();
+    await page.getByTestId("tab-whatMatters").click();
     await page.getByTestId("ai-digest-switch").click();
     await page.waitForFunction(() => document.querySelector("[data-testid=ai-digest-switch]")?.getAttribute("aria-checked") === "false");
     await switchOn("ai-digest-switch");

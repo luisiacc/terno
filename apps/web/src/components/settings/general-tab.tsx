@@ -1,11 +1,10 @@
-import { aiFeaturesAvailable, leadScreen, UNDO_SEND_SECONDS, type FirstScreen, type UndoSendSeconds } from "@terno/core";
+import { leadScreen, UNDO_SEND_SECONDS, type FirstScreen, type UndoSendSeconds } from "@terno/core";
 import type { AppSettings } from "@terno/core/rpc";
 import { Button } from "@terno/ui/components/button";
 import { NumberField } from "@terno/ui/components/number-field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Switch } from "@terno/ui/components/switch";
-import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
-import { Inbox, Keyboard, Sun } from "@terno/ui/icons";
+import { Keyboard } from "@terno/ui/icons";
 import { useEffect, useReducer, useRef, useState } from "react";
 import { isLanguageSetting, LOCALE_IDS, LOCALES, resolveLocale, t, type LanguageSetting } from "@terno/i18n";
 import { setApp, useApp } from "~/state/app";
@@ -16,7 +15,6 @@ import { MacSection } from "~/lib/web-parts";
 import { parseSyncWindow, SYNC_WINDOW_MAX, SYNC_WINDOW_MIN } from "~/lib/settings-values";
 import { DiagnosticsSection } from "./diagnostics-section";
 import { SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
-import TodaySettings from "./today-settings";
 import { badgeSupported, pageNotificationsSupported } from "~/lib/notify";
 
 
@@ -226,55 +224,9 @@ function LanguageRow({ settings, update }: { settings: AppSettings; update: Sett
 /** Plan 188: Undo send's windows, in seconds. */
 const undoSendChoices = (): { value: UndoSendSeconds; label: string }[] => UNDO_SEND_SECONDS.map((n) => ({ value: n, label: t("settings.general.undoSendTime.seconds", { count: n }) }));
 
-/**
- * Plan 207: the screen the app opens on, and so the one number the sidebar and the Dock show. Only where What matters
- * shows; the current screen stays where it is (it decides launches).
- */
-function FirstScreenGroup({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
-  // only where What matters shows (Codex code review #6: a local build with Dev mode's AI off has nothing to open on)
-  if (!useApp(todayOffered)) return null;
-  const value: FirstScreen = settings.firstScreen ?? "inbox";
-  return (
-    <SettingsGroup testId="first-screen-group">
-      <SettingsRow find="general.firstScreen" label={t("firstScreen.setting")} hint={t("firstScreen.setting.hint")} testId="first-screen-row">
-        {(a) => (
-          <ToggleGroup
-            aria-labelledby={a["aria-labelledby"]}
-            aria-describedby={a["aria-describedby"]}
-            variant="segmented"
-            value={[value]}
-            onValueChange={(v: string[]) => {
-              const next = v[0];
-              if ((next === "inbox" || next === "whatMatters") && next !== value) void update({ firstScreen: next });
-            }}
-            data-testid="first-screen-toggle"
-          >
-            <ToggleGroupItem value="inbox" data-testid="first-screen-inbox" className="gap-1.5">
-              <Inbox aria-hidden />
-              {t("view.inbox")}
-            </ToggleGroupItem>
-            <ToggleGroupItem value="whatMatters" data-testid="first-screen-what-matters" className="gap-1.5">
-              <Sun aria-hidden />
-              {t("today.title")}
-            </ToggleGroupItem>
-          </ToggleGroup>
-        )}
-      </SettingsRow>
-      {/* the owner: What matters first hides the Inbox's number; this keeps it */}
-      {value === "whatMatters" && (
-        <SettingsRow find="general.keepInboxCount" label={t("firstScreen.keepInboxCount")} hint={t("firstScreen.keepInboxCount.hint")} testId="keep-inbox-count-row">
-          {(a) => <Switch {...a} data-testid="keep-inbox-count" checked={settings.keepInboxCount} onCheckedChange={(on) => void update({ keepInboxCount: on })} />}
-        </SettingsRow>
-      )}
-    </SettingsGroup>
-  );
-}
-
 export function GeneralTab({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
   return (
     <div data-testid="general-tab">
-      <FirstScreenGroup settings={settings} update={update} />
-
       <SettingsGroup>
         <SettingsRow find="general.remoteImages" label={t("settings.general.remoteImages")} hint={t(settings.remoteImages === "always" ? "settings.general.remoteImages.hintOn" : "settings.general.remoteImages.hint")}>
           {(a) => <Switch {...a} data-testid="remote-images-switch" checked={settings.remoteImages === "always"} onCheckedChange={(on) => void update({ remoteImages: on ? "always" : "ask" })} />}
@@ -284,10 +236,6 @@ export function GeneralTab({ settings, update }: { settings: AppSettings; update
       <SettingsGroup>
         <LanguageRow settings={settings} update={update} />
       </SettingsGroup>
-
-      {aiFeaturesAvailable(settings) && (
-        <TodaySettings settings={settings} update={update} />
-      )}
 
       <SettingsGroup title={t("settings.general.sync")}>
         <SettingsRow find="general.syncWindow" labelFor label={t("settings.general.syncWindow")} hint={t("settings.general.syncWindow.hint")}>

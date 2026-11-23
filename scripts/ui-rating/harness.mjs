@@ -73,6 +73,8 @@ async function backgroundSwitches(page) {
   const notNow = page.getByTestId("ai-followups-notnow");
   if (await notNow.isVisible().catch(() => false)) await notNow.click();
   await switchOn(page, "replies-switch");
+  // plan 247: the digest is What matters' (Each morning)
+  await openTab(page, "whatMatters");
   await switchOn(page, "ai-digest-switch");
 }
 
@@ -123,7 +125,10 @@ export async function checkAi(page, mode, url) {
     if ((await page.getByTestId("ai-endpoint").inputValue()) !== `${url}/v1`) problems.push("the endpoint isn't the stub's");
     if ((await page.getByTestId("ai-model").inputValue()) !== MODEL) problems.push(`the model isn't ${MODEL}`);
   }
-  for (const id of ["ai-summaries-switch", "ai-followups-switch", "replies-switch", "ai-digest-switch"]) if ((await page.getByTestId(id).getAttribute("aria-checked")) !== "true") problems.push(`${id} is off`);
+  for (const id of ["ai-summaries-switch", "ai-followups-switch", "replies-switch"]) if ((await page.getByTestId(id).getAttribute("aria-checked")) !== "true") problems.push(`${id} is off`);
+  // plan 247: the digest's switch is in What matters' section
+  await openTab(page, "whatMatters");
+  if ((await page.getByTestId("ai-digest-switch").getAttribute("aria-checked")) !== "true") problems.push("ai-digest-switch is off");
   await openTab(page, "appearance");
   if ((await page.getByTestId("site-icons-switch").getAttribute("aria-checked")) !== "false") problems.push("sender icons are on");
   await page.keyboard.press("Escape");

@@ -14,7 +14,7 @@ import { setApp, useApp } from "~/state/app";
 import { openFound } from "../settings/find-open";
 import { MutedList } from "./muted-list";
 
-/** The finished items' switch, saved at once wherever it's changed (Settings has the same row: `general.todayFinished`). */
+/** The finished items' switch, saved at once wherever it's changed (Settings has the same row: `whatMatters.finished`). */
 async function saveFinished(finished: boolean): Promise<void> {
   try {
     setApp({ settings: reconcileSettings(await client.call("settings.update", { today: { finished } })) });
@@ -54,9 +54,9 @@ export function WhatMattersOptions() {
   const hintId = useId();
   const more = () => {
     setOpen(false);
-    setApp({ dialog: "settings", settingsTab: "general" });
+    setApp({ dialog: "settings", settingsTab: "whatMatters" });
     // once Settings is there, at the row itself
-    requestAnimationFrame(() => openFound({ id: "general.todayFinished", tab: "general", page: null, scope: null, under: null }));
+    requestAnimationFrame(() => openFound({ id: "whatMatters.finished", tab: "whatMatters", page: null, scope: null, under: null }));
   };
   return (
     <Popover open={open} onOpenChange={setOpen}>

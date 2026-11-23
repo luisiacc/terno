@@ -1,5 +1,6 @@
 import type { Account, AccountPatch } from "@terno/core";
 import { client } from "~/rpc/connection";
+import { snack } from "~/lib/snack";
 import { getApp, setAccounts } from "~/state/app";
 
 /**
@@ -79,6 +80,18 @@ export async function patchAccount(id: number, patch: AccountEdit, options: { op
     throw error;
   } finally {
     if (p.edits.length === 0 && pending.get(id) === p) pending.delete(id);
+  }
+}
+
+/**
+ * Plan 211's "Show in What matters", from either place it's drawn (Accounts, and What matters' own section with several
+ * accounts, plan 247): the account's event redraws both; a refusal is said.
+ */
+export async function setAccountFeed(id: number, feed: boolean): Promise<void> {
+  try {
+    await client.call("accounts.update", { id, feed });
+  } catch (error) {
+    snack.error(error instanceof Error ? error.message : String(error));
   }
 }
 

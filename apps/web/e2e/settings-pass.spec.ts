@@ -15,6 +15,8 @@ const ctx = { clientId: "setup", origin: "dev" as const };
 const COLOR_NAMES = { rose: "Rose", amber: "Amber", lime: "Lime", emerald: "Emerald", cyan: "Cyan", brown: "Brown", violet: "Violet", slate: "Slate" } as const;
 const TABS = [
   ["general", "General"],
+  // plan 247: with the demo's AI, What matters has its section
+  ["whatMatters", "What matters"],
   ["appearance", "Appearance"],
   ["accounts", "Accounts"],
   ["categories", "Categories"],
@@ -110,14 +112,14 @@ test("General and Appearance edit, persist and take effect; the sidebar's rows; 
   await scenario("the sidebar's rows stand 1 px apart: a hovered row's fill never runs into the selected one's", async () => {
     await openVia(page, "gear", "general");
     const general = await page.getByTestId("tab-general").boundingBox();
-    const appearance = page.getByTestId("tab-appearance");
+    const appearance = page.getByTestId("tab-whatMatters");
     await appearance.hover();
     const below = await appearance.boundingBox();
     expect(below!.y - (general!.y + general!.height)).toBeCloseTo(1, 1);
     // the hovered row is filled, and the line between them is the sidebar's own
     const fill = (id: string) => page.getByTestId(id).evaluate((el) => getComputedStyle(el).backgroundColor);
-    expect(await fill("tab-appearance")).not.toBe("rgba(0, 0, 0, 0)");
-    expect(await fill("tab-general")).not.toBe(await fill("tab-appearance"));
+    expect(await fill("tab-whatMatters")).not.toBe("rgba(0, 0, 0, 0)");
+    expect(await fill("tab-general")).not.toBe(await fill("tab-whatMatters"));
     if (process.env.SETTINGS_SHOTS) {
       for (const scheme of ["light", "dark"] as const) {
         await page.emulateMedia({ colorScheme: scheme });

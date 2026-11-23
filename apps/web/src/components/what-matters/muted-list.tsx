@@ -7,7 +7,7 @@ import { mute, muteAddress, muteName, unmute, wholeKindsLeft, type useDatedMutes
 
 /**
  * Plan 210 (iteration 4, the owner's "Mute this kind/sender"): what's muted in What matters, each with Unmute ("Show
- * again"), where What matters' settings are (its gear and Settings → General → What matters). A kind says it's from any
+ * again"), where What matters' settings are (its gear and Settings → What matters). A kind says it's from any
  * sender; a sender, their address beside their name; a pair (iteration 5) both ("Deliveries from Parcelo", the address). Unmute takes it off at once (with Undo in the snack) and keeps the
  * keys in the list: the next row's button, else the previous, else `fallback`.
  */

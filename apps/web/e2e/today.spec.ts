@@ -229,6 +229,12 @@ test.describe("What matters and its digest (plan 145)", () => {
     await expect(page.getByTestId("digest-page")).toBeVisible();
     await expect(page.getByTestId("digest-title")).toHaveText("Automated mail");
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-digest-off.png` });
+    // plan 247 (Codex code review): the way to turn the digest on opens What matters' section at its switch
+    await page.getByTestId("digest-turn-on").click();
+    await expect(page.getByTestId("tab-whatMatters")).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByTestId("ai-digest-switch")).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("settings-dialog")).toHaveCount(0);
     // plan 235: ticked rows' senders can be hidden from the foot, and each row has a menu (⇧F10 on it) for the ticked rows
     const digestRows = page.getByTestId("digest-item");
     expect(await digestRows.count()).toBeGreaterThanOrEqual(3);
@@ -249,6 +255,8 @@ test.describe("What matters and its digest (plan 145)", () => {
     // what Hide does to mail still to come, on its help icon's hover
     await menu.getByTestId("digest-menu-hide-help").hover();
     await expect(page.locator("[data-slot=tooltip-content]")).toContainText("now and in the future");
+    // plan 247 (Codex code review): where to let them back in
+    await expect(page.locator("[data-slot=tooltip-content]")).toContainText("Settings → What matters → Each morning");
     // and by the keys alone: the pointer away, the arrows reach Hide and its help shows (a keyboard has no hover)
     await page.mouse.move(0, 0);
     await expect(page.locator("[data-slot=tooltip-content]")).toHaveCount(0);
@@ -322,7 +330,8 @@ test.describe("What matters and its digest (plan 145)", () => {
     await page.keyboard.press("j");
     await expect(page.locator("[data-digest-open]:focus")).toHaveCount(1);
     await page.getByTestId("open-settings").click();
-    await page.getByTestId("tab-ai").click();
+    // plan 247: the digest's settings are What matters' (Each morning)
+    await page.getByTestId("tab-whatMatters").click();
     const excluded = page.getByTestId("ai-digest-excluded");
     await expect(excluded).toContainText("Senders left out");
     await expect(excluded.getByTestId("ai-digest-excluded-item")).toHaveText(["Morning Brewnews@morningbrew.test"]);
@@ -1332,14 +1341,19 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await expect(dinners).toHaveCount(1);
     });
 
-    await scenario("Settings → AI: its group beside the digest's, on, naming who reads the mail", async () => {
+    await scenario("Settings → What matters: what it looks for, on, naming who reads the mail; not in AI any more", async () => {
       await page.getByTestId("open-settings").click();
       await page.getByTestId("tab-ai").click();
+      await expect(page.getByTestId("ai-tab")).toBeVisible();
+      await expect(page.getByTestId("ai-dated")).toHaveCount(0);
+      await expect(page.getByTestId("ai-digest")).toHaveCount(0);
+      await page.getByTestId("tab-whatMatters").click();
       const group = page.getByTestId("ai-dated");
-      // plan 210 (iteration 3): the feature by its name, and who reads its mail, in one line
-      await expect(group).toContainText("What matters");
+      // plan 247: the group says what it's for; who reads its mail beside the switch and in full below it
+      await expect(group).toContainText("What it looks for");
       await expect(group.getByTestId("ai-dated-switch")).toBeChecked();
-      await expect(group).toContainText(/“What matters”: \S/);
+      await expect(group).toContainText(/Read by \S/);
+      await expect(group.getByTestId("today-privacy")).toContainText("To find bills, trips and requests, Terno");
       await expect(group).not.toContainText("digest");
       await group.scrollIntoViewIfNeeded();
       if (SHOTS) {

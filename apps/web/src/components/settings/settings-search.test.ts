@@ -152,6 +152,35 @@ describe("the entries a search runs on", async () => {
     expect(ids({ ...ctx, desktop: false, webStorage: true }).has("storage.engine")).toBe(true);
   });
 
+  it("plan 247: with AI, What matters' settings are found in its own section, in its order, each by its row's rule", () => {
+    const withAi = { ...ctx, settings: { ...settings, ai: { provider: "anthropic", model: "claude-sonnet-5-5", local: false, hasKey: true, keyConfirmed: true, keys: { anthropic: { hasKey: true, keyHint: null } }, profiles: {}, fromEnv: false } } as typeof settings };
+    const entries = findEntries(withAi, accounts, []);
+    const mine = entries.filter((e) => e.data.tab === "whatMatters").map((e) => e.data.id);
+    expect(mine).toEqual(["whatMatters.show", "whatMatters.firstScreen", "whatMatters.finished", "whatMatters.dated", "whatMatters.shown", "whatMatters.muted", "whatMatters.digest", "whatMatters.digestExcluded", "whatMatters.notify", "whatMatters.time", "whatMatters.accounts"]);
+    // nothing of it is left in General or AI
+    expect(entries.filter((e) => /^(general|ai)\.(today|firstScreen|keepInboxCount|digest|dated)/.test(e.data.id))).toEqual([]);
+    expect(findSettings(entries, "digest")[0]?.entry.data.id).toBe("whatMatters.digest");
+    // Codex code review: the left-out senders' list shows only with one; without, a search for it opens the digest's switch
+    expect(entries.find((e) => e.data.id === "whatMatters.digestExcluded")?.data.under).toBe("whatMatters.digest");
+    expect(findSettings(entries, "finished")[0]?.entry.data.id).toBe("whatMatters.finished");
+    expect(findSettings(entries, "launch")[0]?.entry.data.id).toBe("whatMatters.firstScreen");
+    expect(findSettings(entries, "launch")[0]?.entry.place.map((p) => p.text)).toEqual(["What matters"]);
+    const ids = (c: typeof ctx, n = accounts) => new Set(findEntries(c, n, []).map((e) => e.data.id));
+    // the Inbox's number only while What matters opens first; launch and it only while it's in the sidebar
+    expect(ids({ ...withAi, settings: { ...withAi.settings, firstScreen: "whatMatters" } as typeof settings }).has("whatMatters.keepInboxCount")).toBe(true);
+    const hidden = ids({ ...withAi, settings: { ...withAi.settings, today: { show: false } } as typeof settings });
+    expect(hidden.has("whatMatters.firstScreen")).toBe(false);
+    expect(hidden.has("whatMatters.show")).toBe(true);
+    // a local build with Dev mode's Pro AI off: the section and its switch, not the launch
+    const devOff = ids({ ...withAi, devMode: true, settings: { ...withAi.settings, devAi: false } as typeof settings });
+    expect(devOff.has("whatMatters.show")).toBe(true);
+    expect(devOff.has("whatMatters.firstScreen")).toBe(false);
+    // with one account, Accounts' own switch
+    expect(ids({ ...withAi, accounts: 1 }, [accounts[0]!]).has("whatMatters.accounts")).toBe(false);
+    // without AI, none of it
+    expect([...ids(ctx)].filter((id) => id.startsWith("whatMatters."))).toEqual([]);
+  });
+
   it("in Spanish, finds by the English name and words too, and says so", () => {
     setLocale("es", es as never);
     try {
