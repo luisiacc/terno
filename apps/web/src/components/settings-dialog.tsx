@@ -45,6 +45,9 @@ function initialFocus(): boolean | HTMLElement {
   const id = getApp().settingsAccount;
   if (id === null) return switchFocus() && (document.querySelector<HTMLElement>(`[data-settings-tab="${getApp().settingsTab}"]`) ?? true);
   const row = document.querySelector<HTMLElement>(`[data-testid=settings-account][data-account-id="${id}"] [data-testid=account-toggle]`);
+  // its row stands at the pane's top with its settings below, not wherever focus would scroll it (the row, not the
+  // item: the hairline above the item stays out of sight under the header's own)
+  row?.scrollIntoView({ block: "start", behavior: "instant" });
   // used once: a later visit to the tab opens nothing by itself
   setApp({ settingsAccount: null });
   return row ?? switchFocus();

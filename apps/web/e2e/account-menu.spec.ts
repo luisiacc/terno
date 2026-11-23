@@ -275,15 +275,18 @@ test.describe("the account menu", () => {
       await page.keyboard.press("z");
       await expect.poll(() => inboxUnread(db, a!)).toBe(unread);
     });
-    await scenario("Account settings…: Settings opens on that account, open and focused", async () => {
+    await scenario("Account settings…: Settings opens on that account, open and focused, its row at the top", async () => {
       await freshStart(page);
-      const [, b] = await accountIds(page);
-      await openMenu(page, b!);
+      // the last account: the one a focus scroll alone left in the pane's middle
+      const b = (await accountIds(page)).at(-1)!;
+      await openMenu(page, b);
       await page.getByTestId("account-menu-settings").click();
       const item = page.locator(`[data-testid=settings-account][data-account-id="${b}"]`);
       await expect(item.getByTestId("account-toggle")).toBeFocused();
       await expect(item.getByTestId("account-toggle")).toHaveAttribute("aria-expanded", "true");
       await expect(item.getByTestId("account-editor")).toBeVisible();
+      const tops = async () => ({ row: (await item.getByTestId("account-toggle").boundingBox())!.y, pane: (await page.getByTestId("settings-scroller").boundingBox())!.y });
+      await expect.poll(async () => { const t = await tops(); return Math.round(t.row - t.pane); }).toBe(0);
       // once: going to another tab and back opens nothing by itself
       await page.getByTestId("tab-general").click();
       await page.getByTestId("tab-accounts").click();
