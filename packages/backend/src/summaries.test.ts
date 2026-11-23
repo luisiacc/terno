@@ -684,6 +684,66 @@ describe("by hand", () => {
     await expect(read(thread)).resolves.toMatchObject({ state: "ready" });
   });
 
+  describe("plan 242: Dev mode's Summarize again", () => {
+    const again = (client: RpcClient, threadId: number, id = requestId()) => client.call("ai.summarize", { threadId, requestId: id, again: true });
+    /** a local build with Dev mode's switch on, and an old thread summarized once by hand */
+    async function local() {
+      const s = await setup({ enabled: false, devAi: { openai: "env-openai" } });
+      await s.client.call("settings.update", { devAi: true });
+      const m = await s.arrive({ date: START - 400 * 86_400_000 }, false);
+      await go(s.client, m.thread);
+      expect(s.model.requests).toHaveLength(1);
+      return { ...s, ...m };
+    }
+    const NEW = { summary: "Ana still needs the signature.", items: [] };
+
+    it("asks the model although what's stored would do, and keeps the new one", async () => {
+      const { client, model, clock, thread, read } = await local();
+      await go(client, thread);
+      expect(model.requests).toHaveLength(1);
+      model.answer = () => replying(NEW);
+      clock.now += 1000;
+      await expect(again(client, thread)).resolves.toMatchObject({ status: "ready", summary: { summary: NEW.summary, generatedAt: START + 1000 } });
+      expect(model.requests).toHaveLength(2);
+      await expect(read(thread)).resolves.toMatchObject({ state: "ready", summary: { summary: NEW.summary } });
+    });
+
+    it("doesn't take the answer of a run it finds on the thread", async () => {
+      const { client, model, arrive } = await local();
+      const { thread } = await arrive({ date: START - 400 * 86_400_000 }, false);
+      const g = gate();
+      model.answer = (req, n) => (n === 1 ? held(req, g.opened) : replying(NEW));
+      // the reader's ordinary request, stopped at the model: its answer is one Summarize again doesn't take
+      const first = go(client, thread);
+      await until(() => expect(model.requests).toHaveLength(2));
+      const mine = again(client, thread);
+      await settle();
+      g.open(replying());
+      await expect(first).resolves.toMatchObject({ status: "ready", summary: { summary: ANSWER.summary } });
+      await expect(mine).resolves.toMatchObject({ status: "ready", summary: { summary: NEW.summary } });
+      expect(model.requests).toHaveLength(3);
+    });
+
+    it("cancelled, what was stored stays", async () => {
+      const { client, model, thread, read } = await local();
+      const g = gate();
+      model.answer = (req) => held(req, g.opened);
+      const id = requestId();
+      const pending = again(client, thread, id);
+      await until(() => expect(model.requests).toHaveLength(2));
+      await client.call("ai.cancel", { requestId: id });
+      expect(await errorOf(pending)).toMatchObject({ code: "CANCELLED" });
+      await expect(read(thread)).resolves.toMatchObject({ state: "ready", summary: { summary: ANSWER.summary } });
+    });
+
+    it("is refused outside a local build, and nothing is asked", async () => {
+      const { client, model, thread } = await old();
+      await go(client, thread);
+      expect(await errorOf(again(client, thread))).toMatchObject({ code: "BAD_REQUEST" });
+      expect(model.requests).toHaveLength(1);
+    });
+  });
+
   it("reuse requires the same target: another endpoint asks again, and the result names who wrote it", async () => {
     const { client, model, thread } = await old();
     await go(client, thread);

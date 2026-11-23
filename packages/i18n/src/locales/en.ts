@@ -1373,6 +1373,8 @@ const en = {
   "actions.print": "Print",
   "actions.summarize": "Summarize this conversation",
   "actions.updateSummary": "Update summary",
+  // plan 242: Dev mode's, with a summary shown
+  "actions.summarizeAgain": "Summarize again",
   "summary.label": "Summary",
   "summary.ready": "Summary ready",
   "summary.kind.decision": "Decision",

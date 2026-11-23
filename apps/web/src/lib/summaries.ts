@@ -13,11 +13,20 @@ export type SummaryUi =
   /** there was one, but the conversation changed */
   | { kind: "stale" }
   | { kind: "ready"; summary: AiSummary }
-  | { kind: "running"; requestId: string; was: "none" | "stale" }
-  | { kind: "waitingBody"; was: "none" | "stale" }
+  | ({ kind: "running"; requestId: string } & Asked)
+  | ({ kind: "waitingBody" } & Asked)
   /** nothing set up to run summaries: the block points to Settings */
-  | { kind: "noProvider"; was: "none" | "stale" }
-  | { kind: "error"; message: string; errorKind: AiErrorKind | undefined; was: "none" | "stale"; key?: string };
+  | ({ kind: "noProvider" } & Asked)
+  | ({ kind: "error"; message: string; errorKind: AiErrorKind | undefined; key?: string } & Asked);
+
+/**
+ * What a request in progress goes back to. Plan 242: `again` is Dev mode's Summarize again: what's stored was shown and
+ * is still there, so it comes back, and a retry or the text arriving asks again rather than taking it.
+ */
+interface Asked {
+  was: "none" | "stale";
+  again?: true;
+}
 
 interface SummariesState {
   byThread: ReadonlyMap<number, SummaryUi>;
@@ -55,6 +64,8 @@ function put(threadId: number, ui: SummaryUi): void {
 }
 
 const reads = new Map<number, number>();
+/** a read already sent answers for what was there then: one that lands after a new summary would put the old one back */
+const forgetReads = (threadId: number) => reads.set(threadId, (reads.get(threadId) ?? 0) + 1);
 
 /** What the backend has for a thread; asked when a thread opens and when its messages change. */
 export async function loadSummary(threadId: number): Promise<void> {
@@ -84,30 +95,43 @@ const wasOf = (ui: SummaryUi | undefined): "none" | "stale" => {
   return ui.was;
 };
 
-/** §7: a summary by hand, shown in the block at once. */
-export async function summarize(threadId: number): Promise<void> {
+/** A request ends with nothing new: back to what was there; for Summarize again, the stored one, read again. */
+function back(threadId: number, asked: Asked): void {
+  put(threadId, { kind: asked.was });
+  if (asked.again) void loadSummary(threadId);
+}
+
+/**
+ * §7: a summary by hand, shown in the block at once. Shown already, it opens the block; with `again` (plan 242, Dev
+ * mode's: the backend refuses it elsewhere) the model writes it anew.
+ */
+export async function summarize(threadId: number, o: { again?: boolean } = {}): Promise<void> {
   const before = useSummaries.getState().byThread.get(threadId);
   if (before?.kind === "running") return;
-  if (before?.kind === "ready") return useSummaries.setState({ open: true });
-  const was = wasOf(before);
+  if (before?.kind === "ready") {
+    useSummaries.setState({ open: true });
+    if (!o.again) return;
+  }
+  const asked: Asked = { was: wasOf(before), ...(o.again ? { again: true as const } : {}) };
   const requestId = globalThis.crypto.randomUUID();
-  put(threadId, { kind: "running", requestId, was });
+  forgetReads(threadId);
+  put(threadId, { kind: "running", requestId, ...asked });
   const mine = () => {
     const now = useSummaries.getState().byThread.get(threadId);
     return now?.kind === "running" && now.requestId === requestId;
   };
   try {
-    const result = await client.call("ai.summarize", { threadId, requestId });
+    const result = await client.call("ai.summarize", { threadId, requestId, ...(asked.again ? { again: true as const } : {}) });
     if (!mine()) return;
     if (result.status === "ready") put(threadId, { kind: "ready", summary: result.summary });
-    else put(threadId, { kind: "waitingBody", was });
+    else put(threadId, { kind: "waitingBody", ...asked });
   } catch (error) {
     if (!mine()) return;
     const e = error as { code?: string; message?: string; details?: { aiErrorKind?: AiErrorKind }; i18n?: { key: string; params?: Readonly<Record<string, string | number>> } };
     const errorKind = e.details?.aiErrorKind;
-    if (e.code === "CANCELLED" || errorKind === "cancelled") put(threadId, { kind: was });
-    else if (errorKind === "not_configured") put(threadId, { kind: "noProvider", was });
-    else put(threadId, { kind: "error", message: localized(e.message ?? "", e.i18n), errorKind, was, ...(e.i18n?.key ? { key: e.i18n.key } : {}) });
+    if (e.code === "CANCELLED" || errorKind === "cancelled") back(threadId, asked);
+    else if (errorKind === "not_configured") put(threadId, { kind: "noProvider", ...asked });
+    else put(threadId, { kind: "error", message: localized(e.message ?? "", e.i18n), errorKind, ...asked, ...(e.i18n?.key ? { key: e.i18n.key } : {}) });
   }
 }
 
@@ -115,14 +139,14 @@ export async function summarize(threadId: number): Promise<void> {
 export function stopSummary(threadId: number): void {
   const now = useSummaries.getState().byThread.get(threadId);
   if (now?.kind !== "running") return;
-  put(threadId, { kind: now.was });
+  back(threadId, now);
   void client.call("ai.cancel", { requestId: now.requestId }).catch(() => {});
 }
 
 /** Back to what it was, nothing sent. */
 export function dismissSummary(threadId: number): void {
   const now = useSummaries.getState().byThread.get(threadId);
-  if (now && now.kind !== "ready") put(threadId, { kind: wasOf(now) });
+  if (now && "was" in now) back(threadId, now);
 }
 
 /** The text that was downloading is here: carry on. */
@@ -130,7 +154,7 @@ export function bodyArrivedForSummary(threadId: number): void {
   const now = useSummaries.getState().byThread.get(threadId);
   if (now?.kind !== "waitingBody") return;
   put(threadId, { kind: now.was });
-  void summarize(threadId);
+  void summarize(threadId, { again: now.again });
 }
 
 export function setSummaryOpen(open: boolean): void {

@@ -1543,7 +1543,11 @@ export function createHandlers(b: Backend): Handlers {
       void b.writing.learner.aiChanged();
       return next;
     },
-    "ai.summarize": ({ threadId, requestId }, ctx) => b.summaries.request(threadId, requestId, ctx.clientId),
+    "ai.summarize": ({ threadId, requestId, again }, ctx) => {
+      // i18n-ignore: a caller's bug: only a local build offers this (plan 242)
+      if (again && !b.options.devAi) throw new RpcError("BAD_REQUEST", "Dev mode is only for a local build");
+      return b.summaries.request(threadId, requestId, ctx.clientId, { again: again === true });
+    },
     "ai.summaries.get": ({ threadId }) => b.summaries.read(threadId),
     "ai.summaries.status": () => b.summaries.status(),
     "ai.summaries.clear": async () => {

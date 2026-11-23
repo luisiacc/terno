@@ -1259,7 +1259,8 @@ export const contract = {
    * Plan 132 §7: a conversation's summary, by hand: any thread that isn't in spam or trash, however old. Cancellable
    * with `ai.cancel`. It runs at once: where AI sends mail is said where the provider is chosen (plan 131, no per-use consent).
    */
-  "ai.summarize": m<AiSummarizeResult>()(z.object({ threadId: id, requestId: z.string().min(1).max(64) }), { timeoutMs: 120_000 }),
+  // plan 242: `again`, Dev mode's only (a local build): what's stored isn't handed back, the model is asked
+  "ai.summarize": m<AiSummarizeResult>()(z.object({ threadId: id, requestId: z.string().min(1).max(64), again: z.literal(true).optional() }), { timeoutMs: 120_000 }),
   /** Plan 132 §6: the summary an open reader shows. Mail content: renderer only, never for MCP. */
   "ai.summaries.get": m<AiSummaryRead>()(z.object({ threadId: id })),
   /** What the automatic summaries are doing, for Settings → AI. */

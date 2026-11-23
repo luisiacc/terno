@@ -241,7 +241,7 @@ export default function ThreadSummary({ detail, said = [] }: { detail: ThreadDet
               textTestId="summary-error"
               actions={
                 <span className="-my-1 flex items-center gap-1.5">
-                  <Button size="sm" variant="outline" data-testid="summary-retry" onClick={() => { dismissSummary(threadId); void summarize(threadId); }}>
+                  <Button size="sm" variant="outline" data-testid="summary-retry" onClick={() => { dismissSummary(threadId); void summarize(threadId, { again: ui.again }); }}>
                     {t("summary.tryAgain")}
                   </Button>
                   {copy.settings && (

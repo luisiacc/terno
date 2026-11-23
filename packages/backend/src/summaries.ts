@@ -407,7 +407,7 @@ export class SummaryWorker {
   }
 
   /** Assemble, reuse or ask, then write: the write re-checks everything the request took time over. */
-  private async run(sources: SummarySources, row: AiSummaryRow | null, o: { foreground: boolean; signal: AbortSignal; ai?: AiTasks }): Promise<Run> {
+  private async run(sources: SummarySources, row: AiSummaryRow | null, o: { foreground: boolean; signal: AbortSignal; ai?: AiTasks; again?: boolean }): Promise<Run> {
     const { store } = this.host;
     // before anything it writes was read: a clear after this point makes the write refuse itself
     const clearGeneration = store.aiSummaries.clearGeneration();
@@ -420,7 +420,7 @@ export class SummaryWorker {
     }
   }
 
-  private async runFor(sources: SummarySources, row: AiSummaryRow | null, o: { foreground: boolean; signal: AbortSignal; ai?: AiTasks }, clearGeneration: number): Promise<Run> {
+  private async runFor(sources: SummarySources, row: AiSummaryRow | null, o: { foreground: boolean; signal: AbortSignal; ai?: AiTasks; again?: boolean }, clearGeneration: number): Promise<Run> {
     const { store } = this.host;
     const signal = AbortSignal.any([o.signal, this.cleared.signal]);
     const ai = o.ai ?? (await this.host.forTask({ foreground: o.foreground }));
@@ -429,7 +429,7 @@ export class SummaryWorker {
     const contentHash = await sha256(JSON.stringify({ subject, thread, reader, compact }));
     const language = await this.readerLanguage();
     const base = { threadId: sources.threadId, stamp: sources.stamp, expectThrough: row?.throughMessageId ?? null, now: this.host.now(), clearGeneration };
-    if (reusable(row, { contentHash, language, ai })) {
+    if (!o.again && reusable(row, { contentHash, language, ai })) {
       const outcome = await store.aiSummaries.finish({ ...base, reuse: true });
       if (outcome === "written") this.host.ready(sources.threadId);
       return { outcome, summary: outcome === "written" ? (viewOf(row!) ?? undefined) : undefined };
@@ -466,8 +466,11 @@ export class SummaryWorker {
     return summary ? { state: "ready", summary } : { state: "none" };
   }
 
-  /** §7: a summary by hand. Its limits are spam and trash, and the user's word on where it goes. */
-  async request(threadId: number, requestId: string, clientId: string): Promise<AiSummarizeResult> {
+  /**
+   * §7: a summary by hand. Its limits are spam and trash, and the user's word on where it goes. Plan 242: `again` (Dev
+   * mode's, checked by the handler) never takes what's stored, nor a run it joins, which may have.
+   */
+  async request(threadId: number, requestId: string, clientId: string, o: { again?: boolean } = {}): Promise<AiSummarizeResult> {
     const { store } = this.host;
     const { signal, release } = this.host.begin(requestId, clientId);
     try {
@@ -485,17 +488,17 @@ export class SummaryWorker {
         const running = this.inflight.get(threadId);
         if (running) {
           const joined = await Promise.race([running.catch(() => null), aborted(signal)]);
-          if (joined?.outcome === "written" && joined.summary) return { status: "ready", summary: joined.summary };
+          if (!o.again && joined?.outcome === "written" && joined.summary) return { status: "ready", summary: joined.summary };
           continue;
         }
 
         const row = await store.aiSummaries.get(threadId);
         const ai = await this.host.forTask({ foreground: true });
-        const { running: mine, joined } = this.single(threadId, () => this.run(sources, row, { foreground: true, signal, ai }));
+        const { running: mine, joined } = this.single(threadId, () => this.run(sources, row, { foreground: true, signal, ai, again: o.again }));
         // another caller got there during the awaits above: same as finding it running at the top
         if (joined) {
           const settled = await Promise.race([mine.catch(() => null), aborted(signal)]);
-          if (settled?.outcome === "written" && settled.summary) return { status: "ready", summary: settled.summary };
+          if (!o.again && settled?.outcome === "written" && settled.summary) return { status: "ready", summary: settled.summary };
           continue;
         }
         const run = await mine;

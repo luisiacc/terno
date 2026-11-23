@@ -1361,6 +1361,7 @@ const es = {
   "actions.print": "Imprimir",
   "actions.summarize": "Resumir esta conversación",
   "actions.updateSummary": "Actualizar el resumen",
+  "actions.summarizeAgain": "Volver a resumir",
   "summary.label": "Resumen",
   "summary.ready": "Resumen listo",
   "summary.kind.decision": "Decisión",

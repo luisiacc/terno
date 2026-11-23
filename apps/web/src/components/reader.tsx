@@ -77,15 +77,20 @@ import { readerText } from "~/lib/reader-items";
 import ThreadSummary from "./thread-summary";
 
 
-/** Plan 132 §7: a summary by hand. Never in spam or trash, nor with one spam message in the thread. Open already: the block shows it. */
+/**
+ * Plan 132 §7: a summary by hand. Never in spam or trash, nor with one spam message in the thread. Open already: the block
+ * shows it; plan 242: on a local build (Dev mode) it's written again instead, to see what a prompt change makes of it.
+ */
 function SummarizeButton({ threadId }: { threadId: number }) {
   const kind = useSummaries((s) => s.byThread.get(threadId)?.kind);
   const updates = useApp((s) => kind === "stale" && !s.settings?.summaries.enabled);
+  const again = useApp((s) => kind === "ready" && s.devAi !== null);
   const offered = useApp(summariesOffered);
   if (!offered) return null;
+  const label = again ? t("actions.summarizeAgain") : updates ? t("actions.updateSummary") : t("actions.summarize");
   return (
     // a narrow reader (the minimum window) gives its place to the bell, as Mark as unread does; the palette keeps it
-    <IconButton className={cn(tool, "@max-[420px]:hidden")} label={updates ? t("actions.updateSummary") : t("actions.summarize")} onClick={() => void summarize(threadId)} data-summarize data-testid="action-summarize" aria-busy={kind === "running" || undefined}>
+    <IconButton className={cn(tool, "@max-[420px]:hidden")} label={label} onClick={() => void summarize(threadId, { again })} data-summarize data-testid="action-summarize" aria-busy={kind === "running" || undefined}>
       {/* plan 162: its own glyph; the sparkle is the mark on AI cards and ⌘J's (one sparkle stood for three actions) */}
       <SummaryDoc />
     </IconButton>

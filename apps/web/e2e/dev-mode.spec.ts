@@ -111,6 +111,17 @@ test("Plan 147: the switch off, no AI feature shows, whatever the profile has sa
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByTestId("summary-block")).toHaveAttribute("data-state", "ready");
   await expect(page.getByTestId("action-summarize")).toBeVisible();
+  // plan 242: on a local build the button writes a shown summary again: the model is asked (here no host can be reached,
+  // so it fails), and leaving that brings back what was stored
+  const again = page.getByTestId("action-summarize");
+  await expect(again).toHaveAccessibleName("Summarize again");
+  await again.click();
+  await expect(page.getByTestId("summary-block")).toHaveAttribute("data-state", "error");
+  await page.getByTestId("summary-error-settings").click();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByTestId("summary-block")).toHaveAttribute("data-state", "ready");
+  await expect(page.getByTestId("summary-block")).toContainText("From before the switch went off.");
   await expect(page.getByTestId("quick-ai")).toBeVisible();
   await expect(page.getByTestId("nav-today")).toBeVisible();
   await palette("summarize");
