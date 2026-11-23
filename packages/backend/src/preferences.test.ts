@@ -291,7 +291,7 @@ describe("show: the second reader (plan 248 §5)", () => {
     expect(prompt).toContain("<rules>\nr1: about: a sale or offer from REI");
     const row = (await t.list()).sections.flatMap((x) => x.items).find((i) => i.thread.id === sale)!;
     expect(row.id).toMatch(/^dated:-\d+$/);
-    expect(row.why.item?.kind).toBe("expire");
+    expect(row.why.item).toMatchObject({ kind: "expire", wanted: true });
     // Done and its Undo, on the wanted store
     const id = Number(row.id.slice("dated:".length));
     const { undoId } = await t.client.call("dated.act", { id, revision: row.why.item!.revision, action: "done" });

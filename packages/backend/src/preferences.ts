@@ -28,7 +28,7 @@ import {
 import { captureError } from "@terno/core/diag";
 import type { AppSettings, I18nRef } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
-import { WANTED_LOOK_MAX, wantedAsDated, type MailStore, type WantedMark, type WantedWrite } from "@terno/store";
+import { PREFERENCE_VERDICTS_MAX, WANTED_LOOK_MAX, wantedAsDated, type MailStore, type WantedMark, type WantedWrite } from "@terno/store";
 import type { AccountGate } from "./account-gate";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import { asksForSecrets, inWords, readerZone } from "./dated";
@@ -274,7 +274,7 @@ export class WhatMattersWords {
     const savedAt = record.savedAt ?? 0;
     const blocked = this.worker.blocked();
     const unjudged = reaching.filter((t) => verdicts.get(t.key)?.basis !== basis);
-    if (o.ask) this.worker.want(unjudged, reaching.length);
+    if (o.ask && (unjudged.length || reaching.length)) this.worker.want(unjudged, reaching.map((t) => t.key));
     return {
       rules,
       basis,
@@ -391,17 +391,21 @@ export class PreferenceWorker {
     return this.paused !== null || this.host.now() < this.heldUntil;
   }
 
-  /** The projection's unjudged rows: queued (once each), the worker woken. Nothing queued, nothing runs. */
-  want(targets: readonly RowTarget[], reaching: number): void {
-    this.asked = new Set(targets.map((t) => t.key));
+  /**
+   * The projection's rows: those a semantic rule reaches are kept from the verdicts' prune (the list's and the count's alike,
+   * until the words change), the unjudged queued once each and the worker woken. Nothing queued, nothing runs; a pause or
+   * a hold wakes nothing either (each mailbox change projects).
+   */
+  want(targets: readonly RowTarget[], reaching: readonly string[]): void {
+    if (this.asked.size < PREFERENCE_VERDICTS_MAX) for (const key of reaching) this.asked.add(key);
     let added = false;
     for (const t of targets) {
       if (this.queue.has(t.key) || (this.attempts.get(t.key) ?? 0) >= MAX_ATTEMPTS) continue;
       this.queue.set(t.key, t);
       added = true;
     }
-    this.total = Math.max(reaching, this.queue.size);
-    if (added) this.wake();
+    this.total = Math.max(reaching.length, this.queue.size);
+    if (added && !this.blocked()) this.wake();
   }
 
   /** The words changed: work for the old ones stops; marks the new ones don't want go; wanted items' reasons are brought in step. */
@@ -411,6 +415,7 @@ export class PreferenceWorker {
     this.leaving?.stop.abort();
     this.queue.clear();
     this.attempts.clear();
+    this.asked.clear();
     this.paused = null;
     const { store } = this.host;
     const shows = rules.filter((r) => r.effect === "show");

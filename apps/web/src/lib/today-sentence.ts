@@ -49,7 +49,8 @@ export function todaySentence(item: Pick<TodayItem, "thread" | "why" | "summary"
     const text = bare(why.text ?? "");
     if (!text) return ended(subject);
     // an alert is what the mail says happened, never a fact of ours (plan 204, the fourth round): it says whose word it is
-    return ended(why.item?.kind === "alert" ? alertSays(text) : text);
+    // (plan 248: one the user's words brought is news they asked for, not something the mail raised)
+    return ended(why.item?.kind === "alert" && !why.item.wanted ? alertSays(text) : text);
   }
   if (why.kind === "promise") return bare(why.text ?? "") ? promiseSentence(why.text!) : ended(subject);
   if (why.kind === "reminder") return t("whatMatters.say.reminder", { subject });

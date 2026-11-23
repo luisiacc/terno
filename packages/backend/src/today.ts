@@ -706,7 +706,8 @@ export class TodayService {
    */
   private async visibility(items: readonly PlacedItem[], page: readonly { id: number; waitingSince: number }[]): Promise<{ rows: RowVisibility; hidden: Set<FeedRowId> } | null> {
     const rules = await this.b.words.rules();
-    if (!rules.length) return null;
+    // shows alone hide and order nothing: no row is looked at (most of what a projection does here is skipped)
+    if (!rules.some((r) => r.effect !== "show")) return null;
     const targets = new Map<string, RowTarget>();
     const ofEntry = new Map<object, RowTarget>();
     for (const p of items)
@@ -775,7 +776,7 @@ export class TodayService {
 
   /** Plan 248: the "Changed" lines of rows the user's words hide aren't lines either (the Codex code review) */
   private async keptChanged(changed: Awaited<ReturnType<TodayService["changedItems"]>>): Promise<Awaited<ReturnType<TodayService["changedItems"]>>> {
-    if (!changed || !(await this.b.words.rules()).length) return changed;
+    if (!changed || !(await this.b.words.rules()).some((r) => r.effect !== "show")) return changed;
     return { dated: await this.historyKept("dated", [...changed.dated]), promises: await this.historyKept("promise", [...changed.promises]) };
   }
 
@@ -863,7 +864,7 @@ export class TodayService {
     // plan 211: every history line is an item the AI made: an account with AI or What matters off has none; plan 215, but a
     // waiting conversation's Done, What matters' own, which follows its switch alone (as its row did)
     const { gate } = this.b;
-    return historyPage(store, { now, after: o.after, through: o.through ?? null, limit: o.limit ?? HISTORY_PAGE, held: new Set(o.held), dated: settings.dated?.enabled === true, promises: settings.followups?.enabled === true, waiting: true, changed: await this.keptChanged(await this.changedItems(settings)), shows: (accountId) => gate.reads(accountId), showsWaiting: (accountId) => gate.feed(accountId), yieldTurn: () => this.b.yieldTurn(), sliceMs: this.b.options.sliceBudgetMs, ...((await this.b.words.rules()).length && { keep: (source, rows) => this.historyKept(source, rows) }) });
+    return historyPage(store, { now, after: o.after, through: o.through ?? null, limit: o.limit ?? HISTORY_PAGE, held: new Set(o.held), dated: settings.dated?.enabled === true, promises: settings.followups?.enabled === true, waiting: true, changed: await this.keptChanged(await this.changedItems(settings)), shows: (accountId) => gate.reads(accountId), showsWaiting: (accountId) => gate.feed(accountId), yieldTurn: () => this.b.yieldTurn(), sliceMs: this.b.options.sliceBudgetMs, ...((await this.b.words.rules()).some((r) => r.effect !== "show") && { keep: (source, rows) => this.historyKept(source, rows) }) });
   }
 
   /**
