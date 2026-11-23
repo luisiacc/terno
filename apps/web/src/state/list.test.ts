@@ -291,3 +291,28 @@ it("plan 195 (Codex code review #2): a refresh while another mailbox is still on
     listArrival.on = listArrival.arm = listArrival.play = undefined;
   }
 });
+
+it("plan 238: an account leaving the all-accounts Inbox ends its \"select all N\", and a next page asked before is asked again", async () => {
+  const account = (id: number, unified = true) => ({ id, kind: "imap", email: `${id}@x.test`, displayName: `A${id}`, color: "brown", senderName: "", signature: "", syncWindowDays: null, unified, syncState: { status: "idle", syncedSince: null, bodiesPending: 0, lastError: null, lastSyncAt: null } }) as never;
+  const { getApp, setAccounts } = await import("~/state/app");
+  const mail = (id: number, accountId: number) => ({ ...row(id, true), accountId }) as ThreadSummary;
+  // the next page answers late with account 2's row, asked of the Inbox as it was; the one after knows it's out
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  let n = 0;
+  answer = async (p) => (p.cursor ? (n++ === 0 ? (await held, { items: [mail(3, 2), mail(4, 1)], nextCursor: null }) : { items: [mail(4, 1)], nextCursor: null }) : { items: [mail(1, 1), mail(2, 1)], nextCursor: cursor(2) });
+  setApp({ view: "inbox", query: "", accountId: null, categoryId: null, folder: null, listFilters: new Map(), accounts: [account(1), account(2)] });
+  await reloadList();
+  await vi.waitFor(() => expect(useList.getState().items.map((t) => t.id)).toEqual([1, 2]));
+  setApp({ scope: { key: "k", scope: { kind: "view", view: "inbox" }, label: "Inbox", count: 3 } as never, checked: new Set([1]) });
+  const more = loadMore();
+  await vi.waitFor(() => expect(useList.getState().loadingMore).toBe(true));
+  setAccounts([account(1), account(2, false)]);
+  expect(getApp().scope).toBeNull();
+  expect(getApp().checked.size).toBe(0);
+  release();
+  await more;
+  await vi.waitFor(() => expect(n).toBe(2));
+  expect(useList.getState().items.map((t) => t.id)).toEqual([1, 2, 4]);
+  setApp({ accounts: [] });
+});

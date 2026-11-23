@@ -1,4 +1,4 @@
-import type { ThreadSummary } from "@terno/core";
+import { inAllInbox, type ThreadSummary } from "@terno/core";
 import { RpcError, type ThreadScope } from "@terno/core/rpc";
 import { keepInPage } from "@terno/store/list";
 import { followupsOffered } from "~/lib/ai";
@@ -8,7 +8,7 @@ import { DIGEST_ROW_ID, matchesFilter } from "@terno/core";
 import { flushSync } from "react-dom";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";
-import { getApp, getSelectionWriteRevision, inPlainInbox, setApp, setListAutoSelection, useApp } from "./app";
+import { getApp, getSelectionWriteRevision, inboxShape, inPlainInbox, setApp, setListAutoSelection, useApp } from "./app";
 import { noteRows, useActionRows } from "./action-preview";
 import { cursorKey, heldRows, historyCursor, historyThrough, publishHistory, todayAnswer, todayRowsLeft } from "./today";
 import type { HistoryKey, TodayHistoryItem } from "@terno/core";
@@ -210,12 +210,17 @@ async function withTop<P extends Paged>(page: Promise<P>, first: boolean): Promi
   // plan 179: the Inbox's own count for its heading under the top, as "select all N" counts it; asked only when a top may lead
   const scope = currentScope();
   const counting = (anyPinned() || anyDue() || followsOnTop) && scope ? client.call("threads.scopeCount", { scope }).then((r) => ({ n: r.count, capped: r.capped }), () => null) : Promise.resolve(null);
-  const [p, pinRows, dueRows, followRows, total] = await Promise.all([page, pinning, due, following, counting]);
+  const [p, pinRowsAll, dueRowsAll, followRowsAll, total] = await Promise.all([page, pinning, due, following, counting]);
+  // plan 238: the all-accounts Inbox's top leaves out an account that's out of it, as its page does (its own Inbox,
+  // Reminders and Follow-ups still have them); read at the answer, so a switch flipped meanwhile counts
+  const outOfInbox = accountId === undefined ? new Set(getApp().accounts.filter((a) => !inAllInbox(a)).map((a) => a.id)) : null;
+  const shown = (rows: ThreadSummary[]) => (outOfInbox?.size ? rows.filter((t) => !outOfInbox.has(t.accountId)) : rows);
+  const [pinRows, dueRows, followRows] = [shown(pinRowsAll), shown(dueRowsAll), shown(followRowsAll)];
   // a pinned one is in Pinned only, whatever else it has
   const pinnedIds = new Set(pinRows.map((t) => t.id));
   const reminding = [...dueRows, ...followRows.filter((t) => !dueRows.some((d) => d.id === t.id))].filter((t) => !pinnedIds.has(t.id));
   const held = heldInReminders(s.selectedId, pinnedIds);
-  if (held && !reminding.some((t) => t.id === held.row.id)) reminding.splice(Math.min(held.at, reminding.length), 0, held.row);
+  if (held && !outOfInbox?.has(held.row.accountId) && !reminding.some((t) => t.id === held.row.id)) reminding.splice(Math.min(held.at, reminding.length), 0, held.row);
   const rows = [...pinRows, ...reminding];
   const top: InboxTop = { ids: rows.map((t) => t.id), pinned: pinRows.length, total: rows.length ? total : null };
   if (rows.length === 0) return { ...p, top };
@@ -554,12 +559,14 @@ async function loadNextPage(): Promise<boolean> {
   const mine = pageSeq;
   const connection = client.connectionVersion;
   const editsAtStart = edits;
+  const shapeAtStart = inboxShape.rev;
   useList.setState({ loadingMore: true });
   try {
     const page = await fetchPage(st.nextCursor);
     if (connection !== client.connectionVersion || mine !== pageSeq || useList.getState().key !== key) return true;
-    if (edits !== editsAtStart) {
-      // it may bring back a row an optimistic edit just took out: ask again from where the list ends now
+    if (edits !== editsAtStart || inboxShape.rev !== shapeAtStart) {
+      // it may bring back a row an optimistic edit just took out (or the Inbox no longer shows, plan 238): ask again
+      // from where the list ends now
       useList.setState({ loadingMore: false });
       return loadNextPage();
     }

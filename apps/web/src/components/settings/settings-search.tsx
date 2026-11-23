@@ -102,6 +102,7 @@ export function SettingsSearch() {
     webStorage: StorageSection !== null,
     agents,
     updater: updater && updateState !== null,
+    accounts: accounts.length,
   };
   // nothing is built until something is typed
   const results = query.trim() ? findSettings(findEntries(ctx, accounts, categories), query) : [];

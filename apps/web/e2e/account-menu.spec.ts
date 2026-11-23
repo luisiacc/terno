@@ -4,7 +4,7 @@
  */
 import type { Page } from "@playwright/test";
 import { sqlDb } from "../../backend-dev/src/server";
-import { expect, rows, test, scenario, freshStart } from "./fixtures";
+import { axeBothModes, expect, rows, test, scenario, freshStart } from "./fixtures";
 
 type Handlers = Record<string, (...a: unknown[]) => Promise<unknown>>;
 
@@ -291,6 +291,69 @@ test.describe("the account menu", () => {
       await page.getByTestId("tab-general").click();
       await page.getByTestId("tab-accounts").click();
       await expect(page.locator("[data-testid=account-editor]")).toHaveCount(0);
+    });
+  });
+
+  test("plan 238: Show in all-accounts Inbox: its mail leaves the Inbox and its count, stays under its row; undone; Settings' switch", async ({ app: page, server }) => {
+    const db = sqlDb(server.backend.store);
+    const ids = await accountIds(page);
+    const b = ids.find((id) => inboxUnread(db, id) > 0)!;
+    expect(b).toBeDefined();
+    const total = ids.reduce((n, id) => n + inboxUnread(db, id), 0);
+    const own = inboxUnread(db, b);
+    const inboxCount = page.getByTestId("nav-inbox").locator("[data-slot=nav-count]");
+    const accountOf = (thread: number) => db.get<{ a: number }>("SELECT account_id AS a FROM threads WHERE id = ?", thread)!.a;
+    const shownAccounts = async () => (await rows(page).evaluateAll((els) => els.map((el) => Number(el.getAttribute("data-thread-id"))))).map(accountOf);
+    await page.getByTestId("nav-inbox").click();
+    await rows(page).first().waitFor();
+    await expect(inboxCount).toHaveText(String(total));
+    await expect.poll(shownAccounts).toContain(b);
+
+    await scenario("from the keyboard: Shift+F10 on the row, the arrows to the item, Enter", async () => {
+      await row(page, b).focus();
+      await page.keyboard.press("Shift+F10");
+      await expect(menu(page, b)).toBeVisible();
+      const item = page.getByTestId("account-menu-all-inbox");
+      await expect(item).toHaveAttribute("aria-checked", "true");
+      await expect(item).toHaveAccessibleName("Show in Inbox");
+      await axeBothModes(page, `[data-testid="account-menu-${b}"]`);
+      for (let i = 0; i < 12 && !(await item.evaluate((el) => el === document.activeElement)); i++) await page.keyboard.press("ArrowDown");
+      await expect(item).toBeFocused();
+      await page.keyboard.press("Enter");
+      await expect(menu(page, b)).toHaveCount(0);
+      await expect(row(page, b)).toBeFocused();
+      await expect(page.getByTestId("snack").filter({ hasText: "is out of the all-accounts Inbox" })).toBeVisible();
+      // its mail leaves the Inbox and its count; its row has the mark (its own count is the account counts setting's)
+      await expect(inboxCount).toHaveText(String(total - own));
+      await expect.poll(shownAccounts).not.toContain(b);
+      await expect(page.getByTestId(`nav-account-hidden-${b}`)).toHaveAccessibleName("Hidden from the all-accounts Inbox");
+      await expect.poll(async () => (await server.backend.store.accounts.get(b))!.unified).toBe(false);
+      await openMenu(page, b);
+      await expect(page.getByTestId("account-menu-all-inbox")).toHaveAttribute("aria-checked", "false");
+      await page.keyboard.press("Escape");
+    });
+
+    await scenario("Undo (z) puts it back; its own Inbox had it all along", async () => {
+      await page.keyboard.press("z");
+      await expect.poll(async () => (await server.backend.store.accounts.get(b))!.unified).toBe(true);
+      await expect(inboxCount).toHaveText(String(total));
+      await expect(page.getByTestId(`nav-account-hidden-${b}`)).toHaveCount(0);
+      await expect.poll(shownAccounts).toContain(b);
+    });
+
+    await scenario("Settings → Accounts: the same switch, named and described", async () => {
+      await openMenu(page, b);
+      await page.getByTestId("account-menu-settings").click();
+      const sw = page.locator(`[data-testid=settings-account][data-account-id="${b}"]`).getByTestId("account-all-inbox");
+      await expect(sw).toHaveAccessibleName("Show in all-accounts Inbox");
+      await expect(sw).toHaveAccessibleDescription(/out of the all-accounts Inbox and its unread count/);
+      await sw.click();
+      await expect(sw).toHaveAttribute("aria-checked", "false");
+      await expect.poll(async () => (await server.backend.store.accounts.get(b))!.unified).toBe(false);
+      await expect(page.getByTestId(`nav-account-hidden-${b}`)).toHaveCount(1);
+      await expect(inboxCount).toHaveText(String(total - own));
+      await sw.click();
+      await expect.poll(async () => (await server.backend.store.accounts.get(b))!.unified).toBe(true);
     });
   });
 

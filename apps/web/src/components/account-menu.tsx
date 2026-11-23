@@ -1,7 +1,8 @@
-import { CATEGORY_COLORS, type Account, type CategoryColor } from "@terno/core";
+import { CATEGORY_COLORS, allInboxOffered, inAllInbox, type Account, type CategoryColor } from "@terno/core";
 import { AccountMark } from "@terno/ui/components/category-dot";
 import {
   ContextMenu,
+  ContextMenuCheckboxItem,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuRadioGroup,
@@ -13,9 +14,10 @@ import {
   ContextMenuTrigger,
 } from "@terno/ui/components/context-menu";
 import { t } from "@terno/i18n";
-import { ArrowLeft, Focus, FolderPlus, KeyRound, MailOpen, PenLine, RefreshCw, Settings2, SquarePen, Trash2 } from "@terno/ui/icons";
+import { ArrowLeft, Focus, FolderPlus, Inbox, KeyRound, MailOpen, PenLine, RefreshCw, Settings2, SquarePen, Trash2 } from "@terno/ui/icons";
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { focusAccount, leaveFocus } from "~/lib/account-folders";
+import { setInAllInbox } from "~/lib/account-inbox";
 import { patchAccount } from "~/lib/accounts";
 import { startCreate } from "~/lib/folders";
 import { markAccountRead, openCompose } from "~/lib/actions";
@@ -37,6 +39,8 @@ const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 export function AccountMenu({ account, unread, onRename, solo = false, children }: { account: Account; unread: number; onRename: () => void; /** plan 108: the focused sidebar's header */ solo?: boolean; children: ReactElement }) {
   // plan 108: focus is offered with more than one account (with one, the sidebar already shows only it)
   const several = useApp((s) => s.accounts.length > 1);
+  // plan 238: in the all-accounts Inbox or only under its row (offered with several accounts, or while it's out)
+  const allInbox = useApp((s) => !solo && allInboxOffered(account, s.accounts.length));
   // mounted from the first Remove… on, so the dialog can animate out after
   const [removing, setRemoving] = useState<boolean | null>(null);
   // an item that moves focus itself (the rename field, the composer, a dialog, the sign-in panel) keeps the
@@ -97,6 +101,13 @@ export function AccountMenu({ account, unread, onRename, solo = false, children 
                 <span className="flex-1">{t("account.menu.focus")}</span>
               </ContextMenuItem>
             )
+          )}
+          {allInbox && (
+            <ContextMenuCheckboxItem closeOnClick data-testid="account-menu-all-inbox" checked={inAllInbox(account)} onCheckedChange={(on) => void setInAllInbox(account.id, on)}>
+              <Inbox />
+              {/* the sidebar's Inbox, the row above the accounts: Settings says it in full */}
+              <span className="flex-1">{t("account.menu.allInbox")}</span>
+            </ContextMenuCheckboxItem>
           )}
           <ContextMenuItem data-testid="account-menu-rename" onClick={away(onRename)}>
             <PenLine />

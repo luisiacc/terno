@@ -1,4 +1,4 @@
-import { aiFeaturesAvailable, type Account, type Category } from "@terno/core";
+import { aiFeaturesAvailable, allInboxOffered, type Account, type Category } from "@terno/core";
 import type { AppSettings } from "@terno/core/rpc";
 import { L, getLocale, DEFAULT_LOCALE, t, type ParamsArg, type TextKey } from "@terno/i18n";
 import type { FindEntry } from "~/lib/settings-find";
@@ -24,6 +24,8 @@ export interface FindContext {
   agents: boolean;
   /** the app updates itself (About's update preferences) */
   updater: boolean;
+  /** how many accounts there are (plan 238: the all-accounts Inbox's switch is offered with several) */
+  accounts: number;
 }
 
 export interface IndexEntry {
@@ -114,6 +116,7 @@ export const SETTINGS_INDEX = [
   { id: "account.replies", tab: "accounts", label: "replies.account", hint: "replies.accountHint", scope: "account", when: accountAi },
   { id: "account.useGeneral", tab: "accounts", label: "aiDraft.account.useGeneral", hint: "aiDraft.account.useGeneralHint", scope: "account", when: accountAi },
   { id: "account.syncWindow", tab: "accounts", label: "settings.general.syncWindow", words: "settings.find.words.syncWindow", scope: "account" },
+  { id: "account.allInbox", tab: "accounts", label: "account.allInbox", hint: "account.allInbox.hint", words: "settings.find.words.allInbox", scope: "account", when: (ctx, a) => !!a && allInboxOffered(a, ctx.accounts) },
   { id: "account.separateTabs", tab: "accounts", label: "account.separateTabs", hint: "account.separateTabs.hint", words: "settings.find.words.separateTabs", scope: "account", when: (_c, a) => a?.kind === "gmail" },
   { id: "account.followups", tab: "accounts", label: "account.followups", hint: "account.followups.hint", scope: "account", when: accountAi },
   { id: "account.connection", tab: "accounts", label: "account.connection", words: "settings.find.words.connection", scope: "account" },

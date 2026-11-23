@@ -1,4 +1,4 @@
-import { separatesTabs, type Account, type DevAiProvider, type Category, type Counts, type Filter, type FilterRule, type Folder, type ListFilter, type ReminderKind, type Tab, type View } from "@terno/core";
+import { inAllInbox, separatesTabs, type Account, type DevAiProvider, type Category, type Counts, type Filter, type FilterRule, type Folder, type ListFilter, type ReminderKind, type Tab, type View } from "@terno/core";
 import type { AppSettings, HostInfo, OwnerIdentity, ThreadScope } from "@terno/core/rpc";
 import { create } from "zustand";
 import type { PrintTarget } from "~/lib/print-open";
@@ -363,13 +363,25 @@ export function inSeparateTab(t: { accountId?: number; tab?: number }, accounts:
 }
 
 /**
+ * What the Inbox shows changed (plans 83, 86, 238): a page of it still on its way was asked of the Inbox as it was,
+ * so it asks again (state/list's next page). An object property, not a module let (React Compiler).
+ */
+export const inboxShape = { rev: 0 };
+
+/**
  * Plan 86: the account list changed (an edit here, an event from the backend). An account that stops keeping its
  * tabs apart takes you from one of them to its Inbox, and a "select all N" of the Inbox counted other threads.
+ * Plan 238: likewise an account taken out of (or back into) the all-accounts Inbox.
  */
 export function setAccounts(accounts: Account[]): void {
   // which accounts, not their order (plan 169: a reorder regroups nothing)
-  const separated = (list: readonly Account[]) => list.filter(separatesTabs).map((a) => a.id).sort((a, b) => a - b).join();
-  const regrouped = separated(getApp().accounts) !== separated(accounts) && getApp().scope !== null && (inPlainInbox(getApp()) || getApp().gmailTab !== null);
+  const ids = (list: readonly Account[], test: (a: Account) => boolean) => list.filter(test).map((a) => a.id).sort((a, b) => a - b).join();
+  const before = getApp();
+  const tabs = ids(before.accounts, separatesTabs) !== ids(accounts, separatesTabs);
+  const out = (a: Account) => !inAllInbox(a);
+  const unified = ids(before.accounts, out) !== ids(accounts, out);
+  if (tabs || unified) inboxShape.rev++;
+  const regrouped = before.scope !== null && ((tabs && (inPlainInbox(before) || before.gmailTab !== null)) || (unified && inPlainInbox(before) && before.accountId === null));
   setApp({ accounts, ...(regrouped ? { scope: null, checked: new Set<number>() } : {}) });
   const { gmailTab, accountId } = getApp();
   const account = accounts.find((a) => a.id === accountId);
@@ -384,7 +396,9 @@ export function setAccounts(accounts: Account[]): void {
 export function setCategories(categories: Category[]): void {
   const hidden = (list: readonly Category[]) => list.filter((c) => !c.showInInbox).map((c) => c.id).sort((a, b) => a - b).join();
   // plan 83: what the Inbox shows changed (here or in another window): a "select all N" of it counted other threads
-  const regrouped = hidden(getApp().categories) !== hidden(categories) && inPlainInbox(getApp()) && getApp().scope !== null;
+  const changed = hidden(getApp().categories) !== hidden(categories);
+  if (changed) inboxShape.rev++;
+  const regrouped = changed && inPlainInbox(getApp()) && getApp().scope !== null;
   setApp({ categories, ...(regrouped ? { scope: null, checked: new Set<number>() } : {}) });
   const { categoryId, reviewCategoryId } = getApp();
   const gone = (id: number | null) => id !== null && !categories.some((c) => c.id === id);

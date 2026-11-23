@@ -112,7 +112,7 @@ describe("the entries a search runs on", async () => {
   const { findEntries } = await import("./search-index");
   const { findSettings } = await import("~/lib/settings-find");
   const settings = { ai: { provider: "none", fromEnv: false, keys: {}, profiles: {} }, devAi: null } as unknown as Parameters<typeof findEntries>[0]["settings"];
-  const ctx = { settings, desktop: true, devMode: false, notifications: true, badge: true, summaries: true, webStorage: false, agents: true, updater: false };
+  const ctx = { settings, desktop: true, devMode: false, notifications: true, badge: true, summaries: true, webStorage: false, agents: true, updater: false, accounts: 2 };
   const accounts = [
     { id: 1, displayName: "Work", kind: "gmail" },
     { id: 2, displayName: "Home", kind: "imap" },
@@ -127,6 +127,15 @@ describe("the entries a search runs on", async () => {
     expect(entries.filter((e) => e.data.id === "account.separateTabs").map((e) => e.key)).toEqual(["account.separateTabs:1"]);
     expect(entries.filter((e) => e.data.id === "account.sentCopies").map((e) => e.key)).toEqual(["account.sentCopies:2"]);
     expect(findSettings(entries, "receipts color")[0]?.entry.key).toBe("category.color:7");
+  });
+
+  it("plan 238: the all-accounts Inbox's switch with several accounts, found as the unified inbox; with one, only while it's out", () => {
+    const keys = (c: typeof ctx, list: typeof accounts) => findEntries(c, list, []).filter((e) => e.data.id === "account.allInbox").map((e) => e.key);
+    expect(keys(ctx, accounts)).toEqual(["account.allInbox:1", "account.allInbox:2"]);
+    expect(findSettings(findEntries(ctx, accounts, []), "home unified inbox")[0]?.entry.key).toBe("account.allInbox:2");
+    const one = [accounts[0]!];
+    expect(keys({ ...ctx, accounts: 1 }, one)).toEqual([]);
+    expect(keys({ ...ctx, accounts: 1 }, [{ ...one[0]!, unified: false }] as typeof accounts)).toEqual(["account.allInbox:1"]);
   });
 
   it("leaves out what can't exist here", () => {

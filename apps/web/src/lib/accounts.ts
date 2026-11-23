@@ -3,10 +3,11 @@ import { client } from "~/rpc/connection";
 import { getApp, setAccounts } from "~/state/app";
 
 /**
- * What the sidebar and Settings edit in place (plan 106): the account's own fields. Gmail tabs regroup lists and
- * go through `setSeparateTabs`; a backfill is a request, not a field shown.
+ * What the sidebar and Settings edit in place (plan 106): the account's own fields, and whether it's in the
+ * all-accounts Inbox (plan 238, through `setInAllInbox`). Gmail tabs regroup lists and go through `setSeparateTabs`;
+ * a backfill is a request, not a field shown.
  */
-export type AccountEdit = Pick<AccountPatch, "displayName" | "color" | "senderName" | "signature" | "syncWindowDays">;
+export type AccountEdit = Pick<AccountPatch, "displayName" | "color" | "senderName" | "signature" | "syncWindowDays" | "unified">;
 type Field = keyof AccountEdit;
 
 /**

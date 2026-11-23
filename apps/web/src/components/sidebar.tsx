@@ -1,6 +1,6 @@
 import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { create } from "zustand";
-import { COUNTED_VIEWS, FOLDER_VIEWS, folderRef, leadScreen, separatesTabs, tabRef, TABS, viewRef, type Account, type FirstScreen, type Category, type CategoryColor, type CountedView, type Folder, type FolderView, type Tab, type View } from "@terno/core";
+import { COUNTED_VIEWS, FOLDER_VIEWS, folderRef, inAllInbox, leadScreen, separatesTabs, tabRef, TABS, viewRef, type Account, type FirstScreen, type Category, type CategoryColor, type CountedView, type Folder, type FolderView, type Tab, type View } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
 import { AccountMark, CategoryDot } from "@terno/ui/components/category-dot";
 import { Shortcut } from "@terno/ui/components/shortcut";
@@ -200,7 +200,7 @@ function NavItem({
   /** plan 188: what the number is, its description ("12 unread", "3 due"); unread unless the row says otherwise */
   countSaid?: string;
   shortcut?: string;
-  /** a quiet mark after the name (plan 83: a category hidden from the Inbox) */
+  /** a quiet mark after the name (plan 83: a category hidden from the Inbox; plan 238: an account out of the all-accounts one) */
   note?: React.ReactNode;
   /** plan 107: a control over the row's end on hover (a folder's "+"): the count steps aside meanwhile */
   hoverAction?: boolean;
@@ -268,6 +268,8 @@ function NavItem({
         // on it only opens or closes (plan 67, the owner, 2026-11-10); no padding, so a click on the name beside it still selects
         <span className="flex min-w-0 flex-1 items-center gap-1">
           <span className="truncate">{label}</span>
+          {/* plan 238: an account out of the all-accounts Inbox, between its name and the disclosure */}
+          {note}
           <ChevronRight
             aria-hidden
             data-slot="nav-disclosure"
@@ -1197,6 +1199,17 @@ const AccountEntry = memo(function AccountEntry({
               countTone={countTone === "hidden" ? "hidden" : undefined}
               // open, its "+" sits where the count was (plan 107)
               reserveEnd={a.syncState.authRequired || open ? "icon" : undefined}
+              // plan 238: its mail is only under it, out of the all-accounts Inbox (the category row's mark)
+              note={
+                !inAllInbox(a) && (
+                  <EyeOff
+                    role="img"
+                    aria-label={t("account.allInbox.badge")}
+                    data-testid={`nav-account-hidden-${a.id}`}
+                    className="size-3 shrink-0 text-muted-foreground animate-in fade-in zoom-in-75"
+                  />
+                )
+              }
             />
           )}
           {a.syncState.authRequired && <SignInMarker account={a} />}

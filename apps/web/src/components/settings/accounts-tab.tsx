@@ -1,7 +1,7 @@
 import { SentCopies } from "./sent-copies";
 import { RecipientReceipts } from "./recipient-receipts";
 import { localized } from "~/lib/i18n";
-import { separatesTabs, signInMethod, unhandled, type Account, type SignInMethod } from "@terno/core";
+import { allInboxOffered, inAllInbox, separatesTabs, signInMethod, unhandled, type Account, type SignInMethod } from "@terno/core";
 import type { AppSettings } from "@terno/core/rpc";
 import { Accordion, AccordionItem, AccordionPanel, AccordionTrigger } from "@terno/ui/components/accordion";
 import { Button, GHOST_DANGER_PRESS } from "@terno/ui/components/button";
@@ -15,6 +15,7 @@ import { t } from "@terno/i18n";
 import { useEffect, useId, useState } from "react";
 import { snack } from "~/lib/snack";
 import { setSeparateTabs } from "~/lib/gmail-tabs";
+import { setInAllInbox } from "~/lib/account-inbox";
 import { client } from "~/rpc/connection";
 import { canStart, clearAttemptError, needsGoogleScript, needsSignIn, prepareGoogle, signInAgain, useSignIn } from "~/lib/sign-in";
 import SignInPanel from "../sign-in-panel";
@@ -176,6 +177,8 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
   // plan 211: the account's two switches show where AI features can run; with its AI off, what depends on it isn't here
   const aiOffered = useApp(aiFeaturesOffered);
   const aiOn = account.ai !== false;
+  // plan 238: with several accounts (with one, the Inbox is that account's), or while it's out
+  const allInbox = useApp((s) => allInboxOffered(account, s.accounts.length));
   return (
     <div className="hairline-divide pb-1 pl-5" data-testid="account-editor">
       <SettingsRow find="account.name" labelFor label={t("account.name")} hint={t("account.name.hint")}>
@@ -213,6 +216,12 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
           />
         )}
       </SettingsRow>
+      {/* plan 238: in the all-accounts Inbox, or only under its row */}
+      {allInbox && (
+        <SettingsRow find="account.allInbox" label={t("account.allInbox")} hint={t("account.allInbox.hint")}>
+          {(a) => <Switch {...a} data-testid="account-all-inbox" checked={inAllInbox(account)} onCheckedChange={(on) => void setInAllInbox(account.id, on)} />}
+        </SettingsRow>
+      )}
       {/* plan 86: Gmail's Promotions and Social, under the account and out of the Inbox */}
       {account.kind === "gmail" && (
         <SettingsRow find="account.separateTabs" label={t("account.separateTabs")} hint={t("account.separateTabs.hint")}>

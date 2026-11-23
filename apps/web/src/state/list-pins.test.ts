@@ -148,3 +148,16 @@ it("a refresh keeps the whole loaded window in Split, counting each row once whe
   expect(shown.slice(0, 2)).toEqual([501, 502]);
   expect(shown).toContain(698);
 });
+
+it("plan 238: the all-accounts Inbox's top leaves out an account out of it; its own Inbox keeps its top", async () => {
+  const mail = (id: number, accountId: number) => ({ ...row(id), accountId }) as ThreadSummary;
+  mailbox({ "pins.threads": () => Promise.resolve({ items: [mail(7, 2), mail(5, 1)] }), "reminders.threads": () => Promise.resolve({ items: [mail(5, 1), mail(9, 2)] }) });
+  setApp({ query: "", view: "inbox", accountId: null, categoryId: null, reviewCategoryId: null, folder: null, selectedId: null, checked: new Set(), accounts: [{ id: 1 }, { id: 2, unified: false }] as never });
+  await reloadList({ keepSelection: true });
+  expect({ ids: inboxTop.ids, pinned: inboxTop.pinned }).toEqual({ ids: [5], pinned: 1 });
+  setApp({ accountId: 2 });
+  await vi.waitFor(() => expect(useList.getState().itemsKey).toContain(",2,"));
+  expect({ ids: inboxTop.ids, pinned: inboxTop.pinned }).toEqual({ ids: [7, 5, 9], pinned: 2 });
+  setApp({ accountId: null, accounts: [] });
+  await vi.waitFor(() => expect(useList.getState().itemsKey).toContain(",null,"));
+});
