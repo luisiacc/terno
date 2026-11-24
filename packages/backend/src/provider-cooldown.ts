@@ -1,5 +1,5 @@
 import { ProviderCooldownError, RequestNotDispatchedError, type ProviderRequests, type RequestDescriptor, type RequestTicket, type Observation429 } from "@terno/mail/portable";
-import { COOLDOWN_CANDIDATE_BYTES, COOLDOWN_TICKETS, COOLDOWN_LEDGER_BYTES, COOLDOWN_SERVICES, PROVIDER_COOLDOWN_KEY, compactCooldown, decodeCooldown, encodeCooldown, mergeCooldownRows, mailboxKeyValid, mailboxDigest, nextCooldownRevision, copyOpAdmission, type CooldownLedger, type CooldownRow, type CooldownService, type CooldownStamp, type OAuthServices, type ProviderCooldownStore, type OpAdmission } from "@terno/store";
+import { COOLDOWN_CANDIDATE_BYTES, COOLDOWN_TICKETS, COOLDOWN_LEDGER_BYTES, COOLDOWN_SERVICES, PROVIDER_COOLDOWN_KEY, compactCooldown, decodeCooldown, encodeCooldown, mergeCooldownRows, mailboxKeyValid, mailboxDigest, nextCooldownRevision, copyOpAdmission, type CooldownLedger, type CooldownRow, type CooldownService, type CooldownStamp, type OAuthServices, type ProviderCooldownStore, type OpAdmission, OAUTH_SERVICES } from "@terno/store";
 import { RETRY_DELAYS_MS, retryJitter } from "./connectivity";
 import { isOAuthKind } from "@terno/core";
 export { ProviderCooldownError, PROVIDER_COOLDOWN_KEY };
@@ -667,10 +667,13 @@ export class ProviderCooldown {
     for (const b of this.ledger.bindings) {
       const found = accountAt(b.id);
       const a = found && { ...found };
-      if (!a || !isOAuthKind(a.kind) || a.createdAt !== b.createdAt || await mailboxDigest(a.email, (bytes) => crypto.subtle.digest("SHA-256", bytes)) !== b.emailDigest) continue;
+      // plan 259 (Codex review #2): an account is held only by its own provider's services; a kind the ledger has none for
+      // (Outlook, until its Graph provider) is neither verified nor held here
+      const services = a && isOAuthKind(a.kind) ? OAUTH_SERVICES[a.kind] : undefined;
+      if (!a || !services || a.createdAt !== b.createdAt || await mailboxDigest(a.email, (bytes) => crypto.subtle.digest("SHA-256", bytes)) !== b.emailDigest) continue;
       verified.push(a.id);
       const needsToken = dependent.has(`${b.mailboxKey}/${a.id}/${a.createdAt}`);
-      if (this.state(b.mailboxKey, "gmail-api").kind !== "ready" || (needsToken && (this.state(b.mailboxKey, "oauth-token").kind !== "ready" || this.state("installation", "oauth-token").kind !== "ready"))) blocked.push(a.id);
+      if (this.state(b.mailboxKey, services.mail).kind !== "ready" || (needsToken && (this.state(b.mailboxKey, services.token).kind !== "ready" || this.state("installation", services.token).kind !== "ready"))) blocked.push(a.id);
     }
     try {
       const preproofDependency = [...this.dependencies.values()].some((d) => d.owner === "installation" && d.id === null);

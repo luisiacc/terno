@@ -193,6 +193,20 @@ describe("latent cooldown delta", () => {
     expect(JSON.parse(f.encoded()!).rows[0].minimum).toBe("3000");
   });
 
+  it("plan 259 (Codex review #2): a Gmail pause never holds an Outlook account bound to the same address", async () => {
+    const key = "580852f44dc8a5bc68cbd0130926bedcbfb143d6ca60f3f40fdf6ff7b4dd820f";
+    const stamp = { id: 1, email: "synthetic1@example.test", createdAt: 1 };
+    const ledger = JSON.parse(seeded({ owner: key, service: "gmail-api" }));
+    ledger.bindings = [{ id: 1, createdAt: 1, emailDigest: key, mailboxKey: key }];
+    const f = fixture(JSON.stringify(ledger)), g = await f.open();
+    expect(g.state(key, "gmail-api").kind).not.toBe("ready");
+    const gmail = await g.admission((id) => id === 1 ? { ...stamp, kind: "gmail" } : undefined);
+    expect(gmail.blockedAccountIds).toEqual([1]);
+    const outlook = await g.admission((id) => id === 1 ? { ...stamp, kind: "outlook" } : undefined);
+    expect(outlook.blockedAccountIds).toEqual([]);
+    expect(outlook.verifiedAccountIds).toEqual([]);
+  });
+
   it("36 dependency changes wake admission", async () => {
     const key = "580852f44dc8a5bc68cbd0130926bedcbfb143d6ca60f3f40fdf6ff7b4dd820f";
     const stamp = { id: 1, email: "synthetic1@example.test", createdAt: 1 };
