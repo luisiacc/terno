@@ -131,18 +131,15 @@ export function migrateLocalMail(s: StoredSettings): StoredSettings {
 export const AGENTS_VERSION = 1;
 
 /**
- * Plan 183: the MCP connector ran on every launch, never the user's choice.
- * A profile from before then starts with agents off, keeping the level it had
- * (organize, or send if it allowed sending), ready for when the user turns
- * agents on; a fresh one takes the default (on, at read: owner, 2026-11-24).
- * `fresh` is read from the raw stored object, before the other migrations
- * stamp it. Pure, like the others.
+ * Plan 183: agents became the user's choice, stamped once. A profile without
+ * the stamp takes the default (on, read only: owner, 2026-11-24), whatever it
+ * allowed before: the least an agent can do, and a profile seeded before its
+ * first start (the demo, the smokes) behaves like a fresh one. Pure, like the others.
  */
-export function migrateAgents(s: StoredSettings, fresh: boolean): StoredSettings {
+export function migrateAgents(s: StoredSettings): StoredSettings {
   if ((s.agentsVersion ?? 0) >= AGENTS_VERSION) return s;
-  const { allowAgentSend, ...rest } = s;
-  const agents: AgentsSetting = fresh ? DEFAULT_AGENTS : { enabled: false, access: allowAgentSend ? "send" : "organize" };
-  return { ...rest, agents, agentsVersion: AGENTS_VERSION };
+  const { allowAgentSend: _old, ...rest } = s;
+  return { ...rest, agents: DEFAULT_AGENTS, agentsVersion: AGENTS_VERSION };
 }
 
 /**
@@ -176,7 +173,7 @@ export async function readOfferAnswers(store: Pick<SettingsStore, "settings">): 
 /** Every read-time migration, in order. */
 function migrate(s: StoredSettings): StoredSettings {
   const fresh = Object.keys(s).length === 0;
-  return migrateAgents(migrateLocalMail(migrateErrorReports(migrateRemoteImages(migrateAppearance(s, fresh)))), fresh);
+  return migrateAgents(migrateLocalMail(migrateErrorReports(migrateRemoteImages(migrateAppearance(s, fresh)))));
 }
 
 export const DEFAULT_SETTINGS: General = {

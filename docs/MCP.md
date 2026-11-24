@@ -31,6 +31,8 @@ Available tools:
 - `categorize`
 - `create_draft`
 - `send_email`: only works when the user enables it in Settings → Agents (where "Change token" also cuts off every connected agent).
+
+Agents are allowed by default at **Read only**: `update_threads`, `categorize`, `create_draft` and `create_filter` need **Read and organize**, and `send_email` needs **Read, organize and send**, both chosen in Settings → Agents.
 - `list_filters`
 - `create_filter`: supports a dry run.
 

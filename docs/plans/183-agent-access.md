@@ -135,4 +135,12 @@ A settings file can turn agents off or lower the level, never turn them on or ra
 
 > make this setting ON by default
 
-`DEFAULT_AGENTS` is now `{ enabled: true, access: "read" }`: a fresh profile opens the socket at its first start, read only, so an agent works with nothing to set up and changes no mail until the user raises the level. A profile from before plan 183 still migrates to off at the level it had, and a stored choice is kept (the default only fills what isn't stored). Import still only turns agents off. The tests above now start on: the e2e flow checks the switch on at Read only, then turns it off at the end (no token, no level, the setup still shown); the packaged smoke reaches the app with no setup, then turns agents off and hears where to turn them on.
+`DEFAULT_AGENTS` is now `{ enabled: true, access: "read" }`: a fresh profile opens the socket at its first start, read only, so an agent works with nothing to set up and changes no mail until the user raises the level. A stored choice is kept (the default only fills what isn't stored). Import still only turns agents off. The tests above now start on: the e2e flow checks the switch on at Read only, then turns it off at the end (no token, no level, the setup still shown); the packaged smoke reaches the app with no setup, then turns agents off and hears where to turn them on.
+
+### Revisions after the Codex review
+
+- **Every profile without the plan 183 stamp takes the default, on at read only.** The migration told a fresh profile from an old one by an empty settings row, but the demo seed (desktop smokes, the web demo) and an account connected before any setting write leave rows that aren't empty, so those started off at Organize: the smokes found no socket, and a web demo export carried `enabled: false` into an import. `allowAgentSend` is no longer carried into a level (there are no users from before plan 183): the least an agent can do is the default for all of them.
+- The site's home and privacy copy (en, es) no longer say "off until you turn it on"; `docs/MCP.md` says agents start at Read only and which tools need a higher level.
+- The visual baseline `settings-agents.png` shows the switch on at Read only.
+- Tests: an untouched fresh profile's agent reads and is refused an archive; importing Off closes the live connector (socket and token gone).
+- Not changed: the socket has no connection cap and each connection keeps a 5 s handshake timer (Codex #6). It was already so whenever agents were on; only processes running as the user can reach it, so it isn't part of this change.

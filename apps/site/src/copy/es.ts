@@ -97,8 +97,8 @@ export const es: SiteCopy = {
     },
     agents: {
       title: "Tus agentes de IA, en todos tus buzones.",
-      body: "Conecta Claude Code, Codex, Cursor u otra app de tu ordenador que use servidores MCP locales, y podrá buscar y leer todas tus cuentas a través de Terno. Está desactivado hasta que lo activas, y tú decides si los agentes solo pueden leer, también organizar o también enviar.",
-      points: ["Claude Code, Codex, Cursor y otras apps MCP locales", "Desactivado hasta que lo activas", "Solo leer, organizar o enviar: tú eliges"],
+      body: "Conecta Claude Code, Codex, Cursor u otra app de tu ordenador que use servidores MCP locales, y podrá buscar y leer todas tus cuentas a través de Terno. Viene activado, solo para leer, y tú decides si los agentes también pueden organizar, también enviar o no conectarse en absoluto.",
+      points: ["Claude Code, Codex, Cursor y otras apps MCP locales", "Solo leer hasta que permitas más", "Solo leer, organizar o enviar: tú eliges"],
       demo: {
         you: "Tú",
         agent: "Agente",
@@ -467,7 +467,7 @@ export const es: SiteCopy = {
           id: "agents",
           title: "Herramientas de IA en tu ordenador",
           body: [
-            "En un Mac y en Linux, Terno incluye un conector (MCP) que las herramientas de IA de tu ordenador, como Claude, pueden usar para llegar a tu correo; aún no está en Windows. Está desactivado hasta que lo activas en Ajustes → Agentes, donde también eliges qué pueden hacer esas herramientas: solo leer, también organizar (archivar, categorizar, filtros y borradores) o también enviar. Mientras está desactivado, nada las espera. No se puede alcanzar desde la red: solo pueden usarlo los programas que se ejecutan con tu usuario en tu ordenador y tienen una clave guardada en tu carpeta de Terno, los mismos programas que podrían abrir directamente tus archivos de correo. Lo que esas herramientas hagan con tu correo depende de ellas y de su proveedor.",
+            "En un Mac y en Linux, Terno incluye un conector (MCP) que las herramientas de IA de tu ordenador, como Claude, pueden usar para llegar a tu correo; aún no está en Windows. Viene activado, solo para leer, y en Ajustes → Agentes eliges qué pueden hacer esas herramientas: solo leer, también organizar (archivar, categorizar, filtros y borradores) o también enviar, o lo desactivas. Mientras está desactivado, nada las espera. No se puede alcanzar desde la red: solo pueden usarlo los programas que se ejecutan con tu usuario en tu ordenador y tienen una clave guardada en tu carpeta de Terno, los mismos programas que podrían abrir directamente tus archivos de correo. Lo que esas herramientas hagan con tu correo depende de ellas y de su proveedor.",
           ],
         },
         {

@@ -53,19 +53,21 @@ async function setup(o: { stored?: Record<string, unknown>; start?: typeof start
 }
 
 describe("plan 183: the setting", () => {
-  it("is on on a fresh profile, at read (owner, 2026-11-24)", async () => {
-    const { client } = await setup();
+  it("is on on a fresh profile, at read (owner, 2026-11-24): an untouched agent reads and changes nothing", async () => {
+    const { client, agent } = await setup();
     expect((await client.call("app.bootstrap", {})).settings.agents).toEqual({ enabled: true, access: "read" });
+    await expect(agent.call("threads.search", { query: "x" })).resolves.toBeTruthy();
+    await expect(agent.call("threads.act", { threadIds: [1], action: "archive" })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
-  it("an existing profile goes off, keeping the level it had", async () => {
+  it("a profile from before plan 183, or one seeded before its first start, takes the default: read only, whatever it allowed", async () => {
     const before = await setup({ stored: { density: "compact" } });
-    expect((await readSettings(before.backend.store)).agents).toEqual({ enabled: false, access: "organize" });
+    expect((await readSettings(before.backend.store)).agents).toEqual({ enabled: true, access: "read" });
     const sender = await setup({ stored: { density: "compact", allowAgentSend: true } });
-    expect((await readSettings(sender.backend.store)).agents).toEqual({ enabled: false, access: "send" });
-    // stamped once: what the user chooses next is kept
-    await sender.set({ enabled: true, access: "read" });
     expect((await readSettings(sender.backend.store)).agents).toEqual({ enabled: true, access: "read" });
+    // stamped once: what the user chooses next is kept
+    await sender.set({ enabled: false, access: "organize" });
+    expect((await readSettings(sender.backend.store)).agents).toEqual({ enabled: false, access: "organize" });
     expect(sqlDb(sender.backend.store).get<{ value_json: string }>("SELECT value_json FROM settings WHERE key = 'app'")!.value_json).not.toContain("allowAgentSend");
   });
 
@@ -116,13 +118,17 @@ describe("plan 183: the gate", () => {
   });
 
   it("an import can turn agents off, never on, and never changes the level", async () => {
-    const { client, set } = await setup();
+    const { client, set, backend, paths } = await setup();
+    await backend.start();
     const dump = await client.call("app.export", {});
     await set({ enabled: true, access: "organize" });
     await client.call("app.import", { data: { ...dump, settings: { ...dump.settings, agents: { enabled: true, access: "send" } } } });
     expect((await client.call("app.bootstrap", {})).settings.agents).toEqual({ enabled: true, access: "organize" });
     await client.call("app.import", { data: { ...dump, settings: { ...dump.settings, agents: { enabled: false, access: "send" } } } });
     expect((await client.call("app.bootstrap", {})).settings.agents).toEqual({ enabled: false, access: "organize" });
+    // and the live connector closes with it
+    expect(existsSync(paths.socketPath)).toBe(false);
+    expect(existsSync(paths.tokenPath)).toBe(false);
   });
 });
 

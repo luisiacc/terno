@@ -105,8 +105,8 @@ export const en = {
     },
     agents: {
       title: "Your AI agents, every inbox.",
-      body: "Connect Claude Code, Codex, Cursor or another app on your computer that runs local MCP servers, and it can search and read all your accounts through Terno. It’s off until you turn it on, and you decide whether agents may only read, also organize, or also send.",
-      points: ["Claude Code, Codex, Cursor, other local MCP apps", "Off until you turn it on", "Read only, organize or send: your call"],
+      body: "Connect Claude Code, Codex, Cursor or another app on your computer that runs local MCP servers, and it can search and read all your accounts through Terno. It’s on from the start, read only, and you decide whether agents may also organize, also send, or not connect at all.",
+      points: ["Claude Code, Codex, Cursor, other local MCP apps", "Read only until you allow more", "Read only, organize or send: your call"],
       /** the example session beside it: the setup line, a question, Terno's tool at work, the answer */
       demo: {
         you: "You",
@@ -482,7 +482,7 @@ export const en = {
           id: "agents",
           title: "AI tools on your computer",
           body: [
-            "On a Mac and on Linux, Terno includes a connector (MCP) that AI tools on your computer, such as Claude, can use to reach your mail; it isn’t on Windows yet. It is off until you turn it on in Settings → Agents, where you also choose what those tools may do: only read, also organize (archive, categorize, filters and drafts), or also send. While it is off, nothing listens for them. It can’t be reached from the network: only programs running as you on your computer, holding a key kept in your Terno folder, can use it, the same programs that could open your mail files directly. What those tools do with your mail is up to them and their provider.",
+            "On a Mac and on Linux, Terno includes a connector (MCP) that AI tools on your computer, such as Claude, can use to reach your mail; it isn’t on Windows yet. It is on from the start, read only, and Settings → Agents is where you choose what those tools may do: only read, also organize (archive, categorize, filters and drafts), or also send, or turn it off. While it is off, nothing listens for them. It can’t be reached from the network: only programs running as you on your computer, holding a key kept in your Terno folder, can use it, the same programs that could open your mail files directly. What those tools do with your mail is up to them and their provider.",
           ],
         },
         {
