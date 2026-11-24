@@ -372,10 +372,12 @@ export const digestMorph = (update: () => void): void => (useAppearance.getState
  * back into the reader as one view transition; its state then changes on the transition's frame, checked again there.
  */
 export function backToDigest(glide = false): boolean {
+  // the newsletter it was asked from: a later one opened before the frame isn't put away (Codex review)
+  const from = useToday.getState().fromDigest;
   const ready = () => {
     const back = useToday.getState().fromDigest;
     const s = getApp();
-    return back !== null && s.today && s.selectedId === back;
+    return back !== null && back === from && s.today && s.selectedId === back;
   };
   if (!ready()) return false;
   const go = () => {

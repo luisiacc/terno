@@ -140,11 +140,17 @@ export function move(delta: number, byKey = false) {
   warmNext([next + delta, next + 2 * delta].flatMap((n) => items[n]?.id ?? []));
 }
 
+/** A message's header has the keys (N and P put you there): o is its own, as Enter is. */
+function onMessageHeader(): boolean {
+  const header = document.activeElement;
+  return header instanceof HTMLElement && header.dataset.testid === "message-toggle";
+}
+
 /** Enter / o: in List the cursor's conversation becomes the page. */
 function openCurrent() {
   // on a message's header (N and P put you there), o opens it as Enter does
   const header = document.activeElement;
-  if (header instanceof HTMLElement && header.dataset.testid === "message-toggle") return header.click();
+  if (onMessageHeader()) return (header as HTMLElement).click();
   const id = getApp().selectedId;
   if (!listLayout()) {
     if (id !== null) {
@@ -234,7 +240,8 @@ const HANDLERS: Partial<Record<Command, () => void>> = {
   // plan 162 (after ai162-r02): the digest page has the list's keys while it has the keys: its rows, not Today's behind it
   "list.next": () => (digestHasKeys() ? digestKeys.current!.step(1) : move(1, true)),
   "list.prev": () => (digestHasKeys() ? digestKeys.current!.step(-1) : move(-1, true)),
-  "list.open": () => (digestHasKeys() ? digestKeys.current!.open() : openCurrent()),
+  // a focused message's header keeps o as its own (it toggles, as Enter does), the digest's keys or not (Codex review)
+  "list.open": () => (!onMessageHeader() && digestHasKeys() ? digestKeys.current!.open() : openCurrent()),
   "list.toggleSelect": () => (digestHasKeys() ? digestKeys.current!.toggle() : toggleCurrent()),
   // plan 251 (Codex critique): the digest's list beside a newsletter is the list: the feed under it is out of reach, so
   // nothing selects there (its checks would take the reader and what e acts on)

@@ -51,16 +51,23 @@ afterEach(() => {
   dropApi();
 });
 
-test("motion off, or no API: the update runs at once, nothing named", () => {
+test("motion off: the update runs at once, nothing named", () => {
   const els = rows([0]);
-  for (const off of [() => (motion = 0), dropApi]) {
-    off();
-    const update = vi.fn();
-    morph(update);
-    expect(update).toHaveBeenCalledOnce();
-    expect(names(els)).toEqual([""]);
-  }
+  motion = 0;
+  const update = vi.fn();
+  morph(update);
+  expect(update).toHaveBeenCalledOnce();
+  expect(names(els)).toEqual([""]);
   expect(calls).toBe(0);
+});
+
+test("no API (motion on): the update runs at once, nothing named", () => {
+  const els = rows([0]);
+  dropApi();
+  const update = vi.fn();
+  morph(update);
+  expect(update).toHaveBeenCalledOnce();
+  expect(names(els)).toEqual([""]);
 });
 
 test("names only what's wholly in view above the foot, in the old state and again in the new, and clears them after", async () => {

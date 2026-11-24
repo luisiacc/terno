@@ -10,6 +10,7 @@ import { Archive, Ban, ChevronRight, EyeOff, Info, Mail, X } from "@terno/ui/ico
 import { cn } from "@terno/ui/lib/utils";
 import { type MouseEvent, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getApp } from "~/state/app";
+import { leaveNewDraft } from "~/lib/compose";
 import { useDesign } from "~/lib/design";
 import { LIST_TITLE } from "~/lib/list-title";
 import { focusReader } from "~/lib/pane-focus";
@@ -320,24 +321,36 @@ export default function DigestPage({ place = "page" }: { place?: "page" | "colum
   };
   const heading = useRef<HTMLHeadingElement>(null);
   const open = (threadId: number) => {
-    // plan 251: beside, the open row's Open is the way into it (as the list's Enter on its open row)
-    if (beside && threadId === current) return void focusReader();
+    // plan 251: beside, the open row's Open is the way into it (as the list's Enter on its open row); with a new message
+    // over it, the way back to it (Codex review: the message is put aside, as opening a conversation does)
+    if (beside && threadId === current) {
+      const s = getApp();
+      if (!s.compose && s.heldView === null) return void focusReader();
+      if (s.compose) leaveNewDraft();
+      if (getApp().heldView !== null) setApp({ heldView: null });
+      return;
+    }
     const opening = () => {
-      openFromDigest(day, threadId, beside ? digestPick(day).scroll : (scroller.current?.scrollTop ?? scrollAt.current), { toggled, readTicked }, anchorOf(rowEl(threadId), threadId));
+      // the ticks as they are now: from the page this runs on the transition's frame (Codex review)
+      const ticks = { toggled: keys.current.toggled, readTicked: keys.current.readTicked };
+      openFromDigest(day, threadId, beside ? digestPick(day).scroll : (scroller.current?.scrollTop ?? scrollAt.current), ticks, anchorOf(rowEl(threadId), threadId));
       // plan 162 (after ai162-r02): opened from here is read now (plan 145), not after the reader's dwell: that's for j held
       // down a list, and back in under it the newsletter stayed unread while the page said it was opened
       if (liveIds?.has(threadId) !== false) void act("markRead", [threadId], { quiet: true });
     };
     if (beside) return opening();
     // plan 251: from the page, the list glides into the list column beside the newsletter (Split), on the transition's
-    // frame: only if nothing else was opened by then
-    const was = getApp().selectedId;
-    digestMorph(() => getApp().selectedId === was && opening());
+    // frame: only if nothing else was opened, and no new message started, by then
+    const was = getApp();
+    digestMorph(() => {
+      const now = getApp();
+      if (now.selectedId === was.selectedId && now.compose === was.compose) opening();
+    });
   };
   // plan 162 (after ai162-r02): the page's own keys, the list's: the cursor is the row holding the focus. Plan 251: beside,
   // the open row is the cursor when the keys are elsewhere (the reader)
-  const keys = useRef({ toggle, open, current, day });
-  keys.current = { toggle, open, current, day };
+  const keys = useRef({ toggle, open, current, day, toggled, readTicked });
+  keys.current = { toggle, open, current, day, toggled, readTicked };
   // plan 251 (Codex critique): the open row's place, kept, so j/k go on from there when it leaves the list (hidden, archived)
   const shownIds = shown.map((i) => i.threadId);
   if (beside && current !== null && shownIds.includes(current)) shownAt.current = shownIds.indexOf(current);
@@ -362,13 +375,21 @@ export default function DigestPage({ place = "page" }: { place?: "page" | "colum
       const all = rows();
       const ids = all.map((el) => Number(el.dataset.digestOpen));
       const at = keys.current.current === null ? -1 : ids.indexOf(keys.current.current);
-      // the open row left the list: the row that took its place is next, the one above it previous
-      const i = at >= 0 ? at + delta : Math.min(shownAt.current, ids.length) + (delta > 0 ? 0 : -1);
-      const to = all[Math.max(0, Math.min(all.length - 1, i))];
+      // the open row left the list: the row that took its place is next, the one above it previous (none past either
+      // end: Codex review)
+      const i = at >= 0 ? Math.max(0, Math.min(all.length - 1, at + delta)) : Math.min(shownAt.current, ids.length) + (delta > 0 ? 0 : -1);
+      const to = all[i];
       if (!to || Number(to.dataset.digestOpen) === keys.current.current) return;
-      const inColumn = scroller.current?.contains(document.activeElement) === true;
+      const before = document.activeElement;
+      const inColumn = scroller.current?.contains(before) === true;
       keys.current.open(Number(to.dataset.digestOpen));
-      if (inColumn) to.focus({ preventScroll: true });
+      if (inColumn) return void to.focus({ preventScroll: true });
+      // the keys were in the reader on a control of the conversation that went (Codex review): into the one that came, as
+      // the list's own j does
+      requestAnimationFrame(() => {
+        const now = document.activeElement;
+        if (before && before !== document.body && (!now || now === document.body)) focusReader();
+      });
     };
     digestKeys.current = {
       beside,
@@ -400,15 +421,23 @@ export default function DigestPage({ place = "page" }: { place?: "page" | "colum
         // the page lands where it was left: the column may have clamped it)
         const id = keys.current.current;
         const was = settled.current;
-        if (!beside || id === null || !was || (was.current === id && was.top === scroller.current?.scrollTop)) return;
+        const sc = scroller.current;
+        if (!beside || id === null || !was || !sc || (was.current === id && was.top === sc.scrollTop)) return;
         const anchor = anchorOf(rowEl(id), id);
-        if (anchor) keepDigestPick({ ...digestPick(keys.current.day), anchor });
+        if (!anchor) return;
+        // scrolled away from it: the page brings it back into view, at the column's edge it went past (Codex review)
+        const box = sc.getBoundingClientRect();
+        const tall = rowEl(id)!.getBoundingClientRect().height;
+        anchor.y = Math.max(box.top, Math.min(box.bottom - tall, anchor.y));
+        keepDigestPick({ ...digestPick(keys.current.day), anchor });
       },
       focus: () => {
         const id = keys.current.current;
         const el = (id !== null && scroller.current?.querySelector<HTMLElement>(`[data-digest-open="${id}"]`)) || scroller.current?.querySelector<HTMLElement>("[data-digest-open]") || heading.current;
         if (!el) return false;
         focusQuietly(el);
+        // in view (the column may have been scrolled away from it)
+        (el.closest("li") ?? el).scrollIntoView({ block: "nearest" });
         return document.activeElement === el;
       },
     };

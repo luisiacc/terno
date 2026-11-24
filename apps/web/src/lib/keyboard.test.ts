@@ -178,3 +178,28 @@ describe("Esc with a popover open (plan 210, iteration 4, merge)", () => {
     uninstall();
   });
 });
+
+describe("o on a message's header with the digest's list beside (plan 251, Codex review)", () => {
+  it("toggles the message, as Enter does; elsewhere o is the digest's", async () => {
+    const { digestKeys } = await import("~/state/today");
+    const doc = document as unknown as { addEventListener: unknown; removeEventListener: unknown; activeElement: unknown };
+    let onKey!: (e: unknown) => void;
+    doc.addEventListener = (type: string, f: (e: unknown) => void) => { if (type === "keydown") onKey = f; };
+    doc.removeEventListener = () => {};
+    const uninstall = installKeyboard();
+    const press = () => onKey({ key: "o", metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, repeat: false, isComposing: false, defaultPrevented: false, preventDefault() {} });
+    const opened: string[] = [];
+    digestKeys.current = { beside: true, has: () => true, step() {}, toggle() {}, open: () => opened.push("digest"), focus: () => true, leave() {} };
+    setApp({ compose: null, dialog: null, menuOpen: false });
+    (globalThis as Record<string, unknown>).HTMLElement ??= class {};
+    // a message's header button (node: a stand-in with what the resolver and the handler read)
+    const header = Object.assign(Object.create((globalThis as unknown as { HTMLElement: { prototype: object } }).HTMLElement.prototype), { dataset: { testid: "message-toggle" }, click: () => opened.push("header"), closest: () => null, matches: () => false, isContentEditable: false, tagName: "BUTTON", getAttribute: () => null, hasAttribute: () => false });
+    doc.activeElement = header;
+    press();
+    doc.activeElement = null;
+    press();
+    expect(opened).toEqual(["header", "digest"]);
+    digestKeys.current = null;
+    uninstall();
+  });
+});

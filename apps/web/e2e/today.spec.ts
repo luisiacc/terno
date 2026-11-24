@@ -644,7 +644,6 @@ test.describe("What matters and its digest (plan 145)", () => {
     await settingUp(page, server, { ai: { provider: "fake", model: "demo" } });
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.getByTestId("nav-today").click();
-    const feedTop = await feedList(page).evaluate((el) => el.scrollTop);
     await (await digestRow(page)).click();
     await expect(page.getByTestId("digest-title")).toHaveText("Automated mail");
     const items = page.getByTestId("digest-item");
@@ -723,6 +722,29 @@ test.describe("What matters and its digest (plan 145)", () => {
       await expect(page.getByTestId("reader-subject")).toHaveText(await subjectOf(4));
     });
 
+    await scenario("Codex review: from a control of the conversation that goes, j lands the keys in the next one; a new message over it, the open row's click comes back to it", async () => {
+      await page.getByTestId("quick-reply").focus();
+      await page.keyboard.press("j");
+      await expect(page.getByTestId("reader-subject")).toHaveText(await subjectOf(5));
+      await expect.poll(() => page.evaluate(() => document.activeElement?.closest("[data-testid=reader]") !== null)).toBe(true);
+      await page.keyboard.press("c");
+      await expect(page.getByTestId("reader-subject")).toHaveCount(0);
+      await column.getByTestId("digest-open").nth(5).click();
+      await expect(page.getByTestId("reader-subject")).toHaveText(await subjectOf(5));
+      await page.keyboard.press("k");
+      await expect(page.getByTestId("reader-subject")).toHaveText(await subjectOf(4));
+    });
+
+    await scenario("Codex review: scrolled away from the open row, Esc brings the page back with it in view", async () => {
+      await column.getByTestId("digest-scroller").evaluate((el) => (el.scrollTop = el.scrollHeight));
+      await page.keyboard.press("Escape");
+      await expect(column).toHaveCount(0);
+      await expect(page.getByTestId("digest-open").nth(4)).toBeInViewport();
+      await expect(page.getByTestId("digest-open").nth(4)).toBeFocused();
+      await page.getByTestId("digest-open").nth(4).click();
+      await expect(column).toBeVisible();
+    });
+
     await scenario("Esc: the page again, on the row it was on, the ticks kept; again, the feed where it was", async () => {
       await page.keyboard.press("Escape");
       await expect(column).toHaveCount(0);
@@ -733,7 +755,22 @@ test.describe("What matters and its digest (plan 145)", () => {
       await expect(page.locator(FEED)).toBeVisible();
       await page.keyboard.press("Escape");
       await expect(page.getByTestId("digest-page")).toHaveCount(0);
-      expect(feedTop).toBeGreaterThanOrEqual(0);
+    });
+
+    await scenario("Codex review: the open row gone from the list's end (its sender hidden), j opens nothing past it and k the row above", async () => {
+      await (await digestRow(page)).click();
+      const last = (await items.count()) - 1;
+      await items.nth(last).getByTestId("digest-open").click();
+      const lastSubject = (await column.getByTestId("digest-subject").nth(last).innerText()).trim();
+      await expect(page.getByTestId("reader-subject")).toHaveText(lastSubject);
+      await column.getByTestId("digest-open").nth(last).click({ button: "right" });
+      await page.getByTestId("digest-menu-hide").click();
+      await expect(column.getByTestId("digest-subject").filter({ hasText: lastSubject })).toHaveCount(0);
+      await page.keyboard.press("j");
+      await expect(page.getByTestId("reader-subject")).toHaveText(lastSubject);
+      const above = (await column.getByTestId("digest-subject").last().innerText()).trim();
+      await page.keyboard.press("k");
+      await expect(page.getByTestId("reader-subject")).toHaveText(above);
     });
   });
 

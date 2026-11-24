@@ -89,3 +89,15 @@ The digest is at most 40 rows (`DIGEST_CANDIDATES_MAX`): the column renders them
 10. **Skip to list and F6 would target the covered feed.** The column is inside the list's section (the feed's wrapper alone is inert), and `focusFeed` hands focus to the column's open row.
 11. **Rows at the column's width.** Beside, the sender and a row's state shrink and truncate so the subject keeps room, a digest's line is clamped to two lines, and the opened row's "stays in Inbox" (the page's to say) isn't repeated there. The foot puts its count on a line of its own with the buttons at the end.
 12. **Tests.** The feed's scroll is checked untouched under the column; the old button's assertions now check the column (`BESIDE`); axe in light and dark on the column (today.spec) and in every design (design-axe). No render-count gate: the digest is at most 40 rows and isn't virtualized (as the page always was). UI rating (`a08-today-digest` rates the page, which looks as it did): not run with this series; the column beside a newsletter isn't one of the rated captures yet.
+
+## Revisions after the Codex code review
+
+1. **A queued Esc could put away a newsletter opened after it** (Esc, then j within the frame). The way back is for the newsletter it was asked from: `backToDigest` checks it again on the transition's frame (`today-digest-glide.test.ts`).
+2. **A queued Open could save ticks from before a change, or put away a new message started meanwhile.** It reads the ticks when it lands, and lands only if neither the selection nor the new message changed.
+3. **j from a control of the conversation that goes** (the reply bar) left the keys on nothing: they go into the next conversation, as the list's j does (e2e).
+4. **Scrolled away from the open row, Esc landed the page's row off screen**, with focus on it: the column hands the page its row's height clamped to its own view; F6 and Skip to list bring the row into view (e2e).
+5. **With a new message over the reader, a click on the open row did nothing:** it puts the message aside (saved, as opening a conversation does) and the newsletter is back (e2e).
+6. **List's Back from a new message's page went to the digest:** only the newsletter's own page goes back to it (`goBack`, ⌘[ in a frame).
+7. **The open row gone at an end of the list, j or k went the other way:** nothing past the end (e2e: its sender hidden, j stays, k opens the row above).
+8. **o on a focused message header** was the digest's: it's the header's, as Enter is (`keyboard.test.ts`).
+9. **The "no API" unit test ran with motion off:** split, motion on.

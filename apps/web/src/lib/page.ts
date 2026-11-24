@@ -121,8 +121,9 @@ useAppearance.subscribe((s, p) => {
 export function goBack(): void {
   if (returnFromMailReaderView()) return;
   if (!listLayout() || currentPage() === "list") return;
-  // plan 251: List's Back from a newsletter the digest opened is the digest's page (the button above it went)
-  if (backToDigest()) return;
+  // plan 251: List's Back from a newsletter the digest opened is the digest's page (the button above it went); only from
+  // the newsletter's own page (a new message's page over it closes as it always has: Codex review)
+  if (currentPage() === "thread" && backToDigest()) return;
   markSelectionIntent();
   closePage({ focus: true });
 }
@@ -244,7 +245,7 @@ export function forwardNavKey(e: KeyboardEvent): void {
   if (returnFromMailReaderView()) { e.preventDefault(); return; }
   // plan 161, pass 2 (Codex review): from inside a newsletter's own document too, Esc goes back to the digest that opened it
   // plan 251: and ⌘[ in List, as its toolbar's Back does
-  if ((e.key === "Escape" || (listLayout() && currentPage() !== "list")) && backToDigest(true)) { e.preventDefault(); return; }
+  if ((e.key === "Escape" || (listLayout() && currentPage() === "thread")) && backToDigest(true)) { e.preventDefault(); return; }
   if (!listLayout() || currentPage() === "list") {
     // plan 161, pass 2: a preview's matched conversation closes back to its rule from inside its mail too (Split)
     if (e.key === "Escape" && !listLayout() && closePreviewRow()) {
