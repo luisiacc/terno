@@ -1071,9 +1071,11 @@ export class BackendCore {
         if (!await this.accountRead(life, () => this.getSecret(`account:${accountId}:refreshToken`)) || !this.current(life)) return false;
         await recover();
         if (status.signInRequired) return false;
-        await this.resumeAuth(accountId);
-        this.watchAccount(accountId);
-        void this.syncAccount(accountId);
+        // as an IMAP recheck (plan 263): push and a pass start whatever resuming its ops does
+        try { await this.resumeAuth(accountId); } finally {
+          this.watchAccount(accountId);
+          this.syncInBackground(accountId);
+        }
         return true;
       }
       if (account?.kind !== "imap" || !scope || !this.current(life)) return false;
