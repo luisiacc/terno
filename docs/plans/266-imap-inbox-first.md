@@ -188,6 +188,43 @@ Not taken:
 5. (after a yield, a backlog over 500 bodies waits for the poll for what the base would have done in the queued pass):
    bodies past 500 already wait for the next pass today; the arrival's pass takes the next 500.
 
+## Codex code review, round 2 (10 points; the last round)
+
+Fixed, each with a regression test that fails without its fix:
+1. **ID-less mail stored early and moved mid-pass stayed held** (introduced). Plan 114 adopts only by Message-ID, so a
+   message without one, stored by the early read and moved to Archive before the ordered read, could never be placed
+   again. The early read leaves ID-less mail to the ordered read. Test: an ID-less message moved on Sent's SELECT is
+   one row in Archive, nothing held.
+3. **An early read in a pass that stopped held a server copy for good** (introduced). The next pass met the stored
+   Inbox copy by its place, never "new", so its copy in Archive (a server rule, an All Mail) was held on every pass. In
+   the early read, mail met at its place past the acknowledged boundary (only an early read of a stopped pass, or our
+   own op, stores there) counts as new once the ordered read meets it there. Test: Inbox + Archive copies, the pass
+   stops on Sent's `NO [UNAVAILABLE]`; the next one places both, nothing held.
+6. **Backfill spent its three tries on "later"** (pre-existing). The backfill's SEARCH refusal goes through the same
+   classification: a temporary one fails the pass (deferred) and isn't a try. Test (`imap-backfill.int.test.ts`): four
+   `NO [UNAVAILABLE]` answers, then the folder's older mail arrives.
+7. **A SEARCH with no tagged answer read as the folder's refusal** (introduced for role folders). imapflow resolves
+   `false` with nothing logged when it has no answer; that is now the connection's failure (retryable: the pass
+   reconnects once, then backs off), never a folder tolerated as read. A real socket reset makes imapflow throw a
+   network error instead, so the test stubs `search` to resolve `false` on the pass's first session: the reconnected
+   one reads Sent.
+10. **The SEARCH-refusal test proved too little.** It now uses a neutral text (the RFC 5530 code alone decides), runs
+    with an empty Sent (incremental SEARCH) and a full one (the sweep's SEARCH ALL), and asserts one attempt (a
+    deferred error is never retried at once; a plain retryable one would be).
+
+Not taken:
+2. (a `uidnext` stored as `null` by an older build sends `UID null:*`): pre-existing, and only from a server that
+   omitted UIDNEXT on an empty mailbox before this fix; this plan no longer writes one (the fallback above), and
+   there are no users with old profiles to repair (owner, 2026-11-23).
+4. (a move to Archive after the ordered Inbox read still imports a second copy): pre-existing; the window is the same
+   as before this plan.
+5. (an unsolicited FETCH inside an envelope FETCH can trip `expected.delete`): pre-existing in every reader; a reader
+   that tells unsolicited updates apart is its own change.
+8. (imapflow's ESEARCH expansion capped by an older EXISTS): a library bug, pre-existing; the servers we test don't
+   advertise ESEARCH, and patching imapflow is out of scope. Reported here for a follow-up.
+9. (an arrival waits for the next body's permit): one permit wait at most; cancelling a queued permit on an arrival
+   needs the incoming-permit API to take a second abort reason. Left as is.
+
 ## Out of scope
 
 - Finding 3 (folders past the 10,000 catalog cap), deferred above.

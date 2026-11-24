@@ -747,7 +747,10 @@ export function toProviderError(error: unknown): ProviderError {
  * deferred, never a folder's refusal a pass tolerates and reports as synced.
  */
 function searchRefused(c: ImapFlow): never {
-  if (refusal(c) === "temporary") throw ProviderError.deferred(L("errors.imap.listRefused"));
+  const why = refusal(c);
+  if (why === "temporary") throw ProviderError.deferred(L("errors.imap.listRefused"));
+  // no tagged answer (the session closed under it, round 2 #7): the connection failed, not the folder
+  if (why === "unknown") throw ProviderError.network(L("errors.imap.listRefused"));
   throw new ProviderError(L("errors.imap.listRefused"), false);
 }
 
@@ -1287,6 +1290,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             // plan 266 (Codex code review #2): stored by the early read and still where it was: new this pass, as if
             // this read had stored it (one moved away meanwhile isn't, and its twin elsewhere is held, not imported)
             if (opts.early?.has(atLocation)) opts.introduced.add(atLocation);
+            // past the acknowledged boundary, an early read's own from a pass that stopped (round 2 #3): new as well,
+            // once the ordered read meets it, else a server's copy of it in another folder was held for good
+            else if (opts.arrivals) opts.introduced.add(atLocation);
             if (!(await locations.unresolved([atLocation])).length) {
               await upsertLocation(atLocation, path, uidvalidity, m.uid, flags);
               touched.add(atLocation);
@@ -1306,7 +1312,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           if (existing) candidates.add(existing.id);
           // plan 266 (Codex critique #1, #2): the early read of new mail takes only mail with no stored twin; anything that
           // may be one already here (moved by another app, a reset's) waits for the read after the sweeps, and is met
-          if (opts.arrivals && candidates.size) {
+          // (and mail with no Message-ID, round 2 #1: moved away mid-pass, plan 114 could never adopt it back)
+          if (opts.arrivals && (candidates.size || !envelope.rfcMessageId)) {
             for (const id of candidates) opts.seen?.add(id);
             continue;
           }
@@ -1459,8 +1466,10 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           // gone or reset since: the regular pass reads it again with the wider window
           if (!c.mailbox || Number(c.mailbox.uidValidity) !== known.uidvalidity) uids = [];
           else {
+            clearRefusal(c);
             const found = await c.search({ since: new Date(request.since), before: new Date(request.until) }, { uid: true });
-            if (!found) throw new ProviderError(L("errors.imap.listRefused"), false);
+            // a refusal for later is no try of the folder's three (round 2 #6)
+            if (!found) searchRefused(c);
             const below = Math.min(known.uidnext, state.below[key] ?? Infinity);
             uids = found.filter((uid) => uid < below).sort((a, b) => b - a);
           }

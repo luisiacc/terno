@@ -2903,20 +2903,92 @@ describe("plan 266: the Inbox's new mail first, whatever another folder does", (
     expect(sqlDb(backend.store).all("SELECT mailbox FROM message_locations ORDER BY mailbox")).toEqual([{ mailbox: "INBOX" }, { mailbox: "INBOX" }]);
   });
 
-  it("a role folder's SEARCH the server says to retry later fails the pass, never passes as read (Codex code review #3)", async () => {
+  it.each([false, true])("a role folder's SEARCH the server says to retry later fails the pass once, never passes as read (Codex code review #3; Sent holds mail: %s)", async (full) => {
     const { imap, backend, client, addAccount } = await setup();
     const ctl = imap.server.control;
+    // a Sent with mail is swept (SEARCH ALL); an empty one is only read (UID n:*)
+    if (full) ctl.addMessage("Sent", { raw: raw({ subject: "Sent before", from: "Luis <luis@test.local>", to: "Ana <ana@example.com>" }) });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
-    const busy = imap.server.script.add({ on: "command", command: "UID SEARCH", mailbox: "Sent", send: "$TAG NO [UNAVAILABLE] Try again later\r\n" });
+    // the code alone says "later" (RFC 5530), not the text
+    const busy = imap.server.script.add({ on: "command", command: "UID SEARCH", mailbox: "Sent", send: "$TAG NO [UNAVAILABLE] Not now\r\n" });
     ctl.addMessage("INBOX", { raw: raw({ subject: "Arrived while Sent's search was busy" }) });
     await backend.syncAccount(account.id);
-    expect(busy.hits).toBeGreaterThan(0);
+    // deferred: no instant reconnect and second try (round 2 #10)
+    expect(busy.hits).toBe(1);
     expect((await syncState(client)).lastError).not.toBeNull();
     expect(await subjects(client, "inbox")).toEqual(["Arrived while Sent's search was busy"]);
     busy.remove();
     await backend.syncAccount(account.id);
     expect((await syncState(client)).lastError).toBeNull();
+  });
+
+  it("a role folder's SEARCH that ends with no tagged answer is the connection's failure: the pass reconnects and reads it (round 2 #7)", async () => {
+    const { ImapFlow } = await import("imapflow");
+    const { imap, backend, addAccount } = await setup();
+    const ctl = imap.server.control;
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    ctl.addMessage("Sent", { raw: raw({ subject: "Sent elsewhere", from: "Luis <luis@test.local>", to: "Ana <ana@example.com>" }) });
+    // imapflow resolves false, with nothing logged, when it has no answer to give (a session gone under the command)
+    // (every Sent SEARCH of the pass's session: only a new session reads Sent)
+    const original = ImapFlow.prototype.search;
+    let cut = 0;
+    const gone = new WeakSet<object>();
+    const spy = vi.spyOn(ImapFlow.prototype, "search").mockImplementation(function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+      if (this.mailbox && this.mailbox.path === "Sent" && !cut) gone.add(this);
+      if (gone.has(this) && this.mailbox && this.mailbox.path === "Sent") {
+        cut++;
+        return Promise.resolve(false);
+      }
+      return original.apply(this, args);
+    });
+    try {
+      await backend.syncAccount(account.id);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(cut).toBeGreaterThan(0);
+    expect(count(backend, "SELECT 1 FROM messages WHERE subject = 'Sent elsewhere'")).toBe(1);
+  });
+
+  it("ID-less mail moved from the Inbox to Archive mid-pass is imported once, from Archive, and nothing stays held (round 2 #1)", async () => {
+    const { imap, backend, addAccount } = await setup();
+    const ctl = imap.server.control;
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    ctl.addMessage("INBOX", { raw: ["From: Ana <ana@example.com>", "To: Luis <luis@test.local>", "Subject: No Message-ID", `Date: ${new Date().toUTCString()}`, "Content-Type: text/plain; charset=utf-8", "", "hola", ""].join("\r\n") });
+    let moved = false;
+    imap.server.script.add({ on: "command", command: "SELECT", match: /Sent/, run: true, when: () => {
+      if (!moved) ctl.moveMessages("INBOX", ctl.listMessages("INBOX").map((m) => m.uid), "Archive");
+      moved = true;
+      return false;
+    } });
+    await backend.syncAccount(account.id);
+    await backend.syncAccount(account.id);
+    expect(moved).toBe(true);
+    expect(count(backend, "SELECT 1 FROM messages WHERE subject = 'No Message-ID'")).toBe(1);
+    expect(sqlDb(backend.store).all("SELECT mailbox FROM message_locations")).toEqual([{ mailbox: "Archive" }]);
+    expect(sqlDb(backend.store).all("SELECT 1 FROM imap_identity_holds")).toEqual([]);
+  });
+
+  it("mail an early read stored in a pass that stopped is new to the next one: its server copy in Archive arrives too (round 2 #3)", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const bytes = raw({ subject: "In two folders", id: "twice@test.local" });
+    ctl.addMessage("INBOX", { raw: bytes });
+    ctl.addMessage("Archive", { raw: bytes });
+    const busy = imap.server.script.add({ on: "command", command: "SELECT", match: /Sent/, times: 1, send: "$TAG NO [UNAVAILABLE] Not now\r\n" });
+    await backend.syncAccount(account.id);
+    expect(busy.hits).toBe(1);
+    expect((await syncState(client)).lastError).not.toBeNull();
+    await backend.syncAccount(account.id);
+    expect((await syncState(client)).lastError).toBeNull();
+    // as one pass that reads both reads them: a place in each folder, nothing held
+    expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations ORDER BY mailbox").map((l) => l.mailbox)).toEqual(["Archive", "INBOX"]);
+    expect(sqlDb(backend.store).all("SELECT 1 FROM imap_identity_holds")).toEqual([]);
   });
 
   it("mail that arrives after the Inbox's SEARCH and that another app flags at once is read the next pass (Codex code review #1)", async () => {

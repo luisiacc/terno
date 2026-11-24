@@ -103,6 +103,18 @@ it("a folder whose backfill search is refused isn't marked done: a later pass re
   expect(t.subjects()).toContain("older-project");
 });
 
+it("a backfill search the server says to retry later is no try of a folder's three: its older mail still comes (plan 266)", async () => {
+  const t = await setup();
+  // the backfill's SEARCH in Projects answered "later" four times, more than the three tries a refusal gets
+  let tries = 0;
+  t.w.server.script.add({ on: "command", command: "UID SEARCH", when: (ctx: { data: string; mailbox: string | null }) => /BEFORE/i.test(ctx.data) && ctx.mailbox === "Projects" && ++tries <= 4, send: "$TAG NO [UNAVAILABLE] Not now\r\n" } as never);
+  await t.client.call("accounts.update", { id: t.account.id, syncWindowDays: 365 });
+  for (let i = 0; i < 10 && tries < 5; i++) await bounded(t.backend.syncAccount(t.account.id), "pass");
+  await done(t);
+  expect(tries).toBeGreaterThan(4);
+  expect(t.subjects()).toContain("older-project");
+});
+
 it("an older message in two folders arrives from both, as a first sync reads it, and nothing stays held (Codex review)", async () => {
   const t = await setup({ extra: (add) => { add("INBOX", "twin", 120); add("Projects", "twin", 120); } });
   await t.client.call("accounts.update", { id: t.account.id, syncWindowDays: 365 });
