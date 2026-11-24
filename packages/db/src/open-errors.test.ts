@@ -69,7 +69,7 @@ describe("why a mailbox couldn't open (plan 95)", () => {
     expect(error).toBeInstanceOf(MigrationError);
     // the cause is SQLite's own (not a failed ROLLBACK's "no transaction is active")
     expect(((error as MigrationError).cause as { errcode: number }).errcode & 0xff).toBe(13);
-    expect(classifyOpenError(error, () => ({ needBytes: 10, freeBytes: 1 }))).toEqual({ kind: "no-room", needBytes: 10, freeBytes: 1 });
+    expect(classifyOpenError(error, () => ({ needBytes: 10, freeBytes: 1 }))).toEqual({ kind: "no-room", needBytes: 1 + 64 * 2 ** 20, freeBytes: 1 });
     expect(version(db)).toBe(CREATING.version - 1);
     // nothing of the step is left behind
     expect(schema()).toEqual(before);
@@ -77,6 +77,14 @@ describe("why a mailbox couldn't open (plan 95)", () => {
     migrate(db);
     expect(version(db)).toBe(SCHEMA_VERSION);
     db.close();
+  });
+
+  it("a disk that really filled never asks for less than is free (the Fable review): a rebuild needed more than the estimate", () => {
+    const full = Object.assign(new Error("database or disk is full"), { errcode: 13 });
+    const free = 2 ** 30;
+    const r = classifyOpenError(full, () => ({ needBytes: 700 * 2 ** 20, freeBytes: free }));
+    expect(r).toMatchObject({ kind: "no-room", freeBytes: free });
+    expect((r as { needBytes: number }).needBytes).toBeGreaterThan(free);
   });
 
   it("a write that fills the database inside a transaction keeps SQLite's error after the rollback", () => {

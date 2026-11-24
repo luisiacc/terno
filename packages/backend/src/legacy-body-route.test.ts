@@ -1,7 +1,7 @@
 /**
- * Plan 253: which mailboxes the exclusive legacy-body owner opens. Only the
- * ones its one-time conversion is for; any other migration runs in the
- * host's own open, whose checkpoints wait for the backup's first write.
+ * Plans 253, 255: which mailboxes the exclusive legacy-body owner opens.
+ * Only the ones its one-time conversion is for; any other migration runs in
+ * the host's own open, with no worker spawned for it.
  */
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

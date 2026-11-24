@@ -37,6 +37,9 @@ export type OpenFailure =
   | { kind: "no-room"; needBytes: number; freeBytes: number }
   | { kind: "failed"; reason: "migration" | "corrupt" | "unwritable"; step: number | null };
 
+/** beyond what was free when the disk filled: an update's room is at least this much more */
+const FULL_MARGIN = 64 * 2 ** 20;
+
 // SQLite's primary result codes (an extended code carries one in its low byte)
 const SQLITE_IOERR = 10;
 const SQLITE_CORRUPT = 11;
@@ -71,7 +74,12 @@ export function classifyOpenError(error: unknown, estimate: () => { needBytes: n
     const { needBytes, freeBytes } = estimate();
     return { kind: "no-room", needBytes, freeBytes } as const;
   };
-  if (sqlite.includes(SQLITE_FULL) || errno.includes("ENOSPC") || errno.includes("EDQUOT")) return room();
+  if (sqlite.includes(SQLITE_FULL) || errno.includes("ENOSPC") || errno.includes("EDQUOT")) {
+    // the disk really filled: what's free now (after the rollback) wasn't enough, whatever the estimate says, so the
+    // screen never asks for less than is already free (the Fable review)
+    const r = room();
+    return { ...r, needBytes: Math.max(r.needBytes, r.freeBytes + FULL_MARGIN) };
+  }
   // a full disk rarely reaches SQLite as SQLITE_FULL: the WAL it can't create is SQLITE_CANTOPEN, a write the volume
   // refuses SQLITE_IOERR, the same as a failing or locked disk. With less free than the update needs, it is the
   // disk's room (found on a real full APFS volume: upgrade.volumes.int.test.ts)

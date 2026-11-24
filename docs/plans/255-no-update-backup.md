@@ -142,3 +142,22 @@ The review is in `/tmp/terno-scratch/p255-code-review.txt`.
 - **#4:** a full disk during the legacy body owner's conversion is said as unwritable. Only mailboxes from before v45 go there.
 - **#5:** a full disk that the backups' removal frees a moment after the open failed. Try Again opens it.
 - **#8:** tests that would still pass if the removal were awaited. Awaiting would be a visible code change.
+
+## 9. A second review: Fable and Astra
+
+Two independent reviews, Claude Fable and Codex's gpt-6.2-astra, read the series as it stood after §8. Each fix has a test that fails without it.
+
+1. **A Try Again that crashes no longer strands the window** (Astra #1). A backend that dies before it reports cleared only an `upgrading` gate, so the earlier failure stayed up with its button busy. Any gate but `open` now steps aside on a crash, for the restart policy and its stopped-engine screen (`host.test.ts`).
+2. **The rule reads every UPDATE** (Astra #2, Fable #1).
+   - `UPDATE t AS x SET`, `INDEXED BY` and `NOT INDEXED` were missed. With trigger bodies out, any `UPDATE` that isn't a foreign key's `ON UPDATE` counts.
+   - A quoted name touching a keyword (`UPDATE"t"SET`) now has a space kept around it.
+3. **A trigger ends at the `END` that starts a statement** (Astra #3). A column may be named `begin` or `end`: counting those hid a `DELETE` after the trigger. The trigger's own `END` follows a `;` outside any `CASE`.
+4. **The cover has an accessible description** (Astra #6). Its main sentence is `aria-describedby`, so a screen reader says what happened and what to do, not only the title and the focused button (`mailbox-gate.spec.ts`).
+5. **No room never asks for less than is free** (Fable #2). After a real `SQLITE_FULL` the disk is back to what it was, and the estimate (64 MiB plus half the file) could be below it. The ask is now at least what's free plus 64 MiB (`open-errors.test.ts`).
+6. **The full-disk test proves the rollback** (Fable #4): the error is the `MigrationError` of the step right after the one the file reached.
+7. **Comments** that still spoke of a backup (Fable #3) say what is.
+
+**Left as they are:**
+- **Astra #4:** a crash-left WAL holding a current schema routes once through the legacy owner, which costs time, not data.
+- **Astra #5:** "0 B free" when both the disk and `statfs` fail, a double failure.
+- **Astra #7:** the smoke samples the cover every 25 ms. The cover shows only after 400 ms and stays until open.

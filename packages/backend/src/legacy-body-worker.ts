@@ -18,9 +18,9 @@ export async function needsLegacyBodyUpgrade(path: string): Promise<boolean> {
     // The normal opener classifies invalid/truncated files using SQLite's real error code.
     if (bytesRead !== header.length || header.subarray(0, 16).toString("ascii") !== "SQLite format 3\0") return false;
     const version = header.readUInt32BE(60), applicationId = header.readUInt32BE(68);
-    // plan 253: only a mailbox the conversion is for: one that crosses the body-parts step, or isn't marked converted
-    // (pending included). Any other migration runs in the host's own open, whose checkpoints wait for the backup's
-    // first write: this owner's connection is the file's last, and its close would checkpoint before the window opens
+    // plans 253, 255: only a mailbox the conversion is for: one that crosses the body-parts step, or isn't marked
+    // converted (pending included). Any other migration runs in the host's own open: an ordinary update spawns no
+    // exclusive worker, and doesn't wait for its close
     return version < SCHEMA_VERSION && (version < BODY_PARTS_SCHEMA || applicationId !== BODY_READY_APPLICATION_ID) || applicationId === BODY_UPGRADE_APPLICATION_ID;
   } finally { await file.close(); }
 }

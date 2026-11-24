@@ -55,6 +55,18 @@ describe("main's mailbox gate (plan 95)", () => {
     expect(t.starts()).toBe(0);
   });
 
+  it("a Try Again whose backend crashes before it reports clears the old failure, so the window isn't left on it (Astra review)", () => {
+    const t = setup({ alive: true });
+    t.host.failed(1, corrupt);
+    t.die();
+    t.host.exited(1);
+    expect(t.host.retry()).toBe(true);
+    expect(t.starts()).toBe(1);
+    // the fresh backend (instance 2) dies before saying anything
+    expect(t.host.exited(2)).toBe(false);
+    expect(t.published.at(-1)).toEqual({ kind: "open" });
+  });
+
   it("a crash mid-upgrade steps the gate aside, so the restart policy (and the stopped-engine screen) take over (Codex review R6)", () => {
     const t = setup({ alive: true });
     t.host.reported({ kind: "upgrading", from: 37, to: 38 });

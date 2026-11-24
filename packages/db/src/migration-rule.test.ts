@@ -47,6 +47,16 @@ describe("migrations that touch rows (plan 255)", () => {
     ['ALTER TABLE t ADD COLUMN "DROP COLUMN" TEXT', 0],
     ['CREATE TRIGGER g AFTER INSERT ON t BEGIN UPDATE u SET "case" = 1; END; DELETE FROM t', 1],
     ['CREATE TRIGGER g AFTER INSERT ON t BEGIN UPDATE u SET "end" = 1; DELETE FROM v; END; CREATE TABLE w (x)', 0],
+    // the Fable and Astra reviews: any UPDATE form, a quoted name touching a keyword, begin and end as column names
+    ["UPDATE threads AS t SET x = m.x FROM messages m WHERE m.thread_id = t.id", 1],
+    ["UPDATE t INDEXED BY i SET x = 1", 1],
+    ["UPDATE t NOT INDEXED SET x = 1", 1],
+    ['UPDATE"t"SET x = 1', 1],
+    ['DROP TABLE"t"', 1],
+    ["CREATE TABLE t (id INTEGER, p INTEGER REFERENCES u(id) ON UPDATE CASCADE ON DELETE CASCADE)", 0],
+    ["CREATE TRIGGER g AFTER INSERT ON drafts BEGIN UPDATE drafts SET begin = 1; END; DELETE FROM drafts", 1],
+    ["CREATE TRIGGER g AFTER INSERT ON drafts BEGIN UPDATE drafts SET end = 1; DELETE FROM v; END; CREATE TABLE w (x)", 0],
+    ["CREATE TRIGGER g AFTER INSERT ON t BEGIN UPDATE u SET n = CASE WHEN new.x THEN 1 END; END; UPDATE t SET x = 0", 1],
   ] as const)("%s", (sql, n) => {
     expect(rowRewrites(sql)).toHaveLength(n);
   });

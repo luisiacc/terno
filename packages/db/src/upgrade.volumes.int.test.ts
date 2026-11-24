@@ -10,9 +10,9 @@ import { closeSync, mkdirSync, mkdtempSync, openSync, rmSync, writeSync } from "
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, expect, it } from "vitest";
-import { SCHEMA_VERSION } from "./migrations";
+import { MIGRATIONS, SCHEMA_VERSION } from "./migrations";
 import { nodeSqliteDriver } from "./node-driver";
-import { classifyOpenError } from "./open-errors";
+import { classifyOpenError, MigrationError } from "./open-errors";
 import { openDatabaseWith } from "./portable";
 import { oldMailbox } from "./test/old-mailbox";
 import { diskFree, mailboxBytes, mailboxSchema, migrateHeadroom } from "./upgrade";
@@ -64,6 +64,9 @@ it.skipIf(process.platform !== "darwin")("a full disk: the migration rolls back 
   const reached = mailboxSchema(db)!;
   expect(reached).toBeGreaterThanOrEqual(40);
   expect(reached).toBeLessThan(SCHEMA_VERSION);
+  // it was a step that failed (not the open before any ran), the one right after the file's (the Fable review)
+  expect(error).toBeInstanceOf(MigrationError);
+  expect((error as MigrationError).step).toBe(MIGRATIONS[MIGRATIONS.findIndex((m) => m.version === reached) + 1]!.version);
 
   rmSync(filler);
   expect(mailboxSchema(db)).toBe(reached);

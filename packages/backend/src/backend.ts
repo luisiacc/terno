@@ -26,7 +26,7 @@ export interface BackendOptions extends Omit<BackendCoreOptions, "store" | "plat
 
 const nodeLookup: LookupAll = (host) => dnsLookup(host, { all: true });
 
-/** Hosts call after their backup gate, before opening a normal store or reading mail. */
+/** Hosts call before opening a normal store or reading mail (plan 255: there is no backup before it). */
 export async function openNodeMailbox(path: string, options: OpenOptions = {}, signal = new AbortController().signal): Promise<Db> {
   signal.throwIfAborted();
   if (await needsLegacyBodyUpgrade(path)) await upgradeNodeLegacyBodies(path, signal);

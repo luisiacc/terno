@@ -33,6 +33,9 @@ test.describe("mailbox gate (plan 95)", () => {
       await expect(cover(page)).toHaveAttribute("role", "alertdialog");
       await expect(page.getByTestId("mailbox-body")).toContainText(/about 3[,.]0 GB free\. 2[,.]0 GB is free now/);
       await expect(page.getByTestId("mailbox-retry")).toBeFocused();
+      // what happened and what to do is the dialog's description, not only its title (Astra review)
+      await expect(cover(page)).toHaveAccessibleName("Your Mac is almost out of space");
+      await expect(cover(page)).toHaveAccessibleDescription(/about 3[,.]0 GB free\. 2[,.]0 GB is free now\. Free up some space, then try again\./);
       await page.getByTestId("mailbox-retry").click();
       await expect.poll(() => calls(page)).toContain("retry");
     });
@@ -71,6 +74,7 @@ test.describe("mailbox gate (plan 95)", () => {
       await fresh(page);
       await fakeMain(page, { gate: failed("corrupt") });
       await expect(cover(page)).toContainText("Terno can’t read it.");
+      await expect(cover(page)).toHaveAccessibleDescription(/^Terno can’t read it\./);
       await expect(cover(page).getByRole("button")).toHaveText(["Try Again", "Export diagnostics…"]);
       await page.getByTestId("mailbox-retry").click();
       await expect.poll(() => calls(page)).toContain("retry");

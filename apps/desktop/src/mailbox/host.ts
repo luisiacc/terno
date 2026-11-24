@@ -51,9 +51,10 @@ export class MailboxHost {
   /** A backend exited. True when it was one that explained itself: no restart, no crash report. */
   exited(instance: number): boolean {
     if (instance !== this.failedInstance) {
-      // a crash mid-upgrade isn't still upgrading: the gate steps aside for the restart policy (and, if it gives up,
-      // the stopped-engine screen with its Try Again) (Codex review R6)
-      if (this.current.kind === "upgrading") this.set(GATE_OPEN);
+      // a crash isn't what the gate says: not still upgrading (Codex review R6), and not the failure an earlier
+      // backend explained (a Try Again that crashed before it reported: the Astra review). The gate steps aside for
+      // the restart policy and, if it gives up, the stopped-engine screen with its Try Again
+      if (this.current.kind !== "open") this.set(GATE_OPEN);
       return false;
     }
     this.failedInstance = null;

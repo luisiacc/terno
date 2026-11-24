@@ -2,7 +2,7 @@ import type { MailboxGate } from "@terno/core/mailbox";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Spinner } from "@terno/ui/components/spinner";
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { formatBytes } from "~/lib/format";
 import { retryMailbox, useMailbox } from "~/lib/mailbox";
@@ -28,6 +28,7 @@ export default function MailboxCover({ required }: { required: boolean }) {
 function Cover({ title, children, testId, kind, busy }: { title: string; children: ReactNode; testId: string; kind: string; busy?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
+  const bodyId = useId();
   useLayoutEffect(() => {
     const release = registerNativeReloadModal(ref.current!, document.getElementById("root"));
     const primary = ref.current?.querySelector<HTMLElement>("[data-primary]") ?? ref.current;
@@ -41,6 +42,7 @@ function Cover({ title, children, testId, kind, busy }: { title: string; childre
       role="alertdialog"
       aria-modal="true"
       aria-labelledby={titleId}
+      aria-describedby={bodyId}
       aria-busy={busy || undefined}
       data-testid={testId}
       data-kind={kind}
@@ -50,18 +52,24 @@ function Cover({ title, children, testId, kind, busy }: { title: string; childre
         <p id={titleId} className="text-md font-semibold tracking-tight">
           {title}
         </p>
-        {children}
+        <DescribedBy.Provider value={bodyId}>{children}</DescribedBy.Provider>
       </div>
     </div>,
     document.body,
   );
 }
 
-const Body = ({ children, testId }: { children: ReactNode; testId?: string }) => (
-  <p className="mt-1.5 text-sm text-muted-foreground" data-testid={testId}>
-    {children}
-  </p>
-);
+/** the cover's main sentence is its description for assistive tech (what happened, what to do), not only its title */
+const DescribedBy = createContext<string | undefined>(undefined);
+
+const Body = ({ children, testId, describes = true }: { children: ReactNode; testId?: string; describes?: boolean }) => {
+  const id = useContext(DescribedBy);
+  return (
+    <p id={describes ? id : undefined} className="mt-1.5 text-sm text-muted-foreground" data-testid={testId}>
+      {children}
+    </p>
+  );
+};
 
 const Actions = ({ children }: { children: ReactNode }) => <div className="mt-5 flex flex-wrap justify-center gap-2">{children}</div>;
 
@@ -178,7 +186,7 @@ function UpdateAction({ label, secondary = null }: { label: string; secondary?: 
   if (state.status === "unsupported") {
     return (
       <>
-        {state.unsupported && <Body>{unsupportedText(state.unsupported)}</Body>}
+        {state.unsupported && <Body describes={false}>{unsupportedText(state.unsupported)}</Body>}
         <Actions>
           <Button data-primary onClick={() => openLink(TERNO_LINKS.latest)} data-testid="update-download-page">
             {t("updates.required.downloadPage")}

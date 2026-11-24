@@ -16,16 +16,16 @@ interface Migration {
 export const REWRITE_RULE_FROM = 78;
 
 /**
- * The statements of a step that delete or rewrite rows it finds: DROP TABLE, a dropped column, DELETE, UPDATE (an
- * upsert's DO UPDATE included), and an INSERT that may replace a row (OR REPLACE, REPLACE INTO), a WITH before any of
+ * The statements of a step that delete or rewrite rows it finds: DROP TABLE, a dropped column, DELETE, UPDATE (any
+ * form: an alias, INDEXED BY, an upsert's DO UPDATE; a foreign key's ON UPDATE is a clause, not a statement), and an INSERT that may replace a row (OR REPLACE, REPLACE INTO), a WITH before any of
  * them too. An INSERT that only adds rows, even copied from a SELECT, destroys nothing. Strings, quoted names and
  * comments are read in one pass (a `--` inside a string isn't a comment), then trigger bodies (which run later, on
  * the app's own writes) are left out.
  */
 export function rowRewrites(sql: string): string[] {
-  const code = sql.replace(/'(?:[^']|'')*'|"(?:[^"]|"")*"|`[^`]*`|\[[^\]]*\]|--[^\n]*|\/\*[\s\S]*?\*\//g, (t) => (t.startsWith("--") || t.startsWith("/*") ? " " : t.startsWith("'") ? "''" : "_q"));
+  const code = sql.replace(/'(?:[^']|'')*'|"(?:[^"]|"")*"|`[^`]*`|\[[^\]]*\]|--[^\n]*|\/\*[\s\S]*?\*\//g, (t) => (t.startsWith("--") || t.startsWith("/*") ? " " : t.startsWith("'") ? " '' " : " _q "));
   // a trigger's body runs from its BEGIN (a WHEN clause before it may hold a CASE … END of its own) to the END that
-  // closes it, not one that closes a CASE inside it
+  // closes it: the first END at a statement's start outside any CASE (a column may be named begin or end)
   let outside = "";
   const trigger = /\bCREATE\s+(?:TEMP\s+|TEMPORARY\s+)?TRIGGER\b/gi;
   let at = 0;
@@ -34,14 +34,14 @@ export function rowRewrites(sql: string): string[] {
     const begin = /\bBEGIN\b/gi;
     begin.lastIndex = m.index;
     const b = begin.exec(code);
-    const words = /\b(BEGIN|CASE|END)\b/gi;
-    words.lastIndex = b ? b.index : code.length;
-    let depth = 0;
+    const words = /\b(CASE|END)\b/gi;
+    words.lastIndex = b ? b.index + b[0].length : code.length;
+    let cases = 0;
     let end = code.length;
     for (let w = words.exec(code); w; w = words.exec(code)) {
-      const word = w[1]!.toUpperCase();
-      if (word === "BEGIN" || word === "CASE") depth++;
-      else if (--depth === 0) {
+      if (w[1]!.toUpperCase() === "CASE") cases++;
+      else if (cases > 0) cases--;
+      else if (/;\s*$/.test(code.slice(0, w.index))) {
         end = w.index + w[0].length;
         break;
       }
@@ -54,7 +54,7 @@ export function rowRewrites(sql: string): string[] {
   for (const raw of outside.split(";")) {
     const st = raw.trim().replace(/\s+/g, " ");
     if (!st) continue;
-    if (/^DROP TABLE\b/i.test(st) || /^ALTER TABLE \S+ DROP\b/i.test(st) || /\bDELETE FROM\b/i.test(st) || /\bUPDATE\b(?: OR \w+)? \S+ SET\b|\bDO UPDATE SET\b/i.test(st) || /\bOR REPLACE\b|\bREPLACE INTO\b/i.test(st)) found.push(st);
+    if (/^DROP TABLE\b/i.test(st) || /^ALTER TABLE \S+ DROP\b/i.test(st) || /\bDELETE FROM\b/i.test(st) || /(?<!\bON )\bUPDATE\b/i.test(st) || /\bOR REPLACE\b|\bREPLACE INTO\b/i.test(st)) found.push(st);
   }
   return found;
 }
