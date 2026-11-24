@@ -21,7 +21,7 @@ import { deleteSnippet, listSnippets, saveSnippet } from "./snippets";
 import { linksOf, resolveLink } from "./links";
 import { followFavoriteFolders, readAgents, readAutoCategorize, readSettings, SettingsError, updateSettings } from "./settings";
 import { countFolder, createFolder, deleteFolder, favoriteFolder, renameFolder } from "./folders";
-import { googleClientFor } from "./google-client";
+import { oauthClientFor } from "./oauth-clients";
 import { beginGoogleRemoval, googleGrantOf, removalMark, removedSince, revokesSettled, withdrawGoogleGrant } from "./google-revoke";
 
 /** How long a recipient lookup waits for the index's first build (then answers with what it has: nothing). */
@@ -1290,7 +1290,7 @@ export function createHandlers(b: Backend): Handlers {
 
     "accounts.connectGmail": async ({ syncWindowDays }) => {
       // plan 123: the client this build carries; a build without one can't connect Google
-      const oauth = await googleClientFor(b);
+      const oauth = await oauthClientFor(b, "google");
       if (!oauth) throw new RpcError("BAD_REQUEST", L("errors.google.noClient"));
       if (!b.options.openExternal) throw new RpcError("UNAVAILABLE", L("errors.googleConnectNeedsDesktop"));
       // plan 125: a removal's revoke would end the grant this consent is about to make for the same person

@@ -27,7 +27,7 @@ if (testBuild && !(typeof testBuild.feed === "string" && typeof testBuild.userDa
 }
 if (testBuild && !process.env.TERNO_BUILD_OUT) throw new Error("a test build needs TERNO_BUILD_OUT: dist/ is what dist:mac packages");
 const { archiveMaps, assertNoMaps, injectDebugIds, resetArchive } = await import(join(repo, "scripts/sourcemaps.mjs"));
-const { buildDsn, buildGoogleClients } = await import(join(repo, "scripts/release-env.mjs"));
+const { buildDsn, buildGoogleClients, buildMicrosoftClients } = await import(join(repo, "scripts/release-env.mjs"));
 
 /** The commit this build is from (and whether the tree had changes on top). */
 function buildSha() {
@@ -45,6 +45,8 @@ const sha = process.env.TERNO_BUILD_SHA || buildSha();
 const dsn = testBuild ? "" : buildDsn();
 // plan 99: Terno's Google clients (from .env or the environment); an updater test build has none
 const google = testBuild ? null : buildGoogleClients();
+// plan 259: Terno's Microsoft clients (public ids, from .env or the environment); a test build has none
+const microsoft = testBuild ? null : buildMicrosoftClients();
 
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
@@ -65,6 +67,7 @@ const common = {
     "process.env.TERNO_BUILD_SHA": JSON.stringify(sha),
     "process.env.TERNO_SENTRY_DSN": JSON.stringify(dsn),
     "process.env.TERNO_GOOGLE_CLIENTS": JSON.stringify(google ? JSON.stringify(google) : ""),
+    "process.env.TERNO_MICROSOFT_CLIENTS": JSON.stringify(microsoft ? JSON.stringify(microsoft) : ""),
     ...(testBuild ? { __TERNO_TEST_BUILD__: JSON.stringify(testBuild) } : {}),
   },
   // ESM deps that read import.meta.url get a CJS-compatible value

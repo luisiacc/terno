@@ -43,6 +43,15 @@ done
 
 There is one client, Terno Desktop (since 2026-11-20, for Google's verification): development builds use it too, so there are no `_DEV_` secrets. The web client (`TERNO_GOOGLE_WEB_ID`) belongs to the web build only and isn't needed here.
 
+Outlook's sign-in (plan 259) needs the Microsoft Entra app registrations' client IDs: "Terno" for releases and "Terno Dev" for development builds. They are public IDs, with no secret, kept with the others:
+
+```sh
+for n in TERNO_MICROSOFT_CLIENT_ID TERNO_MICROSOFT_DEV_CLIENT_ID; do
+  v="$(grep -E "^$n=" .env | head -1 | cut -d= -f2- | sed -E 's/^["'\'']|["'\'']$//g')"
+  [ -n "$v" ] && printf '%s' "$v" | gh secret set "$n" --env release && echo "✓ $n"
+done
+```
+
 ### 4. Sentry source maps (optional)
 
 With this set, each release's source maps go to Sentry, so error reports show readable stack traces. Without it, they're kept for 90 days as the workflow run's `source-maps-…` artifact.
@@ -59,7 +68,7 @@ gh secret set SENTRY_AUTH_TOKEN --env release
 gh secret list --env release
 ```
 
-You need these seven: `MAC_CERT_P12`, `MAC_CERT_PASSWORD`, `APPLE_API_KEY_P8`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`, `TERNO_GOOGLE_DESKTOP_ID` and `TERNO_GOOGLE_DESKTOP_SECRET`. Each build's first step checks the ones it uses by name and stops if one is missing. Linux needs nothing more: its packages aren't signed.
+You need these eight: `MAC_CERT_P12`, `MAC_CERT_PASSWORD`, `APPLE_API_KEY_P8`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`, `TERNO_GOOGLE_DESKTOP_ID`, `TERNO_GOOGLE_DESKTOP_SECRET` and `TERNO_MICROSOFT_CLIENT_ID` (`TERNO_MICROSOFT_DEV_CLIENT_ID` is optional). Each build's first step checks the ones it uses by name and stops if one is missing. Linux needs nothing more: its packages aren't signed.
 
 ## Making a release
 

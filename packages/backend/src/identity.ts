@@ -4,7 +4,7 @@ import { L } from "@terno/i18n";
 import type { OAuthAdmission, OwnerClaim, OwnerDecision, SecretIntent } from "@terno/store";
 import type { GmailAccountConfig, GmailConnectResult, GmailRenewalProof, ImapAccountConfig } from "@terno/mail";
 import type { BackendCore as Backend } from "./core";
-import { googleClientFor, rememberedGoogleClient } from "./google-client";
+import { oauthClientFor, rememberedClient } from "./oauth-clients";
 
 /**
  * A failed live login: the provider's own words when they are Terno's (they
@@ -132,7 +132,7 @@ export async function googleCredentialIntent(b: Backend, account: Account, stamp
     if (!sameBytes(latest, current)) throw persistenceFailed();
     b.assertSignIn(account.id, flow);
     // plan 99: the stored grant belongs to the account's own client (the one this sign-in used)
-    const oauth = await googleClientFor(b, await rememberedGoogleClient(b, account.id)).catch(() => null);
+    const oauth = await oauthClientFor(b, "google", await rememberedClient(b, account.id, "google")).catch(() => null);
     b.assertSignIn(account.id, flow);
     if (!oauth) throw invalidRenewal();
     let proof: GmailRenewalProof;
@@ -199,8 +199,8 @@ export async function oauthAdmission(b: Backend, accountId: number, flow: AbortC
 export async function connectExistingGoogle(b: Backend, account: Account, flow: AbortController): Promise<GmailConnectResult> {
   if (b.options.providers.gmailTokens) throw new RpcError("UNAVAILABLE", L("errors.gmailReconnectInBrowser"));
   // plan 99: an account signs in again with the client that connected it (its refresh token works with no other)
-  const remembered = await rememberedGoogleClient(b, account.id);
-  const oauth = await googleClientFor(b, remembered);
+  const remembered = await rememberedClient(b, account.id, "google");
+  const oauth = await oauthClientFor(b, "google", remembered);
   b.assertSignIn(account.id, flow);
   if (!oauth) throw new RpcError("BAD_REQUEST", L(remembered ? "errors.google.clientGone" : "errors.google.noClient"));
   if (!b.options.openExternal) throw new RpcError("UNAVAILABLE", L("errors.googleConnectNeedsDesktop"));

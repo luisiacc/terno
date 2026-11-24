@@ -9,5 +9,5 @@ export * from "./agent-connector";
 export * from "./demo";
 export * from "./net-policy";
 export * from "./identity";
-export { parseGoogleClients, type GoogleClients } from "./google-client";
+export { parseGoogleClients, parseOAuthClients, type GoogleClients, type OAuthClientSet } from "./oauth-clients";
 export * from "./keychain";

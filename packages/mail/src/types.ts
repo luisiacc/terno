@@ -234,8 +234,8 @@ export interface ProviderContext {
   replaceSecret(name: string, expectedPlaintext: string, nextPlaintext: string): Promise<boolean>;
   /** app-wide secrets (e.g. the Gmail OAuth client secret) */
   getAppSecret(name: string): Promise<string | null>;
-  /** plan 99: the Google OAuth client this account's refresh token belongs to (null: it isn't here any more) */
-  googleClient?(): Promise<{ clientId: string; clientSecret: string | null } | null>;
+  /** plans 99, 259: the OAuth client this account's refresh token belongs to (null: it isn't here any more) */
+  oauthClient?(): Promise<{ clientId: string; clientSecret: string | null } | null>;
   /** persistent provider sync cursor (stored on the account) */
   loadCursor<T>(): Promise<T | null>;
   saveCursor(cursor: unknown, check?: () => void): Promise<void>;

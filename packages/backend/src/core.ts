@@ -7,7 +7,7 @@ import { copyOpAdmission, OAUTH_SERVICES, rejectedRecipients, type CooldownStamp
 import { prepareCopyWire, readCopyWire } from "./sent-copy";
 import type { PendingGmailRenewal } from "./identity";
 import type { AiTasks } from "@terno/ai";
-import { isOAuthKind, accessAllows, aiFeaturesAvailable, AGENT_METHODS, ruleAwaitsBody, agentRefusal, agentsMaySend, asciiEmail, canonicalAuthored, decodeText, encodeText, messageOf, aiCanRun, textRef, type Account, type AccountKind, type AccountPrefs, type DevAiKeys, type FavoriteFolder, type FavoriteFoldersSnapshot, type AccountSyncState, type SyncProgress, type OpState, type ThreadAction } from "@terno/core";
+import { isOAuthKind, signInMethod, accessAllows, aiFeaturesAvailable, AGENT_METHODS, ruleAwaitsBody, agentRefusal, agentsMaySend, asciiEmail, canonicalAuthored, decodeText, encodeText, messageOf, aiCanRun, textRef, type Account, type AccountKind, type AccountPrefs, type DevAiKeys, type FavoriteFolder, type FavoriteFoldersSnapshot, type AccountSyncState, type SyncProgress, type OpState, type ThreadAction } from "@terno/core";
 import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/diag";
 import { RpcError, RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type ResultOf, type Transport } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
@@ -43,7 +43,7 @@ import { TabsBackfill } from "./tabs";
 import { ScheduledSends, type ComposeSendParams } from "./scheduled";
 import { Forwarding } from "./forwarding";
 import { createHandlers } from "./handlers";
-import { forgetOwnGoogleClient, googleClientFor, rememberedGoogleClient, type GoogleClients } from "./google-client";
+import { forgetOwnGoogleClient, oauthClientFor, rememberedClient, type GoogleClients, type OAuthClientSet } from "./oauth-clients";
 import { restorePending } from "./import";
 import { blobFingerprint, keychainRefusal, migrateLegacySecrets, readKeychainState, SecretUnreadableError, type LegacySecretReader } from "./keychain";
 import { createNetworkPolicy, type LookupAll, type NetDecision, type NetworkPolicy } from "./net-policy";
@@ -105,8 +105,10 @@ export interface BackendCoreOptions {
   /** the host enforces the policy outside the backend too (Electron main fences the renderer) */
   onPolicy?: (policy: { localMode: boolean; errorReports: "ask" | "always" | "never"; language: AppSettings["language"] }) => void;
   openExternal?: (url: string) => Promise<void>;
-  /** plan 99: Terno's own Google Desktop clients, baked into the build (google-client.ts) */
+  /** plan 99: Terno's own Google Desktop clients, baked into the build (oauth-clients.ts) */
   googleClients?: GoogleClients | null;
+  /** plan 259: Terno's own Microsoft clients (public: no secret), baked into the build */
+  microsoftClients?: OAuthClientSet | null;
   now?: () => number;
   log?: (level: "info" | "warn" | "error", message: string, extra?: unknown) => void;
   /** lift plan 62 clock holds on start (default); tests of its explicit Check clock contract disable it */
@@ -2064,6 +2066,7 @@ export class BackendCore {
       this.cooldownChanged();
       const status = await this.accountStatus(accountId);
       const authority = this.statusAuthority(life);
+      const method = signInMethod(account.kind);
       const services = isOAuthKind(account.kind) && !cfg.config.demo ? OAUTH_SERVICES[account.kind] : undefined;
       const requests = services ? await savedAccountRequests({
         status, services,
@@ -2103,8 +2106,8 @@ export class BackendCore {
         },
         replaceSecret: (name, expected, next) => this.replaceProviderSecret(life, stamp, name, expected, next),
         getAppSecret: (name) => this.accountRead(life, () => this.getSecret(name)),
-        // plan 99: the client this account's refresh token belongs to (read now: a reconnect may have recorded it)
-        googleClient: () => this.accountRead(life, async () => googleClientFor(this, await rememberedGoogleClient(this, accountId))),
+        // plans 99, 259: the client this account's refresh token belongs to (read now: a reconnect may have recorded it)
+        ...(method !== "password" && { oauthClient: () => this.accountRead(life, async () => oauthClientFor(this, method, await rememberedClient(this, accountId, method))) }),
         event: (code, fields) => {
           if (this.current(life)) breadcrumb("sync", code, { accountKind: accountKindOf(account.kind), ...(fields?.durationMs !== undefined && { durationMs: fields.durationMs }) });
         },

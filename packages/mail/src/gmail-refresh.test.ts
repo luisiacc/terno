@@ -26,7 +26,7 @@ function harness(response: () => Response | Promise<Response> = () => json(valid
     // the backend's cooperative turn (core.ts), not a timer: fake clocks here count only the network's
     yield: async () => {},
     store: { setting: async () => ({}) },
-    getSecret: vi.fn(async () => durable), getAppSecret: async () => null, googleClient: async () => ({ clientId: "client", clientSecret: null }),
+    getSecret: vi.fn(async () => durable), getAppSecret: async () => null, oauthClient: async () => ({ clientId: "client", clientSecret: null }),
     replaceSecret: replace,
     event: (...args: unknown[]) => { events.push(args); },
     fetch: vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -415,7 +415,7 @@ describe("plan 99: the refresh uses the account's own Google client", () => {
     const fetch = h.ctx.fetch as ReturnType<typeof vi.fn>;
     const inner = fetch.getMockImplementation() as (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
     fetch.mockImplementation(async (input: string | URL | Request, init?: RequestInit) => { if (String(input).includes("/token")) bodies.push(String(init?.body)); return inner(input, init); });
-    h.ctx.googleClient = async () => ({ clientId: "terno-dev", clientSecret: "dev-secret" });
+    h.ctx.oauthClient = async () => ({ clientId: "terno-dev", clientSecret: "dev-secret" });
     await h.provider.verify();
     const sent = new URLSearchParams(bodies[0]);
     expect([sent.get("client_id"), sent.get("client_secret")]).toEqual(["terno-dev", "dev-secret"]);
@@ -423,20 +423,20 @@ describe("plan 99: the refresh uses the account's own Google client", () => {
 
   it("a client that is gone asks to sign in again, without a token request", async () => {
     const h = harness();
-    h.ctx.googleClient = async () => null;
+    h.ctx.oauthClient = async () => null;
     await expect(h.provider.verify()).rejects.toBeInstanceOf(ProviderAuthError);
     expect(h.exchanges).toEqual([]);
   });
 
   it("plan 264: a remembered client that couldn't be read just now is retried, never a sign-in demand", async () => {
     const h = harness();
-    h.ctx.googleClient = async () => { throw new Error("Synthetic store read failure"); };
+    h.ctx.oauthClient = async () => { throw new Error("Synthetic store read failure"); };
     const error = await h.provider.verify().catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ProviderError);
     expect(error).not.toBeInstanceOf(ProviderAuthError);
     expect(error).toMatchObject({ retryable: true, i18n: { key: "errors.gmail.clientUnread" } });
     expect(h.exchanges).toEqual([]);
-    h.ctx.googleClient = async () => ({ clientId: "client", clientSecret: null });
+    h.ctx.oauthClient = async () => ({ clientId: "client", clientSecret: null });
     await h.provider.verify();
   });
 
@@ -444,7 +444,7 @@ describe("plan 99: the refresh uses the account's own Google client", () => {
     const h = harness();
     const setting = vi.fn(async () => ({ gmailClientId: "own-client" }));
     (h.ctx as { store: unknown }).store = { setting };
-    delete (h.ctx as { googleClient?: unknown }).googleClient;
+    delete (h.ctx as { oauthClient?: unknown }).oauthClient;
     await expect(h.provider.verify()).rejects.toBeInstanceOf(ProviderAuthError);
     expect(h.exchanges).toEqual([]);
   });

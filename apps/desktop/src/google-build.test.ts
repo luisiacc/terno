@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error a build script (plain JS)
-import { buildGoogleClients, buildWebGoogleClientId, withDotEnv } from "../../../scripts/release-env.mjs";
+import { buildGoogleClients, buildMicrosoftClients, buildWebGoogleClientId, withDotEnv } from "../../../scripts/release-env.mjs";
 
 // Plan 99: what a desktop build bakes in (synthetic values only).
 const both = { TERNO_GOOGLE_DESKTOP_ID: "prod-id", TERNO_GOOGLE_DESKTOP_SECRET: "prod-s", TERNO_GOOGLE_DESKTOP_DEV_ID: "dev-id", TERNO_GOOGLE_DESKTOP_DEV_SECRET: "dev-s" };
@@ -27,6 +27,16 @@ describe("plan 99: the build's Google clients", () => {
     expect(buildWebGoogleClientId({ TERNO_RELEASE: "1", TERNO_GOOGLE_WEB_DEV_ID: "web-dev", TERNO_GOOGLE_WEB_ID: "web-prod" })).toBe("web-prod");
     expect(() => buildWebGoogleClientId({ TERNO_RELEASE: "1", TERNO_GOOGLE_WEB_DEV_ID: "web-dev" })).toThrow(/a web release needs Terno's Google client/);
     expect(buildWebGoogleClientId({ TERNO_RELEASE: "1", TERNO_GOOGLE_WEB_ID: "" })).toBe("");
+  });
+
+  it("plan 259: Microsoft's clients are public ids, baked in like Google's; a release without one fails unless it says none", () => {
+    const ms = { TERNO_MICROSOFT_CLIENT_ID: "ms-prod", TERNO_MICROSOFT_DEV_CLIENT_ID: "ms-dev" };
+    expect(buildMicrosoftClients({ ...ms, TERNO_RELEASE: "1" })).toEqual({ preferred: "ms-prod", clients: [{ clientId: "ms-prod", clientSecret: "" }, { clientId: "ms-dev", clientSecret: "" }] });
+    expect(buildMicrosoftClients(ms).preferred).toBe("ms-dev");
+    expect(buildMicrosoftClients({ TERNO_MICROSOFT_CLIENT_ID: "ms-prod" }).preferred).toBe("ms-prod");
+    expect(buildMicrosoftClients({})).toBeNull();
+    expect(() => buildMicrosoftClients({ TERNO_RELEASE: "1", TERNO_MICROSOFT_DEV_CLIENT_ID: "ms-dev" })).toThrow(/a release needs Terno's Microsoft client/);
+    expect(buildMicrosoftClients({ TERNO_RELEASE: "1", TERNO_MICROSOFT_CLIENT_ID: "" })).toBeNull();
   });
 
   it("reads .env under the environment (what is set wins)", () => {

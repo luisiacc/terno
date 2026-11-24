@@ -56,3 +56,22 @@ export function buildWebGoogleClientId(env = withDotEnv()) {
   if (env.TERNO_GOOGLE_WEB_ID || env.TERNO_GOOGLE_WEB_ID === "") return env.TERNO_GOOGLE_WEB_ID;
   throw new Error("a web release needs Terno's Google client: set TERNO_GOOGLE_WEB_ID (in .env), or TERNO_GOOGLE_WEB_ID= for none");
 }
+
+/**
+ * Plan 259: Terno's Microsoft Entra app registrations ("Terno", "Terno Dev"), baked in like Google's: every one the
+ * build has (a refresh token works only with the client that issued it), a release preferring prod, anything else dev.
+ * Public clients: an id and no secret (PKCE and the loopback protect the flow). A release without its client fails,
+ * unless TERNO_MICROSOFT_CLIENT_ID="" says so (a fork).
+ */
+export function buildMicrosoftClients(env = withDotEnv()) {
+  const release = env.TERNO_RELEASE === "1";
+  const one = (id) => (id ? [{ clientId: id, clientSecret: "" }] : []);
+  const prod = one(env.TERNO_MICROSOFT_CLIENT_ID);
+  const dev = one(env.TERNO_MICROSOFT_DEV_CLIENT_ID);
+  if (release && !prod.length) {
+    if (env.TERNO_MICROSOFT_CLIENT_ID === "") return null;
+    throw new Error("a release needs Terno's Microsoft client: set TERNO_MICROSOFT_CLIENT_ID (in .env), or TERNO_MICROSOFT_CLIENT_ID= for none");
+  }
+  const clients = release ? [...prod, ...dev] : [...dev, ...prod];
+  return clients.length ? { preferred: clients[0].clientId, clients } : null;
+}

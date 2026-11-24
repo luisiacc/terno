@@ -14,6 +14,8 @@ export const WORKFLOW = "release.yml";
 // so without this check a missing secret would ship a release where Gmail can't connect. The web client
 // (TERNO_GOOGLE_WEB_ID) is only the web build's (apps/web/vite.config.ts); a desktop release never reads it
 const GOOGLE = ["TERNO_GOOGLE_DESKTOP_ID", "TERNO_GOOGLE_DESKTOP_SECRET"];
+// plan 259: the same for Outlook's sign-in (buildMicrosoftClients): a public id, kept with the others in `release`
+const MICROSOFT = ["TERNO_MICROSOFT_CLIENT_ID"];
 const MAC = [
   // the Developer ID Application certificate (.p12, base64) and its export password
   "MAC_CERT_P12",
@@ -25,13 +27,13 @@ const MAC = [
 ];
 
 /** Each job's secrets (plan 189): the draft holds none, and the Linux job never sees the signing key. Empty counts as missing: GitHub passes an unset secret as "". */
-export const PHASE_SECRETS = { "build-mac": [...GOOGLE, ...MAC], "build-linux": GOOGLE, draft: [] };
+export const PHASE_SECRETS = { "build-mac": [...GOOGLE, ...MICROSOFT, ...MAC], "build-linux": [...GOOGLE, ...MICROSOFT], draft: [] };
 
 /** Secrets the `release` environment must hold, for every job. */
 export const REQUIRED_SECRETS = [...new Set(Object.values(PHASE_SECRETS).flat())];
 
 /** Optional: a dev Google client (accounts made with it keep refreshing, plan 99; none since dev builds use the release's) and Sentry source maps. */
-export const OPTIONAL_SECRETS = ["TERNO_GOOGLE_DESKTOP_DEV_ID", "TERNO_GOOGLE_DESKTOP_DEV_SECRET", "SENTRY_AUTH_TOKEN"];
+export const OPTIONAL_SECRETS = ["TERNO_GOOGLE_DESKTOP_DEV_ID", "TERNO_GOOGLE_DESKTOP_DEV_SECRET", "TERNO_MICROSOFT_DEV_CLIENT_ID", "SENTRY_AUTH_TOKEN"];
 
 const SHA = /^[0-9a-f]{40}$/;
 /** What release.mjs releases: stable x.y.z or nightly x.y.z-nightly.n. */

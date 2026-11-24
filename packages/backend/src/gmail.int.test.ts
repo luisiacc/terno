@@ -13,7 +13,7 @@ import { createGmailTokenBroker, createRegistry, gmailReconnect, type ProviderRe
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { sqlDb } from "@terno/db";
-import type { GoogleClients } from "./google-client";
+import type { GoogleClients } from "./oauth-clients";
 
 const TEST_GOOGLE: GoogleClients = { preferred: "client-123.apps.googleusercontent.com", clients: [{ clientId: "client-123.apps.googleusercontent.com", clientSecret: "" }] };
 

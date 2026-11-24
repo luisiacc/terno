@@ -4,7 +4,7 @@
  * mail data never hops through the main process.
  */
 import { dirname } from "node:path";
-import { Backend, openNodeMailbox, nodeStore, parseGoogleClients, seedDemo, seedDemoCode, type LegacySecretReader, type SecretCipher } from "@terno/backend";
+import { Backend, openNodeMailbox, nodeStore, parseGoogleClients, parseOAuthClients, seedDemo, seedDemoCode, type LegacySecretReader, type SecretCipher } from "@terno/backend";
 import { devAiKeys } from "@terno/core";
 import { GATE_OPEN } from "@terno/core/mailbox";
 import { classifyOpenError, diskFree, mailboxBytes, mailboxSchema, migrateHeadroom, nodePlatform, removeOldBackups, SCHEMA_VERSION, SqlMailStore } from "@terno/db";
@@ -189,6 +189,7 @@ async function initialize(msg: Extract<MainToBackend, { type: "init" }>, signal:
       providers: msg.demo && msg.testImapInsecure ? loopbackInsecure(registry, createRegistry({ imap: { allowInsecure: true } })) : registry,
       openExternal: async (url) => send({ type: "open-external", url }),
       googleClients: parseGoogleClients(process.env.TERNO_GOOGLE_CLIENTS),
+      microsoftClients: parseOAuthClients(process.env.TERNO_MICROSOFT_CLIENTS),
       demoAi: msg.demo || msg.dev,
       devAi: msg.devMode ? devAiKeys(process.env) : undefined,
       demo: msg.demo,

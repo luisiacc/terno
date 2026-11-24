@@ -65,7 +65,7 @@ function context(netFetch: typeof fetch) {
   const ctx = {
     account: { id: 1, email: "synthetic@example.test" }, config: {},
     fetch: netFetch, store: { setting: async () => ({}) },
-    getSecret: async () => "synthetic-refresh", getAppSecret: async () => null, googleClient: async () => ({ clientId: "synthetic-client", clientSecret: null }), replaceSecret,
+    getSecret: async () => "synthetic-refresh", getAppSecret: async () => null, oauthClient: async () => ({ clientId: "synthetic-client", clientSecret: null }), replaceSecret,
   } as unknown as ProviderContext;
   return { ctx, replaceSecret };
 }
