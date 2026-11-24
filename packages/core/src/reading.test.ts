@@ -143,3 +143,35 @@ describe("readingWords (plan 269)", () => {
     expect(readingWords(HARD_WRAPPED)).toBe(wordsIn(HARD_WRAPPED));
   });
 });
+
+describe("readingWords after the Codex review (plan 269)", () => {
+  const padding = "Your account\nSettings\nHelp center\nSecurity\nPrivacy\nBilling\nTeam\nIntegrations\nAPI keys\nAudit log\nSupport\nStatus\nDocs\nBlog\nCareers\nPress\nPartners\nAffiliates\nCommunity\nEvents\nWebinars\nGuides\nTemplates\nChangelog\nRoadmap\nPricing\nEnterprise\nContact sales";
+
+  it("two facts are two: a date then a time on the next line, or one timestamp with its zone", () => {
+    expect(readingWords(`Delivered 24 Nov\n12:30 at the front door\n${padding}`)).toBe(0);
+    expect(readingWords(`New sign-in to your account\n2026-11-24 14:30:20 +00:00\n${padding}`)).toBe(0);
+  });
+
+  it("an amount with a spaced currency sign is an amount", () => {
+    const bill = `Your statement is ready\nPrevious balance: $ 18.40\nNew charges: $ 318.92\nMinimum due: $ 35.00\n${padding}`;
+    expect(readingWords(bill)).toBe(wordsIn(bill));
+  });
+
+  it("a link's words never make its sentence a footer, and a link doesn't take the sentence's full stop", () => {
+    const prose = "We moved your mailbox to the new region last night and every folder came across intact, including the shared ones. If anything looks out of place, the guide at https://help.example/unsubscribe-guide walks through the checks we ran. Replies to this message reach the migration team directly.";
+    expect(readingWords(`Migration finished\n\n${prose}\n\nThanks`)).toBe(wordsIn(prose) - 1);
+    expect(readingWords("Account update\nOpen the requested account details at https://help.example/account.\nThanks")).toBe(6);
+  });
+
+  it("a sentence followed by a button keeps counting: the button isn't its wrapped end", () => {
+    const entry = "We restored writes across the impacted EU regions.";
+    expect(readingWords(`${entry}\nView incident\n`.repeat(8))).toBe(8 * 8);
+  });
+
+  it("knows the common footer wordings: 'is intended for', a typographic apostrophe", () => {
+    const fine = "This email is intended for the named recipient only and may contain confidential information; if you received it in error please delete it and notify the sender immediately without reading, copying or forwarding any part of it to anyone else.";
+    expect(readingWords(`Your statement is ready\nView statement\n\n${fine}`)).toBe(0);
+    expect(readingWords("Your statement is ready\nView statement\n\nYou’re receiving this because you have an account with Example Bank and chose to get statements by email every month.")).toBe(0);
+  });
+
+});

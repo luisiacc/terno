@@ -206,7 +206,7 @@ describe("new mail", () => {
   });
 
   it("plan 269: a machine's notice is read by its prose: its template asks for no summary, the same text from a person does, and by hand still works", async () => {
-    const { client, model, arrive, row } = await setup();
+    const { backend, client, model, arrive, row, account, clock } = await setup();
     const notice = `1 new message awaits your response\n\nMara Velez\nLawyer at Velez & Ortiz\n\nView message: https://social.test/messaging/thread/2-YTk2ZjQ1NzQtOGRhZC00?midToken=AQH\n\nInstall the Social widgets\nStay updated at a glance\nAdd widget: https://social.test/widgets\n\n----------------------------------------\nThis email was intended for Rafa Ortiz (Founder at Ortiz Legal)\nLearn why we included this: https://social.test/help/4788\nYou are receiving Social notification emails.\nUnsubscribe: https://social.test/psettings/email-unsubscribe\n© 2026 Social Corporation, 1000 West Maude Avenue, Sunnyvale, CA 94085.`;
     const machine = await arrive({ subject: "Mara just messaged you", from: { name: "Mara Velez via Social", email: "messaging-digest-noreply@social.test" }, bodyText: notice });
     await until(async () => expect(await row(machine.thread)).toBeNull());
@@ -215,10 +215,17 @@ describe("new mail", () => {
     const person = await arrive({ subject: "Mara's note", bodyText: notice });
     await until(async () => expect((await row(person.thread))?.state).toBe("ready"));
     expect(model.requests).toHaveLength(1);
-    // in one conversation, a notice doesn't hide a long reply
-    const talk = await arrive({ rfcMessageId: "talk-269@test", subject: "Lease" });
-    await arrive({ inReplyTo: "talk-269@test", references: ["talk-269@test"], subject: "Re: Lease", from: { name: "Social", email: "messaging-digest-noreply@social.test" }, bodyText: notice, date: START - 30_000 });
-    await until(async () => expect((await row(talk.thread))?.state).toBe("ready"));
+    // in one conversation arriving together, a notice doesn't hide a long message: one request reads both
+    const [talk, ping] = [
+      msg({ accountId: account.id, rfcMessageId: "talk-269@test", subject: "Lease", date: clock.now - 60_000, bodyText: WORDS, from: { name: "Ana", email: "ana@books.test" } }),
+      msg({ accountId: account.id, inReplyTo: "talk-269@test", references: ["talk-269@test"], subject: "Re: Lease", date: clock.now - 30_000, bodyText: notice, from: { name: "Social", email: "messaging-digest-noreply@social.test" } }),
+    ];
+    await backend.ingestSliced([talk, ping], true, undefined, undefined, undefined, undefined, undefined, true);
+    const both = (await backend.store.debug.snapshot()).messages.find((x) => x.providerMsgId === talk.providerMsgId)!.threadId;
+    expect((await backend.store.debug.snapshot()).messages.filter((x) => x.threadId === both)).toHaveLength(2);
+    await until(async () => expect((await row(both))?.state).toBe("ready"));
+    expect(model.requests).toHaveLength(2);
+    expect(promptText(model.requests[1]!.messages[0]!.content)).toContain("awaits your response");
     await expect(client.call("ai.summarize", { threadId: machine.thread, requestId: requestId() })).resolves.toMatchObject({ summary: expect.anything() });
   });
 

@@ -132,7 +132,7 @@ export function summarySources(c: Ctx, threadId: number): SummarySources | null 
   const own = new Set(accounts.map((a) => String(a.email).toLowerCase()));
   const rows = T(c, "messages").by("fk_thread_id", threadId).sort((a, b) => a.date - b.date || a.id - b.id);
   const messages = rows.filter((r) => !r.is_draft);
-  // plan 269: asked only of a role address (plan 17's level 1), once per sender
+  // plan 269: asked only of a marked arrival from a role address (plan 17's level 1), once per sender
   const writtenTo = new Map<string, boolean>();
   const written = (key: string) => writtenTo.get(key) ?? writtenTo.set(key, T(c, "correspondents").get(key)?.written === 1).get(key)!;
   return {
@@ -160,7 +160,7 @@ export function summarySources(c: Ctx, threadId: number): SummarySources | null 
         to: repairAddresses(addressesOf(r.to_json)),
         cc: repairAddresses(addressesOf(r.cc_json)),
         list: !!r.list_id,
-        person: senderIsPerson({ from_email: r.from_email, list_id: r.list_id ?? null, is_bulk: r.is_bulk ? 1 : 0, gmail_labels: r.gmail_labels ?? null, is_spam: r.is_spam ? 1 : 0 }, { written }),
+        person: mark?.wants_summary !== 1 ? null : senderIsPerson({ from_email: r.from_email, list_id: r.list_id ?? null, is_bulk: r.is_bulk ? 1 : 0, gmail_labels: r.gmail_labels ?? null, is_spam: r.is_spam ? 1 : 0 }, { written }),
         trash: r.is_trash === 1,
         spam: r.is_spam === 1,
         bodyState: r.body_state,

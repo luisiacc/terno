@@ -154,7 +154,7 @@ export function summarySources(db: Db, threadId: number): SummarySources | null 
   const accounts = db.all<{ id: number; email: string }>("SELECT id, lower(email) AS email FROM accounts");
   const own = new Set(accounts.map((r) => r.email));
   const messages = rows.filter((r) => r.is_draft === 0);
-  // plan 269: asked only of a role address (plan 17's level 1), once per sender
+  // plan 269: asked only of a marked arrival from a role address (plan 17's level 1), once per sender
   const writtenTo = new Map<string, boolean>();
   const written = (key: string) => writtenTo.get(key) ?? writtenTo.set(key, db.get<{ written: number }>("SELECT written FROM correspondents WHERE email = ?", key)?.written === 1).get(key)!;
   return {
@@ -180,7 +180,7 @@ export function summarySources(db: Db, threadId: number): SummarySources | null 
       to: repairAddresses(addressesOf(r.to_json)),
       cc: repairAddresses(addressesOf(r.cc_json)),
       list: r.list_id !== null,
-      person: senderIsPerson(r, { written }),
+      person: r.marked_at === null ? null : senderIsPerson(r, { written }),
       trash: r.is_trash === 1,
       spam: r.is_spam === 1,
       bodyState: r.body_state,

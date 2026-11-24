@@ -142,3 +142,29 @@ Codex made twelve points:
 11. Said what happens to a summary the reader already has: the gate decides automatic requests only (above).
 12. The corpus can't say what the worker summarizes today, and a blanket "nothing lost" would reject the skips meant.
     The corpus test names the one meant skip, and the worker test runs mail through the real queue with a fake model.
+
+## What the Codex code review changed
+
+Eight findings on `8e7f52bc2`, all fixed:
+
+1. The amount pattern tried a number-then-currency match from every digit of a long run: a 3,950-digit reference took
+   231 ms per call under load. It now starts only where the digits start (1.5 ms). The writing checks share the
+   pattern and read the same: a match never started mid-run before either. Measured by hand, not asserted: a
+   wall-clock check belongs in a perf gate.
+2. Two facts read as three: "24 Nov" then "12:30" on the next line also made "Nov 12", and a timestamp with its zone
+   (`14:30:20 +00:00`) made two times. Facts are read per line, overlapping readings keep the first, times take their
+   seconds, and an offset isn't a time.
+3. A spaced currency sign (`$ 18.40`) was dropped as a non-word before facts were read. Facts are read from the line,
+   links out, before words are counted.
+4. A link with "unsubscribe" in it made its sentence a footer line, and a link took the sentence's full stop with it.
+   Links come out of a line before the footer phrases are matched, and a link ends before trailing punctuation.
+5. A sentence followed by a button ("View incident") joined it as a wrapped line and lost its full stop. A line that
+   ends a sentence is never joined to the next.
+6. Footer wording: "this email is intended for", "this message is intended for", "view in browser", "este correo está
+   dirigido a", and typographic apostrophes ("You’re receiving") are folded before matching.
+7. Every sources read classified every sender, so opening a thread could read correspondents. `person` is asked only of
+   marked new mail (null otherwise), the only mail the gate reads; conformance checks an old message is never asked.
+8. The mixed-conversation test could pass on a summary made before the notice arrived; it now ingests both in one batch
+   and checks that one request read both. The corpus check pooled a conversation's messages, so a person's long reply
+   could hide a machine's message being skipped. It now takes each machine message alone (four in the corpus reach 60
+   words on their own; the paired templates in core's tests are the real check).

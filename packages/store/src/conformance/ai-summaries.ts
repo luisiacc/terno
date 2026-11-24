@@ -113,6 +113,9 @@ export function defineAiSummariesConformance(fresh: () => Promise<MailStore>, re
         expect((await store.aiSummaries.sources(asked.thread))!.messages[0]!.person).toBe(false);
         await store.sync.ingest([msg({ accountId, providerMsgId: "mine", rfcMessageId: "mine@x.test", from: { name: "Me", email: "me@x.test" }, to: [support], isSent: true, inInbox: false, gmailLabels: ["SENT"], subject: "Re: Your question", date: NOW - 1000 })], { applyFilters: false, now: NOW, classifier: null });
         expect((await store.aiSummaries.sources(asked.thread))!.messages[0]!.person).toBe(true);
+        // mail that isn't new isn't asked: opening a thread reads no correspondents
+        const old = await arrive({ providerMsgId: "old", rfcMessageId: "old@x.test", subject: "Old", from: support }, { wants: null });
+        expect((await store.aiSummaries.sources(old.thread))!.messages[0]!.person).toBeNull();
       });
 
       it("marks a message whose text isn't here yet, and its text says so", async () => {

@@ -18,22 +18,27 @@ describe("the fictional corpus (plan 269)", () => {
     .flatMap((f) => readFileSync(join(dir, f), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as CorpusConversation));
 
   /** what the corpus has that plan 269 means to skip: a machine's short note with nothing to read past its template */
-  const SKIPPED: Record<string, string> = { "steps-004": "a setup nudge: verify your address, then four bullets of tips" };
+  const SKIPPED: Record<string, string> = { "steps-004#0": "a setup nudge: verify your address, then four bullets of tips" };
+  const address = (from: string) => /<([^>]+)>/.exec(from)?.[1] ?? from;
+  // nobody in the corpus has written to them: a role address is a machine here, as for a stranger
+  const machine = (from: string) => automatedLevel({ from_email: address(from), list_id: null, is_bulk: 0, gmail_labels: null, is_spam: 0 }) > 0;
 
-  it("loses no summary but the notes it means to skip: every conversation over the floor today still is", () => {
+  it("loses no summary but the notes it means to skip: each machine's message that reaches the floor alone still does", () => {
     expect(conversations.length).toBeGreaterThan(100);
     const lost: string[] = [];
+    let read = 0;
     for (const c of conversations) {
-      const inbound = c.messages.filter((m) => !m.own);
-      const today = inbound.reduce((n, m) => n + wordsIn(m.text), 0);
-      if (today < MIN_WORDS) continue;
-      const email = /<([^>]+)>/.exec(inbound[0]?.from ?? "")?.[1] ?? "";
-      // nobody in the corpus has written to them: a role address is a machine here, as for a stranger
-      const person = (from: string) => automatedLevel({ from_email: /<([^>]+)>/.exec(from)?.[1] ?? from, list_id: null, is_bulk: 0, gmail_labels: null, is_spam: 0 }) === 0;
-      const reading = inbound.reduce((n, m) => n + (person(m.from) ? wordsIn(m.text) : readingWords(m.text)), 0);
-      if (reading < MIN_WORDS) lost.push(c.id);
-      else expect(SKIPPED[c.id], `${c.id} ${email}`).toBeUndefined();
+      // each one as if it arrived alone, the worker's hardest case: no other new message adds its words
+      c.messages.forEach((m, i) => {
+        if (m.own || !machine(m.from) || wordsIn(m.text) < MIN_WORDS) return;
+        read++;
+        const id = `${c.id}#${i}`;
+        if (readingWords(m.text) < MIN_WORDS) lost.push(id);
+        else expect(SKIPPED[id], `${id} ${address(m.from)}`).toBeUndefined();
+      });
     }
+    // few: the corpus is mostly people; the paired templates in core's reading tests are the real check
+    expect(read).toBeGreaterThanOrEqual(4);
     expect(lost).toEqual(Object.keys(SKIPPED));
   });
 });
