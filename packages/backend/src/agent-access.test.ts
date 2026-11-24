@@ -53,9 +53,9 @@ async function setup(o: { stored?: Record<string, unknown>; start?: typeof start
 }
 
 describe("plan 183: the setting", () => {
-  it("is off on a fresh profile, at read", async () => {
+  it("is on on a fresh profile, at read (owner, 2026-11-24)", async () => {
     const { client } = await setup();
-    expect((await client.call("app.bootstrap", {})).settings.agents).toEqual({ enabled: false, access: "read" });
+    expect((await client.call("app.bootstrap", {})).settings.agents).toEqual({ enabled: true, access: "read" });
   });
 
   it("an existing profile goes off, keeping the level it had", async () => {
@@ -71,7 +71,9 @@ describe("plan 183: the setting", () => {
 
   it("a partial patch keeps the other field", async () => {
     const { set, client } = await setup();
+    await set({ enabled: false });
     await set({ access: "organize" });
+    expect((await client.call("app.bootstrap", {})).settings.agents).toEqual({ enabled: false, access: "organize" });
     await set({ enabled: true });
     expect((await client.call("app.bootstrap", {})).settings.agents).toEqual({ enabled: true, access: "organize" });
   });
@@ -79,7 +81,8 @@ describe("plan 183: the setting", () => {
 
 describe("plan 183: the gate", () => {
   it("refuses everything while agents are off, saying where to turn them on", async () => {
-    const { agent } = await setup();
+    const { agent, set } = await setup();
+    await set({ enabled: false });
     await expect(agent.call("app.bootstrap", {})).rejects.toMatchObject({ code: "FORBIDDEN", message: expect.stringMatching(/Settings → Agents/) });
   });
 
@@ -125,7 +128,8 @@ describe("plan 183: the gate", () => {
 
 describe("plan 183: the connector", () => {
   it("off: no socket and no token file, and one an older build left goes at start", async () => {
-    const { backend, paths, client } = await setup();
+    const { backend, paths, client, set } = await setup();
+    await set({ enabled: false });
     writeFileSync(paths.tokenPath, "stale");
     await backend.start();
     expect(existsSync(paths.tokenPath)).toBe(false);
@@ -133,10 +137,9 @@ describe("plan 183: the connector", () => {
     expect(await client.call("agents.status", {})).toEqual({ available: true, enabled: false, running: false, connected: 0, tokenSince: null });
   });
 
-  it("on: the socket answers the token; off: the agent is cut and both files go", async () => {
+  it("on (a fresh profile's start): the socket answers the token; off: the agent is cut and both files go", async () => {
     const { backend, paths, set, client, handshake } = await setup();
     await backend.start();
-    await set({ enabled: true });
     expect((await handshake("nope")).reply).toContain("unauthorized");
     const { sock, reply } = await handshake(readFileSync(paths.tokenPath, "utf8"));
     expect(reply).toContain('"ok":true');
@@ -184,7 +187,6 @@ describe("plan 183: the connector", () => {
       start: (b, socketPath, tokenPath) => (fail ? Promise.reject(Object.assign(new Error("in use"), { code: "EADDRINUSE" })) : startAgentSocket(b, socketPath, tokenPath)),
     });
     await backend.start();
-    await set({ enabled: true });
     expect(await client.call("agents.status", {})).toMatchObject({ enabled: true, running: false });
     expect(backend.agentConnector!.failed()).toBe(true);
     expect(existsSync(paths.tokenPath)).toBe(false);
@@ -198,6 +200,7 @@ describe("plan 183: the connector", () => {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
     const { backend, paths, set, stop } = await setup({ start: async (b, s, t) => (await gate, startAgentSocket(b, s, t)) });
+    await set({ enabled: false });
     await backend.start();
     const turningOn = set({ enabled: true });
     await new Promise((r) => setTimeout(r, 20));
@@ -217,6 +220,6 @@ describe("plan 183: the connector", () => {
       await backend.stop();
       rmSync(dir, { recursive: true, force: true });
     });
-    expect(await backend.server.invoke("agents.status", {}, { clientId: "r", origin: "renderer" })).toEqual({ available: false, enabled: false, running: false, connected: 0, tokenSince: null });
+    expect(await backend.server.invoke("agents.status", {}, { clientId: "r", origin: "renderer" })).toEqual({ available: false, enabled: true, running: false, connected: 0, tokenSince: null });
   });
 });

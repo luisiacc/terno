@@ -106,7 +106,8 @@ test("the bundled terno-mcp wrapper finds the Linux binary and the app's default
   await page.getByTestId("tab-agents").click();
   // the command Settings → Agents gives an agent is this package's own, stable path
   await expect(page.getByText(wrapper).first()).toBeVisible();
-  await page.getByRole("switch", { name: "Allow agents" }).click();
+  // on by default (owner, 2026-11-24)
+  await expect(page.getByRole("switch", { name: "Allow agents" })).toBeChecked();
   await expect(page.getByTestId("agents-token-row")).toBeVisible();
   await page.keyboard.press("Escape");
   const payload = JSON.parse((await listAccounts()).content[0]!.text);

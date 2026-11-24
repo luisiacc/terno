@@ -130,3 +130,9 @@ A settings file can turn agents off or lower the level, never turn them on or ra
 9. **A failed start leaves nothing behind.** `startAgentSocket` removes its token file (and socket) when listening fails; the chain recovers from a rejection; `agents.status` reports `enabled` with `running: false` and the tab says it couldn't start, in plain English, with what to do (quit and reopen Terno). The next toggle retries.
 10. **The MCP bootstrap cache is tied to its connection.** It is reused only for the same live client; a closed connection drops it, so an agent cut off by the switch can't keep reading accounts and counts from it.
 11. **Every caller of the old field moves**: `writing.test.ts`, `appearance.test.ts`, `settings-edits.test.ts` (an agent's draft write now needs access), `forwarding.test.ts`, `backend.test.ts`, `mcp.test.ts`, and the e2e fixture; each grants the level it needs.
+
+## Revision (owner, 2026-11-24): on by default
+
+> make this setting ON by default
+
+`DEFAULT_AGENTS` is now `{ enabled: true, access: "read" }`: a fresh profile opens the socket at its first start, read only, so an agent works with nothing to set up and changes no mail until the user raises the level. A profile from before plan 183 still migrates to off at the level it had, and a stored choice is kept (the default only fills what isn't stored). Import still only turns agents off. The tests above now start on: the e2e flow checks the switch on at Read only, then turns it off at the end (no token, no level, the setup still shown); the packaged smoke reaches the app with no setup, then turns agents off and hears where to turn them on.

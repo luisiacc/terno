@@ -9,7 +9,7 @@ import {
 } from "@terno/ai";
 import { AI_PROVIDER_IDS, canonicalThemeId, COMPATIBLE_PRESETS, DEFAULT_DESIGN, DESIGN_IDS, DESIGN_PALETTE, DEV_AI_PROVIDERS, fitsMode, isDesignId, isStyleFont, JEV_DEFAULT_MODEL, SUMMARY_DEFAULT_MODEL, textRef, type DevAiKeys, themeMode, upgradeThemeTokens, type AiTaskName, type AiTaskTarget, type CustomTheme, type TextRef, type ThemeMode } from "@terno/core";
 import type { AiProfile, AiSettings, AppSettings, SettingsPatch } from "@terno/core/rpc";
-import { DEFAULT_AGENTS, DEFAULT_DATED, DEFAULT_TODAY, FAVORITES_MAX, NUDGE_DEFAULT, UNDO_SEND_DEFAULT, type AgentAccess, type AgentsSetting, type FavoriteFolder } from "@terno/core";
+import { DEFAULT_AGENTS, DEFAULT_DATED, DEFAULT_TODAY, FAVORITES_MAX, NUDGE_DEFAULT, UNDO_SEND_DEFAULT, type AgentsSetting, type FavoriteFolder } from "@terno/core";
 import { isLanguageSetting, L, type Localized } from "@terno/i18n";
 import type { MailStore } from "@terno/store";
 import { unreadableSecrets } from "./keychain";
@@ -132,16 +132,17 @@ export const AGENTS_VERSION = 1;
 
 /**
  * Plan 183: the MCP connector ran on every launch, never the user's choice.
- * Every profile now starts with agents off. One that existed keeps the level
- * it had (organize, or send if it allowed sending), ready for when the user
- * turns agents on; a fresh one starts at read. `fresh` is read from the raw
- * stored object, before the other migrations stamp it. Pure, like the others.
+ * A profile from before then starts with agents off, keeping the level it had
+ * (organize, or send if it allowed sending), ready for when the user turns
+ * agents on; a fresh one takes the default (on, at read: owner, 2026-11-24).
+ * `fresh` is read from the raw stored object, before the other migrations
+ * stamp it. Pure, like the others.
  */
 export function migrateAgents(s: StoredSettings, fresh: boolean): StoredSettings {
   if ((s.agentsVersion ?? 0) >= AGENTS_VERSION) return s;
   const { allowAgentSend, ...rest } = s;
-  const access: AgentAccess = fresh ? DEFAULT_AGENTS.access : allowAgentSend ? "send" : "organize";
-  return { ...rest, agents: { enabled: false, access }, agentsVersion: AGENTS_VERSION };
+  const agents: AgentsSetting = fresh ? DEFAULT_AGENTS : { enabled: false, access: allowAgentSend ? "send" : "organize" };
+  return { ...rest, agents, agentsVersion: AGENTS_VERSION };
 }
 
 /**
@@ -200,7 +201,7 @@ export const DEFAULT_SETTINGS: General = {
   // plan 187: one line, as before
   previewLines: 1,
   remoteImages: "ask",
-  // plan 183: no connector until the user turns agents on
+  // plan 183: on at read until the user turns agents off (owner, 2026-11-24)
   agents: DEFAULT_AGENTS,
   syncWindowDays: 180,
   autoCategorize: "auto",

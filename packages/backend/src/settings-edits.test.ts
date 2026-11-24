@@ -238,6 +238,7 @@ describe("app.import", () => {
     const dump = await from.client.call("app.export", {});
 
     const to = setup();
+    await to.client.call("settings.update", { agents: { enabled: false } });
     const here = await to.client.call("accounts.addImap", imap("luis@fastmail.com"));
     await to.client.call("categories.create", { name: "facturas", color: "rose" });
     const result = await to.client.call("app.import", { data: dump });
@@ -250,7 +251,7 @@ describe("app.import", () => {
     expect(filters.find((f) => f.name === "Recibos")!.rule.actions).toEqual([{ type: "addCategory", categoryId: boot.categories[0]!.id }]);
     expect(filters.find((f) => f.name === "Trabajo")).toMatchObject({ enabled: false, source: "ai", rule: { conditions: [{ field: "account", value: here.id }] } });
     expect((await to.client.call("drafts.list", {})).map((d) => [d.accountId, d.subject, d.to])).toEqual([[here.id, "Pendiente", [{ name: "", email: "ana@" }]]]);
-    // density, the layout (plan 24) and motion come along; local mode stays on and agents stay off (plan 183: never imported on)
+    // density, the layout (plan 24) and motion come along; local mode stays on and agents turned off here stay off (plan 183: never imported on)
     expect(boot.settings).toMatchObject({ density: "compact", layout: "list", motionMs: 50, localMode: true, agents: { enabled: false } });
 
     // a second import adds nothing new

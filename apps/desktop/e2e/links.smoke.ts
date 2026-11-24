@@ -94,7 +94,8 @@ test("the app claims terno:// links", () => {
 test("an agent's link opens its message in the running app: a click (open-url) and a second launch", async () => {
   await page.getByTestId("open-settings").click();
   await page.getByTestId("tab-agents").click();
-  await page.getByRole("switch", { name: "Allow agents" }).click();
+  // on by default (owner, 2026-11-24)
+  await expect(page.getByRole("switch", { name: "Allow agents" })).toBeChecked();
   await expect(page.getByTestId("agents-token-row")).toBeVisible();
   await page.keyboard.press("Escape");
 

@@ -186,7 +186,7 @@ test("main cancels the renderer's remote requests, for everyone (plan 97: not a 
   await expect.poll(() => app.evaluate(() => (globalThis as unknown as { blocked: string[] }).blocked)).toContainEqual(expect.stringContaining("https://example.com/pixel.png"));
 });
 
-test("the bundled terno-mcp wrapper answers MCP requests against the running app, once the user allows agents (plan 183)", async () => {
+test("the bundled terno-mcp wrapper answers MCP requests against the running app while agents are allowed, as they are by default (plan 183)", async () => {
   const wrapper = join(appPath, "Contents/Resources/bin/terno-mcp");
   const env = { ...process.env, TERNO_USER_DATA: userData };
   delete env.ELECTRON_RUN_AS_NODE;
@@ -202,19 +202,24 @@ test("the bundled terno-mcp wrapper answers MCP requests against the running app
     await new Promise((r) => child.on("exit", r));
     return lines.map((l) => JSON.parse(l)).find((m) => m.id === 2).result as { isError?: boolean; content: { text: string }[] };
   };
-  // off by default: no socket, and the agent hears where to turn it on
+  // on by default (owner, 2026-11-24): the agent answers with nothing to set up
+  expect(existsSync(join(userData, "agent.token"))).toBe(true);
+  const payload = JSON.parse((await listAccounts()).content[0]!.text);
+  expect(payload.accounts).toHaveLength(4);
+
+  // off: no socket, and the agent hears where to turn it on
+  await page.getByTestId("open-settings").click();
+  await page.getByTestId("tab-agents").click();
+  const allow = page.getByRole("switch", { name: "Allow agents" });
+  await allow.click();
+  await expect(page.getByTestId("agents-token-row")).toHaveCount(0);
   expect(existsSync(join(userData, "agent.token"))).toBe(false);
   const refused = await listAccounts();
   expect(refused.isError).toBe(true);
   expect(refused.content[0]!.text).toMatch(/Settings → Agents → Allow agents/);
-
-  await page.getByTestId("open-settings").click();
-  await page.getByTestId("tab-agents").click();
-  await page.getByRole("switch", { name: "Allow agents" }).click();
+  await allow.click();
   await expect(page.getByTestId("agents-token-row")).toBeVisible();
   await page.keyboard.press("Escape");
-  const payload = JSON.parse((await listAccounts()).content[0]!.text);
-  expect(payload.accounts).toHaveLength(4);
 });
 
 test("a release carries no test build's world: no baked feed or profile, GitHub's feed, a stable signature for Squirrel", async () => {

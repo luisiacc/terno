@@ -436,8 +436,8 @@ test.describe("editable, persisted and in effect", () => {
     await scenario("Agents and Data: agent sending persists; export downloads and imports back", async () => {
       await fresh(page);
       await openVia(page, "gear", "agents");
-      // plan 183: sending is the highest access level, once agents are allowed at all
-      await page.getByRole("switch", { name: "Allow agents" }).click();
+      // plan 183: sending is the highest access level; agents are allowed by default (owner, 2026-11-24)
+      await expect(page.getByRole("switch", { name: "Allow agents" })).toBeChecked();
       await page.getByTestId("agents-access").click();
       await page.getByTestId("agents-access-send").click();
       await reopen(page, "agents");

@@ -10,7 +10,8 @@ export interface AgentsSetting {
   access: AgentAccess;
 }
 
-export const DEFAULT_AGENTS: AgentsSetting = { enabled: false, access: "read" };
+/** On by default (owner, 2026-11-24), at read only: agents work out of the box, and nothing they do changes mail. */
+export const DEFAULT_AGENTS: AgentsSetting = { enabled: true, access: "read" };
 
 export function accessAllows(access: AgentAccess, needed: AgentAccess): boolean {
   return AGENT_ACCESS.indexOf(access) >= AGENT_ACCESS.indexOf(needed);

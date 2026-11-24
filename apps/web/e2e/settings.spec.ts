@@ -239,7 +239,7 @@ test.describe("accounts, settings and command palette", () => {
 test.describe("agents", () => {
   test.use({ backendOptions: { agentSocket: true } });
 
-  test("Settings → Agents: off until turned on, at the level chosen; the token cuts agents off, and so does turning it off (plan 183)", async ({ app: page, server }) => {
+  test("Settings → Agents: on by default at read only, at the level chosen; the token cuts agents off, and so does turning it off (plan 183)", async ({ app: page, server }) => {
     const { socketPath, tokenPath } = server.agents!;
     const handshake = (token: string) => {
       const agent = connect(socketPath);
@@ -248,15 +248,9 @@ test.describe("agents", () => {
     };
     await page.getByTestId("open-settings").click();
     await page.getByTestId("tab-agents").click();
-    // off: no connector, nothing to manage, but the setup is there to copy, for other apps too
+    // on by default (owner, 2026-11-24), at read only
     const allow = page.getByRole("switch", { name: "Allow agents" });
-    await expect(allow).not.toBeChecked();
-    await expect(page.getByTestId("agents-token-row")).toHaveCount(0);
-    await expect(page.getByTestId("agents-access")).toHaveCount(0);
-    expect(existsSync(tokenPath)).toBe(false);
-    await expect(page.getByTestId("mcp-other")).toContainText('"command": "/Applications/Terno.app/Contents/Resources/bin/terno-mcp"');
-
-    await allow.click();
+    await expect(allow).toBeChecked();
     await expect(page.getByTestId("agents-token-row")).toContainText("0 agents connected");
     await expect(page.getByTestId("agents-access")).toHaveText("Read only");
     const old = readFileSync(tokenPath, "utf8");
@@ -285,7 +279,11 @@ test.describe("agents", () => {
     expect(second.reply).toContain('"ok":true');
     await page.getByRole("switch", { name: "Allow agents" }).click();
     await second.closed;
+    // off: no connector, nothing to manage, but the setup is there to copy, for other apps too
+    await expect(page.getByRole("switch", { name: "Allow agents" })).not.toBeChecked();
     await expect(page.getByTestId("agents-token-row")).toHaveCount(0);
+    await expect(page.getByTestId("agents-access")).toHaveCount(0);
     expect(existsSync(tokenPath)).toBe(false);
+    await expect(page.getByTestId("mcp-other")).toContainText('"command": "/Applications/Terno.app/Contents/Resources/bin/terno-mcp"');
   });
 });
