@@ -232,6 +232,8 @@ export class BackendCore {
   private admissionSnapshot?: Promise<OpAdmission>;
   private cooldownVersion = 0;
   private cooldownTimer: ReturnType<typeof setTimeout> | null = null;
+  /** when the cooldown timer is due (performance.now(), the timers' monotonic clock) */
+  private cooldownDue = 0;
   private readonly providers = new Map<number, Promise<MailProvider | null>>();
   private readonly lifetimes = new Map<number, AccountLifetime>();
   private readonly statuses = new Map<number, AccountStatus>();
@@ -256,7 +258,8 @@ export class BackendCore {
   private favoritesRevision = 0;
   /** plan 107: what talks to an account's provider now (sync passes, ops, body reads, copy repairs): a folder change waits for it */
   private readonly providerWork = new Map<number, Set<Promise<unknown>>>();
-  private readonly capacitySync = new Set<number>();
+  /** accounts waiting for Google to admit them again: refused for capacity, or a pass asked for while it wasn't ready (plan 263) */
+  private readonly admissionSync = new Set<number>();
   private readonly bodyJobs = new Map<number, { threadId: number; promise: Promise<ResultOf<"reader.hydrate">> }>();
   private bodyWaiters = 0;
   /** a change arrived while syncing: run another pass when the current one ends */
@@ -531,7 +534,7 @@ export class BackendCore {
     this.connectivity = new Connectivity(
       {
         signInRequired: (id) => this.statuses.get(id)?.signInRequired ?? false,
-        sync: (accountId) => void this.syncAccount(accountId),
+        sync: (accountId) => this.syncInBackground(accountId),
         reconnect: (reason) => void this.reconnect(reason),
         offline: () => void this.wentOffline(),
       },
@@ -654,20 +657,53 @@ export class BackendCore {
     this.cooldownVersion++;
     this.admissionSnapshot = undefined;
     if (this.stopped || this.options.autoSync === false || !this.cooldown) return;
+    // plan 263 (Codex critique #7): a change that lands after the timer is due but before its callback would erase the
+    // wake (the row is ready now, so nextWakeDelay skips it): it runs here instead
+    const due = this.cooldownTimer !== null && performance.now() >= this.cooldownDue;
     if (this.cooldownTimer) clearTimeout(this.cooldownTimer);
     this.cooldownTimer = null;
+    if (due) this.cooldownWake();
     const delay = this.cooldown.nextWakeDelay();
-    if (delay !== null) this.cooldownTimer = setTimeout(() => {
-      this.cooldownTimer = null;
-      this.cooldownChanged();
-      for (const id of this.google.keys()) if (this.googleReady(id)) void this.syncAccount(id);
-    }, delay);
-    this.kickWorker();
-    for (const id of this.capacitySync) {
-      if (this.syncing.has(id) || !this.connectivity.canSync(id) || !this.googleReady(id)) continue;
-      this.capacitySync.delete(id);
-      void this.syncAccount(id);
+    if (delay !== null) {
+      this.cooldownDue = performance.now() + delay;
+      this.cooldownTimer = setTimeout(() => {
+        this.cooldownTimer = null;
+        this.cooldownWake();
+        this.cooldownChanged();
+      }, delay);
     }
+    this.kickWorker();
+    for (const id of this.admissionSync) {
+      if (this.syncing.has(id) || !this.connectivity.canSync(id) || !this.googleReady(id)) continue;
+      this.admissionSync.delete(id);
+      this.syncInBackground(id);
+    }
+  }
+
+  /**
+   * A timed Google cooldown ended: every account Google admits now syncs, whatever the network says (the pass is a
+   * probe offline). One in a pass waits for it to end (plan 263, Codex critique #6: syncing it again here and from the
+   * admission set ran it twice); the admission set's loop that follows skips what started here.
+   */
+  private cooldownWake(): void {
+    for (const id of this.google.keys()) {
+      if (!this.googleReady(id)) continue;
+      if (this.syncing.has(id)) this.admissionSync.add(id);
+      else this.syncInBackground(id);
+    }
+  }
+
+  /**
+   * Plan 263 (Codex critique #2): a pass nobody awaits (the poll, a retry, a push, a wake). What fails before its own
+   * error handling (a store read, a provider that can't be made) is reported, never an unhandled rejection: on desktop
+   * that ends the backend, and every account with it. The next pass (the poll, or offline the probe) tries again.
+   */
+  private syncInBackground(accountId: number, o?: { quick?: boolean }): void {
+    (o ? this.syncAccount(accountId, undefined, o) : this.syncAccount(accountId)).catch((error: unknown) => {
+      if (this.stopped) return;
+      captureError(error, { code: "sync.failed" });
+      this.log("warn", `sync failed for account ${accountId}`, error instanceof Error ? error.message : String(error));
+    });
   }
 
   /** Before mailbox proof, Google admission belongs to the installation, never a claimed address. */
@@ -855,7 +891,7 @@ export class BackendCore {
       void this.providers.get(account.id)?.then((p) => { if (life && this.current(life)) p?.heartbeat?.(); }, () => {});
       // plan 25: one that needs a sign-in isn't asked at every poll (a refused login, again and again, locks
       // accounts out); signing in again lifts it, and recheckSignIn tries the saved password at moments the user would
-      if (!this.connectivity.pending(account.id) && !(await this.accountStatus(account.id)).signInRequired) void this.syncAccount(account.id);
+      if (!this.connectivity.pending(account.id) && !(await this.accountStatus(account.id)).signInRequired) this.syncInBackground(account.id);
     }
   }
 
@@ -879,7 +915,7 @@ export class BackendCore {
       if (!admitted(account.id) || !quickHealthy((await this.accountStatus(account.id)).project())) continue;
       const provider = await this.provider(account.id).catch(() => null);
       // admitted again: a blur, offline or another pass may have come while those were read
-      if (provider?.quickChecks && admitted(account.id)) void this.syncAccount(account.id, undefined, { quick: true });
+      if (provider?.quickChecks && admitted(account.id)) this.syncInBackground(account.id, { quick: true });
     }
   }
 
@@ -957,12 +993,16 @@ export class BackendCore {
       this.cooldownChanged();
     }
     const ids = this.connectivity.retryNow(accountId, reason);
-    if (reason === "user") {
-      let resumed = false;
-      for (const id of ids) resumed = (await this.store.ops.resumeNetwork(id, this.now())).length > 0 || resumed;
-      if (resumed) this.kickWorker();
+    // those accounts' probes are gone now: they sync whatever resuming their ops does (plan 263, Codex critique #5)
+    try {
+      if (reason === "user") {
+        let resumed = false;
+        for (const id of ids) resumed = (await this.store.ops.resumeNetwork(id, this.now())).length > 0 || resumed;
+        if (resumed) this.kickWorker();
+      }
+    } finally {
+      for (const id of ids) this.syncInBackground(id);
     }
-    for (const id of ids) void this.syncAccount(id);
     for (const account of await this.store.accounts.list()) {
       if (accountId !== null && account.id !== accountId) continue;
       void this.recheckSignIn(account.id, reason);
@@ -1005,7 +1045,7 @@ export class BackendCore {
       if (status.signInRequired) return false;
       await this.resumeAuth(accountId);
       this.watchAccount(accountId);
-      void this.syncAccount(accountId);
+      this.syncInBackground(accountId);
       return true;
     } catch {
       // a refused (or failed) recheck never discharges the sign-in hold
@@ -1561,7 +1601,7 @@ export class BackendCore {
     for (const id of new Set(accountIds)) {
       if (!this.connectivity.canSync(id)) continue;
       if (this.syncing.has(id)) this.flagSyncAgain.add(id);
-      else void this.syncAccount(id);
+      else this.syncInBackground(id);
     }
   }
 
@@ -2019,7 +2059,7 @@ export class BackendCore {
       if (!provider || !this.current(life)) return;
       this.watchAccount(account.id, provider);
     }, () => {});
-    void this.syncAccount(account.id);
+    this.syncInBackground(account.id);
   }
 
   private watchAccount(accountId: number, known?: MailProvider): void {
@@ -2028,7 +2068,7 @@ export class BackendCore {
     if (!this.current(life) || !this.connectivity.online || this.unwatch.has(accountId) || !this.connectivity.tracked(accountId)) return;
     void (known ? Promise.resolve(known) : this.provider(accountId)).then((provider) => {
       if (!provider?.watch || !this.current(life) || !this.connectivity.online || this.unwatch.has(accountId) || !this.connectivity.tracked(accountId)) return;
-      this.unwatch.set(accountId, provider.watch(() => { if (this.current(life)) void this.syncAccount(accountId); }));
+      this.unwatch.set(accountId, provider.watch(() => { if (this.current(life)) this.syncInBackground(accountId); }));
     });
   }
 
@@ -2046,7 +2086,7 @@ export class BackendCore {
     this.attention.forget(accountId);
     this.unwatch.get(accountId)?.();
     this.unwatch.delete(accountId);
-    this.capacitySync.delete(accountId);
+    this.admissionSync.delete(accountId);
     this.syncAgain.delete(accountId);
     this.flagSyncAgain.delete(accountId);
     this.syncing.delete(accountId);
@@ -2100,7 +2140,7 @@ export class BackendCore {
     this.lifetimes.delete(accountId);
     this.credentials.delete(accountId);
     this.statuses.delete(accountId);
-    this.capacitySync.delete(accountId);
+    this.admissionSync.delete(accountId);
     this.cooldownAccounts.delete(accountId);
     this.cooldownChanged();
     this.options.providers.gmailTokens?.forget?.(accountId);
@@ -2194,6 +2234,8 @@ export class BackendCore {
       if (!provider || !this.current(life)) return;
       // an account that syncs is one whose failures are counted (dropAccount untracks it)
       this.connectivity.track(accountId);
+      // plan 263: this is the pass an admission wait was for (a capacity refusal puts it back)
+      if (!o.quick) this.admissionSync.delete(accountId);
       // plan 41: live mail this pass inserts is news once the account synced in this life (no first sync, no catch-up
       // at launch); it's looked at when the pass is over (its flags, filters and bodies settled)
       const arrivals = this.attention.beginPass(accountId);
@@ -2413,7 +2455,7 @@ export class BackendCore {
         // plan 102 (Codex review): what a pass brought in before failing is in; what the next one finds is new (a
         // first chunk that failed mustn't leave the retry's new mail unannounced)
         if (retryable) this.attention.prime(accountId);
-        if (error instanceof ProviderCooldownError && error.cooldown.kind === "capacity") this.capacitySync.add(accountId);
+        if (error instanceof ProviderCooldownError && error.cooldown.kind === "capacity") this.admissionSync.add(accountId);
         // offline or a sign-in to redo is the provider's verdict (expected); anything else is ours
         captureError(error, { code: "sync.failed", fields: { accountKind, retryable } });
         const wake = error instanceof ProviderCooldownError ? this.cooldown?.nextWakeDelay() : null;
@@ -2426,7 +2468,8 @@ export class BackendCore {
           return;
         }
         if (error instanceof FlagConnectionError) {
-          await statusRun.end({ status: "error", lastError: message, lastErrorI18n });
+          // no retry schedule: the poll, or offline the probe the pass's end leaves it (plan 263)
+          await statusRun.end({ status: "error", lastError: message, lastErrorI18n, connection: null });
           return;
         }
         if (!retryable) {
@@ -2462,14 +2505,30 @@ export class BackendCore {
       this.syncing.delete(accountId);
       const explicit = this.syncAgain.delete(accountId);
       const flags = this.flagSyncAgain.delete(accountId);
-      const capacity = this.options.autoSync !== false && this.capacitySync.has(accountId) && this.connectivity.canSync(accountId);
-      if (this.current(life) && !this.statuses.get(accountId)?.signInRequired && this.googleReady(accountId) && (explicit || ((flags || capacity) && this.connectivity.canSync(accountId)))) {
-        this.capacitySync.delete(accountId);
-        void this.syncAccount(accountId);
+      const capacity = this.options.autoSync !== false && this.admissionSync.has(accountId) && this.connectivity.canSync(accountId);
+      if (!this.current(life) || this.statuses.get(accountId)?.signInRequired) return;
+      if (this.googleReady(accountId) && (explicit || ((flags || capacity) && this.connectivity.canSync(accountId)))) {
+        this.admissionSync.delete(accountId);
+        this.syncInBackground(accountId);
+        return;
       }
+      // plan 263: a pass asked for while Google refuses the account runs when it admits it again (cooldownChanged)
+      if (explicit && !this.googleReady(accountId)) this.admissionSync.add(accountId);
+      this.keepScheduled(accountId);
     });
     this.syncing.set(accountId, run);
     return run;
+  }
+
+  /**
+   * Plan 263: whatever a pass ended in, its account keeps a way to sync again: online the poll, a retry, a cooldown
+   * wake or a hold only the user lifts (a sign-in, a paused policy). Offline the poll is off, so one without a timer
+   * gets its probe here (a cooldown refusal, the flag-connection error or a failure before the provider left none).
+   */
+  private keepScheduled(accountId: number): void {
+    // a paused Gmail account (its policy, or another mailbox's sign-in) waits for the user: a probe would stop at once
+    if (this.stopped || this.connectivity.online || this.connectivity.pending(accountId) || this.google.get(accountId)?.paused) return;
+    this.connectivity.probeLater(accountId);
   }
 
   // ───────────────────────────── folder changes (plan 107) ─────────────────────────────
@@ -2748,7 +2807,7 @@ export class BackendCore {
     if (flow) this.assertSignIn(accountId, flow);
     const status = await this.accountStatus(accountId);
     this.credentials.set(accountId, this.credentialsOf(accountId) + 1);
-    this.capacitySync.delete(accountId);
+    this.admissionSync.delete(accountId);
     this.cooldownChanged();
     await this.accountWrite(life, async () => {
       if (flow) this.assertSignIn(accountId, flow);

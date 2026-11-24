@@ -7,8 +7,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { createAccount, sqlDb } from "@terno/db";
-import { ProviderAuthError, ProviderError, type MailProvider, type ProviderRegistry } from "@terno/mail";
-import { afterEach, describe, expect, it } from "vitest";
+import { ProviderAuthError, ProviderCooldownError, ProviderError, type MailProvider, type ProviderRegistry } from "@terno/mail";
+import { FlagObservationError } from "@terno/store";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 
 interface Scripted extends MailProvider {
@@ -28,10 +29,12 @@ afterEach(async () => {
   for (const c of cleanups.splice(0).reverse()) await c();
 });
 
-async function setup(o: { syncIntervalMs?: number; accounts?: number } = {}) {
+async function setup(o: { syncIntervalMs?: number; accounts?: number; kind?: "imap" | "gmail"; offlineRetryMs?: number; createFails?: number } = {}) {
   const providers = new Map<number, Scripted>();
+  let createFails = o.createFails ?? 0;
   const registry: ProviderRegistry = {
     create(ctx) {
+      if (createFails > 0 && createFails--) throw new Error("synthetic: the provider could not be made");
       const p: Scripted = {
         up: true,
         failWith: null,
@@ -76,11 +79,11 @@ async function setup(o: { syncIntervalMs?: number; accounts?: number } = {}) {
     autoSync: true,
     syncIntervalMs: o.syncIntervalMs ?? 3_600_000,
     onNetworkReset: () => void resets++,
-    connectivity: { delays: [150, 300, 600], settleMs: 30, offlineRetryMs: 60_000 },
+    connectivity: { delays: [150, 300, 600], settleMs: 30, offlineRetryMs: o.offlineRetryMs ?? 60_000 },
   });
   await backend.store.ready;
   const ids: number[] = [];
-  for (let i = 0; i < (o.accounts ?? 2); i++) ids.push(createAccount(sqlDb(backend.store), { kind: "imap", email: `a${i}@example.com`, displayName: `A${i}`, color: "brown", providerConfig: {} }).id);
+  for (let i = 0; i < (o.accounts ?? 2); i++) ids.push(createAccount(sqlDb(backend.store), { kind: o.kind ?? "imap", email: `a${i}@example.com`, displayName: `A${i}`, color: "brown", providerConfig: {} }).id);
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "r", origin: "renderer" });
   const client = new RpcClient(c);
@@ -284,5 +287,120 @@ describe("ops through an outage (2026-11)", () => {
     expect(retryPark(tls, 5_000, true)).toEqual({ retryAt: 5_000 });
     // a permanent failure is never parked
     expect(retryPark(new ProviderError("550 rejected", false), undefined, true)).toBeUndefined();
+  });
+});
+
+describe("plan 263: every pass leaves its account a way to sync again", () => {
+  for (const [name, failure] of [
+    ["a Google capacity refusal", () => new ProviderCooldownError("gmail-api", "0", "capacity")],
+    ["the flag-connection error", () => new FlagObservationError()],
+  ] as const) it(`offline, a probe that ends in ${name} keeps its probe; the next one finds the server`, async () => {
+    const t = await setup({ accounts: 1, kind: "gmail", offlineRetryMs: 150 });
+    await t.backend.start();
+    const id = t.ids[0]!;
+    await expect.poll(() => t.providers.get(id)?.syncs).toBe(1);
+    const p = t.providers.get(id)!;
+    p.failWith = failure;
+    // the OS says offline (and may be wrong): the poll stops, only the probe looks
+    t.backend.networkChanged(false, "offline");
+    await expect.poll(() => p.syncs).toBe(2);
+    expect(t.state(id).status).toBe("error");
+    p.failWith = null;
+    // the next probe works: the host was wrong, the account is back
+    await expect.poll(() => p.syncs, { timeout: 2_000 }).toBe(3);
+    await expect.poll(() => t.state(id).status).toBe("idle");
+  });
+
+  for (const resume of ["admission", "another pass"] as const) it(`a sync asked for during a Gmail pass that ends with Google's capacity full runs once Google admits it again, once (${resume})`, async () => {
+    const t = await setup({ accounts: 1, kind: "gmail" });
+    await t.backend.start();
+    const id = t.ids[0]!;
+    await expect.poll(() => t.providers.get(id)?.syncs).toBe(1);
+    const p = t.providers.get(id)!;
+    let open!: () => void;
+    p.gate = new Promise<void>((resolve) => { open = resolve; });
+    const pass = t.backend.syncAccount(id);
+    await expect.poll(() => p.syncs).toBe(2);
+    // new mail announced while the pass runs: one more pass after it
+    void t.backend.syncAccount(id);
+    // every background slot taken (other accounts' bodies) as the pass ends
+    const full = vi.spyOn(t.backend.net, "googleAvailable").mockImplementation((admission) => admission !== "background");
+    p.gate = null;
+    open();
+    await pass;
+    await tick(50);
+    expect(p.syncs).toBe(2);
+    // a slot comes back: the pool tells the backend (net-policy's googleChanged)
+    full.mockRestore();
+    // the pool's word, or a pass that starts first (a timed wake, the poll): that pass is the one waited for
+    if (resume === "admission") (t.backend as unknown as { cooldownChanged(): void }).cooldownChanged();
+    else await t.backend.syncAccount(id);
+    await expect.poll(() => p.syncs).toBe(3);
+    await tick(100);
+    (t.backend as unknown as { cooldownChanged(): void }).cooldownChanged();
+    await tick(50);
+    expect(p.syncs).toBe(3);
+  });
+
+  const core = (t: { backend: unknown }) => t.backend as unknown as { cooldownChanged(): void; cooldown: { nextWakeDelay(): number | null } };
+
+  it("a timed cooldown's wake syncs an account the admission set also holds once, not twice (Codex critique #6)", async () => {
+    const t = await setup({ accounts: 1, kind: "gmail" });
+    await t.backend.start();
+    const id = t.ids[0]!;
+    await expect.poll(() => t.providers.get(id)?.syncs).toBe(1);
+    const p = t.providers.get(id)!;
+    // refused for capacity with every background slot taken: it waits in the admission set
+    const full = vi.spyOn(t.backend.net, "googleAvailable").mockImplementation((admission) => admission !== "background");
+    p.failWith = () => new ProviderCooldownError("gmail-api", "0", "capacity");
+    await t.backend.syncAccount(id);
+    expect(p.syncs).toBe(2);
+    // a timed cooldown ends 30 ms from now; by then Google admits the account again
+    vi.spyOn(core(t).cooldown, "nextWakeDelay").mockReturnValueOnce(30);
+    core(t).cooldownChanged();
+    p.failWith = null;
+    full.mockRestore();
+    await expect.poll(() => p.syncs).toBe(3);
+    await tick(150);
+    expect(p.syncs).toBe(3);
+  });
+
+  it("a change that lands after the cooldown wake is due, before its timer ran, still wakes the accounts (Codex critique #7)", async () => {
+    const t = await setup({ accounts: 1, kind: "gmail" });
+    await t.backend.start();
+    const id = t.ids[0]!;
+    await expect.poll(() => t.providers.get(id)?.syncs).toBe(1);
+    vi.spyOn(core(t).cooldown, "nextWakeDelay").mockReturnValueOnce(20);
+    core(t).cooldownChanged();
+    // the event loop is busy past the deadline; then a slot comes back (the row is ready: no next wake)
+    const until = performance.now() + 40;
+    while (performance.now() < until) { /* busy */ }
+    core(t).cooldownChanged();
+    await expect.poll(() => t.providers.get(id)!.syncs).toBe(2);
+  });
+
+  it("a pass whose provider can't be made is reported, not an unhandled rejection; the poll tries again (Codex critique #2)", async () => {
+    const unhandled: unknown[] = [];
+    const listen = (reason: unknown) => void unhandled.push(reason);
+    process.on("unhandledRejection", listen);
+    try {
+      const t = await setup({ accounts: 1, syncIntervalMs: 150, createFails: 1 });
+      await t.backend.start();
+      const id = t.ids[0]!;
+      await expect.poll(() => t.providers.get(id)?.syncs, { timeout: 3_000 }).toBe(1);
+      await tick(20);
+      expect(unhandled).toEqual([]);
+    } finally { process.off("unhandledRejection", listen); }
+  });
+
+  it("Retry now syncs the accounts whose probes it cleared even when resuming their ops fails (Codex critique #5)", async () => {
+    const t = await setup({ accounts: 1 });
+    await t.backend.start();
+    const id = t.ids[0]!;
+    await expect.poll(() => t.providers.get(id)?.syncs).toBe(1);
+    t.backend.networkChanged(false, "offline");
+    vi.spyOn(t.backend.store.ops, "resumeNetwork").mockRejectedValueOnce(new Error("synthetic: disk full"));
+    await expect(t.backend.retryNow(id, "user")).rejects.toThrow("disk full");
+    await expect.poll(() => t.providers.get(id)!.syncs).toBe(2);
   });
 });
