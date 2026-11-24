@@ -155,6 +155,39 @@ Not taken, with the reason:
 - #12 (an IDLE rerun after a temporary refusal skips the backoff): `core.ts` scheduling, plan 263's area. Each rerun is
   caused by one `EXISTS`, so it is bounded by arrivals, and it now stores them.
 
+## Codex code review, round 1 (8 points)
+
+Fixed, each with a regression test that fails without its fix (`imap.int.test.ts`, "plan 266"):
+1. **UIDNEXT acknowledged past what was read** (pre-existing, high). imapflow raises `mailbox.uidNext` past any UID a
+   FETCH names (`tools.js`), an unsolicited one included (RFC 3501 §7.4.2): mail that arrived after the Inbox's SEARCH
+   and that another app flagged at once was acknowledged unread and never fetched. `syncMailbox` now acknowledges
+   through UIDNEXT as SELECT gave it and what its SEARCH found (a SELECT without UIDNEXT, which RFC 3501 allows: the
+   stored boundary and what was found), and its first-read snapshot is SELECT's too. Test: the unsolicited FETCH comes
+   before the ordered read's tagged OK; the next pass stores the message.
+2. **A second row for mail moved out of the Inbox mid-pass** (introduced). The early read put its new ids in the pass's
+   `introduced`, so if another app moved one to Archive before the ordered Inbox read, the Archive read imported a
+   second copy. The early read keeps its own set; an id joins `introduced` only when the ordered read meets it where it
+   was stored. Test: the move happens on Sent's SELECT; one row, adopted in Archive the next pass.
+3. **A temporary SEARCH refusal tolerated as a folder's** (introduced for role folders, pre-existing for custom ones).
+   imapflow answers a refused SEARCH with `false`; `NO [UNAVAILABLE]` was thrown as non-retryable `listRefused`, which
+   `tolerate` swallowed, and the pass reported success. A temporary one (the logged error, `refusal()`) is now deferred.
+   Test: Sent's `UID SEARCH` answered `NO [UNAVAILABLE]` fails the pass; the Inbox's new mail is stored anyway.
+6. **A body fetch started after an arrival announced while it waited for its permits** (introduced). The yield is
+   checked again once the permits are held. The IDLE test now checks order: at most one body fetch starts between the
+   arrival and its envelope read (it was "fewer than 12"). The permit wait itself isn't reproducible in the fixture.
+7. **An expunge between the early read's SEARCH and FETCH failed the pass** (pre-existing for the ordered read; a new
+   window here). The early read acknowledges nothing, so a UID the FETCH no longer returns is skipped there; the
+   ordered read searches again. Test: one of two new UIDs expunged on the FETCH; the other is stored, no error.
+8. **Test gap:** the `UNAVAILABLE` test now checks the Inbox's cursor is where it was after the failed pass. A second
+   announcement can't happen: `ingest` (and its `live` notice) runs only for mail with no stored place, and the second
+   read finds it by its place.
+
+Not taken:
+4. (500 pending bodies all in a refused Sent keep an older Inbox body waiting): needs the body query to leave out
+   mailboxes refused this pass, a store change in both engines; before this plan the refusal stopped the whole pass.
+5. (after a yield, a backlog over 500 bodies waits for the poll for what the base would have done in the queued pass):
+   bodies past 500 already wait for the next pass today; the arrival's pass takes the next 500.
+
 ## Out of scope
 
 - Finding 3 (folders past the 10,000 catalog cap), deferred above.

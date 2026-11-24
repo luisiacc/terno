@@ -2833,6 +2833,7 @@ describe("an account's own folders (plan 68)", () => {
 describe("plan 266: the Inbox's new mail first, whatever another folder does", () => {
   const subjects = async (client: RpcClient, view: "inbox" | "archive") => (await client.call("threads.list", { view })).items.map((t) => t.subject);
   const syncState = async (client: RpcClient) => (await client.call("app.bootstrap", {})).accounts[0]!.syncState;
+  const inboxCursor = (backend: Backend, accountId: number) => (JSON.parse(sqlDb(backend.store).get<{ c: string }>("SELECT provider_config AS c FROM accounts WHERE id = ?", accountId)!.c) as { cursor: { mailboxes: Record<string, unknown> } }).cursor.mailboxes.INBOX;
 
   it("a Sent the server won't open (NO) leaves the Inbox and Archive read; a vanished folder's mail waits until it opens", async () => {
     const { imap, backend, client, addAccount } = await setup();
@@ -2902,17 +2903,98 @@ describe("plan 266: the Inbox's new mail first, whatever another folder does", (
     expect(sqlDb(backend.store).all("SELECT mailbox FROM message_locations ORDER BY mailbox")).toEqual([{ mailbox: "INBOX" }, { mailbox: "INBOX" }]);
   });
 
+  it("a role folder's SEARCH the server says to retry later fails the pass, never passes as read (Codex code review #3)", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const busy = imap.server.script.add({ on: "command", command: "UID SEARCH", mailbox: "Sent", send: "$TAG NO [UNAVAILABLE] Try again later\r\n" });
+    ctl.addMessage("INBOX", { raw: raw({ subject: "Arrived while Sent's search was busy" }) });
+    await backend.syncAccount(account.id);
+    expect(busy.hits).toBeGreaterThan(0);
+    expect((await syncState(client)).lastError).not.toBeNull();
+    expect(await subjects(client, "inbox")).toEqual(["Arrived while Sent's search was busy"]);
+    busy.remove();
+    await backend.syncAccount(account.id);
+    expect((await syncState(client)).lastError).toBeNull();
+  });
+
+  it("mail that arrives after the Inbox's SEARCH and that another app flags at once is read the next pass (Codex code review #1)", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    // the pass's second search of new Inbox UIDs is the ordered read's (the first is the early read's)
+    let searches = 0;
+    imap.server.script.add({ on: "command", command: "UID SEARCH", mailbox: "INBOX", match: /UID \d+:\*/i, run: true, when: () => { searches++; return false; } });
+    // after its answer is made, before the tagged OK: mail arrives and the server tells of a flag change on it (RFC
+    // 3501 §7.4.2 lets a FETCH come unsolicited), which imapflow reads as a UID past its uidNext
+    const flagged = imap.server.script.add({ on: "response", command: "UID SEARCH", mailbox: "INBOX", untagged: false, times: 1, when: () => searches === 2, before: () => {
+      const m = ctl.addMessage("INBOX", { raw: raw({ subject: "Flagged on the phone" }), flags: ["\\Seen"] });
+      return `* ${ctl.listMessages("INBOX").length} FETCH (UID ${m.uid} FLAGS (\\Seen))\r\n`;
+    } });
+    await backend.syncAccount(account.id);
+    expect(flagged.hits).toBe(1);
+    await backend.syncAccount(account.id);
+    expect(await subjects(client, "inbox")).toEqual(["Flagged on the phone"]);
+  });
+
+  it("mail the early read stored and another app moves to Archive before the ordered read stays one message (Codex code review #2)", async () => {
+    const { imap, backend, addAccount } = await setup();
+    const ctl = imap.server.control;
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    ctl.addMessage("INBOX", { raw: raw({ subject: "Moved mid-pass" }) });
+    // Sent is swept after the Inbox: by then the early read has stored it, and the ordered Inbox read is still to come
+    let moved = false;
+    imap.server.script.add({ on: "command", command: "SELECT", match: /Sent/, run: true, when: () => {
+      if (!moved) ctl.moveMessages("INBOX", ctl.listMessages("INBOX").map((m) => m.uid), "Archive");
+      moved = true;
+      return false;
+    } });
+    await backend.syncAccount(account.id);
+    expect(moved).toBe(true);
+    const rows = () => sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages WHERE subject = 'Moved mid-pass'");
+    const [first, ...others] = rows();
+    expect(others).toEqual([]);
+    await backend.syncAccount(account.id);
+    expect(rows()).toEqual([first]);
+    expect(sqlDb(backend.store).all("SELECT mailbox FROM message_locations")).toEqual([{ mailbox: "Archive" }]);
+  });
+
+  it("a new Inbox UID expunged between the early read's SEARCH and FETCH is skipped, the rest stored (Codex code review #7)", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const gone = ctl.addMessage("INBOX", { raw: raw({ subject: "Gone at once" }) });
+    ctl.addMessage("INBOX", { raw: raw({ subject: "Stays" }) });
+    let expunged = false;
+    imap.server.script.add({ on: "command", command: "UID FETCH", mailbox: "INBOX", match: /ENVELOPE/i, run: true, when: () => {
+      if (!expunged) ctl.expungeMessages("INBOX", [gone.uid]);
+      expunged = true;
+      return false;
+    } });
+    await backend.syncAccount(account.id);
+    expect(expunged).toBe(true);
+    expect((await syncState(client)).lastError).toBeNull();
+    expect(await subjects(client, "inbox")).toEqual(["Stays"]);
+  });
+
   it("a Sent the server says to try later fails the pass, but the Inbox's new mail is stored first, once", async () => {
     const { imap, backend, client, addAccount } = await setup();
     const ctl = imap.server.control;
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const before = inboxCursor(backend, account.id);
     const busy = imap.server.script.add({ on: "command", command: "SELECT", match: /Sent/, send: "$TAG NO [UNAVAILABLE] Try again later\r\n" });
     ctl.addMessage("INBOX", { raw: raw({ subject: "Arrived while Sent was busy" }) });
     await backend.syncAccount(account.id);
     expect(busy.hits).toBeGreaterThan(0);
     expect((await syncState(client)).lastError).not.toBeNull();
     expect(await subjects(client, "inbox")).toEqual(["Arrived while Sent was busy"]);
+    // the early read acknowledged nothing (Codex code review #8): the ordered read takes it from the same boundary
+    expect(inboxCursor(backend, account.id)).toEqual(before);
     busy.remove();
     await backend.syncAccount(account.id);
     expect((await syncState(client)).lastError).toBeNull();

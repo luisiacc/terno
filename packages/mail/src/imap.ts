@@ -742,6 +742,15 @@ export function toProviderError(error: unknown): ProviderError {
   return new ProviderError(`IMAP: ${message}`, true);
 }
 
+/**
+ * Plan 266 (Codex code review #3): a SEARCH imapflow answered false. One the server said to retry later (RFC 5530) is
+ * deferred, never a folder's refusal a pass tolerates and reports as synced.
+ */
+function searchRefused(c: ImapFlow): never {
+  if (refusal(c) === "temporary") throw ProviderError.deferred(L("errors.imap.listRefused"));
+  throw new ProviderError(L("errors.imap.listRefused"), false);
+}
+
 /** imapflow resolves false when a STORE, MOVE, COPY or DELETE fails; its logger keeps why (makeClient) */
 const commandErrors = new WeakMap<ImapFlow, { err?: unknown }>();
 /** forget an earlier command's error before the one whose result is read */
@@ -1227,12 +1236,16 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
   }
 
   /** Unknown locators never establish logical identity from an envelope or arrival order. */
-  async function syncMailbox(c: ImapFlow, path: string, cursor: Cursor, sink: SyncSink, touched: Set<number>, opts: { reidentify?: boolean; checkpoint?: Snapshot | null; introduced: Set<number>; preview?: number; uids?: number[]; heldUids?: number[]; formerly?: { from: string; uidvalidity: number }; seen?: Set<number>; arrivals?: true }): Promise<number | undefined> {
+  async function syncMailbox(c: ImapFlow, path: string, cursor: Cursor, sink: SyncSink, touched: Set<number>, opts: { reidentify?: boolean; checkpoint?: Snapshot | null; introduced: Set<number>; preview?: number; uids?: number[]; heldUids?: number[]; formerly?: { from: string; uidvalidity: number }; seen?: Set<number>; arrivals?: true; early?: ReadonlySet<number> }): Promise<number | undefined> {
     const lock = await c.getMailboxLock(path);
     try {
       const mb = c.mailbox;
       if (!mb) return;
       const uidvalidity = Number(mb.uidValidity);
+      // plan 266 (Codex code review #1): the mailbox as SELECT found it. imapflow raises its uidNext past any UID a FETCH
+      // names, an unsolicited one too (another app flagging mail that arrived after our SEARCH), and that mail is unread
+      const opened = snapshotOf(mb);
+      const openedUidNext = Number(mb.uidNext);
       let state = cursor.mailboxes[path];
       const hadState = state !== undefined;
       // plan 79: a preview is a first read's newest messages only, before that read (nothing to preview after it)
@@ -1250,8 +1263,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       }
       const live = state !== undefined;
       const reidentify = reset || opts.reidentify === true;
+      if (!opts.uids) clearRefusal(c);
       const searched = opts.uids ?? await c.search(state ? { uid: `${state.uidnext}:*` } : reidentify ? { all: true } : { since: new Date(sink.windowStart) }, { uid: true });
-      if (!searched) throw new ProviderError(L("errors.imap.listRefused"), false);
+      if (!searched) searchRefused(c);
       // a preview: the most recently arrived (highest UIDs) of the window
       const found = opts.uids ? opts.uids : state ? searched.filter((uid) => uid >= state!.uidnext) : opts.preview !== undefined ? searched.sort((a, b) => a - b).slice(-opts.preview) : searched;
       const fresh: IncomingMessage[] = [];
@@ -1270,6 +1284,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           // (read afresh: no state, or another generation's reset, Codex code review round 24 #2)
           if (atLocation === null && !live && opts.formerly?.uidvalidity === uidvalidity) atLocation = await locations.at(opts.formerly.from, uidvalidity, m.uid);
           if (atLocation !== null) {
+            // plan 266 (Codex code review #2): stored by the early read and still where it was: new this pass, as if
+            // this read had stored it (one moved away meanwhile isn't, and its twin elsewhere is held, not imported)
+            if (opts.early?.has(atLocation)) opts.introduced.add(atLocation);
             if (!(await locations.unresolved([atLocation])).length) {
               await upsertLocation(atLocation, path, uidvalidity, m.uid, flags);
               touched.add(atLocation);
@@ -1358,7 +1375,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           };
           fresh.push(incoming);
         }
-        if (expected.size) throw new ProviderError(L("errors.imap.listRefused"), false);
+        // plan 266 (Codex code review #7): the early read acknowledges nothing, so a UID expunged since its SEARCH is
+        // simply not there; the ordered read searches again
+        if (expected.size && !opts.arrivals) throw new ProviderError(L("errors.imap.listRefused"), false);
       }
       // old mail (plan 101) is never live: it notifies nothing, as a first sync's doesn't
       if (fresh.length) await sink.ingest(fresh, { live: live && !opts.uids });
@@ -1373,9 +1392,13 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       if (opts.uids || opts.arrivals) return uidvalidity;
 
       // a first read or a reset read everything now; a mailbox we had is acknowledged as its sweep saw it
-      const seen: Snapshot | null = reset || !hadState ? snapshotOf(mb) : (opts.checkpoint ?? null);
+      const seen: Snapshot | null = reset || !hadState ? opened : (opts.checkpoint ?? null);
+      // read through what SELECT announced and what the SEARCH found, never further (a UID past both is unread);
       // a message set aside isn't acknowledged until it's told apart: a pass that stops first reads it again
-      const uidnext = Math.min(Number(mb.uidNext), held);
+      // (RFC 3501 lets SELECT leave UIDNEXT out: then what was read before, and what this SEARCH found)
+      let through = Number.isSafeInteger(openedUidNext) && openedUidNext > 0 ? openedUidNext : (state?.uidnext ?? 1);
+      for (const uid of found) if (uid >= through) through = uid + 1;
+      const uidnext = Math.min(through, held);
       cursor.mailboxes[path] = { uidvalidity, uidnext, ...(seen && { messages: seen.messages, ...(seen.modseq !== undefined && { modseq: seen.modseq }) }) };
       if (cursor.resetPending) delete cursor.resetPending[path];
       if (cursor.previewed) {
@@ -1509,9 +1532,10 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       const known = await readMailbox(locations, path, uidvalidity);
       // SELECT already proves an empty mailbox; with no cached UIDs there is nothing to reconcile.
       if (mb.exists === 0 && known.length === 0) return seen;
+      clearRefusal(c);
       const found = await c.search({ all: true }, { uid: true });
       // A refused search says nothing about which cached messages still exist.
-      if (!found) throw new ProviderError(L("errors.imap.listRefused"), false);
+      if (!found) searchRefused(c);
       // gathered and split a few thousand at a time (Codex R46: 500,000 mapped and filtered at once, 46 to 71 ms)
       const serverUids = new Set<number>();
       await addAll(serverUids, found);
@@ -1600,6 +1624,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             releaseRead = await ctx.incoming?.acquire(accountId, sink.signal, reset);
             releaseLarge = await ctx.incoming?.promote?.(accountId, sink.signal, reset);
             check();
+            // an arrival announced while this one waited for its permits goes first (Codex code review #6)
+            if (yielding()) break;
             fetched = true;
             let source: Buffer | undefined;
             let invalid = false;
@@ -1982,10 +2008,12 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         };
         // plan 266: the Inbox's new mail first, before a STATUS per folder and every sweep (a large folder, or one the
         // server refuses, never keeps it waiting). It acknowledges nothing: the read after the sweeps takes the same UIDs
-        // again (what this one stored is found by its place), and what it can't tell apart (moved in from a folder not
-        // swept yet) it holds for that read, which plan 114 lets adopt it
+        // again (what this one stored is found by its place); mail with a stored twin (moved in by another app) is left
+        // to that read, which plan 114 lets adopt it
+        // (what it stores is new to this pass only once the ordered read meets it there: Codex code review #2)
+        const early = new Set<number>();
         if (r.inbox && cursor.mailboxes[r.inbox]) {
-          await syncMailbox(c, r.inbox, cursor, sink, touched, { introduced, seen, arrivals: true });
+          await syncMailbox(c, r.inbox, cursor, sink, touched, { introduced: early, seen, arrivals: true });
           if (sink.signal.aborted) return;
         }
         // the custom folders to read this pass: new ones, and known ones STATUS says changed
@@ -2115,7 +2143,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         if (firstRead) sink.progress?.({ done: 0, total: boxes.size + custom.length, unit: "folders" });
         for (const path of boxes) {
           if (sink.signal.aborted) return;
-          await isolated(path, () => syncMailbox(c, path, cursor, sink, touched, { introduced, seen, checkpoint: swept.get(path) ?? null, reidentify: cursor.mailboxes[path] === undefined && (pending.size > 0 || vanishedIds.size > 0) }));
+          await isolated(path, () => syncMailbox(c, path, cursor, sink, touched, { introduced, seen, early, checkpoint: swept.get(path) ?? null, reidentify: cursor.mailboxes[path] === undefined && (pending.size > 0 || vanishedIds.size > 0) }));
           folderRead();
         }
         for (const path of custom) {

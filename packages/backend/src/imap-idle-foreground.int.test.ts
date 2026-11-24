@@ -405,15 +405,19 @@ describe("plan 266: a body run yields to an Inbox arrival", () => {
     const w = await wire(true, [{ on: "command", command: "UID FETCH", match: /BODY\.PEEK\[\]/i, delay: 150 }]);
     const t = await account(w);
     await listener(w);
-    const bodies = () => w.commands.filter((c) => c.command === "UID FETCH" && /BODY\.PEEK\[\]/i.test(c.data)).length;
+    const isBody = (c: { command: string; data: string }) => c.command === "UID FETCH" && /BODY\.PEEK\[\]/i.test(c.data);
+    const bodies = () => w.commands.filter(isBody).length;
     const start = bodies();
     for (let i = 0; i < 12; i++) w.server.control.addMessage("INBOX", { raw: rawIdleMail(`backlog-${i}`, `Backlog ${i}`) });
     await w.wait(() => (bodies() > start ? true : undefined), "the backlog's first body");
+    const at = w.commands.length;
     w.server.control.addMessage("INBOX", { raw: rawIdleMail("arrival", "Arrival bytes") });
     const inbox = async () => (await t.client.call("threads.list", { view: "inbox" })).items.map((x) => x.subject);
     await expect.poll(inbox, { timeout: 5000 }).toContain("arrival");
-    // not after the twelve bodies before it
-    expect(bodies() - start).toBeLessThan(12);
+    // its envelope is read after the body under way (and at most one that had started), not after the other eleven
+    const envelope = w.commands.findIndex((c, i) => i >= at && c.command === "UID FETCH" && /ENVELOPE/i.test(c.data));
+    expect(envelope).toBeGreaterThanOrEqual(at);
+    expect(w.commands.slice(at, envelope).filter(isBody).length).toBeLessThanOrEqual(1);
     await expect.poll(() => sqlDb(t.backend.store).get<{ c: number }>("SELECT count(*) AS c FROM messages WHERE body_state = 'full'")!.c, { timeout: 8000 }).toBe(13);
     expect((await detail(t, "arrival")).messages[0]!.bodyText).toBe("Arrival bytes\n");
   });
