@@ -32,6 +32,7 @@ export function openDatabaseWith(driver: SqliteDriver, path: string, options: Op
     registerFunctions(db);
     registerBodyMatches(db);
     if (!options.readonly) {
+      if (options.deferCheckpoints) db.exec("PRAGMA wal_autocheckpoint = 0");
       migrate(db);
       db.onBeforeCommit(() => flushSearchOutbox(db, options.searchLogBytes));
       // no build survives a restart; writes made outside a transaction are batched now

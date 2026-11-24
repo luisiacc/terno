@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
-import type { BackupInfo } from "@terno/db/backups";
+import { unsettled, type BackupInfo } from "@terno/db/backups";
+import { cutShortSettle } from "../../../../packages/db/src/test/backup-fixtures";
 import { BEFORE_RESTORE_RETENTION_MS, readRestoredMarker, reconcileRestore, restoreFromBackup, RestoreError, restorePaths, settleRestored, type RestoreDeps } from "./restore";
 
 const dirs: string[] = [];
@@ -53,6 +54,36 @@ describe("restoring a backup (plan 95)", () => {
     expect(existsSync(restorePaths(w.db).journal)).toBe(false);
     // and the old mailbox, with its WAL, is whole aside
     expect(value(restorePaths(w.db).aside)).toBe("live");
+  });
+
+  it("plan 253: a backup not settled yet (a clone still in WAL mode) is settled first, and nothing appears beside the copy", async () => {
+    const w = world();
+    const wal = new DatabaseSync(w.backup.file);
+    wal.exec("PRAGMA journal_mode = WAL");
+    wal.close();
+    expect(unsettled(w.backup.file)).toBe(true);
+    await restoreFromBackup(w.db, { ...w.backup, size: statSync(w.backup.file).size }, roomy);
+    w.live.close();
+    expect(unsettled(w.backup.file)).toBe(false);
+    expect(value(w.db)).toBe("backup");
+    expect(readdirSync(w.dir).filter((f) => f.startsWith("terno.db.restoring"))).toEqual([]);
+    expect(existsSync(`${w.db}-wal`)).toBe(false);
+  });
+
+  it("plan 253: a backup whose settle was cut short is played back before it is copied: the backup as it was (Codex plan review #1)", async () => {
+    const w = world();
+    cutShortSettle(w.backup.file);
+    expect(existsSync(`${w.backup.file}-journal`)).toBe(true);
+    await restoreFromBackup(w.db, w.backup, roomy);
+    w.live.close();
+    expect(existsSync(`${w.backup.file}-journal`)).toBe(false);
+    expect(value(w.db)).toBe("backup");
+    const c = new DatabaseSync(w.db, { readOnly: true });
+    try {
+      expect(c.prepare("SELECT name FROM sqlite_master WHERE name = '_spill'").all()).toEqual([]);
+    } finally {
+      c.close();
+    }
   });
 
   it("needs room for the copy, and says so without touching anything", async () => {

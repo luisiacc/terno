@@ -49,6 +49,15 @@ export interface CheckpointWorker {
   stop(): Promise<void>;
 }
 
+/**
+ * Plan 253: checkpoints wait for this (a backup's first write after a clone),
+ * never longer than `maxMs`, so the WAL can't grow without bound.
+ */
+export interface CheckpointHold {
+  until: Promise<unknown>;
+  maxMs: number;
+}
+
 export interface SqliteDriver {
   bodyPreparation?: import("@terno/store").BodyPreparationFactory;
   readonly id: "node-sqlite" | "wasm-opfs" | "wasm-memory" | (string & {});
@@ -63,6 +72,6 @@ export interface SqliteDriver {
     /** plan 69: a VACUUM the store asked for may run when the file is next opened (a host with disk to check) */
     compactOnOpen: boolean;
   };
-  /** runs WAL checkpoints off the writer's thread (desktop) */
-  startCheckpointWorker?(path: string, onExit: () => void, intervalMs: number): CheckpointWorker;
+  /** runs WAL checkpoints off the writer's thread (desktop); with a hold, none until it settles (plan 253) */
+  startCheckpointWorker?(path: string, onExit: () => void, intervalMs: number, hold?: CheckpointHold): CheckpointWorker;
 }

@@ -12,6 +12,7 @@
 import { execFile, type ChildProcess } from "node:child_process";
 import { existsSync, statfsSync, statSync } from "node:fs";
 import { dirname } from "node:path";
+import { pathToFileURL } from "node:url";
 import { Worker } from "node:worker_threads";
 
 /** statfs f_type of APFS on macOS */
@@ -52,6 +53,71 @@ const untrack = (child: ChildProcess) => {
 /** Ends a clone in flight (the backend's shutdown): its promise rejects, its partial folder goes. */
 export function cancelClones(): void {
   killAll();
+}
+
+/**
+ * A backup file opened for reading only, never written: `immutable` keeps
+ * SQLite from touching it or adding a -wal or -shm beside it (plan 253: the
+ * first write to a fresh clone is the expensive one, and it is the settle's).
+ */
+export const untouchedUri = (file: string) => `${pathToFileURL(file).href}?immutable=1`;
+
+// mode=rw: a generation removed meanwhile is never created again
+const SETTLE_SOURCE = `
+const { parentPort, workerData } = require("node:worker_threads");
+const { DatabaseSync } = require("node:sqlite");
+try {
+  const db = new DatabaseSync(workerData.uri);
+  let mode;
+  try {
+    db.exec("PRAGMA synchronous = FULL");
+    mode = db.prepare("PRAGMA journal_mode = DELETE").get().journal_mode;
+  } finally {
+    db.close();
+  }
+  parentPort.postMessage(mode === "delete" ? { ok: true } : { ok: false, message: "journal mode stayed " + mode });
+} catch (e) {
+  parentPort.postMessage({ ok: false, message: String((e && e.message) || e) });
+}
+`;
+
+export interface Settle {
+  /** resolves with how long it took; rejects when it failed or was stopped */
+  done: Promise<number>;
+  /** ends it (a shutdown) and waits for its thread to be gone; a switch cut short leaves a journal the next settle plays back */
+  stop(): Promise<void>;
+}
+
+/**
+ * Plan 253: a clone backup's first write, off the caller's thread. After a
+ * clone, whichever file is written first pays while APFS splits the extents
+ * the two share (seconds on a large, fragmented mailbox), and a reader of
+ * that file waits meanwhile. Paid here, on the backup, the mailbox's own
+ * first write (its checkpoint, held until this ends) is free. The write is
+ * the switch to a rollback journal, which also leaves the backup one
+ * self-contained file (and plays back a journal an earlier settle left).
+ */
+export function settleBackup(file: string): Settle {
+  const started = performance.now();
+  const worker = new Worker(SETTLE_SOURCE, { eval: true, workerData: { uri: `${pathToFileURL(file).href}?mode=rw` } });
+  const exited = new Promise<void>((resolve) => worker.once("exit", () => resolve()));
+  const done = new Promise<number>((resolve, reject) => {
+    worker.once("message", (m: { ok: boolean; message?: string }) => {
+      if (m.ok) resolve(performance.now() - started);
+      else reject(new Error(m.message));
+      void worker.terminate();
+    });
+    worker.once("error", reject);
+    void exited.then(() => reject(new Error("the backup's settle ended before it answered")));
+  });
+  done.catch(() => {});
+  return {
+    done,
+    stop: async () => {
+      await worker.terminate();
+      await exited;
+    },
+  };
 }
 
 /** cp says why in words; the classifier reads errno codes */

@@ -3,6 +3,8 @@
  *
  * - On one APFS volume the backup is a clone made under the mailbox's
  *   exclusive lock (plan 112, `clone.ts`): milliseconds whatever its size.
+ *   It is verified without being written; its first write, which pays for
+ *   the clone, comes after the mailbox opened (plan 253, `settleBackup`).
  * - Elsewhere, or while another connection has the file, SQLite's backup API
  *   copies a consistent snapshot (the WAL's commits included) whatever other
  *   connections do, a few hundred pages at a time so the backend's event
@@ -23,7 +25,7 @@ import { backup as sqliteBackup, DatabaseSync } from "node:sqlite";
 import { dirname, join } from "node:path";
 import { SCHEMA_VERSION } from "./migrations";
 import { BACKUP_RETENTION_MS, fileSize, listBackups, readManifest, remove, type BackupInfo } from "./backups";
-import { cloneFile, lockMailbox, sameApfsVolume } from "./clone";
+import { cloneFile, lockMailbox, sameApfsVolume, untouchedUri } from "./clone";
 import { BackupError, NoRoomError, SchemaNewerError } from "./open-errors";
 
 export { BACKUP_RETENTION_MS, listBackups, type BackupInfo } from "./backups";
@@ -174,11 +176,13 @@ export async function prepareUpgrade(path: string, o: UpgradeOptions): Promise<U
         source.close();
       }
     }
-    // the copy opens, at the version it was taken from, with every page; it leaves WAL mode (both ways keep the
+    // the copy opens, at the version it was taken from, with every page. A clone is only read (plan 253): its first
+    // write costs seconds while APFS splits what it shares with the mailbox, so it leaves WAL mode later, off the
+    // backend's thread (settleBackup). A full copy shares nothing and leaves WAL mode now (both ways keep the
     // source's), so it is one self-contained file that reading never adds a -wal or -shm next to
-    const copy = new DatabaseSync(file);
+    const copy = method === "clone" ? new DatabaseSync(untouchedUri(file), { readOnly: true }) : new DatabaseSync(file);
     try {
-      copy.exec("PRAGMA journal_mode = DELETE");
+      if (method !== "clone") copy.exec("PRAGMA journal_mode = DELETE");
       const v = Number((copy.prepare("PRAGMA user_version").get() as { user_version: number }).user_version);
       const n = Number((copy.prepare("PRAGMA page_count").get() as { page_count: number }).page_count);
       if (v !== from || v !== expected.version || n !== expected.pages) throw new Error(`backup verification failed (v${v}/${from}, ${n}/${expected.pages} pages)`);

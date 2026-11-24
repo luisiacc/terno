@@ -19,8 +19,8 @@ import { closeSync, existsSync, fsyncSync, openSync, readFileSync, renameSync, r
 import { copyFile, open } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import { dirname } from "node:path";
-import type { BackupInfo } from "@terno/db/backups";
-import { cloneFile, sameApfsVolume } from "@terno/db/clone";
+import { unsettled, type BackupInfo } from "@terno/db/backups";
+import { cloneFile, sameApfsVolume, settleBackup, untouchedUri } from "@terno/db/clone";
 
 const MiB = 2 ** 20;
 export const BEFORE_RESTORE_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
@@ -151,6 +151,9 @@ async function restore(db: string, backup: BackupInfo, deps: RestoreDeps): Promi
   // what an earlier restore set aside goes now: the journal's states are only unambiguous without it
   for (const f of [p.aside, `${p.aside}-wal`, p.restoring]) rmSync(f, { force: true });
   try {
+    // plan 253: a clone backup not settled yet (still WAL mode, or a settle cut short left its journal) is settled
+    // first, so what's copied is the file with every commit played in, never one a journal still has to finish
+    if (unsettled(backup.file)) await settleBackup(backup.file).done;
     fault("copy");
     // off main's thread (a large mailbox takes a while); a clone where the volume can (the backup never changes)
     if (clone) {
@@ -159,7 +162,8 @@ async function restore(db: string, backup: BackupInfo, deps: RestoreDeps): Promi
       if (freeBytes(dirname(db)) < 64 * MiB) throw Object.assign(new Error("no room left after the copy"), { code: "ENOSPC" });
     } else await copyFile(backup.file, p.restoring);
     await syncFileAsync(p.restoring);
-    const check = new DatabaseSync(p.restoring, { readOnly: true });
+    // read only, so nothing appears beside the file about to become the mailbox
+    const check = new DatabaseSync(untouchedUri(p.restoring), { readOnly: true });
     try {
       const v = (check.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
       if (Number(v) !== backup.fromSchema) throw new Error("the backup isn't the version its manifest says");

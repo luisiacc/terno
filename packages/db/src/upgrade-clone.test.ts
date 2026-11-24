@@ -5,12 +5,14 @@
  * clone path never applies, and these are skipped).
  */
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statfsSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statfsSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
-import { cloneFile, cpError, sameApfsVolume } from "./clone";
+import { backupToSettle, unsettled } from "./backups";
+import { cloneFile, cpError, sameApfsVolume, settleBackup, untouchedUri } from "./clone";
+import { cutShortSettle } from "./test/backup-fixtures";
 import { SCHEMA_VERSION } from "./migrations";
 import { nodeSqliteDriver } from "./node-driver";
 import { classifyOpenError } from "./open-errors";
@@ -44,8 +46,9 @@ function workdir() {
 
 const opts = (w: { backups: string }, o: Partial<UpgradeOptions> = {}): UpgradeOptions => ({ backupsDir: w.backups, appVersion: "0.3.0", freeBytes: () => 100 * GiB, ...o });
 
-const drafts = (path: string) => {
-  const db = new DatabaseSync(path, { readOnly: true });
+/** a published backup is read without touching it (immutable): a clone stays in WAL mode until it is settled (plan 253) */
+const drafts = (path: string, backup = path.includes("/backups/")) => {
+  const db = backup ? new DatabaseSync(untouchedUri(path), { readOnly: true }) : new DatabaseSync(path, { readOnly: true });
   try {
     return { version: (db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, subjects: (db.prepare("SELECT subject FROM drafts ORDER BY id").all() as { subject: string }[]).map((r) => r.subject) };
   } finally {
@@ -236,6 +239,99 @@ describe.skipIf(!apfs)("prepareUpgrade's clone (plan 112)", () => {
     expect(sameApfsVolume(w.db, w.backups)).toBe(true);
     await prepareUpgrade(w.db, opts(w));
     expect(readdirSync(w.backups)).toHaveLength(1);
+  });
+});
+
+/** the file's journal-mode bytes (18–19): 2 in WAL mode, 1 with a rollback journal */
+const header = (file: string) => [...readFileSync(file).subarray(18, 20)];
+/** read without playing a journal back: an unfinished transaction's pages show (or the file doesn't even read) */
+const torn = (file: string) => {
+  try {
+    const db = new DatabaseSync(untouchedUri(file), { readOnly: true });
+    try {
+      return db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = '_spill'").all().length > 0;
+    } finally {
+      db.close();
+    }
+  } catch {
+    return true;
+  }
+};
+
+describe.skipIf(!apfs)("plan 253: the clone isn't written before the window opens; its settle is", () => {
+  it("prepareUpgrade only reads the clone: still in WAL mode, untouched since cp made it, nothing beside it", async () => {
+    const w = workdir();
+    oldMailbox(w.db, PREV, 2);
+    // a crash left a commit only in the WAL: the clone holds it all the same
+    const r = spawnSync(process.execPath, ["-e", `const { DatabaseSync } = require("node:sqlite"); const db = new DatabaseSync(${JSON.stringify(w.db)}); db.exec("PRAGMA journal_mode = WAL; PRAGMA wal_autocheckpoint = 0"); db.exec(${JSON.stringify(INSERT)}); process.exit(0);`]);
+    expect(r.status).toBe(0);
+    let made: { mtimeMs: number; header: number[] } | null = null;
+    const watched = (src: string, dst: string) => cloneFile(src, dst).then(() => void (made = { mtimeMs: statSync(dst).mtimeMs, header: header(dst) }));
+    const plan = await prepareUpgrade(w.db, opts(w, { clone: watched }));
+    expect(plan).toMatchObject({ made: true, method: "clone" });
+    // the verification used to switch the journal mode here: the write that costs seconds on a large mailbox
+    expect(made).toEqual({ mtimeMs: statSync(plan.backup!.file).mtimeMs, header: [2, 2] });
+    expect(header(plan.backup!.file)).toEqual([2, 2]);
+    expect(readdirSync(plan.backup!.dir).sort()).toEqual(["manifest.json", "terno.db"]);
+    expect(backupToSettle(w.backups)).toBe(plan.backup!.file);
+
+    // settled: one self-contained file with every row, the WAL-only one included, and nothing left to do
+    const ms = await settleBackup(plan.backup!.file).done;
+    expect(ms).toBeGreaterThanOrEqual(0);
+    expect(header(plan.backup!.file)).toEqual([1, 1]);
+    expect(readdirSync(plan.backup!.dir).sort()).toEqual(["manifest.json", "terno.db"]);
+    expect(drafts(plan.backup!.file)).toEqual({ version: PREV, subjects: ["draft 1", "draft 2", "only in the WAL"] });
+    expect(backupToSettle(w.backups)).toBeNull();
+    // settling again is harmless
+    await settleBackup(plan.backup!.file).done;
+    expect(header(plan.backup!.file)).toEqual([1, 1]);
+  });
+
+  it("the copy path still publishes a self-contained file at once", async () => {
+    const w = workdir();
+    oldMailbox(w.db, PREV, 1);
+    const plan = await prepareUpgrade(w.db, opts(w, { volume: () => false }));
+    expect(plan).toMatchObject({ method: "copy" });
+    expect(header(plan.backup!.file)).toEqual([1, 1]);
+    expect(backupToSettle(w.backups)).toBeNull();
+  });
+
+  it("a settle cut short leaves a journal that counts as unsettled, and the next settle plays it back (Codex plan review #1)", async () => {
+    const w = workdir();
+    oldMailbox(w.db, PREV, 2);
+    const plan = await prepareUpgrade(w.db, opts(w));
+    cutShortSettle(plan.backup!.file);
+    // the header already says rollback journal; the journal beside it is what still counts
+    expect(header(plan.backup!.file)).toEqual([1, 1]);
+    expect(existsSync(`${plan.backup!.file}-journal`)).toBe(true);
+    expect(unsettled(plan.backup!.file)).toBe(true);
+    expect(torn(plan.backup!.file)).toBe(true);
+    expect(backupToSettle(w.backups)).toBe(plan.backup!.file);
+    await settleBackup(plan.backup!.file).done;
+    expect(existsSync(`${plan.backup!.file}-journal`)).toBe(false);
+    expect(torn(plan.backup!.file)).toBe(false);
+    expect(statSync(plan.backup!.file).size).toBe(plan.backup!.size);
+    expect(drafts(plan.backup!.file)).toEqual({ version: PREV, subjects: ["draft 1", "draft 2"] });
+  });
+
+  it("a generation removed meanwhile is never made again: the settle fails and creates nothing (Codex plan review #2)", async () => {
+    const w = workdir();
+    const gone = join(w.dir, "gone", "terno.db");
+    mkdirSync(join(w.dir, "gone"));
+    await expect(settleBackup(gone).done).rejects.toThrow();
+    expect(existsSync(gone)).toBe(false);
+  });
+
+  it("stop() ends a settle and waits for its thread; the file stays one the next settle finishes", async () => {
+    const w = workdir();
+    oldMailbox(w.db, PREV, 1);
+    const plan = await prepareUpgrade(w.db, opts(w));
+    const job = settleBackup(plan.backup!.file);
+    await job.stop();
+    await expect(job.done).rejects.toThrow();
+    await settleBackup(plan.backup!.file).done;
+    expect(backupToSettle(w.backups)).toBeNull();
+    expect(drafts(plan.backup!.file).subjects).toEqual(["draft 1"]);
   });
 });
 

@@ -62,6 +62,98 @@ describe.runIf(sqliteDriver().features.checkpointWorker)("checkpoint worker", ()
   });
 });
 
+// plan 253: checkpoints wait for a backup's first write after a clone, within a bound
+describe.runIf(sqliteDriver().features.checkpointWorker)("a held checkpoint worker", () => {
+  const MiB = 2 ** 20;
+  /** bytes of the main file: it grows only when a checkpoint copies the WAL into it */
+  const fileBytes = async (db: { path: string }) => (await import("node:fs")).statSync(db.path).size;
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const fill = (db: ReturnType<typeof testDb>, a: number, n = 4) => {
+    for (let i = 0; i < n; i++) ingestMessages(db, Array.from({ length: 200 }, () => msg({ accountId: a, bodyText: "x".repeat(2000) })));
+  };
+
+  it.each(["resolves", "rejects", "never settles (the bound)"] as const)("checkpoints nothing while held, and starts once the hold %s", async (how) => {
+    const { startCheckpointWorker } = await import("./checkpoint");
+    const db = testDb();
+    const [a] = withAccounts(db);
+    db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+    let resolve!: () => void, reject!: (e: Error) => void;
+    const until = new Promise<void>((y, n) => ((resolve = y), (reject = n)));
+    const worker = startCheckpointWorker(db, 20, { until, maxMs: how === "never settles (the bound)" ? 400 : 60_000 })!;
+    try {
+      const before = await fileBytes(db);
+      fill(db, a!);
+      await wait(200);
+      expect(await fileBytes(db)).toBe(before);
+      if (how === "resolves") resolve();
+      if (how === "rejects") reject(new Error("settle failed"));
+      await wait(how === "never settles (the bound)" ? 600 : 200);
+      expect(await fileBytes(db)).toBeGreaterThan(before + MiB);
+    } finally {
+      await worker.stop();
+    }
+  });
+
+  it("a bulk writer doesn't wait below the hard limit; past it, it waits for the hold, and stop() lets it go", async () => {
+    const { startCheckpointWorker } = await import("./checkpoint");
+    const db = testDb();
+    db.exec("CREATE TABLE bulk (b BLOB)");
+    db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+    let resolve!: () => void;
+    const until = new Promise<void>((y) => (resolve = y));
+    const worker = startCheckpointWorker(db, 20, { until, maxMs: 60_000 })!;
+    try {
+      // past the budget (16 MiB) and below the hard limit (64 MiB): no wait
+      db.tx(() => {
+        for (let i = 0; i < 24; i++) db.run("INSERT INTO bulk VALUES (randomblob(1048576))");
+      });
+      let settled = false;
+      await Promise.race([worker.settle().then(() => (settled = true)), wait(100)]);
+      expect(settled).toBe(true);
+      // past the hard limit: waits for the hold, then a checkpoint
+      db.tx(() => {
+        for (let i = 0; i < 48; i++) db.run("INSERT INTO bulk VALUES (randomblob(1048576))");
+      });
+      settled = false;
+      const waiting = worker.settle().then(() => (settled = true));
+      await wait(150);
+      expect(settled).toBe(false);
+      resolve();
+      await waiting;
+      expect(settled).toBe(true);
+      // held again (a second worker) and stopped: the writer isn't left waiting
+      const other = startCheckpointWorker(db, 20, { until: new Promise(() => {}), maxMs: 60_000 })!;
+      db.tx(() => {
+        for (let i = 0; i < 72; i++) db.run("INSERT INTO bulk VALUES (randomblob(1048576))");
+      });
+      const left = other.settle();
+      await wait(50);
+      await other.stop();
+      await left;
+    } finally {
+      await worker.stop();
+    }
+  });
+
+  it("deferCheckpoints: the open (and its migration) never checkpoints on its thread; without it, SQLite's default", async () => {
+    const { openDatabaseWith } = await import("./portable");
+    const { nodeSqliteDriver } = await import("./node-driver");
+    const { mkdtempSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    const dir = mkdtempSync(join(tmpdir(), "terno-defer-"));
+    const deferred = openDatabaseWith(nodeSqliteDriver, join(dir, "a.db"), { deferCheckpoints: true });
+    const plain = openDatabaseWith(nodeSqliteDriver, join(dir, "b.db"));
+    try {
+      expect(deferred.get("PRAGMA wal_autocheckpoint")).toEqual({ wal_autocheckpoint: 0 });
+      expect(plain.get("PRAGMA wal_autocheckpoint")).toEqual({ wal_autocheckpoint: 1000 });
+    } finally {
+      deferred.close();
+      plain.close();
+    }
+  });
+});
+
 describe("migrations", () => {
   it("upgrades a v1 database and backfills the op target index for unsettled ops", async () => {
     const { MIGRATIONS, migrate } = await import("./migrations");

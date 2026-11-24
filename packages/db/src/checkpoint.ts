@@ -1,15 +1,16 @@
-import type { CheckpointWorker } from "./connection";
+import type { CheckpointHold, CheckpointWorker } from "./connection";
 import type { Db } from "./sqlite";
 
-export type { CheckpointWorker } from "./connection";
+export type { CheckpointHold, CheckpointWorker } from "./connection";
 
 /**
  * Hands WAL checkpoints to the driver's worker (desktop), with in-thread
  * autocheckpoints switched off meanwhile. If the worker ever dies, in-thread
  * autocheckpoints come back so the WAL can't grow unbounded. Drivers without
- * a worker keep SQLite's defaults.
+ * a worker keep SQLite's defaults. With a hold, the worker checkpoints only
+ * once it settles or its bound passes (plan 253).
  */
-export function startCheckpointWorker(db: Db, intervalMs = 1000): CheckpointWorker | null {
+export function startCheckpointWorker(db: Db, intervalMs = 1000, hold?: CheckpointHold): CheckpointWorker | null {
   const start = db.driver.startCheckpointWorker;
   if (db.path === ":memory:" || !db.driver.features.checkpointWorker || !start) return null;
   db.exec("PRAGMA wal_autocheckpoint = 0");
@@ -23,5 +24,6 @@ export function startCheckpointWorker(db: Db, intervalMs = 1000): CheckpointWork
       }
     },
     intervalMs,
+    hold,
   );
 }

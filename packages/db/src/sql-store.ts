@@ -108,7 +108,7 @@ import { answeredReminders, deleteExactReminders, deleteReminders, listReminders
 import { addPins, deleteExactPins, deletePins, listPins } from "./pins";
 import { COMPACT_KEY, compactPages, footprint, incrementalVacuum, removeStorage, storageThreads } from "./storage";
 import { autoReasons, categoryStats, countScope, pendingSuggestions, predictThread, quickActions, resolveScope } from "./categorize-bulk";
-import { startCheckpointWorker, type CheckpointWorker } from "./checkpoint";
+import { startCheckpointWorker, type CheckpointHold, type CheckpointWorker } from "./checkpoint";
 import { adoptProviderThread, deleteMessages, findIngestMessage, ingestMessages, recomputeThreads, setMessageBody } from "./ingest";
 import { tabsIdle, tabsSlice } from "./tabs";
 import { answeredThreads, arrivalRows, backfillSlice, factsIdle, ownMailChanged, referencesOfOwn, resetFacts, startRescan } from "./facts";
@@ -205,8 +205,8 @@ const FLAG_COLUMNS: Record<string, string> = {
 const NO_CLASSIFICATION: ClassifyResult = { deltas: [], auto: new Map(), touched: new Set(), suggested: 0, backfill: 0 };
 
 export interface SqlMailStoreOptions {
-  /** run WAL checkpoints on the driver's worker (desktop) */
-  checkpointWorker?: boolean;
+  /** run WAL checkpoints on the driver's worker (desktop); with a hold, none until it settles (plan 253) */
+  checkpointWorker?: boolean | { hold: CheckpointHold };
   log?: (level: "info" | "warn" | "error", message: string, extra?: unknown) => void;
   /**
    * Answer searches from the in-memory instant index whenever it is exactly
@@ -283,7 +283,10 @@ export class SqlMailStore implements MailStore {
     this.log = options.log ?? (() => {});
     observeBodyRetirement(db, () => this.queueBodyGarbage(true));
     db.onCommit(() => { if (!this.bodyClosing && db.get("SELECT 1 FROM body_captures WHERE owned=0 AND ready=1 LIMIT 1")) this.queueBodyGarbage(); });
-    this.checkpointer = options.checkpointWorker ? startCheckpointWorker(db) : null;
+    const cw = options.checkpointWorker;
+    this.checkpointer = cw ? startCheckpointWorker(db, undefined, cw === true ? undefined : cw.hold) : null;
+    // asked for a worker and got none (a driver without one): the open may have deferred checkpoints to it (plan 253)
+    if (cw && !this.checkpointer && db.path !== ":memory:") db.exec("PRAGMA wal_autocheckpoint = 1000");
     if (options.instantSearch) {
       this.instant = new InstantSearch({
         ...(options.instantSearch === true ? {} : options.instantSearch),

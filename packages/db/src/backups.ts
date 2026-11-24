@@ -4,7 +4,7 @@
  * with `terno.db` and `manifest.json`; a folder whose manifest doesn't name
  * its own file and size is never trusted, and goes.
  */
-import { readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 export const BACKUP_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
@@ -43,8 +43,9 @@ export function readManifest(dir: string, id: string): BackupInfo | null {
     const file = join(dir, id, "terno.db");
     const ok = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n) && n >= 0;
     if (!ok(m.fromSchema) || !ok(m.toSchema) || !ok(m.size) || !ok(m.createdAt) || typeof m.appVersion !== "string") return null;
-    // the manifest names its own file: one of another size is a different (or broken) copy
-    if (m.file !== "terno.db" || fileSize(file) !== m.size) return null;
+    // the manifest names its own file: one of another size is a different (or broken) copy, unless a settle cut short
+    // left its journal, whose playback puts the size back (plan 253)
+    if (m.file !== "terno.db" || (fileSize(file) !== m.size && !existsSync(`${file}-journal`))) return null;
     return { id, dir: join(dir, id), file, fromSchema: m.fromSchema, toSchema: m.toSchema, appVersion: m.appVersion, size: m.size, createdAt: m.createdAt };
   } catch {
     return null;
@@ -73,3 +74,25 @@ export function listBackups(backupsDir: string): BackupInfo[] {
   return out.sort((a, b) => b.createdAt - a.createdAt);
 }
 
+/**
+ * Still to settle: the header says WAL (bytes 18–19 are 2), or a rollback
+ * journal beside it (a settle cut short) is still to be played back.
+ */
+export function unsettled(file: string): boolean {
+  if (existsSync(`${file}-journal`)) return true;
+  let fd: number | null = null;
+  try {
+    fd = openSync(file, "r");
+    const b = new Uint8Array(2);
+    return readSync(fd, b, 0, 2, 18) === 2 && (b[0] === 2 || b[1] === 2);
+  } catch {
+    return false;
+  } finally {
+    if (fd !== null) closeSync(fd);
+  }
+}
+
+/** The kept backup that still has to be settled, or null. */
+export function backupToSettle(backupsDir: string): string | null {
+  return listBackups(backupsDir).find((b) => unsettled(b.file))?.file ?? null;
+}
