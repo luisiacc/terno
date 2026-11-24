@@ -124,3 +124,35 @@ it("keeps a first sync's look at changes within the control slice budget", async
     expect(saved).toEqual({ historyId: "20" });
   } finally { await provider.close(); }
 });
+
+// plan 265: an incremental pass's queues at the most a history read holds (10,000 additions over five pages, every one
+// already stored): merged, taken newest first and looked up without stalling the loop
+it("keeps a catch-up's queue of 10,000 additions within the control slice budget", async () => {
+  const pages = 5;
+  let lookups = 0, raws = 0, saved: unknown;
+  const page = (n: number) => ({ historyId: "20", history: Array.from({ length: 4 }, (_, k) => ({ messagesAdded: Array.from({ length: 500 }, (_, i) => ({ message: { id: `m${n}-${k}-${i}` } })) })), ...(n + 1 < pages && { nextPageToken: `p${n + 1}` }) });
+  const fetch = async (input: string | URL) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith("/history")) return Response.json(page(Number(url.searchParams.get("pageToken")?.slice(1) ?? 0)));
+    raws++;
+    return Response.json({});
+  };
+  const ctx = { account: { id: 1, email: "reader@example.test" }, config: {}, store: {
+    messageByProviderId: async () => ({ id: ++lookups, subject: "", fromEmail: "sender@example.test" }), pendingAttachmentBodies: async () => [],
+  }, loadCursor: async () => ({ historyId: "10" }), saveCursor: async (value: unknown) => { saved = value; }, fetch } as unknown as ProviderContext;
+  const noop = async () => {};
+  const sink: SyncSink = { signal: new AbortController().signal, windowStart: 0, ingest: noop, updateFlags: noop,
+    removeMessages: noop, setBody: noop, setSyncState: noop, pendingMessageIds: async () => new Set() };
+  const provider = createGmailApiProvider(ctx, { tokens: { get: async () => "synthetic", invalidate() {} }, buildRaw: async () => new Uint8Array() });
+  try {
+    const budget = 15 * BUDGET_MULTIPLIER, monitor = watchLoop(budget);
+    try { await provider.sync(sink); }
+    finally {
+      const timing = monitor.stop();
+      expect(timing.stall, JSON.stringify(timing)).toBeLessThanOrEqual(budget);
+    }
+    expect(lookups).toBe(10_000);
+    expect(raws).toBe(0);
+    expect(saved).toEqual({ historyId: "20" });
+  } finally { await provider.close(); }
+});

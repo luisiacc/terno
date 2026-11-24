@@ -1,6 +1,7 @@
 import { retainedIncomingBytes } from "./incoming-size";
 import { gmailSendBody } from "./outgoing-wire";
 import { L } from "@terno/i18n";
+import { RpcError } from "@terno/core/rpc";
 import { LEAVE_FOLDER, MOVE_TO_FOLDER, type IncomingMessage, type LeaveFolderPayload, type MoveToFolderPayload, type ProviderFolder } from "@terno/store";
 import { CATEGORY_ACTIONS, CATEGORY_LABELS, FOLDER_NAME_MAX, FOLDERS_PER_ACCOUNT_MAX, isValidEmail } from "@terno/core";
 import { parseRaw, type ParsedMessage } from "./mime";
@@ -87,7 +88,11 @@ interface ReconcileCursor {
   historyId?: string;
   reconciliation: Reconciliation | { version: 1; stage: "restart" };
 }
-interface SyncPass extends SyncSink { check(): void }
+interface SyncPass extends SyncSink {
+  check(): void;
+  /** plan 265: a message failure held for the pass's end (fetchFull with `hold`); the pass throws it last */
+  held?: Held;
+}
 const LIST_TOKEN_MAX = 4096;
 const LIST_PAGES_MAX = 10_000;
 const HISTORY_BYTES = 256 * 1024;
@@ -131,6 +136,12 @@ export const LONG_SYNC_MS = 10 * 60_000;
 
 /** plan 102: a pass's share of a first sync; then another pass, which reads new mail first */
 export const FIRST_SYNC_CHUNK_MS = 60_000;
+
+/** plan 265: a pass's share of the flag snapshot backlog (~125 reads at the quota) before its history; then another pass */
+export const FLAG_SNAPSHOTS_MS = 30_000;
+
+/** plan 265: a long incremental pass looks at history again this often, so new mail waits a step, never the pass */
+export const ARRIVALS_EVERY_MS = 60_000;
 
 /**
  * Plan 227: messages whose labels a look at new mail during a first sync reads again, at most: about a chunk of reads
@@ -535,8 +546,19 @@ class IncomingResourceError extends ProviderError {
   override get expected(): boolean { return true; }
 }
 
+/**
+ * Plan 265: what one message's own content decides (its siblings read fine): on the paths that bring new mail, held for
+ * the pass's end rather than failing its siblings. Worker faults, network, quota and sign-in are the pass's.
+ */
+const MESSAGE_FAILURES = new Set(["input-limit", "worker-timeout", "envelope-unavailable", "mime-limit-headers", "mime-limit-addresses"]);
+
+/** Plan 265: a failure held for a pass's end: the message stays unstored, so nothing saves progress past it. */
+interface Held { error?: unknown }
+
 function processingError(error: IncomingProcessingError | ResponseBodyLimitError): ProviderError {
   if (error instanceof IncomingProcessingError && error.code === "mime-limit-parts") return new IncomingCaptureRefusal("mime-parts");
+  // plan 265: the parser's verdict IMAP already records (imap.ts), a repair rather than a failed pass
+  if (error instanceof IncomingProcessingError && error.code === "mime-limit-depth") return new IncomingCaptureRefusal("mime-depth");
   if (error instanceof ResponseBodyLimitError || error.code === "input-limit" || error.code === "result-limit") return new IncomingResourceError("input-limit", L("errors.mail.processingLimit"));
   if (error.code.startsWith("malformed-")) return invalidResponse();
   if (error.code === "worker-timeout") return new IncomingResourceError(error.code, L("errors.mail.processingTimedOut"));
@@ -796,8 +818,14 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
   /** plan 102: Gmail's own receive time of what fetchFull reads, while a first sync's listing asks (never a fallback date) */
   let received: Map<string, number> | null = null;
 
-  async function fetchFull(ids: string[], sink: SyncPass): Promise<Set<string>> {
+  /**
+   * Messages downloaded whole and stored, 50 at a time; those Gmail no longer has are returned. `hold` (plan 265): a
+   * message only its own content fails (or whose repair couldn't be recorded) is left unstored and held in
+   * `sink.held` while its siblings go on; the caller saves no progress past it and the pass throws it at its end.
+   */
+  async function fetchFull(ids: string[], sink: SyncPass, hold = false): Promise<Set<string>> {
     ctx.google?.check({ endpoint: "gmail-api", purpose: "mail" });
+    const held = hold ? sink.held : undefined;
     const gone = new Set<string>();
     let batch: { message: IncomingMessage; release?: () => void }[] = [];
     let batchBytes = 0;
@@ -872,7 +900,18 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
             // Enumeration isn't a snapshot: a message may disappear before its download.
             if (error instanceof GmailApiError && error.resource === `/messages/${id}?format=raw` && error.status === 404) { await sink.retireCapture?.(locator); gone.add(id); return; }
             if (error instanceof IncomingCaptureRefusal && sink.blockCapture) {
-              check(); await sink.blockCapture(locator, error.reason, repair?.revision ?? 0); check(); return;
+              check();
+              try { await sink.blockCapture(locator, error.reason, repair?.revision ?? 0); }
+              catch (refused) {
+                // plan 265: a repair the store has no room for (its journal full) holds this message, not its siblings;
+                // a conflict, a fence or a store failure is the pass's
+                if (!held || !(refused instanceof RpcError && refused.code === "UNAVAILABLE" && refused.i18n?.key === "capture.capacity")) throw refused;
+                check(); held.error ??= refused; return;
+              }
+              check(); return;
+            }
+            if (held && (error instanceof IncomingCaptureRefusal || (error instanceof IncomingResourceError && MESSAGE_FAILURES.has(error.code)))) {
+              check(); held.error ??= error; return;
             }
             throw error;
           }
@@ -933,9 +972,13 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       sink.signal.removeEventListener("abort", canceled);
       reset.removeEventListener("abort", resetCanceled);
     }
+    let stored = true;
+    try { await admission; }
+    catch (error) { failure ??= { error }; stored = false; }
+    // plan 265: what was downloaded before a sibling failed is stored too (the next pass doesn't read it again), unless
+    // storing is what failed, or the pass was cancelled or reset (the checks below throw, the first failure stays)
     try {
-      await admission;
-      if (!failure) {
+      if (stored) {
         sink.check();
         if (reset.aborted) throw new ProviderError(L("errors.gmail.requestOffline"), true);
         await flush();
@@ -950,13 +993,22 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     return gone;
   }
 
+  /** plan 265: where the flag snapshots' traversal stopped for time, for the next pass (in memory: a launch starts over) */
+  let flagPlace: { after: number; through: number } | undefined;
+
+  /**
+   * Durable flag snapshots read again (plan 38). Plan 265: at most FLAG_SNAPSHOTS_MS of them before the pass's history
+   * (10,000 of them were ~40 minutes at the quota, new mail waiting), then another pass soon (`again()`), which goes
+   * on from where this one stopped.
+   */
   async function reconcileFlags(sink: SyncPass): Promise<ProviderError | undefined> {
     if (!ctx.flagObservation) return;
     const reset = reads.signal;
     const pass = new AbortController();
     const preparation = AbortSignal.any([sink.signal, reset, pass.signal]);
     let failure: { error: unknown } | undefined, malformed: ProviderError | undefined;
-    let after: number | undefined, through: number | undefined;
+    let after = flagPlace?.after, through = flagPlace?.through;
+    const started = Date.now();
     const check = () => {
       sink.check();
       if (reset.aborted) throw new ProviderError(L("errors.gmail.requestOffline"), true);
@@ -966,7 +1018,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       check();
       const page = await store.pendingFlagSnapshots({ limit: 50, ...(after !== undefined && { afterMessageId: after }), ...(through !== undefined && { throughMessageId: through }) });
       through ??= page.throughMessageId;
-      if (!page.items.length) break;
+      if (!page.items.length) { flagPlace = undefined; break; }
       const updates: FlagUpdate[] = [], gone: number[] = [];
       try {
         await download(page.items, async (target) => {
@@ -989,8 +1041,10 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       if (gone.length) await sink.removeMessages(gone);
       if (failure) throw failure.error;
       if (!updates.length) await yieldPage();
-      if (!page.hasMore) break;
+      if (!page.hasMore) { flagPlace = undefined; break; }
       after = page.items[page.items.length - 1]!.id;
+      // out of this pass's share: new mail is read before the rest (10,000 snapshots are ~40 minutes at the quota)
+      if (Date.now() - started > FLAG_SNAPSHOTS_MS) { flagPlace = { after, through }; sink.again?.(); break; }
     }
     return malformed;
   }
@@ -1165,9 +1219,11 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     await relabel([...yours.keys()], sink, async (id) => yours.get(id), () => {});
     fresh.reverse();
     const live: SyncPass = { ...sink, ingest: (messages) => sink.ingest(messages, { live: true }) };
-    for (let i = 0; i < fresh.length; i += 50) await fetchFull(fresh.slice(i, i + 50), live);
+    for (let i = 0; i < fresh.length; i += 50) await fetchFull(fresh.slice(i, i + 50), live, true);
     const rest = new Map(others.slice(0, PEEK_RELABEL - yours.size));
     await relabel([...rest.keys()], sink, async (id) => rest.get(id), () => {});
+    // plan 265: a message held back stays the next look's (the first sync goes on; the pass says why at its end)
+    if (sink.held?.error !== undefined) return;
     if (latest !== from || (unplaced && !state.gap)) await save({ ...state, peek: latest, ...(unplaced && { gap: true }) });
   }
 
@@ -1349,74 +1405,128 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       if (error instanceof ExpiredHistory || error instanceof HistoryOverflow) return void sink.again?.();
       throw error;
     }
+    if (sink.held?.error !== undefined) throw sink.held.error;
   }
 
-  async function incremental(sink: SyncPass, cursor: Cursor) {
-    const added = new Set<string>();
-    const changed = new Set<string>();
-    const deleted = new Set<string>();
-    // plan 260: messages a record names without saying how they changed; read by ID below (Google's sync guide: only
-    // the labels might change, so labels and existence are all there is to read), never a reason to reconcile
-    const summary = new Set<string>();
+  /** What history says changed after a position: each kind in history's order, and the position it reaches. */
+  interface HistoryChanges { added: string[]; changed: string[]; deleted: string[]; untyped: string[]; latest: string; references: number }
+
+  /**
+   * History after `from`, every page: gone (404) is ExpiredHistory, longer than a pass reads (pages, references, a
+   * repeated continuation) is HistoryOverflow.
+   */
+  async function historySince(from: string, sink: SyncPass): Promise<HistoryChanges> {
+    const changes: HistoryChanges = { added: [], changed: [], deleted: [], untyped: [], latest: from, references: 0 };
     let pageToken: string | undefined;
     const pages = new Set<string>();
-    let latest = cursor.historyId, references = 0, pageCount = 0;
+    let pageCount = 0;
     do {
       if (++pageCount > HISTORY_PAGES) throw new HistoryOverflow();
-      const q = new URLSearchParams({ startHistoryId: cursor.historyId, maxResults: "500" });
+      const q = new URLSearchParams({ startHistoryId: from, maxResults: "500" });
       for (const t of ["messageAdded", "messageDeleted", "labelAdded", "labelRemoved"]) q.append("historyTypes", t);
       if (pageToken) q.set("pageToken", pageToken);
       const page = readHistory(await syncRead(`/history?${q}`, sink).catch((error: unknown) => {
         if (error instanceof GmailApiError && error.resource === `/history?${q}` && error.status === 404) throw new ExpiredHistory();
         throw error;
       }));
-      references += historyReferences(page);
-      if (references > HISTORY_TOTAL_REFS) throw new HistoryOverflow();
+      changes.references += historyReferences(page);
+      if (changes.references > HISTORY_TOTAL_REFS) throw new HistoryOverflow();
       if (page.nextPageToken !== undefined && !nonempty(page.nextPageToken)) throw invalidResponse();
       if (page.nextPageToken !== undefined && (page.nextPageToken.length > LIST_TOKEN_MAX || pages.has(page.nextPageToken))) throw new HistoryOverflow();
       pageToken = continuation(page.nextPageToken, pages);
-      if (earlierHistory(page.historyId, latest)) throw invalidResponse();
+      if (earlierHistory(page.historyId, changes.latest)) throw invalidResponse();
       for (const h of page.history ?? []) {
-        for (const a of h.messagesAdded ?? []) added.add(a.message.id);
-        for (const d of h.messagesDeleted ?? []) deleted.add(d.message.id);
-        for (const l of h.labelsAdded ?? []) changed.add(l.message.id);
-        for (const l of h.labelsRemoved ?? []) changed.add(l.message.id);
-        for (const id of untyped(h)) summary.add(id);
+        for (const a of h.messagesAdded ?? []) changes.added.push(a.message.id);
+        for (const d of h.messagesDeleted ?? []) changes.deleted.push(d.message.id);
+        for (const l of h.labelsAdded ?? []) changes.changed.push(l.message.id);
+        for (const l of h.labelsRemoved ?? []) changes.changed.push(l.message.id);
+        // plan 260: messages a record names without saying how they changed; read by ID (Google's sync guide: only
+        // the labels might change, so labels and existence are all there is to read), never a reason to reconcile
+        changes.untyped.push(...untyped(h));
       }
-      latest = page.historyId;
+      changes.latest = page.historyId;
       if (pageToken) { await new Promise<void>((resolve) => setTimeout(resolve, 0)); sink.check(); }
     } while (pageToken);
+    return changes;
+  }
 
+  /**
+   * History since the cursor applied: additions (live mail, the newest first), summary-only messages, labels read
+   * again, then deletions; the cursor saved once all of it is. Plan 265: in steps of at most 50, and every
+   * ARRIVALS_EVERY_MS between steps history is read again from where the pass got to and merged (new mail is taken
+   * next), so a long catch-up never keeps what arrives during it waiting for the whole pass.
+   */
+  async function incremental(sink: SyncPass, cursor: Cursor) {
+    const first = await historySince(cursor.historyId, sink);
+    let latest = first.latest, merged = first.references, looking = true, lookedAt = Date.now();
     const lookup = storedMessage(sink);
     const known = async (id: string) => (await lookup(id))?.id;
+    const deleted = new Set<string>();
+    // additions in history's order, taken from the end (the newest first); every one ever queued, never queued twice
+    const arrivals: string[] = [], added = new Set<string>();
+    // summary-only ids and labels to read, in order; an id waits once (a look that names it again after it was read
+    // queues it again: it changed since)
+    const summary: string[] = [], summaryWaiting = new Set<string>();
+    const rereads: string[] = [], rereadWaiting = new Set<string>();
+    let summaryAt = 0, rereadAt = 0;
+    const reread = (id: string) => { if (!rereadWaiting.has(id)) { rereadWaiting.add(id); rereads.push(id); } };
     // Authoritative deletions release bounded repair capacity before new capture admissions.
     let retired = 0;
-    for (const gid of deleted) {
-      if (++retired % 50 === 0) { await new Promise<void>((resolve) => setTimeout(resolve, 0)); sink.check(); }
-      const locator = { kind: "gmail" as const, providerId: gid };
-      if (await store.repairs?.get(accountId, locator)) await sink.retireCapture?.(locator);
-    }
-    const toFetch: string[] = [];
-    for (const id of added) if (!deleted.has(id) && !(await known(id))) toFetch.push(id);
+    const merge = async (changes: HistoryChanges) => {
+      for (const gid of changes.deleted) {
+        if (deleted.has(gid)) continue;
+        deleted.add(gid);
+        if (++retired % 50 === 0) { await new Promise<void>((resolve) => setTimeout(resolve, 0)); sink.check(); }
+        const locator = { kind: "gmail" as const, providerId: gid };
+        if (await store.repairs?.get(accountId, locator)) await sink.retireCapture?.(locator);
+      }
+      for (const id of changes.added) if (!added.has(id)) { added.add(id); arrivals.push(id); }
+      for (const id of changes.untyped) if (!summaryWaiting.has(id)) { summaryWaiting.add(id); summary.push(id); }
+      for (const id of changes.changed) reread(id);
+    };
+    await merge(first);
+    // plan 265: new history merged between steps; gone or too long, the pass stops looking (its cursor then is the
+    // position merged last, what the look named is the next pass's), and it stops after twice a pass's references
+    const look = async () => {
+      if (!looking || Date.now() - lookedAt < ARRIVALS_EVERY_MS) return;
+      let more: HistoryChanges;
+      try { more = await historySince(latest, sink); }
+      catch (error) {
+        if (error instanceof ExpiredHistory || error instanceof HistoryOverflow) { looking = false; return; }
+        throw error;
+      }
+      lookedAt = Date.now();
+      merged += more.references;
+      if (merged > 2 * HISTORY_TOTAL_REFS) looking = false;
+      await merge(more);
+      latest = more.latest;
+    };
     // plan 41: what history added since the cursor is live mail (a full sync and the attachment re-fetch aren't)
     const live: SyncPass = { ...sink, ingest: (messages) => sink.ingest(messages, { live: true }) };
-    for (let i = 0; i < toFetch.length; i += 50) await fetchFull(toFetch.slice(i, i + 50), live);
+    const nextArrivals = async () => {
+      const ids: string[] = [];
+      while (ids.length < 50 && arrivals.length) {
+        const id = arrivals.pop()!;
+        if (!deleted.has(id) && !(await known(id))) ids.push(id);
+      }
+      return ids;
+    };
     // plan 260: a summary-only message held here is relabelled (a 404 removes it); one not held comes in whole as a
     // reconciliation would have brought it: within the account's window, and not live (only a typed addition says new)
-    let unheld: string[] = [];
-    let looked = 0;
-    for (const id of summary) {
-      if (++looked % 50 === 0) { await new Promise<void>((resolve) => setTimeout(resolve, 0)); sink.check(); }
-      if (deleted.has(id)) continue;
-      if (await known(id)) changed.add(id);
-      else if (!added.has(id)) unheld.push(id);
-    }
-    // (Codex code review) the window by Gmail's own date, read before any download: old mail is never captured, nor
-    // left a capture repair; no date said, it's taken (as a listing that can't place it would have)
-    if (sink.windowStart > 0 && unheld.length) {
-      const old = new Set<string>();
-      for (let i = 0; i < unheld.length; i += 50) {
-        await download(unheld.slice(i, i + 50), async (gid) => {
+    const summaryStep = async () => {
+      let unheld: string[] = [];
+      for (const id of summary.slice(summaryAt, summaryAt + 50)) {
+        summaryAt++;
+        summaryWaiting.delete(id);
+        if (deleted.has(id)) continue;
+        if (await known(id)) reread(id);
+        else if (!added.has(id)) unheld.push(id);
+      }
+      // (Codex code review) the window by Gmail's own date, read before any download: old mail is never captured, nor
+      // left a capture repair; no date said, it's taken (as a listing that can't place it would have)
+      if (sink.windowStart > 0 && unheld.length) {
+        const old = new Set<string>();
+        await download(unheld, async (gid) => {
           try {
             const m = await syncRead(`/messages/${gid}?format=minimal`, sink);
             const at = isRecord(m) && typeof m.internalDate === "string" && /^\d+$/.test(m.internalDate) ? Number(m.internalDate) : undefined;
@@ -1427,13 +1537,28 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
           }
         });
         sink.check();
+        unheld = unheld.filter((gid) => !old.has(gid));
       }
-      unheld = unheld.filter((gid) => !old.has(gid));
+      if (unheld.length) await fetchFull(unheld, sink, true);
+    };
+    const rereadStep = async () => {
+      const gids: string[] = [];
+      for (const id of rereads.slice(rereadAt, rereadAt + 50)) {
+        rereadAt++;
+        rereadWaiting.delete(id);
+        if (!deleted.has(id)) gids.push(id);
+      }
+      await relabel(gids, sink, known, (gid) => deleted.add(gid));
+      sink.check();
+    };
+    for (;;) {
+      const ids = await nextArrivals();
+      if (ids.length) await fetchFull(ids, live, true);
+      else if (summaryAt < summary.length) await summaryStep();
+      else if (rereadAt < rereads.length) await rereadStep();
+      else break;
+      await look();
     }
-    for (let i = 0; i < unheld.length; i += 50) await fetchFull(unheld.slice(i, i + 50), sink);
-
-    await relabel([...changed].filter((gid) => !deleted.has(gid)), sink, known, (gid) => deleted.add(gid));
-    sink.check();
     let removals: number[] = [];
     for (const gid of deleted) {
       const locator = { kind: "gmail" as const, providerId: gid };
@@ -1444,6 +1569,8 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     }
     sink.check();
     if (removals.length) await sink.removeMessages(removals);
+    // plan 265: a message held back (left unstored) keeps the cursor before it; the pass says why at its end
+    if (sink.held?.error !== undefined) return;
     await saveProgress(sink, { historyId: latest });
   }
 
@@ -1570,7 +1697,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       };
       const effect = async (run: () => Promise<void>) => { check(); await run(); check(); };
       const sink: SyncPass = {
-        ...outer, check,
+        ...outer, check, held: {},
         ingest: (messages, o) => effect(() => { messages.forEach((m) => meet(m.gmailLabels)); return outer.ingest(messages, o); }),
         updateFlags: (updates) => effect(() => { updates.forEach((u) => meet(u.gmailLabels)); return outer.updateFlags(updates); }),
         removeMessages: (ids) => effect(() => outer.removeMessages(ids)),
@@ -1580,14 +1707,14 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       if (outer.quick) return quickPass(sink);
       // Explicit source admission must not wait behind an expired/full reconciliation.
       const requested = sink.captureRetry;
+      // plan 265: a retried repair its own content fails again stays pending and doesn't keep new mail out (held)
       if (requested?.locator.kind === "gmail") {
         const repair = await store.repairs?.get(accountId, requested.locator);
-        if (repair?.state === "pending" && repair.revision === requested.revision) await fetchFull([requested.locator.providerId], sink);
-      } else {
-        const retry = await store.repairs?.list(accountId, "", "pending");
-        if (retry?.items.length) await fetchFull(retry.items.flatMap((r) => r.locator.kind === "gmail" ? [r.locator.providerId] : []), sink);
+        if (repair?.state === "pending" && repair.revision === requested.revision) await fetchFull([requested.locator.providerId], sink, true);
       }
       sink.check();
+      // plan 265: a share of the flag backlog, then new mail (the rest a pass at a time). Before history: a snapshot
+      // acknowledged during this pass would be read under its old epoch and refused (plan 38), a wasted read each
       const malformed = await reconcileFlags(sink);
       sink.check();
       const cursor = await ctx.loadCursor<unknown>();
@@ -1629,9 +1756,16 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         }
       }
       sink.check();
+      // plan 265: retries asked for earlier (a page of them) after new mail; the one asked for now went first
+      if (requested?.locator.kind !== "gmail") {
+        const retry = await store.repairs?.list(accountId, "", "pending");
+        if (retry?.items.length) await fetchFull(retry.items.flatMap((r) => r.locator.kind === "gmail" ? [r.locator.providerId] : []), sink, true);
+      }
+      sink.check();
       await captureAttachments(sink);
       sink.check();
       if (malformed) throw malformed;
+      if (sink.held?.error !== undefined) throw sink.held.error;
       // plan 101: older mail, after everything new
       await backfill(sink);
     },
