@@ -2542,7 +2542,7 @@ export class BackendCore {
             if (!o.quick) await provider.folders?.(sink);
           } catch (error) {
             // the provider's own failure (offline, a malformed answer) waits; a sign-in to redo or a store failure doesn't
-            if (!(error instanceof ProviderError) || error instanceof ProviderAuthError || error instanceof ProviderCooldownError || (isOAuthKind(accountKind) && (error.httpResponse?.status === 429 || (error.httpResponse?.status === 403 && (error.retryable || this.requests.get(accountId)?.paused))))) throw error;
+            if (!(error instanceof ProviderError) || error instanceof ProviderAuthError || error instanceof ProviderCooldownError || (this.requests.has(accountId) && (error.httpResponse?.status === 429 || (error.httpResponse?.status === 403 && (error.retryable || this.requests.get(accountId)?.paused))))) throw error;
           }
         } finally {
           arrivals.end();
@@ -2609,7 +2609,7 @@ export class BackendCore {
         const wake = error instanceof ProviderCooldownError ? this.cooldown?.nextWakeDelay() : null;
         this.log("warn", `sync failed for account ${accountId}`, `${message}${syncFailureDetail(error)}${wake != null ? ` (tries again in ${Math.ceil(wake / 1000)} s)` : error instanceof ProviderCooldownError ? " (no retry scheduled)" : ""}`);
         if (!this.store.isOpen) return;
-        if (error instanceof ProviderCooldownError || (isOAuthKind(accountKind) && error instanceof ProviderError && (error.httpResponse?.status === 429 || (error.httpResponse?.status === 403 && (error.retryable || this.requests.get(accountId)?.paused))))) {
+        if (error instanceof ProviderCooldownError || (this.requests.has(accountId) && error instanceof ProviderError && (error.httpResponse?.status === 429 || (error.httpResponse?.status === 403 && (error.retryable || this.requests.get(accountId)?.paused))))) {
           this.connectivity.succeeded(accountId);
           await status.constrain(authority, { message, i18n: lastErrorI18n }, () => !this.requestsReady(accountId));
           await statusRun.end({ status: "error", lastError: message, lastErrorI18n, connection: null });
