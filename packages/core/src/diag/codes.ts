@@ -123,7 +123,6 @@ export const CODES = {
   // sender icons (plan 22): counts, sizes and durations only, never a domain, an address or a URL
   "icons.batch": c("count", "durationMs"),
   "icons.trimmed": c("count", "bytes"),
-  "icons.people": c("count", "durationMs", "status"),
 
   // renderer
   "ui.boundary": c("area", "errorClass"),

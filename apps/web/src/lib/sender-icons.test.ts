@@ -96,7 +96,7 @@ describe("the renderer's sender icons (plan 22)", () => {
   it("an avatar that's gone keeps no image alive: 5,000 avatars come and go, snapshots don't accumulate", async () => {
     for (let i = 0; i < 5000; i++) {
       const email = `p${i}@x${i}.com`;
-      const ref = { id: `d:x${i}.com`, v: 1, kind: "site" as const, px: 32, full: false };
+      const ref = { id: `d:x${i}.com`, v: 1, px: 32, full: false };
       store.entries.set(email, { state: "ref", ref });
       store.data.set(`${ref.id}:1`, `data:image/png;base64,${"A".repeat(2000)}`);
       const off = subscribeIcon(email, () => {});
@@ -127,23 +127,17 @@ describe("the renderer's sender icons (plan 22)", () => {
 
   it("an icon is measured once, when its bytes arrive, and its fit goes with them (plan 252)", async () => {
     measured.urls.length = 0;
-    const site = { id: "d:acme.com", v: 1, kind: "site" as const, px: 64, full: false };
-    const photo = { id: "p:ana", v: 1, kind: "photo" as const, px: 96, full: true };
+    const site = { id: "d:acme.com", v: 1, px: 64, full: false };
     store.entries.set("a@acme.com", { state: "ref", ref: site });
-    store.entries.set("ana@x.com", { state: "ref", ref: photo });
-    for (const e of ["a@acme.com", "ana@x.com"]) {
-      store.visible.add(e);
-      store.request(e);
-    }
+    store.visible.add("a@acme.com");
+    store.request("a@acme.com");
     await frame();
     const data = fake.pending.shift()!;
     expect(data.method).toBe("icons.data");
-    data.resolve({ "d:acme.com": "data:site", "p:ana": "data:photo" });
+    data.resolve({ "d:acme.com": "data:site" });
     await frame();
-    // a photo fills the disc as it is: only the website's icon is measured
     expect(measured.urls).toEqual(["data:site"]);
     expect(shown("a@acme.com")).toEqual({ ref: site, url: "data:site", fit: measured.fit });
-    expect(shown("ana@x.com")?.fit).toEqual(WHOLE);
     // nothing measured (bytes put by hand): the whole image as a mark
     store.data.set("d:other.com:1", "data:other");
     store.entries.set("b@other.com", { state: "ref", ref: { ...site, id: "d:other.com" } });
@@ -168,7 +162,7 @@ describe("the renderer's sender icons (plan 22)", () => {
     measured.urls.length = 0;
     let go!: () => void;
     measured.hold = new Promise((r) => (go = r));
-    const site = { id: "d:slow.com", v: 1, kind: "site" as const, px: 64, full: false };
+    const site = { id: "d:slow.com", v: 1, px: 64, full: false };
     store.entries.set("a@slow.com", { state: "ref", ref: site });
     store.visible.add("a@slow.com");
     store.request("a@slow.com");
@@ -195,7 +189,7 @@ describe("the renderer's sender icons (plan 22)", () => {
   });
 
   it("an icon whose bytes are gone (evicted, a lost file) is looked up again, once, while it's on screen (second Codex review)", async () => {
-    const ref = { id: "d:gone.com", v: 1, kind: "site" as const, px: 32, full: false };
+    const ref = { id: "d:gone.com", v: 1, px: 32, full: false };
     store.entries.set("a@gone.com", { state: "ref", ref });
     store.visible.add("a@gone.com");
     store.request("a@gone.com");
@@ -219,10 +213,10 @@ describe("the renderer's sender icons (plan 22)", () => {
   });
 });
 
-// A reset (a source on or off, photos listed, icons forgotten) never blanks the avatars on screen: they'd flash to
+// A reset (the source on or off, icons forgotten) never blanks the avatars on screen: they'd flash to
 // initials and back. What's on screen keeps drawing until its new answer can be drawn.
 describe("a reset doesn't flash the list", () => {
-  const ref = (id: string, v = 1) => ({ id, v, kind: "site" as const, px: 32, full: false });
+  const ref = (id: string, v = 1) => ({ id, v, px: 32, full: false });
   const answerAll = async (answer: (p: (typeof fake.pending)[number]) => unknown) => {
     for (let i = 0; i < 10 && fake.pending.length; i++) {
       const p = fake.pending.shift()!;
@@ -252,34 +246,35 @@ describe("a reset doesn't flash the list", () => {
   });
 
   it("a new icon replaces the old one only once its bytes are here", async () => {
-    showing("ana@gmail.com", ref("d:gmail.com"));
+    showing("ana@acme.com", ref("d:acme.com"));
     fake.listeners.forEach((l) => l({ icons: {}, reset: true }));
     await frame();
-    fake.pending.shift()!.resolve({ "ana@gmail.com": { ...ref("p:ana"), kind: "photo" } });
+    // the site's icon was refreshed: a new version
+    fake.pending.shift()!.resolve({ "ana@acme.com": ref("d:acme.com", 2) });
     await frame();
     await frame();
-    // the lookup answered; the photo's bytes are on their way: still the old icon
+    // the lookup answered; the new bytes are on their way: still the old icon
     expect(fake.pending.map((p) => p.method)).toEqual(["icons.data"]);
-    expect(shown("ana@gmail.com")?.url).toBe("data:d:gmail.com");
-    await answerAll(() => ({ "p:ana": "data:photo" }));
-    expect(shown("ana@gmail.com")?.url).toBe("data:photo");
+    expect(shown("ana@acme.com")?.url).toBe("data:d:acme.com");
+    await answerAll(() => ({ "d:acme.com": "data:acme-2" }));
+    expect(shown("ana@acme.com")?.url).toBe("data:acme-2");
   });
 
   it("an icon that's gone (its source off) goes to initials when the answer says so; off-screen ones are forgotten", async () => {
-    showing("ana@gmail.com", { ...ref("p:ana"), kind: "photo" } as unknown as ReturnType<typeof ref>);
+    showing("ana@acme.com", ref("d:acme.com"));
     store.entries.set("away@x.com", { state: "ref", ref: ref("d:x.com") });
     fake.listeners.forEach((l) => l({ icons: {}, reset: true }));
     expect(store.entries.has("away@x.com")).toBe(false);
     await frame();
-    expect(shown("ana@gmail.com")?.url).toBe("data:p:ana");
-    await answerAll(() => ({ "ana@gmail.com": null }));
-    expect(shown("ana@gmail.com")).toBeNull();
+    expect(shown("ana@acme.com")?.url).toBe("data:d:acme.com");
+    await answerAll(() => ({ "ana@acme.com": null }));
+    expect(shown("ana@acme.com")).toBeNull();
   });
 });
 
 // Codex review (plan 75)
 describe("holding through a reset, the edge cases", () => {
-  const ref = (id: string, v = 1) => ({ id, v, kind: "site" as const, px: 32, full: false });
+  const ref = (id: string, v = 1) => ({ id, v, px: 32, full: false });
   const showing = (email: string, a: ReturnType<typeof ref>) => {
     store.visible.add(email);
     store.entries.set(email, { state: "ref", ref: a });
@@ -375,7 +370,7 @@ describe("holding through a reset, the edge cases", () => {
 // A backend reset cannot retract RPC replies that are already on their way to the renderer.
 describe("reset generations", () => {
   const email = "ana@acme.com";
-  const ref = { id: "d:acme.com", v: 1, kind: "site" as const, px: 32, full: false };
+  const ref = { id: "d:acme.com", v: 1, px: 32, full: false };
   const reset = () => fake.listeners.forEach((l) => l({ icons: {}, reset: true }));
 
   it("an old lookup cannot resurrect an icon after the new generation answers none", async () => {
@@ -420,7 +415,7 @@ describe("reset generations", () => {
 
 describe("obsolete failures and retries (review regression)", () => {
   const email = "ana@acme.com";
-  const ref = (v: number) => ({ id: "d:acme.com", v, kind: "site" as const, px: 32, full: false });
+  const ref = (v: number) => ({ id: "d:acme.com", v, px: 32, full: false });
   const reset = () => fake.listeners.forEach((l) => l({ icons: {}, reset: true }));
   const showing = () => {
     store.visible.add(email);

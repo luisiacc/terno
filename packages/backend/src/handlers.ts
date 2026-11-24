@@ -3,7 +3,6 @@ import { RpcError, type Draft, type DraftAddress, type Handlers } from "@terno/c
 import { agentsMaySend, nextColor, parseHandoff, capFilterName, categoryRule, folderRule, isFilterable, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, matchExcerpt, parseSearch, resolveSearch, rowMatchOf, searchWithFilter, type ThreadAction, type AccountPrefs, PINS_MAX, REMINDERS_MAX, SCHEDULED_MAX, FORWARD_ADDRESSES_MAX_CHARS } from "@terno/core";
 import { L } from "@terno/i18n";
 import { movedNothing, SearchCancelledError, StaleCursorError, wantedAsDated, type AddedBy, type DraftRow, type FolderMoved, type MessageState } from "@terno/store";
-import { GMAIL_SCOPES } from "@terno/mail/portable";
 import type { GmailAccountConfig, ImapAccountConfig } from "@terno/mail";
 import { BackendCore as Backend } from "./core";
 import { forgetSignInVersion, signInVersion, admitBrowserGoogle, beginSignIn, endSignIn, googleAdmission, changeOwnerTo, gmailClaim, googleFlowActive, imapClaim, loginFailed, reconnectAccount, validateGoogleConnection } from "./identity";
@@ -20,10 +19,9 @@ import { AGENT_ATTACHMENT, AgentFileCancelled, locateForAgent } from "./agent-at
 import { FolderExports } from "./folder-export";
 import { deleteSnippet, listSnippets, saveSnippet } from "./snippets";
 import { linksOf, resolveLink } from "./links";
-import { followFavoriteFolders, readAgents, readAutoCategorize, readSettings, setGooglePhotoState, SettingsError, updateSettings } from "./settings";
+import { followFavoriteFolders, readAgents, readAutoCategorize, readSettings, SettingsError, updateSettings } from "./settings";
 import { countFolder, createFolder, deleteFolder, favoriteFolder, renameFolder } from "./folders";
 import { googleClientFor } from "./google-client";
-import { authorizeGooglePhotos, setGooglePhotos } from "./icons/google";
 import { beginGoogleRemoval, googleGrantOf, removalMark, removedSince, revokesSettled, withdrawGoogleGrant } from "./google-revoke";
 
 /** How long a recipient lookup waits for the index's first build (then answers with what it has: nothing). */
@@ -407,9 +405,6 @@ export function createHandlers(b: Backend): Handlers {
     await b.dropAccount(id, { remove: true });
     // plan 125: read once nothing can replace it (dropAccount ended the account's sign-ins and renewals)
     const grant = gmail ? await googleGrantOf(b, id) : undefined;
-    // plan 22: its photo lists and photos go with it
-    await setGooglePhotoState(store, id, null);
-    await b.icons.dropPhotos(id);
     // plan 107: and its favorite folders, in the one turn of its folder list with the account row (Codex code review
     // round 11 #3: a favorite waiting for the list found the account still there and was written after the cleanup)
     await b.withFolderList(id, async () => {
@@ -1295,8 +1290,6 @@ export function createHandlers(b: Backend): Handlers {
         signal: b.abort.signal,
         fetch: b.net.fetchFor("mail"),
         google,
-        // plan 125: mail only; contacts are asked for when the user turns photos on (Settings → Appearance)
-        scopes: GMAIL_SCOPES,
       }).finally(() => google.close());
       googleFlowActive(b);
       validateGoogleConnection(result, "initial");
@@ -1798,8 +1791,6 @@ export function createHandlers(b: Backend): Handlers {
       await b.icons.forget();
       return { ok: true as const };
     },
-    "icons.googlePhotos": ({ accountId, on, later }) => setGooglePhotos(b, accountId, on, later),
-    "icons.authorizeGoogle": (p) => authorizeGooglePhotos(b, p),
 
     "sync.network": ({ online }) => {
       b.networkChanged(online, online ? "online" : "offline");

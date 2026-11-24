@@ -1,7 +1,6 @@
 import type { Account } from "@terno/core";
 import { t } from "@terno/i18n";
 import { client } from "~/rpc/connection";
-import { getApp, setApp } from "~/state/app";
 import { webBuiltInClientId } from "~/lib/google-client";
 
 /** Google Identity Services' token model: the subset Terno uses. */
@@ -33,10 +32,8 @@ declare global {
 }
 
 const GIS = "https://accounts.google.com/gsi/client";
-/** the same scopes as desktop (@terno/mail's GMAIL_SCOPES) */
+/** the same scopes as desktop (@terno/mail's GMAIL_SCOPES, pinned by plan 258's tests): Terno asks for nothing else */
 const GMAIL_SCOPES = ["openid", "email", "profile", "https://www.googleapis.com/auth/gmail.modify"];
-/** plan 22: the two contacts scopes (@terno/mail's CONTACTS_SCOPE, OTHER_CONTACTS_SCOPE) */
-const PHOTO_SCOPES = ["https://www.googleapis.com/auth/contacts.readonly", "https://www.googleapis.com/auth/contacts.other.readonly"];
 let loading: Promise<void> | null = null;
 
 /** Loads Google's sign-in script (allowed by the web build's CSP). Call it before the click: the popup needs the click's activation. */
@@ -56,15 +53,16 @@ export function preloadGoogle(): Promise<void> {
   return loading;
 }
 
-function accessToken(clientId: string, loginHint?: string, scopes = GMAIL_SCOPES, photo = false): Promise<TokenResponse> {
+function accessToken(clientId: string, loginHint?: string): Promise<TokenResponse> {
   return new Promise((resolve, reject) => {
     const invalid = () => new Error(t("errors.google.invalidResponse"));
     try {
       const tokens = window.google!.accounts.oauth2.initTokenClient({
         client_id: clientId,
-        scope: scopes.join(" "),
+        scope: GMAIL_SCOPES.join(" "),
         login_hint: loginHint,
-        include_granted_scopes: true,
+        // plan 258: Google's default is true, which would carry an older grant (plan 22's contacts) into this token
+        include_granted_scopes: false,
         callback: (value) => {
           try {
             if (!value || typeof value !== "object" || Array.isArray(value)) throw invalid();
@@ -76,7 +74,7 @@ function accessToken(clientId: string, loginHint?: string, scopes = GMAIL_SCOPES
             const expiresIn = typeof r.expires_in === "number" ? r.expires_in : typeof r.expires_in === "string" && /^\d+$/.test(r.expires_in) ? Number(r.expires_in) : NaN;
             if (typeof r.access_token !== "string" || r.access_token.length > 4096 || !/^[\x21-\x7e]+$/.test(r.access_token) ||
               !Number.isInteger(expiresIn) || expiresIn < 60 || expiresIn > 86_400 ||
-              typeof r.scope !== "string" || !r.scope.trim() || (photo && r.scope.length > 2000)) throw invalid();
+              typeof r.scope !== "string" || !r.scope.trim()) throw invalid();
             if (!r.scope.split(/\s+/).includes(GMAIL_SCOPES[3]!)) throw new Error(t("web.google.noGmailScope"));
             resolve({ access_token: r.access_token, expires_in: expiresIn, scope: r.scope });
           } catch (error) {
@@ -90,7 +88,7 @@ function accessToken(clientId: string, loginHint?: string, scopes = GMAIL_SCOPES
           } catch { reject(new Error(t("errors.google.unavailable"))); }
         },
       });
-      tokens.requestAccessToken(photo ? { prompt: "consent", login_hint: loginHint } : { prompt: loginHint ? "" : "consent" });
+      tokens.requestAccessToken({ prompt: loginHint ? "" : "consent" });
     } catch { reject(new Error(t("errors.google.unavailable"))); }
   });
 }
@@ -107,39 +105,7 @@ export async function connectGmailWeb(loginHint?: string, accountId?: number, o:
   const clientId = webBuiltInClientId();
   if (!clientId) throw Object.assign(new Error(t("errors.google.noClientWeb")), { i18n: { key: "errors.google.noClientWeb" } });
   await preloadGoogle();
-  // plan 125: a new account asks for mail only; contacts wait until the user turns photos on
   const adding = loginHint === undefined && accountId === undefined;
-  // plan 74: an account whose photos wait for this sign-in asks for them too
-  // the accounts waiting before Google's popup: their consent is read again by the backend (switched off meanwhile, it counts for nothing)
-  const waitedBefore = new Set(getApp().settings?.googlePhotosPending ?? []);
-  const pending = accountId !== undefined && waitedBefore.has(accountId);
-  const token = await accessToken(clientId, loginHint, pending ? [...GMAIL_SCOPES, ...PHOTO_SCOPES] : GMAIL_SCOPES);
-  const granted = token.scope.split(/\s+/);
-  const expiresIn = token.expires_in;
-  const account = await client.call("accounts.connectGmailToken", { accessToken: token.access_token, expiresIn, ...(accountId !== undefined && { accountId }), ...(adding && o.syncWindowDays !== undefined && { syncWindowDays: o.syncWindowDays }) });
-  // still wanted after Google's popup (not turned off meanwhile); Add account may have reached a waiting mailbox too
-  const waited = waitedBefore.has(account.id);
-  const stillPending = waited && (getApp().settings?.googlePhotosPending ?? []).includes(account.id);
-  if (stillPending && token.scope.length <= 2000 && PHOTO_SCOPES.some((scope) => granted.includes(scope)) && !getApp().settings?.googlePhotos[String(account.id)]) {
-    // photos are extra: the account is connected even if this fails
-    await client.call("icons.authorizeGoogle", { accountId: account.id, accessToken: token.access_token, expiresIn, scope: token.scope, ...(waited && { ifPending: true }) }).then((settings) => setApp({ settings }), () => {});
-  } else if (stillPending && pending) {
-    // unticked on Google's screen: it stops waiting (no asking at every sign-in). Add account didn't ask (plan 125),
-    // so a waiting mailbox it reached keeps waiting for its own sign-in.
-    await client.call("icons.googlePhotos", { accountId: account.id, on: false }).then((settings) => setApp({ settings }), () => {});
-  }
-  return account;
-}
-
-/**
- * Plan 22: photos from Google for an account. Google's popup asks for the contacts scopes beside
- * mail's (granted ones kept), for that address; the token goes to that account only, never
- * creating one, and later reconnects carry the same grant (include_granted_scopes).
- */
-export async function authorizeGooglePhotosWeb(account: Account): Promise<void> {
-  const clientId = webBuiltInClientId();
-  if (!clientId) throw Object.assign(new Error(t("errors.google.noClientWeb")), { i18n: { key: "errors.google.noClientWeb" } });
-  await preloadGoogle();
-  const token = await accessToken(clientId, account.email, [...GMAIL_SCOPES, ...PHOTO_SCOPES], true);
-  setApp({ settings: await client.call("icons.authorizeGoogle", { accountId: account.id, accessToken: token.access_token, expiresIn: token.expires_in, scope: token.scope }) });
+  const token = await accessToken(clientId, loginHint);
+  return client.call("accounts.connectGmailToken", { accessToken: token.access_token, expiresIn: token.expires_in, ...(accountId !== undefined && { accountId }), ...(adding && o.syncWindowDays !== undefined && { syncWindowDays: o.syncWindowDays }) });
 }

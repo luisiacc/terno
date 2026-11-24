@@ -154,7 +154,7 @@ export function createGmailTokenBroker(o: { endpoints?: Partial<GmailEndpoints>;
             const t = tokens.get(id);
             // ops wait for the user (no attempts spent) and resume when the account is reconnected
             if (!t || t.expiresAt - 60_000 <= now()) {
-              // plan 184: said where it's found, since some callers (photos) carry on without it
+              // plan 184: said where it's found, since a caller may carry on without it
               const error = new ProviderAuthError(gmailReconnect());
               ctx.refused?.(error);
               throw error;

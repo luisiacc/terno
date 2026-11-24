@@ -26,9 +26,11 @@ it("exports categories, filters, settings, drafts and unsent ops, and no secret"
   backend.connect(s, { clientId: "r", origin: "renderer" });
   const client = new RpcClient(c);
   await backend.setSecret("ai:anthropic:apiKey", "sk-ant-secret-1234");
-  // plan 123: a Google client ID of the user's own, left from before, is neither returned nor exported
-  await backend.store.settings.set("app", { ...(await backend.store.settings.get<object>("app", {})), gmailClientId: "client-1.apps.googleusercontent.com" });
+  // plan 123: a Google client ID of the user's own, left from before, is neither returned nor exported; plan 258: nor are
+  // the Photos from Google switches
+  await backend.store.settings.set("app", { ...(await backend.store.settings.get<object>("app", {})), gmailClientId: "client-1.apps.googleusercontent.com", googlePhotos: { "1": { connections: true, otherContacts: true, apiDisabled: false } }, googlePhotosPending: [2] });
   await client.call("settings.update", { density: "compact", previewLines: 0 });
+  for (const key of ["googlePhotos", "googlePhotosPending"]) expect((await client.call("app.bootstrap", {})).settings).not.toHaveProperty(key);
   const { accounts } = await client.call("app.bootstrap", {});
   const thread = (await client.call("threads.list", { view: "inbox", limit: 1 })).items[0]!;
   await client.call("threads.act", { threadIds: [thread.id], action: "archive" });
@@ -40,6 +42,7 @@ it("exports categories, filters, settings, drafts and unsent ops, and no secret"
   expect(dump.filters.map((f) => f.name)).toContain("Notificaciones de GitHub → Desarrollo");
   expect(dump.settings).toMatchObject({ density: "compact", previewLines: 0 });
   expect(dump.settings).not.toHaveProperty("gmailClientId");
+  expect(dump.settings).not.toHaveProperty("googlePhotos"); expect(dump.settings).not.toHaveProperty("googlePhotosPending");
   expect(dump.accounts.map((a) => a.email)).toEqual(accounts.map((a) => a.email));
   expect(dump.drafts).toMatchObject([{ subject: "Borrador", mode: "new", bcc: [], quotedText: "", inReplyTo: null, forwardOf: null }]);
   expect(dump.ops).toMatchObject([{ kind: "archive", state: "queued" }]);

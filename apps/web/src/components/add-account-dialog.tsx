@@ -97,8 +97,6 @@ export function AddAccountForm({ draft, onDraft, onDone, onBusy }: FormProps) {
     setError(null);
     try {
       const a = WEB ? await (await import("~/web/google")).connectGmailWeb(undefined, undefined, { syncWindowDays }) : await client.call("accounts.connectGmail", { syncWindowDays });
-      // plan 22: photos from Google came on with the account
-      if (!WEB) void client.call("app.bootstrap", {}).then((b) => setApp({ settings: b.settings }), () => {});
       snack.success(t("account.connected", { email: a.email }));
       onDone();
     } catch (error) {

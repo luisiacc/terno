@@ -8,7 +8,7 @@ import { requestHttp } from "./provider-http";
 import type { RequestDescriptor } from "./types";
 const A = "a".repeat(64), B = "b".repeat(64);
 const gmail: RequestDescriptor = { request: { endpoint: "gmail-api", purpose: "mail" } };
-const userinfo: RequestDescriptor = { request: { endpoint: "google-userinfo", purpose: "photos" } };
+const userinfo: RequestDescriptor = { request: { endpoint: "google-userinfo", purpose: "identity-proof" } };
 
 const cleanup = fixtureCleanup();
 beforeEach(() => cleanup.assertAvailable());

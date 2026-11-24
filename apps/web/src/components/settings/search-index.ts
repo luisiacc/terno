@@ -108,7 +108,6 @@ export const SETTINGS_INDEX = [
   { id: "appearance.motion", tab: "appearance", group: "settings.appearance.motionMail", label: "settings.appearance.motion", hint: "settings.appearance.motion.hint", words: "settings.find.words.motion" },
   { id: "appearance.htmlMail", tab: "appearance", group: "settings.appearance.motionMail", label: "settings.appearance.htmlMail", hint: "settings.appearance.htmlMail.hint" },
   { id: "appearance.siteIcons", tab: "appearance", group: "settings.appearance.senderPictures", label: "settings.appearance.siteIcons", hint: "settings.appearance.siteIcons.hint", words: "settings.find.words.siteIcons" },
-  { id: "appearance.googlePhotos", tab: "appearance", group: "settings.appearance.senderPictures", label: "settings.appearance.googlePhotos", words: "settings.find.words.siteIcons", scope: "account", when: (_c, a) => a?.kind === "gmail" },
   { id: "appearance.forgetIcons", tab: "appearance", group: "settings.appearance.senderPictures", label: "settings.appearance.forgetIcons" },
   { id: "appearance.customThemes", tab: "appearance", label: "settings.appearance.custom", hint: "settings.appearance.custom.footer", words: "settings.find.words.customThemes" },
 

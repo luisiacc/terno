@@ -95,11 +95,17 @@ export class IconCache {
         raw = null;
       }
       if (!raw) return;
+      // plan 258: website icons only; a photo Photos from Google cached (a `p:` key) goes, its bytes with it
+      const retired: number[] = [];
       try {
         const index = JSON.parse(new TextDecoder().decode(raw)) as IndexFile;
         if (index.v !== 1 || !Array.isArray(index.entries)) return;
         for (const [key, e] of index.entries.slice(0, this.o.maxEntries)) {
           if (typeof key !== "string" || !e || (e.kind !== "icon" && e.kind !== "none")) continue;
+          if (!key.startsWith("d:")) {
+            if (e.kind === "icon" && Number.isInteger(e.slot) && e.slot >= 0 && e.slot < this.o.slots) retired.push(e.slot);
+            continue;
+          }
           if (e.kind === "icon") {
             if (!Number.isInteger(e.slot) || e.slot < 0 || e.slot >= this.o.slots || this.usedSlots.has(e.slot) || !(e.size > 0 && e.size <= MAX_STORED)) continue;
             this.usedSlots.add(e.slot);
@@ -112,6 +118,13 @@ export class IconCache {
         this.usedSlots.clear();
         this.bytes = 0;
       }
+      if (!retired.length) return;
+      // queued before any later write, so a slot reused meanwhile is never removed after it
+      const files = this.o.files!;
+      void this.serial(async () => {
+        for (const n of retired) if (!this.usedSlots.has(n)) await files.remove(this.slotPath(n)).catch(() => {});
+      });
+      this.schedule();
     })();
     return this.loaded;
   }
@@ -129,7 +142,7 @@ export class IconCache {
     return e;
   }
 
-  /** The entry without touching it (tests, the people map). */
+  /** The entry without touching it (tests, icons.data). */
   peek(key: string): CacheEntry | undefined {
     return this.entries.get(key);
   }
@@ -190,12 +203,6 @@ export class IconCache {
   timeouts(key: string): number {
     const e = this.entries.get(key);
     return e?.kind === "none" ? (e.timeouts ?? 0) : 0;
-  }
-
-  delete(key: string): void {
-    if (!this.entries.has(key)) return;
-    this.drop(key);
-    this.schedule();
   }
 
   keys(): IterableIterator<string> {

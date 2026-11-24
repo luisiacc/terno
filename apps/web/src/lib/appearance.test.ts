@@ -56,7 +56,7 @@ const SERVER: AppSettings = {
       characterKeys: true,
       sendSound: true,
   senderIcons: false,
-  googlePhotos: {}, googlePhotosPending: [], favoriteFolders: [],
+  favoriteFolders: [],
   dockBadge: true,
   firstScreen: null,
   keepInboxCount: false,

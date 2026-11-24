@@ -9,7 +9,6 @@ export * from "./gmail";
 export * from "./registry";
 export * from "./compose-portable";
 export * from "./gmail-web";
-export * from "./google-photos";
 export * from "./incoming";
 export * from "./provider-http";
 

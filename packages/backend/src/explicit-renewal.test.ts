@@ -9,14 +9,12 @@ import { ProviderAuthError, type GmailConnectResult, type GmailRenewalProof, typ
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { onSqlite } from "./test/store-axis";
-import { setGooglePhotoState } from "./settings";
 
 // plan 123: only Terno's own Google clients exist; tests carry a synthetic one
 const TEST_GOOGLE = { preferred: "synthetic-client", clients: [{ clientId: "synthetic-client", clientSecret: "" }] };
 
 const MAIL = "https://www.googleapis.com/auth/gmail.modify";
-const PHOTO = "https://www.googleapis.com/auth/contacts.readonly";
-const who = { email: "reader@example.test", name: "Reader", sub: "reader-sub", emailVerified: true, grantedScopes: [MAIL, PHOTO] };
+const who = { email: "reader@example.test", name: "Reader", sub: "reader-sub", emailVerified: true, grantedScopes: [MAIL] };
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { vi.restoreAllMocks(); for (const fn of cleanups.splice(0).reverse()) await fn(); });
 function gate() { let release!: () => void; const promise = new Promise<void>((resolve) => { release = resolve; }); return { promise, release }; }
@@ -26,14 +24,13 @@ async function setup(kind: "SQL" | "IndexedDB") {
   const logs: unknown[] = [];
   let answer: GmailConnectResult = { ...who, refreshToken: "old-refresh" };
   const inspect = vi.fn(async () => ({ ...who }));
-  const photos = vi.fn(async (scopes: readonly string[]) => [...scopes]);
   let proofToken = "old-refresh";
-  const begin = vi.fn<NonNullable<ProviderRegistry["beginGmailRenewal"]>>(async (): Promise<GmailRenewalProof> => ({ scopeSource: "resource-proof", refreshToken: proofToken, expiresAt: Date.now() + 3600_000, inspect, provePhotos: photos }));
+  const begin = vi.fn<NonNullable<ProviderRegistry["beginGmailRenewal"]>>(async (): Promise<GmailRenewalProof> => ({ scopeSource: "resource-proof", refreshToken: proofToken, expiresAt: Date.now() + 3600_000, inspect }));
   const connect = vi.fn<ProviderRegistry["connectGmail"]>(async () => answer);
   const instances: { closes: number; syncs: number }[] = [];
   const registry: ProviderRegistry = {
     connectGmail: connect, beginGmailRenewal: begin, async verifyImap() {},
-    create() { const p = { closes: 0, syncs: 0 }; instances.push(p); return { async verify() {}, async execute() {}, async sync() { p.syncs++; }, async close() { p.closes++; }, async photos() { return { own: null, contacts: [], connections: "ok", otherContacts: "skipped" }; } }; },
+    create() { const p = { closes: 0, syncs: 0 }; instances.push(p); return { async verify() {}, async execute() {}, async sync() { p.syncs++; }, async close() { p.closes++; } }; },
   };
   const dir = mkdtempSync(join(tmpdir(), "terno-explicit-renewal-"));
   const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((r) => setImmediate(r)) };
@@ -43,14 +40,13 @@ async function setup(kind: "SQL" | "IndexedDB") {
   const backend = new Backend({ googleClients: TEST_GOOGLE, dbPath: join(dir, "test.db"), store, platform: store ? platform : undefined, version: "test", log: (...args) => { logs.push(args); }, cipher: { encrypt, decrypt }, providers: registry, autoSync: false, iconTransport: null, openExternal: async () => {} });
   const [c, s] = createMemoryTransportPair(); backend.connect(s, { clientId: "renewal", origin: "renderer" }); const client = new RpcClient(c);
   cleanups.push(async () => { for (const g of gates) g.release(); client.close(); await backend.stop(); rmSync(dir, { recursive: true, force: true }); });
-  // signed in without the contacts scopes: these tests turn photos on themselves
   answer = { ...who, email: "owner@example.test", sub: "owner-sub", refreshToken: "owner-refresh", grantedScopes: [MAIL] };
   await client.call("accounts.connectGmail", {});
   answer = { ...who, refreshToken: "old-refresh", grantedScopes: [MAIL] };
   const account = await client.call("accounts.connectGmail", {});
   await backend.syncAccount(account.id);
   const name = `account:${account.id}:refreshToken`;
-  return { backend, client, account, name, logs, registry, connect, begin, inspect, photos, encrypt, decrypt, instances,
+  return { backend, client, account, name, logs, registry, connect, begin, inspect, encrypt, decrypt, instances,
     store,
     async history() {
       if (!store) return ownerHistory(sqlDb(backend.store));
@@ -60,6 +56,8 @@ async function setup(kind: "SQL" | "IndexedDB") {
     },
     answer(value: Partial<GmailConnectResult>) { answer = { ...who, refreshToken: null, ...value }; }, rotate(value: string) { proofToken = value; },
     gate() { const g = gate(); gates.push(g); return g; },
+    /** a newer sign-in of the account whose consent is declined: it supersedes whatever flow was running, and fails */
+    supersede() { connect.mockImplementationOnce(async () => { throw new Error("synthetic consent declined"); }); return outcome(client.call("accounts.reconnect", { id: account.id })); },
     async mark() {
       await new Promise<void>((r) => setImmediate(r));
       await backend.syncAccount(account.id);
@@ -72,14 +70,14 @@ async function setup(kind: "SQL" | "IndexedDB") {
 
 describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal", (kind) => {
   const sqlite = onSqlite(kind);
-  it.each(["reconnect", "owner", "photos"] as const)("%s subject refusal preserves exact credential/config/history/queue/rules", async (method) => {
+  it.each(["reconnect", "owner"] as const)("%s subject refusal preserves exact credential/config/history/queue/rules", async (method) => {
     const t = await setup(kind);
     await t.mark();
     const config = await t.backend.store.accounts.config(t.account.id), account = await t.backend.store.accounts.get(t.account.id);
     const secret = await t.backend.store.secrets.get(t.name), owner = await t.backend.store.owner.get(), history = await t.history();
     const ops = await t.client.call("ops.list", {}), rules = await t.backend.store.filters.list();
     t.answer({ sub: "OTHER-SUBJECT", refreshToken: "replacement" });
-    const request = method === "reconnect" ? t.client.call("accounts.reconnect", { id: t.account.id }) : method === "owner" ? t.client.call("identity.changeOwner", { accountId: t.account.id }) : t.client.call("icons.googlePhotos", { accountId: t.account.id, on: true });
+    const request = method === "reconnect" ? t.client.call("accounts.reconnect", { id: t.account.id }) : t.client.call("identity.changeOwner", { accountId: t.account.id });
     await expect(request).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(await t.backend.store.accounts.config(t.account.id)).toEqual(config);
     expect(await t.backend.store.accounts.get(t.account.id)).toEqual(account);
@@ -111,9 +109,9 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
       entered.release(); await blocked.promise; return change(request);
     });
     const result = outcome(t.client.call("identity.changeOwner", { accountId: t.account.id })); await entered.promise;
-    const off = outcome(t.client.call("icons.googlePhotos", { accountId: t.account.id, on: false }));
+    const newer = t.supersede();
     await new Promise<void>((resolve) => setImmediate(resolve)); blocked.release();
-    expect(await result).toHaveProperty("error"); expect(await off).toHaveProperty("value");
+    expect(await result).toHaveProperty("error"); expect(await newer).toHaveProperty("error");
     expect.soft(await t.backend.store.owner.get()).toEqual(owner); expect.soft(await t.history()).toEqual(history);
     expect(notifications).toEqual([]); expect(await t.backend.getSecret(t.name)).toBe("old-refresh");
     expect(t.backend.credentialsOf(t.account.id)).toBe(generation);
@@ -161,9 +159,9 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     }
     t.answer({ refreshToken: "admitted-replacement" });
     const reconnect = outcome<unknown>(method === "reconnect" ? t.client.call("accounts.reconnect", { id: t.account.id }) : t.client.call("identity.changeOwner", { accountId: t.account.id })); await commitEntered.promise;
-    const off = outcome(t.client.call("icons.googlePhotos", { accountId: t.account.id, on: false }));
+    const newer = t.supersede();
     await new Promise<void>((r) => setImmediate(r)); commitBlocked.release();
-    expect(await reconnect).toHaveProperty("error"); expect(await off).toHaveProperty("value");
+    expect(await reconnect).toHaveProperty("error"); expect(await newer).toHaveProperty("error");
     await t.backend.syncAccount(t.account.id);
     expect(await t.backend.getSecret(t.name)).toBe("old-refresh");
     opBlocked.release(); await worker;
@@ -298,9 +296,9 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     }
     t.answer({ refreshToken: "uncertain-replacement" });
     const result = outcome<unknown>(method === "reconnect" ? t.client.call("accounts.reconnect", { id: t.account.id }) : t.client.call("identity.changeOwner", { accountId: t.account.id })); await entered.promise;
-    const off = outcome(t.client.call("icons.googlePhotos", { accountId: t.account.id, on: false }));
+    const newer = t.supersede();
     await new Promise<void>((resolve) => setImmediate(resolve)); blocked.release();
-    expect(await result).toHaveProperty("error"); expect(await off).toHaveProperty("value");
+    expect(await result).toHaveProperty("error"); expect(await newer).toHaveProperty("error");
     expect(await t.backend.getSecret(t.name)).toBe("uncertain-replacement"); expect(t.backend.credentialsOf(t.account.id)).toBeGreaterThan(generation);
     expect(notifications).toEqual([]); settle.release(); await worker; await t.backend.runWorker();
     expect(sends).toBe(1); expect((await t.client.call("ops.list", {})).find((row) => row.id === sent.opId)?.state).toBe("succeeded");
@@ -309,7 +307,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
   sqlite.each(["execution", "acknowledgement"] as const)("owner proof expiry gates transaction %s without an unreported claim", async (delay) => {
     const t = await setup(kind), entered = t.gate(), blocked = t.gate();
     t.answer({ refreshToken: null }); t.rotate("rotated-refresh");
-    const proof: GmailRenewalProof = { scopeSource: "resource-proof", refreshToken: "rotated-refresh", expiresAt: Date.now() + 60_000, inspect: t.inspect, provePhotos: t.photos };
+    const proof: GmailRenewalProof = { scopeSource: "resource-proof", refreshToken: "rotated-refresh", expiresAt: Date.now() + 60_000, inspect: t.inspect };
     t.begin.mockResolvedValueOnce(proof);
     const change = t.backend.store.owner.change.bind(t.backend.store.owner), owner = await t.backend.store.owner.get();
     vi.spyOn(t.backend.store.owner, "change").mockImplementationOnce(async (...args) => {
@@ -357,16 +355,14 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     expect((await t.client.call("app.bootstrap", {})).accounts.map((a) => ({ id: a.id, email: a.email }))).toEqual(before);
   });
 
-  it.each(["accounts.reconnect", "identity.changeOwner", "icons.googlePhotos"] as const)("%s retains exact old blob only after cold proof", async (method) => {
+  it.each(["accounts.reconnect", "identity.changeOwner"] as const)("%s retains exact old blob only after cold proof", async (method) => {
     const t = await setup(kind); await t.mark(); const before = await t.backend.store.secrets.get(t.name);
     t.answer({ refreshToken: null });
     if (method === "accounts.reconnect") await t.client.call(method, { id: t.account.id });
     if (method === "identity.changeOwner") await t.client.call(method, { accountId: t.account.id });
-    if (method === "icons.googlePhotos") await t.client.call(method, { accountId: t.account.id, on: true });
     expect(t.begin).toHaveBeenCalledOnce(); expect(t.begin.mock.calls[0]![0]).toMatchObject({ refreshToken: "old-refresh" });
     expect(t.inspect).toHaveBeenCalledOnce(); expect(await t.backend.store.secrets.get(t.name)).toEqual(before);
     expect((await t.backend.store.accounts.get(t.account.id))?.syncState.authRequired).toBe(false);
-    if (method === "icons.googlePhotos") expect(t.photos).toHaveBeenCalledWith([PHOTO], expect.any(AbortSignal));
   });
 
   sqlite.each(["missing", "unreadable", "refused", "wrong mailbox", "wrong subject", "unsupported"] as const)("omission fails safely for %s old grant", async (scenario) => {
@@ -390,17 +386,6 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     expect(t.begin).toHaveBeenCalledOnce();
   });
 
-  sqlite("mail-proven rotation survives denied optional photo proof, without enabling or clearing auth", async () => {
-    const t = await setup(kind); await t.mark(); t.answer({ refreshToken: null }); t.rotate("rotated-refresh");
-    t.photos.mockRejectedValue(new Error("PRIVATE_PHOTO_TOKEN"));
-    const result = await outcome(t.client.call("icons.googlePhotos", { accountId: t.account.id, on: true }));
-    expect(result).toHaveProperty("error"); expect(String("error" in result ? result.error : result)).not.toContain("PRIVATE_PHOTO_TOKEN");
-    expect(await t.backend.getSecret(t.name)).toBe("rotated-refresh");
-    expect((await t.client.call("app.bootstrap", {})).settings.googlePhotos).toEqual({});
-    expect((await t.backend.store.accounts.get(t.account.id))?.syncState.authRequired).toBe(true);
-    expect(await t.backend.provider(t.account.id)).not.toBeNull();
-  });
-
   it.each(["before", "after"] as const)("failed %s-commit persistence retries one candidate without spending old refresh again", async (stage) => {
     const t = await setup(kind); t.answer({ refreshToken: null }); t.rotate("rotated-refresh");
     const original = t.backend.store.secrets.commit.bind(t.backend.store.secrets);
@@ -410,29 +395,13 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     expect(t.begin).toHaveBeenCalledOnce(); expect(await t.backend.getSecret(t.name)).toBe("rotated-refresh");
   });
 
-  sqlite.each(["reconnect", "owner", "photo-on", "photo-off", "removal"] as const)("a blocked photo consent loses to newer %s", async (newer) => {
-    const t = await setup(kind); const entered = t.gate(), blocked = t.gate();
-    t.connect.mockImplementationOnce(async () => { entered.release(); await blocked.promise; return { ...who, refreshToken: "stale-photo" }; });
-    const old = outcome(t.client.call("icons.googlePhotos", { accountId: t.account.id, on: true })); await entered.promise;
-    t.answer({ refreshToken: "newer-refresh" });
-    if (newer === "reconnect") await t.client.call("accounts.reconnect", { id: t.account.id });
-    if (newer === "owner") await t.client.call("identity.changeOwner", { accountId: t.account.id });
-    if (newer === "photo-on") await t.client.call("icons.googlePhotos", { accountId: t.account.id, on: true });
-    if (newer === "photo-off") await t.client.call("icons.googlePhotos", { accountId: t.account.id, on: false });
-    if (newer === "removal") await t.client.call("accounts.remove", { id: t.account.id });
-    blocked.release(); expect(await old).toHaveProperty("error");
-    expect(await t.backend.getSecret(t.name)).toBe(newer === "removal" ? null : newer === "photo-off" ? "old-refresh" : "newer-refresh");
-    if (newer === "photo-off") expect((await t.client.call("app.bootstrap", {})).settings.googlePhotos).toEqual({});
-  });
-
-  sqlite.each(["reconnect", "owner", "photo-on"] as const)("newer %s wins while older reconnect encrypts", async (newer) => {
+  sqlite.each(["reconnect", "owner"] as const)("newer %s wins while older reconnect encrypts", async (newer) => {
     const t = await setup(kind); const entered = t.gate(), blocked = t.gate();
     t.encrypt.mockImplementationOnce(async (value) => { entered.release(); await blocked.promise; return plaintextCipher.encrypt(value); });
     t.answer({ refreshToken: "stale-refresh" }); const old = outcome(t.client.call("accounts.reconnect", { id: t.account.id })); await entered.promise;
     t.answer({ refreshToken: "newer-refresh" });
     if (newer === "reconnect") await t.client.call("accounts.reconnect", { id: t.account.id });
     if (newer === "owner") await t.client.call("identity.changeOwner", { accountId: t.account.id });
-    if (newer === "photo-on") await t.client.call("icons.googlePhotos", { accountId: t.account.id, on: true });
     blocked.release(); expect(await old).toHaveProperty("error"); expect(await t.backend.getSecret(t.name)).toBe("newer-refresh");
   });
 
@@ -455,18 +424,6 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     blocked.release(); expect(await old).toHaveProperty("error"); expect(await newer).toHaveProperty("value");
     expect(await t.backend.getSecret(t.name)).toBe("newer-refresh");
     expect((await t.backend.store.accounts.get(t.account.id))?.syncState.authRequired).toBe(false);
-  });
-
-  sqlite("old photo-on cannot enable after off during admitted settings persistence", async () => {
-    const t = await setup(kind), entered = t.gate(), blocked = t.gate();
-    const update = t.backend.store.settings.update.bind(t.backend.store.settings);
-    vi.spyOn(t.backend.store.settings, "update").mockImplementationOnce(async (...args) => { entered.release(); await blocked.promise; return update(...args); });
-    t.answer({ refreshToken: "photo-refresh" });
-    const old = outcome(t.client.call("icons.googlePhotos", { accountId: t.account.id, on: true })); await entered.promise;
-    const off = outcome(t.client.call("icons.googlePhotos", { accountId: t.account.id, on: false }));
-    await new Promise<void>((r) => setImmediate(r)); blocked.release();
-    expect(await old).toHaveProperty("error"); expect(await off).toHaveProperty("value");
-    expect((await t.client.call("app.bootstrap", {})).settings.googlePhotos).toEqual({});
   });
 
   sqlite("stamp change during proof never saves rotation or claims owner", async () => {
@@ -506,7 +463,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
 
   sqlite("an expired known candidate may recover its credential but cannot partially claim owner", async () => {
     const t = await setup(kind); t.answer({ refreshToken: null }); t.rotate("rotated-refresh");
-    const proof: GmailRenewalProof = { scopeSource: "resource-proof", refreshToken: "rotated-refresh", expiresAt: Date.now() + 3600_000, inspect: t.inspect, provePhotos: t.photos };
+    const proof: GmailRenewalProof = { scopeSource: "resource-proof", refreshToken: "rotated-refresh", expiresAt: Date.now() + 3600_000, inspect: t.inspect };
     t.begin.mockResolvedValueOnce(proof);
     vi.spyOn(t.backend.store.secrets, "commit").mockRejectedValueOnce(new Error("synthetic disk failure"));
     await expect(t.client.call("accounts.reconnect", { id: t.account.id })).rejects.toThrow();
@@ -517,19 +474,13 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     expect(t.begin).toHaveBeenCalledTimes(2);
   });
 
-  sqlite.each(["reconnect", "owner", "photo"] as const)("%s never returns private encryption exception text", async (method) => {
+  sqlite.each(["reconnect", "owner"] as const)("%s never returns private encryption exception text", async (method) => {
     const t = await setup(kind); t.answer({ refreshToken: "new-refresh" });
     t.encrypt.mockRejectedValueOnce(new Error("PRIVATE_REFRESH_ADDRESS_SUBJECT"));
-    const result = await outcome<unknown>(method === "reconnect" ? t.client.call("accounts.reconnect", { id: t.account.id }) : method === "owner" ? t.client.call("identity.changeOwner", { accountId: t.account.id }) : t.client.call("icons.googlePhotos", { accountId: t.account.id, on: true }));
+    const result = await outcome<unknown>(method === "reconnect" ? t.client.call("accounts.reconnect", { id: t.account.id }) : t.client.call("identity.changeOwner", { accountId: t.account.id }));
     expect(result).toHaveProperty("error"); expect(String("error" in result ? result.error : result)).not.toContain("PRIVATE_REFRESH_ADDRESS_SUBJECT");
     expect(await t.backend.getSecret(t.name)).toBe("old-refresh");
     expect(JSON.stringify(t.logs)).not.toContain("PRIVATE_REFRESH_ADDRESS_SUBJECT");
-  });
-
-  sqlite("photo renewal requires explicit effective mail scope", async () => {
-    const t = await setup(kind); t.answer({ refreshToken: "new-refresh", grantedScopes: undefined });
-    await expect(t.client.call("icons.googlePhotos", { accountId: t.account.id, on: true })).rejects.toThrow();
-    expect(await t.backend.getSecret(t.name)).toBe("old-refresh");
   });
 
   sqlite("raw credential snapshot failures never expose private store text", async () => {
@@ -549,16 +500,6 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     await t.client.call("accounts.reconnect", { id: t.account.id });
     expect(t.begin).toHaveBeenCalledOnce(); expect(t.inspect).toHaveBeenCalledTimes(2); expect(await t.backend.getSecret(t.name)).toBe("rotated-refresh");
     expect(JSON.stringify(t.logs)).not.toContain("PRIVATE_PROFILE_TOKEN");
-  });
-
-  sqlite("photo failure plus storage failure keeps one mail-proven candidate for an explicit reconnect", async () => {
-    const t = await setup(kind); t.answer({ refreshToken: null }); t.rotate("rotated-refresh");
-    t.photos.mockRejectedValueOnce(new Error("synthetic photo denied"));
-    vi.spyOn(t.backend.store.secrets, "commit").mockRejectedValueOnce(new Error("synthetic disk failure"));
-    await expect(t.client.call("icons.googlePhotos", { accountId: t.account.id, on: true })).rejects.toThrow();
-    await t.client.call("accounts.reconnect", { id: t.account.id });
-    expect(t.begin).toHaveBeenCalledOnce(); expect(t.photos).toHaveBeenCalledOnce(); expect(await t.backend.getSecret(t.name)).toBe("rotated-refresh");
-    expect((await t.client.call("app.bootstrap", {})).settings.googlePhotos).toEqual({});
   });
 
   it("removal drains an admitted explicit commit and never leaves an orphan credential", async () => {
@@ -582,107 +523,9 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     expect(await t.backend.store.owner.get()).toEqual(owner); expect(await t.backend.getSecret(t.name)).toBe("newer-secret");
   });
 
-  sqlite("photo-off cancels a pending final listing before waiting for old finalization", async () => {
-    const t = await setup(kind); t.answer({ refreshToken: "photo-refresh" }); const entered = t.gate();
-    let photoSignal: AbortSignal | undefined;
-    const create = t.registry.create.bind(t.registry);
-    vi.spyOn(t.registry, "create").mockImplementation((ctx) => ({ ...create(ctx), photos: async (_want, signal) => {
-      photoSignal = signal; entered.release();
-      await new Promise<void>((resolve) => { if (signal?.aborted) resolve(); else signal?.addEventListener("abort", () => resolve(), { once: true }); });
-      return { own: null, contacts: [], connections: "ok", otherContacts: "skipped" };
-    } }));
-    const old = outcome(t.client.call("icons.googlePhotos", { accountId: t.account.id, on: true })); await entered.promise;
-    const off = outcome(t.client.call("icons.googlePhotos", { accountId: t.account.id, on: false }));
-    await new Promise<void>((r) => setImmediate(r));
-    const cancelled = photoSignal!.aborted;
-    // Release even the pre-fix implementation so the regression fails without a stuck test/process.
-    if (!cancelled) await t.backend.icons.dropPhotos(t.account.id);
-    expect(await old).toHaveProperty("error"); expect(await off).toHaveProperty("value");
-    expect(cancelled).toBe(true); expect((await t.client.call("app.bootstrap", {})).settings.googlePhotos).toEqual({});
-  });
-
-  sqlite.each(["photo-off", "removal"] as const)("%s finishes while the old provider ignores listing cancellation", async (intent) => {
-    const t = await setup(kind); t.answer({ refreshToken: "photo-refresh" }); const entered = t.gate(), blocked = t.gate();
-    const create = t.registry.create.bind(t.registry);
-    vi.spyOn(t.registry, "create").mockImplementation((ctx) => ({ ...create(ctx), photos: async () => {
-      entered.release(); await blocked.promise;
-      return { own: null, contacts: [], connections: "denied", otherContacts: "skipped" };
-    } }));
-    const old = outcome(t.client.call("icons.googlePhotos", { accountId: t.account.id, on: true })); await entered.promise;
-    let settled = false;
-    const newer = outcome<unknown>(intent === "photo-off" ? t.client.call("icons.googlePhotos", { accountId: t.account.id, on: false }) : t.client.call("accounts.remove", { id: t.account.id })).then((value) => { settled = true; return value; });
-    for (let i = 0; i < 30 && !settled; i++) await new Promise<void>((r) => setImmediate(r));
-    const finishedBeforeNetwork = settled;
-    blocked.release(); expect(await old).toHaveProperty("error"); expect(await newer).toHaveProperty("value");
-    expect(finishedBeforeNetwork).toBe(true); expect((await t.client.call("app.bootstrap", {})).settings.googlePhotos).toEqual({});
-  });
-
-  sqlite("old photo completion and cleanup preserve a newer coalesced listing", async () => {
-    const t = await setup(kind), firstEntered = t.gate(), secondEntered = t.gate(), firstBlocked = t.gate(), secondBlocked = t.gate();
-    const state = { connections: true, otherContacts: false, apiDisabled: false };
-    await setGooglePhotoState(t.backend.store, t.account.id, state);
-    const provider = (await t.backend.provider(t.account.id))!;
-    let calls = 0, newerSignal: AbortSignal | undefined;
-    provider.photos = async (_want, signal) => {
-      if (++calls === 1) { firstEntered.release(); await firstBlocked.promise; }
-      else { newerSignal = signal; secondEntered.release(); await secondBlocked.promise; }
-      return { own: null, contacts: [], connections: "ok", otherContacts: "skipped" };
-    };
-    const sibling = (await t.backend.store.accounts.list()).find((account) => account.id !== t.account.id)!;
-    await setGooglePhotoState(t.backend.store, sibling.id, state);
-    const siblingEntered = t.gate(), siblingBlocked = t.gate();
-    const siblingProvider = (await t.backend.provider(sibling.id))!;
-    let siblingSignal: AbortSignal | undefined;
-    siblingProvider.photos = async (_want, signal) => {
-      siblingSignal = signal; siblingEntered.release(); await siblingBlocked.promise;
-      return { own: null, contacts: [], connections: "ok", otherContacts: "skipped" };
-    };
-    const siblingRun = t.backend.icons.syncPeople(sibling.id, state, new AbortController().signal); await siblingEntered.promise;
-    const firstController = new AbortController(), secondController = new AbortController();
-    const old = t.backend.icons.syncPeople(t.account.id, state, firstController.signal); await firstEntered.promise;
-    const newer = t.backend.icons.syncPeople(t.account.id, state, secondController.signal); await secondEntered.promise;
-    await old; firstController.abort(); firstBlocked.release(); await new Promise<void>((r) => setImmediate(r));
-    expect(newerSignal!.aborted).toBe(false); expect(t.backend.icons.syncPeople(t.account.id, state)).toBe(newer);
-    expect(siblingSignal!.aborted).toBe(false);
-    expect(t.backend.icons.syncPeople(sibling.id, state)).toBe(siblingRun);
-    secondBlocked.release(); siblingBlocked.release(); await Promise.all([newer, siblingRun]);
-  });
-
   it("stale owner secret expectation leaves owner, history and credential unchanged", async () => {
     const t = await setup(kind); const before = await t.backend.store.owner.get(), stamp = (await t.backend.store.accounts.stamp(t.account.id))!;
     const result = await t.backend.store.owner.change({ claim: { accountId: t.account.id, email: t.account.email, displayName: "Reader", provider: "gmail", verifiedBy: "google_oauth", evidence: { googleSub: who.sub, emailVerified: true } }, stamp, secret: { kind: "replace", name: t.name, expectedBlob: new TextEncoder().encode("stale"), blob: new TextEncoder().encode("newer") }, reason: "synthetic", now: 2 });
     expect(result).toBe(false); expect(await t.backend.store.owner.get()).toEqual(before); expect(await t.backend.getSecret(t.name)).toBe("old-refresh");
-  });
-
-  // plan 74, Codex review round 2: switched off at any moment of a reconnect asking for waiting photos, they stay off
-  sqlite("photos switched off during the reconnect's photo proof stay off; mail is signed in", async () => {
-    const t = await setup(kind); const entered = t.gate(), held = t.gate();
-    t.answer({ refreshToken: null, grantedScopes: [MAIL, PHOTO] }); t.rotate("rotated-refresh");
-    t.photos.mockImplementationOnce(async (scopes) => { entered.release(); await held.promise; return [...scopes]; });
-    await t.client.call("icons.googlePhotos", { accountId: t.account.id, on: true, later: true });
-    const reconnect = outcome(t.client.call("accounts.reconnect", { id: t.account.id })); await entered.promise;
-    await t.client.call("icons.googlePhotos", { accountId: t.account.id, on: false });
-    held.release();
-    expect(await reconnect).toHaveProperty("value");
-    const settings = (await t.client.call("app.bootstrap", {})).settings;
-    expect(settings.googlePhotos).toEqual({}); expect(settings.googlePhotosPending).toEqual([]);
-  });
-
-  sqlite("photos switched off while the reconnect lists the people go off and are forgotten", async () => {
-    const t = await setup(kind); const entered = t.gate(), held = t.gate();
-    t.answer({ refreshToken: "new-refresh", grantedScopes: [MAIL, PHOTO] });
-    const create = t.registry.create.bind(t.registry);
-    vi.spyOn(t.registry, "create").mockImplementation((ctx) => ({ ...create(ctx), photos: async () => {
-      entered.release(); await held.promise;
-      return { own: null, contacts: [], connections: "ok", otherContacts: "skipped" };
-    } }));
-    await t.client.call("icons.googlePhotos", { accountId: t.account.id, on: true, later: true });
-    const reconnect = outcome(t.client.call("accounts.reconnect", { id: t.account.id })); await entered.promise;
-    expect((await t.client.call("app.bootstrap", {})).settings.googlePhotos[String(t.account.id)]).toBeDefined();
-    const drop = vi.spyOn(t.backend.icons, "dropPhotos");
-    await t.client.call("icons.googlePhotos", { accountId: t.account.id, on: false });
-    held.release(); await reconnect;
-    expect((await t.client.call("app.bootstrap", {})).settings.googlePhotos).toEqual({});
-    expect(drop).toHaveBeenCalledWith(t.account.id);
   });
 });

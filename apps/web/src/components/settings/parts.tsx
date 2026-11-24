@@ -86,15 +86,12 @@ export function SettingsRow({
   labelFor,
   errorTestId,
   find,
-  findScope,
 }: {
   /**
    * Plan 203: the setting this row is in Settings' search (search-index.ts), which opens it here; false for a row
    * that isn't a setting (a status, an error, a list item)
    */
   find?: SettingId | false;
-  /** plan 203: the row is itself one account's or category's (Appearance's photos from Google), as its disclosure is elsewhere */
-  findScope?: `${"account" | "category"}:${number}`;
   label: React.ReactNode;
   hint?: React.ReactNode;
   /** announced (role=alert), linked to the control, which is marked invalid */
@@ -131,14 +128,14 @@ export function SettingsRow({
   );
   if (stacked) {
     return (
-      <div className="py-3" data-testid={testId} data-setting={find || undefined} data-setting-scope={findScope}>
+      <div className="py-3" data-testid={testId} data-setting={find || undefined}>
         {text}
         <div className="mt-2.5">{children(a11y)}</div>
       </div>
     );
   }
   return (
-    <div className="flex min-h-11 items-center justify-between gap-6 py-2.5" data-testid={testId} data-setting={find || undefined} data-setting-scope={findScope}>
+    <div className="flex min-h-11 items-center justify-between gap-6 py-2.5" data-testid={testId} data-setting={find || undefined}>
       {text}
       <div className="flex shrink-0 items-center gap-2">{children(a11y)}</div>
     </div>

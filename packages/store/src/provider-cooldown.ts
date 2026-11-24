@@ -2,7 +2,9 @@ export const PROVIDER_COOLDOWN_KEY = "provider-cooldown:v1";
 export const COOLDOWN_LEDGER_BYTES = 65_536;
 export const COOLDOWN_CANDIDATE_BYTES = 131_072;
 export const COOLDOWN_TICKETS = 64;
-export const COOLDOWN_SERVICES = ["gmail-api", "oauth-token", "google-people", "google-userinfo"] as const;
+export const COOLDOWN_SERVICES = ["gmail-api", "oauth-token", "google-userinfo"] as const;
+/** plan 258: plan 22's People API, never asked since; a row a ledger kept for it still reads, and is dropped */
+const RETIRED_SERVICES: readonly string[] = ["google-people"];
 export type CooldownService = typeof COOLDOWN_SERVICES[number];
 export type CooldownHold = "clock" | "clock-evidence" | "range" | "calendar" | "leap-second";
 export interface CooldownRow {
@@ -67,7 +69,7 @@ export function decodeCooldown(encoded: string | null): CooldownLedger {
   if (BigInt(v.revision) > 99_999_999_999_999_999_935n) return bad();
   const seen = new Set<string>();
   for (const r of v.rows) {
-    if (!record(r) || !keys(r, "owner,service,revision,phaseRevision,minimum,wall,replay,sample,position,hold,repair") || !(r.owner === "installation" || mailboxKeyValid(r.owner)) || !COOLDOWN_SERVICES.includes(r.service as CooldownService) || !decimal(r.revision) || !decimal(r.phaseRevision) || BigInt(r.phaseRevision) > BigInt(r.revision) || (r.minimum !== null && !minimum(r.minimum)) || (r.wall !== null && !minimum(r.wall)) || !decimal(r.replay) || BigInt(r.replay) > 17_280_000_000_360_000n || !integer(r.sample) || r.sample < 1600 || r.sample > 360000 || !integer(r.position) || r.position < 0 || r.position > 6 || ![null, "clock", "clock-evidence", "range", "calendar", "leap-second"].includes(r.hold as CooldownHold | null) || (r.repair !== null && (!decimal(r.repair) || BigInt(r.repair) >= BigInt(r.revision)))) return bad();
+    if (!record(r) || !keys(r, "owner,service,revision,phaseRevision,minimum,wall,replay,sample,position,hold,repair") || !(r.owner === "installation" || mailboxKeyValid(r.owner)) || !(COOLDOWN_SERVICES.includes(r.service as CooldownService) || RETIRED_SERVICES.includes(r.service as string)) || !decimal(r.revision) || !decimal(r.phaseRevision) || BigInt(r.phaseRevision) > BigInt(r.revision) || (r.minimum !== null && !minimum(r.minimum)) || (r.wall !== null && !minimum(r.wall)) || !decimal(r.replay) || BigInt(r.replay) > 17_280_000_000_360_000n || !integer(r.sample) || r.sample < 1600 || r.sample > 360000 || !integer(r.position) || r.position < 0 || r.position > 6 || ![null, "clock", "clock-evidence", "range", "calendar", "leap-second"].includes(r.hold as CooldownHold | null) || (r.repair !== null && (!decimal(r.repair) || BigInt(r.repair) >= BigInt(r.revision)))) return bad();
     const key = `${r.owner}/${r.service}`;
     if (seen.has(key) || BigInt(r.revision) > BigInt(v.revision)) return bad();
     seen.add(key);
@@ -77,7 +79,8 @@ export function decodeCooldown(encoded: string | null): CooldownLedger {
     if (!record(b) || !keys(b, "id,createdAt,emailDigest,mailboxKey") || !integer(b.id) || b.id < 1 || !integer(b.createdAt) || !mailboxKeyValid(b.emailDigest) || !mailboxKeyValid(b.mailboxKey) || b.emailDigest !== b.mailboxKey || ids.has(b.id)) return bad();
     ids.add(b.id);
   }
-  return v as unknown as CooldownLedger;
+  const ledger = v as unknown as CooldownLedger;
+  return ledger.rows.some((r) => RETIRED_SERVICES.includes(r.service)) ? { ...ledger, rows: ledger.rows.filter((r) => !RETIRED_SERVICES.includes(r.service)) } : ledger;
 }
 
 export function encodeCooldown(ledger: CooldownLedger): string {

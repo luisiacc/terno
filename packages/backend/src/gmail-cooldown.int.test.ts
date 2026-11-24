@@ -302,10 +302,10 @@ for (const kind of ["SQL", "IndexedDB"] as const) describe(`${kind} saved Gmail 
     await expect(secondProvider.verify()).rejects.toBeInstanceOf(ProviderCooldownError);
     expect(h.requests).toHaveLength(before);
     const service = h.contexts.get(second.id)!.google!;
-    const other = await service.request({ request: { endpoint: "google-userinfo", purpose: "photos" } }, `${h.origin}/userinfo`);
+    const other = await service.request({ request: { endpoint: "google-userinfo", purpose: "identity-proof" } }, `${h.origin}/userinfo`);
     expect(other.status).toBe(429); await other.text();
     expect(h.requests.at(-1)).toBe("/userinfo");
-    await expect(service.request({ request: { endpoint: "google-userinfo", purpose: "photos" } }, `${h.origin}/userinfo`)).rejects.toBeInstanceOf(ProviderCooldownError);
+    await expect(service.request({ request: { endpoint: "google-userinfo", purpose: "identity-proof" } }, `${h.origin}/userinfo`)).rejects.toBeInstanceOf(ProviderCooldownError);
     expect(h.requests.filter((path) => path === "/userinfo")).toHaveLength(1);
     const complete = [...h.requests];
     await h.reopen();
@@ -400,24 +400,6 @@ for (const kind of ["SQL", "IndexedDB"] as const) describe(`${kind} saved Gmail 
     expect((response as Response).status).toBe(429); await (response as Response).text();
     await expect(google.request({ request: { endpoint: "oauth-token", purpose: "refresh" } }, `${h.origin}/token`)).rejects.toBeInstanceOf(ProviderCooldownError);
     expect(JSON.parse((await h.backend.store.providerCooldown.read())!).rows).toEqual(expect.arrayContaining([expect.objectContaining({ owner: "installation", service: "oauth-token" })]));
-  });
-
-  sqlite("R1 public photos still reach a ready service during a Gmail-only cooldown", async () => {
-    const original = globalThis.fetch;
-    let userinfo = 0;
-    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
-      const url = input instanceof Request ? input.url : String(input);
-      if (url !== "https://openidconnect.googleapis.com/v1/userinfo") return original(input, init);
-      userinfo++;
-      return Promise.resolve(new Response(JSON.stringify({ picture: "https://lh3.googleusercontent.com/synthetic=s64" }), { headers: { "content-type": "application/json" } }));
-    });
-    const h = await setup(kind); h.answer(healthyProfile);
-    const provider = (await h.backend.provider(h.account.id))!; await provider.verify();
-    h.answer(undefined);
-    await expect(provider.verify()).rejects.toMatchObject({ status: 429 });
-    expect(await provider.photos!({ connections: false, otherContacts: false })).toMatchObject({ own: "https://lh3.googleusercontent.com/synthetic=s128" });
-    expect(userinfo).toBe(1);
-    expect(h.requests).toEqual(["/token", "/gmail/profile", "/gmail/profile"]);
   });
 
   sqlite("R1 rejects stale proof publication across bound-policy preparation", async () => {

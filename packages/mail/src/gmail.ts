@@ -30,8 +30,6 @@ export interface ConnectOptions {
   google?: Pick<GoogleRequests, "request">;
   /** pre-selects the account on Google's consent screen (re-verifying an owner) */
   loginHint?: string;
-  /** plan 22: the whole list asked for (installed apps get no incremental consent: mail's scopes plus the new ones) */
-  scopes?: string[];
   /** Only an existing-account caller that will prove the stored grant may accept true wire omission. */
   allowOmittedRefreshToken?: boolean;
 }
@@ -43,7 +41,8 @@ export interface ConnectOptions {
 export async function connectGmail(options: ConnectOptions): Promise<GmailConnectResult> {
   return withGoogleSignIn({ fetch: options.fetch, google: options.google, signal: options.signal, timeoutMs: options.timeoutMs ?? 300_000 }, async (flow) => {
     const ep = { ...GOOGLE_ENDPOINTS, ...options.endpoints };
-    const requestedScopes = [...(options.scopes ?? SCOPES)];
+    // plan 258: always exactly these, in every build
+    const requestedScopes = [...SCOPES];
     const verifier = b64url(randomBytes(48));
     const challenge = b64url(createHash("sha256").update(verifier).digest());
     const state = b64url(randomBytes(24));

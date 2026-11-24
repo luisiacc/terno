@@ -51,14 +51,13 @@ describe("Google connection RPC validation", () => {
     expect(await t.client.call("app.bootstrap", {})).toMatchObject({ accounts: [], owner: null });
   });
 
-  it("plan 125: a new desktop sign-in asks for mail only; photos stay off until the user turns them on", async () => {
+  it("plan 258: a new desktop sign-in names no scopes of its own (the registry asks for mail's), and an older grant's contacts turn nothing on", async () => {
     const t = await setup(false);
     const contacts = "https://www.googleapis.com/auth/contacts.readonly";
-    // even a grant that somehow carries contacts doesn't turn photos on by itself
     t.answer({ ...identity, grantedScopes: [...identity.grantedScopes, contacts], refreshToken: "synthetic-refresh" });
-    const account = await t.client.call("accounts.connectGmail", {});
-    expect(t.connect.mock.calls[0]![0].scopes).toEqual(["openid", "email", "profile", "https://www.googleapis.com/auth/gmail.modify"]);
-    expect((await t.client.call("app.bootstrap", {})).settings.googlePhotos[String(account.id)]).toBeUndefined();
+    await t.client.call("accounts.connectGmail", {});
+    expect(t.connect.mock.calls[0]![0]).not.toHaveProperty("scopes");
+    expect((await t.client.call("app.bootstrap", {})).settings).not.toHaveProperty("googlePhotos");
   });
 
   it("plan 79: the days chosen when connecting are the new account's window, on desktop and the web; a reconnect keeps its own", async () => {
@@ -114,12 +113,6 @@ describe("Google connection RPC validation", () => {
     t.answer({ ...identity, email: "luis@c.example", sub: "s3", refreshToken: "r" });
     await t.client.call("accounts.connectGmail", {});
     expect((await t.client.call("app.bootstrap", {})).accounts.map((a) => a.displayName)).toEqual(["luis@a.example", "luis@b.example", "luis@c.example"]);
-  });
-
-  it("plan 22: a sign-in where the contacts boxes were unticked leaves photos off", async () => {
-    const t = await setup(false);
-    const account = await t.client.call("accounts.connectGmail", {});
-    expect((await t.client.call("app.bootstrap", {})).settings.googlePhotos[String(account.id)]).toBeUndefined();
   });
 
   it("explicit reduced desktop consent is actionable and saves nothing", async () => {
@@ -307,23 +300,6 @@ describe("Google connection RPC validation", () => {
     expect(await older).toHaveProperty("error"); await newer;
     expect(t.installed.mock.calls.map((call) => call[1])).toEqual(["first", "newer"]);
     expect((await t.backend.store.accounts.config<Record<string, unknown>>(account.id))!.config.googleSubject).toBe(identity.sub);
-  });
-
-  it("browser photo consent cannot extend expiry across account reads and admission", async () => {
-    const t = await setup();
-    const account = await t.client.call("accounts.connectGmailToken", { accessToken: "first", expiresIn: 3600 });
-    await t.backend.syncAccount(account.id);
-    await t.backend.store.accounts.setSyncState(account.id, { status: "error", authRequired: true });
-    const before = await t.backend.store.accounts.get(account.id), config = await t.backend.store.accounts.config(account.id);
-    const get = t.backend.store.accounts.get.bind(t.backend.store.accounts);
-    vi.spyOn(t.backend.store.accounts, "get").mockImplementationOnce(async (id) => { t.advance(30_000); return get(id); });
-    const admit = t.backend.store.accounts.admitGoogle.bind(t.backend.store.accounts);
-    vi.spyOn(t.backend.store.accounts, "admitGoogle").mockImplementationOnce(async (...args) => { t.advance(31_000); return admit(...args); });
-    t.installed.mockClear();
-    await expect(t.client.call("icons.authorizeGoogle", { accountId: account.id, accessToken: "expired-photo-token", expiresIn: 60, scope: "https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/contacts.readonly" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    expect(t.installed).not.toHaveBeenCalled();
-    expect(await t.backend.store.accounts.get(account.id)).toEqual(before);
-    expect(await t.backend.store.accounts.config(account.id)).toEqual(config);
   });
 
   it("a browser token expired during inspection is never installed or saved", async () => {

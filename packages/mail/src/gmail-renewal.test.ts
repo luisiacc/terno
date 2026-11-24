@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createRegistry } from "./registry";
-import { CONTACTS_SCOPE, OTHER_CONTACTS_SCOPE } from "./google-photos";
 
 const endpoints = { token: "https://google.test/token", api: "https://google.test/mail", userinfo: "https://google.test/userinfo" };
 const identity = { email: "reader@example.test", name: "Reader", sub: "synthetic-sub", emailVerified: true };
@@ -26,36 +25,6 @@ describe("cold installed grant proof", () => {
     expect(new URLSearchParams(t.net.mock.calls[0]![1]!.body as string).get("refresh_token")).toBe("old-refresh");
     await expect(proof.inspect()).resolves.toMatchObject(identity);
     expect(t.net.mock.calls.slice(1).every(([, init]) => new Headers(init?.headers).get("authorization") === "Bearer cold-access")).toBe(true);
-  });
-
-  it("omitted refresh scopes need actual selected photo endpoint proof", async () => {
-    const t = setup();
-    const proof = await t.begin();
-    await proof.inspect();
-    expect(proof.scopeSource).toBe("resource-proof");
-    await expect(proof.provePhotos([CONTACTS_SCOPE, OTHER_CONTACTS_SCOPE])).resolves.toEqual([CONTACTS_SCOPE, OTHER_CONTACTS_SCOPE]);
-    expect(t.net.mock.calls.filter(([url]) => String(url).startsWith("https://people.googleapis.com/")).map(([url]) => String(url))).toEqual([
-      expect.stringContaining("people/me/connections?"), expect.stringContaining("otherContacts?"),
-    ]);
-  });
-
-  it("fresh consent scope cannot replace denied durable photo permission", async () => {
-    const t = setup();
-    const proof = await t.begin();
-    await proof.inspect();
-    t.net.mockResolvedValueOnce(new Response("synthetic-secret-marker", { status: 403 }));
-    await expect(proof.provePhotos([CONTACTS_SCOPE])).rejects.toThrow("403");
-    expect(proof.refreshToken).toBe("rotated-refresh");
-  });
-
-  it("explicit reduced old grant refuses photos without claiming requested scopes", async () => {
-    const t = setup("https://www.googleapis.com/auth/gmail.modify");
-    const proof = await t.begin();
-    await proof.inspect();
-    expect(proof.scopeSource).toBe("refresh-response");
-    const calls = t.net.mock.calls.length;
-    await expect(proof.provePhotos([CONTACTS_SCOPE])).rejects.toThrow();
-    expect(t.net).toHaveBeenCalledTimes(calls);
   });
 
   it("proof expires on the cumulative deadline with no idle timer", async () => {

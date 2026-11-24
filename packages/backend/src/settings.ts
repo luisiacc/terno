@@ -32,6 +32,9 @@ interface StoredSettings extends Partial<General> {
   };
   /** plan 123: a Google client of the user's own (before it); dropped on read */
   gmailClientId?: string;
+  /** plan 22's photos from Google, removed by plan 258 with the contacts scopes; dropped on read */
+  googlePhotos?: unknown;
+  googlePhotosPending?: unknown;
   /** pre-v3 shape, mapped on read */
   aiProvider?: "anthropic" | "fake" | "none";
   aiModel?: string;
@@ -225,8 +228,6 @@ export const DEFAULT_SETTINGS: General = {
   sendSound: true,
   // plan 22: website icons are on in either mode until turned off
   senderIcons: true,
-  googlePhotos: {},
-  googlePhotosPending: [],
   // plan 107: folders below Starred
   favoriteFolders: [],
   // plan 41: like Mail, the count and the notifications are on until turned off
@@ -360,52 +361,6 @@ export async function readAgents(store: SettingsStore): Promise<AgentsSetting> {
 /** Plan 22: whether website icons may be fetched: in either mode, unless the user turned them off. */
 export async function readSiteIcons(store: SettingsStore): Promise<boolean> {
   return (await stored(store)).senderIcons ?? DEFAULT_SETTINGS.senderIcons;
-}
-
-/** Plan 22: the Gmail accounts showing photos from Google, and what each was granted. */
-export async function readGooglePhotos(store: SettingsStore): Promise<AppSettings["googlePhotos"]> {
-  return (await stored(store)).googlePhotos ?? {};
-}
-
-/** Plan 22: an account's photo state (null: off), written only by the icons service. */
-/** `clearPending`: a consent or the user's off ends any wait (plan 74); the icon service's own updates leave it alone. */
-export async function setGooglePhotoState(store: SettingsStore, accountId: number, state: AppSettings["googlePhotos"][string] | null, clearPending = true): Promise<void> {
-  await store.settings.update<StoredSettings, void>("app", {}, (raw) => {
-    const s = migrate(raw);
-    const next = { ...s.googlePhotos };
-    if (state) next[String(accountId)] = state;
-    else delete next[String(accountId)];
-    // plan 74: on (through any flow) or off, it no longer waits for a sign-in
-    const pending = clearPending ? (s.googlePhotosPending ?? []).filter((id) => id !== accountId) : (s.googlePhotosPending ?? []);
-    return { value: { ...s, googlePhotos: next, googlePhotosPending: pending }, result: undefined };
-  });
-}
-
-/**
- * Plan 74: a sign-in's consent turns photos on only if the account still waits, read in the same transaction as the
- * write (off at any moment before it wins). True when it turned them on.
- */
-export async function consumeGooglePhotosPending(store: SettingsStore, accountId: number, state: AppSettings["googlePhotos"][string]): Promise<boolean> {
-  return store.settings.update<StoredSettings, boolean>("app", {}, (raw) => {
-    const s = migrate(raw);
-    const pending = s.googlePhotosPending ?? [];
-    if (!pending.includes(accountId)) return { value: s, result: false };
-    return { value: { ...s, googlePhotos: { ...s.googlePhotos, [String(accountId)]: state }, googlePhotosPending: pending.filter((id) => id !== accountId) }, result: true };
-  });
-}
-
-/** Plan 74: an account's photos switched on to come with its next sign-in with Google (or no longer waiting). */
-export async function setGooglePhotosPending(store: SettingsStore, accountId: number, on: boolean): Promise<void> {
-  await store.settings.update<StoredSettings, void>("app", {}, (raw) => {
-    const s = migrate(raw);
-    const rest = (s.googlePhotosPending ?? []).filter((id) => id !== accountId);
-    return { value: { ...s, googlePhotosPending: on ? [...rest, accountId] : rest }, result: undefined };
-  });
-}
-
-/** Plan 74: whether an account's next sign-in with Google should ask for the contacts scopes too. */
-export async function googlePhotosPending(store: SettingsStore, accountId: number): Promise<boolean> {
-  return ((await stored(store)).googlePhotosPending ?? []).includes(accountId);
 }
 
 /** Plan 107: the folders below Starred, in the order added. */
@@ -605,7 +560,7 @@ export async function readSettings(store: SettingsStore): Promise<AppSettings> {
 /** The user's own settings, for what writes them down or works out what they were: an export never records the overlay. */
 export async function readStoredSettings(store: SettingsStore): Promise<AppSettings> {
   const s = withoutOffers(await stored(store));
-  const { aiProvider: _p, aiModel: _m, ai: _ai, appearanceVersion: _v, remoteImagesVersion: _r, errorReportsVersion: _e, localMailVersion: _l, smartCategorizeVersion: _c, gmailClientId: _g, agentsVersion: _av, allowAgentSend: _as, ...general } = s;
+  const { aiProvider: _p, aiModel: _m, ai: _ai, appearanceVersion: _v, remoteImagesVersion: _r, errorReportsVersion: _e, localMailVersion: _l, smartCategorizeVersion: _c, gmailClientId: _g, googlePhotos: _gp, googlePhotosPending: _gpp, agentsVersion: _av, allowAgentSend: _as, ...general } = s;
   const { provider, profiles, capabilities } = aiState(s, s.aiProvider === undefined && !s.ai?.provider && (await store.secrets.has(keySecretName("anthropic"))));
   const profile = profiles[provider] ?? { model: "" };
   const secret = keySecretName(provider, profile.preset);

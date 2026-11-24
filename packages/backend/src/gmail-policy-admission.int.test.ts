@@ -273,17 +273,6 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     if (reason === "SERVICE_DISABLED") expect(writes).not.toHaveBeenCalled();
   });
 
-  sqlite("optional userinfo permission failure does not pause Gmail mail", async () => {
-    const h = await setup(false, kind);
-    const provider = (await h.backend.provider(h.account.id))!;
-    await provider.verify();
-    h.answer((r) => new URL(r.url).pathname.includes("userinfo") ? failure(403, "insufficientPermissions") : undefined);
-    await provider.photos!({ connections: false, otherContacts: false });
-    const { opId } = await h.send();
-    expect(await h.backend.runWorker()).toBe(1);
-    expect(await h.backend.store.ops.get(opId)).toMatchObject({ state: "succeeded", attempts: 1 });
-  });
-
   sqlite.each(["insufficientPermissions", "ACCESS_TOKEN_SCOPE_INSUFFICIENT"])("plan 184: a mail 403 %s asks for a sign-in, not Retry now: nothing more goes, sends wait, signing in again sends", async (reason) => {
     const h = await setup(false, kind);
     await (await h.backend.provider(h.account.id))!.verify();

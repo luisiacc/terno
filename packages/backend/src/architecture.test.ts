@@ -141,7 +141,6 @@ function runtimeLoads(code: string, rel: string): string[] {
 const MAY_LOAD: Record<string, string[]> = {
   "apps/desktop/src/main.ts": ['require("./app")'],
   "apps/web/src/components/add-account-dialog.tsx": ['import("~/web/google")'],
-  "apps/web/src/components/settings/sender-pictures.tsx": ['import("~/web/google")'],
   "apps/web/src/lib/notify.ts": ['import("~/web/lifecycle")'],
   "apps/web/src/lib/sign-in.ts": ['import("~/web/google")'],
   "apps/web/src/rpc/connection.ts": ['import("~/web/connect")'],

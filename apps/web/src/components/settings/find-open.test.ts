@@ -40,13 +40,6 @@ describe("openFound", () => {
     expect(pane.querySelector("[data-found]")?.getAttribute("data-setting")).toBe("ai.drafting");
   });
 
-  it("opens a row that is itself its account's (Appearance's photos from Google)", async () => {
-    pane.innerHTML = `<div data-setting="appearance.googlePhotos" data-setting-scope="account:1"><button role="switch"></button></div><div data-setting="appearance.googlePhotos" data-setting-scope="account:2"><button role="switch"></button></div>`;
-    openFound(target({ id: "appearance.googlePhotos", tab: "appearance", scope: { kind: "account", id: 2 } }));
-    await vi.advanceTimersByTimeAsync(10);
-    expect(pane.querySelector("[data-found]")?.getAttribute("data-setting-scope")).toBe("account:2");
-  });
-
   it("tints a row, never a whole group or an account standing in for a row", async () => {
     pane.innerHTML = `<section data-setting="accounts.owner"><h3>Your Terno account</h3><button>Change</button></section><div data-setting-scope="account:3"><button data-setting-open aria-expanded="true">Work</button></div>`;
     openFound(target({ id: "accounts.owner", tab: "accounts" }));

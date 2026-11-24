@@ -49,7 +49,7 @@ import { blobFingerprint, migrateLegacySecrets, readKeychainState, SecretUnreada
 import { createNetworkPolicy, type LookupAll, type NetDecision, type NetworkPolicy } from "./net-policy";
 import { CARRY_SLICE, carryRenamed } from "./folders";
 import { followFolderFilters } from "./similar";
-import { aiAllowed, followFavoriteFolders, provideDevAi, readAgents, readAutoCategorize, readComposeSuggestions, readGooglePhotos, readPolicy, readSettings, readSiteIcons, setGooglePhotoState } from "./settings";
+import { aiAllowed, followFavoriteFolders, provideDevAi, readAgents, readAutoCategorize, readComposeSuggestions, readPolicy, readSettings, readSiteIcons } from "./settings";
 import { IconService } from "./icons/service";
 import type { IconTransport } from "./icons/transport";
 import { browserUnsubscribeTransport, type UnsubscribeTransport } from "./unsubscribe";
@@ -337,7 +337,7 @@ export class BackendCore {
   readonly quickChecks: QuickChecks;
   /** plan 191: agents waiting for new mail on one account */
   readonly agentWaits: AgentMailWaits;
-  /** plan 22: sender icons (website icons and Google photos), idle until the first lookup */
+  /** plan 22: sender icons (website icons), idle until the first lookup */
   readonly icons: IconService;
   /** plan 41: the Dock badge and notifications for important new mail */
   readonly attention: Attention;
@@ -555,17 +555,8 @@ export class BackendCore {
       web,
       now: () => this.now(),
       assertSite: async (url) => void (await this.net.assert("icons", url)),
-      photoFetch: this.net.fetchFor("mail"),
       siteIconsOn: () => readSiteIcons(this.store),
-      googlePhotos: () => readGooglePhotos(this.store),
-      setGooglePhotoState: (accountId, state) => {
-        const flow = this.signIns.get(accountId);
-        // maintenance (scopes or the API changed), not consent: an account waiting for its sign-in keeps waiting (plan 74)
-        return flow ? this.credentialWrite(accountId, flow, () => setGooglePhotoState(this.store, accountId, state, false)) : setGooglePhotoState(this.store, accountId, state, false);
-      },
-      accountEmail: async (accountId) => (await this.store.accounts.get(accountId))?.email ?? null,
-      provider: (accountId) => this.provider(accountId),
-      // the people's pictures are for the user's own windows, never for agents
+      // the senders' icons are for the user's own windows, never for agents
       emit: (payload) => this.server.emit("icons", payload, { origins: ["renderer", "dev"] }),
       timeouts: options.iconTimeouts,
     });
@@ -755,6 +746,8 @@ export class BackendCore {
     // plan 123: only Terno's own Google clients; a secret saved for one of the user's goes (before the keychain move,
     // which would otherwise open and seal it again)
     await forgetOwnGoogleClient(this).catch((error: unknown) => void captureError(error, { code: "google.own_client_cleanup_failed" }));
+    // plan 258: what Photos from Google left on disk (its contacts' addresses and photo URLs)
+    void this.icons.forgetGooglePhotos();
     // before anything syncs: secrets sealed by Única are sealed again (or stay pending, and Settings asks for them)
     if (this.options.legacySecrets) {
       await migrateLegacySecrets(this.store, this.options.cipher, this.options.legacySecrets, (level, message) => this.log(level, message)).catch((error: unknown) => {
@@ -1185,7 +1178,7 @@ export class BackendCore {
     await this.ready.catch(() => {});
     // its snapshots are written before the store closes under them
     await this.autocomplete.close().catch(() => {});
-    // fetches in flight aborted, the icon index and the photo lists written
+    // fetches in flight aborted, the icon index written
     await this.icons.close().catch(() => {});
     try {
       await this.categorizer.persist();
@@ -1936,7 +1929,7 @@ export class BackendCore {
         tokenResult: (generation, error) => {
           if (error instanceof ProviderAuthError) this.reportRefusal(error, status.refuse({ ...authority, generation }, error));
         },
-        // plan 184: work no caller sees fail (push, a Sent copy, a web token missing under photos): the credentials
+        // plan 184: work no caller sees fail (push, a Sent copy): the credentials
         // now (a sign-in that replaced this provider's ended its lifetime; a renewal that kept it, they're its own)
         refused: (error) => {
           if (!this.refusals.has(error)) this.reportRefusal(error, this.refused(accountId, account.kind, life, this.credentialsOf(accountId), error, false));
@@ -3266,7 +3259,7 @@ export function syncFailureDetail(error: unknown): string {
 }
 
 // the route words Google's mail, people and identity requests use; any other segment is an id
-const ROUTE_WORDS = new Set(["messages", "threads", "attachments", "drafts", "labels", "history", "profile", "send", "import", "insert", "modify", "trash", "untrash", "batchModify", "batchDelete", "watch", "stop", "people", "me", "connections", "otherContacts", "userinfo", "v1", "v2", "v3", "oauth2", "gmail", "users", "token", "settings", "sendAs", "filters"]);
+const ROUTE_WORDS = new Set(["messages", "threads", "attachments", "drafts", "labels", "history", "profile", "send", "import", "insert", "modify", "trash", "untrash", "batchModify", "batchDelete", "watch", "stop", "me", "userinfo", "v1", "v2", "v3", "oauth2", "gmail", "users", "token", "settings", "sendAs", "filters"]);
 
 /** A request's path with its origin, query and every id-like segment removed (only route words stay). */
 export function requestShape(resource: string): string {

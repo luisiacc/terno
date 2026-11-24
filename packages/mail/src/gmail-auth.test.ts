@@ -379,11 +379,9 @@ describe("Google callback ownership and protocol", () => {
     await expect(fetch(callback)).rejects.toThrow();
   });
 
-  it("accepts case-insensitive Bearer and preserves the exact requested custom scopes when omitted", async () => {
-    const scopes = ["openid", mailScope, "https://www.googleapis.com/auth/photoslibrary.readonly"];
-    const expected = [...scopes];
-    const { result } = desktop({ options: { scopes }, token: () => { scopes.length = 0; return json({ ...token, token_type: "bearer" }); } });
-    await expect(result).resolves.toMatchObject({ grantedScopes: expected });
+  it("accepts case-insensitive Bearer and keeps the requested scopes when the token omits them", async () => {
+    const { result } = desktop({ token: () => json({ ...token, token_type: "bearer" }) });
+    await expect(result).resolves.toMatchObject({ grantedScopes: ["openid", "email", "profile", mailScope] });
   });
 
   it("accepts a broader explicit mail grant and unverified optional email evidence", async () => {

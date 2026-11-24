@@ -49,8 +49,6 @@ const SETTINGS = {
   motionMs: 75,
   htmlMailAppearance: "auto",
   senderIcons: false,
-  googlePhotos: {},
-  googlePhotosPending: [],
   density: "comfortable",
   layout: "split",
 } as unknown as AppSettings;

@@ -69,8 +69,8 @@ function reveal(el: HTMLElement) {
 
 const pane = () => document.querySelector<HTMLElement>("[data-testid=settings-scroller]");
 const scopeOf = (root: ParentNode, target: FindTarget) => (target.scope ? root.querySelector<HTMLElement>(`[data-setting-scope="${target.scope.kind}:${target.scope.id}"]`) : null);
-/** a setting in an element, or the element itself (a row that is its own scope) */
-const settingIn = (root: HTMLElement, id: string) => (root.matches(`[data-setting="${id}"]`) ? root : root.querySelector<HTMLElement>(`[data-setting="${id}"]`));
+/** a setting in an element */
+const settingIn = (root: HTMLElement, id: string) => root.querySelector<HTMLElement>(`[data-setting="${id}"]`);
 /** in a group still loading (drafting's preferences), a row may be about to go: it isn't found yet */
 const settled = (el: HTMLElement | null) => (el && !el.closest("[aria-busy=true]") ? el : null);
 

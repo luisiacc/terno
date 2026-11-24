@@ -61,11 +61,9 @@ function release(email: string, entry?: Entry): void {
 /** `shown` cache per address, so useSyncExternalStore sees the same object until something changes */
 const snapshots = new Map<string, ShownIcon | null>();
 
-/** Both sources: website icons where the host can fetch them, or any account with photos from Google. */
+/** Website icons, where the host can fetch them and the setting allows (plan 258 removed Google photos). */
 export function iconsEnabled(s: AppState): boolean {
-  const set = s.settings;
-  if (!set) return false;
-  return (set.senderIcons && s.host?.capabilities.siteIcons === true) || Object.keys(set.googlePhotos ?? {}).length > 0;
+  return !!s.settings?.senderIcons && s.host?.capabilities.siteIcons === true;
 }
 
 function notify(email: string): void {
@@ -152,8 +150,8 @@ function wire(): void {
   client.on("icons", ({ icons, reset }) => {
     if (reset) {
       generation++;
-      // stale-while-revalidate: what's on screen keeps showing and asks again (a source turned on or off, photos listed,
-      // icons forgotten); each avatar changes only when its new answer can be drawn. The rest is forgotten.
+      // stale-while-revalidate: what's on screen keeps showing and asks again (the source turned on or off, icons
+      // forgotten); each avatar changes only when its new answer can be drawn. The rest is forgotten.
       for (const email of entries.keys()) {
         if (visible.has(email)) continue;
         entries.delete(email);
@@ -264,9 +262,8 @@ async function fetchData(refs: IconRef[]): Promise<void> {
   for (const ref of refs) {
     const url = got[ref.id];
     if (!url) gone.add(ref.id);
-    // a website's icon is measured first (plan 252), off this request's slot: it lands at its own size
-    else if (ref.kind === "site") measure(ref, url, epoch);
-    else landed(ref, url, WHOLE, epoch);
+    // measured first (plan 252), off this request's slot: it lands at its own size
+    else measure(ref, url, epoch);
   }
   // replacements whose bytes are gone: initials (one whose bytes came is swapped in when they land)
   const keys = new Set(refs.map(dataKey));
@@ -461,8 +458,3 @@ export const __senderIconsForTests = {
   measuring,
   reset: () => [entries, data, fits, visible, batch, dataBatch, snapshots, listeners, refetched, held, replacing, measuring].forEach((m) => m.clear()),
 };
-
-/** Plan 158: a person is their photo or their initials; a website's icon, of any size, stands for the company. */
-export function iconStandsFor(ref: { kind: string }, person: boolean): boolean {
-  return ref.kind === "photo" || !person;
-}

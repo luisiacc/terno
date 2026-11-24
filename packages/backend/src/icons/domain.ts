@@ -28,17 +28,9 @@ export function registrableDomain(host: string): string | null {
   return p.domain;
 }
 
-/** What an address can be shown with: its site's icon, or (freemail, no usable domain) only a photo. */
-export type IconSubject = { kind: "site"; domain: string } | { kind: "photo-only" };
-
-export function iconSubject(email: string): IconSubject {
+/** The registrable domain whose icon an address is shown with; null for freemail (a person, shown by initials) and addresses with no usable domain. */
+export function iconDomain(email: string): string | null {
   const host = senderHost(email);
   const domain = host ? registrableDomain(host) : null;
-  if (!domain || isFreemail(domain)) return { kind: "photo-only" };
-  return { kind: "site", domain };
-}
-
-/** An address as the photo map keys it. */
-export function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase();
+  return domain && !isFreemail(domain) ? domain : null;
 }

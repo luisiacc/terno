@@ -276,10 +276,6 @@ export interface AppSettings {
    * mode (on in connected mode, off in local mode); the user's choice sticks.
    */
   senderIcons: boolean;
-  /** plan 22: Gmail accounts showing photos from Google, by account id (set through icons.googlePhotos, never settings.update) */
-  googlePhotos: Record<string, GooglePhotoState>;
-  /** plan 74: Gmail accounts whose photos are switched on but wait for the account's next sign-in with Google (Google asks then) */
-  googlePhotosPending: number[];
   /** plan 41: the sidebar's one number on the Dock icon (the web: the installed app's icon); plan 207: the first screen's */
   dockBadge: boolean;
   /** plan 207: the screen the app opens on, and so the one number the sidebar and the Dock show; null: not asked yet (the Inbox) */
@@ -296,21 +292,13 @@ export interface AppSettings {
   favoriteFolders: FavoriteFolder[];
 }
 
-/** Plan 22: what Google granted an account for photos (each contacts scope on its own), and whether its project's People API is off. */
-export interface GooglePhotoState {
-  connections: boolean;
-  otherContacts: boolean;
-  apiDisabled: boolean;
-}
-
 /** Plan 22: an icon the backend has for an address: `id` names its bytes (icons.data), `v` changes when they do. */
 export interface IconRef {
   id: string;
   v: number;
-  kind: "site" | "photo";
   /** the smaller side in px (SVG: 512) */
   px: number;
-  /** drawn edge to edge (photos, touch icons); otherwise centered on a tile */
+  /** drawn edge to edge (touch icons); otherwise centered on a tile */
   full: boolean;
 }
 
@@ -1607,15 +1595,6 @@ export const contract = {
   "icons.data": m<Record<string, string | null>>()(z.object({ ids: z.array(z.string().max(300)).max(50) })),
   /** plan 22: "Forget saved icons" */
   "icons.forget": m<{ ok: true }>()(empty),
-  /** plan 22: photos from Google for a Gmail account, on (desktop: Google's consent in the browser) or off */
-  // plan 74: `later` turns them on without a Google window now: they come with the account's next sign-in
-  "icons.googlePhotos": m<AppSettings>()(z.object({ accountId: id, on: z.boolean(), later: z.boolean().optional() }), { timeoutMs: 300_000 }),
-  /** plan 22, web: the token Google's consent gave for that account's photos (refused unless it opens the same mailbox) */
-  "icons.authorizeGoogle": m<AppSettings>()(
-    // plan 74 `ifPending`: a sign-in's consent counts only if the account still waits (not turned off meanwhile)
-    z.object({ accountId: id, accessToken: z.string().min(1).max(4096), expiresIn: z.number().int().min(60).max(86_400), scope: z.string().max(2000), ifPending: z.boolean().optional() }),
-    { timeoutMs: 120_000 },
-  ),
 } as const;
 
 export type Contract = typeof contract;

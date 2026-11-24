@@ -79,6 +79,15 @@ describe("latent cooldown policy", () => {
     fractional.time(3000, 2010.75); expect(bounded.state(A, "gmail-api")).toEqual({ kind: "at", atMs: 3000 }); fractional.time(3000, 2011); expect(bounded.state(A, "gmail-api")).toEqual({ kind: "ready" });
   });
   it("20 restart waits complete duration", async () => { const f = fixture(seeded()), g = await f.open(); f.time(121000, 120009); expect(g.state(A, "gmail-api")).toEqual({ kind: "at", atMs: 121000 }); f.time(121000, 120010); expect(g.state(A, "gmail-api")).toEqual({ kind: "ready" }); expect(f.samples()).toBe(0); });
+  it("plan 258: a row kept for the retired People API reads, is dropped, and leaves Gmail's cooldown as it was", async () => {
+    const ledger = JSON.parse(seeded()) as { rows: Record<string, unknown>[] };
+    ledger.rows.push({ ...ledger.rows[0], service: "google-people" });
+    const encoded = JSON.stringify(ledger);
+    expect(decodeCooldown(encoded).rows.map((r) => r.service)).toEqual(["gmail-api"]);
+    const f = fixture(encoded), g = await f.open(); f.time(121000, 120009);
+    expect(g.state(A, "gmail-api")).toEqual({ kind: "at", atMs: 121000 });
+    f.time(121000, 120010); expect(g.state(A, "gmail-api")).toEqual({ kind: "ready" });
+  });
   it("21 backward wall requires repair", async () => { const f = fixture(), g = await f.open(); await observe(g); f.time(999, 20); expect(g.state(A, "gmail-api")).toEqual({ kind: "hold", reason: "clock" }); await turns(); });
   it("22 elapsed rollback requires repair", async () => { const f = fixture(), g = await f.open(); await observe(g); f.time(1100, 9); expect(g.state(A, "gmail-api")).toEqual({ kind: "hold", reason: "clock" }); await turns(); });
   it("23 check clock retains D and full wait", async () => { const f = fixture(), g = await f.open(); await observe(g, at(121000)); f.time(999, 20); g.state(A, "gmail-api"); f.time(2000, 30); const rev = g.revisionFor(A, "gmail-api")!; g.checkClock(A, "gmail-api", rev); await g.drain(5000); expect(decodeCooldown(f.encoded()).rows[0]?.minimum).toBe("121000"); f.time(122000, 120029); expect(g.state(A, "gmail-api")).toEqual({ kind: "at", atMs: 121000 }); f.time(122000, 120030); expect(g.state(A, "gmail-api")).toEqual({ kind: "ready" }); });

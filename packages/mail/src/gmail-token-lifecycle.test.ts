@@ -24,7 +24,7 @@ it("forgets a removed account's browser token while a sibling remains usable", a
   }
 });
 
-it("plan 184 (code review #2): photos without a live browser token report the refusal they carry on past", async () => {
+it("plan 184 (code review #2): a request without a live browser token reports its refusal and reaches nothing", async () => {
   const broker = createGmailTokenBroker({ now: () => 1000 });
   const refused: unknown[] = [];
   const requests: string[] = [];
@@ -33,7 +33,7 @@ it("plan 184 (code review #2): photos without a live browser token report the re
     return Response.json({});
   } } as unknown as ProviderContext);
   try {
-    await provider.photos!({ connections: true, otherContacts: false }).catch(() => {});
+    await provider.verify().catch(() => {});
     expect(requests).toEqual([]);
     expect(refused.length).toBeGreaterThan(0);
     expect(refused[0]).toBeInstanceOf(ProviderAuthError);

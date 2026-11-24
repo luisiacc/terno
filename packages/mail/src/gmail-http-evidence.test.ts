@@ -7,8 +7,6 @@ import { toErrorPayload } from "@terno/core/rpc";
 import { createGmailApiProvider } from "./gmail-api";
 import { connectGmail, createGmailProvider } from "./gmail";
 import { createGmailTokenBroker } from "./gmail-web";
-import { beginGmailRenewal } from "./gmail-renewal";
-import { CONTACTS_SCOPE } from "./google-photos";
 import { ProviderAuthError, ProviderError, type ProviderContext } from "./types";
 
 const endpoints = { auth: "https://auth.test/authorize", token: "https://oauth.test/token", api: "https://gmail.test/mail", userinfo: "https://openid.test/userinfo" };
@@ -227,16 +225,6 @@ describe("failed HTTP evidence through public Gmail boundaries", () => {
     expect(evidence(error)).toEqual(expected("oauth-token", "authorization-code", 429));
   });
 
-  it("cold proof tags People separately and preserves the known refresh result", async () => {
-    const t = await wire((path, response) => path === "/token" ? reply(response, 200, JSON.stringify(token)) : reply(response, 429));
-    const proof = await beginGmailRenewal({ clientId: "synthetic-client", clientSecret: null, refreshToken: "synthetic-refresh", fetch: t.fetch, endpoints });
-    const error = await failure(proof.provePhotos([CONTACTS_SCOPE]));
-    expect(proof.refreshToken).toBe("synthetic-refresh");
-    expect(t.requests).toEqual(["/token", "/v1/people/me/connections?personFields=photos&pageSize=1"]);
-    expect(t.logical[1]).toBe("https://people.googleapis.com/v1/people/me/connections?personFields=photos&pageSize=1");
-    expect(evidence(error)).toEqual(expected("google-people", "grant-proof", 429));
-  });
-
   it("portable broker uses the API boundary and absent tokens have no response evidence", async () => {
     const t = await wire((_path, response) => reply(response, 429)), broker = createGmailTokenBroker({ endpoints });
     const { ctx } = context(t.fetch), p = broker.provider(ctx); cleanup.push(() => p.close());
@@ -309,17 +297,5 @@ describe("receipt and cancellation controls through public providers", () => {
     const headers = vi.spyOn(response.headers, "get"); answer(response); await flush();
     expect(canceled).toHaveBeenCalledTimes(1); expect(headers).not.toHaveBeenCalled(); expect(h.replaceSecret).not.toHaveBeenCalled();
     expect(await result).not.toHaveProperty("httpResponse");
-  });
-
-  it("photo failures exercise exact userinfo and People routes without changing their public results", async () => {
-    const t = await wire((_path, response) => reply(response, 429));
-    const result = await api(t.fetch).photos!({ connections: true, otherContacts: true });
-    expect(result).toMatchObject({ own: null, contacts: [], connections: "failed", otherContacts: "failed" });
-    expect(t.requests).toHaveLength(3);
-    expect(t.requests[0]).toBe("/userinfo");
-    expect(t.requests[1]).toMatch(/^\/v1\/people\/me\/connections\?/);
-    expect(t.requests[2]).toMatch(/^\/v1\/otherContacts\?/);
-    expect(t.logical[0]).toBe(endpoints.userinfo);
-    expect(t.logical.slice(1).every((url) => url.startsWith("https://people.googleapis.com/v1/"))).toBe(true);
   });
 });

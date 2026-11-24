@@ -3,7 +3,6 @@ import { gmailSendBody } from "./outgoing-wire";
 import { L } from "@terno/i18n";
 import { LEAVE_FOLDER, MOVE_TO_FOLDER, type IncomingMessage, type LeaveFolderPayload, type MoveToFolderPayload, type ProviderFolder } from "@terno/store";
 import { CATEGORY_ACTIONS, CATEGORY_LABELS, FOLDER_NAME_MAX, FOLDERS_PER_ACCOUNT_MAX, isValidEmail } from "@terno/core";
-import { collectGooglePhotos, PEOPLE_API, type GoogleFailureReason } from "./google-photos";
 import { parseRaw, type ParsedMessage } from "./mime";
 import { cancelResponse, readResponseText, ResponseBodyLimitError, untilAborted } from "./http-body";
 import { readIncomingBody, type IncomingBody } from "./incoming-body";
@@ -336,7 +335,7 @@ async function download<T>(items: T[], work: (item: T) => Promise<void>): Promis
   if (failure) throw failure.error;
 }
 
-type GmailFailureReason = GoogleFailureReason | "DOMAIN_POLICY";
+type GmailFailureReason = "SERVICE_DISABLED" | "ACCESS_TOKEN_SCOPE_INSUFFICIENT" | "DOMAIN_POLICY";
 
 /** Google's own reason for a refusal (e.g. "rateLimitExceeded"), for the console: a short token, never body text. */
 export function googleReasonOf(text: string): string | undefined {
@@ -745,7 +744,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         const quota = res.status === 403 && isRateLimit(text);
         const reason = res.status === 403 ? googleFailureReason(text) : undefined;
         // plan 184: a token without mail's scope is a grant to renew (Google: the token lacks the scope): a sign-in,
-        // never a policy pause. Mail only (People's and userinfo's are photos'), and quota keeps precedence. The
+        // never a policy pause. Mail only, and quota keeps precedence. The
         // refusal holds the account before the forbidden ticket admits another request.
         if (reason === "ACCESS_TOKEN_SCOPE_INSUFFICIENT" && !quota && context.endpoint === "gmail-api") {
           const error = new ProviderAuthError(L("errors.gmail.permissionRequired"), httpResponse);
@@ -1512,10 +1511,6 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     },
     async verify() {
       readBaseline(await api<unknown>("/profile"));
-    },
-
-    photos(want, signal) {
-      return collectGooglePhotos((url, sig) => api(url, { signal: sig, httpContext: url === ep.userinfo ? { endpoint: "google-userinfo", purpose: "photos" } : url.startsWith(`${PEOPLE_API}/`) ? { endpoint: "google-people", purpose: "photos" } : { endpoint: "unknown", purpose: "unknown" } }), ep.userinfo, want, signal);
     },
 
     async sync(outer) {

@@ -143,4 +143,25 @@ describe("the icon cache (plan 22)", () => {
     await c.clear();
     expect([...files.map.keys()]).toEqual([]);
   });
+
+  it("plan 258: a photo Photos from Google cached is dropped at the first read, its bytes and its index entry with it", async () => {
+    const files = memFiles();
+    const { c } = cache({ files });
+    await c.load();
+    await c.put("d:netflix.com", icon(32), 1000);
+    await c.put("p:0badf00d", { ...icon(96, 9), full: true }, 1000);
+    c.negative("p:00c0ffee", 5000);
+    await c.flush();
+    expect(files.map.has("/p/terno.db.icons/1")).toBe(true);
+    const { c: again } = cache({ files });
+    await again.load();
+    await again.flush();
+    expect([...again.keys()]).toEqual(["d:netflix.com"]);
+    expect(await again.read("p:0badf00d")).toBeNull();
+    expect(files.map.has("/p/terno.db.icons/1")).toBe(false);
+    expect(await again.read("d:netflix.com")).toEqual(icon(32).bytes);
+    // the index written again holds website icons only
+    const index = JSON.parse(new TextDecoder().decode(files.map.get("/p/terno.db.icons.json"))) as { entries: [string][] };
+    expect(index.entries.map(([key]) => key)).toEqual(["d:netflix.com"]);
+  });
 });

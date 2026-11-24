@@ -2,7 +2,7 @@
  * Plan 22, the service end to end on a real backend: zero requests when the defaults say so,
  * fetching only what visible avatars ask for, the network and invalidation.
  */
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient, type IconAnswer, type IconRef } from "@terno/core/rpc";
@@ -136,7 +136,7 @@ describe("sender icons, fetching (plan 22)", () => {
     await until(() => Object.keys(Object.assign({}, ...events.map((e) => e.icons))).length === 3);
     const got = Object.assign({}, ...events.map((e) => e.icons)) as Record<string, IconRef>;
     expect(new Set(Object.values(got).map((r) => r.id))).toEqual(new Set(["d:netflix.com"]));
-    expect(got["info@mail.netflix.com"]).toMatchObject({ kind: "site", px: 32, full: false });
+    expect(got["info@mail.netflix.com"]).toMatchObject({ px: 32, full: false });
     expect(transport.calls).toEqual(["https://netflix.com/", "https://netflix.com/favicon.ico"]);
     // answered from memory now, nothing fetched again
     expect(await client.call("icons.lookup", { emails: ["x@netflix.com"] })).toEqual({ "x@netflix.com": got["info@mail.netflix.com"] });
@@ -247,5 +247,16 @@ describe("sender icons, fetching (plan 22)", () => {
     times.sort((a, b) => a - b);
     expect(times[10]!).toBeLessThanOrEqual(10);
     expect(transport.calls).toEqual([]);
+  });
+});
+
+describe("plan 258: what Photos from Google left behind", () => {
+  it("the contacts' addresses and photo URLs it kept are removed when the backend starts", async () => {
+    const { backend, dir } = await setup({ seed: false });
+    const people = join(dir, "t.db.icons-people.json");
+    writeFileSync(people, JSON.stringify({ v: 1, accounts: { "1": { at: 1, own: null, map: [["ana@example.test", "https://lh3.googleusercontent.com/a/ana=s128"]] } } }));
+    await backend.start();
+    await until(() => !existsSync(people));
+    expect(existsSync(join(dir, "t.db"))).toBe(true);
   });
 });

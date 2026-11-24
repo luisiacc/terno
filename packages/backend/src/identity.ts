@@ -5,8 +5,6 @@ import type { GoogleAdmission, OwnerClaim, OwnerDecision, SecretIntent } from "@
 import type { GmailAccountConfig, GmailConnectResult, GmailRenewalProof, ImapAccountConfig } from "@terno/mail";
 import type { BackendCore as Backend } from "./core";
 import { googleClientFor, rememberedGoogleClient } from "./google-client";
-import { consumeGooglePhotosPending, googlePhotosPending, setGooglePhotosPending } from "./settings";
-import { CONTACTS_SCOPE, GMAIL_SCOPES, OTHER_CONTACTS_SCOPE } from "@terno/mail/portable";
 
 /**
  * A failed live login: the provider's own words when they are Terno's (they
@@ -141,7 +139,7 @@ export async function googleCredentialIntent(b: Backend, account: Account, stamp
     try { proof = await b.options.providers.beginGmailRenewal({ clientId: oauth.clientId, clientSecret: oauth.clientSecret, refreshToken, fetch: b.net.fetchFor("mail"), signal: AbortSignal.any([b.abort.signal, flow.signal]) }); }
     catch { throw invalidRenewal(); }
     b.assertSignIn(account.id, flow);
-    if (!proof || typeof proof.refreshToken !== "string" || proof.refreshToken.length > 4096 || !/^[\x21-\x7e]+$/.test(proof.refreshToken) || !Number.isFinite(proof.expiresAt) || typeof proof.inspect !== "function" || typeof proof.provePhotos !== "function") throw invalidRenewal();
+    if (!proof || typeof proof.refreshToken !== "string" || proof.refreshToken.length > 4096 || !/^[\x21-\x7e]+$/.test(proof.refreshToken) || !Number.isFinite(proof.expiresAt) || typeof proof.inspect !== "function") throw invalidRenewal();
     pending = { stamp: { ...stamp }, expectedBlob: current, proof, verified: false };
     b.gmailRenewals.set(account.id, pending);
   }
@@ -195,7 +193,7 @@ export async function googleAdmission(b: Backend, accountId: number, flow: Abort
   } };
 }
 
-export async function connectExistingGoogle(b: Backend, account: Account, flow: AbortController, scopes?: string[]): Promise<GmailConnectResult> {
+export async function connectExistingGoogle(b: Backend, account: Account, flow: AbortController): Promise<GmailConnectResult> {
   if (b.options.providers.gmailTokens) throw new RpcError("UNAVAILABLE", L("errors.gmailReconnectInBrowser"));
   // plan 99: an account signs in again with the client that connected it (its refresh token works with no other)
   const remembered = await rememberedGoogleClient(b, account.id);
@@ -204,16 +202,13 @@ export async function connectExistingGoogle(b: Backend, account: Account, flow: 
   if (!oauth) throw new RpcError("BAD_REQUEST", L(remembered ? "errors.google.clientGone" : "errors.google.noClient"));
   if (!b.options.openExternal) throw new RpcError("UNAVAILABLE", L("errors.googleConnectNeedsDesktop"));
   let result: GmailConnectResult;
-  try { result = await b.options.providers.connectGmail({ clientId: oauth.clientId, clientSecret: oauth.clientSecret, openExternal: b.options.openExternal, signal: AbortSignal.any([b.abort.signal, flow.signal]), fetch: b.net.fetchFor("mail"), loginHint: account.email, scopes, allowOmittedRefreshToken: true }); }
+  try { result = await b.options.providers.connectGmail({ clientId: oauth.clientId, clientSecret: oauth.clientSecret, openExternal: b.options.openExternal, signal: AbortSignal.any([b.abort.signal, flow.signal]), fetch: b.net.fetchFor("mail"), loginHint: account.email, allowOmittedRefreshToken: true }); }
   catch { b.assertSignIn(account.id, flow); throw invalidRenewal(); }
   b.assertSignIn(account.id, flow);
   validateGoogleConnection(result, "renewal");
   if (result.email.toLowerCase() !== account.email.toLowerCase()) throw new RpcError("BAD_REQUEST", L("errors.googleConnectedOther", { got: result.email, expected: account.email }));
   return result;
 }
-
-/** Plan 74: reconnects asking Google for photos waiting on them (photos switched off meanwhile don't cancel them). */
-export const photoReconnects = new WeakSet<AbortController>();
 
 /** Explicit credential changes retain one owner through preparation, durable commit and state publication. */
 export async function reconnectAccount(b: Backend, accountId: number, password: string | undefined): Promise<Account> {
@@ -227,7 +222,6 @@ export async function reconnectAccount(b: Backend, accountId: number, password: 
     const admission = method === "google" ? await googleAdmission(b, accountId, flow) : undefined;
     let result: GmailConnectResult | undefined;
     let blob: Uint8Array | undefined;
-    let photos = false;
     switch (method) {
     case "password": {
       if (!b.host.capabilities.imap) throw new RpcError("UNAVAILABLE", L("errors.imapNeedsDesktop"));
@@ -239,11 +233,7 @@ export async function reconnectAccount(b: Backend, accountId: number, password: 
       break;
     }
     case "google":
-      // plan 74: photos switched on to come with this sign-in: Google asks for the contacts scopes too
-      photos = await googlePhotosPending(b.store, accountId);
-      b.assertSignIn(accountId, flow);
-      if (photos) photoReconnects.add(flow);
-      result = await connectExistingGoogle(b, account, flow, photos ? [...GMAIL_SCOPES, CONTACTS_SCOPE, OTHER_CONTACTS_SCOPE] : undefined);
+      result = await connectExistingGoogle(b, account, flow);
       if (admission!.expectedSubject !== null && admission!.expectedSubject !== result.sub) throw invalidRenewal();
       if (result.refreshToken !== null) blob = await encryptCredential(b, result.refreshToken);
       break;
@@ -263,34 +253,6 @@ export async function reconnectAccount(b: Backend, accountId: number, password: 
       b.assertSignIn(accountId, flow);
       if (!current) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
       b.startAccount(current);
-      // still wanted (not turned off while Google's window was open)?
-      if (photos && result && (await googlePhotosPending(b.store, accountId))) {
-        b.assertSignIn(accountId, flow);
-        // what Google granted is the photo state, as for a new account; unticked, it stops waiting (no asking every sign-in)
-        const granted = result.grantedScopes ?? [];
-        const wanted = [CONTACTS_SCOPE, OTHER_CONTACTS_SCOPE].filter((scope) => granted.includes(scope));
-        // Google kept the old grant (no new refresh token): the contacts scopes must be proven on it, as the switch's consent does
-        let proven = true;
-        if (prepared.pending && wanted.length) {
-          try {
-            const proved = await prepared.pending.proof.provePhotos(wanted, AbortSignal.any([b.abort.signal, flow.signal]));
-            proven = wanted.every((scope) => proved.includes(scope));
-          } catch { proven = false; }
-          b.assertSignIn(accountId, flow);
-        }
-        const state = { connections: granted.includes(CONTACTS_SCOPE), otherContacts: granted.includes(OTHER_CONTACTS_SCOPE), apiDisabled: false };
-        // unproven: mail is signed in all the same; photos keep waiting for the next sign-in
-        if (!proven) {
-          /* nothing: still pending */
-        } else if (state.connections || state.otherContacts) {
-          // on only if still waiting at this instant (switched off during the proof, it stays off)
-          const on = await b.credentialWrite(accountId, flow, () => consumeGooglePhotosPending(b.store, accountId, state));
-          b.assertSignIn(accountId, flow);
-          // listed before the reconnect answers, as the switch's consent does: Settings then shows what Google said (People API off)
-          if (on) await b.icons.syncPeople(accountId, state, flow.signal).catch(() => {});
-        } else await b.credentialWrite(accountId, flow, () => setGooglePhotosPending(b.store, accountId, false));
-        b.assertSignIn(accountId, flow);
-      }
       return current;
     });
   } finally { await endSignIn(b, accountId, flow); }

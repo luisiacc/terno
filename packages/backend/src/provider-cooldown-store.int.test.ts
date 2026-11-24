@@ -24,7 +24,7 @@ const rmSync: typeof removeSync = (...args) => { cleanup.remove(() => removeSync
 const mailboxA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const mailboxB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const gmail: RequestDescriptor = { request: { endpoint: "gmail-api", purpose: "mail" } };
-const userinfo: RequestDescriptor = { request: { endpoint: "google-userinfo", purpose: "photos" } };
+const userinfo: RequestDescriptor = { request: { endpoint: "google-userinfo", purpose: "identity-proof" } };
 const wallNow = () => 1000;
 const elapsedNow = () => 10;
 

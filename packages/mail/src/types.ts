@@ -42,8 +42,7 @@ export interface ProviderOp {
 export type HttpRequestContext =
   | { readonly endpoint: "gmail-api"; readonly purpose: "mail" | "identity-proof" }
   | { readonly endpoint: "oauth-token"; readonly purpose: "refresh" | "authorization-code" }
-  | { readonly endpoint: "google-people"; readonly purpose: "photos" | "grant-proof" }
-  | { readonly endpoint: "google-userinfo"; readonly purpose: "photos" | "identity-proof" }
+  | { readonly endpoint: "google-userinfo"; readonly purpose: "identity-proof" }
   | { readonly endpoint: "unknown"; readonly purpose: "unknown" };
 
 export type BoundedHttpHeader =
@@ -361,8 +360,6 @@ export interface MailProvider {
    * pass to settle (Codex code review round 14 #1).
    */
   renamesFollowed?(renamed: readonly FolderMove[]): Promise<void>;
-  /** plan 22 (Gmail): the account's own picture and its contacts' photos, as far as the grant allows */
-  photos?(want: import("./google-photos").PhotoWant, signal?: AbortSignal): Promise<import("./google-photos").GooglePhotos>;
   close(): Promise<void>;
 }
 
@@ -410,7 +407,6 @@ export interface GmailRenewalProof {
   readonly expiresAt: number;
   /** Uses this forced refresh's access, never a cached or newly consented token. */
   inspect(signal?: AbortSignal): Promise<Omit<GmailConnectResult, "refreshToken">>;
-  provePhotos(scopes: readonly string[], signal?: AbortSignal): Promise<string[]>;
 }
 
 export interface GmailRenewalOptions {
