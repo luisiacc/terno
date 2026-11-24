@@ -1,5 +1,7 @@
 # 125: Contacts asked only for photos, and Remove account withdraws Google's grant
 
+> **2026-11-24:** §1 (contacts asked only for photos) no longer applies: [plan 258](258-no-contacts-scopes.md) removed the contacts scopes and Photos from Google. §2 (Remove account revokes the grant) stands.
+
 ## Request (verbatim)
 
 > yes

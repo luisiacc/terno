@@ -391,7 +391,7 @@ export const es: SiteCopy = {
     privacy: {
       title: "Privacidad",
       intro: "Terno guarda tu correo en tu ordenador. No hay cuenta de Terno ni ningún servidor de Terno que guarde tu correo. Esta página explica exactamente qué hacen con tus datos la app y este sitio web.",
-      updated: "Última actualización: 23 de noviembre de 2026",
+      updated: "Última actualización: 24 de noviembre de 2026",
       contents: "En esta página",
       sections: [
         {
@@ -405,8 +405,8 @@ export const es: SiteCopy = {
           id: "on-your-computer",
           title: "Tu correo se queda en tu ordenador",
           body: [
-            "Terno descarga tu correo de tus proveedores de correo y lo guarda, junto con tus contactos y el índice de búsqueda, en una base de datos en tu carpeta de usuario del ordenador. Tus contraseñas, tokens de inicio de sesión y claves de IA se cifran con una clave que tu sistema guarda por ti: en el Llavero en un Mac, con la protección de datos propia de Windows para tu cuenta de usuario en Windows, y en tu llavero (como GNOME Keyring o KWallet) en Linux. En un Linux sin llavero en marcha, esa clave es una incluida en la app, que los protege menos.",
-            "Nada de esto se nos envía. No tenemos ningún servidor que reciba tu correo, tus contactos ni nada de lo que haces en la app. No hay analítica ni rastreo.",
+            "Terno descarga tu correo de tus proveedores de correo y lo guarda, junto con las direcciones con las que te escribes y el índice de búsqueda, en una base de datos en tu carpeta de usuario del ordenador. Tus contraseñas, tokens de inicio de sesión y claves de IA se cifran con una clave que tu sistema guarda por ti: en el Llavero en un Mac, con la protección de datos propia de Windows para tu cuenta de usuario en Windows, y en tu llavero (como GNOME Keyring o KWallet) en Linux. En un Linux sin llavero en marcha, esa clave es una incluida en la app, que los protege menos.",
+            "Nada de esto se nos envía. No tenemos ningún servidor que reciba tu correo ni nada de lo que haces en la app. No hay analítica ni rastreo.",
           ],
         },
         {
@@ -416,7 +416,6 @@ export const es: SiteCopy = {
           points: [
             "**Tus proveedores de correo** (Gmail, iCloud, Outlook o cualquier servidor IMAP/SMTP), para descargar, enviar y organizar tu correo.",
             "**Iconos de sitios web.** Para mostrar el logo de una empresa junto a su correo, Terno pide el icono al propio sitio web de esa empresa. El sitio ve tu dirección IP y nada más. Activado por defecto; puedes desactivarlo en Ajustes → Apariencia.",
-            "**Fotos de Google.** Con una cuenta de Google, Terno puede mostrar las fotos de tus contactos de Google. Puedes desactivarlo en Ajustes → Apariencia.",
             "**Las imágenes remotas de los mensajes** solo se cargan cuando tú lo decides, para un mensaje o siempre. Entonces el servidor del remitente ve tu dirección IP, como con cualquier app de correo.",
             "**Actualizaciones.** Donde Terno puede actualizarse solo, consulta GitHub si hay una versión nueva al abrirse y cada pocas horas. No se envía nada sobre ti ni sobre tu correo. En Ajustes → General eliges si las versiones nuevas se descargan solas.",
             "**IA**, solo si configuras un proveedor. Consulta [Proveedores de IA](#ai).",
@@ -431,9 +430,8 @@ export const es: SiteCopy = {
             "Cuando conectas una cuenta de Google, Google te pide que permitas a Terno:",
           ],
           points: [
-            "**Ver tu nombre, tu dirección de correo y tu foto de perfil**, para identificar la cuenta en Terno y, con Fotos de Google activado, mostrar tu foto en el correo que envías.",
+            "**Ver tu nombre, tu dirección de correo y tu foto de perfil**, para identificar la cuenta en Terno. Terno usa tu nombre y tu dirección, no la foto.",
             "**Leer, enviar, etiquetar y eliminar tu correo de Gmail** (el permiso `gmail.modify`), para que puedas leer, buscar, enviar, archivar, etiquetar y eliminar tu correo en Terno.",
-            "**Ver las direcciones de correo y las fotos de tus contactos** (acceso de solo lectura a tus contactos y a otros contactos), solo para poner la foto correcta junto a quienes te escriben. Terno solo lo pide cuando activas Fotos de Google en Ajustes → Apariencia.",
           ],
           after: [
             "Terno usa estos datos solo para ofrecerte las funciones que ves en la app. Se guardan en tu ordenador y nunca se nos envían. No los vendemos, no los usamos para publicidad ni para crear perfiles tuyos, ni para desarrollar, mejorar o entrenar modelos de IA, y nadie en Luisiacc LLC los lee.",

@@ -349,6 +349,16 @@ describe("the privacy policy", () => {
     expect(page("/privacy/").querySelector("section#google")!.textContent).toContain("will adhere to the Google API Services User Data Policy, including the Limited Use requirements");
   });
 
+  it("plan 258: asks Google for the profile and Gmail only: no contacts, no People API, no Photos from Google, in either language", () => {
+    for (const path of ["/privacy/", "/es/privacy/"]) {
+      const doc = page(path);
+      const google = doc.querySelector("section#google")!;
+      expect(google.querySelectorAll("ul > li")).toHaveLength(2);
+      expect(doc.body.textContent).not.toMatch(/your contacts|contacts’|other contacts|tus contactos|otros contactos|People API|Photos from Google|Fotos de Google/i);
+    }
+    expect(page("/privacy/").body.textContent).toContain("Last updated: November 24, 2026");
+  });
+
   it("every in-page link lands on a section, and both languages use the same anchors", () => {
     for (const path of ["/privacy/", "/es/privacy/"]) {
       const doc = page(path);
@@ -365,11 +375,9 @@ describe("the privacy policy", () => {
     // update checks run whatever the setting; only the download is a choice
     expect(section("connections")).not.toContain("you control");
     expect(section("connections")).toContain("every few hours");
-    // People API reads addresses to match photos (google-photos.ts), and the own picture is for sent mail
-    expect(section("google")).toContain("email addresses and photos");
-    expect(section("google")).toContain("the mail you send");
-    // plan 125: contacts only with the photos switch; removal withdraws the grant
-    expect(section("google")).toContain("only when you turn on Photos from Google");
+    // plan 258: Terno asks Google for its profile and Gmail only; the profile picture isn't used
+    expect(section("google")).toContain("not the picture");
+    // plan 125: removal withdraws the grant
     expect(section("google")).toContain("withdraws Terno’s access at Google");
     // the connector is gated by a token file, not per app
     expect(section("agents")).toContain("key kept in your Terno folder");

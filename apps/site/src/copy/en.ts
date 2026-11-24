@@ -406,7 +406,7 @@ export const en = {
     privacy: {
       title: "Privacy",
       intro: "Terno keeps your mail on your computer. There is no Terno account, and no Terno server that stores your mail. This page says exactly what the app and this website do with your data.",
-      updated: "Last updated: November 23, 2026",
+      updated: "Last updated: November 24, 2026",
       contents: "On this page",
       sections: [
         {
@@ -420,8 +420,8 @@ export const en = {
           id: "on-your-computer",
           title: "Your mail stays on your computer",
           body: [
-            "Terno downloads your mail from your mail providers and keeps it, with your contacts and the search index, in a database in your user folder on your computer. Your passwords, sign-in tokens and AI keys are encrypted with a key your system keeps for you: in the Keychain on a Mac, with Windows’ own data protection for your user account on Windows, and in your keyring (such as GNOME Keyring or KWallet) on Linux. On a Linux system with no keyring running, that key is one built into the app instead, which protects them less.",
-            "None of this is sent to us. We have no server that receives your mail, your contacts or anything you do in the app. There are no analytics and no tracking.",
+            "Terno downloads your mail from your mail providers and keeps it, with the addresses you write to and hear from and the search index, in a database in your user folder on your computer. Your passwords, sign-in tokens and AI keys are encrypted with a key your system keeps for you: in the Keychain on a Mac, with Windows’ own data protection for your user account on Windows, and in your keyring (such as GNOME Keyring or KWallet) on Linux. On a Linux system with no keyring running, that key is one built into the app instead, which protects them less.",
+            "None of this is sent to us. We have no server that receives your mail or anything you do in the app. There are no analytics and no tracking.",
           ],
         },
         {
@@ -431,7 +431,6 @@ export const en = {
           points: [
             "**Your mail providers** (Gmail, iCloud, Outlook or any IMAP/SMTP server), to fetch, send and organize your mail.",
             "**Website icons.** To show a company’s logo next to its mail, Terno asks that company’s own website for its icon. The site sees your IP address and nothing else. On by default; turn it off in Settings → Appearance.",
-            "**Photos from Google.** With a Google account, Terno can show your Google contacts’ photos. You can turn it off in Settings → Appearance.",
             "**Remote images in messages** load only when you choose to, for one message or always. The sender’s server then sees your IP address, as with any mail app.",
             "**Updates.** Where Terno can update itself, it checks GitHub for a new version after it opens and every few hours. Nothing about you or your mail is sent. In Settings → General you choose whether new versions download on their own.",
             "**AI**, only if you set up a provider. See [AI providers](#ai).",
@@ -446,9 +445,8 @@ export const en = {
             "When you connect a Google account, Google asks you to allow Terno to:",
           ],
           points: [
-            "**See your name, email address and profile picture**, to identify the account in Terno and, with Photos from Google on, to show your picture on the mail you send.",
+            "**See your name, email address and profile picture**, to identify the account in Terno. Terno uses your name and address, not the picture.",
             "**Read, send, label and delete your Gmail mail** (the `gmail.modify` permission), so you can read, search, send, archive, label and delete your mail in Terno.",
-            "**See your contacts’ email addresses and photos** (read-only access to your contacts and other contacts), only to put the right photo next to the people who write to you. Terno asks for this only when you turn on Photos from Google in Settings → Appearance.",
           ],
           after: [
             "Terno uses this data only to provide the features you see in the app. It is stored on your computer and is never sent to us. We don’t sell it, use it for advertising, use it to build profiles of you, or use it to develop, improve or train AI models, and no person at Luisiacc LLC reads it.",

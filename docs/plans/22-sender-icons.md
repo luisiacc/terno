@@ -1,5 +1,7 @@
 # Plan 22: sender icons (website icons and Google photos)
 
+> **2026-11-24:** [plan 258](258-no-contacts-scopes.md) removed §6 (Google photos, the contacts scopes and the account's own picture). Sender pictures are website icons only.
+
 - **Status:** done (see "Revisions after the Codex review", "What the Codex code review changed" and "Implementation notes").
 - **Builds on:** `da55479` (main after plan 20).
 - **Request (verbatim):** "extract icons for emails, 1st try to get the favicon from the main site like if the sender is from 'netflix.com' get the favicon and cache it of course, then use it in the future for thos senders, lets also make sure to render the gmail pictures of the users if they have it."

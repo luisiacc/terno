@@ -123,3 +123,13 @@ Codex reviewed `052b2053` and raised 7 points, all fixed:
 7. **Own picture.** It is shown on the user's own messages, not in Settings → Accounts. The justification and the demo script were corrected.
 
 Points 2 and 5 are honest descriptions of the current app. Opt-in MCP and a way to turn update checks off would be app changes.
+
+## Update, 2026-11-24: the contacts scopes are gone (plan 258)
+
+Google's verification rejected `contacts.readonly` and `contacts.other.readonly`: the demo video couldn't show them doing anything, because the mailbox had no sender with a contacts photo. The owner removed both from the Cloud Console's Data Access list, and [plan 258](258-no-contacts-scopes.md) removed them from the code with the Photos from Google feature built on them (plan 22 §6, plans 74 and 125 §1).
+
+- Terno now asks for exactly `openid email profile https://www.googleapis.com/auth/gmail.modify`, in every build. `packages/mail/src/google-scopes.test.ts` pins it: the list, the desktop consent URL, and no other `googleapis.com/auth/` permission anywhere in the shipped source. The web sign-in sets `include_granted_scopes: false`, so a token can't carry an older contacts grant.
+- **Scope justifications:** the contacts entry above no longer applies. `openid`, `email`, `profile` identify which Google account was connected (its address and name in the account list); Terno doesn't use the profile picture.
+- **Demo video:** step 3 (contacts) is gone, and step 4 shows only the account's address and name in Settings → Accounts (there is no "own picture" any more).
+- **Policy:** the Photos from Google item and the contacts permission are gone from both languages, the profile item says the picture isn't used, and the date is November 24, 2026.
+- Test users who granted contacts before still hold that grant at Google until they remove Terno at myaccount.google.com/permissions, or remove the account in Terno (which revokes the whole grant, plan 125). Terno never uses it.

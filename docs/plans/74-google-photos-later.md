@@ -1,5 +1,7 @@
 # 74 · Photos from Google, on without signing in now
 
+> **2026-11-24:** removed by [plan 258](258-no-contacts-scopes.md) with Photos from Google and the contacts scopes.
+
 ## Request
 
 > allow to toggle this on without signing with google, it will just turn on whenever they connect a google account
