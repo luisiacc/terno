@@ -207,6 +207,24 @@ test("the Pro link lands on Terno Pro in every design, clear of a sticky header 
     }
 });
 
+test("the hero's “What matters” link lands on its section in Pro, in every design, clear of a sticky header", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const design of DESIGNS)
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/designs/${design}/`);
+      await page.getByRole("link", { name: "New “What matters”: only the email that needs you" }).click();
+      await expect(page).toHaveURL(/#what-matters$/);
+      const title = page.locator("#what-matters h3").first();
+      await expect(title).toBeInViewport();
+      const [top, bar] = await page.evaluate(() => [
+        document.querySelector("#what-matters")!.getBoundingClientRect().top,
+        getComputedStyle(document.querySelector("header")!).position === "sticky" ? document.querySelector("header")!.getBoundingClientRect().bottom : 0,
+      ]);
+      expect(top, `${design} ${width}`).toBeGreaterThanOrEqual(bar);
+    }
+});
+
 test("Midnight's header: GitHub and the language menu are named icons; the menu closes on Esc and a click outside, and switches language", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("link", { name: "Source code on GitHub" })).toHaveAttribute("href", /github\.com/);

@@ -7,7 +7,7 @@ import { Logo } from "../parts/logo";
 import { AgentSession, agentsPrivacyLink } from "../parts/agents";
 import { PRO_LEAD, PRO_MORE, Peek, ProLeadShot, proPrivacyLink } from "../parts/pro";
 import { DESIGN_SHOTS, Shot, type ShotName } from "../parts/shot";
-import { WM_BENEFITS, WM_SHOT } from "../parts/what-matters";
+import { WM_ANCHOR, WM_BENEFITS, WM_SHOT, WhatMattersNews } from "../parts/what-matters";
 import { Waitlist } from "../parts/waitlist";
 import { Window } from "../parts/window";
 import { GITHUB, LANGUAGES, LICENSE_URL, pathIn, type Route } from "../site";
@@ -208,7 +208,7 @@ function Pro({ copy }: { copy: SiteCopy }) {
 function WhatMatters({ copy }: { copy: SiteCopy }) {
   const w = copy.whatMatters;
   return (
-    <div id="what-matters" className="mt-14 scroll-mt-20">
+    <div id={WM_ANCHOR} className="mt-14 scroll-mt-20">
       <div className="max-w-3xl">
         <p className={`${mono} text-(--mn-accent)`}>{w.eyebrow}</p>
         <h3 className="mt-4 text-2xl font-semibold tracking-[-0.025em] text-balance sm:text-4xl">{w.title}</h3>
@@ -291,10 +291,16 @@ export const Midnight: HomeDesign = ({ copy, route }) => {
         {/* hero */}
         <section className="mn-hero relative overflow-hidden">
           <div className={`${wrap} relative pt-20 text-center sm:pt-28`}>
+            <WhatMattersNews
+              copy={copy}
+              className="mn-news inline-flex max-w-full items-center gap-2.5 rounded-full border border-(--mn-line) bg-(--mn-raised) py-1 pr-3 pl-1 text-left text-sm text-(--mn-muted) transition-colors duration-100 hover:text-(--mn-fg)"
+              tagClassName={`${mono} mn-pro-chip shrink-0 rounded-full px-2 py-1 text-[0.62rem] leading-none`}
+            />
             <h1 className="mx-auto mt-7 max-w-4xl text-[2.6rem] leading-[1.02] font-semibold tracking-[-0.035em] text-balance sm:text-6xl lg:text-7xl">
               <span className="mn-title">{copy.hero.title}</span>
             </h1>
             <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-balance text-(--mn-muted)">{copy.hero.subtitle}</p>
+            <p className="mx-auto mt-3 max-w-2xl text-lg leading-relaxed text-balance text-(--mn-muted)">{copy.hero.ai}</p>
             <div id={DOWNLOAD_ANCHOR} className="mt-9 flex scroll-mt-28 flex-col items-center justify-center gap-3 sm:flex-row">
               <DownloadMac copy={copy} className="mn-btn mn-btn-primary h-12 gap-2.5 px-5 text-[0.95rem]" subClassName="text-[0.7rem] font-normal text-white" />
               <DownloadLinux copy={copy} className="mn-btn mn-btn-ghost h-12 gap-2.5 px-5 text-[0.95rem]" subClassName="text-[0.7rem] font-normal text-(--mn-muted)" />

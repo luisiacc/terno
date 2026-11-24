@@ -176,7 +176,7 @@ describe("Terno Pro (plan 97)", () => {
         expect(imgs.map((i) => i.getAttribute("data-mode")), `${route.path} ${name}`).toEqual(["light", "dark"]);
         for (const img of imgs) expect(img.getAttribute("alt")).toBe(copy.alt[name]);
       }
-      // coming soon: nothing to download, buy or start
+      // the plan isn't sold yet (its features work on the user's own key): nothing to download, buy or start
       expect(pro.querySelectorAll('a[href^="/download"], form'), route.path).toHaveLength(0);
       expect([...pro.querySelectorAll("button")].every((b) => b.closest(".site-shot-tools")), route.path).toBe(true);
     }
@@ -230,11 +230,28 @@ describe("“What matters” (plan 224)", () => {
       expect(h4s.map((h) => h.textContent), route.path).toEqual(benefits.map((b) => b.title));
       for (const [i, h4] of h4s.entries()) expect(h4.nextElementSibling?.textContent, `${route.path} ${i}`).toBe(benefits[i]!.body);
       for (const text of [copy.whatMatters.body, copy.whatMatters.done, copy.whatMatters.foot]) expect(wm.textContent, route.path).toContain(text);
-      // Pro only: not in the hero or the header, and nowhere outside Pro
-      expect(page.querySelector('a[href="#what-matters"]'), route.path).toBeNull();
+      // its section lives in Pro only; the hero names it in one link, above the title (the owner, 2026-11-23), and the header doesn't
       expect(page.querySelectorAll('img[src^="/shots/ai-what-matters-"]'), route.path).toHaveLength(2);
-      expect(copy.hero.subtitle, route.path).not.toContain(copy.whatMatters.eyebrow);
+      expect(page.querySelectorAll('header a[href="#what-matters"]'), route.path).toHaveLength(0);
+      const news = [...page.querySelectorAll('a[href="#what-matters"]')];
+      expect(news, route.path).toHaveLength(1);
+      expect(news[0]!.textContent, route.path).toBe(copy.hero.news.tag + copy.hero.news.text);
+      expect(copy.hero.news.text, route.path).toContain(copy.whatMatters.eyebrow);
+      const h1 = page.querySelector("h1")!;
+      expect(news[0]!.compareDocumentPosition(h1) & 4, route.path).toBe(4);
+      expect(h1.compareDocumentPosition(pro) & 4, route.path).toBe(4);
     }
+  });
+
+  it("the hero names the AI in its own line under the subtitle, in every home design, without promising a plan on sale", () => {
+    for (const route of homes) {
+      const copy = COPY[route.lang];
+      const page = new JSDOM(render(route).body).window.document;
+      const ai = [...page.querySelectorAll("p")].find((p) => p.textContent === copy.hero.ai);
+      expect(ai, route.path).toBeDefined();
+      expect(ai!.previousElementSibling?.textContent, route.path).toBe(copy.hero.subtitle);
+    }
+    for (const lang of ["en", "es"] as const) expect(JSON.stringify(COPY[lang].hero)).not.toMatch(/Pro|\$|US\$/);
   });
 
   it("names the view as the app does, and nothing promises the old Today", () => {

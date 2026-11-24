@@ -11,7 +11,9 @@ export const es: SiteCopy = {
   nav: { features: "Funciones", pro: "Pro", privacy: "Privacidad", source: "Código", download: "Descargar", language: "English", languageHref: "/", languageMenu: "Idioma", sourceOnGithub: "Código fuente en GitHub", home: "Inicio de Terno" },
   hero: {
     title: "El último cliente de correo que probarás.",
-    subtitle: "Todas tus cuentas en una bandeja. Búsqueda instantánea. Archiva un correo y todos los parecidos se archivan también. Totalmente local, sin cuenta.",
+    subtitle: "Bandeja unificada. Búsqueda instantánea. Archiva un correo y todos los parecidos se van con él. Totalmente local, sin registrarte.",
+    ai: "Activa la IA para tener resúmenes, respuestas redactadas y recordatorios cuando alguien no responde.",
+    news: { tag: "Nuevo", text: "«Lo importante»: solo el correo que te necesita" },
     note: "Gratis · macOS en Apple silicon y Linux",
   },
   download: {
@@ -121,7 +123,7 @@ export const es: SiteCopy = {
   },
   pro: {
     eyebrow: "Terno Pro",
-    status: "Próximamente",
+    status: "IA disponible hoy · Plan próximamente",
     title: "Menos tiempo en el correo.",
     body: "Pro te muestra lo importante, redacta tus respuestas y resume los hilos largos. Tú decides: ningún correo sale hasta que lo envías.",
     price: "Previsto: US$12 al mes o US$108 al año, con una prueba gratis de 14 días.",

@@ -7,7 +7,7 @@ import { Kbd } from "../parts/kbd";
 import { Logo } from "../parts/logo";
 import { PRO_LEAD, PRO_MORE, Peek, ProLeadShot, proPrivacyLink } from "../parts/pro";
 import { DESIGN_SHOTS, Shot, type ShotName } from "../parts/shot";
-import { WM_BENEFITS, WM_SHOT } from "../parts/what-matters";
+import { WM_ANCHOR, WM_BENEFITS, WM_SHOT, WhatMattersNews } from "../parts/what-matters";
 import { Waitlist } from "../parts/waitlist";
 import { Window } from "../parts/window";
 import { GITHUB, LICENSE_URL } from "../site";
@@ -151,7 +151,7 @@ function Pro({ copy }: { copy: SiteCopy }) {
 function WhatMatters({ copy }: { copy: SiteCopy }) {
   const w = copy.whatMatters;
   return (
-    <div id="what-matters" className="letter-sub mt-16 scroll-mt-20">
+    <div id={WM_ANCHOR} className="letter-sub mt-16 scroll-mt-20">
       <p className="text-[15px] font-semibold text-(--l-link)">{w.eyebrow}</p>
       <h3 className="mt-3 text-[1.75rem] leading-[1.15] font-semibold tracking-[-0.022em] text-balance sm:text-[2.125rem]">{w.title}</h3>
       <p className="letter-prose mt-5">{w.body}</p>
@@ -206,8 +206,12 @@ export const Letter: HomeDesign = ({ copy }) => {
       </header>
 
       <main id="main" className="letter-flow pt-20 sm:pt-32">
+        <p>
+          <WhatMattersNews copy={copy} className={`${quiet} inline-flex max-w-full items-center gap-2.5 text-[15px]`} tagClassName="letter-pro-chip shrink-0 rounded-full px-2.5 py-1 text-[12.5px] leading-none font-medium" />
+        </p>
         <h1 className="mt-5 text-[2.75rem] leading-[1.02] font-semibold tracking-[-0.04em] text-balance sm:text-[4.25rem]">{copy.hero.title}</h1>
         <p className="letter-prose letter-lead mt-8">{copy.hero.subtitle}</p>
+        <p className="letter-prose letter-lead mt-3">{copy.hero.ai}</p>
         <div id={DOWNLOAD_ANCHOR} className="mt-10 flex scroll-mt-20 flex-wrap items-center gap-3">
           <DownloadMac copy={copy} className={button} subClassName="text-[12px] font-normal opacity-65" />
           <DownloadLinux copy={copy} className={quietButton} subClassName="text-[12px] font-normal text-(--l-muted)" />

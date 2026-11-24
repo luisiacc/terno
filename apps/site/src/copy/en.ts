@@ -10,7 +10,11 @@ export const en = {
   nav: { features: "Features", pro: "Pro", privacy: "Privacy", source: "Source", download: "Download", language: "Español", languageHref: "/es/", languageMenu: "Language", sourceOnGithub: "Source code on GitHub", home: "Terno home" },
   hero: {
     title: "The last email client you’ll try.",
-    subtitle: "Every account in one inbox. Instant search. Archive one email, and every similar one is archived too. Fully local, no account needed.",
+    subtitle: "Unified inbox. Instant search. Archive one email, and every one like it goes too. Fully local, no sign-up.",
+    /** the AI, one line under the subtitle: it works today on the user's own key or a local model; Pro's plan isn't sold yet */
+    ai: "Turn on AI for summaries, drafted replies, and reminders when someone doesn’t reply.",
+    /** the link above the title, down to “What matters” in Pro (the owner, 2026-11-23: it belongs in the first lines) */
+    news: { tag: "New", text: "“What matters”: only the email that needs you" },
     note: "Free · macOS on Apple silicon and Linux",
   },
   download: {
@@ -127,7 +131,8 @@ export const en = {
   /** Terno Pro (plan 97): the AI features, coming soon. Its own key so `features` keeps one shape. */
   pro: {
     eyebrow: "Terno Pro",
-    status: "Coming soon",
+    /** the AI works today, on the user's own key or a model on their Mac; the plan isn't sold yet (Codex review: not "Use it today", which read as Pro on your own key) */
+    status: "AI available today · Plan coming soon",
     title: "Less time on email.",
     body: "Pro shows you what matters, drafts your replies and sums up long threads. You stay in charge: no email goes out until you send it.",
     price: "Planned: US$12 a month or $108 a year, with a 14-day free trial.",

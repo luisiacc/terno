@@ -7,7 +7,7 @@ import { Logo } from "../parts/logo";
 import { AgentSession, agentsPrivacyLink } from "../parts/agents";
 import { PRO_LEAD, PRO_MORE, Peek, ProLeadShot, proPrivacyLink } from "../parts/pro";
 import { DESIGN_SHOTS, Shot, type ShotName } from "../parts/shot";
-import { WM_BENEFITS, WM_SHOT } from "../parts/what-matters";
+import { WM_ANCHOR, WM_BENEFITS, WM_SHOT, WhatMattersNews } from "../parts/what-matters";
 import { Waitlist } from "../parts/waitlist";
 import { Window } from "../parts/window";
 import { GITHUB, LICENSE_URL } from "../site";
@@ -151,7 +151,7 @@ function Pro({ copy }: { copy: SiteCopy }) {
 function WhatMatters({ copy }: { copy: SiteCopy }) {
   const w = copy.whatMatters;
   return (
-    <div id="what-matters" className="mx-auto mt-16 max-w-5xl scroll-mt-6">
+    <div id={WM_ANCHOR} className="mx-auto mt-16 max-w-5xl scroll-mt-6">
       <div className="mx-auto max-w-3xl text-center">
         <p className="text-[0.95rem] font-semibold text-(--l-accent)">{w.eyebrow}</p>
         <h3 className={`mt-3 ${h3} sm:text-[1.9rem]`}>{w.title}</h3>
@@ -227,10 +227,16 @@ export const Lumen: HomeDesign = ({ copy }) => {
         {/* hero */}
         <section className="lumen-hero overflow-hidden pt-10 sm:pt-16" aria-labelledby="hero-title">
           <div className={`${wrap} flex flex-col items-center text-center`}>
+            <WhatMattersNews
+              copy={copy}
+              className="inline-flex max-w-full items-center gap-2.5 rounded-full bg-(--l-raise) py-1 pr-3.5 pl-1 text-left text-[0.92rem] text-(--l-muted) shadow-[inset_0_0_0_1px_var(--l-line)] transition-colors duration-100 hover:text-(--l-fg)"
+              tagClassName="lumen-pro-chip shrink-0 rounded-full px-2.5 py-1 text-[0.78rem] leading-none font-medium"
+            />
             <h1 id="hero-title" className="mt-7 max-w-4xl text-[2.9rem] leading-[1.02] font-semibold tracking-[-0.035em] text-balance sm:text-6xl lg:text-[5.25rem]">
               {copy.hero.title}
             </h1>
             <p className="mt-6 max-w-2xl text-lg leading-relaxed text-(--l-muted) text-balance sm:text-xl">{copy.hero.subtitle}</p>
+            <p className="mt-3 max-w-2xl text-lg leading-relaxed text-(--l-muted) text-balance sm:text-xl">{copy.hero.ai}</p>
             <div id={DOWNLOAD_ANCHOR} className="mt-10 flex scroll-mt-24 flex-col items-center gap-4 sm:flex-row">
               <DownloadMac copy={copy} className="lumen-btn h-14 gap-3 rounded-2xl pr-6 pl-5 text-[1.05rem]" subClassName="text-[0.78rem] font-normal" />
               <DownloadLinux copy={copy} className="lumen-btn-quiet h-14 gap-3 rounded-2xl pr-6 pl-5 text-[1.05rem]" subClassName="text-[0.78rem] font-normal text-(--l-muted)" />

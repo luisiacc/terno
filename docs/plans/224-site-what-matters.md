@@ -124,3 +124,24 @@ The first runs found the feed with only waiting conversations. The diagnosis (th
 8. **The outline is tested:** Pro's h2 comes before “What matters”, whose title is an h3 and its benefits h4s, in all three designs.
 
 Also found while re-running the demo capture: a second click on the open conversation closes it, and a promise follow-up shows What matters' card, not the follow-up line; the script skips both.
+
+## The owner's third round (2026-11-23): the first lines name it
+
+> i want to let the user know those things that are in the subtitle, i want to also let them know of the what matters section which is pretty revolutionary and potent their usage with ai(summaries,draft, followup detection), but thats on the ai plan, its still the best email client without ai, how do we convery all of these on the first lines too so they know to keep reading below and find out more
+
+> pro plan is not active but they can use AI already, the pricing is what's not built
+
+This reverses the second round's "the hero is back to its words": the section stays in Pro, but the hero points at it.
+
+- **A link above the title** (`WhatMattersNews` in `parts/what-matters.tsx`, styled by each design): a "New" tag and "“What matters”: only the email that needs you", down to `#what-matters` (`WM_ANCHOR`). The header still has no link to it.
+- **The subtitle in the owner's words:** "Unified inbox. Instant search. Archive one email, and every one like it goes too. Fully local, no sign-up." ("no sign-up", since "no account" reads as no email account.)
+- **The AI in its own line under it** (`hero.ai`), in the subtitle's style: "Turn on AI for summaries, drafted replies, and reminders when someone doesn’t reply." It names no plan or price: the features work today on the user's own key or a model on their Mac.
+- **Pro's chip** says "AI available today · Plan coming soon" instead of "Coming soon": the features work, the plan and its price aren't sold yet ("Planned: …" stays).
+- Tests: `render.test.ts` (the hero's one link, before the h1, the AI line under the subtitle, no plan or price in the hero) and an e2e that the link lands on the section clear of a sticky header in every design and width; axe stays clean in all three designs, light and dark, 1440 and 390 px.
+
+### What the Codex review changed
+
+1. **Pro's chip** first read "Use it today with your own key", which beside "Terno Pro" says Pro runs on your key; it now says the AI is available and the plan is coming.
+2. **The e2e finds the hero's link by its accessible name**, not its href.
+
+Not taken: rewording the subtitle's archive sentence, "Fully local" and "reminders" (the owner's chosen words), the Spanish teaser (it matches the section's own "te necesitan"), and an instant jump instead of the site's smooth scroll (every anchor on the site already scrolls that way).
