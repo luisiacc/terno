@@ -695,11 +695,6 @@ export class BackendCore {
   }
 
   /**
-   * Plan 263 (Codex critique #2): a pass nobody awaits (the poll, a retry, a push, a wake). What fails before its own
-   * error handling (a store read, a provider that can't be made) is reported, never an unhandled rejection: on desktop
-   * that ends the backend, and every account with it. The next pass (the poll, or offline the probe) tries again.
-   */
-  /**
    * Plan 263 (Codex code review #1): the sync machinery nobody awaits (the poll, a reconnect, going offline) reports
    * its failure; never an unhandled rejection.
    */
@@ -707,6 +702,11 @@ export class BackendCore {
     work.catch((error: unknown) => { if (!this.stopped) captureError(error, { code: "sync.failed" }); });
   }
 
+  /**
+   * Plan 263 (Codex critique #2): a pass nobody awaits (the poll, a retry, a push, a wake). What fails before its own
+   * error handling (a store read, a provider that can't be made) is reported, never an unhandled rejection: on desktop
+   * that ends the backend, and every account with it. The next pass (the poll, or offline the probe) tries again.
+   */
   private syncInBackground(accountId: number, o?: { quick?: boolean }): void {
     (o ? this.syncAccount(accountId, undefined, o) : this.syncAccount(accountId)).catch((error: unknown) => {
       if (this.stopped) return;
