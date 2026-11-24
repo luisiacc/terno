@@ -3,7 +3,7 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import { deploySteps, runSteps } from "../deploy-steps.mjs";
 import { csvCell, rowsFromWrangler, toCsv, waitlistQuery } from "../waitlist-csv.mjs";
-import { handleDownload, isTarget, pickAssets, TARGETS } from "./download";
+import { handleDownload, isTarget, KEEP_FAILED_S, KEEP_FOUND_S, pickAssets, TARGETS } from "./download";
 import worker, { type Env } from "./index";
 import { MAX_ROWS, handleWaitlist, parseFields, validEmail } from "./waitlist";
 
@@ -153,10 +153,16 @@ const latest = (r: ReturnType<typeof release> | null) => async (url: string | UR
   expect(String(url)).toBe("https://api.github.com/repos/luisiacc/terno/releases/latest");
   return r ? Response.json(r) : new Response("Not Found", { status: 404 });
 };
-/** the Cache API, enough for one key */
-const memoryCache = () => {
-  const m = new Map<string, Response>();
-  return { match: async (r: Request) => m.get(r.url)?.clone(), put: async (r: Request, res: Response) => void m.set(r.url, res) } as unknown as Cache;
+/** the Cache API, enough for one key: an entry lasts its `max-age` on this clock, as Cloudflare's does */
+const memoryCache = (clock = { now: 0 }) => {
+  const m = new Map<string, { res: Response; until: number }>();
+  return {
+    match: async (r: Request) => {
+      const e = m.get(r.url);
+      return e && clock.now < e.until ? e.res.clone() : undefined;
+    },
+    put: async (r: Request, res: Response) => void m.set(r.url, { res, until: clock.now + Number(/max-age=(\d+)/.exec(res.headers.get("cache-control") ?? "")![1]) * 1000 }),
+  } as unknown as Cache;
 };
 
 describe("download", () => {
@@ -171,7 +177,8 @@ describe("download", () => {
     // a release with only some files names only those; a draft or prerelease (never "latest", but checked) none
     expect(pickAssets(release({ files: ["Terno-1.2.0-arm64.dmg"] }))).toEqual({ "/download/mac": expect.stringMatching(/arm64\.dmg$/) });
     expect(pickAssets(release({ draft: true, files: ALL }))).toEqual({});
-    expect(pickAssets(release({ prerelease: true, files: ALL.map((f) => f.replace("1.2.0", "1.3.0-nightly.2")) }))).toEqual({});
+    // the guard itself, with files whose names would pass (Codex review: nightly names alone never reached it)
+    expect(pickAssets(release({ prerelease: true, files: ALL }))).toEqual({});
     // a nightly's file name never passes for a stable one, and nothing is followed off GitHub's download host
     expect(pickAssets(release({ files: ["Terno-1.3.0-nightly.2-linux-amd64.deb"] }))).toEqual({});
     expect(pickAssets(release({ files: ALL, host: "https://evil.example" }))).toEqual({});
@@ -180,15 +187,15 @@ describe("download", () => {
 
   it("redirects every target to its file; without one, to the page that says where else, in the visitor's language", async () => {
     for (const target of Object.keys(TARGETS)) {
-      const found = await handleDownload(new Request(`https://terno.app${target}`), latest(release({ files: ALL })), null);
+      const found = await handleDownload(new Request(`https://terno.app${target}`), { fetcher: latest(release({ files: ALL })), cache: null });
       expect(found.status, target).toBe(302);
       expect(found.headers.get("location"), target).toBe(pickAssets(release({ files: ALL }))[target as keyof typeof TARGETS]);
     }
     for (const fetcher of [latest(null), latest(release({ files: [] })), async () => new Response("rate limited", { status: 403 }), async () => { throw new Error("offline"); }]) {
-      expect((await handleDownload(new Request("https://terno.app/download/mac"), fetcher, null)).headers.get("location")).toBe("https://terno.app/download/");
-      expect((await handleDownload(new Request("https://terno.app/download/mac?lang=es"), fetcher, null)).headers.get("location")).toBe("https://terno.app/es/download/");
-      expect((await handleDownload(new Request("https://terno.app/download/linux/rpm-arm64"), fetcher, null)).headers.get("location")).toBe("https://terno.app/download/linux/");
-      expect((await handleDownload(new Request("https://terno.app/download/linux/deb?lang=es"), fetcher, null)).headers.get("location")).toBe("https://terno.app/es/download/linux/");
+      expect((await handleDownload(new Request("https://terno.app/download/mac"), { fetcher, cache: null })).headers.get("location")).toBe("https://terno.app/download/");
+      expect((await handleDownload(new Request("https://terno.app/download/mac?lang=es"), { fetcher, cache: null })).headers.get("location")).toBe("https://terno.app/es/download/");
+      expect((await handleDownload(new Request("https://terno.app/download/linux/rpm-arm64"), { fetcher, cache: null })).headers.get("location")).toBe("https://terno.app/download/linux/#unavailable");
+      expect((await handleDownload(new Request("https://terno.app/download/linux/deb?lang=es"), { fetcher, cache: null })).headers.get("location")).toBe("https://terno.app/es/download/linux/#unavailable");
     }
   });
 
@@ -203,23 +210,58 @@ describe("download cache", () => {
     let calls = 0;
     const counting = async (url: string | URL | Request) => (calls++, latest(release({ files: ALL }))(url));
     const cache = memoryCache();
-    const rush = await Promise.all(Object.keys(TARGETS).flatMap((t) => [1, 2].map(() => handleDownload(new Request(`https://terno.app${t}`), counting, cache))));
+    const rush = await Promise.all(Object.keys(TARGETS).flatMap((t) => [1, 2].map(() => handleDownload(new Request(`https://terno.app${t}`), { fetcher: counting, cache }))));
     expect(rush.every((r) => r.status === 302 && r.headers.get("location")!.startsWith("https://github.com/"))).toBe(true);
     expect(calls).toBe(1);
-    for (const t of Object.keys(TARGETS)) await handleDownload(new Request(`https://terno.app${t}`), counting, cache);
+    for (const t of Object.keys(TARGETS)) await handleDownload(new Request(`https://terno.app${t}`), { fetcher: counting, cache });
     expect(calls).toBe(1);
   });
 
-  it("remembers a failed lookup too, so an outage or GitHub's rate limit isn't hit on every click", async () => {
-    const req = new Request("https://terno.app/download/linux/deb");
+  it("hands the shared lookup to the Worker to finish, so a cancelled first click can't strand the rest", async () => {
+    let resolveFetch: ((r: Response) => void) | null = null;
+    const slow = () => new Promise<Response>((r) => (resolveFetch = r));
+    const handed: Promise<unknown>[] = [];
+    const first = handleDownload(new Request("https://terno.app/download/mac"), { fetcher: slow, cache: null, waitUntil: (w) => handed.push(w) });
+    const second = handleDownload(new Request("https://terno.app/download/linux/deb"), { fetcher: slow, cache: null, waitUntil: (w) => handed.push(w) });
+    // one lookup, handed over once, by the click that began it
+    expect(handed).toHaveLength(1);
+    // GitHub is asked a moment later (after the cache is looked at), then answers
+    while (!resolveFetch) await new Promise((r) => setTimeout(r, 0));
+    resolveFetch(Response.json(release({ files: ALL })));
+    await handed[0];
+    expect((await first).headers.get("location")).toMatch(/arm64\.dmg$/);
+    expect((await second).headers.get("location")).toMatch(/linux-amd64\.deb$/);
+  });
+
+  it("keeps a found release for ten minutes and a failure for one, then asks again", async () => {
+    expect([KEEP_FOUND_S, KEEP_FAILED_S]).toEqual([600, 60]);
+    const clock = { now: 0 };
     let calls = 0;
-    const failing = async () => (calls++, new Response("rate limited", { status: 403 }));
-    const cache = memoryCache();
-    for (let i = 0; i < 3; i++) expect((await handleDownload(req, failing, cache)).headers.get("location")).toBe("https://terno.app/download/linux/");
+    let up = false;
+    const github = async (url: string | URL | Request) => (calls++, up ? latest(release({ files: ALL }))(url) : new Response("rate limited", { status: 403 }));
+    const cache = memoryCache(clock);
+    const click = () => handleDownload(new Request("https://terno.app/download/linux/deb"), { fetcher: github, cache });
+    expect((await click()).headers.get("location")).toBe("https://terno.app/download/linux/#unavailable");
+    up = true;
+    clock.now = 59_000;
+    await click();
     expect(calls).toBe(1);
+    clock.now = 61_000;
+    expect((await click()).headers.get("location")).toMatch(/linux-amd64\.deb$/);
+    expect(calls).toBe(2);
+    clock.now = 61_000 + 599_000;
+    await click();
+    expect(calls).toBe(2);
+    clock.now = 61_000 + 601_000;
+    await click();
+    expect(calls).toBe(3);
+  });
+
+  it("remembers a failed lookup too, so an outage isn't hit on every click", async () => {
+    const req = new Request("https://terno.app/download/linux/deb");
     let offline = 0;
-    const cache2 = memoryCache();
-    for (let i = 0; i < 3; i++) await handleDownload(req, async () => { offline++; throw new Error("offline"); }, cache2);
+    const cache = memoryCache();
+    for (let i = 0; i < 3; i++) await handleDownload(req, { fetcher: async () => { offline++; throw new Error("offline"); }, cache });
     expect(offline).toBe(1);
   });
 });
@@ -241,28 +283,31 @@ describe("deploy", () => {
     });
 });
 
+/** a Worker's context: what it's asked to finish after the response */
+const ctx = { waitUntil: () => {}, passThroughOnException: () => {} } as unknown as ExecutionContext;
+
 describe("worker", () => {
   const env = (): Env => ({ DB: fakeDb(), ASSETS: { fetch: async () => new Response("<html></html>", { headers: { "content-type": "text/html" } }) } as unknown as Fetcher });
 
   it("sends www to the apex with the path and query", async () => {
-    const res = await worker.fetch(new Request("https://www.terno.app/privacy/?ref=x"), env());
+    const res = await worker.fetch(new Request("https://www.terno.app/privacy/?ref=x"), env(), ctx);
     expect(res.status).toBe(301);
     expect(res.headers.get("location")).toBe("https://terno.app/privacy/?ref=x");
   });
 
   it("secures every response; only terno.app is indexable", async () => {
-    const prod = await worker.fetch(new Request("https://terno.app/"), env());
+    const prod = await worker.fetch(new Request("https://terno.app/"), env(), ctx);
     expect(prod.headers.get("content-security-policy")).toContain("default-src 'self'");
     expect(prod.headers.get("strict-transport-security")).toContain("max-age=");
     expect(prod.headers.get("x-content-type-options")).toBe("nosniff");
     expect(prod.headers.get("permissions-policy")).toContain("camera=()");
     expect(prod.headers.get("x-robots-tag")).toBeNull();
-    const preview = await worker.fetch(new Request("https://terno-site-preview.example.workers.dev/"), env());
+    const preview = await worker.fetch(new Request("https://terno-site-preview.example.workers.dev/"), env(), ctx);
     expect(preview.headers.get("x-robots-tag")).toBe("noindex");
-    const api = await worker.fetch(post(JSON.stringify({ email: "a@b.co", platform: "linux" })), env());
+    const api = await worker.fetch(post(JSON.stringify({ email: "a@b.co", platform: "linux" })), env(), ctx);
     expect(api.headers.get("cache-control")).toBe("no-store");
     expect(api.headers.get("content-security-policy")).toBeTruthy();
-    expect((await worker.fetch(new Request("https://terno.app/api/other"), env())).status).toBe(404);
+    expect((await worker.fetch(new Request("https://terno.app/api/other"), env(), ctx)).status).toBe(404);
   });
 
   it("routes every download to the Worker, uncached by browsers; the Linux page stays a page", async () => {
@@ -270,7 +315,7 @@ describe("worker", () => {
     globalThis.fetch = (async () => new Response("offline", { status: 503 })) as typeof fetch;
     try {
       for (const target of Object.keys(TARGETS)) {
-        const res = await worker.fetch(new Request(`https://terno.app${target}`), env());
+        const res = await worker.fetch(new Request(`https://terno.app${target}`), env(), ctx);
         expect(res.status, target).toBe(302);
         expect(res.headers.get("cache-control"), target).toBe("no-store");
         expect(res.headers.get("content-security-policy"), target).toBeTruthy();
@@ -278,13 +323,13 @@ describe("worker", () => {
     } finally {
       globalThis.fetch = offline;
     }
-    const page = await worker.fetch(new Request("https://terno.app/download/linux/"), env());
+    const page = await worker.fetch(new Request("https://terno.app/download/linux/"), env(), ctx);
     expect(page.status).toBe(200);
     expect(page.headers.get("cache-control")).toBe("public, max-age=0, must-revalidate");
   });
 
   it("caches hashed assets for a year", async () => {
-    const res = await worker.fetch(new Request("https://terno.app/assets/index-abc.css"), env());
+    const res = await worker.fetch(new Request("https://terno.app/assets/index-abc.css"), env(), ctx);
     expect(res.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
   });
 });

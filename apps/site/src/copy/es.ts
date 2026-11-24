@@ -250,6 +250,7 @@ export const es: SiteCopy = {
       which: "¿No sabes qué procesador tienes? `uname -m` muestra `x86_64` para x86-64 y `aarch64` para arm64.",
       updates: "Terno aún no puede actualizarse solo en Linux. Cuando salga una versión nueva, descárgala aquí e instálala igual.",
       releases: "Todas las versiones en GitHub",
+      unavailable: "No pudimos acceder a esa descarga ahora mismo. Inténtalo de nuevo en un momento o descárgala desde [todas las versiones en GitHub](https://github.com/luisiacc/terno/releases).",
     },
     waitlist: { title: "Únete a la lista de espera" },
     notFound: { title: "Esta página no existe", body: "Puede que el enlace sea antiguo o esté mal escrito.", home: "Ir a la página de inicio" },

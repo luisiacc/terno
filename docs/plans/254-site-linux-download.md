@@ -82,3 +82,14 @@ The plan critique raised ten points, all taken:
 - Commands on the Linux page wrap only between words (each word kept whole), so a phone never breaks a file name or scrolls a code box (axe flagged the scroll areas as unreachable by keyboard).
 - The package buttons read "Download .deb · x86-64" with the download icon; the home's Linux button uses the terminal icon (the free set has no Linux mark).
 - Found on the way, not from this plan: four waitlist tests in `worker.test.ts` fail on Node 24 before this change too: the test's D1 stand-in (`node:sqlite`) rejects the numbered parameters (`?1`…`?4`) that D1 accepts ("column index out of range").
+
+## Revisions after the Codex code review
+
+Six findings, all fixed, each with a test that fails without the fix:
+
+1. **A cancelled first click could strand the rest.** The shared lookup's I/O belonged to the request that began it; cancelled mid-lookup (reproduced in `workerd`), every click waiting on it stayed pending. The lookup is handed to the Worker's `ctx.waitUntil`, and GitHub gets 8 seconds (`AbortSignal.timeout`). Test: one lookup, handed over once, both waiting clicks answered.
+2. **A failed Linux package reloaded the page silently.** It lands on `/download/linux/#unavailable`, where a notice (shown only by `:target`, like the waitlist's outcomes) says it couldn't be reached and links every version on GitHub. Tested in the Worker and in e2e (hidden, then shown, axe-clean).
+3. **The Mac fallback linked the release that had just failed.** It links every release, not `/releases/latest`.
+4. **The e2e test couldn't tell commands apart.** Each package's button and its own command are checked within the same item.
+5. **The test cache never expired.** It now honours `max-age` on a clock: a failure is asked again after a minute, a release after ten.
+6. **The prerelease test never reached the guard** (its nightly names failed the patterns first): it uses names that would pass.

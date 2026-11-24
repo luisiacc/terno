@@ -11,7 +11,7 @@ export interface Env extends WaitlistEnv {
 }
 
 export default {
-  async fetch(req: Request, env: Env): Promise<Response> {
+  async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
     if (url.hostname === `www.${PRODUCTION_HOST}`) {
       url.hostname = PRODUCTION_HOST;
@@ -19,7 +19,7 @@ export default {
     }
     let res: Response;
     if (url.pathname === "/api/waitlist") res = await handleWaitlist(req, env);
-    else if (isTarget(url.pathname)) res = await handleDownload(req);
+    else if (isTarget(url.pathname)) res = await handleDownload(req, { waitUntil: (work) => ctx.waitUntil(work) });
     else if (url.pathname.startsWith("/api/")) res = new Response("Not Found", { status: 404 });
     else res = await env.ASSETS.fetch(req);
     return secure(res, url);

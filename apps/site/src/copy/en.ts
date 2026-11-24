@@ -258,6 +258,8 @@ export const en = {
       which: "Not sure which processor? `uname -m` prints `x86_64` for x86-64 and `aarch64` for arm64.",
       updates: "Terno can’t update itself on Linux yet. When a new version is out, download it here and install it the same way.",
       releases: "Every version on GitHub",
+      /** shown when a package's download couldn't be reached (the Worker lands on #unavailable) */
+      unavailable: "We couldn’t reach that download just now. Try again in a moment, or get it from [every version on GitHub](https://github.com/luisiacc/terno/releases).",
     },
     waitlist: { title: "Join the waitlist" },
     notFound: { title: "This page doesn’t exist", body: "The link may be old or mistyped.", home: "Go to the home page" },

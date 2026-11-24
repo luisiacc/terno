@@ -98,7 +98,8 @@ describe("screenshots", () => {
       expect(doc.title).toBe(`${COPY[lang].pages.linux.title} · Terno`);
       expect(doc.querySelector('meta[name="description"]')?.getAttribute("content")).toBe(COPY[lang].pages.linux.description);
       const fallback = new JSDOM(render(routes().find((r) => r.path === (lang === "es" ? "/es/download/" : "/download/"))!).body).window.document;
-      expect(fallback.querySelector('a[href="https://github.com/luisiacc/terno/releases/latest"]'), lang).not.toBeNull();
+      // every release, not the latest: the latest is the one a download just failed to find a file in
+      expect(fallback.querySelector('a[href="https://github.com/luisiacc/terno/releases"]'), lang).not.toBeNull();
       expect(fallback.querySelector("form"), lang).toBeNull();
     }
   });

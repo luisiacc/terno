@@ -69,6 +69,10 @@ function LinuxPage({ copy }: { copy: SiteCopy }) {
   const query = copy.lang === "es" ? "?lang=es" : "";
   return (
     <Plain copy={copy}>
+      {/* a package that couldn't be reached lands here on #unavailable, and only then does this show (site.css) */}
+      <p id="unavailable" role="status" className="site-outcome site-outcome-error mt-6 rounded-xl px-4 py-3">
+        <Rich text={l.unavailable} />
+      </p>
       <h1 className={h1}>{l.title}</h1>
       <p className={lead}>{l.lead}</p>
       <p className={prose}>{l.install}</p>
@@ -169,7 +173,7 @@ export function SecondaryPage({ route, copy }: { route: Route; copy: SiteCopy })
         <h1 className={h1}>{p.download.title}</h1>
         <p className={lead}>{p.download.body}</p>
         <p className="mt-8">
-          <a href={`${GITHUB}/releases/latest`} className={releasesLink}>
+          <a href={`${GITHUB}/releases`} className={releasesLink}>
             {p.download.releases}
             <ChevronRight size="1.15em" />
           </a>

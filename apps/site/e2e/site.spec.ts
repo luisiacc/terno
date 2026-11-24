@@ -71,7 +71,7 @@ test("routing: real 404s, trailing slashes, the download stand-in, robots and si
     const res = await request.get(path, { maxRedirects: 0 });
     expect(res.status(), path).toBe(302);
     expect(res.headers()["cache-control"], path).toBe("no-store");
-    expect(res.headers().location, path).toMatch(new RegExp(`/download/linux/$|Terno-[\\d.]+-${file.replace(".", "\\.")}$`));
+    expect(res.headers().location, path).toMatch(new RegExp(`/download/linux/#unavailable$|Terno-[\\d.]+-${file.replace(".", "\\.")}$`));
   }
   expect((await request.get("/es/download/linux/no-such-package", { maxRedirects: 0 })).status()).toBe(404);
   expect((await request.get("/download/linux/snap", { maxRedirects: 0 })).status()).toBe(404);
@@ -286,7 +286,22 @@ for (const path of ["/download/linux/", "/es/download/linux/"])
       expect(axe.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`)).toEqual([]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
       const query = path.startsWith("/es/") ? "?lang=es" : "";
-      for (const pkg of ["deb", "deb-arm64", "rpm", "rpm-arm64"]) await expect(page.locator(`a[href="/download/linux/${pkg}${query}"]`)).toHaveCount(1);
-      await expect(page.locator("code").filter({ hasText: "sudo apt install ./Terno-*-linux-arm64.deb" })).toHaveCount(1);
-      await expect(page.locator("code").filter({ hasText: "sudo dnf install ./Terno-*-linux-x86_64.rpm" })).toHaveCount(1);
+      // each package's button and, beside it in the same item, the command for that very file
+      for (const [pkg, command] of [
+        ["deb", "sudo apt install ./Terno-*-linux-amd64.deb"],
+        ["deb-arm64", "sudo apt install ./Terno-*-linux-arm64.deb"],
+        ["rpm", "sudo dnf install ./Terno-*-linux-x86_64.rpm"],
+        ["rpm-arm64", "sudo dnf install ./Terno-*-linux-aarch64.rpm"],
+      ] as const) {
+        const item = page.locator("li").filter({ has: page.locator(`a[href="/download/linux/${pkg}${query}"]`) });
+        await expect(item).toHaveCount(1);
+        await expect(item.locator("code")).toHaveText(command);
+      }
+      // the notice shows only when a package couldn't be reached (#unavailable), and links to GitHub
+      await expect(page.locator("#unavailable")).toBeHidden();
+      await page.goto(`${path}#unavailable`);
+      await expect(page.locator("#unavailable")).toBeVisible();
+      await expect(page.locator('#unavailable a[href="https://github.com/luisiacc/terno/releases"]')).toHaveCount(1);
+      const axeNotice = await new AxeBuilder({ page }).withTags(AXE_TAGS).analyze();
+      expect(axeNotice.violations.map((v) => v.id)).toEqual([]);
     });
