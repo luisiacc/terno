@@ -10,6 +10,11 @@ import { Archive, Ban, ChevronRight, EyeOff, Info, Mail, X } from "@terno/ui/ico
 import { cn } from "@terno/ui/lib/utils";
 import { type MouseEvent, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getApp } from "~/state/app";
+import { useDesign } from "~/lib/design";
+import { LIST_TITLE } from "~/lib/list-title";
+import { focusReader } from "~/lib/pane-focus";
+import { focusQuietly } from "~/lib/quiet-focus";
+import { COLUMN as FEED_COLUMN } from "./what-matters/feed";
 import { modelName, routeOf } from "~/lib/ai";
 import { listDate } from "~/lib/format";
 import { closeDigestPage } from "~/lib/page";
@@ -23,7 +28,7 @@ import { setApp, useApp } from "~/state/app";
 import { openFound } from "./settings/find-open";
 import { openSettings } from "~/lib/settings-place";
 import { reloadList } from "~/state/list";
-import { digestKeys, digestPick, keepDigestPick, leaveOut, letBackIn, openFromDigest, senderKey, useToday, withoutSenders } from "~/state/today";
+import { digestKeys, digestMorph, digestPick, keepDigestPick, leaveOut, letBackIn, openFromDigest, senderKey, useToday, withoutSenders } from "~/state/today";
 import { AiProvenance } from "~/components/ai-provenance";
 
 /** Plan 247: the digest's switch is What matters' (Once a day): Settings opens there, at the switch. */
@@ -110,11 +115,26 @@ function DigestRowMenu({ onOpen, archive, leave, children }: { onOpen: () => voi
   );
 }
 
-export default function DigestPage() {
+/** A row's place on screen, for the other form to land it at the same height (plan 251). */
+const anchorOf = (el: Element | null | undefined, id: number) => (el ? { id, y: el.getBoundingClientRect().top } : null);
+
+/**
+ * Plan 251: the page has two forms. `page`, in the reader's column (plan 145); `column`, in the list column beside the
+ * newsletter it opened (Split), where What matters' feed was: the same rows, ticks and foot, the open one marked, and the
+ * list's keys (j/k open the next or previous). Both read and write the one pick (`useToday.pick`), so either takes up
+ * where the other was left.
+ */
+export default function DigestPage({ place = "page" }: { place?: "page" | "column" }) {
+  const beside = place === "column";
   const digest = useToday((s) => s.digest);
   const [row, setRow] = useState<DigestRow | null>(digest);
   const ai = useApp((s) => s.settings?.ai);
-  const [liveIds, setLive] = useState<ReadonlySet<number> | null>(null);
+  // plan 251 (Codex critique): what's live from the first paint, so a form mounted for a transition's new snapshot doesn't
+  // show an archived row as live for its first frame
+  const [liveIds, setLive] = useState<ReadonlySet<number> | null>(() => (digest ? new Set(digest.liveIds) : null));
+  // the newsletter open beside the column form; none on the page
+  const current = useToday((s) => (beside ? s.fromDigest : null));
+  const listTitle = LIST_TITLE[useDesign().variants.listHeader === "title" ? "title" : "display"];
   useEffect(() => {
     let current = true;
     // plan 166 (Codex critique): only the newest of the page's own reads lands, so an older one can't bring back a row
@@ -160,7 +180,8 @@ export default function DigestPage() {
     if (!el) return;
     const set = () => {
       setFootHeight(el.offsetHeight);
-      useSnack.setState({ pageLift: el.offsetHeight });
+      // the snacks stand on the page's foot; beside, they're over the reader (Split's dock), clear of the column
+      if (!beside) useSnack.setState({ pageLift: el.offsetHeight });
       const sc = scroller.current;
       if (sc) setAtEnd(sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 1);
     };
@@ -169,7 +190,7 @@ export default function DigestPage() {
     ro.observe(el);
     return () => {
       ro.disconnect();
-      useSnack.setState({ pageLift: 0 });
+      if (!beside) useSnack.setState({ pageLift: 0 });
     };
   }, [row !== null]);
   const scrollAt = useRef(digestPick(day).scroll);
@@ -184,19 +205,50 @@ export default function DigestPage() {
     setToggled(digestPick(day).toggled);
     setReadTicked(digestPick(day).readTicked ?? new Set());
   }
+  /** Plan 251: the row back at the height it was left at in the other form, when it's here; whether it was. */
+  const land = (id: number | null | undefined): boolean => {
+    const sc = scroller.current;
+    const { anchor } = digestPick(day);
+    const el = id != null && anchor?.id === id ? rowEl(id) : null;
+    if (!sc || !el || !anchor) return false;
+    sc.scrollTop += el.getBoundingClientRect().top - anchor.y;
+    return true;
+  };
+  const rowEl = (id: number) => scroller.current?.querySelector<HTMLElement>(`[data-digest-open="${id}"]`)?.closest("li") ?? null;
   useLayoutEffect(() => {
     if (restored.current === day || !scroller.current || !row?.items.length) return;
     restored.current = day;
     const pick = digestPick(day);
+    if (beside) {
+      // plan 251: the open row where the page had it, and the keys on it (a program's focus: no ring) unless they're
+      // somewhere already (the reader, a field); the way back's row (`from`) is the page's to use
+      // never under the foot bar (the forms' feet differ in height)
+      land(current);
+      if (current !== null) rowEl(current)?.scrollIntoView({ block: "nearest" });
+      settled.current = { top: scroller.current.scrollTop, current };
+      const at = document.activeElement;
+      if (current !== null && (!at || at === document.body)) focusQuietly(scroller.current.querySelector<HTMLElement>(`[data-digest-open="${current}"]`));
+      return;
+    }
     scrollAt.current = pick.scroll;
     scroller.current.scrollTop = scrollAt.current;
+    // plan 251: back from the list beside, the row it was on where the list had it
+    if (land(pick.from)) scrollAt.current = scroller.current.scrollTop;
     // pass 2: back from a newsletter, the row it was opened from is the cursor again (a program's focus: no ring). Plan 162
     // (after ai162-r02): opened afresh, the first row is, so the page has the keys (j moved Today's list behind it)
     const at = (pick.from != null && scroller.current.querySelector<HTMLElement>(`[data-digest-open="${pick.from}"]`)) || scroller.current.querySelector<HTMLElement>("[data-digest-open]");
     const elsewhere = document.activeElement && document.activeElement !== document.body && !document.activeElement.closest("[data-testid=list-header], [data-testid=thread-list], [data-testid=wm-feed]");
     if (at && (pick.from != null || !elsewhere)) at.focus({ preventScroll: true });
-    if (pick.from != null) keepDigestPick({ day, toggled: pick.toggled, readTicked: pick.readTicked, scroll: pick.scroll, from: null });
+    if (pick.from != null) keepDigestPick({ day, toggled: pick.toggled, readTicked: pick.readTicked, scroll: scrollAt.current, from: null });
   }, [row, day]);
+  // plan 251: beside, the open row stays in view as j/k or a click move it
+  const shownAt = useRef<number>(-1);
+  /** where the column landed: moved from there (scrolled, or another row open), the page lands where the column is */
+  const settled = useRef<{ top: number; current: number | null } | null>(null);
+  useLayoutEffect(() => {
+    if (!beside || current === null || settled.current === null || settled.current.current === current) return;
+    rowEl(current)?.scrollIntoView({ block: "nearest" });
+  }, [current]);
   useEffect(() => {
     if (day && restored.current === day) keepDigestPick({ day, toggled, readTicked, scroll: scrollAt.current });
   }, [day, toggled, readTicked]);
@@ -268,14 +320,27 @@ export default function DigestPage() {
   };
   const heading = useRef<HTMLHeadingElement>(null);
   const open = (threadId: number) => {
-    openFromDigest(day, threadId, scroller.current?.scrollTop ?? scrollAt.current, { toggled, readTicked });
-    // plan 162 (after ai162-r02): opened from here is read now (plan 145), not after the reader's dwell: that's for j held
-    // down a list, and back in under it the newsletter stayed unread while the page said it was opened
-    if (liveIds?.has(threadId) !== false) void act("markRead", [threadId], { quiet: true });
+    // plan 251: beside, the open row's Open is the way into it (as the list's Enter on its open row)
+    if (beside && threadId === current) return void focusReader();
+    const opening = () => {
+      openFromDigest(day, threadId, beside ? digestPick(day).scroll : (scroller.current?.scrollTop ?? scrollAt.current), { toggled, readTicked }, anchorOf(rowEl(threadId), threadId));
+      // plan 162 (after ai162-r02): opened from here is read now (plan 145), not after the reader's dwell: that's for j held
+      // down a list, and back in under it the newsletter stayed unread while the page said it was opened
+      if (liveIds?.has(threadId) !== false) void act("markRead", [threadId], { quiet: true });
+    };
+    if (beside) return opening();
+    // plan 251: from the page, the list glides into the list column beside the newsletter (Split), on the transition's
+    // frame: only if nothing else was opened by then
+    const was = getApp().selectedId;
+    digestMorph(() => getApp().selectedId === was && opening());
   };
-  // plan 162 (after ai162-r02): the page's own keys, the list's: the cursor is the row holding the focus
-  const keys = useRef({ toggle, open });
-  keys.current = { toggle, open };
+  // plan 162 (after ai162-r02): the page's own keys, the list's: the cursor is the row holding the focus. Plan 251: beside,
+  // the open row is the cursor when the keys are elsewhere (the reader)
+  const keys = useRef({ toggle, open, current, day });
+  keys.current = { toggle, open, current, day };
+  // plan 251 (Codex critique): the open row's place, kept, so j/k go on from there when it leaves the list (hidden, archived)
+  const shownIds = shown.map((i) => i.threadId);
+  if (beside && current !== null && shownIds.includes(current)) shownAt.current = shownIds.indexOf(current);
   const tickableIds = new Set(shown.filter(tickable).map((i) => i.threadId));
   const canTick = useRef(tickableIds);
   canTick.current = tickableIds;
@@ -292,26 +357,59 @@ export default function DigestPage() {
       // the whole row, its hairline too, above the foot bar (the scroller's padding is the bar's height)
       (el.closest("li") ?? el).scrollIntoView({ block: "nearest" });
     };
+    /** Plan 251: beside, the next or previous row opens; the keys stay where they were (moved along, in the column). */
+    const stepBeside = (delta: 1 | -1) => {
+      const all = rows();
+      const ids = all.map((el) => Number(el.dataset.digestOpen));
+      const at = keys.current.current === null ? -1 : ids.indexOf(keys.current.current);
+      // the open row left the list: the row that took its place is next, the one above it previous
+      const i = at >= 0 ? at + delta : Math.min(shownAt.current, ids.length) + (delta > 0 ? 0 : -1);
+      const to = all[Math.max(0, Math.min(all.length - 1, i))];
+      if (!to || Number(to.dataset.digestOpen) === keys.current.current) return;
+      const inColumn = scroller.current?.contains(document.activeElement) === true;
+      keys.current.open(Number(to.dataset.digestOpen));
+      if (inColumn) to.focus({ preventScroll: true });
+    };
     digestKeys.current = {
+      beside,
       has: () => {
         const at = document.activeElement;
         const s = getApp();
         if (s.dialog !== null || s.menuOpen) return false;
+        // plan 251: beside, the list's keys wherever focus is, as the mail list has them in Split (fields keep theirs)
+        if (beside) return true;
         return at === null || at === document.body ? true : scroller.current?.contains(at) === true;
       },
       step: (delta) => {
+        if (beside) return stepBeside(delta);
         const all = rows();
         const id = cursor();
         const i = id === null ? -1 : all.findIndex((el) => Number(el.dataset.digestOpen) === id);
         go(all[i < 0 ? 0 : Math.max(0, Math.min(all.length - 1, i + delta))]);
       },
       toggle: () => {
-        const id = cursor();
+        const id = cursor() ?? keys.current.current;
         if (id !== null && canTick.current.has(id)) keys.current.toggle(id);
       },
       open: () => {
-        const id = cursor() ?? (rows()[0] ? Number(rows()[0]!.dataset.digestOpen) : null);
+        const id = cursor() ?? keys.current.current ?? (rows()[0] ? Number(rows()[0]!.dataset.digestOpen) : null);
         if (id !== null) keys.current.open(id);
+      },
+      leave: () => {
+        // plan 251: going back to the page, the column says where its open row is, if it moved from where it landed (else
+        // the page lands where it was left: the column may have clamped it)
+        const id = keys.current.current;
+        const was = settled.current;
+        if (!beside || id === null || !was || (was.current === id && was.top === scroller.current?.scrollTop)) return;
+        const anchor = anchorOf(rowEl(id), id);
+        if (anchor) keepDigestPick({ ...digestPick(keys.current.day), anchor });
+      },
+      focus: () => {
+        const id = keys.current.current;
+        const el = (id !== null && scroller.current?.querySelector<HTMLElement>(`[data-digest-open="${id}"]`)) || scroller.current?.querySelector<HTMLElement>("[data-digest-open]") || heading.current;
+        if (!el) return false;
+        focusQuietly(el);
+        return document.activeElement === el;
       },
     };
     return () => {
@@ -411,7 +509,7 @@ export default function DigestPage() {
   if (!row)
     return (
       <div className="relative p-8 text-sm text-muted-foreground" data-testid="digest-page">
-        <DigestClose />
+        {!beside && <DigestClose />}
         {t("today.digest.none")}
       </div>
     );
@@ -420,6 +518,166 @@ export default function DigestPage() {
   // plan 162 (Codex review): a provider that answered with an error is stored apart from one out of reach
   const answered = row.errorKind === "provider_error" ? "errors.ai.providerError" : row.errorKind === "provider_not_found" ? "errors.ai.notFound" : row.errorKind === "provider_no_permission" ? "errors.ai.noPermission" : undefined;
   const failure = row.state === "failed" ? aiErrorCopy({ message: answered ? "" : t("today.digest.failed"), kind: (answered ? (answered === "errors.ai.noPermission" ? "auth" : "unavailable") : row.errorKind) as never, key: answered }, ai ? errorTarget(routeOf("digest", ai).provider, ai) : null) : null;
+  // plan 251: the rows and the foot, the same in both forms
+  const list = shown.length > 0 && (
+    <ul>
+      {shown.map((i) => {
+        const state = stateOf(i);
+        // owner's decisions (2): one sent to Trash or Spam from the reader says where it went, as its snack did
+        const moved = state === "archived" ? movedTo.get(i.threadId) : undefined;
+        // plan 251: beside, an opened row is the one open or one already read there (it's quiet): the page says it stays
+        const label = moved ? () => t(moved === "trash" ? "actions.done.trash" : "actions.done.spam") : (automated && state === "keep") || (beside && state === "opened") ? undefined : STATE_LABEL[state];
+        const quiet = state === "opened" || state === "archived";
+        // plan 235: Automated mail's menu acts on the ticked rows when it's opened on one of several ticked
+        const targets = automated ? menuTargets(i) : [i];
+        const archivable = targets.filter(tickable);
+        const hidden = sendersIn(targets);
+        return (
+          // plan 166: each row has a menu, as rows do: a digest's says "Not a newsletter"; Automated mail has claimed
+          // nothing is a newsletter, so its menu hides the sender instead (plan 235), and it has no row control. Plan 251:
+          // each row glides on its own between the forms (`morph`), its images cropped, not scaled
+          <DigestRowMenu
+            key={i.threadId}
+            onOpen={() => open(i.threadId)}
+            archive={automated && archivable.length ? { label: archivable.length > 1 ? t("today.digest.archiveAll", { count: archivable.length }) : t("actions.archive"), run: () => void archive(archivable) } : null}
+            leave={
+              // an item stored with no sender address has nothing to keep out
+              !hidden
+                ? null
+                : automated
+                  ? { label: t("today.digest.hideSender", { count: hidden }), icon: <EyeOff />, testId: "digest-menu-hide", help: t("today.digest.hideHelp", { count: hidden }), run: () => void leaveOutSenders(targets) }
+                  : { label: t("today.digest.notNewsletter"), icon: <Ban />, testId: "digest-menu-not-newsletter", run: () => void leaveOutSenders([i]) }
+            }
+          >
+          <li data-testid="digest-item" data-live={live(i)} data-state={state} data-current={(beside && i.threadId === current) || undefined} data-morph={`digest-row-${i.threadId}`} data-morph-class="morph-crop" className="group/item relative flex items-start gap-1 border-b border-hairline py-1">
+            {/* pass 2: a 24 px box of its own, so a near miss doesn't open the newsletter beside it */}
+            <Checkbox target="quiet" data-testid="digest-tick" aria-label={t("today.digest.tick", { subject: i.subject })} checked={state === "archive"} disabled={!tickable(i)} className="mt-1.5" onMouseDown={shiftDown} onCheckedChange={(_, how) => toggle(i.threadId, (how.event as { shiftKey?: boolean }).shiftKey === true)} />
+            {/* plan 161: reading is as plain as archiving: the whole row opens the newsletter, and says so on hover */}
+            {/* plan 251: beside, the open row is marked as the list marks its open conversation */}
+            <button type="button" data-digest-open={i.threadId} aria-current={(beside && i.threadId === current) || undefined} className="group/open flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors group-has-[[data-not-newsletter]:hover]/item:bg-row-hover hover:bg-row-hover focus:bg-row-selected aria-[current]:bg-row-selected focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" data-testid="digest-open" onClick={() => open(i.threadId)}>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-baseline gap-2 text-xs">
+                  {/* plan 251 (Codex critique): in the narrow column the sender and what happened to the row give way too, so
+                      the subject keeps room */}
+                  <span className={cn("font-medium", beside ? "max-w-[45%] min-w-0 truncate" : "max-w-[60%] shrink-0", quiet ? "text-muted-foreground" : "text-foreground")} data-testid="digest-from">{i.from}</span>
+                  <span className="min-w-0 flex-1 truncate text-muted-foreground" data-testid="digest-subject">{i.subject}</span>
+                  {label && <span className={cn("font-medium text-muted-foreground", beside ? "max-w-[35%] min-w-0 truncate" : "shrink-0")} data-testid="digest-state">{label()}</span>}
+                  {/* plan 166: the date gives its place to the row's control while it shows */}
+                  <span className={cn("shrink-0 text-muted-foreground tabular", !automated && "group-hover/item:invisible group-has-[[data-not-newsletter]:focus-visible]/item:invisible")} data-testid="digest-date">{listDate(i.lastDate)}</span>
+                </span>
+                {i.line !== null && <span className={cn("mt-0.5 block text-sm", beside && "line-clamp-2", quiet ? "text-muted-foreground" : "text-foreground")} data-testid="digest-line">{i.line}</span>}
+              </span>
+              {/* pass 3: at rest, so opening one is as visible as ticking it, its edge the Archive button's */}
+              <ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground transition-colors group-hover/open:text-foreground" />
+            </button>
+            {!automated && (
+              // plan 166: beside Open, never inside it (Codex critique): on the first line where the date is, at the chevron's
+              // inset, shown with the row's hover or its own Tab focus; quiet, icon-only, named in its tooltip
+              <IconButton
+                label={t("today.digest.notNewsletter")}
+                size="icon-xs"
+                data-not-newsletter=""
+                data-testid="digest-not-newsletter"
+                className="absolute top-1.5 right-8 opacity-0 group-hover/item:opacity-100 focus-reveal:opacity-100"
+                onClick={() => void leaveOutSenders([i])}
+              >
+                <Ban />
+              </IconButton>
+            )}
+          </li>
+          </DigestRowMenu>
+        );
+      })}
+    </ul>
+  );
+  const footer = (
+  <footer
+    ref={foot}
+    // plan 251: the foot glides with the list between the forms; beside, it closes the column under its rows
+    data-morph="digest-foot"
+    data-morph-class="morph-crop"
+    data-morph-pinned=""
+    className={cn(
+      "z-10 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-hairline pt-3 pb-4",
+      beside ? cn(FEED_COLUMN, "max-w-none shrink-0 justify-end gap-x-2 bg-pane") : "sticky bottom-0 mt-auto bg-background before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-6 before:bg-linear-to-t before:from-background before:to-transparent group-data-[end]/digest:before:hidden",
+    )}
+    data-testid="digest-actions"
+  >
+    {/* plan 251: beside, what it says on a line of its own, the buttons under it at the column's end (the column is narrow) */}
+    {finished ? (
+      <p role="status" className={cn("me-auto text-sm", beside && "basis-full")} data-testid="digest-done">
+        {t(automated ? "today.digest.archivedSelected" : "today.digest.archived", { count: done.count })}.
+        {shown.every((i) => stateOf(i) === "archived") && <span className="ml-1 text-muted-foreground" data-testid="digest-all-done">{t("today.digest.allDone")}</span>}
+      </p>
+    ) : (
+      <p className={cn("me-auto text-sm text-muted-foreground tabular", beside && "basis-full")} data-testid="digest-count">
+        {automated ? (
+          chosen.length < allTickable.length ? t("today.digest.countSelected", { count: allTickable.length, selected: chosen.length }) : t("today.digest.automatedCount", { count: allTickable.length })
+        ) : (
+          <>
+            {/* pass 2: what Archive will do, in words: how many go, and how many stay; a status, not a button */}
+            <span data-testid="digest-to-archive">{t("today.digest.toArchive", { count: chosen.length })}</span>
+            {staying > 0 && <span data-testid="digest-staying"> · {t("today.digest.staying", { count: staying })}</span>}
+          </>
+        )}
+      </p>
+    )}
+    {(anyTicked || allTickable.length > 0) && (
+      <Button size="sm" variant="outline" className="text-foreground" data-testid="digest-tick-all" onClick={() => tickAll(!anyTicked)}>
+        {t(anyTicked ? "today.digest.untickAll" : "today.digest.tickAll")}
+      </Button>
+    )}
+    {/* pass 2: done, its Undo here once the snack that carries the same one is gone (plan 162: one Undo at a time) */}
+    {finished && done.undo && !undoInSnack && (
+      <Button size="sm" variant="outline" className="text-foreground" data-testid="digest-undo" aria-label={t("today.digest.undoName")} onClick={() => undoNow(done.undo!)}>
+        {t("common.undo")}
+      </Button>
+    )}
+    {automated && sendersIn(chosen) > 0 && (
+      // plan 235: the ticked rows' senders out of Automated mail, as the row's menu does it
+      // what it does to mail still to come, in its tooltip, as the menu's Hide says it
+      <Tooltip>
+        <TooltipTrigger render={<Button size="sm" variant="outline" className="text-foreground" data-testid="digest-hide" onClick={() => void leaveOutSenders(chosen)} />}>
+          {t("today.digest.hideSender", { count: sendersIn(chosen) })}
+        </TooltipTrigger>
+        <TooltipContent>{t("today.digest.hideHelp", { count: sendersIn(chosen) })}</TooltipContent>
+      </Tooltip>
+    )}
+    {(!finished || chosen.length > 0) && (
+      // the count is what goes, always: what was opened or unticked isn't in it, and its row says so
+      <Button size="sm" data-testid="digest-archive" disabled={!chosen.length} onClick={() => void archive()}>
+        {automated ? t("today.digest.archiveSelected", { count: chosen.length }) : t("today.digest.archiveAll", { count: chosen.length })}
+      </Button>
+    )}
+  </footer>
+  );
+  if (beside)
+    return (
+      // plan 251: the list column's form: the list's header line and title type, the rows in the feed's column, the foot
+      // under them. The page's hints (coverage, the tick hint, the digest's settings) stay the page's
+      <section data-testid="digest-page" data-place="column" data-finished={finished || undefined} aria-label={t(automated ? "today.digest.automatedTitle" : "today.digest.title")} className="flex h-full min-h-0 flex-col bg-pane">
+        <header className="drag-region shrink-0 pb-2" data-testid="digest-header">
+          <div className={cn(FEED_COLUMN, "max-w-none flex h-(--pane-bar) items-center gap-2")}>
+            <h1 ref={heading} tabIndex={-1} className={cn("min-w-0 flex-1 truncate outline-none", listTitle)} data-testid="digest-title" data-morph="digest-title" data-morph-class="morph-crop">
+              {t(automated ? "today.digest.automatedTitle" : "today.digest.title")}
+            </h1>
+            {!automated && row.model && <AiProvenance model={row.model} at={0} detail={t("today.digest.writtenBy", { model: modelName(row.model) })} testId="digest-provenance" className="-me-1.5" />}
+          </div>
+        </header>
+        <div
+          ref={scroller}
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]"
+          data-testid="digest-scroller"
+          data-morph-clip=""
+        >
+          <div className={cn(FEED_COLUMN, "max-w-none")}>
+            {finished && shown.length > 0 && <h2 className="pt-2 pb-1 text-xs font-medium text-muted-foreground" data-testid="digest-still-here">{t("today.digest.stillHere")}</h2>}
+            {list}
+          </div>
+        </div>
+        {footer}
+      </section>
+    );
   return (
     // ai-r03: the pane scrolls, bounded to the reader's height, and the page is a column in it. The page itself scrolled
     // with no height to scroll in, so it grew past the window and the parent clipped its last rows (every style, since
@@ -428,6 +686,7 @@ export default function DigestPage() {
       ref={scroller}
       className="group/digest h-full min-h-0 overflow-y-auto [scrollbar-gutter:stable]"
       data-testid="digest-scroller"
+      data-morph-clip=""
       data-end={atEnd || undefined}
       style={{ scrollPaddingBottom: footHeight }}
       onScroll={(e) => {
@@ -448,7 +707,7 @@ export default function DigestPage() {
       {/* plan 162 (after ai162-r01): the title on every pane title's line (it sat 15 px low), what the batch is and who wrote
           its lines under it; the decision is at the pane's foot, after the list, where reading ends */}
       <header className={cn(PANE_TITLE_TOP, "space-y-1")} data-testid="digest-header">
-        <h1 ref={heading} tabIndex={-1} className={cn(PANE_TITLE, "outline-none")} data-testid="digest-title">{t(automated ? "today.digest.automatedTitle" : "today.digest.title")}</h1>
+        <h1 ref={heading} tabIndex={-1} className={cn(PANE_TITLE, "outline-none")} data-testid="digest-title" data-morph="digest-title" data-morph-class="morph-crop">{t(automated ? "today.digest.automatedTitle" : "today.digest.title")}</h1>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           {!automated && items.length > 0 && (
             <p className="text-sm text-muted-foreground" data-testid="digest-coverage">
@@ -488,123 +747,12 @@ export default function DigestPage() {
         </p>
       )}
       {finished && shown.length > 0 && <h2 className="pt-2 text-xs font-medium text-muted-foreground" data-testid="digest-still-here">{t("today.digest.stillHere")}</h2>}
-      {shown.length > 0 && (
-        <ul>
-          {shown.map((i) => {
-            const state = stateOf(i);
-            // owner's decisions (2): one sent to Trash or Spam from the reader says where it went, as its snack did
-            const moved = state === "archived" ? movedTo.get(i.threadId) : undefined;
-            const label = moved ? () => t(moved === "trash" ? "actions.done.trash" : "actions.done.spam") : automated && state === "keep" ? undefined : STATE_LABEL[state];
-            const quiet = state === "opened" || state === "archived";
-            // plan 235: Automated mail's menu acts on the ticked rows when it's opened on one of several ticked
-            const targets = automated ? menuTargets(i) : [i];
-            const archivable = targets.filter(tickable);
-            const hidden = sendersIn(targets);
-            return (
-              // plan 166: each row has a menu, as rows do: a digest's says "Not a newsletter"; Automated mail has claimed
-              // nothing is a newsletter, so its menu hides the sender instead (plan 235), and it has no row control
-              <DigestRowMenu
-                key={i.threadId}
-                onOpen={() => open(i.threadId)}
-                archive={automated && archivable.length ? { label: archivable.length > 1 ? t("today.digest.archiveAll", { count: archivable.length }) : t("actions.archive"), run: () => void archive(archivable) } : null}
-                leave={
-                  // an item stored with no sender address has nothing to keep out
-                  !hidden
-                    ? null
-                    : automated
-                      ? { label: t("today.digest.hideSender", { count: hidden }), icon: <EyeOff />, testId: "digest-menu-hide", help: t("today.digest.hideHelp", { count: hidden }), run: () => void leaveOutSenders(targets) }
-                      : { label: t("today.digest.notNewsletter"), icon: <Ban />, testId: "digest-menu-not-newsletter", run: () => void leaveOutSenders([i]) }
-                }
-              >
-              <li data-testid="digest-item" data-live={live(i)} data-state={state} className="group/item relative flex items-start gap-1 border-b border-hairline py-1">
-                {/* pass 2: a 24 px box of its own, so a near miss doesn't open the newsletter beside it */}
-                <Checkbox target="quiet" data-testid="digest-tick" aria-label={t("today.digest.tick", { subject: i.subject })} checked={state === "archive"} disabled={!tickable(i)} className="mt-1.5" onMouseDown={shiftDown} onCheckedChange={(_, how) => toggle(i.threadId, (how.event as { shiftKey?: boolean }).shiftKey === true)} />
-                {/* plan 161: reading is as plain as archiving: the whole row opens the newsletter, and says so on hover */}
-                <button type="button" data-digest-open={i.threadId} className="group/open flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors group-has-[[data-not-newsletter]:hover]/item:bg-row-hover hover:bg-row-hover focus:bg-row-selected focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" data-testid="digest-open" onClick={() => open(i.threadId)}>
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-baseline gap-2 text-xs">
-                      <span className={cn("max-w-[60%] shrink-0 font-medium", quiet ? "text-muted-foreground" : "text-foreground")} data-testid="digest-from">{i.from}</span>
-                      <span className="min-w-0 flex-1 truncate text-muted-foreground" data-testid="digest-subject">{i.subject}</span>
-                      {label && <span className="shrink-0 font-medium text-muted-foreground" data-testid="digest-state">{label()}</span>}
-                      {/* plan 166: the date gives its place to the row's control while it shows */}
-                      <span className={cn("shrink-0 text-muted-foreground tabular", !automated && "group-hover/item:invisible group-has-[[data-not-newsletter]:focus-visible]/item:invisible")} data-testid="digest-date">{listDate(i.lastDate)}</span>
-                    </span>
-                    {i.line !== null && <span className={cn("mt-0.5 block text-sm", quiet ? "text-muted-foreground" : "text-foreground")} data-testid="digest-line">{i.line}</span>}
-                  </span>
-                  {/* pass 3: at rest, so opening one is as visible as ticking it, its edge the Archive button's */}
-                  <ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground transition-colors group-hover/open:text-foreground" />
-                </button>
-                {!automated && (
-                  // plan 166: beside Open, never inside it (Codex critique): on the first line where the date is, at the chevron's
-                  // inset, shown with the row's hover or its own Tab focus; quiet, icon-only, named in its tooltip
-                  <IconButton
-                    label={t("today.digest.notNewsletter")}
-                    size="icon-xs"
-                    data-not-newsletter=""
-                    data-testid="digest-not-newsletter"
-                    className="absolute top-1.5 right-8 opacity-0 group-hover/item:opacity-100 focus-reveal:opacity-100"
-                    onClick={() => void leaveOutSenders([i])}
-                  >
-                    <Ban />
-                  </IconButton>
-                )}
-              </li>
-              </DigestRowMenu>
-            );
-          })}
-        </ul>
-      )}
+      {list}
       {/* plan 162 (after ai162-r01): the decision, sticky at the pane's foot: what Archive will do, the reset, then Archive
           last, so the page reads, then acts (Archive led the page, darkest, before anything was read) */}
       {/* plan 162 (after ai162-r02): rows going on under it fade into its edge (one was cut in half by it, at rest); the
           list keeps its height as scroll padding, so the cursor and Tab stop above it; and the snack stands on it */}
-      <footer ref={foot} className="sticky bottom-0 z-10 mt-auto flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-hairline bg-background pt-3 pb-4 before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-6 before:bg-linear-to-t before:from-background before:to-transparent group-data-[end]/digest:before:hidden" data-testid="digest-actions">
-        {finished ? (
-          <p role="status" className="me-auto text-sm" data-testid="digest-done">
-            {t(automated ? "today.digest.archivedSelected" : "today.digest.archived", { count: done.count })}.
-            {shown.every((i) => stateOf(i) === "archived") && <span className="ml-1 text-muted-foreground" data-testid="digest-all-done">{t("today.digest.allDone")}</span>}
-          </p>
-        ) : (
-          <p className="me-auto text-sm text-muted-foreground tabular" data-testid="digest-count">
-            {automated ? (
-              chosen.length < allTickable.length ? t("today.digest.countSelected", { count: allTickable.length, selected: chosen.length }) : t("today.digest.automatedCount", { count: allTickable.length })
-            ) : (
-              <>
-                {/* pass 2: what Archive will do, in words: how many go, and how many stay; a status, not a button */}
-                <span data-testid="digest-to-archive">{t("today.digest.toArchive", { count: chosen.length })}</span>
-                {staying > 0 && <span data-testid="digest-staying"> · {t("today.digest.staying", { count: staying })}</span>}
-              </>
-            )}
-          </p>
-        )}
-        {(anyTicked || allTickable.length > 0) && (
-          <Button size="sm" variant="outline" className="text-foreground" data-testid="digest-tick-all" onClick={() => tickAll(!anyTicked)}>
-            {t(anyTicked ? "today.digest.untickAll" : "today.digest.tickAll")}
-          </Button>
-        )}
-        {/* pass 2: done, its Undo here once the snack that carries the same one is gone (plan 162: one Undo at a time) */}
-        {finished && done.undo && !undoInSnack && (
-          <Button size="sm" variant="outline" className="text-foreground" data-testid="digest-undo" aria-label={t("today.digest.undoName")} onClick={() => undoNow(done.undo!)}>
-            {t("common.undo")}
-          </Button>
-        )}
-        {automated && sendersIn(chosen) > 0 && (
-          // plan 235: the ticked rows' senders out of Automated mail, as the row's menu does it
-          // what it does to mail still to come, in its tooltip, as the menu's Hide says it
-          <Tooltip>
-            <TooltipTrigger render={<Button size="sm" variant="outline" className="text-foreground" data-testid="digest-hide" onClick={() => void leaveOutSenders(chosen)} />}>
-              {t("today.digest.hideSender", { count: sendersIn(chosen) })}
-            </TooltipTrigger>
-            <TooltipContent>{t("today.digest.hideHelp", { count: sendersIn(chosen) })}</TooltipContent>
-          </Tooltip>
-        )}
-        {(!finished || chosen.length > 0) && (
-          // the count is what goes, always: what was opened or unticked isn't in it, and its row says so
-          <Button size="sm" data-testid="digest-archive" disabled={!chosen.length} onClick={() => void archive()}>
-            {automated ? t("today.digest.archiveSelected", { count: chosen.length }) : t("today.digest.archiveAll", { count: chosen.length })}
-          </Button>
-        )}
-      </footer>
+      {footer}
     </section>
     </div>
   );

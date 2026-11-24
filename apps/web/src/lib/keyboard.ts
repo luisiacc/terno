@@ -15,7 +15,7 @@ import { useThreads } from "~/state/threads";
 import { warmNext } from "~/lib/warm";
 import { acceptSuggestion, answerReview, rejectSuggestion } from "~/lib/categorize";
 import { leaveReview } from "~/lib/review";
-import { backToDigest, digestHasKeys, digestKeys, openFeedRow, useFeedRow, useToday } from "~/state/today";
+import { backToDigest, digestHasKeys, digestKeys, digestListBeside, openFeedRow, useFeedRow, useToday } from "~/state/today";
 import { changeOnSelected, doneOnSelected, handOnSelected, laterOnSelected, removeOnSelected } from "~/lib/today-task";
 import { conversationKeys } from "~/lib/conversation-keys";
 import { printCommand } from "~/lib/print-open";
@@ -191,8 +191,8 @@ function escape() {
   const s = getApp();
   // plan 162 (after ai162-r03): a summary being written in the reader stops first, as Esc stops ⌘J and Ask
   if (s.selectedId !== null && useSummaries.getState().byThread.get(s.selectedId)?.kind === "running") return void stopSummary(s.selectedId);
-  // plan 161, pass 2: a newsletter the digest opened goes back to the digest first, as its "Back to the digest" does
-  if (backToDigest()) return;
+  // plan 161, pass 2: a newsletter the digest opened goes back to the digest first (plan 251: the list beside it glides back)
+  if (backToDigest(true)) return;
   // plan 204 (the feed), plan 210: What matters' feed puts away what's open beside it, a conversation or the digest's page
   // (whose keys were the page's), back on its item; List's digest is a page over the feed: Esc closes it as any page
   if (!s.checked.size && !s.scope && closeFeedConversation()) return;
@@ -236,13 +236,15 @@ const HANDLERS: Partial<Record<Command, () => void>> = {
   "list.prev": () => (digestHasKeys() ? digestKeys.current!.step(-1) : move(-1, true)),
   "list.open": () => (digestHasKeys() ? digestKeys.current!.open() : openCurrent()),
   "list.toggleSelect": () => (digestHasKeys() ? digestKeys.current!.toggle() : toggleCurrent()),
-  "list.selectAll": selectAll,
+  // plan 251 (Codex critique): the digest's list beside a newsletter is the list: the feed under it is out of reach, so
+  // nothing selects there (its checks would take the reader and what e acts on)
+  "list.selectAll": () => !digestListBeside() && selectAll(),
   "list.selectNone": clearSelection,
-  "list.selectRead": () => selectWhere((t) => !t.unread),
-  "list.selectUnread": () => selectWhere((t) => t.unread),
-  "list.selectStarred": () => selectWhere((t) => t.starred),
-  "list.extendNext": () => extendSelection(1),
-  "list.extendPrev": () => extendSelection(-1),
+  "list.selectRead": () => !digestListBeside() && selectWhere((t) => !t.unread),
+  "list.selectUnread": () => !digestListBeside() && selectWhere((t) => t.unread),
+  "list.selectStarred": () => !digestListBeside() && selectWhere((t) => t.starred),
+  "list.extendNext": () => !digestListBeside() && extendSelection(1),
+  "list.extendPrev": () => !digestListBeside() && extendSelection(-1),
   "list.menu": () => {
     // plan 106: a focused sidebar row with a menu of its own opens that one
     if (!openFocusedMenu()) openMenuForSelection();

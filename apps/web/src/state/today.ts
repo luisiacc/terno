@@ -7,6 +7,8 @@ import { momentsOfList, type Moment } from "~/lib/clear";
 import type { ReaderItem } from "~/lib/reader-items";
 import { client } from "~/rpc/connection";
 import type { Undo } from "~/lib/snack";
+import { useAppearance } from "~/lib/appearance";
+import { morph } from "~/lib/morph";
 import { getApp, navigate, setApp, useApp } from "./app";
 import { reloadList } from "./list";
 
@@ -85,6 +87,11 @@ export interface DigestPick {
   done?: readonly DigestDone[] | null;
   /** the row a newsletter was opened from: the cursor again on the way back */
   from?: number | null;
+  /**
+   * Plan 251: the row the list was left on, and its distance from the top of its scroller, so the other form (the page in
+   * the reader, the list beside the newsletter) puts it at the same height and the move between them is sideways
+   */
+  anchor?: { id: number; y: number } | null;
   /**
    * Plan 162 (after ai162-r02): what was opened from the page, recorded the moment it opens. Opened is read and stays in
    * the Inbox (plan 145), so it's out of Archive whichever way the page is come back to; it was learnt from the backend's
@@ -334,26 +341,52 @@ export const keepDigestPick = (pick: DigestPick): void => useToday.setState((s) 
  * Plan 162 (after ai162-r02): the digest page's own keys, the list's (j/k move, x ticks, Enter opens; Esc puts the
  * page away, as What matters' feed puts away a conversation, plan 210), while it has them: focus in the page, or nowhere with the page on screen. Set by the page while it's mounted.
  */
-export const digestKeys: { current: { has: () => boolean; step: (delta: 1 | -1) => void; toggle: () => void; open: () => void } | null } = { current: null };
+export const digestKeys: { current: { has: () => boolean; step: (delta: 1 | -1) => void; toggle: () => void; open: () => void; focus: () => boolean; leave: () => void; beside: boolean } | null } = { current: null };
+
+/** Plan 251: the digest's list is beside the newsletter, in the list column: the list's own commands are its. */
+export const digestListBeside = (): boolean => digestKeys.current?.beside === true;
 
 /** The digest page's keys, when it has them. */
 export const digestHasKeys = (): boolean => digestKeys.current?.has() === true;
 
 /** Plan 162 (after ai162-r02): a newsletter opened from the page: kept, where the page was kept, then shown. */
-export function openFromDigest(day: string, threadId: number, scroll: number, ticks: Pick<DigestPick, "toggled" | "readTicked">): void {
+export function openFromDigest(day: string, threadId: number, scroll: number, ticks: Pick<DigestPick, "toggled" | "readTicked">, anchor?: DigestPick["anchor"]): void {
   const pick = digestPick(day);
-  keepDigestPick({ day, ...ticks, scroll, from: threadId, opened: new Set([...(pick.opened ?? []), threadId]) });
+  keepDigestPick({ day, ...ticks, scroll, from: threadId, opened: new Set([...(pick.opened ?? []), threadId]), ...(anchor !== undefined ? { anchor } : {}) });
   useToday.setState({ fromDigest: threadId });
   setApp({ selectedId: threadId });
 }
 
-/** Plan 161: Esc, or "Back to the digest", from the newsletter the digest opened: back to the page. */
-export function backToDigest(): boolean {
-  const back = useToday.getState().fromDigest;
-  const s = getApp();
-  if (back === null || !s.today || s.selectedId !== back) return false;
-  useToday.setState({ fromDigest: null });
-  setApp({ selectedId: DIGEST_ROW_ID });
+/**
+ * Plan 251: Split, a newsletter the digest opened in the reader: the digest's list is beside it, in the list column, where
+ * the feed was. List has no column beside: the newsletter is a page over the feed there.
+ */
+export const digestBeside = (selectedId: number | null, fromDigest: number | null, today: boolean, layout: string): boolean => today && layout !== "list" && fromDigest !== null && selectedId === fromDigest;
+
+/** Plan 251: the layout changes between the page and the list beside (Split only): the list glides across. */
+export const digestMorph = (update: () => void): void => (useAppearance.getState().layout === "list" ? update() : morph(update));
+
+/**
+ * Plan 161: Esc, the reader's ×, List's Back, from the newsletter the digest opened: back to the page. Plan 251: `glide`,
+ * from a person's way back (never an action's, whose Undo reads the selection it leaves at once), moves the list beside
+ * back into the reader as one view transition; its state then changes on the transition's frame, checked again there.
+ */
+export function backToDigest(glide = false): boolean {
+  const ready = () => {
+    const back = useToday.getState().fromDigest;
+    const s = getApp();
+    return back !== null && s.today && s.selectedId === back;
+  };
+  if (!ready()) return false;
+  const go = () => {
+    if (!ready()) return;
+    // the list beside says where it was left, while it's still there
+    digestKeys.current?.leave();
+    useToday.setState({ fromDigest: null });
+    setApp({ selectedId: DIGEST_ROW_ID });
+  };
+  if (glide) digestMorph(go);
+  else go();
   return true;
 }
 

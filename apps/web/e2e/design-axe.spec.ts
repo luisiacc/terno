@@ -457,7 +457,9 @@ test.describe("axe", { tag: ["@variant", "@variant-relief"] }, () => {
       // plan 145, owner's decisions (2): a newsletter opened from it and archived in the reader: back here, its row archived
       // (the last: the page's own Archive below unticks the first)
       await page.getByTestId("digest-open").last().click();
-      await page.getByTestId("back-to-digest").waitFor();
+      // plan 251: its list beside it, in the list column
+      await page.locator("[data-testid=digest-page][data-place=column]").waitFor();
+      await clean(page, "the digest beside a newsletter", "#app-list");
       await page.getByTestId("action-archive").click();
       await page.locator("[data-testid=digest-item][data-state=archived]").first().waitFor();
       await clean(page, "the digest, a newsletter archived from the reader", "[data-testid=digest-page]");

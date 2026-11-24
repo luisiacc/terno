@@ -1034,7 +1034,12 @@ function ReaderHeader({ detail, account, cats, fold }: { detail: ThreadDetail; a
 
 /** Where Back goes: the list's own title ("Inbox", "Invoices", "Review · Invoices", a search's “query”). */
 function useListTitle(): string {
+  // plan 251: a newsletter the digest opened goes back to the digest's page (`goBack`): its title
+  const back = useToday((s) => s.fromDigest);
+  const automated = useToday((s) => s.digest?.automated === true);
+  const toDigest = useApp((s) => back !== null && s.selectedId === back);
   return useApp((s) => {
+    if (toDigest) return t(automated ? "today.digest.automatedTitle" : "today.digest.title");
     const review = s.categories.find((c) => c.id === s.reviewCategoryId);
     if (review) return t("list.reviewTitle", { category: review.name });
     if (s.query.trim()) return t("list.scope.quoted", { label: s.query.trim() });
@@ -1202,8 +1207,6 @@ function ReaderContent() {
   const summarizeOffered = useApp((s) => summariesOffered(s, accountId));
   // plan 147: Dev mode's switch off, what's stored stays out of sight too; elsewhere reading is never gated (plan 132)
   const summaryShown = useApp((s) => aiAllowed(s, accountId));
-  // plan 161: only on the newsletter it was opened for
-  const fromDigest = useToday((s) => s.fromDigest !== null && s.fromDigest === selectedId);
 
   useEffect(() => {
     if (draftShown?.threadId === selectedId && draftShown.key !== draftKey) setApp({ draftShown: null });
@@ -1322,7 +1325,7 @@ function ReaderContent() {
         {feedPane && <ToolbarDivider />}
         {feedPane && (
           <Tooltip>
-            <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={t("whatMatters.closeEmail")} aria-keyshortcuts="Escape" onClick={() => backToDigest() || closeFeedConversation()} data-testid="reader-close" className={cn(tool, "-mr-2 @max-[560px]:-mr-1.5")} />}>
+            <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={t("whatMatters.closeEmail")} aria-keyshortcuts="Escape" onClick={() => backToDigest(true) || closeFeedConversation()} data-testid="reader-close" className={cn(tool, "-mr-2 @max-[560px]:-mr-1.5")} />}>
               <X />
             </TooltipTrigger>
             <TooltipContent className="flex items-center gap-2">
@@ -1352,13 +1355,6 @@ function ReaderContent() {
             </div>
           ) : (
             <>
-              {/* plan 161, pass 2: as Ask's way back, with its key (Esc goes back too) */}
-              {fromDigest && (
-                <Button variant="ghost" size="xs" className="mb-2 -ml-2 gap-1.5 font-medium text-muted-foreground hover:text-foreground" data-testid="back-to-digest" onClick={() => void backToDigest()}>
-                  {t("today.digest.back")}
-                  <Shortcut keys="escape" />
-                </Button>
-              )}
               <AskReturn threadId={detail.thread.id} />
               <Thread key={`t${detail.thread.id}`} detail={detail} account={account} cats={cats} summaryShown={summaryShown} />
               {/* plan 144: off, it never shows; a draft here means it's out of the way */}

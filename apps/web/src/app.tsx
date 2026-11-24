@@ -29,6 +29,8 @@ import { installNetworkEvents } from "~/lib/network";
 import { Reader } from "./components/reader";
 import { RemindDialog } from "./components/remind-dialog";
 import { TodayLaterDialog } from "./components/today-later-dialog";
+import DigestPage from "./components/digest-page";
+import { digestBeside as digestBesideOf, useToday } from "./state/today";
 import { TodayChangeDialog } from "./components/change-form";
 import { SelectionBar } from "./components/selection-bar";
 import { SnackDock } from "./components/snack-dock";
@@ -148,6 +150,8 @@ export function App() {
   // the reader's room too, and a conversation opened from it comes in on the right as the reader always does
   const feed = useApp((s) => s.today);
   const feedWide = feed && !list && selectedId === null && !many && !composing && !heldView && !pinned && !pinnedAsk;
+  // plan 251: a newsletter the digest opened has the digest's list beside it, over the feed (kept laid out under it)
+  const digestBeside = useToday((s) => digestBesideOf(selectedId, s.fromDigest, feed, list ? "list" : "split"));
   // plan 236: the feed beside the reader keeps a width of its own, apart from the mail list's (set before the paint)
   useLayoutEffect(() => showColumn(feed ? "feed" : "list"), [feed]);
   useEffect(() => installKeyboard(), []);
@@ -202,11 +206,23 @@ export function App() {
             key={import.meta.env.VITE_RENDER_PROBE && regressions.remountList ? page : undefined}
             data-list-section
             // plan 250: the list clips itself to the card's corners; what floats over it (a pinned Ask in List) doesn't
-            className="pane-card-clip h-full min-h-0 data-covered:invisible"
+            className="pane-card-clip relative h-full min-h-0 data-covered:invisible"
             inert={covered}
             data-covered={covered || undefined}
           >
-            {feed ? <WhatMattersFeed /> : <ThreadList />}
+            {/* plan 251: under the digest's list the feed keeps its scroll and place, out of sight and reach */}
+            {feed ? (
+              <div className={cn("contents", digestBeside && "invisible")} inert={digestBeside}>
+                <WhatMattersFeed />
+              </div>
+            ) : (
+              <ThreadList />
+            )}
+            {digestBeside && (
+              <div className="absolute inset-0">
+                <DigestPage place="column" />
+              </div>
+            )}
           </div>
           {list && page !== "list" && <PageLayer page={page} />}
           {/* plan 115: the pinned draft, over the list or its page, kept while other mail is read */}

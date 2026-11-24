@@ -2847,7 +2847,6 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "today.digest.offHint": "Activa el resumen para tener una línea de cada uno. Hasta entonces, nada ha ordenado qué son.",
   "today.digest.offLink": "Ajustes del resumen de boletines",
   "today.digest.writtenBy": "Escrito por {model}. Puede equivocarse.",
-  "today.digest.back": "Volver al resumen",
   "today.digest.tick": "Incluir {subject}",
   "today.digest.notNewsletter": "No es un boletín",
   "today.digest.notNewsletterDone": "{sender} no estará en tu resumen",

@@ -357,6 +357,27 @@
   }
 }
 /*
+ * Plan 251: a layout change's view transition (apps/web/src/lib/morph.ts, which never starts one with motion off): the
+ * user's --motion, the drawer's curve. A row keeps its height and its content's left edge on both sides, so its images
+ * aren't scaled: they're cropped by the group as it narrows or widens.
+ */
+::view-transition-group(*),
+::view-transition-old(*),
+::view-transition-new(*) {
+  animation-duration: var(--motion);
+  animation-timing-function: var(--motion-ease-drawer);
+}
+::view-transition-group(.morph-crop) {
+  overflow: clip;
+}
+::view-transition-old(.morph-crop),
+::view-transition-new(.morph-crop) {
+  width: auto;
+  height: 100%;
+  object-fit: none;
+  object-position: left top;
+}
+/*
  * Laid over a scroller from outside it, going with its content (the learned offer over the list): moved by the
  * scroller's timeline (--list-scroll), so the compositor moves it in the frame the content moves; a scroll event comes
  * a frame later, and what it moved trailed the rows. Gone (hidden, no Tab stop) once scrolled past its height

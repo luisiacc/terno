@@ -2,7 +2,7 @@ import { DIGEST_ROW_ID, type FeedRowId } from "@terno/core";
 import { hideFocusRing } from "~/lib/focus-ring";
 import { focusQuietly } from "~/lib/quiet-focus";
 import { getApp, setApp } from "~/state/app";
-import { feedRow, openFeedRow, useFeedRow, useToday, type FeedRow } from "~/state/today";
+import { digestKeys, digestListBeside, feedRow, openFeedRow, useFeedRow, useToday, type FeedRow } from "~/state/today";
 
 /**
  * Plan 210 (iteration 2): the feed scrolls a row into view by its id (registered by the feed while it's drawn); the list's
@@ -40,6 +40,8 @@ export function feedPlace(): FeedRowId | null {
  * has no item.
  */
 export function focusFeed(o: { quiet?: boolean } = {}): boolean {
+  // plan 251: the digest's list over the feed is the list: its open row (Skip to list, F6, the keys coming back)
+  if (digestListBeside()) return digestKeys.current!.focus();
   const quiet = o.quiet === true;
   const id = feedPlace();
   const first = () => document.querySelector<HTMLElement>("[data-testid=wm-feed] [data-testid=wm-item-open]");

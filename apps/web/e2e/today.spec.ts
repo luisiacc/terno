@@ -20,6 +20,8 @@ const dev = { clientId: "setup", origin: "dev" as const };
 const SHOTS = process.env.TODAY_SHOTS;
 
 const FEED = "[data-testid=wm-feed]";
+/** plan 251: the digest's list beside a newsletter it opened (Split), where the feed was: the digest's way back is open */
+const BESIDE = "[data-testid=digest-page][data-place=column]";
 /** the feed's scroller */
 const feedList = (page: Page) => page.locator(`${FEED} [data-keep-scroll="list"]`);
 /** an open item of the feed (not a history line), by its words (its sentence, or who and what's next under it) */
@@ -308,7 +310,7 @@ test.describe("What matters and its digest (plan 145)", () => {
     await expect(strat).toHaveCount(0);
     await expect(page.getByTestId("digest-archive")).toHaveText(`Archive ${count - 1}`);
     await expect(await digestRow(page)).toContainText(`${count - 1} newsletter`);
-    await expect(page.getByTestId("back-to-digest")).toHaveCount(0);
+    await expect(page.locator(BESIDE)).toHaveCount(0);
     expect(db.get<{ u: number }>("SELECT unread_count u FROM threads WHERE subject = ?", "Stratechery weekly")!.u).toBe(1);
     const snack = page.getByTestId("snack").filter({ hasText: "Stratechery won't be in your digest" });
     await expect(snack).toBeVisible();
@@ -419,7 +421,7 @@ test.describe("What matters and its digest (plan 145)", () => {
     // plan 161: opening a source and coming back keeps what was unticked. Pass 2: Esc is the way back, and the row
     // opened says it stays (it's read: plan 145 archives only unread mail)
     await page.getByTestId("digest-item").filter({ hasText: "Stratechery" }).getByTestId("digest-open").click();
-    await expect(page.getByTestId("back-to-digest")).toBeVisible();
+    await expect(page.locator(BESIDE)).toBeVisible();
     await expect(page.getByTestId("reader-subject")).toHaveText("Stratechery weekly");
     // read after the reader's dwell, as a person reading it would
     await expect.poll(() => db.get<{ u: number }>("SELECT unread_count u FROM threads WHERE subject = ?", "Stratechery weekly")!.u).toBe(0);
@@ -459,11 +461,11 @@ test.describe("What matters and its digest (plan 145)", () => {
     await expect(page.getByTestId("digest-archive")).toHaveText("Archive 1");
     // plan 161: leaving Today takes the way back with it
     await page.getByTestId("digest-item").filter({ hasText: "Stratechery" }).getByTestId("digest-open").click();
-    await expect(page.getByTestId("back-to-digest")).toBeVisible();
+    await expect(page.locator(BESIDE)).toBeVisible();
     await page.getByTestId("nav-inbox").click();
     await page.getByTestId("thread-row").first().click();
     await expect(page.getByTestId("reader")).toBeVisible();
-    await expect(page.getByTestId("back-to-digest")).toHaveCount(0);
+    await expect(page.locator(BESIDE)).toHaveCount(0);
   });
 
   test("owner's decisions (2): Archive, e, Trash and Spam on a newsletter opened from the digest go back to it, where it was, with Undo", async ({ app: page, server }) => {
@@ -491,7 +493,7 @@ test.describe("What matters and its digest (plan 145)", () => {
         const top = await scroller.evaluate((el) => el.scrollTop);
         expect(top).toBeGreaterThan(0);
         await item.getByTestId("digest-open").click();
-        await expect(page.getByTestId("back-to-digest")).toBeVisible();
+        await expect(page.locator(BESIDE)).toBeVisible();
         await expect(page.getByTestId("reader-subject")).toHaveText("Stratechery weekly");
         // read, as a person reading it (an unread one comes back unread, and ticked)
         await expect.poll(() => db.get<{ u: number }>("SELECT unread_count u FROM threads WHERE subject = ?", "Stratechery weekly")!.u).toBe(0);
@@ -512,8 +514,8 @@ test.describe("What matters and its digest (plan 145)", () => {
         await expect.poll(where).toMatchObject({ in_inbox: 1, in_trash: 0, in_spam: 0 });
         // exact: the newsletter open again, still from the digest
         await expect(page.getByTestId("reader-subject")).toHaveText("Stratechery weekly");
-        await expect(page.getByTestId("back-to-digest")).toBeVisible();
-        await page.getByTestId("back-to-digest").click();
+        await expect(page.locator(BESIDE)).toBeVisible();
+        await page.getByTestId("reader-close").click();
         await expect(item.getByTestId("digest-open")).toBeFocused();
         await expect(item).toHaveAttribute("data-state", "opened");
       });
@@ -523,7 +525,7 @@ test.describe("What matters and its digest (plan 145)", () => {
     // digest's item being the last open one)
     await show(page, "Can you make the 19th");
     await page.locator(`${FEED} [data-testid=wm-item]`).filter({ hasText: "Can you make the 19th" }).click();
-    await expect(page.getByTestId("back-to-digest")).toHaveCount(0);
+    await expect(page.locator(BESIDE)).toHaveCount(0);
   });
 
   test("plan 162 (after ai162-r02): every way back keeps an opened newsletter out of Archive, at once; the page has the list's keys", async ({ app: page, server }) => {
@@ -564,8 +566,6 @@ test.describe("What matters and its digest (plan 145)", () => {
     await scenario("each way back, straight back (under the reader's dwell): the row opened stays, said so, and isn't counted", async () => {
       const ways: [string, () => Promise<void>][] = [
         ["Enter, then Esc", async () => page.keyboard.press("Escape")],
-        ["Back to the digest", async () => page.getByTestId("back-to-digest").click()],
-        ["the digest's way in", async () => (await digestRow(page)).click()],
         // the reader's ×, "Close (Esc)", does what Esc does: the digest first, never the feed behind it (owner, 2026-11-18)
         ["the reader's close", async () => page.getByTestId("reader-close").click()],
       ];
@@ -634,7 +634,153 @@ test.describe("What matters and its digest (plan 145)", () => {
       const footAfter = (await page.getByTestId("digest-actions").boundingBox())!;
       expect(snackBox.y + snackBox.height).toBeLessThanOrEqual(footAfter.y);
       await expect(page.getByTestId("digest-item").filter({ hasText: "Opened · stays in Inbox" })).toHaveCount(kept);
-      for (let i = 0; i < 3; i++) expect(db.get<{ n: number }>("SELECT in_inbox n FROM threads WHERE subject = ?", await subjectOf(i))!.n).toBe(1);
+      // by the row's conversation (a subject can be two conversations': the demo's has more than one brief)
+      for (let i = 0; i < kept; i++) expect(db.get<{ n: number }>("SELECT in_inbox n FROM threads WHERE id = ?", Number(await items.nth(i).getByTestId("digest-open").getAttribute("data-digest-open")))!.n).toBe(1);
+    });
+  });
+
+  test("plan 251: a message opened from Automated mail has the list beside it: a click or j/k/↓/↑ opens another, Esc puts it back", async ({ app: page, server }) => {
+    await withMail(server, 6);
+    await settingUp(page, server, { ai: { provider: "fake", model: "demo" } });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.getByTestId("nav-today").click();
+    const feedTop = await feedList(page).evaluate((el) => el.scrollTop);
+    await (await digestRow(page)).click();
+    await expect(page.getByTestId("digest-title")).toHaveText("Automated mail");
+    const items = page.getByTestId("digest-item");
+    const total = await items.count();
+    expect(total).toBeGreaterThanOrEqual(6);
+    const subjectOf = async (i: number) => (await items.nth(i).getByTestId("digest-subject").innerText()).trim();
+    const column = page.locator("[data-testid=digest-page][data-place=column]");
+    const listCard = page.locator("#app-list");
+    const feedScroll = await feedList(page).evaluate((el) => el.scrollTop);
+    // ticked before, kept beside
+    await items.nth(0).getByTestId("digest-tick").click();
+
+    await scenario("a click: the list goes into the list column, the message into the reader, its row marked; no button back", async () => {
+      const second = await subjectOf(1);
+      await items.nth(1).getByTestId("digest-open").click();
+      await expect(page.getByTestId("reader-subject")).toHaveText(second);
+      await expect(column).toBeVisible();
+      // in the list's card, where the feed was (kept under it, out of reach)
+      const box = (await column.boundingBox())!;
+      const card = (await listCard.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(card.x - 1);
+      expect(box.x + box.width).toBeLessThanOrEqual(card.x + card.width + 1);
+      await expect(page.locator(FEED)).toBeHidden();
+      await expect(page.locator("[data-testid=digest-page]:not([data-place])")).toHaveCount(0);
+      await expect(column.getByTestId("digest-open").nth(1)).toHaveAttribute("aria-current", "true");
+      await expect(column.getByTestId("digest-open").nth(1)).toBeFocused();
+      await expect(column.getByTestId("digest-tick").first()).toBeChecked();
+      await expect(page.getByText("Back to the digest")).toHaveCount(0);
+      if (SHOTS) {
+        await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-beside-light.png` });
+        await page.emulateMedia({ colorScheme: "dark" });
+        await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-beside-dark.png` });
+      }
+      for (const mode of ["dark", "light"] as const) {
+        await page.emulateMedia({ colorScheme: mode });
+        const results = await new AxeBuilder({ page }).include("#app-list").analyze();
+        expect(results.violations.map((v) => `${mode} ${v.id}: ${v.nodes[0]?.html.slice(0, 120)}`)).toEqual([]);
+      }
+    });
+
+    await scenario("another row's click opens it there; the list stays", async () => {
+      const fourth = await subjectOf(3);
+      await column.getByTestId("digest-open").nth(3).click();
+      await expect(page.getByTestId("reader-subject")).toHaveText(fourth);
+      await expect(column.getByTestId("digest-open").nth(3)).toHaveAttribute("aria-current", "true");
+      await expect(column.locator("[aria-current]")).toHaveCount(1);
+    });
+
+    await scenario("j and ↓ open the next, k and ↑ the previous, from the list and from the reader; x ticks the open one", async () => {
+      await page.keyboard.press("j");
+      await expect(page.getByTestId("reader-subject")).toHaveText(await subjectOf(4));
+      await expect(column.getByTestId("digest-open").nth(4)).toBeFocused();
+      await page.keyboard.press("ArrowDown");
+      await expect(page.getByTestId("reader-subject")).toHaveText(await subjectOf(5));
+      await page.keyboard.press("k");
+      await page.keyboard.press("ArrowUp");
+      await expect(page.getByTestId("reader-subject")).toHaveText(await subjectOf(3));
+      await expect(column.getByTestId("digest-open").nth(3)).toBeFocused();
+      // with the keys in the reader they stay there
+      await page.getByTestId("reader-subject").click();
+      await page.keyboard.press("j");
+      await expect(page.getByTestId("reader-subject")).toHaveText(await subjectOf(4));
+      await expect(column.getByTestId("digest-open").nth(4)).toHaveAttribute("aria-current", "true");
+      await expect(column.getByTestId("digest-open").nth(4)).not.toBeFocused();
+      await page.keyboard.press("x");
+      await expect(column.getByTestId("digest-tick").nth(4)).toBeChecked();
+      // the feed under it took none of it
+      expect(await feedList(page).evaluate((el) => el.scrollTop)).toBe(feedScroll);
+      // ⌘A selects nothing in the feed under it
+      await page.keyboard.press("ControlOrMeta+a");
+      await expect(page.getByTestId("reader-subject")).toHaveText(await subjectOf(4));
+      // Skip to list / Enter: the open row has the keys; Enter on it goes into the reader
+      await column.getByTestId("digest-open").nth(4).focus();
+      await page.keyboard.press("Enter");
+      await expect(column.getByTestId("digest-open").nth(4)).not.toBeFocused();
+      await expect(page.getByTestId("reader-subject")).toHaveText(await subjectOf(4));
+    });
+
+    await scenario("Esc: the page again, on the row it was on, the ticks kept; again, the feed where it was", async () => {
+      await page.keyboard.press("Escape");
+      await expect(column).toHaveCount(0);
+      await expect(page.getByTestId("digest-page")).toBeVisible();
+      await expect(page.getByTestId("digest-open").nth(4)).toBeFocused();
+      await expect(items.nth(0).getByTestId("digest-tick")).toBeChecked();
+      await expect(items.nth(4).getByTestId("digest-tick")).toBeChecked();
+      await expect(page.locator(FEED)).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("digest-page")).toHaveCount(0);
+      expect(feedTop).toBeGreaterThanOrEqual(0);
+    });
+  });
+
+  test.describe("with motion", () => {
+    test.use({ reducedMotion: "no-preference" });
+    test("plan 251: the list glides between the reader and the list column in one view transition, its rows named only while it runs", async ({ app: page, server }) => {
+      await withMail(server, 3);
+      await settingUp(page, server, { ai: { provider: "fake", model: "demo" } });
+      await page.getByTestId("nav-today").click();
+      await (await digestRow(page)).click();
+      await expect(page.getByTestId("digest-title")).toHaveText("Automated mail");
+      await page.evaluate(() => {
+        const w = window as unknown as { transitions: string[][] };
+        w.transitions = [];
+        const start = document.startViewTransition.bind(document);
+        document.startViewTransition = ((update: () => void) => {
+          const names = () => [...document.querySelectorAll<HTMLElement>("[data-morph]")].map((el) => el.style.getPropertyValue("view-transition-name")).filter(Boolean);
+          w.transitions.push(names());
+          return start(() => {
+            update();
+            w.transitions.push(names());
+          });
+        }) as typeof document.startViewTransition;
+      });
+      const transitions = () => page.evaluate(() => (window as unknown as { transitions: string[][] }).transitions);
+      const subject = (await page.getByTestId("digest-subject").nth(1).innerText()).trim();
+      await page.getByTestId("digest-open").nth(1).click();
+      await expect(page.getByTestId("reader-subject")).toHaveText(subject);
+      await expect(page.locator("[data-testid=digest-page][data-place=column]")).toBeVisible();
+      await expect.poll(async () => (await transitions()).length).toBe(2);
+      const [before, after] = await transitions();
+      // the title, the foot and the rows in view, on both sides
+      for (const names of [before!, after!]) {
+        expect(names).toContain("digest-title");
+        expect(names).toContain("digest-foot");
+        expect(names.filter((n) => n.startsWith("digest-row-")).length).toBeGreaterThanOrEqual(3);
+      }
+      // another row from the column: no transition (only the reader changes)
+      await page.locator("[data-place=column] [data-testid=digest-open]").nth(2).click();
+      await expect(page.getByTestId("reader-subject")).not.toHaveText(subject);
+      // Esc: back, one transition more
+      await page.keyboard.press("Escape");
+      await expect(page.locator("[data-testid=digest-page][data-place=column]")).toHaveCount(0);
+      await expect(page.getByTestId("digest-page")).toBeVisible();
+      await expect.poll(async () => (await transitions()).length).toBe(4);
+      // and the names are gone once it's over
+      await expect.poll(() => page.evaluate(() => [...document.querySelectorAll<HTMLElement>("[data-morph]")].some((el) => el.style.getPropertyValue("view-transition-name")))).toBe(false);
     });
   });
 
@@ -711,6 +857,21 @@ test.describe("What matters in List (plan 162, after ai162-r02, Codex review)", 
       await page.getByTestId("digest-close").click();
       await expect(page.getByTestId("digest-page")).toHaveCount(0);
       await expect(page.locator(DIGEST)).toBeInViewport();
+    });
+    await scenario("plan 251: a newsletter opened from it is a page: no list beside, and the toolbar's Back says the digest and goes back to it", async () => {
+      await (await digestRow(page)).click();
+      const subject = (await page.getByTestId("digest-subject").nth(1).innerText()).trim();
+      await page.getByTestId("digest-open").nth(1).click();
+      await expect(page.getByTestId("reader-subject")).toHaveText(subject);
+      await expect(page.locator(BESIDE)).toHaveCount(0);
+      await expect(page.getByTestId("reader-back")).toHaveAccessibleName("Back to Today's digest");
+      await page.getByTestId("reader-back").click();
+      await expect(page.getByTestId("digest-page")).toBeVisible();
+      await expect(page.getByTestId("digest-open").nth(1)).toBeFocused();
+      // and its Back from there is the feed's again
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("digest-page")).toHaveCount(0);
+      await expect(page.locator(FEED)).toBeVisible();
     });
   });
 });

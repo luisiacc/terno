@@ -2889,7 +2889,6 @@ It contains none of your mail, contacts, settings or keys.
   "today.digest.offHint": "Turn on the digest to get a line on each. Until then, nothing has sorted out what these are.",
   "today.digest.offLink": "Newsletter digest settings",
   "today.digest.writtenBy": "Written by {model}. It can make mistakes.",
-  "today.digest.back": "Back to the digest",
   "today.digest.tick": "Include {subject}",
   "today.digest.notNewsletter": "Not a newsletter",
   "today.digest.notNewsletterDone": "{sender} won't be in your digest",

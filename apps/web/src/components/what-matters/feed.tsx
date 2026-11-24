@@ -156,7 +156,7 @@ const menuId = (id: number): number | undefined => (id === DIGEST_ROW_ID ? undef
  * The column every line of the feed sits on: the same at any width, centred where the feed is wide. The rows' words start
  * 1rem into it (plan 214: room for the mark inside a row's fill), and the headings and the header's title with them.
  */
-const COLUMN = "mx-auto w-full max-w-[44rem] px-5";
+export const COLUMN = "mx-auto w-full max-w-[44rem] px-5";
 
 export function WhatMattersFeed() {
   const items = useList((s) => s.items);
