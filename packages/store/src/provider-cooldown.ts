@@ -119,7 +119,52 @@ export function mergeCooldownRows(old: CooldownRow | undefined, candidate: Coold
   else if (candidate.hold && candidate.hold !== "clock" && !repairs(old, candidate)) hold = candidate.hold;
   else if (old.hold === "clock" && candidate.hold === null && !(candidate.repair === old.revision && BigInt(candidate.revision) > BigInt(old.revision))) hold = "clock";
   else if (candidate.hold === "clock" && old.hold === null && !(old.repair === candidate.revision && BigInt(old.revision) > BigInt(candidate.revision))) hold = "clock";
-  return { ...newer, phaseRevision: phaseOf(phase), sample: phase.sample, position: phase.position, minimum: max(old.minimum, candidate.minimum), replay: max(old.replay, candidate.replay)!, hold, repair: hold ? null : newer.repair };
+  // plan 264: a row fenced at or after the other's revision accounts for it, and its minimum and replay stand (a success
+  // retiring a met pause sets them to now and 0; Check clock, a start's lift and a 429 carrying the fence on never lower
+  // them, so for those this is the max)
+  const covers = (a: CooldownRow, b: CooldownRow) => a.repair !== null && BigInt(b.revision) <= BigInt(a.repair) && BigInt(a.revision) > BigInt(b.revision);
+  const replay = covers(candidate, old) ? candidate.replay : covers(old, candidate) ? old.replay : max(old.replay, candidate.replay)!;
+  const minimum = covers(candidate, old) ? candidate.minimum : covers(old, candidate) ? old.minimum : max(old.minimum, candidate.minimum);
+  return { ...newer, phaseRevision: phaseOf(phase), sample: phase.sample, position: phase.position, minimum, replay, hold, repair: hold ? null : newer.repair };
+}
+
+/** plan 264: a row whose pause is over and that carries nothing forward: the same as no row */
+export const cooldownRetired = (row: CooldownRow, wall: number): boolean =>
+  row.hold === null && row.position === 0 && row.replay === "0" && row.minimum !== null && BigInt(row.minimum) <= BigInt(wall);
+
+const WORST_ROW: CooldownRow = { owner: "f".repeat(64), service: "google-userinfo", revision: "9".repeat(20), phaseRevision: "9".repeat(20), minimum: "-8640000000000000", wall: "-8640000000000000", replay: "17280000000360000", sample: 360000, position: 6, hold: "clock-evidence", repair: "9".repeat(20) };
+/** plan 264: what a start waits, for every Google service, once it clears an overflow (a refusal it lost may be in it) */
+export const OVERFLOW_QUARANTINE_MS = 3_600_000;
+
+/**
+ * Plan 264: a start's compaction, inside the adapter's transaction. Drops bindings of accounts that no longer exist and
+ * retired rows (identical to no row); any other row stays, bound or not. An overflow lost a refusal it couldn't write:
+ * it is cleared only when what is left, plus a worst-case row for every service each remaining owner lacks, fits with
+ * the overflow envelope's room, and then every Google service waits OVERFLOW_QUARANTINE_MS from this start, at the
+ * installation (every account), in place of what was lost.
+ */
+export function compactCooldown(encoded: string | null, live: (id: number, createdAt: number) => boolean, wall: number): string {
+  const ledger = decodeCooldown(encoded);
+  const valid = Number.isSafeInteger(wall) && Math.abs(wall) <= 8_640_000_000_000_000 - OVERFLOW_QUARANTINE_MS;
+  ledger.bindings = ledger.bindings.filter((b) => live(b.id, b.createdAt));
+  if (valid) ledger.rows = ledger.rows.filter((row) => !cooldownRetired(row, wall));
+  if (ledger.overflow && valid) {
+    const bound = new Set(ledger.bindings.map((b) => b.mailboxKey));
+    const worst = bytes(JSON.stringify(WORST_ROW)) + 1;
+    let missing = 0;
+    for (const owner of ["installation", ...bound]) for (const service of COOLDOWN_SERVICES) if (!ledger.rows.some((r) => r.owner === owner && r.service === service)) missing++;
+    if (bytes(encodeCooldown({ ...ledger, overflow: false })) + missing * worst <= COOLDOWN_LEDGER_BYTES - 128) {
+      ledger.overflow = false;
+      for (const service of COOLDOWN_SERVICES) {
+        ledger.revision = nextCooldownRevision(ledger.revision);
+        const old = ledger.rows.find((r) => r.owner === "installation" && r.service === service);
+        const quarantine: CooldownRow = { owner: "installation", service, revision: ledger.revision, phaseRevision: ledger.revision, minimum: String(wall + OVERFLOW_QUARANTINE_MS), wall: String(wall), replay: String(OVERFLOW_QUARANTINE_MS), sample: 360000, position: 6, hold: null, repair: null };
+        ledger.rows = ledger.rows.filter((r) => r !== old);
+        ledger.rows.push(mergeCooldownRows(old, quarantine));
+      }
+    }
+  }
+  return encodeCooldown(ledger);
 }
 
 /** Called inside the adapter's existing synchronous transaction. */
