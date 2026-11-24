@@ -541,7 +541,7 @@
    edge so the gap stays the ground's. It doesn't clip: what a pane lays over its neighbour (a pinned Ask beside a pinned
    draft) can leave it, so the pane's own content clips itself to the corners (`pane-card-clip`) */
 @utility pane-card {
-  border-radius: var(--radius-sm);
+  border-radius: calc(var(--radius-sm) + 2px);
   background-color: var(--background);
   outline: var(--hairline-w) solid var(--hairline);
   outline-offset: calc(-1 * var(--hairline-w));
