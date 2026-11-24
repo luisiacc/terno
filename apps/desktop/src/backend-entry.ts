@@ -120,6 +120,8 @@ function portTransport(port: PortMain): Transport {
 let backend: Backend | null = null;
 /** plan 176: whether a Terno window has focus (main's word, kept from init on) */
 let focused = false;
+/** plan 263: main's latest word on the network from init on (one told while the mailbox opens is kept for the backend) */
+let online = true;
 /** the focus main reports isn't a renderer's: one name for it among the clients (quick-checks.ts) */
 const MAIN_CLIENT = "main";
 let opening: { abort: AbortController; done: Promise<void> } | null = null;
@@ -149,13 +151,15 @@ parentPort.on("message", async (event) => {
     return;
   }
   if (msg.type === "network") {
-    // before init there is nothing to tell (init carries the state); after a stop, nothing to do
+    // before init there is nothing to tell (init carries the state); while the mailbox opens the backend starts from it
+    online = msg.online;
     backend?.networkChanged(msg.online, msg.reason);
     return;
   }
   if (msg.type === "init") {
     if (opening || backend || closing) return;
     focused = msg.focused;
+    online = msg.online;
     const abort = new AbortController();
     const current = { abort, done: initialize(msg, abort.signal) };
     opening = current;
@@ -191,7 +195,7 @@ async function initialize(msg: Extract<MainToBackend, { type: "init" }>, signal:
       // plan 161: main sends these only for the demo mailbox (test-hooks.ts)
       ...(msg.testNow !== undefined ? { now: offsetClock(msg.testNow) } : {}),
       ...(msg.testNetLog ? { onNet: netRecorder(msg.testNetLog) } : {}),
-      online: msg.online,
+      online,
       onPolicy: (policy) => send({ type: "policy", ...policy }),
       // plan 41: main owns the Dock and the notifications (they work with every window closed)
       attention: { badge: (count) => send({ type: "badge", count }), notify: (notice) => send({ type: "notify", notice }) },

@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import type { NetworkInterfaceInfo } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { changedKeys, DEBOUNCE_MS, fingerprint, keyKind, MAX_WAIT_MS, NetworkWatch, SCUTIL, SCUTIL_SCRIPT, type NetworkWatchChange } from "./network-watch";
+import { changedKeys, DEBOUNCE_MS, fingerprint, keyKind, MAX_WAIT_MS, NetworkWatch, RECHECK_MS, SCUTIL, SCUTIL_SCRIPT, type NetworkWatchChange } from "./network-watch";
 
 /**
  * What scutil printed on this Mac when a full-tunnel VPN on utun9 disconnected (plan 20's passive
@@ -210,5 +210,59 @@ describe("NetworkWatch (plan 20)", () => {
     expect(t.spawns).toEqual([]);
     t.watch.wake();
     expect(t.changes).toEqual([{ online: true, reason: "wake" }]);
+  });
+});
+
+describe("an offline report is read again (plan 263)", () => {
+  it("a wake read offline, Wi-Fi joining 3 s later with no key scutil posts: told online at the 4 s read, then nothing", () => {
+    let online = true, reads = 0;
+    const t = rig({ online: () => (reads++, online) });
+    t.watch.start();
+    online = false;
+    t.watch.wake();
+    expect(t.changes).toEqual([{ online: false, reason: "wake" }]);
+    vi.advanceTimersByTime(3_000);
+    online = true;
+    vi.advanceTimersByTime(RECHECK_MS[1]);
+    expect(t.changes).toEqual([{ online: false, reason: "wake" }, { online: true, reason: "online" }]);
+    // the watcher's child is the only thing left
+    const after = reads;
+    vi.advanceTimersByTime(10 * 60_000);
+    expect(reads).toBe(after);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("offline for good: four reads after the report, then no timer", () => {
+    let reads = 0;
+    const t = rig({ platform: "linux", online: () => (reads++, false) });
+    t.watch.start();
+    expect(reads).toBe(1);
+    vi.advanceTimersByTime(RECHECK_MS.reduce((a, b) => a + b, 0));
+    expect(reads).toBe(1 + RECHECK_MS.length);
+    expect(vi.getTimerCount()).toBe(0);
+    vi.advanceTimersByTime(60 * 60_000);
+    expect(reads).toBe(1 + RECHECK_MS.length);
+    expect(t.changes).toEqual([]);
+  });
+
+  it("a newer report starts the reads over; online needs none; stop clears them", () => {
+    let online = false, reads = 0;
+    const t = rig({ platform: "linux", online: () => (reads++, online) });
+    t.watch.start();
+    vi.advanceTimersByTime(RECHECK_MS[0] + RECHECK_MS[1]);
+    expect(reads).toBe(3);
+    t.watch.wake();
+    expect(reads).toBe(4);
+    // the ladder began again at its first step
+    vi.advanceTimersByTime(RECHECK_MS[0]);
+    expect(reads).toBe(5);
+    online = true;
+    t.watch.wake();
+    expect(vi.getTimerCount()).toBe(0);
+    online = false;
+    t.watch.wake();
+    expect(vi.getTimerCount()).toBe(1);
+    t.watch.stop();
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

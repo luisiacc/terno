@@ -10,6 +10,8 @@
  * monitor`) sees everything too, but posts every failed lookup (thousands a minute on a busy Mac).
  *
  * Elsewhere: wake from sleep only (macOS first).
+ *
+ * Plan 263: a report that said offline is followed by a few bounded re-reads of `isOnline()` (RECHECK_MS).
  */
 import type { NetworkInterfaceInfo } from "node:os";
 
@@ -66,6 +68,14 @@ const RESTART_MAX_MS = 5 * 60_000;
 /** up this long, the watcher's earlier failures are forgotten */
 const HEALTHY_MS = 10 * 60_000;
 const MAX_FAILURES = 8;
+/**
+ * Plan 263: after a report that said offline, `isOnline()` is read again this long after each step (1 s, 4 s, 14 s,
+ * 44 s from the report), and the first "online" is told. Main has no online event, and right after a wake (or at a
+ * login launch) Wi-Fi often hasn't joined yet; the address change that follows doesn't always reach scutil (an address
+ * kept across the sleep, Chromium's reachability trailing configd), and Linux has no watcher at all. Bounded: nothing
+ * runs while online or after the last step.
+ */
+export const RECHECK_MS = [1_000, 3_000, 10_000, 30_000] as const;
 
 /** AirDrop, peer-to-peer and virtual links churn their link-local addresses: never a network change */
 const IGNORED_IF = /^(awdl|llw|anpi|ap|bridge|gif|stf|lo)\d*$/;
@@ -105,6 +115,7 @@ export class NetworkWatch {
   private burstGlobal = false;
   private print = "";
   private online = true;
+  private recheckTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly now: () => number;
   private readonly setTimer: (fn: () => void, ms: number) => ReturnType<typeof setTimeout>;
   private readonly clearTimer: (t: ReturnType<typeof setTimeout>) => void;
@@ -125,6 +136,7 @@ export class NetworkWatch {
     this.stopped = false;
     this.print = fingerprint(this.deps.interfaces());
     this.online = this.deps.isOnline();
+    this.recheck();
     if (this.deps.platform === "darwin") this.spawn();
   }
 
@@ -134,13 +146,15 @@ export class NetworkWatch {
     this.print = fingerprint(this.deps.interfaces());
     this.online = this.deps.isOnline();
     this.deps.onChange({ online: this.online, reason: "wake" });
+    this.recheck();
   }
 
   stop(): void {
     this.stopped = true;
     if (this.restartTimer) this.clearTimer(this.restartTimer);
     if (this.debounce) this.clearTimer(this.debounce);
-    this.restartTimer = this.debounce = null;
+    if (this.recheckTimer) this.clearTimer(this.recheckTimer);
+    this.restartTimer = this.debounce = this.recheckTimer = null;
     const child = this.child;
     this.child = null;
     if (!child) return;
@@ -191,6 +205,22 @@ export class NetworkWatch {
     this.online = online;
     if (changed) this.deps.onChange({ online, reason: "network" });
     else if (flipped) this.deps.onChange({ online, reason: online ? "online" : "offline" });
+    if (changed || flipped) this.recheck();
+  }
+
+  /** Plan 263: offline now, read again on RECHECK_MS's steps; any newer reading starts over (online: none). */
+  private recheck(step = 0): void {
+    if (this.recheckTimer) this.clearTimer(this.recheckTimer);
+    this.recheckTimer = null;
+    if (this.stopped || this.online || step >= RECHECK_MS.length) return;
+    this.recheckTimer = this.setTimer(() => {
+      this.recheckTimer = null;
+      if (this.stopped || this.online) return;
+      if (!this.deps.isOnline()) return this.recheck(step + 1);
+      this.online = true;
+      this.print = fingerprint(this.deps.interfaces());
+      this.deps.onChange({ online: true, reason: "online" });
+    }, RECHECK_MS[step]!);
   }
 
   private spawn(): void {
