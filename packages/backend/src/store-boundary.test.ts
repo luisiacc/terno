@@ -23,8 +23,8 @@ function sources(dir: string): string[] {
 
 /** file → what it may import from @terno/db: opening and upgrading the mailbox, never querying it */
 const OPENING: Record<string, string[]> = {
-  "packages/backend/src/backend.ts": ["nodePlatform", "openDatabase", "SqlMailStore", "SEARCH_SCHEMA_VERSION", "openingSqlStore", "type Db", "type OpenOptions"],
-  "packages/backend/src/legacy-body-worker.ts": ["BODY_UPGRADE_APPLICATION_ID", "SCHEMA_VERSION", "MigrationError", "SchemaNewerError", "type OpenFailure", "BodyUpgradeProgress"],
+  "packages/backend/src/backend.ts": ["nodePlatform", "openDatabase", "SqlMailStore", "SEARCH_SCHEMA_VERSION", "openingSqlStore", "type CheckpointHold", "type Db", "type OpenOptions"],
+  "packages/backend/src/legacy-body-worker.ts": ["BODY_PARTS_SCHEMA", "BODY_READY_APPLICATION_ID", "BODY_UPGRADE_APPLICATION_ID", "SCHEMA_VERSION", "MigrationError", "SchemaNewerError", "type OpenFailure", "BodyUpgradeProgress"],
   "packages/backend/src/incoming.worker.ts": ["nodeSqliteDriver", "nodePlatform", "openDatabaseWith", "upgradeLegacyBodies", "classifyOpenError", "type BodyUpgradeProgress"],
 };
 

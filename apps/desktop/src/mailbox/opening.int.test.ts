@@ -5,9 +5,12 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { beforeAll, afterAll, expect, it } from "vitest";
-import { Db, MIGRATIONS, nodeSqliteDriver, createAccount, ingestMessages, registerFunctions, listBackups, SCHEMA_VERSION } from "@terno/db";
+import { Db, MIGRATIONS, nodeSqliteDriver, createAccount, ingestMessages, registerFunctions, listBackups, SCHEMA_VERSION, BODY_READY_APPLICATION_ID, backupToSettle } from "@terno/db";
+import { oldMailbox } from "../../../../packages/db/src/test/old-mailbox";
+import { readFileSync, statfsSync } from "node:fs";
 import { msg } from "../../../../packages/store/src/conformance/fixtures";
 import { openNodeMailbox, nodeStore } from "@terno/backend";
+import { untouchedUri } from "@terno/db/clone";
 import type { MainToBackend } from "../ipc";
 
 const text = "😀e\u0301\r\nexact old entry phrase ".repeat(9000), html = `<p>${text}</p>`;
@@ -49,9 +52,10 @@ function legacy(path: string, fail: boolean) {
 function init(directory: string): MainToBackend {
   return { type: "init", dbPath: join(directory, "mail.db"), demo: false, dev: false, devMode: false, online: false, focused: false, socketPath: join(directory, "agent.sock"), tokenPath: join(directory, "agent.token"), version: "test", diag: { session: "synthetic-opening-session", build: "test", channel: "test" } };
 }
-function exactOld(path: string, version: number) {
-  const db = new Db(nodeSqliteDriver, path, { readonly: true });
-  try { expect(db.get<{ user_version: number }>("PRAGMA user_version")!.user_version).toBe(version); const row = db.get<{ body_text: string; body_html: string }>("SELECT body_text,body_html FROM message_bodies")!; expect(row.body_text === text && row.body_html === html).toBe(true); }
+function exactOld(path: string, version: number, bodies = true) {
+  // a published backup is read without touching it: a clone stays in WAL mode until it is settled (plan 253)
+  const db = new Db(nodeSqliteDriver, path.includes("/backups/") ? untouchedUri(path) : path, { readonly: true });
+  try { expect(db.get<{ user_version: number }>("PRAGMA user_version")!.user_version).toBe(version); if (!bodies) return; const row = db.get<{ body_text: string; body_html: string }>("SELECT body_text,body_html FROM message_bodies")!; expect(row.body_text === text && row.body_html === html).toBe(true); }
   finally { db.close(); }
 }
 
@@ -90,5 +94,49 @@ for (const mode of ["prepared-cancel", "prepared-success", "backup-cancel", "mig
       finally { await store.close(); }
     }
     expect(native.events.some((event) => event.tag === "unexpected-route")).toBe(false);
+  } finally { await native.close(); rmSync(directory, { recursive: true, force: true }); }
+});
+
+/** a mailbox one schema behind whose bodies are converted, as every recent Terno leaves it: the host's own open migrates it */
+function behind(path: string) {
+  oldMailbox(path, SCHEMA_VERSION - 1, 2);
+  const db = new Db(nodeSqliteDriver, path);
+  try { db.exec(`PRAGMA application_id = ${BODY_READY_APPLICATION_ID}`); } finally { db.close(); }
+}
+const apfs = process.platform === "darwin" && statfsSync(tmpdir()).type === 26;
+const header = (file: string) => [...readFileSync(file).subarray(18, 20)];
+
+// plan 253: the backup's first write (its settle) never holds the window, and a shutdown that closes waits for it
+for (const mode of ["settle-ready", "settle-shutdown"] as const) it.skipIf(!apfs)(`actual native entry: ${mode}`, async () => {
+  const directory = mkdtempSync(join(tmpdir(), "terno-entry-settle-")), path = join(directory, "mail.db"), backups = join(directory, "backups");
+  behind(path);
+  const native = owner(mode);
+  try {
+    expect((await native.until("booted")).tag).toBe("booted"); native.worker.postMessage(init(directory));
+    expect((await native.until("settle-held")).tag).toBe("settle-held");
+    // the clone path, the host's own open (no legacy owner)
+    expect(native.events.some((event) => event.tag === "legacy-start")).toBe(false);
+    if (mode === "settle-ready") {
+      // the window is served while the backup still waits for its first write
+      expect((await native.until("ready")).tag).toBe("ready");
+      expect(header(listBackups(backups)[0]!.file)).toEqual([2, 2]);
+      native.worker.postMessage({ fixture: "release-settle" });
+      for (let i = 0; i < 250 && backupToSettle(backups); i++) await new Promise((r) => setTimeout(r, 20));
+      expect(header(listBackups(backups)[0]!.file)).toEqual([1, 1]);
+      expect(backupToSettle(backups)).toBeNull();
+      native.worker.postMessage({ type: "shutdown", id: 1, force: true, deadlineMs: 5000 }); expect((await native.until("shutdown-result")).outcome).toBe("closed");
+    } else {
+      await native.until("ready");
+      // never released: the shutdown ends the settle, and says closed only once its thread is gone
+      native.worker.postMessage({ type: "shutdown", id: 1, force: true, deadlineMs: 5000 });
+      expect((await native.until("shutdown-result")).outcome).toBe("closed");
+      const tags = native.events.map((event) => event.tag);
+      expect(tags.indexOf("settle-exit")).toBeGreaterThan(-1);
+      expect(tags.indexOf("settle-exit")).toBeLessThan(tags.indexOf("shutdown-result"));
+      // the backup is whole, and still the next start's to settle
+      expect(header(listBackups(backups)[0]!.file)).toEqual([2, 2]);
+      expect(backupToSettle(backups)).toBe(listBackups(backups)[0]!.file);
+    }
+    exactOld(listBackups(backups)[0]!.file, SCHEMA_VERSION - 1, false);
   } finally { await native.close(); rmSync(directory, { recursive: true, force: true }); }
 });

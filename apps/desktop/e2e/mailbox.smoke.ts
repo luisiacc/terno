@@ -14,15 +14,16 @@
  *   backup is not sent again
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, statfsSync, statSync, writeFileSync, writeSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readSync, rmSync, statfsSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
 import { MIGRATIONS, SCHEMA_VERSION } from "../../../packages/db/src/migrations";
 import { nodeSqliteDriver } from "../../../packages/db/src/node-driver";
 import { Db } from "../../../packages/db/src/sqlite";
+import { BODY_READY_APPLICATION_ID } from "../../../packages/db/src/body-upgrade";
 import { closePackaged } from "./packaged-fixture";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -81,11 +82,14 @@ function oldMailbox(path: string, o: { version?: number; drafts?: number; bodyKb
   });
   db.run("INSERT INTO ops (id, seq, account_id, kind, target_json, payload_json, state, created_at, updated_at) VALUES ('op-1', 1, 1, 'send', '{}', '{}', 'queued', 1, 1)");
   db.run("INSERT INTO settings (key, value_json) VALUES ('app', ?)", JSON.stringify({ localMode: false }));
+  // its bodies converted, as every recent Terno leaves it: the backend's own open migrates it (plan 253)
+  db.exec(`PRAGMA application_id = ${BODY_READY_APPLICATION_ID}`);
   db.close();
 }
 
 const facts = (path: string) => {
-  const db = new DatabaseSync(path, { readOnly: true });
+  // a backup is read without touching it: a clone stays in WAL mode until it is settled (plan 253)
+  const db = path.includes("/backups/") ? new DatabaseSync(`${pathToFileURL(path).href}?immutable=1`, { readOnly: true }) : new DatabaseSync(path, { readOnly: true });
   try {
     const one = <T>(sql: string) => db.prepare(sql).get() as T;
     return {
@@ -134,10 +138,24 @@ test("an older mailbox: backed up, migrated, and the window opens as usual, neve
   }
   expect(covered).toBe(false);
   await expect(gate(page)).toHaveCount(0);
+  // plan 253: the backup's first write (its settle) comes after the window opened, off the backend's thread
+  const generations = readdirSync(join(userData, "backups"));
+  const copy = join(userData, "backups", generations[0]!, "terno.db");
+  const journalMode = () => {
+    const fd = openSync(copy, "r");
+    try {
+      const b = Buffer.alloc(2);
+      readSync(fd, b, 0, 2, 18);
+      return [...b];
+    } finally {
+      closeSync(fd);
+    }
+  };
+  await expect.poll(journalMode, { timeout: 30_000 }).toEqual([1, 1]);
   await closePackaged(app);
   app = undefined;
   expect(facts(db)).toEqual({ version: SCHEMA_VERSION, drafts: 5 });
-  const generations = readdirSync(join(userData, "backups"));
+  expect(logged(userData, "mailbox.backup_settled")).toBe(1);
   expect(generations).toHaveLength(1);
   const manifest = JSON.parse(readFileSync(join(userData, "backups", generations[0]!, "manifest.json"), "utf8")) as { fromSchema: number; toSchema: number };
   expect(manifest).toMatchObject({ fromSchema: PREV, toSchema: SCHEMA_VERSION, method: "clone" });

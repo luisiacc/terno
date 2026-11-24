@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { Backend, openNodeMailbox, nodeStore, parseGoogleClients, seedDemo, seedDemoCode, type LegacySecretReader, type SecretCipher } from "@terno/backend";
 import { devAiKeys } from "@terno/core";
 import type { BackupSummary, MailboxGate } from "@terno/core/mailbox";
-import { cancelClones, classifyOpenError, diskFree, expireBackups, listBackups, mailboxBytes, migrateHeadroom, nodePlatform, prepareUpgrade, quarantineRestored, SCHEMA_VERSION, SqlMailStore, type BackupInfo, type UpgradePlan } from "@terno/db";
+import { backupToSettle, cancelClones, classifyOpenError, diskFree, expireBackups, listBackups, mailboxBytes, migrateHeadroom, nodePlatform, prepareUpgrade, quarantineRestored, SCHEMA_VERSION, settleBackup, SqlMailStore, type BackupInfo, type Settle, type UpgradePlan } from "@terno/db";
 import { captureError, diagPlatform, installDiag, log, type DiagEntry, type DiagOptions } from "@terno/core/diag";
 import { isRpcMessage, type RpcMessage, type Transport } from "@terno/core/rpc";
 import { createRegistry } from "@terno/mail/registry";
@@ -279,14 +279,19 @@ async function openMailbox(msg: Extract<MainToBackend, { type: "init" }>, signal
     const migrating = plan.from !== null && plan.from < plan.to;
     if (migrating && !plan.backup) log.info("mailbox.backup_skipped", { schema: plan.from ?? 0 });
     if (migrating) send({ type: "gate", gate: { kind: "upgrading", phase: "migrate", from: plan.from!, to: plan.to } });
-    const db = await openNodeMailbox(msg.dbPath, { uuid: () => nodePlatform.uuid() }, signal);
+    // plan 253: the open never checkpoints on this thread, and the store's checkpoints wait for the kept backup's
+    // first write (settled off this thread, once expiry says which generation stays)
+    const db = await openNodeMailbox(msg.dbPath, { uuid: () => nodePlatform.uuid(), deferCheckpoints: true }, signal);
+    let release = () => {};
+    const hold = new Promise<void>((resolve) => (release = resolve));
     try {
       signal.throwIfAborted();
       // a restored copy: quarantined and on disk before its marker goes (Codex review R3)
       restoredFrom = settleRestored(db, msg.dbPath, () => quarantineRestored(db))?.createdAt ?? null;
-      mailbox = nodeStore(db, { log: storeLog(msg.dev) });
+      mailbox = nodeStore(db, { log: storeLog(msg.dev), checkpointHold: { until: hold, maxMs: SETTLE_HOLD_MS } });
       // opened healthy at this schema: only now may a backup past its time go (Codex review R8)
       expireBackups(backupsDir);
+      startSettle(backupsDir, release);
     } catch (error) {
       try { db.close(); } catch { /* the open's error explains it */ }
       throw error;
@@ -321,6 +326,43 @@ async function openMailbox(msg: Extract<MainToBackend, { type: "init" }>, signal
   }
 }
 
+/**
+ * Plan 253: the longest the mailbox's checkpoints wait for the backup's settle (2–5 s measured on a 1.2 GB mailbox).
+ * Until a checkpoint, commits made with synchronous=NORMAL aren't durable against a power cut: this bounds that window.
+ */
+const SETTLE_HOLD_MS = 15_000;
+/** the kept backup's settle while it runs; a shutdown that closes ends it */
+let settling: Settle | null = null;
+
+/** Settles the kept backup if it is still a clone in WAL mode; `release` lets the mailbox's checkpoints go after. */
+function startSettle(backupsDir: string, release: () => void): void {
+  let file: string | null = null;
+  try {
+    file = backupToSettle(backupsDir);
+  } catch {
+    /* nothing readable to settle */
+  }
+  if (!file) return release();
+  const job = (settling = settleBackup(file));
+  void job.done
+    .then(
+      (durationMs) => log.info("mailbox.backup_settled", { durationMs: Math.round(durationMs) }),
+      // a shutdown's stop isn't a failure; either way the next start settles what's left
+      (error: unknown) => void (settling === job && captureError(error, { code: "mailbox.backup_settle_failed", expected: false })),
+    )
+    .finally(() => {
+      if (settling === job) settling = null;
+      release();
+    });
+}
+
+/** A shutdown that closes: the settle ends and its thread is gone before "closed". */
+async function stopSettle(): Promise<void> {
+  const job = settling;
+  settling = null;
+  await job?.stop();
+}
+
 let closing: Promise<void> | null = null;
 
 /** See MainToBackend "shutdown": a send in flight is never cut short unless main says so. */
@@ -331,6 +373,7 @@ async function shutdown(msg: Extract<MainToBackend, { type: "shutdown" }>): Prom
   if (!b || closing) {
     pending?.abort.abort(new DOMException("Mailbox opening stopped", "AbortError"));
     await pending?.done;
+    await stopSettle();
     await closing;
     return send({ type: "shutdown-result", id: msg.id, outcome: "closed" });
   }
@@ -343,6 +386,7 @@ async function shutdown(msg: Extract<MainToBackend, { type: "shutdown" }>): Prom
   }
   pending?.abort.abort(new DOMException("Mailbox opening stopped", "AbortError"));
   await pending?.done;
+  await stopSettle();
   if (closing) await closing;
   else closing = b.stop().catch((error: unknown) => void captureError(error, { code: "backend.fatal", expected: false }));
   await closing;

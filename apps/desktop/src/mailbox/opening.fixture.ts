@@ -38,6 +38,23 @@ if (mode === "backup-cancel") {
   const statfs = fs.statfsSync;
   fs.statfsSync = ((...args: Parameters<typeof statfs>) => ({ ...statfs(...args), type: 0 })) as typeof statfs;
 }
+// plan 253: the backup's settle (an eval worker switching the journal mode) waits, before it starts, for release-settle
+const threads = createRequire(import.meta.url)("node:worker_threads") as typeof import("node:worker_threads");
+const settleGate = new Int32Array(new SharedArrayBuffer(4));
+if (mode.startsWith("settle-")) {
+  const Native = threads.Worker;
+  threads.Worker = class extends Native {
+    constructor(source: string | URL, options?: import("node:worker_threads").WorkerOptions) {
+      if (options?.eval && String(source).includes("journal_mode = DELETE")) {
+        port.postMessage({ fixture: "settle-held" });
+        source = `{ const g = new Int32Array(require("node:worker_threads").workerData.gate); while (Atomics.load(g, 0) === 0) Atomics.wait(g, 0, 0, 20); }\n${String(source)}`;
+        options = { ...options, workerData: { ...options.workerData, gate: settleGate.buffer } };
+      }
+      super(source, options);
+      if (options?.workerData?.gate) this.once("exit", () => port.postMessage({ fixture: "settle-exit" }));
+    }
+  } as typeof Native;
+}
 syncBuiltinESMExports();
 const open = nodeSqliteDriver.open.bind(nodeSqliteDriver);
 nodeSqliteDriver.open = (path, options) => { port.postMessage({ fixture: "host-open" }); return open(path, options); };
@@ -50,6 +67,7 @@ port.on("message", (value) => {
   if (value?.fixture === "release-prepared" && held) { const next = held; held = undefined; emit.call(next.worker, "message", next.message); }
   if (value?.fixture === "release-retirement") releaseRetirement();
   if (value?.fixture === "release-backup") releaseBackup();
+  if (value?.fixture === "release-settle") { Atomics.store(settleGate, 0, 1); Atomics.notify(settleGate, 0); }
   if (value?.fixture === "barrier") port.postMessage({ fixture: "barrier" });
   if (value?.fixture === "dispose") {
     disposing = true; releaseBackup(); releaseRetirement();

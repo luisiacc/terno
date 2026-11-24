@@ -6,6 +6,8 @@ import type { Db } from "./sqlite";
 /** SQLite header hint: an interrupted/copied upgrade must enter the asynchronous owner again. */
 export const BODY_UPGRADE_APPLICATION_ID = 1413631824;
 export const BODY_READY_APPLICATION_ID = 1413631812;
+/** the migration that adds body parts (and marks a mailbox with bodies as pending conversion) */
+export const BODY_PARTS_SCHEMA = 45;
 export interface BodyUpgradeProgress { scanned: number; converted: number; partBytes: number; phase?: "prepared" | "committed" }
 export class BodyUpgradeRequired extends Error { constructor() { super("This mailbox needs asynchronous body upgrade admission"); this.name = "BodyUpgradeRequired"; } }
 
