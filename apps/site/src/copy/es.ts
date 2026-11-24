@@ -56,10 +56,10 @@ export const es: SiteCopy = {
       points: ["Gmail, Outlook, cualquier IMAP/SMTP", "Cuentas ilimitadas", "Categorías que las abarcan todas"],
     },
     local: {
-      title: "Sin cuenta. Sin nube. Solo tu Mac.",
-      body: "Tu correo se sincroniza entre tu Mac y tus servidores de correo, nunca a través de los nuestros. Tu correo, tus contactos y el índice de búsqueda viven en tu Mac.",
+      title: "Sin cuenta. Sin nube. Solo tu ordenador.",
+      body: "Tu correo se sincroniza entre tu ordenador y tus servidores de correo, nunca a través de los nuestros. Tu correo, tus contactos y el índice de búsqueda viven en tu ordenador.",
       points: ["Privado desde el primer momento", "Imágenes remotas solo si las pides", "Cero rastreo"],
-      map: { mac: "Tu Mac", kept: { mail: "Correo", contacts: "Contactos", index: "Índice de búsqueda" }, link: "Sincronización directa", servers: "Tus servidores de correo", providers: "Gmail · Outlook · IMAP", ours: "Ningún servidor de Terno" },
+      map: { computer: "Tu ordenador", kept: { mail: "Correo", contacts: "Contactos", index: "Índice de búsqueda" }, link: "Sincronización directa", servers: "Tus servidores de correo", providers: "Gmail · Outlook · IMAP", ours: "Ningún servidor de Terno" },
     },
     search: {
       title: "Búsqueda instantánea.",
@@ -98,7 +98,7 @@ export const es: SiteCopy = {
     },
     agents: {
       title: "Tus agentes de IA, en todos tus buzones.",
-      body: "Conecta Claude Code, Codex, Cursor u otra app de tu Mac que use servidores MCP locales, y podrá buscar y leer todas tus cuentas a través de Terno. Está desactivado hasta que lo activas, y tú decides si los agentes solo pueden leer, también organizar o también enviar.",
+      body: "Conecta Claude Code, Codex, Cursor u otra app de tu ordenador que use servidores MCP locales, y podrá buscar y leer todas tus cuentas a través de Terno. Está desactivado hasta que lo activas, y tú decides si los agentes solo pueden leer, también organizar o también enviar.",
       points: ["Claude Code, Codex, Cursor y otras apps MCP locales", "Desactivado hasta que lo activas", "Solo leer, organizar o enviar: tú eliges"],
       demo: {
         you: "Tú",
@@ -153,7 +153,7 @@ export const es: SiteCopy = {
       points: [],
     },
     privacy: "La IA está desactivada hasta que la activas. Con Pro, cada función envía a Claude u OpenAI solo los datos del correo que necesita, a través del servidor intermediario de Terno, que no guarda nada. Terno nunca envía un correo por ti.",
-    ownKey: "Pro es IA sin claves que configurar. También puedes usar estas funciones sin Pro, con tu propia clave de Claude u OpenAI o con un modelo en tu Mac. Tu proveedor puede cobrarte por el uso.",
+    ownKey: "Pro es IA sin claves que configurar. También puedes usar estas funciones sin Pro, con tu propia clave de Claude u OpenAI o con un modelo en tu ordenador. Tu proveedor puede cobrarte por el uso.",
   },
   keys: [
     { keys: ["J", "K"], label: "Siguiente, anterior" },
@@ -258,22 +258,22 @@ export const es: SiteCopy = {
     notFound: { title: "Esta página no existe", body: "Puede que el enlace sea antiguo o esté mal escrito.", home: "Ir a la página de inicio" },
     privacy: {
       title: "Privacidad",
-      intro: "Terno guarda tu correo en tu Mac. No hay cuenta de Terno ni ningún servidor de Terno que guarde tu correo. Esta página explica exactamente qué hacen con tus datos la app y este sitio web.",
-      updated: "Última actualización: 20 de noviembre de 2026",
+      intro: "Terno guarda tu correo en tu ordenador. No hay cuenta de Terno ni ningún servidor de Terno que guarde tu correo. Esta página explica exactamente qué hacen con tus datos la app y este sitio web.",
+      updated: "Última actualización: 23 de noviembre de 2026",
       contents: "En esta página",
       sections: [
         {
           id: "who",
           title: "Quiénes somos",
           body: [
-            "Terno lo hace Luisiacc LLC («nosotros»). Esta política cubre la app Terno para Mac y este sitio web, terno.app. El código de Terno es público en [GitHub](https://github.com/luisiacc/terno), así que puedes comprobar todo lo que sigue.",
+            "Terno lo hace Luisiacc LLC («nosotros»). Esta política cubre la app Terno en todos los sistemas donde funciona (Mac, Windows y Linux) y este sitio web, terno.app. El código de Terno es público en [GitHub](https://github.com/luisiacc/terno), así que puedes comprobar todo lo que sigue.",
           ],
         },
         {
-          id: "on-your-mac",
-          title: "Tu correo se queda en tu Mac",
+          id: "on-your-computer",
+          title: "Tu correo se queda en tu ordenador",
           body: [
-            "Terno descarga tu correo de tus proveedores de correo y lo guarda, junto con tus contactos y el índice de búsqueda, en una base de datos en la carpeta de usuario de tu Mac. Tus contraseñas, tokens de inicio de sesión y claves de IA se cifran con una clave guardada en el Llavero de macOS.",
+            "Terno descarga tu correo de tus proveedores de correo y lo guarda, junto con tus contactos y el índice de búsqueda, en una base de datos en tu carpeta de usuario del ordenador. Tus contraseñas, tokens de inicio de sesión y claves de IA se cifran con una clave que tu sistema guarda por ti: en el Llavero en un Mac, con la protección de datos propia de Windows para tu cuenta de usuario en Windows, y en tu llavero (como GNOME Keyring o KWallet) en Linux. En un Linux sin llavero en marcha, esa clave es una incluida en la app, que los protege menos.",
             "Nada de esto se nos envía. No tenemos ningún servidor que reciba tu correo, tus contactos ni nada de lo que haces en la app. No hay analítica ni rastreo.",
           ],
         },
@@ -286,7 +286,7 @@ export const es: SiteCopy = {
             "**Iconos de sitios web.** Para mostrar el logo de una empresa junto a su correo, Terno pide el icono al propio sitio web de esa empresa. El sitio ve tu dirección IP y nada más. Activado por defecto; puedes desactivarlo en Ajustes → Apariencia.",
             "**Fotos de Google.** Con una cuenta de Google, Terno puede mostrar las fotos de tus contactos de Google. Puedes desactivarlo en Ajustes → Apariencia.",
             "**Las imágenes remotas de los mensajes** solo se cargan cuando tú lo decides, para un mensaje o siempre. Entonces el servidor del remitente ve tu dirección IP, como con cualquier app de correo.",
-            "**Actualizaciones.** Terno consulta GitHub si hay una versión nueva al abrirse y cada pocas horas. No se envía nada sobre ti ni sobre tu correo. En Ajustes → General eliges si las versiones nuevas se descargan solas.",
+            "**Actualizaciones.** Donde Terno puede actualizarse solo, consulta GitHub si hay una versión nueva al abrirse y cada pocas horas. No se envía nada sobre ti ni sobre tu correo. En Ajustes → General eliges si las versiones nuevas se descargan solas.",
             "**IA**, solo si configuras un proveedor. Consulta [Proveedores de IA](#ai).",
             "**Informes de error**, solo si aceptas. Consulta [Informes de error](#errors).",
             "**Cancelar suscripciones.** Cuando pulsas Cancelar suscripción, Terno contacta con la dirección que el remitente dio para ello.",
@@ -304,17 +304,17 @@ export const es: SiteCopy = {
             "**Ver las direcciones de correo y las fotos de tus contactos** (acceso de solo lectura a tus contactos y a otros contactos), solo para poner la foto correcta junto a quienes te escriben. Terno solo lo pide cuando activas Fotos de Google en Ajustes → Apariencia.",
           ],
           after: [
-            "Terno usa estos datos solo para ofrecerte las funciones que ves en la app. Se guardan en tu Mac y nunca se nos envían. No los vendemos, no los usamos para publicidad ni para crear perfiles tuyos, ni para desarrollar, mejorar o entrenar modelos de IA, y nadie en Luisiacc LLC los lee.",
-            "Terno solo pasa datos de usuario de Google a otros en dos casos, ambos elegidos por ti: al proveedor de IA que configures, para las funciones de IA descritas [más abajo](#ai) (algunas funcionan solas una vez configurado un proveedor, y puedes desactivar cada una o desactivar la IA para una cuenta), y a las herramientas de IA de tu Mac que conectes a Terno.",
+            "Terno usa estos datos solo para ofrecerte las funciones que ves en la app. Se guardan en tu ordenador y nunca se nos envían. No los vendemos, no los usamos para publicidad ni para crear perfiles tuyos, ni para desarrollar, mejorar o entrenar modelos de IA, y nadie en Luisiacc LLC los lee.",
+            "Terno solo pasa datos de usuario de Google a otros en dos casos, ambos elegidos por ti: al proveedor de IA que configures, para las funciones de IA descritas [más abajo](#ai) (algunas funcionan solas una vez configurado un proveedor, y puedes desactivar cada una o desactivar la IA para una cuenta), y a las herramientas de IA de tu ordenador que conectes a Terno.",
             "El uso y la transferencia a cualquier otra app, por parte de Terno, de la información recibida de las API de Google se ajustarán a la [Política de datos de usuario de los servicios de API de Google](https://developers.google.com/terms/api-services-user-data-policy), incluidos los requisitos de uso limitado.",
-            "Eliminar la cuenta en Ajustes → Cuentas borra su correo y sus tokens de tu Mac y retira el acceso de Terno en Google, para Terno en cualquier sitio donde uses esa cuenta. Si Google no lo confirma, Terno te avisa, y puedes quitar Terno tú mismo en [myaccount.google.com/permissions](https://myaccount.google.com/permissions).",
+            "Eliminar la cuenta en Ajustes → Cuentas borra su correo y sus tokens de tu ordenador y retira el acceso de Terno en Google, para Terno en cualquier sitio donde uses esa cuenta. Si Google no lo confirma, Terno te avisa, y puedes quitar Terno tú mismo en [myaccount.google.com/permissions](https://myaccount.google.com/permissions).",
           ],
         },
         {
           id: "ai",
           title: "Proveedores de IA",
           body: [
-            "La IA está desactivada hasta que eliges un proveedor en Ajustes → IA: Anthropic, OpenAI, un servicio compatible con OpenAI (como OpenRouter, Groq, Together o Azure OpenAI) o un modelo que se ejecuta en tu Mac (Ollama, LM Studio). Tu clave se queda en tu Mac, y las peticiones van directamente de tu Mac a ese proveedor, bajo sus condiciones de privacidad. Nada pasa por nosotros. Con un modelo en tu Mac, nada sale de él. Si guardas una clave de Anthropic y otra de OpenAI, Terno reparte el trabajo entre ambas, así que tu correo puede llegar a las dos.",
+            "La IA está desactivada hasta que eliges un proveedor en Ajustes → IA: Anthropic, OpenAI, un servicio compatible con OpenAI (como OpenRouter, Groq, Together o Azure OpenAI) o un modelo que se ejecuta en tu ordenador (Ollama, LM Studio). Tu clave se queda en tu ordenador, y las peticiones van directamente de tu ordenador a ese proveedor, bajo sus condiciones de privacidad. Nada pasa por nosotros. Con un modelo en tu ordenador, nada sale de él. Si guardas una clave de Anthropic y otra de OpenAI, Terno reparte el trabajo entre ambas, así que tu correo puede llegar a las dos.",
             "Con un proveedor configurado, algunas funciones trabajan solas a medida que llega el correo; abajo aparecen como **automáticas**. Puedes desactivar cada una en Ajustes → IA, y desactivar la IA para una cuenta con «Usar IA con esta cuenta» en Ajustes → Cuentas. El correo de esa cuenta ya no se envía nunca, aunque su nombre y su dirección pueden aparecer cuando escribes un filtro o una acción. Las funciones automáticas nunca leen el correo de Spam ni de la Papelera, y se detienen en el límite mensual que fijas en Ajustes → IA. Nunca se envían adjuntos ni imágenes, solo nombres de archivo donde se indica.",
             "Qué envía cada función:",
           ],
@@ -334,24 +334,24 @@ export const es: SiteCopy = {
         },
         {
           id: "agents",
-          title: "Herramientas de IA en tu Mac",
+          title: "Herramientas de IA en tu ordenador",
           body: [
-            "Terno incluye un conector (MCP) que las herramientas de IA de tu Mac, como Claude, pueden usar para llegar a tu correo. Está desactivado hasta que lo activas en Ajustes → Agentes, donde también eliges qué pueden hacer esas herramientas: solo leer, también organizar (archivar, categorizar, filtros y borradores) o también enviar. Mientras está desactivado, nada las espera. No se puede alcanzar desde la red: solo pueden usarlo los programas que se ejecutan con tu usuario en tu Mac y tienen una clave guardada en tu carpeta de Terno, los mismos programas que podrían abrir directamente tus archivos de correo. Lo que esas herramientas hagan con tu correo depende de ellas y de su proveedor.",
+            "Terno incluye un conector (MCP) que las herramientas de IA de tu ordenador, como Claude, pueden usar para llegar a tu correo. Está desactivado hasta que lo activas en Ajustes → Agentes, donde también eliges qué pueden hacer esas herramientas: solo leer, también organizar (archivar, categorizar, filtros y borradores) o también enviar. Mientras está desactivado, nada las espera. No se puede alcanzar desde la red: solo pueden usarlo los programas que se ejecutan con tu usuario en tu ordenador y tienen una clave guardada en tu carpeta de Terno, los mismos programas que podrían abrir directamente tus archivos de correo. Lo que esas herramientas hagan con tu correo depende de ellas y de su proveedor.",
           ],
         },
         {
           id: "errors",
           title: "Informes de error",
           body: [
-            "Cuando algo falla, Terno pregunta antes de enviar un informe (también puedes elegir Siempre o Nunca), y antes puedes ver exactamente qué contiene: el error y en qué parte del código de Terno ocurrió; los pasos justo anteriores, como códigos (por ejemplo, qué vista o diálogo estaba abierto); las versiones de la app y de macOS, tu idioma y el tipo de Mac (procesador y memoria); cuántas cuentas tienes; y un identificador aleatorio que puedes restablecer. Nunca contiene tu correo, direcciones, nombres ni asuntos. Los informes van a Sentry, el servicio que usamos para seguir los errores.",
-            "Terno guarda sus propios registros en tu Mac, con un tamaño limitado. No contienen tu correo ni direcciones.",
+            "Cuando algo falla, Terno pregunta antes de enviar un informe (también puedes elegir Siempre o Nunca), y antes puedes ver exactamente qué contiene: el error y en qué parte del código de Terno ocurrió; los pasos justo anteriores, como códigos (por ejemplo, qué vista o diálogo estaba abierto); las versiones de la app y del sistema operativo, tu idioma y el tipo de ordenador (procesador y memoria); cuántas cuentas tienes; y un identificador aleatorio que puedes restablecer. Nunca contiene tu correo, direcciones, nombres ni asuntos. Los informes van a Sentry, el servicio que usamos para seguir los errores.",
+            "Terno guarda sus propios registros en tu ordenador, con un tamaño limitado. No contienen tu correo ni direcciones.",
           ],
         },
         {
           id: "delete",
           title: "Borrar tus datos",
           body: [
-            "Eliminar una cuenta en Ajustes → Cuentas borra su correo, sus tokens de inicio de sesión y sus imágenes del buzón de Terno. Antes de que una actualización cambie cómo se guarda tu buzón, Terno guarda una copia por si algo sale mal; una copia hecha antes de que eliminaras la cuenta la sigue conteniendo hasta que se borra, la primera vez que Terno se abre 14 días o más después de la actualización. Para borrarlo todo de una vez, cierra Terno y elimina la carpeta `~/Library/Application Support/Terno` y el ítem del Llavero «Terno Safe Storage».",
+            "Eliminar una cuenta en Ajustes → Cuentas borra su correo, sus tokens de inicio de sesión y sus imágenes del buzón de Terno. Antes de que una actualización cambie cómo se guarda tu buzón, Terno guarda una copia por si algo sale mal; una copia hecha antes de que eliminaras la cuenta la sigue conteniendo hasta que se borra, la primera vez que Terno se abre 14 días o más después de la actualización. Para borrarlo todo de una vez, cierra Terno y elimina su carpeta: `~/Library/Application Support/Terno` en un Mac, `%APPDATA%\\Terno` en Windows, `~/.config/Terno` en Linux. En un Mac, elimina también el ítem del Llavero «Terno Safe Storage»; en Linux, la entrada de Terno en tu llavero.",
           ],
         },
         {

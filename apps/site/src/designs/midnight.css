@@ -165,7 +165,7 @@ html[data-design="midnight"] .mn-card { transition: background-color 100ms ease;
 html[data-design="midnight"] .mn-card:hover { background: var(--mn-raised); }
 html[data-design="midnight"] .mn-icon { display: inline-flex; }
 
-/* local: your Mac and your mail server, nothing between */
+/* local: your computer and your mail server, nothing between */
 html[data-design="midnight"] { --mn-node: 44px; }
 html[data-design="midnight"] .mn-node {
   display: grid; flex-shrink: 0; place-items: center; width: var(--mn-node); height: var(--mn-node); border-radius: 12px; color: var(--mn-muted);

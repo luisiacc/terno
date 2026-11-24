@@ -93,3 +93,10 @@ Six findings, all fixed, each with a test that fails without the fix:
 4. **The e2e test couldn't tell commands apart.** Each package's button and its own command are checked within the same item.
 5. **The test cache never expired.** It now honours `max-age` on a clock: a failure is asked again after a minute, a release after ten.
 6. **The prerelease test never reached the guard** (its nightly names failed the patterns first): it uses names that would pass.
+
+## The privacy policy and the taglines, for every computer (2026-11-23)
+
+The owner: "update the privacy policy like it also exists for windows so we won't have to change it, remove the 'mac-only' taglines and replace them with computer."
+
+- **Privacy policy** (en and es, dated November 23, 2026): it covers the app "on every system it runs on (Mac, Windows and Linux)"; "your Mac" is "your computer" throughout; secrets are encrypted with a key the system keeps (the Keychain on a Mac, Windows' data protection for the user's account, the keyring on Linux, and a built-in key on a Linux system with no keyring running, which protects less, as plan 189 found); updates are checked "where Terno can update itself" (a Linux package never checks); error reports name the operating system and the kind of computer; removing everything names each system's folder (`~/Library/Application Support/Terno`, `%APPDATA%\Terno`, `~/.config/Terno`, the app's `appData` + `Terno`) and the Keychain item or keyring entry. The section's anchor is `#on-your-computer` (nothing linked the old one).
+- **Taglines:** "No account. No cloud. Just your computer.", its body and the map's "Your computer" (`map.computer`), the agents feature ("another app on your computer") and Pro's own-key line ("a model on your computer"); Spanish "ordenador". What names the Mac as a fact stays: the Mac download, "macOS on Apple silicon and Linux", the page title and description.

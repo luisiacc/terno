@@ -112,7 +112,7 @@ describe("screenshots", () => {
       const map = card.querySelector("[data-local-map]")!;
       expect(map.getAttribute("aria-hidden"), path).toBe("true");
       const m = copy.features.local.map;
-      for (const words of [m.mac, ...Object.values(m.kept), m.link, m.servers, m.providers, m.ours]) expect(map.textContent, `${path} ${words}`).toContain(words);
+      for (const words of [m.computer, ...Object.values(m.kept), m.link, m.servers, m.providers, m.ours]) expect(map.textContent, `${path} ${words}`).toContain(words);
     }
   });
 
@@ -195,7 +195,7 @@ describe("Terno Pro (plan 97)", () => {
     expect(es.querySelector("#pro h2")?.textContent).toBe("Menos tiempo en el correo.");
     expect(es.querySelector("#pro")!.textContent).not.toContain(COPY.en.pro.body);
     expect(COPY.en.stats[1]!.label).toBe("Terno servers storing your mail");
-    expect(COPY.en.features.local.body).toContain("syncs between your Mac and your mail servers");
+    expect(COPY.en.features.local.body).toContain("syncs between your computer and your mail servers");
     expect(COPY.es.stats[1]!.label).toBe("servidores de Terno que guardan tu correo");
     for (const lang of ["en", "es"] as const) expect(COPY[lang].meta.description).toContain("Terno Pro");
   });
@@ -285,9 +285,9 @@ describe("AI agents over MCP (plan 97)", () => {
     }
   });
 
-  it("promises only what the connector is: a local (stdio) MCP server, for apps on the same Mac (Codex review)", () => {
-    expect(COPY.en.features.agents.body).toContain("on your Mac that runs local MCP servers");
-    expect(COPY.es.features.agents.body).toContain("de tu Mac que use servidores MCP locales");
+  it("promises only what the connector is: a local (stdio) MCP server, for apps on the same computer (Codex review)", () => {
+    expect(COPY.en.features.agents.body).toContain("on your computer that runs local MCP servers");
+    expect(COPY.es.features.agents.body).toContain("de tu ordenador que use servidores MCP locales");
     for (const lang of ["en", "es"] as const) expect(JSON.stringify(COPY[lang].features.agents)).not.toMatch(/any (app|MCP)|cualquier app/);
   });
 

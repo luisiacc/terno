@@ -2,7 +2,7 @@ import { SEARCH_SCHEMA_VERSION, openingSqlStore } from "@terno/db";
 import { needsLegacyBodyUpgrade, upgradeNodeLegacyBodies } from "./legacy-body-worker";
 import { lookup as dnsLookup } from "node:dns/promises";
 import { nodeUnsubscribeTransport } from "./unsubscribe-node";
-import { nodePlatform, openDatabase, SqlMailStore, type CheckpointHold, type Db, type OpenOptions } from "@terno/db";
+import { nodePlatform, openDatabase, SqlMailStore, type Db, type OpenOptions } from "@terno/db";
 import type { MailStore } from "@terno/store";
 import { BackendCore, type BackendCoreOptions } from "./core";
 import type { LookupAll } from "./net-policy";
@@ -55,13 +55,10 @@ export function resetFetchSockets(): void {
   void old.close().catch(() => {});
 }
 
-/**
- * The store a Node backend runs on, over a database already open (and migrated): checkpoints on a worker (held
- * until a backup's first write when asked, plan 253), the instant index.
- */
-export function nodeStore(db: ConstructorParameters<typeof SqlMailStore>[0], options: Pick<BackendOptions, "platform" | "instantSearch" | "log"> & { checkpointHold?: CheckpointHold }): SqlMailStore {
+/** The store a Node backend runs on, over a database already open (and migrated): checkpoints on a worker, the instant index. */
+export function nodeStore(db: ConstructorParameters<typeof SqlMailStore>[0], options: Pick<BackendOptions, "platform" | "instantSearch" | "log">): SqlMailStore {
   return new SqlMailStore(db, {
-    checkpointWorker: options.checkpointHold ? { hold: options.checkpointHold } : true,
+    checkpointWorker: true,
     instantSearch: options.instantSearch ?? true,
     platform: options.platform ?? nodePlatform,
     log: (level, message, extra) => options.log?.(level, message, extra),

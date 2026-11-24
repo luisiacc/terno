@@ -71,7 +71,7 @@ function Section({ name, copy, sizes, className = "mt-auto" }: { name: ShotName;
 const KEPT = { mail: Inbox, contacts: Users, index: Search } as const satisfies Record<keyof SiteCopy["features"]["local"]["map"]["kept"], unknown>;
 
 /**
- * Where your mail lives, as a picture that takes the card's height (it sits beside the unified inbox): your Mac and what
+ * Where your mail lives, as a picture that takes the card's height (it sits beside the unified inbox): your computer and what
  * it keeps, a wire straight down to your mail servers, and beside the wire, where a server of ours would sit, none. The
  * card's words say the same, so it's hidden from screen readers.
  */
@@ -83,7 +83,7 @@ function LocalMap({ m }: { m: SiteCopy["features"]["local"]["map"] }) {
           <span className="mn-node">
             <Logo size={28} />
           </span>
-          {m.mac}
+          {m.computer}
         </p>
         <ul className="mt-4 divide-y divide-(--mn-line) border-t border-(--mn-line) text-sm text-(--mn-muted)">
           {(Object.keys(KEPT) as (keyof typeof KEPT)[]).map((k) => {

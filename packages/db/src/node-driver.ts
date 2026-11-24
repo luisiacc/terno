@@ -8,7 +8,7 @@ import { DatabaseSync, type StatementSync } from "node:sqlite";
 import { setImmediate as yieldToLoop } from "node:timers/promises";
 import { Worker } from "node:worker_threads";
 import type { Platform, PlatformFiles } from "@terno/store";
-import type { CheckpointHold, CheckpointWorker, Row, SqlValue, SqliteConnection, SqliteDriver, SqliteStatement } from "./connection";
+import type { CheckpointWorker, Row, SqlValue, SqliteConnection, SqliteDriver, SqliteStatement } from "./connection";
 
 class NodeStatement implements SqliteStatement {
   private stmt: StatementSync | null;
@@ -86,12 +86,9 @@ const stmt = db.prepare("PRAGMA wal_checkpoint(PASSIVE)");
 const checkpoint = () => {
   try { stmt.get(); } catch (e) { parentPort.postMessage({ error: String(e && e.message || e) }); }
 };
-// plan 253: a held worker starts its passes when told
-let timer = workerData.held ? null : setInterval(checkpoint, workerData.intervalMs);
+const timer = setInterval(checkpoint, workerData.intervalMs);
 parentPort.on("message", (m) => {
-  if (m === "start") {
-    timer ??= setInterval(checkpoint, workerData.intervalMs);
-  } else if (m === "checkpoint") {
+  if (m === "checkpoint") {
     checkpoint();
     parentPort.postMessage("checkpointed");
   } else if (m === "stop") {
@@ -126,11 +123,8 @@ function walIndexReader(path: string): { read(): { frameBytes: number; frames: n
   const view = new DataView(buf.buffer);
   const le = endianness() === "LE";
   let fd: number | null = null;
-  let closed = false;
   return {
     read() {
-      // a writer still waiting when the worker stopped never opens the -shm again (Codex code review #10)
-      if (closed) return null;
       try {
         fd ??= openSync(`${path}-shm`, "r");
         if (readSync(fd, buf, 0, 136, 0) < 136) return null;
@@ -146,37 +140,18 @@ function walIndexReader(path: string): { read(): { frameBytes: number; frames: n
       return { frameBytes: (page === 1 ? 65536 : page) + 24, frames, unchecked: Math.max(0, frames - backfilled) };
     },
     close() {
-      closed = true;
       if (fd !== null) closeSync(fd);
       fd = null;
     },
   };
 }
 
-function startNodeCheckpointWorker(path: string, onExit: () => void, intervalMs: number, hold?: CheckpointHold): CheckpointWorker {
-  const worker = new Worker(WORKER_SOURCE, { eval: true, workerData: { path, intervalMs, held: !!hold } });
+function startNodeCheckpointWorker(path: string, onExit: () => void, intervalMs: number): CheckpointWorker {
+  const worker = new Worker(WORKER_SOURCE, { eval: true, workerData: { path, intervalMs } });
   worker.unref();
   const wal = walIndexReader(path);
   let stopped = false;
   let exited = false;
-  let held = !!hold;
-  // plan 253: no checkpoint until the hold settles (a backup's first write after a clone), its bound passes, or the
-  // worker stops or dies: the one signal the worker's passes and every waiting writer go by
-  let release = () => {};
-  const released: Promise<void> = hold
-    ? new Promise<void>((resolve) => {
-        const bound = setTimeout(() => release(), hold.maxMs);
-        bound.unref();
-        release = () => {
-          clearTimeout(bound);
-          resolve();
-        };
-        void hold.until.then(release, release);
-      }).then(() => {
-        held = false;
-        if (!stopped && !exited) worker.postMessage("start");
-      })
-    : Promise.resolve();
   /** a checkpoint asked for and not answered yet */
   let asked: Promise<void> | null = null;
   const answered = new Set<() => void>();
@@ -188,26 +163,20 @@ function startNodeCheckpointWorker(path: string, onExit: () => void, intervalMs:
   });
   worker.on("exit", () => {
     exited = true;
-    release();
     for (const done of answered) done();
     answered.clear();
     if (!stopped) onExit();
   });
   const checkpointNow = () =>
-    (asked ??= released.then(
-      () =>
-        new Promise<void>((resolve) => {
-          if (stopped || exited) return resolve();
-          answered.add(resolve);
-          worker.postMessage("checkpoint");
-        }),
-    ));
+    (asked ??= new Promise<void>((resolve) => {
+      if (stopped || exited) return resolve();
+      answered.add(resolve);
+      worker.postMessage("checkpoint");
+    }));
   return {
     async settle() {
       const s = wal.read();
       if (stopped || exited || !s || s.frames * s.frameBytes <= WAL_BUDGET || s.unchecked === 0) return;
-      // held: the WAL grows until its hard limit, then the writer waits for the hold like any checkpoint
-      if (held && s.frames * s.frameBytes < WAL_HARD_LIMIT) return;
       // copying is the worker's periodic pass: the caller keeps writing until little is left (right after a pass)
       if (s.unchecked * s.frameBytes > WAL_FINAL_COPY && s.frames * s.frameBytes < WAL_HARD_LIMIT) return;
       // a checkpoint that started before the caller's last write can't cover it: wait for it, then one that can
@@ -218,7 +187,6 @@ function startNodeCheckpointWorker(path: string, onExit: () => void, intervalMs:
     stop: () =>
       new Promise<void>((resolve) => {
         stopped = true;
-        release();
         wal.close();
         const done = () => resolve();
         worker.on("message", (m) => (m === "stopped" ? void worker.terminate().then(done) : undefined));

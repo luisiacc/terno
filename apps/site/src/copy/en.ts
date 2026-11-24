@@ -61,11 +61,11 @@ export const en = {
       points: ["Gmail, Outlook, any IMAP/SMTP", "Unlimited accounts", "Categories across all of them"],
     },
     local: {
-      title: "No account. No cloud. Just your Mac.",
-      body: "Your mail syncs between your Mac and your mail servers, never through ours. Your mail, contacts and search index live on your Mac.",
+      title: "No account. No cloud. Just your computer.",
+      body: "Your mail syncs between your computer and your mail servers, never through ours. Your mail, contacts and search index live on your computer.",
       points: ["Private from the first launch", "Remote images only when you ask", "Zero tracking"],
-      /** the picture of where it all lives (Midnight): your Mac, your mail servers, and no server of ours between them */
-      map: { mac: "Your Mac", kept: { mail: "Mail", contacts: "Contacts", index: "Search index" }, link: "Synced directly", servers: "Your mail servers", providers: "Gmail · Outlook · IMAP", ours: "No Terno server" },
+      /** the picture of where it all lives (Midnight): your computer, your mail servers, and no server of ours between them */
+      map: { computer: "Your computer", kept: { mail: "Mail", contacts: "Contacts", index: "Search index" }, link: "Synced directly", servers: "Your mail servers", providers: "Gmail · Outlook · IMAP", ours: "No Terno server" },
     },
     search: {
       title: "Instant search.",
@@ -104,7 +104,7 @@ export const en = {
     },
     agents: {
       title: "Your AI agents, every inbox.",
-      body: "Connect Claude Code, Codex, Cursor or another app on your Mac that runs local MCP servers, and it can search and read all your accounts through Terno. It’s off until you turn it on, and you decide whether agents may only read, also organize, or also send.",
+      body: "Connect Claude Code, Codex, Cursor or another app on your computer that runs local MCP servers, and it can search and read all your accounts through Terno. It’s off until you turn it on, and you decide whether agents may only read, also organize, or also send.",
       points: ["Claude Code, Codex, Cursor, other local MCP apps", "Off until you turn it on", "Read only, organize or send: your call"],
       /** the example session beside it: the setup line, a question, Terno's tool at work, the answer */
       demo: {
@@ -162,7 +162,7 @@ export const en = {
       points: [],
     },
     privacy: "AI is off until you turn it on. With Pro, each feature sends only the mail details it needs to Claude or OpenAI, through Terno’s relay, which stores none of it. Terno never sends an email for you.",
-    ownKey: "Pro is AI with no keys to set up. These features also work without Pro, on your own Claude or OpenAI key or a model on your Mac. Your provider may charge for use.",
+    ownKey: "Pro is AI with no keys to set up. These features also work without Pro, on your own Claude or OpenAI key or a model on your computer. Your provider may charge for use.",
   },
   keys: [
     { keys: ["J", "K"], label: "Next, previous" },
@@ -270,22 +270,22 @@ export const en = {
     notFound: { title: "This page doesn’t exist", body: "The link may be old or mistyped.", home: "Go to the home page" },
     privacy: {
       title: "Privacy",
-      intro: "Terno keeps your mail on your Mac. There is no Terno account, and no Terno server that stores your mail. This page says exactly what the app and this website do with your data.",
-      updated: "Last updated: November 20, 2026",
+      intro: "Terno keeps your mail on your computer. There is no Terno account, and no Terno server that stores your mail. This page says exactly what the app and this website do with your data.",
+      updated: "Last updated: November 23, 2026",
       contents: "On this page",
       sections: [
         {
           id: "who",
           title: "Who we are",
           body: [
-            "Terno is made by Luisiacc LLC (“we”). This policy covers the Terno app for Mac and this website, terno.app. Terno’s source is public on [GitHub](https://github.com/luisiacc/terno), so you can check everything below.",
+            "Terno is made by Luisiacc LLC (“we”). This policy covers the Terno app on every system it runs on (Mac, Windows and Linux) and this website, terno.app. Terno’s source is public on [GitHub](https://github.com/luisiacc/terno), so you can check everything below.",
           ],
         },
         {
-          id: "on-your-mac",
-          title: "Your mail stays on your Mac",
+          id: "on-your-computer",
+          title: "Your mail stays on your computer",
           body: [
-            "Terno downloads your mail from your mail providers and keeps it, with your contacts and the search index, in a database in your Mac’s user folder. Your passwords, sign-in tokens and AI keys are encrypted with a key kept in your macOS Keychain.",
+            "Terno downloads your mail from your mail providers and keeps it, with your contacts and the search index, in a database in your user folder on your computer. Your passwords, sign-in tokens and AI keys are encrypted with a key your system keeps for you: in the Keychain on a Mac, with Windows’ own data protection for your user account on Windows, and in your keyring (such as GNOME Keyring or KWallet) on Linux. On a Linux system with no keyring running, that key is one built into the app instead, which protects them less.",
             "None of this is sent to us. We have no server that receives your mail, your contacts or anything you do in the app. There are no analytics and no tracking.",
           ],
         },
@@ -298,7 +298,7 @@ export const en = {
             "**Website icons.** To show a company’s logo next to its mail, Terno asks that company’s own website for its icon. The site sees your IP address and nothing else. On by default; turn it off in Settings → Appearance.",
             "**Photos from Google.** With a Google account, Terno can show your Google contacts’ photos. You can turn it off in Settings → Appearance.",
             "**Remote images in messages** load only when you choose to, for one message or always. The sender’s server then sees your IP address, as with any mail app.",
-            "**Updates.** Terno checks GitHub for a new version after it opens and every few hours. Nothing about you or your mail is sent. In Settings → General you choose whether new versions download on their own.",
+            "**Updates.** Where Terno can update itself, it checks GitHub for a new version after it opens and every few hours. Nothing about you or your mail is sent. In Settings → General you choose whether new versions download on their own.",
             "**AI**, only if you set up a provider. See [AI providers](#ai).",
             "**Error reports**, only if you agree. See [Error reports](#errors).",
             "**Unsubscribing.** When you click Unsubscribe, Terno contacts the address the sender gave for it.",
@@ -316,17 +316,17 @@ export const en = {
             "**See your contacts’ email addresses and photos** (read-only access to your contacts and other contacts), only to put the right photo next to the people who write to you. Terno asks for this only when you turn on Photos from Google in Settings → Appearance.",
           ],
           after: [
-            "Terno uses this data only to provide the features you see in the app. It is stored on your Mac and is never sent to us. We don’t sell it, use it for advertising, use it to build profiles of you, or use it to develop, improve or train AI models, and no person at Luisiacc LLC reads it.",
-            "Terno passes Google user data to someone else only in two cases, both your choice: to the AI provider you set up, for the AI features described [below](#ai) (some run on their own once a provider is set up, and you can turn each one off, or turn AI off for one account), and to AI tools on your Mac that you connect to Terno.",
+            "Terno uses this data only to provide the features you see in the app. It is stored on your computer and is never sent to us. We don’t sell it, use it for advertising, use it to build profiles of you, or use it to develop, improve or train AI models, and no person at Luisiacc LLC reads it.",
+            "Terno passes Google user data to someone else only in two cases, both your choice: to the AI provider you set up, for the AI features described [below](#ai) (some run on their own once a provider is set up, and you can turn each one off, or turn AI off for one account), and to AI tools on your computer that you connect to Terno.",
             "Terno’s use and transfer to any other app of information received from Google APIs will adhere to the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including the Limited Use requirements.",
-            "Removing the account in Settings → Accounts deletes its mail and sign-in tokens from your Mac and withdraws Terno’s access at Google, for Terno everywhere you use that account. If Google doesn’t confirm it, Terno tells you, and you can remove Terno yourself at [myaccount.google.com/permissions](https://myaccount.google.com/permissions).",
+            "Removing the account in Settings → Accounts deletes its mail and sign-in tokens from your computer and withdraws Terno’s access at Google, for Terno everywhere you use that account. If Google doesn’t confirm it, Terno tells you, and you can remove Terno yourself at [myaccount.google.com/permissions](https://myaccount.google.com/permissions).",
           ],
         },
         {
           id: "ai",
           title: "AI providers",
           body: [
-            "AI is off until you choose a provider in Settings → AI: Anthropic, OpenAI, an OpenAI-compatible service (such as OpenRouter, Groq, Together or Azure OpenAI) or a model running on your Mac (Ollama, LM Studio). Your key stays on your Mac, and requests go straight from your Mac to that provider, under its privacy terms. Nothing passes through us. With a model on your Mac, nothing leaves it. If you save both an Anthropic and an OpenAI key, Terno divides the work between them, so your mail can reach both.",
+            "AI is off until you choose a provider in Settings → AI: Anthropic, OpenAI, an OpenAI-compatible service (such as OpenRouter, Groq, Together or Azure OpenAI) or a model running on your computer (Ollama, LM Studio). Your key stays on your computer, and requests go straight from your computer to that provider, under its privacy terms. Nothing passes through us. With a model on your computer, nothing leaves it. If you save both an Anthropic and an OpenAI key, Terno divides the work between them, so your mail can reach both.",
             "Once a provider is set up, some features run on their own as mail arrives, marked **automatic** below. You can turn each one off in Settings → AI, and turn AI off for one account with “Use AI with this account” in Settings → Accounts. That account’s mail is then never sent, though its name and address can still appear when you write a filter or a typed action. Automatic features never read mail in Spam or Trash, and they stop at the monthly limit you set in Settings → AI. Attachments and images are never sent, only file names where noted.",
             "What each feature sends:",
           ],
@@ -346,24 +346,24 @@ export const en = {
         },
         {
           id: "agents",
-          title: "AI tools on your Mac",
+          title: "AI tools on your computer",
           body: [
-            "Terno includes a connector (MCP) that AI tools on your Mac, such as Claude, can use to reach your mail. It is off until you turn it on in Settings → Agents, where you also choose what those tools may do: only read, also organize (archive, categorize, filters and drafts), or also send. While it is off, nothing listens for them. It can’t be reached from the network: only programs running as you on your Mac, holding a key kept in your Terno folder, can use it, the same programs that could open your mail files directly. What those tools do with your mail is up to them and their provider.",
+            "Terno includes a connector (MCP) that AI tools on your computer, such as Claude, can use to reach your mail. It is off until you turn it on in Settings → Agents, where you also choose what those tools may do: only read, also organize (archive, categorize, filters and drafts), or also send. While it is off, nothing listens for them. It can’t be reached from the network: only programs running as you on your computer, holding a key kept in your Terno folder, can use it, the same programs that could open your mail files directly. What those tools do with your mail is up to them and their provider.",
           ],
         },
         {
           id: "errors",
           title: "Error reports",
           body: [
-            "When something goes wrong, Terno asks before sending a report (you can choose Always or Never instead), and you can see exactly what it holds first: the error and where in Terno’s code it happened; the steps just before it, as codes (such as which view or dialog was open); the app and macOS versions, your language and the kind of Mac (processor and memory); how many accounts you have; and a random ID you can reset. It never holds your mail, addresses, names or subjects. Reports go to Sentry, the service we use to track errors.",
-            "Terno keeps its own logs on your Mac, limited in size. They don’t contain your mail or addresses.",
+            "When something goes wrong, Terno asks before sending a report (you can choose Always or Never instead), and you can see exactly what it holds first: the error and where in Terno’s code it happened; the steps just before it, as codes (such as which view or dialog was open); the app and operating system versions, your language and the kind of computer (processor and memory); how many accounts you have; and a random ID you can reset. It never holds your mail, addresses, names or subjects. Reports go to Sentry, the service we use to track errors.",
+            "Terno keeps its own logs on your computer, limited in size. They don’t contain your mail or addresses.",
           ],
         },
         {
           id: "delete",
           title: "Removing your data",
           body: [
-            "Removing an account in Settings → Accounts deletes its mail, sign-in tokens and pictures from Terno’s mailbox. Before an update changes how your mailbox is stored, Terno keeps a copy of it in case something goes wrong; a copy made before you removed the account still holds it until the copy is deleted, the first time Terno opens 14 days or more after the update. To remove everything at once, quit Terno and delete the folder `~/Library/Application Support/Terno` and the Keychain item “Terno Safe Storage”.",
+            "Removing an account in Settings → Accounts deletes its mail, sign-in tokens and pictures from Terno’s mailbox. Before an update changes how your mailbox is stored, Terno keeps a copy of it in case something goes wrong; a copy made before you removed the account still holds it until the copy is deleted, the first time Terno opens 14 days or more after the update. To remove everything at once, quit Terno and delete its folder: `~/Library/Application Support/Terno` on a Mac, `%APPDATA%\\Terno` on Windows, `~/.config/Terno` on Linux. On a Mac, also delete the Keychain item “Terno Safe Storage”; on Linux, Terno’s entry in your keyring.",
           ],
         },
         {

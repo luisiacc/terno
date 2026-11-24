@@ -13,12 +13,6 @@ export interface OpenOptions {
   uuid?: () => string;
   /** how much search log engines may catch up on before it is pruned */
   searchLogBytes?: number;
-  /**
-   * Plan 253: the open (and its migration) never checkpoints on this thread;
-   * for a host whose store runs the checkpoint worker right after, which then
-   * owns checkpoints (a held one waits for a backup's first write).
-   */
-  deferCheckpoints?: boolean;
 }
 
 /**
