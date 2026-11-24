@@ -286,3 +286,8 @@ See the step list given with this plan in the conversation of 2026-11-24. In sho
 2. Go-ahead for **stage 0b**: a folder-membership model for a REST provider whose mail sits in one folder at a time (store contract, SQLite, IndexedDB, conformance), and the v79 table rebuild.
 3. Graph rather than IMAP with OAuth.
 4. Web parity deferred to its own plan.
+
+## Owner decisions so far
+
+- 2026-11-24: the web version is ignored for now (decision 4). Stage 4 waits, and the web's Add account shows no Microsoft option.
+- 2026-11-24: Microsoft setup done. The apps "Terno" (release) and "Terno Dev" (dev) are verified publisher Luisiacc LLC. The release id is the `release` environment secret `TERNO_MICROSOFT_CLIENT_ID`, next to `TERNO_GOOGLE_DESKTOP_ID`; both ids are in `.env`. Stage 1 reads it in `release.yml` as `secrets.TERNO_MICROSOFT_CLIENT_ID`.
