@@ -1225,7 +1225,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
   }
 
   /** Unknown locators never establish logical identity from an envelope or arrival order. */
-  async function syncMailbox(c: ImapFlow, path: string, cursor: Cursor, sink: SyncSink, touched: Set<number>, opts: { reidentify?: boolean; checkpoint?: Snapshot | null; introduced: Set<number>; preview?: number; uids?: number[]; heldUids?: number[]; formerly?: { from: string; uidvalidity: number }; seen?: Set<number> }): Promise<number | undefined> {
+  async function syncMailbox(c: ImapFlow, path: string, cursor: Cursor, sink: SyncSink, touched: Set<number>, opts: { reidentify?: boolean; checkpoint?: Snapshot | null; introduced: Set<number>; preview?: number; uids?: number[]; heldUids?: number[]; formerly?: { from: string; uidvalidity: number }; seen?: Set<number>; arrivals?: true }): Promise<number | undefined> {
     const lock = await c.getMailboxLock(path);
     try {
       const mb = c.mailbox;
@@ -1240,6 +1240,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       const reset = before !== undefined && before !== uidvalidity;
       // plan 101: older UIDs of a folder read before, as it was: a reset is the regular pass's (it reads the wider window)
       if (opts.uids && (!hadState || reset)) return;
+      // plan 266: the early read of new mail is a known folder's, as it was: a first read or a reset is the ordered pass's
+      if (opts.arrivals && (!hadState || reset)) return;
       if (reset) {
         await resetLocations(cursor, path, before, touched);
         state = undefined;
@@ -1283,6 +1285,12 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           }
           const candidates = new Set(await locations.twins(envelope, 0, 1));
           if (existing) candidates.add(existing.id);
+          // plan 266 (Codex critique #1, #2): the early read of new mail takes only mail with no stored twin; anything that
+          // may be one already here (moved by another app, a reset's) waits for the read after the sweeps, and is met
+          if (opts.arrivals && candidates.size) {
+            for (const id of candidates) opts.seen?.add(id);
+            continue;
+          }
           // plan 114: the one held message this mail provably is (moved by another app, or renumbered by a reset)
           // takes this place; anything less certain stays held below
           if (existing && envelope.rfcMessageId && candidates.size === 1 && (await locations.unresolved([existing.id])).length
@@ -1359,7 +1367,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       // (its UIDVALIDITY, for the caller to keep)
       if (opts.preview !== undefined) return uidvalidity;
       // a backfill chunk acknowledges nothing either: the folder's own state (uidnext, its snapshot) is the regular pass's
-      if (opts.uids) return uidvalidity;
+      // (nor does the early read of new mail, plan 266: the read after the sweeps takes the same UIDs and acknowledges them)
+      if (opts.uids || opts.arrivals) return uidvalidity;
 
       // a first read or a reset read everything now; a mailbox we had is acknowledged as its sweep saw it
       const seen: Snapshot | null = reset || !hadState ? snapshotOf(mb) : (opts.checkpoint ?? null);
@@ -1545,7 +1554,10 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     return (cursor.pass ?? 0) % CHECK_EVERY !== 0;
   }
 
-  /** Downloads bodies newest-first (search, snippets and body filters depend on them). */
+  /**
+   * Downloads bodies newest-first (search, snippets and body filters depend on them). Plan 266: a mailbox the server
+   * won't open (not temporarily) keeps its bodies pending and the others go on.
+   */
   async function syncBodies(c: ImapFlow, sink: SyncSink) {
     const requested = sink.captureRetry;
     const repair = requested?.locator.kind === "imap" ? await store.repairs?.get(ctx.account.id, requested.locator) : undefined;
@@ -1555,7 +1567,14 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     for (const p of pending) byMailbox.set(p.mailbox, [...(byMailbox.get(p.mailbox) ?? []), p]);
     for (const [mailbox, all] of byMailbox) {
       if (sink.signal.aborted) return;
-      const lock = await c.getMailboxLock(mailbox);
+      let lock: Awaited<ReturnType<ImapFlow["getMailboxLock"]>>;
+      try {
+        lock = await c.getMailboxLock(mailbox);
+      } catch (error) {
+        const e = toProviderError(error);
+        if (sink.signal.aborted || e.retryable || e instanceof ProviderAuthError) throw e;
+        continue;
+      }
       try {
         // UIDs are only meaningful with their UIDVALIDITY: skip stale ones (the next sync remaps them)
         const items = all.filter((i) => i.uidvalidity === Number(c.mailbox && c.mailbox.uidValidity));
@@ -1938,6 +1957,25 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           if (e.retryable || e instanceof ProviderAuthError) throw e;
           incomplete = true;
         };
+        // plan 266: the role mailboxes other than the Inbox are tolerated as a custom folder is: one the server won't
+        // open leaves the pass incomplete (every move and deletion's evidence waits for a pass that reads it), never the
+        // rest unread. A failing Inbox fails the pass, as before.
+        const isolated = async (path: string, work: () => Promise<unknown>) => {
+          if (path === r.inbox) return void (await work());
+          try {
+            await work();
+          } catch (error) {
+            tolerate(error);
+          }
+        };
+        // plan 266: the Inbox's new mail first, before a STATUS per folder and every sweep (a large folder, or one the
+        // server refuses, never keeps it waiting). It acknowledges nothing: the read after the sweeps takes the same UIDs
+        // again (what this one stored is found by its place), and what it can't tell apart (moved in from a folder not
+        // swept yet) it holds for that read, which plan 114 lets adopt it
+        if (r.inbox && cursor.mailboxes[r.inbox]) {
+          await syncMailbox(c, r.inbox, cursor, sink, touched, { introduced, seen, arrivals: true });
+          if (sink.signal.aborted) return;
+        }
         // the custom folders to read this pass: new ones, and known ones STATUS says changed
         // (a pass owing a full check reads every folder: STATUS may have skipped where a moved message went, Codex R9)
         const custom: string[] = [];
@@ -1984,7 +2022,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         const swept = new Map<string, Snapshot | null>();
         for (const path of boxes) {
           if (sink.signal.aborted) return;
-          swept.set(path, await sweepMailbox(c, path, cursor, touched, remember));
+          await isolated(path, async () => swept.set(path, await sweepMailbox(c, path, cursor, touched, remember)));
         }
         for (const path of custom) {
           if (sink.signal.aborted) return;
@@ -2065,7 +2103,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         if (firstRead) sink.progress?.({ done: 0, total: boxes.size + custom.length, unit: "folders" });
         for (const path of boxes) {
           if (sink.signal.aborted) return;
-          await syncMailbox(c, path, cursor, sink, touched, { introduced, seen, checkpoint: swept.get(path) ?? null, reidentify: cursor.mailboxes[path] === undefined && (pending.size > 0 || vanishedIds.size > 0) });
+          await isolated(path, () => syncMailbox(c, path, cursor, sink, touched, { introduced, seen, checkpoint: swept.get(path) ?? null, reidentify: cursor.mailboxes[path] === undefined && (pending.size > 0 || vanishedIds.size > 0) }));
           folderRead();
         }
         for (const path of custom) {

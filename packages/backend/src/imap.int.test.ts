@@ -2830,6 +2830,97 @@ describe("an account's own folders (plan 68)", () => {
   });
 });
 
+describe("plan 266: the Inbox's new mail first, whatever another folder does", () => {
+  const subjects = async (client: RpcClient, view: "inbox" | "archive") => (await client.call("threads.list", { view })).items.map((t) => t.subject);
+  const syncState = async (client: RpcClient) => (await client.call("app.bootstrap", {})).accounts[0]!.syncState;
+
+  it("a Sent the server won't open (NO) leaves the Inbox and Archive read; a vanished folder's mail waits until it opens", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    ctl.addMessage("Sent", { raw: raw({ subject: "Sent before", from: "Luis <luis@test.local>", to: "Ana <ana@example.com>" }) });
+    ctl.createMailbox("Work");
+    ctl.addMessage("Work", { raw: raw({ subject: "Contrato" }) });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const places = () => sqlDb(backend.store).all<{ mailbox: string }>("SELECT DISTINCT mailbox FROM message_locations ORDER BY mailbox").map((l) => l.mailbox);
+    expect(places()).toEqual(["Sent", "Work"]);
+    const refused = imap.server.script.add({ on: "command", command: "SELECT", match: /Sent/, send: "$TAG NO [NOPERM] Sent can't be opened now\r\n" });
+    // gone from the server: its mail may be in Sent now, so its places wait for a pass that reads Sent
+    ctl.deleteMailbox("Work");
+    ctl.addMessage("INBOX", { raw: raw({ subject: "New in Inbox" }) });
+    ctl.addMessage("Archive", { raw: raw({ subject: "New in Archive" }) });
+    await backend.syncAccount(account.id);
+    expect(refused.hits).toBeGreaterThan(0);
+    expect(await subjects(client, "inbox")).toEqual(["New in Inbox"]);
+    expect(await subjects(client, "archive")).toContain("New in Archive");
+    expect((await syncState(client)).lastError).toBeNull();
+    expect(places()).toEqual(["Archive", "INBOX", "Sent", "Work"]);
+    refused.remove();
+    await backend.syncAccount(account.id);
+    expect(places()).toEqual(["Archive", "INBOX", "Sent"]);
+    expect(count(backend, "SELECT 1 FROM messages WHERE subject IN ('New in Inbox', 'New in Archive', 'Sent before')")).toBe(3);
+  });
+
+  it("a Sent the server won't open keeps its pending body; the pass and the other bodies go on (Codex critique #4)", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    ctl.addMessage("Sent", { raw: raw({ subject: "Sent body", from: "Luis <luis@test.local>", to: "Ana <ana@example.com>", body: "Sent text" }) });
+    // its body refused (no code: not temporary), so it stays pending
+    const noBody = imap.server.script.add({ on: "command", command: "UID FETCH", mailbox: "Sent", match: /BODY\.PEEK\[\]/, send: "$TAG NO Body unavailable\r\n" });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const state = (subject: string) => sqlDb(backend.store).get<{ body_state: string }>("SELECT body_state FROM messages WHERE subject = ?", subject)?.body_state;
+    expect(noBody.hits).toBeGreaterThan(0);
+    expect(state("Sent body")).not.toBe("full");
+    noBody.remove();
+    const refused = imap.server.script.add({ on: "command", command: "SELECT", match: /Sent/, send: "$TAG NO [NOPERM] Sent can't be opened now\r\n" });
+    // older than the Sent one: bodies go newest first, so Sent's group comes before it
+    ctl.addMessage("INBOX", { raw: raw({ subject: "Inbox body", body: "Inbox text", date: new Date(Date.now() - 86_400_000) }) });
+    await backend.syncAccount(account.id);
+    expect((await syncState(client)).lastError).toBeNull();
+    expect(state("Inbox body")).toBe("full");
+    expect(state("Sent body")).not.toBe("full");
+    refused.remove();
+    await backend.syncAccount(account.id);
+    expect(state("Sent body")).toBe("full");
+  });
+
+  it("mail another app moves from Archive into the Inbox keeps its message, body and thread (the early read leaves it to the ordered one)", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    const kept = ctl.addMessage("Archive", { raw: raw({ subject: "Back to the Inbox", body: "Kept body" }) });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const before = sqlDb(backend.store).get<{ id: number; thread_id: number; body_state: string }>("SELECT id, thread_id, body_state FROM messages")!;
+    expect(before.body_state).toBe("full");
+    ctl.moveMessages("Archive", [kept.uid], "INBOX");
+    ctl.addMessage("INBOX", { raw: raw({ subject: "Brand new" }) });
+    await backend.syncAccount(account.id);
+    expect((await client.call("threads.list", { view: "inbox" })).items.map((t) => t.subject).sort()).toEqual(["Back to the Inbox", "Brand new"]);
+    expect(sqlDb(backend.store).get("SELECT id, thread_id, body_state FROM messages WHERE subject = 'Back to the Inbox'")).toEqual(before);
+    expect(count(backend, "SELECT 1 FROM messages")).toBe(2);
+    expect(sqlDb(backend.store).all("SELECT mailbox FROM message_locations ORDER BY mailbox")).toEqual([{ mailbox: "INBOX" }, { mailbox: "INBOX" }]);
+  });
+
+  it("a Sent the server says to try later fails the pass, but the Inbox's new mail is stored first, once", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const busy = imap.server.script.add({ on: "command", command: "SELECT", match: /Sent/, send: "$TAG NO [UNAVAILABLE] Try again later\r\n" });
+    ctl.addMessage("INBOX", { raw: raw({ subject: "Arrived while Sent was busy" }) });
+    await backend.syncAccount(account.id);
+    expect(busy.hits).toBeGreaterThan(0);
+    expect((await syncState(client)).lastError).not.toBeNull();
+    expect(await subjects(client, "inbox")).toEqual(["Arrived while Sent was busy"]);
+    busy.remove();
+    await backend.syncAccount(account.id);
+    expect((await syncState(client)).lastError).toBeNull();
+    expect(count(backend, "SELECT 1 FROM messages")).toBe(1);
+    expect(await subjects(client, "inbox")).toEqual(["Arrived while Sent was busy"]);
+  });
+});
+
 describe("IMAP identity and safety (review fixes)", () => {
   it("keeps two distinct messages that share a Message-ID in the same mailbox", async () => {
     const { imap, backend, addAccount } = await setup();
