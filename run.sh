@@ -14,7 +14,7 @@ case "${1:-}" in
     TERNO_USER_DATA=/tmp/terno-demo TERNO_VITE_PORT=5412 exec pnpm dev:desktop:demo
     ;;
   personal)
-    TERNO_USER_DATA=/tmp/terno-personalme TERNO_VITE_PORT=5423 exec pnpm dev:desktop
+    TERNO_USER_DATA=~/.local/terno-personal TERNO_VITE_PORT=5423 exec pnpm dev:desktop
     ;;
   demoai)
     # not /tmp: macOS clears old files there, and a profile that lost its demo-ai.json is refused (plan 167)
