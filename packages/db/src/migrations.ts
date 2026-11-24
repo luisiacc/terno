@@ -1796,6 +1796,14 @@ CREATE TABLE wanted_marks (
 );
 CREATE INDEX wanted_marks_order ON wanted_marks(source, arrived_at);
 ` },
+  // plan 256: an Inbox conversation none of whose Inbox mail is someone else's takes no Gmail tab, so none is offered.
+  // The column is shape only: the tabs backfill's threads phase writes it in its own slices (0 until then: offered, as
+  // before). A pass already in its threads phase starts again (a messages phase's threads phase starts at the beginning)
+  { version: 78, name: "Gmail tabs: only your own mail (plan 256)", rewrites: "the tabs backfill's own progress row: a pass already in its threads phase starts again from the first thread, so the threads it passed get the new column too (no mail, no user data)", sql: `
+ALTER TABLE threads ADD COLUMN only_yours INTEGER NOT NULL DEFAULT 0;
+INSERT INTO settings (key, value_json) SELECT 'tabs_backfill', '{"phase":"threads","after":0}' WHERE EXISTS (SELECT 1 FROM accounts WHERE kind = 'gmail')
+  ON CONFLICT (key) DO UPDATE SET value_json = excluded.value_json WHERE json_extract(settings.value_json, '$.phase') = 'threads';
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

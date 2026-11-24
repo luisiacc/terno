@@ -197,7 +197,7 @@ import { cancelWaiting, filesReady, waitingCount, forwardRuleGone, forwardWork, 
 import { deleteScheduled, failScheduled, getScheduled, listScheduled, putScheduled, rescheduleScheduled, stillScheduled } from "./scheduled";
 import { answeredReminders, deleteExactReminders, deleteReminders, listReminders, putReminders } from "./reminders";
 import { addPins, deleteExactPins, deletePins, listPins } from "./pins";
-import { startTabsBackfill, tabsIdle, tabsSlice } from "./tabs";
+import { requestTabRefresh, startTabsBackfill, tabsIdle, tabsSlice } from "./tabs";
 import { answeredThreads, arrivalRows, backfillSlice, FactsQueue, factsReady, ownMailChanged, referencesOfOwn, resetFacts, startRescan } from "./facts";
 import { sameRevision, SearchCancelledError, type AutocompleteSource, type ContactBatch, type ContactMessage, type SentText } from "@terno/store";
 import { contactOf, isLearnable, sentOf } from "./autocomplete";
@@ -370,8 +370,10 @@ export class IdbMailStore implements MailStore {
       // goes in with the upgrade and comes off only when they're saved, so a close or a failure meanwhile resumes (Codex R1)
       const foldersPending = (typeof meta.logicalSchema === "number" && meta.logicalSchema < 24) || meta.foldersPending === true;
       // plan 86 (SQL v37): a mailbox from before gets its Gmail tabs once; the mark is saved before the schema moves on
-      if (typeof meta.logicalSchema === "number" && meta.logicalSchema < 37) {
-        db.tx(() => startTabsBackfill(db));
+      // plan 256 (SQL v78): one from before writes whether each Inbox thread is only yours, in the backfill's threads phase
+      const tabsFrom = typeof meta.logicalSchema === "number" && meta.logicalSchema < 78 ? meta.logicalSchema : null;
+      if (tabsFrom !== null) {
+        db.tx(() => (tabsFrom < 37 ? startTabsBackfill(db) : requestTabRefresh(db)));
         const commit = db.takeCommit();
         if (commit) {
           await persist(idb, commit, "strict", o.platform);

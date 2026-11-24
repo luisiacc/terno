@@ -41,7 +41,7 @@ export const plainInbox = (p: ScopeParams) => p.view === "inbox" && p.categoryId
 
 export const SUMMARY_COLUMNS = `t.id, t.account_id, t.subject, t.snippet, t.last_date, t.last_from_name,
   t.last_from_email, t.message_count, t.unread_count, t.is_starred, t.has_attachments, t.person, t.waiting_since, t.in_inbox, t.in_spam, t.in_trash,
-  t.tab, EXISTS (SELECT 1 FROM messages s INDEXED BY messages_thread WHERE s.thread_id = t.id AND s.is_spam = 1) AS has_spam,
+  t.tab, t.only_yours, EXISTS (SELECT 1 FROM messages s INDEXED BY messages_thread WHERE s.thread_id = t.id AND s.is_spam = 1) AS has_spam,
   (SELECT group_concat(category_id) FROM thread_categories WHERE thread_id = t.id) AS cats`;
 
 export interface SummaryRow {
@@ -59,6 +59,7 @@ export interface SummaryRow {
   person: number | null;
   waiting_since: number | null;
   tab: number;
+  only_yours: number;
   in_inbox: number;
   in_spam: number;
   in_trash: number;
@@ -87,6 +88,7 @@ export function toSummary(r: SummaryRow): ThreadSummary {
     inTrash: r.in_trash === 1,
     hasSpam: r.has_spam === 1,
     ...(r.tab ? { tab: r.tab } : {}),
+    ...(r.only_yours ? { onlyYours: true as const } : {}),
   };
 }
 

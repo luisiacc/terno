@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { afterAll, afterEach, expect, it } from "vitest";
 import { openDatabase } from "./index";
 import { sqlDb, SqlMailStore } from "./sql-store";
+import { requestTabRefresh } from "./tabs";
 
 const dirs: string[] = [];
 const opened: SqlMailStore[] = [];
@@ -79,4 +80,51 @@ it("a slice stops once it has read its share of messages, mid-window, and the ne
     expect(r.more).toBe(slice < threads.length);
   }
   expect(await store.tabs.idle()).toBe(true);
+});
+
+// with no pass under way, and with one in its threads phase already past every thread (Codex critique: it starts again)
+it.each([["no pass under way", null], ["a pass past every thread", '{"phase":"threads","after":1000000}']] as const)("v78 (plan 256): a mailbox from before learns which Inbox conversations are only your own mail, in the tabs' slices (%s)", async (_, job) => {
+  const dir = mkdtempSync(join(tmpdir(), "terno-tabs-"));
+  dirs.push(dir);
+  const path = join(dir, "s.db");
+  let store = open(path);
+  const [gmail] = await withAccounts(store, 1);
+  await ingest(store, [
+    msg({ accountId: gmail!, providerMsgId: "note", from: { name: "", email: "me0@example.com" }, isSent: true, gmailLabels: ["SENT", "INBOX"] }),
+    msg({ accountId: gmail!, providerMsgId: "person", gmailLabels: ["INBOX", "CATEGORY_PERSONAL"] }),
+  ]);
+  const note = await threadOf(store, "note");
+  const person = await threadOf(store, "person");
+  // what v77 was: no column
+  const db = sqlDb(store);
+  db.run("ALTER TABLE threads DROP COLUMN only_yours");
+  db.run("DELETE FROM settings WHERE key = 'tabs_backfill'");
+  if (job) db.run("INSERT INTO settings (key, value_json) VALUES ('tabs_backfill', ?)", job);
+  db.run("PRAGMA user_version = 77");
+  await store.close();
+
+  store = open(path);
+  // the upgrade only adds the column and asks for the pass: offered as before until the pass reaches it
+  expect((await store.threads.summaries([note]))[0]!.onlyYours).toBeUndefined();
+  expect(JSON.parse(sqlDb(store).get<{ value_json: string }>("SELECT value_json FROM settings WHERE key = 'tabs_backfill'")!.value_json)).toEqual({ phase: "threads", after: 0 });
+  while ((await store.tabs.backfill({ limit: 50 })).more);
+  expect(await store.tabs.idle()).toBe(true);
+  const rows = new Map((await store.threads.summaries([note, person])).map((t) => [t.id, t.onlyYours]));
+  expect([rows.get(note), rows.get(person)]).toEqual([true, undefined]);
+});
+
+it("a refresh asked during a threads pass starts it again; one in its messages phase goes on (plan 256)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "terno-tabs-"));
+  dirs.push(dir);
+  const store = open(join(dir, "s.db"));
+  await withAccounts(store, 1);
+  const db = sqlDb(store);
+  sqlDb(store).run("UPDATE accounts SET kind = 'gmail'");
+  const job = () => JSON.parse(db.get<{ value_json: string }>("SELECT value_json FROM settings WHERE key = 'tabs_backfill'")!.value_json) as unknown;
+  db.run(`INSERT OR REPLACE INTO settings (key, value_json) VALUES ('tabs_backfill', '{"phase":"threads","after":40}')`);
+  requestTabRefresh(db);
+  expect(job()).toEqual({ phase: "threads", after: 0 });
+  db.run(`INSERT OR REPLACE INTO settings (key, value_json) VALUES ('tabs_backfill', '{"phase":"messages","after":40}')`);
+  requestTabRefresh(db);
+  expect(job()).toEqual({ phase: "messages", after: 40 });
 });

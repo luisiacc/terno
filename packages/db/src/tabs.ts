@@ -1,4 +1,4 @@
-import { addressKey, threadTab, type TabMessage } from "@terno/core";
+import { addressKey, threadTabState, type TabMessage } from "@terno/core";
 import { ownAddresses } from "./facts";
 import type { Db } from "./sqlite";
 
@@ -16,22 +16,26 @@ type Row = TabMessage & { from_email: string };
 export const CATEGORY_SQL = `CASE WHEN instr(gmail_labels, '"CATEGORY_PROMOTIONS"') THEN 2 WHEN instr(gmail_labels, '"CATEGORY_SOCIAL"') THEN 3
   WHEN instr(gmail_labels, '"CATEGORY_UPDATES"') THEN 4 WHEN instr(gmail_labels, '"CATEGORY_FORUMS"') THEN 5 WHEN instr(gmail_labels, '"CATEGORY_PERSONAL"') THEN 1 ELSE 0 END`;
 
-/** A thread's tab from its messages (what recomputeThreads folds), written when it changed; the messages read. */
+/** A thread's tab, and whether it's only yours (plan 256), from its messages (what recomputeThreads folds), written when either changed; the messages read. */
 function writeTab(db: Db, threadId: number, own: ReadonlySet<string>): number {
   const messages = db.all<Row>("SELECT id, date, category, in_inbox, is_trash, is_spam, is_sent, is_draft, from_email FROM messages INDEXED BY messages_thread WHERE thread_id = ?", threadId);
-  const tab = threadTab(messages, (m) => own.has(addressKey((m as Row).from_email)));
-  db.run("UPDATE threads SET tab = ? WHERE id = ? AND tab != ?", tab, threadId, tab);
+  const { tab, onlyYours } = threadTabState(messages, (m) => own.has(addressKey((m as Row).from_email)));
+  const mine = onlyYours ? 1 : 0;
+  db.run("UPDATE threads SET tab = ?, only_yours = ? WHERE id = ? AND (tab != ? OR only_yours != ?)", tab, mine, threadId, tab, mine);
   return messages.length;
 }
 
 /**
  * What's yours changed (an alias, an account) or the facts learned it at last: a tab may change, since mail of
  * yours never decides one (Codex code review #3). The backfill's threads phase goes over the Inbox again, in its
- * own slices; one already under way keeps going (what it hasn't reached reads the new addresses).
+ * own slices. One in its messages phase keeps going (its threads phase starts at the beginning); one already in its
+ * threads phase starts again, or what it passed would keep the old addresses' tab (plan 256, Codex critique).
  */
 export function requestTabRefresh(db: Db): void {
-  if (db.get("SELECT 1 FROM settings WHERE key = ?", KEY) || !db.get("SELECT 1 FROM accounts WHERE kind = 'gmail'")) return;
-  db.run("INSERT INTO settings (key, value_json) VALUES (?, ?)", KEY, JSON.stringify({ phase: "threads", after: 0 } satisfies Progress));
+  if (!db.get("SELECT 1 FROM accounts WHERE kind = 'gmail'")) return;
+  const row = db.get<{ value_json: string }>("SELECT value_json FROM settings WHERE key = ?", KEY);
+  if (row && (JSON.parse(row.value_json) as Progress).phase === "messages") return;
+  db.run("INSERT OR REPLACE INTO settings (key, value_json) VALUES (?, ?)", KEY, JSON.stringify({ phase: "threads", after: 0 } satisfies Progress));
 }
 
 export function tabsIdle(db: Db): boolean {

@@ -68,16 +68,21 @@ export interface TabMessage {
  * the Inbox is not Promotions or Social (Primary wins: hiding wrongly loses
  * mail), else the newest such message's tab. `own`: the message is from one
  * of your addresses (sent mail is yours already).
+ *
+ * `onlyYours` (plan 256): none of its Inbox mail is someone else's, so no tab
+ * can take it whatever its categories (a note to yourself): no tab move is offered.
  */
-export function threadTab(messages: Iterable<TabMessage>, own?: (m: TabMessage) => boolean): 0 | 1 | 2 {
+export function threadTabState(messages: Iterable<TabMessage>, own?: (m: TabMessage) => boolean): { tab: 0 | 1 | 2; onlyYours: boolean } {
   let newest: TabMessage | null = null;
   for (const m of messages) {
     if (!m.in_inbox || m.is_trash || m.is_spam || m.is_sent || m.is_draft || own?.(m)) continue;
-    if (m.category !== CAT_PROMOTIONS && m.category !== CAT_SOCIAL) return 0;
+    if (m.category !== CAT_PROMOTIONS && m.category !== CAT_SOCIAL) return { tab: 0, onlyYours: false };
     if (!newest || m.date > newest.date || (m.date === newest.date && m.id > newest.id)) newest = m;
   }
-  return !newest ? 0 : newest.category === CAT_PROMOTIONS ? 1 : 2;
+  return { tab: !newest ? 0 : newest.category === CAT_PROMOTIONS ? 1 : 2, onlyYours: !newest };
 }
+
+export const threadTab = (messages: Iterable<TabMessage>, own?: (m: TabMessage) => boolean): 0 | 1 | 2 => threadTabState(messages, own).tab;
 
 /** Plan 86: an account separates its tabs unless the user turned it off (Gmail only). */
 export const separatesTabs = (account: { kind: string; separateTabs?: boolean }) => account.kind === "gmail" && account.separateTabs !== false;

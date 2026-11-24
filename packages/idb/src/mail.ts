@@ -68,7 +68,7 @@ import {
   TAB_CODE,
   tabOfCode,
   tabRef,
-  threadTab,
+  threadTabState,
   COUNTED_VIEWS,
   viewRef,
   type MessageCategory,
@@ -996,9 +996,11 @@ export function recomputeThreads(c: Ctx, threadIds: Iterable<number>): void {
     const f = facts ? threadFacts(rows as unknown as FactRow[], facts) : null;
     // plan 86: Gmail's tab (only Gmail messages carry a category; your own mail never decides it)
     const ctx = facts;
-    const tab = inbox ? threadTab(rows as unknown as TabMessage[], ctx ? (m) => ctx.own(addressKey((m as unknown as R).from_email)) : undefined) : 0;
+    // plan 256: and whether none of its Inbox mail is someone else's (no tab can take it)
+    const tabs = inbox ? threadTabState(rows as unknown as TabMessage[], ctx ? (m) => ctx.own(addressKey((m as unknown as R).from_email)) : undefined) : { tab: 0, onlyYours: false };
     threads.update(thread, {
-      tab,
+      tab: tabs.tab,
+      only_yours: tabs.onlyYours ? 1 : 0,
       subject: baseSubject(first.subject) || first.subject,
       snippet: latest.snippet,
       last_date: latest.date,
@@ -1312,6 +1314,7 @@ export function toSummary(c: Ctx, t: R): ThreadSummary {
     // before the messages load (an early read) any thread may hold spam (trashed, or beside a reply): no icon until it's known (plan 22)
     hasSpam: c.late && !c.late.loaded ? true : T(c, "messages").by("fk_thread_id", t.id).some((m) => m.is_spam === 1),
     ...(t.tab ? { tab: t.tab } : {}),
+    ...(t.only_yours ? { onlyYours: true as const } : {}),
   };
 }
 

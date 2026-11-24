@@ -241,6 +241,8 @@ export interface ThreadSummary {
   inTrash?: boolean;
   /** plan 86: the Gmail tab it's in (0 or absent: none; whether it's shown apart is the account's setting) */
   tab?: number;
+  /** plan 256: in the Inbox with none of its Inbox mail someone else's (a note to yourself): no Gmail tab can take it */
+  onlyYours?: true;
   /** a message of it is spam, wherever it is now (trashed spam too): never a sender icon (plan 22) */
   hasSpam?: boolean;
   /** renderer only: it was spam a moment ago (Not spam, not yet confirmed): still no sender icon */

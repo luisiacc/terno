@@ -1,6 +1,6 @@
 import { userLabels, writeFolders, type FoldedThread } from "./folders";
 import { insertAttachments, replaceAttachments } from "./attachments";
-import { addressKey, canonicalMessageId, BODY_TAIL_TOKENS, baseSubject, categoryOf, threadTab, emailDomain, unsubscribeJson, featuresFromBlob, normalizeText, threadFacts, trailingTokens, type Address, type FactContext, type FactRow } from "@terno/core";
+import { addressKey, canonicalMessageId, BODY_TAIL_TOKENS, baseSubject, categoryOf, threadTabState, emailDomain, unsubscribeJson, featuresFromBlob, normalizeText, threadFacts, trailingTokens, type Address, type FactContext, type FactRow } from "@terno/core";
 import { requireGmailRefresh, acceptFlagObservation, ThreadMerges, flagObservationValid, type LocalFlagField, type FlagObservation, type IncomingMessage, type ModelDelta } from "@terno/store";
 import { bindSqlPromotedFlags, sqlFlags } from "./flag-intents";
 
@@ -586,11 +586,12 @@ export function recomputeThreads(db: Db, threadIds: Iterable<number>): void {
     const f = facts ? threadFacts(messages, facts) : null;
     // plan 86: Gmail's tab (only Gmail messages carry a category; your own mail never decides it)
     const ctx = facts;
-    const tab = inbox ? threadTab(messages, ctx ? (m) => ctx.own(addressKey((m as ThreadMessage).from_email)) : undefined) : 0;
+    // plan 256: and whether none of its Inbox mail is someone else's (no tab can take it)
+    const tabs = inbox ? threadTabState(messages, ctx ? (m) => ctx.own(addressKey((m as ThreadMessage).from_email)) : undefined) : { tab: 0, onlyYours: false };
     db.run(
       `UPDATE threads SET subject = ?, snippet = ?, last_date = ?, last_from_name = ?, last_from_email = ?,
          message_count = ?, unread_count = ?, has_attachments = ?, is_starred = ?, in_inbox = ?,
-         has_sent = ?, in_trash = ?, in_spam = ?, person = ?, waiting_since = ?, tab = ?
+         has_sent = ?, in_trash = ?, in_spam = ?, person = ?, waiting_since = ?, tab = ?, only_yours = ?
        WHERE id = ?`,
       baseSubject(first.subject) || first.subject,
       latest.snippet,
@@ -608,7 +609,8 @@ export function recomputeThreads(db: Db, threadIds: Iterable<number>): void {
       inSpam,
       f ? f.person : null,
       f ? f.waitingSince : null,
-      tab,
+      tabs.tab,
+      tabs.onlyYours ? 1 : 0,
       threadId,
     );
     written.push(threadId);

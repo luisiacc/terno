@@ -44,10 +44,12 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  * SQL v75 (plan 216) lets a waiting record be `removed`: no CHECK here, and its index is in memory, so no version change.
  * Version 39 adds the senders always shown in What matters (SQL v76, plan 240).
  * Version 40 adds What matters in the user's words: verdicts, wanted items and their marks (SQL v77, plan 249).
+ * SQL v78 (plan 256) adds `threads.only_yours`: absent reads 0, so no version change; a mailbox from before asks the tabs
+ * backfill to write it (store.ts).
  */
 export { IDB_VERSION };
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 77;
+export const LOGICAL_SCHEMA = 78;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 

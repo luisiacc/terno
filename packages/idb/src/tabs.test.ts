@@ -116,3 +116,40 @@ it("a slice stops once it has read its share of messages, mid-window, and the ne
   }
   expect(await store.tabs.idle()).toBe(true);
 });
+
+// with no pass under way, and with one in its threads phase already past every thread (Codex critique: it starts again)
+it.each([["no pass under way", null], ["a pass past every thread", '{"phase":"threads","after":1000000,"max":1000000}']] as const)("schema 78 (plan 256): a mailbox from before learns which Inbox conversations are only your own mail, in the tabs' slices (%s)", async (_, job) => {
+  const factory = new IDBFactory();
+  const name = "tabs-only-yours";
+  let store = await open(factory, name);
+  const [gmail] = await withAccounts(store, 1);
+  await ingest(store, [
+    msg({ accountId: gmail!, providerMsgId: "note", from: { name: "", email: "me0@example.com" }, isSent: true, gmailLabels: ["SENT", "INBOX"] }),
+    msg({ accountId: gmail!, providerMsgId: "person", gmailLabels: ["INBOX", "CATEGORY_PERSONAL"] }),
+  ]);
+  const note = await threadOf(store, "note");
+  const person = await threadOf(store, "person");
+  await store.close();
+  // what schema 77 was: no fact on the rows
+  await rewrite(factory, name, { threads: (r) => void delete r.only_yours }, 77);
+  if (job) {
+    const raw = await request(factory.open(databaseName(name)));
+    const tx = raw.transaction(["settings"], "readwrite");
+    tx.objectStore("settings").put({ key: "tabs_backfill", value_json: job }, "tabs_backfill");
+    await done(tx);
+    raw.close();
+  }
+
+  store = await open(factory, name);
+  await store.whenLoaded();
+  expect((await store.threads.summaries([note]))[0]!.onlyYours).toBeUndefined();
+  expect(await store.tabs.idle()).toBe(false);
+  while ((await store.tabs.backfill({ limit: 50 })).more);
+  expect(await store.tabs.idle()).toBe(true);
+  const rows = new Map((await store.threads.summaries([note, person])).map((t) => [t.id, t.onlyYours]));
+  expect([rows.get(note), rows.get(person)]).toEqual([true, undefined]);
+  // and a mailbox already at 78 asks for nothing on open
+  await store.close();
+  store = await open(factory, name);
+  expect(await store.tabs.idle()).toBe(true);
+});

@@ -126,6 +126,41 @@ export function defineTabsConformance(fresh: () => Promise<MailStore>, reopen: (
       expect(await ids(store, { view: "inbox", accountId: gmail, limit: 10 })).toContain(thread);
     });
 
+    it("a conversation of only your own mail in the Inbox says so: no tab can take it (plan 256)", async () => {
+      const { store, gmail, promo, person } = await setup();
+      const row = async (thread: number) => (await store.threads.summaries([thread]))[0]!;
+      // a note to yourself: sent, and received in the Inbox (Gmail gives it SENT and INBOX), no category of its own
+      await ingest(store, [msg({ accountId: gmail, providerMsgId: "note", from: addr("me0@example.com"), to: [addr("me0@example.com")], isSent: true, gmailLabels: ["SENT", "INBOX"], date: NOW, rfcMessageId: "note@test" })]);
+      const note = await threadOf(store, "note");
+      expect(await row(note)).toMatchObject({ inInbox: true, onlyYours: true });
+      expect((await store.threads.list({ view: "inbox", accountId: gmail, limit: 10 })).items.find((t) => t.id === note)).toMatchObject({ onlyYours: true });
+      // the move offered nowhere would change nothing: your mail never decides a tab
+      expect((await store.threads.act({ threadIds: [note], action: "toPromotions", signal: null, now: NOW + 1 })).threadIds).toEqual([]);
+      // archived, it's out of the Inbox: the fact is the Inbox's, as the tab is
+      await store.threads.act({ threadIds: [note], action: "archive", signal: null, now: NOW + 2 });
+      expect((await row(note)).onlyYours).toBeUndefined();
+      await store.threads.act({ threadIds: [note], action: "moveToInbox", signal: null, now: NOW + 3 });
+      expect((await row(note)).onlyYours).toBe(true);
+      // someone else answers in it: it's theirs too now
+      await ingest(store, [msg({ accountId: gmail, providerMsgId: "note-reply", from: addr("ana@friends.com"), gmailLabels: PRIMARY, date: NOW + 4, inReplyTo: "note@test", references: ["note@test"], subject: "Re: Subject" })]);
+      expect(await threadOf(store, "note-reply")).toBe(note);
+      expect((await row(note)).onlyYours).toBeUndefined();
+      // a thread in a tab, or in Primary from someone else, never is
+      expect((await store.threads.summaries([promo, person])).every((t) => t.onlyYours === undefined)).toBe(true);
+    });
+
+    it("mail from an address that becomes yours makes its conversation only yours once the tabs' pass reaches it (plan 256)", async () => {
+      const { store, gmail } = await setup();
+      await backfillFacts(store);
+      await ingest(store, [msg({ accountId: gmail, providerMsgId: "alias-note", from: addr("me.alias@example.com"), gmailLabels: PRIMARY, date: NOW })]);
+      const thread = await threadOf(store, "alias-note");
+      expect((await store.threads.summaries([thread]))[0]!.onlyYours).toBeUndefined();
+      await ingest(store, [msg({ accountId: gmail, providerMsgId: "alias-sent2", from: addr("me.alias@example.com"), to: [addr("bo@friends.com")], isSent: true, inInbox: false, gmailLabels: ["SENT"], date: NOW + 1 })]);
+      await backfillFacts(store);
+      while ((await store.tabs.backfill({ limit: 50 })).more);
+      expect((await store.threads.summaries([thread]))[0]!.onlyYours).toBe(true);
+    });
+
     it("a new arrival in a tab isn't Inbox mail to notify about", async () => {
       const { store, gmail } = await setup();
       const r = await ingest(store, [msg({ accountId: gmail, providerMsgId: "new-promo", from: addr("sale@shop.com"), gmailLabels: PROMO, date: NOW }), msg({ accountId: gmail, providerMsgId: "new-person", from: addr("bo@friends.com"), gmailLabels: PRIMARY, date: NOW })]);

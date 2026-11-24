@@ -1,4 +1,4 @@
-import { addressKey, categoryOfJson, threadTab, type TabMessage } from "@terno/core";
+import { addressKey, categoryOfJson, threadTabState, type TabMessage } from "@terno/core";
 import { ownAddresses } from "./facts";
 import type { MemDb, Row } from "./mem";
 
@@ -25,21 +25,25 @@ export function startTabsBackfill(db: MemDb): void {
   if ([...t(db, "accounts").all()].some((a) => a.kind === "gmail")) t(db, "settings").put({ key: KEY, value_json: JSON.stringify({ phase: "messages", after: 0 } satisfies Progress) });
 }
 
-/** A thread's tab from its messages (what recomputeThreads folds), written when it changed; the messages read. */
+/** A thread's tab, and whether it's only yours (plan 256), from its messages (what recomputeThreads folds), written when either changed; the messages read. */
 function writeTab(db: MemDb, thread: R, own: ReadonlySet<string>): number {
   const rows = t(db, "messages").by("fk_thread_id", thread.id);
-  const tab = threadTab(rows as unknown as TabMessage[], (m) => own.has(addressKey((m as unknown as R).from_email)));
-  if ((thread.tab ?? 0) !== tab) t(db, "threads").update(thread, { tab });
+  const { tab, onlyYours } = threadTabState(rows as unknown as TabMessage[], (m) => own.has(addressKey((m as unknown as R).from_email)));
+  const mine = onlyYours ? 1 : 0;
+  if ((thread.tab ?? 0) !== tab || (thread.only_yours ?? 0) !== mine) t(db, "threads").update(thread, { tab, only_yours: mine });
   return rows.length;
 }
 
 /**
  * What's yours changed (an alias, an account) or the facts learned it at last: a tab may change, since mail of
  * yours never decides one (Codex code review #3). The backfill's threads phase goes over the Inbox again, in its
- * own slices; one already under way keeps going (what it hasn't reached reads the new addresses).
+ * own slices. One in its messages phase keeps going (its threads phase starts at the beginning); one already in its
+ * threads phase starts again, or what it passed would keep the old addresses' tab (plan 256, Codex critique).
  */
 export function requestTabRefresh(db: MemDb): void {
-  if (t(db, "settings").get(KEY) || ![...t(db, "accounts").all()].some((a) => a.kind === "gmail")) return;
+  if (![...t(db, "accounts").all()].some((a) => a.kind === "gmail")) return;
+  const row = t(db, "settings").get(KEY);
+  if (row && (JSON.parse(row.value_json as string) as Progress).phase === "messages") return;
   t(db, "settings").put({ key: KEY, value_json: JSON.stringify({ phase: "threads", after: 0 } satisfies Progress) });
 }
 
