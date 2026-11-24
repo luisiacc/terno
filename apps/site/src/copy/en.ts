@@ -330,7 +330,7 @@ export const en = {
           id: "ai",
           title: "AI providers",
           body: [
-            "AI is off until you choose a provider in Settings → AI: Anthropic, OpenAI, an OpenAI-compatible service (such as OpenRouter, Groq, Together or Azure OpenAI) or a model running on your computer (Ollama, LM Studio). Your key stays on your computer, and requests go straight from your computer to that provider, under its privacy terms. Nothing passes through us. With a model on your computer, nothing leaves it. If you save both an Anthropic and an OpenAI key, Terno divides the work between them, so your mail can reach both.",
+            "AI is off until you choose a provider in Settings → AI: Anthropic, OpenAI, an OpenAI-compatible service (such as OpenRouter, Groq, Together or Azure OpenAI) or a model running on your computer (Ollama, LM Studio). Your key is stored on your computer and is sent only to that provider, with each request, so it knows the request is yours. Requests go straight from your computer to the provider, under its privacy terms; nothing passes through us. With a model on your computer, nothing leaves it. If you choose Anthropic or OpenAI and save a key for both, Terno divides the work between them, so your mail can reach both.",
             "Once a provider is set up, some features run on their own as mail arrives, marked **automatic** below. You can turn each one off in Settings → AI, and turn AI off for one account with “Use AI with this account” in Settings → Accounts. That account’s mail is then never sent, though its name and address can still appear when you write a filter or a typed action. Automatic features never read mail in Spam or Trash, and they stop at the monthly limit you set in Settings → AI. Attachments and images are never sent, only file names where noted.",
             "What each feature sends:",
           ],
@@ -352,14 +352,14 @@ export const en = {
           id: "agents",
           title: "AI tools on your computer",
           body: [
-            "Terno includes a connector (MCP) that AI tools on your computer, such as Claude, can use to reach your mail. It is off until you turn it on in Settings → Agents, where you also choose what those tools may do: only read, also organize (archive, categorize, filters and drafts), or also send. While it is off, nothing listens for them. It can’t be reached from the network: only programs running as you on your computer, holding a key kept in your Terno folder, can use it, the same programs that could open your mail files directly. What those tools do with your mail is up to them and their provider.",
+            "On a Mac and on Linux, Terno includes a connector (MCP) that AI tools on your computer, such as Claude, can use to reach your mail; it isn’t on Windows yet. It is off until you turn it on in Settings → Agents, where you also choose what those tools may do: only read, also organize (archive, categorize, filters and drafts), or also send. While it is off, nothing listens for them. It can’t be reached from the network: only programs running as you on your computer, holding a key kept in your Terno folder, can use it, the same programs that could open your mail files directly. What those tools do with your mail is up to them and their provider.",
           ],
         },
         {
           id: "errors",
           title: "Error reports",
           body: [
-            "When something goes wrong, Terno asks before sending a report (you can choose Always or Never instead), and you can see exactly what it holds first: the error and where in Terno’s code it happened; the steps just before it, as codes (such as which view or dialog was open); the app and operating system versions, your language and the kind of computer (processor and memory); how many accounts you have; and a random ID you can reset. It never holds your mail, addresses, names or subjects. Reports go to Sentry, the service we use to track errors.",
+            "When something goes wrong, Terno asks before sending a report, and you can see exactly what it holds first. In Settings you can choose Never instead, or Always, which sends each report without asking, along with any from the past week you haven’t decided on. A report holds the error and where in Terno’s code it happened; the steps just before it, as codes (such as which view or dialog was open); the versions of the app and of what runs it; the operating system, its version, the processor type and memory; your language; how many accounts you have of each kind; how long Terno had been running and how often the error repeated; a random ID for that run of Terno; and a random ID for your installation, which you can reset. Some of these are left out when Terno doesn’t know them. It never holds your mail, addresses, names or subjects. Reports go to Sentry, the service we use to track errors.",
             "Terno keeps its own logs on your computer, limited in size. They don’t contain your mail or addresses.",
           ],
         },
@@ -367,7 +367,7 @@ export const en = {
           id: "delete",
           title: "Removing your data",
           body: [
-            "Removing an account in Settings → Accounts deletes its mail, sign-in tokens and pictures from Terno’s mailbox. Before an update changes how your mailbox is stored, Terno keeps a copy of it in case something goes wrong; a copy made before you removed the account still holds it until the copy is deleted, the first time Terno opens 14 days or more after the update. To remove everything at once, quit Terno and delete its folder: `~/Library/Application Support/Terno` on a Mac, `%APPDATA%\\Terno` on Windows, `~/.config/Terno` on Linux (or `$XDG_CONFIG_HOME/Terno` if you set it). On a Mac, also delete the Keychain item “Terno Safe Storage”; on Linux, Terno’s entry in your keyring.",
+            "Removing an account in Settings → Accounts deletes its mail, sign-in tokens and pictures from Terno’s mailbox. To remove everything at once, quit Terno and delete its folder: `~/Library/Application Support/Terno` on a Mac, `%APPDATA%\\Terno` on Windows, `~/.config/Terno` on Linux (or `$XDG_CONFIG_HOME/Terno` if you set it). On a Mac, also delete the Keychain item “Terno Safe Storage”; on Linux, Terno’s entry in your keyring.",
           ],
         },
         {

@@ -347,10 +347,17 @@ describe("the privacy policy", () => {
     // the connector is gated by a token file, not per app
     expect(section("agents")).toContain("key kept in your Terno folder");
     expect(section("agents")).not.toContain("set it up in");
-    // reports carry coded breadcrumbs and device facts
+    // reports carry coded breadcrumbs and device facts; "Always" sends without the preview, past unanswered ones too
     expect(section("errors")).toContain("the steps just before it");
-    // a pre-upgrade backup outlives a removed account until it expires at a later open
-    expect(section("delete")).toContain("14 days or more after the update");
+    expect(section("errors")).toContain("Always, which sends each report without asking");
+    expect(section("errors")).toContain("a random ID for that run of Terno");
+    // plan 255: there is no copy of the mailbox before an update, so none outlives a removed account
+    expect(section("delete")).not.toMatch(/copy|backup/i);
+    // the key goes to its provider with each request; the work is split only between Claude and OpenAI, when chosen
+    expect(section("ai")).toContain("is sent only to that provider");
+    expect(section("ai")).toContain("If you choose Anthropic or OpenAI and save a key for both");
+    // the connector is a Mac and Linux one (a shell launcher and a Unix socket)
+    expect(section("agents")).toContain("it isn’t on Windows yet");
   });
 
   it("the contact is a mailbox Google's consent screen can also use (plan 124)", () => {
