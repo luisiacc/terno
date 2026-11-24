@@ -152,3 +152,11 @@ Within the 100 ms cap, the swap and the color change read as cuts. At the user's
 - **Copy (about 300 ms):** the copy icon shrinks, blurs and fades (2M, ease-in). As it's half gone (0.6M), the check springs in (4M) and draws itself left to right (3M, ease-out). The check is an inline path with `pathLength=1`, so `stroke-dashoffset` draws it.
 - **Settle, 5 s later (about 450 ms):** the check blurs away and the copy icon springs back. The accent shrinks into the icon as a circle (`clip-path`, 5M, ease-in-out). Captured frame by frame, a color fade passed through grey digits on half the accent, where they vanish. So the chip is two layers: the outlined label underneath, and the same label in white on the accent above it, clipped. Every frame shows crisp text on one surface or the other.
 - **Hover** is a veil over both layers with its own quick fade; it doesn't slow the settle. **Press** scales to 0.94 on a spring.
+
+## Copying reads it
+
+> clickign that copy code button once should mark that email as read
+
+A copied code has been read. `copyCode` takes the thread (`id`, `unread`), so the chip and the thread menu's Copy verification code share one rule: once the clipboard takes the code, an unread thread is marked read with `act("markRead", [id], { quiet: true })`, the call the reader's dwell makes (plan 225). Quiet, because it's a side effect of copying, not triage: no undo of its own (z still undoes the last triage), and it doesn't count as read set by hand. A read thread costs nothing, and a refused copy reads nothing. Under the Unread filter the row leaves the list, as a row marked read there always does (the open one stays).
+
+Tests: `codes.test.tsx` (an unread thread is marked read once, quietly; a read one and a refused copy aren't), and `codes.spec.ts` (the row and the menu's copy both drop `data-unread`).

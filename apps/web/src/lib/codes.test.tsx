@@ -5,6 +5,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 vi.mock("~/rpc/connection", () => ({ client: { call: vi.fn().mockResolvedValue({}) } }));
+const markRead = vi.hoisted(() => vi.fn());
+vi.mock("~/lib/actions", () => ({ act: markRead }));
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 
 const NOW = Date.UTC(2026, 9, 29, 12);
@@ -18,6 +20,7 @@ let host: HTMLDivElement, root: Root, writeText: ReturnType<typeof vi.fn>;
 beforeEach(async () => {
   vi.useFakeTimers({ now: NOW, toFake: ["Date", "setTimeout", "clearTimeout"] });
   writeText = vi.fn().mockResolvedValue(undefined);
+  markRead.mockClear();
   Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
   host = document.createElement("div");
   document.body.append(host);
@@ -36,7 +39,7 @@ const { CodeChip } = await import("~/components/code-chip");
 // one component type, so showing a changed thread updates the mounted row (as the list does)
 function Row({ th }: { th: ThreadSummary }) {
   const code = useThreadCode(th);
-  return code ? <CodeChip threadId={th.id} code={code} /> : null;
+  return code ? <CodeChip thread={th} code={code} /> : null;
 }
 async function showRow(th: ThreadSummary) {
   await act(async () => root.render(<Row th={th} />));
@@ -60,6 +63,16 @@ it("a fresh thread's code copies: the check for five seconds, then outlined for 
   expect(chip()!.hasAttribute("data-used")).toBe(true);
 });
 
+it("copying an unread thread's code marks it read, quietly; a read one is left alone", async () => {
+  await showRow(thread());
+  await click();
+  expect(markRead).toHaveBeenCalledExactlyOnceWith("markRead", [7], { quiet: true });
+  markRead.mockClear();
+  await showRow(thread({ unread: false }));
+  await click();
+  expect(markRead).not.toHaveBeenCalled();
+});
+
 it("a second click restarts the five seconds", async () => {
   await showRow(thread());
   await click();
@@ -74,7 +87,7 @@ it("a second click restarts the five seconds", async () => {
 it("pressing the chip doesn't reach the row", async () => {
   const press = vi.fn();
   const { CodeChip } = await import("~/components/code-chip");
-  await act(async () => root.render(<div onMouseDown={press} onClick={press}><CodeChip threadId={7} code="048291" /></div>));
+  await act(async () => root.render(<div onMouseDown={press} onClick={press}><CodeChip thread={thread()} code="048291" /></div>));
   await act(async () => {
     chip()!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
     chip()!.click();
@@ -83,9 +96,9 @@ it("pressing the chip doesn't reach the row", async () => {
 });
 
 it("a row scrolled away and back (or the menu's copy) shares the state", async () => {
-  const { codeKey, copyCode } = await import("./codes");
+  const { copyCode } = await import("./codes");
   await showRow(thread());
-  await act(async () => void (await copyCode(codeKey(7, "048291"), "048291")));
+  await act(async () => void (await copyCode(thread(), "048291")));
   expect(chip()!.hasAttribute("data-copied")).toBe(true);
   act(() => root.unmount());
   await act(async () => vi.advanceTimersByTime(5000));
@@ -104,6 +117,8 @@ it("says so when the clipboard refuses, and stays as it was", async () => {
   await click();
   expect(chip()!.hasAttribute("data-copied")).toBe(false);
   expect(useSnack.getState().current?.message).toBe("Couldn’t copy");
+  // not copied, so not read
+  expect(markRead).not.toHaveBeenCalled();
 });
 
 it("only threads whose newest mail is at most two hours old, with a code", async () => {

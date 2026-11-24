@@ -82,7 +82,7 @@ import { copyAddress, SenderItems, type MenuParts } from "./sender-menu-items";
 import { actSimilar, offerSentence, scopeLabel, visibleOffers } from "~/lib/similar";
 import { orderOffers } from "~/lib/offers";
 import { client } from "~/rpc/connection";
-import { codeKey, copyCode, threadCode } from "~/lib/codes";
+import { copyCode, threadCode } from "~/lib/codes";
 import { copyThreadText } from "~/lib/copy-thread";
 import { listScroller } from "./thread-list";
 import { useAlwaysOffers } from "./review-actions";
@@ -976,7 +976,7 @@ function MoreItems({ spam, single, code, view, ids, scope, sender, senderAccount
           icon={<Copy />}
           label={t("codes.copy", { code })}
           testId="menu-copy-code"
-          onClick={() => void copyCode(codeKey(single.id, code), code).then((ok) => ok && snack(t("codes.copied", { code }), { duration: 2000 }))}
+          onClick={() => void copyCode(single, code).then((ok) => ok && snack(t("codes.copied", { code }), { duration: 2000 }))}
         />
       )}
       {single && (

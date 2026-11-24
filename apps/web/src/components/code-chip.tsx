@@ -1,3 +1,4 @@
+import type { ThreadSummary } from "@terno/core";
 import { cn } from "@terno/ui/lib/utils";
 import { Copy } from "@terno/ui/icons";
 import { codeKey, copyCode, useCodeState } from "~/lib/codes";
@@ -6,10 +7,10 @@ import "./code-chip.css";
 /**
  * A row's verification code, one click from the clipboard (plan 72). A pointer target, not a control: a row is an
  * option of the list, which can't hold a button. Keyboards and screen readers get the code in the row's name and
- * copy it from the thread menu. Pressing it neither opens the thread nor starts a drag (`data-row-control`).
+ * copy it from the thread menu. Pressing it neither opens the thread nor starts a drag (`data-row-control`); copying marks it read.
  */
-export function CodeChip({ threadId, code, className }: { threadId: number; code: string; className?: string }) {
-  const key = codeKey(threadId, code);
+export function CodeChip({ thread, code, className }: { thread: Pick<ThreadSummary, "id" | "unread">; code: string; className?: string }) {
+  const key = codeKey(thread.id, code);
   const { copied, used } = useCodeState(key);
   return (
     <span
@@ -25,7 +26,7 @@ export function CodeChip({ threadId, code, className }: { threadId: number; code
       }}
       onClick={(e) => {
         e.stopPropagation();
-        void copyCode(key, code);
+        void copyCode(thread, code);
       }}
       data-code={code}
       className={cn(

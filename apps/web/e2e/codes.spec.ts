@@ -41,10 +41,13 @@ test("a fresh verification code copies from its row", { tag: "@variant" }, async
   await stabilize(page);
   await axeBothModes(page, "[data-testid=thread-list]");
 
+  await expect(row).toHaveAttribute("data-unread", "true");
   await chip.click();
   await page.mouse.move(0, 0);
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("048291");
   await expect(chip).toHaveAttribute("data-copied", "true");
+  // a copied code has been read
+  await expect(row).not.toHaveAttribute("data-unread", "true");
   // copying doesn't open the thread
   await expect(rowOf(page, other)).toHaveAttribute("data-cursor", "true");
   await expect(row).not.toHaveAttribute("data-cursor", "true");
@@ -73,6 +76,7 @@ test("a code: from the menu, under a drag, too old", async ({ app: page, server,
     await page.getByTestId("menu-copy-code").click();
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("048291");
     await expect(row.getByTestId("row-code")).toHaveAttribute("data-copied", "true");
+    await expect(row).not.toHaveAttribute("data-unread", "true");
   });
   await scenario("dragging from the chip doesn't drag the row", async () => {
     const id = await ingestCode(server, { id: "code-drag", subject: "Your Acme drag code", ageMs: 60_000 });

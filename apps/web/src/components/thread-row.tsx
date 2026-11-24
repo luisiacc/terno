@@ -414,7 +414,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
   // plan 142: gated on the row's every state, as Draft's ink is (contrast.ts)
   const owedInk = "text-draft-foreground";
   const snippet = <RowSnippet thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={quiet} match={match} excerpt={excerpt} lead={LEAD.own} two={previewLines === 2} />;
-  const chip = code && <CodeChip threadId={thread.id} code={code} />;
+  const chip = code && <CodeChip thread={thread} code={code} />;
   const reviewed = review !== null ? categories.find((c) => c.id === review) : undefined;
   const answer = reviewed && <ReviewControls threadId={thread.id} category={reviewed.name} />;
   // plan 24: List gives the pointer a checkbox. It takes the avatar's place while the avatar is under the pointer, and on
