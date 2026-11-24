@@ -13,7 +13,7 @@ function open(redirectHost: "127.0.0.1" | "localhost", state = "s1") {
   const loopback = openLoopback({
     authorize: "https://login.example.test/authorize", state, redirectHost, page, signal: new AbortController().signal,
     params: { client_id: "public-client", response_type: "code", state, prompt: "select_account" },
-    refused: (error) => ({ page: "backend.oauth.denied", error: new ProviderError(`refused ${error}`, false) }),
+    refused: (error, description) => ({ page: "backend.oauth.denied", error: new ProviderError(`refused ${error} ${description ?? "-"}`, false) }),
     invalid: () => new ProviderError("invalid", false),
     openExternal: async (url) => { opened = new URL(url); },
   });
@@ -43,8 +43,8 @@ describe("the shared OAuth loopback (plan 259)", () => {
     try {
       const port = new URL((await first.ready()).searchParams.get("redirect_uri")!).port;
       const refused = first.loopback.code.catch((error: unknown) => error);
-      expect(await (await fetch(`http://127.0.0.1:${port}/callback?state=s1&error=consent_required`)).text()).toBe("false:backend.oauth.denied");
-      expect(String(await refused)).toContain("refused consent_required");
+      expect(await (await fetch(`http://127.0.0.1:${port}/callback?state=s1&error=interaction_required&error_description=AADSTS65001%3A+admin+consent`)).text()).toBe("false:backend.oauth.denied");
+      expect(String(await refused)).toContain("refused interaction_required AADSTS65001: admin consent");
     } finally { await first.loopback.close(); }
     const second = open("127.0.0.1");
     try {

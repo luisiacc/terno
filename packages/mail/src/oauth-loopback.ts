@@ -27,8 +27,11 @@ export interface LoopbackAuthorization {
   redirectHost: "127.0.0.1" | "localhost";
   /** the page the browser shows after the redirect */
   page: (ok: boolean, key: CallbackKey) => string;
-  /** a single, well-formed ?error=: what the page says and what the caller hears */
-  refused(error: string): { page: CallbackKey; error: Error };
+  /**
+   * A single, well-formed ?error=: what the page says and what the caller hears. `description` is the provider's
+   * error_description (at most 1 KiB, never shown as is): Microsoft names an administrator's refusal only there (AADSTS65001)
+   */
+  refused(error: string, description: string | null): { page: CallbackKey; error: Error };
   /** a malformed answer (several errors, an error beside a code, no code) */
   invalid(): Error;
   openExternal(url: string): Promise<void>;
@@ -62,7 +65,7 @@ export function openLoopback(a: LoopbackAuthorization): { code: Promise<{ code: 
           reject(a.invalid());
           return;
         }
-        const refusal = a.refused(errors[0]);
+        const refusal = a.refused(errors[0], url.searchParams.get("error_description")?.slice(0, 1024) ?? null);
         done(false, refusal.page);
         reject(refusal.error);
         return;
