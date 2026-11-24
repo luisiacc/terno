@@ -35,7 +35,7 @@ export function sqlBodyParts(db: Db, capture: string, field: number, yieldTo: ()
 }
 
 /** Staged parts have no message identity until the normal fenced publication transaction. */
-export async function stageBody<T extends Pick<IncomingMessage, "accountId" | "bodyText" | "bodyHtml" | "snippet" | "preparedBodyTokens" | "bodyParts"> & { subject?: string; inReplyTo?: string | null }>(db: Db, message: T, yieldTo: () => Promise<void>, check?: () => void, isolated = false): Promise<T & Pick<IncomingMessage, "bodyCapture">> {
+export async function stageBody<T extends Pick<IncomingMessage, "accountId" | "bodyText" | "bodyHtml" | "snippet" | "preparedBodyTokens" | "bodyParts"> & { subject?: string; inReplyTo?: string | null; references?: readonly string[] }>(db: Db, message: T, yieldTo: () => Promise<void>, check?: () => void, isolated = false): Promise<T & Pick<IncomingMessage, "bodyCapture">> {
   validateBodyInput(message);
   if (!message.bodyParts && Math.max(message.bodyText?.length ?? 0, message.bodyHtml?.length ?? 0) <= BODY_PART_UNITS) return message;
   const id = db.uuid(), counts: (number | null)[] = [];
@@ -57,7 +57,7 @@ export async function stageBody<T extends Pick<IncomingMessage, "accountId" | "b
     if (acknowledged[0] !== (counts[0] ?? 0) || acknowledged[1] !== (counts[1] ?? 0)) throw new Error("Body acknowledgements are incomplete");
     check?.();
     db.tx(() => { check?.(); return db.run("UPDATE body_captures SET text_parts=?,html_parts=?,token_parts=?,ready=1 WHERE id=?", counts[0]!, counts[1]!, tokenCount, id); });
-    return { ...message, bodyText: null, bodyHtml: null, bodyParts: undefined, preparedBodyTokens: undefined, bodyCapture: { id, preview: bodyPreview(message.bodyText, message.bodyParts), snippet: await prepareBodySnippet(message.snippet || message.bodyText, yieldTo, message.snippet ? undefined : message.bodyParts?.text), tail: "", ...(message.subject !== undefined ? { code: bodyCode(codeSubject(message.subject, message.inReplyTo), message.bodyText, message.bodyParts?.text) } : {}) } };
+    return { ...message, bodyText: null, bodyHtml: null, bodyParts: undefined, preparedBodyTokens: undefined, bodyCapture: { id, preview: bodyPreview(message.bodyText, message.bodyParts), snippet: await prepareBodySnippet(message.snippet || message.bodyText, yieldTo, message.snippet ? undefined : message.bodyParts?.text), tail: "", ...(message.subject !== undefined ? { code: bodyCode(codeSubject(message.subject, message), message.bodyText, message.bodyParts?.text) } : {}) } };
   } catch (error) { await finishBodyStage(db, id, yieldTo); throw error; }
 }
 

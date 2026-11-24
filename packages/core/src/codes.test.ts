@@ -77,6 +77,13 @@ describe("verification codes (plan 72)", () => {
     expect(findCode("Action required: Verify your email address", body)).toBe("391372");
   });
 
+  it("ignores an Outlook reply's quoted history, past the snippet too (plan 261, Codex code review)", () => {
+    const reply = `${"Thanks, I'm in now and everything looks right. ".repeat(6)}\n\nFrom: Acme <no-reply@acme.test>\nSent: Tuesday, November 24, 2026 2:06 AM\nTo: Ana\nSubject: Your sign-in\n\nYour code is 482913`;
+    expect(text(reply)).toBeNull();
+    expect(text(reply.replace(/\n/g, " "))).toBeNull();
+    expect(text("Listo.\n\nDe: Acme <no-reply@acme.test>\nEnviado el: martes, 24 de noviembre de 2026\nPara: Ana\nAsunto: Acceso\n\nTu código es 482913")).toBeNull();
+  });
+
   it("ignores codes inside links", () => {
     expect(text("Verify: https://example.com/verify?code=482913")).toBeNull();
   });

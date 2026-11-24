@@ -25,10 +25,11 @@ const WORDS = new RegExp(
  */
 const CANDIDATE = /(?<![\p{L}\p{N}_#$€£¥+/@=]|[\p{L}\p{N}][.,-]|\p{N}\s)(\d{3}[ -]?\d{3}|\d(?:\s\d){5})(?![\p{L}\p{N}_%]|[.,/:-]? ?\p{N})/gu;
 /**
- * Where replied-to history starts ("On … wrote:", "El … escribió:", "-- Original message --"), anywhere in a line:
- * a list snippet runs a body's lines together.
+ * Where replied-to history starts ("On … wrote:", "El … escribió:", "-- Original message --", and Outlook's "From: …
+ * Sent: … Subject:" / "De: … Enviado: … Asunto:", which an HTML reply's text keeps once its quote is flattened: plan 261
+ * reads the whole body, past the snippet), anywhere in a line: a list snippet runs a body's lines together.
  */
-const QUOTE_HEADER = /(?:^|\s)(?:el .{0,120}? escribi[oó]:|on .{0,120}? wrote:|-{2,} ?(?:mensaje (?:original|reenviado)|original message|forwarded message) ?-{2,})/i;
+const QUOTE_HEADER = /(?:^|\s)(?:el .{0,120}? escribi[oó]:|on .{0,120}? wrote:|-{2,} ?(?:mensaje (?:original|reenviado)|original message|forwarded message) ?-{2,}|from: [^]{0,200}?\ssent: [^]{0,200}?\ssubject:|de: [^]{0,200}?\senviado(?: el)?: [^]{0,200}?\sasunto:)/i;
 const URL = /\b(?:https?:\/\/|www\.|mailto:)\S+/gi;
 
 interface Span {

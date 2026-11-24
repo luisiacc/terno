@@ -171,19 +171,21 @@ export function bodyCode(subject: string, text: string | null | undefined, parts
 }
 
 /**
- * The subject a message's code may come from: none for a message that answers another, whose subject repeats the
- * original's, even without "Re:" (plan 261, Codex critique).
+ * The subject a message's code may come from: none for a message that answers another (In-Reply-To or References, what
+ * threading reads), whose subject repeats the original's, even without "Re:" (plan 261, Codex reviews).
  */
-export const codeSubject = (subject: string, inReplyTo: string | null | undefined): string => (inReplyTo ? "" : subject);
+export const codeSubject = (subject: string, reply: { inReplyTo?: string | null; references?: readonly string[] }): string => (reply.inReplyTo || reply.references?.length ? "" : subject);
+/** A stored row's reply headers, as `codeSubject` reads them. */
+export const storedReply = (row: { in_reply_to?: string | null; references_json?: string | null }): { inReplyTo: string | null; references: string[] } => ({ inReplyTo: row.in_reply_to ?? null, references: row.references_json ? (JSON.parse(row.references_json) as string[]) : [] });
 
 /**
  * Plan 261: the code a new message carries, from its body (a capture found it while staging), else from the snippet a
  * header-only message has. Mail of yours carries none: a code is someone else's to give you.
  */
-export function incomingCode(msg: Pick<IncomingMessage, "isSent" | "isDraft" | "subject" | "inReplyTo" | "bodyText" | "bodyParts" | "bodyCapture" | "snippet">): string | null {
+export function incomingCode(msg: Pick<IncomingMessage, "isSent" | "isDraft" | "subject" | "inReplyTo" | "references" | "bodyText" | "bodyParts" | "bodyCapture" | "snippet">): string | null {
   if (msg.isSent || msg.isDraft) return null;
   if (msg.bodyCapture?.code !== undefined) return msg.bodyCapture.code;
-  return bodyCode(codeSubject(msg.subject, msg.inReplyTo), msg.bodyText ?? msg.snippet, msg.bodyParts?.text);
+  return bodyCode(codeSubject(msg.subject, msg), msg.bodyText ?? msg.snippet, msg.bodyParts?.text);
 }
 
 /** The existing unquoted 200-unit snippet, scanning even whitespace/quoted runs in bounded turns. */

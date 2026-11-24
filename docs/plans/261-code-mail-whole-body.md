@@ -114,3 +114,22 @@ row. Two nullable columns: no index.
 
 - "Needs you": a code mail from a person-like sender still waits on you until the dated reader says nothing's asked.
 - Codes other than six digits.
+
+## What the Codex code review changed
+
+Nine findings:
+
+1. Fixed: an Outlook reply's quoted history ("From: … Sent: … Subject:", "De: … Enviado: … Asunto:"), which an HTML
+   reply's text keeps once flattened, now ends the text findCode reads: the whole body brought old codes into reach.
+2. Fixed: a reply threaded by References alone took a code from its subject; `codeSubject` reads In-Reply-To or
+   References, at insert, body arrival and staging, in both stores.
+3. Fixed: the digest checks the snippet as before as well as the stored code, so mail stored before the update keeps its
+   exclusion.
+4. Tested: a newer message removed, the older code is the thread's again (both stores).
+5. Measured, no change: the ingest perf gates (`incoming-inline`, `import`, `load`) pass with findCode inline.
+
+Not changed, as rare (the review cap): a long message and a code arriving together still summarize with the code as the
+newest message; a digest candidate whose code comes with a later body; Sent or Draft flags changing on a stored message;
+the same message re-ingested with different headers across the capture threshold.
+
+Each fixed finding has a case that fails without it (`codes.test.ts`, `conformance/codes.ts`).

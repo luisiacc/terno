@@ -1,6 +1,6 @@
 import { categoryReferenceCeiling, nextCategoryId, reserveCategoryIds } from "./category-identities";
 import type { ClosedOrder } from "./closed-order";
-import { bodyCode, codeSubject, incomingCode, readRuleState } from "@terno/store";
+import { bodyCode, codeSubject, incomingCode, readRuleState, storedReply } from "@terno/store";
 import { saveFilterForward } from "./forwards";
 import { folderPage, folderScopeIds, folderUnreadCounts, refreshFolders } from "./folders";
 import { requireGmailRefresh, copyOpAdmission, ThreadMerges, type OpAdmission } from "@terno/store";
@@ -936,7 +936,7 @@ export function setMessageBody(c: Ctx, messageId: number, bodyText: string | nul
   if (!row) return;
   if (capture) requireBodyCapture(c, row.account_id, capture);
   // plan 261: the body's code replaces what the snippet gave (a capture staged without the subject leaves it)
-  const code = row.is_sent || row.is_draft ? null : capture ? capture.code : bodyCode(codeSubject(row.subject, row.in_reply_to), bodyText);
+  const code = row.is_sent || row.is_draft ? null : capture ? capture.code : bodyCode(codeSubject(row.subject, storedReply(row)), bodyText);
   messages.update(row, { body_tail_norm: capture?.tail ?? bodyTail(bodyText), body_state: state, snippet: row.snippet === "" ? capture?.snippet ?? makeSnippet(bodyText) : row.snippet, ...(code !== undefined ? { code } : {}) });
   if (!capture && bodyText === null && bodyHtml === null) T(c, "message_bodies").delete(messageId);
   else T(c, "message_bodies").put({ message_id: messageId, body_text: bodyText, body_html: bodyHtml, capture_id: capture?.id ?? null, body_preview: capture?.preview ?? null });

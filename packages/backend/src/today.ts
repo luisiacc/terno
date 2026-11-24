@@ -7,6 +7,7 @@ import {
   DIGEST_CANDIDATES_MAX,
   DIGEST_KEEP_DAYS,
   DIGEST_WINDOW_MS,
+  findCode,
   HANDOFF_ITEMS_MAX,
   languageName,
   NOT_NEWSLETTER_NAME_MAX,
@@ -334,7 +335,8 @@ export class TodayService {
       for (const f of facts) {
         if (f.arrivedAt < floor || (since && f.messageId <= since.id) || seen.has(f.threadId) || !keep(f.accountId)) continue;
         // a sign-in code isn't reading, and it isn't something to archive unread
-        if (f.code) continue;
+        // plan 261: the stored code reads the whole text; the snippet's still counts for mail stored before it
+        if (f.code || findCode(f.subject, f.snippet)) continue;
         // after the fourth panel round: a sender named like a security desk is no newsletter to skim, nor a model's to read
         if (excluded.has(addressKey(f.fromEmail)) || (suspiciousSender(f.fromEmail) && (await untrustedSenders([f.fromEmail], this.writtenTo)).size)) continue;
         seen.add(f.threadId);

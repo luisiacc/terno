@@ -72,9 +72,16 @@ export function defineCodesConformance(fresh: () => Promise<MailStore>): void {
       const first = await arrive({ rfcMessageId: "code@test", date: 1_000 });
       expect(await code(first.thread)).toBe("391372");
       // your reply quotes nothing and carries the code's words: yours never offers one
-      await arrive({ isSent: true, inInbox: false, inReplyTo: "code@test", references: ["code@test"], subject: `Re: ${SUBJECT}`, bodyText: "My code is 555111", date: 2_000 });
+      const yours = await arrive({ isSent: true, inInbox: false, inReplyTo: "code@test", references: ["code@test"], subject: `Re: ${SUBJECT}`, bodyText: "My code is 555111", date: 2_000 });
       expect(await code(first.thread)).toBeUndefined();
       expect((await store.aiSummaries.sources(first.thread))!.messages.map((m) => m.code)).toEqual(["391372", null]);
+      // Codex code review: the newer ones gone, the older code is the thread's again
+      const later = await arrive({ inReplyTo: "code@test", references: ["code@test"], subject: `Re: ${SUBJECT}`, bodyText: "Lunch tomorrow?", date: 3_000 });
+      expect(await code(first.thread)).toBeUndefined();
+      await store.sync.remove([later.id]);
+      expect(await code(first.thread)).toBeUndefined();
+      await store.sync.remove([yours.id]);
+      expect(await code(first.thread)).toBe("391372");
     });
 
     it("a message that answers another takes no code from its subject, even without Re:", async () => {
@@ -82,6 +89,10 @@ export function defineCodesConformance(fresh: () => Promise<MailStore>): void {
       await arrive({ rfcMessageId: "orig@test", subject: "Your code 482913", bodyText: "Your code 482913", date: 1_000 });
       const reply = await arrive({ inReplyTo: "orig@test", references: ["orig@test"], subject: "Your code 482913", bodyText: "Thanks, it worked", date: 2_000 });
       expect(await code(reply.thread)).toBeUndefined();
+      // Codex code review: References alone threads it too
+      await arrive({ rfcMessageId: "orig2@test", subject: "Your code 551234", bodyText: "Your code 551234", date: 3_000 });
+      const referencing = await arrive({ references: ["orig2@test"], subject: "Your code 551234", bodyText: "Thanks, it worked", date: 4_000 });
+      expect(await code(referencing.thread)).toBeUndefined();
     });
   });
 }

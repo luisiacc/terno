@@ -1,7 +1,7 @@
 import { userLabels, writeFolders, type FoldedThread } from "./folders";
 import { insertAttachments, replaceAttachments } from "./attachments";
 import { addressKey, canonicalMessageId, BODY_TAIL_TOKENS, baseSubject, categoryOf, threadTabState, emailDomain, unsubscribeJson, featuresFromBlob, normalizeText, threadFacts, trailingTokens, type Address, type FactContext, type FactRow } from "@terno/core";
-import { bodyCode, codeSubject, incomingCode, requireGmailRefresh, acceptFlagObservation, ThreadMerges, flagObservationValid, type LocalFlagField, type FlagObservation, type IncomingMessage, type ModelDelta } from "@terno/store";
+import { bodyCode, codeSubject, incomingCode, storedReply, requireGmailRefresh, acceptFlagObservation, ThreadMerges, flagObservationValid, type LocalFlagField, type FlagObservation, type IncomingMessage, type ModelDelta } from "@terno/store";
 import { bindSqlPromotedFlags, sqlFlags } from "./flag-intents";
 
 export type { IncomingAttachment, IncomingLocation, IncomingMessage } from "@terno/store";
@@ -479,8 +479,8 @@ export function setMessageBody(
     requireBodyCapture(db, message.account_id, capture);
   }
   // plan 261: the body's code replaces what the snippet gave (a capture staged without the subject leaves it)
-  const row = db.get<{ subject: string; in_reply_to: string | null; own: number }>("SELECT subject, in_reply_to, is_sent OR is_draft AS own FROM messages WHERE id = ?", messageId);
-  const code = !row || row.own ? null : capture ? capture.code : bodyCode(codeSubject(row.subject, row.in_reply_to), bodyText);
+  const row = db.get<{ subject: string; in_reply_to: string | null; references_json: string | null; own: number }>("SELECT subject, in_reply_to, references_json, is_sent OR is_draft AS own FROM messages WHERE id = ?", messageId);
+  const code = !row || row.own ? null : capture ? capture.code : bodyCode(codeSubject(row.subject, storedReply(row)), bodyText);
   const updated = db.run(
     `UPDATE messages SET body_tail_norm = ?, body_state = ?, snippet = CASE WHEN snippet = '' THEN ? ELSE snippet END, code = CASE WHEN ? THEN ? ELSE code END WHERE id = ?`,
     capture?.tail ?? bodyTail(bodyText),
