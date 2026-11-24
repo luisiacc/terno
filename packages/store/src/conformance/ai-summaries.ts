@@ -101,6 +101,20 @@ export function defineAiSummariesConformance(fresh: () => Promise<MailStore>, re
         expect((await store.aiSummaries.sources(plain.thread))!.messages[0]!.list).toBe(false);
       });
 
+      it("plan 269: whether each sender is a person, by plan 17's rule (a role address once you've written to it)", async () => {
+        const { store, accountId, arrive } = await setup();
+        const person = async (over: Partial<IncomingMessage>) => (await store.aiSummaries.sources((await arrive(over)).thread))!.messages[0]!.person;
+        expect(await person({ providerMsgId: "ana", rfcMessageId: "ana@x.test", subject: "Ana", from: { name: "Ana Ruiz", email: "ana@studio.test" } })).toBe(true);
+        expect(await person({ providerMsgId: "list", rfcMessageId: "list@x.test", subject: "List", from: { name: "Ana Ruiz", email: "ana@studio.test" }, listId: "news.studio.test" })).toBe(false);
+        expect(await person({ providerMsgId: "bulk", rfcMessageId: "bulk@x.test", subject: "Bulk", from: { name: "Ana Ruiz", email: "ana@studio.test" }, bulk: true })).toBe(false);
+        expect(await person({ providerMsgId: "noreply", rfcMessageId: "noreply@x.test", subject: "No reply", from: { name: "Social", email: "messaging-digest-noreply@social.test" } })).toBe(false);
+        const support = { name: "Shop support", email: "support@shop.test" };
+        const asked = await arrive({ providerMsgId: "support", rfcMessageId: "support@x.test", subject: "Your question", from: support });
+        expect((await store.aiSummaries.sources(asked.thread))!.messages[0]!.person).toBe(false);
+        await store.sync.ingest([msg({ accountId, providerMsgId: "mine", rfcMessageId: "mine@x.test", from: { name: "Me", email: "me@x.test" }, to: [support], isSent: true, inInbox: false, gmailLabels: ["SENT"], subject: "Re: Your question", date: NOW - 1000 })], { applyFilters: false, now: NOW, classifier: null });
+        expect((await store.aiSummaries.sources(asked.thread))!.messages[0]!.person).toBe(true);
+      });
+
       it("marks a message whose text isn't here yet, and its text says so", async () => {
         const { store, arrive } = await setup();
         const m = await arrive({ bodyText: null, bodyState: "none" });

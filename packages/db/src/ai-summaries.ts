@@ -1,4 +1,4 @@
-import { repairAddresses } from "@terno/core";
+import { repairAddresses, senderIsPerson } from "@terno/core";
 import { addressesOf, NEW_MAIL_MS, sourceStamp, summaryBlocked, type AiSummaryRow, type AiSummaryState, type NewMailMark, type NewMailWant, type NewMailWants, type SummarySources, type SummaryWrite, type SummaryWriteOutcome } from "@terno/store";
 import type { Db } from "./sqlite";
 
@@ -145,8 +145,8 @@ export function getSummary(db: Db, threadId: number): AiSummaryRow | null {
 export function summarySources(db: Db, threadId: number): SummarySources | null {
   const thread = db.get<{ account_id: number; subject: string; in_inbox: number; in_spam: number; in_trash: number; tab: number | null }>("SELECT account_id, subject, in_inbox, in_spam, in_trash, tab FROM threads WHERE id = ?", threadId);
   if (!thread) return null;
-  const rows = db.all<{ id: number; from_name: string; from_email: string; date: number; snippet: string; subject: string; is_sent: number; is_draft: number; is_trash: number; is_spam: number; body_state: "none" | "partial" | "full"; body_tail_norm: string | null; attachments_captured: number; capture_id: string | null; marked_at: number | null; to_json: string; cc_json: string; list_id: string | null; code: string | null }>(
-    `SELECT m.id, m.from_name, m.from_email, m.date, m.snippet, m.subject, m.code, m.to_json, m.cc_json, m.list_id, m.is_sent, m.is_draft, m.is_trash, m.is_spam, m.body_state, m.body_tail_norm, m.attachments_captured, h.capture_id,
+  const rows = db.all<{ id: number; from_name: string; from_email: string; date: number; snippet: string; subject: string; is_sent: number; is_draft: number; is_trash: number; is_spam: number; body_state: "none" | "partial" | "full"; body_tail_norm: string | null; attachments_captured: number; capture_id: string | null; marked_at: number | null; to_json: string; cc_json: string; list_id: string | null; is_bulk: number; gmail_labels: string | null; code: string | null }>(
+    `SELECT m.id, m.from_name, m.from_email, m.date, m.snippet, m.subject, m.code, m.to_json, m.cc_json, m.list_id, m.is_bulk, m.gmail_labels, m.is_sent, m.is_draft, m.is_trash, m.is_spam, m.body_state, m.body_tail_norm, m.attachments_captured, h.capture_id,
             (SELECT n.arrived_at FROM ai_new_mail n WHERE n.message_id = m.id AND n.wants_summary = 1) AS marked_at
      FROM messages m LEFT JOIN body_heads h ON h.message_id = m.id WHERE m.thread_id = ? ORDER BY m.date, m.id`,
     threadId,
@@ -154,6 +154,9 @@ export function summarySources(db: Db, threadId: number): SummarySources | null 
   const accounts = db.all<{ id: number; email: string }>("SELECT id, lower(email) AS email FROM accounts");
   const own = new Set(accounts.map((r) => r.email));
   const messages = rows.filter((r) => r.is_draft === 0);
+  // plan 269: asked only of a role address (plan 17's level 1), once per sender
+  const writtenTo = new Map<string, boolean>();
+  const written = (key: string) => writtenTo.get(key) ?? writtenTo.set(key, db.get<{ written: number }>("SELECT written FROM correspondents WHERE email = ?", key)?.written === 1).get(key)!;
   return {
     threadId,
     accountId: thread.account_id,
@@ -177,6 +180,7 @@ export function summarySources(db: Db, threadId: number): SummarySources | null 
       to: repairAddresses(addressesOf(r.to_json)),
       cc: repairAddresses(addressesOf(r.cc_json)),
       list: r.list_id !== null,
+      person: senderIsPerson(r, { written }),
       trash: r.is_trash === 1,
       spam: r.is_spam === 1,
       bodyState: r.body_state,

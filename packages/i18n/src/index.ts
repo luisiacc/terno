@@ -10,6 +10,7 @@ import type { Key, Message, Messages, ParamsArg, Plural, RichKey, RichParams, Te
 
 export { LOCALES, LOCALE_IDS, DEFAULT_LOCALE, type LocaleId };
 export { CODE_WORDS } from "./code-words";
+export { FOOTER_WORDS } from "./footer-words";
 export type { Key, Message, Messages, Params, ParamsArg, Plural, RichKey, RichParams, TextKey, LocaleCheck, Catalog } from "./types";
 
 /** The language setting: follow the system, or one of LOCALE_IDS. */

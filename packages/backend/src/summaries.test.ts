@@ -205,6 +205,23 @@ describe("new mail", () => {
     await until(async () => expect((await row(talk.thread))?.state).toBe("ready"));
   });
 
+  it("plan 269: a machine's notice is read by its prose: its template asks for no summary, the same text from a person does, and by hand still works", async () => {
+    const { client, model, arrive, row } = await setup();
+    const notice = `1 new message awaits your response\n\nMara Velez\nLawyer at Velez & Ortiz\n\nView message: https://social.test/messaging/thread/2-YTk2ZjQ1NzQtOGRhZC00?midToken=AQH\n\nInstall the Social widgets\nStay updated at a glance\nAdd widget: https://social.test/widgets\n\n----------------------------------------\nThis email was intended for Rafa Ortiz (Founder at Ortiz Legal)\nLearn why we included this: https://social.test/help/4788\nYou are receiving Social notification emails.\nUnsubscribe: https://social.test/psettings/email-unsubscribe\n© 2026 Social Corporation, 1000 West Maude Avenue, Sunnyvale, CA 94085.`;
+    const machine = await arrive({ subject: "Mara just messaged you", from: { name: "Mara Velez via Social", email: "messaging-digest-noreply@social.test" }, bodyText: notice });
+    await until(async () => expect(await row(machine.thread)).toBeNull());
+    expect(model.requests).toHaveLength(0);
+    // a person's mail is counted as it always was
+    const person = await arrive({ subject: "Mara's note", bodyText: notice });
+    await until(async () => expect((await row(person.thread))?.state).toBe("ready"));
+    expect(model.requests).toHaveLength(1);
+    // in one conversation, a notice doesn't hide a long reply
+    const talk = await arrive({ rfcMessageId: "talk-269@test", subject: "Lease" });
+    await arrive({ inReplyTo: "talk-269@test", references: ["talk-269@test"], subject: "Re: Lease", from: { name: "Social", email: "messaging-digest-noreply@social.test" }, bodyText: notice, date: START - 30_000 });
+    await until(async () => expect((await row(talk.thread))?.state).toBe("ready"));
+    await expect(client.call("ai.summarize", { threadId: machine.thread, requestId: requestId() })).resolves.toMatchObject({ summary: expect.anything() });
+  });
+
   it("a new message on an old conversation summarizes the conversation; my reply doesn't trigger one", async () => {
     const { model, arrive, row } = await setup();
     await arrive({ providerThreadId: "t", bodyText: "An old first message about the budget." }, false);

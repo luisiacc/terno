@@ -1,5 +1,5 @@
 import { AiError, deliveryOf, SUMMARY_PROMPT_VERSION, summaryBudget, summaryPrompt, type AiTasks, type SummaryReader, type ThreadText } from "@terno/ai";
-import { withoutQuotes, type AiErrorKind, type AiProviderId, type AiSummarizeResult, type AiSummariesStatus, type AiSummary, type AiSummaryRead } from "@terno/core";
+import { readingWords, withoutQuotes, wordsIn, type AiErrorKind, type AiProviderId, type AiSummarizeResult, type AiSummariesStatus, type AiSummary, type AiSummaryRead } from "@terno/core";
 export { withoutQuotes };
 import { captureError } from "@terno/core/diag";
 import { RpcError, type AppSettings } from "@terno/core/rpc";
@@ -14,7 +14,7 @@ const MAX_ATTEMPTS = 3;
 const PAGE = 50;
 /** How long a provider that failed is left alone, with work still queued. */
 const RETRY_WAIT_MS = 60_000;
-/** A thread with less new text than this keeps its text: a summary of three lines is longer than the mail. */
+/** A thread with less new text than this keeps its text: a summary of three lines is longer than the mail (a machine's by its reading, plan 269). */
 const MIN_WORDS = 60;
 const WORD_READ_CHARS = 4000;
 
@@ -46,8 +46,6 @@ export interface SummaryHost {
   ready(threadId: number): void;
   log(level: "info" | "warn" | "error", message: string, extra?: unknown): void;
 }
-
-const wordsIn = (text: string) => (text.match(/\S+/g) ?? []).length;
 
 const day = (ms: number) => {
   const d = new Date(ms);
@@ -321,7 +319,11 @@ export class SummaryWorker {
     // it never fetches a body by itself beyond what sync does: a body arriving wakes it
     if (marks.some((m) => m.bodyState !== "full" && !m.bodyUnavailable)) return "next";
     const texts = await store.aiSummaries.text(marks.map((m) => ({ messageId: m.id, limit: WORD_READ_CHARS })));
-    const words = marks.reduce((n, m) => n + wordsIn(withoutQuotes(texts.get(m.id) ?? "")), 0);
+    // plan 269: a machine's mail counts what a person reads in it, never its template, links and footer
+    const words = marks.reduce((n, m) => {
+      const own = withoutQuotes(texts.get(m.id) ?? "");
+      return n + (m.person ? wordsIn(own) : readingWords(own));
+    }, 0);
     if (words < MIN_WORDS) {
       await store.aiSummaries.drop(row.threadId, row.throughMessageId);
       return "next";

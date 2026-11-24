@@ -69,6 +69,8 @@ export interface SummarySourceMessage {
   cc: readonly Address[];
   /** it came through a mailing list */
   list: boolean;
+  /** plan 269: plan 17's `senderIsPerson`: a machine's mail is counted by what a person reads in it */
+  person: boolean;
   trash: boolean;
   spam: boolean;
   bodyState: "none" | "partial" | "full";
