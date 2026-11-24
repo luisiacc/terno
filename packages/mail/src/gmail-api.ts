@@ -1712,7 +1712,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     },
     async describe(providerId, signal) {
       // the same lane it's admitted on and sent in (background: never a slot a message the user opens or a send needs)
-      ctx.google?.check({ endpoint: "gmail-api", purpose: "mail" }, "background");
+      ctx.requests?.check({ endpoint: "gmail-api", purpose: "mail" }, "background");
       const q = new URLSearchParams({ format: "metadata", fields: "id,internalDate,payload/headers" });
       q.append("metadataHeaders", "Subject");
       q.append("metadataHeaders", "From");
