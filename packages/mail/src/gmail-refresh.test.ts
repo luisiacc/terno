@@ -421,11 +421,23 @@ describe("plan 99: the refresh uses the account's own Google client", () => {
     expect([sent.get("client_id"), sent.get("client_secret")]).toEqual(["terno-dev", "dev-secret"]);
   });
 
-  it.each([["gone", async () => null], ["unreadable secret", async () => { throw new Error("keychain"); }]])("a client that is %s asks to sign in again, without a token request", async (_name, googleClient) => {
+  it("a client that is gone asks to sign in again, without a token request", async () => {
     const h = harness();
-    h.ctx.googleClient = googleClient;
+    h.ctx.googleClient = async () => null;
     await expect(h.provider.verify()).rejects.toBeInstanceOf(ProviderAuthError);
     expect(h.exchanges).toEqual([]);
+  });
+
+  it("plan 264: a remembered client that couldn't be read just now is retried, never a sign-in demand", async () => {
+    const h = harness();
+    h.ctx.googleClient = async () => { throw new Error("Synthetic store read failure"); };
+    const error = await h.provider.verify().catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ProviderError);
+    expect(error).not.toBeInstanceOf(ProviderAuthError);
+    expect(error).toMatchObject({ retryable: true, i18n: { key: "errors.gmail.clientUnread" } });
+    expect(h.exchanges).toEqual([]);
+    h.ctx.googleClient = async () => ({ clientId: "client", clientSecret: null });
+    await h.provider.verify();
   });
 
   it("plan 123: a context that resolves no client (none of Terno's) asks to sign in again, never reading Settings", async () => {

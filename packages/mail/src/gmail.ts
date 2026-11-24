@@ -162,14 +162,15 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
     }
   }
 
-  /** Plan 99: the client that issued the refresh token; not having it (or its secret) means signing in again, never a retry. */
+  /** Plan 99: the client that issued the refresh token; not having one this build knows means signing in again, never a retry. */
   async function oauthClient(): Promise<{ clientId: string; clientSecret: string | null }> {
     // plan 123: only the backend knows Terno's clients; a context without them can't refresh
     if (!ctx.googleClient) throw new ProviderAuthError(L("errors.gmail.reconnect"));
     let client: { clientId: string; clientSecret: string | null } | null;
     try { client = await ctx.googleClient(); } catch (error) {
       if (error instanceof Error && error.name === "AbortError") throw error;
-      throw new ProviderAuthError(L("errors.gmail.reconnect"));
+      // plan 264: our own record couldn't be read just now (a store read): that says nothing of the grant, try again
+      throw new ProviderError(L("errors.gmail.clientUnread"), true);
     }
     if (!client) throw new ProviderAuthError(L("errors.gmail.reconnect"));
     return client;

@@ -45,7 +45,7 @@ import { Forwarding } from "./forwarding";
 import { createHandlers } from "./handlers";
 import { forgetOwnGoogleClient, googleClientFor, rememberedGoogleClient, type GoogleClients } from "./google-client";
 import { restorePending } from "./import";
-import { blobFingerprint, migrateLegacySecrets, readKeychainState, SecretUnreadableError, type LegacySecretReader } from "./keychain";
+import { blobFingerprint, keychainRefusal, migrateLegacySecrets, readKeychainState, SecretUnreadableError, type LegacySecretReader } from "./keychain";
 import { createNetworkPolicy, type LookupAll, type NetDecision, type NetworkPolicy } from "./net-policy";
 import { CARRY_SLICE, carryRenamed } from "./folders";
 import { followFolderFilters } from "./similar";
@@ -884,7 +884,11 @@ export class BackendCore {
         this.lifetime(account.id);
         this.connectivity.track(account.id);
         void this.recheckSignIn(account.id, "start");
-      } else this.startAccount(account);
+      } else {
+        this.startAccount(account);
+        // plan 264: a Gmail session the keychain wouldn't open last time may open now
+        if (account.kind === "gmail" && keychainRefusal((await this.accountStatus(account.id)).refusalKey)) void this.recheckSignIn(account.id, "start");
+      }
     }
     this.syncTimer = setInterval(() => this.inBackground(this.tick()), this.options.syncIntervalMs);
     this.kickWorker();
@@ -1046,6 +1050,19 @@ export class BackendCore {
       const account = await this.store.accounts.get(accountId);
       const status = await this.accountStatus(accountId);
       const scope = status.recheck;
+      // plan 264: a Gmail refusal the keychain made (it wouldn't open the saved Google session) is ours to recheck,
+      // locally: once the session opens, the refusal lifts as a sign-in would. Google's own refusal waits for one.
+      if (account?.kind === "gmail" && scope && keychainRefusal(status.refusalKey) && this.current(life)) {
+        this.rechecked.set(accountId, this.now());
+        const recover = status.localRecoveryProof(this.statusAuthority(life));
+        if (!await this.accountRead(life, () => this.getSecret(`account:${accountId}:refreshToken`)) || !this.current(life)) return false;
+        await recover();
+        if (status.signInRequired) return false;
+        await this.resumeAuth(accountId);
+        this.watchAccount(accountId);
+        void this.syncAccount(accountId);
+        return true;
+      }
       if (account?.kind !== "imap" || !scope || !this.current(life)) return false;
       this.rechecked.set(accountId, this.now());
       // a refusal published while the login runs is newer than its answer

@@ -54,6 +54,9 @@ export class SecretUnreadableError extends Error {
   }
 }
 
+/** plan 264: a sign-in demand the keychain made (it wouldn't open a saved secret), not the server: rechecked locally */
+export const keychainRefusal = (key: string | undefined): boolean => !!key?.startsWith("errors.secret.keychain.");
+
 /** FNV-1a over the blob: tells "still the legacy blob" from "rewritten since" without keeping a copy. */
 export function blobFingerprint(blob: Uint8Array): string {
   let h = 0x811c9dc5;

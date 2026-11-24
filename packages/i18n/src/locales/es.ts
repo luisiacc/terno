@@ -3383,6 +3383,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "errors.gmail.revoked": "El inicio de sesión de Google de esta cuenta caducó o se revocó.",
   "errors.waitingForSignIn": "Esperando a que vuelvas a iniciar sesión en esta cuenta.",
   "errors.gmail.refreshOffline": "No se pudo contactar a Google para renovar el acceso: {detail}",
+  "errors.gmail.clientUnread": "No se pudo leer la configuración guardada de esta cuenta de Gmail. Terno lo intentará de nuevo en breve.",
   "errors.gmail.refreshFailed": "No se pudo renovar el acceso a Gmail ({status}).",
   "errors.gmail.reconnectWeb": "Vuelve a conectar Gmail: en el navegador, el acceso de Google dura una hora y no se guarda.",
   "errors.gmail.accessRefused": "Google no aceptó el acceso a Gmail (¿falta el permiso de Gmail?)",

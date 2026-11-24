@@ -3432,6 +3432,7 @@ It contains none of your mail, contacts, settings or keys.
   "errors.gmail.revoked": "Google’s sign-in for this account expired or was revoked.",
   "errors.waitingForSignIn": "Waiting for you to sign in to this account again.",
   "errors.gmail.refreshOffline": "Couldn’t reach Google to renew access: {detail}",
+  "errors.gmail.clientUnread": "Couldn’t read this Gmail account’s saved settings. Terno tries again shortly.",
   "errors.gmail.refreshFailed": "Couldn’t renew Gmail access ({status}).",
   "errors.gmail.reconnectWeb": "Reconnect Gmail: in the browser, Google’s access lasts an hour and isn’t saved.",
   "errors.gmail.accessRefused": "Google didn’t accept access to Gmail (is the Gmail permission missing?)",

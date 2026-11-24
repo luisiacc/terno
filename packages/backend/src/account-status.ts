@@ -51,6 +51,8 @@ export class AccountStatus {
   get signInRequired(): boolean { return this.auth?.scope === null; }
   /** What lifts a whole-account refusal besides a sign-in: IMAP accepting its own refusal again, else IMAP and SMTP. */
   get recheck(): "incoming" | "account" | null { return this.whole?.source ?? null; }
+  /** the whole-account refusal's catalog key (plan 264: a keychain refusal is rechecked locally) */
+  get refusalKey(): string | undefined { return this.whole?.failure.i18n?.key; }
   holds(kind: string): boolean { return !!this.auth && (this.auth.scope === null || kind === "send"); }
   get policyPaused(): boolean { return this.policy !== undefined; }
   get policyRevision(): number { return this.recovery; }
@@ -116,6 +118,21 @@ export class AccountStatus {
   recoveryProof(authority: StatusAuthority, scope: "account" | "incoming" = "account"): () => Promise<void> {
     const refusal = this.refusal;
     return () => refusal === this.refusal ? this.verified(authority, scope) : Promise.resolve();
+  }
+
+  /**
+   * Plan 264: a refusal our own keychain made, lifted once the secret opens: only that refusal (captured before the
+   * read: a newer one, or another key, stays), never a policy pause or a send refusal beside it.
+   */
+  localRecoveryProof(authority: StatusAuthority): () => Promise<void> {
+    const refusal = this.refusal, key = this.refusalKey;
+    return () => {
+      if (!this.current(authority) || refusal !== this.refusal || !key || this.refusalKey !== key) return Promise.resolve();
+      this.whole = undefined;
+      this.run = undefined;
+      this.state = { ...this.state, status: "idle", lastError: null, lastErrorI18n: null, authRequired: false, authScope: null, connection: null };
+      return this.publish(true);
+    };
   }
 
   verified(authority: StatusAuthority, scope: "account" | "incoming" = "account"): Promise<void> {
