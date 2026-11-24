@@ -1,6 +1,8 @@
+import type { Lang } from "../site";
+
 /** The site's copy (plan 97), English (the source language). `es.ts` must match this shape: the type check says so. */
 export const en = {
-  lang: "en",
+  lang: "en" as Lang,
   meta: {
     title: "Terno: instant, private email for Mac and Linux",
     description:
@@ -160,7 +162,7 @@ export const en = {
       body: "New mail, except spam, gets a short summary, plus a to-do when it asks something of you. Any older conversation, one click.",
       points: [],
     },
-    privacy: "AI is off until you turn it on. With Pro, each feature sends only the mail details it needs to Claude or OpenAI, through Terno’s relay, which stores none of it. Terno never sends an email for you.",
+    privacy: "AI is off until you turn it on. With Pro, each feature sends only the mail details it needs to Claude or OpenAI, through Terno’s relay, which stores none of it. Terno’s AI never sends an email for you.",
     ownKey: "Pro is AI with no keys to set up. These features also work without Pro, on your own Claude or OpenAI key or a model on your computer. Your provider may charge for use.",
   },
   keys: [
@@ -199,9 +201,10 @@ export const en = {
   footer: {
     tagline: "The last email client you’ll try.",
     privacy: "Privacy",
+    terms: "Terms",
     source: "Source",
     license: "License",
-    copyright: "© 2026 Terno",
+    copyright: "© 2026 Luisiacc LLC",
   },
   /** the app's designs by name, as its Settings call them */
   designs: { lumen: "Lumen", atelier: "Atelier", macos: "macOS", luma: "Luma", graphite: "Graphite", relief: "Relief" },
@@ -271,6 +274,135 @@ export const en = {
     },
     waitlist: { title: "Join the waitlist" },
     notFound: { title: "This page doesn’t exist", body: "The link may be old or mistyped.", home: "Go to the home page" },
+    /** the terms of service (Creem's review, 2026-11-23): use of the app, the site and Pro, and acceptable use of AI */
+    terms: {
+      title: "Terms of Service",
+      intro: "These terms cover using Terno, the email app, its AI features, Terno Pro and this website. They are short, and they say plainly what you can expect from us and what we expect from you.",
+      updated: "Last updated: November 23, 2026",
+      contents: "On this page",
+      sections: [
+        {
+          id: "agreement",
+          title: "Who we are",
+          body: [
+            "Terno is made by Luisiacc LLC (“we”, “us”). By downloading or using the Terno app, subscribing to Terno Pro or using terno.app, you agree to these terms and to our [Privacy policy](/privacy/). If you use Terno for an organization, you agree for it too. If you don’t agree, don’t use Terno.",
+          ],
+        },
+        {
+          id: "license",
+          title: "Using the app",
+          body: [
+            "The Terno app is source-available under the [Business Source License 1.1](https://github.com/luisiacc/terno/blob/main/LICENSE). That license says who may use it for free and what needs a paid subscription. In short: it is free for individuals and for Small Organizations (fewer than 100 employees and contractors combined, and less than US$5 million in revenue in the last fiscal year, counting affiliated companies), and anyone may evaluate it for 30 days. A larger organization needs a Pro subscription for each person who connects one of its email accounts to Terno. [LICENSING.md](https://github.com/luisiacc/terno/blob/main/LICENSING.md) explains it, and the license’s own words decide. These terms add to that license and never take away a right it gives you.",
+            "“Terno” and its logo are trademarks of Luisiacc LLC; see [TRADEMARKS.md](https://github.com/luisiacc/terno/blob/main/TRADEMARKS.md) for how a fork may use them.",
+          ],
+        },
+        {
+          id: "your-mail",
+          title: "Your mail and your accounts",
+          body: [
+            "Terno is an app on your computer that connects to mail accounts you already have. Your mail stays yours, and you are responsible for what you send and for following the terms of your mail providers (such as Google, Apple or Microsoft). Terno keeps its copy of your mail on your computer, not on our servers, so we can’t recover anything for you. Mail that reached your provider stays on its servers, but some things can exist only on your computer, such as unsent drafts, mail waiting to be sent, your settings and your rules. Keep that computer secure and backed up.",
+          ],
+        },
+        {
+          id: "ai",
+          title: "AI features",
+          body: [
+            "Terno’s AI features (summaries, drafted replies, “What matters”, follow-ups, Ask your mail and others) are optional and off until you turn them on. They run on a provider you choose, on a model on your computer, or, with Pro, on AI that Terno provides through Anthropic or OpenAI. When you use your own provider, its terms and usage policies apply as well as these.",
+            "AI can be wrong. Read what it writes before you rely on it or send it. Terno’s AI never sends an email on its own: a drafted reply stays a draft until you send it. Rules you set up (such as forwarding) and AI tools you allow to send through Terno’s connector act for you. You are responsible for the mail sent from your accounts, however it was written.",
+            "Terno is an independent product. It is not affiliated with or endorsed by Anthropic, OpenAI, Google, Apple or Microsoft; their names here only say which services Terno works with.",
+          ],
+        },
+        {
+          id: "acceptable-use",
+          title: "Acceptable use",
+          body: [
+            "These rules cover everything you do with Terno, and they apply to what you ask its AI to write even if you never send it. You may not use Terno, its AI features, Terno Pro or its connector for AI tools to:",
+          ],
+          points: [
+            "Generate, request or send **illegal content**, or anything meant to help someone break the law.",
+            "Generate, request or send **abusive content**: harassment, threats, bullying, defamation, or content that promotes violence, terrorism, self-harm or hatred of people for who they are.",
+            "Generate, request or send **sexual, sexually explicit or otherwise NSFW content** of any kind. Content that sexualizes minors is never allowed, and we report it where the law requires.",
+            "Harass, stalk or intimidate anyone.",
+            "Send spam, phishing, scams or bulk unsolicited mail, or impersonate a person or an organization to deceive someone.",
+            "Create or spread malware, or try to get into accounts, systems or mail that aren’t yours.",
+            "Collect, track or expose other people’s personal information without their permission or a legal right to.",
+            "Infringe anyone’s copyright, trademark, privacy or other rights.",
+            "Generate misleading content meant to deceive, such as fake reviews, fake documents or disinformation.",
+            "Abuse Terno Pro: share or resell your access, get around its limits, or overload or attack the service Terno uses to provide AI.",
+            "Break the usage policies of the AI provider your request goes to ([Anthropic](https://www.anthropic.com/legal/aup), [OpenAI](https://openai.com/policies/usage-policies/)).",
+          ],
+          after: [
+            "If you break these rules, we may suspend or end your Pro subscription, without a refund unless the law requires one, and an AI provider may refuse your requests. If you see Terno being used this way, tell us at [support@terno.app](mailto:support@terno.app).",
+          ],
+        },
+        {
+          id: "pro",
+          title: "Terno Pro",
+          body: [
+            "Terno Pro is a subscription that adds AI provided by Terno, with nothing to set up. Every other feature of Terno stays free, and the AI features also work without Pro on your own provider’s key or a model on your computer.",
+            "Pro isn’t on sale yet. This section and Refunds apply once it is. Before then, our [Privacy policy](/privacy/) will also say what Pro’s AI sends through Terno’s service and what that service keeps.",
+          ],
+          points: [
+            "**Price.** Pro is US$15 a month. The price, and any tax added for where you live, is shown at checkout before you pay.",
+            "**Payment.** Payments are handled by Creem (Armitage Labs OÜ), our reseller and merchant of record, which is the seller on your receipt and handles taxes, invoices and payment details. We never see your card.",
+            "**Renewal.** Pro is billed monthly in advance. Each billing period starts on the day of the month you subscribed, and Pro renews at the end of each one until you cancel.",
+            "**Cancelling.** Cancel at any time from the app or from the link in your receipt. You won’t be charged again, and Pro keeps working until the end of the billing period you paid for.",
+            "**Included AI.** Pro includes a monthly amount of AI use, shown in the app. If you use it all, Pro’s AI pauses until your next billing period starts, when it resets; you can switch to your own provider meanwhile. You are never charged extra automatically.",
+            "**Price changes.** If the price changes, we’ll email you at least 30 days before it applies to your subscription, so you can cancel first.",
+            "**Business use.** A Pro subscription includes using Terno for work, at an organization of any size.",
+          ],
+        },
+        {
+          id: "refunds",
+          title: "Refunds",
+          body: [
+            "If Pro isn’t right for you, email [support@terno.app](mailto:support@terno.app) within 14 days of a payment and we’ll refund that payment in full, unless we ended your Pro for breaking the Acceptable use rules. Creem issues the refund, to the way you paid. After 14 days, payments aren’t refunded, but you can cancel at any time so you aren’t charged again. A refund ends Pro, and never deletes anything on your computer. None of this limits a right to a refund that the law where you live gives you.",
+          ],
+        },
+        {
+          id: "site",
+          title: "This website",
+          body: [
+            "You may use terno.app to learn about Terno, download it and join the waitlist. Don’t try to disrupt the site, get around its limits or submit someone else’s email to the waitlist.",
+          ],
+        },
+        {
+          id: "warranty",
+          title: "No warranty",
+          body: [
+            "Terno is provided “as is” and “as available”, without warranties of any kind, express or implied, including that it will be error-free or uninterrupted, or fit for a particular purpose, to the extent the law allows. AI features can be wrong, and the services they depend on can be unavailable.",
+          ],
+        },
+        {
+          id: "liability",
+          title: "Limits on our liability",
+          body: [
+            "To the extent the law allows, Luisiacc LLC isn’t liable for indirect, incidental, special, consequential or punitive damages, or for lost data, profits or revenue, arising from your use of Terno. Our total liability for any claim about Terno is limited to the greater of what you paid for Terno Pro (including through Creem) in the 12 months before the claim, or US$50. Some places don’t allow these limits, so they may not all apply to you.",
+          ],
+        },
+        {
+          id: "ending",
+          title: "Ending",
+          body: [
+            "You can stop using Terno at any time by deleting the app, and cancel Pro as described above. We may suspend or end your access to Pro if you break these terms. Sections that by their nature should last (such as No warranty and Limits on our liability) still apply afterwards.",
+          ],
+        },
+        {
+          id: "changes",
+          title: "Changes",
+          body: [
+            "If these terms change, we’ll update this page and its date. If a change matters to a Pro subscription, we’ll email you before it takes effect; keeping Pro after that means you accept the new terms.",
+          ],
+        },
+        {
+          id: "contact",
+          title: "Contact",
+          body: [
+            "For help, billing questions or refunds, email Luisiacc LLC at [support@terno.app](mailto:support@terno.app). For privacy questions, [privacy@terno.app](mailto:privacy@terno.app).",
+          ],
+        },
+      ],
+    },
     privacy: {
       title: "Privacy",
       intro: "Terno keeps your mail on your computer. There is no Terno account, and no Terno server that stores your mail. This page says exactly what the app and this website do with your data.",
@@ -331,6 +463,7 @@ export const en = {
           body: [
             "AI is off until you choose a provider in Settings → AI: Anthropic, OpenAI, an OpenAI-compatible service (such as OpenRouter, Groq, Together or Azure OpenAI) or a model running on your computer (Ollama, LM Studio). Your key is stored on your computer and is sent only to that provider, with each request, so it knows the request is yours. Requests go straight from your computer to the provider, under its privacy terms; nothing passes through us. With a model on your computer, nothing leaves it. If you choose Anthropic or OpenAI and save a key for both, Terno divides the work between them, so your mail can reach both.",
             "Once a provider is set up, some features run on their own as mail arrives, marked **automatic** below. You can turn each one off in Settings → AI, and turn AI off for one account with “Use AI with this account” in Settings → Accounts. That account’s mail is then never sent, though its name and address can still appear when you write a filter or a typed action. Automatic features never read mail in Spam or Trash, and they stop at the monthly limit you set in Settings → AI. Attachments and images are never sent, only file names where noted.",
+            "What you may and may not use AI for is in the [Terms: Acceptable use](/terms/#acceptable-use).",
             "What each feature sends:",
           ],
           points: [

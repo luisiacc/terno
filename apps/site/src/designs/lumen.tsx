@@ -10,7 +10,7 @@ import { DESIGN_SHOTS, Shot, type ShotName } from "../parts/shot";
 import { WM_ANCHOR, WM_BENEFITS, WM_SHOT, WhatMattersNews } from "../parts/what-matters";
 import { Waitlist } from "../parts/waitlist";
 import { Window } from "../parts/window";
-import { GITHUB, LICENSE_URL } from "../site";
+import { GITHUB, LICENSE_URL, pathIn } from "../site";
 import type { HomeDesign } from "./types";
 
 /**
@@ -506,6 +506,9 @@ export const Lumen: HomeDesign = ({ copy }) => {
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
           <a href={privacy} className="lumen-footlink">
             {copy.footer.privacy}
+          </a>
+          <a href={pathIn(copy.lang, "terms")} className="lumen-footlink">
+            {copy.footer.terms}
           </a>
           <a href={GITHUB} className="lumen-footlink">
             {copy.footer.source}

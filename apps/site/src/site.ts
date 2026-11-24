@@ -16,7 +16,7 @@ export const LANGUAGES: readonly { lang: Lang; name: string }[] = [
   { lang: "es", name: "Español" },
 ];
 /** `download`: where a missing release sends you; `linux`: the Linux packages (plan 254) */
-export type PageKind = "home" | "privacy" | "download" | "linux" | "waitlist" | "404";
+export type PageKind = "home" | "privacy" | "terms" | "download" | "linux" | "waitlist" | "404";
 export interface Route {
   path: string;
   file: string;
@@ -38,7 +38,7 @@ export function routes(): Route[] {
   const list: Route[] = [];
   for (const lang of ["en", "es"] as const) {
     const other = lang === "en" ? "es" : "en";
-    for (const page of ["home", "privacy", "download", "linux", "waitlist"] as const) {
+    for (const page of ["home", "privacy", "terms", "download", "linux", "waitlist"] as const) {
       const path = `${prefix(lang)}${pagePath(page)}`;
       // download and waitlist are where a form or a missing release sends you, not search results
       list.push({ path, file: `${path.slice(1)}index.html`, page, lang, design: SITE_DESIGN, noindex: page === "download" || page === "waitlist", alternate: `${prefix(other)}${pagePath(page)}` });

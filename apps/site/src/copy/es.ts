@@ -151,7 +151,7 @@ export const es: SiteCopy = {
       body: "El correo nuevo, salvo el spam, trae un resumen breve, y una tarea por hacer cuando te pide algo. Cualquier conversación anterior, a un clic.",
       points: [],
     },
-    privacy: "La IA está desactivada hasta que la activas. Con Pro, cada función envía a Claude u OpenAI solo los datos del correo que necesita, a través del servidor intermediario de Terno, que no guarda nada. Terno nunca envía un correo por ti.",
+    privacy: "La IA está desactivada hasta que la activas. Con Pro, cada función envía a Claude u OpenAI solo los datos del correo que necesita, a través del servidor intermediario de Terno, que no guarda nada. La IA de Terno nunca envía un correo por ti.",
     ownKey: "Pro es IA sin claves que configurar. También puedes usar estas funciones sin Pro, con tu propia clave de Claude u OpenAI o con un modelo en tu ordenador. Tu proveedor puede cobrarte por el uso.",
   },
   keys: [
@@ -190,9 +190,10 @@ export const es: SiteCopy = {
   footer: {
     tagline: "El último cliente de correo que probarás.",
     privacy: "Privacidad",
+    terms: "Términos",
     source: "Código",
     license: "Licencia",
-    copyright: "© 2026 Terno",
+    copyright: "© 2026 Luisiacc LLC",
   },
   /** los diseños de la app por su nombre, como los llaman sus Ajustes */
   designs: { lumen: "Lumen", atelier: "Atelier", macos: "macOS", luma: "Luma", graphite: "Grafito", relief: "Relieve" },
@@ -259,6 +260,134 @@ export const es: SiteCopy = {
     },
     waitlist: { title: "Únete a la lista de espera" },
     notFound: { title: "Esta página no existe", body: "Puede que el enlace sea antiguo o esté mal escrito.", home: "Ir a la página de inicio" },
+    terms: {
+      title: "Términos del servicio",
+      intro: "Estos términos cubren el uso de Terno, la app de correo, sus funciones de IA, Terno Pro y este sitio web. Son breves y dicen con claridad qué puedes esperar de nosotros y qué esperamos de ti.",
+      updated: "Última actualización: 23 de noviembre de 2026",
+      contents: "En esta página",
+      sections: [
+        {
+          id: "agreement",
+          title: "Quiénes somos",
+          body: [
+            "Terno lo hace Luisiacc LLC («nosotros»). Al descargar o usar la app Terno, suscribirte a Terno Pro o usar terno.app, aceptas estos términos y nuestra [política de privacidad](/es/privacy/). Si usas Terno para una organización, también los aceptas en su nombre. Si no estás de acuerdo, no uses Terno.",
+          ],
+        },
+        {
+          id: "license",
+          title: "Uso de la app",
+          body: [
+            "La app Terno tiene el código disponible bajo la [Business Source License 1.1](https://github.com/luisiacc/terno/blob/main/LICENSE). Esa licencia dice quién puede usarla gratis y qué necesita una suscripción de pago. En resumen: es gratis para particulares y para Organizaciones Pequeñas (menos de 100 empleados y colaboradores en total, y menos de 5 millones de US$ de ingresos en el último ejercicio fiscal, contando las empresas vinculadas), y cualquiera puede evaluarla durante 30 días. Una organización más grande necesita una suscripción Pro por cada persona que conecte a Terno una de sus cuentas de correo. [LICENSING.md](https://github.com/luisiacc/terno/blob/main/LICENSING.md) lo explica, y lo que decide es el texto de la licencia. Estos términos se suman a esa licencia y nunca te quitan un derecho que te dé.",
+            "«Terno» y su logotipo son marcas de Luisiacc LLC; consulta [TRADEMARKS.md](https://github.com/luisiacc/terno/blob/main/TRADEMARKS.md) para ver cómo puede usarlas un fork.",
+          ],
+        },
+        {
+          id: "your-mail",
+          title: "Tu correo y tus cuentas",
+          body: [
+            "Terno es una app en tu ordenador que se conecta a cuentas de correo que ya tienes. Tu correo sigue siendo tuyo, y eres responsable de lo que envías y de cumplir las condiciones de tus proveedores de correo (como Google, Apple o Microsoft). Terno guarda su copia de tu correo en tu ordenador, no en nuestros servidores, así que no podemos recuperar nada por ti. El correo que llegó a tu proveedor sigue en sus servidores, pero algunas cosas pueden existir solo en tu ordenador, como los borradores sin enviar, el correo pendiente de envío, tus ajustes y tus reglas. Mantén ese ordenador seguro y con copia de seguridad.",
+          ],
+        },
+        {
+          id: "ai",
+          title: "Funciones de IA",
+          body: [
+            "Las funciones de IA de Terno (resúmenes, respuestas redactadas, «Lo importante», seguimientos, Pregunta a tu correo y otras) son opcionales y están desactivadas hasta que las activas. Funcionan con un proveedor que eliges, con un modelo en tu ordenador o, con Pro, con IA que Terno ofrece a través de Anthropic u OpenAI. Cuando usas tu propio proveedor, se aplican sus condiciones y políticas de uso además de estas.",
+            "La IA puede equivocarse. Lee lo que escribe antes de fiarte o de enviarlo. La IA de Terno nunca envía un correo por su cuenta: una respuesta redactada sigue siendo un borrador hasta que la envías. Las reglas que configuras (como el reenvío) y las herramientas de IA a las que permites enviar a través del conector de Terno actúan en tu nombre. Eres responsable del correo que se envía desde tus cuentas, lo haya escrito quien lo haya escrito.",
+            "Terno es un producto independiente. No está afiliado a Anthropic, OpenAI, Google, Apple ni Microsoft, ni cuenta con su respaldo; sus nombres aparecen aquí solo para decir con qué servicios funciona Terno.",
+          ],
+        },
+        {
+          id: "acceptable-use",
+          title: "Uso aceptable",
+          body: [
+            "Estas normas cubren todo lo que haces con Terno, y se aplican a lo que pides escribir a su IA aunque nunca lo envíes. No puedes usar Terno, sus funciones de IA, Terno Pro ni su conector para herramientas de IA para:",
+          ],
+          points: [
+            "Generar, pedir o enviar **contenido ilegal**, o cualquier cosa pensada para ayudar a alguien a infringir la ley.",
+            "Generar, pedir o enviar **contenido abusivo**: acoso, amenazas, intimidación, difamación, o contenido que promueva la violencia, el terrorismo, las autolesiones o el odio hacia las personas por quiénes son.",
+            "Generar, pedir o enviar **contenido sexual, sexualmente explícito o NSFW (no apto para el trabajo)** de cualquier tipo. El contenido que sexualiza a menores nunca está permitido, y lo denunciamos donde la ley lo exige.",
+            "Acosar, perseguir o intimidar a nadie.",
+            "Enviar spam, phishing, estafas o correo masivo no solicitado, ni suplantar a una persona u organización para engañar a alguien.",
+            "Crear o difundir malware, ni intentar entrar en cuentas, sistemas o correo que no son tuyos.",
+            "Recopilar, rastrear o exponer información personal de otras personas sin contar con su autorización ni con otra base legal para hacerlo.",
+            "Infringir los derechos de autor, marcas, privacidad u otros derechos de nadie.",
+            "Generar contenido engañoso con intención de engañar, como reseñas falsas, documentos falsos o desinformación.",
+            "Abusar de Terno Pro: compartir o revender tu acceso, saltarte sus límites, o sobrecargar o atacar el servicio que Terno usa para ofrecer la IA.",
+            "Infringir las políticas de uso del proveedor de IA al que va tu petición ([Anthropic](https://www.anthropic.com/legal/aup), [OpenAI](https://openai.com/policies/usage-policies/)).",
+          ],
+          after: [
+            "Si incumples estas normas, podemos suspender o cancelar tu suscripción Pro, sin reembolso salvo que la ley lo exija, y un proveedor de IA puede rechazar tus peticiones. Si ves que alguien usa Terno así, avísanos en [support@terno.app](mailto:support@terno.app).",
+          ],
+        },
+        {
+          id: "pro",
+          title: "Terno Pro",
+          body: [
+            "Terno Pro es una suscripción que añade IA ofrecida por Terno, sin nada que configurar. Todas las demás funciones de Terno siguen siendo gratis, y las funciones de IA también funcionan sin Pro con la clave de tu propio proveedor o con un modelo en tu ordenador.",
+            "Pro aún no está a la venta. Esta sección y la de Reembolsos se aplican cuando lo esté. Antes de eso, nuestra [política de privacidad](/es/privacy/) también dirá qué envía la IA de Pro a través del servicio de Terno y qué guarda ese servicio.",
+          ],
+          points: [
+            "**Precio.** Pro cuesta 15 US$ al mes. El precio, y cualquier impuesto que corresponda según dónde vivas, se muestra al pagar, antes de que pagues.",
+            "**Pago.** Los pagos los gestiona Creem (Armitage Labs OÜ), nuestro revendedor y comerciante registrado (merchant of record), que figura como vendedor en tu recibo y se ocupa de los impuestos, las facturas y los datos de pago. Nunca vemos tu tarjeta.",
+            "**Renovación.** Pro se cobra mensualmente por adelantado. Cada periodo de facturación empieza el día del mes en que te suscribiste, y Pro se renueva al final de cada uno hasta que lo canceles.",
+            "**Cancelación.** Cancela cuando quieras desde la app o desde el enlace de tu recibo. No se te volverá a cobrar, y Pro sigue funcionando hasta el final del periodo de facturación que pagaste.",
+            "**IA incluida.** Pro incluye una cantidad mensual de uso de IA, que se muestra en la app. Si la agotas, la IA de Pro se pausa hasta que empieza tu siguiente periodo de facturación, cuando se renueva; mientras tanto puedes usar tu propio proveedor. Nunca se te cobra nada extra automáticamente.",
+            "**Cambios de precio.** Si el precio cambia, te escribiremos al menos 30 días antes de que se aplique a tu suscripción, para que puedas cancelar antes.",
+            "**Uso profesional.** Una suscripción Pro incluye usar Terno para trabajar, en una organización de cualquier tamaño.",
+          ],
+        },
+        {
+          id: "refunds",
+          title: "Reembolsos",
+          body: [
+            "Si Pro no es para ti, escribe a [support@terno.app](mailto:support@terno.app) en los 14 días siguientes a un pago y te devolveremos ese pago completo, salvo que hayamos cancelado tu Pro por incumplir las normas de Uso aceptable. El reembolso lo emite Creem, al mismo medio con el que pagaste. Pasados 14 días, los pagos no se reembolsan, pero puedes cancelar cuando quieras para que no se te vuelva a cobrar. Un reembolso termina Pro, y nunca borra nada de tu ordenador. Nada de esto limita un derecho a reembolso que te dé la ley de donde vives.",
+          ],
+        },
+        {
+          id: "site",
+          title: "Este sitio web",
+          body: [
+            "Puedes usar terno.app para conocer Terno, descargarlo y unirte a la lista de espera. No intentes interrumpir el sitio, saltarte sus límites ni apuntar el correo de otra persona a la lista de espera.",
+          ],
+        },
+        {
+          id: "warranty",
+          title: "Sin garantía",
+          body: [
+            "Terno se ofrece «tal cual» y «según disponibilidad», sin garantías de ningún tipo, expresas o implícitas, incluida la de que funcione sin errores ni interrupciones o sea adecuado para un fin concreto, en la medida en que la ley lo permita. Las funciones de IA pueden equivocarse, y los servicios de los que dependen pueden no estar disponibles.",
+          ],
+        },
+        {
+          id: "liability",
+          title: "Límites de nuestra responsabilidad",
+          body: [
+            "En la medida en que la ley lo permita, Luisiacc LLC no responde de daños indirectos, incidentales, especiales, consecuentes o punitivos, ni de la pérdida de datos, beneficios o ingresos, derivados de tu uso de Terno. Nuestra responsabilidad total por cualquier reclamación sobre Terno se limita a la mayor de estas cantidades: lo que pagaste por Terno Pro (también a través de Creem) en los 12 meses anteriores a la reclamación, o 50 US$. En algunos lugares no se permiten estos límites, así que puede que no todos se te apliquen.",
+          ],
+        },
+        {
+          id: "ending",
+          title: "Terminación",
+          body: [
+            "Puedes dejar de usar Terno cuando quieras borrando la app, y cancelar Pro como se explica arriba. Podemos suspender o terminar tu acceso a Pro si incumples estos términos. Las secciones que por su naturaleza deben perdurar (como Sin garantía y Límites de nuestra responsabilidad) siguen aplicándose después.",
+          ],
+        },
+        {
+          id: "changes",
+          title: "Cambios",
+          body: [
+            "Si estos términos cambian, actualizaremos esta página y su fecha. Si un cambio afecta a una suscripción Pro, te escribiremos antes de que entre en vigor; seguir con Pro después significa que aceptas los nuevos términos.",
+          ],
+        },
+        {
+          id: "contact",
+          title: "Contacto",
+          body: [
+            "Para ayuda, preguntas de facturación o reembolsos, escribe a Luisiacc LLC a [support@terno.app](mailto:support@terno.app). Para preguntas de privacidad, a [privacy@terno.app](mailto:privacy@terno.app).",
+          ],
+        },
+      ],
+    },
     privacy: {
       title: "Privacidad",
       intro: "Terno guarda tu correo en tu ordenador. No hay cuenta de Terno ni ningún servidor de Terno que guarde tu correo. Esta página explica exactamente qué hacen con tus datos la app y este sitio web.",
@@ -319,6 +448,7 @@ export const es: SiteCopy = {
           body: [
             "La IA está desactivada hasta que eliges un proveedor en Ajustes → IA: Anthropic, OpenAI, un servicio compatible con OpenAI (como OpenRouter, Groq, Together o Azure OpenAI) o un modelo que se ejecuta en tu ordenador (Ollama, LM Studio). Tu clave se guarda en tu ordenador y solo se envía a ese proveedor, con cada petición, para que sepa que la petición es tuya. Las peticiones van directamente de tu ordenador al proveedor, bajo sus condiciones de privacidad; nada pasa por nosotros. Con un modelo en tu ordenador, nada sale de él. Si eliges Anthropic u OpenAI y guardas una clave de cada uno, Terno reparte el trabajo entre ambos, así que tu correo puede llegar a los dos.",
             "Con un proveedor configurado, algunas funciones trabajan solas a medida que llega el correo; abajo aparecen como **automáticas**. Puedes desactivar cada una en Ajustes → IA, y desactivar la IA para una cuenta con «Usar IA con esta cuenta» en Ajustes → Cuentas. El correo de esa cuenta ya no se envía nunca, aunque su nombre y su dirección pueden aparecer cuando escribes un filtro o una acción. Las funciones automáticas nunca leen el correo de Spam ni de la Papelera, y se detienen en el límite mensual que fijas en Ajustes → IA. Nunca se envían adjuntos ni imágenes, solo nombres de archivo donde se indica.",
+            "Para qué puedes usar la IA y para qué no está en los [Términos: Uso aceptable](/es/terms/#acceptable-use).",
             "Qué envía cada función:",
           ],
           points: [

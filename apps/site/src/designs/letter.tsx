@@ -10,7 +10,7 @@ import { DESIGN_SHOTS, Shot, type ShotName } from "../parts/shot";
 import { WM_ANCHOR, WM_BENEFITS, WM_SHOT, WhatMattersNews } from "../parts/what-matters";
 import { Waitlist } from "../parts/waitlist";
 import { Window } from "../parts/window";
-import { GITHUB, LICENSE_URL } from "../site";
+import { GITHUB, LICENSE_URL, pathIn } from "../site";
 import type { HomeDesign } from "./types";
 
 /**
@@ -340,6 +340,11 @@ export const Letter: HomeDesign = ({ copy }) => {
             <li>
               <a href={privacy} className={quiet}>
                 {copy.footer.privacy}
+              </a>
+            </li>
+            <li>
+              <a href={pathIn(copy.lang, "terms")} className={quiet}>
+                {copy.footer.terms}
               </a>
             </li>
             <li>

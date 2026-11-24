@@ -38,8 +38,36 @@ describe("prerendered pages", () => {
     });
   }
 
-  it("only the public pages per language are indexable (home, privacy, the Linux packages); previews and the 404 aren't", () => {
-    expect(routes().filter((r) => !r.noindex).map((r) => r.path)).toEqual(["/", "/privacy/", "/download/linux/", "/es/", "/es/privacy/", "/es/download/linux/"]);
+  it("only the public pages per language are indexable (home, privacy, terms, the Linux packages); previews and the 404 aren't", () => {
+    expect(routes().filter((r) => !r.noindex).map((r) => r.path)).toEqual(["/", "/privacy/", "/terms/", "/download/linux/", "/es/", "/es/privacy/", "/es/terms/", "/es/download/linux/"]);
+  });
+
+  it("every home design and every plain page links Privacy and Terms in its language; Terms bans illegal, abusive and NSFW generation (Creem's review)", () => {
+    for (const route of routes()) {
+      if (route.path.startsWith("/designs/")) continue;
+      const doc = new JSDOM(render(route).body).window.document;
+      const hrefs = new Set([...doc.querySelectorAll("footer a")].map((a) => a.getAttribute("href")));
+      const es = route.lang === "es" ? "/es" : "";
+      expect(hrefs.has(`${es}/privacy/`), route.path).toBe(true);
+      expect(hrefs.has(`${es}/terms/`), route.path).toBe(true);
+      // a plain page offers itself in the other language
+      if (route.page !== "home" && route.alternate) expect(hrefs.has(route.alternate), route.path).toBe(true);
+    }
+    for (const lang of ["en", "es"] as const)
+      for (const design of DESIGNS) {
+        const doc = new JSDOM(render({ ...routes().find((r) => r.page === "home" && r.lang === lang)!, design }).body).window.document;
+        expect([...doc.querySelectorAll("footer a")].some((a) => a.getAttribute("href") === (lang === "es" ? "/es/terms/" : "/terms/")), `${lang} ${design}`).toBe(true);
+      }
+    const bans = { en: [/may not use Terno/, /illegal content/, /abusive content/, /NSFW content/], es: [/No puedes usar Terno/, /contenido ilegal/, /contenido abusivo/, /NSFW \(no apto para el trabajo\)/] };
+    for (const lang of ["en", "es"] as const) {
+      const terms = new JSDOM(render(routes().find((r) => r.page === "terms" && r.lang === lang)!).body).window.document;
+      const aup = terms.querySelector("section#acceptable-use")?.textContent ?? "";
+      for (const ban of bans[lang]) expect(aup, `${lang} ${ban}`).toMatch(ban);
+      expect(terms.querySelector('a[href="mailto:support@terno.app"]'), lang).not.toBeNull();
+      // the privacy page's AI section points at the rules
+      const privacy = new JSDOM(render(routes().find((r) => r.page === "privacy" && r.lang === lang)!).body).window.document;
+      expect(privacy.querySelector(`section#ai a[href="${lang === "es" ? "/es" : ""}/terms/#acceptable-use"]`), lang).not.toBeNull();
+    }
   });
 
   it("the Spanish home page is in Spanish", () => {

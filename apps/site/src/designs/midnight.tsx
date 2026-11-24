@@ -493,6 +493,9 @@ export const Midnight: HomeDesign = ({ copy, route }) => {
             <a href={privacy} className={link}>
               {copy.footer.privacy}
             </a>
+            <a href={pathIn(copy.lang, "terms")} className={link}>
+              {copy.footer.terms}
+            </a>
             <a href={GITHUB} className={link}>
               {copy.footer.source}
             </a>

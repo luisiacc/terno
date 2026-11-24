@@ -160,7 +160,7 @@ test("on a phone the hero picture's tools stay on screen, and Midnight's stay re
 
 test("every page of the site is dark even when the system is light", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "light" });
-  for (const path of ["/", "/es/", "/privacy/", "/es/privacy/", "/download/", "/waitlist/", "/no-such-page/"]) {
+  for (const path of ["/", "/es/", "/privacy/", "/es/privacy/", "/terms/", "/download/", "/waitlist/", "/no-such-page/"]) {
     await page.goto(path);
     const [html, text, scheme] = await page.evaluate(() => {
       const main = document.querySelector("main")!;
@@ -173,17 +173,17 @@ test("every page of the site is dark even when the system is light", async ({ pa
   }
 });
 
-for (const path of ["/privacy/", "/es/privacy/"])
+for (const [path, anchor] of [["/privacy/", "google"], ["/es/privacy/", "google"], ["/terms/", "acceptable-use"], ["/es/terms/", "acceptable-use"]] as const)
   for (const width of [1440, 390])
-    test(`the privacy policy ${path} (${width}px) is axe-clean, fits the screen and its contents scroll to each section`, async ({ page }) => {
+    test(`the legal page ${path} (${width}px) is axe-clean, fits the screen and its contents scroll to each section`, async ({ page }) => {
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.setViewportSize({ width, height: 900 });
       await page.goto(path);
       const axe = await new AxeBuilder({ page }).withTags(AXE_TAGS).analyze();
       expect(axe.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`)).toEqual([]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
-      await page.locator('nav a[href="#google"]').click();
-      await expect(page.locator("section#google h2")).toBeInViewport();
+      await page.locator(`nav a[href="#${anchor}"]`).click();
+      await expect(page.locator(`section#${anchor} h2`)).toBeInViewport();
     });
 
 test("the Pro link lands on Terno Pro in every design, clear of a sticky header (plan 97)", async ({ page }) => {
