@@ -6,7 +6,8 @@
  *   5 min, each ±20 % (accounts and clients that lost the same server don't come back in lockstep);
  *   a success, a network change or the user starts the schedule over;
  * - offline (the host says so): one probe per account every 5 min (the OS can be wrong), nothing
- *   else; the online event cuts it short;
+ *   else; the online event cuts it short; offline told by a wake or a network change probes soon first
+ *   (at most every 15 s: plan 263);
  * - online, or the network changed (a VPN, Wi-Fi, a wake): settled 300 ms so the sources coalesce,
  *   then every socket is presumed dead (`reconnect`) and every account syncs, 0–250 ms apart.
  *
@@ -207,16 +208,14 @@ export class Connectivity {
         // Still "offline", but the network changed (a Wi-Fi joined, a VPN up, a wake): the OS can be slow or
         // wrong about offline, and a connection may be there now. One probe per account soon (a burst
         // coalesces: each change pushes the same probe), not at the 5-minute cap; a failed one waits the cap.
-        if ((reason === "network" || reason === "wake") && this.now() - this.lastChangeProbeAt >= CHANGE_PROBE_EVERY_MS) {
-          this.lastChangeProbeAt = this.now();
-          for (const [id, a] of this.accounts) if (!a.signIn) this.schedule(id, a, this.settleMs + this.random() * SYNC_JITTER_MS);
-        }
+        this.changeProbe(reason);
         return;
       }
       this.online = false;
       this.lastChangeAt = this.now();
-      // one probe per account at the cap, however soon its retry was (the OS can be wrong about offline)
-      for (const [id, a] of this.accounts) if (!this.signInRequired(id)) this.schedule(id, a, this.offlineRetryMs);
+      // one probe per account at the cap, however soon its retry was (the OS can be wrong about offline); plan 263:
+      // offline read at a wake or a change is the OS's least reliable word (Wi-Fi rejoining), so that one probes soon
+      if (!this.changeProbe(reason)) for (const [id, a] of this.accounts) if (!this.signInRequired(id)) this.schedule(id, a, this.offlineRetryMs);
       this.hooks.offline();
       return;
     }
@@ -286,6 +285,14 @@ export class Connectivity {
       }, this.random() * SYNC_JITTER_MS);
       this.jitters.add(t);
     }
+  }
+
+  /** offline, the network changed: one probe per account soon (at most every CHANGE_PROBE_EVERY_MS), not at the cap */
+  private changeProbe(reason: NetReason): boolean {
+    if ((reason !== "network" && reason !== "wake") || this.now() - this.lastChangeProbeAt < CHANGE_PROBE_EVERY_MS) return false;
+    this.lastChangeProbeAt = this.now();
+    for (const [id, a] of this.accounts) if (!this.signInRequired(id)) this.schedule(id, a, this.settleMs + this.random() * SYNC_JITTER_MS);
+    return true;
   }
 
   private restart(id: number): void {

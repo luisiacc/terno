@@ -258,3 +258,39 @@ describe("Connectivity (plan 20)", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 });
+
+describe("offline told by a wake or a change probes soon (plan 263)", () => {
+  it("an online backend told offline by a wake or a network change probes after the settle; a plain offline waits for the cap", () => {
+    for (const reason of ["wake", "network"] as const) {
+      const { c, syncs, offlineCalls } = rig();
+      for (const id of [1, 2]) c.track(id);
+      c.network(false, reason);
+      expect(offlineCalls()).toBe(1);
+      expect(c.online).toBe(false);
+      vi.advanceTimersByTime(SETTLE_MS + 250);
+      expect(syncs.map((s) => s.id).sort(), reason).toEqual([1, 2]);
+      // those failed: the cap, and the 15 s limit holds for the already-offline branch too
+      c.network(false, "network");
+      vi.advanceTimersByTime(SETTLE_MS + 250);
+      expect(syncs.length).toBe(2);
+      c.stop();
+    }
+    const { c, syncs } = rig();
+    c.track(1);
+    c.network(false, "offline");
+    vi.advanceTimersByTime(OFFLINE_RETRY_MS - 1);
+    expect(syncs).toEqual([]);
+  });
+
+  it("an account waiting for a sign-in gets no change probe (the backend's hook decides)", () => {
+    const syncs: number[] = [];
+    const c = new Connectivity({ signInRequired: (id) => id === 2, sync: (id) => { syncs.push(id); c.failed(id, c.epoch); }, reconnect: () => {}, offline: () => {} }, { random: () => 0.5 });
+    for (const id of [1, 2]) c.track(id);
+    c.network(false, "offline");
+    vi.advanceTimersByTime(CHANGE_PROBE_EVERY_MS);
+    c.network(false, "network");
+    vi.advanceTimersByTime(SETTLE_MS + 250);
+    expect(syncs).toEqual([1]);
+    c.stop();
+  });
+});
