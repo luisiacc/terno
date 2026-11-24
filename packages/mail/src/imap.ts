@@ -831,6 +831,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
   const timeouts: ImapTimeouts = { ...IMAP_TIMEOUTS, ...options.timeouts };
   /** IDLE loops of this account (normally one): reset() restarts them, a sync pings them */
   const watchers = new Set<{ restart(): void; ping(): void; signedIn(): void }>();
+  /** plan 266: Inbox arrivals IDLE has announced (EXISTS, or push back after a gap): a body run yields to the next pass */
+  let arrivals = 0;
 
   const makeClient = async (forIdle = false) => {
     const password = await ctx.getSecret("password");
@@ -1555,18 +1557,23 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
   }
 
   /**
-   * Downloads bodies newest-first (search, snippets and body filters depend on them). Plan 266: a mailbox the server
-   * won't open (not temporarily) keeps its bodies pending and the others go on.
+   * Downloads bodies newest-first (search, snippets and body filters depend on them). Plan 266: `announced` says IDLE
+   * announced new Inbox mail since the pass began: after the body under way (one at least), the rest waits for the
+   * next pass, which the announcement already asked for and which reads the new mail first. A mailbox the server won't
+   * open (not temporarily) keeps its bodies pending and the others go on.
    */
-  async function syncBodies(c: ImapFlow, sink: SyncSink) {
+  async function syncBodies(c: ImapFlow, sink: SyncSink, announced: () => boolean = () => false) {
     const requested = sink.captureRetry;
     const repair = requested?.locator.kind === "imap" ? await store.repairs?.get(ctx.account.id, requested.locator) : undefined;
     const source = repair?.state === "pending" && repair.revision === requested?.revision && repair.locator.kind === "imap" ? repair.locator : undefined;
     const pending = source ? [{ id: source.messageId, mailbox: source.mailbox, uid: source.uid, uidvalidity: source.uidvalidity }] : await store.pendingBodies(options.bodiesPerSync ?? 500);
     const byMailbox = new Map<string, { id: number; uid: number; uidvalidity: number }[]>();
     for (const p of pending) byMailbox.set(p.mailbox, [...(byMailbox.get(p.mailbox) ?? []), p]);
+    let fetched = false;
+    const yielding = () => fetched && announced();
     for (const [mailbox, all] of byMailbox) {
       if (sink.signal.aborted) return;
+      if (yielding()) break;
       let lock: Awaited<ReturnType<ImapFlow["getMailboxLock"]>>;
       try {
         lock = await c.getMailboxLock(mailbox);
@@ -1583,6 +1590,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         const check = () => signal.throwIfAborted();
         for (const item of items) {
           check();
+          if (yielding()) break;
           const locator = { kind: "imap" as const, messageId: item.id, mailbox, uid: item.uid, uidvalidity: item.uidvalidity };
           const repair = await store.repairs?.get(ctx.account.id, locator);
           if (repair?.state === "blocked") continue;
@@ -1592,6 +1600,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             releaseRead = await ctx.incoming?.acquire(accountId, sink.signal, reset);
             releaseLarge = await ctx.incoming?.promote?.(accountId, sink.signal, reset);
             check();
+            fetched = true;
             let source: Buffer | undefined;
             let invalid = false;
             // Exhaust the singleton command before processing: abort alone is not physical EOF.
@@ -1830,6 +1839,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
 
     async sync(sink) {
       sink = { ...sink, signal: AbortSignal.any([sink.signal, incomingReset.signal]) };
+      // plan 266 (Codex critique #7): what IDLE announced before this pass began is this pass's to read
+      const heard = arrivals;
+      const announced = () => arrivals !== heard;
       await withConnection(async (c) => {
         const passGeneration = generation;
         const check = () => {
@@ -2088,7 +2100,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           }
           // the preview's bodies are a head start, never a gate: one the server won't give comes with the rest
           try {
-            await syncBodies(c, sink);
+            await syncBodies(c, sink, announced);
           } catch (error) {
             // read like `tolerate` does: a refused login comes raw from the client, and stops the pass
             const e = toProviderError(error);
@@ -2218,7 +2230,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         cursor.roles = { ...r };
         await ctx.saveCursor(cursor);
         await sink.setSyncState({ syncedSince: sink.windowStart });
-        await syncBodies(c, sink);
+        await syncBodies(c, sink, announced);
         // plan 101: older mail, after everything new and its bodies
         await backfillMailboxes(c, cursor, sink, check);
         if (authoritative) await locations.resumeResolved();
@@ -2712,7 +2724,10 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           pending = c;
           const session = c;
           c.on("error", () => {});
-          c.on("exists", changed);
+          c.on("exists", () => {
+            arrivals++;
+            changed();
+          });
           c.on("expunge", changed);
           c.on("flags", changed);
           c.on("close", () => {
@@ -2739,6 +2754,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             ctx.event?.("push.restored", { durationMs: Date.now() - lostAt });
             lostAt = null;
             // whatever arrived while push was down
+            arrivals++;
             onChange();
           }
         } catch (error) {
