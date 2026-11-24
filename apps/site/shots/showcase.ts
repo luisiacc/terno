@@ -53,6 +53,8 @@ interface Thread {
   inInbox?: boolean;
   /** whom a thread you started is to (a message only you wrote has no one else to answer) */
   to?: Address;
+  /** everyone else on a group conversation: copied on each message, as a reply to all keeps them */
+  cc?: Address[];
 }
 
 const me = (account: number): Address => ({ name: ME, email: ACCOUNTS[account]!.email });
@@ -63,6 +65,10 @@ const theo = { name: "Theo Park", email: "theo@northwind.studio" };
 const marta = { name: "Marta Ruiz", email: "marta.ruiz@gmail.com" };
 const elena = { name: "Elena Sato", email: "elena@brightwater.co" };
 const nadia = { name: "Nadia Okafor", email: "nadia@northwind.studio" };
+/** Priya's team at Oak & Iron and the photographer, on the hero's conversation: the reader names each in a chip */
+const hana = { name: "Hana Lee", email: "hana@oakandiron.com" };
+const marcus = { name: "Marcus Bell", email: "marcus@oakandiron.com" };
+const leo = { name: "Leo Martins", email: "leo@leomartins.photo" };
 
 /** the newsletter that ends up filed in Reading; a promo the shots archive with everything like it */
 const fieldnotes = { name: "Fieldnotes Weekly", email: "hello@fieldnotes.email" };
@@ -91,6 +97,7 @@ const CURATED: Thread[] = [
     subject: "Homepage concepts, round two",
     tag: "client",
     starred: true,
+    cc: [hana, marcus, leo],
     messages: [
       {
         from: me(2),
@@ -105,14 +112,24 @@ const CURATED: Thread[] = [
         body: "These are lovely. The team is split between A and C. Could we try C with A’s colors?\n\nPriya",
       },
       {
+        from: hana,
+        ago: 21 * HOUR,
+        body: "Agreed, C with A’s warmer palette would let the products breathe. Happy to send over the new product photos whenever you need them.\n\nHana",
+      },
+      {
+        from: marcus,
+        ago: 5 * HOUR,
+        body: "One small ask from the shop side: could “Visit the workshop” stay above the fold? It’s our best-performing link.\n\nMarcus",
+      },
+      {
         from: priya,
         ago: 18 * MIN,
-        body: "Hi Sam,\n\nWe looked at the revised C this morning and everyone is in. The type finally feels like us, and the quieter palette makes the products the hero.\n\nTwo small things before we sign off:\n\n1. Could the headline wrap after “made”, so it reads as two lines on desktop?\n2. Let’s swap the third photo for the one from the workshop shoot.\n\nIf those are easy, we’re happy to approve on Friday and move on to the product pages. Thank you, this has been a joy.\n\nPriya",
+        body: "Hi Sam,\n\nWe looked at the revised C this morning and everyone is in. The type finally feels like us, and the quieter palette makes the products the hero.\n\nTwo small things before we sign off:\n\n1. Could the headline wrap after “made”, so it reads as two lines on desktop?\n2. Let’s swap the third photo for the one from the workshop shoot. Leo, could you send Sam the full-size file?\n\nIf those are easy, we’re happy to approve on Friday and move on to the product pages. Thank you, this has been a joy.\n\nPriya",
         html: html([
           "Hi Sam,",
           "We looked at the revised C this morning and everyone is in. The type finally feels like us, and the quieter palette makes the products the hero.",
           "Two small things before we sign off:",
-          "1. Could the headline wrap after “made”, so it reads as two lines on desktop?<br>2. Let’s swap the third photo for the one from the workshop shoot.",
+          "1. Could the headline wrap after “made”, so it reads as two lines on desktop?<br>2. Let’s swap the third photo for the one from the workshop shoot. Leo, could you send Sam the full-size file?",
           "If those are easy, we’re happy to approve on Friday and move on to the product pages. Thank you, this has been a joy.",
           "Priya",
         ]),
@@ -235,7 +252,6 @@ const CURATED: Thread[] = [
 
 const isabella = { name: "Isabella Grant", email: "isabella@larchandpine.com" };
 const daniel = { name: "Daniel Brooks", email: "daniel@brookspress.co" };
-const leo = { name: "Leo Martins", email: "leo@leomartins.photo" };
 
 const letter = (from: Address, list: string, subject: string, ago: number, paragraphs: string[]): Thread => ({
   account: 0,
@@ -441,7 +457,8 @@ function messagesOf(t: Thread, key: string, now: number): MockMessage[] {
       references: Array.from({ length: i }, (_, j) => rfc(j)),
       from: m.from,
       to: [sent ? (t.to ?? other) : me(t.account)],
-      cc: [],
+      // a group conversation: the others copied, as each reply to all keeps them (the first person it was to among them)
+      cc: t.cc ? [other, ...t.cc].filter((a) => a.email !== m.from.email && a.email !== (sent ? (t.to ?? other) : me(t.account)).email) : [],
       bcc: [],
       subject: i ? `Re: ${t.subject}` : t.subject,
       date: now - m.ago,
@@ -451,7 +468,8 @@ function messagesOf(t: Thread, key: string, now: number): MockMessage[] {
       bodyState: "full",
       listId: t.list ?? null,
       bulk: t.bulk ?? false,
-      isRead: sent || (t.read ?? false),
+      // only a conversation's newest message is new: the earlier ones were read as they came (the reader folds them)
+      isRead: sent || (t.read ?? false) || i < t.messages.length - 1,
       isStarred: t.starred ?? false,
       inInbox: t.inInbox ?? true,
       isSent: sent,

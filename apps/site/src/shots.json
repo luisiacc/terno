@@ -1,131 +1,131 @@
 {
   "inbox-dark": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "inbox-light": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "archive-similar-dark": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "archive-similar-light": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "code-dark": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "code-light": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "file-similar-dark": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "file-similar-light": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "inbox-atelier-dark": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "inbox-atelier-light": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "inbox-macos-dark": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "inbox-macos-light": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "palette-catppuccin-light": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "palette-dark": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "palette-dracula-dark": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "palette-gruvbox-dark": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "palette-light": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "palette-nord-dark": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "palette-solarized-light": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "search-dark": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "search-light": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "shortcuts-dark": {
-    "width": 1440,
+    "width": 1280,
     "height": 900
   },
   "shortcuts-light": {
-    "width": 1440,
+    "width": 1280,
     "height": 900
   },
   "snippets-dark": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "snippets-light": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "palette-catppuccin-dark": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "palette-dracula-light": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "palette-gruvbox-light": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "palette-nord-light": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "palette-solarized-dark": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "ai-action-dark": {
-    "width": 1191,
-    "height": 450
+    "width": 1035,
+    "height": 474
   },
   "ai-action-light": {
-    "width": 1191,
-    "height": 450
+    "width": 1035,
+    "height": 474
   },
   "ai-ask-dark": {
     "width": 680,
@@ -136,75 +136,75 @@
     "height": 441
   },
   "ai-digest-dark": {
-    "width": 704,
-    "height": 745
+    "width": 623,
+    "height": 792
   },
   "ai-digest-light": {
-    "width": 704,
-    "height": 745
+    "width": 623,
+    "height": 792
   },
   "ai-followups-dark": {
-    "width": 563,
+    "width": 556,
     "height": 248
   },
   "ai-followups-light": {
-    "width": 563,
+    "width": 556,
     "height": 248
   },
   "ai-generate-dark": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "ai-generate-light": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "ai-generated-dark": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "ai-generated-light": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "ai-reply-dark": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "ai-reply-light": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "ai-rule-dark": {
     "width": 1080,
-    "height": 800
+    "height": 776
   },
   "ai-rule-light": {
     "width": 1080,
-    "height": 800
+    "height": 776
   },
   "ai-summary-dark": {
-    "width": 696,
-    "height": 486
+    "width": 615,
+    "height": 470
   },
   "ai-summary-light": {
-    "width": 696,
-    "height": 486
+    "width": 615,
+    "height": 470
   },
   "archive-detail-dark": {
     "width": 512,
-    "height": 98
+    "height": 105
   },
   "archive-detail-light": {
     "width": 512,
-    "height": 98
+    "height": 105
   },
   "code-detail-dark": {
-    "width": 398,
+    "width": 400,
     "height": 228
   },
   "code-detail-light": {
-    "width": 398,
+    "width": 400,
     "height": 228
   },
   "palette-detail-dark": {
@@ -216,12 +216,12 @@
     "height": 298
   },
   "search-detail-dark": {
-    "width": 398,
-    "height": 446
+    "width": 400,
+    "height": 450
   },
   "search-detail-light": {
-    "width": 398,
-    "height": 446
+    "width": 400,
+    "height": 450
   },
   "shortcuts-detail-dark": {
     "width": 800,
@@ -241,35 +241,35 @@
   },
   "triage-detail-dark": {
     "width": 512,
-    "height": 174
+    "height": 181
   },
   "triage-detail-light": {
     "width": 512,
-    "height": 174
+    "height": 181
   },
   "unified-detail-dark": {
-    "width": 647,
-    "height": 648
+    "width": 645,
+    "height": 652
   },
   "unified-detail-light": {
-    "width": 647,
-    "height": 648
+    "width": 645,
+    "height": 652
   },
   "inbox-graphite-dark": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "inbox-graphite-light": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "inbox-luma-dark": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "inbox-luma-light": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "ai-what-matters-light": {
     "width": 1200,
@@ -280,11 +280,11 @@
     "height": 860
   },
   "inbox-relief-dark": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   },
   "inbox-relief-light": {
-    "width": 1440,
-    "height": 900
+    "width": 1280,
+    "height": 800
   }
 }

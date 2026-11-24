@@ -19,7 +19,11 @@ export const repo = join(site, "..", "..");
 const web = join(repo, "apps", "web");
 export const out = join(site, "public", "shots");
 export const ctx = { clientId: "shots", origin: "dev" as const };
-export const VIEWPORT = { width: 1440, height: 900 };
+/**
+ * The window the pictures show: a laptop-sized one, so the app reads large on the site (a 1440 px window shrinks to
+ * three quarters of itself in the hero), captured at 2× and encoded near-losslessly so its text stays crisp.
+ */
+export const VIEWPORT = { width: 1280, height: 800 };
 
 export const freePort = () =>
   new Promise<number>((resolve) => {
@@ -151,8 +155,9 @@ export function encode(raw: string, o: { og?: boolean; only?: readonly string[] 
     if (RETIRED.includes(name) || (o.only && !o.only.includes(name))) continue;
     const src = join(raw, png);
     const [w, h] = execFileSync("magick", ["identify", "-format", "%w %h", src], { encoding: "utf8" }).split(" ").map(Number) as [number, number];
-    execFileSync("cwebp", ["-quiet", "-q", "82", "-m", "6", src, "-o", join(out, `${base}@2x.webp`)]);
-    execFileSync("cwebp", ["-quiet", "-q", "86", "-m", "6", "-resize", String(Math.round(w / 2)), "0", src, "-o", join(out, `${base}.webp`)]);
+    // sharp_yuv keeps colored text and hairlines from bleeding (WebP's chroma is half resolution otherwise)
+    execFileSync("cwebp", ["-quiet", "-q", "92", "-m", "6", "-sharp_yuv", src, "-o", join(out, `${base}@2x.webp`)]);
+    execFileSync("cwebp", ["-quiet", "-q", "92", "-m", "6", "-sharp_yuv", "-resize", String(Math.round(w / 2)), "0", src, "-o", join(out, `${base}.webp`)]);
     manifest[base] = { width: Math.round(w / 2), height: Math.round(h / 2) };
   }
   if (o.og) execFileSync("magick", [join(raw, "inbox-dark.png"), "-resize", "1200x", "-gravity", "north", "-crop", "1200x630+0+0", "+repage", "-quality", "86", join(site, "public", "og.jpg")]);

@@ -16,7 +16,7 @@ import { join } from "node:path";
 import { chromium, type Page } from "@playwright/test";
 import { startDevServer } from "@terno/backend-dev/src/server";
 import type { DesignId } from "@terno/core";
-import { around, type Box, ctx, dispose, encode, fencedPage, openApp, out, pictureSettings, seedProfile, serveWeb, site } from "./lib";
+import { around, type Box, ctx, dispose, encode, fencedPage, openApp, out, pictureSettings, seedProfile, serveWeb, site, VIEWPORT } from "./lib";
 import { SHOWCASE_NOW } from "./showcase";
 
 const raw = join(site, ".shots-raw");
@@ -46,9 +46,9 @@ const rows = (page: Page, n: number) => page.getByTestId("thread-row").filter({ 
 /** rows end where a row ends: no sliver of the next one (a row's own padding is its margin) */
 const listRows = async (page: Page, first: number, last: number) => around([rows(page, first), rows(page, last)], { pad: 0, x: await listPane(page) });
 /** a dialog on its own: the app's plain background behind it, not slivers of the dimmed list (the window keeps them) */
-async function dialog(page: Page, target = page.getByRole("dialog")): Promise<Box> {
+async function dialog(page: Page, target = page.getByRole("dialog"), window?: { width: number; height: number }): Promise<Box> {
   await page.addStyleTag({ content: "[data-slot=dialog-overlay]{background:var(--background)!important;backdrop-filter:none!important}" });
-  return around([target], { pad: PAD });
+  return around([target], { pad: PAD, window });
 }
 
 const row = (page: Page, subject: string) => page.locator("[data-testid=thread-row]").filter({ has: page.getByTestId("row-subject").filter({ hasText: subject }) }).first();
@@ -156,13 +156,15 @@ const SHOTS: Shot[] = [
   },
   {
     name: "shortcuts",
+    // a taller window: the sheet is as tall as the window lets it be, and more of it reads as more of the keyboard
+    viewport: { width: VIEWPORT.width, height: 900 },
     setup: async (p) => {
       await blur(p);
       await p.keyboard.press("?");
       await p.getByTestId("shortcuts-dialog").waitFor();
       await p.waitForTimeout(300);
     },
-    details: { shortcuts: (p) => dialog(p, p.getByTestId("shortcuts-dialog")) },
+    details: { shortcuts: (p) => dialog(p, p.getByTestId("shortcuts-dialog"), { width: VIEWPORT.width, height: 900 }) },
   },
 ];
 
@@ -196,7 +198,7 @@ async function main() {
           await openApp(page, webPort, server.url, "shots");
           const target = await shot.setup?.(page);
           await page.addStyleTag({ content: "*{caret-color:transparent!important}" });
-          await page.mouse.move(1439, 899);
+          await page.mouse.move((shot.viewport ?? VIEWPORT).width - 1, (shot.viewport ?? VIEWPORT).height - 1);
           const file = join(raw, `${shot.name}-${mode}.png`);
           if (wanted(shot.name)) {
             if (target) await page.locator(target).screenshot({ path: file });

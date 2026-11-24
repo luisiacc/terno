@@ -87,12 +87,13 @@ describe("screenshots", () => {
       const page = new JSDOM(render(routes().find((r) => r.path === path)!).body).window.document;
       for (const [, name] of DESIGN_SHOTS) for (const mode of ["light", "dark"]) expect(page.querySelector(`img[src="/shots/${name}-${mode}.webp"]`), `${path} ${name}`).not.toBeNull();
     }
-    // each is a part of the 1440×900 window, framed when it was taken, in both modes
+    // each is a part of the window it was framed from when it was taken, in both modes
     for (const name of Object.values(parts).flat()) {
       for (const mode of ["light", "dark"]) {
         const size = (shots as Record<string, { width: number; height: number }>)[`${name}-detail-${mode}`];
+        const window = (shots as Record<string, { width: number; height: number }>)[`inbox-${mode}`]!;
         expect(size, `${name}-detail-${mode}`).toBeDefined();
-        expect(size!.width < 1440 || size!.height < 900, name).toBe(true);
+        expect(size!.width < window.width || size!.height < window.height, name).toBe(true);
       }
     }
   });
