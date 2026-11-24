@@ -16,23 +16,21 @@ interface Migration {
 export const REWRITE_RULE_FROM = 78;
 
 /**
- * The statements of a step that delete or rewrite rows it finds: DROP TABLE, DROP COLUMN, DELETE, UPDATE, and an
- * INSERT that may replace a row (OR REPLACE, REPLACE INTO). An INSERT that only adds rows, even copied from a SELECT,
- * destroys nothing. Comments, string literals and trigger bodies (which run later, on the app's own writes) are left
- * out first.
+ * The statements of a step that delete or rewrite rows it finds: DROP TABLE, a dropped column, DELETE, UPDATE (an
+ * upsert's DO UPDATE included), and an INSERT that may replace a row (OR REPLACE, REPLACE INTO), a WITH before any of
+ * them too. An INSERT that only adds rows, even copied from a SELECT, destroys nothing. Strings, quoted names and
+ * comments are read in one pass (a `--` inside a string isn't a comment), then trigger bodies (which run later, on
+ * the app's own writes) are left out.
  */
 export function rowRewrites(sql: string): string[] {
-  const code = sql
-    .replace(/--[^\n]*/g, " ")
-    .replace(/\/\*[\s\S]*?\*\//g, " ")
-    .replace(/'(?:[^']|'')*'/g, "''");
-  // a trigger's body ends at the END that closes its BEGIN, not one that closes a CASE inside it
+  const code = sql.replace(/'(?:[^']|'')*'|"(?:[^"]|"")*"|`[^`]*`|\[[^\]]*\]|--[^\n]*|\/\*[\s\S]*?\*\//g, (t) => (t.startsWith("--") || t.startsWith("/*") ? " " : t.startsWith("'") ? "''" : "_q"));
+  // a trigger's body runs from its BEGIN (a WHEN clause before it may hold a CASE … END of its own) to the END that
+  // closes it, not one that closes a CASE inside it
   let outside = "";
   const trigger = /\bCREATE\s+(?:TEMP\s+|TEMPORARY\s+)?TRIGGER\b/gi;
   let at = 0;
   for (let m = trigger.exec(code); m; m = trigger.exec(code)) {
     outside += code.slice(at, m.index);
-    // from the BEGIN of its body (a WHEN clause before it may hold a CASE … END of its own)
     const begin = /\bBEGIN\b/gi;
     begin.lastIndex = m.index;
     const b = begin.exec(code);
@@ -56,7 +54,7 @@ export function rowRewrites(sql: string): string[] {
   for (const raw of outside.split(";")) {
     const st = raw.trim().replace(/\s+/g, " ");
     if (!st) continue;
-    if (/^DROP TABLE\b/i.test(st) || /\bDROP COLUMN\b/i.test(st) || /^DELETE FROM\b/i.test(st) || /^UPDATE\b/i.test(st) || /^(INSERT OR REPLACE|REPLACE)\b/i.test(st)) found.push(st);
+    if (/^DROP TABLE\b/i.test(st) || /^ALTER TABLE \S+ DROP\b/i.test(st) || /\bDELETE FROM\b/i.test(st) || /\bUPDATE\b(?: OR \w+)? \S+ SET\b|\bDO UPDATE SET\b/i.test(st) || /\bOR REPLACE\b|\bREPLACE INTO\b/i.test(st)) found.push(st);
   }
   return found;
 }

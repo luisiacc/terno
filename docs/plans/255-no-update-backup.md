@@ -122,3 +122,23 @@ These override §§2–5 where they conflict. The critique is in `/tmp/terno-scr
 - **Deleted:** `clone.ts`, `backups.ts`, `restore.ts` (db and desktop), `preparing.ts` and their tests, the hold from plan 253, `quarantineForwards`, 17 strings in each locale and 7 diagnostics codes.
 - **The cover:** "Updating your mailbox…" stays only as the fallback for a migration past 400 ms. The corrupt screen's text is `mailbox.corrupt.body`. The keys `noRoom.migrate` and `upgrading.migrate` are now `….body`.
 - **Note on history:** the deletions landed inside f832a3b63 (a site commit that took the shared index while this was being built); 608b72640 completes the change.
+
+## 8. What the Codex code review changed
+
+The review is in `/tmp/terno-scratch/p255-code-review.txt`.
+
+1. **The scanner reads like SQLite** (#1–3).
+   - Strings, quoted names and comments go in one pass, so a `--` or `/*` inside a string hides nothing, and a column named `"case"`, `"end"` or `"DROP COLUMN"` is just a name.
+   - It catches a `WITH` before `DELETE` or `REPLACE`, an upsert's `DO UPDATE SET`, and `ALTER TABLE t DROP c` without `COLUMN`.
+   - Each case is in `migration-rule.test.ts`; the history list didn't move.
+2. **A full disk is tested where it can happen** (#6).
+   - Electron can't start its own profile on a disk that full, so the packaged case could never reach the gate.
+   - `upgrade.volumes.int.test.ts` fills a real HFS+ image, leaving room for the schema's read (its `-shm`) but not for the migration's pages. The migration rolls back to a step it reached, is classified as no room, and runs once the space is freed.
+   - Found on the way: on a disk full to the last block, even reading the schema fails (a WAL mailbox's reader needs its `-shm`). The backend reads it inside the open's `try`, so that's sorted the same way.
+3. **A stopped checkpoint worker's wal-index reader stays closed** (#7). The bug predates plan 253, whose fix went out with the revert.
+4. **The crash-left WAL test applies the real step** (#9) and checks the migrated schema against a fresh one, table by table and index by index.
+
+**Left as they are:**
+- **#4:** a full disk during the legacy body owner's conversion is said as unwritable. Only mailboxes from before v45 go there.
+- **#5:** a full disk that the backups' removal frees a moment after the open failed. Try Again opens it.
+- **#8:** tests that would still pass if the removal were awaited. Awaiting would be a visible code change.

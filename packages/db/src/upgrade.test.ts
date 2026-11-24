@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
-import { SCHEMA_VERSION } from "./migrations";
+import { MIGRATIONS, SCHEMA_VERSION } from "./migrations";
 import { nodeSqliteDriver } from "./node-driver";
 import { SchemaNewerError } from "./open-errors";
 import { openDatabaseWith } from "./portable";
@@ -48,13 +48,21 @@ describe("before an open (plan 255)", () => {
   it("a crash-left WAL: the schema read is SQLite's own, and the commit only in the WAL survives the migration (Codex plan review #12)", () => {
     const w = workdir();
     oldMailbox(w.db, PREV - 1, 1);
-    // the step to PREV and a draft, both only in the WAL: the main file's header still says PREV - 1
-    crashAfter(w.db, `PRAGMA user_version = ${PREV}; INSERT INTO drafts (id, generation, account_id, format, mode, to_json, cc_json, subject, body_text, body_html, updated_at) VALUES (99, 'g', 1, 2, 'new', '[]', '[]', 'only in the WAL', '', '', 5)`);
+    // the step to PREV (its real SQL) and a draft, both only in the WAL: the main file's header still says PREV - 1
+    crashAfter(w.db, `${MIGRATIONS.find((m) => m.version === PREV)!.sql}; PRAGMA user_version = ${PREV}; INSERT INTO drafts (id, generation, account_id, format, mode, to_json, cc_json, subject, body_text, body_html, updated_at) VALUES (99, 'g', 1, 2, 'new', '[]', '[]', 'only in the WAL', '', '', 5)`);
     expect(mailboxSchema(w.db)).toBe(PREV);
     const db = openDatabaseWith(nodeSqliteDriver, w.db);
     try {
       expect(db.get<{ user_version: number }>("PRAGMA user_version")!.user_version).toBe(SCHEMA_VERSION);
       expect(db.all<{ subject: string }>("SELECT subject FROM drafts ORDER BY id").map((r) => r.subject)).toEqual(["draft 1", "only in the WAL"]);
+      // the schema is whole: the step in the WAL and the one after it both there (Codex code review #9)
+      const fresh = openDatabaseWith(nodeSqliteDriver, ":memory:");
+      const shape = (d: typeof db) => d.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type IN ('table', 'index') AND name NOT LIKE 'sqlite_%' ORDER BY name").map((r) => r.name);
+      try {
+        expect(shape(db)).toEqual(shape(fresh));
+      } finally {
+        fresh.close();
+      }
     } finally {
       db.close();
     }

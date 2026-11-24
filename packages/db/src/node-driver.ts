@@ -123,8 +123,11 @@ function walIndexReader(path: string): { read(): { frameBytes: number; frames: n
   const view = new DataView(buf.buffer);
   const le = endianness() === "LE";
   let fd: number | null = null;
+  let closed = false;
   return {
     read() {
+      // a writer still waiting when the worker stopped never opens the -shm again (Codex code review, plan 255 #7)
+      if (closed) return null;
       try {
         fd ??= openSync(`${path}-shm`, "r");
         if (readSync(fd, buf, 0, 136, 0) < 136) return null;
@@ -140,6 +143,7 @@ function walIndexReader(path: string): { read(): { frameBytes: number; frames: n
       return { frameBytes: (page === 1 ? 65536 : page) + 24, frames, unchecked: Math.max(0, frames - backfilled) };
     },
     close() {
+      closed = true;
       if (fd !== null) closeSync(fd);
       fd = null;
     },

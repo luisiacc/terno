@@ -37,6 +37,16 @@ describe("migrations that touch rows (plan 255)", () => {
     ["CREATE TRIGGER t_ad AFTER DELETE ON t BEGIN UPDATE u SET n = CASE old.x WHEN 1 THEN 0 END; END; UPDATE t SET x = 0", 1],
     ["INSERT OR REPLACE INTO settings (key, value_json) VALUES ('a', '{}')", 1],
     ["DROP INDEX t_x; ALTER TABLE t RENAME TO u", 0],
+    // Codex code review #1–3: a WITH before it, an upsert, DROP without COLUMN, a -- inside a string, quoted names
+    ["WITH old AS (SELECT id FROM t) DELETE FROM t WHERE id IN old", 1],
+    ["WITH x AS (SELECT 1) REPLACE INTO t SELECT * FROM x", 1],
+    ["INSERT INTO t (k, v) VALUES (1, 2) ON CONFLICT (k) DO UPDATE SET v = excluded.v", 1],
+    ["ALTER TABLE t DROP c", 1],
+    ["INSERT INTO t VALUES (2, 'keep--this'); DELETE FROM t", 1],
+    ["INSERT INTO t VALUES ('/*'); DELETE FROM t; INSERT INTO t VALUES ('*/')", 1],
+    ['ALTER TABLE t ADD COLUMN "DROP COLUMN" TEXT', 0],
+    ['CREATE TRIGGER g AFTER INSERT ON t BEGIN UPDATE u SET "case" = 1; END; DELETE FROM t', 1],
+    ['CREATE TRIGGER g AFTER INSERT ON t BEGIN UPDATE u SET "end" = 1; DELETE FROM v; END; CREATE TABLE w (x)', 0],
   ] as const)("%s", (sql, n) => {
     expect(rowRewrites(sql)).toHaveLength(n);
   });

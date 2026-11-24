@@ -9,12 +9,11 @@
  *   backend on a timer (one backend.started in the log)
  * - a step that fails (a table the migration creates is already there): the
  *   gate says so, Try Again tries once more, the file stays at its version
- * - a profile on a full disk image: the migration rolls back, "no room", and
- *   Try Again after freeing space migrates
+ * - a full disk is packages/db's upgrade.volumes.int.test.ts: Electron
+ *   can't start its own profile on a disk that full
  * - a damaged mailbox: the gate says so, and the file is left as it is
  */
-import { execFileSync, spawnSync } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, statfsSync, writeFileSync, writeSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -32,7 +31,6 @@ const PREV = SCHEMA_VERSION - 1;
 
 let work: string;
 let app: ElectronApplication | undefined;
-const mounts: string[] = [];
 
 test.beforeAll(() => {
   if (!existsSync(APP)) throw new Error("release/mac-arm64/Terno.app missing: run `pnpm dist:mac` first");
@@ -45,7 +43,6 @@ test.afterEach(async () => {
 });
 
 test.afterAll(() => {
-  while (mounts.length) spawnSync("hdiutil", ["detach", mounts.pop()!, "-force"]);
   rmSync(work, { recursive: true, force: true });
 });
 
@@ -181,47 +178,6 @@ test("a step that fails: the gate names it, Try Again tries once more, the file 
   expect(facts(db).version).toBe(creating.version - 1);
   // plan 255: the step rolled back in its transaction; no backup was made
   expect(existsSync(join(userData, "backups"))).toBe(false);
-});
-
-test("a full disk: the migration rolls back, 'no room' says the numbers, and Try Again after freeing space migrates", async () => {
-  const image = join(work, "tight.dmg");
-  const made = spawnSync("hdiutil", ["create", "-size", "160m", "-fs", "HFS+", "-volname", "TernoTight", "-o", image], { encoding: "utf8" });
-  test.skip(made.status !== 0, `hdiutil can't make a disk image here: ${made.stderr}`);
-  const mount = join(work, "tight");
-  mkdirSync(mount);
-  execFileSync("hdiutil", ["attach", "-nobrowse", "-mountpoint", mount, image]);
-  mounts.push(mount);
-  const userData = join(mount, "profile");
-  mkdirSync(userData);
-  const db = join(userData, "terno.db");
-  oldMailbox(db, { drafts: 48, bodyKb: 500 });
-  const free = () => {
-    const s = statfsSync(mount);
-    return Number(s.bavail) * Number(s.bsize);
-  };
-  // the disk full to the last few blocks: the migration's first writes can't land
-  const filler = join(mount, "filler.bin");
-  const fd = openSync(filler, "w");
-  for (const size of [1 << 20, 1 << 14, 1 << 12]) {
-    const block = Buffer.alloc(size, 0xab);
-    try {
-      while (free() > size) writeSync(fd, block);
-    } catch {
-      /* full */
-    }
-  }
-  closeSync(fd);
-  const page = await launch(userData);
-  await expect(gate(page)).toHaveAttribute("data-kind", "no-room", { timeout: 30_000 });
-  await expect(gate(page)).toContainText(/Updating your mailbox needs about \d+[.,]\d MB free\. [\d.,]+ (KB|MB|bytes) is free now/);
-  expect(facts(db).version).toBe(PREV);
-  rmSync(filler);
-  await page.getByTestId("mailbox-retry").click();
-  await page.locator("[data-ready]").waitFor({ timeout: 60_000 });
-  await expect(gate(page)).toHaveCount(0);
-  await closePackaged(app);
-  app = undefined;
-  expect(facts(db)).toEqual({ version: SCHEMA_VERSION, drafts: 48 });
 });
 
 test("a damaged mailbox: the gate says so with Try Again and Export Diagnostics, and the file is left as it is", async () => {
