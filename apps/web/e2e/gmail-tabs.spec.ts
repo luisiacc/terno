@@ -9,7 +9,7 @@ import type { Page } from "@playwright/test";
 import { msg } from "@terno/store/conformance";
 import { sqlDb, type DevServer } from "../../backend-dev/src/server";
 import { E2E_NOW } from "./constants";
-import { menuPath, expect, rows, test } from "./fixtures";
+import { menuPath, expect, rows, selectRows, test } from "./fixtures";
 
 const accountOf = (server: DevServer, name: string) => sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM accounts WHERE display_name = ?", name)!.id;
 const rowIds = (page: Page) => page.locator("[data-testid=thread-row]").evaluateAll((els) => els.map((el) => Number(el.getAttribute("data-thread-id"))));
@@ -141,6 +141,46 @@ test.describe("Gmail's Promotions and Social (plan 86)", () => {
     await expect(page.getByTestId("menu-to-promotions")).toHaveCount(0);
     await page.getByTestId("menu-inbox").click();
     await expect(row(page, id)).toHaveCount(0);
+  });
+
+  test("a note to yourself is offered no tab; picked with another conversation, only that one moves (plan 256)", async ({ app: page, server }) => {
+    const personal = accountOf(server, "Personal");
+    const email = sqlDb(server.backend.store).get<{ email: string }>("SELECT email FROM accounts WHERE id = ?", personal)!.email;
+    // sent to yourself: Gmail keeps it in Sent and in the Inbox, and your mail never decides a tab; and a stranger's mail
+    await server.backend.store.sync.ingest(
+      [
+        msg({ accountId: personal, providerMsgId: "note-self", from: { name: "Me", email }, to: [{ name: "Me", email }], subject: "note to self", date: E2E_NOW + 5 * 60_000, isSent: true, gmailLabels: ["SENT", "INBOX"] }),
+        msg({ accountId: personal, providerMsgId: "stranger", from: { name: "Shop", email: "hello@shop.example" }, subject: "stranger subject", date: E2E_NOW + 4 * 60_000, gmailLabels: ["INBOX", "UNREAD", "CATEGORY_PERSONAL"] }),
+      ],
+      { applyFilters: false, now: E2E_NOW, classifier: null },
+    );
+    await page.reload();
+    const note = threadOf(server, "note-self");
+    const stranger = threadOf(server, "stranger");
+    await expect(row(page, note)).toBeVisible();
+
+    // alone: Move to ▸ keeps the account's labels, and neither tab
+    await row(page, note).click({ button: "right" });
+    await menuPath(page, "menu-move");
+    await expect(page.getByTestId("menu-move-list").locator("[data-testid^=menu-move-folder-]").first()).toBeVisible();
+    await expect(page.getByTestId("menu-to-promotions")).toHaveCount(0);
+    await expect(page.getByTestId("menu-to-social")).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+
+    // with a stranger's conversation: the move is offered for it, and only it leaves (one conversation said, one op)
+    await selectRows(page, [note, stranger]);
+    await row(page, stranger).click({ button: "right" });
+    await menuPath(page, "menu-move");
+    await page.getByTestId("menu-to-promotions").click();
+    await expect(page.getByTestId("snack").filter({ hasText: "Moved to Promotions" })).toBeVisible();
+    await expect(page.getByTestId("snack").filter({ hasText: "2 conversations" })).toHaveCount(0);
+    await expect(row(page, stranger)).toHaveCount(0);
+    await expect(row(page, note)).toBeVisible();
+    // (an op that has run keeps its targets in its own JSON)
+    const ops = sqlDb(server.backend.store).all<{ target_json: string }>("SELECT target_json FROM ops WHERE kind = 'toPromotions' AND account_id = ?", personal);
+    const strangerMsg = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM messages WHERE provider_msg_id = 'stranger'")!.id;
+    expect(ops.map((o) => (JSON.parse(o.target_json) as { messageIds: number[] }).messageIds)).toEqual([[strangerMsg]]);
   });
 
   test("Settings → Accounts: Separate Promotions and Social off brings them back to the Inbox at once; on takes them out", async ({ app: page, server }) => {
