@@ -249,6 +249,20 @@ describe("plan 25: an account that needs a sign-in", () => {
     await expect.poll(() => accepted.providers.get(other)?.watches ?? 0).toBe(1);
   });
 
+  it("plan 263 (code review #2): a recheck that lifts the hold syncs and watches the account even when resuming what waited fails", async () => {
+    const t = await setup();
+    const [id] = t.ids as [number];
+    t.keptRefusal(id);
+    await t.backend.setSecret(`account:${id}:password`, "saved-password");
+    t.accepts.add("saved-password");
+    const core = t.backend as unknown as { resumeAuth(id: number): Promise<void> };
+    vi.spyOn(core, "resumeAuth").mockRejectedValueOnce(new Error("synthetic: disk full"));
+    await t.backend.start();
+    await expect.poll(() => t.state(id)).toMatchObject({ authRequired: false });
+    await expect.poll(() => t.providers.get(id)?.syncs ?? 0).toBeGreaterThan(0);
+    await expect.poll(() => t.providers.get(id)?.watches ?? 0).toBe(1);
+  });
+
   it("a window's focus rechecks at most every ten minutes, Retry whenever asked; a Gmail refusal is a revoked grant, never rechecked", async () => {
     const t = await setup({ kinds: ["imap", "gmail"] });
     const [imap, gmail] = t.ids as [number, number];

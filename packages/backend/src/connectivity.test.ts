@@ -293,4 +293,29 @@ describe("offline told by a wake or a change probes soon (plan 263)", () => {
     expect(syncs).toEqual([1]);
     c.stop();
   });
+
+  it("a pass failing after a wake's offline armed the change probe doesn't postpone it to the cap (code review #5)", () => {
+    const { c, syncs } = rig();
+    c.track(1);
+    const epoch = c.epoch;
+    c.network(false, "wake");
+    // the pass that ran before the wake fails now: its backoff is the cap, the probe is sooner
+    const retry = c.failed(1, epoch)!;
+    expect(retry.at - Date.now()).toBeLessThanOrEqual(SETTLE_MS + 250);
+    vi.advanceTimersByTime(SETTLE_MS + 250);
+    expect(syncs.map((s) => s.id)).toEqual([1]);
+    c.stop();
+  });
+
+  it("\"online\" alone while online changes nothing; a wake or a route change still reconnects (code review #7)", () => {
+    const { c, reconnects } = rig();
+    c.track(1);
+    c.network(true, "online");
+    vi.advanceTimersByTime(SETTLE_MS + 250);
+    expect(reconnects).toEqual([]);
+    c.network(true, "wake");
+    vi.advanceTimersByTime(SETTLE_MS + 250);
+    expect(reconnects).toEqual(["wake"]);
+    c.stop();
+  });
 });

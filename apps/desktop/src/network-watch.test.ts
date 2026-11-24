@@ -223,7 +223,9 @@ describe("an offline report is read again (plan 263)", () => {
     expect(t.changes).toEqual([{ online: false, reason: "wake" }]);
     vi.advanceTimersByTime(3_000);
     online = true;
-    vi.advanceTimersByTime(RECHECK_MS[1]);
+    vi.advanceTimersByTime(RECHECK_MS[0] + RECHECK_MS[1] - 3_000 - 1);
+    expect(t.changes).toEqual([{ online: false, reason: "wake" }]);
+    vi.advanceTimersByTime(1);
     expect(t.changes).toEqual([{ online: false, reason: "wake" }, { online: true, reason: "online" }]);
     // the watcher's child is the only thing left
     const after = reads;
@@ -264,5 +266,19 @@ describe("an offline report is read again (plan 263)", () => {
     expect(vi.getTimerCount()).toBe(1);
     t.watch.stop();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("a route burst still settling when a read finds the network tells it once, as the burst (code review #8)", () => {
+    let online = false;
+    const t = rig({ online: () => online });
+    t.watch.start();
+    t.watch.wake();
+    vi.advanceTimersByTime(600);
+    t.say("  changedKey [0] = State:/Network/Global/IPv4\n");
+    online = true;
+    vi.advanceTimersByTime(DEBOUNCE_MS);
+    expect(t.changes).toEqual([{ online: false, reason: "wake" }, { online: true, reason: "network" }]);
+    vi.advanceTimersByTime(60_000);
+    expect(t.changes).toHaveLength(2);
   });
 });

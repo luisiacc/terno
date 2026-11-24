@@ -172,7 +172,9 @@ export class Connectivity {
     if (!a || this.stopped || this.signInRequired(accountId) || epoch !== this.epoch) return null;
     a.failures++;
     const base = this.online ? this.delays[Math.min(a.failures - 1, this.delays.length - 1)]! : this.offlineRetryMs;
-    this.schedule(accountId, a, this.jitter(base));
+    const ms = this.jitter(base);
+    // a try already due sooner (a wake's change probe armed while this pass ran) isn't postponed (plan 263)
+    if (!(a.timer && a.at !== null && a.at <= this.now() + ms)) this.schedule(accountId, a, ms);
     return { failures: a.failures, at: a.at! };
   }
 
@@ -219,6 +221,9 @@ export class Connectivity {
       this.hooks.offline();
       return;
     }
+    // plan 263: "online" alone while online (a probe that worked already said so: main's recheck catching up) is no
+    // change; a wake or a route change still is
+    if (reason === "online" && this.online && !this.settleTimer) return;
     // the most telling reason of a burst wins (a wake over a route change over "other")
     if (this.settleReason === null || rank(reason) > rank(this.settleReason)) this.settleReason = reason;
     if (this.settleTimer) this.clearTimer(this.settleTimer);

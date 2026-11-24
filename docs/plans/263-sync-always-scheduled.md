@@ -174,3 +174,36 @@ Codex critiqued the plan against the code (12 points). What changed:
     returns whether it scheduled).
 12. No change: a reconnect's jitter callbacks firing in a newer offline episode are extra probes, not lost ones; the
     pass they start fails into the offline schedule.
+
+## What the Codex code review changed
+
+One round, 11 findings (3 marked pre-existing, 2 test nits); all fixed, each with a test that fails without the fix
+except #3:
+
+1. **The poll, a reconnect and going offline could still end the backend** (pre-existing): `tick()` rejects when the
+   account list can't be read, and so did the reconnect and offline hooks. They go through `inBackground` (reported as
+   `sync.failed`), and one account's failed status read no longer ends the others' poll. Test: the list rejecting
+   once; no unhandled rejection, the next poll syncs.
+2. **A recheck that lifted an IMAP sign-in hold skipped push and the pass when resuming its ops failed**
+   (pre-existing; the hold had cancelled the probe and offline the poll is off). Push and the pass start in a
+   `finally`. Test in `resign-in.test.ts`.
+3. **The wake could still be erased** if a cooldown row expired between `cooldownChanged`'s due check and its
+   `nextWakeDelay()` read. The delay is read first now, so such a row is due by the check that follows. Not tested:
+   a window of microseconds inside one synchronous function.
+4. **Offline, a timed wake during a pass lost its follow-up** (my critique fix put it in the admission set, whose loop
+   needs online). The wake coalesces with a running pass through `syncAgain` again (that follow-up runs offline);
+   the admission loop still skips what's syncing, so nothing runs twice. Test.
+5. **A pass failing after a wake's offline armed the change probe pushed it to the cap.** `failed()` never postpones a
+   try already due sooner. Test in `connectivity.test.ts`.
+6. **Retry now on an account waiting for admission ran two passes** (the wake its policy recovery causes, then Retry's
+   own). Retry takes its accounts out of the admission set first and starts them itself. Test.
+7. **A probe that worked and main's recheck each reconnected.** "online" alone while the backend is online (no
+   settle pending) changes nothing; a wake or a route change still reconnects. Test.
+8. **The recheck and a route burst still settling each reported.** A recheck that finds a burst pending leaves the
+   report to it and goes on to its next step. Test.
+9. **An IMAP account whose provider couldn't be made at its start never got push** (pre-existing): the start's
+   watcher was skipped and nothing installed it later. A pass that works installs it if missing. The provider-failure
+   test checks push comes back.
+10. The "another pass" variant passed on the base by accident; it is its own test now, seeded with a real capacity
+    wait (fails on the base: a second pass).
+11. The network-watch test asserts silence through 3,999 ms and the report at 4,000 ms.

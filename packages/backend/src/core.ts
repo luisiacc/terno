@@ -535,8 +535,8 @@ export class BackendCore {
       {
         signInRequired: (id) => this.statuses.get(id)?.signInRequired ?? false,
         sync: (accountId) => this.syncInBackground(accountId),
-        reconnect: (reason) => void this.reconnect(reason),
-        offline: () => void this.wentOffline(),
+        reconnect: (reason) => this.inBackground(this.reconnect(reason)),
+        offline: () => this.inBackground(this.wentOffline()),
       },
       { online: options.online, now: () => this.now(), retries: options.autoSync !== false, ...options.connectivity },
     );
@@ -659,11 +659,12 @@ export class BackendCore {
     if (this.stopped || this.options.autoSync === false || !this.cooldown) return;
     // plan 263 (Codex critique #7): a change that lands after the timer is due but before its callback would erase the
     // wake (the row is ready now, so nextWakeDelay skips it): it runs here instead
+    // (the next delay first: a row that expires between the two reads is due here, never skipped by both; review #3)
+    const delay = this.cooldown.nextWakeDelay();
     const due = this.cooldownTimer !== null && performance.now() >= this.cooldownDue;
     if (this.cooldownTimer) clearTimeout(this.cooldownTimer);
     this.cooldownTimer = null;
     if (due) this.cooldownWake();
-    const delay = this.cooldown.nextWakeDelay();
     if (delay !== null) {
       this.cooldownDue = performance.now() + delay;
       this.cooldownTimer = setTimeout(() => {
@@ -682,13 +683,13 @@ export class BackendCore {
 
   /**
    * A timed Google cooldown ended: every account Google admits now syncs, whatever the network says (the pass is a
-   * probe offline). One in a pass waits for it to end (plan 263, Codex critique #6: syncing it again here and from the
-   * admission set ran it twice); the admission set's loop that follows skips what started here.
+   * probe offline). One in a pass is followed by another (syncAgain: that runs offline too); the admission set's loop
+   * that follows skips what's syncing, so nothing starts twice (plan 263, Codex critique #6, code review #4).
    */
   private cooldownWake(): void {
     for (const id of this.google.keys()) {
       if (!this.googleReady(id)) continue;
-      if (this.syncing.has(id)) this.admissionSync.add(id);
+      if (this.syncing.has(id)) this.syncAgain.add(id);
       else this.syncInBackground(id);
     }
   }
@@ -698,6 +699,14 @@ export class BackendCore {
    * error handling (a store read, a provider that can't be made) is reported, never an unhandled rejection: on desktop
    * that ends the backend, and every account with it. The next pass (the poll, or offline the probe) tries again.
    */
+  /**
+   * Plan 263 (Codex code review #1): the sync machinery nobody awaits (the poll, a reconnect, going offline) reports
+   * its failure; never an unhandled rejection.
+   */
+  private inBackground(work: Promise<unknown>): void {
+    work.catch((error: unknown) => { if (!this.stopped) captureError(error, { code: "sync.failed" }); });
+  }
+
   private syncInBackground(accountId: number, o?: { quick?: boolean }): void {
     (o ? this.syncAccount(accountId, undefined, o) : this.syncAccount(accountId)).catch((error: unknown) => {
       if (this.stopped) return;
@@ -875,7 +884,7 @@ export class BackendCore {
         void this.recheckSignIn(account.id, "start");
       } else this.startAccount(account);
     }
-    this.syncTimer = setInterval(() => void this.tick(), this.options.syncIntervalMs);
+    this.syncTimer = setInterval(() => this.inBackground(this.tick()), this.options.syncIntervalMs);
     this.kickWorker();
   }
 
@@ -891,7 +900,10 @@ export class BackendCore {
       void this.providers.get(account.id)?.then((p) => { if (life && this.current(life)) p?.heartbeat?.(); }, () => {});
       // plan 25: one that needs a sign-in isn't asked at every poll (a refused login, again and again, locks
       // accounts out); signing in again lifts it, and recheckSignIn tries the saved password at moments the user would
-      if (!this.connectivity.pending(account.id) && !(await this.accountStatus(account.id)).signInRequired) this.syncInBackground(account.id);
+      // plan 263 (Codex code review #1): one account's failed read (removed meanwhile) doesn't end the others' poll
+      try {
+        if (!this.connectivity.pending(account.id) && !(await this.accountStatus(account.id)).signInRequired) this.syncInBackground(account.id);
+      } catch (error) { if (this.stopped) return; captureError(error, { code: "sync.failed" }); }
     }
   }
 
@@ -989,6 +1001,9 @@ export class BackendCore {
     if (this.stopped) return;
     for (const account of await this.store.accounts.list()) if (accountId === null || account.id === accountId) await this.accountStatus(account.id);
     if (reason === "user") {
+      // Retry starts its accounts itself: one also waiting for Google's admission isn't started again by the wake
+      // its policy recovery causes (plan 263, Codex code review #6)
+      for (const id of this.admissionSync) if (accountId === null || accountId === id) this.admissionSync.delete(id);
       for (const [id, google] of this.google) if (accountId === null || accountId === id) google.recoverPolicy();
       this.cooldownChanged();
     }
@@ -1043,9 +1058,11 @@ export class BackendCore {
       }
       await recover();
       if (status.signInRequired) return false;
-      await this.resumeAuth(accountId);
-      this.watchAccount(accountId);
-      this.syncInBackground(accountId);
+      // the hold is gone (no probe, no poll knew of it): push and a pass start whatever resuming its ops does (plan 263)
+      try { await this.resumeAuth(accountId); } finally {
+        this.watchAccount(accountId);
+        this.syncInBackground(accountId);
+      }
       return true;
     } catch {
       // a refused (or failed) recheck never discharges the sign-in hold
@@ -2435,6 +2452,8 @@ export class BackendCore {
 
         // a probe the host thought pointless worked: it was wrong about offline (reachability can be, with some VPNs)
         if (startedOffline && !this.connectivity.online) this.networkChanged(true, "other");
+        // push, if it never started (its provider couldn't be made at the account's start): plan 263, code review #9
+        if (!this.unwatch.has(accountId)) this.watchAccount(accountId, provider);
         // the account works: whatever waited for its sign-in, or for the network, goes now
         if (!status.holds("send")) await this.accountWrite(life, () => this.resumeAuth(accountId));
         if ((await this.accountWrite(life, () => this.store.ops.resumeNetwork(accountId, this.now()))).length) this.kickWorker();

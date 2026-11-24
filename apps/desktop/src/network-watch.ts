@@ -216,7 +216,8 @@ export class NetworkWatch {
     this.recheckTimer = this.setTimer(() => {
       this.recheckTimer = null;
       if (this.stopped || this.online) return;
-      if (!this.deps.isOnline()) return this.recheck(step + 1);
+      // a burst settling soon reads it and says so itself (one report, not two: Codex code review #8)
+      if (this.debounce || !this.deps.isOnline()) return this.recheck(step + 1);
       this.online = true;
       this.print = fingerprint(this.deps.interfaces());
       this.deps.onChange({ online: true, reason: "online" });

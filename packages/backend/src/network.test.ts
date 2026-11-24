@@ -311,7 +311,7 @@ describe("plan 263: every pass leaves its account a way to sync again", () => {
     await expect.poll(() => t.state(id).status).toBe("idle");
   });
 
-  for (const resume of ["admission", "another pass"] as const) it(`a sync asked for during a Gmail pass that ends with Google's capacity full runs once Google admits it again, once (${resume})`, async () => {
+  it("a sync asked for during a Gmail pass that ends with Google's capacity full runs once Google admits it again, once", async () => {
     const t = await setup({ accounts: 1, kind: "gmail" });
     await t.backend.start();
     const id = t.ids[0]!;
@@ -332,9 +332,7 @@ describe("plan 263: every pass leaves its account a way to sync again", () => {
     expect(p.syncs).toBe(2);
     // a slot comes back: the pool tells the backend (net-policy's googleChanged)
     full.mockRestore();
-    // the pool's word, or a pass that starts first (a timed wake, the poll): that pass is the one waited for
-    if (resume === "admission") (t.backend as unknown as { cooldownChanged(): void }).cooldownChanged();
-    else await t.backend.syncAccount(id);
+    (t.backend as unknown as { cooldownChanged(): void }).cooldownChanged();
     await expect.poll(() => p.syncs).toBe(3);
     await tick(100);
     (t.backend as unknown as { cooldownChanged(): void }).cooldownChanged();
@@ -388,6 +386,8 @@ describe("plan 263: every pass leaves its account a way to sync again", () => {
       await t.backend.start();
       const id = t.ids[0]!;
       await expect.poll(() => t.providers.get(id)?.syncs, { timeout: 3_000 }).toBe(1);
+      // its push starts with the pass that worked (code review #9: the start's watcher never came)
+      await expect.poll(() => t.providers.get(id)!.watching).toBe(1);
       await tick(20);
       expect(unhandled).toEqual([]);
     } finally { process.off("unhandledRejection", listen); }
@@ -401,6 +401,81 @@ describe("plan 263: every pass leaves its account a way to sync again", () => {
     t.backend.networkChanged(false, "offline");
     vi.spyOn(t.backend.store.ops, "resumeNetwork").mockRejectedValueOnce(new Error("synthetic: disk full"));
     await expect(t.backend.retryNow(id, "user")).rejects.toThrow("disk full");
-    await expect.poll(() => t.providers.get(id)!.syncs).toBe(2);
+    // (the pass works, so the host was wrong about offline: the reconnect that follows syncs it once more)
+    await expect.poll(() => t.providers.get(id)!.syncs).toBeGreaterThanOrEqual(2);
+  });
+
+  /** a Gmail account refused for capacity with every background slot taken: it waits in the admission set */
+  const waitForAdmission = async (t: Awaited<ReturnType<typeof setup>>, id: number) => {
+    const p = t.providers.get(id)!;
+    const full = vi.spyOn(t.backend.net, "googleAvailable").mockImplementation((admission) => admission !== "background");
+    p.failWith = () => new ProviderCooldownError("gmail-api", "0", "capacity");
+    const before = p.syncs;
+    await t.backend.syncAccount(id);
+    expect(p.syncs).toBe(before + 1);
+    p.failWith = null;
+    full.mockRestore();
+  };
+
+  it("a full pass that starts while an admission wait is queued is the one it waited for: no second (code review #10)", async () => {
+    const t = await setup({ accounts: 1, kind: "gmail" });
+    await t.backend.start();
+    const id = t.ids[0]!;
+    await expect.poll(() => t.providers.get(id)?.syncs).toBe(1);
+    await waitForAdmission(t, id);
+    // a pass from elsewhere (the poll, a push) before the pool says anything
+    await t.backend.syncAccount(id);
+    await tick(100);
+    expect(t.providers.get(id)!.syncs).toBe(3);
+  });
+
+  it("Retry now on an account waiting for admission starts one pass, not two (code review #6)", async () => {
+    const t = await setup({ accounts: 1, kind: "gmail" });
+    await t.backend.start();
+    const id = t.ids[0]!;
+    await expect.poll(() => t.providers.get(id)?.syncs).toBe(1);
+    await waitForAdmission(t, id);
+    await t.backend.retryNow(id, "user");
+    await expect.poll(() => t.providers.get(id)!.syncs).toBe(3);
+    await tick(150);
+    expect(t.providers.get(id)!.syncs).toBe(3);
+  });
+
+  it("offline, a timed cooldown ending during a pass is followed by another pass at once (code review #4)", async () => {
+    const t = await setup({ accounts: 1, kind: "gmail" });
+    await t.backend.start();
+    const id = t.ids[0]!;
+    await expect.poll(() => t.providers.get(id)?.syncs).toBe(1);
+    const p = t.providers.get(id)!;
+    t.backend.networkChanged(false, "offline");
+    let open!: () => void;
+    p.gate = new Promise<void>((resolve) => { open = resolve; });
+    const pass = t.backend.syncAccount(id);
+    await expect.poll(() => p.syncs).toBe(2);
+    vi.spyOn(core(t).cooldown, "nextWakeDelay").mockReturnValueOnce(20);
+    core(t).cooldownChanged();
+    await tick(60);
+    // the server is still out of reach: the pass fails into the offline schedule (its probe a minute away)
+    p.up = false;
+    p.gate = null;
+    open();
+    await pass;
+    // this is the wake's own pass
+    await expect.poll(() => p.syncs).toBe(3);
+  });
+
+  it("a poll whose account list can't be read is reported, not an unhandled rejection; the next poll syncs (code review #1)", async () => {
+    const unhandled: unknown[] = [];
+    const listen = (reason: unknown) => void unhandled.push(reason);
+    process.on("unhandledRejection", listen);
+    try {
+      const t = await setup({ accounts: 1, syncIntervalMs: 150 });
+      await t.backend.start();
+      const id = t.ids[0]!;
+      await expect.poll(() => t.providers.get(id)?.syncs).toBe(1);
+      vi.spyOn(t.backend.store.accounts, "list").mockRejectedValueOnce(new Error("synthetic: database is locked"));
+      await expect.poll(() => t.providers.get(id)!.syncs, { timeout: 3_000 }).toBeGreaterThanOrEqual(2);
+      expect(unhandled).toEqual([]);
+    } finally { process.off("unhandledRejection", listen); }
   });
 });
