@@ -91,8 +91,7 @@ describe("Settings → AI", () => {
     await act(async () => {});
     expect(update).not.toHaveBeenCalled();
     expect(trigger.textContent).toContain("Claude or OpenAI");
-    // a deliberate pick still works
-    await act(async () => trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+    // a pick from the list (an item press, by click or Enter) still chooses it
     const ollama = document.querySelector<HTMLElement>('[data-testid="ai-choice-ollama"]')!;
     await act(async () => ollama.click());
     expect(update).toHaveBeenCalledWith({ ai: { provider: "ollama" } });
