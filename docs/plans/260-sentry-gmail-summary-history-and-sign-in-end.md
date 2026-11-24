@@ -52,8 +52,8 @@ I can't tell from the logs whether the owner abandoned both consents or whether 
 - `incremental` collects those IDs into `summary`. After the page loop:
   - **deleted** ones (a typed `messagesDeleted` anywhere in the traversal) are skipped: the deletion wins.
   - **held IDs** (a stored message, including one a typed addition just brought in) join `changed`. `relabel` reads each one with `format=minimal` and stores its labels, and a 404 on that resource marks it deleted (plan 33's rule: only the message resource's own 404 authorizes removal). This is exactly what a label change does today.
-  - **unheld IDs** (no stored message, and not a typed addition, which already tried to fetch it) are fetched in full (`fetchFull`) and ingested **only within the account's window** (`date`, Gmail's `internalDate`, at or after `windowStart`), as the reconciliation's `after:` listing would have. They come in **not as live mail**: plan 41 makes only typed history additions live, and the reconciliation that handled these records until now ingested the message that caused it as non-live too. A message that's gone by then is simply absent.
-- `peekArrivals` (the look at new mail during a long reconciliation) keeps the old conservative path for these records. A page with an untyped reference goes `lost()` as before: the look starts again from now with `gap`, so the catch-up starts at the reconciliation's baseline and `incremental` reads the reference by ID there. Without this, the look would move the refresh's cut (`refreshFrom`) past an arrival it can't place.
+  - **unheld IDs** (no stored message, and not a typed addition, which already tried to fetch it) come in **only within the account's window**, as the reconciliation's `after:` listing would have. Each one's `internalDate` is read first (`format=minimal`), **before any download**, so old mail is never captured and never leaves a capture repair. A 404 there drops it. With no date in the reply, it's taken, as a listing that can't place it would have. Only then is it fetched in full (`fetchFull`). They come in **not as live mail**: plan 41 makes only typed history additions live, and the reconciliation that handled these records until now ingested the message that caused it as non-live too. A message that's gone by then is simply absent.
+- `peekArrivals` (the look at new mail during a long reconciliation) can't place these references, so it marks the reconciliation `gap`. The catch-up then starts at the reconciliation's baseline, never at a `refreshFrom` past them, and `incremental` reads them by ID there. The look still finishes its pages and brings in the typed arrivals it read, live, and saves `peek` at the last history it read. Without the `gap`, the look would move the refresh's cut past an arrival it can't place.
 - Nothing else moves: the cursor still advances only after all effects, and a failure midway leaves the old cursor, so the pass replays (the replay finds an arrival it already took as held and only relabels it).
 
 ### TERNO-7: the sign-in's own end is expected (`packages/mail/src/gmail-web.ts`)
@@ -70,10 +70,10 @@ I can't tell from the logs whether the owner abandoned both consents or whether 
   - New: a typed record that also names the other messages in `messages`, plus old mail outside the window (`internalDate` 1970) named only there. The untyped held ones are relabelled, the deleted one stays deleted, the typed arrival stays live, and the old message is downloaded but not stored.
   - New: replay. The unheld arrival comes in, then a held message's minimal read fails. The cursor stays at the old one. After a reopen, the pass relabels the arrival (no second raw read, no second insertion, same row id) and reaches the final state.
   - The `catchup` case of "refuses deterministic %s overflow …" used a summary-only page to force a catch-up overflow. It now forces one with a real reference overflow (2,001 refs), so the plan-26 refusal stays covered.
-- `packages/mail/src/gmail-first-sync-arrivals.test.ts`: "history the look can't finish (%s) …" gains a page with an untyped reference. The look ends `gap` at now, as with an overflow.
+- `packages/mail/src/gmail-first-sync-arrivals.test.ts`: a look whose page has a typed arrival in a record that also names another message. The arrival comes in live, the other isn't downloaded, and the reconciliation keeps `peek` at the page's history with `gap` (what `gap` does to the catch-up is "a look that lost history keeps the catch-up at the baseline").
 - `packages/mail/src/gmail-auth.test.ts`: the deadline and the cancel each reject with an error that `isExpected` accepts, with `retryable` false and the same i18n key. Through `toErrorPayload`, it's `expected: true` with no `diag`.
 
-Each new test fails without its fix: the whole change (both catch-up tests, the auth test), the window filter alone, per-ID `untyped` alone (a per-record rule), and the peek fallback alone.
+Each new test fails without its fix: the whole change (both catch-up tests, the auth test), the date read alone, per-ID `untyped` alone (a per-record rule), the look's `gap` alone, and the look returning early (the first version).
 
 Two tests fail on an unchanged `HEAD` too, here with Node 24.3 (`gmail-history-ownership.test.ts` "keeps one native history reader … (eof)", and `gmail-response.test.ts` "retains an earlier valid page …"). They're unrelated to this plan.
 
@@ -110,3 +110,16 @@ Not taken:
 - **(7) Fan-out in a quick check.** 10,000 unheld references is the same fan-out 10,000 typed additions already have, under the same reference bounds.
 - **(9) The refresh branch of a catch-up overflow.** It's already covered by "a catch-up from a refresh that overflows reads the flags again …" in `gmail-first-sync-arrivals.test.ts`, which doesn't use summary records and still passes.
 - **(12) The deadline covers more than the browser wait.** It also covers preparing the callback page, launching the browser, the token exchange and the identity read. A launch that fails is already its own error ("Could not finish Google sign-in"). A local step stalling for five minutes is implausible, and a stalled token exchange or identity read is Google's or the network's, not ours.
+
+## 8. What the Codex code review changed
+
+One round, five findings. Two fixed:
+
+- **The window was checked after the download.** An old unheld message was captured before the date filter, so a capture refusal could leave a durable repair whose retry ingests it, and the date could fall back to the sender's header. `incremental` now reads Gmail's `internalDate` (`format=minimal`) before any download and drops old ones there. The test checks that the old message gets only that minimal read.
+- **The look gave up on the whole page.** Returning `lost()` on an untyped reference also dropped the typed arrivals beside it until the final catch-up, which can be hours away in a long reconciliation. The look now finishes and brings them in live, and only marks `gap`, with a test.
+
+Not taken:
+
+- **`historyTypes` may filter out summary-only records.** The filter predates this plan, and the records that failed came through it. Unfiltered history would change every read (out of scope, as in §7).
+- **A no-callback deadline might be a broken OAuth configuration, not an abandoned consent.** True: from the backend's side they look the same. A shipped configuration that breaks every consent would show in the owner's own sign-in and the packaged checks (plan 258 pins the consent URL). Reporting every abandoned consent as a bug is the noise TERNO-7 is. It's left to the owner (§1).
+- **The look's test stops before the catch-up.** What `gap` does to the catch-up already has its own test ("a look that lost history keeps the catch-up at the baseline"). The new test checks that the look sets it.

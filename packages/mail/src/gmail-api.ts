@@ -1104,7 +1104,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     // in the order last changed (an id changed again moves to the end)
     const changed = new Set<string>();
     const pages = new Set<string>();
-    let pageToken: string | undefined, latest = from, count = 0, references = 0;
+    let pageToken: string | undefined, latest = from, count = 0, references = 0, unplaced = false;
     // (Codex review: never the same dead cursor every chunk; plan 227: nor the same too-long history)
     const lost = async () => {
       const now = readBaseline(await syncRead("/profile", sink));
@@ -1128,8 +1128,8 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       pageToken = continuation(page.nextPageToken, pages);
       if (earlierHistory(page.historyId, latest)) throw invalidResponse();
       // plan 260 (Codex critique): a message named without a change type may be an arrival this look can't place; the
-      // catch-up then starts from the baseline (and reads it by ID) rather than after it
-      if (page.history?.some((h) => untyped(h).length)) return lost();
+      // catch-up then starts from the baseline (and reads it by ID) rather than after it. The look still does the rest.
+      if (page.history?.some((h) => untyped(h).length)) unplaced = true;
       for (const h of page.history ?? []) {
         for (const a of h.messagesAdded ?? []) added.add(a.message.id);
         for (const d of h.messagesDeleted ?? []) deleted.add(d.message.id);
@@ -1168,7 +1168,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     for (let i = 0; i < fresh.length; i += 50) await fetchFull(fresh.slice(i, i + 50), live);
     const rest = new Map(others.slice(0, PEEK_RELABEL - yours.size));
     await relabel([...rest.keys()], sink, async (id) => rest.get(id), () => {});
-    if (latest !== from) await save({ ...state, peek: latest });
+    if (latest !== from || (unplaced && !state.gap)) await save({ ...state, peek: latest, ...(unplaced && { gap: true }) });
   }
 
   /** The stored message a Gmail id names, yielding every 50 lookups. */
@@ -1403,7 +1403,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     for (let i = 0; i < toFetch.length; i += 50) await fetchFull(toFetch.slice(i, i + 50), live);
     // plan 260: a summary-only message held here is relabelled (a 404 removes it); one not held comes in whole as a
     // reconciliation would have brought it: within the account's window, and not live (only a typed addition says new)
-    const unheld: string[] = [];
+    let unheld: string[] = [];
     let looked = 0;
     for (const id of summary) {
       if (++looked % 50 === 0) { await new Promise<void>((resolve) => setTimeout(resolve, 0)); sink.check(); }
@@ -1411,11 +1411,26 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       if (await known(id)) changed.add(id);
       else if (!added.has(id)) unheld.push(id);
     }
-    const windowed: SyncPass = { ...sink, ingest: async (messages, o) => {
-      const inWindow = messages.filter((m) => m.date >= sink.windowStart);
-      if (inWindow.length) await sink.ingest(inWindow, o);
-    } };
-    for (let i = 0; i < unheld.length; i += 50) await fetchFull(unheld.slice(i, i + 50), windowed);
+    // (Codex code review) the window by Gmail's own date, read before any download: old mail is never captured, nor
+    // left a capture repair; no date said, it's taken (as a listing that can't place it would have)
+    if (sink.windowStart > 0 && unheld.length) {
+      const old = new Set<string>();
+      for (let i = 0; i < unheld.length; i += 50) {
+        await download(unheld.slice(i, i + 50), async (gid) => {
+          try {
+            const m = await syncRead(`/messages/${gid}?format=minimal`, sink);
+            const at = isRecord(m) && typeof m.internalDate === "string" && /^\d+$/.test(m.internalDate) ? Number(m.internalDate) : undefined;
+            if (at !== undefined && at < sink.windowStart) old.add(gid);
+          } catch (e) {
+            if (e instanceof GmailApiError && e.resource === `/messages/${gid}?format=minimal` && e.status === 404) old.add(gid);
+            else throw e;
+          }
+        });
+        sink.check();
+      }
+      unheld = unheld.filter((gid) => !old.has(gid));
+    }
+    for (let i = 0; i < unheld.length; i += 50) await fetchFull(unheld.slice(i, i + 50), sink);
 
     await relabel([...changed].filter((gid) => !deleted.has(gid)), sink, known, (gid) => deleted.add(gid));
     sink.check();

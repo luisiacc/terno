@@ -295,6 +295,19 @@ describe("plan 227: changes during a first sync", () => {
     expect(t.cursor().reconciliation).toMatchObject({ stage: "enumerate", peek: "105" });
   });
 
+  // plan 260: a message named without a change type may be an arrival the look can't place: the catch-up keeps its baseline
+  // (gap), and the look still brings in what it can place (Codex code review: not a whole reconciliation later)
+  it("a message named without a change type keeps the catch-up at the baseline, and the look's arrivals still come in live", async () => {
+    let history: unknown[] = [];
+    const t = listing({ history: () => ({ historyId: history.length ? "105" : "100", history }) });
+    await t.pass();
+    history = [{ ...added(["fresh7"]), messages: [{ id: "fresh7" }, { id: "unplaced" }] }];
+    await t.pass();
+    expect(t.ingested.find((b) => b.ids.includes("fresh7"))).toEqual({ ids: ["fresh7"], live: true });
+    expect(t.downloads).not.toContain("unplaced");
+    expect(t.cursor().reconciliation).toMatchObject({ stage: "enumerate", peek: "105", gap: true });
+  });
+
   it("your send that Gmail puts in your Inbox a look later still goes before the look's downloads (Codex review)", async () => {
     let history: unknown[] = [];
     const labels: Record<string, string[]> = { self: ["SENT"] };
@@ -368,15 +381,12 @@ describe("plan 227: changes during a first sync", () => {
     expect(t.cursor().reconciliation).toMatchObject({ peek: "105" });
   });
 
-  // plan 260 (Codex critique): a message named without a change type may be an arrival the look can't place; the catch-up
-  // must still start at the baseline, so the look can't move the refresh's cut past it
-  it.each(["repeated page", "too many references", "a message with no change type"] as const)("history the look can't finish (%s) starts it again from now, not the same history every chunk", async (kind) => {
+  it.each(["repeated page", "too many references"] as const)("history the look can't finish (%s) starts it again from now, not the same history every chunk", async (kind) => {
     let history = false;
     const t = listing({
       historyId: () => (history ? "300" : "100"),
       history: (url) => {
         if (!history) return { historyId: "100" };
-        if (kind === "a message with no change type") return { historyId: "105", history: [{ messages: [{ id: "m-arrived" }] }] };
         if (kind === "repeated page") return { historyId: "105", history: [relabeled(["m00001"])], nextPageToken: "again" };
         // 2,000 references a page (the most a page holds), six pages: past what a look reads
         const page = Number(url.searchParams.get("pageToken") ?? 0);

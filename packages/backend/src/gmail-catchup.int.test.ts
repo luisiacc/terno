@@ -116,7 +116,7 @@ async function mailbox(kind: "SQL" | "IndexedDB", retries = false) {
     if (id === "arrival" && rawStatus !== 200) return json({}, rawStatus);
     const message = messages.get(id);
     if (!message) return json({}, 404);
-    const minimal = { id, labelIds: message.labelIds };
+    const minimal = { id, labelIds: message.labelIds, ...(message.internalDate !== undefined && { internalDate: message.internalDate }) };
     return json(url.searchParams.get("format") === "raw" ? message : minimalPayload ? minimalPayload(minimal) : minimal);
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -387,7 +387,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s public Gmail full-sync catch-up
     expect(t.requests.some((r) => r.pathname === "/messages" || r.pathname === "/profile")).toBe(false);
     // what's held is read minimal; what isn't comes in whole, not as live mail (only a typed addition says it's new)
     expect(t.requests.filter((r) => r.pathname.startsWith("/messages/")).map((r) => `${r.pathname.slice(10)}:${r.searchParams.get("format")}`).sort())
-      .toEqual(["archive:minimal", "arrival:raw", "deleted:minimal", "read:minimal"]);
+      .toEqual(["archive:minimal", "arrival:minimal", "arrival:raw", "deleted:minimal", "read:minimal"]);
     expect(t.ingested).toEqual([{ id: "arrival", live: false }]);
     await t.assertFinal();
     await t.reopen();
@@ -406,10 +406,12 @@ describe.each(["SQL", "IndexedDB"] as const)("%s public Gmail full-sync catch-up
       // one typed record also names the others in `messages`, with no typed change for them
       return { ...p, history: [{ ...p.history[0], messages: [{ id: "arrival" }, { id: "archive" }, { id: "deleted" }, { id: "read" }, { id: "old" }] }] };
     });
-    t.ingested.length = 0;
+    t.ingested.length = 0; t.requests.length = 0;
     await t.backend.syncAccount(t.account.id);
     expect((await t.backend.store.accounts.get(t.account.id))?.syncState).toMatchObject({ status: "idle", lastError: null });
     expect(t.ingested).toEqual([{ id: "arrival", live: true }]);
+    // its date is read first: the old message is never downloaded (no capture, no repair)
+    expect(t.requests.filter((r) => r.pathname === "/messages/old").map((r) => r.searchParams.get("format"))).toEqual(["minimal"]);
     await t.assertFinal();
   });
 
