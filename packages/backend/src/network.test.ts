@@ -29,7 +29,7 @@ afterEach(async () => {
   for (const c of cleanups.splice(0).reverse()) await c();
 });
 
-async function setup(o: { syncIntervalMs?: number; accounts?: number; kind?: "imap" | "gmail"; offlineRetryMs?: number; createFails?: number } = {}) {
+async function setup(o: { syncIntervalMs?: number; accounts?: number; kind?: "imap" | "gmail"; offlineRetryMs?: number; createFails?: number; autoSync?: boolean } = {}) {
   const providers = new Map<number, Scripted>();
   let createFails = o.createFails ?? 0;
   const registry: ProviderRegistry = {
@@ -76,7 +76,7 @@ async function setup(o: { syncIntervalMs?: number; accounts?: number; kind?: "im
     version: "t",
     cipher: plaintextCipher,
     providers: registry,
-    autoSync: true,
+    autoSync: o.autoSync ?? true,
     syncIntervalMs: o.syncIntervalMs ?? 3_600_000,
     onNetworkReset: () => void resets++,
     connectivity: { delays: [150, 300, 600], settleMs: 30, offlineRetryMs: o.offlineRetryMs ?? 60_000 },
@@ -473,9 +473,43 @@ describe("plan 263: every pass leaves its account a way to sync again", () => {
       await t.backend.start();
       const id = t.ids[0]!;
       await expect.poll(() => t.providers.get(id)?.syncs).toBe(1);
-      vi.spyOn(t.backend.store.accounts, "list").mockRejectedValueOnce(new Error("synthetic: database is locked"));
+      await expect.poll(() => t.state(id).status).toBe("idle");
+      // the poll's own read fails (the first pass is over: it's the next caller; a spy on tick would handle its
+      // promise itself, so the read says who called it)
+      let caller = "";
+      vi.spyOn(t.backend.store.accounts, "list").mockImplementationOnce(() => {
+        caller = new Error().stack ?? "";
+        return Promise.reject(new Error("synthetic: database is locked"));
+      });
+      await expect.poll(() => caller, { timeout: 3_000 }).not.toBe("");
+      expect(caller).toContain("tick");
       await expect.poll(() => t.providers.get(id)!.syncs, { timeout: 3_000 }).toBeGreaterThanOrEqual(2);
       expect(unhandled).toEqual([]);
     } finally { process.off("unhandledRejection", listen); }
+  });
+
+  it("a reconnect's watcher whose provider can't be made is no unhandled rejection (code review round 2 #1)", async () => {
+    const unhandled: unknown[] = [];
+    const listen = (reason: unknown) => void unhandled.push(reason);
+    process.on("unhandledRejection", listen);
+    try {
+      const t = await setup({ accounts: 1, createFails: 2 });
+      await t.backend.start();
+      await tick(100);
+      t.backend.networkChanged(true, "network");
+      await expect.poll(() => t.providers.get(t.ids[0]!)?.syncs ?? 0, { timeout: 3_000 }).toBeGreaterThanOrEqual(1);
+      await tick(50);
+      expect(unhandled).toEqual([]);
+    } finally { process.off("unhandledRejection", listen); }
+  });
+
+  it("with autoSync off, a sync by hand that works starts no push (code review round 2 #3)", async () => {
+    const t = await setup({ accounts: 1, autoSync: false });
+    await t.backend.start();
+    const id = t.ids[0]!;
+    await t.backend.syncAccount(id);
+    expect(t.providers.get(id)!.syncs).toBe(1);
+    await tick(50);
+    expect(t.providers.get(id)!.watches).toBe(0);
   });
 });

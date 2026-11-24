@@ -2086,7 +2086,7 @@ export class BackendCore {
     void (known ? Promise.resolve(known) : this.provider(accountId)).then((provider) => {
       if (!provider?.watch || !this.current(life) || !this.connectivity.online || this.unwatch.has(accountId) || !this.connectivity.tracked(accountId)) return;
       this.unwatch.set(accountId, provider.watch(() => { if (this.current(life)) this.syncInBackground(accountId); }));
-    });
+    }, () => {}); // a provider that can't be made: the pass reports it (plan 263, code review round 2 #1)
   }
 
   async dropAccount(accountId: number, options: { remove?: boolean } = {}): Promise<void> {
@@ -2453,7 +2453,7 @@ export class BackendCore {
         // a probe the host thought pointless worked: it was wrong about offline (reachability can be, with some VPNs)
         if (startedOffline && !this.connectivity.online) this.networkChanged(true, "other");
         // push, if it never started (its provider couldn't be made at the account's start): plan 263, code review #9
-        if (!this.unwatch.has(accountId)) this.watchAccount(accountId, provider);
+        if (this.options.autoSync !== false && !this.unwatch.has(accountId)) this.watchAccount(accountId, provider);
         // the account works: whatever waited for its sign-in, or for the network, goes now
         if (!status.holds("send")) await this.accountWrite(life, () => this.resumeAuth(accountId));
         if ((await this.accountWrite(life, () => this.store.ops.resumeNetwork(accountId, this.now()))).length) this.kickWorker();

@@ -207,3 +207,23 @@ except #3:
 10. The "another pass" variant passed on the base by accident; it is its own test now, seeded with a real capacity
     wait (fails on the base: a second pass).
 11. The network-watch test asserts silence through 3,999 ms and the report at 4,000 ms.
+
+### Second round (7 findings)
+
+Fixed, each with a test that fails without it:
+
+1. **A watcher whose provider couldn't be made was an unhandled rejection** (`watchAccount` had no rejection handler;
+   the recheck's new `finally` and a reconnect both reach it). It ignores the failure: the pass reports it. Test: a
+   reconnect while provider creation fails.
+2. **With autoSync off, a sync by hand that worked started push** (the first round's #9). Push starts there only with
+   autoSync on. Test.
+3. The poll test now proves the failing read was the poll's own (its stack), and the recheck test holds the pass so
+   push must come from the recheck itself.
+
+Not changed (rare, and none a regression against the base):
+
+- "online" ignored while online could, after a probe's reconnect whose account-list read failed, skip a later
+  host-triggered recovery for an account held for its sign-in: needs a store read failing inside a reconnect.
+- Two cooldowns expiring within a millisecond of each other can queue one redundant pass.
+- A timed wake during a pass still waiting for a folder change gives one redundant pass, and a failure in that pass
+  skips its online backoff once: the base's wake did the same (`syncAccount` → `syncAgain`).

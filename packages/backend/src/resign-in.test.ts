@@ -257,10 +257,14 @@ describe("plan 25: an account that needs a sign-in", () => {
     t.accepts.add("saved-password");
     const core = t.backend as unknown as { resumeAuth(id: number): Promise<void> };
     vi.spyOn(core, "resumeAuth").mockRejectedValueOnce(new Error("synthetic: disk full"));
+    // the pass is held: push must come from the recheck itself, not from a pass that worked
+    let release!: () => void;
+    t.script.set(id, { syncGate: new Promise<void>((resolve) => { release = resolve; }) } as never);
     await t.backend.start();
     await expect.poll(() => t.state(id)).toMatchObject({ authRequired: false });
     await expect.poll(() => t.providers.get(id)?.syncs ?? 0).toBeGreaterThan(0);
     await expect.poll(() => t.providers.get(id)?.watches ?? 0).toBe(1);
+    release();
   });
 
   it("a window's focus rechecks at most every ten minutes, Retry whenever asked; a Gmail refusal is a revoked grant, never rechecked", async () => {
