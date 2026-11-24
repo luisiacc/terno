@@ -13,11 +13,21 @@ interface GoogleSignInFlow {
   json(url: string, init?: RequestInit, httpContext?: HttpRequestContext): Promise<Record<string, unknown>>;
 }
 
+/**
+ * Plan 260: the sign-in's own end, its deadline or its caller's cancel. The person left the consent unfinished (or
+ * Google didn't answer in time): shown to them and logged, never reported as our bug. Not retryable: retrying is theirs.
+ */
+class GoogleSignInEnded extends ProviderError {
+  override get expected(): boolean {
+    return true;
+  }
+}
+
 /** One deadline covers headers and bodies, including fetch implementations that ignore abort. */
 export async function withGoogleSignIn<T>(options: { signal?: AbortSignal; timeoutMs?: number; fetch: typeof fetch; google?: Pick<GoogleRequests, "request"> }, run: (flow: GoogleSignInFlow) => Promise<T>): Promise<T> {
   const abort = new AbortController();
-  const cancel = () => abort.abort(new ProviderError(L("errors.google.cancelled"), false));
-  const timer = setTimeout(() => abort.abort(new ProviderError(L("errors.google.timedOut"), false)), options.timeoutMs ?? 30_000);
+  const cancel = () => abort.abort(new GoogleSignInEnded(L("errors.google.cancelled"), false));
+  const timer = setTimeout(() => abort.abort(new GoogleSignInEnded(L("errors.google.timedOut"), false)), options.timeoutMs ?? 30_000);
   if (options.signal?.aborted) cancel();
   else options.signal?.addEventListener("abort", cancel, { once: true });
   const signal = abort.signal;

@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import { createConnection, type Socket } from "node:net";
+import { isExpected } from "@terno/core/diag";
+import { toErrorPayload } from "@terno/core/rpc";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { connectGmail, type ConnectOptions } from "./gmail";
 import { createGmailTokenBroker, inspectGmailToken } from "./gmail-web";
@@ -367,6 +369,17 @@ describe("Google callback ownership and protocol", () => {
     const { result } = desktop({ options: { timeoutMs: 100, openExternal: async (url) => { callback = new URL(new URL(url).searchParams.get("redirect_uri")!); } } });
     await expect(result).rejects.toThrow("Google sign-in timed out.");
     await expect(fetch(callback)).rejects.toThrow();
+  });
+
+  // plan 260 (TERNO-7): the flow's own end is the person's, not our bug: shown and logged, never reported
+  it.each(["deadline", "cancel"] as const)("a sign-in that ends by its %s is expected, not reported", async (stop) => {
+    const caller = new AbortController();
+    const { result } = desktop({ options: { timeoutMs: stop === "deadline" ? 100 : 60_000, signal: caller.signal, openExternal: async () => { if (stop === "cancel") setTimeout(() => caller.abort(), 10); } } });
+    const error = await result.then(() => { throw new Error("Unexpected sign-in success"); }, (e: unknown) => e);
+    expect(error).toMatchObject({ retryable: false, i18n: { key: stop === "deadline" ? "errors.google.timedOut" : "errors.google.cancelled" } });
+    expect(isExpected(error)).toBe(true);
+    expect(toErrorPayload(error)).toMatchObject({ code: "INTERNAL", expected: true });
+    expect(toErrorPayload(error)).not.toHaveProperty("diag");
   });
 
   it("browser launch rejection closes the listener and hides external error details", async () => {
