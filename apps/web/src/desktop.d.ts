@@ -99,10 +99,6 @@ export interface DesktopMailbox {
   state(): Promise<MailboxGate | null>;
   /** Try Again: a fresh start of the mail engine */
   retry(): Promise<boolean>;
-  /** Update Without a Backup (only where the backup is what failed or didn't fit) */
-  skipBackup(): Promise<boolean>;
-  /** Restore the backup over a damaged mailbox */
-  restore(): Promise<boolean>;
   onState(listener: (gate: MailboxGate) => void): () => void;
 }
 

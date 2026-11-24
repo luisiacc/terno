@@ -202,16 +202,13 @@ const windowFocus = new FocusReporter({
 app.on("browser-window-focus", () => windowFocus.changed());
 app.on("browser-window-blur", () => windowFocus.changed());
 
-/** Plan 95: the mailbox gate (being upgraded, or why it can't open), pushed to every window. */
+/** Plan 95: the mailbox gate (being migrated, or why it can't open), pushed to every window. */
 const mailbox = new MailboxHost({
-  dbPath: () => join(app.getPath("userData"), DB_FILE),
   publish: (gate: MailboxGate) => {
     for (const w of windows) if (!w.isDestroyed()) w.webContents.send("terno:mailbox-event", gate);
   },
   start: () => restartEngine(),
   alive: () => backend !== null,
-  log: (code, fields) => diagLog[code === "mailbox.restore_failed" ? "warn" : "info"](code, fields as never),
-  now: Date.now,
 });
 
 function agentPaths() {
@@ -233,12 +230,6 @@ function startBackend() {
   if (backend || quitState !== "running") return;
   const userData = app.getPath("userData");
   mkdirSync(userData, { recursive: true });
-  // a restore a crash cut short is settled before anything opens the file; one that can't be isn't opened at all
-  const flags = mailbox.beforeStart();
-  if (!flags) {
-    mainDiag.setEngine("stopped");
-    return;
-  }
   const instance = ++backendInstance;
   const startedAt = Date.now();
   engineCache ??= new EngineCache(join(userData, ENGINE_CACHE_DIR), BUILD_VERSION);
@@ -384,7 +375,6 @@ function startBackend() {
     online: net.isOnline(),
     // a restarted backend starts from whether a window has focus now; later changes are told as they happen
     focused: windowFocus.current(),
-    ...flags,
   } satisfies MainToBackend);
 }
 
@@ -884,8 +874,6 @@ if (!app.requestSingleInstanceLock()) {
     // plan 95: the window reads the gate and asks; main decides (and refuses what doesn't apply)
     ipcMain.handle("terno:mailbox-state", (e) => (trusted(e) ? mailbox.gate : null));
     ipcMain.handle("terno:mailbox-retry", (e) => trusted(e) && mailbox.retry());
-    ipcMain.handle("terno:mailbox-skip-backup", (e) => trusted(e) && mailbox.skipBackup());
-    ipcMain.handle("terno:mailbox-restore", (e) => (trusted(e) ? mailbox.restore() : false));
     await carryLegacyLocalStorage();
     createWindow();
     links.ready();

@@ -405,10 +405,3 @@ export function pruneForwards(db: Db, now: number): { cancelled: number } {
     return { cancelled: stale.length };
   });
 }
-
-/** Plan 95: a mailbox restored from a backup sends nothing it had waiting. */
-export function quarantineForwards(db: Db, reason: string, now: number): number {
-  const open = db.all<{ id: number }>("SELECT id FROM forwards WHERE state IN ('waiting', 'held', 'sending')");
-  for (const r of open) settle(db, r.id, "cancelled", reason, now);
-  return open.length;
-}

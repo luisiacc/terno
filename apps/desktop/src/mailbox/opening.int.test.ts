@@ -1,16 +1,14 @@
 import { Worker } from "node:worker_threads";
-import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { beforeAll, afterAll, expect, it } from "vitest";
-import { Db, MIGRATIONS, nodeSqliteDriver, createAccount, ingestMessages, registerFunctions, listBackups, SCHEMA_VERSION, BODY_READY_APPLICATION_ID, backupToSettle } from "@terno/db";
+import { Db, MIGRATIONS, nodeSqliteDriver, createAccount, ingestMessages, registerFunctions, SCHEMA_VERSION, BODY_READY_APPLICATION_ID } from "@terno/db";
 import { oldMailbox } from "../../../../packages/db/src/test/old-mailbox";
-import { readFileSync, statfsSync, statSync } from "node:fs";
 import { msg } from "../../../../packages/store/src/conformance/fixtures";
 import { openNodeMailbox, nodeStore } from "@terno/backend";
-import { untouchedUri } from "@terno/db/clone";
 import type { MainToBackend } from "../ipc";
 
 const text = "😀e\u0301\r\nexact old entry phrase ".repeat(9000), html = `<p>${text}</p>`;
@@ -52,24 +50,22 @@ function legacy(path: string, fail: boolean) {
 function init(directory: string): MainToBackend {
   return { type: "init", dbPath: join(directory, "mail.db"), demo: false, dev: false, devMode: false, online: false, focused: false, socketPath: join(directory, "agent.sock"), tokenPath: join(directory, "agent.token"), version: "test", diag: { session: "synthetic-opening-session", build: "test", channel: "test" } };
 }
-function exactOld(path: string, version: number, bodies = true) {
-  // a published backup is read without touching it: a clone stays in WAL mode until it is settled (plan 253)
-  const db = new Db(nodeSqliteDriver, path.includes("/backups/") ? untouchedUri(path) : path, { readonly: true });
-  try { expect(db.get<{ user_version: number }>("PRAGMA user_version")!.user_version).toBe(version); if (!bodies) return; const row = db.get<{ body_text: string; body_html: string }>("SELECT body_text,body_html FROM message_bodies")!; expect(row.body_text === text && row.body_html === html).toBe(true); }
+function exactOld(path: string, version: number) {
+  const db = new Db(nodeSqliteDriver, path, { readonly: true });
+  try { expect(db.get<{ user_version: number }>("PRAGMA user_version")!.user_version).toBe(version); const row = db.get<{ body_text: string; body_html: string }>("SELECT body_text,body_html FROM message_bodies")!; expect(row.body_text === text && row.body_html === html).toBe(true); }
   finally { db.close(); }
 }
 
-for (const mode of ["prepared-cancel", "prepared-success", "backup-cancel", "migration-error"] as const) it(`actual native entry retains opening ownership through ${mode}`, async () => {
+for (const mode of ["prepared-cancel", "prepared-success", "migration-error"] as const) it(`actual native entry retains opening ownership through ${mode}`, async () => {
   const directory = mkdtempSync(join(tmpdir(), "terno-entry-opening-")), path = join(directory, "mail.db");
   legacy(path, mode === "migration-error");
   const native = owner(mode);
   try {
     expect((await native.until("booted")).tag).toBe("booted"); native.worker.postMessage(init(directory));
-    const phase = mode === "backup-cancel" ? "backup-held" : mode === "migration-error" ? "native-exit" : "prepared";
+    const phase = mode === "migration-error" ? "native-exit" : "prepared";
     expect((await native.until(phase)).tag, "entry must enter the owned asynchronous admission path").toBe(phase);
-    if (mode !== "backup-cancel") {
-      const backups = listBackups(join(directory, "backups")); expect(backups).toHaveLength(1); exactOld(backups[0]!.file, 38);
-    } else exactOld(path, 38);
+    // plan 255: no backup before the migration
+    expect(existsSync(join(directory, "backups"))).toBe(false);
     expect(native.events.some((event) => event.tag === "host-open" || event.tag === "ready")).toBe(false);
     if (mode === "migration-error") {
       native.worker.postMessage({ fixture: "release-retirement" });
@@ -84,10 +80,10 @@ for (const mode of ["prepared-cancel", "prepared-success", "backup-cancel", "mig
       native.worker.postMessage({ type: "shutdown", id: 1, force: true, deadlineMs: 5000 });
       if (mode === "prepared-cancel") { expect((await native.until("native-exit")).tag).toBe("native-exit"); exactOld(path, SCHEMA_VERSION); }
       await native.barrier(); expect(native.events.some((event) => event.tag === "shutdown-result"), "logical abort must not acknowledge owned physical work").toBe(false);
-      native.worker.postMessage({ fixture: mode === "backup-cancel" ? "release-backup" : "release-retirement" });
+      native.worker.postMessage({ fixture: "release-retirement" });
       expect((await native.until("shutdown-result")).outcome).toBe("closed");
       expect(native.events.some((event) => event.tag === "ready" || event.tag === "host-open")).toBe(false);
-      expect(listBackups(join(directory, "backups"))).toHaveLength(1); exactOld(path, mode === "backup-cancel" ? 38 : SCHEMA_VERSION);
+      exactOld(path, SCHEMA_VERSION);
       await native.close();
       const store = nodeStore(await openNodeMailbox(path), { instantSearch: false });
       try { const message = (await store.threads.get(1))!.messages[0]!; expect(message.bodyText === text && message.bodyHtml === html).toBe(true); expect(message.bodyState).toBe("partial"); }
@@ -103,62 +99,28 @@ function behind(path: string) {
   const db = new Db(nodeSqliteDriver, path);
   try { db.exec(`PRAGMA application_id = ${BODY_READY_APPLICATION_ID}`); } finally { db.close(); }
 }
-const apfs = process.platform === "darwin" && statfsSync(tmpdir()).type === 26;
-const header = (file: string) => [...readFileSync(file).subarray(18, 20)];
 
-// plan 253: the backup's first write (its settle) never holds the window, and a shutdown that closes waits for it
-for (const mode of ["settle-ready", "settle-shutdown", "settle-throws"] as const) it.skipIf(!apfs)(`actual native entry: ${mode}`, async () => {
-  const directory = mkdtempSync(join(tmpdir(), "terno-entry-settle-")), path = join(directory, "mail.db"), backups = join(directory, "backups");
+// plan 255: an update migrates in the host's own open with no backup, and an earlier build's backups go
+it("actual native entry: an ordinary update, no backup, an old backups folder removed", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "terno-entry-update-")), path = join(directory, "mail.db"), backups = join(directory, "backups");
   behind(path);
-  const native = owner(mode);
+  mkdirSync(join(backups, "1000-v1-v2"), { recursive: true });
+  writeFileSync(join(backups, "1000-v1-v2", "terno.db"), Buffer.alloc(4096));
+  const native = owner("ordinary");
   try {
     expect((await native.until("booted")).tag).toBe("booted"); native.worker.postMessage(init(directory));
-    if (mode === "settle-throws") {
-      // no thread for the settle (Codex code review #9): the mailbox opens all the same, the backup waits for the next start
-      expect((await native.until("ready")).tag).toBe("ready");
-      expect(native.events.some((event) => event.tag === "open-failed")).toBe(false);
-      native.worker.postMessage({ type: "shutdown", id: 1, force: true, deadlineMs: 5000 }); expect((await native.until("shutdown-result")).outcome).toBe("closed");
-      expect(backupToSettle(backups)).toBe(listBackups(backups)[0]!.file);
-      return;
-    }
-    expect((await native.until("settle-held")).tag).toBe("settle-held");
-    // the clone path, the host's own open (no legacy owner)
+    expect((await native.until("ready")).tag).toBe("ready");
+    // the gate said migrating, then open; no legacy owner, nothing else in between
+    expect(native.events.filter((event) => event.tag === "gate").map((event) => event.kind)).toEqual(["upgrading", "open"]);
     expect(native.events.some((event) => event.tag === "legacy-start")).toBe(false);
-    if (mode === "settle-ready") {
-      // the window is served while the backup still waits for its first write
-      expect((await native.until("ready")).tag).toBe("ready");
-      expect(header(listBackups(backups)[0]!.file)).toEqual([2, 2]);
-      // and the mailbox's checkpoints wait for it: its main file isn't written past the worker's 1 s passes (Codex code
-      // review #11), then is once the settle is done
-      const written = () => statSync(path).mtimeMs;
-      const opened = written();
-      await new Promise((r) => setTimeout(r, 1500));
-      expect(written()).toBe(opened);
-      native.worker.postMessage({ fixture: "release-settle" });
-      for (let i = 0; i < 250 && backupToSettle(backups); i++) await new Promise((r) => setTimeout(r, 20));
-      expect(header(listBackups(backups)[0]!.file)).toEqual([1, 1]);
-      expect(backupToSettle(backups)).toBeNull();
-      for (let i = 0; i < 150 && written() === opened; i++) await new Promise((r) => setTimeout(r, 20));
-      expect(written()).toBeGreaterThan(opened);
-      native.worker.postMessage({ type: "shutdown", id: 1, force: true, deadlineMs: 5000 }); expect((await native.until("shutdown-result")).outcome).toBe("closed");
-    } else {
-      await native.until("ready");
-      // never released: the shutdown ends the settle, and says closed only once its thread is gone; a second
-      // shutdown while the first waits for it says closed no sooner (Codex code review #8)
-      native.worker.postMessage({ type: "shutdown", id: 1, force: true, deadlineMs: 5000 });
-      native.worker.postMessage({ type: "shutdown", id: 2, force: true, deadlineMs: 5000 });
-      expect((await native.until("shutdown-result")).outcome).toBe("closed");
-      await native.barrier();
-      for (let i = 0; i < 100 && native.events.filter((event) => event.tag === "shutdown-result").length < 2; i++) await new Promise((r) => setTimeout(r, 20));
-      const tags = native.events.map((event) => event.tag);
-      const exit = tags.indexOf("settle-stopped");
-      expect(exit).toBeGreaterThan(-1);
-      expect(tags.filter((tag) => tag === "shutdown-result")).toHaveLength(2);
-      expect(tags.slice(0, exit)).not.toContain("shutdown-result");
-      // the backup is whole, and still the next start's to settle
-      expect(header(listBackups(backups)[0]!.file)).toEqual([2, 2]);
-      expect(backupToSettle(backups)).toBe(listBackups(backups)[0]!.file);
-    }
-    exactOld(listBackups(backups)[0]!.file, SCHEMA_VERSION - 1, false);
+    for (let i = 0; i < 100 && existsSync(backups); i++) await new Promise((r) => setTimeout(r, 20));
+    expect(existsSync(backups)).toBe(false);
+    native.worker.postMessage({ type: "shutdown", id: 1, force: true, deadlineMs: 5000 }); expect((await native.until("shutdown-result")).outcome).toBe("closed");
+    const db = new Db(nodeSqliteDriver, path, { readonly: true });
+    try {
+      expect(db.get<{ user_version: number }>("PRAGMA user_version")!.user_version).toBe(SCHEMA_VERSION);
+      expect(db.all<{ subject: string }>("SELECT subject FROM drafts ORDER BY id").map((r) => r.subject)).toEqual(["draft 1", "draft 2"]);
+    } finally { db.close(); }
+    expect(native.events.some((event) => event.tag === "unexpected-route")).toBe(false);
   } finally { await native.close(); rmSync(directory, { recursive: true, force: true }); }
 });

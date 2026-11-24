@@ -28,5 +28,3 @@ export function openDatabase(path: string, options: OpenOptions = {}): Db {
 }
 export { compactOnOpen, type CompactOutcome } from "./compact";
 export * from "./upgrade";
-export { cancelClones, settleBackup, type Settle } from "./clone";
-export { backupToSettle } from "./backups";

@@ -5,13 +5,12 @@ import { Spinner } from "@terno/ui/components/spinner";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { formatBytes } from "~/lib/format";
-import { backupDate, restoreMailbox, retryMailbox, skipMailboxBackup, useMailbox } from "~/lib/mailbox";
+import { retryMailbox, useMailbox } from "~/lib/mailbox";
 import { registerNativeReloadModal } from "~/lib/native-reload";
 import { openLink } from "~/lib/open-link";
 import { TERNO_LINKS } from "~/lib/terno-links";
 import { errorText, unsupportedText, updateNow, useUpdates } from "~/lib/updates";
 import { exportDiagnostics } from "~/state/diag";
-import { ConfirmDialog } from "./settings/parts";
 
 /**
  * Plan 95: what covers the desktop window while the mailbox can't be used
@@ -73,11 +72,6 @@ function GateScreen({ gate }: { gate: Exclude<MailboxGate, { kind: "open" }> }) 
       {t("updates.tryAgain")}
     </Button>
   );
-  const skip = (
-    <Button variant="outline" disabled={busy} onClick={() => void skipMailboxBackup()} data-testid="mailbox-skip-backup">
-      {t("mailbox.skipBackup")}
-    </Button>
-  );
   const exportButton = (
     <Button variant="ghost" onClick={() => void exportDiagnostics()}>
       {t("diag.exportButton")}
@@ -85,23 +79,15 @@ function GateScreen({ gate }: { gate: Exclude<MailboxGate, { kind: "open" }> }) 
   );
   switch (gate.kind) {
     case "upgrading":
-      return <Upgrading phase={gate.phase} />;
-    case "restoring":
-      return (
-        <Cover title={t("mailbox.restoring")} testId="mailbox-gate" kind="restoring" busy>
-          <Spinner className="mt-4 text-muted-foreground" aria-hidden />
-        </Cover>
-      );
+      return <Upgrading />;
     case "no-room":
       return (
         <Cover title={t("mailbox.noRoom.title")} testId="mailbox-gate" kind="no-room">
-          <Body testId="mailbox-body">{t(gate.stage === "backup" ? "mailbox.noRoom.backup" : "mailbox.noRoom.migrate", { need: formatBytes(gate.needBytes), free: formatBytes(gate.freeBytes) })}</Body>
-          {gate.canSkipBackup && <Body>{t("mailbox.noRoom.skipHint")}</Body>}
+          <Body testId="mailbox-body">{t("mailbox.noRoom.migrate", { need: formatBytes(gate.needBytes), free: formatBytes(gate.freeBytes) })}</Body>
           <Actions>
             <Button data-primary loading={busy} onClick={() => void retryMailbox()} data-testid="mailbox-retry">
               {t("updates.tryAgain")}
             </Button>
-            {gate.canSkipBackup && skip}
           </Actions>
         </Cover>
       );
@@ -121,18 +107,6 @@ function GateScreen({ gate }: { gate: Exclude<MailboxGate, { kind: "open" }> }) 
               <UpdateAction label={t("mailbox.checkForUpdates")} secondary={<>{retry}{exportButton}</>} />
             </Cover>
           );
-        case "backup":
-          return (
-            <Cover title={t("mailbox.backup.title")} testId="mailbox-gate" kind="backup">
-              <Body>{t("mailbox.backup.body")}</Body>
-              <Actions>
-                <Button data-primary loading={busy} onClick={() => void retryMailbox()} data-testid="mailbox-retry">
-                  {t("updates.tryAgain")}
-                </Button>
-                {skip}
-              </Actions>
-            </Cover>
-          );
         case "unwritable":
           return (
             <Cover title={t("mailbox.unwritable.title")} testId="mailbox-gate" kind="unwritable">
@@ -145,13 +119,23 @@ function GateScreen({ gate }: { gate: Exclude<MailboxGate, { kind: "open" }> }) 
             </Cover>
           );
         case "corrupt":
-          return <Corrupt gate={gate} retry={retry} exportButton={exportButton} />;
+          return (
+            <Cover title={t("mailbox.corrupt.title")} testId="mailbox-gate" kind="corrupt">
+              <Body>{t("mailbox.corrupt.noBackup")}</Body>
+              <Actions>
+                <Button data-primary disabled={busy} onClick={() => void retryMailbox()} data-testid="mailbox-retry">
+                  {t("updates.tryAgain")}
+                </Button>
+                {exportButton}
+              </Actions>
+            </Cover>
+          );
       }
   }
 }
 
-/** A quick upgrade never flashes a screen: it shows only after 400 ms. */
-function Upgrading({ phase }: { phase: "backup" | "migrate" }) {
+/** A quick migration never flashes a screen: it shows only after 400 ms. */
+function Upgrading() {
   const [shown, setShown] = useState(false);
   useEffect(() => {
     const timer = setTimeout(() => setShown(true), 400);
@@ -160,53 +144,8 @@ function Upgrading({ phase }: { phase: "backup" | "migrate" }) {
   if (!shown) return null;
   return (
     <Cover title={t("mailbox.upgrading.title")} testId="mailbox-gate" kind="upgrading" busy>
-      <Body testId="mailbox-body">{t(phase === "backup" ? "mailbox.upgrading.backup" : "mailbox.upgrading.migrate")}</Body>
+      <Body testId="mailbox-body">{t("mailbox.upgrading.migrate")}</Body>
       <Spinner className="mt-4 text-muted-foreground" aria-hidden />
-    </Cover>
-  );
-}
-
-function Corrupt({ gate, retry, exportButton }: { gate: Extract<MailboxGate, { kind: "failed" }>; retry: ReactNode; exportButton: ReactNode }) {
-  const busy = useMailbox((s) => s.busy);
-  const [confirming, setConfirming] = useState(false);
-  const date = gate.backup ? backupDate(gate.backup.createdAt) : "";
-  return (
-    <Cover title={t("mailbox.corrupt.title")} testId="mailbox-gate" kind="corrupt">
-      <Body>{gate.backup ? t("mailbox.corrupt.withBackup", { date }) : t("mailbox.corrupt.noBackup")}</Body>
-      {gate.restoreFailed && (
-        <p role="alert" className="mt-2 text-sm text-destructive-ink" data-testid="mailbox-restore-failed">
-          {t(gate.restoreFailed === "no-room" ? "mailbox.restore.noRoom" : "mailbox.restore.failed")}
-        </p>
-      )}
-      <Actions>
-        {gate.backup ? (
-          <>
-            <Button data-primary disabled={busy} onClick={() => setConfirming(true)} data-testid="mailbox-restore">
-              {t("mailbox.restore")}
-            </Button>
-            {retry}
-          </>
-        ) : (
-          <>
-            <Button data-primary disabled={busy} onClick={() => void retryMailbox()} data-testid="mailbox-retry">
-              {t("updates.tryAgain")}
-            </Button>
-            {exportButton}
-          </>
-        )}
-      </Actions>
-      <ConfirmDialog
-        open={confirming}
-        onOpenChange={setConfirming}
-        title={t("mailbox.restore.title", { date })}
-        description={t("mailbox.restore.body", { date })}
-        confirm={t("mailbox.restore.confirm")}
-        onConfirm={() => {
-          setConfirming(false);
-          void restoreMailbox();
-        }}
-        testId="mailbox-restore-confirm"
-      />
     </Cover>
   );
 }

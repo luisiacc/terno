@@ -5,6 +5,60 @@ interface Migration {
   version: number;
   name: string;
   sql: string;
+  /**
+   * Plan 255: why this step deletes or rewrites rows it finds. There is no backup before a migration, so a step that
+   * does says so, and is rare: leaving an old column or table in place and cleaning up later is preferred.
+   */
+  rewrites?: string;
+}
+
+/** Plan 255: steps from here on follow the rule above (the ones before were written while a backup came first). */
+export const REWRITE_RULE_FROM = 78;
+
+/**
+ * The statements of a step that delete or rewrite rows it finds: DROP TABLE, DROP COLUMN, DELETE, UPDATE, and an
+ * INSERT that may replace a row (OR REPLACE, REPLACE INTO). An INSERT that only adds rows, even copied from a SELECT,
+ * destroys nothing. Comments, string literals and trigger bodies (which run later, on the app's own writes) are left
+ * out first.
+ */
+export function rowRewrites(sql: string): string[] {
+  const code = sql
+    .replace(/--[^\n]*/g, " ")
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/'(?:[^']|'')*'/g, "''");
+  // a trigger's body ends at the END that closes its BEGIN, not one that closes a CASE inside it
+  let outside = "";
+  const trigger = /\bCREATE\s+(?:TEMP\s+|TEMPORARY\s+)?TRIGGER\b/gi;
+  let at = 0;
+  for (let m = trigger.exec(code); m; m = trigger.exec(code)) {
+    outside += code.slice(at, m.index);
+    // from the BEGIN of its body (a WHEN clause before it may hold a CASE … END of its own)
+    const begin = /\bBEGIN\b/gi;
+    begin.lastIndex = m.index;
+    const b = begin.exec(code);
+    const words = /\b(BEGIN|CASE|END)\b/gi;
+    words.lastIndex = b ? b.index : code.length;
+    let depth = 0;
+    let end = code.length;
+    for (let w = words.exec(code); w; w = words.exec(code)) {
+      const word = w[1]!.toUpperCase();
+      if (word === "BEGIN" || word === "CASE") depth++;
+      else if (--depth === 0) {
+        end = w.index + w[0].length;
+        break;
+      }
+    }
+    at = end;
+    trigger.lastIndex = end;
+  }
+  outside += code.slice(at);
+  const found: string[] = [];
+  for (const raw of outside.split(";")) {
+    const st = raw.trim().replace(/\s+/g, " ");
+    if (!st) continue;
+    if (/^DROP TABLE\b/i.test(st) || /\bDROP COLUMN\b/i.test(st) || /^DELETE FROM\b/i.test(st) || /^UPDATE\b/i.test(st) || /^(INSERT OR REPLACE|REPLACE)\b/i.test(st)) found.push(st);
+  }
+  return found;
 }
 
 /**

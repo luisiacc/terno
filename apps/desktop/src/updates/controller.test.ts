@@ -605,7 +605,7 @@ describe("required updates and Update Terno (plan 95)", () => {
 
   it("an update whose mailbox didn't open: installed, not healthy, said once; the record stays for the open that works", () => {
     const h = harness({ version: "0.2.0", pending: { from: "0.1.0", to: "0.2.0", txId: "tx1", at: 1 } });
-    const gate = { kind: "failed", reason: "migration", step: 38, backup: null, restoreFailed: null } as const;
+    const gate = { kind: "failed", reason: "migration", step: 38 } as const;
     h.ctl.mailboxFailed(gate);
     h.ctl.mailboxFailed(gate);
     expect(h.logs.filter(([c]) => c === "update.installed")).toHaveLength(1);
@@ -617,6 +617,12 @@ describe("required updates and Update Terno (plan 95)", () => {
     h.ctl.backendReady();
     expect(h.ctl.view.justUpdated).toBe("0.2.0");
     expect(h.pending).toBeNull();
+  });
+
+  it("a full disk after an update is said as no-room (plan 255: one kind, no backup stage)", () => {
+    const h = harness({ version: "0.2.0", pending: { from: "0.1.0", to: "0.2.0", txId: "tx1", at: 1 } });
+    h.ctl.mailboxFailed({ kind: "no-room", needBytes: 10, freeBytes: 1 });
+    expect(h.captures).toEqual([["update.mailbox_failed", { fromVersion: "0.1.0", toVersion: "0.2.0", openFailure: "no-room", step: undefined }, false]]);
   });
 
   it("a mailbox that fails without an update behind it says nothing about updates", () => {

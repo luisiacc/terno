@@ -1,7 +1,5 @@
 import { GATE_OPEN, gateBlocks, type MailboxGate } from "@terno/core/mailbox";
-import { localeTag, t } from "@terno/i18n";
 import { create } from "zustand";
-import { snack } from "~/lib/snack";
 
 /**
  * Plan 95, desktop: the mailbox gate in the window. Main owns it (the
@@ -15,7 +13,7 @@ let bridge = typeof window === "undefined" ? undefined : window.ternoDesktop?.ma
 
 interface MailboxStore {
   gate: MailboxGate;
-  /** an ask is with main (Try Again, Update Without a Backup, Restore); cleared by the next gate */
+  /** Try Again is with main; cleared by the next gate */
   busy: boolean;
 }
 
@@ -35,13 +33,6 @@ export function startMailbox(): void {
 
 function adopt(gate: MailboxGate): void {
   useMailbox.setState({ gate, busy: false });
-  if (gate.kind === "open" && gate.restoredFrom !== null) {
-    snack(t("mailbox.restored", { date: backupDate(gate.restoredFrom) }), { id: "mailbox-restored", duration: 12_000 });
-  }
-}
-
-export function backupDate(at: number): string {
-  return new Date(at).toLocaleDateString(localeTag(), { month: "long", day: "numeric", year: "numeric" });
 }
 
 async function ask(fn: (b: NonNullable<typeof bridge>) => Promise<boolean>): Promise<void> {
@@ -53,8 +44,6 @@ async function ask(fn: (b: NonNullable<typeof bridge>) => Promise<boolean>): Pro
 }
 
 export const retryMailbox = () => ask((b) => b.retry());
-export const skipMailboxBackup = () => ask((b) => b.skipBackup());
-export const restoreMailbox = () => ask((b) => b.restore());
 
 /** render-probe builds: a stand-in for main (e2e) */
 export function setMailboxBridgeForTests(fake: NonNullable<typeof bridge>): void {

@@ -93,8 +93,6 @@ contextBridge.exposeInMainWorld("ternoDesktop", {
   mailbox: {
     state: () => ipcRenderer.invoke("terno:mailbox-state"),
     retry: () => ipcRenderer.invoke("terno:mailbox-retry"),
-    skipBackup: () => ipcRenderer.invoke("terno:mailbox-skip-backup"),
-    restore: () => ipcRenderer.invoke("terno:mailbox-restore"),
     onState: (listener: (gate: unknown) => void) => {
       const relay = (_e: unknown, gate: unknown) => listener(gate);
       ipcRenderer.on("terno:mailbox-event", relay);

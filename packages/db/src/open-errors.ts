@@ -1,7 +1,7 @@
 /**
  * Plan 95: why a mailbox couldn't open, in kinds the window can explain.
  * Every step of an open (the pragmas, the version read, each migration, the
- * cleanup after it, the backup before it) can fail; one function sorts the
+ * cleanup after it) can fail; one function sorts the
  * failure, from SQLite's result code or the file system's errno anywhere in
  * the error's cause chain. Anything it doesn't recognise stays unclassified
  * and is treated as a crash (restarted, then "The mail engine stopped").
@@ -31,35 +31,11 @@ export class MigrationError extends Error {
   }
 }
 
-/** Not enough free disk for the backup or the migration (the numbers are estimates when the stage is "migrate"). */
-export class NoRoomError extends Error {
-  override name = "NoRoomError";
-  constructor(
-    readonly stage: "backup" | "migrate",
-    readonly needBytes: number,
-    readonly freeBytes: number,
-    readonly canSkipBackup: boolean,
-    override readonly cause?: unknown,
-  ) {
-    super(`Not enough free disk to ${stage === "backup" ? "back up" : "update"} the mailbox`);
-  }
-}
-
-/** The backup before a migration failed (the mailbox itself was only read). */
-export class BackupError extends Error {
-  override name = "BackupError";
-  constructor(
-    readonly kind: "unwritable" | "failed",
-    override readonly cause: unknown,
-  ) {
-    super(`The mailbox backup failed (${kind})`);
-  }
-}
-
 export type OpenFailure =
   | { kind: "newer"; schema: number; supported: number }
-  | { kind: "no-room"; stage: "backup" | "migrate"; needBytes: number; freeBytes: number; canSkipBackup: boolean }
-  | { kind: "failed"; reason: "migration" | "corrupt" | "unwritable" | "backup"; step: number | null };
+  /** the numbers are estimates */
+  | { kind: "no-room"; needBytes: number; freeBytes: number }
+  | { kind: "failed"; reason: "migration" | "corrupt" | "unwritable"; step: number | null };
 
 // SQLite's primary result codes (an extended code carries one in its low byte)
 const SQLITE_IOERR = 10;
@@ -86,15 +62,14 @@ function codes(error: unknown): { sqlite: number[]; errno: string[] } {
   return { sqlite, errno };
 }
 
-/** What kind of failure an open (or the backup before it) ended in, or null: a crash like any other. */
+/** What kind of failure an open ended in, or null: a crash like any other. */
 export function classifyOpenError(error: unknown, estimate: () => { needBytes: number; freeBytes: number } = () => ({ needBytes: 0, freeBytes: 0 })): OpenFailure | null {
   if (error instanceof SchemaNewerError) return { kind: "newer", schema: error.schema, supported: error.supported };
-  if (error instanceof NoRoomError) return { kind: "no-room", stage: error.stage, needBytes: error.needBytes, freeBytes: error.freeBytes, canSkipBackup: error.canSkipBackup };
   const step = error instanceof MigrationError ? error.step : null;
   const { sqlite, errno } = codes(error);
   const room = () => {
     const { needBytes, freeBytes } = estimate();
-    return { kind: "no-room", stage: error instanceof BackupError ? "backup" : "migrate", needBytes, freeBytes, canSkipBackup: false } as const;
+    return { kind: "no-room", needBytes, freeBytes } as const;
   };
   if (sqlite.includes(SQLITE_FULL) || errno.includes("ENOSPC") || errno.includes("EDQUOT")) return room();
   // a full disk rarely reaches SQLite as SQLITE_FULL: the WAL it can't create is SQLITE_CANTOPEN, a write the volume
@@ -105,7 +80,6 @@ export function classifyOpenError(error: unknown, estimate: () => { needBytes: n
     if (r.needBytes > 0 && r.freeBytes < r.needBytes) return r;
   }
   if (sqlite.includes(SQLITE_CORRUPT) || sqlite.includes(SQLITE_NOTADB)) return { kind: "failed", reason: "corrupt", step };
-  if (error instanceof BackupError) return { kind: "failed", reason: error.kind === "unwritable" ? "unwritable" : "backup", step: null };
   if (
     sqlite.includes(SQLITE_READONLY) ||
     sqlite.includes(SQLITE_CANTOPEN) ||

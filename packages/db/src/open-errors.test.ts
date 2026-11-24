@@ -69,7 +69,7 @@ describe("why a mailbox couldn't open (plan 95)", () => {
     expect(error).toBeInstanceOf(MigrationError);
     // the cause is SQLite's own (not a failed ROLLBACK's "no transaction is active")
     expect(((error as MigrationError).cause as { errcode: number }).errcode & 0xff).toBe(13);
-    expect(classifyOpenError(error, () => ({ needBytes: 10, freeBytes: 1 }))).toEqual({ kind: "no-room", stage: "migrate", needBytes: 10, freeBytes: 1, canSkipBackup: false });
+    expect(classifyOpenError(error, () => ({ needBytes: 10, freeBytes: 1 }))).toEqual({ kind: "no-room", needBytes: 10, freeBytes: 1 });
     expect(version(db)).toBe(CREATING.version - 1);
     // nothing of the step is left behind
     expect(schema()).toEqual(before);
@@ -132,11 +132,11 @@ describe("why a mailbox couldn't open (plan 95)", () => {
 
   it("an I/O error is the disk's room when it has less free than the update needs, and the folder's otherwise", () => {
     const ioerr = Object.assign(new Error("disk I/O error"), { errcode: 4874 });
-    expect(classifyOpenError(new MigrationError(38, "x", ioerr), () => ({ needBytes: 100, freeBytes: 0 }))).toEqual({ kind: "no-room", stage: "migrate", needBytes: 100, freeBytes: 0, canSkipBackup: false });
+    expect(classifyOpenError(new MigrationError(38, "x", ioerr), () => ({ needBytes: 100, freeBytes: 0 }))).toEqual({ kind: "no-room", needBytes: 100, freeBytes: 0 });
     expect(classifyOpenError(new MigrationError(38, "x", ioerr), () => ({ needBytes: 100, freeBytes: 10_000 }))).toEqual({ kind: "failed", reason: "unwritable", step: 38 });
     // the WAL a full disk can't create
     const cantopen = Object.assign(new Error("unable to open database file"), { errcode: 14 });
-    expect(classifyOpenError(cantopen, () => ({ needBytes: 100, freeBytes: 0 }))).toMatchObject({ kind: "no-room", stage: "migrate" });
+    expect(classifyOpenError(cantopen, () => ({ needBytes: 100, freeBytes: 0 }))).toMatchObject({ kind: "no-room" });
     expect(classifyOpenError(cantopen, () => ({ needBytes: 100, freeBytes: 10_000 }))).toMatchObject({ kind: "failed", reason: "unwritable" });
   });
 

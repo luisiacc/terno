@@ -2,12 +2,12 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
-import { Db, MIGRATIONS, nodePlatform, nodeSqliteDriver, classifyOpenError, prepareUpgrade, createAccount, ingestMessages, registerFunctions } from "@terno/db";
+import { Db, MIGRATIONS, nodePlatform, nodeSqliteDriver, classifyOpenError, mailboxSchema, createAccount, ingestMessages, registerFunctions } from "@terno/db";
 import { msg } from "../../store/src/conformance/fixtures";
 import { watchLoop } from "../../db/src/test/timing";
 import { nodeStore, openNodeMailbox } from "./backend";
 
-it("admits a backed-up Plan95 mailbox through exact legacy conversion before exposing store commands", async () => {
+it("admits a Plan95 mailbox through exact legacy conversion before exposing store commands", async () => {
   const directory = mkdtempSync(join(tmpdir(), "terno-prepared-node-open-")), path = join(directory, "mail.db");
   const text = "😀e\u0301\r\ncomplete legacy phrase ".repeat(9000), html = `<p>${text}</p>`;
   const old = new Db(nodeSqliteDriver, path);
@@ -27,8 +27,8 @@ it("admits a backed-up Plan95 mailbox through exact legacy conversion before exp
   let db: Db | undefined, store: ReturnType<typeof nodeStore> | undefined;
   const monitor = watchLoop(15), began = performance.now();
   try {
-    const backup = await prepareUpgrade(path, { backupsDir: join(directory, "backups"), appVersion: "test" });
-    expect(backup.backup).not.toBeNull();
+    // plan 255: no backup first, only the schema read
+    expect(mailboxSchema(path)).toBe(38);
     db = await openNodeMailbox(path);
     store = nodeStore(db, { platform: nodePlatform, instantSearch: false });
     const timing = monitor.stop();
@@ -36,7 +36,7 @@ it("admits a backed-up Plan95 mailbox through exact legacy conversion before exp
     const message = (await store.threads.get(threadId))!.messages[0]!;
     expect(message.bodyText === text && message.bodyHtml === html).toBe(true);
     expect((await store.threads.searchText({ query: '"complete legacy phrase"', now: 1, limit: 10 })).items.map((t) => t.id)).toEqual([threadId]);
-    expect(largest, "the verified-backup entry path must not read complete old TEXT on its host").toBeLessThanOrEqual(32768);
+    expect(largest, "the entry path must not read complete old TEXT on its host").toBeLessThanOrEqual(32768);
   } finally { monitor.stop(); if (store) await store.close(); else if (db?.isOpen) db.close(); spy.mockRestore(); rmSync(directory, { recursive: true, force: true }); }
 });
 

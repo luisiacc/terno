@@ -60,16 +60,8 @@ export const CODES = {
   "update.installed": c("fromVersion", "toVersion"),
   "update.mailbox_failed": c("fromVersion", "toVersion", "openFailure", "step"),
 
-  // plan 95: the mailbox's upgrade (backup, migration) and its restore
-  "mailbox.backup_made": c("schema", "method", "durationMs"),
-  "mailbox.backup_skipped": c("schema"),
-  // plan 253: a clone backup's first write, made after the window opened
-  "mailbox.backup_settled": c("durationMs"),
-  "mailbox.backup_settle_failed": c("errorClass", "errno"),
+  // plan 95: a mailbox that didn't open (plan 255: there is no backup before a migration)
   "mailbox.open_failed": c("openFailure", "schema", "step", "errorClass", "errno"),
-  "mailbox.restored": c("durationMs"),
-  "mailbox.restore_failed": c("errorClass", "errno"),
-  "mailbox.restore_reconciled": c("outcome"),
 
   // a free-form line from code that predates codes (the store, the search engine): kept locally, scrubbed
   "log.message": c("source"),

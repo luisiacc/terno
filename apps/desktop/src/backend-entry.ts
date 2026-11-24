@@ -3,19 +3,17 @@
  * database and sync; the renderer talks to it over a direct MessagePort, so
  * mail data never hops through the main process.
  */
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { Backend, openNodeMailbox, nodeStore, parseGoogleClients, seedDemo, seedDemoCode, type LegacySecretReader, type SecretCipher } from "@terno/backend";
 import { devAiKeys } from "@terno/core";
-import type { BackupSummary, MailboxGate } from "@terno/core/mailbox";
-import { backupToSettle, cancelClones, classifyOpenError, diskFree, expireBackups, listBackups, mailboxBytes, migrateHeadroom, nodePlatform, prepareUpgrade, quarantineRestored, SCHEMA_VERSION, settleBackup, SqlMailStore, type BackupInfo, type Settle, type UpgradePlan } from "@terno/db";
+import { GATE_OPEN } from "@terno/core/mailbox";
+import { classifyOpenError, diskFree, mailboxBytes, mailboxSchema, migrateHeadroom, nodePlatform, removeOldBackups, SCHEMA_VERSION, SqlMailStore } from "@terno/db";
 import { captureError, diagPlatform, installDiag, log, type DiagEntry, type DiagOptions } from "@terno/core/diag";
 import { isRpcMessage, type RpcMessage, type Transport } from "@terno/core/rpc";
 import { createRegistry } from "@terno/mail/registry";
 import { loopbackInsecure } from "./imap-seam";
 import type { BackendToMain, MainToBackend } from "./ipc";
-import { Preparation } from "./mailbox/preparing";
 import { demoCodeWanted, netRecorder, offsetClock } from "./test-hooks";
-import { settleRestored } from "./mailbox/restore";
 
 type PortMain = {
   on(event: "message", l: (e: { data: unknown }) => void): void;
@@ -168,8 +166,8 @@ parentPort.on("message", async (event) => {
 
 async function initialize(msg: Extract<MainToBackend, { type: "init" }>, signal: AbortSignal): Promise<void> {
   installDiag(diagOptions({ version: msg.version, build: msg.diag.build, channel: msg.diag.channel, session: msg.diag.session }));
-  // plan 95: the mailbox first (a backup before a migration, a restored copy quarantined); what goes wrong here
-  // is explained by the window, not restarted
+  // plan 95: the mailbox first (migrated, plan 255: with no backup); what goes wrong here is explained by the window,
+  // not restarted
   if (!(await openMailbox(msg, signal))) return;
   if (signal.aborted) { await mailbox?.close(); mailbox = null; return; }
   try {
@@ -202,7 +200,7 @@ async function initialize(msg: Extract<MainToBackend, { type: "init" }>, signal:
     });
     mailbox = null;
     if (signal.aborted) return;
-    send({ type: "gate", gate: { kind: "open", restoredFrom } });
+    send({ type: "gate", gate: GATE_OPEN });
     if (msg.demo && (await seedDemo(backend.store, { threads: 3000, accounts: 4 }))) {
       if (signal.aborted) return;
       // AI off, as on a real install: the AI features show only once a real model is set up (the demo model is still
@@ -250,56 +248,32 @@ const storeLog =
     log[level]("log.message", { source: "backend" });
     if (dev) console[level](`[backend] ${message}`, extra ?? "");
   };
-let restoredFrom: number | null = null;
-/** the backup before a migration, while it runs: a shutdown ends a clone in flight and waits for it (plan 112) */
-const preparation = new Preparation();
-
-const summary = (b: BackupInfo | null | undefined): BackupSummary | null => (b ? { createdAt: b.createdAt, appVersion: b.appVersion, fromSchema: b.fromSchema } : null);
-
 /**
- * Backs the mailbox up when a migration is due, quarantines a restored one,
- * then opens (and migrates) it. A classified failure becomes the window's
- * gate and ends this process without a restart; anything else is a crash.
+ * Opens (and migrates) the mailbox. There is no backup before a migration
+ * (plan 255): a step that fails rolls back in its own transaction. A
+ * classified failure becomes the window's gate and ends this process without
+ * a restart; anything else is a crash.
  */
 async function openMailbox(msg: Extract<MainToBackend, { type: "init" }>, signal: AbortSignal): Promise<boolean> {
-  const backupsDir = join(dirname(msg.dbPath), "backups");
-  let plan: UpgradePlan | null = null;
-  const startedAt = Date.now();
+  let from: number | null = null;
   try {
     signal.throwIfAborted();
-    plan = await preparation.run(prepareUpgrade(msg.dbPath, {
-      backupsDir,
-      appVersion: msg.version,
-      skipBackup: msg.skipBackup,
-      onBackup: () => send({ type: "gate", gate: { kind: "upgrading", phase: "backup", from: plan?.from ?? 0, to: SCHEMA_VERSION } }),
-    }));
-    // a shutdown came while the backup ran: the mailbox isn't opened
-    if (preparation.stopped || signal.aborted) return false;
-    if (plan.made) log.info("mailbox.backup_made", { schema: plan.from ?? 0, method: plan.method ?? "copy", durationMs: Date.now() - startedAt });
-    const migrating = plan.from !== null && plan.from < plan.to;
-    if (migrating && !plan.backup) log.info("mailbox.backup_skipped", { schema: plan.from ?? 0 });
-    if (migrating) send({ type: "gate", gate: { kind: "upgrading", phase: "migrate", from: plan.from!, to: plan.to } });
-    // plan 253: the open never checkpoints on this thread, and the store's checkpoints wait for the kept backup's
-    // first write (settled off this thread, once expiry says which generation stays)
-    const db = await openNodeMailbox(msg.dbPath, { uuid: () => nodePlatform.uuid(), deferCheckpoints: true }, signal);
-    let release = () => {};
-    const hold = new Promise<void>((resolve) => (release = resolve));
+    // an earlier build's pre-update backups: nothing reads them now, and a clone holds disk (not waited for)
+    void removeOldBackups(msg.dbPath);
+    from = mailboxSchema(msg.dbPath);
+    if (from !== null && from < SCHEMA_VERSION) send({ type: "gate", gate: { kind: "upgrading", from, to: SCHEMA_VERSION } });
+    const db = await openNodeMailbox(msg.dbPath, { uuid: () => nodePlatform.uuid() }, signal);
     try {
       signal.throwIfAborted();
-      // a restored copy: quarantined and on disk before its marker goes (Codex review R3)
-      restoredFrom = settleRestored(db, msg.dbPath, () => quarantineRestored(db))?.createdAt ?? null;
-      mailbox = nodeStore(db, { log: storeLog(msg.dev), checkpointHold: { until: hold, maxMs: SETTLE_HOLD_MS } });
-      // opened healthy at this schema: only now may a backup past its time go (Codex review R8)
-      expireBackups(backupsDir);
-      startSettle(backupsDir, release);
+      mailbox = nodeStore(db, { log: storeLog(msg.dev) });
     } catch (error) {
       try { db.close(); } catch { /* the open's error explains it */ }
       throw error;
     }
     return true;
   } catch (error) {
-    // a backup ended by a shutdown isn't a failure to show
-    if (preparation.stopped || signal.aborted) return false;
+    // an opening ended by a shutdown isn't a failure to show
+    if (signal.aborted) return false;
     const failure = classifyOpenError(error, () => {
       const size = mailboxBytes(msg.dbPath);
       let free = 0;
@@ -310,68 +284,15 @@ async function openMailbox(msg: Extract<MainToBackend, { type: "init" }>, signal
       die(error, "backend.init_failed");
       return false;
     }
-    let backup: BackupSummary | null = null;
-    try {
-      backup = summary(plan?.backup ?? listBackups(backupsDir)[0]);
-    } catch { /* none to offer */ }
-    const gate: MailboxGate = failure.kind === "failed" ? { ...failure, backup, restoreFailed: null } : failure;
-    const kind = failure.kind === "failed" ? failure.reason : failure.kind === "no-room" ? (failure.stage === "backup" ? "no-room-backup" : "no-room-migrate") : "newer";
+    const kind = failure.kind === "failed" ? failure.reason : failure.kind;
     // the world's doing (a newer copy, a full or read-only disk) is logged; a step that failed or a damaged file is ours to fix
-    const expected = kind === "newer" || kind === "no-room-backup" || kind === "no-room-migrate" || kind === "unwritable";
-    captureError(error, { code: "mailbox.open_failed", fields: { openFailure: kind, schema: plan?.from ?? undefined, step: failure.kind === "failed" ? (failure.step ?? undefined) : undefined }, expected });
-    send({ type: "open-failed", gate });
+    const expected = kind === "newer" || kind === "no-room" || kind === "unwritable";
+    captureError(error, { code: "mailbox.open_failed", fields: { openFailure: kind, schema: from ?? undefined, step: failure.kind === "failed" ? (failure.step ?? undefined) : undefined }, expected });
+    send({ type: "open-failed", gate: failure });
     flushDiag();
     setTimeout(() => process.exit(75), 100);
     return false;
   }
-}
-
-/**
- * Plan 253: the longest the mailbox's checkpoints wait for the backup's settle (2–5 s measured on a 1.2 GB mailbox).
- * Until a checkpoint, commits made with synchronous=NORMAL aren't durable against a power cut: this bounds that window.
- */
-const SETTLE_HOLD_MS = 15_000;
-/** the kept backup's settle while it runs; a shutdown that closes ends it */
-let settling: Settle | null = null;
-
-/** Settles the kept backup if it is still a clone in WAL mode; `release` lets the mailbox's checkpoints go after. */
-function startSettle(backupsDir: string, release: () => void): void {
-  let file: string | null = null;
-  try {
-    file = backupToSettle(backupsDir);
-  } catch {
-    /* nothing readable to settle */
-  }
-  if (!file) return release();
-  let job: Settle;
-  try {
-    job = settling = settleBackup(file);
-  } catch (error) {
-    // no thread for it (Codex code review #9): the mailbox opens all the same, and the next start settles it
-    captureError(error, { code: "mailbox.backup_settle_failed", expected: false });
-    return release();
-  }
-  void job.done
-    .then(
-      (durationMs) => log.info("mailbox.backup_settled", { durationMs: Math.round(durationMs) }),
-      // a shutdown's stop isn't a failure; either way the next start settles what's left
-      (error: unknown) => void (settling === job && captureError(error, { code: "mailbox.backup_settle_failed", expected: false })),
-    )
-    .finally(() => {
-      if (settling === job) settling = null;
-      release();
-    });
-}
-
-/** the settle's stop, shared: a second shutdown waits for the same thread (Codex code review #8) */
-let settleStopped: Promise<void> | null = null;
-
-/** A shutdown that closes: the settle ends and its thread is gone before "closed". */
-function stopSettle(): Promise<void> {
-  const job = settling;
-  settling = null;
-  if (job) settleStopped = job.stop();
-  return settleStopped ?? Promise.resolve();
 }
 
 let closing: Promise<void> | null = null;
@@ -380,11 +301,9 @@ let closing: Promise<void> | null = null;
 async function shutdown(msg: Extract<MainToBackend, { type: "shutdown" }>): Promise<void> {
   const b = backend;
   const pending = opening;
-  if (!b) await preparation.stop(cancelClones);
   if (!b || closing) {
     pending?.abort.abort(new DOMException("Mailbox opening stopped", "AbortError"));
     await pending?.done;
-    await stopSettle();
     await closing;
     return send({ type: "shutdown-result", id: msg.id, outcome: "closed" });
   }
@@ -397,7 +316,6 @@ async function shutdown(msg: Extract<MainToBackend, { type: "shutdown" }>): Prom
   }
   pending?.abort.abort(new DOMException("Mailbox opening stopped", "AbortError"));
   await pending?.done;
-  await stopSettle();
   if (closing) await closing;
   else closing = b.stop().catch((error: unknown) => void captureError(error, { code: "backend.fatal", expected: false }));
   await closing;

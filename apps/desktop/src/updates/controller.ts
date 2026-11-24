@@ -397,11 +397,11 @@ export class UpdateController {
    * release) settles it with the usual "Terno updated" note.
    */
   mailboxFailed(gate: MailboxGate): void {
-    if (this.mailboxFailureSaid || gate.kind === "open" || gate.kind === "upgrading" || gate.kind === "restoring") return;
+    if (this.mailboxFailureSaid || gate.kind === "open" || gate.kind === "upgrading") return;
     const pending = this.deps.pending.read();
     if (!pending || installOutcome(pending, this.deps.version) !== "applied") return;
     this.mailboxFailureSaid = true;
-    const openFailure = gate.kind === "failed" ? gate.reason : gate.kind === "no-room" ? (gate.stage === "backup" ? "no-room-backup" : "no-room-migrate") : "newer";
+    const openFailure = gate.kind === "failed" ? gate.reason : gate.kind;
     this.deps.log("update.installed", { fromVersion: pending.from, toVersion: pending.to });
     this.deps.capture(Object.assign(new Error("mailbox didn't open after an update"), { name: "UpdateMailboxFailed" }), "update.mailbox_failed", { fromVersion: pending.from, toVersion: pending.to, openFailure, step: gate.kind === "failed" ? (gate.step ?? undefined) : undefined }, false);
   }
