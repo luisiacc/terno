@@ -92,7 +92,8 @@ it("owner proof expiry during persistence preparation rolls back pin, credential
 
 it("an Outlook sign-in admits under its own subject key, never Google's (plan 259)", async () => {
   const store = await open();
-  const { oauthIdentityAdmission } = await import("../../store/src/conformance/google-identity");
+  const { oauthIdentityAdmission, unknownKindRefused } = await import("../../store/src/conformance/google-identity");
+  await unknownKindRefused(store);
   const { stamp } = await oauthIdentityAdmission(store, "outlook");
   expect((await store.accounts.config<Record<string, unknown>>(stamp.id))!.config).not.toHaveProperty("googleSubject");
   await store.close();

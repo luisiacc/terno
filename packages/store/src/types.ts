@@ -284,8 +284,8 @@ export interface OpRow {
 export interface OwnerClaim {
   email: string;
   displayName: string;
-  provider: "gmail" | "imap";
-  verifiedBy: "google_oauth" | "imap_login";
+  provider: "gmail" | "imap" | "outlook";
+  verifiedBy: "google_oauth" | "imap_login" | "microsoft_oauth";
   /** {googleSub, emailVerified} | {imapHost, loginUser, emailMatchesLogin}; never leaves the backend */
   evidence: Record<string, unknown>;
   accountId: number;

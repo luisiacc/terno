@@ -10,6 +10,12 @@ interface Migration {
    * does says so, and is rare: leaving an old column or table in place and cleaning up later is preferred.
    */
   rewrites?: string;
+  /**
+   * Plan 259: the step rebuilds a table other tables reference (SQLite's documented 12-step procedure), so foreign keys
+   * are off while it runs: dropping the old table would otherwise run every ON DELETE CASCADE beneath it. They're
+   * checked (PRAGMA foreign_key_check) before the step commits, and on again after it, whatever happened.
+   */
+  rebuildsReferenced?: true;
 }
 
 /** Plan 255: steps from here on follow the rule above (the ones before were written while a backup came first). */
@@ -1839,6 +1845,47 @@ CREATE TRIGGER capture_repair_location_changed AFTER UPDATE ON message_locations
  DELETE FROM capture_repairs WHERE message_id=OLD.message_id AND json_extract(locator,'$.mailbox')=OLD.mailbox;
 END;
 ` },
+  // plan 259: Outlook is a third kind. The kind and the owner's provider are descriptive values the app checks (plan
+  // 267's rule), so their CHECK lists go rather than grow: a later provider is a code change, never a migration
+  { version: 81, name: "Accounts and the owner take any provider (plan 259)", rebuildsReferenced: true, rewrites: "the DROP TABLE of accounts and owner after every row is copied unchanged into their rebuilt tables (a CHECK list can't be dropped in place): a handful of rows. Foreign keys are off for the step, so nothing referencing an account is touched, and are checked before it commits", sql: `
+CREATE TABLE accounts_v81 (
+  id INTEGER PRIMARY KEY,
+  kind TEXT NOT NULL,
+  email TEXT NOT NULL,
+  display_name TEXT NOT NULL DEFAULT '',
+  color TEXT NOT NULL DEFAULT 'indigo',
+  provider_config TEXT NOT NULL DEFAULT '{}',
+  secret_ref TEXT,
+  sync_state TEXT NOT NULL DEFAULT '{}',
+  position INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+INSERT INTO accounts_v81 (id, kind, email, display_name, color, provider_config, secret_ref, sync_state, position, created_at)
+  SELECT id, kind, email, display_name, color, provider_config, secret_ref, sync_state, position, created_at FROM accounts;
+DROP TABLE accounts;
+ALTER TABLE accounts_v81 RENAME TO accounts;
+CREATE TRIGGER body_fact_accounts_insert AFTER INSERT ON accounts BEGIN UPDATE body_protocol SET epoch=lower(hex(randomblob(16))) WHERE id=1; END;
+CREATE TRIGGER body_fact_accounts_update AFTER UPDATE ON accounts BEGIN UPDATE body_protocol SET epoch=lower(hex(randomblob(16))) WHERE id=1; END;
+CREATE TRIGGER body_fact_accounts_delete AFTER DELETE ON accounts BEGIN UPDATE body_protocol SET epoch=lower(hex(randomblob(16))) WHERE id=1; END;
+CREATE TABLE owner_v81 (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  user_id TEXT NOT NULL,
+  email TEXT NOT NULL,
+  display_name TEXT NOT NULL DEFAULT '',
+  provider TEXT NOT NULL,
+  verified_by TEXT NOT NULL,
+  evidence_json TEXT NOT NULL DEFAULT '{}',
+  verified_at INTEGER,
+  account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
+  cloud_json TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+INSERT INTO owner_v81 (id, user_id, email, display_name, provider, verified_by, evidence_json, verified_at, account_id, cloud_json, created_at, updated_at)
+  SELECT id, user_id, email, display_name, provider, verified_by, evidence_json, verified_at, account_id, cloud_json, created_at, updated_at FROM owner;
+DROP TABLE owner;
+ALTER TABLE owner_v81 RENAME TO owner;
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;
@@ -1855,14 +1902,23 @@ export function migrate(db: Db): { from: number; to: number } {
   if (from > SCHEMA_VERSION) throw new SchemaNewerError(from, SCHEMA_VERSION);
   for (const m of MIGRATIONS) {
     if (m.version <= from) continue;
+    // plan 259: a pragma inside a transaction is ignored, so this is set before it, and proven before anything is dropped
+    const keysWere = m.rebuildsReferenced && Number(db.get<{ foreign_keys: number }>("PRAGMA foreign_keys")!.foreign_keys);
     try {
+      if (m.rebuildsReferenced) {
+        db.exec("PRAGMA foreign_keys = OFF");
+        if (Number(db.get<{ foreign_keys: number }>("PRAGMA foreign_keys")!.foreign_keys) !== 0) throw new Error("foreign keys stayed on: the rebuild would cascade");
+      }
       db.tx(() => {
         db.exec(m.sql);
+        if (m.rebuildsReferenced && db.all("PRAGMA foreign_key_check").length) throw new Error("the rebuild left references without their rows");
         db.exec(`PRAGMA user_version = ${m.version}`);
       });
     } catch (error) {
       // plan 95: the step rolled back (the file is at the step before); the window says which, and why
       throw new MigrationError(m.version, m.name, error);
+    } finally {
+      if (keysWere) db.exec("PRAGMA foreign_keys = ON");
     }
   }
   if (from !== SCHEMA_VERSION) {

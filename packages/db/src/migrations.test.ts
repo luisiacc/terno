@@ -862,6 +862,42 @@ describe("migration v75: Remove on a conversation waiting on you (plan 216)", ()
   });
 });
 
+describe("migration v81: accounts and the owner take any provider (plan 259)", () => {
+  it("rebuilds accounts and owner without their lists, every row and every reference to them kept; foreign keys are on again after", () => {
+    const { db } = legacyMail(80, { threads: 4, seed: 29 });
+    db.run("INSERT INTO accounts (id, kind, email, display_name, provider_config, created_at) VALUES (2, 'gmail', 'g@x.mx', 'G', '{\"googleSubject\":\"s\"}', 5)");
+    db.run("INSERT OR REPLACE INTO owner (id, user_id, email, display_name, provider, verified_by, evidence_json, verified_at, account_id, created_at, updated_at) VALUES (1, 'u', 'g@x.mx', 'G', 'gmail', 'google_oauth', '{}', 1, 2, 1, 1)");
+    expect(() => db.run("INSERT INTO accounts (id, kind, email, created_at) VALUES (3, 'outlook', 'o@x.mx', 0)")).toThrow();
+    const children = db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND sql LIKE '%REFERENCES accounts%' ORDER BY name").map((r) => r.name);
+    expect(children.length).toBeGreaterThan(20);
+    const snapshot = () => ({
+      accounts: db.all<Record<string, unknown>>("SELECT * FROM accounts ORDER BY id"),
+      owner: db.all<Record<string, unknown>>("SELECT * FROM owner"),
+      counts: children.map((t) => [t, db.get<{ n: number }>(`SELECT count(*) AS n FROM ${t}`)!.n]),
+    });
+    const before = snapshot();
+    expect(before.counts.find(([t]) => t === "messages")![1]).toBeGreaterThan(0);
+    db.exec("PRAGMA foreign_keys = ON");
+    expect(migrate(db)).toEqual({ from: 80, to: SCHEMA_VERSION });
+    expect(snapshot()).toEqual(before);
+    expect(db.get<{ foreign_keys: number }>("PRAGMA foreign_keys")!.foreign_keys).toBe(1);
+    expect(db.all("PRAGMA foreign_key_check")).toEqual([]);
+    expect(db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'accounts' ORDER BY name").map((r) => r.name))
+      .toEqual(["body_fact_accounts_delete", "body_fact_accounts_insert", "body_fact_accounts_update"]);
+    // a third provider goes in, the owner can be of it, and the triggers and cascades still hold
+    const epoch = () => db.get<{ epoch: string }>("SELECT epoch FROM body_protocol WHERE id = 1")?.epoch;
+    const was = epoch();
+    db.run("INSERT INTO accounts (id, kind, email, created_at) VALUES (3, 'outlook', 'o@x.mx', 0)");
+    if (was !== undefined) expect(epoch()).not.toBe(was);
+    db.run("UPDATE owner SET provider = 'outlook', verified_by = 'microsoft_oauth', account_id = 3");
+    db.run("DELETE FROM accounts WHERE id = 3");
+    expect(db.get<{ account_id: number | null }>("SELECT account_id FROM owner")!.account_id).toBeNull();
+    db.run("DELETE FROM accounts WHERE id = 1");
+    expect(db.get<{ n: number }>("SELECT count(*) AS n FROM messages")!.n).toBe(0);
+    expect(db.get<{ n: number }>("SELECT count(*) AS n FROM threads")!.n).toBe(0);
+  });
+});
+
 describe("migration v80: message repairs take any reason, and say which message (plan 267)", () => {
   it("copies every repair unchanged, keeps the usage counts, the cascades and the location triggers; a new reason goes in, an unknown state doesn't", () => {
     const { db } = legacyMail(79, { threads: 3, seed: 23 });

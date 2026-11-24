@@ -312,8 +312,8 @@ export interface OwnerIdentity {
   userId: string;
   email: string;
   displayName: string;
-  provider: "gmail" | "imap";
-  verifiedBy: "google_oauth" | "imap_login";
+  provider: "gmail" | "imap" | "outlook";
+  verifiedBy: "google_oauth" | "imap_login" | "microsoft_oauth";
   verifiedAt: number | null;
   /** adopted from an existing install's first account, not verified by a fresh login */
   migrated: boolean;

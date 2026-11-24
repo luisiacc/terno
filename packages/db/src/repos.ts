@@ -3,7 +3,7 @@ import { filterForwardChanged, forwardRuleGone } from "./forwards";
 import { assetError, bindFlagTarget, linkAssets, localFlagIntent, operationFlagFields, settleFlagEffects, validateAssets, type LocalFlagField } from "@terno/store";
 import { sqlFlags } from "./flag-intents";
 import { RpcError } from "@terno/core/rpc";
-import { OAUTH_KINDS } from "@terno/core";
+import { isAccountKind, OAUTH_KINDS } from "@terno/core";
 import { L } from "@terno/i18n";
 import { sqlAssets } from "./attachments";
 import {
@@ -93,6 +93,8 @@ export function createAccount(
   a: { kind: AccountKind; email: string; displayName: string; color: string; providerConfig?: unknown; secretRef?: string | null },
   now = Date.now(),
 ): Account {
+  // plan 259: the database keeps no list of kinds since v81; the store checks what it writes
+  if (!isAccountKind(a.kind)) throw new Error("Unknown account kind");
   return db.tx(() => {
     const id = nextAccountId(db);
     const position = db.get<{ p: number }>("SELECT coalesce(max(position), -1) + 1 AS p FROM accounts")!.p;

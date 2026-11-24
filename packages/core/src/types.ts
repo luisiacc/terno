@@ -15,6 +15,9 @@ export type AccountKind = "imap" | "gmail" | "outlook";
 export type SignInMethod = "password" | "google" | "microsoft";
 export const SIGN_IN = { imap: "password", gmail: "google", outlook: "microsoft" } as const satisfies Record<AccountKind, SignInMethod>;
 export const signInMethod = (kind: AccountKind): SignInMethod => SIGN_IN[kind];
+/** Plan 259: the kinds there are; the store checks a kind it writes (the database keeps no list since v81) */
+export const ACCOUNT_KINDS = Object.keys(SIGN_IN) as readonly AccountKind[];
+export const isAccountKind = (kind: unknown): kind is AccountKind => typeof kind === "string" && (ACCOUNT_KINDS as readonly string[]).includes(kind);
 /**
  * Plan 259: the kinds that sign in with OAuth and speak a REST API (Gmail, Outlook over Microsoft Graph), and the key in
  * the account's config that holds the stable subject its grants belong to (Google's `sub`; Microsoft's tenant and object id).

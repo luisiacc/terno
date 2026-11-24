@@ -9,8 +9,8 @@ interface OwnerRow {
   user_id: string;
   email: string;
   display_name: string;
-  provider: "gmail" | "imap";
-  verified_by: "google_oauth" | "imap_login";
+  provider: "gmail" | "imap" | "outlook";
+  verified_by: "google_oauth" | "imap_login" | "microsoft_oauth";
   evidence_json: string;
   verified_at: number | null;
   account_id: number | null;

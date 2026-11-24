@@ -67,3 +67,13 @@ it("a first Google pin and credential roll back together and survive an uncertai
   expect((await store.accounts.config<Record<string, unknown>>(account.id))!.config.googleSubject).toBe("first");
   expect(await store.secrets.get(name)).toEqual(Uint8Array.of(2));
 });
+
+it("an Outlook sign-in admits under its own subject key, never Google's; an unknown kind isn't written (plan 259)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "terno-outlook-pin-"));
+  const store = new SqlMailStore(openDatabase(join(dir, "test.db")));
+  cleanup.push(async () => { await store.close(); rmSync(dir, { recursive: true, force: true }); });
+  const { oauthIdentityAdmission, unknownKindRefused } = await import("../../store/src/conformance/google-identity");
+  await unknownKindRefused(store);
+  const { stamp } = await oauthIdentityAdmission(store, "outlook");
+  expect((await store.accounts.config<Record<string, unknown>>(stamp.id))!.config).not.toHaveProperty("googleSubject");
+});

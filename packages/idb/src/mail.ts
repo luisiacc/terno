@@ -75,6 +75,7 @@ import {
   type TabMessage,
   parseHandoff,
 } from "@terno/core";
+import { isAccountKind } from "@terno/core";
 import type { OwnerIdentity } from "@terno/core/rpc";
 import { acceptFlagObservation, bindFlagTarget, flagObservationValid, localFlagIntent, settleFlagEffects, type FlagObservation } from "@terno/store";
 import { bindIdbPromotedFlags, idbFlags } from "./flag-intents";
@@ -1556,6 +1557,7 @@ export function getAccountConfig<V>(c: Ctx, id: number): { config: V; secretRef:
 }
 
 export function createAccount(c: Ctx, a: { kind: AccountKind; email: string; displayName: string; color: string; providerConfig?: unknown; secretRef?: string | null }, now: number): Account {
+  if (!isAccountKind(a.kind)) throw new Error("Unknown account kind");
   return c.db.tx(() => {
     const accounts = T(c, "accounts");
     const id = Math.max(getSetting(c, "account_id_hwm", 0), accounts.highestKey()) + 1;

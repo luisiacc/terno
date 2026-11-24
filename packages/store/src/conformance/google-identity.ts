@@ -26,6 +26,12 @@ export async function oauthIdentityAdmission(store: MailStore, kind: OAuthKind =
   return { stamp, name, intent };
 }
 
+/** Plan 259: the database keeps no list of kinds (SQLite since v81); the store refuses one it doesn't know. */
+export async function unknownKindRefused(store: MailStore) {
+  await expect(store.accounts.create({ kind: "yahoo" as never, email: "y@example.test", displayName: "Y", color: "brown", providerConfig: {}, secret: { key: "password", blob: Uint8Array.of(1) }, now: 1 })).rejects.toThrow(/Unknown account kind/);
+  expect(await store.accounts.list()).toEqual([]);
+}
+
 /** An IMAP account takes no OAuth admission: its password commit can't be made to carry one. */
 export async function oauthAdmissionRefusesImap(store: MailStore) {
   const { account } = await store.accounts.create({ kind: "imap", email: "imap@example.test", displayName: "IMAP", color: "brown", providerConfig: {}, secret: { key: "password", blob: Uint8Array.of(1) }, now: 1 });
