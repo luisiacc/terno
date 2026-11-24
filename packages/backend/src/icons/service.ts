@@ -263,11 +263,22 @@ export class IconService {
   }
 
   /**
-   * Plan 258: Photos from Google's list of the contacts' addresses and photo URLs goes (at each start: it costs one
-   * removal of a missing file). Their cached photos go when the cache's index is first read (cache.ts).
+   * Plan 258: what Photos from Google left goes, on either host and whatever the website-icons switch says. Its list
+   * of the contacts' addresses and photo URLs marks that there is something to do: the cache's photo bytes are swept
+   * first and the list removed last, so a sweep that fails is tried again at the next start. Without the list, this is
+   * one read of a missing file.
    */
   async forgetGooglePhotos(): Promise<void> {
-    if (this.o.files && this.o.base) await this.o.files.remove(`${this.o.base}.icons-people.json`).catch(() => {});
+    const files = this.o.files;
+    if (!files || !this.o.base) return;
+    const people = `${this.o.base}.icons-people.json`;
+    try {
+      if (!(await files.read(people))) return;
+      await this.cache.sweep();
+      await files.remove(people);
+    } catch {
+      // the next start tries again
+    }
   }
 
   /** Quit: what's in flight is aborted and awaited, the index written. */

@@ -317,20 +317,21 @@ describe("holding through a reset, the edge cases", () => {
   });
 
   it("a replacement from before a reset never comes back for an address that left the screen", async () => {
-    showing("ana@gmail.com", ref("d:gmail.com"));
+    showing("ana@acme.com", ref("d:acme.com"));
     reset();
     await frame();
-    take("icons.lookup").resolve({ "ana@gmail.com": ref("p:ana") });
+    // the site's icon was refreshed: a new version, its bytes on their way
+    take("icons.lookup").resolve({ "ana@acme.com": ref("d:acme.com", 2) });
     await frame();
     await frame();
     const data = take("icons.data");
-    // scrolled away, then the photo source turned off
-    store.visible.delete("ana@gmail.com");
+    // scrolled away, then website icons turned off
+    store.visible.delete("ana@acme.com");
     reset();
-    data.resolve({ "p:ana": "data:photo" });
+    data.resolve({ "d:acme.com": "data:v2" });
     await frame();
-    expect(store.entries.has("ana@gmail.com")).toBe(false);
-    expect(shown("ana@gmail.com")).toBeNull();
+    expect(store.entries.has("ana@acme.com")).toBe(false);
+    expect(shown("ana@acme.com")).toBeNull();
   });
 
   it("a replacement whose bytes fail to come is looked up again, not stuck on the old icon", async () => {

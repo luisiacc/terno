@@ -56,9 +56,9 @@ export const es: SiteCopy = {
     },
     local: {
       title: "Sin cuenta. Sin nube. Solo tu ordenador.",
-      body: "Tu correo se sincroniza entre tu ordenador y tus servidores de correo, nunca a través de los nuestros. Tu correo, tus contactos y el índice de búsqueda viven en tu ordenador.",
+      body: "Tu correo se sincroniza entre tu ordenador y tus servidores de correo, nunca a través de los nuestros. Tu correo, las direcciones con las que te escribes y el índice de búsqueda viven en tu ordenador.",
       points: ["Privado desde el primer momento", "Imágenes remotas solo si las pides", "Cero rastreo"],
-      map: { computer: "Tu ordenador", kept: { mail: "Correo", contacts: "Contactos", index: "Índice de búsqueda" }, link: "Sincronización directa", servers: "Tus servidores de correo", providers: "Gmail · Outlook · IMAP", ours: "Ningún servidor de Terno" },
+      map: { computer: "Tu ordenador", kept: { mail: "Correo", contacts: "Direcciones", index: "Índice de búsqueda" }, link: "Sincronización directa", servers: "Tus servidores de correo", providers: "Gmail · Outlook · IMAP", ours: "Ningún servidor de Terno" },
     },
     search: {
       title: "Búsqueda instantánea.",

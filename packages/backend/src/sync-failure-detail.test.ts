@@ -23,7 +23,7 @@ describe("sync failure detail", () => {
     expect(requestShape("/messages/abcdefabcdefabcd?format=raw")).toBe("/messages/:id");
     expect(requestShape("/messages/x/attachments/ANGjdJ8%2Fq")).toBe("/messages/:id/attachments/:id");
     expect(requestShape("/threads/18c2?format=metadata")).toBe("/threads/:id");
-    expect(requestShape("https://people.googleapis.com/v1/people/me/connections?personFields=names")).toBe("/v1/people/me/connections");
+    expect(requestShape("https://openidconnect.googleapis.com/v1/userinfo?alt=json")).toBe("/v1/userinfo");
     expect(requestShape("/labels/Label_12/../ana@example.com")).toBe("/labels/:id/:id/:id");
   });
 });

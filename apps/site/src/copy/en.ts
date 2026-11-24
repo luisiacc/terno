@@ -63,10 +63,10 @@ export const en = {
     },
     local: {
       title: "No account. No cloud. Just your computer.",
-      body: "Your mail syncs between your computer and your mail servers, never through ours. Your mail, contacts and search index live on your computer.",
+      body: "Your mail syncs between your computer and your mail servers, never through ours. Your mail, the addresses you write to and the search index live on your computer.",
       points: ["Private from the first launch", "Remote images only when you ask", "Zero tracking"],
       /** the picture of where it all lives (Midnight): your computer, your mail servers, and no server of ours between them */
-      map: { computer: "Your computer", kept: { mail: "Mail", contacts: "Contacts", index: "Search index" }, link: "Synced directly", servers: "Your mail servers", providers: "Gmail · Outlook · IMAP", ours: "No Terno server" },
+      map: { computer: "Your computer", kept: { mail: "Mail", contacts: "Addresses", index: "Search index" }, link: "Synced directly", servers: "Your mail servers", providers: "Gmail · Outlook · IMAP", ours: "No Terno server" },
     },
     search: {
       title: "Instant search.",

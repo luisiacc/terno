@@ -2,7 +2,7 @@
  * Plan 22, the service end to end on a real backend: zero requests when the defaults say so,
  * fetching only what visible avatars ask for, the network and invalidation.
  */
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient, type IconAnswer, type IconRef } from "@terno/core/rpc";
@@ -43,9 +43,10 @@ function stubTransport(o: { known?: (host: string) => boolean; hold?: Promise<vo
   return t;
 }
 
-async function setup(o: { transport?: IconTransport; seed?: boolean; online?: boolean } = {}) {
+async function setup(o: { transport?: IconTransport | null; seed?: boolean; online?: boolean } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "terno-icons-"));
-  const transport = o.transport ?? stubTransport();
+  // null: a host that can't fetch website icons (the web)
+  const transport = o.transport === undefined ? stubTransport() : o.transport;
   const backend = new Backend({ dbPath: join(dir, "t.db"), version: "t", cipher: plaintextCipher, providers: demoRegistry, autoSync: false, iconTransport: transport, online: o.online });
   await backend.store.ready;
   if (o.seed !== false) await seedDemo(backend.store, { threads: 300, accounts: 4 });
@@ -251,12 +252,32 @@ describe("sender icons, fetching (plan 22)", () => {
 });
 
 describe("plan 258: what Photos from Google left behind", () => {
-  it("the contacts' addresses and photo URLs it kept are removed when the backend starts", async () => {
-    const { backend, dir } = await setup({ seed: false });
-    const people = join(dir, "t.db.icons-people.json");
-    writeFileSync(people, JSON.stringify({ v: 1, accounts: { "1": { at: 1, own: null, map: [["ana@example.test", "https://lh3.googleusercontent.com/a/ana=s128"]] } } }));
+  const people = (dir: string) => join(dir, "t.db.icons-people.json");
+  const leftovers = (dir: string) => {
+    writeFileSync(people(dir), JSON.stringify({ v: 1, accounts: { "1": { at: 1, own: null, map: [["ana@example.test", "https://lh3.googleusercontent.com/a/ana=s128"]] } } }));
+    mkdirSync(join(dir, "t.db.icons"), { recursive: true });
+    writeFileSync(join(dir, "t.db.icons", "3"), pngBytes(96));
+    writeFileSync(join(dir, "t.db.icons.json"), JSON.stringify({ v: 1, entries: [["p:0badf00d", { kind: "icon", mime: "image/png", px: 96, full: true, size: 10, hash: 1, slot: 3, fetchedAt: 1, usedAt: 1 }]] }));
+  };
+
+  it("goes at start, with website icons off and on a host that can't fetch them: the photos first, then the contacts' list", async () => {
+    const { backend, client, dir } = await setup({ seed: false, transport: null });
+    await client.call("settings.update", { senderIcons: false });
+    leftovers(dir);
     await backend.start();
-    await until(() => !existsSync(people));
-    expect(existsSync(join(dir, "t.db"))).toBe(true);
+    await until(() => !existsSync(people(dir)));
+    expect(existsSync(join(dir, "t.db.icons", "3"))).toBe(false);
+    expect(readFileSync(join(dir, "t.db.icons.json"), "utf8")).not.toContain("p:");
+  });
+
+  it("a sweep that fails keeps the list, so the next start tries again", async () => {
+    const { backend, dir } = await setup({ seed: false });
+    leftovers(dir);
+    vi.spyOn(backend.icons.cache, "sweep").mockRejectedValueOnce(new Error("synthetic disk failure"));
+    await backend.icons.forgetGooglePhotos();
+    expect(existsSync(people(dir))).toBe(true);
+    await backend.icons.forgetGooglePhotos();
+    expect(existsSync(people(dir))).toBe(false);
+    expect(existsSync(join(dir, "t.db.icons", "3"))).toBe(false);
   });
 });

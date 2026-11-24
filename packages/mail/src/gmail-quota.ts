@@ -12,7 +12,6 @@ const LATE_MS = 1000;
 
 /** What a Gmail API request costs in quota units (Google's table; unknown calls count as a list). */
 export function gmailUnits(path: string, method = "GET"): number {
-  if (path.startsWith("https://")) return 0; // People API and userinfo: not Gmail's quota
   const [route = "", query = ""] = path.split("?");
   const format = /(?:^|&)format=([a-z]+)/.exec(query)?.[1];
   if (route === "/messages/send") return 100;

@@ -22,7 +22,6 @@ describe("Gmail quota units", () => {
     expect(gmailUnits("/threads/t1?format=full")).toBe(120);
     expect(gmailUnits("/labels")).toBe(1);
     expect(gmailUnits("/profile")).toBe(1);
-    expect(gmailUnits("https://people.googleapis.com/v1/people/me")).toBe(0);
   });
 });
 

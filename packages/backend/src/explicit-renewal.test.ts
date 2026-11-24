@@ -379,6 +379,17 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     expect(await t.backend.provider(t.account.id)).not.toBeNull();
   });
 
+  it("plan 258: a reconnect never asks for more than mail, even for an account plan 74 left waiting for photos", async () => {
+    const t = await setup(kind);
+    await t.backend.store.settings.set("app", { ...(await t.backend.store.settings.get<object>("app", {})), googlePhotosPending: [t.account.id] });
+    t.answer({ refreshToken: "new-refresh" });
+    await t.client.call("accounts.reconnect", { id: t.account.id });
+    const asked = t.connect.mock.calls.at(-1)![0];
+    expect(asked).toMatchObject({ loginHint: who.email });
+    expect(asked).not.toHaveProperty("scopes");
+    expect((await t.client.call("app.bootstrap", {})).settings).not.toHaveProperty("googlePhotosPending");
+  });
+
   it("returned rotation commits before reconnect success", async () => {
     const t = await setup(kind); t.answer({ refreshToken: null }); t.rotate("rotated-refresh");
     await t.client.call("accounts.reconnect", { id: t.account.id });

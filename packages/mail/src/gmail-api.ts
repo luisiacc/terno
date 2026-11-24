@@ -654,7 +654,8 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
 
   async function api<T>(path: string, init: RequestInit & { ambiguousOnFailure?: boolean; responseMode?: "json" | "void" | "incoming"; incomingId?: string; readReset?: AbortSignal; preparationSignal?: AbortSignal; httpContext?: HttpRequestContext; requestRun?: RequestRun; proofToken?: string; requestGeneration?: number; admission?: MailAdmission; prepaid?: boolean } = {}, retried = false): Promise<T> {
     const { ambiguousOnFailure, responseMode = "json", incomingId, readReset, preparationSignal, httpContext, requestRun, proofToken, requestGeneration, admission, prepaid, ...request } = init;
-    const context = httpContext ?? (path.startsWith("https://") ? { endpoint: "unknown", purpose: "unknown" } as const : { endpoint: "gmail-api", purpose: "mail" } as const);
+    // a path under the Gmail API (plan 258: nothing else goes through here since Photos from Google left)
+    const context = httpContext ?? { endpoint: "gmail-api", purpose: "mail" } as const;
     ctx.google?.check(context, admission);
     const generation = requestGeneration ?? ctx.google?.generation();
     preparationSignal?.throwIfAborted();
@@ -692,7 +693,6 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       let nativeStatus: number | undefined;
       let settleForbidden: ((kind: "quota" | "policy" | "none", policyError?: ProviderError) => Promise<void>) | undefined;
       try {
-        // plan 22: the People API and userinfo go through the same token and deadlines (absolute URLs)
         deadline.signal.throwIfAborted();
         // Gmail's per-user quota, paced just before the request leaves; a send the user asked for
         // counts but never waits, a full download paid before taking its read slot (fetchFull)
@@ -703,7 +703,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
           await quota.spend(units, preparationSignal ? AbortSignal.any([deadline.signal, preparationSignal]) : deadline.signal);
           preparationSignal?.throwIfAborted();
         }
-        const url = path.startsWith("https://") ? path : `${ep.api}${path}`;
+        const url = `${ep.api}${path}`;
         const wire = { ...request, signal: deadline.signal, headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...request.headers } };
         const responsePromise = ctx.google ? ctx.google.request({ request: context, admission, run: sending && requestRun ? { markDispatched() { requestRun.markDispatched(); requestRun.markSubmissionDispatched?.(); } } : requestRun, generation, onForbidden: (settle) => {
           if (deadline.signal.aborted) void settle("none");
@@ -764,7 +764,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       }
       try {
         if (responseMode === "incoming") return await incomingResponse(res, incomingId!, deadline, preparationSignal, admission) as T;
-        if (path === "/profile" || path === "/messages/send" || path === ep.userinfo) return JSON.parse(await readResponseText(res, 65_536, deadline.signal, yieldPage)) as T;
+        if (path === "/profile" || path === "/messages/send") return JSON.parse(await readResponseText(res, 65_536, deadline.signal, yieldPage)) as T;
         if (path === "/labels") return JSON.parse(await readResponseText(res, LABELS_BYTES, deadline.signal, yieldPage)) as T;
         if (path.startsWith("/history?") || path.startsWith("/messages?")) return JSON.parse(await readResponseText(res, HISTORY_BYTES, deadline.signal, yieldPage)) as T;
         if (path.startsWith("/messages/") && path.endsWith("?format=minimal")) return JSON.parse(await readResponseText(res, 65_536, deadline.signal, yieldPage)) as T;

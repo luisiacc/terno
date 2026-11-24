@@ -144,7 +144,7 @@ describe("the icon cache (plan 22)", () => {
     expect([...files.map.keys()]).toEqual([]);
   });
 
-  it("plan 258: a photo Photos from Google cached is dropped at the first read, its bytes and its index entry with it", async () => {
+  it("plan 258: a photo Photos from Google cached is never served, and the sweep removes every slot no website icon holds", async () => {
     const files = memFiles();
     const { c } = cache({ files });
     await c.load();
@@ -152,16 +152,26 @@ describe("the icon cache (plan 22)", () => {
     await c.put("p:0badf00d", { ...icon(96, 9), full: true }, 1000);
     c.negative("p:00c0ffee", 5000);
     await c.flush();
-    expect(files.map.has("/p/terno.db.icons/1")).toBe(true);
+    // a photo the LRU dropped from the index long ago left its file behind
+    files.map.set("/p/terno.db.icons/7", pngBytes(64));
     const { c: again } = cache({ files });
     await again.load();
-    await again.flush();
     expect([...again.keys()]).toEqual(["d:netflix.com"]);
     expect(await again.read("p:0badf00d")).toBeNull();
-    expect(files.map.has("/p/terno.db.icons/1")).toBe(false);
+    await again.sweep();
+    expect([...files.map.keys()].filter((k) => k.startsWith("/p/terno.db.icons/"))).toEqual(["/p/terno.db.icons/0"]);
     expect(await again.read("d:netflix.com")).toEqual(icon(32).bytes);
     // the index written again holds website icons only
     const index = JSON.parse(new TextDecoder().decode(files.map.get("/p/terno.db.icons.json"))) as { entries: [string][] };
     expect(index.entries.map(([key]) => key)).toEqual(["d:netflix.com"]);
+  });
+
+  it("plan 258: an index of photo misses only is written again without them", async () => {
+    const files = memFiles();
+    files.map.set("/p/terno.db.icons.json", new TextEncoder().encode(JSON.stringify({ v: 1, entries: [["p:00c0ffee", { kind: "none", until: 9e15, usedAt: 1 }]] })));
+    const { c } = cache({ files });
+    await c.load();
+    await c.flush();
+    expect(JSON.parse(new TextDecoder().decode(files.map.get("/p/terno.db.icons.json")))).toEqual({ v: 1, entries: [] });
   });
 });

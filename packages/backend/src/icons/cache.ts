@@ -95,15 +95,15 @@ export class IconCache {
         raw = null;
       }
       if (!raw) return;
-      // plan 258: website icons only; a photo Photos from Google cached (a `p:` key) goes, its bytes with it
-      const retired: number[] = [];
+      // plan 258: website icons only; a photo Photos from Google cached (a `p:` key) is never served (sweep() removes its bytes)
+      let retired = false;
       try {
         const index = JSON.parse(new TextDecoder().decode(raw)) as IndexFile;
         if (index.v !== 1 || !Array.isArray(index.entries)) return;
         for (const [key, e] of index.entries.slice(0, this.o.maxEntries)) {
           if (typeof key !== "string" || !e || (e.kind !== "icon" && e.kind !== "none")) continue;
           if (!key.startsWith("d:")) {
-            if (e.kind === "icon" && Number.isInteger(e.slot) && e.slot >= 0 && e.slot < this.o.slots) retired.push(e.slot);
+            retired = true;
             continue;
           }
           if (e.kind === "icon") {
@@ -118,15 +118,27 @@ export class IconCache {
         this.usedSlots.clear();
         this.bytes = 0;
       }
-      if (!retired.length) return;
-      // queued before any later write, so a slot reused meanwhile is never removed after it
-      const files = this.o.files!;
-      void this.serial(async () => {
-        for (const n of retired) if (!this.usedSlots.has(n)) await files.remove(this.slotPath(n)).catch(() => {});
-      });
-      this.schedule();
+      if (retired) this.schedule();
     })();
     return this.loaded;
+  }
+
+  /**
+   * Plan 258: every slot file no website icon holds is removed (a photo's, listed or evicted long ago), then the index
+   * is written without them. Queued like any write, so a slot reserved meanwhile is skipped and written after. Throws
+   * when a removal fails, so the caller can try again.
+   */
+  async sweep(): Promise<void> {
+    await this.load();
+    if (!this.disk) return;
+    const files = this.o.files!;
+    await this.serial(async () => {
+      for (let n = 0; n < this.o.slots; n++) if (!this.usedSlots.has(n)) await files.remove(this.slotPath(n));
+    });
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+    const index: IndexFile = { v: 1, entries: [...this.entries.entries()] };
+    await this.serial(() => files.replace(this.indexPath, new TextEncoder().encode(JSON.stringify(index))));
   }
 
   get size(): { entries: number; bytes: number } {
