@@ -1,18 +1,23 @@
 import { L } from "@terno/i18n";
 import { RpcError } from "@terno/core/rpc";
-import type { CaptureLocator, CaptureReason, CaptureRepair, CaptureRepairPage, CaptureTicket } from "@terno/core";
+import { CAPTURE_DETAIL_TEXT_MAX, isCaptureReason, type CaptureDetail, type CaptureLocator, type CaptureReason, type CaptureRepair, type CaptureRepairPage, type CaptureTicket } from "@terno/core";
 
 export const CAPTURE_REPAIR_COUNT = 1000;
 export const CAPTURE_REPAIR_BYTES = 1024 * 1024;
 export interface CaptureRepairRow {
   [column: string]: unknown;
   account_id: number; key: string; message_id: number | null;
-  locator: string; reason: CaptureReason; state: "blocked" | "pending"; revision: number; bytes: number;
+  /** plan 267: plain text in the database (no list there); written only from CAPTURE_REASONS, read whatever it is */
+  locator: string; reason: string; state: "blocked" | "pending"; revision: number; bytes: number;
+  /** plan 267: JSON of what's known about the message (CaptureDetail), or null */
+  detail?: string | null;
 }
 export interface CaptureRepairStorage {
   get(account: number, key: string): CaptureRepairRow | undefined;
   usage(account: number): { count: number; bytes: number };
   messageId(account: number, locator: CaptureLocator): number | null;
+  /** plan 267: the stored message's subject, sender and date, when it's stored (an IMAP repair's always is) */
+  envelope(account: number, messageId: number): CaptureDetail | undefined;
   valid(account: number, locator: CaptureLocator): boolean;
   put(row: CaptureRepairRow): void;
   remove(account: number, key: string): void;
@@ -23,6 +28,8 @@ export interface CaptureRepairs {
   get(account: number, locator: CaptureLocator): Promise<CaptureRepair | null>;
   list(account: number, after?: string, state?: "pending"): Promise<CaptureRepairPage>;
   block(account: number, locator: CaptureLocator, reason: CaptureReason, revision: number, check?: () => void): Promise<void>;
+  /** plan 267: what's known about a repair's message, kept when the row is still at `revision` and has none */
+  describe(account: number, key: string, revision: number, detail: CaptureDetail): Promise<void>;
   retry(account: number, key: string, revision: number, check?: () => void): Promise<void>;
   retire(account: number, locator: CaptureLocator, check?: () => void): Promise<void>;
 }
@@ -41,24 +48,65 @@ export function captureLocator(key: string): CaptureLocator {
   if (captureKey(locator) !== key) throw new Error("Invalid capture identity");
   return locator;
 }
-export const captureRepair = (r: CaptureRepairRow): CaptureRepair => ({ key: r.key, locator: JSON.parse(r.locator), reason: r.reason, state: r.state, revision: r.revision });
+/** A detail cut to its bounds, its unknown or malformed parts dropped (plan 267); undefined when nothing's left. */
+export function captureDetail(value: unknown): CaptureDetail | undefined {
+  if (!value || typeof value !== "object") return;
+  const v = value as Record<string, unknown>, out: CaptureDetail = {};
+  const text = (x: unknown) => typeof x === "string" && x.trim() ? x.trim().slice(0, CAPTURE_DETAIL_TEXT_MAX) : undefined;
+  const subject = text(v.subject), from = text(v.from);
+  if (subject) out.subject = subject;
+  if (from) out.from = from;
+  if (Number.isSafeInteger(v.date) && (v.date as number) > 0) out.date = v.date as number;
+  return Object.keys(out).length ? out : undefined;
+}
+function readDetail(json: string | null | undefined): CaptureDetail | undefined {
+  if (!json) return;
+  try { return captureDetail(JSON.parse(json)); } catch { return; }
+}
+/** plan 267: a reason this build doesn't know (a newer one wrote it on the same schema) reads as "unknown", never an error */
+export const captureRepair = (r: CaptureRepairRow): CaptureRepair => {
+  const detail = readDetail(r.detail);
+  return { key: r.key, locator: JSON.parse(r.locator), reason: isCaptureReason(r.reason) ? r.reason : "unknown", state: r.state, revision: r.revision, ...(detail && { detail }) };
+};
 export function captureRowBytes(row: CaptureRepairRow): number {
+  // plan 267: no detail costs nothing (a row from before it, or SQLite's null, counts as it always did)
+  const { detail, ...rest } = row;
+  const counted = detail ? { ...rest, detail } : rest;
   let bytes = 0;
   for (;;) {
-    const next = new TextEncoder().encode(JSON.stringify({ ...row, bytes })).length;
+    const next = new TextEncoder().encode(JSON.stringify({ ...counted, bytes })).length;
     if (next === bytes) return bytes;
     bytes = next;
   }
 }
 export function blockCapture(db: CaptureRepairStorage, account: number, locator: CaptureLocator, reason: CaptureReason, revision: number): void {
-  if (reason !== "mime-parts" && reason !== "mime-depth") throw new Error("Invalid capture reason");
+  // plan 267: the database holds no list of reasons; this is where a reason is checked
+  if (!isCaptureReason(reason)) throw new Error("Invalid capture reason");
   const key = captureKey(locator), previous = db.get(account, key);
   if (!db.valid(account, locator) || (previous?.revision ?? 0) !== revision) throw new RpcError("STALE", L("capture.changed"));
-  const row: CaptureRepairRow = { account_id: account, key, message_id: locator.kind === "imap" ? locator.messageId : db.messageId(account,locator), locator: JSON.stringify(locator), reason, state: "blocked", revision, bytes: 0 };
+  const messageId = locator.kind === "imap" ? locator.messageId : db.messageId(account,locator);
+  // the stored message's envelope (an IMAP repair's message always is), else what the row had (a Gmail one, read for the list)
+  const detail = (messageId !== null ? captureDetail(db.envelope(account, messageId)) : undefined) ?? readDetail(previous?.detail);
+  const row: CaptureRepairRow = { account_id: account, key, message_id: messageId, locator: JSON.stringify(locator), reason, state: "blocked", revision, bytes: 0, detail: detail ? JSON.stringify(detail) : null };
   row.bytes = captureRowBytes(row);
   const used = db.usage(account);
-  if (used.count + (previous ? 0 : 1) > CAPTURE_REPAIR_COUNT || used.bytes - (previous?.bytes ?? 0) + row.bytes > CAPTURE_REPAIR_BYTES) throw new RpcError("UNAVAILABLE", L("capture.capacity"));
+  const fits = (r: CaptureRepairRow) => used.bytes - (previous?.bytes ?? 0) + r.bytes <= CAPTURE_REPAIR_BYTES;
+  // a detail never costs a repair its place: near the cap the row goes without it
+  if (!fits(row) && row.detail) { row.detail = null; row.bytes = captureRowBytes(row); }
+  if (used.count + (previous ? 0 : 1) > CAPTURE_REPAIR_COUNT || !fits(row)) throw new RpcError("UNAVAILABLE", L("capture.capacity"));
   db.put(row);
+}
+/**
+ * Plan 267: what's known about a repair's message (Gmail's own parse of its headers, read when the list is opened), kept
+ * only on the row it was read for: the same revision, still without one, and inside the byte cap (else nothing changes).
+ */
+export function describeCapture(db: CaptureRepairStorage, account: number, key: string, revision: number, given: CaptureDetail): void {
+  const row = db.get(account, key), detail = captureDetail(given);
+  if (!row || !detail || row.revision !== revision || readDetail(row.detail)) return;
+  const next: CaptureRepairRow = { ...row, detail: JSON.stringify(detail) };
+  next.bytes = captureRowBytes(next);
+  if (db.usage(account).bytes - row.bytes + next.bytes > CAPTURE_REPAIR_BYTES) return;
+  db.put(next);
 }
 export function retryCapture(db: CaptureRepairStorage, account: number, key: string, revision: number): void {
   const row = db.get(account, key);

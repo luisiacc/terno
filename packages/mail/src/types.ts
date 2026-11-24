@@ -301,6 +301,11 @@ export interface MailProvider {
   flagSnapshotSource?: "locations";
   verify(): Promise<void>;
   sync(sink: SyncSink): Promise<void>;
+  /**
+   * Plan 267: the subject, sender and date of a message whose capture was refused (never stored), read on the user's
+   * opening of the repairs list from the provider's own parse of its headers; undefined when it can't be read.
+   */
+  describe?(providerId: string, signal: AbortSignal): Promise<import("@terno/core").CaptureDetail | undefined>;
   /** Explicit cached-message body read; never enumerates mail or loads embedded resources. */
   readBody?(target: { id: number; providerMsgId: string }, signal: AbortSignal): Promise<{ parsed: import("./mime").ParsedMessage; release(): void } | null>;
   /**

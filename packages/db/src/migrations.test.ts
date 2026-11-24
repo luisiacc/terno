@@ -862,6 +862,48 @@ describe("migration v75: Remove on a conversation waiting on you (plan 216)", ()
   });
 });
 
+describe("migration v80: message repairs take any reason, and say which message (plan 267)", () => {
+  it("copies every repair unchanged, keeps the usage counts, the cascades and the location triggers; a new reason goes in, an unknown state doesn't", () => {
+    const { db } = legacyMail(79, { threads: 3, seed: 23 });
+    db.run("INSERT INTO accounts (id, kind, email, display_name, provider_config, created_at) VALUES (2, 'gmail', 'g@x.mx', '', '{}', 0)");
+    const [a, b, c] = db.all<{ id: number }>("SELECT id FROM messages ORDER BY id LIMIT 3").map((r) => r.id);
+    for (const [m, uid] of [[a!, 7], [b!, 8], [c!, 9]] as const) db.run("INSERT INTO message_locations (message_id, account_id, mailbox, uidvalidity, uid) VALUES (?, 1, 'INBOX', 5, ?)", m, uid);
+    const imap = (m: number, uid: number) => JSON.stringify(["imap", m, "INBOX", 5, uid]);
+    const repair = (account: number, key: string, message: number | null, locator: string, reason: string, state: string, revision: number, bytes: number) =>
+      db.run("INSERT INTO capture_repairs (account_id, key, message_id, locator, reason, state, revision, bytes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", account, key, message, locator, reason, state, revision, bytes);
+    // written as v79 wrote them: its triggers count the usage
+    repair(1, imap(a!, 7), a!, JSON.stringify({ kind: "imap", messageId: a, mailbox: "INBOX", uidvalidity: 5, uid: 7 }), "mime-depth", "blocked", 0, 120);
+    repair(1, imap(b!, 8), b!, JSON.stringify({ kind: "imap", messageId: b, mailbox: "INBOX", uidvalidity: 5, uid: 8 }), "mime-parts", "pending", 3, 130);
+    repair(1, imap(c!, 9), c!, JSON.stringify({ kind: "imap", messageId: c, mailbox: "INBOX", uidvalidity: 5, uid: 9 }), "mime-parts", "blocked", 1, 140);
+    repair(2, JSON.stringify(["gmail", "g1"]), null, JSON.stringify({ kind: "gmail", providerId: "g1" }), "mime-parts", "blocked", 0, 90);
+    expect(() => repair(2, JSON.stringify(["gmail", "g2"]), null, "{}", "mime-headers", "blocked", 0, 1)).toThrow();
+    const rows = db.all<Record<string, unknown>>("SELECT * FROM capture_repairs ORDER BY account_id, key");
+    const usage = () => db.all<Record<string, unknown>>("SELECT * FROM capture_repair_usage ORDER BY account_id");
+    const counted = usage();
+    expect(counted).toEqual([{ account_id: 1, count: 3, bytes: 390 }, { account_id: 2, count: 1, bytes: 90 }]);
+    db.exec("PRAGMA foreign_keys = ON");
+    expect(migrate(db)).toEqual({ from: 79, to: SCHEMA_VERSION });
+    expect(db.all<Record<string, unknown>>("SELECT * FROM capture_repairs ORDER BY account_id, key")).toEqual(rows.map((r) => ({ ...r, detail: null })));
+    expect(usage()).toEqual(counted);
+    expect(db.all("PRAGMA foreign_key_check")).toEqual([]);
+    expect(db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type IN ('index', 'trigger') AND sql LIKE '%capture_repairs%' ORDER BY name").map((r) => r.name))
+      .toEqual(["capture_repair_added", "capture_repair_changed", "capture_repair_location_changed", "capture_repair_location_removed", "capture_repair_message", "capture_repair_removed", "capture_repair_state"]);
+    // any reason now (the store checks them); the state's list stays
+    repair(2, JSON.stringify(["gmail", "g2"]), null, JSON.stringify({ kind: "gmail", providerId: "g2" }), "mime-headers", "blocked", 0, 50);
+    expect(() => repair(2, JSON.stringify(["gmail", "g3"]), null, "{}", "mime-parts", "gone", 0, 1)).toThrow();
+    db.run("UPDATE capture_repairs SET bytes = 70, detail = '{\"subject\":\"Hi\"}' WHERE account_id = 2 AND key = ?", JSON.stringify(["gmail", "g2"]));
+    expect(usage()).toEqual([{ account_id: 1, count: 3, bytes: 390 }, { account_id: 2, count: 2, bytes: 160 }]);
+    // the location triggers: a uid change and a removed location take their repair; a removed message its own
+    db.run("UPDATE message_locations SET uid = 70 WHERE message_id = ?", a!);
+    db.run("DELETE FROM message_locations WHERE message_id = ?", b!);
+    db.run("DELETE FROM messages WHERE id = ?", c!);
+    expect(db.all("SELECT * FROM capture_repairs WHERE account_id = 1")).toEqual([]);
+    expect(usage()).toEqual([{ account_id: 1, count: 0, bytes: 0 }, { account_id: 2, count: 2, bytes: 160 }]);
+    db.run("DELETE FROM accounts WHERE id = 2");
+    expect(db.all("SELECT * FROM capture_repairs")).toEqual([]);
+  });
+});
+
 describe("migration v77: What matters in your words (plan 249)", () => {
   it("adds three empty tables with their indexes, every thread, message, dated item and setting kept as it was; a mark goes with its message and an item with its thread", () => {
     const { db } = legacyMail(76, { threads: 3, seed: 19 });

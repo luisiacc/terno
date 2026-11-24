@@ -28,3 +28,24 @@ it("keeps collapsed recovery idle with a stable accessible controlled region", a
   const region = document.getElementById(toggle.getAttribute("aria-controls")!);
   expect(region).not.toBeNull(); expect(region!.hidden).toBe(true);
 });
+
+it("plan 267: says which message each repair is and why, in its own words for every reason", async () => {
+  const row = (key: string, reason: string, detail?: object) => ({ key, locator: { kind: "gmail", providerId: key }, reason, state: "blocked", revision: 0, ...(detail && { detail }) });
+  call.mockResolvedValueOnce({ items: [
+    row("a", "mime-parts", { subject: "Quarterly report", from: "Ana Torres", date: Date.UTC(2026, 9, 3) }),
+    row("b", "mime-depth"), row("c", "mime-headers", { from: "Bea" }), row("d", "mime-addresses"), row("e", "unknown"),
+  ] });
+  container = document.createElement("div"); document.body.append(container); root = createRoot(container);
+  await act(async () => root.render(<CaptureRecovery accountId={1} />));
+  await act(async () => [...container.querySelectorAll("button")].find((b) => b.textContent === "Messages needing repair")!.click());
+  const groups = [...container.querySelectorAll('[role="group"]')];
+  expect(groups.map((g) => g.getAttribute("aria-label"))).toEqual(["Quarterly report", "Message 2", "No subject", "Message 4", "Message 5"]);
+  const text = groups.map((g) => g.textContent);
+  expect(text[0]).toContain("Ana Torres · ");
+  expect(text[0]).toContain("too many parts");
+  expect(text[1]).toContain("nested too deeply");
+  expect(text[2]).toContain("Bea");
+  expect(text[2]).toContain("headers are too large");
+  expect(text[3]).toContain("address list is too large");
+  expect(text[4]).toContain("can't be processed safely");
+});

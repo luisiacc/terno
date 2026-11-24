@@ -48,6 +48,8 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  * backfill to write it (store.ts).
  * SQL v79 (plan 261) adds `messages.code` and `threads.code`: absent reads as none, so no version change; mail from before
  * has none stored (a code shows for two hours).
+ * SQL v80 (plan 267) drops the capture repairs' reason CHECK and adds `detail`: IndexedDB has no CHECKs, and an absent
+ * `detail` reads as none, so no version change.
  */
 export { IDB_VERSION };
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */

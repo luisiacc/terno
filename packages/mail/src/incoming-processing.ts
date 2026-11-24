@@ -1,4 +1,4 @@
-import { MAX_INCOMING_MIME_BYTES } from "@terno/core";
+import { MAX_INCOMING_MIME_BYTES, type CaptureReason } from "@terno/core";
 import type { ParsedMessage } from "./mime";
 
 export type IncomingProcessingInput =
@@ -39,6 +39,21 @@ const FAILURE_CODES = [
   "input-limit", "result-limit", "worker-unavailable", "worker-fault", "worker-timeout", "worker-busy", "worker-closed",
 ] as const;
 export type IncomingProcessingFailureCode = typeof FAILURE_CODES[number];
+
+/**
+ * Plan 267: the parser's limits, one message's own verdict (its structure, the same on every try), as the repair each
+ * becomes, for both providers: the worker's codes, and the parser's own when a message is parsed in place. Size isn't
+ * one (a big message is stored envelope-only; the size refusals left are malformed input), nor are worker faults and
+ * timeouts (a timeout can pass on a quieter machine).
+ */
+export function captureReasonOf(error: unknown): CaptureReason | undefined {
+  switch ((error as { code?: unknown } | null)?.code) {
+    case "mime-limit-parts": case "EMAXPARTCOUNT": return "mime-parts";
+    case "mime-limit-depth": case "EMAXNESTINGDEPTH": return "mime-depth";
+    case "mime-limit-headers": case "EMAXHEADERSIZE": return "mime-headers";
+    case "mime-limit-addresses": case "EMAXFORWARDEDADDRESSES": return "mime-addresses";
+  }
+}
 
 export class IncomingProcessingError extends Error {
   constructor(readonly code: IncomingProcessingFailureCode) {

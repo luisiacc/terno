@@ -202,6 +202,23 @@ describe("IMAP provider against ImapKit", () => {
     expect((await client.call("threads.get", { threadId: thread!.id }))!.messages[0]).toMatchObject(expected);
   });
 
+  it("plan 267: a body the parser refuses (its headers past the limit) becomes a repair named by its envelope; the next body is downloaded and nothing is retried", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    // a header block past the parser's limit (2 MB parsed in place, as here; 512 KiB in the desktop's worker)
+    const filler = `X-Filler: ${Array.from({ length: 2300 }, () => "x".repeat(990)).join("\r\n ")}\r\n`;
+    imap.server.control.addMessage("INBOX", { raw: filler + raw({ subject: "Too many", date: new Date(Date.UTC(2026, 9, 1)) }) });
+    imap.server.control.addMessage("INBOX", { raw: raw({ subject: "Fine", body: "Ordinary body", date: new Date(Date.UTC(2026, 9, 2)) }) });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const repairs = (await client.call("captureRepairs.list", { accountId: account.id })).items;
+    expect(repairs).toHaveLength(1);
+    expect(repairs[0]).toMatchObject({ reason: "mime-headers", state: "blocked", detail: { subject: "Too many", from: "Ana Pérez" } });
+    expect(sqlDb(backend.store).get("SELECT body_state FROM messages WHERE subject = 'Fine'")).toEqual({ body_state: "full" });
+    // a second pass leaves the refused body alone: it completes, and there's still the one repair
+    await backend.syncAccount(account.id);
+    expect((await client.call("captureRepairs.list", { accountId: account.id })).items).toHaveLength(1);
+  });
+
   it("rejects a wrong password when adding the account", async () => {
     const { client, imap, smtp } = await setup();
     await expect(

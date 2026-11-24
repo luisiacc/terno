@@ -41,6 +41,8 @@ function rig(o: {
   explicitRetry?: string;
   flags?: number;
   stored?: string[];
+  /** plan 267: a metadata read's answer (a number: that HTTP status; a string: the raw body) */
+  metadata?: (id: string) => unknown;
 }) {
   const stored = new Set(o.stored ?? []);
   const raws: string[] = [], minimals: string[] = [], histories: string[] = [], saved: unknown[] = [], ingested: string[][] = [], flagPages: FlagSnapshotRequest[] = [];
@@ -78,6 +80,11 @@ function rig(o: {
       }
       if (url.pathname.endsWith("/labels")) return Response.json({ labels: [] });
       const id = url.pathname.split("/").at(-1)!;
+      if (url.searchParams.get("format") === "metadata") {
+        const answer = o.metadata?.(id) ?? 404;
+        if (typeof answer === "number") return Response.json({ error: { message: "synthetic" } }, { status: answer });
+        return typeof answer === "string" ? new Response(answer) : Response.json(answer);
+      }
       if (url.searchParams.get("format") === "minimal") {
         minimals.push(id);
         const answer = o.minimal?.(id) ?? { id, labelIds: ["INBOX"] };
@@ -123,11 +130,27 @@ describe("one message never holds the rest back", () => {
     expect(t.saved).toEqual([{ historyId: "20" }]);
   });
 
+  it.each([["mime-limit-headers", "mime-headers"], ["mime-limit-addresses", "mime-addresses"]] as const)("plan 267: %s is a %s repair: siblings stored, the cursor moves, and the next pass leaves it be", async (code, reason) => {
+    const blockCapture = vi.fn(async () => {});
+    let blocked = false;
+    const t = rig({ history: () => additions(["a1", "bad", "a2"]), refuse: (id) => id === "bad" ? code : undefined, blockCapture, repairRows: [] });
+    await t.sync();
+    expect(blockCapture).toHaveBeenCalledExactlyOnceWith({ kind: "gmail", providerId: "bad" }, reason, 0);
+    expect(t.ingested.flat().sort()).toEqual(["a1", "a2"]);
+    expect(t.saved).toEqual([{ historyId: "20" }]);
+    blocked = true;
+    const next = rig({ history: () => additions(["bad"]), refuse: (id) => id === "bad" && blocked ? code : undefined, blockCapture, repairRows: ["bad"] });
+    await next.sync();
+    expect(next.raws).toEqual([]);
+    expect(next.saved).toEqual([{ historyId: "20" }]);
+  });
+
   it("a message only its own content fails is held: the other 119 are stored newest first, the cursor stays, and a later pass takes it", async () => {
     let bad = true;
     const ids = named(120);
-    const t = rig({ history: () => additions(ids), refuse: (id) => id === "a60" && bad ? "mime-limit-headers" : undefined });
-    await expect(t.sync()).rejects.toMatchObject({ code: "mime-limit-headers", expected: true, retryable: false });
+    // (plan 267: a parser verdict is a repair now; an input over the processor's limit is still held)
+    const t = rig({ history: () => additions(ids), refuse: (id) => id === "a60" && bad ? "input-limit" : undefined });
+    await expect(t.sync()).rejects.toMatchObject({ code: "input-limit", expected: true, retryable: false });
     // the newest first: the first batch downloaded is a71..a120
     expect(t.raws.slice(0, 50).sort()).toEqual(ids.slice(70).sort());
     expect(t.ingested.flat().sort()).toEqual(ids.filter((id) => id !== "a60").sort());
@@ -169,16 +192,16 @@ describe("one message never holds the rest back", () => {
   });
 
   it("a retry asked for now that fails again is held without keeping history's cursor back", async () => {
-    const t = rig({ history: () => additions(["a1"]), explicitRetry: "r", refuse: (id) => id === "r" ? "mime-limit-headers" : undefined });
-    await expect(t.sync()).rejects.toMatchObject({ code: "mime-limit-headers" });
+    const t = rig({ history: () => additions(["a1"]), explicitRetry: "r", refuse: (id) => id === "r" ? "input-limit" : undefined });
+    await expect(t.sync()).rejects.toMatchObject({ code: "input-limit" });
     expect(t.raws).toEqual(["r", "a1"]);
     expect(t.ingested.flat()).toEqual(["a1"]);
     expect(t.saved).toEqual([{ historyId: "20" }]);
   });
 
   it("a pending repair its own content fails again is retried after new mail, which is stored and its cursor saved", async () => {
-    const t = rig({ history: () => additions(["a1"]), pendingRepairs: ["r"], refuse: (id) => id === "r" ? "mime-limit-headers" : undefined });
-    await expect(t.sync()).rejects.toMatchObject({ code: "mime-limit-headers" });
+    const t = rig({ history: () => additions(["a1"]), pendingRepairs: ["r"], refuse: (id) => id === "r" ? "input-limit" : undefined });
+    await expect(t.sync()).rejects.toMatchObject({ code: "input-limit" });
     expect(t.raws).toEqual(["a1", "r"]);
     expect(t.ingested.flat()).toEqual(["a1"]);
     expect(t.saved).toEqual([{ historyId: "20" }]);
@@ -278,5 +301,21 @@ describe("a long catch-up looks at history between its steps", () => {
     const full = new RpcError("UNAVAILABLE", L("capture.capacity"));
     const t = rig({ flags: 1, minimal: (id) => id === "f1" ? { id: "wrong", labelIds: [] } : undefined, history: () => additions(["parts"]), refuse: (id) => id === "parts" ? "mime-limit-parts" : undefined, blockCapture: async () => { throw full; } });
     await expect(t.sync()).rejects.toBe(full);
+  });
+});
+
+describe("which message a repair is (plan 267)", () => {
+  it("reads the subject, sender and date from Gmail's own parse of the headers, decoded", async () => {
+    const t = rig({ history: () => additions([]), metadata: (id) => ({ id, internalDate: "1700000000000", payload: { headers: [{ name: "Subject", value: "=?UTF-8?B?UmVwb3J0ZSBhbnVhbA==?=" }, { name: "From", value: "Ana Torres <ana@example.test>" }] } }) });
+    expect(await t.provider.describe!("m1", new AbortController().signal)).toEqual({ subject: "Reporte anual", from: "Ana Torres", date: 1700000000000 });
+  });
+
+  it("gives nothing for another message's answer, a missing one, or one past its bound; a cancelled read throws", async () => {
+    const huge = JSON.stringify({ id: "huge", payload: { headers: [{ name: "Subject", value: "x".repeat(70_000) }] } });
+    const answers: Record<string, unknown> = { other: { id: "else", payload: { headers: [] } }, gone: 404, huge };
+    const t = rig({ history: () => additions([]), metadata: (id) => answers[id] });
+    for (const id of ["other", "gone", "huge"]) expect(await t.provider.describe!(id, new AbortController().signal)).toBeUndefined();
+    const stop = new AbortController(); stop.abort();
+    await expect(t.provider.describe!("other", stop.signal)).rejects.toBeDefined();
   });
 });

@@ -8,7 +8,7 @@ import { L, type Localized } from "@terno/i18n";
 import type { IncomingMessage, ProviderFolder, ImapLocation, FlagSnapshotPage } from "@terno/store";
 import { headerFields, messageAddresses, parseListId, parseRaw, splitIds } from "./mime";
 import { isNetworkError } from "./net-errors";
-import { IncomingProcessingError } from "./incoming-processing";
+import { captureReasonOf, IncomingProcessingError } from "./incoming-processing";
 import { ImapIdentityError, LEAVE_FOLDER, MOVE_TO_FOLDER, type LeaveFolderPayload, type MoveToFolderPayload } from "@terno/store";
 import { sendViaSmtp } from "./smtp";
 import { nameTaken, planImapCreate, ROLE_NAME_HINTS, planImapDelete, planImapRename, refusedBy, serverReason } from "./folder-changes";
@@ -1658,10 +1658,16 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
                 parsed = result.message;
               } else parsed = await parseRaw(source);
             } catch (error) {
-              const code = (error as { code?: string })?.code;
-              if ((code !== "EMAXNESTINGDEPTH" && !(error instanceof IncomingProcessingError && code === "mime-limit-depth")) || !sink.blockCapture) throw error;
+              // plan 267: every parser limit is the message's own verdict, a repair (the body run goes on); a wrong or
+              // repeated response, a stale UIDVALIDITY or a store failure isn't one and stays the pass's
+              const reason = captureReasonOf(error);
+              if (!reason || !sink.blockCapture) throw error;
               check();
-              await sink.blockCapture(locator, "mime-depth", repair?.revision ?? 0);
+              try { await sink.blockCapture(locator, reason, repair?.revision ?? 0); }
+              catch (refused) {
+                // the repair list is full: this body stays pending (the list says what to do), the others go on
+                if (!(refused instanceof RpcError && refused.code === "UNAVAILABLE" && refused.i18n?.key === "capture.capacity")) throw refused;
+              }
               continue;
             }
             check();

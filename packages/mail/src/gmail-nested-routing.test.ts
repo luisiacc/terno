@@ -62,7 +62,8 @@ it.each(["digest", "explicit", "comment"] as const)("requires the worker for nes
     try {
       const result = await collect(bytes, processor);
       expect(calls).toHaveBeenCalledOnce();
-      expect(result.error).toMatchObject({ code: available ? "mime-limit-addresses" : "worker-unavailable", retryable: false, network: false, ambiguous: false });
+      // plan 267: the worker's verdict on the message's forwarded addresses is a repair reason (with no sink here, thrown)
+      expect(result.error).toMatchObject({ ...(available ? { reason: "mime-addresses" } : { code: "worker-unavailable" }), retryable: false, network: false, ambiguous: false });
       expect(result.writes).toEqual([]); expect(result.removals).toEqual([]); expect(completedGmailCursors(result.checkpoints)).toEqual([]);
     } finally { await processor.close(); await processor.whenIdle(); }
   }

@@ -192,6 +192,8 @@ export const SYNC_INTERVAL_MS = 40_000;
 const AUTO_NOTICE_GATHER_MS = 1500;
 /** plan 25: a window's focus rechecks a refused saved password at most this often (a refused login, again and again, locks accounts out) */
 const RECHECK_FOCUS_MS = 10 * 60_000;
+/** plan 267: how long opening the repairs list waits for Gmail to say which messages they are (the rest next time) */
+export const REPAIR_DETAIL_MS = 8000;
 
 /** plan 228: the accounts' addresses for the recipient index, each by the name its mail goes out under */
 function ownAddresses(accounts: readonly Account[]): OwnAddress[] {
@@ -1456,6 +1458,33 @@ export class BackendCore {
     this.server.emit("counts", counts);
     // plan 41: the Dock shows the sidebar's Inbox number (no query of its own)
     this.attention.counts(counts);
+  }
+
+  /**
+   * Plan 267: a page of the repairs list, the user having opened it. A Gmail repair's message was never stored, so what
+   * it is (subject, sender, date) is read from Gmail's own parse of its headers now, once per message (kept on the row),
+   * a few at a time and within REPAIR_DETAIL_MS: the page shows what's known by then, the rest the next time it's opened.
+   */
+  async listCaptureRepairs(accountId: number, after?: string): Promise<import("@terno/core").CaptureRepairPage> {
+    const page = await this.store.captureRepairs.list(accountId, after);
+    const missing = page.items.filter((r) => !r.detail && r.locator.kind === "gmail");
+    if (!missing.length || this.stopped) return page;
+    const provider = await this.provider(accountId).catch(() => null);
+    if (!provider?.describe) return page;
+    const life = this.lifetime(accountId);
+    const signal = AbortSignal.any([this.abort.signal, AbortSignal.timeout(REPAIR_DETAIL_MS)]);
+    const found = new Map<string, import("@terno/core").CaptureDetail>();
+    const queue = [...missing];
+    await Promise.all(Array.from({ length: Math.min(4, queue.length) }, async () => {
+      for (let r = queue.shift(); r && !signal.aborted; r = queue.shift()) {
+        if (r.locator.kind !== "gmail") continue;
+        const detail = await provider.describe!(r.locator.providerId, signal).catch(() => undefined);
+        if (!detail || !this.current(life)) continue;
+        await this.accountWrite(life, () => this.store.captureRepairs.describe(accountId, r.key, r.revision, detail)).catch(() => {});
+        found.set(r.key, detail);
+      }
+    }));
+    return { ...page, items: page.items.map((r) => found.has(r.key) ? { ...r, detail: found.get(r.key) } : r) };
   }
 
   async retryCapture(accountId: number, key: string, revision: number): Promise<import("@terno/core").CaptureRepair | null> {

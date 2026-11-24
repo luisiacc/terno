@@ -1810,6 +1810,35 @@ INSERT INTO settings (key, value_json) SELECT 'tabs_backfill', '{"phase":"thread
 ALTER TABLE messages ADD COLUMN code TEXT;
 ALTER TABLE threads ADD COLUMN code TEXT;
 ` },
+  // plan 267: every message Terno can't read safely becomes a repair. A CHECK can't be altered: the table is rebuilt once
+  // without the reason's list (the store checks reasons; a new one is a code change, never a migration; the state's list
+  // stays, it decides what's retried and read), with a `detail` for the list (JSON: what's known of the message). Its triggers and the two on message_locations that name it
+  // are dropped first and made again after the rename; the usage triggers come after the copy, so nothing counts twice.
+  { version: 80, name: "Message repairs take any reason, and say which message (plan 267)", rewrites: "the DROP TABLE of capture_repairs after every row is copied unchanged into its rebuilt table (the reason's CHECK can't be altered in place): at most 1,000 small rows per account, its usage counts untouched", sql: `
+DROP TRIGGER capture_repair_location_removed;
+DROP TRIGGER capture_repair_location_changed;
+CREATE TABLE capture_repairs_v80(account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, key TEXT NOT NULL, message_id INTEGER REFERENCES messages(id) ON DELETE CASCADE, locator TEXT NOT NULL, reason TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('blocked','pending')), revision INTEGER NOT NULL, bytes INTEGER NOT NULL, detail TEXT, PRIMARY KEY(account_id,key));
+INSERT INTO capture_repairs_v80(account_id,key,message_id,locator,reason,state,revision,bytes) SELECT account_id,key,message_id,locator,reason,state,revision,bytes FROM capture_repairs;
+DROP TABLE capture_repairs;
+ALTER TABLE capture_repairs_v80 RENAME TO capture_repairs;
+CREATE INDEX capture_repair_state ON capture_repairs(account_id,state,key);
+CREATE INDEX capture_repair_message ON capture_repairs(message_id,state);
+CREATE TRIGGER capture_repair_added AFTER INSERT ON capture_repairs BEGIN
+ INSERT INTO capture_repair_usage(account_id,count,bytes) VALUES(NEW.account_id,1,NEW.bytes) ON CONFLICT(account_id) DO UPDATE SET count=count+1,bytes=bytes+NEW.bytes;
+END;
+CREATE TRIGGER capture_repair_changed AFTER UPDATE ON capture_repairs BEGIN
+ UPDATE capture_repair_usage SET bytes=bytes+NEW.bytes-OLD.bytes WHERE account_id=NEW.account_id;
+END;
+CREATE TRIGGER capture_repair_removed AFTER DELETE ON capture_repairs BEGIN
+ UPDATE capture_repair_usage SET count=count-1,bytes=bytes-OLD.bytes WHERE account_id=OLD.account_id;
+END;
+CREATE TRIGGER capture_repair_location_removed AFTER DELETE ON message_locations BEGIN
+ DELETE FROM capture_repairs WHERE message_id=OLD.message_id AND json_extract(locator,'$.mailbox')=OLD.mailbox;
+END;
+CREATE TRIGGER capture_repair_location_changed AFTER UPDATE ON message_locations WHEN NEW.uid!=OLD.uid OR NEW.uidvalidity!=OLD.uidvalidity BEGIN
+ DELETE FROM capture_repairs WHERE message_id=OLD.message_id AND json_extract(locator,'$.mailbox')=OLD.mailbox;
+END;
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

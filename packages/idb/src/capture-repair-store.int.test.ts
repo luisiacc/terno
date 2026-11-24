@@ -46,6 +46,30 @@ describe.each(["SQL","IDB","WASM"] as const)("%s capture obligation",kind=>{
     const replacement=await t.store.accounts.create({kind:"gmail",email:"synthetic@example.test",displayName:"Replacement",color:"blue",now:1});
     expect(replacement.account.id).toBeGreaterThan(a);await expect(t.store.captureRepairs.block(a,locator("old"),"mime-parts",0)).rejects.toThrow();
   });
+  it("plan 267: takes every parser verdict, refuses an unknown reason, keeps a detail only at its revision and names an IMAP message from its envelope",async()=>{
+    const t=await fixture(kind),a=t.account.id;
+    for(const reason of ["mime-headers","mime-addresses"] as const)await t.store.captureRepairs.block(a,locator(reason),reason,0);
+    await expect(t.store.captureRepairs.block(a,locator("x"),"too-large" as never,0)).rejects.toThrow("Invalid capture reason");
+    const row=(await t.store.captureRepairs.get(a,locator("mime-headers")))!;
+    expect(row).toMatchObject({reason:"mime-headers",state:"blocked",revision:0});expect(row.detail).toBeUndefined();
+    // a read for another revision changes nothing; the right one is kept (bounded), once, and survives a retry and a reopen
+    await t.store.captureRepairs.describe(a,row.key,1,{subject:"Stale"});
+    expect((await t.store.captureRepairs.get(a,row.locator))!.detail).toBeUndefined();
+    await t.store.captureRepairs.describe(a,row.key,0,{subject:"S".repeat(500),from:" Ana ",date:5});
+    await t.store.captureRepairs.describe(a,row.key,0,{subject:"Second"});
+    expect((await t.store.captureRepairs.get(a,row.locator))!.detail).toEqual({subject:"S".repeat(200),from:"Ana",date:5});
+    await t.store.captureRepairs.retry(a,row.key,0);
+    await t.reopen();
+    const listed=(await t.store.captureRepairs.list(a)).items.find(r=>r.key===row.key)!;
+    expect(listed).toMatchObject({state:"pending",revision:1,detail:{subject:"S".repeat(200),from:"Ana",date:5}});
+    // IMAP: the stored envelope names the message at once
+    const {account}=await t.store.accounts.create({kind:"imap",email:"imap@example.test",displayName:"IMAP",color:"blue",now:1});
+    await t.store.sync.ingest([{accountId:account.id,providerMsgId:"env",providerThreadId:null,rfcMessageId:"env@example.test",inReplyTo:null,references:[],from:{name:"Bea",email:"bea@example.test"},to:[],cc:[],bcc:[],subject:"Quarterly report",date:42,snippet:"",bodyText:null,bodyHtml:null,bodyState:"none",listId:null,isRead:true,isStarred:false,inInbox:true,isSent:false,isDraft:false,isTrash:false,isSpam:false,hasAttachments:false,size:5,locations:[{mailbox:"INBOX",uidvalidity:3,uid:4,flags:[]}]}],{applyFilters:false,now:1,classifier:null});
+    const id=(await t.store.providerStore(account.id).messageByProviderId("env"))!.id;
+    const imap={kind:"imap" as const,messageId:id,mailbox:"INBOX",uidvalidity:3,uid:4};
+    await t.store.captureRepairs.block(account.id,imap,"mime-addresses",0);
+    expect((await t.store.captureRepairs.get(account.id,imap))!.detail).toEqual({subject:"Quarterly report",from:"Bea",date:42});
+  });
   it("excludes more than 50 blocked cached items before selection, preserves other accounts and releases on message deletion",async()=>{
     const t=await fixture(kind),a=t.account.id;
     const incoming=Array.from({length:52},(_,i)=>({accountId:a,providerMsgId:`cached${i}`,providerThreadId:null,rfcMessageId:`cached${i}@example.test`,inReplyTo:null,references:[],from:{name:"",email:"sender@example.test"},to:[],cc:[],bcc:[],subject:`Cached ${i}`,date:1,snippet:"",bodyText:"Cached text",bodyHtml:null,bodyState:"full" as const,listId:null,isRead:true,isStarred:false,inInbox:true,isSent:false,isDraft:false,isTrash:false,isSpam:false,hasAttachments:true,size:5}));

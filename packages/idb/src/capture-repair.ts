@@ -1,4 +1,4 @@
-import { blockCapture, captureKey, captureRepair, retryCapture, type CaptureRepairs, type CaptureRepairRow, type CaptureRepairStorage } from "@terno/store";
+import { blockCapture, captureKey, captureRepair, describeCapture, retryCapture, type CaptureRepairs, type CaptureRepairRow, type CaptureRepairStorage } from "@terno/store";
 import type { MemDb } from "./mem";
 import { T, type Ctx } from "./mail";
 const usage = new WeakMap<MemDb, Map<number, { count: number; bytes: number }>>();
@@ -19,6 +19,7 @@ export function idbCaptureStorage(c: Ctx): CaptureRepairStorage {
   return {
     get:(a,key)=>rows.get(a,key),
     usage:(a)=>usage.get(c.db)!.get(a) ?? {count:0,bytes:0},
+    envelope:(a,id)=>{const m=T(c,"messages").get(id);return m && m.account_id===a ? {subject:m.subject,from:m.from_name || m.from_email || undefined,date:m.date} : undefined;},
     messageId:(a,l)=>l.kind === "imap" ? l.messageId : T(c,"messages").by("provider",a,l.providerId)[0]?.id ?? null,
     valid:(a,l)=> {
       if(l.kind === "gmail") return T(c,"accounts").get(a)?.kind === "gmail";
@@ -36,6 +37,7 @@ export function idbCaptureRepairs(c: Ctx, command: <V>(fn:()=>V, options?: { che
     get:(a,l)=>read(()=>{const r=db.get(a,captureKey(l));return r?captureRepair(r):null;}),
     list: page ?? ((a,after="",state)=>read(()=>{const rows=db.page(a,after,state);return {items:rows.map(captureRepair),...(rows.length===50 && {next:rows.at(-1)!.key})};})),
     block:(a,l,r,v,check)=>command(()=>{check?.();blockCapture(db,a,l,r,v);check?.();}, {check}),
+    describe:(a,key,v,detail)=>command(()=>{describeCapture(db,a,key,v,detail);}),
     retry:(a,key,v,check)=>command(()=>{check?.();retryCapture(db,a,key,v);check?.();}, {check}),
     retire:(a,l,check)=>command(()=>{check?.();db.remove(a,captureKey(l));}, {check}),
   };

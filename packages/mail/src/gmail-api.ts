@@ -3,12 +3,12 @@ import { gmailSendBody } from "./outgoing-wire";
 import { L } from "@terno/i18n";
 import { RpcError } from "@terno/core/rpc";
 import { LEAVE_FOLDER, MOVE_TO_FOLDER, type IncomingMessage, type LeaveFolderPayload, type MoveToFolderPayload, type ProviderFolder } from "@terno/store";
-import { CATEGORY_ACTIONS, CATEGORY_LABELS, FOLDER_NAME_MAX, FOLDERS_PER_ACCOUNT_MAX, isValidEmail } from "@terno/core";
+import { CATEGORY_ACTIONS, CATEGORY_LABELS, FOLDER_NAME_MAX, FOLDERS_PER_ACCOUNT_MAX, decodeEncodedWords, isValidEmail, parseAddressHeader } from "@terno/core";
 import { parseRaw, type ParsedMessage } from "./mime";
 import { cancelResponse, readResponseText, ResponseBodyLimitError, untilAborted } from "./http-body";
 import { readIncomingBody, type IncomingBody } from "./incoming-body";
 import { captureHttpResponseEvidence } from "./http-response-evidence";
-import { IncomingProcessingError, INCOMING_GMAIL_WIRE_BYTES } from "./incoming-processing";
+import { captureReasonOf, IncomingProcessingError, INCOMING_GMAIL_WIRE_BYTES } from "./incoming-processing";
 import { failedBeforeRequest, isFetchNetworkFailure, ProviderCooldownError, RequestNotDispatchedError } from "./net-errors";
 import { createQuotaPacer, gmailUnits, type QuotaPacer } from "./gmail-quota";
 import { nameTaken, planLabelCreate, planLabelDelete, planLabelRename, refusedBy } from "./folder-changes";
@@ -550,7 +550,8 @@ class IncomingResourceError extends ProviderError {
  * Plan 265: what one message's own content decides (its siblings read fine): on the paths that bring new mail, held for
  * the pass's end rather than failing its siblings. Worker faults, network, quota and sign-in are the pass's.
  */
-const MESSAGE_FAILURES = new Set(["input-limit", "worker-timeout", "envelope-unavailable", "mime-limit-headers", "mime-limit-addresses"]);
+// (plan 267: every parser limit is a repair now, IncomingCaptureRefusal; what's left has no repair reason)
+const MESSAGE_FAILURES = new Set(["input-limit", "worker-timeout", "envelope-unavailable"]);
 
 /**
  * Plan 265: failures held for a pass's end (the first is thrown): each message stays unstored, so the step that held
@@ -559,9 +560,9 @@ const MESSAGE_FAILURES = new Set(["input-limit", "worker-timeout", "envelope-una
 interface Held { error?: unknown; count: number }
 
 function processingError(error: IncomingProcessingError | ResponseBodyLimitError): ProviderError {
-  if (error instanceof IncomingProcessingError && error.code === "mime-limit-parts") return new IncomingCaptureRefusal("mime-parts");
-  // plan 265: the parser's verdict IMAP already records (imap.ts), a repair rather than a failed pass
-  if (error instanceof IncomingProcessingError && error.code === "mime-limit-depth") return new IncomingCaptureRefusal("mime-depth");
+  // plan 267: a message's own structure past the parser's limits (parts, depth, headers, addresses) is a repair
+  const reason = error instanceof IncomingProcessingError ? captureReasonOf(error) : undefined;
+  if (reason) return new IncomingCaptureRefusal(reason);
   if (error instanceof ResponseBodyLimitError || error.code === "input-limit" || error.code === "result-limit") return new IncomingResourceError("input-limit", L("errors.mail.processingLimit"));
   if (error.code.startsWith("malformed-")) return invalidResponse();
   if (error.code === "worker-timeout") return new IncomingResourceError(error.code, L("errors.mail.processingTimedOut"));
@@ -801,6 +802,8 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         if (path === "/labels") return JSON.parse(await readResponseText(res, LABELS_BYTES, deadline.signal, yieldPage)) as T;
         if (path.startsWith("/history?") || path.startsWith("/messages?")) return JSON.parse(await readResponseText(res, HISTORY_BYTES, deadline.signal, yieldPage)) as T;
         if (path.startsWith("/messages/") && path.endsWith("?format=minimal")) return JSON.parse(await readResponseText(res, 65_536, deadline.signal, yieldPage)) as T;
+        // plan 267: a few named headers, read within a bound (a message refused for its huge headers is the reason to ask)
+        if (path.startsWith("/messages/") && path.includes("?format=metadata&")) return JSON.parse(await readResponseText(res, 65_536, deadline.signal, yieldPage)) as T;
         return await untilAborted(res.json(), deadline.signal) as T;
       } catch (e) {
         if (path.startsWith("/history?") && e instanceof ResponseBodyLimitError) throw new HistoryOverflow();
@@ -1681,6 +1684,27 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       for (let i = 0; i < hits.length; i += 50) {
         pass.check();
         await fetchFull(hits.slice(i, i + 50).map((h) => h.id), pass);
+      }
+    },
+    async describe(providerId, signal) {
+      ctx.google?.check({ endpoint: "gmail-api", purpose: "mail" });
+      const q = new URLSearchParams({ format: "metadata", fields: "id,internalDate,payload/headers" });
+      q.append("metadataHeaders", "Subject");
+      q.append("metadataHeaders", "From");
+      try {
+        const m = await api<{ id?: unknown; internalDate?: unknown; payload?: { headers?: { name?: unknown; value?: unknown }[] } }>(`/messages/${encodeURIComponent(providerId)}?${q}`, { signal, preparationSignal: signal, admission: "reader" });
+        if (!isRecord(m) || m.id !== providerId) return;
+        const header = (name: string) => {
+          const value = Array.isArray(m.payload?.headers) ? m.payload.headers.find((h) => isRecord(h) && typeof h.name === "string" && h.name.toLowerCase() === name)?.value : undefined;
+          return typeof value === "string" ? decodeEncodedWords(value).trim() : undefined;
+        };
+        const sender = parseAddressHeader(header("from") ?? "", { single: true })[0];
+        const date = typeof m.internalDate === "string" && /^\d+$/.test(m.internalDate) ? Number(m.internalDate) : NaN;
+        return { ...(header("subject") && { subject: header("subject") }), ...((sender?.name || sender?.email) && { from: sender.name || sender.email }), ...(Number.isSafeInteger(date) && date > 0 && { date }) };
+      } catch (error) {
+        // gone, unreadable, over its bound: the row stays as it is (a cancelled read is the caller's)
+        if (signal.aborted) throw error;
+        return;
       }
     },
     async readBody(target, signal) {

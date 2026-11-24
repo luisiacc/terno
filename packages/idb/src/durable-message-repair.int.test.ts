@@ -39,7 +39,7 @@ it("the emitted worker refuses the real existing MIME part limit, with a valid 1
 });
 
 async function mailbox(kind: "SQL" | "IndexedDB") {
-  const unexpected: string[] = [], requests: URL[] = [];
+  const unexpected: string[] = [], requests: URL[] = [], metadataReads: string[] = [];
   const messages = new Map([resource("a"), resource("b")].map((m) => [m.id, m]));
   let additions: string[] = [], transient = false, removed = false;
   let historyDeleted: string[] = [];
@@ -66,6 +66,11 @@ async function mailbox(kind: "SQL" | "IndexedDB") {
       return Response.json({ historyId: additions.length ? terminal : base, ...(additions.length && start === base ? { history: [{ id: terminal, messagesAdded: additions.map((id) => ({ message: { id } })), messagesDeleted: historyDeleted.map(id=>({message:{id}})) }] } : {}) });
     }
     const id = path.slice("/messages/".length), format = url.searchParams.get("format");
+    // plan 267: opening the repairs list asks which message each is (Gmail's parse of its Subject and From)
+    if (path.startsWith("/messages/") && format === "metadata" && url.searchParams.getAll("metadataHeaders").join() === "Subject,From" && url.searchParams.get("fields") === "id,internalDate,payload/headers") {
+      metadataReads.push(id);
+      return messages.has(id) ? Response.json({ id, internalDate: "1700000000000", payload: { headers: [{ name: "Subject", value: `Synthetic ${id}` }, { name: "From", value: "Sender <sender@example.test>" }] } }) : Response.json({}, { status: 404 });
+    }
     if (!path.startsWith("/messages/") || (!messages.has(id) && !missing.has(id)) || url.searchParams.size !== 1 || (format !== "raw" && format !== "minimal")) return refuse();
     if(missing.has(id))return Response.json({}, {status:404});
     if (id === "p" && format === "raw") {
