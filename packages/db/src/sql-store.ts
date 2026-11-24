@@ -1,7 +1,8 @@
 import { bodyPrefix, bodyTestKey, bodyPartRange, CORPUS_TEXTS_MAX, finishBodyClose, readPassages, readThreadContext } from "@terno/store";
 import { releaseIndexBodies, releaseBodyChanges, type IndexChange } from "@terno/store";
 import { publishBody, storedReply } from "@terno/store";
-import { resolvable, parseSearch, searchTerms } from "@terno/core";
+import { resolvable, parseSearch, searchTerms, isOAuthKind } from "@terno/core";
+import { oauthAdmits, oauthAdmittedConfig } from "@terno/store";
 import { bodyUpgradePending, BodyUpgradeRequired, BODY_UPGRADE_APPLICATION_ID, BODY_READY_APPLICATION_ID } from "./body-upgrade";
 import { unsubscribeBodyParts, decodeBodyPart } from "@terno/store";
 import { actOnItems, fromOf, itemMembers, linkItems, liveAmong, needsCount, restoreItems, messagesHere, senders, allDigests, beginDigest, clearDigests, digestFacts, digestLive, digestRead, getDigest, latestDigest, pendingDigestDays, pruneDigests, waitingAmong, waitingPage, writeDigest } from "./today";
@@ -1702,11 +1703,13 @@ export class SqlMailStore implements MailStore {
         this.providerStores.delete(id);
       });
     },
-    admitGoogle: async (stamp, google) => this.db.tx(() => {
+    admitOAuth: async (stamp, admission) => this.db.tx(() => {
       const account = accountStamp(this.db, stamp.id);
       const config = getAccountConfig<Record<string, unknown>>(this.db, stamp.id)?.config;
-      if (!account || getAccount(this.db, stamp.id)?.kind !== "gmail" || account.email !== stamp.email || account.createdAt !== stamp.createdAt || !config || (config.googleSubject ?? null) !== google.expectedSubject || (google.expectedSubject !== null && google.expectedSubject !== google.subject) || (google.eligible && !google.eligible())) return false;
-      if (config.googleSubject !== google.subject) setAccountProviderConfig(this.db, stamp.id, { ...config, googleSubject: google.subject });
+      const kind = getAccount(this.db, stamp.id)?.kind;
+      if (!account || account.email !== stamp.email || account.createdAt !== stamp.createdAt || !isOAuthKind(kind) || !oauthAdmits(kind, config, admission)) return false;
+      const next = oauthAdmittedConfig(kind, config!, admission.subject);
+      if (next) setAccountProviderConfig(this.db, stamp.id, next);
       return true;
     }),
     setSyncState: async (id, patch) => setAccountSyncState(this.db, id, patch),
@@ -1718,7 +1721,7 @@ export class SqlMailStore implements MailStore {
     get: async () => getOwner(this.db),
     confirm: async (c) => this.db.tx(() => {
       const owner = this.db.get(`SELECT 1 FROM owner WHERE id = 1 AND account_id = ? AND email = ? AND display_name = ? AND provider = ? AND verified_by = ? AND evidence_json = ? AND verified_at = ? AND updated_at = ?`, c.claim.accountId, c.claim.email.toLowerCase(), c.claim.displayName, c.claim.provider, c.claim.verifiedBy, JSON.stringify(c.claim.evidence), c.now, c.now);
-      return !!owner && this.commitSecret({ kind: "retain", google: c.secret.google && { expectedSubject: c.secret.google.subject, subject: c.secret.google.subject }, name: c.secret.name, expectedBlob: c.secret.kind === "retain" ? c.secret.expectedBlob : c.secret.blob }, { ...c.stamp, id: c.claim.accountId });
+      return !!owner && this.commitSecret({ kind: "retain", oauth: c.secret.oauth && { expectedSubject: c.secret.oauth.subject, subject: c.secret.oauth.subject }, name: c.secret.name, expectedBlob: c.secret.kind === "retain" ? c.secret.expectedBlob : c.secret.blob }, { ...c.stamp, id: c.claim.accountId });
     }),
     change: async (c) =>
       this.db.tx(() => {
@@ -1793,11 +1796,13 @@ export class SqlMailStore implements MailStore {
     const account = accountStamp(this.db, stamp.id);
     if (!account || account.email !== stamp.email || account.createdAt !== stamp.createdAt) return false;
     const config = getAccountConfig<Record<string, unknown>>(this.db, stamp.id)?.config;
-    if (intent.google && (getAccount(this.db, stamp.id)?.kind !== "gmail" || !config || (config.googleSubject ?? null) !== intent.google.expectedSubject || (intent.google.expectedSubject !== null && intent.google.expectedSubject !== intent.google.subject) || (intent.google.eligible && !intent.google.eligible()))) return false;
+    const kind = getAccount(this.db, stamp.id)?.kind;
+    if (intent.oauth && !oauthAdmits(kind, config, intent.oauth)) return false;
     const current = getSecret(this.db, intent.name);
     const expected = intent.expectedBlob;
     if (expected === null ? current !== null : !current || current.length !== expected.length || !current.every((b, i) => b === expected[i])) return false;
-    if (intent.google && config!.googleSubject !== intent.google.subject) setAccountProviderConfig(this.db, stamp.id, { ...config, googleSubject: intent.google.subject });
+    const admitted = intent.oauth && isOAuthKind(kind) ? oauthAdmittedConfig(kind, config!, intent.oauth.subject) : null;
+    if (admitted) setAccountProviderConfig(this.db, stamp.id, admitted);
     if (intent.kind === "replace" && (!current || current.length !== intent.blob.length || !current.every((b, i) => b === intent.blob[i]))) putSecret(this.db, intent.name, intent.blob);
     return true;
   }

@@ -35,7 +35,8 @@ import { COOLDOWN_TICKETS, bindCooldown, decodeCooldown, encodeCooldown, mailbox
 import { keptThreads, resolveSimilarPage, similarOffers, similarScopesOf } from "./similar";
 import { removeStorage, storageThreads } from "./storage";
 import { assetAccounting } from "./asset-accounting";
-import { attachmentMessageBudgetAsync, parseHandoff } from "@terno/core";
+import { attachmentMessageBudgetAsync, parseHandoff, isOAuthKind } from "@terno/core";
+import { oauthAdmits, oauthAdmittedConfig } from "@terno/store";
 import { handoffConfirmed } from "./handoff";
 import { mergeBefore, sameImapLocations, reaffirmSavedFlagIntent, acceptFlagObservation, flagEpochs, flagReconciliation, flagObservationValid, flagTick, initializeFlagStep, rearmFlagEffects, settleFlagEffects, startFlagObservation } from "@terno/store";
 import { bindIdbPromotedFlags, idbFlags, idbFlagSnapshots, prepareIdbFlagPage } from "./flag-intents";
@@ -2636,15 +2637,17 @@ export class IdbMailStore implements MailStore {
         this.providerStores.delete(id);
       });
     },
-    admitGoogle: (stamp, admission) => {
-      const google = { ...admission }; stamp = { ...stamp };
+    admitOAuth: (stamp, input) => {
+      const admission = { ...input }; stamp = { ...stamp };
       return this.command(() => {
       const account = T(this.c, "accounts").get(stamp.id);
       const config = getAccountConfig<Record<string, unknown>>(this.c, stamp.id)?.config;
-      if (!account || account.kind !== "gmail" || account.email !== stamp.email || account.created_at !== stamp.createdAt || !config || (config.googleSubject ?? null) !== google.expectedSubject || (google.expectedSubject !== null && google.expectedSubject !== google.subject) || (google.eligible && !google.eligible())) return false;
-      if (config.googleSubject !== google.subject) T(this.c, "accounts").update(account, { provider_config: JSON.stringify({ ...config, googleSubject: google.subject }) });
+      const kind = account?.kind as string | undefined;
+      if (!account || account.email !== stamp.email || account.created_at !== stamp.createdAt || !isOAuthKind(kind) || !oauthAdmits(kind, config, admission)) return false;
+      const next = oauthAdmittedConfig(kind, config!, admission.subject);
+      if (next) T(this.c, "accounts").update(account, { provider_config: JSON.stringify(next) });
       return true;
-      }, { early: true, check: () => { if (google.eligible && !google.eligible()) throw new CredentialAdmissionExpired(); } });
+      }, { early: true, check: () => { if (admission.eligible && !admission.eligible()) throw new CredentialAdmissionExpired(); } });
     },
     setSyncState: (id, patch) =>
       this.command(() => {
@@ -2672,7 +2675,7 @@ export class IdbMailStore implements MailStore {
     get: () => this.early(() => getOwner(this.c)),
     confirm: (o) => {
       const stamp = { ...o.stamp }, claim = { ...o.claim, evidence: { ...o.claim.evidence } }, now = o.now;
-      const secret = { kind: "retain" as const, google: o.secret.google && { expectedSubject: o.secret.google.subject, subject: o.secret.google.subject }, name: o.secret.name, expectedBlob: Uint8Array.from(o.secret.kind === "retain" ? o.secret.expectedBlob : o.secret.blob) };
+      const secret = { kind: "retain" as const, oauth: o.secret.oauth && { expectedSubject: o.secret.oauth.subject, subject: o.secret.oauth.subject }, name: o.secret.name, expectedBlob: Uint8Array.from(o.secret.kind === "retain" ? o.secret.expectedBlob : o.secret.blob) };
       return this.early(() => {
         const r = T(this.c, "owner").get(1);
         return !!r && r.account_id === claim.accountId && r.email === claim.email.toLowerCase() && r.display_name === claim.displayName && r.provider === claim.provider && r.verified_by === claim.verifiedBy && r.evidence_json === JSON.stringify(claim.evidence) && r.verified_at === now && r.updated_at === now && this.commitSecret(secret, { ...stamp, id: claim.accountId });
@@ -2688,7 +2691,7 @@ export class IdbMailStore implements MailStore {
         if (!this.commitSecret(secret, { ...stamp, id: claim.accountId })) return false;
         changeOwner(this.c, claim, o.reason, o.now);
         return true;
-      }, { check: () => { if ((eligible && eligible() !== true) || (secret.google?.eligible && !secret.google.eligible())) throw new CredentialAdmissionExpired(); } });
+      }, { check: () => { if ((eligible && eligible() !== true) || (secret.oauth?.eligible && !secret.oauth.eligible())) throw new CredentialAdmissionExpired(); } });
     },
   };
 
@@ -2768,12 +2771,14 @@ export class IdbMailStore implements MailStore {
     const account = T(this.c, "accounts").get(stamp.id);
     if (!account || account.email !== stamp.email || account.created_at !== stamp.createdAt) return false;
     const config = getAccountConfig<Record<string, unknown>>(this.c, stamp.id)?.config;
-    if (intent.google && (account.kind !== "gmail" || !config || (config.googleSubject ?? null) !== intent.google.expectedSubject || (intent.google.expectedSubject !== null && intent.google.expectedSubject !== intent.google.subject) || (intent.google.eligible && !intent.google.eligible()))) return false;
+    const kind = account.kind as string;
+    if (intent.oauth && !oauthAdmits(kind, config, intent.oauth)) return false;
     const secrets = T(this.c, "secrets");
     const current = secrets.get(intent.name)?.blob as Uint8Array | undefined;
     const expected = intent.expectedBlob;
     if (expected === null ? current !== undefined : !current || current.length !== expected.length || !current.every((b, i) => b === expected[i])) return false;
-    if (intent.google && config!.googleSubject !== intent.google.subject) T(this.c, "accounts").update(account, { provider_config: JSON.stringify({ ...config, googleSubject: intent.google.subject }) });
+    const admitted = intent.oauth && isOAuthKind(kind) ? oauthAdmittedConfig(kind, config!, intent.oauth.subject) : null;
+    if (admitted) T(this.c, "accounts").update(account, { provider_config: JSON.stringify(admitted) });
     if (intent.kind === "replace" && (!current || current.length !== intent.blob.length || !current.every((b, i) => b === intent.blob[i]))) secrets.put({ name: intent.name, blob: intent.blob });
     return true;
   }
@@ -2782,7 +2787,7 @@ export class IdbMailStore implements MailStore {
     commit: (intent, stamp) => {
       const copy = intent.kind === "retain" ? { ...intent, expectedBlob: Uint8Array.from(intent.expectedBlob) } : { ...intent, expectedBlob: intent.expectedBlob && Uint8Array.from(intent.expectedBlob), blob: Uint8Array.from(intent.blob) };
       const account = { ...stamp };
-      return this.command(() => this.commitSecret(copy, account), { early: true, check: () => { if (copy.google?.eligible && !copy.google.eligible()) throw new CredentialAdmissionExpired(); } });
+      return this.command(() => this.commitSecret(copy, account), { early: true, check: () => { if (copy.oauth?.eligible && !copy.oauth.eligible()) throw new CredentialAdmissionExpired(); } });
     },
     names: () => this.early(() => [...T(this.c, "secrets").all()].map((s) => String(s.name)).sort()),
     get: (name) => this.early(() => (T(this.c, "secrets").get(name)?.blob as Uint8Array | undefined) ?? null),

@@ -5,7 +5,7 @@ import { L } from "@terno/i18n";
 import { movedNothing, SearchCancelledError, StaleCursorError, wantedAsDated, type AddedBy, type DraftRow, type FolderMoved, type MessageState } from "@terno/store";
 import type { GmailAccountConfig, ImapAccountConfig } from "@terno/mail";
 import { BackendCore as Backend } from "./core";
-import { forgetSignInVersion, signInVersion, admitBrowserGoogle, beginSignIn, endSignIn, googleAdmission, changeOwnerTo, gmailClaim, googleFlowActive, imapClaim, loginFailed, reconnectAccount, validateGoogleConnection } from "./identity";
+import { forgetSignInVersion, signInVersion, admitBrowserGoogle, beginSignIn, endSignIn, oauthAdmission, changeOwnerTo, gmailClaim, googleFlowActive, imapClaim, loginFailed, reconnectAccount, validateGoogleConnection } from "./identity";
 import { accountLabel } from "./account-label";
 import { toRpcError } from "./ai-service";
 import { exportMailbox, importMailbox, restorePending } from "./import";
@@ -1375,7 +1375,7 @@ export function createHandlers(b: Backend): Handlers {
           if (accountId === undefined && snapshot.config.googleSubject === undefined) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
           flow ??= beginSignIn(b, existing.id);
           flowId = existing.id;
-          const admission = await googleAdmission(b, existing.id, flow);
+          const admission = await oauthAdmission(b, existing.id, flow);
           if (admission.expectedSubject !== (snapshot.config.googleSubject ?? null)) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
           await admitBrowserGoogle(b, existing, who, accessToken, expiresAt, flow, { ...admission, stamp: snapshot.stamp });
           void b.syncAccount(existing.id);

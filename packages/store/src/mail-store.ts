@@ -40,6 +40,7 @@ import type {
   Vetoes,
 } from "@terno/core";
 import type { OwnerIdentity } from "@terno/core/rpc";
+import { isOAuthKind, OAUTH_SUBJECT, type OAuthKind } from "@terno/core";
 import type { MailStoreSearch, SearchCursor, SearchFeed, SearchMessageDoc, SearchThreadDoc, StoreSearchPage } from "./search";
 import type {
   AddedBy,
@@ -320,15 +321,32 @@ export interface StorageRemoval {
   partial: number[];
 }
 
-/** Explicit verification can deliberately replace a missing credential; ordinary refresh CAS never upserts. */
-export interface GoogleAdmission {
+/**
+ * Explicit verification can deliberately replace a missing credential; ordinary refresh CAS never upserts. Plan 259: any
+ * OAuth kind (Gmail, Outlook): the account row's own kind names where its subject lives (`OAUTH_SUBJECT`), so the check
+ * and the commit are one atomic unit whatever the provider.
+ */
+export interface OAuthAdmission {
   expectedSubject: string | null;
   subject: string;
   /** Evaluated synchronously at actual store admission. */
   eligible?: () => boolean;
 }
 
-export type SecretIntent = { google?: GoogleAdmission } & (
+/** Whether an admission holds for an account row of this kind and config: an OAuth kind whose stored subject is the one expected. */
+export function oauthAdmits(kind: string | null | undefined, config: Record<string, unknown> | null | undefined, admission: OAuthAdmission): boolean {
+  if (!isOAuthKind(kind) || !config) return false;
+  const stored = (config[OAUTH_SUBJECT[kind]] ?? null) as unknown;
+  return stored === admission.expectedSubject && (admission.expectedSubject === null || admission.expectedSubject === admission.subject) && (!admission.eligible || admission.eligible());
+}
+
+/** The config with the admitted subject stored, or null when it is already there (nothing to write). */
+export function oauthAdmittedConfig(kind: OAuthKind, config: Record<string, unknown>, subject: string): Record<string, unknown> | null {
+  const key = OAUTH_SUBJECT[kind];
+  return config[key] === subject ? null : { ...config, [key]: subject };
+}
+
+export type SecretIntent = { oauth?: OAuthAdmission } & (
   | { kind: "retain"; name: string; expectedBlob: Uint8Array }
   | { kind: "replace"; name: string; expectedBlob: Uint8Array | null; blob: Uint8Array });
 
@@ -924,7 +942,7 @@ export interface MailStore {
     setSyncState(id: number, patch: Partial<AccountSyncState>): Promise<void>;
     setProviderConfig(id: number, config: unknown): Promise<void>;
     /** Explicit browser consent: conditional pin admission without a durable token. */
-    admitGoogle(stamp: { id: number; email: string; createdAt: number }, admission: GoogleAdmission): Promise<boolean>;
+    admitOAuth(stamp: { id: number; email: string; createdAt: number }, admission: OAuthAdmission): Promise<boolean>;
     /** the provider's sync cursor, merged into the latest stored config in one unit (preferences beside it are kept) */
     setCursor(id: number, cursor: unknown, check?: () => void): Promise<void>;
   };

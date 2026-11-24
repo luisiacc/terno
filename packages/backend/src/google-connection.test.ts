@@ -288,9 +288,9 @@ describe("Google connection RPC validation", () => {
     await t.backend.syncAccount(account.id);
     let release!: () => void, entered!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; }), blocked = new Promise<void>((resolve) => { entered = resolve; });
-    const admit = t.backend.store.accounts.admitGoogle.bind(t.backend.store.accounts);
+    const admit = t.backend.store.accounts.admitOAuth.bind(t.backend.store.accounts);
     if (stage === "inspection") t.inspect.mockImplementationOnce(async () => { entered(); await gate; return { ...identity }; });
-    else vi.spyOn(t.backend.store.accounts, "admitGoogle").mockImplementationOnce(async (...args) => { entered(); await gate; return admit(...args); });
+    else vi.spyOn(t.backend.store.accounts, "admitOAuth").mockImplementationOnce(async (...args) => { entered(); await gate; return admit(...args); });
     const older = t.client.call("accounts.connectGmailToken", { accessToken: "older", expiresIn: 3600, accountId: account.id }).then((value) => ({ value }), (error: unknown) => ({ error }));
     await blocked;
     const newer = t.client.call("accounts.connectGmailToken", { accessToken: "newer", expiresIn: 3600, accountId: account.id });
