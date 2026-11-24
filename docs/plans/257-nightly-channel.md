@@ -71,3 +71,9 @@ The review (`/tmp/terno-scratch/p257/review.out`) raised six points. Each fix ha
 3. **A run cancelled mid-upload** leaves a nightly draft nothing would publish; pruning now deletes nightly drafts below the newest published nightly (never one above it, never a stable draft).
 
 Skipped as very rare: a second stable dispatch landing between the scheduler's busy check and its dispatch (GitHub would then replace the waiting stable run), and two drafts of one tag created at the same moment by a local and a CI run (local nightlies are now refused).
+
+## Follow-up: a nightly by hand
+
+> i wanta way to manually do a nightly release too
+
+`pnpm release:nightly` (root and `apps/desktop`) runs the scheduler's own entry, `release-ci.mjs nightly`, from the maintainer's Mac. Outside GitHub Actions it first makes `pnpm release`'s checks (`localNightlyProblems`): gh signed in, a clean tree, and HEAD is GitHub's `main` tip, since GitHub builds main's tip and unpushed commits would silently be left out. Then the same decision and dispatch as the schedule: it prints the version and the run's link, or why there's nothing to build (main is already the newest nightly, or a release run is going). No second path: the number, the skip rules and the draft job's checks are the scheduler's. `pnpm release` with a nightly version now points here.

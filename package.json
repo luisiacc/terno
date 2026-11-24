@@ -16,6 +16,7 @@
     "dist:linux": "TERNO_RELEASE=1 pnpm build && TERNO_RELEASE=1 pnpm --filter @terno/desktop dist:linux",
     "release": "node apps/desktop/scripts/release.mjs",
     "release:mac": "node apps/desktop/scripts/release.mjs",
+    "release:nightly": "node apps/desktop/scripts/release-ci.mjs nightly",
     "typecheck": "pnpm -r --parallel typecheck",
     "lint": "oxlint --deny-warnings apps packages",
     "test": "vitest run --project unit && vitest run --project db-wasm",

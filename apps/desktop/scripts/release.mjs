@@ -36,7 +36,7 @@ if (prerelease && channel !== "nightly") fail(`${version}: only stable (x.y.z) a
 const run = (cmd, args, o = {}) => spawnSync(cmd, args, { encoding: "utf8", ...o });
 const ci = process.env.GITHUB_ACTIONS === "true";
 // plan 257: nightlies are numbered and published by the Nightly workflow alone, so they only ever go up (Codex review)
-if (prerelease && !ci) fail(`${version}: nightlies come from the Nightly workflow: \`gh workflow run nightly.yml --repo ${REPO}\` (RELEASING.md)`);
+if (prerelease && !ci) fail(`${version}: nightlies are numbered for you: run \`pnpm release:nightly\` (RELEASING.md)`);
 const phase = process.argv[2] && !process.argv[2].startsWith("--") ? process.argv[2] : null;
 const sha = ci ? process.env.GITHUB_SHA : execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).trim();
 

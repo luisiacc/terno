@@ -82,10 +82,10 @@ The releases above are the **stable** channel. The **nightly** channel builds it
 - It's versioned `<next>-nightly.<YYYYMMDDHHmm>`, for example `0.1.6-nightly.202611250817`: above the last stable release (or the one in review) and below the next one. Linux packages record it as `0.1.6~nightly.202611250817`.
 - It **publishes itself** as a prerelease, never marked "Latest". Stable copies and the site's download links only ever see stable releases. The newest 10 nightlies are kept; older ones, and nightly drafts a cancelled run left, are deleted with their tags.
 - **To use it:** in Terno, Settings → About → Updates → Channel → **Nightly**. That copy then takes each new nightly. Switching back to Stable doesn't downgrade: Terno waits for the next stable release that's newer than the nightly it runs.
-- **A nightly now:** "Run workflow" on the Nightly workflow in the Actions tab, or `gh workflow run nightly.yml --repo luisiacc/terno`. It skips just as the schedule does.
+- **A nightly now:** `pnpm release:nightly`. Like `pnpm release`, it needs a clean tree that is GitHub's `main` tip (push first). It picks the number, starts the build and prints the run's link, or says why there's nothing to build: `main` is already the newest nightly, or a release run is going. It publishes itself when both builds pass. Without this Mac: "Run workflow" on the Nightly workflow in the Actions tab.
 - GitHub's schedules are best effort: a night can be late or skipped. A failed nightly emails you like any failed run, and the next night tries again. If `main` moved while a nightly was starting, that run stops with "main moved", and the next night builds the newer tip.
 
-Nightlies come only from that workflow: `pnpm release` refuses a nightly version, and the release run refuses a nightly whose number isn't the one the workflow would pick. A stable release that's built but still waiting for your review counts as taken, so nightlies after it are numbered for the next version and switching back to Stable never installs older code.
+Nightlies come only from the workflow or `pnpm release:nightly`, which decide the same way: `pnpm release` refuses a nightly version, and the release run refuses a nightly whose number isn't the one they would pick. A stable release that's built but still waiting for your review counts as taken, so nightlies after it are numbered for the next version and switching back to Stable never installs older code.
 
 ## When it fails
 

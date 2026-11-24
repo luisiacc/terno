@@ -3,7 +3,7 @@
 // it runs before touching them, and the `gh workflow run` call that starts it.
 // `node release-ci.mjs check <phase>` is each job's preflight. RELEASING.md is
 // the maintainer's setup guide.
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { compareRelease, NIGHTLY_TAG } from "./release-assets.mjs";
 
@@ -112,8 +112,9 @@ export function deleteFailedDraft(version, run = gh) {
 }
 
 // ── Plan 257: the nightly ─────────────────────────────────────────────────────────────────────────────────────────
-// .github/workflows/nightly.yml runs `node release-ci.mjs nightly` each night: it reads GitHub, decides, and starts
-// release.yml exactly as `pnpm release` does. The draft job then publishes the nightly and prunes old ones.
+// .github/workflows/nightly.yml runs `node release-ci.mjs nightly` each night, and `pnpm release:nightly` runs it from
+// this Mac: it reads GitHub, decides, and starts release.yml exactly as `pnpm release` does. The draft job then
+// publishes the nightly and prunes old ones.
 
 /** Nightlies kept on the Releases page; a copy only ever needs the newest. */
 export const KEEP_NIGHTLIES = 10;
@@ -213,7 +214,7 @@ export function startNightly({ run = gh, now = new Date(), start = dispatch } = 
 export function assertNightlyVersion(version, pkgVersion, run = gh) {
   const releases = listReleases(run);
   const base = nightlyBase(pkgVersion, releases);
-  if (version.replace(/-.*/, "") !== base) throw new Error(`a nightly of this commit is ${base}-nightly.N, not ${version}: start nightlies with the Nightly workflow`);
+  if (version.replace(/-.*/, "") !== base) throw new Error(`a nightly of this commit is ${base}-nightly.N, not ${version}: start nightlies with \`pnpm release:nightly\` or the Nightly workflow`);
   const newest = nightlyVersions(releases)[0];
   if (newest && compareRelease(version, newest) <= 0) throw new Error(`${version} doesn't sort above the published ${newest}`);
 }
@@ -240,10 +241,31 @@ export function pruneNightlies(run = gh) {
   return failed;
 }
 
+/**
+ * `pnpm release:nightly` from this Mac (plan 257): the scheduler's own decision and dispatch, after the checks
+ * `pnpm release` makes. GitHub builds its main's tip, so what you have must be exactly that. Empty = ready.
+ */
+export function localNightlyProblems({ head, dirty }, run = gh) {
+  if (run(["auth", "status"]).status !== 0) return ["gh isn't signed in: run `gh auth login` first"];
+  if (dirty) return ["the working tree has changes: GitHub builds main's tip, so commit and push them first"];
+  if (!isMainTip(head, run)) return [`${head.slice(0, 10)} isn't the tip of GitHub's main: GitHub builds main's tip, so push your commits (or pull theirs), then run this again`];
+  return [];
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url) && process.argv[2] === "nightly") {
+  const local = process.env.GITHUB_ACTIONS !== "true";
   try {
+    if (local) {
+      const git = (...args) => execFileSync("git", args, { encoding: "utf8" }).trim();
+      const problems = localNightlyProblems({ head: git("rev-parse", "HEAD"), dirty: git("status", "--porcelain", "--untracked-files=no") });
+      if (problems.length) throw new Error(problems[0]);
+    }
     const r = startNightly();
-    console.log(r.build ? `✓ building ${r.version} from ${r.mainSha.slice(0, 10)}${r.url ? `: ${r.url}` : ""}` : `· no nightly tonight: ${r.reason}`);
+    if (!r.build) console.log(`· no nightly ${local ? "now" : "tonight"}: ${r.reason}`);
+    else {
+      console.log(`✓ building ${r.version} from ${r.mainSha.slice(0, 10)} on GitHub (macOS and Linux)${r.url ? `: ${r.url}` : ""}`);
+      if (local) console.log(`  It publishes itself when both builds pass (about 25 minutes). Follow it with \`gh run watch --repo ${REPO}\`, or close this.`);
+    }
   } catch (e) {
     console.error(`✗ ${e.message}`);
     process.exit(1);

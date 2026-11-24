@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { compareVersions } from "@terno/core/updates";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error a build script (plain JS)
-import { assertNightlyVersion, deleteFailedDraft, dispatch, dispatchArgs, isMainTip, KEEP_NIGHTLIES, nightliesToPrune, nightlyBase, nightlyPlan, PHASE_SECRETS, preflight, publishNightly, pruneNightlies, REQUIRED_SECRETS, startNightly, tagExists, VERSION } from "../scripts/release-ci.mjs";
+import { assertNightlyVersion, deleteFailedDraft, dispatch, dispatchArgs, isMainTip, KEEP_NIGHTLIES, localNightlyProblems, nightliesToPrune, nightlyBase, nightlyPlan, PHASE_SECRETS, preflight, publishNightly, pruneNightlies, REQUIRED_SECRETS, startNightly, tagExists, VERSION } from "../scripts/release-ci.mjs";
 // @ts-expect-error a build script (plain JS)
 import { channelOf, compareRelease, LINUX_ARCHES, linuxPackages, packageVersion, publishConfig, releaseAssets } from "../scripts/release-assets.mjs";
 // @ts-expect-error a build script (plain JS)
@@ -436,6 +436,30 @@ describe("plan 257: tonight's nightly", () => {
   it("a GitHub read that fails stops the scheduler instead of guessing", () => {
     const down = (args: string[]) => (args[1] === "--paginate" ? { status: 1, stderr: "HTTP 503" } : fakeGh({}).run(args));
     expect(() => startNightly({ run: down, now: night, start: () => null })).toThrow(/couldn't read the releases/);
+  });
+});
+
+describe("plan 257: a nightly by hand (pnpm release:nightly)", () => {
+  const gh = (o: { signedIn?: boolean; tip?: string } = {}) => (args: string[]) => {
+    if (args[0] === "auth") return { status: o.signedIn === false ? 1 : 0, stdout: "" };
+    if (args[1] === "repos/luisiacc/terno/commits/main") return { status: 0, stdout: `${o.tip ?? sha}\n` };
+    return { status: 1, stdout: "" };
+  };
+
+  it("is ready when gh is signed in and a clean tree is GitHub's main tip", () => {
+    expect(localNightlyProblems({ head: sha, dirty: "" }, gh())).toEqual([]);
+  });
+
+  it("says what to do when it isn't: sign in, commit, or push (GitHub builds main's tip, not this checkout)", () => {
+    expect(localNightlyProblems({ head: sha, dirty: "" }, gh({ signedIn: false }))).toEqual([expect.stringContaining("gh auth login")]);
+    expect(localNightlyProblems({ head: sha, dirty: " M apps/desktop/src/main.ts" }, gh())).toEqual([expect.stringContaining("commit and push them first")]);
+    expect(localNightlyProblems({ head: sha, dirty: "" }, gh({ tip: later }))).toEqual([expect.stringContaining("push your commits")]);
+  });
+
+  it("is a script at the root and in the desktop package, running the scheduler's own entry", () => {
+    const scripts = (p: string) => JSON.parse(readFileSync(join(__dirname, p), "utf8")).scripts;
+    expect(scripts("../../../package.json")["release:nightly"]).toBe("node apps/desktop/scripts/release-ci.mjs nightly");
+    expect(scripts("../package.json")["release:nightly"]).toBe("node scripts/release-ci.mjs nightly");
   });
 });
 
