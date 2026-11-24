@@ -74,7 +74,7 @@ The work comes in four stages, each landing on its own, with tests. Stage 0 is t
 5. **OAuth clients.**
    - `google-client.ts` becomes `oauth-clients.ts`, with `clientFor(b, method, remembered?)`. `BackendCoreOptions.googleClients` becomes `oauthClients: { google?: …; microsoft?: … }`, and `ProviderContext.googleClient()` becomes `oauthClient()`.
    - A Microsoft client is public: an id and no secret. `clientSecret: null` already passes through the Gmail code.
-   - The config's remembered client id becomes `oauthClientId`. The reader still accepts `googleClientId`: no users yet (memory), but the owner's own profiles carry it.
+   - The remembered client id is per provider, like the subject: Gmail keeps `googleClientId`, Outlook writes `microsoftClientId` (`oauth-clients.ts`; changed in the stage 0a code review, which found the plan and the code naming it differently).
 6. **Shared OAuth pieces, lifted out of `gmail.ts`.**
    - `oauth-loopback.ts`: the loopback listener with PKCE and state, the callback page, and the error mapping. It is parameterised by authorize URL, extra params (`access_type`/`prompt` for Google; `prompt=select_account` and `response_mode=query` for Microsoft) and an error mapper.
    - `oauth-session.ts`: the refresh-token session (single-flight refresh, CAS persistence, closed-lifetime fencing, `tokenResult`). `createGmailProvider` keeps only what is Google's.
@@ -105,7 +105,7 @@ Every existing Gmail test passes unchanged except for renamed imports. That prov
      - `AADSTS65001`/`consent_required`/`interaction_required` with admin-consent wording → "your organisation's administrator has to allow Terno" (the plan-28 admin case).
      - Anything else → invalid response.
 3. **Account and owner.**
-   - `OutlookAccountConfig { senderName, microsoftSubject: "<tid>:<oid>", oauthClientId, tenant: "consumers" | "organizations" }`. The tenant is consumers when `tid` is the documented consumer tenant `9188040d-6c67-4c5b-b112-36a304b66dad`.
+   - `OutlookAccountConfig { senderName, microsoftSubject: "<tid>:<oid>", microsoftClientId, tenant: "consumers" | "organizations" }`. The tenant is consumers when `tid` is the documented consumer tenant `9188040d-6c67-4c5b-b112-36a304b66dad`.
    - The refresh token goes in `account:N:refreshToken`, as Gmail's does.
    - `identity.ts` gains `validateMicrosoftConnection` (scope check on `Mail.ReadWrite` and `Mail.Send`), `microsoftClaim`, the reconnect and renewal branches, and `connectExistingMicrosoft` with `login_hint`.
    - The owner's `verified_by` is `microsoft_oauth`.

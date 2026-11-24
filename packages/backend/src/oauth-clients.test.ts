@@ -89,4 +89,18 @@ describe("plan 259: Microsoft's clients beside Google's", () => {
     expect(await oauthClientFor(backend, "microsoft", "terno-prod")).toBeNull();
     expect(await oauthClientFor(backend, "google", "ms-prod")).toBeNull();
   });
+
+  it("Codex review #3: an Outlook account made with the dev client refreshes with it in a release that prefers prod", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "terno-ms-remembered-"));
+    const contexts = new Map<number, Parameters<ProviderRegistry["create"]>[0]>();
+    const providers: ProviderRegistry = { create: (ctx) => { contexts.set(ctx.account.id, ctx); return { async verify() {}, async sync() {}, async execute() {}, async close() {} }; }, async verifyImap() {}, connectGmail: async () => { throw new Error("unused"); } };
+    const microsoftClients = parseOAuthClients(JSON.stringify({ preferred: "ms-prod", clients: [{ clientId: "ms-prod", clientSecret: "" }, { clientId: "ms-dev", clientSecret: "" }] }));
+    const backend = new Backend({ dbPath: join(dir, "test.db"), version: "test", cipher: plaintextCipher, providers, autoSync: false, googleClients: BUILT, microsoftClients });
+    cleanups.push(async () => { await backend.stop(); rmSync(dir, { recursive: true, force: true }); });
+    const { account } = await backend.store.accounts.create({ kind: "outlook", email: "o@outlook.test", displayName: "O", color: "brown", providerConfig: { microsoftClientId: "ms-dev" }, secret: { key: "refreshToken", blob: await plaintextCipher.encrypt("synthetic") }, now: 1 });
+    await backend.start();
+    await backend.syncAccount(account.id).catch(() => {});
+    await vi.waitFor(() => expect(contexts.get(account.id)).toBeDefined());
+    expect(await contexts.get(account.id)!.oauthClient!()).toEqual({ clientId: "ms-dev", clientSecret: null });
+  });
 });
