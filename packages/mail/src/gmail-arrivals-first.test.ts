@@ -32,6 +32,8 @@ function rig(o: {
   minimal?: (id: string) => unknown;
   blockCapture?: SyncSink["blockCapture"];
   pendingRepairs?: string[];
+  /** the repair the person just asked to retry (it goes before history) */
+  explicitRetry?: string;
   flags?: number;
   stored?: string[];
 }) {
@@ -54,7 +56,7 @@ function rig(o: {
         return { items: Array.from({ length: Math.max(0, end - after) }, (_, i) => ({ id: after + i + 1, providerMsgId: `f${after + i + 1}` })), throughMessageId: through, hasMore: end < through };
       },
       repairs: {
-        get: async () => null,
+        get: async (_account: number, locator: { providerId: string }) => locator.providerId === o.explicitRetry ? { key: locator.providerId, locator, reason: "mime-parts", state: "pending", revision: 1 } : null,
         list: async () => ({ items: (o.pendingRepairs ?? []).map((id) => ({ key: id, locator: { kind: "gmail", providerId: id }, reason: "mime-parts", state: "pending", revision: 1 })) }),
       },
     },
@@ -89,6 +91,7 @@ function rig(o: {
     async ingest(messages) { ingested.push(messages.map((m) => m.providerMsgId!)); for (const m of messages) stored.add(m.providerMsgId!); },
     async updateFlags(list) { updates.push(...list.map((u) => u.expectedProviderMsgId!)); }, async removeMessages() {}, async setBody() {}, async setSyncState() {}, async pendingMessageIds() { return new Set(); },
     again: () => void again++,
+    ...(o.explicitRetry && { captureRetry: { locator: { kind: "gmail" as const, providerId: o.explicitRetry }, revision: 1 } }),
     ...(o.blockCapture && { blockCapture: o.blockCapture }),
   };
   return { provider, sink, raws, minimals, histories, saved, ingested, flagPages, updates, stored, again: () => again, sync: () => provider.sync(sink) };
@@ -153,6 +156,14 @@ describe("one message never holds the rest back", () => {
     await expect(t.sync()).rejects.toMatchObject({ status: 503 });
     expect(t.ingested.flat().sort()).toEqual(["a1", "a2"]);
     expect(t.saved).toEqual([]);
+  });
+
+  it("a retry asked for now that fails again is held without keeping history's cursor back", async () => {
+    const t = rig({ history: () => additions(["a1"]), explicitRetry: "r", refuse: (id) => id === "r" ? "mime-limit-headers" : undefined });
+    await expect(t.sync()).rejects.toMatchObject({ code: "mime-limit-headers" });
+    expect(t.raws).toEqual(["r", "a1"]);
+    expect(t.ingested.flat()).toEqual(["a1"]);
+    expect(t.saved).toEqual([{ historyId: "20" }]);
   });
 
   it("a pending repair its own content fails again is retried after new mail, which is stored and its cursor saved", async () => {

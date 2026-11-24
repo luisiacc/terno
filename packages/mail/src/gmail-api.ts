@@ -552,8 +552,11 @@ class IncomingResourceError extends ProviderError {
  */
 const MESSAGE_FAILURES = new Set(["input-limit", "worker-timeout", "envelope-unavailable", "mime-limit-headers", "mime-limit-addresses"]);
 
-/** Plan 265: a failure held for a pass's end: the message stays unstored, so nothing saves progress past it. */
-interface Held { error?: unknown }
+/**
+ * Plan 265: failures held for a pass's end (the first is thrown): each message stays unstored, so the step that held
+ * it saves no progress past it. `count` tells a step its own holds from an earlier step's (a repair retried first).
+ */
+interface Held { error?: unknown; count: number }
 
 function processingError(error: IncomingProcessingError | ResponseBodyLimitError): ProviderError {
   if (error instanceof IncomingProcessingError && error.code === "mime-limit-parts") return new IncomingCaptureRefusal("mime-parts");
@@ -906,12 +909,12 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
                 // plan 265: a repair the store has no room for (its journal full) holds this message, not its siblings;
                 // a conflict, a fence or a store failure is the pass's
                 if (!held || !(refused instanceof RpcError && refused.code === "UNAVAILABLE" && refused.i18n?.key === "capture.capacity")) throw refused;
-                check(); held.error ??= refused; return;
+                check(); held.error ??= refused; held.count++; return;
               }
               check(); return;
             }
             if (held && (error instanceof IncomingCaptureRefusal || (error instanceof IncomingResourceError && MESSAGE_FAILURES.has(error.code)))) {
-              check(); held.error ??= error; return;
+              check(); held.error ??= error; held.count++; return;
             }
             throw error;
           }
@@ -1152,6 +1155,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
    * stored. History gone, or more than a look reads: new mail is read from now on, the gap is the catch-up's.
    */
   async function peekArrivals(sink: SyncPass, state: Reconciliation, save: (value: Reconciliation) => Promise<void>) {
+    const holds = sink.held?.count ?? 0;
     const from = state.peek ?? state.baseline;
     const added = new Set<string>();
     const deleted = new Set<string>();
@@ -1223,7 +1227,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     const rest = new Map(others.slice(0, PEEK_RELABEL - yours.size));
     await relabel([...rest.keys()], sink, async (id) => rest.get(id), () => {});
     // plan 265: a message held back stays the next look's (the first sync goes on; the pass says why at its end)
-    if (sink.held?.error !== undefined) return;
+    if ((sink.held?.count ?? 0) !== holds) return;
     if (latest !== from || (unplaced && !state.gap)) await save({ ...state, peek: latest, ...(unplaced && { gap: true }) });
   }
 
@@ -1457,6 +1461,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
    * next), so a long catch-up never keeps what arrives during it waiting for the whole pass.
    */
   async function incremental(sink: SyncPass, cursor: Cursor) {
+    const holds = sink.held?.count ?? 0;
     const first = await historySince(cursor.historyId, sink);
     let latest = first.latest, merged = first.references, looking = true, lookedAt = Date.now();
     const lookup = storedMessage(sink);
@@ -1570,7 +1575,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     sink.check();
     if (removals.length) await sink.removeMessages(removals);
     // plan 265: a message held back (left unstored) keeps the cursor before it; the pass says why at its end
-    if (sink.held?.error !== undefined) return;
+    if ((sink.held?.count ?? 0) !== holds) return;
     await saveProgress(sink, { historyId: latest });
   }
 
@@ -1697,7 +1702,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       };
       const effect = async (run: () => Promise<void>) => { check(); await run(); check(); };
       const sink: SyncPass = {
-        ...outer, check, held: {},
+        ...outer, check, held: { count: 0 },
         ingest: (messages, o) => effect(() => { messages.forEach((m) => meet(m.gmailLabels)); return outer.ingest(messages, o); }),
         updateFlags: (updates) => effect(() => { updates.forEach((u) => meet(u.gmailLabels)); return outer.updateFlags(updates); }),
         removeMessages: (ids) => effect(() => outer.removeMessages(ids)),
