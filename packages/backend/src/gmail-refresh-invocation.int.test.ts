@@ -56,7 +56,7 @@ async function mailbox(kind: "SQL" | "IndexedDB", mode: "normal" | "local" | "go
   let backend = await open(); await backend.ready;
   const { account } = await backend.store.accounts.create({ kind: "gmail", email: "me@example.test", displayName: "Synthetic", color: "brown", now: 1 });
   const runs: Promise<void>[] = [];
-  cleanup.push(async () => { await Promise.allSettled(runs); try { expect(unexpected).toEqual([]); expect(backend.net.googlePending()).toBe(0); } finally { await backend.stop(); rmSync(dir, { recursive: true, force: true }); } });
+  cleanup.push(async () => { await Promise.allSettled(runs); try { expect(unexpected).toEqual([]); expect(backend.net.providerPending()).toBe(0); } finally { await backend.stop(); rmSync(dir, { recursive: true, force: true }); } });
   const cursor = async () => (await backend.store.accounts.config<{ cursor?: unknown }>(account.id))?.config.cursor;
   const rows = async () => (await backend.store.debug.snapshot()).messages;
   const seed = async (ids: string[], local = false) => {

@@ -2,12 +2,12 @@ import { AccountStatus, type StatusAuthority } from "./account-status";
 import { observeRefusals } from "./refusals";
 import { captureLocator } from "@terno/store";
 import { ProviderCooldown } from "./provider-cooldown";
-import { savedGoogleRequests, type SavedGoogleRequests } from "./google-requests";
-import { copyOpAdmission, rejectedRecipients, type CooldownStamp, type OpAdmission, type OpPark } from "@terno/store";
+import { savedAccountRequests, type SavedAccountRequests } from "./account-requests";
+import { copyOpAdmission, OAUTH_SERVICES, rejectedRecipients, type CooldownStamp, type OpAdmission, type OpPark } from "@terno/store";
 import { prepareCopyWire, readCopyWire } from "./sent-copy";
 import type { PendingGmailRenewal } from "./identity";
 import type { AiTasks } from "@terno/ai";
-import { accessAllows, aiFeaturesAvailable, AGENT_METHODS, ruleAwaitsBody, agentRefusal, agentsMaySend, asciiEmail, canonicalAuthored, decodeText, encodeText, messageOf, aiCanRun, textRef, type Account, type AccountKind, type AccountPrefs, type DevAiKeys, type FavoriteFolder, type FavoriteFoldersSnapshot, type AccountSyncState, type SyncProgress, type OpState, type ThreadAction } from "@terno/core";
+import { isOAuthKind, accessAllows, aiFeaturesAvailable, AGENT_METHODS, ruleAwaitsBody, agentRefusal, agentsMaySend, asciiEmail, canonicalAuthored, decodeText, encodeText, messageOf, aiCanRun, textRef, type Account, type AccountKind, type AccountPrefs, type DevAiKeys, type FavoriteFolder, type FavoriteFoldersSnapshot, type AccountSyncState, type SyncProgress, type OpState, type ThreadAction } from "@terno/core";
 import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/diag";
 import { RpcError, RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type ResultOf, type Transport } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
@@ -232,7 +232,8 @@ export class BackendCore {
   readonly options: Required<Pick<BackendCoreOptions, "now" | "sliceBudgetMs" | "syncIntervalMs">> & BackendCoreOptions;
   private readonly incoming: IncomingPipeline;
   private cooldown?: ProviderCooldown;
-  private readonly google = new Map<number, SavedGoogleRequests>();
+  /** plan 259: every saved OAuth account's request policy (its provider's cooldowns, capacity and mailbox proof) */
+  private readonly requests = new Map<number, SavedAccountRequests>();
   private readonly cooldownAccounts = new Map<number, CooldownStamp & { kind: string }>();
   private admissionSnapshot?: Promise<OpAdmission>;
   private cooldownVersion = 0;
@@ -376,7 +377,7 @@ export class BackendCore {
     this.platform = options.platform;
     this.store = options.store;
     if (options.devAi) provideDevAi(this.store, options.devAi);
-    this.net = createNetworkPolicy({ siteIcons: () => readSiteIcons(this.store), lookup: options.lookup, googleChanged: () => this.cooldownChanged(), observe: options.onNet });
+    this.net = createNetworkPolicy({ siteIcons: () => readSiteIcons(this.store), lookup: options.lookup, providerChanged: () => this.cooldownChanged(), observe: options.onNet });
     // the web host POSTs through the policy (no-cors); other hosts pass theirs (Node's in backend.ts)
     this.unsubscribeTransport = options.unsubscribeTransport !== undefined ? options.unsubscribeTransport : options.host?.kind === "web" ? browserUnsubscribeTransport(this.net.fetchFor("unsubscribe")) : null;
     this.aiService = new AiService(this, options.aiFactory ?? defaultAiFactory);
@@ -705,7 +706,7 @@ export class BackendCore {
     }
     this.kickWorker();
     for (const id of this.admissionSync) {
-      if (this.syncing.has(id) || !this.connectivity.canSync(id) || !this.googleReady(id)) continue;
+      if (this.syncing.has(id) || !this.connectivity.canSync(id) || !this.requestsReady(id)) continue;
       this.admissionSync.delete(id);
       this.syncInBackground(id);
     }
@@ -717,8 +718,8 @@ export class BackendCore {
    * that follows skips what's syncing, so nothing starts twice (plan 263, Codex critique #6, code review #4).
    */
   private cooldownWake(): void {
-    for (const id of this.google.keys()) {
-      if (!this.googleReady(id)) continue;
+    for (const id of this.requests.keys()) {
+      if (!this.requestsReady(id)) continue;
       if (this.syncing.has(id)) this.syncAgain.add(id);
       else this.syncInBackground(id);
     }
@@ -763,14 +764,14 @@ export class BackendCore {
           scope.check({ request: { endpoint: "google-userinfo", purpose: "identity-proof" } });
           if (codeExchange) scope.check({ request: { endpoint: "oauth-token", purpose: "authorization-code" } });
         }
-        if (this.net.googlePending() >= 64) throw new ProviderError(L("errors.google.capacity"), true);
+        if (this.net.providerPending() >= 64) throw new ProviderError(L("errors.google.capacity"), true);
       } catch (error) { throw failure(error); }
     };
     try { check(); } catch (error) { close(); throw error; }
     return {
       request: (descriptor: RequestDescriptor, input: Parameters<typeof fetch>[0], init?: RequestInit) => {
         check();
-        return this.net.fetchGoogle(policy, descriptor)(input, init).catch((error: unknown) => {
+        return this.net.fetchProvider(policy, descriptor)(input, init).catch((error: unknown) => {
           throw failure(error);
         });
       },
@@ -778,8 +779,9 @@ export class BackendCore {
     };
   }
 
-  private googleReady(id: number): boolean {
-    try { this.google.get(id)?.check({ endpoint: "gmail-api", purpose: "mail" }); return true; }
+  private requestsReady(id: number): boolean {
+    const requests = this.requests.get(id);
+    try { requests?.check({ endpoint: requests.services.mail, purpose: "mail" }); return true; }
     catch { return false; }
   }
 
@@ -788,11 +790,11 @@ export class BackendCore {
     const version = this.cooldownVersion;
     return this.admissionSnapshot = (async () => {
       const snapshot = await this.cooldown!.admission((id) => this.cooldownAccounts.get(id));
-      const blocked = [...snapshot.blockedAccountIds, ...[...this.google].filter(([id, google]) => google.paused && !this.statuses.get(id)?.signInRequired).map(([id]) => id)];
+      const blocked = [...snapshot.blockedAccountIds, ...[...this.requests].filter(([id, requests]) => requests.paused && !this.statuses.get(id)?.signInRequired).map(([id]) => id)];
       const gmail = snapshot.kinds.gmail;
       const all = !!gmail?.all || this.cooldown!.state("installation", "gmail-api").kind !== "ready";
       return copyOpAdmission({ ...snapshot, blockedAccountIds: blocked,
-        kinds: { ...snapshot.kinds, gmail: { unverified: !!gmail?.unverified, all: all || version !== this.cooldownVersion, sends: !this.net.googleAvailable("send"), background: !this.net.googleAvailable("background") } },
+        kinds: { ...snapshot.kinds, gmail: { unverified: !!gmail?.unverified, all: all || version !== this.cooldownVersion, sends: !this.net.providerAvailable("send"), background: !this.net.providerAvailable("background") } },
         // plan 107: an account changing its folders is passed by until it's done (the worker is kicked then)
         pausedAccountIds: [...this.folderChanges.keys()] });
     })();
@@ -917,7 +919,7 @@ export class BackendCore {
       } else {
         this.startAccount(account);
         // plan 264: a Gmail session the keychain wouldn't open last time may open now
-        if (account.kind === "gmail" && keychainRefusal((await this.accountStatus(account.id)).refusalKey)) void this.recheckSignIn(account.id, "start");
+        if (isOAuthKind(account.kind) && keychainRefusal((await this.accountStatus(account.id)).refusalKey)) void this.recheckSignIn(account.id, "start");
       }
     }
     this.syncTimer = setInterval(() => this.inBackground(this.tick()), this.options.syncIntervalMs);
@@ -1040,7 +1042,7 @@ export class BackendCore {
       // Retry starts its accounts itself: one also waiting for Google's admission isn't started again by the wake
       // its policy recovery causes (plan 263, Codex code review #6)
       for (const id of this.admissionSync) if (accountId === null || accountId === id) this.admissionSync.delete(id);
-      for (const [id, google] of this.google) if (accountId === null || accountId === id) google.recoverPolicy();
+      for (const [id, requests] of this.requests) if (accountId === null || accountId === id) requests.recoverPolicy();
       // plan 264: the gate's own way back too: a faulted store read again, a held pause lifted (re-waited from now)
       await this.cooldown?.retry().catch(() => {});
       this.cooldownChanged();
@@ -1082,7 +1084,7 @@ export class BackendCore {
       const scope = status.recheck;
       // plan 264: a Gmail refusal the keychain made (it wouldn't open the saved Google session) is ours to recheck,
       // locally: once the session opens, the refusal lifts as a sign-in would. Google's own refusal waits for one.
-      if (account?.kind === "gmail" && scope && keychainRefusal(status.refusalKey) && this.current(life)) {
+      if (isOAuthKind(account?.kind) && scope && keychainRefusal(status.refusalKey) && this.current(life)) {
         this.rechecked.set(accountId, this.now());
         const recover = status.localRecoveryProof(this.statusAuthority(life));
         if (!await this.accountRead(life, () => this.getSecret(`account:${accountId}:refreshToken`)) || !this.current(life)) return false;
@@ -2062,17 +2064,18 @@ export class BackendCore {
       this.cooldownChanged();
       const status = await this.accountStatus(accountId);
       const authority = this.statusAuthority(life);
-      const google = account.kind === "gmail" && !cfg.config.demo ? await savedGoogleRequests({
-        status,
+      const services = isOAuthKind(account.kind) && !cfg.config.demo ? OAUTH_SERVICES[account.kind] : undefined;
+      const requests = services ? await savedAccountRequests({
+        status, services,
         gate: this.cooldown!, net: this.net, store: this.store.providerCooldown, stamp,
         live: () => this.current(life), credentials: () => this.credentialsOf(accountId),
         write: (work) => this.accountWrite(life, work), changed: () => this.cooldownChanged(),
       }) : undefined;
-      if (!this.current(life)) { google?.close(); return null; }
-      if (google) this.google.set(accountId, google);
+      if (!this.current(life)) { requests?.close(); return null; }
+      if (requests) this.requests.set(accountId, requests);
       const created = this.options.providers.create({
         yield: () => this.platform.yield(),
-        google,
+        requests,
         tokenResult: (generation, error) => {
           if (error instanceof ProviderAuthError) this.reportRefusal(error, status.refuse({ ...authority, generation }, error));
         },
@@ -2109,7 +2112,7 @@ export class BackendCore {
         saveCursor: (cursor, check) => this.accountWrite(life, () => this.store.accounts.setCursor(accountId, cursor, check)),
         // Providers cancel their reads on reset/close. Sends retain their own acceptance/ambiguity signal.
         fetch: (input, init) => {
-          if (!this.current(life) || google) throw new RequestNotDispatchedError(L("errors.accountGone"));
+          if (!this.current(life) || requests) throw new RequestNotDispatchedError(L("errors.accountGone"));
           return this.net.fetchFor("mail")(input, init);
         },
       });
@@ -2198,8 +2201,8 @@ export class BackendCore {
     this.flagSyncAgain.delete(accountId);
     this.syncing.delete(accountId);
     this.providers.delete(accountId);
-    this.google.get(accountId)?.close();
-    this.google.delete(accountId);
+    this.requests.get(accountId)?.close();
+    this.requests.delete(accountId);
     this.cooldownChanged();
     // Never wait for a stuck read, factory or close before cancelling its lifetime.
     if (life.provider) {
@@ -2347,7 +2350,7 @@ export class BackendCore {
    * and publishes nothing. One already running isn't followed by another: the running pass reads the same mail.
    */
   syncAccount(accountId: number, captureRetry?: { locator: import("@terno/core").CaptureLocator; revision: number; check(): void }, o: { quick?: boolean } = {}): Promise<void> {
-    if (this.stopped || this.google.get(accountId)?.paused) return Promise.resolve();
+    if (this.stopped || this.requests.get(accountId)?.paused) return Promise.resolve();
     const life = this.lifetime(accountId);
     if (!this.current(life)) return Promise.resolve();
     const running = this.syncing.get(accountId);
@@ -2536,14 +2539,14 @@ export class BackendCore {
             if (!o.quick) await provider.folders?.(sink);
           } catch (error) {
             // the provider's own failure (offline, a malformed answer) waits; a sign-in to redo or a store failure doesn't
-            if (!(error instanceof ProviderError) || error instanceof ProviderAuthError || error instanceof ProviderCooldownError || (accountKind === "gmail" && (error.httpResponse?.status === 429 || (error.httpResponse?.status === 403 && (error.retryable || this.google.get(accountId)?.paused))))) throw error;
+            if (!(error instanceof ProviderError) || error instanceof ProviderAuthError || error instanceof ProviderCooldownError || (isOAuthKind(accountKind) && (error.httpResponse?.status === 429 || (error.httpResponse?.status === 403 && (error.retryable || this.requests.get(accountId)?.paused))))) throw error;
           }
         } finally {
           arrivals.end();
           // plan 191: not a first sync's (its live mail is the mailbox, not news)
           if (agentArrivals.length && before?.syncState.lastSyncAt != null && this.current(life)) this.agentWaits.arrived(accountId, agentArrivals);
         }
-        if (!this.current(life) || (before?.kind === "gmail" && credentials !== this.credentialsOf(accountId))) return;
+        if (!this.current(life) || (isOAuthKind(before?.kind) && credentials !== this.credentialsOf(accountId))) return;
         breadcrumb("sync", "sync.done", { accountKind, durationMs: performance.now() - started });
         this.evictions.passDone(accountId, pass);
         this.attention.prime(accountId);
@@ -2589,7 +2592,7 @@ export class BackendCore {
         // new mail first (it stays a chunk away at most)
         if (more && this.current(life)) this.continueBackfill(accountId);
       } catch (caught) {
-        if (!this.current(life) || (before?.kind === "gmail" && credentials !== this.credentialsOf(accountId))) return;
+        if (!this.current(life) || (isOAuthKind(before?.kind) && credentials !== this.credentialsOf(accountId))) return;
         const error = caught instanceof FlagObservationError ? new FlagConnectionError() : caught;
         const message = error instanceof Error ? error.message : String(error);
         const lastErrorI18n = textRef((error as { i18n?: unknown } | null)?.i18n) ?? null;
@@ -2603,9 +2606,9 @@ export class BackendCore {
         const wake = error instanceof ProviderCooldownError ? this.cooldown?.nextWakeDelay() : null;
         this.log("warn", `sync failed for account ${accountId}`, `${message}${syncFailureDetail(error)}${wake != null ? ` (tries again in ${Math.ceil(wake / 1000)} s)` : error instanceof ProviderCooldownError ? " (no retry scheduled)" : ""}`);
         if (!this.store.isOpen) return;
-        if (error instanceof ProviderCooldownError || (accountKind === "gmail" && error instanceof ProviderError && (error.httpResponse?.status === 429 || (error.httpResponse?.status === 403 && (error.retryable || this.google.get(accountId)?.paused))))) {
+        if (error instanceof ProviderCooldownError || (isOAuthKind(accountKind) && error instanceof ProviderError && (error.httpResponse?.status === 429 || (error.httpResponse?.status === 403 && (error.retryable || this.requests.get(accountId)?.paused))))) {
           this.connectivity.succeeded(accountId);
-          await status.constrain(authority, { message, i18n: lastErrorI18n }, () => !this.googleReady(accountId));
+          await status.constrain(authority, { message, i18n: lastErrorI18n }, () => !this.requestsReady(accountId));
           await statusRun.end({ status: "error", lastError: message, lastErrorI18n, connection: null });
           return;
         }
@@ -2649,13 +2652,13 @@ export class BackendCore {
       const flags = this.flagSyncAgain.delete(accountId);
       const capacity = this.options.autoSync !== false && this.admissionSync.has(accountId) && this.connectivity.canSync(accountId);
       if (!this.current(life) || this.statuses.get(accountId)?.signInRequired) return;
-      if (this.googleReady(accountId) && (explicit || ((flags || capacity) && this.connectivity.canSync(accountId)))) {
+      if (this.requestsReady(accountId) && (explicit || ((flags || capacity) && this.connectivity.canSync(accountId)))) {
         this.admissionSync.delete(accountId);
         this.syncInBackground(accountId);
         return;
       }
       // plan 263: a pass asked for while Google refuses the account runs when it admits it again (cooldownChanged)
-      if (explicit && !this.googleReady(accountId)) this.admissionSync.add(accountId);
+      if (explicit && !this.requestsReady(accountId)) this.admissionSync.add(accountId);
       this.keepScheduled(accountId);
     });
     this.syncing.set(accountId, run);
@@ -2669,7 +2672,7 @@ export class BackendCore {
    */
   private keepScheduled(accountId: number): void {
     // a paused Gmail account (its policy, or another mailbox's sign-in) waits for the user: a probe would stop at once
-    if (this.stopped || this.connectivity.online || this.connectivity.pending(accountId) || this.google.get(accountId)?.paused) return;
+    if (this.stopped || this.connectivity.online || this.connectivity.pending(accountId) || this.requests.get(accountId)?.paused) return;
     this.connectivity.probeLater(accountId);
   }
 
@@ -3240,7 +3243,7 @@ export class BackendCore {
         else if (error instanceof ProviderIdentityError) state = await this.store.ops.fail(op.id, message, true, this.now(), { identity: true, keepAttempt: true });
         else if (error instanceof ProviderError && error.network) state = await this.store.ops.fail(op.id, message, true, this.now(), { network: true, keepAttempt: this.connectivity.inOutage(op.account_id) });
         else {
-          const retryAt = pe?.retryable && pe.httpResponse?.status === 403 ? this.google.get(op.account_id)?.retryAt() : undefined;
+          const retryAt = pe?.retryable && pe.httpResponse?.status === 403 ? this.requests.get(op.account_id)?.retryAt() : undefined;
           state = await this.store.ops.fail(op.id, message, pe ? pe.retryable : true, this.now(), retryPark(pe, retryAt, this.connectivity.inOutage(op.account_id)));
         }
         // A permanently failed send answered nobody: recomputed lists and counts follow. So do a folder move's (plan 127).

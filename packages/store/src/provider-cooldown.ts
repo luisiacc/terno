@@ -7,6 +7,13 @@ export const COOLDOWN_SERVICES = ["gmail-api", "oauth-token", "google-userinfo"]
 /** plan 258: plan 22's People API, never asked since; a row a ledger kept for it still reads, and is dropped */
 const RETIRED_SERVICES: readonly string[] = ["google-people"];
 export type CooldownService = typeof COOLDOWN_SERVICES[number];
+/** Plan 259: an OAuth provider's services in the ledger: its mail API, its token endpoint and its identity read. */
+export type OAuthServices = { mail: "gmail-api"; token: "oauth-token"; identity: "google-userinfo" } & Record<"mail" | "token" | "identity", CooldownService>;
+/**
+ * The providers whose requests the ledger governs. Outlook's join with its Graph provider (plan 259 stage 2), so the
+ * ledger never carries rows for services nothing asks yet; an account of a kind not here gets no request policy.
+ */
+export const OAUTH_SERVICES: Readonly<Partial<Record<OAuthKind, OAuthServices>>> = { gmail: { mail: "gmail-api", token: "oauth-token", identity: "google-userinfo" } };
 export type CooldownHold = "clock" | "clock-evidence" | "range" | "calendar" | "leap-second";
 export interface CooldownRow {
   owner: string;

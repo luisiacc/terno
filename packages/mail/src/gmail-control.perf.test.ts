@@ -24,10 +24,10 @@ it.each([false, true].flatMap((managed) => [1, 65_536].map((chunkSize) => ({ man
   const wire = async () => { requests++; return response; };
   const net = createNetworkPolicy({ fetch: wire });
   const ctx = {
-    google: managed ? {
+    requests: managed ? {
       generation: () => 0,
-      check: (request: Parameters<NonNullable<ProviderContext["google"]>["check"]>[0]) => policy.check({ request }),
-      request: (descriptor: Parameters<NonNullable<ProviderContext["google"]>["request"]>[0], input: Parameters<typeof fetch>[0], init?: RequestInit) => net.fetchGoogle(policy, descriptor)(input, init),
+      check: (request: Parameters<NonNullable<ProviderContext["requests"]>["check"]>[0]) => policy.check({ request }),
+      request: (descriptor: Parameters<NonNullable<ProviderContext["requests"]>["request"]>[0], input: Parameters<typeof fetch>[0], init?: RequestInit) => net.fetchProvider(policy, descriptor)(input, init),
       prove: async () => {}, tokenUnavailable() {}, accessAvailable() {},
     } : undefined,
     account: { id: 1 }, store: {},

@@ -41,12 +41,12 @@ it.each(["base64", "quoted-printable"].flatMap((encoding) => [false, true].map((
     expect((await backend.store.threads.get(snapshot.messages[0]!.threadId))?.messages[0]?.bodyHtml).toBe(expected);
     expect((await backend.store.accounts.config<{ cursor?: unknown }>(account.id))?.config.cursor).toEqual({ historyId: "10" });
     expect((await backend.store.accounts.get(account.id))?.syncState.status).toBe("idle");
-    expect(backend.net.googlePending()).toBe(0);
+    expect(backend.net.providerPending()).toBe(0);
     expect(fixture.unexpected).toEqual([]);
     expect(fixture.requests.filter(({ url }) => url.searchParams.get("format") === "raw")).toHaveLength(1);
     expect(fixture.requests.filter(({ url }) => url.searchParams.get("format") === "minimal")).toHaveLength(1);
   } finally {
-    try { expect(backend.net.googlePending()).toBe(0); }
+    try { expect(backend.net.providerPending()).toBe(0); }
     finally { try { await backend.stop(); } finally { rmSync(dir, { recursive: true, force: true }); } }
   }
 });

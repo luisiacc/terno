@@ -380,7 +380,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s account lifetime: X06 / S16 / S
     cleanup.push(async () => { waiting.release(); vi.unstubAllGlobals(); });
     const t = await setup(kind, "gmail");
     cleanup.push(async () => { waiting.release(); });
-    const managed = vi.spyOn(t.backend.net, "fetchGoogle");
+    const managed = vi.spyOn(t.backend.net, "fetchProvider");
     const contexts: ProviderContext[] = [];
     t.registry.create = (ctx) => {
       contexts.push(ctx);
@@ -406,10 +406,10 @@ describe.each(["SQL", "IndexedDB"] as const)("%s account lifetime: X06 / S16 / S
     await Promise.race([entered.promise, worker.then(() => { throw new Error("Worker settled before the expected cancellation boundary"); })]);
     expect(sends).toBe(phase === "MIME preparation" ? 0 : 1);
     expect(physicalSettled).toBe(false);
-    old.google!.check({ endpoint: "gmail-api", purpose: "mail" });
+    old.requests!.check({ endpoint: "gmail-api", purpose: "mail" });
     try {
       await t.client.call("accounts.reconnect", { id: t.ids[0]! });
-      expect(() => old.google!.check({ endpoint: "gmail-api", purpose: "mail" })).toThrow();
+      expect(() => old.requests!.check({ endpoint: "gmail-api", purpose: "mail" })).toThrow();
       if (phase !== "MIME preparation") expect(sendSignal?.aborted).toBe(false);
       expect(await t.backend.getSecret(`account:${t.ids[0]}:refreshToken`)).toBe("synthetic-refresh");
     } finally {
@@ -419,7 +419,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s account lifetime: X06 / S16 / S
     await t.backend.runWorker();
     expect(sends).toBe(1);
     expect(physicalSettled).toBe(true);
-    await expect.poll(() => t.backend.net.googlePending()).toBe(0);
+    await expect.poll(() => t.backend.net.providerPending()).toBe(0);
     expect(unexpected).toEqual([]);
     expect(routes).toEqual(["GET https://gmail.googleapis.com/gmail/v1/users/me/profile", "POST https://gmail.googleapis.com/gmail/v1/users/me/messages/send"]);
     expect(managed).toHaveBeenCalledTimes(2);

@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { createNetworkPolicy } from "../../backend/src/net-policy";
 import { createGmailApiProvider, toBase64url } from "./gmail-api";
 import type { IncomingMessage } from "@terno/store";
-import type { FlagUpdate, GoogleRequests, ProviderContext, ProviderRequests, SyncSink } from "./types";
+import type { FlagUpdate, AccountRequests, ProviderContext, ProviderRequests, SyncSink } from "./types";
 import { completedGmailCursors } from "./test/gmail-cursor.fixture";
 
 const raw = toBase64url(new TextEncoder().encode("From: sender@example.test\r\nSubject: Synthetic\r\n\r\nExact body"));
@@ -42,9 +42,9 @@ function mailbox(respond: (url: URL) => Response | Promise<Response>, initial: u
   };
   const ctx = {
     account: { id: 1, email: "me@example.test" }, config: {}, fetch: fallback,
-    google: { check() {}, generation: () => 1, prove: async (read) => { if (needsProof) { await read(); needsProof = false; } },
-      request: (descriptor, input, init) => net.fetchGoogle(policy, descriptor)(input, init),
-      accessAvailable() {}, tokenUnavailable() {} } satisfies GoogleRequests,
+    requests: { check() {}, generation: () => 1, prove: async (read) => { if (needsProof) { await read(); needsProof = false; } },
+      request: (descriptor, input, init) => net.fetchProvider(policy, descriptor)(input, init),
+      accessAvailable() {}, tokenUnavailable() {} } satisfies AccountRequests,
     store: {
       messageByProviderId: async (id: string) => rows.get(id),
       syncedMessagePage: async (after = "") => {
@@ -72,7 +72,7 @@ function mailbox(respond: (url: URL) => Response | Promise<Response>, initial: u
   const provider = createGmailApiProvider(ctx as unknown as ProviderContext, { tokens: { get: async () => "synthetic", invalidate() {} }, buildRaw: async () => new Uint8Array() });
   cleanup.push(async () => {
     await provider.close();
-    expect(reservations).toBe(0); expect(net.googlePending()).toBe(0);
+    expect(reservations).toBe(0); expect(net.providerPending()).toBe(0);
     expect(external).not.toHaveBeenCalled(); expect(fallback).not.toHaveBeenCalled();
   });
   return { sync: () => provider.sync(sink), rows, requests, checkpoints, removals, updates, flagWrites,

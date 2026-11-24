@@ -1,14 +1,14 @@
 import type { AccountStatus } from "./account-status";
-import { ProviderCooldownError, type GoogleRequests, type HttpRequestContext, type MailAdmission, type ProviderRequests } from "@terno/mail/portable";
-import { COOLDOWN_SERVICES, mailboxDigest, type CooldownService, type CooldownStamp, type ProviderCooldownStore } from "@terno/store";
+import { ProviderCooldownError, type AccountRequests, type HttpRequestContext, type MailAdmission, type ProviderRequests } from "@terno/mail/portable";
+import { COOLDOWN_SERVICES, mailboxDigest, type CooldownService, type CooldownStamp, type OAuthServices, type ProviderCooldownStore } from "@terno/store";
 import type { ProviderCooldown } from "./provider-cooldown";
 import type { NetworkPolicy } from "./net-policy";
 
-const mail = { endpoint: "gmail-api", purpose: "mail" } as const;
 /** plan 264: after a bind that didn't settle locally, the account waits this long (or Retry Now) before binding again */
 export const REBIND_MS = 30_000;
 
-export interface SavedGoogleRequests extends GoogleRequests {
+export interface SavedAccountRequests extends AccountRequests {
+  readonly services: OAuthServices;
   readonly paused: boolean;
   readonly policyPaused: boolean;
   recoverPolicy(): void;
@@ -16,20 +16,24 @@ export interface SavedGoogleRequests extends GoogleRequests {
   close(): void;
 }
 
-export async function savedGoogleRequests(input: {
+export async function savedAccountRequests(input: {
   status: AccountStatus;
   gate: ProviderCooldown;
   net: NetworkPolicy;
   store: ProviderCooldownStore;
   stamp: CooldownStamp;
+  /** plan 259: the account's provider's services (OAUTH_SERVICES); pauses and proofs are about its own mail API */
+  services: OAuthServices;
   live(): boolean;
   credentials(): number;
   write<T>(work: () => Promise<T>): Promise<T>;
   changed(): void;
   setTimeout?(fn: () => void, ms: number): ReturnType<typeof setTimeout>;
   clearTimeout?(timer: ReturnType<typeof setTimeout>): void;
-}): Promise<SavedGoogleRequests> {
+}): Promise<SavedAccountRequests> {
   const { gate, net } = input;
+  const service = input.services.mail;
+  const mail = { endpoint: service, purpose: "mail" } as const;
   const stamp = { ...input.stamp };
   const digest = await mailboxDigest(stamp.email, (bytes) => crypto.subtle.digest("SHA-256", bytes));
   let owner = await gate.bindingFor(stamp);
@@ -52,8 +56,8 @@ export async function savedGoogleRequests(input: {
   const policyPaused = () => input.status.policyPaused;
   let proving: Promise<void> | undefined;
   const alive = () => !closed && input.live();
-  const refuse = () => new ProviderCooldownError("gmail-api", "0", "binding");
-  const unsettled = () => new ProviderCooldownError("gmail-api", "0", "storage");
+  const refuse = () => new ProviderCooldownError(service, "0", "binding");
+  const unsettled = () => new ProviderCooldownError(service, "0", "storage");
   /** the gate's binding for this account (one a recovery read back, or a bind written but not confirmed) becomes its scope */
   const adopt = async (key: string, active: () => boolean): Promise<boolean> => {
     if (await gate.bindingFor(stamp) !== key || !active()) return false;
@@ -69,7 +73,7 @@ export async function savedGoogleRequests(input: {
     return true;
   };
   const check = (request: HttpRequestContext, admission: MailAdmission = "background") => {
-    if (!alive() || input.status.signInRequired || paused || (request.endpoint === "gmail-api" && policyPaused())) throw refuse();
+    if (!alive() || input.status.signInRequired || paused || (request.endpoint === service && policyPaused())) throw refuse();
     if (deferred !== undefined) throw unsettled();
     installation.check({ request });
     scope.check({ request });
@@ -80,19 +84,20 @@ export async function savedGoogleRequests(input: {
       const state = gate.state(bound, request.endpoint as CooldownService);
       if (state.kind !== "ready") throw new ProviderCooldownError(request.endpoint, gate.revisionFor(bound, request.endpoint as CooldownService) ?? "0", state.kind === "at" ? "timed" : state.reason);
     }
-    if (!net.googleAvailable(admission)) throw new ProviderCooldownError(request.endpoint, "0", "capacity");
+    if (!net.providerAvailable(admission)) throw new ProviderCooldownError(request.endpoint, "0", "capacity");
   };
   const pause = () => { paused = true; input.changed(); };
   const constraint = (epoch: number, active: () => boolean) => input.status.constrain(
-    { generation: epoch, live: active }, new ProviderCooldownError("gmail-api", "0", "quota"), () => gate.mailConstrained(owner ?? "installation", stamp),
+    { generation: epoch, live: active }, new ProviderCooldownError(service, "0", "quota"), () => gate.mailConstrained(owner ?? "installation", stamp, input.services),
   );
   return {
     generation: input.credentials,
+    services: input.services,
     get paused() { return paused || deferred !== undefined || policyPaused(); },
     get policyPaused() { return policyPaused(); },
     recoverPolicy() { undefer(); if (input.status.recoverPolicy()) input.changed(); },
     retryAt() {
-      const states = [gate.state(owner ?? "installation", "gmail-api"), gate.state("installation", "gmail-api")];
+      const states = [gate.state(owner ?? "installation", service), gate.state("installation", service)];
       const dates = states.flatMap((state) => state.kind === "at" ? [state.atMs] : []);
       return dates.length ? Math.max(...dates) : undefined;
     },
@@ -114,9 +119,9 @@ export async function savedGoogleRequests(input: {
           return { ...ticket, headers429: (e) => active() ? ticket.headers429(e) : Promise.resolve("unconfirmed"), dispatch: (transport) => ticket.dispatch(() => { assert(); return transport(); }) };
         },
       };
-      return net.fetchGoogle(policy, { ...descriptor, admission: descriptor.admission ?? "background", onForbidden: descriptor.onForbidden ? (settle) => descriptor.onForbidden!(async (kind, error) => {
+      return net.fetchProvider(policy, { ...descriptor, admission: descriptor.admission ?? "background", onForbidden: descriptor.onForbidden ? (settle) => descriptor.onForbidden!(async (kind, error) => {
         const current = active() && !init?.signal?.aborted;
-        if (current && kind === "policy" && error && descriptor.request.endpoint === "gmail-api") void input.status.forbid({ generation: epoch, live: active }, revision, error);
+        if (current && kind === "policy" && error && descriptor.request.endpoint === service) void input.status.forbid({ generation: epoch, live: active }, revision, error);
         await settle(current ? kind : "none");
         if (current && kind === "quota") void constraint(epoch, active);
       }) : undefined })(resource, init).then((response) => {

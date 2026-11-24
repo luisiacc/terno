@@ -17,7 +17,7 @@ function rig(o: { cursor: unknown; history?: () => Response }) {
     },
     loadCursor: async () => o.cursor,
     saveCursor: async (value: unknown) => void saved.push(value),
-    google: {
+    requests: {
       generation: () => 0, check() {}, prove: async () => {},
       request: async (_descriptor: unknown, input: string, init: RequestInit) => {
         const path = new URL(new Request(input, init).url).pathname;

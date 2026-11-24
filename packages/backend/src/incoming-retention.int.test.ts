@@ -105,7 +105,7 @@ it.each([0, 1])("holds six readers and one decoded attachment consumer through E
       }
       expect((await backend.store.accounts.config<{ cursor?: unknown }>(account.id))?.config.cursor).toEqual({ historyId: "10" });
     }
-    expect(backend.net.googlePending()).toBe(0);
+    expect(backend.net.providerPending()).toBe(0);
     expect(fixture.unexpected).toEqual([]);
   } finally {
     release();
@@ -178,7 +178,7 @@ it("shares real small-result credits while a promoted consumer owns the pipeline
     const messages = (await backend.store.debug.snapshot()).messages;
     expect(messages).toHaveLength(81);
     for (const message of messages) expect(message.bodyText === `${String(message.accountId) === largeAccount ? large : text.replace(/\r\n/g, "\n")}\n`).toBe(true);
-    expect(backend.net.googlePending()).toBe(0);
+    expect(backend.net.providerPending()).toBe(0);
     expect(fixture.unexpected).toEqual([]);
   } finally {
     release();

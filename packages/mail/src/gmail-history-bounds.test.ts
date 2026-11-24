@@ -10,7 +10,7 @@ it("cancels an oversized decoded history stream before parsing or admitting effe
     account: { id: 1, email: "me@example.test" }, config: {}, store: { pendingAttachmentBodies: async () => [] },
     loadCursor: async () => ({ historyId: "10" }),
     saveCursor: async (value: unknown) => { checkpoints.push(value); controller.abort(new Error("Pause reconciliation")); },
-    google: {
+    requests: {
       generation: () => 0, check() {},
       prove: async (proof: () => Promise<string>) => { if (!proofs++) expect(await proof()).toBe("me@example.test"); },
       request: async (_descriptor: unknown, input: string, init: RequestInit) => {

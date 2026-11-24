@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { createNetworkPolicy } from "../../backend/src/net-policy";
 import { createGmailApiProvider } from "./gmail-api";
-import type { GoogleRequests, ProviderContext, ProviderRequests } from "./types";
+import type { AccountRequests, ProviderContext, ProviderRequests } from "./types";
 
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -32,11 +32,11 @@ function mailbox(answer: (id: string) => Response | Promise<Response>) {
   };
   const ctx = {
     account: { id: 1, email: "me@example.test" }, config: {}, fetch: async () => { throw new Error("unmanaged fetch forbidden"); },
-    google: { check() {}, generation: () => 1, prove: async () => {}, request: (descriptor, input, init) => net.fetchGoogle(policy, descriptor)(input, init), accessAvailable() {}, tokenUnavailable() {} } satisfies GoogleRequests,
+    requests: { check() {}, generation: () => 1, prove: async () => {}, request: (descriptor, input, init) => net.fetchProvider(policy, descriptor)(input, init), accessAvailable() {}, tokenUnavailable() {} } satisfies AccountRequests,
     store: { providerIds: async (ids: number[]) => new Map(ids.map((id) => [id, `g${id}`])) },
   } as unknown as ProviderContext;
   const provider = createGmailApiProvider(ctx, { tokens: { get: async () => "synthetic", invalidate() {} }, buildRaw: async () => new Uint8Array() });
-  cleanup.push(async () => { await provider.close(); expect(reservations).toBe(0); expect(net.googlePending()).toBe(0); });
+  cleanup.push(async () => { await provider.close(); expect(reservations).toBe(0); expect(net.providerPending()).toBe(0); });
   const trash = (count: number) => provider.execute({ id: "trash", kind: "trash", target: { messageIds: Array.from({ length: count }, (_, i) => i + 1) }, payload: {}, requestRun: { markDispatched() { dispatched++; } } } as never);
   return { trash, asked, settled429, peak: () => peak, dispatched: () => dispatched };
 }

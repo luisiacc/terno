@@ -33,7 +33,7 @@ async function setup(refresh = false, kind: "SQL" | "IDB" = "SQL", large = false
   const paths: string[] = [], unexpected: string[] = [];
   const requests: { url: string; method: string }[] = [];
   const admissions: { path: string; lane: string }[] = [];
-  const google = new Map<number, NonNullable<ProviderContext["google"]>>();
+  const google = new Map<number, NonNullable<ProviderContext["requests"]>>();
   const syncRuns = new Map<number, number>();
   const bodies: { finish(): void }[] = [];
   const resets = new Map<number, () => void>();
@@ -88,12 +88,12 @@ async function setup(refresh = false, kind: "SQL" | "IDB" = "SQL", large = false
   });
   const providers: ProviderRegistry = {
     create(ctx) {
-      if (ctx.google) google.set(ctx.account.id, ctx.google);
+      if (ctx.requests) google.set(ctx.account.id, ctx.requests);
       const incoming = ctx.incoming!;
       const processor = ctx.incomingProcessor!;
       // a synthetic server: Google's per-user quota pacing (plan 62) is lifted, as in gmail.int.test.ts
       const provider = createGmailProvider({ ...ctx,
-        google: ctx.google && { ...ctx.google, request(descriptor, input, init) { admissions.push({ path: new URL(input instanceof Request ? input.url : String(input)).pathname, lane: descriptor.admission ?? "background" }); return ctx.google!.request(descriptor, input, init); } },
+        requests: ctx.requests && { ...ctx.requests, request(descriptor, input, init) { admissions.push({ path: new URL(input instanceof Request ? input.url : String(input)).pathname, lane: descriptor.admission ?? "background" }); return ctx.requests!.request(descriptor, input, init); } },
         incoming: { ...incoming, promote: async (id, signal, reset, admission) => {
           if (admission === "reader") readerQueued();
           const release = await incoming.promote!(id, signal, reset, admission);
@@ -155,16 +155,16 @@ it("public Send completes through the shared physical pool while six multi-accou
   expect(t.bodies).toHaveLength(6);
   expect(t.paths.some((p) => p === "/1/gmail/messages/m0")).toBe(true);
   expect(t.paths.some((p) => p.startsWith("/2/gmail/messages/m"))).toBe(true);
-  expect(t.backend.net.googlePending()).toBe(6);
+  expect(t.backend.net.providerPending()).toBe(6);
   const sent = await t.rpc.call("compose.send", { accountId: 3, to: [{ email: "recipient@example.test", name: "" }], subject: "Exact subject", bodyText: "Exact body" });
   await t.backend.runWorker();
   expect((await t.rpc.call("ops.list", {})).find((op) => op.id === sent.opId)).toMatchObject({ state: "succeeded", attempts: 1 });
   expect(t.paths.filter((p) => p === "/3/gmail/messages/send")).toHaveLength(1);
-  expect(t.backend.net.googlePending()).toBe(6);
+  expect(t.backend.net.providerPending()).toBe(6);
   expect(t.sourceClosed()).toBe(0);
   await t.finishBackfill();
   expect(t.sourceClosed()).toBe(6);
-  expect(t.backend.net.googlePending()).toBe(0);
+  expect(t.backend.net.providerPending()).toBe(0);
 });
 
 it("public header-only open hydrates its body without waiting for held multi-account backfill", async () => {
@@ -181,7 +181,7 @@ it("public header-only open hydrates its body without waiting for held multi-acc
   expect(cached.messages[0]!.bodyText).toBeNull();
   await t.hydrate( { threadId: thread.id, messageId: cached.messages[0]!.id });
   const opened = await t.rpc.call("threads.get", { threadId: thread.id });
-  expect(t.backend.net.googlePending()).toBe(6);
+  expect(t.backend.net.providerPending()).toBe(6);
   expect(t.sourceClosed()).toBe(0);
   expect(opened.messages[0]!.bodyText).toBe("Exact downloaded body\n");
 });
@@ -190,14 +190,14 @@ it("public Send receives an admission opportunity during actual multi-account ca
   const t = await setup(true);
   await t.sixNativeBodies;
   expect(t.bodies).toHaveLength(62);
-  expect(t.backend.net.googlePending()).toBe(62);
+  expect(t.backend.net.providerPending()).toBe(62);
   expect(new Set(t.paths.filter((p) => /\/messages\/m\d+$/.test(p)).map((p) => p.split("/")[1])).size).toBe(11);
   const sent = await t.rpc.call("compose.send", { accountId: t.sender, to: [{ email: "recipient@example.test", name: "" }], subject: "Exact subject", bodyText: "Exact body" });
   await t.backend.runWorker();
   const op = (await t.rpc.call("ops.list", {})).find((row) => row.id === sent.opId);
   expect(op).toMatchObject({ state: "succeeded", attempts: 1 });
   expect(t.paths.filter((p) => p === `/${t.sender}/gmail/messages/send`)).toHaveLength(1);
-  expect(t.backend.net.googlePending()).toBe(62);
+  expect(t.backend.net.providerPending()).toBe(62);
   expect(t.sourceClosed()).toBe(0);
   expect(op?.state).toBe("succeeded");
 });
@@ -280,7 +280,7 @@ for (const kind of ["SQL", "IDB"] as const) {
     if (change === "removed") expect(detail).toBeNull();
     else expect(detail!.messages[0]!.bodyText).toBe(change === "completed" ? "Newer authoritative body" : null);
     expect(t.paths.filter((p) => p === "/3/gmail/messages/header")).toHaveLength(1);
-    expect(t.backend.net.googlePending()).toBe(6);
+    expect(t.backend.net.providerPending()).toBe(6);
   });
 
   it(`${kind} exact message404 retains the cached header and healthy sibling`, async () => {
@@ -310,7 +310,7 @@ for (const kind of ["SQL", "IDB"] as const) {
     expect(t.paths.filter((p) => p === "/3/gmail/messages/header")).toHaveLength(1);
     held.finish();
     expect(await Promise.all(joined)).toEqual(Array.from({ length: 8 }, () => ({ changed: true })));
-    expect(t.backend.net.googlePending()).toBe(6);
+    expect(t.backend.net.providerPending()).toBe(6);
   });
 }
 
@@ -355,7 +355,7 @@ it("62 background bodies plus reader and Send retain64; native EOF advances queu
   const worker = t.backend.runWorker();
   void worker.catch(() => {});
   await sending.started;
-  expect(t.backend.net.googlePending()).toBe(64);
+  expect(t.backend.net.providerPending()).toBe(64);
   const sent = await t.rpc.call("compose.send", { accountId: t.sender - 1, ...payload });
   const original = await t.backend.store.ops.get(sent.opId);
   expect(original).toMatchObject({ state: "queued", attempts: 0 });
@@ -368,7 +368,7 @@ it("62 background bodies plus reader and Send retain64; native EOF advances queu
   expect(posts).toBe(2);
   expect(t.sourceClosed()).toBe(0);
   reader.finish(); await hydration;
-  expect(t.backend.net.googlePending()).toBe(62);
+  expect(t.backend.net.providerPending()).toBe(62);
 });
 
 function heldJson(value: unknown) {
@@ -401,7 +401,7 @@ for (const status of [401, 403, 429] as const) it(`reader HTTP${status} does not
   expect(t.paths).toHaveLength(before);
   expect((await t.rpc.call("threads.get", { threadId: thread.id })).messages[0]!.bodyText).toBeNull();
   expect(t.sourceClosed()).toBe(0);
-  expect(t.backend.net.googlePending()).toBe(6);
+  expect(t.backend.net.providerPending()).toBe(6);
 });
 
 for (const kind of ["SQL", "IDB"] as const) it(`${kind} keyed body writer rejects a foreign current provider identity`, async () => {
@@ -433,7 +433,7 @@ it("foreground joins an already issued background refresh without duplicating or
   });
   const background = t.sync(3);
   await token.started;
-  expect(t.backend.net.googlePending()).toBe(7);
+  expect(t.backend.net.providerPending()).toBe(7);
   const hydration = t.hydrate({ threadId: thread.id, messageId: detail.messages[0]!.id });
   const sent = await t.rpc.call("compose.send", { accountId: 3, to: [{ email: "recipient@example.test", name: "" }], subject: "Shared refresh", bodyText: "Exact body" });
   expect(t.paths.filter((path) => path === "/3/token")).toHaveLength(1);
@@ -473,7 +473,7 @@ for (const kind of ["SQL", "IDB"] as const) it(`${kind} keyed capture stages exa
 for (const phase of ["before", "after"] as const) for (const automatic of [true, false]) it(`capacity EOF ${phase} catch registration resumes once (automatic=${automatic})`, async () => {
   const t = await setup(true, "SQL", false, automatic, true);
   await t.sixNativeBodies;
-  expect(t.backend.net.googlePending()).toBe(62);
+  expect(t.backend.net.providerPending()).toBe(62);
   t.override((request) => new URL(request.url).pathname === "/12/gmail/messages" ? Response.json({}) : undefined);
   let refused!: () => void, deliver!: () => void, released!: () => void;
   const refusal = new Promise<void>((resolve) => { refused = resolve; });
@@ -486,13 +486,13 @@ for (const phase of ["before", "after"] as const) for (const automatic of [true,
   });
   const core = t.backend as unknown as { cooldownChanged(): void };
   const changed = core.cooldownChanged.bind(core);
-  vi.spyOn(core, "cooldownChanged").mockImplementation(() => { changed(); if (t.backend.net.googlePending() === 61) released(); });
+  vi.spyOn(core, "cooldownChanged").mockImplementation(() => { changed(); if (t.backend.net.providerPending() === 61) released(); });
   const continuation = vi.spyOn(t.backend, "syncAccount");
   const first = t.sync(12);
   await refusal;
   if (phase === "after") await first;
   t.bodies[0]!.finish(); await eof;
-  expect(t.backend.net.googlePending()).toBe(61);
+  expect(t.backend.net.providerPending()).toBe(61);
   deliver(); await first;
   expect(continuation.mock.calls.filter(([id]) => id === 12)).toHaveLength(automatic ? 2 : 1);
   if (automatic) {
@@ -508,7 +508,7 @@ for (const automatic of [true, false]) it(`an aborted held body frees capacity a
   // the incident: a network reset aborts held reads; plan 62 kept their slots and refused every later sync
   const t = await setup(true, "SQL", false, automatic, true);
   await t.sixNativeBodies;
-  expect(t.backend.net.googlePending()).toBe(62);
+  expect(t.backend.net.providerPending()).toBe(62);
   t.override((request) => new URL(request.url).pathname === "/12/gmail/messages" ? Response.json({}) : undefined);
   let refused!: () => void;
   const refusal = new Promise<void>((resolve) => { refused = resolve; });
@@ -523,7 +523,7 @@ for (const automatic of [true, false]) it(`an aborted held body frees capacity a
   expect(t.paths.filter((path) => path.startsWith("/12/"))).toHaveLength(0);
   const held = t.paths.find((path) => /^\/\d+\/gmail\/messages\/m\d+$/.test(path))!;
   t.reset(Number(held.split("/")[1]));
-  await vi.waitFor(() => expect(t.backend.net.googlePending()).toBeLessThan(62));
+  await vi.waitFor(() => expect(t.backend.net.providerPending()).toBeLessThan(62));
   if (automatic) {
     await vi.waitFor(() => expect(continuation.mock.calls.filter(([id]) => id === 12)).toHaveLength(2));
     const index = continuation.mock.calls.findLastIndex(([id]) => id === 12);
@@ -549,7 +549,7 @@ it("managed selected body obtains its native reader once through exact EOF", asy
   const acquisition = vi.spyOn(native.body!, "getReader");
   t.override((request) => new URL(request.url).pathname === "/3/gmail/messages/header" ? native : undefined);
   await t.hydrate({ threadId: thread.id, messageId: detail.messages[0]!.id });
-  expect(t.backend.net.googlePending()).toBe(6);
+  expect(t.backend.net.providerPending()).toBe(6);
   expect(acquisition).toHaveBeenCalledTimes(1);
 });
 
@@ -591,7 +591,7 @@ it("a rejected fatal UTF8 envelope cannot poison the next keyed body's decoder o
   expect(await t.rpc.call("threads.get", { threadId: first.thread.id })).toEqual(first);
   expect(await t.hydrate({ threadId: next.thread.id, messageId: next.messages[0]!.id })).toEqual({ changed: true });
   expect((await t.rpc.call("threads.get", { threadId: next.thread.id })).messages[0]!.bodyText).toBe("Exact café body\n");
-  expect(t.backend.net.googlePending()).toBe(6);
+  expect(t.backend.net.providerPending()).toBe(6);
   expect(t.sourceClosed()).toBe(0);
 });
 
@@ -609,7 +609,7 @@ for (const guard of ["retired", "auth", "quota", "policy"] as const) it(`capacit
   });
   const core = t.backend as unknown as { cooldownChanged(): void };
   const changed = core.cooldownChanged.bind(core);
-  vi.spyOn(core, "cooldownChanged").mockImplementation(() => { changed(); if (t.backend.net.googlePending() === 61) released(); });
+  vi.spyOn(core, "cooldownChanged").mockImplementation(() => { changed(); if (t.backend.net.providerPending() === 61) released(); });
   const calls = vi.spyOn(t.backend, "syncAccount");
   const first = t.sync(12); await refusal;
   let retirement: Promise<void> | undefined;
@@ -628,7 +628,7 @@ for (const guard of ["retired", "auth", "quota", "policy"] as const) it(`capacit
   await t.rpc.call("app.bootstrap", {});
   expect(calls.mock.calls.filter(([id]) => id === 12)).toHaveLength(1);
   expect(t.paths.filter((path) => path === "/12/gmail/messages")).toHaveLength(0);
-  expect(t.backend.net.googlePending()).toBe(61);
+  expect(t.backend.net.providerPending()).toBe(61);
 });
 
 
@@ -660,7 +660,7 @@ for (const mode of ["available", "refilled", "retired", "removed", "credentials"
   let epoch: number | undefined;
   vi.spyOn(core, "cooldownChanged").mockImplementation(() => {
     changed();
-    if (t.backend.net.googlePending() === 61) edge();
+    if (t.backend.net.providerPending() === 61) edge();
     if (epoch !== undefined && t.google.get(12)!.generation() !== epoch) renewed();
   });
   const calls = vi.spyOn(t.backend, "syncAccount");
@@ -668,16 +668,16 @@ for (const mode of ["available", "refilled", "retired", "removed", "credentials"
   epoch = t.google.get(12)!.generation();
   expect(t.syncRuns.get(12)).toBe(1);
   expect(t.paths.filter((path) => path.startsWith("/12/"))).toEqual([]);
-  expect(t.backend.net.googlePending()).toBe(62);
+  expect(t.backend.net.providerPending()).toBe(62);
   t.bodies[0]!.finish(); await eof;
   expect(t.sourceClosed()).toBe(1);
-  expect(t.backend.net.googlePending()).toBe(61);
+  expect(t.backend.net.providerPending()).toBe(61);
   let refill: Promise<ArrayBuffer> | undefined;
   if (mode !== "available") {
     const response = await t.google.get(1)!.request({ request: { endpoint: "gmail-api", purpose: "mail" }, admission: "background" }, new Request("https://foreground.invalid/1/gmail/messages/m0?format=minimal", { headers: { Authorization: "Bearer synthetic-access" } }));
     refill = response.arrayBuffer();
     expect(t.bodies).toHaveLength(63);
-    expect(t.backend.net.googlePending()).toBe(62);
+    expect(t.backend.net.providerPending()).toBe(62);
     expect(t.paths.filter((path) => path === "/1/gmail/messages/m0")).toHaveLength(2);
   }
   let cancelled: Promise<void> | undefined;
@@ -687,12 +687,12 @@ for (const mode of ["available", "refilled", "retired", "removed", "credentials"
   unblock(); await first; await cancelled;
   if (mode !== "available") {
     expect(t.paths.filter((path) => path.startsWith("/12/"))).toEqual([]);
-    expect(t.backend.net.googlePending()).toBe(62);
+    expect(t.backend.net.providerPending()).toBe(62);
   }
   if (refill) t.bodies.at(-1)!.finish();
   if (refill) expect(new Uint8Array(await refill)).toEqual(new TextEncoder().encode(t.envelope("m0")));
   await Promise.all(calls.mock.results.filter((_, i) => calls.mock.calls[i]![0] === 12).map((result) => result.value));
-  expect(t.backend.net.googlePending()).toBe(61);
+  expect(t.backend.net.providerPending()).toBe(61);
   expect(t.sourceClosed()).toBe(mode === "available" ? 1 : 2);
   // Bootstrap is an RPC/serial-store barrier, never a manual sync or a polling retry.
   await t.rpc.call("app.bootstrap", {});
@@ -713,6 +713,6 @@ for (const mode of ["available", "refilled", "retired", "removed", "credentials"
     messages: siblingBefore.messages.map((message) => ({ ...message, isRead: true, bodyText: "Exact downloaded body\n", attachmentState: "complete" })),
   });
   expect(await t.rpc.call("ops.list", {})).toEqual(ops);
-  expect(t.backend.net.googlePending()).toBe(0);
+  expect(t.backend.net.providerPending()).toBe(0);
   expect(t.sourceClosed()).toBe(mode === "available" ? 62 : 63);
 });

@@ -47,7 +47,7 @@ async function mailbox(kind: "SQL" | "IndexedDB") {
   const missing=new Set<string>();
   const deletedTerminal="90071992547409930004";
   let held: { entered: ReturnType<typeof gate>; release: ReturnType<typeof gate> } | undefined;
-  // Native Request interception precedes construction of the managed fetchGoogle boundary.
+  // Native Request interception precedes construction of the managed fetchProvider boundary.
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const refuse = (): never => { unexpected.push("Unexpected synthetic Gmail route"); throw new Error(unexpected.at(-1)); };
     if (!(input instanceof Request) || init !== undefined || input.method !== "GET" || input.redirect !== "error" || input.headers.get("authorization") !== "Bearer synthetic") return refuse();
@@ -95,7 +95,7 @@ async function mailbox(kind: "SQL" | "IndexedDB") {
   cleanup.push(async () => {
     held?.release.release(); await Promise.allSettled(runs);
     for(const client of clients) client.close();
-    try { expect(unexpected).toEqual([]); expect(backend.net.googlePending()).toBe(0); } finally { await backend.stop(); rmSync(dir, { recursive: true, force: true }); }
+    try { expect(unexpected).toEqual([]); expect(backend.net.providerPending()).toBe(0); } finally { await backend.stop(); rmSync(dir, { recursive: true, force: true }); }
   });
   const rows = async () => (await backend.store.debug.snapshot()).messages;
   const cursor = async () => (await backend.store.accounts.config<{ cursor?: unknown }>(account.id))?.config.cursor;

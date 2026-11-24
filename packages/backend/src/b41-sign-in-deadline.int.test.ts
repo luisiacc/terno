@@ -42,7 +42,7 @@ it.each([
   let finished = false;
   const result = inspectGmailToken("synthetic-stalled-settlement", async () => { throw new Error("Unexpected unmanaged request"); }, {
     signal: abort.signal,
-    google: { request: (d, input, init) => net.fetchGoogle(policy, d)(input, init) },
+    google: { request: (d, input, init) => net.fetchProvider(policy, d)(input, init) },
   }).then(() => { throw new Error("Unexpected sign-in success"); }, (error: unknown) => { finished = true; return error; });
   const other = gate.requestsFor("a".repeat(64));
   const held: ReturnType<typeof other.reserve>[] = [];
@@ -53,7 +53,7 @@ it.each([
     expect(writes).toBe(1);
     expect(writing).toBe(true);
     expect(raw).toBe(null);
-    expect(net.googlePending()).toBe(0); // This response already proved native body EOF.
+    expect(net.providerPending()).toBe(0); // This response already proved native body EOF.
     expect(gate.state("installation", "gmail-api").kind).toBe("at");
     // The quota ticket remains owned across logical cancellation and an unfinished write.
     for (let n = 0; n < COOLDOWN_TICKETS - 1; n++) held.push(other.reserve(descriptor));

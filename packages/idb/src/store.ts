@@ -2747,7 +2747,7 @@ export class IdbMailStore implements MailStore {
         if (digest !== mailboxKey) return false;
         return this.command(() => {
           const account = T(this.c, "accounts").get(stamp.id);
-          if (!current() || !account || account.kind !== "gmail" || account.email !== stamp.email || account.created_at !== stamp.createdAt) return false;
+          if (!current() || !account || !isOAuthKind(account.kind as string) || account.email !== stamp.email || account.created_at !== stamp.createdAt) return false;
           const next = bindCooldown(getSetting<string | null>(this.c, PROVIDER_COOLDOWN_KEY, null), stamp, digest, mailboxKey);
           setSetting(this.c, PROVIDER_COOLDOWN_KEY, next);
           return decodeCooldown(next).bindings.some((b) => b.id === stamp.id && b.createdAt === stamp.createdAt && b.mailboxKey === mailboxKey && b.emailDigest === digest);

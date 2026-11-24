@@ -1,6 +1,7 @@
 import { ProviderCooldownError, RequestNotDispatchedError, type ProviderRequests, type RequestDescriptor, type RequestTicket, type Observation429 } from "@terno/mail/portable";
-import { COOLDOWN_CANDIDATE_BYTES, COOLDOWN_TICKETS, COOLDOWN_LEDGER_BYTES, COOLDOWN_SERVICES, PROVIDER_COOLDOWN_KEY, compactCooldown, decodeCooldown, encodeCooldown, mergeCooldownRows, mailboxKeyValid, mailboxDigest, nextCooldownRevision, copyOpAdmission, type CooldownLedger, type CooldownRow, type CooldownService, type CooldownStamp, type ProviderCooldownStore, type OpAdmission } from "@terno/store";
+import { COOLDOWN_CANDIDATE_BYTES, COOLDOWN_TICKETS, COOLDOWN_LEDGER_BYTES, COOLDOWN_SERVICES, PROVIDER_COOLDOWN_KEY, compactCooldown, decodeCooldown, encodeCooldown, mergeCooldownRows, mailboxKeyValid, mailboxDigest, nextCooldownRevision, copyOpAdmission, type CooldownLedger, type CooldownRow, type CooldownService, type CooldownStamp, type OAuthServices, type ProviderCooldownStore, type OpAdmission } from "@terno/store";
 import { RETRY_DELAYS_MS, retryJitter } from "./connectivity";
+import { isOAuthKind } from "@terno/core";
 export { ProviderCooldownError, PROVIDER_COOLDOWN_KEY };
 export type CooldownPersistence = Pick<ProviderCooldownStore, "read" | "update">;
 export interface CooldownClock { wallNow(): number; elapsedNow(): number; random(): number }
@@ -208,12 +209,12 @@ export class ProviderCooldown {
   }
   /** Private host scope; request arguments cannot change mailbox/service ownership. */
   /** Status observes durable admission, independent of a retired request handle's liveness. */
-  mailConstrained(owner: string, stamp: CooldownStamp): boolean {
+  mailConstrained(owner: string, stamp: CooldownStamp, services: OAuthServices): boolean {
     const scopes = new Set([owner, "installation"]);
-    if ([...scopes].some((scope) => this.state(scope, "gmail-api").kind !== "ready")) return true;
+    if ([...scopes].some((scope) => this.state(scope, services.mail).kind !== "ready")) return true;
     const dependent = [...this.dependencies.values()].some((dependency) => dependency.owner === owner &&
       (owner === "installation" ? dependency.id === null : dependency.id === stamp.id && dependency.createdAt === stamp.createdAt));
-    return dependent && [...scopes].some((scope) => this.state(scope, "oauth-token").kind !== "ready");
+    return dependent && [...scopes].some((scope) => this.state(scope, services.token).kind !== "ready");
   }
 
   requestsFor(owner: string, live: () => boolean = () => true): ProviderRequests {
@@ -666,7 +667,7 @@ export class ProviderCooldown {
     for (const b of this.ledger.bindings) {
       const found = accountAt(b.id);
       const a = found && { ...found };
-      if (!a || a.kind !== "gmail" || a.createdAt !== b.createdAt || await mailboxDigest(a.email, (bytes) => crypto.subtle.digest("SHA-256", bytes)) !== b.emailDigest) continue;
+      if (!a || !isOAuthKind(a.kind) || a.createdAt !== b.createdAt || await mailboxDigest(a.email, (bytes) => crypto.subtle.digest("SHA-256", bytes)) !== b.emailDigest) continue;
       verified.push(a.id);
       const needsToken = dependent.has(`${b.mailboxKey}/${a.id}/${a.createdAt}`);
       if (this.state(b.mailboxKey, "gmail-api").kind !== "ready" || (needsToken && (this.state(b.mailboxKey, "oauth-token").kind !== "ready" || this.state("installation", "oauth-token").kind !== "ready"))) blocked.push(a.id);

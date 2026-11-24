@@ -3,7 +3,7 @@ import { L } from "@terno/i18n";
 import { GMAIL_UNITS_PER_SECOND } from "./gmail-quota";
 import { createGmailApiProvider, isRateLimit, GOOGLE_ENDPOINTS, type GmailEndpoints } from "./gmail-api";
 import { buildRawPortable } from "./compose-portable";
-import { ProviderAuthError, ProviderError, type GoogleRequests, type GmailTokenBroker, type HttpRequestContext, type HttpResponseEvidence, type MailProvider, type ProviderContext } from "./types";
+import { ProviderAuthError, ProviderError, type AccountRequests, type GmailTokenBroker, type HttpRequestContext, type HttpResponseEvidence, type MailProvider, type ProviderContext } from "./types";
 import { readResponseText } from "./http-body";
 import { captureHttpResponseEvidence } from "./http-response-evidence";
 
@@ -24,7 +24,7 @@ class GoogleSignInEnded extends ProviderError {
 }
 
 /** One deadline covers headers and bodies, including fetch implementations that ignore abort. */
-export async function withGoogleSignIn<T>(options: { signal?: AbortSignal; timeoutMs?: number; fetch: typeof fetch; google?: Pick<GoogleRequests, "request"> }, run: (flow: GoogleSignInFlow) => Promise<T>): Promise<T> {
+export async function withGoogleSignIn<T>(options: { signal?: AbortSignal; timeoutMs?: number; fetch: typeof fetch; google?: Pick<AccountRequests, "request"> }, run: (flow: GoogleSignInFlow) => Promise<T>): Promise<T> {
   const abort = new AbortController();
   const cancel = () => abort.abort(new GoogleSignInEnded(L("errors.google.cancelled"), false));
   const timer = setTimeout(() => abort.abort(new GoogleSignInEnded(L("errors.google.timedOut"), false)), options.timeoutMs ?? 30_000);
@@ -130,7 +130,7 @@ export async function readGoogleIdentity(accessToken: string, ep: GmailEndpoints
   return { email, name: (info.name ?? "") as string, sub: info.sub, emailVerified: info.email_verified === true };
 }
 
-export async function inspectGmailToken(accessToken: string, netFetch: typeof fetch, options: { signal?: AbortSignal; timeoutMs?: number; endpoints?: Partial<GmailEndpoints>; google?: Pick<GoogleRequests, "request"> } = {}) {
+export async function inspectGmailToken(accessToken: string, netFetch: typeof fetch, options: { signal?: AbortSignal; timeoutMs?: number; endpoints?: Partial<GmailEndpoints>; google?: Pick<AccountRequests, "request"> } = {}) {
   return withGoogleSignIn({ ...options, fetch: netFetch }, (flow) => readGoogleIdentity(accessToken, { ...GOOGLE_ENDPOINTS, ...options.endpoints }, flow));
 }
 
@@ -147,7 +147,7 @@ export function createGmailTokenBroker(o: { endpoints?: Partial<GmailEndpoints>;
   const now = o.now ?? Date.now;
   const tokens = new Map<number, { token: string; expiresAt: number }>();
   return {
-    inspect: (accessToken, netFetch, options?: { signal?: AbortSignal; timeoutMs?: number; google?: Pick<GoogleRequests, "request"> }) => inspectGmailToken(accessToken, netFetch, { ...options, endpoints: o.endpoints }),
+    inspect: (accessToken, netFetch, options?: { signal?: AbortSignal; timeoutMs?: number; google?: Pick<AccountRequests, "request"> }) => inspectGmailToken(accessToken, netFetch, { ...options, endpoints: o.endpoints }),
     set(accountId, accessToken, expiresAt) {
       tokens.set(accountId, { token: accessToken, expiresAt });
     },

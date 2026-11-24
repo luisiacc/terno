@@ -1,6 +1,6 @@
 import { L } from "@terno/i18n";
 import { isFetchNetworkFailure, RequestNotDispatchedError } from "./net-errors";
-import { ProviderAuthError, ProviderError, type GoogleRequests, type RequestRun, type HttpResponseEvidence, type MailAdmission } from "./types";
+import { ProviderAuthError, ProviderError, type AccountRequests, type RequestRun, type HttpResponseEvidence, type MailAdmission } from "./types";
 import { captureHttpResponseEvidence } from "./http-response-evidence";
 
 export interface GmailRefreshExchange {
@@ -20,7 +20,7 @@ const token = (value: unknown): value is string => typeof value === "string" && 
 /** A refresh exchange only: the caller owns durable credential replacement before access publication. */
 export async function exchangeGmailRefresh(options: {
   fetch: typeof fetch;
-  google?: GoogleRequests;
+  google?: AccountRequests;
   run?: RequestRun;
   generation?: number;
   admission?: MailAdmission;

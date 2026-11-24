@@ -324,13 +324,13 @@ describe("plan 263: every pass leaves its account a way to sync again", () => {
     // new mail announced while the pass runs: one more pass after it
     void t.backend.syncAccount(id);
     // every background slot taken (other accounts' bodies) as the pass ends
-    const full = vi.spyOn(t.backend.net, "googleAvailable").mockImplementation((admission) => admission !== "background");
+    const full = vi.spyOn(t.backend.net, "providerAvailable").mockImplementation((admission) => admission !== "background");
     p.gate = null;
     open();
     await pass;
     await tick(50);
     expect(p.syncs).toBe(2);
-    // a slot comes back: the pool tells the backend (net-policy's googleChanged)
+    // a slot comes back: the pool tells the backend (net-policy's providerChanged)
     full.mockRestore();
     (t.backend as unknown as { cooldownChanged(): void }).cooldownChanged();
     await expect.poll(() => p.syncs).toBe(3);
@@ -349,7 +349,7 @@ describe("plan 263: every pass leaves its account a way to sync again", () => {
     await expect.poll(() => t.providers.get(id)?.syncs).toBe(1);
     const p = t.providers.get(id)!;
     // refused for capacity with every background slot taken: it waits in the admission set
-    const full = vi.spyOn(t.backend.net, "googleAvailable").mockImplementation((admission) => admission !== "background");
+    const full = vi.spyOn(t.backend.net, "providerAvailable").mockImplementation((admission) => admission !== "background");
     p.failWith = () => new ProviderCooldownError("gmail-api", "0", "capacity");
     await t.backend.syncAccount(id);
     expect(p.syncs).toBe(2);
@@ -408,7 +408,7 @@ describe("plan 263: every pass leaves its account a way to sync again", () => {
   /** a Gmail account refused for capacity with every background slot taken: it waits in the admission set */
   const waitForAdmission = async (t: Awaited<ReturnType<typeof setup>>, id: number) => {
     const p = t.providers.get(id)!;
-    const full = vi.spyOn(t.backend.net, "googleAvailable").mockImplementation((admission) => admission !== "background");
+    const full = vi.spyOn(t.backend.net, "providerAvailable").mockImplementation((admission) => admission !== "background");
     p.failWith = () => new ProviderCooldownError("gmail-api", "0", "capacity");
     const before = p.syncs;
     await t.backend.syncAccount(id);

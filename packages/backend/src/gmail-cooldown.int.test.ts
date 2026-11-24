@@ -303,7 +303,7 @@ for (const kind of ["SQL", "IndexedDB"] as const) describe(`${kind} saved Gmail 
     const before = h.requests.length;
     await expect(secondProvider.verify()).rejects.toBeInstanceOf(ProviderCooldownError);
     expect(h.requests).toHaveLength(before);
-    const service = h.contexts.get(second.id)!.google!;
+    const service = h.contexts.get(second.id)!.requests!;
     const other = await service.request({ request: { endpoint: "google-userinfo", purpose: "identity-proof" } }, `${h.origin}/userinfo`);
     expect(other.status).toBe(429); await other.text();
     expect(h.requests.at(-1)).toBe("/userinfo");
@@ -328,7 +328,7 @@ for (const kind of ["SQL", "IndexedDB"] as const) describe(`${kind} saved Gmail 
     cleanup.push(async () => write.resolve());
     const update = h.backend.store.providerCooldown.update;
     h.backend.store.providerCooldown.update = async (fn) => { entered.resolve(); await write.promise; return update(fn); };
-    const result = exchangeGmailRefresh({ fetch: ctx.fetch, google: ctx.google, url: `${h.origin}/token`, clientId: "synthetic", clientSecret: null, refreshToken: "synthetic", signal: abort.signal }).catch((error: unknown) => error);
+    const result = exchangeGmailRefresh({ fetch: ctx.fetch, google: ctx.requests, url: `${h.origin}/token`, clientId: "synthetic", clientSecret: null, refreshToken: "synthetic", signal: abort.signal }).catch((error: unknown) => error);
     await entered.promise;
     abort.abort();
     expect(await result).toMatchObject({ status: 429, retryable: true, network: false, httpResponse: { request: { endpoint: "oauth-token", purpose: "refresh" }, status: 429 } });
@@ -341,7 +341,7 @@ for (const kind of ["SQL", "IndexedDB"] as const) describe(`${kind} saved Gmail 
   sqlite("R1 does not cache a pre-dispatch OAuth denial after admission becomes ready", async () => {
     const h = await setup(kind); h.answer(healthyProfile);
     const provider = (await h.backend.provider(h.account.id))!;
-    const google = h.contexts.get(h.account.id)!.google!;
+    const google = h.contexts.get(h.account.id)!.requests!;
     const check = google.check;
     let denied = true;
     vi.spyOn(google, "check").mockImplementation((request) => {
@@ -364,7 +364,7 @@ for (const kind of ["SQL", "IndexedDB"] as const) describe(`${kind} saved Gmail 
       if (req.url !== "/installation-quota") return healthyProfile(req, res);
       res.writeHead(429, { "content-type": "application/json", "retry-after": "120" }).end("{}"); return true;
     });
-    const quota = await h.contexts.get(second.id)!.google!.request({ request: { endpoint: "oauth-token", purpose: "refresh" } }, `${h.origin}/installation-quota`); await quota.text();
+    const quota = await h.contexts.get(second.id)!.requests!.request({ request: { endpoint: "oauth-token", purpose: "refresh" } }, `${h.origin}/installation-quota`); await quota.text();
     await h.backend.dropAccount(h.account.id); await h.backend.signedIn(h.account.id);
     await expect((await h.backend.provider(h.account.id))!.verify()).rejects.toBeInstanceOf(ProviderCooldownError);
     const [local, remote] = createMemoryTransportPair();
@@ -392,7 +392,7 @@ for (const kind of ["SQL", "IndexedDB"] as const) describe(`${kind} saved Gmail 
       held = res; entered.resolve(); return true;
     });
     const provider = (await h.backend.provider(h.account.id))!;
-    const google = h.contexts.get(h.account.id)!.google!;
+    const google = h.contexts.get(h.account.id)!.requests!;
     const late = google.request({ request: { endpoint: "oauth-token", purpose: "refresh" } }, `${h.origin}/late-token`).catch((error: unknown) => error);
     await entered.promise;
     await provider.verify();

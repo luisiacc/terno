@@ -146,7 +146,7 @@ it("managed local capacity refuses dispatch until actual native EOF, then admits
   let raw: string | null = null;
   const gate = await ProviderCooldown.open({ read: async () => raw, update: async (fn) => { const next = fn(raw); raw = next.encoded; return next.result; } }, { wallNow: () => 1000, elapsedNow: () => 10, random: () => 0.5 });
   cleanups.push(() => gate.close());
-  const managed = t.backend.net.fetchGoogle(gate.requestsFor("a".repeat(64)), { request: { endpoint: "gmail-api", purpose: "identity-proof" } });
+  const managed = t.backend.net.fetchProvider(gate.requestsFor("a".repeat(64)), { request: { endpoint: "gmail-api", purpose: "identity-proof" } });
   const held: Response[] = [];
   // Fill the real bounded pool, deriving its limit from refusal rather than a guessed UI cap.
   for (let count = 0; count < 1000; count++) {
@@ -154,7 +154,7 @@ it("managed local capacity refuses dispatch until actual native EOF, then admits
     catch (error) { expect(error).toBeInstanceOf(ProviderCooldownError); break; }
   }
   expect(held.length).toBeGreaterThan(0);
-  expect(t.backend.net.googlePending()).toBe(held.length);
+  expect(t.backend.net.providerPending()).toBe(held.length);
   const count = t.routes.length;
   await expect(inspectGmailToken("synthetic-capacity", managed)).rejects.toMatchObject({ message: expect.stringContaining("paused") });
   expect(t.routes).toHaveLength(count);
@@ -169,13 +169,13 @@ it("managed local capacity refuses dispatch until actual native EOF, then admits
   // EOF, rather than cancel/abort, supplies physical completion evidence.
   t.finish([...t.nativeBodies][0]!);
   await held[0]!.arrayBuffer();
-  expect(t.backend.net.googlePending()).toBe(held.length - 1);
+  expect(t.backend.net.providerPending()).toBe(held.length - 1);
   expect(await t.connect("synthetic-released")).toMatchObject({ email });
-  expect(t.backend.net.googlePending()).toBe(held.length - 1);
+  expect(t.backend.net.providerPending()).toBe(held.length - 1);
   expect(t.routes.slice(count)).toEqual([profile, userinfo]);
   for (const body of t.nativeBodies) t.finish(body);
   await Promise.all(held.slice(1).map((response) => response.arrayBuffer()));
-  expect(t.backend.net.googlePending()).toBe(0);
+  expect(t.backend.net.providerPending()).toBe(0);
 });
 
 it("public HTTP429 preserves the safe localized error reference", async () => {
@@ -260,7 +260,7 @@ it("desktop identity quota stops before userinfo and never stores its exchanged 
   expect(await t.backend.store.secrets.get("account:1:refreshToken")).toBeNull();
   expect(t.installed).not.toHaveBeenCalled();
   expect(decodeCooldown(await t.backend.store.providerCooldown.read()).rows[0]).toMatchObject({ service: "gmail-api", owner: "installation" });
-  expect(t.backend.net.googlePending()).toBe(0);
+  expect(t.backend.net.providerPending()).toBe(0);
 });
 
 it("targeted sign-in and rediscovered Add Account cannot publish access through a verified mailbox quota", async () => {
@@ -273,7 +273,7 @@ it("targeted sign-in and rediscovered Add Account cannot publish access through 
   expect(await t.backend.store.providerCooldown.bind(stamp, key)).toBe(true);
   const gate = await ProviderCooldown.open(t.backend.store.providerCooldown, { wallNow: Date.now, elapsedNow: () => performance.now(), random: () => 0.5 });
   try {
-    const managed = t.backend.net.fetchGoogle(await gate.requestsForAccount(stamp, () => true), { request: { endpoint: "gmail-api", purpose: "identity-proof" } });
+    const managed = t.backend.net.fetchProvider(await gate.requestsForAccount(stamp, () => true), { request: { endpoint: "gmail-api", purpose: "identity-proof" } });
     t.refuse(429);
     await expect(inspectGmailToken("synthetic-saved-quota", managed)).rejects.toMatchObject({ i18n: { key: "errors.google.quota" } });
   } finally { await gate.close(); }
@@ -337,5 +337,5 @@ it.each(["cancel", "deadline"] as const)("initial public auth ends on %s during 
   expect(t.installed).not.toHaveBeenCalled();
   expect(JSON.stringify(t.frames)).not.toContain("synthetic-stalled-public");
   expect(JSON.stringify(t.frames)).not.toContain(marker);
-  expect(t.backend.net.googlePending()).toBe(0);
+  expect(t.backend.net.providerPending()).toBe(0);
 });

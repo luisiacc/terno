@@ -1772,7 +1772,7 @@ export class SqlMailStore implements MailStore {
         return this.db.tx(() => {
           const account = accountStamp(this.db, stamp.id);
           const kind = this.db.get<{ kind: string }>("SELECT kind FROM accounts WHERE id = ?", stamp.id)?.kind;
-          if (!current() || !account || kind !== "gmail" || account.email !== stamp.email || account.createdAt !== stamp.createdAt) return false;
+          if (!current() || !account || !isOAuthKind(kind) || account.email !== stamp.email || account.createdAt !== stamp.createdAt) return false;
           const next = bindCooldown(getSetting<string | null>(this.db, PROVIDER_COOLDOWN_KEY, null), stamp, digest, mailboxKey);
           setSetting(this.db, PROVIDER_COOLDOWN_KEY, next);
           return decodeCooldown(next).bindings.some((b) => b.id === stamp.id && b.createdAt === stamp.createdAt && b.mailboxKey === mailboxKey && b.emailDigest === digest);

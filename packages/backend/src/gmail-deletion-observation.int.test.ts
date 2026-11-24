@@ -78,7 +78,7 @@ async function mailbox(kind: "SQL" | "IndexedDB") {
     for (const h of held) h.release.release();
     await Promise.allSettled(runs);
     for (const client of clients) client.close();
-    try { expect(unexpected).toEqual([]); expect(backend.net.googlePending()).toBe(0); } finally { await backend.stop(); rmSync(dir, { recursive: true, force: true }); }
+    try { expect(unexpected).toEqual([]); expect(backend.net.providerPending()).toBe(0); } finally { await backend.stop(); rmSync(dir, { recursive: true, force: true }); }
   });
   const cursor = async () => (await backend.store.accounts.config<{ cursor?: unknown }>(account.id))?.config.cursor;
   const rows = async () => (await backend.store.debug.snapshot()).messages;

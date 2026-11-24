@@ -36,12 +36,12 @@ it("hands the admitted native raw reader directly to physical tracking without a
     await new Promise<void>((resolve) => setImmediate(resolve));
     expect(acquisitions, "one native ownership acquisition must survive admission").toBe(1);
     expect(releases, "admission must not manufacture native reader release errors before handoff").toBe(0);
-    expect(backend.net.googlePending()).toBe(1);
+    expect(backend.net.providerPending()).toBe(1);
     controller.close(); await work;
     const message = (await backend.store.debug.snapshot()).messages[0]!;
     expect(message.bodyText === `${plain.replaceAll("\r\n", "\n")}\n`).toBe(true);
     expect((await backend.store.accounts.config<{ cursor?: unknown }>(account.id))?.config.cursor).toEqual({ historyId: "10" });
-    expect(backend.net.googlePending()).toBe(0); expect(acquisitions).toBe(1); expect(releases).toBe(0);
+    expect(backend.net.providerPending()).toBe(0); expect(acquisitions).toBe(1); expect(releases).toBe(0);
     expect(fixture.requests.filter(({ url }) => url.searchParams.get("format") === "raw")).toHaveLength(1);
     expect(fixture.requests.filter(({ url }) => url.searchParams.get("format") === "minimal")).toHaveLength(1); expect(fixture.unexpected).toEqual([]);
   } finally { try { controller.close(); } catch { /* already physically closed */ } await work; try { await backend.stop(); } finally { reading.mockRestore(); for (const spy of readerSpies) spy.mockRestore(); fixture.transport.mockRestore(); rmSync(directory, { recursive: true, force: true }); } }
@@ -62,6 +62,6 @@ it("separates completed native control-reader retirement from the next provider 
     await backend.syncAccount(account.id);
     expect(atRelease, "actual native retirement has its own cooperative work turn").toBeGreaterThan(0);
     expect(atLabels, "subsequent provider work follows a separate turn").toBeGreaterThan(atRelease);
-    expect(backend.net.googlePending()).toBe(0); expect(fixture.unexpected).toEqual([]);
+    expect(backend.net.providerPending()).toBe(0); expect(fixture.unexpected).toEqual([]);
   } finally { await backend.stop(); spy.mockRestore(); fixture.transport.mockRestore(); rmSync(directory, { recursive: true, force: true }); }
 });

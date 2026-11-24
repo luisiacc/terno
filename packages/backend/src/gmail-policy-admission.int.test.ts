@@ -764,7 +764,7 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     const h = await setup(false, kind);
     await (await h.backend.provider(h.account.id))!.verify();
     h.answer((request) => new URL(request.url).pathname === "/token" ? failure(429, "rateLimitExceeded") : followupHealthy(request));
-    const response = await h.context.google!.request({ request: { endpoint: "oauth-token", purpose: "refresh" } }, "https://synthetic.invalid/token", { method: "POST" });
+    const response = await h.context.requests!.request({ request: { endpoint: "oauth-token", purpose: "refresh" } }, "https://synthetic.invalid/token", { method: "POST" });
     expect(response.status).toBe(429);
     await response.text();
     expect(JSON.parse((await h.backend.store.providerCooldown.read())!).rows).toEqual(expect.arrayContaining([expect.objectContaining({ service: "oauth-token" })]));
@@ -1082,11 +1082,11 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     await (await h.backend.provider(h.account.id))!.verify();
     const responses: Response[] = [];
     try {
-      for (let i = 0; i < 64; i++) responses.push(await h.context.google!.request({ admission: i < 62 ? "background" : "send", request: { endpoint: "gmail-api", purpose: "mail" } }, "https://synthetic.invalid/hold"));
+      for (let i = 0; i < 64; i++) responses.push(await h.context.requests!.request({ admission: i < 62 ? "background" : "send", request: { endpoint: "gmail-api", purpose: "mail" } }, "https://synthetic.invalid/hold"));
       const { opId } = await h.send();
       const original = await h.backend.store.ops.get(opId);
       const ledger = await h.backend.store.providerCooldown.read();
-      await expect(h.context.google!.request({ request: { endpoint: "gmail-api", purpose: "mail" } }, "https://synthetic.invalid/hold")).rejects.toMatchObject({ cooldown: { kind: "capacity" } });
+      await expect(h.context.requests!.request({ request: { endpoint: "gmail-api", purpose: "mail" } }, "https://synthetic.invalid/hold")).rejects.toMatchObject({ cooldown: { kind: "capacity" } });
       expect(await h.backend.runWorker()).toBe(0);
       expect(await h.backend.store.ops.get(opId)).toEqual(original);
       expect(await h.backend.store.providerCooldown.read()).toBe(ledger);
@@ -1112,17 +1112,17 @@ it("R1 late403 after cancellation releases its logical ticket and, the request b
     requests.push(input);
     return new Promise<Response>((resolve) => { respond = resolve; });
   } });
-  const google = { generation: () => 0, check: (request: Parameters<typeof policy.check>[0]["request"]) => policy.check({ request }), request: (descriptor: Parameters<typeof net.fetchGoogle>[1], input: Parameters<typeof fetch>[0], init?: RequestInit) => net.fetchGoogle(policy, descriptor)(input, init), prove: async () => {}, tokenUnavailable() {}, accessAvailable() {} };
-  const provider = createGmailApiProvider({ google, account: { id: 1 }, store: {} } as unknown as ProviderContext, { tokens: { get: async () => "synthetic", invalidate() {} }, buildRaw: async () => new Uint8Array(), endpoints: { api: "https://synthetic.invalid/gmail" } });
+  const google = { generation: () => 0, check: (request: Parameters<typeof policy.check>[0]["request"]) => policy.check({ request }), request: (descriptor: Parameters<typeof net.fetchProvider>[1], input: Parameters<typeof fetch>[0], init?: RequestInit) => net.fetchProvider(policy, descriptor)(input, init), prove: async () => {}, tokenUnavailable() {}, accessAvailable() {} };
+  const provider = createGmailApiProvider({ requests: google, account: { id: 1 }, store: {} } as unknown as ProviderContext, { tokens: { get: async () => "synthetic", invalidate() {} }, buildRaw: async () => new Uint8Array(), endpoints: { api: "https://synthetic.invalid/gmail" } });
   try {
     const verifying = provider.verify().catch((error: unknown) => error);
     await vi.waitFor(() => expect(requests).toHaveLength(1));
     provider.reset!();
     expect(await verifying).toBeInstanceOf(ProviderError);
-    expect(net.googlePending()).toBe(1); // the fetch hasn't answered: its slot is held
+    expect(net.providerPending()).toBe(1); // the fetch hasn't answered: its slot is held
     respond(failure(403, "userRateLimitExceeded"));
     await vi.waitFor(() => expect(gate.resources().tickets).toBe(0));
-    await vi.waitFor(() => expect(net.googlePending()).toBe(0));
+    await vi.waitFor(() => expect(net.providerPending()).toBe(0));
     expect(encoded).toBeNull();
   } finally { await provider.close(); await gate.close(); }
 });

@@ -704,7 +704,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
   }
 
   function discard(response: Response) {
-    if (!ctx.google) { cancelResponse(response); return; }
+    if (!ctx.requests) { cancelResponse(response); return; }
     const deadline = deadlineSignal(reads.signal, undefined, options.readTimeoutMs ?? READ_TIMEOUT_MS);
     void readResponseText(response, 65_536, deadline.signal).catch(() => "").finally(() => deadline.done());
   }
@@ -713,14 +713,14 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     const { ambiguousOnFailure, responseMode = "json", incomingId, readReset, preparationSignal, httpContext, requestRun, proofToken, requestGeneration, admission, prepaid, ...request } = init;
     // a path under the Gmail API (plan 258: nothing else goes through here since Photos from Google left)
     const context = httpContext ?? { endpoint: "gmail-api", purpose: "mail" } as const;
-    ctx.google?.check(context, admission);
-    const generation = requestGeneration ?? ctx.google?.generation();
+    ctx.requests?.check(context, admission);
+    const generation = requestGeneration ?? ctx.requests?.generation();
     preparationSignal?.throwIfAborted();
     const token = proofToken ?? (preparationSignal ? await untilAborted(tokens.get(requestRun, admission), preparationSignal) : await tokens.get(requestRun, admission));
     let profile: unknown;
-    if (ctx.google && !proofToken) {
+    if (ctx.requests && !proofToken) {
       try {
-        await ctx.google.prove(async () => {
+        await ctx.requests.prove(async () => {
           profile = await api<unknown>("/profile", { proofToken: token, requestRun, requestGeneration: generation, signal: request.signal, readReset, preparationSignal, admission, httpContext: { endpoint: "gmail-api", purpose: "identity-proof" } }, retried);
           readBaseline(profile);
           if (!isRecord(profile) || typeof profile.emailAddress !== "string" || profile.emailAddress.length > 254 || !isValidEmail(profile.emailAddress) || /[\s\p{Cc}]/u.test(profile.emailAddress)) throw invalidResponse();
@@ -762,7 +762,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         }
         const url = `${ep.api}${path}`;
         const wire = { ...request, signal: deadline.signal, headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...request.headers } };
-        const responsePromise = ctx.google ? ctx.google.request({ request: context, admission, run: sending && requestRun ? { markDispatched() { requestRun.markDispatched(); requestRun.markSubmissionDispatched?.(); } } : requestRun, generation, onForbidden: (settle) => {
+        const responsePromise = ctx.requests ? ctx.requests.request({ request: context, admission, run: sending && requestRun ? { markDispatched() { requestRun.markDispatched(); requestRun.markSubmissionDispatched?.(); } } : requestRun, generation, onForbidden: (settle) => {
           if (deadline.signal.aborted) void settle("none");
           else settleForbidden = settle;
         }, onHeaders: (status, evidence) => { nativeStatus = status; httpResponse = evidence; } }, url, wire) : netFetch(url, wire);
@@ -854,7 +854,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
    * `sink.held` while its siblings go on; the caller saves no progress past it and the pass throws it at its end.
    */
   async function fetchFull(ids: string[], sink: SyncPass, hold = false): Promise<Set<string>> {
-    ctx.google?.check({ endpoint: "gmail-api", purpose: "mail" });
+    ctx.requests?.check({ endpoint: "gmail-api", purpose: "mail" });
     const held = hold ? sink.held : undefined;
     const gone = new Set<string>();
     let batch: { message: IncomingMessage; release?: () => void }[] = [];
@@ -1685,7 +1685,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
      * list isn't documented to have an order, so each new id's date is read from its metadata (no body).
      */
     async search({ queries, before, limit, signal }) {
-      ctx.google?.check({ endpoint: "gmail-api", purpose: "mail" });
+      ctx.requests?.check({ endpoint: "gmail-api", purpose: "mail" });
       const ids = new Set<string>();
       for (const query of queries) {
         signal.throwIfAborted();
@@ -1767,10 +1767,10 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       const meet = (labels: readonly string[] | null | undefined) => {
         for (const l of labels ?? []) if (l.startsWith("Label_") && !catalog?.known.has(l)) unknownLabel = true;
       };
-      const generation = ctx.google?.generation();
+      const generation = ctx.requests?.generation();
       const check = () => {
         outer.signal.throwIfAborted();
-        if (generation !== ctx.google?.generation()) throw new RequestNotDispatchedError(L("errors.gmail.requestOffline"));
+        if (generation !== ctx.requests?.generation()) throw new RequestNotDispatchedError(L("errors.gmail.requestOffline"));
       };
       const effect = async (run: () => Promise<void>) => { check(); await run(); check(); };
       const sink: SyncPass = {
@@ -1883,7 +1883,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     },
 
     async execute(op: ProviderOp) {
-      ctx.google?.check({ endpoint: "gmail-api", purpose: "mail" }, op.kind === "send" ? "send" : "background");
+      ctx.requests?.check({ endpoint: "gmail-api", purpose: "mail" }, op.kind === "send" ? "send" : "background");
       if (op.kind === "send") {
         const payload = op.payload as SendPayload;
         const raw = await options.buildRaw(payload);

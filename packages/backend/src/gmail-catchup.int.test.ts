@@ -1115,7 +1115,7 @@ describe.each(["SQL"] as const)("%s managed Gmail concurrent public sync request
   });
   it.each([false, true] as const)("freezes H1 with concurrent requests: %s", async (trigger) => {
     const t = await mailbox(kind); t.seed();
-    const managed = t.context.google;
+    const managed = t.context.requests;
     expect(managed).toBeDefined();
     const requests = vi.spyOn(managed!, "request");
     await t.backend.syncAccount(t.account.id);

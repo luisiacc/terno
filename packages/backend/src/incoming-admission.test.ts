@@ -35,7 +35,7 @@ it("shares six incoming raw reads across accounts and drains all mail without ex
     async verifyImap() {}, async connectGmail() { throw new Error("Unused synthetic consent"); },
   };
   const backend = new Backend({ dbPath: join(dir, "test.db"), incomingProcessor: processor, providers, cipher: plaintextCipher, version: "test", autoSync: false, instantSearch: false, iconTransport: null });
-  cleanup.push(async () => { opened = true; for (const release of releases) release(); try { expect(backend.net.googlePending()).toBe(0); } finally { try { await backend.stop(); } finally { rmSync(dir, { recursive: true, force: true }); } } });
+  cleanup.push(async () => { opened = true; for (const release of releases) release(); try { expect(backend.net.providerPending()).toBe(0); } finally { try { await backend.stop(); } finally { rmSync(dir, { recursive: true, force: true }); } } });
   await backend.ready;
   const accounts = [];
   for (let i = 0; i < 2; i++) {
@@ -56,7 +56,7 @@ it("shares six incoming raw reads across accounts and drains all mail without ex
   expect(messages).toHaveLength(16);
   expect(messages.map((message) => message.bodyText)).toEqual(Array(16).fill("Small body\n"));
   expect(process).not.toHaveBeenCalled();
-  expect(backend.net.googlePending()).toBe(0);
+  expect(backend.net.providerPending()).toBe(0);
   expect(fixture.unexpected).toEqual([]);
   expect(fixture.requests.filter(({ url }) => url.searchParams.get("format") === "minimal")).toHaveLength(16);
   expect(ingest.mock.calls.map(([messages]) => messages.length).sort()).toEqual([8, 8]);
@@ -107,7 +107,7 @@ async function controlMailbox(options: Partial<Parameters<typeof incomingGmailFi
     async verifyImap() {}, async connectGmail() { throw new Error("Unused synthetic consent"); },
   };
   const backend = new Backend({ dbPath: join(dir, "synthetic.db"), providers, cipher: plaintextCipher, version: "test", autoSync: false, instantSearch: false, iconTransport: null });
-  cleanup.push(async () => { try { expect(backend.net.googlePending()).toBe(0); } finally { try { await backend.stop(); } finally { rmSync(dir, { recursive: true, force: true }); } } });
+  cleanup.push(async () => { try { expect(backend.net.providerPending()).toBe(0); } finally { try { await backend.stop(); } finally { rmSync(dir, { recursive: true, force: true }); } } });
   await backend.ready;
   const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", now: 1 });
   fixture.accounts.set("synthetic", account.email);
@@ -125,7 +125,7 @@ it.each(["missing", "mismatched"] as const)("refuses a %s saved-mailbox profile 
   const state = (await t.backend.store.accounts.get(t.account.id))!.syncState;
   expect(state.status).not.toBe("idle");
   expect(state.lastSyncAt).toBeNull();
-  expect(t.backend.net.googlePending()).toBe(0);
+  expect(t.backend.net.providerPending()).toBe(0);
   expect(t.fixture.unexpected).toEqual([]);
 });
 
@@ -146,7 +146,7 @@ it("retains real catchup progress and native HTTP evidence, then promotes only t
   expect(before).toHaveLength(1);
   expect(before[0]!.bodyText).toBe("Small body\n");
   expect((await t.backend.store.accounts.get(t.account.id))!.syncState.lastSyncAt).toBeNull();
-  expect(t.backend.net.googlePending()).toBe(0);
+  expect(t.backend.net.providerPending()).toBe(0);
   const bindings = decodeCooldown(await t.backend.store.providerCooldown.read()).bindings;
   expect(bindings).toMatchObject([{ id: t.account.id, createdAt: 1, mailboxKey: await mailboxDigest(t.account.email, (bytes) => crypto.subtle.digest("SHA-256", bytes)) }]);
   failing = false;
@@ -161,6 +161,6 @@ it("retains real catchup progress and native HTTP evidence, then promotes only t
   const history = t.fixture.requests.filter(({ url }) => url.pathname.endsWith("/history"));
   expect(history.map(({ url }) => url.searchParams.get("startHistoryId"))).toEqual(["10", "10", "10"]);
   expect(history.every(({ url }) => url.searchParams.getAll("historyTypes").sort().join(",") === "labelAdded,labelRemoved,messageAdded,messageDeleted")).toBe(true);
-  expect(t.backend.net.googlePending()).toBe(0);
+  expect(t.backend.net.providerPending()).toBe(0);
   expect(t.fixture.unexpected).toEqual([]);
 });

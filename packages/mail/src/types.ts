@@ -193,7 +193,7 @@ export interface SyncSink {
 
 export type MailAdmission = "background" | "send" | "reader";
 
-export interface GoogleRequests {
+export interface AccountRequests {
   generation(): number;
   check(request: HttpRequestContext, admission?: MailAdmission): void;
   request(descriptor: RequestDescriptor, input: Parameters<typeof fetch>[0], init?: RequestInit): Promise<Response>;
@@ -206,8 +206,8 @@ export interface GoogleRequests {
 export interface ProviderContext {
   /** Give interactive work a turn after a page that produced no sliced effects. */
   yield?(): Promise<void>;
-  /** Installed by BackendCore for every saved Gmail account; standalone transports own their policy. */
-  google?: GoogleRequests;
+  /** Installed by BackendCore for every saved OAuth account (plan 259); standalone transports own their policy. */
+  requests?: AccountRequests;
   /** One result from the shared refresh, qualified to its issuing credentials. */
   tokenResult?(generation: number, error?: ProviderAuthError): void | Promise<void>;
   /**
@@ -404,7 +404,7 @@ export interface GmailConnectResult {
 /** The web's Gmail sign-in: short-lived access tokens from Google's token model, kept in memory. */
 export interface GmailTokenBroker {
   /** whose mailbox the token opens (Gmail profile + OpenID userinfo) */
-  inspect(accessToken: string, netFetch: typeof fetch, options?: { signal?: AbortSignal; timeoutMs?: number; google?: Pick<GoogleRequests, "request"> }): Promise<Omit<GmailConnectResult, "refreshToken">>;
+  inspect(accessToken: string, netFetch: typeof fetch, options?: { signal?: AbortSignal; timeoutMs?: number; google?: Pick<AccountRequests, "request"> }): Promise<Omit<GmailConnectResult, "refreshToken">>;
   /** hands the token to that account's provider until it expires */
   set(accountId: number, accessToken: string, expiresAt: number): void;
   /** release the removed account's in-memory credential */
@@ -435,7 +435,7 @@ export interface ProviderRegistry {
   readonly gmailTokens?: GmailTokenBroker;
   create(ctx: ProviderContext): MailProvider;
   verifyImap(config: ImapAccountConfig, password: string): Promise<void>;
-  connectGmail(options: { clientId: string; clientSecret: string | null; openExternal: (url: string) => Promise<void>; signal?: AbortSignal; fetch: typeof fetch; google?: Pick<GoogleRequests, "request">; loginHint?: string; scopes?: string[]; allowOmittedRefreshToken?: boolean }): Promise<GmailConnectResult>;
+  connectGmail(options: { clientId: string; clientSecret: string | null; openExternal: (url: string) => Promise<void>; signal?: AbortSignal; fetch: typeof fetch; google?: Pick<AccountRequests, "request">; loginHint?: string; scopes?: string[]; allowOmittedRefreshToken?: boolean }): Promise<GmailConnectResult>;
   /** Cold proof is optional: custom registries without it must refuse omitted renewal credentials. */
   beginGmailRenewal?(options: GmailRenewalOptions): Promise<GmailRenewalProof>;
   /** plan 125: withdraw a removed account's Google grant (desktop only: the endpoint has no CORS; absent in test and

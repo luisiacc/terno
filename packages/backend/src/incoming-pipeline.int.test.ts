@@ -60,7 +60,7 @@ it("shares prefix/promotion ownership across accounts through actual worker and 
     async verifyImap() {}, async connectGmail() { throw new Error("Unused synthetic consent"); },
   };
   const backend = new Backend({ dbPath: join(dir, "synthetic.db"), incomingProcessor: processor, providers, cipher: plaintextCipher, version: "test", autoSync: false, instantSearch: false, iconTransport: null });
-  cleanups.push(async () => { continuePrefix(); continueWrite(); try { expect(backend.net.googlePending()).toBe(0); } finally { try { await backend.stop(); } finally { rmSync(dir, { recursive: true, force: true }); } } });
+  cleanups.push(async () => { continuePrefix(); continueWrite(); try { expect(backend.net.providerPending()).toBe(0); } finally { try { await backend.stop(); } finally { rmSync(dir, { recursive: true, force: true }); } } });
   await backend.ready;
   const accounts = [];
   for (let index = 0; index < 2; index++) {
@@ -93,7 +93,7 @@ it("shares prefix/promotion ownership across accounts through actual worker and 
   expect(writes).toBe(6);
   expect(process).toHaveBeenCalledTimes(6);
   for (const result of process.mock.results) expect((await result.value).kind).toBe("gmail");
-  expect(backend.net.googlePending()).toBe(0);
+  expect(backend.net.providerPending()).toBe(0);
   expect(fixture.unexpected).toEqual([]);
   expect(fixture.requests.filter(({ url }) => url.searchParams.get("format") === "minimal")).toHaveLength(6);
   for (const account of accounts) {

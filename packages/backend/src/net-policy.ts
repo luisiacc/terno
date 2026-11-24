@@ -38,9 +38,9 @@ export interface NetworkPolicy {
   fetchFor(purpose: NetPurpose, meta?: NetMeta): typeof fetch;
   /** whether every address of the URL's host is loopback (what local mode would accept for AI) */
   isLoopbackEndpoint(url: string): Promise<boolean>;
-  fetchGoogle(policy: ProviderRequests, descriptor: RequestDescriptor): typeof fetch;
-  googlePending(): number;
-  googleAvailable(admission?: RequestDescriptor["admission"]): boolean;
+  fetchProvider(policy: ProviderRequests, descriptor: RequestDescriptor): typeof fetch;
+  providerPending(): number;
+  providerAvailable(admission?: RequestDescriptor["admission"]): boolean;
 }
 
 export type LookupAll = (host: string) => Promise<{ address: string; family: number }[]>;
@@ -59,7 +59,7 @@ export interface NetworkPolicyOptions {
    */
   lookup?: LookupAll;
   fetch?: typeof fetch;
-  googleChanged?: () => void;
+  providerChanged?: () => void;
   /** plan 161: every decision, allowed or refused, for a test host that proves where requests went (never set in a release) */
   observe?: (decision: NetDecision) => void;
 }
@@ -123,9 +123,9 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
   const NativeRequest = globalThis.Request;
   const NativeResponse = globalThis.Response;
 
-  let googlePending = 0;
+  let providerPending = 0;
   let backgroundPending = 0, foregroundPending = 0;
-  const available = (admission?: RequestDescriptor["admission"]) => googlePending < 64 && (admission === "background" ? backgroundPending < 62 : admission ? foregroundPending < 2 : true);
+  const available = (admission?: RequestDescriptor["admission"]) => providerPending < 64 && (admission === "background" ? backgroundPending < 62 : admission ? foregroundPending < 2 : true);
   const availability = () => [available(), available("background"), available("reader")].join();
   /**
    * Plan 262: a Google slot counts a fetch that hasn't completed, and comes back when it does: the fetch rejects, or its
@@ -232,9 +232,9 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
 
   return {
     assert,
-    googlePending: () => googlePending,
-    googleAvailable: available,
-    fetchGoogle(policy, descriptor) {
+    providerPending: () => providerPending,
+    providerAvailable: available,
+    fetchProvider(policy, descriptor) {
       return (input, init) => {
         // Snapshot mutable init/Headers/body before the first asynchronous policy step.
         const request = new NativeRequest(input, { ...init, redirect: "error" });
@@ -259,7 +259,7 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
               if (request.signal.aborted) throw new RequestNotDispatchedError(L("errors.accountGone"));
               if (!available(descriptor.admission)) throw new ProviderCooldownError(descriptor.request.endpoint, "0", "capacity");
               const before = availability();
-              googlePending++;
+              providerPending++;
               if (descriptor.admission === "background") backgroundPending++;
               else if (descriptor.admission) foregroundPending++;
               let released = false;
@@ -268,15 +268,15 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
                 released = true;
                 request.signal.removeEventListener("abort", settle);
                 const before = availability();
-                googlePending--;
+                providerPending--;
                 if (descriptor.admission === "background") backgroundPending--;
                 else if (descriptor.admission) foregroundPending--;
-                if (before !== availability()) options.googleChanged?.();
+                if (before !== availability()) options.providerChanged?.();
               };
               let sent: Promise<Response>;
               // nothing between the count and the fetch may strand the slot, a synchronous throw included
               try {
-                if (before !== availability()) options.googleChanged?.();
+                if (before !== availability()) options.providerChanged?.();
                 sent = baseFetch(request);
               } catch (error) { free(); throw error; }
               return sent.then((response) => {

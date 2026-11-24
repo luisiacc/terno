@@ -60,7 +60,7 @@ async function setup(emails: string[]) {
   });
   return { backend, accounts, requests, unreadable(value: boolean) { unreadable = value; }, tokenStatus(value: number) { tokenStatus = value; } };
 }
-const google = (b: Backend, id: number) => (b as unknown as { google: Map<number, { paused: boolean }> }).google.get(id);
+const google = (b: Backend, id: number) => (b as unknown as { requests: Map<number, { paused: boolean }> }).requests.get(id);
 
 describe("plan 264: binding a mailbox", () => {
   it("accounts proving at the same time all bind, and none is paused", async () => {

@@ -9,7 +9,7 @@ import { readGoogleIdentity, withGoogleSignIn } from "./gmail-web";
 import { GMAIL_UNITS_PER_SECOND } from "./gmail-quota";
 import { exchangeGmailRefresh, type GmailRefreshExchange } from "./gmail-refresh";
 import { createGmailApiProvider, GMAIL_SCOPES as SCOPES, GOOGLE_ENDPOINTS, type GmailEndpoints } from "./gmail-api";
-import { ProviderAuthError, ProviderError, type GmailConnectResult, type MailProvider, type ProviderContext, type RequestRun, type MailAdmission, type GoogleRequests } from "./types";
+import { ProviderAuthError, ProviderError, type GmailConnectResult, type MailProvider, type ProviderContext, type RequestRun, type MailAdmission, type AccountRequests } from "./types";
 
 export * from "./gmail-api";
 export { callbackPage } from "./oauth-page";
@@ -27,7 +27,7 @@ export interface ConnectOptions {
   timeoutMs?: number;
   /** the backend's network-policy fetch (purpose "mail") */
   fetch: typeof fetch;
-  google?: Pick<GoogleRequests, "request">;
+  google?: Pick<AccountRequests, "request">;
   /** pre-selects the account on Google's consent screen (re-verifying an owner) */
   loginHint?: string;
   /** Only an existing-account caller that will prove the stored grant may accept true wire omission. */
@@ -182,18 +182,18 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
   function refresh(run?: RequestRun, admission?: MailAdmission): Promise<string> {
     if (run) { refreshRuns.add(run); if (refreshIssued) run.markDispatched(); }
     refreshing ??= Promise.resolve().then(async () => {
-      const generation = ctx.google?.generation() ?? 0;
+      const generation = ctx.requests?.generation() ?? 0;
       try {
         assertOpen();
         if (!candidate) {
-          ctx.google?.tokenUnavailable();
-          ctx.google?.check({ endpoint: "oauth-token", purpose: "refresh" }, admission);
+          ctx.requests?.tokenUnavailable();
+          ctx.requests?.check({ endpoint: "oauth-token", purpose: "refresh" }, admission);
           const refreshToken = await ctx.getSecret("refreshToken");
           assertOpen();
           if (!refreshToken) throw new ProviderAuthError(L("errors.gmail.reconnect"));
           const { clientId, clientSecret } = await oauthClient();
           assertOpen();
-          const exchange = await exchangeGmailRefresh({ fetch: ctx.fetch, url: ep.token, clientId, clientSecret, refreshToken, signal: lifetime.signal, google: ctx.google, generation, admission, run: { markDispatched: () => { refreshIssued = true; for (const owner of refreshRuns) owner.markDispatched(); } } });
+          const exchange = await exchangeGmailRefresh({ fetch: ctx.fetch, url: ep.token, clientId, clientSecret, refreshToken, signal: lifetime.signal, google: ctx.requests, generation, admission, run: { markDispatched: () => { refreshIssued = true; for (const owner of refreshRuns) owner.markDispatched(); } } });
           assertOpen();
           candidate = { expected: refreshToken, exchange, uncertain: false };
         }
@@ -203,7 +203,7 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
         // A delayed commit consumes token life. The next demand uses the now-durable credential.
         if (pending.exchange.expiresAt <= Date.now()) throw new ProviderError(L("errors.gmail.refreshFailed", { status: 200 }), true);
         access = pending.exchange;
-        ctx.google?.accessAvailable();
+        ctx.requests?.accessAvailable();
         await ctx.tokenResult?.(generation);
         return access.accessToken;
       } catch (error) {

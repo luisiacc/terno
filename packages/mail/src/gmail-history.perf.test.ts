@@ -49,7 +49,7 @@ it("keeps maximal admitted history decoding and expansion within the control sli
     return source;
   } });
   // Admission retains its native reader for the physical response, without reading ahead.
-  const response = await net.fetchGoogle(policy, { request: { endpoint: "gmail-api", purpose: "mail" } })(resource);
+  const response = await net.fetchProvider(policy, { request: { endpoint: "gmail-api", purpose: "mail" } })(resource);
   const ctx = { account: { id: 1 }, config: {}, store: {
     messageByProviderId: async () => { lookups++; return null; }, pendingAttachmentBodies: async () => [],
   }, loadCursor: async () => ({ historyId: "10" }), saveCursor: async (value: unknown) => { saved = value; },
@@ -66,7 +66,7 @@ it("keeps maximal admitted history decoding and expansion within the control sli
     expect(source.body!.locked).toBe(true);
     expect(response).not.toBe(source);
     expect(pulled).toBe(0);
-    expect(net.googlePending()).toBe(1);
+    expect(net.providerPending()).toBe(1);
     const budget = 15 * BUDGET_MULTIPLIER, monitor = watchLoop(budget);
     try { await provider.sync(sink); }
     finally {
@@ -78,7 +78,7 @@ it("keeps maximal admitted history decoding and expansion within the control sli
     expect(nativeReads).toBe(2);
     expect(nativeEof).toBe(1);
     expect(nativeReleases).toBe(0);
-    expect(net.googlePending()).toBe(0);
+    expect(net.providerPending()).toBe(0);
     expect(requests).toBe(1);
     expect(lookups).toBe(2000);
     expect(saved).toEqual({ historyId: "11" });

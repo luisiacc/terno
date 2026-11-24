@@ -28,24 +28,24 @@ it.each(["eof", "cancel"] as const)("keeps one native history reader and capacit
     requests++; return source;
   } });
   try {
-    const response = await net.fetchGoogle(gate.requestsFor("a".repeat(64)), { request: { endpoint: "gmail-api", purpose: "mail" } })(resource);
+    const response = await net.fetchProvider(gate.requestsFor("a".repeat(64)), { request: { endpoint: "gmail-api", purpose: "mail" } })(resource);
     expect(acquire).toHaveBeenCalledTimes(1);
     expect(owned.releaseLock).not.toHaveBeenCalled();
     expect(source.body!.locked).toBe(true);
     expect(owned.read).not.toHaveBeenCalled();
-    expect(net.googlePending()).toBe(1);
+    expect(net.providerPending()).toBe(1);
     const reader = response.body!.getReader();
     try {
       const bytes = new TextEncoder().encode('{"historyId":"11"}');
       controller.enqueue(bytes);
       expect(await reader.read()).toEqual({ done: false, value: bytes });
       expect(owned.read).toHaveBeenCalledTimes(1);
-      expect(net.googlePending()).toBe(1);
+      expect(net.providerPending()).toBe(1);
       if (action === "cancel") {
         await reader.cancel("Synthetic local cancellation");
         expect(cancellations).toBe(1);
         expect(owned.read).toHaveBeenCalledTimes(1);
-        expect(net.googlePending()).toBe(0); // plan 262: a settled cancel ends the request
+        expect(net.providerPending()).toBe(0); // plan 262: a settled cancel ends the request
         expect(acquire).toHaveBeenCalledTimes(1);
         expect(owned.releaseLock).not.toHaveBeenCalled();
         return;
@@ -56,10 +56,10 @@ it.each(["eof", "cancel"] as const)("keeps one native history reader and capacit
       for (let turn = 0; turn < 20 && vi.mocked(owned.read).mock.calls.length < 2; turn++) await Promise.resolve();
       expect(owned.read).toHaveBeenCalledTimes(2);
       expect(settled).toBe(false);
-      expect(net.googlePending()).toBe(1);
+      expect(net.providerPending()).toBe(1);
       controller.close();
       expect(await final).toEqual({ done: true, value: undefined });
-      expect(net.googlePending()).toBe(0);
+      expect(net.providerPending()).toBe(0);
       expect(requests).toBe(1);
       expect(acquire).toHaveBeenCalledTimes(1);
       expect(owned.releaseLock).not.toHaveBeenCalled();

@@ -90,9 +90,9 @@ it.each(["EOF", "read error"] as const)("retired managed headers retain physical
     return new Response("sibling exact body");
   });
   const old = t.contexts.get(t.ids[0]!)!, sibling = t.contexts.get(t.ids[1]!)!;
-  await old.google!.prove(async () => old.account.email);
-  await sibling.google!.prove(async () => sibling.account.email);
-  const read = (ctx: ProviderContext, id: string, signal?: AbortSignal) => ctx.google!.request({ request: { endpoint: "gmail-api", purpose: "mail" }, generation: ctx.google!.generation() }, `${api}/messages/${id}`, { signal });
+  await old.requests!.prove(async () => old.account.email);
+  await sibling.requests!.prove(async () => sibling.account.email);
+  const read = (ctx: ProviderContext, id: string, signal?: AbortSignal) => ctx.requests!.request({ request: { endpoint: "gmail-api", purpose: "mail" }, generation: ctx.requests!.generation() }, `${api}/messages/${id}`, { signal });
   const controller = new AbortController();
   const result = Promise.allSettled([read(old, "held", controller.signal)]);
   cleanup.push(async () => { headers.release(); tail.release(); siblingRelease.release(); await joinRead(result, () => reads > 0, drained.promise); await turn(); });
@@ -100,21 +100,21 @@ it.each(["EOF", "read error"] as const)("retired managed headers retain physical
   const siblingResult = read(sibling, "sibling");
   cleanup.push(async () => { siblingRelease.release(); await siblingResult; });
   await siblingEntered.promise;
-  expect(t.backend.net.googlePending()).toBe(2);
+  expect(t.backend.net.providerPending()).toBe(2);
   await t.client.call("accounts.reconnect", { id: t.ids[0]! });
-  expect(() => old.google!.check({ endpoint: "gmail-api", purpose: "mail" })).toThrow();
+  expect(() => old.requests!.check({ endpoint: "gmail-api", purpose: "mail" })).toThrow();
   expect(controller.signal.aborted).toBe(false);
   siblingRelease.release();
   expect(await (await siblingResult).text()).toBe("sibling exact body");
-  expect(t.backend.net.googlePending()).toBe(1);
+  expect(t.backend.net.providerPending()).toBe(1);
   headers.release(); await reading.promise;
   expect((await result)[0]).toMatchObject({ status: "rejected", reason: { name: "AbortError" } });
   expect(cancels).toBe(0);
-  const assertHeld = () => expect(t.backend.net.googlePending()).toBe(1);
+  const assertHeld = () => expect(t.backend.net.providerPending()).toBe(1);
   assertHeld();
   await turn(); assertHeld();
   tail.release();
-  await expect.poll(() => t.backend.net.googlePending()).toBe(0);
+  await expect.poll(() => t.backend.net.providerPending()).toBe(0);
   expect(() => assertHeld()).toThrow();
   expect(reads).toBe(1); expect(cancels).toBe(0);
   expect(t.unexpected).toEqual([]);
@@ -146,11 +146,11 @@ it.each(["success", "late acceptance", "connection loss", "body loss", "portal H
   const worker = t.backend.runWorker();
   cleanup.push(async () => { release.release(); await worker; });
   await Promise.race([entered.promise, worker.then(() => { throw new Error("Worker ended before dispatch"); })]);
-  expect(t.backend.net.googlePending()).toBe(1);
+  expect(t.backend.net.providerPending()).toBe(1);
   if (outcome !== "success") await t.client.call("accounts.reconnect", { id: accountId });
   expect(signal?.aborted).toBe(false);
   release.release(); await worker;
-  await expect.poll(() => t.backend.net.googlePending()).toBe(0);
+  await expect.poll(() => t.backend.net.providerPending()).toBe(0);
   const op = (await t.backend.store.ops.get(opId))!;
   expect(op).toMatchObject({ state: outcome === "success" ? "succeeded" : "unknown", attempts: 1, payload_json: original });
   const assertContent = async (wire: string) => {
@@ -180,14 +180,14 @@ it.each(["cancel", "abort", "EOF then abort"] as const)("managed read %s frees i
     return new Response("sibling body");
   });
   const old = t.contexts.get(t.ids[0]!)!, sibling = t.contexts.get(t.ids[1]!)!;
-  await old.google!.prove(async () => old.account.email); await sibling.google!.prove(async () => sibling.account.email);
+  await old.requests!.prove(async () => old.account.email); await sibling.requests!.prove(async () => sibling.account.email);
   const controller = new AbortController();
-  const response = await old.google!.request({ request: { endpoint: "gmail-api", purpose: "mail" }, generation: old.google!.generation() }, `${api}/messages/held`, { signal: controller.signal });
+  const response = await old.requests!.request({ request: { endpoint: "gmail-api", purpose: "mail" }, generation: old.requests!.generation() }, `${api}/messages/held`, { signal: controller.signal });
   const siblingController = new AbortController();
-  const siblingResponse = sibling.google!.request({ request: { endpoint: "gmail-api", purpose: "mail" }, generation: sibling.google!.generation() }, `${api}/messages/sibling`, { signal: siblingController.signal });
+  const siblingResponse = sibling.requests!.request({ request: { endpoint: "gmail-api", purpose: "mail" }, generation: sibling.requests!.generation() }, `${api}/messages/sibling`, { signal: siblingController.signal });
   cleanup.push(async () => { siblingRelease.release(); const res = await siblingResponse; if (!res.bodyUsed) await res.arrayBuffer(); });
   await siblingEntered.promise;
-  expect(t.backend.net.googlePending()).toBe(2);
+  expect(t.backend.net.providerPending()).toBe(2);
   if (event === "cancel") { await response.body!.cancel(); expect(cancelled).toBe(1); }
   else if (event === "abort") {
     // an aborted body never reads as complete; the abort cancels the native body
@@ -201,15 +201,15 @@ it.each(["cancel", "abort", "EOF then abort"] as const)("managed read %s frees i
     expect(await text).toBe("");
     expect(cancelled).toBe(0);
   }
-  await expect.poll(() => t.backend.net.googlePending()).toBe(1);
+  await expect.poll(() => t.backend.net.providerPending()).toBe(1);
   const assertIndependent = () => expect(siblingSignal.aborted).toBe(false);
   assertIndependent();
   siblingRelease.release();
   expect(await (await siblingResponse).text()).toBe("sibling body");
-  expect(t.backend.net.googlePending()).toBe(0);
+  expect(t.backend.net.providerPending()).toBe(0);
   // Oracle control acts on the same native Request signal, not a fabricated signal.
   siblingController.abort();
   expect(assertIndependent).toThrow();
-  await turn(); expect(t.backend.net.googlePending()).toBe(0);
+  await turn(); expect(t.backend.net.providerPending()).toBe(0);
   expect(t.unexpected).toEqual([]);
 });
