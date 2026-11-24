@@ -45,7 +45,7 @@ export function readManifest(dir: string, id: string): BackupInfo | null {
     if (!ok(m.fromSchema) || !ok(m.toSchema) || !ok(m.size) || !ok(m.createdAt) || typeof m.appVersion !== "string") return null;
     // the manifest names its own file: one of another size is a different (or broken) copy, unless a settle cut short
     // left its journal, whose playback puts the size back (plan 253)
-    if (m.file !== "terno.db" || (fileSize(file) !== m.size && !existsSync(`${file}-journal`))) return null;
+    if (m.file !== "terno.db" || !existsSync(file) || (fileSize(file) !== m.size && !existsSync(`${file}-journal`))) return null;
     return { id, dir: join(dir, id), file, fromSchema: m.fromSchema, toSchema: m.toSchema, appVersion: m.appVersion, size: m.size, createdAt: m.createdAt };
   } catch {
     return null;

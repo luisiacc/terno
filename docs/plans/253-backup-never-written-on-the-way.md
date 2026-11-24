@@ -1,6 +1,6 @@
 # Plan 253: an update's backup is never written before the window opens
 
-- **Status:** building.
+- **Status:** shipped (see §§7–8).
 - **Builds on:** plan 95 (safe upgrades: the backup before a migration, the mailbox gate), plan 112 (the backup as an APFS clone).
 - **Request (verbatim):** "sometimes when doing updates, we are blocking the user from using the app while showing a screen like its loading, i don't like this , under which scenarios do we do this? and can we avoid it and just let the user use the app always normally" — then, after the findings below: "ok lets do that change."
 
@@ -159,3 +159,55 @@ These override §§2–5 where they conflict. The critique is in `/tmp/terno-scr
     - The fixture parks the settle worker's answer. The test asserts the mailbox reaches `ready` while held, releases it, then asserts the backup is settled and that the next start finds nothing.
     - The smoke waits for settlement separately.
     - `mailbox.backup_settled` and `mailbox.backup_settle_failed` go into the diagnostics catalog.
+
+## 7. As shipped
+
+- **`upgrade.ts`:** the clone path verifies through `immutable=1` (`untouchedUri`) and never switches the clone's journal mode. The copy path still does, inline.
+- **`backups.ts`:** `unsettled(file)` (WAL header or a `-journal` beside) and `backupToSettle(dir)`. A generation whose size differs from its manifest is kept when a journal beside it can put the size back. Without that, `listBackups` deleted a backup cut short mid-settle.
+- **`clone.ts`:** `settleBackup(file)` returns `{ done, stop }`: a worker opens the file as `mode=rw`, plays a journal back, switches to DELETE, and succeeds only when the pragma answers `delete`.
+- **Checkpoint hold:**
+  - `startCheckpointWorker(db, interval, hold)` through `SqliteDriver`, and the store's `checkpointWorker: { hold }`.
+  - One release (the hold settles, its bound, `stop()`, the worker's exit) starts the worker's passes and frees writers waiting past the hard limit.
+  - A store asked for a worker that gets none turns autocheckpoints back on.
+- **`OpenOptions.deferCheckpoints`:** `wal_autocheckpoint = 0` before `migrate()`.
+- **The backend** opens with `deferCheckpoints`, makes the store with a 15 s hold, and runs `startSettle` after `expireBackups`. A shutdown that closes runs `stopSettle()` (the thread gone) before "closed". It logs `mailbox.backup_settled { durationMs }` or captures `mailbox.backup_settle_failed`.
+- **The legacy body owner** (`needsLegacyBodyUpgrade`) opens only `version < SCHEMA_VERSION && (version < 45 || application_id ≠ READY)`, or a pending conversion.
+- **Restore** settles an unsettled backup before copying it, and checks the staged copy through `immutable=1`.
+
+### Measured
+
+A copy of the owner's dev mailbox (1.17 GB, years of real mail grown page by page, in WAL mode, schema 76 → 77). Same harness each time: `prepareUpgrade`, the open with its migration, the store with its held checkpoints, then 6 s of reads and small writes on the backend's thread while the backup settles. Three runs each, alternating. Load 2.3–4.2.
+
+| | before (the switch inline, as shipped by plan 112) | after |
+|---|---|---|
+| mailbox ready | 2.7–4.9 s | **53–81 ms** |
+| the backup's settle | (on the way) | 4.2–5.7 s, in the background |
+| slowest read / write meanwhile | — | 12–14 ms / 9–14 ms |
+| longest event-loop delay meanwhile | — | 15–19 ms |
+
+The 200–380 ms write stall the first experiment saw (§1) didn't show here.
+
+## 8. What the Codex code review changed
+
+The review is in `/tmp/terno-scratch/p253-code-review.txt`. Each fix has a regression test that fails without it.
+
+1. **A journal no longer vouches for a missing file** (#1).
+   - `readManifest` forgives a size mismatch only for a file that exists, with a journal beside it.
+   - A retry's kept generation that a settle left mid-way is played back and checked against its size before the migration runs (`playedBack`). If that fails, it's a backup failure.
+   - Tests: a retry after a cut-short settle; a journal beside a removed file.
+2. **The settle's write survives a power cut on macOS** (#3): `fullfsync = ON` beside `synchronous = FULL`, so its journal reaches the disk before page 1 does. Not tested: a pragma that only a power cut can show.
+3. **Two shutdowns wait for the same settle** (#8). `stopSettle` keeps the stop it started, and a second shutdown awaits it. Test: two shutdowns, a settle thread slow to go, neither "closed" before it has.
+4. **A settle with no thread doesn't fail the mailbox** (#9). A synchronous `new Worker` failure is captured as `mailbox.backup_settle_failed`, the hold releases, and the window opens. Test: the entry with the settle's constructor throwing reaches `ready`.
+5. **A stopped worker's wal-index reader stays closed** (#10). A writer still waiting never reopens `-shm`. Not tested on its own: one file descriptor, shown only by `lsof`.
+6. **The tests prove the wiring** (#11):
+   - the entry test checks that the mailbox's main file isn't written for 1.5 s while the settle is held, and is once it's done (fails with the hold removed);
+   - the `deferCheckpoints` test checks the order (the pragma before the migration's first `CREATE`);
+   - the stop test shows the writer waiting before `stop()`, with no other worker checkpointing.
+
+**Left as they are:**
+- **#2:** a retry more than 14 days after a failed first attempt, then a power cut before the first checkpoint, could lose the expired generation. Rare, and older than this series.
+- **#4:** restore racing the engine's restart over IPC. Older than this series.
+- **#5:** a mailbox in DELETE mode switching to WAL pays the split before `ready`. Only a restored mailbox is in that mode, and restore is the user's recovery action.
+- **#6:** a pending conversion whose completion is still only in the WAL routes once more to the owner.
+- **#7:** the settle starts during startup. It's a worker, measured with no effect on the backend's thread; the 15 s hold is far beyond a start's milliseconds.
+- **#12:** interrupting the WAL-to-DELETE switch itself (the fixture interrupts the transaction after it). SQLite's journal playback is the same either way.

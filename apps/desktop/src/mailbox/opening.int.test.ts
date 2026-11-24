@@ -7,7 +7,7 @@ import { build } from "esbuild";
 import { beforeAll, afterAll, expect, it } from "vitest";
 import { Db, MIGRATIONS, nodeSqliteDriver, createAccount, ingestMessages, registerFunctions, listBackups, SCHEMA_VERSION, BODY_READY_APPLICATION_ID, backupToSettle } from "@terno/db";
 import { oldMailbox } from "../../../../packages/db/src/test/old-mailbox";
-import { readFileSync, statfsSync } from "node:fs";
+import { readFileSync, statfsSync, statSync } from "node:fs";
 import { msg } from "../../../../packages/store/src/conformance/fixtures";
 import { openNodeMailbox, nodeStore } from "@terno/backend";
 import { untouchedUri } from "@terno/db/clone";
@@ -107,12 +107,20 @@ const apfs = process.platform === "darwin" && statfsSync(tmpdir()).type === 26;
 const header = (file: string) => [...readFileSync(file).subarray(18, 20)];
 
 // plan 253: the backup's first write (its settle) never holds the window, and a shutdown that closes waits for it
-for (const mode of ["settle-ready", "settle-shutdown"] as const) it.skipIf(!apfs)(`actual native entry: ${mode}`, async () => {
+for (const mode of ["settle-ready", "settle-shutdown", "settle-throws"] as const) it.skipIf(!apfs)(`actual native entry: ${mode}`, async () => {
   const directory = mkdtempSync(join(tmpdir(), "terno-entry-settle-")), path = join(directory, "mail.db"), backups = join(directory, "backups");
   behind(path);
   const native = owner(mode);
   try {
     expect((await native.until("booted")).tag).toBe("booted"); native.worker.postMessage(init(directory));
+    if (mode === "settle-throws") {
+      // no thread for the settle (Codex code review #9): the mailbox opens all the same, the backup waits for the next start
+      expect((await native.until("ready")).tag).toBe("ready");
+      expect(native.events.some((event) => event.tag === "open-failed")).toBe(false);
+      native.worker.postMessage({ type: "shutdown", id: 1, force: true, deadlineMs: 5000 }); expect((await native.until("shutdown-result")).outcome).toBe("closed");
+      expect(backupToSettle(backups)).toBe(listBackups(backups)[0]!.file);
+      return;
+    }
     expect((await native.until("settle-held")).tag).toBe("settle-held");
     // the clone path, the host's own open (no legacy owner)
     expect(native.events.some((event) => event.tag === "legacy-start")).toBe(false);
@@ -120,19 +128,33 @@ for (const mode of ["settle-ready", "settle-shutdown"] as const) it.skipIf(!apfs
       // the window is served while the backup still waits for its first write
       expect((await native.until("ready")).tag).toBe("ready");
       expect(header(listBackups(backups)[0]!.file)).toEqual([2, 2]);
+      // and the mailbox's checkpoints wait for it: its main file isn't written past the worker's 1 s passes (Codex code
+      // review #11), then is once the settle is done
+      const written = () => statSync(path).mtimeMs;
+      const opened = written();
+      await new Promise((r) => setTimeout(r, 1500));
+      expect(written()).toBe(opened);
       native.worker.postMessage({ fixture: "release-settle" });
       for (let i = 0; i < 250 && backupToSettle(backups); i++) await new Promise((r) => setTimeout(r, 20));
       expect(header(listBackups(backups)[0]!.file)).toEqual([1, 1]);
       expect(backupToSettle(backups)).toBeNull();
+      for (let i = 0; i < 150 && written() === opened; i++) await new Promise((r) => setTimeout(r, 20));
+      expect(written()).toBeGreaterThan(opened);
       native.worker.postMessage({ type: "shutdown", id: 1, force: true, deadlineMs: 5000 }); expect((await native.until("shutdown-result")).outcome).toBe("closed");
     } else {
       await native.until("ready");
-      // never released: the shutdown ends the settle, and says closed only once its thread is gone
+      // never released: the shutdown ends the settle, and says closed only once its thread is gone; a second
+      // shutdown while the first waits for it says closed no sooner (Codex code review #8)
       native.worker.postMessage({ type: "shutdown", id: 1, force: true, deadlineMs: 5000 });
+      native.worker.postMessage({ type: "shutdown", id: 2, force: true, deadlineMs: 5000 });
       expect((await native.until("shutdown-result")).outcome).toBe("closed");
+      await native.barrier();
+      for (let i = 0; i < 100 && native.events.filter((event) => event.tag === "shutdown-result").length < 2; i++) await new Promise((r) => setTimeout(r, 20));
       const tags = native.events.map((event) => event.tag);
-      expect(tags.indexOf("settle-exit")).toBeGreaterThan(-1);
-      expect(tags.indexOf("settle-exit")).toBeLessThan(tags.indexOf("shutdown-result"));
+      const exit = tags.indexOf("settle-stopped");
+      expect(exit).toBeGreaterThan(-1);
+      expect(tags.filter((tag) => tag === "shutdown-result")).toHaveLength(2);
+      expect(tags.slice(0, exit)).not.toContain("shutdown-result");
       // the backup is whole, and still the next start's to settle
       expect(header(listBackups(backups)[0]!.file)).toEqual([2, 2]);
       expect(backupToSettle(backups)).toBe(listBackups(backups)[0]!.file);

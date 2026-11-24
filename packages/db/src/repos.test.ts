@@ -121,15 +121,19 @@ describe.runIf(sqliteDriver().features.checkpointWorker)("a held checkpoint work
       resolve();
       await waiting;
       expect(settled).toBe(true);
-      // held again (a second worker) and stopped: the writer isn't left waiting
+      // held again (a second worker, the first gone) and stopped: the writer was waiting, and isn't left waiting
+      await worker.stop();
       const other = startCheckpointWorker(db, 20, { until: new Promise(() => {}), maxMs: 60_000 })!;
       db.tx(() => {
         for (let i = 0; i < 72; i++) db.run("INSERT INTO bulk VALUES (randomblob(1048576))");
       });
-      const left = other.settle();
-      await wait(50);
+      let freed = false;
+      const left = other.settle().then(() => (freed = true));
+      await wait(100);
+      expect(freed).toBe(false);
       await other.stop();
       await left;
+      expect(freed).toBe(true);
     } finally {
       await worker.stop();
     }
@@ -144,6 +148,19 @@ describe.runIf(sqliteDriver().features.checkpointWorker)("a held checkpoint work
     const dir = mkdtempSync(join(tmpdir(), "terno-defer-"));
     const deferred = openDatabaseWith(nodeSqliteDriver, join(dir, "a.db"), { deferCheckpoints: true });
     const plain = openDatabaseWith(nodeSqliteDriver, join(dir, "b.db"));
+    // set before the migration's first statement (Codex code review #11), read from what the connection was asked
+    const asked: string[] = [];
+    const recording = { ...nodeSqliteDriver, open: (path: string, o: { readonly: boolean }) => {
+      const conn = nodeSqliteDriver.open(path, o);
+      const exec = conn.exec.bind(conn);
+      conn.exec = (sql: string) => { asked.push(sql); exec(sql); };
+      return conn;
+    } };
+    openDatabaseWith(recording, join(dir, "c.db"), { deferCheckpoints: true }).close();
+    const deferAt = asked.findIndex((sql) => /wal_autocheckpoint = 0/.test(sql));
+    const firstCreate = asked.findIndex((sql) => /CREATE TABLE/i.test(sql));
+    expect(deferAt).toBeGreaterThan(-1);
+    expect(deferAt).toBeLessThan(firstCreate);
     try {
       expect(deferred.get("PRAGMA wal_autocheckpoint")).toEqual({ wal_autocheckpoint: 0 });
       expect(plain.get("PRAGMA wal_autocheckpoint")).toEqual({ wal_autocheckpoint: 1000 });

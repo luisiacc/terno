@@ -70,7 +70,9 @@ try {
   const db = new DatabaseSync(workerData.uri);
   let mode;
   try {
+    // the journal reaches the disk before page 1 does, on macOS too (F_FULLFSYNC; Codex code review #3)
     db.exec("PRAGMA synchronous = FULL");
+    db.exec("PRAGMA fullfsync = ON");
     mode = db.prepare("PRAGMA journal_mode = DELETE").get().journal_mode;
   } finally {
     db.close();

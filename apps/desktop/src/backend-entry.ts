@@ -343,7 +343,14 @@ function startSettle(backupsDir: string, release: () => void): void {
     /* nothing readable to settle */
   }
   if (!file) return release();
-  const job = (settling = settleBackup(file));
+  let job: Settle;
+  try {
+    job = settling = settleBackup(file);
+  } catch (error) {
+    // no thread for it (Codex code review #9): the mailbox opens all the same, and the next start settles it
+    captureError(error, { code: "mailbox.backup_settle_failed", expected: false });
+    return release();
+  }
   void job.done
     .then(
       (durationMs) => log.info("mailbox.backup_settled", { durationMs: Math.round(durationMs) }),
@@ -356,11 +363,15 @@ function startSettle(backupsDir: string, release: () => void): void {
     });
 }
 
+/** the settle's stop, shared: a second shutdown waits for the same thread (Codex code review #8) */
+let settleStopped: Promise<void> | null = null;
+
 /** A shutdown that closes: the settle ends and its thread is gone before "closed". */
-async function stopSettle(): Promise<void> {
+function stopSettle(): Promise<void> {
   const job = settling;
   settling = null;
-  await job?.stop();
+  if (job) settleStopped = job.stop();
+  return settleStopped ?? Promise.resolve();
 }
 
 let closing: Promise<void> | null = null;

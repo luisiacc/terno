@@ -25,7 +25,7 @@ import { backup as sqliteBackup, DatabaseSync } from "node:sqlite";
 import { dirname, join } from "node:path";
 import { SCHEMA_VERSION } from "./migrations";
 import { BACKUP_RETENTION_MS, fileSize, listBackups, readManifest, remove, type BackupInfo } from "./backups";
-import { cloneFile, lockMailbox, sameApfsVolume, untouchedUri } from "./clone";
+import { cloneFile, lockMailbox, sameApfsVolume, settleBackup, untouchedUri } from "./clone";
 import { BackupError, NoRoomError, SchemaNewerError } from "./open-errors";
 
 export { BACKUP_RETENTION_MS, listBackups, type BackupInfo } from "./backups";
@@ -120,7 +120,7 @@ export async function prepareUpgrade(path: string, o: UpgradeOptions): Promise<U
   if (from === SCHEMA_VERSION) return { from, to: SCHEMA_VERSION, backup: backups.find((b) => b.toSchema === SCHEMA_VERSION) ?? null, made: false };
   // an earlier attempt at this upgrade already has the copy from before it started
   const kept = backups.find((b) => b.toSchema === SCHEMA_VERSION);
-  if (kept) return { from, to: SCHEMA_VERSION, backup: kept, made: false };
+  if (kept) return { from, to: SCHEMA_VERSION, backup: await playedBack(o.backupsDir, kept), made: false };
   if (o.skipBackup) return { from, to: SCHEMA_VERSION, backup: null, made: false };
 
   const size = mailboxBytes(path);
@@ -212,6 +212,23 @@ export async function prepareUpgrade(path: string, o: UpgradeOptions): Promise<U
   // the new generation is in place: the older ones go
   for (const b of backups) remove(b.dir);
   return { from, to: SCHEMA_VERSION, backup: readManifest(o.backupsDir, id), made: true, method };
+}
+
+/**
+ * Plan 253 (Codex code review #1): a kept generation whose settle was cut short is trusted only once its journal is
+ * played back and it is the size its manifest says: it is the way back from the migration about to run. Rare (a
+ * crash mid-settle, then a retry), so it may wait here.
+ */
+async function playedBack(dir: string, kept: BackupInfo): Promise<BackupInfo> {
+  if (!existsSync(`${kept.file}-journal`)) return kept;
+  try {
+    await settleBackup(kept.file).done;
+  } catch (error) {
+    throw new BackupError("failed", error);
+  }
+  const info = readManifest(dir, kept.id);
+  if (!info || existsSync(`${kept.file}-journal`) || fileSize(kept.file) !== info.size) throw new BackupError("failed", new Error("the kept backup didn't play back to its size"));
+  return info;
 }
 
 /** After the mailbox opened (healthy, at this schema): a backup past its 14 days goes. No timer: a start is the check. */

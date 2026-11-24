@@ -46,12 +46,19 @@ if (mode.startsWith("settle-")) {
   threads.Worker = class extends Native {
     constructor(source: string | URL, options?: import("node:worker_threads").WorkerOptions) {
       if (options?.eval && String(source).includes("journal_mode = DELETE")) {
+        if (mode === "settle-throws") throw new Error("no thread for the settle");
         port.postMessage({ fixture: "settle-held" });
         source = `{ const g = new Int32Array(require("node:worker_threads").workerData.gate); while (Atomics.load(g, 0) === 0) Atomics.wait(g, 0, 0, 20); }\n${String(source)}`;
         options = { ...options, workerData: { ...options.workerData, gate: settleGate.buffer } };
       }
       super(source, options);
       if (options?.workerData?.gate) this.once("exit", () => port.postMessage({ fixture: "settle-exit" }));
+    }
+    // a settle's thread that takes a while to go, so a second shutdown arrives while the first waits for it
+    override terminate(): Promise<number> {
+      const going = super.terminate();
+      if (mode !== "settle-shutdown") return going;
+      return going.then((code) => new Promise<number>((r) => setTimeout(() => { port.postMessage({ fixture: "settle-stopped" }); r(code); }, 300)));
     }
   } as typeof Native;
 }

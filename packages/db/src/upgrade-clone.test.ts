@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
-import { backupToSettle, unsettled } from "./backups";
+import { backupToSettle, listBackups, unsettled } from "./backups";
 import { cloneFile, cpError, sameApfsVolume, settleBackup, untouchedUri } from "./clone";
 import { cutShortSettle } from "./test/backup-fixtures";
 import { SCHEMA_VERSION } from "./migrations";
@@ -312,6 +312,29 @@ describe.skipIf(!apfs)("plan 253: the clone isn't written before the window open
     expect(torn(plan.backup!.file)).toBe(false);
     expect(statSync(plan.backup!.file).size).toBe(plan.backup!.size);
     expect(drafts(plan.backup!.file)).toEqual({ version: PREV, subjects: ["draft 1", "draft 2"] });
+  });
+
+  it("a retry trusts a kept generation cut short mid-settle only once it is played back to its size (Codex code review #1)", async () => {
+    const w = workdir();
+    oldMailbox(w.db, PREV, 2);
+    const first = await prepareUpgrade(w.db, opts(w));
+    cutShortSettle(first.backup!.file);
+    expect(statSync(first.backup!.file).size).not.toBe(first.backup!.size);
+    // the migration failed, the user tries again: the kept generation is the way back
+    const retry = await prepareUpgrade(w.db, opts(w));
+    expect(retry).toMatchObject({ made: false, backup: { id: first.backup!.id } });
+    expect(existsSync(`${first.backup!.file}-journal`)).toBe(false);
+    expect(statSync(first.backup!.file).size).toBe(first.backup!.size);
+    expect(drafts(first.backup!.file)).toEqual({ version: PREV, subjects: ["draft 1", "draft 2"] });
+  });
+
+  it("a journal beside a generation whose file is gone doesn't make it a backup (Codex code review #1)", async () => {
+    const w = workdir();
+    oldMailbox(w.db, PREV, 1);
+    const plan = await prepareUpgrade(w.db, opts(w));
+    cutShortSettle(plan.backup!.file);
+    rmSync(plan.backup!.file);
+    expect(listBackups(w.backups)).toEqual([]);
   });
 
   it("a generation removed meanwhile is never made again: the settle fails and creates nothing (Codex plan review #2)", async () => {
