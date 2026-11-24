@@ -79,13 +79,13 @@ You need these seven: `MAC_CERT_P12`, `MAC_CERT_PASSWORD`, `APPLE_API_KEY_P8`, `
 The releases above are the **stable** channel. The **nightly** channel builds itself (plan 257):
 
 - **Every night** (08:17 UTC), `.github/workflows/nightly.yml` starts the same release run for `main`'s tip, unless `main` hasn't changed since the last nightly or a release run is already queued or running. Nothing to push or bump.
-- It's versioned `<next>-nightly.<YYYYMMDDHHmm>`, for example `0.1.6-nightly.202611250817`: above the last stable release and below the next one. Linux packages record it as `0.1.6~nightly.202611250817`.
-- It **publishes itself** as a prerelease, never marked "Latest". Stable copies and the site's download links only ever see stable releases. The newest 10 nightlies are kept; older ones are deleted with their tags.
+- It's versioned `<next>-nightly.<YYYYMMDDHHmm>`, for example `0.1.6-nightly.202611250817`: above the last stable release (or the one in review) and below the next one. Linux packages record it as `0.1.6~nightly.202611250817`.
+- It **publishes itself** as a prerelease, never marked "Latest". Stable copies and the site's download links only ever see stable releases. The newest 10 nightlies are kept; older ones, and nightly drafts a cancelled run left, are deleted with their tags.
 - **To use it:** in Terno, Settings → About → Updates → Channel → **Nightly**. That copy then takes each new nightly. Switching back to Stable doesn't downgrade: Terno waits for the next stable release that's newer than the nightly it runs.
 - **A nightly now:** "Run workflow" on the Nightly workflow in the Actions tab, or `gh workflow run nightly.yml --repo luisiacc/terno`. It skips just as the schedule does.
 - GitHub's schedules are best effort: a night can be late or skipped. A failed nightly emails you like any failed run, and the next night tries again. If `main` moved while a nightly was starting, that run stops with "main moved", and the next night builds the newer tip.
 
-A hand-made nightly still works (`TERNO_VERSION=0.1.6-nightly.1 pnpm release`), but its number must sort above every published nightly, so prefer running the workflow. `pnpm release --local` with a nightly version only makes a draft.
+Nightlies come only from that workflow: `pnpm release` refuses a nightly version, and the release run refuses a nightly whose number isn't the one the workflow would pick. A stable release that's built but still waiting for your review counts as taken, so nightlies after it are numbered for the next version and switching back to Stable never installs older code.
 
 ## When it fails
 
@@ -95,7 +95,7 @@ The run's log says which step failed and why:
 - **"holds no Developer ID Application identity"**: the `.p12` has the wrong certificate, or the certificate without its private key. Export it again from My Certificates (the row with a disclosure triangle).
 - **"isn't notarized"**: check the three `APPLE_API_*` secrets, and that the key wasn't revoked.
 - **The Linux smoke test failed**: the run's log has Playwright's report. `docs/DEVELOPMENT.md` → Linux runs the same test in Docker.
-- **"doesn't sort above the published …"** (a nightly): a newer nightly is already out. Start the Nightly workflow instead of picking a number.
+- **"a nightly of this commit is …"** or **"doesn't sort above the published …"**: a stable release went into review, or a newer nightly came out, while this nightly was building. Nothing was published; the next night numbers it right.
 - **"couldn't publish v…-nightly…"**: the nightly's draft was removed, and the next night builds again.
 - **"v… already exists"**: a release with that version is already on the Releases page. If it's a draft you don't want, delete it there (or `gh release delete v1.4.0`); otherwise bump the version.
 

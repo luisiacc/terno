@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { compareVersions } from "@terno/core/updates";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error a build script (plain JS)
-import { assertNightlyIsNewest, deleteFailedDraft, dispatch, dispatchArgs, isMainTip, isReleased, KEEP_NIGHTLIES, nightliesToPrune, nightlyPlan, PHASE_SECRETS, preflight, publishNightly, pruneNightlies, REQUIRED_SECRETS, startNightly, tagExists, VERSION } from "../scripts/release-ci.mjs";
+import { assertNightlyVersion, deleteFailedDraft, dispatch, dispatchArgs, isMainTip, KEEP_NIGHTLIES, nightliesToPrune, nightlyBase, nightlyPlan, PHASE_SECRETS, preflight, publishNightly, pruneNightlies, REQUIRED_SECRETS, startNightly, tagExists, VERSION } from "../scripts/release-ci.mjs";
 // @ts-expect-error a build script (plain JS)
 import { channelOf, compareRelease, LINUX_ARCHES, linuxPackages, packageVersion, publishConfig, releaseAssets } from "../scripts/release-assets.mjs";
 // @ts-expect-error a build script (plain JS)
@@ -323,7 +323,7 @@ type Release = { tag: string; prerelease: boolean; draft: boolean };
 const rel = (tag: string, o: Partial<Release> = {}): Release => ({ tag, prerelease: /-/.test(tag), draft: false, ...o });
 type Reply = { status: number; stdout?: string; stderr?: string };
 /** A stand-in for gh that answers each GitHub read the nightly makes, and records every call. */
-const fakeGh = (o: { releases?: Release[]; main?: string; pkg?: string; released?: string[]; shas?: Record<string, string>; runs?: string[]; edit?: Reply; view?: Reply; delete?: (tag: string) => Reply }) => {
+const fakeGh = (o: { releases?: Release[]; main?: string; pkg?: string; shas?: Record<string, string>; runs?: string[]; edit?: Reply; view?: Reply; delete?: (tag: string) => Reply }) => {
   const calls: string[][] = [];
   const run = (args: string[]): Reply => {
     calls.push(args);
@@ -331,7 +331,6 @@ const fakeGh = (o: { releases?: Release[]; main?: string; pkg?: string; released
     if (path.startsWith("repos/luisiacc/terno/releases?")) return { status: 0, stdout: (o.releases ?? []).map((r) => JSON.stringify(r)).join("\n") };
     if (path === "repos/luisiacc/terno/commits/main") return { status: 0, stdout: `${o.main ?? later}\n` };
     if (path.startsWith("repos/luisiacc/terno/contents/apps/desktop/package.json")) return { status: 0, stdout: Buffer.from(JSON.stringify({ version: o.pkg ?? "0.1.5" })).toString("base64") };
-    if (path.startsWith("repos/luisiacc/terno/releases/tags/v")) return (o.released ?? []).includes(path.split("/v").pop()!) ? { status: 0, stdout: "false\n" } : { status: 1, stderr: "gh: Not Found (HTTP 404)" };
     if (path.startsWith("repos/luisiacc/terno/commits/v")) return { status: 0, stdout: `${o.shas?.[path.split("/").pop()!] ?? sha}\n` };
     if (args[0] === "run" && args[1] === "list") return { status: 0, stdout: JSON.stringify((o.runs ?? []).map((status) => ({ status }))) };
     if (args[0] === "release" && args[1] === "edit") return o.edit ?? { status: 0 };
@@ -369,7 +368,8 @@ describe("plan 257: what a nightly is built as", () => {
 });
 
 describe("plan 257: tonight's nightly", () => {
-  const base = { pkgVersion: "0.1.5", pkgReleased: true, nightlies: [], mainSha: sha, busy: false, now: night };
+  const base = { pkgVersion: "0.1.5", releases: [rel("v0.1.5")], newestSha: null, mainSha: sha, busy: false, now: night };
+  const n24 = rel("v0.1.6-nightly.202611240817");
 
   it("after a stable release: the next patch, stamped with the run's UTC minute, a version releases accept", () => {
     const plan = nightlyPlan(base);
@@ -380,37 +380,42 @@ describe("plan 257: tonight's nightly", () => {
   });
 
   it("a version bumped but not released yet is the nightly's base", () => {
-    expect(nightlyPlan({ ...base, pkgVersion: "0.2.0", pkgReleased: false }).version).toBe("0.2.0-nightly.202611250817");
+    expect(nightlyPlan({ ...base, pkgVersion: "0.2.0" }).version).toBe("0.2.0-nightly.202611250817");
+  });
+
+  it("a stable release waiting in review is taken: a nightly of newer code is numbered for the next one (Codex review)", () => {
+    // stable 0.1.6 built from A sits as a draft; main moved to B. A 0.1.6-nightly of B would sort below 0.1.6, and
+    // switching that copy to Stable would install A's older code over B's newer mailbox
+    const plan = nightlyPlan({ ...base, pkgVersion: "0.1.6", releases: [rel("v0.1.5"), rel("v0.1.6", { draft: true })] });
+    expect(plan.version).toBe("0.1.7-nightly.202611250817");
+    expect(compareVersions(plan.version, "0.1.6")).toBe(1);
   });
 
   it("skips when main is the commit the newest nightly was built from: a quiet day costs no Mac", () => {
-    const nightlies = [{ version: "0.1.6-nightly.202611240817", sha }, { version: "0.1.6-nightly.202611230817", sha: null }];
-    expect(nightlyPlan({ ...base, nightlies })).toEqual({ build: false, reason: expect.stringContaining("is already 0.1.6-nightly.202611240817") });
-    expect(nightlyPlan({ ...base, nightlies, mainSha: later })).toEqual({ build: true, version: "0.1.6-nightly.202611250817" });
+    const releases = [rel("v0.1.5"), rel("v0.1.6-nightly.202611230817"), n24];
+    expect(nightlyPlan({ ...base, releases, newestSha: sha })).toEqual({ build: false, reason: expect.stringContaining("is already 0.1.6-nightly.202611240817") });
+    expect(nightlyPlan({ ...base, releases, newestSha: later })).toEqual({ build: true, version: "0.1.6-nightly.202611250817" });
   });
 
-  it("bump, nightly, then stable published from that commit: nothing to build until main moves (Codex)", () => {
+  it("bump, nightly, then stable published from that commit: nothing to build until main moves", () => {
     // the nightly was built from the very commit the stable release was, so Nightly copies already have its code
-    const nightlies = [{ version: "0.1.6-nightly.202611240817", sha }];
-    expect(nightlyPlan({ ...base, pkgVersion: "0.1.6", pkgReleased: true, nightlies }).build).toBe(false);
-    expect(nightlyPlan({ ...base, pkgVersion: "0.1.6", pkgReleased: true, nightlies, mainSha: later }).version).toBe("0.1.7-nightly.202611250817");
+    const releases = [rel("v0.1.6"), n24];
+    expect(nightlyPlan({ ...base, pkgVersion: "0.1.6", releases, newestSha: sha }).build).toBe(false);
+    expect(nightlyPlan({ ...base, pkgVersion: "0.1.6", releases, newestSha: sha, mainSha: later }).version).toBe("0.1.7-nightly.202611250817");
   });
 
-  it("never goes below the newest nightly: a higher hand-made one raises the base (Codex)", () => {
-    const nightlies = [{ version: "1.4.0-nightly.1", sha: later }];
-    const plan = nightlyPlan({ ...base, nightlies });
-    expect(plan.version).toBe("1.4.0-nightly.202611250817");
-    expect(compareVersions(plan.version, "1.4.0-nightly.1")).toBe(1);
-    // one that would still sort below (a clock behind the newest stamp) is skipped, never published out of order
-    expect(nightlyPlan({ ...base, nightlies: [{ version: "0.1.6-nightly.209901010000", sha: later }] }).build).toBe(false);
+  it("never goes below the newest nightly: a stable draft deleted after nightlies took the next number keeps it", () => {
+    expect(nightlyBase("0.1.6", [rel("v0.1.5"), rel("v0.1.7-nightly.202611240817")])).toBe("0.1.7");
+    // a clock behind the newest stamp is skipped, never published out of order
+    expect(nightlyPlan({ ...base, releases: [rel("v0.1.6-nightly.209901010000")], newestSha: later }).build).toBe(false);
   });
 
-  it("skips while a release run is queued or running: GitHub keeps one waiting run per group, a nightly would replace a stable one (Codex)", () => {
+  it("skips while a release run is queued or running: GitHub keeps one waiting run per group, a nightly would replace a stable one", () => {
     expect(nightlyPlan({ ...base, busy: true })).toEqual({ build: false, reason: expect.stringContaining("queued or running") });
   });
 
   it("the scheduler reads GitHub, then dispatches main's tip with tonight's version", () => {
-    const g = fakeGh({ main: later, pkg: "0.1.5", released: ["0.1.5"], releases: [rel("v0.1.5"), rel("v0.1.6-nightly.202611240817")], shas: { "v0.1.6-nightly.202611240817": sha }, runs: ["completed"] });
+    const g = fakeGh({ main: later, pkg: "0.1.5", releases: [rel("v0.1.5"), n24], shas: { "v0.1.6-nightly.202611240817": sha }, runs: ["completed"] });
     const started: unknown[] = [];
     const r = startNightly({ run: g.run, now: night, start: (o: unknown) => (started.push(o), "https://github.com/luisiacc/terno/actions/runs/7") });
     expect(r).toMatchObject({ build: true, version: "0.1.6-nightly.202611250817", url: "https://github.com/luisiacc/terno/actions/runs/7" });
@@ -421,18 +426,15 @@ describe("plan 257: tonight's nightly", () => {
 
   it("the scheduler dispatches nothing on a quiet night or while a release runs", () => {
     for (const o of [{ main: sha, runs: ["completed"] }, { main: later, runs: ["queued"] }, { main: later, runs: ["in_progress"] }]) {
-      const g = fakeGh({ ...o, released: ["0.1.5"], releases: [rel("v0.1.6-nightly.202611240817")], shas: { "v0.1.6-nightly.202611240817": sha } });
+      const g = fakeGh({ ...o, releases: [rel("v0.1.5"), n24], shas: { "v0.1.6-nightly.202611240817": sha } });
       let dispatched = false;
       expect(startNightly({ run: g.run, now: night, start: () => ((dispatched = true), null) }).build).toBe(false);
       expect(dispatched).toBe(false);
     }
   });
 
-  it("a GitHub read that fails stops the scheduler; only a 404 means unreleased (Codex)", () => {
-    expect(isReleased("0.1.5", fakeGh({ released: ["0.1.5"] }).run)).toBe(true);
-    expect(isReleased("0.1.6", fakeGh({}).run)).toBe(false);
-    expect(() => isReleased("0.1.6", () => ({ status: 1, stderr: "HTTP 502: Bad Gateway" }))).toThrow(/couldn't read the release v0\.1\.6/);
-    const down = (args: string[]) => (args[1] === "--paginate" ? { status: 1, stderr: "HTTP 503" } : fakeGh({ released: ["0.1.5"] }).run(args));
+  it("a GitHub read that fails stops the scheduler instead of guessing", () => {
+    const down = (args: string[]) => (args[1] === "--paginate" ? { status: 1, stderr: "HTTP 503" } : fakeGh({}).run(args));
     expect(() => startNightly({ run: down, now: night, start: () => null })).toThrow(/couldn't read the releases/);
   });
 });
@@ -456,21 +458,32 @@ describe("plan 257: publishing and pruning", () => {
     expect(draft.calls.some((a) => a[1] === "delete" && a[2] === "v0.1.6-nightly.1")).toBe(true);
   });
 
-  it("the draft job refuses a nightly that wouldn't sort above every published one (the updater takes the feed's first)", () => {
-    const g = fakeGh({ releases: [rel("v0.1.6-nightly.202611250817"), rel("v0.1.5")] });
-    expect(() => assertNightlyIsNewest("0.1.6-nightly.202611240817", g.run)).toThrow(/doesn't sort above the published 0\.1\.6-nightly\.202611250817/);
-    expect(() => assertNightlyIsNewest("0.1.6-nightly.202611250817", g.run)).toThrow();
-    expect(() => assertNightlyIsNewest("0.1.6-nightly.202611260817", g.run)).not.toThrow();
-    expect(() => assertNightlyIsNewest("0.1.6-nightly.1", fakeGh({ releases: [rel("v0.1.5")] }).run)).not.toThrow();
+  it("the draft job takes only the number the scheduler would give now (Codex review)", () => {
+    const g = fakeGh({ releases: [rel("v0.1.5"), rel("v0.1.6-nightly.202611250817")] });
+    expect(() => assertNightlyVersion("0.1.6-nightly.202611260817", "0.1.5", g.run)).not.toThrow();
+    // not above the newest: the updater takes the feed's first nightly, so order must match
+    expect(() => assertNightlyVersion("0.1.6-nightly.202611240817", "0.1.5", g.run)).toThrow(/doesn't sort above the published 0\.1\.6-nightly\.202611250817/);
+    expect(() => assertNightlyVersion("0.1.6-nightly.202611250817", "0.1.5", g.run)).toThrow(/doesn't sort above/);
+    // a hand-typed number far ahead would have raised every later nightly's base
+    expect(() => assertNightlyVersion("1.4.0-nightly.1", "0.1.5", g.run)).toThrow(/a nightly of this commit is 0\.1\.6-nightly\.N/);
+    // a stable release went into review while this nightly built: its number is taken
+    const review = fakeGh({ releases: [rel("v0.1.5"), rel("v0.1.6", { draft: true })] });
+    expect(() => assertNightlyVersion("0.1.6-nightly.202611260817", "0.1.6", review.run)).toThrow(/is 0\.1\.7-nightly\.N/);
   });
 
-  it("keeps the newest nightlies and never touches a stable release, a draft or a nightly-looking full release", () => {
+  it("keeps the newest nightlies and never touches a stable release, a stable draft or a nightly-looking full release", () => {
     const nightlies = Array.from({ length: KEEP_NIGHTLIES + 3 }, (_, i) => rel(`v0.1.6-nightly.202611${String(i + 1).padStart(2, "0")}0817`));
-    const others = [rel("v0.1.5"), rel("v0.1.6-nightly.1", { draft: true }), rel("v0.1.4-nightly.9", { prerelease: false }), rel("v0.1.4-beta.1")];
+    const others = [rel("v0.1.5"), rel("v0.1.6", { draft: true }), rel("v0.1.4-nightly.9", { prerelease: false }), rel("v0.1.4-beta.1")];
     // the API's order isn't the version order
     const pruned = nightliesToPrune([...others, ...nightlies.slice().reverse()]);
     expect(pruned).toEqual(["v0.1.6-nightly.202611030817", "v0.1.6-nightly.202611020817", "v0.1.6-nightly.202611010817"]);
     expect(nightliesToPrune(nightlies.slice(0, KEEP_NIGHTLIES))).toEqual([]);
+  });
+
+  it("removes a nightly draft a cancelled run left below the newest nightly, never one above it (Codex review)", () => {
+    const releases = [rel("v0.1.6-nightly.202611250817"), rel("v0.1.6-nightly.202611240817", { draft: true }), rel("v0.1.6-nightly.202611260817", { draft: true })];
+    expect(nightliesToPrune(releases)).toEqual(["v0.1.6-nightly.202611240817"]);
+    expect(nightliesToPrune([rel("v0.1.6-nightly.1", { draft: true })])).toEqual([]);
   });
 
   it("prunes with the tags, across every page of releases, and reports what it couldn't delete", () => {

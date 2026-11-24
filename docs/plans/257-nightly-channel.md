@@ -61,3 +61,13 @@ The critique raised 12 points (`/tmp/terno-scratch/p257/critique.out`). Changes 
 10. **Only the CI draft job publishes a nightly**, after both builds passed. `pnpm release --local` with a nightly version still makes a draft (macOS only, maybe not notarized).
 11. **Pruning reads every release** (`gh api --paginate`), and deletes by tag only releases that are published prereleases with a nightly tag. A tag left behind by a failed cleanup is harmless (no release, so no copy ever sees it) and is only warned about.
 12. **The cron runs at minute 17** (`17 8 * * *`), off the top of the hour GitHub delays first. RELEASING.md says schedules are best effort and how to start one by hand.
+
+## What the Codex code review changed
+
+The review (`/tmp/terno-scratch/p257/review.out`) raised six points. Each fix has a regression test that fails without it:
+
+1. **A stable release in review is taken.** Stable `0.1.6` built from A waits as a draft while main moves to B: tonight's nightly used to be `0.1.6-nightly.…` of B, and switching that copy to Stable would install A's older code over B's newer mailbox (the SQLite downgrade guard then refuses it). `nightlyBase` now counts any release with the package version's tag, draft or published, so that nightly is `0.1.7-nightly.…`. The `isReleased` read is gone: one paginated release listing answers everything.
+2. **Nightlies come only from the Nightly workflow.** `pnpm release` (and `--local`) refuses a nightly version, and the draft job's `assertNightlyVersion` requires exactly `nightlyBase(...)-nightly.N` above every published nightly. A hand-typed `1.4.0-nightly.1` can no longer raise every later nightly's base, and a local macOS-only, maybe un-notarized nightly draft can't be made at all.
+3. **A run cancelled mid-upload** leaves a nightly draft nothing would publish; pruning now deletes nightly drafts below the newest published nightly (never one above it, never a stable draft).
+
+Skipped as very rare: a second stable dispatch landing between the scheduler's busy check and its dispatch (GitHub would then replace the waiting stable run), and two drafts of one tag created at the same moment by a local and a CI run (local nightlies are now refused).

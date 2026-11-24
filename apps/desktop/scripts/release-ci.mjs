@@ -129,27 +129,46 @@ export function nightlyStamp(now) {
   return now.toISOString().slice(0, 16).replace(/\D/g, "");
 }
 
+/** The published nightlies' versions, newest first. */
+export function nightlyVersions(releases) {
+  return releases.filter((r) => r.prerelease && !r.draft && NIGHTLY_TAG.test(r.tag)).map((r) => r.tag.slice(1)).sort((a, b) => compareRelease(b, a));
+}
+
 /**
- * Tonight's decision, from what GitHub says (plan 257). `nightlies` are the published ones, newest first or not.
- * The base is the package's version until it's released, then the next patch, and never below the newest nightly's:
- * a nightly sorts above the last stable, below the next one, and above every earlier nightly.
+ * The x.y.z a nightly is numbered under, from the package's version and every release (drafts too). The package's
+ * version until any release has its tag, then the next patch: a stable release waiting in review is taken, so a
+ * nightly built after it never shares its number with older code (switching to Stable would then install that older
+ * code over a newer mailbox, Codex review). Never below the newest nightly's, so nightlies only go up.
  */
-export function nightlyPlan({ pkgVersion, pkgReleased, nightlies, mainSha, busy, now }) {
+export function nightlyBase(pkgVersion, releases) {
+  let base = releases.some((r) => r.tag === `v${pkgVersion}`) ? nextPatch(pkgVersion) : pkgVersion;
+  const newest = nightlyVersions(releases)[0]?.replace(/-.*/, "");
+  if (newest && compareRelease(newest, base) > 0) base = newest;
+  return base;
+}
+
+/**
+ * Tonight's decision, from what GitHub says (plan 257): skip while a release runs or when main is the newest
+ * nightly's commit, else `<base>-nightly.<UTC minute>`, which must sort above every published nightly.
+ */
+export function nightlyPlan({ pkgVersion, releases, newestSha, mainSha, busy, now }) {
   if (busy) return { build: false, reason: "a release run is queued or running: it would replace a waiting one, so tonight is skipped" };
-  const newest = [...nightlies].sort((a, b) => compareRelease(b.version, a.version))[0] ?? null;
-  if (newest && newest.sha === mainSha) return { build: false, reason: `main (${mainSha.slice(0, 10)}) is already ${newest.version}` };
-  let base = pkgReleased ? nextPatch(pkgVersion) : pkgVersion;
-  const newestBase = newest?.version.replace(/-.*/, "");
-  if (newestBase && compareRelease(newestBase, base) > 0) base = newestBase;
-  const version = `${base}-nightly.${nightlyStamp(now)}`;
-  if (newest && compareRelease(version, newest.version) <= 0) return { build: false, reason: `${version} wouldn't sort above ${newest.version}` };
+  const newest = nightlyVersions(releases)[0] ?? null;
+  if (newest && newestSha === mainSha) return { build: false, reason: `main (${mainSha.slice(0, 10)}) is already ${newest}` };
+  const version = `${nightlyBase(pkgVersion, releases)}-nightly.${nightlyStamp(now)}`;
+  if (newest && compareRelease(version, newest) <= 0) return { build: false, reason: `${version} wouldn't sort above ${newest}` };
   return { build: true, version };
 }
 
-/** The published nightlies past the newest `keep`, oldest last: never a draft, a stable release or a stray tag. */
+/**
+ * What pruning deletes: the published nightlies past the newest `keep`, and nightly drafts below the newest published
+ * nightly (a run cancelled mid-upload leaves one, and it could never be published). Never a stable release or draft.
+ */
 export function nightliesToPrune(releases, keep = KEEP_NIGHTLIES) {
-  const nightlies = releases.filter((r) => r.prerelease && !r.draft && NIGHTLY_TAG.test(r.tag));
-  return nightlies.sort((a, b) => compareRelease(b.tag.slice(1), a.tag.slice(1))).slice(keep).map((r) => r.tag);
+  const published = nightlyVersions(releases);
+  const old = published.slice(keep).map((v) => `v${v}`);
+  const stale = published.length ? releases.filter((r) => r.draft && NIGHTLY_TAG.test(r.tag) && compareRelease(r.tag.slice(1), published[0]) < 0).map((r) => r.tag) : [];
+  return [...old, ...stale];
 }
 
 /** A `gh` read that fails loudly: a guess here could build the wrong version or delete the wrong release. */
@@ -159,27 +178,10 @@ function ghRead(run, args, what) {
   return r.stdout;
 }
 
-/** Every release on GitHub (all pages), as { tag, prerelease, draft }. */
+/** Every release on GitHub (all pages, drafts too), as { tag, prerelease, draft }. */
 export function listReleases(run = gh) {
   const out = ghRead(run, ["api", "--paginate", `repos/${REPO}/releases?per_page=100`, "--jq", ".[] | {tag: .tag_name, prerelease, draft}"], "the releases");
   return out.split("\n").filter(Boolean).map((line) => JSON.parse(line));
-}
-
-/** Whether `v<version>` is a published release: only a 404 means no. */
-export function isReleased(version, run = gh) {
-  const r = run(["api", `repos/${REPO}/releases/tags/v${version}`, "--jq", ".draft"]);
-  if (r.status === 0) return r.stdout.trim() === "false";
-  if (/HTTP 404|Not Found/.test(r.stderr ?? "")) return false;
-  throw new Error(`couldn't read the release v${version} from GitHub: ${(r.stderr ?? "").trim()}`);
-}
-
-/** The published nightlies, as { version, sha } (only the newest's commit is read; the plan needs no other). */
-export function publishedNightlies(run = gh) {
-  const versions = listReleases(run)
-    .filter((r) => r.prerelease && !r.draft && NIGHTLY_TAG.test(r.tag))
-    .map((r) => r.tag.slice(1))
-    .sort((a, b) => compareRelease(b, a));
-  return versions.map((version, i) => ({ version, sha: i === 0 ? ghRead(run, ["api", `repos/${REPO}/commits/v${version}`, "--jq", ".sha"], `v${version}'s commit`).trim() : null }));
 }
 
 /** Whether any release.yml run hasn't finished (queued, waiting, pending or in progress). */
@@ -195,18 +197,25 @@ export function startNightly({ run = gh, now = new Date(), start = dispatch } = 
   const content = ghRead(run, ["api", `repos/${REPO}/contents/apps/desktop/package.json?ref=${mainSha}`, "--jq", ".content"], "the desktop package.json");
   const pkgVersion = JSON.parse(Buffer.from(content, "base64").toString("utf8")).version;
   if (!/^\d+\.\d+\.\d+$/.test(pkgVersion)) throw new Error(`apps/desktop/package.json's version ${pkgVersion} isn't x.y.z`);
-  const plan = nightlyPlan({ pkgVersion, pkgReleased: isReleased(pkgVersion, run), nightlies: publishedNightlies(run), mainSha, busy: releaseBusy(run), now });
+  const releases = listReleases(run);
+  const newest = nightlyVersions(releases)[0];
+  const newestSha = newest ? ghRead(run, ["api", `repos/${REPO}/commits/v${newest}`, "--jq", ".sha"], `v${newest}'s commit`).trim() : null;
+  const plan = nightlyPlan({ pkgVersion, releases, newestSha, mainSha, busy: releaseBusy(run), now });
   if (plan.build) plan.url = start({ sha: mainSha, version: plan.version }, run);
   return { ...plan, mainSha };
 }
 
 /**
- * The draft job, for a nightly built on GitHub: refuses one that wouldn't sort above every published nightly (the
- * updater takes the feed's first nightly, so order must match), before anything is created.
+ * The draft job, for a nightly, before anything is created: its number must be the one the scheduler gives now
+ * (`nightlyBase`, so neither a stable release that went into review meanwhile nor a hand-typed version slips through)
+ * and sort above every published nightly (the updater takes the feed's first nightly, so order must match).
  */
-export function assertNightlyIsNewest(version, run = gh) {
-  const newest = publishedNightlies(run)[0];
-  if (newest && compareRelease(version, newest.version) <= 0) throw new Error(`${version} doesn't sort above the published ${newest.version}`);
+export function assertNightlyVersion(version, pkgVersion, run = gh) {
+  const releases = listReleases(run);
+  const base = nightlyBase(pkgVersion, releases);
+  if (version.replace(/-.*/, "") !== base) throw new Error(`a nightly of this commit is ${base}-nightly.N, not ${version}: start nightlies with the Nightly workflow`);
+  const newest = nightlyVersions(releases)[0];
+  if (newest && compareRelease(version, newest) <= 0) throw new Error(`${version} doesn't sort above the published ${newest}`);
 }
 
 /**
@@ -222,7 +231,7 @@ export function publishNightly(version, run = gh) {
   throw new Error(`couldn't publish v${version}: ${(edited.stderr ?? "").trim()}${removed ? " (its draft was removed; the next night builds again)" : ""}`);
 }
 
-/** Deletes the nightlies past the newest KEEP_NIGHTLIES, with their tags; returns the ones it couldn't (throws only if it can't list them). */
+/** Deletes what `nightliesToPrune` names, with tags; returns the ones it couldn't (throws only if it can't list them). */
 export function pruneNightlies(run = gh) {
   const failed = [];
   for (const tag of nightliesToPrune(listReleases(run))) {

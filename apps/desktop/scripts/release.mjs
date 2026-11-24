@@ -7,14 +7,14 @@
 //
 // `pnpm release --local` builds macOS on this Mac and drafts it (macOS only). A stable release reaches users only
 // when the maintainer reviews the draft and publishes it: the zip, its blockmap, the channel file (latest-mac.yml, or
-// nightly-mac.yml for an x.y.z-nightly.n version), the DMG, and the Linux packages. A nightly built on GitHub
-// (plan 257, usually started by .github/workflows/nightly.yml) publishes itself as a prerelease that is never "Latest".
+// nightly-mac.yml for an x.y.z-nightly.n version), the DMG, and the Linux packages. A nightly (plan 257) is started
+// only by .github/workflows/nightly.yml and publishes itself as a prerelease that is never "Latest".
 // Never run by tests.
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertNightlyIsNewest, deleteFailedDraft, dispatch, isMainTip, KEEP_NIGHTLIES, publishNightly, pruneNightlies, tagExists } from "./release-ci.mjs";
+import { assertNightlyVersion, deleteFailedDraft, dispatch, isMainTip, KEEP_NIGHTLIES, publishNightly, pruneNightlies, tagExists } from "./release-ci.mjs";
 import { channelOf, PLATFORMS, releaseAssets } from "./release-assets.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -35,6 +35,8 @@ if (prerelease && channel !== "nightly") fail(`${version}: only stable (x.y.z) a
 
 const run = (cmd, args, o = {}) => spawnSync(cmd, args, { encoding: "utf8", ...o });
 const ci = process.env.GITHUB_ACTIONS === "true";
+// plan 257: nightlies are numbered and published by the Nightly workflow alone, so they only ever go up (Codex review)
+if (prerelease && !ci) fail(`${version}: nightlies come from the Nightly workflow: \`gh workflow run nightly.yml --repo ${REPO}\` (RELEASING.md)`);
 const phase = process.argv[2] && !process.argv[2].startsWith("--") ? process.argv[2] : null;
 const sha = ci ? process.env.GITHUB_SHA : execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).trim();
 
@@ -92,17 +94,17 @@ function checkFiles(dirs, platforms) {
 }
 
 /**
- * The draft release with every platform's files; the one phase that writes to GitHub. A nightly built on GitHub
- * (plan 257) then publishes itself and prunes old nightlies; a stable release, or anything from --local, waits for review.
+ * The draft release with every platform's files; the one phase that writes to GitHub. A nightly (plan 257, only ever
+ * built on GitHub) then publishes itself and prunes old nightlies; a stable release waits for review.
  */
 function draft(dirs, platforms) {
   const files = checkFiles(dirs, platforms);
-  const nightly = prerelease && ci;
+  const nightly = prerelease;
   if (run("gh", ["release", "view", `v${version}`, "--repo", REPO]).status === 0) fail(`v${version} already exists on ${REPO}: bump the version in apps/desktop/package.json`);
   if (tagExists(version)) fail(`the tag v${version} already exists on ${REPO} without a release: bump the version, or delete the tag if it's a leftover`);
   if (nightly) {
     try {
-      assertNightlyIsNewest(version);
+      assertNightlyVersion(version, JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version);
     } catch (e) {
       fail(e.message);
     }
