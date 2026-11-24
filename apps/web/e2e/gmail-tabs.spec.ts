@@ -173,8 +173,10 @@ test.describe("Gmail's Promotions and Social (plan 86)", () => {
     await row(page, stranger).click({ button: "right" });
     await menuPath(page, "menu-move");
     await page.getByTestId("menu-to-promotions").click();
-    await expect(page.getByTestId("snack").filter({ hasText: "Moved to Promotions" })).toBeVisible();
-    await expect(page.getByTestId("snack").filter({ hasText: "2 conversations" })).toHaveCount(0);
+    const moved = page.getByTestId("snack").filter({ hasText: "Moved to Promotions" });
+    await expect(moved).toBeVisible();
+    // one conversation: a count would follow a "·" (Codex code review: the menu's target is the two checked rows)
+    await expect(moved).not.toContainText("·");
     await expect(row(page, stranger)).toHaveCount(0);
     await expect(row(page, note)).toBeVisible();
     // (an op that has run keeps its targets in its own JSON)

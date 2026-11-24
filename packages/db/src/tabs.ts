@@ -61,7 +61,9 @@ export function tabsSlice(db: Db, limit: number): { processed: number; more: boo
   const max = db.get<{ m: number | null }>("SELECT max(id) AS m FROM threads")!.m ?? 0;
   const to = Math.min(max, state.after + n);
   const ids = db
-    .all<{ id: number }>("SELECT t.id FROM threads t JOIN accounts a ON a.id = t.account_id WHERE t.id > ? AND t.id <= ? AND t.in_inbox = 1 AND a.kind = 'gmail'", state.after, to)
+    // in id order: a slice its budget stops goes on after the last thread it did, so none below it may come later
+    // (plan 256, Codex code review: the planner can walk the window account by account)
+    .all<{ id: number }>("SELECT t.id FROM threads t JOIN accounts a ON a.id = t.account_id WHERE t.id > ? AND t.id <= ? AND t.in_inbox = 1 AND a.kind = 'gmail' ORDER BY t.id", state.after, to)
     .map((r) => r.id);
   let read = 0;
   let last = to;

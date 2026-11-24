@@ -83,3 +83,17 @@ Not taken:
 - *The backfill's list refresh leaves a cached reader summary stale.* At worst the menu offers the move as before until the next read; not worth a new notification path.
 - *The backfill reads a whole conversation before checking its budget; IndexedDB reads every thread key once per pass.* Plan 86's bounds, unchanged; the pass now also runs once after the upgrade, Inbox Gmail threads only.
 - *Gate the fact on Gmail.* The fact is about the mail, not the provider, and only Gmail rows use it (the menu's `tabbable` needs an account that keeps tabs apart); an IMAP row having it is harmless.
+
+## Revisions after the Codex code review
+
+Codex reviewed 1bae3bc2c and 0ad8d3db8 (`/tmp/terno-scratch/p256/review.out`). Taken:
+
+1. *SQLite's tabs pass could skip a thread for good.* Its window query had no order, and with statistics the planner walks it account by account (1, 3 before 2, 4); a slice its message budget stops after 3 goes on after 3, so 2 was never visited. True of plan 86's tabs since then, and the v78 upgrade relies on the pass. The query is ordered by thread id (still a bounded rowid range). Regression test: two Gmail accounts' threads interleaved, `ANALYZE`, a budget of 4 messages; it failed without the order.
+2. *The mixed-selection e2e passed with both conversations sent.* Its count check looked for "2 conversations", which the snack writes with a non-breaking space. It now checks the snack carries no count ("·"); without `runTab`'s filter it fails on "Moved to Promotions · 2 conversations".
+
+Not taken:
+
+- *A "select all" scope searched from Promotions can be moved to Social.* Plan 86's scope rule, which this plan doesn't change; a scope's threads are judged by the store's action rule.
+- *An open menu acts on rows whose fact changed while it was open.* The menu is open for seconds; the store's action rule still places nothing it can't.
+- *A mixed move clears the check on the note it skipped.* The same as any action on a checked selection, where rows a place action doesn't fit are left unchecked too.
+- *The pass reads a whole conversation before its budget; IndexedDB reads every thread key once a pass.* As in the critique: plan 86's bounds, unchanged.

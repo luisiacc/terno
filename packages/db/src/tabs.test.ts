@@ -128,3 +128,22 @@ it("a refresh asked during a threads pass starts it again; one in its messages p
   requestTabRefresh(db);
   expect(job()).toEqual({ phase: "messages", after: 40 });
 });
+
+it("a slice stopped by its budget never skips a lower thread: two accounts' threads interleaved (plan 256, Codex code review)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "terno-tabs-"));
+  dirs.push(dir);
+  const store = open(join(dir, "s.db"));
+  const [a, b] = await withAccounts(store, 2);
+  sqlDb(store).run("UPDATE accounts SET kind = 'gmail'");
+  // notes to yourself, the two accounts' threads one after the other, each of three messages
+  for (let t = 0; t < 6; t++) await ingest(store, [0, 1, 2].map((i) => msg({ accountId: (t % 2 ? b : a)!, providerMsgId: `n${t}m${i}`, providerThreadId: `gn${t}`, from: { name: "", email: "me0@example.com" }, isSent: true, gmailLabels: ["SENT", "INBOX"] })));
+  const db = sqlDb(store);
+  db.run("UPDATE threads SET only_yours = 0");
+  db.run(`INSERT OR REPLACE INTO settings (key, value_json) VALUES ('tabs_backfill', '{"phase":"threads","after":0}')`);
+  // the planner's statistics (as a mailbox's PRAGMA optimize leaves them) may walk the threads account by account
+  // (accounts first, then each one's threads in the window: 1, 3 before 2, 4), and a slice's budget of 4 messages
+  // stops it after 3, its window's second thread of the first account
+  db.run("ANALYZE");
+  while ((await store.tabs.backfill({ limit: 4 })).more);
+  expect(db.all<{ only_yours: number }>("SELECT only_yours FROM threads ORDER BY id").map((r) => r.only_yours)).toEqual([1, 1, 1, 1, 1, 1]);
+});
