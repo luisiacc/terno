@@ -301,7 +301,16 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
       >
         <SettingsRow find="ai.provider" label={t("ai.provider")} hint={t("ai.provider.hint")}>
           {({ id: _id, ...a }) => (
-            <Select value={choice} onValueChange={(v) => void select(v as ProviderChoice)} items={items}>
+            <Select
+              value={choice}
+              // the owner: where mail goes, and what runs on this Mac, changes only by a pick from the open list. Typing
+              // on the closed control (or autofill) switches it unseen: "ol" picks Ollama, whose model can freeze the Mac
+              onValueChange={(v, details) => {
+                if (details.reason !== "item-press") return details.cancel();
+                void select(v as ProviderChoice);
+              }}
+              items={items}
+            >
               <SelectTrigger {...a} size="sm" className="w-56" data-testid="ai-provider">
                 <SelectValue />
               </SelectTrigger>

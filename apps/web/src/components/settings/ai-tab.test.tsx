@@ -79,6 +79,25 @@ describe("Settings → AI", () => {
     expect(calls().some(([method]) => method === "ai.listModels")).toBe(false);
   });
 
+  // the owner: typing "ol" on the closed control switched to Ollama unseen, and the local model froze the machine
+  it("the provider changes only by a pick from the open list, never by typing on the closed control", async () => {
+    const s = settings({ keys: { anthropic: key, openai: { ...key, keyHint: "wxyz" } } });
+    useApp.setState({ devAi: null, settings: s } as never);
+    const update = vi.fn(async () => {});
+    const host = await render(<AiTab settings={s} update={update as never} />);
+    const trigger = $(host, "ai-provider")!;
+    act(() => trigger.focus());
+    for (const key of "ollama") act(() => void trigger.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true })));
+    await act(async () => {});
+    expect(update).not.toHaveBeenCalled();
+    expect(trigger.textContent).toContain("Claude or OpenAI");
+    // a deliberate pick still works
+    await act(async () => trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+    const ollama = document.querySelector<HTMLElement>('[data-testid="ai-choice-ollama"]')!;
+    await act(async () => ollama.click());
+    expect(update).toHaveBeenCalledWith({ ai: { provider: "ollama" } });
+  });
+
   it("with no key yet, says either will do; a key saved for OpenAI goes to OpenAI", async () => {
     const s = settings({ provider: "anthropic", hasKey: false, keyHint: null, keys: {} });
     useApp.setState({ devAi: null, settings: s } as never);

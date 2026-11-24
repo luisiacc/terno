@@ -139,3 +139,7 @@ Round 2: spec PASS, one point, fixed. **The chosen key removed while it was bein
 1. With both keys Reply ready's check reads the mail on OpenAI while the reply is written on Claude: Settings' Reply ready hint now adds "First, OpenAI reads the sender, subject and newest messages to tell whether a reply is needed." (`helperElsewhere`, tested).
 2. ⌘J's reading of what you typed (and of who it's for) goes to OpenAI with both keys: Drafting's note adds a line naming it.
 3. Test connection tried OpenAI's key on Sol with both keys, where OpenAI only runs Luna: a key now tests on a model it runs (drafting's first), Sol only when OpenAI drafts.
+
+## The owner's rule: a local provider is never chosen for you (2026-11-24)
+
+On a nightly, with both keys saved on "Claude or OpenAI", the provider turned to Ollama without being picked, and the local model froze the Mac. Nothing in Terno selects a provider by itself (only the AI tab's selector writes it, and routing never falls back to a local server), but Base UI's Select commits a value when letters are typed on the closed control (as a native select does: "ol" picks Ollama) or the browser autofills it. The provider selector now takes only a pick from the open list (`reason === "item-press"`); anything else is cancelled. Owner: never auto-select Ollama or any local server, ever; the user chooses it by hand.
