@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { ProviderCooldown, ProviderCooldownError } from "./provider-cooldown";
-import { createNetworkPolicy } from "./net-policy";
+import { RETIRED_DRAIN_MS, createNetworkPolicy } from "./net-policy";
 
 const gates: ProviderCooldown[] = [];
 afterEach(async () => { for (const gate of gates.splice(0)) await gate.close(); });
@@ -135,20 +135,57 @@ it("an abort while a pending read waits holds the slot until the transport's can
   await expect.poll(() => net.googlePending()).toBe(0);
 });
 
-it("an abort while a 429's pause is still being saved frees the slot first", async () => {
-  let save!: () => void;
+it("an abort while a 429's pause is still being saved frees the slot first, and the pause is still saved", async () => {
+  let save!: () => void, entered!: () => void;
   const saving = new Promise<void>((resolve) => { save = resolve; });
+  const writing = new Promise<void>((resolve) => { entered = resolve; });
   let raw: string | null = null;
-  const gate = await ProviderCooldown.open({ read: async () => raw, update: async (fn) => { await saving; const result = fn(raw); raw = result.encoded; return result.result; } }, { wallNow: () => 1000, elapsedNow: () => 10, random: () => 0.5 });
+  const gate = await ProviderCooldown.open({ read: async () => raw, update: async (fn) => { entered(); await saving; const result = fn(raw); raw = result.encoded; return result.result; } }, { wallNow: () => 1000, elapsedNow: () => 10, random: () => 0.5 });
   gates.push(gate);
   const net = createNetworkPolicy({ fetch: async () => new Response(new ReadableStream<Uint8Array>({ pull() {} }), { status: 429, headers: { "retry-after": "120" } }) });
   const abort = new AbortController();
-  const result = net.fetchGoogle(gate.requestsFor("a".repeat(64)), descriptor)("https://gmail.googleapis.com/test", { signal: abort.signal }).catch((error: unknown) => error);
-  await vi.waitFor(() => expect(net.googlePending()).toBe(1));
-  abort.abort();
-  await expect.poll(() => net.googlePending()).toBe(0);
-  save();
+  let outcome: unknown = "pending";
+  const result = net.fetchGoogle(gate.requestsFor("a".repeat(64)), descriptor)("https://gmail.googleapis.com/test", { signal: abort.signal }).then((r) => r, (error: unknown) => error);
+  void result.then((value) => { outcome = value; });
+  try {
+    await writing;
+    expect(outcome).toBe("pending");
+    expect(net.googlePending()).toBe(1);
+    abort.abort();
+    await expect.poll(() => net.googlePending()).toBe(0);
+    expect(outcome).toBe("pending");
+  } finally { save(); }
   await result;
+  expect(raw).not.toBeNull();
+  expect(gate.state("a".repeat(64), "gmail-api").kind).not.toBe("ready");
+});
+
+it("a 429 whose body has already ended keeps its slot until its pause is installed", async () => {
+  // a closed body would otherwise free the slot before headers429 ran, for a request the pause should refuse
+  const base = await policy();
+  let pendingAtObservation = -1;
+  const net = createNetworkPolicy({ fetch: async () => new Response(new ReadableStream<Uint8Array>({ start(c) { c.close(); } }), { status: 429, headers: { "retry-after": "120" } }) });
+  const observed: typeof base = { ...base, reserve: (input) => {
+    const ticket = base.reserve(input);
+    return { ...ticket, headers429: (evidence) => { pendingAtObservation = net.googlePending(); return ticket.headers429(evidence); } };
+  } };
+  const response = await net.fetchGoogle(observed, descriptor)("https://gmail.googleapis.com/test");
+  expect(pendingAtObservation).toBe(1);
+  expect(response.status).toBe(429);
+  await expect.poll(() => net.googlePending()).toBe(0);
+});
+
+it("the native end reaches a caller that holds a reader but isn't reading", async () => {
+  let body!: ReadableStreamDefaultController<Uint8Array>;
+  const net = createNetworkPolicy({ fetch: async () => new Response(new ReadableStream<Uint8Array>({ start(c) { body = c; } }, { highWaterMark: 0 })) });
+  const request = net.fetchGoogle(await policy(), descriptor);
+  const failing = (await request("https://gmail.googleapis.com/a")).body!.getReader();
+  body.error(new TypeError("synthetic reset"));
+  await expect(failing.closed).rejects.toThrow("synthetic reset");
+  const ending = (await request("https://gmail.googleapis.com/b")).body!.getReader();
+  body.close();
+  await expect(ending.closed).resolves.toBeUndefined();
+  expect(net.googlePending()).toBe(0);
 });
 
 it("an abort after headers frees the slot though nobody reads the body, and the body reads as the abort", async () => {
@@ -164,7 +201,7 @@ it("an abort after headers frees the slot though nobody reads the body, and the 
   expect(net.googlePending()).toBe(0);
 });
 
-it("an abort racing EOF on an in-flight read releases once", async () => {
+it.each(["EOF first", "abort first"] as const)("an abort racing EOF on an in-flight read releases once (%s)", async (order) => {
   let body!: ReadableStreamDefaultController<Uint8Array>, pulled!: () => void;
   const pulling = new Promise<void>((resolve) => { pulled = resolve; });
   const net = createNetworkPolicy({ fetch: standardFetch(() => new Response(new ReadableStream<Uint8Array>({ start(c) { body = c; }, pull() { pulled(); } }, { highWaterMark: 0 }))) });
@@ -173,9 +210,10 @@ it("an abort racing EOF on an in-flight read releases once", async () => {
   const response = await request("https://gmail.googleapis.com/test", { signal: abort.signal });
   const read = response.text().catch(() => "aborted");
   await pulling;
-  body.close();
-  abort.abort();
-  await read;
+  if (order === "EOF first") { body.close(); abort.abort(); }
+  else { abort.abort(); await Promise.resolve(); await Promise.resolve(); try { body.close(); } catch { /* the abort cancelled it */ } }
+  // a native EOF that came first is the end; an abort that came first is
+  expect(await read).toBe(order === "EOF first" ? "" : "aborted");
   await new Promise<void>((resolve) => setImmediate(resolve));
   expect(net.googlePending()).toBe(0);
   expect(net.googleAvailable("background")).toBe(true);
@@ -214,21 +252,39 @@ it.each([200, 429])("drains a retired %s response without publishing headers and
 });
 
 
-it.each([false, true])("retired body failure releases capacity, request aborted or not (aborted=%s)", async (aborted) => {
+it("a retired body's native failure releases its slot", async () => {
   let live = true;
   let deliver!: (response: Response) => void;
   let body!: ReadableStreamDefaultController<Uint8Array>;
-  const abort = new AbortController();
   const net = createNetworkPolicy({ fetch: async () => new Promise<Response>((resolve) => { deliver = resolve; }) });
-  const result = net.fetchGoogle(await policy(() => live), descriptor)("https://gmail.googleapis.com/test", { signal: abort.signal });
+  const result = net.fetchGoogle(await policy(() => live), descriptor)("https://gmail.googleapis.com/test");
   await vi.waitFor(() => expect(deliver).toBeDefined());
   live = false;
   deliver(new Response(new ReadableStream<Uint8Array>({ start(c) { body = c; } })));
   await expect(result).rejects.toMatchObject({ name: "AbortError" });
   expect(net.googlePending()).toBe(1);
-  if (aborted) abort.abort();
   body.error(new Error("synthetic body failure"));
   await expect.poll(() => net.googlePending()).toBe(0);
+});
+
+it("a retired body the transport errors on abort releases its slot without a cancel (plan 262)", async () => {
+  let live = true;
+  let deliver!: (response: Response) => void;
+  const cancelled = vi.fn();
+  const abort = new AbortController();
+  // as the Fetch Standard has it: the abort errors the streaming body (the transport's listener runs before ours)
+  const net = createNetworkPolicy({ fetch: async (input) => new Promise<Response>((resolve) => { deliver = (response) => resolve(response); void input; }) });
+  const result = net.fetchGoogle(await policy(() => live), descriptor)("https://gmail.googleapis.com/test", { signal: abort.signal });
+  await vi.waitFor(() => expect(deliver).toBeDefined());
+  live = false;
+  let body!: ReadableStreamDefaultController<Uint8Array>;
+  abort.signal.addEventListener("abort", () => body.error(abort.signal.reason), { once: true });
+  deliver(new Response(new ReadableStream<Uint8Array>({ start(c) { body = c; }, cancel: cancelled })));
+  await expect(result).rejects.toMatchObject({ name: "AbortError" });
+  expect(net.googlePending()).toBe(1);
+  abort.abort();
+  await expect.poll(() => net.googlePending()).toBe(0);
+  expect(cancelled).not.toHaveBeenCalled();
 });
 
 it("a retired response whose request is aborted mid-drain is cancelled and frees its slot", async () => {
@@ -246,6 +302,44 @@ it("a retired response whose request is aborted mid-drain is cancelled and frees
   abort.abort();
   await expect.poll(() => net.googlePending()).toBe(0);
   expect(cancelled).toBe(1);
+});
+
+it("a retired drain unlocks the native body when it ends", async () => {
+  let live = true;
+  let deliver!: (response: Response) => void;
+  let body!: ReadableStreamDefaultController<Uint8Array>;
+  const net = createNetworkPolicy({ fetch: async () => new Promise<Response>((resolve) => { deliver = resolve; }) });
+  const result = net.fetchGoogle(await policy(() => live), descriptor)("https://gmail.googleapis.com/test");
+  await vi.waitFor(() => expect(deliver).toBeDefined());
+  live = false;
+  const source = new Response(new ReadableStream<Uint8Array>({ start(c) { body = c; } }));
+  deliver(source);
+  await expect(result).rejects.toMatchObject({ name: "AbortError" });
+  expect(source.body!.locked).toBe(true);
+  body.close();
+  await expect.poll(() => net.googlePending()).toBe(0);
+  await expect.poll(() => source.body!.locked).toBe(false);
+});
+
+it("a retired body that stalls is cancelled after its drain bound, and frees its slot", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    let live = true;
+    let deliver!: (response: Response) => void;
+    const cancelled = vi.fn();
+    const net = createNetworkPolicy({ fetch: async () => new Promise<Response>((resolve) => { deliver = resolve; }) });
+    const result = net.fetchGoogle(await policy(() => live), descriptor)("https://gmail.googleapis.com/send");
+    await vi.waitFor(() => expect(deliver).toBeDefined());
+    live = false;
+    deliver(new Response(new ReadableStream<Uint8Array>({ pull() {}, cancel: cancelled })));
+    await expect(result).rejects.toMatchObject({ name: "AbortError" });
+    vi.advanceTimersByTime(RETIRED_DRAIN_MS - 1);
+    await Promise.resolve();
+    expect(net.googlePending()).toBe(1);
+    vi.advanceTimersByTime(1);
+    await expect.poll(() => net.googlePending()).toBe(0);
+    expect(cancelled).toHaveBeenCalledTimes(1);
+  } finally { vi.useRealTimers(); }
 });
 
 it("releases a retired response with no native body", async () => {
@@ -328,4 +422,14 @@ it("Node's own fetch on loopback: an abort before headers and one mid-body both 
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
+});
+
+it("the last chunk before EOF always reaches the caller (a stream closes before the read that emptied it resolves)", async () => {
+  const bytes = new TextEncoder().encode('{"historyId":"11"}');
+  const net = createNetworkPolicy({ fetch: async () => new Response(new ReadableStream<Uint8Array>({
+    start(c) { for (const byte of bytes) c.enqueue(new Uint8Array([byte])); c.close(); },
+  })) });
+  const response = await net.fetchGoogle(await policy(), descriptor)("https://gmail.googleapis.com/history");
+  expect(await response.text()).toBe('{"historyId":"11"}');
+  expect(net.googlePending()).toBe(0);
 });

@@ -528,6 +528,9 @@ for (const automatic of [true, false]) it(`an aborted held body frees capacity a
     await vi.waitFor(() => expect(continuation.mock.calls.filter(([id]) => id === 12)).toHaveLength(2));
     const index = continuation.mock.calls.findLastIndex(([id]) => id === 12);
     await continuation.mock.results[index]!.value;
+    // after the resumed pass and a scheduler barrier: no third run was queued behind it
+    await t.rpc.call("app.bootstrap", {});
+    expect(continuation.mock.calls.filter(([id]) => id === 12)).toHaveLength(2);
     expect(t.paths.filter((path) => path === "/12/gmail/messages")).toHaveLength(1);
   } else {
     await new Promise<void>((resolve) => setImmediate(resolve));

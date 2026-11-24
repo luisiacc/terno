@@ -122,3 +122,25 @@ Codex critiqued the plan and a first draft (10 points); all but the wording ones
 8. The incident test now fills all 62 background slots before checking the 63rd; the EOF race gates a real read.
 9. A scheduler-level test drives the abort through a provider reset and asserts one automatic resume.
 10. Retired-drain and send ownership tests are kept and pass unchanged.
+
+## Revisions after the Codex code review
+
+One round, nine findings, all fixed with a test that fails on `ba90b8f50`:
+
+1. A retired response whose body stalls (a send retired by an account removal, its deadline cleared) held a
+   foreground slot for good: the retired drain now has a bound (`RETIRED_DRAIN_MS`, 30 s, one-shot), then cancels.
+2. A 429 whose body had already ended freed its slot before `headers429` installed the pause, so a queued request
+   could take it: a response's slot now waits for the ticket to observe it (headers, 429, release) or an abort.
+3. An abort landing in the same turn as a native EOF turned the EOF into an AbortError: the abort's cancel is queued
+   after the reactions already pending, so a native end that came first stays the end (both orders tested).
+4. A caller holding a reader but not reading never saw the native end: it is forwarded to the outward stream. The
+   first version closed the outward stream from `reader.closed` while a read was in flight and dropped the last
+   chunk (a stream closes before the read that emptied it delivers it; caught by the `gmail-control` perf gate):
+   the end is forwarded only when no read is in flight, with its own unit test.
+5. The retired drain kept the native body locked: `releaseLock()` is back.
+6. The gated-429 test now waits for the writer, checks the outcome is still pending, releases the gate in
+   `finally` and checks the pause was saved; a new test checks the slot is held when the 429 is observed.
+7. The aborted retired-failure case had no effect (the abort cancelled first): replaced by a transport that errors
+   its body on abort, asserting no cancel.
+8. "abort then EOF" never produced an EOF: now three cases, cancel, abort, and EOF then abort.
+9. The scheduler test rechecks the resume count after the resumed pass and a scheduler barrier.
