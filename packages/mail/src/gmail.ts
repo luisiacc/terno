@@ -1,20 +1,16 @@
-import { RequestNotDispatchedError } from "./net-errors";
-import { createHash, randomBytes } from "node:crypto";
-import { createServer, type Server } from "node:http";
-import type { AddressInfo } from "node:net";
 import { L } from "@terno/i18n";
-import { callbackPage, type CallbackKey } from "./oauth-page";
+import { callbackPage } from "./oauth-page";
+import { openLoopback, pkce } from "./oauth-loopback";
+import { createOAuthSession } from "./oauth-session";
 import { buildRaw } from "./compose";
 import { readGoogleIdentity, withGoogleSignIn } from "./gmail-web";
 import { GMAIL_UNITS_PER_SECOND } from "./gmail-quota";
-import { exchangeGmailRefresh, type GmailRefreshExchange } from "./gmail-refresh";
+import { exchangeGmailRefresh } from "./gmail-refresh";
 import { createGmailApiProvider, GMAIL_SCOPES as SCOPES, GOOGLE_ENDPOINTS, type GmailEndpoints } from "./gmail-api";
-import { ProviderAuthError, ProviderError, type GmailConnectResult, type MailProvider, type ProviderContext, type RequestRun, type MailAdmission, type AccountRequests } from "./types";
+import { ProviderError, type GmailConnectResult, type MailProvider, type ProviderContext, type AccountRequests } from "./types";
 
 export * from "./gmail-api";
 export { callbackPage } from "./oauth-page";
-
-const b64url = (buf: Buffer) => buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
 // ───────────────────────────── OAuth (installed app, PKCE, loopback) ─────────────────────────────
 
@@ -43,69 +39,29 @@ export async function connectGmail(options: ConnectOptions): Promise<GmailConnec
     const ep = { ...GOOGLE_ENDPOINTS, ...options.endpoints };
     // plan 258: always exactly these, in every build
     const requestedScopes = [...SCOPES];
-    const verifier = b64url(randomBytes(48));
-    const challenge = b64url(createHash("sha256").update(verifier).digest());
-    const state = b64url(randomBytes(24));
+    const { verifier, challenge, state } = pkce();
     const page = await flow.wait(callbackPage());
-    let server: Server | null = null;
+    const invalid = () => new ProviderError(L("errors.google.invalidResponse"), false);
+    const loopback = openLoopback({
+      authorize: ep.auth, state, redirectHost: "127.0.0.1", page, invalid, openExternal: options.openExternal, signal: flow.signal,
+      params: {
+        client_id: options.clientId,
+        response_type: "code",
+        scope: requestedScopes.join(" "),
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+        state,
+        access_type: "offline",
+        prompt: "consent",
+        ...(options.loginHint && { login_hint: options.loginHint }),
+      },
+      refused: (error) => {
+        const adminPolicy = error === "admin_policy_enforced";
+        return { page: adminPolicy ? "errors.google.adminPolicy" : "backend.oauth.denied", error: adminPolicy ? new ProviderError(L("errors.google.adminPolicy"), false) : error === "access_denied" ? new ProviderError(L("errors.google.denied"), false) : invalid() };
+      },
+    });
     try {
-      let settled = false;
-      const code = await flow.wait(new Promise<{ code: string; redirectUri: string }>((resolve, reject) => {
-        server = createServer((req, res) => {
-          const url = new URL(req.url ?? "/", "http://127.0.0.1");
-          if (url.pathname !== "/callback") return void res.writeHead(404).end();
-          const done = (ok: boolean, msg: CallbackKey) => {
-            res.writeHead(ok ? 200 : 400, { "content-type": "text/html; charset=utf-8" });
-            res.end(page(ok, msg));
-          };
-          if (url.searchParams.get("state") !== state) {
-            done(false, "backend.oauth.invalid");
-            return; // ignore forged/stale redirects, keep waiting for the real one
-          }
-          if (settled) return void res.writeHead(409).end();
-          settled = true;
-          const errors = url.searchParams.getAll("error");
-          if (errors.length) {
-            if (errors.length !== 1 || !errors[0] || url.searchParams.has("code")) {
-              done(false, "backend.oauth.invalid");
-              reject(new ProviderError(L("errors.google.invalidResponse"), false));
-              return;
-            }
-            const error = errors[0];
-            const adminPolicy = error === "admin_policy_enforced";
-            done(false, adminPolicy ? "errors.google.adminPolicy" : "backend.oauth.denied");
-            reject(new ProviderError(adminPolicy ? L("errors.google.adminPolicy") : error === "access_denied" ? L("errors.google.denied") : L("errors.google.invalidResponse"), false));
-            return;
-          }
-          const authorizationCode = url.searchParams.get("code");
-          if (!authorizationCode?.trim() || url.searchParams.getAll("code").length !== 1) {
-            done(false, "backend.oauth.invalid");
-            reject(new ProviderError(L("errors.google.invalidResponse"), false));
-            return;
-          }
-          done(true, "backend.oauth.back");
-          const port = (server!.address() as AddressInfo).port;
-          resolve({ code: authorizationCode, redirectUri: `http://127.0.0.1:${port}/callback` });
-        });
-        server.on("error", reject);
-        server.listen(0, "127.0.0.1", () => {
-          if (flow.signal.aborted) return;
-          const port = (server!.address() as AddressInfo).port;
-          const params = new URLSearchParams({
-            client_id: options.clientId,
-            redirect_uri: `http://127.0.0.1:${port}/callback`,
-            response_type: "code",
-            scope: requestedScopes.join(" "),
-            code_challenge: challenge,
-            code_challenge_method: "S256",
-            state,
-            access_type: "offline",
-            prompt: "consent",
-          });
-          if (options.loginHint) params.set("login_hint", options.loginHint);
-          void Promise.resolve().then(() => options.openExternal(`${ep.auth}?${params}`)).catch(reject);
-        });
-      }));
+      const code = await flow.wait(loopback.code);
       const body = new URLSearchParams({ client_id: options.clientId, code: code.code, code_verifier: verifier, grant_type: "authorization_code", redirect_uri: code.redirectUri });
       if (options.clientSecret) body.set("client_secret", options.clientSecret);
       const tokens = await flow.json(ep.token, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body }, { endpoint: "oauth-token", purpose: "authorization-code" });
@@ -119,11 +75,7 @@ export async function connectGmail(options: ConnectOptions): Promise<GmailConnec
       const identity = await readGoogleIdentity(tokens.access_token, ep, flow);
       return { ...identity, refreshToken: (tokens.refresh_token as string | undefined) ?? null, grantedScopes };
     } finally {
-      const listener = server as Server | null;
-      if (listener) {
-        listener.closeAllConnections();
-        await new Promise<void>((resolve) => listener.close(() => resolve()));
-      }
+      await loopback.close();
     }
   });
 }
@@ -133,117 +85,24 @@ export async function connectGmail(options: ConnectOptions): Promise<GmailConnec
 /** Desktop: the API client with tokens refreshed from the stored refresh token, and nodemailer's MIME. */
 export function createGmailProvider(ctx: ProviderContext, options: { endpoints?: Partial<GmailEndpoints>; unitsPerSecond?: number } = {}): MailProvider {
   const ep = { ...GOOGLE_ENDPOINTS, ...options.endpoints };
-  let access: GmailRefreshExchange | null = null;
-  let refreshing: Promise<string> | null = null;
-  let candidate: { expected: string; exchange: GmailRefreshExchange; uncertain: boolean } | null = null;
-  const lifetime = new AbortController();
-  const assertOpen = () => { lifetime.signal.throwIfAborted(); };
-  const persistenceFailure = () => new ProviderError(L("errors.secret.replaceFailed"), true);
-
-  async function persist(pending: NonNullable<typeof candidate>): Promise<void> {
-    assertOpen();
-    try {
-      // A failed acknowledgement may already have committed. Assert ownership before retrying old bytes.
-      let committed = pending.uncertain && await ctx.replaceSecret("refreshToken", pending.exchange.refreshToken, pending.exchange.refreshToken);
-      assertOpen();
-      if (!committed) committed = await ctx.replaceSecret("refreshToken", pending.expected, pending.exchange.refreshToken);
-      assertOpen();
-      if (!committed) {
-        candidate = null;
-        throw persistenceFailure();
-      }
-      candidate = null;
-    } catch (error) {
-      assertOpen();
-      if (candidate === pending) pending.uncertain = true;
-      if (error instanceof ProviderAuthError) throw error;
-      if (error instanceof Error && error.name === "AbortError") throw new DOMException("closed", "AbortError");
-      throw persistenceFailure();
-    }
-  }
-
-  /** Plan 99: the client that issued the refresh token; not having one this build knows means signing in again, never a retry. */
-  async function oauthClient(): Promise<{ clientId: string; clientSecret: string | null }> {
-    // plan 123: only the backend knows Terno's clients; a context without them can't refresh
-    if (!ctx.oauthClient) throw new ProviderAuthError(L("errors.gmail.reconnect"));
-    let client: { clientId: string; clientSecret: string | null } | null;
-    try { client = await ctx.oauthClient(); } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") throw error;
-      // plan 264: our own record couldn't be read just now (a store read): that says nothing of the grant, try again
-      throw new ProviderError(L("errors.gmail.clientUnread"), true);
-    }
-    if (!client) throw new ProviderAuthError(L("errors.gmail.reconnect"));
-    return client;
-  }
-
-  /** One promise owns both the exchange and its durable result for every waiting operation. */
-  const refreshRuns = new Set<RequestRun>();
-  let refreshIssued = false;
-  function refresh(run?: RequestRun, admission?: MailAdmission): Promise<string> {
-    if (run) { refreshRuns.add(run); if (refreshIssued) run.markDispatched(); }
-    refreshing ??= Promise.resolve().then(async () => {
-      const generation = ctx.requests?.generation() ?? 0;
-      try {
-        assertOpen();
-        if (!candidate) {
-          ctx.requests?.tokenUnavailable();
-          ctx.requests?.check({ endpoint: "oauth-token", purpose: "refresh" }, admission);
-          const refreshToken = await ctx.getSecret("refreshToken");
-          assertOpen();
-          if (!refreshToken) throw new ProviderAuthError(L("errors.gmail.reconnect"));
-          const { clientId, clientSecret } = await oauthClient();
-          assertOpen();
-          const exchange = await exchangeGmailRefresh({ fetch: ctx.fetch, url: ep.token, clientId, clientSecret, refreshToken, signal: lifetime.signal, google: ctx.requests, generation, admission, run: { markDispatched: () => { refreshIssued = true; for (const owner of refreshRuns) owner.markDispatched(); } } });
-          assertOpen();
-          candidate = { expected: refreshToken, exchange, uncertain: false };
-        }
-        const pending = candidate;
-        await persist(pending);
-        assertOpen();
-        // A delayed commit consumes token life. The next demand uses the now-durable credential.
-        if (pending.exchange.expiresAt <= Date.now()) throw new ProviderError(L("errors.gmail.refreshFailed", { status: 200 }), true);
-        access = pending.exchange;
-        ctx.requests?.accessAvailable();
-        await ctx.tokenResult?.(generation);
-        return access.accessToken;
-      } catch (error) {
-        assertOpen();
-        if (error instanceof ProviderAuthError) await ctx.tokenResult?.(generation, error);
-        if (error instanceof ProviderError || error instanceof RequestNotDispatchedError) throw error;
-        if (error instanceof Error && error.name === "AbortError") {
-          candidate = null;
-          throw new DOMException("closed", "AbortError");
-        }
-        throw persistenceFailure();
-      } finally {
-        refreshRuns.clear(); refreshIssued = false;
-        refreshing = null;
-      }
-    });
-    return refreshing;
-  }
+  // plan 259: the refresh-token session every OAuth provider shares; Google's exchange and words
+  const session = createOAuthSession(ctx, {
+    token: { endpoint: "oauth-token", purpose: "refresh" },
+    exchange: ({ refreshToken, clientId, clientSecret, signal, generation, admission, run }) =>
+      exchangeGmailRefresh({ fetch: ctx.fetch, url: ep.token, clientId, clientSecret, refreshToken, signal, google: ctx.requests, generation, admission, run }),
+    messages: { reconnect: () => L("errors.gmail.reconnect"), clientUnread: () => L("errors.gmail.clientUnread"), stale: () => L("errors.gmail.refreshFailed", { status: 200 }) },
+  });
 
   const provider = createGmailApiProvider(ctx, {
     endpoints: options.endpoints,
     // plan 62 fix: paced under Google's per-user quota rather than refused
     unitsPerSecond: options.unitsPerSecond ?? GMAIL_UNITS_PER_SECOND,
-    tokens: {
-      get: async (run, admission) => {
-        assertOpen();
-        return access && access.refreshAt > Date.now() ? access.accessToken : refresh(run, admission);
-      },
-      invalidate: (token) => {
-        if (access?.accessToken === token) access = null;
-      },
-    },
+    tokens: { get: session.get, invalidate: session.invalidate },
     buildRaw: (payload) => buildRaw(payload, { keepBcc: true }),
   });
   const close = provider.close.bind(provider);
   provider.close = async () => {
-    lifetime.abort(new DOMException("closed", "AbortError"));
-    access = null;
-    candidate = null;
-    refreshing = null;
+    session.close();
     await close();
   };
   return provider;

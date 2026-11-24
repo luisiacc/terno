@@ -80,7 +80,7 @@ describe("plan 99: Terno's Google client", () => {
 describe("plan 259: Microsoft's clients beside Google's", () => {
   it("a public client resolves with no secret, from its own set, and never Google's", async () => {
     const dir = mkdtempSync(join(tmpdir(), "terno-ms-client-"));
-    const providers: ProviderRegistry = { create: () => ({ async verify() {}, async sync() {}, async execute() {}, async close() {} }), async verifyImap() {} };
+    const providers: ProviderRegistry = { create: () => ({ async verify() {}, async sync() {}, async execute() {}, async close() {} }), async verifyImap() {}, connectGmail: async () => { throw new Error("unused"); } };
     const microsoftClients = parseOAuthClients(JSON.stringify({ preferred: "ms-prod", clients: [{ clientId: "ms-prod", clientSecret: "" }, { clientId: "ms-dev", clientSecret: "" }] }));
     const backend = new Backend({ dbPath: join(dir, "test.db"), version: "test", cipher: plaintextCipher, providers, autoSync: false, googleClients: BUILT, microsoftClients });
     cleanups.push(async () => { await backend.stop(); rmSync(dir, { recursive: true, force: true }); });
