@@ -38,9 +38,9 @@ describe("verification codes (plan 72)", () => {
     expect(text("Order 777888 shipped. Your security code is 482913.")).toBe("482913");
   });
 
-  it("needs a word that announces it, close enough", () => {
+  it("needs a word that announces it, anywhere in the message (plan 261)", () => {
     expect(text("Your order 482913 has shipped.")).toBeNull();
-    expect(text(`code${" lorem".repeat(40)} 482913`)).toBeNull();
+    expect(text(`code${" lorem".repeat(40)} 482913`)).toBe("482913");
     expect(text("Codes and decoder rings: 482913")).toBeNull();
     expect(text("La clave del éxito: 482913")).toBeNull();
   });
@@ -60,6 +60,21 @@ describe("verification codes (plan 72)", () => {
     expect(text("code: 123456A")).toBeNull();
     expect(text("code: 123456%")).toBeNull();
     expect(text("Use code at 12:30:45")).toBeNull();
+  });
+
+  it("finds the owner's Microsoft code, deep in a long mail whose subject says nothing of a code (plan 261)", () => {
+    const body = [
+      "Microsoft",
+      "Hello, Ana Pérez",
+      "We need to verify your email address.",
+      "You are receiving this email because you are in process of signing up for the program.",
+      "As part of our ongoing effort to keep your identity and privacy protected, we need to confirm that you provided this email address for contact and verification purposes.",
+      "If you did not sign-up for our program using this email address, please disregard this email.",
+      "Please verify your email address by entering this code: 391372",
+      "Your code will expire after 10 minutes.",
+      "Microsoft Corporation\nOne Microsoft Way\nRedmond, WA 98052 USA",
+    ].join("\n\n");
+    expect(findCode("Action required: Verify your email address", body)).toBe("391372");
   });
 
   it("ignores codes inside links", () => {

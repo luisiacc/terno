@@ -5,10 +5,10 @@ import { baseSubject, normalizeText } from "./text";
 export const CODE_MAX_AGE = 2 * 3_600_000;
 /** Mail dated a little ahead (the sender's clock) still counts as fresh. */
 const CLOCK_SKEW = 5 * 60_000;
-/** How far (in characters) a code may sit from the word that announces it. */
-const NEAR = 120;
 const SUBJECT_CAP = 1_000;
-const BODY_CAP = 20_000;
+/** How much of a body findCode reads: a caller holding the body in parts needs no more than this (plan 261). */
+export const CODE_TEXT_MAX = 20_000;
+const BODY_CAP = CODE_TEXT_MAX;
 
 /** Scripts written without spaces: their words match anywhere, not only between word boundaries. */
 const UNSPACED = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u;
@@ -50,13 +50,16 @@ function ownText(text: string): string {
     .join("\n");
 }
 
-/** In one stretch of text: the code closest to a word that announces it, if one is near enough. One pass: both lists come in order. */
+/**
+ * In one stretch of text: the code closest to a word that announces it, at any distance (plan 261: the word and a code
+ * are enough). One pass: both lists come in order.
+ */
 function closest(text: string): { code: string | null; announced: boolean; codes: Set<string> } {
   const words = spans(WORDS, text);
   const candidates = spans(CANDIDATE, text);
   const codes = new Set(candidates.map((c) => c.value.replace(/\D/g, "")));
   let best: string | null = null;
-  let bestGap = NEAR + 1;
+  let bestGap = Infinity;
   let w = 0;
   for (const c of candidates) {
     // the last word starting before this code, and the one after it, are the only ones that can be closest
@@ -74,8 +77,8 @@ function closest(text: string): { code: string | null; announced: boolean; codes
 }
 
 /**
- * The verification code a message carries, or null (plan 72). Simple on purpose: six digits near a word like
- * "code" or "código". `body` is the text the reader shows (an HTML body's visible text: the renderer's `mailText`).
+ * The verification code a message carries, or null (plan 72). Simple on purpose: six digits and a word like
+ * "code" or "código" (plan 261: anywhere in the message's own text; the closest to a word wins). `body` is the text the reader shows (an HTML body's visible text: the renderer's `mailText`).
  * The subject (not a reply's) wins over the body; a subject that announces a code ("Your sign-in code") takes the
  * body's only six-digit number even when no word sits beside it.
  */
