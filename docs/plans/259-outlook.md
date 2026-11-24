@@ -291,3 +291,87 @@ See the step list given with this plan in the conversation of 2026-11-24. In sho
 
 - 2026-11-24: the web version is ignored for now (decision 4). Stage 4 waits, and the web's Add account shows no Microsoft option.
 - 2026-11-24: Microsoft setup done. The apps "Terno" (release) and "Terno Dev" (dev) are verified publisher Luisiacc LLC. The release id is the `release` environment secret `TERNO_MICROSOFT_CLIENT_ID`, next to `TERNO_GOOGLE_DESKTOP_ID`; both ids are in `.env`. Stage 1 reads it in `release.yml` as `secrets.TERNO_MICROSOFT_CLIENT_ID`.
+- 2026-11-24: the owner approved stages 0a and 0b and asked for them built in a worktree.
+
+## Stage 0a as built
+
+- Kinds, admission, op lanes, request policy, OAuth clients and the shared loopback and session are as in stage 0a above, with these differences:
+  - Outlook's services join the cooldown ledger (`OAUTH_SERVICES`) only with its Graph provider (stage 2). Until then an Outlook account gets no request policy, and Gmail's ledger never holds it.
+  - The remembered client is per provider (`googleClientId`, `microsoftClientId`).
+- The SQLite step is v81 (v79 and v80 went to plans 261 and 267). Following plan 267's new rule, it drops the kind and provider CHECK lists rather than widening them, and the stores check kinds on write.
+- The Codex code review found six issues, all fixed with a test that fails without the fix:
+  1. An admission names its provider.
+  2. Bindings are held only on their own provider's services.
+  3. The remembered client key matches the plan.
+  4. Google's cooldown path is taken only by an account with a request policy.
+  5. The loopback passes `error_description`.
+  6. The web worker gives Outlook its own words.
+
+## Stage 0b: where an Outlook message lives (design)
+
+`message_locations` is IMAP's: every row is a server copy addressed by (mailbox, uidvalidity, uid). That address feeds:
+- identity holds, `dispatch` and `mappedMove`
+- capture-repair locators and their triggers
+- uid-ordered rebuilds and counts
+- folder aliases by uidvalidity
+- `pendingBodies`
+
+None of these applies to Graph, where a message is in exactly one folder and its immutable id (in `messages.provider_msg_id`) is its identity. Reusing the table with made-up uids would run all of that on Outlook rows. So the design is:
+
+1. **A table.**
+   - SQLite v82: `message_folders(message_id INTEGER PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE, account_id INTEGER NOT NULL, folder TEXT NOT NULL)` with `INDEX message_folders_folder(account_id, folder, message_id)`. It is shape only.
+   - IndexedDB gets the same as a store keyed by `message_id`, with `account_folder` and `fk_message_id` indexes, deleted with its message.
+   - The primary key is the rule: one folder per message, and a move is one write.
+2. **Ingest.**
+   - `IncomingMessage.folder?: string` is the folder key (the Graph folder id), beside `locations` (IMAP) and `gmailLabels` (Gmail).
+   - Ingest writes it for a new row and replaces it for an existing one (a move the delta reported), then `recomputeThreads` updates membership in the same transaction, as it does for locations.
+   - A removed message takes its row with it (cascade, and the IndexedDB delete).
+   - The provider sends inInbox, isTrash, isSpam and isSent itself, as Gmail does.
+3. **Membership, counts and export.** Each place that reads locations "as places" gains a third branch on `message_folders`, in both engines:
+   - `MEMBERSHIP` and `writeFolders`, and `overlayFolderOps` (pending moves replayed)
+   - `placed` and `countFolderMessages` (a seek on the folder index)
+   - folder export's `IN_FOLDER`
+   - `replaceFolders`' rebuild gate
+   - `rebuildFolders`
+
+   None of the IMAP-only paths read it (holds, aliases, uid walks).
+4. **Moves.**
+   - `queueFolderMoves` becomes a three-way choice by kind: Gmail's labels, IMAP's locations, Outlook's single folder.
+   - "Your own mail stays in Sent" holds for IMAP and Outlook, because both keep sent mail in a Sent folder.
+   - `keepInbox` is IMAP's COPY. Graph has no second place for one message (its `/copy` makes a new message), so an Outlook move is always a move: `keepInbox: false`. A thread whose category is shown in the Inbox, filed to a folder, leaves the Inbox on the server.
+   - `settleFolderOp` writes the folder on success, as it writes Gmail's labels. The provider's answer is the folder the message is now in, so no provider-side settling is needed.
+   - `leaveFolder` (undo) is a move back.
+   - Archive, trash, spam, notSpam and moveToInbox set flags as for IMAP. The provider moves the message, and ingest or settle writes its new folder.
+5. **Not used for Outlook:**
+   - identity holds, `dispatch`, `mappedMove`, `resumeResolved`
+   - `pendingBodies` (Graph reads a body by id)
+   - capture-repair locators by uid (an `outlook` locator with the Graph id comes in stage 2)
+   - folder aliases (Graph folder ids survive renames)
+6. **Tests.** An Outlook fixture joins the store conformance suites `folders.ts`, `folder-move.ts` and `folder-export.ts`:
+   - membership from `folder`, a move settling, Sent kept, undo
+   - counts, export
+   - a delta-reported move by re-ingest, and removal
+
+   Each runs in both engines.
+7. **Perf.** The membership queries gain one indexed branch that finds nothing for IMAP and Gmail accounts. The `store.perf` and `folders.perf` gates must hold at 50k.
+
+**Owner decision flagged:** an Outlook move of a thread that Terno keeps in the Inbox is a plain move (it leaves the Inbox on the server), since Graph can't keep one message in two folders. The alternative, a Graph copy, would put a second message in the thread.
+
+## Revisions to the stage 0b design after the Codex critique
+
+The critique (11 points) showed that 0b is two pieces of different weight:
+
+- **Storage and membership (no provider needed).** These are buildable and testable now with an Outlook fixture:
+  - v82 `message_folders`, and the IndexedDB store with its physical upgrade (`IDB_VERSION` 40 → 41, `onupgradeneeded`, the cascade, satellite loading).
+  - `IncomingMessage.folder` on insert and on the existing-row path. It holds a user folder only; a role folder is null, its flags saying which. An omitted folder keeps the stored one.
+  - The membership branch, `writeFolders`, and the overlay replayed one folder per message.
+  - A bounded `(account, folder, message_id)` count walk.
+  - Export using the same state at both steps.
+  - A rebuild cursor for Outlook, with pending moves preserved.
+  - Conformance in both engines, and populated 50k cases in `store.perf`, `idb.perf`, `filter-folder.perf` and `folder-export.perf`.
+- **Move semantics and settlement (need Graph's answers).** These are designed and built with the Graph provider in stage 2, because each rule follows from what Graph returns:
+  - One provider move per filing (no archive after `moveToFolder`), with `kept` and `leftInbox` from the resulting state.
+  - A per-message source journalled for undo.
+  - A confirmed destination per message for every location op (archive, trash, spam, notSpam, moveToInbox, move, leave), including partial success, unknown outcomes and a delta read racing a settlement.
+
+  Until stage 2 no Outlook op runs: the registry refuses the kind.
