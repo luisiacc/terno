@@ -52,7 +52,8 @@ it.each(["eof", "cancel"] as const)("keeps one native history reader and capacit
       }
       let settled = false;
       const final = reader.read().then((result) => { settled = true; return result; });
-      await Promise.resolve();
+      // the streams machinery reaches pull a few microtasks later (how many is Node's own detail, not ours)
+      for (let turn = 0; turn < 20 && vi.mocked(owned.read).mock.calls.length < 2; turn++) await Promise.resolve();
       expect(owned.read).toHaveBeenCalledTimes(2);
       expect(settled).toBe(false);
       expect(net.googlePending()).toBe(1);

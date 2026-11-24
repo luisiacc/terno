@@ -45,7 +45,11 @@ function mailbox(options: { cursor?: unknown; cached?: boolean | number; respond
     incoming, incomingProcessor: processor,
     account: { id: 1, email: "me@example.com" }, config: {},
     store: {
-      messageByProviderId: async (id: string) => cached.find((m) => m.providerMsgId === id),
+      // the store's contract: a stored message's id, subject and sender (plan 227's look reads the sender)
+      messageByProviderId: async (id: string) => {
+        const m = cached.find((c) => c.providerMsgId === id);
+        return m ? { id: m.id, subject: "", fromEmail: "sender@example.com" } : null;
+      },
       syncedMessages: async () => cached,
       syncedMessagePage: async (after = "") => {
         const items = cached.filter((m) => m.providerMsgId > after).sort((a, b) => a.providerMsgId.localeCompare(b.providerMsgId, "en", { numeric: false })).slice(0, 50);

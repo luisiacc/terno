@@ -75,7 +75,10 @@ I can't tell from the logs whether the owner abandoned both consents or whether 
 
 Each new test fails without its fix: the whole change (both catch-up tests, the auth test), the date read alone, per-ID `untyped` alone (a per-record rule), the look's `gap` alone, and the look returning early (the first version).
 
-Two tests fail on an unchanged `HEAD` too, here with Node 24.3 (`gmail-history-ownership.test.ts` "keeps one native history reader … (eof)", and `gmail-response.test.ts` "retains an earlier valid page …"). They're unrelated to this plan.
+Two tests failed on an unchanged `HEAD` too, unrelated to this plan, and are fixed alongside it (both test bugs, not code bugs):
+
+- `gmail-response.test.ts` "retains an earlier valid page …": the test's store returned stored messages without `fromEmail`, which `MailStore.messageByProviderId` promises and plan 227's look at new mail reads. The stub now keeps the contract.
+- `gmail-history-ownership.test.ts` "keeps one native history reader … (eof)": it expected the wrapped stream's `pull` to have read the native reader again after exactly one microtask. How many turns the streams machinery takes is Node's detail (it's more on Node 24.3). It now waits a bounded number of microtasks and still asserts exactly two native reads and no settle before EOF.
 
 ## 4. Perf and resources
 
