@@ -135,7 +135,7 @@ This reverses the second round's "the hero is back to its words": the section st
 
 - **A link above the title** (`WhatMattersNews` in `parts/what-matters.tsx`, styled by each design): a "New" tag and "“What matters”: only the email that needs you", down to `#what-matters` (`WM_ANCHOR`). The header still has no link to it.
 - **The subtitle in the owner's words:** "Unified inbox. Instant search. Archive one email, and every one like it goes too. Fully local, no sign-up." ("no sign-up", since "no account" reads as no email account.)
-- **The AI in its own line under it** (`hero.ai`), in the subtitle's style: "Turn on AI for summaries, drafted replies, and reminders when someone doesn’t reply." It names no plan or price: the features work today on the user's own key or a model on their Mac.
+- **The AI as the subtitle's last sentence:** "Turn on AI for summaries, drafted replies, and reminders when someone doesn’t reply." It names no plan or price: the features work today on the user's own key or a model on their Mac. (First a paragraph of its own; two grey blocks of the same weight looked heavy, and of four mock-ups the owner chose one paragraph.)
 - **Pro's chip** says "AI available today · Plan coming soon" instead of "Coming soon": the features work, the plan and its price aren't sold yet ("Planned: …" stays).
 - Tests: `render.test.ts` (the hero's one link, before the h1, the AI line under the subtitle, no plan or price in the hero) and an e2e that the link lands on the section clear of a sticky header in every design and width; axe stays clean in all three designs, light and dark, 1440 and 390 px.
 

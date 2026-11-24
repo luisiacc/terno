@@ -243,13 +243,12 @@ describe("“What matters” (plan 224)", () => {
     }
   });
 
-  it("the hero names the AI in its own line under the subtitle, in every home design, without promising a plan on sale", () => {
+  it("the hero's subtitle ends with the AI, in every home design, without promising a plan on sale", () => {
     for (const route of homes) {
       const copy = COPY[route.lang];
       const page = new JSDOM(render(route).body).window.document;
-      const ai = [...page.querySelectorAll("p")].find((p) => p.textContent === copy.hero.ai);
-      expect(ai, route.path).toBeDefined();
-      expect(ai!.previousElementSibling?.textContent, route.path).toBe(copy.hero.subtitle);
+      expect([...page.querySelectorAll("p")].some((p) => p.textContent === copy.hero.subtitle), route.path).toBe(true);
+      expect(copy.hero.subtitle, route.path).toMatch(route.lang === "en" ? /Turn on AI for .+\.$/ : /Activa la IA para .+\.$/);
     }
     for (const lang of ["en", "es"] as const) expect(JSON.stringify(COPY[lang].hero)).not.toMatch(/Pro|\$|US\$/);
   });

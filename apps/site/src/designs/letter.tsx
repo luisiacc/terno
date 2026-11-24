@@ -211,7 +211,6 @@ export const Letter: HomeDesign = ({ copy }) => {
         </p>
         <h1 className="mt-5 text-[2.75rem] leading-[1.02] font-semibold tracking-[-0.04em] text-balance sm:text-[4.25rem]">{copy.hero.title}</h1>
         <p className="letter-prose letter-lead mt-8">{copy.hero.subtitle}</p>
-        <p className="letter-prose letter-lead mt-3">{copy.hero.ai}</p>
         <div id={DOWNLOAD_ANCHOR} className="mt-10 flex scroll-mt-20 flex-wrap items-center gap-3">
           <DownloadMac copy={copy} className={button} subClassName="text-[12px] font-normal opacity-65" />
           <DownloadLinux copy={copy} className={quietButton} subClassName="text-[12px] font-normal text-(--l-muted)" />

@@ -300,7 +300,6 @@ export const Midnight: HomeDesign = ({ copy, route }) => {
               <span className="mn-title">{copy.hero.title}</span>
             </h1>
             <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-balance text-(--mn-muted)">{copy.hero.subtitle}</p>
-            <p className="mx-auto mt-3 max-w-2xl text-lg leading-relaxed text-balance text-(--mn-muted)">{copy.hero.ai}</p>
             <div id={DOWNLOAD_ANCHOR} className="mt-9 flex scroll-mt-28 flex-col items-center justify-center gap-3 sm:flex-row">
               <DownloadMac copy={copy} className="mn-btn mn-btn-primary h-12 gap-2.5 px-5 text-[0.95rem]" subClassName="text-[0.7rem] font-normal text-white" />
               <DownloadLinux copy={copy} className="mn-btn mn-btn-ghost h-12 gap-2.5 px-5 text-[0.95rem]" subClassName="text-[0.7rem] font-normal text-(--mn-muted)" />

@@ -10,9 +10,8 @@ export const en = {
   nav: { features: "Features", pro: "Pro", privacy: "Privacy", source: "Source", download: "Download", language: "Español", languageHref: "/es/", languageMenu: "Language", sourceOnGithub: "Source code on GitHub", home: "Terno home" },
   hero: {
     title: "The last email client you’ll try.",
-    subtitle: "Unified inbox. Instant search. Archive one email, and every one like it goes too. Fully local, no sign-up.",
-    /** the AI, one line under the subtitle: it works today on the user's own key or a local model; Pro's plan isn't sold yet */
-    ai: "Turn on AI for summaries, drafted replies, and reminders when someone doesn’t reply.",
+    /** its last sentence is the AI, which works today on the user's own key or a local model (Pro's plan isn't sold yet) */
+    subtitle: "Unified inbox. Instant search. Archive one email, and every one like it goes too. Fully local, no sign-up. Turn on AI for summaries, drafted replies, and reminders when someone doesn’t reply.",
     /** the link above the title, down to “What matters” in Pro (the owner, 2026-11-23: it belongs in the first lines) */
     news: { tag: "New", text: "“What matters”: only the email that needs you" },
     note: "Free · macOS on Apple silicon and Linux",

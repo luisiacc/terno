@@ -11,8 +11,7 @@ export const es: SiteCopy = {
   nav: { features: "Funciones", pro: "Pro", privacy: "Privacidad", source: "Código", download: "Descargar", language: "English", languageHref: "/", languageMenu: "Idioma", sourceOnGithub: "Código fuente en GitHub", home: "Inicio de Terno" },
   hero: {
     title: "El último cliente de correo que probarás.",
-    subtitle: "Bandeja unificada. Búsqueda instantánea. Archiva un correo y todos los parecidos se van con él. Totalmente local, sin registrarte.",
-    ai: "Activa la IA para tener resúmenes, respuestas redactadas y recordatorios cuando alguien no responde.",
+    subtitle: "Bandeja unificada. Búsqueda instantánea. Archiva un correo y todos los parecidos se van con él. Totalmente local, sin registrarte. Activa la IA para tener resúmenes, respuestas redactadas y recordatorios cuando alguien no responde.",
     news: { tag: "Nuevo", text: "«Lo importante»: solo el correo que te necesita" },
     note: "Gratis · macOS en Apple silicon y Linux",
   },
