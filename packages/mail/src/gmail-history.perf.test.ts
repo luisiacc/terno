@@ -3,7 +3,7 @@ import { createNetworkPolicy } from "../../backend/src/net-policy";
 import { ProviderCooldown } from "../../backend/src/provider-cooldown";
 import { BUDGET_MULTIPLIER } from "../../db/src/test/perf";
 import { watchLoop } from "../../db/src/test/timing";
-import { createGmailApiProvider } from "./gmail-api";
+import { ARRIVALS_EVERY_MS, createGmailApiProvider } from "./gmail-api";
 import type { ProviderContext, SyncSink } from "./types";
 
 afterEach(() => vi.restoreAllMocks());
@@ -125,20 +125,24 @@ it("keeps a first sync's look at changes within the control slice budget", async
   } finally { await provider.close(); }
 });
 
-// plan 265: an incremental pass's queues at the most a history read holds (10,000 additions over five pages, every one
-// already stored): merged, taken newest first and looked up without stalling the loop
-it("keeps a catch-up's queue of 10,000 additions within the control slice budget", async () => {
+// plan 265: an incremental pass's queues at the most a pass merges (10,000 additions over five pages, then a look with
+// 10,000 more, every one already stored): merged, taken newest first and looked up without stalling the loop; a third
+// look past twice a pass's references is left whole for the next pass (Codex code review)
+it("keeps a catch-up's queues of 20,000 additions within the control slice budget", async () => {
   const pages = 5;
-  let lookups = 0, raws = 0, saved: unknown;
-  const page = (n: number) => ({ historyId: "20", history: Array.from({ length: 4 }, (_, k) => ({ messagesAdded: Array.from({ length: 500 }, (_, i) => ({ message: { id: `m${n}-${k}-${i}` } })) })), ...(n + 1 < pages && { nextPageToken: `p${n + 1}` }) });
+  let lookups = 0, raws = 0, now = Date.now(), saved: unknown;
+  vi.spyOn(Date, "now").mockImplementation(() => now);
+  const page = (from: string, n: number) => ({ historyId: from === "10" ? "20" : "30", history: Array.from({ length: 4 }, (_, k) => ({ messagesAdded: Array.from({ length: 500 }, (_, i) => ({ message: { id: `m${from}-${n}-${k}-${i}` } })) })), ...(n + 1 < pages && { nextPageToken: `p${n + 1}` }) });
   const fetch = async (input: string | URL) => {
     const url = new URL(String(input));
-    if (url.pathname.endsWith("/history")) return Response.json(page(Number(url.searchParams.get("pageToken")?.slice(1) ?? 0)));
+    const from = url.searchParams.get("startHistoryId")!;
+    if (url.pathname.endsWith("/history")) return Response.json(from === "30" ? { historyId: "40", history: [{ messagesAdded: [{ message: { id: "late" } }] }] } : page(from, Number(url.searchParams.get("pageToken")?.slice(1) ?? 0)));
     raws++;
     return Response.json({});
   };
   const ctx = { account: { id: 1, email: "reader@example.test" }, config: {}, store: {
-    messageByProviderId: async () => ({ id: ++lookups, subject: "", fromEmail: "sender@example.test" }), pendingAttachmentBodies: async () => [],
+    // a minute of work every 400 lookups: a look after each step
+    messageByProviderId: async () => { if (++lookups % 400 === 0) now += ARRIVALS_EVERY_MS; return { id: lookups, subject: "", fromEmail: "sender@example.test" }; }, pendingAttachmentBodies: async () => [],
   }, loadCursor: async () => ({ historyId: "10" }), saveCursor: async (value: unknown) => { saved = value; }, fetch } as unknown as ProviderContext;
   const noop = async () => {};
   const sink: SyncSink = { signal: new AbortController().signal, windowStart: 0, ingest: noop, updateFlags: noop,
@@ -151,8 +155,8 @@ it("keeps a catch-up's queue of 10,000 additions within the control slice budget
       const timing = monitor.stop();
       expect(timing.stall, JSON.stringify(timing)).toBeLessThanOrEqual(budget);
     }
-    expect(lookups).toBe(10_000);
+    expect(lookups).toBe(20_000);
     expect(raws).toBe(0);
-    expect(saved).toEqual({ historyId: "20" });
+    expect(saved).toEqual({ historyId: "30" });
   } finally { await provider.close(); }
 });

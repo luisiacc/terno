@@ -29,7 +29,12 @@ function rig(o: {
   status?: (id: string) => number | undefined;
   /** ms a raw read waits before it answers */
   delay?: (id: string) => number;
+  /** a minimal read's answer (a number: that HTTP status) */
   minimal?: (id: string) => unknown;
+  /** ids with a capture repair row */
+  repairRows?: string[];
+  /** called on each stored-message lookup */
+  lookup?: (id: string) => void;
   blockCapture?: SyncSink["blockCapture"];
   pendingRepairs?: string[];
   /** the repair the person just asked to retry (it goes before history) */
@@ -39,7 +44,7 @@ function rig(o: {
 }) {
   const stored = new Set(o.stored ?? []);
   const raws: string[] = [], minimals: string[] = [], histories: string[] = [], saved: unknown[] = [], ingested: string[][] = [], flagPages: FlagSnapshotRequest[] = [];
-  const updates: string[] = [];
+  const updates: string[] = [], events: string[] = [], updatesAtSave: string[][] = [];
   let again = 0;
   const pipeline = new IncomingPipeline();
   const ctx = {
@@ -48,7 +53,7 @@ function rig(o: {
     incoming: { acquire: pipeline.acquire.bind(pipeline), promote: pipeline.promote.bind(pipeline) },
     incomingProcessor: { run: async (input: { expectedId?: string }) => { throw new IncomingProcessingError(o.refuse?.(input.expectedId!) ?? "worker-fault"); } },
     store: {
-      messageByProviderId: async (id: string) => stored.has(id) ? { id: Number(id.replace(/\D/g, "")) || 1, subject: "", fromEmail: "sender@example.test" } : null,
+      messageByProviderId: async (id: string) => (o.lookup?.(id), stored.has(id)) ? { id: Number(id.replace(/\D/g, "")) || 1, subject: "", fromEmail: "sender@example.test" } : null,
       pendingAttachmentBodies: async () => [], syncedMessagePage: async () => ({ items: [] }),
       pendingFlagSnapshots: async (p: FlagSnapshotRequest) => {
         flagPages.push({ ...p });
@@ -56,12 +61,13 @@ function rig(o: {
         return { items: Array.from({ length: Math.max(0, end - after) }, (_, i) => ({ id: after + i + 1, providerMsgId: `f${after + i + 1}` })), throughMessageId: through, hasMore: end < through };
       },
       repairs: {
-        get: async (_account: number, locator: { providerId: string }) => locator.providerId === o.explicitRetry ? { key: locator.providerId, locator, reason: "mime-parts", state: "pending", revision: 1 } : null,
+        get: async (_account: number, locator: { providerId: string }) => locator.providerId === o.explicitRetry ? { key: locator.providerId, locator, reason: "mime-parts", state: "pending", revision: 1 }
+          : o.repairRows?.includes(locator.providerId) ? { key: locator.providerId, locator, reason: "mime-parts", state: "blocked", revision: 1 } : null,
         list: async () => ({ items: (o.pendingRepairs ?? []).map((id) => ({ key: id, locator: { kind: "gmail", providerId: id }, reason: "mime-parts", state: "pending", revision: 1 })) }),
       },
     },
     loadCursor: async () => ({ historyId: "10" }),
-    saveCursor: async (value: unknown) => void saved.push(value),
+    saveCursor: async (value: unknown) => { saved.push(value); updatesAtSave.push([...updates]); },
     fetch: async (input: string | URL) => {
       const url = new URL(String(input));
       if (url.pathname.endsWith("/history")) {
@@ -74,7 +80,8 @@ function rig(o: {
       const id = url.pathname.split("/").at(-1)!;
       if (url.searchParams.get("format") === "minimal") {
         minimals.push(id);
-        return Response.json(o.minimal?.(id) ?? { id, labelIds: ["INBOX"] });
+        const answer = o.minimal?.(id) ?? { id, labelIds: ["INBOX"] };
+        return typeof answer === "number" ? Response.json({ error: { message: "synthetic" } }, { status: answer }) : Response.json(answer);
       }
       raws.push(id);
       const delay = o.delay?.(id);
@@ -89,17 +96,20 @@ function rig(o: {
   const sink: SyncSink = {
     signal: new AbortController().signal, windowStart: 0,
     async ingest(messages) { ingested.push(messages.map((m) => m.providerMsgId!)); for (const m of messages) stored.add(m.providerMsgId!); },
-    async updateFlags(list) { updates.push(...list.map((u) => u.expectedProviderMsgId!)); }, async removeMessages() {}, async setBody() {}, async setSyncState() {}, async pendingMessageIds() { return new Set(); },
+    async updateFlags(list) { updates.push(...list.map((u) => `${u.expectedProviderMsgId}:${u.gmailLabels!.join(",")}`)); },
+    async retireCapture(locator) { events.push(`retire ${locator.kind === "gmail" ? locator.providerId : ""}`); }, async removeMessages() {}, async setBody() {}, async setSyncState() {}, async pendingMessageIds() { return new Set(); },
     again: () => void again++,
     ...(o.explicitRetry && { captureRetry: { locator: { kind: "gmail" as const, providerId: o.explicitRetry }, revision: 1 } }),
-    ...(o.blockCapture && { blockCapture: o.blockCapture }),
+    ...(o.blockCapture && { blockCapture: async (...args: Parameters<NonNullable<SyncSink["blockCapture"]>>) => { const [locator] = args; events.push(`block ${locator.kind === "gmail" ? locator.providerId : ""}`); return o.blockCapture!(...args); } }),
   };
-  return { provider, sink, raws, minimals, histories, saved, ingested, flagPages, updates, stored, again: () => again, sync: () => provider.sync(sink) };
+  return { provider, sink, raws, minimals, histories, saved, ingested, flagPages, updates, updatesAtSave, events, stored, again: () => again, sync: () => provider.sync(sink) };
 }
 
-/** history since "10" adding `ids` in that order (pages of 500), at `historyId` */
+/** history since "10" adding `ids` in that order (records of 100), at `historyId` */
 function additions(ids: string[], historyId = "20"): HistoryAnswer {
-  return { historyId, history: ids.map((id) => ({ messagesAdded: [{ message: { id } }] })) };
+  const history = [];
+  for (let i = 0; i < ids.length; i += 100) history.push({ messagesAdded: ids.slice(i, i + 100).map((id) => ({ message: { id } })) });
+  return { historyId, history };
 }
 const named = (n: number, prefix = "a") => Array.from({ length: n }, (_, i) => `${prefix}${i + 1}`);
 
@@ -228,10 +238,45 @@ describe("a long catch-up looks at history between its steps", () => {
     const t = rig({
       stored: ["s1"],
       history: (start) => start === "10" ? { historyId: "20", history: [{ labelsAdded: [{ message: { id: "s1" } }] }] } : start === "20" ? { historyId: "30", history: [{ labelsRemoved: [{ message: { id: "s1" } }] }] } : { historyId: "30" },
-      minimal: (id) => { now += ARRIVALS_EVERY_MS; return { id, labelIds: ["INBOX"] }; },
+      minimal: (id) => { now += ARRIVALS_EVERY_MS; return { id, labelIds: t.minimals.length === 1 ? ["INBOX", "STARRED"] : ["INBOX"] }; },
     });
     await t.sync();
     expect(t.minimals).toEqual(["s1", "s1"]);
+    expect(t.updatesAtSave).toEqual([["s1:INBOX,STARRED", "s1:INBOX"]]);
     expect(t.saved).toEqual([{ historyId: "30" }]);
+  });
+
+  it("a look still frees the repair row of a message a reread found gone, before that look's new mail needs a repair", async () => {
+    let now = NOW;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const t = rig({
+      stored: ["s1"], repairRows: ["s1"],
+      history: (start) => start === "10" ? { historyId: "20", history: [{ labelsAdded: [{ message: { id: "s1" } }] }] }
+        : start === "20" ? { historyId: "30", history: [{ messagesDeleted: [{ message: { id: "s1" } }] }, { messagesAdded: [{ message: { id: "parts" } }] }] } : { historyId: "30" },
+      minimal: () => { now += ARRIVALS_EVERY_MS; return 404; },
+      refuse: (id) => id === "parts" ? "mime-limit-parts" : undefined, blockCapture: async () => {},
+    });
+    await t.sync();
+    expect(t.events.slice(0, 2)).toEqual(["retire s1", "block parts"]);
+    expect(t.saved).toEqual([{ historyId: "30" }]);
+  });
+
+  it("a replay of mail already stored still looks at history between its steps", async () => {
+    let now = NOW;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const ids = named(600);
+    const t = rig({
+      stored: ids, lookup: (id) => { if (id === "a550") now += ARRIVALS_EVERY_MS; },
+      history: (start) => start === "10" ? additions(ids) : start === "20" ? additions(["fresh"], "30") : { historyId: "30" },
+    });
+    await t.sync();
+    expect(t.raws).toEqual(["fresh"]);
+    expect(t.saved).toEqual([{ historyId: "30" }]);
+  });
+
+  it("a held message's error comes before a malformed flag snapshot's", async () => {
+    const full = new RpcError("UNAVAILABLE", L("capture.capacity"));
+    const t = rig({ flags: 1, minimal: (id) => id === "f1" ? { id: "wrong", labelIds: [] } : undefined, history: () => additions(["parts"]), refuse: (id) => id === "parts" ? "mime-limit-parts" : undefined, blockCapture: async () => { throw full; } });
+    await expect(t.sync()).rejects.toBe(full);
   });
 });

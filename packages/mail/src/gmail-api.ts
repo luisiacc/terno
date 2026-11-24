@@ -1475,12 +1475,15 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     const rereads: string[] = [], rereadWaiting = new Set<string>();
     let summaryAt = 0, rereadAt = 0;
     const reread = (id: string) => { if (!rereadWaiting.has(id)) { rereadWaiting.add(id); rereads.push(id); } };
-    // Authoritative deletions release bounded repair capacity before new capture admissions.
+    // Authoritative deletions release bounded repair capacity before new capture admissions (each once: a reread's 404
+    // joins `deleted` without retiring, a look's deletion of it then still frees its row: Codex code review)
+    const retiredIds = new Set<string>();
     let retired = 0;
     const merge = async (changes: HistoryChanges) => {
       for (const gid of changes.deleted) {
-        if (deleted.has(gid)) continue;
         deleted.add(gid);
+        if (retiredIds.has(gid)) continue;
+        retiredIds.add(gid);
         if (++retired % 50 === 0) { await new Promise<void>((resolve) => setTimeout(resolve, 0)); sink.check(); }
         const locator = { kind: "gmail" as const, providerId: gid };
         if (await store.repairs?.get(accountId, locator)) await sink.retireCapture?.(locator);
@@ -1491,7 +1494,8 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     };
     await merge(first);
     // plan 265: new history merged between steps; gone or too long, the pass stops looking (its cursor then is the
-    // position merged last, what the look named is the next pass's), and it stops after twice a pass's references
+    // position merged last, what the look named is the next pass's); a look past twice a pass's references is left
+    // whole for the next pass, and looking stops
     const look = async () => {
       if (!looking || Date.now() - lookedAt < ARRIVALS_EVERY_MS) return;
       let more: HistoryChanges;
@@ -1501,20 +1505,23 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         throw error;
       }
       lookedAt = Date.now();
+      if (merged + more.references > 2 * HISTORY_TOTAL_REFS) { looking = false; return; }
       merged += more.references;
-      if (merged > 2 * HISTORY_TOTAL_REFS) looking = false;
       await merge(more);
       latest = more.latest;
     };
     // plan 41: what history added since the cursor is live mail (a full sync and the attachment re-fetch aren't)
     const live: SyncPass = { ...sink, ingest: (messages) => sink.ingest(messages, { live: true }) };
+    // a step looks at most 500 candidates (already stored ones too), so a replay of stored mail still looks between steps
     const nextArrivals = async () => {
       const ids: string[] = [];
-      while (ids.length < 50 && arrivals.length) {
+      let visited = 0;
+      while (ids.length < 50 && visited < 500 && arrivals.length) {
+        visited++;
         const id = arrivals.pop()!;
         if (!deleted.has(id) && !(await known(id))) ids.push(id);
       }
-      return ids;
+      return { ids, visited };
     };
     // plan 260: a summary-only message held here is relabelled (a 404 removes it); one not held comes in whole as a
     // reconciliation would have brought it: within the account's window, and not live (only a typed addition says new)
@@ -1557,11 +1564,14 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       sink.check();
     };
     for (;;) {
-      const ids = await nextArrivals();
+      const { ids, visited } = await nextArrivals();
       if (ids.length) await fetchFull(ids, live, true);
-      else if (summaryAt < summary.length) await summaryStep();
-      else if (rereadAt < rereads.length) await rereadStep();
-      else break;
+      // (a step that met only stored additions is a step too: a look next)
+      else if (!visited) {
+        if (summaryAt < summary.length) await summaryStep();
+        else if (rereadAt < rereads.length) await rereadStep();
+        else break;
+      }
       await look();
     }
     let removals: number[] = [];
@@ -1769,8 +1779,9 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       sink.check();
       await captureAttachments(sink);
       sink.check();
-      if (malformed) throw malformed;
+      // a held message keeps the cursor back: its error, and what to do about it, comes first (Codex code review)
       if (sink.held?.error !== undefined) throw sink.held.error;
+      if (malformed) throw malformed;
       // plan 101: older mail, after everything new
       await backfill(sink);
     },

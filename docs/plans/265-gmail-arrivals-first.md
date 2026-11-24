@@ -165,3 +165,30 @@ The plan critique (12 points) and what changed:
 11. Bounds: one look per `ARRIVALS_EVERY_MS` of work, each bounded as a history read is (100 pages, 10,000
     references); looks stop past twice a pass's references.
 12. The automatic repair retry moves after history with `hold` (tested).
+
+## What the Codex code review changed
+
+Self-review first: a hold from the retry the person just asked for (it goes before history) kept the history cursor
+back every pass. Holds are now counted, and `incremental` and `peekArrivals` save no progress only past their own
+(tested).
+
+The review (10 findings; no path found that saves a cursor, peek, page or backfill past an unstored, unrecorded
+message):
+
+1. Fixed: a held message's error is thrown before a malformed flag snapshot's (the hold is what keeps the cursor
+   back, and its error says what to do). Tested.
+2. Declined (rare): a message held by a peek and stored by the catch-up later in the same pass still reports its error
+   for that pass; the next pass is clean.
+3. Declined: siblings stored after a repair-row conflict (`STALE`) are valid mail; storing them is right.
+4. Declined (pre-existing, unchanged admission chain): a queued flush after `reset()` writes mail already downloaded
+   and fenced by the sink's own checks.
+5. Fixed: a reread's 404 joins the deletions without retiring its repair row; a look's deletion of it now still
+   retires it before that look's additions (repair retirement tracked apart from deletion). Tested.
+6. Noted: the flag share is checked per page; at the paced quota a page of 50 is ~12 s.
+7. Fixed: an arrivals step looks at most 500 candidates, stored ones included, so a replay of stored mail still looks
+   between steps. Tested.
+8. Fixed: a look that would take the pass past twice a pass's references is left whole for the next pass (looking
+   stops). Covered by the perf gate below.
+9. Fixed: the reread test returns different labels and checks both reached the sink before the cursor save.
+10. Fixed: the perf gate merges a 10,000-addition look (20,000 lookups) within the slice budget, and leaves a third
+    look past the budget unmerged.
