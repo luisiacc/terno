@@ -46,10 +46,12 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  * Version 40 adds What matters in the user's words: verdicts, wanted items and their marks (SQL v77, plan 249).
  * SQL v78 (plan 256) adds `threads.only_yours`: absent reads 0, so no version change; a mailbox from before asks the tabs
  * backfill to write it (store.ts).
+ * SQL v79 (plan 261) adds `messages.code` and `threads.code`: absent reads as none, so no version change; mail from before
+ * has none stored (a code shows for two hours).
  */
 export { IDB_VERSION };
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 78;
+export const LOGICAL_SCHEMA = 79;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 

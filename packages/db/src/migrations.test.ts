@@ -436,7 +436,7 @@ describe("migration v14: people and waiting for your reply (plan 17)", () => {
     const before = db.all<Record<string, unknown>>("SELECT * FROM threads ORDER BY id");
     expect(migrate(db)).toEqual({ from: 13, to: SCHEMA_VERSION });
     const after = db.all<Record<string, unknown>>("SELECT * FROM threads ORDER BY id");
-    expect(after).toEqual(before.map((t) => ({ ...t, person: null, waiting_since: null, tab: 0, only_yours: 0 })));
+    expect(after).toEqual(before.map((t) => ({ ...t, person: null, waiting_since: null, tab: 0, only_yours: 0, code: null })));
     expect(db.get<{ c: number }>("SELECT count(*) AS c FROM messages WHERE is_bulk != 0")!.c).toBe(0);
     expect(db.get<{ c: number }>("SELECT count(*) AS c FROM correspondents")!.c).toBe(0);
     expect(JSON.parse(db.get<{ value_json: string }>("SELECT value_json FROM settings WHERE key = 'facts_backfill'")!.value_json)).toEqual({ phase: "senders", after: 0 });
@@ -649,7 +649,7 @@ describe("migration v37: Gmail tabs (plan 86)", () => {
     const { db } = legacyMail(36, { threads: 10, seed: 6 });
     const before = db.all<Record<string, unknown>>("SELECT * FROM threads ORDER BY id");
     expect(migrate(db)).toEqual({ from: 36, to: SCHEMA_VERSION });
-    expect(db.all<Record<string, unknown>>("SELECT * FROM threads ORDER BY id")).toEqual(before.map((t) => ({ ...t, tab: 0, only_yours: 0 })));
+    expect(db.all<Record<string, unknown>>("SELECT * FROM threads ORDER BY id")).toEqual(before.map((t) => ({ ...t, tab: 0, only_yours: 0, code: null })));
     expect(db.get<{ c: number }>("SELECT count(*) AS c FROM messages WHERE category IS NOT NULL")!.c).toBe(0);
     expect(db.get("SELECT 1 FROM settings WHERE key = 'tabs_backfill'")).toBeUndefined();
     const gmail = legacyMail(36, { threads: 2, seed: 7 }).db;
@@ -851,7 +851,7 @@ describe("migration v75: Remove on a conversation waiting on you (plan 216)", ()
     const threads = db.all<Record<string, unknown>>("SELECT * FROM threads ORDER BY id");
     expect(migrate(db)).toEqual({ from: 74, to: SCHEMA_VERSION });
     expect(db.all<Record<string, unknown>>("SELECT * FROM waiting_acts ORDER BY message_id")).toEqual(before);
-    expect(db.all<Record<string, unknown>>("SELECT * FROM threads ORDER BY id")).toEqual(threads.map((t) => ({ ...t, only_yours: 0 })));
+    expect(db.all<Record<string, unknown>>("SELECT * FROM threads ORDER BY id")).toEqual(threads.map((t) => ({ ...t, only_yours: 0, code: null })));
     expect(db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'waiting_acts' AND sql IS NOT NULL ORDER BY name").map((r) => r.name)).toEqual(["waiting_acts_done", "waiting_acts_later", "waiting_acts_removed"]);
     db.run("INSERT INTO waiting_acts (message_id, state, at, rev) VALUES (?, 'removed', 1, 1)", c);
     expect(() => db.run("UPDATE waiting_acts SET state = 'gone' WHERE message_id = ?", c)).toThrow();
@@ -899,8 +899,8 @@ describe("migration v74: Done and Later on a conversation waiting on you (plan 2
     const threads = db.all<Record<string, unknown>>("SELECT * FROM threads ORDER BY id");
     const messages = db.all<Record<string, unknown>>("SELECT * FROM messages ORDER BY id");
     expect(migrate(db)).toEqual({ from: 73, to: SCHEMA_VERSION });
-    expect(db.all<Record<string, unknown>>("SELECT * FROM threads ORDER BY id")).toEqual(threads.map((t) => ({ ...t, only_yours: 0 })));
-    expect(db.all<Record<string, unknown>>("SELECT * FROM messages ORDER BY id")).toEqual(messages);
+    expect(db.all<Record<string, unknown>>("SELECT * FROM threads ORDER BY id")).toEqual(threads.map((t) => ({ ...t, only_yours: 0, code: null })));
+    expect(db.all<Record<string, unknown>>("SELECT * FROM messages ORDER BY id")).toEqual(messages.map((m) => ({ ...m, code: null })));
     expect(db.all("SELECT * FROM waiting_acts")).toEqual([]);
     expect(db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'waiting_acts' AND sql IS NOT NULL ORDER BY name").map((r) => r.name)).toEqual(expect.arrayContaining(["waiting_acts_done", "waiting_acts_later"]));
     const m = messages[0]!.id as number;

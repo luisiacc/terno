@@ -43,7 +43,8 @@ export interface IncomingMessage {
   snippet: string;
   bodyParts?: import("@terno/core").ExactBodyParts;
   preparedBodyTokens?: Uint16Array[];
-  bodyCapture?: { id: string; preview: string | null; snippet: string; tail: string };
+  /** `code`: plan 261, the body's verification code, when staging knew the subject (undefined: it didn't) */
+  bodyCapture?: { id: string; preview: string | null; snippet: string; tail: string; code?: string | null };
   bodyText: string | null;
   bodyHtml: string | null;
   bodyState: "none" | "partial" | "full";

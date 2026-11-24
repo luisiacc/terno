@@ -1,6 +1,6 @@
-import { codeExpiry, codeFresh, findCode, type ThreadSummary } from "@terno/core";
+import { codeExpiry, codeFresh, type ThreadSummary } from "@terno/core";
 import { t } from "@terno/i18n";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { act, targetRows } from "./actions";
 import { snack } from "./snack";
 
@@ -68,26 +68,22 @@ export function useCodeState(key: string): { copied: boolean; used: boolean } {
 }
 
 /**
- * The code a thread offers now: its newest message at most two hours old, read from the snippet (the newest
- * message's) and the subject. The subject is the first message's, so it counts only while that is the only one: a
- * reply must not bring back the original's code.
+ * The code a thread offers now: its newest message's, while that is at most two hours old. The store found it in that
+ * message's whole text and its own subject when the text arrived (plan 261), so a reply never brings back the original's.
  */
-export function threadCode(thread: Pick<ThreadSummary, "subject" | "snippet" | "lastDate" | "messageCount">, now: number): string | null {
-  return codeFresh(thread.lastDate, now) ? codeOf(thread) : null;
+export function threadCode(thread: Pick<ThreadSummary, "code" | "lastDate">, now: number): string | null {
+  return thread.code && codeFresh(thread.lastDate, now) ? thread.code : null;
 }
 
-const codeOf = (thread: Pick<ThreadSummary, "subject" | "snippet" | "messageCount">) => findCode(thread.messageCount > 1 ? "" : thread.subject, thread.snippet);
-
 /**
- * A row's code. Older threads cost one subtraction per render; a fresh one is read once (memoized) and one timer, set
- * to the exact expiry, takes the chip away. Nothing runs while idle.
+ * A row's code. A row without one costs nothing; a fresh one sets one timer, to the exact expiry, that takes the chip
+ * away. Nothing runs while idle.
  */
 export function useThreadCode(thread: ThreadSummary): string | null {
   // the clock is read again when newer mail arrives: a row on screen for a while must not see it as old
   const [clock, setClock] = useState(() => ({ now: Date.now(), date: thread.lastDate }));
   if (clock.date !== thread.lastDate) setClock({ now: Date.now(), date: thread.lastDate });
-  const fresh = codeFresh(thread.lastDate, clock.date === thread.lastDate ? clock.now : Date.now());
-  const code = useMemo(() => (fresh ? codeOf(thread) : null), [fresh, thread.subject, thread.snippet, thread.messageCount]);
+  const code = threadCode(thread, clock.date === thread.lastDate ? clock.now : Date.now());
   useEffect(() => {
     if (!code) return;
     const id = setTimeout(() => setClock({ now: Date.now(), date: thread.lastDate }), Math.max(0, codeExpiry(thread.lastDate) - Date.now()) + 1);

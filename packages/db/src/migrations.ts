@@ -1804,6 +1804,12 @@ ALTER TABLE threads ADD COLUMN only_yours INTEGER NOT NULL DEFAULT 0;
 INSERT INTO settings (key, value_json) SELECT 'tabs_backfill', '{"phase":"threads","after":0}' WHERE EXISTS (SELECT 1 FROM accounts WHERE kind = 'gmail')
   ON CONFLICT (key) DO UPDATE SET value_json = excluded.value_json WHERE json_extract(settings.value_json, '$.phase') = 'threads';
 ` },
+  // plan 261: a message's verification code, found in its whole text when the text arrives (not in the 200-character
+  // snippet), and its thread's, the newest message's. Shape only: mail from before has none (a code shows for two hours).
+  { version: 79, name: "Verification codes stored with the mail (plan 261)", sql: `
+ALTER TABLE messages ADD COLUMN code TEXT;
+ALTER TABLE threads ADD COLUMN code TEXT;
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

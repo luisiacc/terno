@@ -74,6 +74,8 @@ export interface SummarySourceMessage {
   bodyState: "none" | "partial" | "full";
   /** too big to keep: its text will never come (plan 106's size limit) */
   bodyUnavailable: boolean;
+  /** plan 261: the verification code it carries (its whole text read when it arrived): no AI reads it by itself */
+  code: string | null;
   /** when it arrived as new mail, while a marker says summaries want it */
   markedAt: number | null;
 }

@@ -66,6 +66,8 @@ export interface DigestFact {
   fromEmail: string;
   subject: string;
   snippet: string;
+  /** plan 261: the verification code the message carries */
+  code: string | null;
 }
 
 /** How many of the newest waiting threads the rule reads: every count pays for this, and a window with more isn't a person's. */

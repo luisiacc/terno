@@ -1,6 +1,7 @@
 import type { BodyPin } from "./body-protocol";
 import type { SearchMessageDoc } from "./search";
-import { UNSUBSCRIBE_SCAN_MAX, tokenize, type TextOp } from "@terno/core";
+import type { IncomingMessage } from "./types";
+import { CODE_TEXT_MAX, findCode, UNSUBSCRIBE_SCAN_MAX, tokenize, type TextOp } from "@terno/core";
 
 /** A storage/transfer unit, never a limit on a message's complete content. */
 export const BODY_PART_UNITS = 32768;
@@ -154,6 +155,36 @@ export async function* bodyPartWrites(text: string | null, html: string | null, 
 export type BodyTest = { op: TextOp; value: string; prefix?: boolean };
 export const bodyTestKey = (op: TextOp, value: string, prefix = false): string => JSON.stringify([op, value, prefix]);
 export type BodyTestResults = Map<string, Map<string, boolean>>;
+
+/**
+ * Plan 261: the verification code a message's body carries, found once when its text is known (the whole text findCode
+ * reads, not the 200-unit snippet). Text held in parts is read only as far as findCode would.
+ */
+export function bodyCode(subject: string, text: string | null | undefined, parts?: readonly string[]): string | null {
+  if (!parts?.length) return findCode(subject, text ?? null);
+  let head = "";
+  for (const part of parts) {
+    head += part.slice(0, CODE_TEXT_MAX - head.length);
+    if (head.length >= CODE_TEXT_MAX) break;
+  }
+  return findCode(subject, head);
+}
+
+/**
+ * The subject a message's code may come from: none for a message that answers another, whose subject repeats the
+ * original's, even without "Re:" (plan 261, Codex critique).
+ */
+export const codeSubject = (subject: string, inReplyTo: string | null | undefined): string => (inReplyTo ? "" : subject);
+
+/**
+ * Plan 261: the code a new message carries, from its body (a capture found it while staging), else from the snippet a
+ * header-only message has. Mail of yours carries none: a code is someone else's to give you.
+ */
+export function incomingCode(msg: Pick<IncomingMessage, "isSent" | "isDraft" | "subject" | "inReplyTo" | "bodyText" | "bodyParts" | "bodyCapture" | "snippet">): string | null {
+  if (msg.isSent || msg.isDraft) return null;
+  if (msg.bodyCapture?.code !== undefined) return msg.bodyCapture.code;
+  return bodyCode(codeSubject(msg.subject, msg.inReplyTo), msg.bodyText ?? msg.snippet, msg.bodyParts?.text);
+}
 
 /** The existing unquoted 200-unit snippet, scanning even whitespace/quoted runs in bounded turns. */
 export async function prepareBodySnippet(text: string | null | undefined, yieldTo: () => Promise<void>, parts?: readonly string[]): Promise<string> {

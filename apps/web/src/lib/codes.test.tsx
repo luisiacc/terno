@@ -13,7 +13,7 @@ vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 const NOW = Date.UTC(2026, 9, 29, 12);
 const HOURS_2 = 2 * 3_600_000;
 const thread = (o: Partial<ThreadSummary> = {}): ThreadSummary => ({
-  id: 7, accountId: 1, subject: "Your Acme sign-in code", snippet: "Use this code to finish signing in: 048291", lastDate: NOW - 60_000,
+  id: 7, accountId: 1, subject: "Your Acme sign-in code", snippet: "Use this code to finish signing in: 048291", code: "048291", lastDate: NOW - 60_000,
   fromName: "Acme", fromEmail: "no-reply@acme.test", messageCount: 1, unread: true, starred: false, hasAttachments: false, categoryIds: [], ...o,
 });
 
@@ -114,7 +114,7 @@ it("a row scrolled away and back (or the menu's copy) shares the state", async (
   await showRow(thread());
   expect(chip()!.hasAttribute("data-used")).toBe(true);
   // a newer code in the same thread is a new one
-  await showRow(thread({ snippet: "Your new code is 551234" }));
+  await showRow(thread({ snippet: "Your new code is 551234", code: "551234" }));
   expect(chip()!.hasAttribute("data-used")).toBe(false);
 });
 
@@ -133,7 +133,7 @@ it("says so when the clipboard refuses, and stays as it was", async () => {
 it("only threads whose newest mail is at most two hours old, with a code", async () => {
   await showRow(thread({ lastDate: NOW - HOURS_2 - 1 }));
   expect(chip()).toBeNull();
-  await showRow(thread({ subject: "Shipped", snippet: "Your order 048291 has shipped." }));
+  await showRow(thread({ subject: "Shipped", snippet: "Your order 048291 has shipped.", code: undefined }));
   expect(chip()).toBeNull();
 });
 
@@ -154,18 +154,17 @@ it("threadCode: the menu reads the same code", async () => {
 
 // Codex review round 4
 it("a row on screen for a while still offers the code of mail arriving now", async () => {
-  await showRow(thread({ snippet: "Hello", subject: "Hi" }));
+  await showRow(thread({ snippet: "Hello", subject: "Hi", code: undefined }));
   expect(chip()).toBeNull();
   await act(async () => vi.advanceTimersByTime(10 * 60_000));
-  await showRow(thread({ snippet: "Your new code is 551234", subject: "Hi", lastDate: Date.now(), messageCount: 2 }));
+  await showRow(thread({ snippet: "Your new code is 551234", subject: "Hi", code: "551234", lastDate: Date.now(), messageCount: 2 }));
   expect(chip()!.dataset.code).toBe("551234");
 });
 
-it("a reply doesn't bring back the first message's code from the subject", async () => {
-  await showRow(thread({ subject: "Your code 111111", snippet: "Thanks, that worked!", messageCount: 2 }));
+// plan 261: the store found the code in the newest message's whole text; the list reads it, never the snippet
+it("offers the store's code, whatever the snippet shows, and nothing without one", async () => {
+  await showRow(thread({ subject: "Action required: Verify your email address", snippet: "Microsoft Hello, Ana We need to verify your email address.", code: "391372" }));
+  expect(chip()!.dataset.code).toBe("391372");
+  await showRow(thread({ subject: "Your code 111111", snippet: "Your code 111111", code: undefined, messageCount: 2 }));
   expect(chip()).toBeNull();
-  await showRow(thread({ subject: "Your code 111111", snippet: "Your new code is 222222", messageCount: 2 }));
-  expect(chip()!.dataset.code).toBe("222222");
-  const { threadCode } = await import("./codes");
-  expect(threadCode(thread({ subject: "Your code 111111", snippet: "Thanks", messageCount: 2 }), NOW)).toBeNull();
 });

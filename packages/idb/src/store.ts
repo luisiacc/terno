@@ -10,7 +10,7 @@ import { activeDated, addDatedMute, datedMutes, removeDatedMute, closedDatedPage
 import { activeFollowups, closedFollowupPage, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, closeArchivedFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupsPutAway, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
 import { findLinked, newestLinked } from "./links";
 import { addAskTurn, askAccountsOf, askCandidates, askHeaders, askNewest, askTurnCount, askTurns, clearAsk, listAskConversations, removeAskConversation, removeAskForAccount, restoreAskConversation } from "./ask";
-import { projectBodyTokens, messageBodiesReleased } from "@terno/store";
+import { bodyCode, codeSubject, projectBodyTokens, messageBodiesReleased } from "@terno/store";
 import { releaseIndexBodies, releaseBodyChanges, type IndexChange } from "@terno/store";
 import { releaseMessageBodies } from "@terno/store";
 import { BodyProtocol, BodyEpochChanged, BODY_FACT_TABLES, publishBody, type BodyTicket } from "@terno/store";
@@ -604,7 +604,7 @@ export class IdbMailStore implements MailStore {
     } };
   }
 
-  private async stageBody<M extends Pick<IncomingMessage, "accountId" | "bodyText" | "bodyHtml" | "snippet" | "preparedBodyTokens" | "bodyParts">>(message: M, check?: () => void): Promise<M & Pick<IncomingMessage, "bodyCapture">> {
+  private async stageBody<M extends Pick<IncomingMessage, "accountId" | "bodyText" | "bodyHtml" | "snippet" | "preparedBodyTokens" | "bodyParts"> & { subject?: string; inReplyTo?: string | null }>(message: M, check?: () => void): Promise<M & Pick<IncomingMessage, "bodyCapture">> {
     validateBodyInput(message);
     if (!message.bodyParts && Math.max(message.bodyText?.length ?? 0, message.bodyHtml?.length ?? 0) <= BODY_PART_UNITS) return message;
     const id = this.o.platform.uuid();
@@ -622,7 +622,7 @@ export class IdbMailStore implements MailStore {
       }
       if (acknowledged[0] !== (bodyPartCount(message.bodyText, message.bodyParts?.text) ?? 0) || acknowledged[1] !== (bodyPartCount(message.bodyHtml, message.bodyParts?.html) ?? 0)) throw new Error("Body acknowledgements are incomplete");
       await this.command(() => { check?.(); const row = T(this.c, "body_captures").get(id)!; T(this.c, "body_captures").update(row, { token_parts: tokenCount, ready: 1 }); }, { check });
-      return { ...message, bodyText: null, bodyHtml: null, bodyParts: undefined, preparedBodyTokens: undefined, bodyCapture: { id, preview: bodyPreview(message.bodyText, message.bodyParts), snippet: await prepareBodySnippet(message.snippet || message.bodyText, this.o.platform.yield, message.snippet ? undefined : message.bodyParts?.text), tail: "" } };
+      return { ...message, bodyText: null, bodyHtml: null, bodyParts: undefined, preparedBodyTokens: undefined, bodyCapture: { id, preview: bodyPreview(message.bodyText, message.bodyParts), snippet: await prepareBodySnippet(message.snippet || message.bodyText, this.o.platform.yield, message.snippet ? undefined : message.bodyParts?.text), tail: "", ...(message.subject !== undefined ? { code: bodyCode(codeSubject(message.subject, message.inReplyTo), message.bodyText, message.bodyParts?.text) } : {}) } };
     } catch (error) { if (this.isOpen && !this.unusable) await this.finishBodyStage(id); throw error; }
   }
 
@@ -1313,9 +1313,11 @@ export class IdbMailStore implements MailStore {
     setBody: async (messageId, text, html, { now, classifier, attachments, bodyParts, preparedBodyTokens, captureUnavailable, repair, check, expected }) => this.bodyCommand(async () => {
       const callerCheck = check; check = () => { if (this.bodyClosing) throw new Error("The store is closing"); callerCheck?.(); };
       await this.bodyCleanup;
-      const accountId = await this.read(() => T(this.c, "messages").get(messageId)?.account_id as number | undefined);
+      // plan 261: the subject finds the body's code while staging holds the text
+      const held = await this.read(() => { const m = T(this.c, "messages").get(messageId); return m ? { accountId: m.account_id as number, subject: m.subject as string, inReplyTo: (m.in_reply_to as string | null | undefined) ?? null } : undefined; });
+      const accountId = held?.accountId;
       const staged = !captureUnavailable && attachments !== undefined && accountId !== undefined ? await stageAttachments(this, accountId, attachments, now, this.o.platform.yield, await this.attachments.current(accountId, { id: messageId })) : undefined;
-      const body = !captureUnavailable && accountId !== undefined ? await this.stageBody({ accountId, bodyText: text, bodyHtml: html, bodyParts, snippet: "", preparedBodyTokens }, check) : { bodyText: text, bodyHtml: html, bodyCapture: undefined };
+      const body = !captureUnavailable && accountId !== undefined ? await this.stageBody({ accountId, subject: held!.subject, inReplyTo: held!.inReplyTo, bodyText: text, bodyHtml: html, bodyParts, snippet: "", preparedBodyTokens }, check) : { bodyText: text, bodyHtml: html, bodyCapture: undefined };
       const cache: BodyTestResults = new Map();
       try {
       return await publishBody(async () => {

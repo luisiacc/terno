@@ -41,9 +41,9 @@ function legacy(path: string, fail: boolean) {
     registerFunctions(db);
     for (const migration of MIGRATIONS) if (migration.version <= 38) db.tx(() => { db.exec(migration.sql); db.exec(`PRAGMA user_version=${migration.version}`); });
     const account = createAccount(db, { kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "brown" }, 1);
-    db.exec("ALTER TABLE messages ADD COLUMN unsubscribe TEXT");
+    db.exec("ALTER TABLE messages ADD COLUMN unsubscribe TEXT; ALTER TABLE messages ADD COLUMN code TEXT; ALTER TABLE threads ADD COLUMN only_yours INTEGER NOT NULL DEFAULT 0; ALTER TABLE threads ADD COLUMN code TEXT");
     ingestMessages(db, [msg({ accountId: account.id, providerMsgId: "legacy", bodyText: text, bodyHtml: html, bodyState: "partial" })], 1);
-    db.exec("ALTER TABLE messages DROP COLUMN unsubscribe");
+    db.exec("ALTER TABLE messages DROP COLUMN unsubscribe; ALTER TABLE messages DROP COLUMN code; ALTER TABLE threads DROP COLUMN only_yours; ALTER TABLE threads DROP COLUMN code");
     if (fail) db.exec("CREATE TABLE body_parts(synthetic_collision INTEGER)");
   } finally { db.close(); }
 }

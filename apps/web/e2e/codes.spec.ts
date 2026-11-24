@@ -3,11 +3,11 @@ import type { IncomingMessage } from "@terno/store";
 import { E2E_NOW } from "./constants";
 import { menuPath, axeBothModes, expect, scenario, search, stabilize, test, type DevServerFixture } from "./fixtures";
 
-async function ingestCode(server: DevServerFixture, o: { id: string; subject: string; ageMs: number; code?: string }): Promise<number> {
+async function ingestCode(server: DevServerFixture, o: { id: string; subject: string; ageMs: number; code?: string; text?: string }): Promise<number> {
   const [account] = await server.backend.store.accounts.list();
   // the page's clock is frozen at E2E_NOW
   const now = E2E_NOW;
-  const text = `Use this code to finish signing in: ${o.code ?? "048291"}\n\nIt expires in 10 minutes. If you didn’t ask for it, ignore this email.`;
+  const text = o.text ?? `Use this code to finish signing in: ${o.code ?? "048291"}\n\nIt expires in 10 minutes. If you didn’t ask for it, ignore this email.`;
   const incoming: IncomingMessage = {
     accountId: account!.id, providerMsgId: o.id, providerThreadId: null, rfcMessageId: `${o.id}@acme.test`, inReplyTo: null, references: [],
     from: { name: "Acme", email: "no-reply@acme.test" }, replyTo: [], to: [{ name: "Me", email: account!.email }], cc: [], bcc: [],
@@ -25,6 +25,8 @@ test("a fresh verification code copies from its row", { tag: "@variant" }, async
   const id = await ingestCode(server, { id: "code", subject: "Your Acme sign-in code", ageMs: 5 * 60_000 });
   // a second one, open: a chip on a plain row and on the selected one
   const other = await ingestCode(server, { id: "code-open", subject: "Your Acme backup code", ageMs: 20 * 60_000, code: "731406" });
+  // plan 261: the code far past what the row's preview holds, under a subject that names none
+  const deep = await ingestCode(server, { id: "code-deep", subject: "Action required: Verify your email address", ageMs: 30 * 60_000, text: `Acme\n\nWe need to verify your email address.\n\n${"You are receiving this email because you are signing up for the program. ".repeat(4)}\n\nPlease verify your email address by entering this code: 391372\n\nYour code will expire after 10 minutes.` });
   await page.reload();
   await page.locator("[data-ready]").waitFor();
   await search(page, "Acme code");
@@ -36,6 +38,7 @@ test("a fresh verification code copies from its row", { tag: "@variant" }, async
   // the outlined label underneath and the accent's over it
   await expect(chip).toHaveText("048291048291");
   await expect(rowOf(page, other).getByTestId("row-code")).toHaveAttribute("data-code", "731406");
+  await expect(rowOf(page, deep).getByTestId("row-code")).toHaveAttribute("data-code", "391372");
   // screen readers hear it in the row
   await expect(row).toContainText("Verification code 048291");
   await stabilize(page);

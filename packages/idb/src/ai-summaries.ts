@@ -161,6 +161,7 @@ export function summarySources(c: Ctx, threadId: number): SummarySources | null 
         spam: r.is_spam === 1,
         bodyState: r.body_state,
         bodyUnavailable: r.attachments_captured === 2 && r.body_state !== "full",
+        code: (r.code as string | null | undefined) ?? null,
         markedAt: mark?.wants_summary === 1 ? mark.arrived_at : null,
       };
     }),

@@ -674,9 +674,11 @@ export class SqlMailStore implements MailStore {
     setBody: async (messageId, text, html, { now, classifier, attachments, bodyParts, preparedBodyTokens, captureUnavailable, repair, check, expected }) => this.bodyCommand(async () => {
       const callerCheck = check; check = () => { if (this.bodyClosing) throw new Error("The store is closing"); callerCheck?.(); };
       await this.bodyCleanup;
-      const accountId = this.db.get<{ account_id: number }>("SELECT account_id FROM messages WHERE id = ?", messageId)?.account_id;
+      // plan 261: the subject finds the body's code while staging holds the text
+      const held = this.db.get<{ account_id: number; subject: string; in_reply_to: string | null }>("SELECT account_id, subject, in_reply_to FROM messages WHERE id = ?", messageId);
+      const accountId = held?.account_id;
       const staged = !captureUnavailable && attachments !== undefined && accountId !== undefined ? await stageAttachments(this, accountId, attachments, now, this.yieldTo, await this.attachments.current(accountId, { id: messageId })) : undefined;
-      const body = !captureUnavailable && accountId !== undefined ? await stageBody(this.db, { accountId, bodyText: text, bodyHtml: html, bodyParts, snippet: "", preparedBodyTokens }, this.yieldTo, check) : { bodyText: text, bodyHtml: html, bodyCapture: undefined };
+      const body = !captureUnavailable && accountId !== undefined ? await stageBody(this.db, { accountId, subject: held!.subject, inReplyTo: held!.in_reply_to, bodyText: text, bodyHtml: html, bodyParts, snippet: "", preparedBodyTokens }, this.yieldTo, check) : { bodyText: text, bodyHtml: html, bodyCapture: undefined };
       const cache = new Map<string, Map<string, boolean>>();
       try {
       return await publishBody(async () => {

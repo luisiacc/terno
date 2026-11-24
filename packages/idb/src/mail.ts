@@ -1,6 +1,6 @@
 import { categoryReferenceCeiling, nextCategoryId, reserveCategoryIds } from "./category-identities";
 import type { ClosedOrder } from "./closed-order";
-import { readRuleState } from "@terno/store";
+import { bodyCode, codeSubject, incomingCode, readRuleState } from "@terno/store";
 import { saveFilterForward } from "./forwards";
 import { folderPage, folderScopeIds, folderUnreadCounts, refreshFolders } from "./folders";
 import { requireGmailRefresh, copyOpAdmission, ThreadMerges, type OpAdmission } from "@terno/store";
@@ -848,6 +848,7 @@ export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: n
         subject_norm: normalizeText(msg.subject),
         date: msg.date,
         snippet: msg.bodyCapture?.snippet ?? (msg.snippet ? makeSnippet(msg.snippet) : makeSnippet(msg.bodyText)),
+        code: incomingCode(msg),
         body_tail_norm: msg.bodyCapture?.tail ?? bodyTail(msg.bodyText),
         body_state: msg.bodyState,
         list_id: msg.listId ? normalizeText(msg.listId) : null,
@@ -934,7 +935,9 @@ export function setMessageBody(c: Ctx, messageId: number, bodyText: string | nul
   const row = messages.get(messageId);
   if (!row) return;
   if (capture) requireBodyCapture(c, row.account_id, capture);
-  messages.update(row, { body_tail_norm: capture?.tail ?? bodyTail(bodyText), body_state: state, snippet: row.snippet === "" ? capture?.snippet ?? makeSnippet(bodyText) : row.snippet });
+  // plan 261: the body's code replaces what the snippet gave (a capture staged without the subject leaves it)
+  const code = row.is_sent || row.is_draft ? null : capture ? capture.code : bodyCode(codeSubject(row.subject, row.in_reply_to), bodyText);
+  messages.update(row, { body_tail_norm: capture?.tail ?? bodyTail(bodyText), body_state: state, snippet: row.snippet === "" ? capture?.snippet ?? makeSnippet(bodyText) : row.snippet, ...(code !== undefined ? { code } : {}) });
   if (!capture && bodyText === null && bodyHtml === null) T(c, "message_bodies").delete(messageId);
   else T(c, "message_bodies").put({ message_id: messageId, body_text: bodyText, body_html: bodyHtml, capture_id: capture?.id ?? null, body_preview: capture?.preview ?? null });
   if (capture) { T(c, "body_heads").put({ message_id: messageId, capture_id: capture.id }); T(c, "body_captures").update(T(c, "body_captures").get(capture.id)!, { message_id: messageId }); }
@@ -1003,6 +1006,7 @@ export function recomputeThreads(c: Ctx, threadIds: Iterable<number>): void {
       only_yours: tabs.onlyYours ? 1 : 0,
       subject: baseSubject(first.subject) || first.subject,
       snippet: latest.snippet,
+      code: latest.code ?? null,
       last_date: latest.date,
       last_from_name: (counterpart ?? latest).from_name,
       last_from_email: (counterpart ?? latest).from_email,
@@ -1315,6 +1319,7 @@ export function toSummary(c: Ctx, t: R): ThreadSummary {
     hasSpam: c.late && !c.late.loaded ? true : T(c, "messages").by("fk_thread_id", t.id).some((m) => m.is_spam === 1),
     ...(t.tab ? { tab: t.tab } : {}),
     ...(t.only_yours ? { onlyYours: true as const } : {}),
+    ...(t.code ? { code: t.code as string } : {}),
   };
 }
 

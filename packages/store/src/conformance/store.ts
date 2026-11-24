@@ -37,6 +37,7 @@ import { defineUnsubscribeConformance } from "./unsubscribe";
 import { defineHiddenInboxConformance } from "./hidden-inbox";
 import { defineAccountOutOfInboxConformance } from "./account-out-of-inbox";
 import { defineTabsConformance } from "./tabs";
+import { defineCodesConformance } from "./codes";
 import { defineImapAdoptConformance } from "./imap-adopt";
 import { defineViewUnreadConformance } from "./view-unread";
 import { defineFlagIntentConformance } from "./flag-intents";
@@ -131,6 +132,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
       open.push(next);
       return next;
     });
+    defineCodesConformance(fresh);
     defineViewUnreadConformance(fresh);
     defineImapAdoptConformance(fresh);
     defineScheduledConformance(fresh, async (s) => {

@@ -20,9 +20,9 @@ function fixture(db: Db): number {
   const account = createAccount(db, { kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "brown" }, 1);
   const assets = sqlAssets(db);
   const asset = db.tx(() => { const asset = createAsset(assets, () => crypto.randomUUID(), { accountId: account.id, filename: "exact.bin", mime: "application/octet-stream", size: 3, now: 1 }); appendAsset(assets, account.id, asset.assetId!, 0, "AP+A"); sealAsset(assets, account.id, asset.assetId!); return asset; });
-  db.exec("ALTER TABLE messages ADD COLUMN unsubscribe TEXT");
+  db.exec("ALTER TABLE messages ADD COLUMN unsubscribe TEXT; ALTER TABLE messages ADD COLUMN code TEXT; ALTER TABLE threads ADD COLUMN only_yours INTEGER NOT NULL DEFAULT 0; ALTER TABLE threads ADD COLUMN code TEXT");
   const threadId = [...ingestMessages(db, [msg({ accountId: account.id, providerMsgId: "old", bodyText: text, bodyHtml: html, bodyState: "full", isStarred: true, attachments: [{ filename: "exact.bin", mime: "application/octet-stream", size: 3, assetId: asset.assetId! }] })], 1).touchedThreads][0]!;
-  db.exec("ALTER TABLE messages DROP COLUMN unsubscribe");
+  db.exec("ALTER TABLE messages DROP COLUMN unsubscribe; ALTER TABLE messages DROP COLUMN code; ALTER TABLE threads DROP COLUMN only_yours; ALTER TABLE threads DROP COLUMN code");
   return threadId;
 }
 const laterTables = new Set(["scheduled_sends", "forward_eligible", "forwards", "forward_recipients", "ai_new_mail", "ai_summaries", "writing_profiles", "writing_generations"]);

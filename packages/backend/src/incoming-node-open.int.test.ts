@@ -16,9 +16,9 @@ it("admits a Plan95 mailbox through exact legacy conversion before exposing stor
     registerFunctions(old);
     for (const migration of MIGRATIONS) if (migration.version <= 38) old.tx(() => { old.exec(migration.sql); old.exec(`PRAGMA user_version=${migration.version}`); });
     const account = createAccount(old, { kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "brown" }, 1);
-    old.exec("ALTER TABLE messages ADD COLUMN unsubscribe TEXT");
+    old.exec("ALTER TABLE messages ADD COLUMN unsubscribe TEXT; ALTER TABLE messages ADD COLUMN code TEXT; ALTER TABLE threads ADD COLUMN only_yours INTEGER NOT NULL DEFAULT 0; ALTER TABLE threads ADD COLUMN code TEXT");
     threadId = [...ingestMessages(old, [msg({ accountId: account.id, providerMsgId: "legacy", bodyText: text, bodyHtml: html, bodyState: "full" })], 1).touchedThreads][0]!;
-    old.exec("ALTER TABLE messages DROP COLUMN unsubscribe");
+    old.exec("ALTER TABLE messages DROP COLUMN unsubscribe; ALTER TABLE messages DROP COLUMN code; ALTER TABLE threads DROP COLUMN only_yours; ALTER TABLE threads DROP COLUMN code");
   } finally { old.close(); }
   let largest = 0;
   const inspect = (row: unknown): void => { if (typeof row === "string") largest = Math.max(largest, row.length); else if (row && typeof row === "object" && !ArrayBuffer.isView(row) && !(row instanceof ArrayBuffer)) for (const value of Object.values(row)) inspect(value); };
