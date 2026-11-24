@@ -4,7 +4,6 @@ export interface WaitlistClasses {
   form?: string;
   label?: string;
   input?: string;
-  select?: string;
   button?: string;
   note?: string;
   status?: string;
@@ -13,15 +12,16 @@ export interface WaitlistClasses {
 const STATUSES = ["thanks", "invalid", "busy", "full", "error"] as const;
 
 /**
- * The Windows/Linux waitlist (plan 97). A real form: without JS it posts and the Worker answers 303 to
- * /waitlist/#<status>, where `:target` shows the message (site.css). With JS (client.ts) it posts in place and
- * shows the same message in the live region. `platform` preselects (the /download/ page asks for Mac).
+ * The Windows waitlist (plans 97, 254: Mac and Linux download). A real form: without JS it posts and the Worker
+ * answers 303 to /waitlist/#<status>, where `:target` shows the message (site.css). With JS (client.ts) it posts in
+ * place and shows the same message in the live region.
  */
-export function Waitlist({ copy, id = "waitlist", platform = "windows", c = {} }: { copy: SiteCopy; id?: string; platform?: "windows" | "linux" | "mac" | "mac-intel"; c?: WaitlistClasses }) {
+export function Waitlist({ copy, id = "waitlist", c = {} }: { copy: SiteCopy; id?: string; c?: WaitlistClasses }) {
   const w = copy.waitlist;
   return (
     <form method="post" action="/api/waitlist" className={`site-waitlist ${c.form ?? ""}`} data-waitlist data-sending={w.sending} noValidate={false}>
       <input type="hidden" name="lang" value={copy.lang} />
+      <input type="hidden" name="platform" value="windows" />
       {/* a field people never see; a bot that fills it is thanked and ignored */}
       <div className="site-hp" aria-hidden="true">
         <label>
@@ -35,17 +35,6 @@ export function Waitlist({ copy, id = "waitlist", platform = "windows", c = {} }
           {w.email}
         </label>
         <input id={`${id}-email`} name="email" type="email" required maxLength={254} autoComplete="email" placeholder={w.placeholder} className={c.input} />
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor={`${id}-platform`} className={c.label}>
-          {w.platform}
-        </label>
-        <select id={`${id}-platform`} name="platform" defaultValue={platform} className={c.select}>
-          <option value="windows">{w.platforms.windows}</option>
-          <option value="linux">{w.platforms.linux}</option>
-          <option value="mac">{w.platforms.mac}</option>
-          <option value="mac-intel">{w.platforms["mac-intel"]}</option>
-        </select>
       </div>
       <button type="submit" className={c.button}>
         {w.submit}

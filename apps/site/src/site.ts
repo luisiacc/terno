@@ -15,7 +15,8 @@ export const LANGUAGES: readonly { lang: Lang; name: string }[] = [
   { lang: "en", name: "English" },
   { lang: "es", name: "Español" },
 ];
-export type PageKind = "home" | "privacy" | "download" | "waitlist" | "404";
+/** `download`: where a missing release sends you; `linux`: the Linux packages (plan 254) */
+export type PageKind = "home" | "privacy" | "download" | "linux" | "waitlist" | "404";
 export interface Route {
   path: string;
   file: string;
@@ -29,7 +30,7 @@ export interface Route {
 }
 
 const prefix = (lang: Lang) => (lang === "es" ? "/es" : "");
-const pagePath = (page: Exclude<PageKind, "404">) => (page === "home" ? "/" : `/${page}/`);
+const pagePath = (page: Exclude<PageKind, "404">) => (page === "home" ? "/" : page === "linux" ? "/download/linux/" : `/${page}/`);
 /** the same page in `lang` */
 export const pathIn = (lang: Lang, page: Exclude<PageKind, "404">) => `${prefix(lang)}${pagePath(page)}`;
 
@@ -37,7 +38,7 @@ export function routes(): Route[] {
   const list: Route[] = [];
   for (const lang of ["en", "es"] as const) {
     const other = lang === "en" ? "es" : "en";
-    for (const page of ["home", "privacy", "download", "waitlist"] as const) {
+    for (const page of ["home", "privacy", "download", "linux", "waitlist"] as const) {
       const path = `${prefix(lang)}${pagePath(page)}`;
       // download and waitlist are where a form or a missing release sends you, not search results
       list.push({ path, file: `${path.slice(1)}index.html`, page, lang, design: SITE_DESIGN, noindex: page === "download" || page === "waitlist", alternate: `${prefix(other)}${pagePath(page)}` });

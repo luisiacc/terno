@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { SiteCopy } from "../copy";
-import { DownloadMac, WaitlistLink } from "../parts/download";
+import { DOWNLOAD_ANCHOR, DownloadLinux, DownloadMac, WaitlistLink } from "../parts/download";
 import { Check, ChevronRight, ExternalLink, Github, ShieldCheck } from "../parts/icons";
 import { Kbd } from "../parts/kbd";
 import { Logo } from "../parts/logo";
@@ -217,7 +217,7 @@ export const Lumen: HomeDesign = ({ copy }) => {
           <a href={copy.nav.languageHref} hrefLang={otherLang} lang={otherLang} className="lumen-navlink">
             {copy.nav.language}
           </a>
-          <a href="/download/mac" data-download="mac" className="lumen-btn ml-2 h-9 rounded-full px-4 text-[0.9rem]">
+          <a href={`#${DOWNLOAD_ANCHOR}`} className="lumen-btn ml-2 h-9 rounded-full px-4 text-[0.9rem]">
             {copy.nav.download}
           </a>
         </nav>
@@ -231,11 +231,13 @@ export const Lumen: HomeDesign = ({ copy }) => {
               {copy.hero.title}
             </h1>
             <p className="mt-6 max-w-2xl text-lg leading-relaxed text-(--l-muted) text-balance sm:text-xl">{copy.hero.subtitle}</p>
-            <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row sm:gap-6">
+            <div id={DOWNLOAD_ANCHOR} className="mt-10 flex scroll-mt-24 flex-col items-center gap-4 sm:flex-row">
               <DownloadMac copy={copy} className="lumen-btn h-14 gap-3 rounded-2xl pr-6 pl-5 text-[1.05rem]" subClassName="text-[0.78rem] font-normal" />
-              <WaitlistLink copy={copy} className="lumen-quietlink text-[0.98rem]" />
+              <DownloadLinux copy={copy} className="lumen-btn-quiet h-14 gap-3 rounded-2xl pr-6 pl-5 text-[1.05rem]" subClassName="text-[0.78rem] font-normal text-(--l-muted)" />
             </div>
-            <p className="mt-6 text-sm text-(--l-muted)">{copy.hero.note}</p>
+            <p className="mt-6 text-sm text-(--l-muted)">
+              {copy.hero.note} · <WaitlistLink copy={copy} className="lumen-quietlink" />
+            </p>
           </div>
           {/* on a phone the window runs off the right edge, so the list stays legible */}
           <div className="mx-auto mt-14 w-full max-w-[76rem] px-4 max-sm:w-[190%] max-sm:max-w-none max-sm:pr-0 sm:mt-16 sm:px-8">
@@ -459,12 +461,13 @@ export const Lumen: HomeDesign = ({ copy }) => {
             {copy.closing.title}
           </h2>
           <p className={`mx-auto mt-5 max-w-xl ${lead}`}>{copy.closing.body}</p>
-          <div className="mt-10 flex justify-center">
+          <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
             <DownloadMac copy={copy} className="lumen-btn h-14 gap-3 rounded-2xl pr-6 pl-5 text-[1.05rem]" subClassName="text-[0.78rem] font-normal" />
+            <DownloadLinux copy={copy} className="lumen-btn-quiet h-14 gap-3 rounded-2xl pr-6 pl-5 text-[1.05rem]" subClassName="text-[0.78rem] font-normal text-(--l-muted)" />
           </div>
         </section>
 
-        {/* Windows and Linux */}
+        {/* Windows */}
         <section id="waitlist" aria-labelledby="waitlist-title" className="lumen-band py-24 sm:py-28">
           <div className={`${wrap} grid gap-10 lg:grid-cols-12 lg:gap-16`}>
             <div className="lg:col-span-5">
@@ -477,11 +480,10 @@ export const Lumen: HomeDesign = ({ copy }) => {
               <Waitlist
                 copy={copy}
                 c={{
-                  form: "grid gap-4 sm:grid-cols-[1fr_11rem] sm:items-end",
+                  form: "grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end",
                   label: "text-sm font-medium",
                   input: "lumen-field h-12 rounded-xl px-4 text-base",
-                  select: "lumen-field h-12 rounded-xl px-3.5 text-base",
-                  button: "lumen-btn h-12 rounded-xl px-6 text-[0.98rem] sm:col-span-2 sm:justify-self-start",
+                  button: "lumen-btn h-12 justify-self-start rounded-xl px-6 text-[0.98rem]",
                   note: "text-sm text-(--l-muted) sm:col-span-2",
                   status: "text-[0.98rem] font-medium sm:col-span-2",
                 }}

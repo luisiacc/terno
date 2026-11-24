@@ -5,6 +5,7 @@
  */
 export const MAX_BODY = 2048;
 export const MAX_ROWS = 50_000;
+// the site asks for Windows only (plan 254); the rest stay accepted, so a page cached before that never fails
 const PLATFORMS = new Set(["windows", "linux", "mac", "mac-intel"]);
 export type Outcome = "thanks" | "invalid" | "busy" | "full" | "error";
 

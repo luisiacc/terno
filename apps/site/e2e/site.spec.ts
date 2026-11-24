@@ -20,6 +20,14 @@ for (const design of DESIGNS)
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
         await page.keyboard.press("Tab");
         await expect(page.locator(":focus")).toHaveAttribute("href", "#main");
+        // both downloads are a Tab away from the top, Mac first (plan 254)
+        const reached: string[] = [];
+        for (let i = 0; i < 25 && !reached.includes("/download/linux/"); i++) {
+          await page.keyboard.press("Tab");
+          reached.push((await page.locator(":focus").getAttribute("href")) ?? "");
+        }
+        expect(reached).toContain("/download/mac");
+        expect(reached.indexOf("/download/mac")).toBeLessThan(reached.indexOf("/download/linux/"));
         // the CSP refuses nothing the page uses
         expect(errors.filter((e) => /Content Security Policy/i.test(e))).toEqual([]);
       });
@@ -28,7 +36,8 @@ test("the waitlist joins in place with JS", async ({ page }) => {
   await page.goto("/");
   const form = page.locator("#waitlist form");
   await form.getByLabel("Email").fill("js@example.com");
-  await form.getByLabel("Platform").selectOption("linux");
+  // Windows only (plan 254): no platform to choose
+  await expect(form.locator("select")).toHaveCount(0);
   await form.getByRole("button", { name: "Join the waitlist" }).click();
   await expect(form.getByRole("status")).toHaveText("You’re on the list. We’ll write when it’s ready.");
   await expect(page).toHaveURL(/\/$/);
@@ -53,6 +62,19 @@ test("routing: real 404s, trailing slashes, the download stand-in, robots and si
   expect(privacy.status()).toBeGreaterThanOrEqual(301);
   expect(privacy.headers().location).toBe("/privacy/");
   expect((await request.get("/download/mac", { maxRedirects: 0 })).headers().location).toMatch(/\/download\/$|Terno-.*-arm64\.dmg$/);
+  // plan 254: the Linux page is a page in each language, each package a redirect to its file (or back to the page),
+  // and only the Worker's own package paths exist
+  for (const path of ["/download/linux/", "/es/download/linux/"]) expect((await request.get(path)).status(), path).toBe(200);
+  const bare = await request.get("/download/linux", { maxRedirects: 0 });
+  expect(bare.headers().location).toBe("/download/linux/");
+  for (const [path, file] of [["/download/linux/deb", "linux-amd64.deb"], ["/download/linux/deb-arm64", "linux-arm64.deb"], ["/download/linux/rpm", "linux-x86_64.rpm"], ["/download/linux/rpm-arm64", "linux-aarch64.rpm"]] as const) {
+    const res = await request.get(path, { maxRedirects: 0 });
+    expect(res.status(), path).toBe(302);
+    expect(res.headers()["cache-control"], path).toBe("no-store");
+    expect(res.headers().location, path).toMatch(new RegExp(`/download/linux/$|Terno-[\\d.]+-${file.replace(".", "\\.")}$`));
+  }
+  expect((await request.get("/es/download/linux/no-such-package", { maxRedirects: 0 })).status()).toBe(404);
+  expect((await request.get("/download/linux/snap", { maxRedirects: 0 })).status()).toBe(404);
   // previews stay crawlable so search engines can read their noindex (a Disallow would hide it)
   expect(await (await request.get("/robots.txt")).text()).not.toContain("/designs/");
   for (const design of DESIGNS) {
@@ -64,6 +86,8 @@ test("routing: real 404s, trailing slashes, the download stand-in, robots and si
   for (const gone of ["atelier", "bento"]) expect((await request.get(`/designs/${gone}/`)).status()).toBe(404);
   const sitemap = await (await request.get("/sitemap.xml")).text();
   expect(sitemap).toContain("<loc>https://terno.app/es/</loc>");
+  expect(sitemap).toContain("<loc>https://terno.app/download/linux/</loc>");
+  expect(sitemap).toContain("<loc>https://terno.app/es/download/linux/</loc>");
   expect(sitemap).not.toContain("/designs/");
 });
 
@@ -251,4 +275,18 @@ for (const colorScheme of ["light", "dark"] as const)
       const axe = await new AxeBuilder({ page }).withTags(AXE_TAGS).analyze();
       expect(axe.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`)).toEqual([]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    });
+
+for (const path of ["/download/linux/", "/es/download/linux/"])
+  for (const width of [1440, 390])
+    test(`the Linux page ${path} (${width}px) is axe-clean, fits, and links each package with its command (plan 254)`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(path);
+      const axe = await new AxeBuilder({ page }).withTags(AXE_TAGS).analyze();
+      expect(axe.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`)).toEqual([]);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+      const query = path.startsWith("/es/") ? "?lang=es" : "";
+      for (const pkg of ["deb", "deb-arm64", "rpm", "rpm-arm64"]) await expect(page.locator(`a[href="/download/linux/${pkg}${query}"]`)).toHaveCount(1);
+      await expect(page.locator("code").filter({ hasText: "sudo apt install ./Terno-*-linux-arm64.deb" })).toHaveCount(1);
+      await expect(page.locator("code").filter({ hasText: "sudo dnf install ./Terno-*-linux-x86_64.rpm" })).toHaveCount(1);
     });

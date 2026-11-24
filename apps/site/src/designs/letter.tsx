@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { SiteCopy } from "../copy";
-import { DownloadMac, WaitlistLink } from "../parts/download";
+import { DOWNLOAD_ANCHOR, DownloadLinux, DownloadMac, WaitlistLink } from "../parts/download";
 import { Github } from "../parts/icons";
 import { AgentSession, agentsPrivacyLink } from "../parts/agents";
 import { Kbd } from "../parts/kbd";
@@ -26,6 +26,9 @@ const link = "text-(--l-link) underline decoration-(--l-link)/30 underline-offse
 const quiet = "text-(--l-muted) transition-colors duration-100 hover:text-(--l-ink)";
 const button =
   "inline-flex items-center gap-3 rounded-full bg-(--l-ink) py-2.5 pr-6 pl-5 text-[15px] font-medium text-(--l-bg) transition-opacity duration-100 hover:opacity-85";
+/** the button's outlined twin, for the second download */
+const quietButton =
+  "inline-flex items-center gap-3 rounded-full py-2.5 pr-6 pl-5 text-[15px] font-medium text-(--l-ink) shadow-[inset_0_0_0_1px_var(--l-line)] transition-shadow duration-100 hover:shadow-[inset_0_0_0_1px_var(--l-muted)]";
 
 type FeatureId = keyof SiteCopy["features"];
 
@@ -195,7 +198,7 @@ export const Letter: HomeDesign = ({ copy }) => {
             <a href={copy.nav.languageHref} hrefLang={copy.lang === "en" ? "es" : "en"} className={quiet}>
               {copy.nav.language}
             </a>
-            <a href="/download/mac" data-download="mac" className="font-medium text-(--l-link) transition-opacity duration-100 hover:opacity-80">
+            <a href={`#${DOWNLOAD_ANCHOR}`} className="font-medium text-(--l-link) transition-opacity duration-100 hover:opacity-80">
               {copy.nav.download}
             </a>
           </nav>
@@ -205,11 +208,13 @@ export const Letter: HomeDesign = ({ copy }) => {
       <main id="main" className="letter-flow pt-20 sm:pt-32">
         <h1 className="mt-5 text-[2.75rem] leading-[1.02] font-semibold tracking-[-0.04em] text-balance sm:text-[4.25rem]">{copy.hero.title}</h1>
         <p className="letter-prose letter-lead mt-8">{copy.hero.subtitle}</p>
-        <div className="mt-10 flex flex-wrap items-center gap-x-7 gap-y-4">
+        <div id={DOWNLOAD_ANCHOR} className="mt-10 flex scroll-mt-20 flex-wrap items-center gap-3">
           <DownloadMac copy={copy} className={button} subClassName="text-[12px] font-normal opacity-65" />
-          <WaitlistLink copy={copy} className={`text-[15px] ${link}`} />
+          <DownloadLinux copy={copy} className={quietButton} subClassName="text-[12px] font-normal text-(--l-muted)" />
         </div>
-        <p className="mt-5 text-[14px] text-(--l-muted)">{copy.hero.note}</p>
+        <p className="mt-5 text-[14px] text-(--l-muted)">
+          {copy.hero.note} · <WaitlistLink copy={copy} className={link} />
+        </p>
 
         <Figure copy={copy} name="inbox" eager className="mt-20 sm:mt-24" />
 
@@ -296,8 +301,9 @@ export const Letter: HomeDesign = ({ copy }) => {
             {copy.closing.title}
           </h2>
           <p className="letter-prose letter-lead mt-6">{copy.closing.body}</p>
-          <div className="mt-10 flex flex-wrap items-center gap-x-7 gap-y-4">
+          <div className="mt-10 flex flex-wrap items-center gap-3">
             <DownloadMac copy={copy} className={button} subClassName="text-[12px] font-normal opacity-65" />
+            <DownloadLinux copy={copy} className={quietButton} subClassName="text-[12px] font-normal text-(--l-muted)" />
           </div>
           <p className="mt-12 flex items-center gap-2.5 text-[15px] text-(--l-muted)" aria-hidden="true">
             <Logo size={18} />
@@ -313,11 +319,10 @@ export const Letter: HomeDesign = ({ copy }) => {
           <Waitlist
             copy={copy}
             c={{
-              form: "mt-8 grid gap-4 sm:grid-cols-[1fr_10rem] sm:items-end",
+              form: "mt-8 grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end",
               label: "text-[14px] font-medium text-(--l-soft)",
               input: "letter-field h-12 px-4",
-              select: "letter-field h-12 px-3.5",
-              button: `${button} justify-self-start sm:col-span-2`,
+              button: `${button} justify-self-start`,
               note: "text-[14px] leading-relaxed text-(--l-muted) sm:col-span-2",
               status: "text-[15px] sm:col-span-2",
             }}

@@ -3,21 +3,23 @@ import type { SiteCopy } from "./en";
 export const es: SiteCopy = {
   lang: "es",
   meta: {
-    title: "Terno: correo instantáneo y privado para Mac",
+    title: "Terno: correo instantáneo y privado para Mac y Linux",
     description:
-      "Terno es un cliente de correo rápido para Mac, pensado para el teclado. Todas tus cuentas en una bandeja. Búsqueda instantánea. Totalmente local, sin cuenta. Terno Pro añade IA que redacta tus respuestas y hace funcionar «Lo importante»: una vista con solo lo que te necesita.",
+      "Terno es un cliente de correo rápido para Mac y Linux, pensado para el teclado. Todas tus cuentas en una bandeja. Búsqueda instantánea. Totalmente local, sin cuenta. Terno Pro añade IA que redacta tus respuestas y hace funcionar «Lo importante»: una vista con solo lo que te necesita.",
   },
   skip: "Ir al contenido",
   nav: { features: "Funciones", pro: "Pro", privacy: "Privacidad", source: "Código", download: "Descargar", language: "English", languageHref: "/", languageMenu: "Idioma", sourceOnGithub: "Código fuente en GitHub", home: "Inicio de Terno" },
   hero: {
     title: "El último cliente de correo que probarás.",
     subtitle: "Todas tus cuentas en una bandeja. Búsqueda instantánea. Archiva un correo y todos los parecidos se archivan también. Totalmente local, sin cuenta.",
-    note: "Gratis · macOS en Apple silicon",
+    note: "Gratis · macOS en Apple silicon y Linux",
   },
   download: {
     mac: "Descargar para Mac",
     macSub: "Apple silicon",
-    other: "Windows y Linux",
+    linux: "Descargar para Linux",
+    linuxSub: ".deb · .rpm",
+    other: "Windows",
     otherSub: "Únete a la lista",
   },
   whatMatters: {
@@ -171,12 +173,10 @@ export const es: SiteCopy = {
     body: "Gratis. Sin cuenta. Sin registro. Solo tu correo.",
   },
   waitlist: {
-    title: "Windows y Linux están en camino.",
+    title: "Windows está en camino.",
     body: "Déjanos tu correo y te escribiremos una vez, cuando Terno esté listo para tu equipo. Nada más.",
     email: "Correo",
     placeholder: "tu@ejemplo.com",
-    platform: "Plataforma",
-    platforms: { windows: "Windows", linux: "Linux", mac: "Mac (Apple silicon)", "mac-intel": "Mac (Intel)" },
     submit: "Unirme a la lista",
     sending: "Uniéndote…",
     thanks: "Ya estás en la lista. Te escribiremos cuando esté listo.",
@@ -232,8 +232,24 @@ export const es: SiteCopy = {
   },
   pages: {
     download: {
-      title: "La primera versión está en camino",
-      body: "Terno para Mac aún no está publicado. Déjanos tu correo y te escribiremos el día que lo esté.",
+      title: "Descarga Terno en GitHub",
+      body: "No pudimos obtener la versión más reciente ahora mismo. Todas las versiones de Terno, para Mac y Linux, están en GitHub.",
+      releases: "Las versiones de Terno en GitHub",
+    },
+    linux: {
+      title: "Terno para Linux",
+      description: "Descarga Terno, el cliente de correo rápido, privado y pensado para el teclado, para Linux: un .deb para Debian y Ubuntu y un .rpm para Fedora y RHEL, para x86-64 y arm64.",
+      lead: "Paquetes para Debian y Ubuntu (.deb) y para Fedora y RHEL (.rpm), para procesadores Intel y AMD (x86-64) y ARM (arm64).",
+      deb: "Debian, Ubuntu y Mint",
+      rpm: "Fedora y RHEL",
+      x64: "x86-64",
+      arm64: "arm64",
+      download: "Descargar",
+      install: "Abre el archivo para instalarlo con tu centro de software, o desde una terminal en la carpeta donde se descargó:",
+      older: "Si esa carpeta también tiene una descarga anterior, escribe el nombre completo del archivo nuevo en lugar del `*`.",
+      which: "¿No sabes qué procesador tienes? `uname -m` muestra `x86_64` para x86-64 y `aarch64` para arm64.",
+      updates: "Terno aún no puede actualizarse solo en Linux. Cuando salga una versión nueva, descárgala aquí e instálala igual.",
+      releases: "Todas las versiones en GitHub",
     },
     waitlist: { title: "Únete a la lista de espera" },
     notFound: { title: "Esta página no existe", body: "Puede que el enlace sea antiguo o esté mal escrito.", home: "Ir a la página de inicio" },

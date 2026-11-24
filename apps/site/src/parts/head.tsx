@@ -10,7 +10,7 @@ export function Head({ route, copy, title, description }: { route: Route; copy: 
     "@type": "SoftwareApplication",
     name: "Terno",
     applicationCategory: "CommunicationApplication",
-    operatingSystem: "macOS",
+    operatingSystem: "macOS, Linux",
     description: copy.meta.description,
     url: ORIGIN,
     image: `${ORIGIN}/og.jpg`,

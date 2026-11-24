@@ -1,7 +1,7 @@
-import type { ReactNode } from "react";
-import { ArrowLeft } from "./icons";
+import { Fragment, type ReactNode } from "react";
+import { ArrowLeft, ChevronRight, Download } from "./icons";
 import type { SiteCopy } from "../copy";
-import type { Route } from "../site";
+import { GITHUB, type Route } from "../site";
 import { Logo } from "./logo";
 import { Rich } from "./rich";
 import { Waitlist, WaitlistOutcomes } from "./waitlist";
@@ -38,14 +38,82 @@ const h1 = "mt-6 text-4xl font-semibold tracking-tight text-balance";
 const lead = "mt-4 text-lg text-(--plain-muted) text-pretty";
 const prose = "mt-3 leading-relaxed text-(--plain-muted) text-pretty";
 const formClasses = {
-  form: "mt-10 grid gap-4 sm:grid-cols-[1fr_10rem] sm:items-end",
+  form: "mt-10 grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end",
   label: "text-sm font-medium",
   input: "h-11 rounded-xl border border-(--plain-line) bg-transparent px-3.5 text-base",
-  select: "h-11 rounded-xl border border-(--plain-line) bg-transparent px-3",
-  button: "h-11 rounded-xl bg-(--plain-fg) px-5 font-medium text-(--plain-bg) sm:col-span-2 sm:justify-self-start",
+  button: "h-11 justify-self-start rounded-xl bg-(--plain-fg) px-5 font-medium text-(--plain-bg)",
   note: "text-sm text-(--plain-muted) sm:col-span-2",
   status: "sm:col-span-2",
 };
+
+const releasesLink = "inline-flex items-center gap-1 font-medium underline decoration-(--plain-line) underline-offset-4 hover:decoration-(--plain-fg)";
+
+/** the Linux packages, each a Worker path (worker/download.ts), its architecture's label, and its install command */
+const PACKAGES = {
+  deb: [
+    { arch: "x64", path: "/download/linux/deb", command: "sudo apt install ./Terno-*-linux-amd64.deb" },
+    { arch: "arm64", path: "/download/linux/deb-arm64", command: "sudo apt install ./Terno-*-linux-arm64.deb" },
+  ],
+  rpm: [
+    { arch: "x64", path: "/download/linux/rpm", command: "sudo dnf install ./Terno-*-linux-x86_64.rpm" },
+    { arch: "arm64", path: "/download/linux/rpm-arm64", command: "sudo dnf install ./Terno-*-linux-aarch64.rpm" },
+  ],
+} as const;
+
+/**
+ * /download/linux/ (plan 254): the four packages by family and processor, x86-64 first (the common one). Each button
+ * is the Worker's path for its file in the latest release; under each, the command that installs exactly that file.
+ */
+function LinuxPage({ copy }: { copy: SiteCopy }) {
+  const l = copy.pages.linux;
+  const query = copy.lang === "es" ? "?lang=es" : "";
+  return (
+    <Plain copy={copy}>
+      <h1 className={h1}>{l.title}</h1>
+      <p className={lead}>{l.lead}</p>
+      <p className={prose}>{l.install}</p>
+      {(["deb", "rpm"] as const).map((family) => (
+        <section key={family} aria-labelledby={`linux-${family}`} className="mt-12">
+          <h2 id={`linux-${family}`} className="text-xl font-semibold">
+            {l[family]}
+          </h2>
+          <ul className="mt-5 grid gap-6">
+            {PACKAGES[family].map((pkg) => (
+              <li key={pkg.path} className="grid gap-3">
+                <a href={`${pkg.path}${query}`} className="inline-flex h-11 items-center gap-2.5 justify-self-start rounded-xl bg-(--plain-fg) px-5 font-medium whitespace-nowrap text-(--plain-bg)">
+                  <Download size="1.15em" />
+                  {l.download} .{family} · {l[pkg.arch]}
+                </a>
+                {/* on a phone it wraps between words only, never inside the file's name */}
+                <code className="block rounded-xl border border-(--plain-line) px-4 py-3 font-mono text-sm text-(--plain-fg)">
+                  {pkg.command.split(" ").map((word, i) => (
+                    <Fragment key={i}>
+                      {i > 0 && " "}
+                      <span className="whitespace-nowrap">{word}</span>
+                    </Fragment>
+                  ))}
+                </code>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+      <p className={`${prose} mt-10`}>
+        <Rich text={l.older} />
+      </p>
+      <p className={prose}>
+        <Rich text={l.which} />
+      </p>
+      <p className={prose}>{l.updates}</p>
+      <p className="mt-8">
+        <a href={`${GITHUB}/releases`} className={releasesLink}>
+          {l.releases}
+          <ChevronRight size="1.15em" />
+        </a>
+      </p>
+    </Plain>
+  );
+}
 
 export function SecondaryPage({ route, copy }: { route: Route; copy: SiteCopy }) {
   const p = copy.pages;
@@ -100,9 +168,15 @@ export function SecondaryPage({ route, copy }: { route: Route; copy: SiteCopy })
       <Plain copy={copy}>
         <h1 className={h1}>{p.download.title}</h1>
         <p className={lead}>{p.download.body}</p>
-        <Waitlist copy={copy} id="download-waitlist" platform="mac" c={formClasses} />
+        <p className="mt-8">
+          <a href={`${GITHUB}/releases/latest`} className={releasesLink}>
+            {p.download.releases}
+            <ChevronRight size="1.15em" />
+          </a>
+        </p>
       </Plain>
     );
+  if (route.page === "linux") return <LinuxPage copy={copy} />;
   if (route.page === "waitlist")
     return (
       <Plain copy={copy}>

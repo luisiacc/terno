@@ -2,21 +2,23 @@
 export const en = {
   lang: "en",
   meta: {
-    title: "Terno: instant, private email for Mac",
+    title: "Terno: instant, private email for Mac and Linux",
     description:
-      "Terno is a fast, keyboard-first email client for Mac. Every account in one inbox. Instant search. Fully local, no account needed. Terno Pro adds AI that drafts your replies and powers “What matters”: one view of only what needs you.",
+      "Terno is a fast, keyboard-first email client for Mac and Linux. Every account in one inbox. Instant search. Fully local, no account needed. Terno Pro adds AI that drafts your replies and powers “What matters”: one view of only what needs you.",
   },
   skip: "Skip to content",
   nav: { features: "Features", pro: "Pro", privacy: "Privacy", source: "Source", download: "Download", language: "Español", languageHref: "/es/", languageMenu: "Language", sourceOnGithub: "Source code on GitHub", home: "Terno home" },
   hero: {
     title: "The last email client you’ll try.",
     subtitle: "Every account in one inbox. Instant search. Archive one email, and every similar one is archived too. Fully local, no account needed.",
-    note: "Free · macOS on Apple silicon",
+    note: "Free · macOS on Apple silicon and Linux",
   },
   download: {
     mac: "Download for Mac",
     macSub: "Apple silicon",
-    other: "Windows & Linux",
+    linux: "Download for Linux",
+    linuxSub: ".deb · .rpm",
+    other: "Windows",
     otherSub: "Join the waitlist",
   },
   /**
@@ -177,12 +179,10 @@ export const en = {
     body: "Free. No account. No sign-up. Just your mail.",
   },
   waitlist: {
-    title: "Windows and Linux are coming.",
+    title: "Windows is coming.",
     body: "Leave your email and we’ll write once, when Terno is ready for your computer. Nothing else.",
     email: "Email",
     placeholder: "you@example.com",
-    platform: "Platform",
-    platforms: { windows: "Windows", linux: "Linux", mac: "Mac (Apple silicon)", "mac-intel": "Mac (Intel)" },
     submit: "Join the waitlist",
     sending: "Joining…",
     thanks: "You’re on the list. We’ll write when it’s ready.",
@@ -237,9 +237,27 @@ export const en = {
     "ai-summary": "A short summary above a conversation, with a to-do and a Reply button",
   },
   pages: {
+    /** where a download lands when GitHub can't be reached or has no such file (plan 254) */
     download: {
-      title: "The first build is on its way",
-      body: "Terno for Mac isn’t published yet. Leave your email and we’ll write the day it is.",
+      title: "Get Terno on GitHub",
+      body: "We couldn’t reach the newest version just now. Every version of Terno, for Mac and Linux, is on GitHub.",
+      releases: "Terno’s releases on GitHub",
+    },
+    /** the Linux packages (plan 254): the commands are the same in every language, so they're in the page */
+    linux: {
+      title: "Terno for Linux",
+      description: "Download Terno, the fast, private, keyboard-first email client, for Linux: a .deb for Debian and Ubuntu and an .rpm for Fedora and RHEL, for x86-64 and arm64.",
+      lead: "Packages for Debian and Ubuntu (.deb) and for Fedora and RHEL (.rpm), for Intel and AMD processors (x86-64) and ARM (arm64).",
+      deb: "Debian, Ubuntu and Mint",
+      rpm: "Fedora and RHEL",
+      x64: "x86-64",
+      arm64: "arm64",
+      download: "Download",
+      install: "Open the file to install it with your software center, or from a terminal in the folder it downloaded to:",
+      older: "If that folder holds an older download too, type the new file’s full name instead of the `*`.",
+      which: "Not sure which processor? `uname -m` prints `x86_64` for x86-64 and `aarch64` for arm64.",
+      updates: "Terno can’t update itself on Linux yet. When a new version is out, download it here and install it the same way.",
+      releases: "Every version on GitHub",
     },
     waitlist: { title: "Join the waitlist" },
     notFound: { title: "This page doesn’t exist", body: "The link may be old or mistyped.", home: "Go to the home page" },

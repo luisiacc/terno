@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { SiteCopy } from "../copy";
-import { DownloadMac, WaitlistLink } from "../parts/download";
+import { DOWNLOAD_ANCHOR, DownloadLinux, DownloadMac, WaitlistLink } from "../parts/download";
 import { Check, ChevronRight, Github, Inbox, Languages, Mails, Search, Users, X } from "../parts/icons";
 import { Kbd } from "../parts/kbd";
 import { Logo } from "../parts/logo";
@@ -279,7 +279,7 @@ export const Midnight: HomeDesign = ({ copy, route }) => {
                 <Github size={16} />
               </a>
               <LanguageMenu copy={copy} route={route} />
-              <a href="/download/mac" className="mn-btn mn-btn-primary ml-2 h-8 px-3 text-[0.8rem]">
+              <a href={`#${DOWNLOAD_ANCHOR}`} className="mn-btn mn-btn-primary ml-2 h-8 px-3 text-[0.8rem]">
                 {copy.nav.download}
               </a>
             </div>
@@ -295,11 +295,13 @@ export const Midnight: HomeDesign = ({ copy, route }) => {
               <span className="mn-title">{copy.hero.title}</span>
             </h1>
             <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-balance text-(--mn-muted)">{copy.hero.subtitle}</p>
-            <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <div id={DOWNLOAD_ANCHOR} className="mt-9 flex scroll-mt-28 flex-col items-center justify-center gap-3 sm:flex-row">
               <DownloadMac copy={copy} className="mn-btn mn-btn-primary h-12 gap-2.5 px-5 text-[0.95rem]" subClassName="text-[0.7rem] font-normal text-white" />
-              <WaitlistLink copy={copy} className="mn-btn mn-btn-ghost h-12 px-5 text-[0.9rem]" />
+              <DownloadLinux copy={copy} className="mn-btn mn-btn-ghost h-12 gap-2.5 px-5 text-[0.95rem]" subClassName="text-[0.7rem] font-normal text-(--mn-muted)" />
             </div>
-            <p className={`${mono} mt-5 text-(--mn-dim) normal-case tracking-[0.04em]`}>{copy.hero.note}</p>
+            <p className={`${mono} mt-5 text-(--mn-dim) normal-case tracking-[0.04em]`}>
+              {copy.hero.note} · <WaitlistLink copy={copy} className="underline decoration-(--mn-line) underline-offset-4 transition-colors duration-100 hover:text-(--mn-fg)" />
+            </p>
 
           </div>
 
@@ -445,8 +447,9 @@ export const Midnight: HomeDesign = ({ copy, route }) => {
               {copy.closing.title}
             </h2>
             <p className="mx-auto mt-5 max-w-lg text-lg text-pretty text-(--mn-muted)">{copy.closing.body}</p>
-            <div className="mt-9 flex justify-center">
+            <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <DownloadMac copy={copy} className="mn-btn mn-btn-primary h-12 gap-2.5 px-5 text-[0.95rem]" subClassName="text-[0.7rem] font-normal text-white" />
+              <DownloadLinux copy={copy} className="mn-btn mn-btn-ghost h-12 gap-2.5 px-5 text-[0.95rem]" subClassName="text-[0.7rem] font-normal text-(--mn-muted)" />
             </div>
           </div>
         </section>
@@ -462,11 +465,10 @@ export const Midnight: HomeDesign = ({ copy, route }) => {
             <Waitlist
               copy={copy}
               c={{
-                form: "grid gap-4 sm:grid-cols-[1fr_11rem] sm:items-end",
+                form: "grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end",
                 label: `${mono} text-[0.68rem] text-(--mn-muted)`,
                 input: "mn-field h-11 rounded-lg px-3.5 text-base",
-                select: "mn-field h-11 rounded-lg px-3 text-base",
-                button: "mn-btn mn-btn-primary h-11 px-5 text-[0.9rem] sm:col-span-2 sm:justify-self-start",
+                button: "mn-btn mn-btn-primary h-11 justify-self-start px-5 text-[0.9rem]",
                 note: "text-sm text-(--mn-dim) sm:col-span-2",
                 status: "text-sm sm:col-span-2",
               }}

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { COPY } from "./copy";
 import { render, routes } from "./entry-server";
 import { DESIGN_IDS } from "@terno/core";
+import { DESIGNS } from "./site";
 import { DESIGN_SHOTS } from "./parts/shot";
 import shots from "./shots.json";
 import { FILED_WINDOW, SHORTCUTS_WINDOW, VIEWPORT } from "../shots/windows";
@@ -31,14 +32,14 @@ describe("prerendered pages", () => {
         expect(doc.querySelectorAll('link[rel="alternate"][hreflang]')).toHaveLength(3);
       }
       if (route.page === "home") {
-        expect(doc.querySelector('a[href="/download/mac"]')).not.toBeNull();
+        expect(doc.querySelector(`a[href="${route.lang === "es" ? "/download/mac?lang=es" : "/download/mac"}"]`)).not.toBeNull();
         expect(doc.querySelector("#waitlist form[action='/api/waitlist']")).not.toBeNull();
       }
     });
   }
 
-  it("only the four public pages per language are indexable; previews and the 404 aren't", () => {
-    expect(routes().filter((r) => !r.noindex).map((r) => r.path)).toEqual(["/", "/privacy/", "/es/", "/es/privacy/"]);
+  it("only the public pages per language are indexable (home, privacy, the Linux packages); previews and the 404 aren't", () => {
+    expect(routes().filter((r) => !r.noindex).map((r) => r.path)).toEqual(["/", "/privacy/", "/download/linux/", "/es/", "/es/privacy/", "/es/download/linux/"]);
   });
 
   it("the Spanish home page is in Spanish", () => {
@@ -62,6 +63,44 @@ describe("screenshots", () => {
       expect(shot.querySelector("button[data-zoom]")).not.toBeNull();
     }
     expect(doc.querySelector("dialog[data-lightbox]")).not.toBeNull();
+  });
+
+  it("every home design, in each language, offers the Mac and Linux downloads and the Windows waitlist (plan 254)", () => {
+    for (const lang of ["en", "es"] as const)
+      for (const design of DESIGNS) {
+        const route = { ...routes().find((r) => r.path === (lang === "es" ? "/es/" : "/"))!, design };
+        const page = new JSDOM(render(route).body).window.document;
+        const copy = COPY[lang];
+        const where = `${lang} ${design}`;
+        const hrefs = [...page.querySelectorAll("a")].map((a) => a.getAttribute("href"));
+        // the hero and the closing each have both
+        expect(hrefs.filter((h) => h === (lang === "es" ? "/download/mac?lang=es" : "/download/mac")), where).toHaveLength(2);
+        expect(hrefs.filter((h) => h === (lang === "es" ? "/es/download/linux/" : "/download/linux/")), where).toHaveLength(2);
+        // the header's Download goes to the hero's buttons, not to one platform's file
+        expect(page.getElementById("download")?.querySelector('a[href^="/download/mac"]'), where).not.toBeNull();
+        expect(hrefs, where).toContain("#download");
+        expect(page.body.textContent, where).toContain(`${copy.download.other} · ${copy.download.otherSub}`);
+        // Windows only: no platform to choose, and the form says Windows
+        const form = page.querySelector("#waitlist form")!;
+        expect(form.querySelector("select"), where).toBeNull();
+        expect(form.querySelector('input[name="platform"]')?.getAttribute("value"), where).toBe("windows");
+      }
+  });
+
+  it("the Linux page has its own title and description, is indexed in each language, and its fallback page sends you to GitHub (plan 254)", () => {
+    for (const lang of ["en", "es"] as const) {
+      const path = lang === "es" ? "/es/download/linux/" : "/download/linux/";
+      const route = routes().find((r) => r.path === path)!;
+      expect(route.noindex, path).toBe(false);
+      expect(route.alternate, path).toBe(lang === "es" ? "/download/linux/" : "/es/download/linux/");
+      const { head, body } = render(route);
+      const doc = new JSDOM(`<html><head>${head}</head><body>${body}</body></html>`).window.document;
+      expect(doc.title).toBe(`${COPY[lang].pages.linux.title} · Terno`);
+      expect(doc.querySelector('meta[name="description"]')?.getAttribute("content")).toBe(COPY[lang].pages.linux.description);
+      const fallback = new JSDOM(render(routes().find((r) => r.path === (lang === "es" ? "/es/download/" : "/download/"))!).body).window.document;
+      expect(fallback.querySelector('a[href="https://github.com/luisiacc/terno/releases/latest"]'), lang).not.toBeNull();
+      expect(fallback.querySelector("form"), lang).toBeNull();
+    }
   });
 
   it("Midnight's local card pictures where mail lives, in each language: the Mac and what it keeps, the mail servers, no server of Terno's", () => {

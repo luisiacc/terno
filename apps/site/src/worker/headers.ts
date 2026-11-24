@@ -20,6 +20,8 @@ const PERMISSIONS = ["camera", "microphone", "geolocation", "payment", "usb", "i
 /** Only the production host is indexed: a preview or workers.dev URL never competes with terno.app. */
 export const PRODUCTION_HOST = "terno.app";
 
+import { isTarget } from "./download";
+
 export function secure(res: Response, url: URL): Response {
   const out = new Response(res.body, res);
   const h = out.headers;
@@ -31,7 +33,8 @@ export function secure(res: Response, url: URL): Response {
   h.set("Cross-Origin-Opener-Policy", "same-origin");
   if (url.hostname !== PRODUCTION_HOST) h.set("X-Robots-Tag", "noindex");
   const path = url.pathname;
-  if (path.startsWith("/api/") || path.startsWith("/download/mac")) h.set("Cache-Control", "no-store");
+  // a download's redirect is the Worker's to refresh (its lookup is cached on its own); the Linux page is a page
+  if (path.startsWith("/api/") || isTarget(path)) h.set("Cache-Control", "no-store");
   else if (path.startsWith("/assets/")) h.set("Cache-Control", "public, max-age=31536000, immutable");
   else if (path.startsWith("/shots/") || path === "/og.jpg") h.set("Cache-Control", "public, max-age=86400");
   else if (res.ok) h.set("Cache-Control", "public, max-age=0, must-revalidate");

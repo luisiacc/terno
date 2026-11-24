@@ -13,8 +13,9 @@ export { routes };
 export function render(route: Route): { head: string; body: string; lang: string; design: string } {
   const copy = COPY[route.lang];
   const p = copy.pages;
-  const title = route.page === "home" ? copy.meta.title : `${route.page === "privacy" ? p.privacy.title : route.page === "download" ? p.download.title : route.page === "waitlist" ? p.waitlist.title : p.notFound.title} · Terno`;
-  const description = route.page === "privacy" ? p.privacy.intro : copy.meta.description;
+  const titles: Record<Exclude<Route["page"], "home">, string> = { privacy: p.privacy.title, download: p.download.title, linux: p.linux.title, waitlist: p.waitlist.title, "404": p.notFound.title };
+  const title = route.page === "home" ? copy.meta.title : `${titles[route.page]} · Terno`;
+  const description = route.page === "privacy" ? p.privacy.intro : route.page === "linux" ? p.linux.description : copy.meta.description;
   const Home = DESIGN_HOMES[route.design];
   const preview = route.path.startsWith("/designs/");
   const body = route.page === "home" ? (
