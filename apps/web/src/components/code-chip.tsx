@@ -1,4 +1,3 @@
-import type { ThreadSummary } from "@terno/core";
 import { cn } from "@terno/ui/lib/utils";
 import { Copy } from "@terno/ui/icons";
 import { codeKey, copyCode, useCodeState } from "~/lib/codes";
@@ -9,8 +8,8 @@ import "./code-chip.css";
  * option of the list, which can't hold a button. Keyboards and screen readers get the code in the row's name and
  * copy it from the thread menu. Pressing it neither opens the thread nor starts a drag (`data-row-control`); copying marks it read.
  */
-export function CodeChip({ thread, code, className }: { thread: Pick<ThreadSummary, "id" | "unread">; code: string; className?: string }) {
-  const key = codeKey(thread.id, code);
+export function CodeChip({ threadId, code, className }: { threadId: number; code: string; className?: string }) {
+  const key = codeKey(threadId, code);
   const { copied, used } = useCodeState(key);
   return (
     <span
@@ -26,7 +25,7 @@ export function CodeChip({ thread, code, className }: { thread: Pick<ThreadSumma
       }}
       onClick={(e) => {
         e.stopPropagation();
-        void copyCode(thread, code);
+        void copyCode(threadId, code);
       }}
       data-code={code}
       className={cn(

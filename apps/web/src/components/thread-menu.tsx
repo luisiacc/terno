@@ -976,7 +976,7 @@ function MoreItems({ spam, single, code, view, ids, scope, sender, senderAccount
           icon={<Copy />}
           label={t("codes.copy", { code })}
           testId="menu-copy-code"
-          onClick={() => void copyCode(single, code).then((ok) => ok && snack(t("codes.copied", { code }), { duration: 2000 }))}
+          onClick={() => void copyCode(single.id, code).then((ok) => ok && snack(t("codes.copied", { code }), { duration: 2000 }))}
         />
       )}
       {single && (

@@ -157,6 +157,12 @@ Within the 100 ms cap, the swap and the color change read as cuts. At the user's
 
 > clickign that copy code button once should mark that email as read
 
-A copied code has been read. `copyCode` takes the thread (`id`, `unread`), so the chip and the thread menu's Copy verification code share one rule: once the clipboard takes the code, an unread thread is marked read with `act("markRead", [id], { quiet: true })`, the call the reader's dwell makes (plan 225). Quiet, because it's a side effect of copying, not triage: no undo of its own (z still undoes the last triage), and it doesn't count as read set by hand. A read thread costs nothing, and a refused copy reads nothing. Under the Unread filter the row leaves the list, as a row marked read there always does (the open one stays).
+A copied code has been read. The chip and the thread menu's Copy verification code share one rule in `copyCode`: once the clipboard takes the code, a thread unread as the list holds it then is marked read with `act("markRead", [id], { quiet: true })`, the call the reader's dwell makes (plan 225). Quiet, because it's a side effect of copying, not triage: no undo of its own (z still undoes the last triage), and it doesn't count as read set by hand. A read thread costs nothing, and a refused copy reads nothing. Under the Unread filter the row leaves the list, as a row marked read there always does (the open one stays).
 
-Tests: `codes.test.tsx` (an unread thread is marked read once, quietly; a read one and a refused copy aren't), and `codes.spec.ts` (the row and the menu's copy both drop `data-unread`).
+Tests: `codes.test.tsx` (an unread thread is marked read once, quietly; a read one and a refused copy aren't), and `codes.spec.ts` (the row and the menu's copy both drop `data-unread`, with another thread open so the reader's dwell can't be what reads it). Both e2e tests fail with the read removed.
+
+Codex review (six points):
+
+- Fixed: the unread state is the list's when the copy lands (`targetRows`), not the row's or the menu's snapshot, which a sync can have changed meanwhile (unit test).
+- Fixed: the menu e2e could pass on the reader's dwell (Split opens a lone search result); another thread is open now and the target is asserted unread first.
+- Left, as reading does everywhere: under the Unread filter a copied row that isn't open leaves (a checked one with its check; a pinned one comes back on the next refresh, as pinned rows ignore the filter); a quiet read takes a backend undo slot like the dwell's, and z on an earlier star restores its snapshot's unread flag. All rare, and shared with every other quiet read.

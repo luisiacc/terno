@@ -1,7 +1,7 @@
 import { codeExpiry, codeFresh, findCode, type ThreadSummary } from "@terno/core";
 import { t } from "@terno/i18n";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { act } from "./actions";
+import { act, targetRows } from "./actions";
 import { snack } from "./snack";
 
 /** How long the check shows after a copy. */
@@ -28,11 +28,12 @@ export const codeKey = (threadId: number, code: string): string => `${threadId}:
  * unread thread is marked read, quietly, as reading it in the reader does (plan 225: no undo of its own, z still undoes the
  * last triage). False when the clipboard refused (said in a snack).
  */
-export function copyCode(thread: Pick<ThreadSummary, "id" | "unread">, code: string): Promise<boolean> {
-  const key = codeKey(thread.id, code);
+export function copyCode(threadId: number, code: string): Promise<boolean> {
+  const key = codeKey(threadId, code);
   return navigator.clipboard.writeText(code).then(
     () => {
-      if (thread.unread) void act("markRead", [thread.id], { quiet: true });
+      // read as it is now, not as the row or menu last drew it (a sync may have changed it meanwhile)
+      if (targetRows([threadId]).some((t) => t.unread)) void act("markRead", [threadId], { quiet: true });
       clearTimeout(copying.get(key));
       copying.set(
         key,

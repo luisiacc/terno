@@ -68,11 +68,16 @@ test("a code: from the menu, under a drag, too old", async ({ app: page, server,
   await scenario("the thread menu copies the code too (the keyboard's way)", async () => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     const id = await ingestCode(server, { id: "code-menu", subject: "Your Acme menu code", ageMs: 60_000 });
-    await search(page, '"Acme menu code"');
+    // another one open, so the reader's dwell can't be what reads it
+    const open = await ingestCode(server, { id: "code-menu-open", subject: "Your Acme menu login code", ageMs: 2 * 60_000, code: "731406" });
+    await search(page, "Acme menu");
     const row = rowOf(page, id);
+    await rowOf(page, open).click();
+    await expect(rowOf(page, open)).toHaveAttribute("data-cursor", "true");
     await row.click({ button: "right" });
     await menuPath(page, "menu-more");
     await expect(page.getByTestId("menu-copy-code")).toHaveText("Copy verification code 048291");
+    await expect(row).toHaveAttribute("data-unread", "true");
     await page.getByTestId("menu-copy-code").click();
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("048291");
     await expect(row.getByTestId("row-code")).toHaveAttribute("data-copied", "true");
