@@ -44,7 +44,7 @@ it("Google pin and credential admission is conditional and durable across reopen
   expect((await store.accounts.config<Record<string, unknown>>(stamp.id))!.config.googleSubject).toBe("first");
   expect(await store.secrets.get(name)).toEqual(Uint8Array.of(2));
   store.db.onBeforeCommit(() => { throw new Error("synthetic rollback"); });
-  await expect(store.secrets.commit({ kind: "replace", name, expectedBlob: Uint8Array.of(2), blob: Uint8Array.of(3), oauth: { expectedSubject: "first", subject: "first" } }, stamp)).rejects.toThrow();
+  await expect(store.secrets.commit({ kind: "replace", name, expectedBlob: Uint8Array.of(2), blob: Uint8Array.of(3), oauth: { kind: "gmail", expectedSubject: "first", subject: "first" } }, stamp)).rejects.toThrow();
   expect(await store.secrets.get(name)).toEqual(Uint8Array.of(2));
 });
 
@@ -54,7 +54,7 @@ it("a first Google pin and credential roll back together and survive an uncertai
   cleanup.push(async () => { await store.close(); rmSync(dir, { recursive: true, force: true }); });
   const { account } = await store.accounts.create({ kind: "gmail", email: "legacy@example.test", displayName: "Legacy", color: "brown", providerConfig: { cursor: "keep" }, secret: { key: "refreshToken", blob: Uint8Array.of(1) }, now: 1 });
   const stamp = (await store.accounts.stamp(account.id))!, name = `account:${account.id}:refreshToken`;
-  const intent = { kind: "replace" as const, name, expectedBlob: Uint8Array.of(1), blob: Uint8Array.of(2), oauth: { expectedSubject: null, subject: "first" } };
+  const intent = { kind: "replace" as const, name, expectedBlob: Uint8Array.of(1), blob: Uint8Array.of(2), oauth: { kind: "gmail" as const, expectedSubject: null, subject: "first" } };
   let fail = true;
   store.db.onBeforeCommit(() => { if (fail) throw new Error("synthetic rollback"); });
   await expect(store.secrets.commit(intent, stamp)).rejects.toThrow();

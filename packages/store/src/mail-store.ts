@@ -327,6 +327,8 @@ export interface StorageRemoval {
  * and the commit are one atomic unit whatever the provider.
  */
 export interface OAuthAdmission {
+  /** whose proof this is: the store admits it only for an account of this kind (Codex review: never a Google proof on an Outlook row) */
+  kind: OAuthKind;
   expectedSubject: string | null;
   subject: string;
   /** Evaluated synchronously at actual store admission. */
@@ -335,7 +337,7 @@ export interface OAuthAdmission {
 
 /** Whether an admission holds for an account row of this kind and config: an OAuth kind whose stored subject is the one expected. */
 export function oauthAdmits(kind: string | null | undefined, config: Record<string, unknown> | null | undefined, admission: OAuthAdmission): boolean {
-  if (!isOAuthKind(kind) || !config) return false;
+  if (!isOAuthKind(kind) || kind !== admission.kind || !config) return false;
   const stored = (config[OAUTH_SUBJECT[kind]] ?? null) as unknown;
   return stored === admission.expectedSubject && (admission.expectedSubject === null || admission.expectedSubject === admission.subject) && (!admission.eligible || admission.eligible());
 }

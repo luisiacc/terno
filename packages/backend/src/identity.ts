@@ -167,7 +167,7 @@ export async function googleCredentialIntent(b: Backend, account: Account, stamp
 }
 
 async function confirmCredential(b: Backend, stamp: { id: number; email: string; createdAt: number }, intent: SecretIntent, owner?: OwnerDecision): Promise<boolean> {
-  return owner ? b.store.owner.confirm(owner) : b.store.secrets.commit({ kind: "retain", oauth: intent.oauth && { expectedSubject: intent.oauth.subject, subject: intent.oauth.subject }, name: intent.name, expectedBlob: intent.kind === "retain" ? intent.expectedBlob : intent.blob }, stamp);
+  return owner ? b.store.owner.confirm(owner) : b.store.secrets.commit({ kind: "retain", oauth: intent.oauth && { kind: intent.oauth.kind, expectedSubject: intent.oauth.subject, subject: intent.oauth.subject }, name: intent.name, expectedBlob: intent.kind === "retain" ? intent.expectedBlob : intent.blob }, stamp);
 }
 
 export async function commitGoogleCredential(b: Backend, accountId: number, stamp: { id: number; email: string; createdAt: number }, flow: AbortController, intent: SecretIntent): Promise<void> {
@@ -190,7 +190,7 @@ export async function oauthAdmission(b: Backend, accountId: number, flow: AbortC
   if (!stored || !stamp || !account || !isOAuthKind(account.kind)) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
   const key = OAUTH_SUBJECT[account.kind], subject = stored.config[key];
   if (Object.hasOwn(stored.config, key) && (typeof subject !== "string" || !subject || subject.length > 255 || /[\s\p{Cc}]/u.test(subject))) throw invalidRenewal();
-  return { stamp, expectedSubject: (subject as string | undefined) ?? null, eligible: () => {
+  return { stamp, kind: account.kind, expectedSubject: (subject as string | undefined) ?? null, eligible: () => {
     try { b.assertSignIn(accountId, flow); } catch { return false; }
     return b.credentialsOf(accountId) === generation;
   } };

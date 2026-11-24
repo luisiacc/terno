@@ -46,7 +46,7 @@ it("Google pin and credential admission is conditional and durable across reopen
     if (args[1] === "readwrite") queueMicrotask(() => tx.abort());
     return tx;
   });
-  await expect(store.secrets.commit({ kind: "replace", name, expectedBlob: Uint8Array.of(2), blob: Uint8Array.of(3), oauth: { expectedSubject: "first", subject: "first" } }, stamp)).rejects.toThrow();
+  await expect(store.secrets.commit({ kind: "replace", name, expectedBlob: Uint8Array.of(2), blob: Uint8Array.of(3), oauth: { kind: "gmail", expectedSubject: "first", subject: "first" } }, stamp)).rejects.toThrow();
   spy.mockRestore();
   expect(await store.secrets.get(name)).toEqual(Uint8Array.of(2));
 });
@@ -58,7 +58,7 @@ it("a Google first pin superseded during persistence preparation rolls back both
   let eligible = true;
   const take = store["db"].takeCommit.bind(store["db"]);
   const spy = vi.spyOn(store["db"], "takeCommit").mockImplementationOnce(() => { const commit = take(); queueMicrotask(() => { eligible = false; }); return commit; });
-  expect(await store.secrets.commit({ kind: "replace", name, expectedBlob: Uint8Array.of(1), blob: Uint8Array.of(2), oauth: { expectedSubject: null, subject: "first", eligible: () => eligible } }, stamp)).toBe(false);
+  expect(await store.secrets.commit({ kind: "replace", name, expectedBlob: Uint8Array.of(1), blob: Uint8Array.of(2), oauth: { kind: "gmail", expectedSubject: null, subject: "first", eligible: () => eligible } }, stamp)).toBe(false);
   spy.mockRestore();
   expect((await store.accounts.config(account.id))!.config).toEqual({ cursor: "keep" });
   expect(await store.secrets.get(name)).toEqual(Uint8Array.of(1));
@@ -76,7 +76,7 @@ it("owner proof expiry during persistence preparation rolls back pin, credential
   let now = 1;
   const take = store["db"].takeCommit.bind(store["db"]);
   const spy = vi.spyOn(store["db"], "takeCommit").mockImplementationOnce(() => { const commit = take(); queueMicrotask(() => { now = 3; }); return commit; });
-  expect(await store.owner.change({ claim: { ...claim, accountId: account.id, email: account.email }, stamp, secret: { kind: "replace", name, expectedBlob: Uint8Array.of(1), blob: Uint8Array.of(2), oauth: { expectedSubject: null, subject: "first", eligible: () => true } }, eligible: () => now < 2, reason: "synthetic", now: 3 })).toBe(false);
+  expect(await store.owner.change({ claim: { ...claim, accountId: account.id, email: account.email }, stamp, secret: { kind: "replace", name, expectedBlob: Uint8Array.of(1), blob: Uint8Array.of(2), oauth: { kind: "gmail", expectedSubject: null, subject: "first", eligible: () => true } }, eligible: () => now < 2, reason: "synthetic", now: 3 })).toBe(false);
   spy.mockRestore();
   await store.close(); store = await open(store.name);
   expect(await store.owner.get()).toEqual(owner);
