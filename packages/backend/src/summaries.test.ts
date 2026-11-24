@@ -194,6 +194,17 @@ describe("new mail", () => {
     await until(async () => expect((await row(fine.thread))?.state).toBe("ready"));
   });
 
+  it("plan 261: a verification code's mail, however long, asks for no summary; a long mail arriving beside it still does", async () => {
+    const { model, arrive, row } = await setup();
+    const code = await arrive({ subject: "Action required: Verify your email address", bodyText: `${WORDS}\n\nPlease verify your email address by entering this code: 391372` });
+    await until(async () => expect(await row(code.thread)).toBeNull());
+    expect(model.requests).toHaveLength(0);
+    // in one conversation: the code's arrival is no reading, the other's is
+    const talk = await arrive({ rfcMessageId: "talk@test" });
+    await arrive({ inReplyTo: "talk@test", references: ["talk@test"], subject: "Re: books", bodyText: `${WORDS}\n\nYour code: 482913`, date: START - 30_000 });
+    await until(async () => expect((await row(talk.thread))?.state).toBe("ready"));
+  });
+
   it("a new message on an old conversation summarizes the conversation; my reply doesn't trigger one", async () => {
     const { model, arrive, row } = await setup();
     await arrive({ providerThreadId: "t", bodyText: "An old first message about the budget." }, false);

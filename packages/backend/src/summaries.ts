@@ -311,7 +311,8 @@ export class SummaryWorker {
       await store.aiSummaries.drop(row.threadId, row.throughMessageId);
       return "next";
     }
-    const marks = sources.messages.filter((m) => m.markedAt !== null && !m.trash && !m.spam);
+    // plan 261: a verification code is no reading: its arrival asks for no summary (by hand still makes one)
+    const marks = sources.messages.filter((m) => m.markedAt !== null && !m.trash && !m.spam && !m.code);
     const floor = Math.max(this.host.now() - NEW_MAIL_MS, settings.summaries.enabledAt ?? 0);
     if (summaryBlocked(sources) || !sources.inInbox || sources.tab > 0 || !marks.some((m) => m.markedAt! >= floor)) {
       await store.aiSummaries.drop(row.threadId, row.throughMessageId);

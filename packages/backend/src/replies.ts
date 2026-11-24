@@ -79,6 +79,8 @@ export class ReplyService {
     if ((await store.drafts.list()).some((d) => d.thread_id === threadId)) return null;
     const sources = await store.aiSummaries.sources(threadId);
     if (!sources || summaryBlocked(sources)) return null;
+    // plan 261: the message a reply would answer gives a verification code: there's nothing to say back
+    if ([...sources.messages].reverse().find((m) => !m.own && !m.trash && !m.spam)?.code) return null;
     if (stamp !== undefined && sources.stamp !== stamp) return null;
     return { stamp: sources.stamp };
   }

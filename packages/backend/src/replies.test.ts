@@ -124,6 +124,17 @@ describe("what an open spends", () => {
     expect(model.checks).toEqual([]);
   });
 
+  it("plan 261: a verification code waiting on you gets nothing prepared; a later message from the person does", async () => {
+    const { model, put, prepare, row } = await setup();
+    const code = await put({ rfcMessageId: "code@test", subject: "Action required: Verify your email address", bodyText: "We need to verify your email address.\n\nPlease verify it by entering this code: 391372" });
+    expect(await prepare(code)).toEqual({ status: "none" });
+    expect(model.checks).toEqual([]);
+    expect(await row(code)).toBeNull();
+    // the person writes after it: that message is what a reply answers
+    await put({ inReplyTo: "code@test", references: ["code@test"], subject: "Re: Action required", bodyText: "Did the code work? Can you make the 19th?", date: NOW - 1_800_000 });
+    expect(await prepare(code)).toEqual({ status: "started" });
+  });
+
   it("a yes writes it and stores it; reopening at that state costs nothing, in every state", async () => {
     const { client, model, put, prepare, row, settled } = await setup();
     const t = await put();
