@@ -191,10 +191,12 @@ export function releaseBusy(run = gh) {
   return runs.some((x) => x.status !== "completed");
 }
 
-/** The scheduler: reads GitHub, decides, and starts release.yml for main's tip. */
-export function startNightly({ run = gh, now = new Date(), start = dispatch } = {}) {
+/** The scheduler: reads GitHub, decides, and starts release.yml for main's tip (`expect`: the tip it must be, by hand). */
+export function startNightly({ run = gh, now = new Date(), start = dispatch, expect = null } = {}) {
   const mainSha = ghRead(run, ["api", `repos/${REPO}/commits/main`, "--jq", ".sha"], "main's tip").trim();
   if (!SHA.test(mainSha)) throw new Error(`main's tip "${mainSha}" isn't a SHA`);
+  // by hand: main moved after the checks, so it would build a commit this checkout doesn't have (Codex review)
+  if (expect && mainSha !== expect) throw new Error(`GitHub's main moved to ${mainSha.slice(0, 10)} while this started: pull, then run it again`);
   const content = ghRead(run, ["api", `repos/${REPO}/contents/apps/desktop/package.json?ref=${mainSha}`, "--jq", ".content"], "the desktop package.json");
   const pkgVersion = JSON.parse(Buffer.from(content, "base64").toString("utf8")).version;
   if (!/^\d+\.\d+\.\d+$/.test(pkgVersion)) throw new Error(`apps/desktop/package.json's version ${pkgVersion} isn't x.y.z`);
@@ -248,19 +250,21 @@ export function pruneNightlies(run = gh) {
 export function localNightlyProblems({ head, dirty }, run = gh) {
   if (run(["auth", "status"]).status !== 0) return ["gh isn't signed in: run `gh auth login` first"];
   if (dirty) return ["the working tree has changes: GitHub builds main's tip, so commit and push them first"];
-  if (!isMainTip(head, run)) return [`${head.slice(0, 10)} isn't the tip of GitHub's main: GitHub builds main's tip, so push your commits (or pull theirs), then run this again`];
+  // a failed read says so, never "push your commits" (Codex review)
+  if (ghRead(run, ["api", `repos/${REPO}/commits/main`, "--jq", ".sha"], "main's tip").trim() !== head) return [`${head.slice(0, 10)} isn't the tip of GitHub's main: GitHub builds main's tip, so push your commits (or pull theirs), then run this again`];
   return [];
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url) && process.argv[2] === "nightly") {
   const local = process.env.GITHUB_ACTIONS !== "true";
   try {
+    const git = (...args) => execFileSync("git", args, { encoding: "utf8" }).trim();
+    const head = local ? git("rev-parse", "HEAD") : null;
     if (local) {
-      const git = (...args) => execFileSync("git", args, { encoding: "utf8" }).trim();
-      const problems = localNightlyProblems({ head: git("rev-parse", "HEAD"), dirty: git("status", "--porcelain", "--untracked-files=no") });
+      const problems = localNightlyProblems({ head, dirty: git("status", "--porcelain", "--untracked-files=no") });
       if (problems.length) throw new Error(problems[0]);
     }
-    const r = startNightly();
+    const r = startNightly({ expect: head });
     if (!r.build) console.log(`· no nightly ${local ? "now" : "tonight"}: ${r.reason}`);
     else {
       console.log(`✓ building ${r.version} from ${r.mainSha.slice(0, 10)} on GitHub (macOS and Linux)${r.url ? `: ${r.url}` : ""}`);

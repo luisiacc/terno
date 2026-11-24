@@ -456,6 +456,23 @@ describe("plan 257: a nightly by hand (pnpm release:nightly)", () => {
     expect(localNightlyProblems({ head: sha, dirty: "" }, gh({ tip: later }))).toEqual([expect.stringContaining("push your commits")]);
   });
 
+  it("a failed read of main says so, never \"push your commits\" (Codex review)", () => {
+    const down = (args: string[]) => (args[0] === "auth" ? { status: 0, stdout: "" } : { status: 1, stdout: "", stderr: "HTTP 403: rate limit" });
+    expect(() => localNightlyProblems({ head: sha, dirty: "" }, down)).toThrow(/couldn't read main's tip from GitHub: HTTP 403/);
+  });
+
+  it("stops when main moved after the checks: it would build a commit this checkout doesn't have (Codex review)", () => {
+    const g = fakeGh({ main: later, releases: [rel("v0.1.5")], runs: ["completed"] });
+    let dispatched = false;
+    expect(() => startNightly({ run: g.run, now: night, start: () => ((dispatched = true), null), expect: sha })).toThrow(/main moved to fedcba9876 while this started/);
+    expect(dispatched).toBe(false);
+    expect(startNightly({ run: g.run, now: night, start: () => null, expect: later }).build).toBe(true);
+  });
+
+  it("a run whose commit moved tells a nightly to start again as a nightly, not as a stable release (Codex review)", () => {
+    for (const j of JOBS) expect(step("The commit is main's tip", j)).toContain("pnpm release:nightly for a nightly");
+  });
+
   it("is a script at the root and in the desktop package, running the scheduler's own entry", () => {
     const scripts = (p: string) => JSON.parse(readFileSync(join(__dirname, p), "utf8")).scripts;
     expect(scripts("../../../package.json")["release:nightly"]).toBe("node apps/desktop/scripts/release-ci.mjs nightly");

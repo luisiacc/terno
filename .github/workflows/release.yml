@@ -50,7 +50,7 @@ jobs:
       - name: The commit is main's tip
         run: |
           [ "$GITHUB_REF" = refs/heads/main ] || { echo "✗ releases build from main only, not $GITHUB_REF"; exit 1; }
-          [ "$GITHUB_SHA" = "$RELEASE_SHA" ] || { echo "✗ main moved since you started ($RELEASE_SHA → $GITHUB_SHA): pull, then run pnpm release again"; exit 1; }
+          [ "$GITHUB_SHA" = "$RELEASE_SHA" ] || { echo "✗ main moved since this started ($RELEASE_SHA → $GITHUB_SHA): pull, then start it again (pnpm release, or pnpm release:nightly for a nightly)"; exit 1; }
 
       # before anything is installed: every secret this job uses, by name (never a value), and the version's shape
       - name: Check the secrets
@@ -145,7 +145,7 @@ jobs:
       - name: The commit is main's tip
         run: |
           [ "$GITHUB_REF" = refs/heads/main ] || { echo "✗ releases build from main only, not $GITHUB_REF"; exit 1; }
-          [ "$GITHUB_SHA" = "$RELEASE_SHA" ] || { echo "✗ main moved since you started ($RELEASE_SHA → $GITHUB_SHA): pull, then run pnpm release again"; exit 1; }
+          [ "$GITHUB_SHA" = "$RELEASE_SHA" ] || { echo "✗ main moved since this started ($RELEASE_SHA → $GITHUB_SHA): pull, then start it again (pnpm release, or pnpm release:nightly for a nightly)"; exit 1; }
 
       # before anything is installed: every secret this job uses, by name (never a value), and the version's shape
       - name: Check the secrets
@@ -272,7 +272,7 @@ jobs:
       - name: The commit is main's tip
         run: |
           [ "$GITHUB_REF" = refs/heads/main ] || { echo "✗ releases build from main only, not $GITHUB_REF"; exit 1; }
-          [ "$GITHUB_SHA" = "$RELEASE_SHA" ] || { echo "✗ main moved since you started ($RELEASE_SHA → $GITHUB_SHA): pull, then run pnpm release again"; exit 1; }
+          [ "$GITHUB_SHA" = "$RELEASE_SHA" ] || { echo "✗ main moved since this started ($RELEASE_SHA → $GITHUB_SHA): pull, then start it again (pnpm release, or pnpm release:nightly for a nightly)"; exit 1; }
 
       - name: Check the version
         run: node apps/desktop/scripts/release-ci.mjs check draft
