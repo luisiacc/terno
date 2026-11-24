@@ -36,6 +36,7 @@ async function setup(refresh = false, kind: "SQL" | "IDB" = "SQL", large = false
   const google = new Map<number, NonNullable<ProviderContext["google"]>>();
   const syncRuns = new Map<number, number>();
   const bodies: { finish(): void }[] = [];
+  const resets = new Map<number, () => void>();
   let first!: () => void;
   const firstNativeBody = new Promise<void>((resolve) => { first = resolve; });
   let witness!: () => void;
@@ -73,8 +74,9 @@ async function setup(refresh = false, kind: "SQL" | "IDB" = "SQL", large = false
         bodies.push({ finish() {
           if (finished) return;
           finished = true;
-          controller.enqueue(bytes.slice(prefix));
-          controller.close(); sourceClosed++;
+          // a body its request's abort cancelled (plan 262) has nothing left to finish
+          try { controller.enqueue(bytes.slice(prefix)); controller.close(); } catch { return; }
+          sourceClosed++;
         } });
         if (bodies.length === 1) first();
         if (bodies.length === capacity) witness();
@@ -99,6 +101,7 @@ async function setup(refresh = false, kind: "SQL" | "IDB" = "SQL", large = false
         } },
         incomingProcessor: { run: async (input, signal) => { const result = await processor.run(input, signal); processed.push(ctx.account.id); return result; } },
       }, { endpoints: { api: `https://foreground.invalid/${ctx.account.id}/gmail`, token: `https://foreground.invalid/${ctx.account.id}/token` }, unitsPerSecond: Infinity });
+      resets.set(ctx.account.id, () => provider.reset?.());
       const sync = provider.sync.bind(provider);
       provider.sync = async (sink) => { syncRuns.set(ctx.account.id, (syncRuns.get(ctx.account.id) ?? 0) + 1); try { await sync(sink); } catch (error) { await syncFailure?.(ctx.account.id, error); throw error; } };
       return provider;
@@ -143,7 +146,7 @@ async function setup(refresh = false, kind: "SQL" | "IDB" = "SQL", large = false
     syncs.push(backend.syncAccount(id));
     if (!refresh && id === 1) { await firstNativeBody; if (large) await initialPromotion; }
   }
-  return { backend, rpc, hydrate, paths, requests, google, syncRuns, envelope, onSyncFailure(fn: typeof syncFailure) { syncFailure = fn; }, admissions, sync(id: number) { const work = backend.syncAccount(id); syncs.push(work); return work; }, sixNativeBodies, bodies, sender, promoted, processed, readerPromotion, override(fn: typeof override) { override = fn; }, sourceClosed: () => sourceClosed, async finishBackfill() { holding = false; for (const body of bodies) body.finish(); await Promise.all(syncs); } };
+  return { backend, rpc, hydrate, paths, requests, google, syncRuns, reset: (id: number) => resets.get(id)!(), envelope, onSyncFailure(fn: typeof syncFailure) { syncFailure = fn; }, admissions, sync(id: number) { const work = backend.syncAccount(id); syncs.push(work); return work; }, sixNativeBodies, bodies, sender, promoted, processed, readerPromotion, override(fn: typeof override) { override = fn; }, sourceClosed: () => sourceClosed, async finishBackfill() { holding = false; for (const body of bodies) body.finish(); await Promise.all(syncs); } };
 }
 
 it("public Send completes through the shared physical pool while six multi-account backfill bodies remain held", async () => {
@@ -499,6 +502,38 @@ for (const phase of ["before", "after"] as const) for (const automatic of [true,
     expect(continuation.mock.calls.filter(([id]) => id === 12)).toHaveLength(2);
     expect(t.paths.filter((path) => path === "/12/gmail/messages")).toHaveLength(1);
   } else expect(t.paths.filter((path) => path.startsWith("/12/"))).toHaveLength(0);
+});
+
+for (const automatic of [true, false]) it(`an aborted held body frees capacity and the refused sync resumes once (automatic=${automatic}, plan 262)`, async () => {
+  // the incident: a network reset aborts held reads; plan 62 kept their slots and refused every later sync
+  const t = await setup(true, "SQL", false, automatic, true);
+  await t.sixNativeBodies;
+  expect(t.backend.net.googlePending()).toBe(62);
+  t.override((request) => new URL(request.url).pathname === "/12/gmail/messages" ? Response.json({}) : undefined);
+  let refused!: () => void;
+  const refusal = new Promise<void>((resolve) => { refused = resolve; });
+  t.onSyncFailure(async (id, error) => {
+    if (id !== 12) return;
+    expect(error).toMatchObject({ cooldown: { kind: "capacity" } });
+    refused();
+  });
+  const continuation = vi.spyOn(t.backend, "syncAccount");
+  const first = t.sync(12);
+  await refusal; await first;
+  expect(t.paths.filter((path) => path.startsWith("/12/"))).toHaveLength(0);
+  const held = t.paths.find((path) => /^\/\d+\/gmail\/messages\/m\d+$/.test(path))!;
+  t.reset(Number(held.split("/")[1]));
+  await vi.waitFor(() => expect(t.backend.net.googlePending()).toBeLessThan(62));
+  if (automatic) {
+    await vi.waitFor(() => expect(continuation.mock.calls.filter(([id]) => id === 12)).toHaveLength(2));
+    const index = continuation.mock.calls.findLastIndex(([id]) => id === 12);
+    await continuation.mock.results[index]!.value;
+    expect(t.paths.filter((path) => path === "/12/gmail/messages")).toHaveLength(1);
+  } else {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(continuation.mock.calls.filter(([id]) => id === 12)).toHaveLength(1);
+    expect(t.paths.filter((path) => path.startsWith("/12/"))).toHaveLength(0);
+  }
 });
 
 it("managed selected body obtains its native reader once through exact EOF", async () => {

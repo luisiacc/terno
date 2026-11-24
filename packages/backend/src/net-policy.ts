@@ -125,42 +125,51 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
   let backgroundPending = 0, foregroundPending = 0;
   const available = (admission?: RequestDescriptor["admission"]) => googlePending < 64 && (admission === "background" ? backgroundPending < 62 : admission ? foregroundPending < 2 : true);
   const availability = () => [available(), available("background"), available("reader")].join();
-  const physical = (request: Request, release: () => void, owned?: ReadableStreamDefaultReader<Uint8Array>) => (response: Response): Response => {
-    if (!response.body) { release(); return response; }
-    const reader = owned ?? response.body.getReader();
-    let cancelled = false;
+  /**
+   * Plan 262: a Google slot counts a fetch that hasn't completed, and comes back when it does: the fetch rejects, or its
+   * native body ends (EOF, an error, or a cancel once the cancel settles). An abort is one of those: the Fetch Standard
+   * has an aborted signal reject a pending fetch and error a streaming body, and a body's cancel abort the fetch. Plan
+   * 62 kept the slot after an abort; that leaked one per deadline or network reset, and after 62 of them background
+   * sync was refused for the rest of the run. The tracker owns the native reader from the moment headers arrive, so
+   * an abort or a native end is seen while nobody reads (admission may still be deciding, or the caller idle).
+   */
+  const track = (request: Request, reader: ReadableStreamDefaultReader<Uint8Array>, release: () => void) => {
+    let cancelling: Promise<void> | undefined;
+    let ended = false;
+    const end = () => {
+      if (ended) return;
+      ended = true;
+      request.signal.removeEventListener("abort", onAbort);
+      release();
+    };
+    // one cancel for every path: a second would resolve at once against the closed stream, before the first settled
+    const cancel = (reason: unknown) => (cancelling ??= reader.cancel(reason).catch(() => {}));
+    function onAbort() { void cancel(request.signal.reason); }
+    // a cancel closes the stream before the transport's cancel settles: a close while cancelling waits for it
+    const closed = () => { if (cancelling) void cancelling.then(end); else end(); };
+    reader.closed.then(closed, closed);
+    if (request.signal.aborted) onAbort();
+    else request.signal.addEventListener("abort", onAbort, { once: true });
+    return { reader, cancel, get cancelled() { return cancelling !== undefined; } };
+  };
+  type Tracked = ReturnType<typeof track>;
+
+  const physical = (request: Request, tracked: Tracked, response: Response): Response => {
+    const { reader } = tracked;
     const body = new ReadableStream<Uint8Array>({
       async pull(controller) {
         try {
           const chunk = await reader.read();
-          if (chunk.done) {
-            if (!cancelled && !request.signal.aborted) release();
-            controller.close();
-          } else controller.enqueue(chunk.value);
+          if (!chunk.done) { controller.enqueue(chunk.value); return; }
+          // a body cancelled under the caller (its request aborted) ends as the abort, never as a complete body
+          if (tracked.cancelled) controller.error(request.signal.aborted ? request.signal.reason : new DOMException("Provider request ended", "AbortError"));
+          else controller.close();
         } catch (error) {
-          if (!cancelled && !request.signal.aborted) release();
           controller.error(error);
         }
       },
-      cancel(reason) {
-        cancelled = true;
-        // A control-body limit may leave a small tail. Only native EOF/error proves termination;
-        // ordinary cancellation (including abort) still retains the physical capacity slot.
-        if (reason instanceof Error && reason.name === "ResponseBodyLimitError") {
-          return (async () => {
-            let bytes = 0;
-            try {
-              for (let chunks = 0; chunks < 32 && bytes < 256 * 1024 && !request.signal.aborted; chunks++) {
-                const chunk = await reader.read();
-                if (chunk.done) { if (!request.signal.aborted) release(); return; }
-                bytes += chunk.value.byteLength;
-              }
-            } catch { if (!request.signal.aborted) release(); return; }
-            await reader.cancel(reason);
-          })();
-        }
-        return reader.cancel(reason);
-      },
+      // an over-limit control body is cancelled at once too: draining its tail could wait on a stalled server for good
+      cancel: (reason) => tracked.cancel(reason),
     }, { highWaterMark: 0 });
     return new NativeResponse(body, { status: response.status, statusText: response.statusText, headers: response.headers });
   };
@@ -206,10 +215,7 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
         const request = new NativeRequest(input, { ...init, redirect: "error" });
         const run = async () => {
           await assert("mail", new URL(request.url));
-          let release: (() => void) | undefined;
-          let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
-          let received = false;
-          let hasBody = false;
+          let tracked: Tracked | undefined;
           try {
             const response = await requestHttp(policy, descriptor, () => {
               if (request.signal.aborted) throw new RequestNotDispatchedError(L("errors.accountGone"));
@@ -218,9 +224,8 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
               googlePending++;
               if (descriptor.admission === "background") backgroundPending++;
               else if (descriptor.admission) foregroundPending++;
-              if (before !== availability()) options.googleChanged?.();
               let released = false;
-              release = () => {
+              const give = () => {
                 if (released) return;
                 released = true;
                 const before = availability();
@@ -229,32 +234,30 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
                 else if (descriptor.admission) foregroundPending--;
                 if (before !== availability()) options.googleChanged?.();
               };
-              return baseFetch(request).then((response) => {
-                received = true;
-                hasBody = response.body !== null;
-                // Hold the native body until admission publishes or rejects the response.
-                reader = response.body?.getReader();
+              let sent: Promise<Response>;
+              // nothing between the count and the fetch may strand the slot, a synchronous throw included
+              try {
+                if (before !== availability()) options.googleChanged?.();
+                sent = baseFetch(request);
+              } catch (error) { give(); throw error; }
+              return sent.then((response) => {
+                // Hold the native body until admission publishes or rejects the response; a bodyless one is over.
+                if (response.body) tracked = track(request, response.body.getReader(), give);
+                else give();
                 return response;
               }, (error: unknown) => {
-                if (!request.signal.aborted) release!();
+                give();
                 throw error;
               });
             }, Date.now);
-            return physical(request, release!, reader)(response);
+            return tracked ? physical(request, tracked, response) : response;
           } catch (error) {
-            if (received) {
-              if (reader) {
-                const owned = reader;
-                void (async () => {
-                  try { while (!(await owned.read()).done) { /* discard without buffering */ } }
-                  catch { /* A non-aborted read failure is terminal. */ }
-                  finally {
-                    owned.releaseLock();
-                    if (!request.signal.aborted) release!();
-                  }
-                })();
-              } else if (!hasBody && !request.signal.aborted) release!();
-            }
+            // a retired response is read to its end (EOF rather than a reset), unless its request is aborted first
+            const owned = tracked;
+            if (owned) void (async () => {
+              try { while (!(await owned.reader.read()).done) { /* discard without buffering */ } }
+              catch { /* the tracker saw the end */ }
+            })();
             throw error;
           }
         };

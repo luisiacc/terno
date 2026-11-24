@@ -1098,7 +1098,7 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
   });
 });
 
-it("R1 late403 after cancellation releases its logical ticket but retains physical response capacity", async () => {
+it("R1 late403 after cancellation releases its logical ticket and, the request being aborted, its physical slot (plan 262)", async () => {
   const { ProviderCooldown } = await import("./provider-cooldown");
   const { createNetworkPolicy } = await import("./net-policy");
   const { createGmailApiProvider } = await import("../../mail/src/gmail-api");
@@ -1119,9 +1119,10 @@ it("R1 late403 after cancellation releases its logical ticket but retains physic
     await vi.waitFor(() => expect(requests).toHaveLength(1));
     provider.reset!();
     expect(await verifying).toBeInstanceOf(ProviderError);
+    expect(net.googlePending()).toBe(1); // the fetch hasn't answered: its slot is held
     respond(failure(403, "userRateLimitExceeded"));
     await vi.waitFor(() => expect(gate.resources().tickets).toBe(0));
-    expect(net.googlePending()).toBe(1);
+    await vi.waitFor(() => expect(net.googlePending()).toBe(0));
     expect(encoded).toBeNull();
   } finally { await provider.close(); await gate.close(); }
 });

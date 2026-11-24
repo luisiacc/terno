@@ -4,7 +4,7 @@ import { ProviderCooldown } from "../../backend/src/provider-cooldown";
 
 afterEach(() => vi.restoreAllMocks());
 
-it.each(["eof", "cancel"] as const)("keeps one native history reader and capacity until actual EOF (%s)", async (action) => {
+it.each(["eof", "cancel"] as const)("keeps one native history reader and capacity until EOF or a settled cancel (%s)", async (action) => {
   let cancellations = 0;
   let controller!: ReadableStreamDefaultController<Uint8Array>;
   const source = new Response(new ReadableStream<Uint8Array>({ start(value) { controller = value; }, cancel() { cancellations++; } }, { highWaterMark: 0 }));
@@ -45,7 +45,7 @@ it.each(["eof", "cancel"] as const)("keeps one native history reader and capacit
         await reader.cancel("Synthetic local cancellation");
         expect(cancellations).toBe(1);
         expect(owned.read).toHaveBeenCalledTimes(1);
-        expect(net.googlePending()).toBe(1);
+        expect(net.googlePending()).toBe(0); // plan 262: a settled cancel ends the request
         expect(acquire).toHaveBeenCalledTimes(1);
         expect(owned.releaseLock).not.toHaveBeenCalled();
         return;

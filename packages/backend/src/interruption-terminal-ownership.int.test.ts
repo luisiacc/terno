@@ -169,7 +169,7 @@ it.each(["success", "late acceptance", "connection loss", "body loss", "portal H
   expect(t.requests.filter((r) => r.method === "POST")).toHaveLength(1);
 });
 
-it.each(["cancel", "abort then EOF"] as const)("managed read %s conservatively retains its slot without cancelling a sibling", async (event) => {
+it.each(["cancel", "abort then EOF"] as const)("managed read %s frees its slot without cancelling a sibling (plan 262)", async (event) => {
   let native!: ReadableStreamDefaultController<Uint8Array>, cancelled = 0;
   const body = new ReadableStream<Uint8Array>({ start(c) { native = c; }, cancel() { cancelled++; } }, { highWaterMark: 0 });
   const siblingEntered = gate(), siblingRelease = gate();
@@ -189,16 +189,22 @@ it.each(["cancel", "abort then EOF"] as const)("managed read %s conservatively r
   await siblingEntered.promise;
   expect(t.backend.net.googlePending()).toBe(2);
   if (event === "cancel") { await response.body!.cancel(); expect(cancelled).toBe(1); }
-  else { controller.abort(); native.close(); expect(await response.text()).toBe(""); expect(cancelled).toBe(0); }
-  expect(t.backend.net.googlePending()).toBe(2);
+  else {
+    // an aborted body never reads as complete; the abort cancels the native body
+    controller.abort();
+    try { native.close(); } catch { /* the abort already cancelled the native body */ }
+    await expect(response.text()).rejects.toMatchObject({ name: "AbortError" });
+    expect(cancelled).toBe(1);
+  }
+  await expect.poll(() => t.backend.net.googlePending()).toBe(1);
   const assertIndependent = () => expect(siblingSignal.aborted).toBe(false);
   assertIndependent();
   siblingRelease.release();
   expect(await (await siblingResponse).text()).toBe("sibling body");
+  expect(t.backend.net.googlePending()).toBe(0);
   // Oracle control acts on the same native Request signal, not a fabricated signal.
   siblingController.abort();
   expect(assertIndependent).toThrow();
-  expect(t.backend.net.googlePending()).toBe(1);
-  await turn(); expect(t.backend.net.googlePending()).toBe(1);
+  await turn(); expect(t.backend.net.googlePending()).toBe(0);
   expect(t.unexpected).toEqual([]);
 });
