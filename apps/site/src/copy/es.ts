@@ -355,7 +355,7 @@ export const es: SiteCopy = {
           id: "delete",
           title: "Borrar tus datos",
           body: [
-            "Eliminar una cuenta en Ajustes → Cuentas borra su correo, sus tokens de inicio de sesión y sus imágenes del buzón de Terno. Antes de que una actualización cambie cómo se guarda tu buzón, Terno guarda una copia por si algo sale mal; una copia hecha antes de que eliminaras la cuenta la sigue conteniendo hasta que se borra, la primera vez que Terno se abre 14 días o más después de la actualización. Para borrarlo todo de una vez, cierra Terno y elimina su carpeta: `~/Library/Application Support/Terno` en un Mac, `%APPDATA%\\Terno` en Windows, `~/.config/Terno` en Linux. En un Mac, elimina también el ítem del Llavero «Terno Safe Storage»; en Linux, la entrada de Terno en tu llavero.",
+            "Eliminar una cuenta en Ajustes → Cuentas borra su correo, sus tokens de inicio de sesión y sus imágenes del buzón de Terno. Antes de que una actualización cambie cómo se guarda tu buzón, Terno guarda una copia por si algo sale mal; una copia hecha antes de que eliminaras la cuenta la sigue conteniendo hasta que se borra, la primera vez que Terno se abre 14 días o más después de la actualización. Para borrarlo todo de una vez, cierra Terno y elimina su carpeta: `~/Library/Application Support/Terno` en un Mac, `%APPDATA%\\Terno` en Windows, `~/.config/Terno` en Linux (o `$XDG_CONFIG_HOME/Terno` si lo has definido). En un Mac, elimina también el ítem del Llavero «Terno Safe Storage»; en Linux, la entrada de Terno en tu llavero.",
           ],
         },
         {

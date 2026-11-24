@@ -367,7 +367,7 @@ export const en = {
           id: "delete",
           title: "Removing your data",
           body: [
-            "Removing an account in Settings → Accounts deletes its mail, sign-in tokens and pictures from Terno’s mailbox. Before an update changes how your mailbox is stored, Terno keeps a copy of it in case something goes wrong; a copy made before you removed the account still holds it until the copy is deleted, the first time Terno opens 14 days or more after the update. To remove everything at once, quit Terno and delete its folder: `~/Library/Application Support/Terno` on a Mac, `%APPDATA%\\Terno` on Windows, `~/.config/Terno` on Linux. On a Mac, also delete the Keychain item “Terno Safe Storage”; on Linux, Terno’s entry in your keyring.",
+            "Removing an account in Settings → Accounts deletes its mail, sign-in tokens and pictures from Terno’s mailbox. Before an update changes how your mailbox is stored, Terno keeps a copy of it in case something goes wrong; a copy made before you removed the account still holds it until the copy is deleted, the first time Terno opens 14 days or more after the update. To remove everything at once, quit Terno and delete its folder: `~/Library/Application Support/Terno` on a Mac, `%APPDATA%\\Terno` on Windows, `~/.config/Terno` on Linux (or `$XDG_CONFIG_HOME/Terno` if you set it). On a Mac, also delete the Keychain item “Terno Safe Storage”; on Linux, Terno’s entry in your keyring.",
           ],
         },
         {
