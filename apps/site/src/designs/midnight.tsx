@@ -67,14 +67,14 @@ function Section({ name, copy, sizes, className = "mt-auto" }: { name: ShotName;
   );
 }
 
-/**
- * Where your mail lives, as a picture that takes the card's height (it sits beside the unified inbox): your Mac and what
- * it keeps, a wire straight to your mail servers, and no server of Terno's between them. The card's words say the
- * same, so it's hidden from screen readers.
- */
 /** what the Mac keeps, each with its icon */
 const KEPT = { mail: Inbox, contacts: Users, index: Search } as const satisfies Record<keyof SiteCopy["features"]["local"]["map"]["kept"], unknown>;
 
+/**
+ * Where your mail lives, as a picture that takes the card's height (it sits beside the unified inbox): your Mac and what
+ * it keeps, a wire straight down to your mail servers, and beside the wire, where a server of ours would sit, none. The
+ * card's words say the same, so it's hidden from screen readers.
+ */
 function LocalMap({ m }: { m: SiteCopy["features"]["local"]["map"] }) {
   return (
     <div className="mt-auto flex flex-1 flex-col" aria-hidden="true" data-local-map>
@@ -97,10 +97,19 @@ function LocalMap({ m }: { m: SiteCopy["features"]["local"]["map"] }) {
           })}
         </ul>
       </div>
-      {/* the wire runs down from the Mac's node to the servers' (both 44 px, inside a 1 px border and 20 px of padding) */}
-      <div className="flex min-h-14 flex-1 items-center gap-3 ps-[42px]">
-        <span className="mn-wire-v self-stretch" />
-        <span className="font-mono text-[0.72rem] text-(--mn-dim)">{m.link}</span>
+      {/* the boxes' own border and padding, then the nodes' track: the wire runs from one node to the other, and what's
+          beside it starts on the boxes' text line */}
+      <div className="flex min-h-28 flex-1 gap-3 border-x border-transparent px-5">
+        <span className="mn-track">
+          <span className="mn-wire-v" />
+        </span>
+        <span className="flex flex-col justify-center gap-3 py-5">
+          <span className="font-mono text-[0.72rem] text-(--mn-dim)">{m.link}</span>
+          <span className="flex items-center gap-2.5 self-start rounded-lg border border-dashed border-(--mn-line) px-3.5 py-2.5 font-mono text-[0.72rem] text-pretty text-(--mn-dim)">
+            <X size="1.15em" className="shrink-0" />
+            {m.ours}
+          </span>
+        </span>
       </div>
       <div className="flex items-center gap-3 rounded-xl border border-(--mn-line) bg-(--mn-raised) p-5">
         <span className="mn-node">
@@ -111,10 +120,6 @@ function LocalMap({ m }: { m: SiteCopy["features"]["local"]["map"] }) {
           <span className="mt-0.5 block font-mono text-[0.72rem] text-(--mn-dim)">{m.providers}</span>
         </span>
       </div>
-      <p className="mt-3 flex items-center gap-2.5 rounded-xl border border-dashed border-(--mn-line) px-5 py-3.5 font-mono text-[0.72rem] text-(--mn-dim)">
-        <X size="1.15em" className="shrink-0" />
-        {m.ours}
-      </p>
     </div>
   );
 }
@@ -340,7 +345,7 @@ export const Midnight: HomeDesign = ({ copy, route }) => {
               <Section name="search-detail" copy={copy} sizes={half} />
             </Card>
             <Card f={f.triage} className="lg:col-span-3">
-              <Section name="triage-detail" copy={copy} sizes={half} />
+              <Section name="filed-detail" copy={copy} sizes={half} />
             </Card>
             <Card f={f.palette} className="lg:col-span-3">
               <Section name="palette-detail" copy={copy} sizes={halfWide} className="site-wide mt-auto" />

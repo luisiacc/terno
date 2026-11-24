@@ -217,11 +217,11 @@
   },
   "search-detail-dark": {
     "width": 400,
-    "height": 374
+    "height": 298
   },
   "search-detail-light": {
     "width": 400,
-    "height": 374
+    "height": 298
   },
   "shortcuts-detail-dark": {
     "width": 800,
@@ -240,12 +240,12 @@
     "height": 332
   },
   "triage-detail-dark": {
-    "width": 607,
-    "height": 460
+    "width": 512,
+    "height": 181
   },
   "triage-detail-light": {
-    "width": 607,
-    "height": 460
+    "width": 512,
+    "height": 181
   },
   "unified-detail-dark": {
     "width": 645,
@@ -286,5 +286,13 @@
   "inbox-relief-light": {
     "width": 1280,
     "height": 800
+  },
+  "filed-detail-dark": {
+    "width": 607,
+    "height": 460
+  },
+  "filed-detail-light": {
+    "width": 607,
+    "height": 460
   }
 }

@@ -16,7 +16,8 @@ import { join } from "node:path";
 import { chromium, type Page } from "@playwright/test";
 import { startDevServer } from "@terno/backend-dev/src/server";
 import type { DesignId } from "@terno/core";
-import { around, type Box, ctx, dispose, encode, fencedPage, openApp, out, pictureSettings, seedProfile, serveWeb, site, VIEWPORT } from "./lib";
+import { around, type Box, ctx, dispose, encode, fencedPage, openApp, out, pictureSettings, seedProfile, serveWeb, site } from "./lib";
+import { FILED_WINDOW, SHORTCUTS_WINDOW, VIEWPORT } from "./windows";
 import { SHOWCASE_NOW } from "./showcase";
 
 const raw = join(site, ".shots-raw");
@@ -61,9 +62,6 @@ async function open(page: Page, subject: string) {
 async function blur(page: Page) {
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
 }
-
-/** the window the triage picture is taken in: the snackbar a little under the reply bar, no empty pane between */
-const TRIAGE_HEIGHT = 510;
 
 /** a newsletter filed in Reading (l), and the offer to file everything like it opened */
 async function fileSimilar(p: Page) {
@@ -117,8 +115,8 @@ const SHOTS: Shot[] = [
       await p.waitForTimeout(400);
     },
     // the field, what it found and the first results
-    // three results: as tall as the triage picture beside it in Midnight's grid
-    details: { search: async (p) => around([p.getByTestId("search-button"), rows(p, 2)], { pad: 0, x: await listPane(p), top: 0 }) },
+    // two results: as tall as the filed newsletter beside it in Midnight's grid
+    details: { search: async (p) => around([p.getByTestId("search-button"), rows(p, 1)], { pad: 0, x: await listPane(p), top: 0 }) },
   },
   {
     name: "palette",
@@ -158,17 +156,17 @@ const SHOTS: Shot[] = [
     },
     details: { archive: (p) => around([p.getByTestId("snack")], { pad: PAD }) },
   },
-  { name: "file-similar", setup: fileSimilar },
+  { name: "file-similar", setup: fileSimilar, details: { triage: (p) => around([p.getByTestId("snack")], { pad: PAD }) } },
   {
-    // the filed newsletter and what Terno offers under it, in one picture: a shorter window brings the snackbar up to
-    // the message (in the full one, the empty pane between them is most of the frame)
+    // the filed newsletter and what Terno offers under it, in one picture (Midnight's, as tall as search beside it): a
+    // shorter window brings the snackbar up to the message (in the full one, the empty pane between is most of the frame)
     name: "file-similar-short",
     detailsOnly: true,
-    viewport: { width: VIEWPORT.width, height: TRIAGE_HEIGHT },
+    viewport: FILED_WINDOW,
     setup: fileSimilar,
     details: {
-      triage: async (p) => {
-        const box = await around([p.getByTestId("reader-subject"), p.getByTestId("snack")], { pad: PAD + 8, window: { width: VIEWPORT.width, height: TRIAGE_HEIGHT } });
+      filed: async (p) => {
+        const box = await around([p.getByTestId("reader-subject"), p.getByTestId("snack")], { pad: PAD + 8, window: FILED_WINDOW });
         // closer above the title: the toolbar's buttons end just over it
         return { ...box, y: box.y + 10, height: box.height - 10 };
       },
@@ -176,19 +174,24 @@ const SHOTS: Shot[] = [
   },
   {
     name: "shortcuts",
-    // a taller window: the sheet is as tall as the window lets it be, and more of it reads as more of the keyboard
-    viewport: { width: VIEWPORT.width, height: 900 },
+    viewport: SHORTCUTS_WINDOW,
     setup: async (p) => {
       await blur(p);
       await p.keyboard.press("?");
       await p.getByTestId("shortcuts-dialog").waitFor();
       await p.waitForTimeout(300);
     },
-    details: { shortcuts: (p) => dialog(p, p.getByTestId("shortcuts-dialog"), { width: VIEWPORT.width, height: 900 }) },
+    details: { shortcuts: (p) => dialog(p, p.getByTestId("shortcuts-dialog"), SHORTCUTS_WINDOW) },
   },
 ];
 
+/** every picture a shot writes: its window (unless it's only sections) and its sections */
+const picturesOf = (shot: Shot) => [...(shot.detailsOnly ? [] : [shot.name]), ...Object.keys(shot.details ?? {}).map((d) => `${d}-detail`)];
+
 async function main() {
+  // a name that isn't a picture fails before anything is built or seeded, rather than "succeeding" with none (Codex review)
+  const unknown = only?.filter((n) => !SHOTS.some((s) => picturesOf(s).includes(n)));
+  if (unknown?.length) throw new Error(`--only: no picture named ${unknown.join(", ")} (pictures: ${SHOTS.flatMap(picturesOf).join(", ")})`);
   rmSync(raw, { recursive: true, force: true });
   mkdirSync(raw, { recursive: true });
   mkdirSync(out, { recursive: true });
@@ -202,7 +205,7 @@ async function main() {
     const browser = await chromium.launch();
     cleanup.push(() => browser.close());
     for (const shot of SHOTS) {
-      const pictures = [...(shot.detailsOnly ? [] : [shot.name]), ...Object.keys(shot.details ?? {}).map((d) => `${d}-detail`)];
+      const pictures = picturesOf(shot);
       const wanted = (name: string) => !only || only.includes(name);
       if (!pictures.some(wanted)) continue;
       for (const mode of shot.modes ?? (["light", "dark"] as const)) {

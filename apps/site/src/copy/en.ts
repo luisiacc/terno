@@ -59,7 +59,7 @@ export const en = {
       body: "Your mail syncs between your Mac and your mail servers, never through ours. Your mail, contacts and search index live on your Mac.",
       points: ["Private from the first launch", "Remote images only when you ask", "Zero tracking"],
       /** the picture of where it all lives (Midnight): your Mac, your mail servers, and no server of ours between them */
-      map: { mac: "Your Mac", kept: { mail: "Mail", contacts: "Contacts", index: "Search index" }, link: "Synced directly", servers: "Your mail servers", providers: "Gmail · Outlook · IMAP", ours: "No Terno server in between" },
+      map: { mac: "Your Mac", kept: { mail: "Mail", contacts: "Contacts", index: "Search index" }, link: "Synced directly", servers: "Your mail servers", providers: "Gmail · Outlook · IMAP", ours: "No Terno server" },
     },
     search: {
       title: "Instant search.",
@@ -219,6 +219,7 @@ export const en = {
     "code-detail": "A verification code on its message in the list, with a copy button",
     "search-detail": "Search for “hopper ride”: more than 100 results, instantly, with the matching words highlighted",
     "triage-detail": "After filing a newsletter in Reading, Terno offers to file the 84 more from it, and its future mail",
+    "filed-detail": "A newsletter just filed in Reading, and under it Terno’s offer to file the 84 more from it, and its future mail",
     "archive-detail": "After archiving a promotion, Terno offers to archive the 14 more from the same sender",
     "palette-detail": "The command palette, with the archive commands that match what was typed",
     "snippets-detail": "The snippets list, each with a preview",

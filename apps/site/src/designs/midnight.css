@@ -166,12 +166,15 @@ html[data-design="midnight"] .mn-card:hover { background: var(--mn-raised); }
 html[data-design="midnight"] .mn-icon { display: inline-flex; }
 
 /* local: your Mac and your mail server, nothing between */
+html[data-design="midnight"] { --mn-node: 44px; }
 html[data-design="midnight"] .mn-node {
-  display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; color: var(--mn-muted);
+  display: grid; flex-shrink: 0; place-items: center; width: var(--mn-node); height: var(--mn-node); border-radius: 12px; color: var(--mn-muted);
   background: var(--mn-bg); box-shadow: 0 0 0 1px var(--mn-line);
 }
+/* a node's width, the wire down its middle: the wire meets each node's center whatever the boxes hold */
+html[data-design="midnight"] .mn-track { display: flex; flex-shrink: 0; justify-content: center; width: var(--mn-node); }
 html[data-design="midnight"] .mn-wire-v {
-  width: 1px; flex-shrink: 0;
+  width: 1px;
   background: repeating-linear-gradient(180deg, var(--mn-accent) 0 6px, transparent 6px 11px);
   opacity: 0.7;
 }

@@ -55,7 +55,7 @@ export const es: SiteCopy = {
       title: "Sin cuenta. Sin nube. Solo tu Mac.",
       body: "Tu correo se sincroniza entre tu Mac y tus servidores de correo, nunca a través de los nuestros. Tu correo, tus contactos y el índice de búsqueda viven en tu Mac.",
       points: ["Privado desde el primer momento", "Imágenes remotas solo si las pides", "Cero rastreo"],
-      map: { mac: "Tu Mac", kept: { mail: "Correo", contacts: "Contactos", index: "Índice de búsqueda" }, link: "Sincronización directa", servers: "Tus servidores de correo", providers: "Gmail · Outlook · IMAP", ours: "Sin servidores de Terno en medio" },
+      map: { mac: "Tu Mac", kept: { mail: "Correo", contacts: "Contactos", index: "Índice de búsqueda" }, link: "Sincronización directa", servers: "Tus servidores de correo", providers: "Gmail · Outlook · IMAP", ours: "Ningún servidor de Terno" },
     },
     search: {
       title: "Búsqueda instantánea.",
@@ -213,6 +213,7 @@ export const es: SiteCopy = {
     "code-detail": "Un código de verificación en su mensaje de la lista, con un botón para copiarlo",
     "search-detail": "Búsqueda de «hopper ride»: más de 100 resultados, al instante, con las palabras encontradas resaltadas",
     "triage-detail": "Tras clasificar un boletín en Reading, Terno ofrece clasificar los otros 84, y su correo futuro",
+    "filed-detail": "Un boletín recién clasificado en Reading y, debajo, la oferta de Terno de clasificar los otros 84, y su correo futuro",
     "archive-detail": "Tras archivar una promoción, Terno ofrece archivar las otras 14 del mismo remitente",
     "palette-detail": "La paleta de comandos, con los comandos de archivar que coinciden con lo escrito",
     "snippets-detail": "La lista de plantillas, cada una con su vista previa",

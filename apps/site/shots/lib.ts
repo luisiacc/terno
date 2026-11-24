@@ -12,6 +12,7 @@ import type { Browser, Locator, Page } from "@playwright/test";
 import { startDevServer } from "@terno/backend-dev/src/server";
 import { DESIGN_PALETTE } from "@terno/core";
 import { SHOWCASE_NOW, SNIPPETS, showcaseDataset } from "./showcase";
+import { VIEWPORT } from "./windows";
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const site = join(here, "..");
@@ -19,11 +20,8 @@ export const repo = join(site, "..", "..");
 const web = join(repo, "apps", "web");
 export const out = join(site, "public", "shots");
 export const ctx = { clientId: "shots", origin: "dev" as const };
-/**
- * The window the pictures show: a laptop-sized one, so the app reads large on the site (a 1440 px window shrinks to
- * three quarters of itself in the hero), captured at 2× and encoded near-losslessly so its text stays crisp.
- */
-export const VIEWPORT = { width: 1280, height: 800 };
+// the window the pictures show (a 1440 px one shrank to three quarters of itself in the hero): windows.ts
+export { VIEWPORT };
 
 export const freePort = () =>
   new Promise<number>((resolve) => {

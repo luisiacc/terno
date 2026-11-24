@@ -5,6 +5,7 @@ import { render, routes } from "./entry-server";
 import { DESIGN_IDS } from "@terno/core";
 import { DESIGN_SHOTS } from "./parts/shot";
 import shots from "./shots.json";
+import { FILED_WINDOW, SHORTCUTS_WINDOW, VIEWPORT } from "../shots/windows";
 
 describe("prerendered pages", () => {
   for (const route of routes()) {
@@ -64,8 +65,9 @@ describe("screenshots", () => {
   });
 
   it("Midnight's local card pictures where mail lives, in each language: the Mac and what it keeps, the mail servers, no server of Terno's", () => {
+    // Midnight by name, in each language (the home routes, whatever design is live at /)
     for (const [path, copy] of [["/", COPY.en], ["/es/", COPY.es]] as const) {
-      const page = new JSDOM(render(routes().find((r) => r.path === path)!).body).window.document;
+      const page = new JSDOM(render({ ...routes().find((r) => r.path === path)!, design: "midnight" }).body).window.document;
       const card = [...page.querySelectorAll("article")].find((a) => a.querySelector("h3")?.textContent === copy.features.local.title)!;
       const map = card.querySelector("[data-local-map]")!;
       expect(map.getAttribute("aria-hidden"), path).toBe("true");
@@ -77,7 +79,7 @@ describe("screenshots", () => {
   it("a design that shows one part of the app shows a section picture of it, never a window moved behind a frame", () => {
     const parts: Record<string, string[]> = {
       "/designs/lumen/": ["unified", "triage", "archive", "code", "palette", "snippets"],
-      "/designs/midnight/": ["unified", "search", "triage", "palette", "snippets", "code", "shortcuts"],
+      "/designs/midnight/": ["unified", "search", "filed", "palette", "snippets", "code", "shortcuts"],
       "/designs/letter/": ["search", "code", "palette"],
     };
     for (const [path, names] of Object.entries(parts)) {
@@ -98,12 +100,13 @@ describe("screenshots", () => {
       const page = new JSDOM(render(routes().find((r) => r.path === path)!).body).window.document;
       for (const [, name] of DESIGN_SHOTS) for (const mode of ["light", "dark"]) expect(page.querySelector(`img[src="/shots/${name}-${mode}.webp"]`), `${path} ${name}`).not.toBeNull();
     }
-    // each is a part of the window it was framed from when it was taken (the shortcuts sheet's own, taller one), in both modes
+    // each is a part of the window it was framed from when it was taken (the shortcuts sheet's taller one, the filed
+    // newsletter's shorter one), in both modes
+    const windows: Record<string, { width: number; height: number }> = { shortcuts: SHORTCUTS_WINDOW, filed: FILED_WINDOW };
     for (const name of Object.values(parts).flat()) {
       for (const mode of ["light", "dark"]) {
-        const sizes = shots as Record<string, { width: number; height: number }>;
-        const size = sizes[`${name}-detail-${mode}`];
-        const window = sizes[`${name === "shortcuts" ? "shortcuts" : "inbox"}-${mode}`]!;
+        const size = (shots as Record<string, { width: number; height: number }>)[`${name}-detail-${mode}`];
+        const window = windows[name] ?? VIEWPORT;
         expect(size, `${name}-detail-${mode}`).toBeDefined();
         expect(size!.width <= window.width && size!.height <= window.height && size!.width * size!.height < window.width * window.height, name).toBe(true);
       }
