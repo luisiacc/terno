@@ -56,6 +56,7 @@ function changeLabel(method: SignInMethod): string {
   switch (method) {
   case "password": return t("account.changePassword");
   case "google": return t("account.connectGoogle");
+  case "microsoft": return t("account.connectMicrosoft");
   default: return unhandled(method);
   }
 }

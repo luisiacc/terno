@@ -140,6 +140,9 @@ function Action({ account, attempt, google, onAsk }: { account: Account; attempt
     );
   case "google":
     break;
+  // plan 259: no Outlook account exists before its sign-in is built (stage 1)
+  case "microsoft":
+    return null;
   default: unhandled(method);
   }
   // the desktop's Google page is open in the browser: say where the user is expected, and offer it again

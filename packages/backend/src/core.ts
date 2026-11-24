@@ -164,7 +164,7 @@ interface AccountLifetime {
 
 const COUNTS_EVERY_MS = 200;
 
-const accountKindOf = (kind: string | undefined): FieldValueOf<"accountKind"> => (kind === "imap" || kind === "gmail" ? kind : "other");
+const accountKindOf = (kind: string | undefined): FieldValueOf<"accountKind"> => (kind === "imap" || kind === "gmail" || kind === "outlook" ? kind : "other");
 const OP_KINDS = new Set<string>(["archive", "trash", "spam", "notSpam", "moveToInbox", "markRead", "markUnread", "star", "unstar", "send", "move", "moveToFolder", "leaveFolder", "toPrimary", "toPromotions", "toSocial", "toUpdates", "toForums", "toNoCategory"]);
 const opKindOf = (kind: string): FieldValueOf<"opKind"> => (OP_KINDS.has(kind) ? (kind as FieldValueOf<"opKind">) : "other");
 

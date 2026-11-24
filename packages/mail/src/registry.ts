@@ -5,7 +5,8 @@ import { createGmailProvider, connectGmail } from "./gmail";
 import { revokeGoogleToken } from "./google-revoke";
 import { createImapProvider, type ImapProviderOptions } from "./imap";
 import { sendViaSmtp, verifySmtp } from "./smtp";
-import { ProviderError, type ImapAccountConfig, type ProviderRegistry, type SendPayload } from "./types";
+import { unhandled } from "@terno/core";
+import { ProviderError, type ImapAccountConfig, type MailProvider, type ProviderRegistry, type SendPayload } from "./types";
 import { ImapFlow } from "imapflow";
 
 export interface RegistryOptions {
@@ -29,6 +30,12 @@ function demoOverSmtp(ctx: Parameters<typeof createDemoProvider>[0], port: numbe
   };
 }
 
+/** Plan 259: Outlook has no provider until stage 2 builds it over Microsoft Graph; never the IMAP one by default. */
+function outlookNotYet(): MailProvider {
+  const refuse = async (): Promise<never> => { throw new ProviderError(L("errors.microsoft.notYet"), false); };
+  return { verify: refuse, sync: refuse, execute: refuse, async close() {} };
+}
+
 /**
  * Production registry: real providers per account kind; accounts created by
  * the demo seed (config.demo) use the offline demo provider.
@@ -37,8 +44,13 @@ export function createRegistry(options: RegistryOptions = {}): ProviderRegistry 
   return {
     create(ctx) {
       if (ctx.config.demo) return options.demoSmtpPort ? demoOverSmtp(ctx, options.demoSmtpPort) : createDemoProvider(ctx);
-      if (ctx.account.kind === "gmail") return createGmailProvider(ctx, options.gmail);
-      return createImapProvider(ctx, options.imap);
+      const kind = ctx.account.kind;
+      switch (kind) {
+      case "gmail": return createGmailProvider(ctx, options.gmail);
+      case "outlook": return outlookNotYet();
+      case "imap": return createImapProvider(ctx, options.imap);
+      default: return unhandled(kind);
+      }
     },
     async verifyImap(config: ImapAccountConfig, password: string) {
       const c = new ImapFlow({

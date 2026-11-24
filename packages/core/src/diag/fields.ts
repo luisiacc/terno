@@ -29,7 +29,7 @@ const THREAD_ACTIONS = ["archive", "trash", "spam", "notSpam", "moveToInbox", "m
 
 /** Every field any code may use, with its type. */
 export const FIELD_TYPES = {
-  accountKind: enumOf("imap", "gmail", "demo", "other"),
+  accountKind: enumOf("imap", "gmail", "outlook", "demo", "other"),
   aiKind: enumOf("invalid_output", "refused", "auth", "rate_limited", "unavailable", "timeout", "blocked", "not_configured", "unsupported", "cancelled", "other"),
   action: enumOf(...THREAD_ACTIONS, "print", "pdf", "other"),
   ambiguous: bool,

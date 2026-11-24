@@ -158,6 +158,9 @@ export async function signInAgain(account: Account, password?: string): Promise<
       }
       await client.call("accounts.reconnect", { id: account.id });
       break;
+    case "microsoft":
+      await client.call("accounts.reconnect", { id: account.id });
+      break;
     default: unhandled(method);
     }
     if (!latest(account.id, mine)) return false;

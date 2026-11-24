@@ -6,15 +6,23 @@ export type MessageId = number;
 export type CategoryId = number;
 export type FilterId = number;
 
-export type AccountKind = "imap" | "gmail";
+export type AccountKind = "imap" | "gmail" | "outlook";
 
 /**
  * Plan 184: how an account of each kind signs in again (accounts.reconnect, the sign-in panel, Settings). A new
  * kind fails the type check until it names its way; a new way fails every `switch` on it until it's handled there.
  */
-export type SignInMethod = "password" | "google";
-export const SIGN_IN = { imap: "password", gmail: "google" } as const satisfies Record<AccountKind, SignInMethod>;
+export type SignInMethod = "password" | "google" | "microsoft";
+export const SIGN_IN = { imap: "password", gmail: "google", outlook: "microsoft" } as const satisfies Record<AccountKind, SignInMethod>;
 export const signInMethod = (kind: AccountKind): SignInMethod => SIGN_IN[kind];
+/**
+ * Plan 259: the kinds that sign in with OAuth and speak a REST API (Gmail, Outlook over Microsoft Graph), and the key in
+ * the account's config that holds the stable subject its grants belong to (Google's `sub`; Microsoft's tenant and object id).
+ * The stores compare it atomically with every credential commit, whatever the provider.
+ */
+export const OAUTH_SUBJECT = { gmail: "googleSubject", outlook: "microsoftSubject" } as const satisfies Partial<Record<AccountKind, string>>;
+export type OAuthKind = keyof typeof OAUTH_SUBJECT;
+export const isOAuthKind = (kind: string | null | undefined): kind is OAuthKind => kind === "gmail" || kind === "outlook";
 /** an exhaustive switch's default: a value no case handles is a type error */
 export function unhandled(value: never): never {
   throw new Error(`Unhandled: ${String(value)}`);

@@ -237,6 +237,8 @@ export async function reconnectAccount(b: Backend, accountId: number, password: 
       if (admission!.expectedSubject !== null && admission!.expectedSubject !== result.sub) throw invalidRenewal();
       if (result.refreshToken !== null) blob = await encryptCredential(b, result.refreshToken);
       break;
+    // plan 259: Outlook signs in from stage 1 on; until then no account of its kind exists to get here
+    case "microsoft": throw new RpcError("UNAVAILABLE", L("errors.microsoft.notYet"));
     default: unhandled(method);
     }
     b.assertSignIn(accountId, flow);
@@ -290,6 +292,8 @@ export async function changeOwnerTo(b: Backend, accountId: number, password: str
       if (result.refreshToken !== null) blob = await encryptCredential(b, result.refreshToken);
       claim = gmailClaim({ ...result, name: result.name || (config as unknown as GmailAccountConfig).senderName });
       break;
+    // plan 259: Outlook signs in from stage 1 on; until then no account of its kind exists to get here
+    case "microsoft": throw new RpcError("UNAVAILABLE", L("errors.microsoft.notYet"));
     default: unhandled(method);
     }
     b.assertSignIn(accountId, flow);
