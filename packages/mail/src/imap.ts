@@ -742,6 +742,9 @@ export function toProviderError(error: unknown): ProviderError {
   return new ProviderError(`IMAP: ${message}`, true);
 }
 
+/** plan 267: how many refused-but-unrecorded bodies a body run looks past (the repair list holds 1,000) */
+const UNRECORDED_MAX = 2000;
+
 /**
  * Plan 266 (Codex code review #3): a SEARCH imapflow answered false. One the server said to retry later (RFC 5530) is
  * deferred, never a folder's refusal a pass tolerates and reports as synced.
@@ -845,6 +848,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
   const watchers = new Set<{ restart(): void; ping(): void; signedIn(): void }>();
   /** plan 266: Inbox arrivals IDLE has announced (EXISTS, or push back after a gap): a body run yields to the next pass */
   let arrivals = 0;
+  /** plan 267: messages whose body the parser refused while the repair list was full (bounded; cleared once one fits) */
+  const unrecorded = new Set<number>();
 
   const makeClient = async (forIdle = false) => {
     const password = await ctx.getSecret("password");
@@ -1599,7 +1604,12 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     const requested = sink.captureRetry;
     const repair = requested?.locator.kind === "imap" ? await store.repairs?.get(ctx.account.id, requested.locator) : undefined;
     const source = repair?.state === "pending" && repair.revision === requested?.revision && repair.locator.kind === "imap" ? repair.locator : undefined;
-    const pending = source ? [{ id: source.messageId, mailbox: source.mailbox, uid: source.uid, uidvalidity: source.uidvalidity }] : await store.pendingBodies(options.bodiesPerSync ?? 500);
+    const limit = options.bodiesPerSync ?? 500;
+    // plan 267 (Codex code review #8): bodies a full repair list couldn't record are left out, so they never fill the
+    // page an older body waits behind (a bounded look past them; once a repair goes in, they're tried again)
+    const pending = source ? [{ id: source.messageId, mailbox: source.mailbox, uid: source.uid, uidvalidity: source.uidvalidity }]
+      : unrecorded.size ? (await store.pendingBodies(limit + unrecorded.size)).filter((p) => !unrecorded.has(p.id)).slice(0, limit)
+      : await store.pendingBodies(limit);
     const byMailbox = new Map<string, { id: number; uid: number; uidvalidity: number }[]>();
     for (const p of pending) byMailbox.set(p.mailbox, [...(byMailbox.get(p.mailbox) ?? []), p]);
     let fetched = false;
@@ -1637,11 +1647,13 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             if (yielding()) break;
             fetched = true;
             let source: Buffer | undefined;
-            let invalid = false;
+            let invalid = false, answered = false;
             // Exhaust the singleton command before processing: abort alone is not physical EOF.
+            // (a second answer for the UID is a broken exchange whether or not the first carried bytes: plan 267, never
+            // a body to judge, or to make a repair of)
             for await (const msg of c.fetch([item.uid], { uid: true, source: { start: 0, maxLength: MAX_INCOMING_MIME_BYTES + 1 } }, { uid: true })) {
-              if (msg.uid !== item.uid || source) invalid = true;
-              else source = msg.source;
+              if (msg.uid !== item.uid || answered) invalid = true;
+              else { answered = true; source = msg.source; }
             }
             check();
             if (invalid) throw new IncomingProcessingError("input-limit");
@@ -1663,10 +1675,11 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
               const reason = captureReasonOf(error);
               if (!reason || !sink.blockCapture) throw error;
               check();
-              try { await sink.blockCapture(locator, reason, repair?.revision ?? 0); }
+              try { await sink.blockCapture(locator, reason, repair?.revision ?? 0); unrecorded.clear(); }
               catch (refused) {
                 // the repair list is full: this body stays pending (the list says what to do), the others go on
                 if (!(refused instanceof RpcError && refused.code === "UNAVAILABLE" && refused.i18n?.key === "capture.capacity")) throw refused;
+                if (unrecorded.size < UNRECORDED_MAX) unrecorded.add(item.id);
               }
               continue;
             }

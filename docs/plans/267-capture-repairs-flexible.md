@@ -147,3 +147,33 @@ Codex critiqued the first draft in 12 points; the design above is the result:
 11. A missing detail costs no bytes; near the cap a repair goes without one. IndexedDB's logical schema stays at 79: the
     only change is an optional field an older build ignores.
 12. The Settings test covers every reason, `unknown`, "No subject", "Message N" and the accessible names.
+
+## Revisions after the Codex code review
+
+One round, 12 findings (10 medium, 2 low), all fixed; each new test fails on `9beda85c3` unless noted:
+
+1. Details opened in Settings could fill the journal's bytes and refuse a later repair or a retry: a detail no longer
+   counts toward the cap (it's bounded on its own, 200 characters a part); the cap bounds what repairs need, as before.
+2. A provider that ignores the signal kept the list waiting: one deadline from the start (provider creation included),
+   the page returned at it, a late answer writes nothing (`repairDetailMs`, a test option).
+3. A read under old credentials, or after the account went, could be kept: the lifetime's abort is in the signal, and
+   lifetime and credentials are checked before each write.
+4. A row retried or retired meanwhile came back with its old revision: the page is read again at the end.
+5. Admission was checked on one lane and sent on another, four at a time, by any number of windows: background on both,
+   one read at a time, one opening per account (another window just lists).
+6. Fetching older search hits had no `blockCapture`: a refusal there ended the fetch; it's a repair now.
+7. IMAP took a second FETCH answer as the body when the first had none: any second answer is a broken exchange (no
+   test: the in-process server can't send one).
+8. With the journal full, refused bodies that couldn't be recorded filled every body page: the run looks past them
+   (bounded at 2,000; tried again once a repair fits).
+9. A date past JavaScript's range broke the list: the normalizer keeps only dates `Date` can show, and the page is the
+   stored (normalized) one.
+10. An encoded display name with a comma split in two: the sender is parsed as written, then its name decoded.
+11. The IMAP test: the refused message is the newer one, and the second pass is checked to fetch no body source (passes
+    on both: it tightens the test).
+12. The migration test checks both foreign keys and a message's own cascade without a location trigger standing in.
+
+`pnpm test:all` ran beside this work (machine load 30–45). Its other failures also fail on the commit before plan 267,
+and the e2e ones (account and provider refusals, first sync, Settings axe: a dialog covers the window at start) on the
+commit before plan 262: none is this change's. `migrations-shipped.test.ts` now lists v80. In passing, 75d59bca0 fixed
+17 migration tests that failed in this environment (a statement prepared before a migration kept its old columns).

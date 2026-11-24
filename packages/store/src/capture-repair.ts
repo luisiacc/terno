@@ -56,7 +56,8 @@ export function captureDetail(value: unknown): CaptureDetail | undefined {
   const subject = text(v.subject), from = text(v.from);
   if (subject) out.subject = subject;
   if (from) out.from = from;
-  if (Number.isSafeInteger(v.date) && (v.date as number) > 0) out.date = v.date as number;
+  // a date JavaScript can show (Date's own range), never one that makes formatting throw
+  if (Number.isSafeInteger(v.date) && (v.date as number) > 0 && (v.date as number) <= 8_640_000_000_000_000) out.date = v.date as number;
   return Object.keys(out).length ? out : undefined;
 }
 function readDetail(json: string | null | undefined): CaptureDetail | undefined {
@@ -69,9 +70,9 @@ export const captureRepair = (r: CaptureRepairRow): CaptureRepair => {
   return { key: r.key, locator: JSON.parse(r.locator), reason: isCaptureReason(r.reason) ? r.reason : "unknown", state: r.state, revision: r.revision, ...(detail && { detail }) };
 };
 export function captureRowBytes(row: CaptureRepairRow): number {
-  // plan 267: no detail costs nothing (a row from before it, or SQLite's null, counts as it always did)
-  const { detail, ...rest } = row;
-  const counted = detail ? { ...rest, detail } : rest;
+  // plan 267: the detail isn't counted. It's optional and bounded on its own (CAPTURE_DETAIL_TEXT_MAX), so it never
+  // takes the room a repair or a retry needs; the cap keeps bounding what repairs need, as it always did
+  const { detail: _detail, ...counted } = row;
   let bytes = 0;
   for (;;) {
     const next = new TextEncoder().encode(JSON.stringify({ ...counted, bytes })).length;
@@ -90,23 +91,17 @@ export function blockCapture(db: CaptureRepairStorage, account: number, locator:
   const row: CaptureRepairRow = { account_id: account, key, message_id: messageId, locator: JSON.stringify(locator), reason, state: "blocked", revision, bytes: 0, detail: detail ? JSON.stringify(detail) : null };
   row.bytes = captureRowBytes(row);
   const used = db.usage(account);
-  const fits = (r: CaptureRepairRow) => used.bytes - (previous?.bytes ?? 0) + r.bytes <= CAPTURE_REPAIR_BYTES;
-  // a detail never costs a repair its place: near the cap the row goes without it
-  if (!fits(row) && row.detail) { row.detail = null; row.bytes = captureRowBytes(row); }
-  if (used.count + (previous ? 0 : 1) > CAPTURE_REPAIR_COUNT || !fits(row)) throw new RpcError("UNAVAILABLE", L("capture.capacity"));
+  if (used.count + (previous ? 0 : 1) > CAPTURE_REPAIR_COUNT || used.bytes - (previous?.bytes ?? 0) + row.bytes > CAPTURE_REPAIR_BYTES) throw new RpcError("UNAVAILABLE", L("capture.capacity"));
   db.put(row);
 }
 /**
  * Plan 267: what's known about a repair's message (Gmail's own parse of its headers, read when the list is opened), kept
- * only on the row it was read for: the same revision, still without one, and inside the byte cap (else nothing changes).
+ * only on the row it was read for: the same revision and still without one (else nothing changes).
  */
 export function describeCapture(db: CaptureRepairStorage, account: number, key: string, revision: number, given: CaptureDetail): void {
   const row = db.get(account, key), detail = captureDetail(given);
   if (!row || !detail || row.revision !== revision || readDetail(row.detail)) return;
-  const next: CaptureRepairRow = { ...row, detail: JSON.stringify(detail) };
-  next.bytes = captureRowBytes(next);
-  if (db.usage(account).bytes - row.bytes + next.bytes > CAPTURE_REPAIR_BYTES) return;
-  db.put(next);
+  db.put({ ...row, detail: JSON.stringify(detail) });
 }
 export function retryCapture(db: CaptureRepairStorage, account: number, key: string, revision: number): void {
   const row = db.get(account, key);

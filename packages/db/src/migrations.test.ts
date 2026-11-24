@@ -901,6 +901,13 @@ describe("migration v80: message repairs take any reason, and say which message 
     expect(usage()).toEqual([{ account_id: 1, count: 0, bytes: 0 }, { account_id: 2, count: 2, bytes: 160 }]);
     db.run("DELETE FROM accounts WHERE id = 2");
     expect(db.all("SELECT * FROM capture_repairs")).toEqual([]);
+    // both foreign keys as v36 had them (a message's own cascade, without a location trigger to stand in for it)
+    expect(db.all<{ table: string; from: string; on_delete: string }>("SELECT \"table\", \"from\", on_delete FROM pragma_foreign_key_list('capture_repairs') ORDER BY \"from\""))
+      .toEqual([{ table: "accounts", from: "account_id", on_delete: "CASCADE" }, { table: "messages", from: "message_id", on_delete: "CASCADE" }]);
+    const d = db.get<{ id: number }>("SELECT id FROM messages ORDER BY id LIMIT 1")!.id;
+    repair(1, JSON.stringify(["gmail-like", d]), d!, "{}", "mime-depth", "blocked", 0, 5);
+    db.run("DELETE FROM messages WHERE id = ?", d!);
+    expect(db.all("SELECT * FROM capture_repairs")).toEqual([]);
   });
 });
 

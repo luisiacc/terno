@@ -310,6 +310,11 @@ describe("which message a repair is (plan 267)", () => {
     expect(await t.provider.describe!("m1", new AbortController().signal)).toEqual({ subject: "Reporte anual", from: "Ana Torres", date: 1700000000000 });
   });
 
+  it("parses the sender as written before decoding its name: an encoded \"Doe, Jane\" stays one name", async () => {
+    const t = rig({ history: () => additions([]), metadata: (id) => ({ id, payload: { headers: [{ name: "From", value: "=?UTF-8?Q?Doe=2C_Jane?= <jane@example.test>" }] } }) });
+    expect(await t.provider.describe!("m1", new AbortController().signal)).toEqual({ from: "Doe, Jane" });
+  });
+
   it("gives nothing for another message's answer, a missing one, or one past its bound; a cancelled read throws", async () => {
     const huge = JSON.stringify({ id: "huge", payload: { headers: [{ name: "Subject", value: "x".repeat(70_000) }] } });
     const answers: Record<string, unknown> = { other: { id: "else", payload: { headers: [] } }, gone: 404, huge };

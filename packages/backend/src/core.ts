@@ -110,6 +110,8 @@ export interface BackendCoreOptions {
   log?: (level: "info" | "warn" | "error", message: string, extra?: unknown) => void;
   /** lift plan 62 clock holds on start (default); tests of its explicit Check clock contract disable it */
   checkClockOnStart?: boolean;
+  /** plan 267: how long opening the repairs list waits for Gmail (tests shorten it); REPAIR_DETAIL_MS otherwise */
+  repairDetailMs?: number;
   /** start sync loops and the ops worker on start() (tests disable) */
   autoSync?: boolean;
   /** how often every account is polled (default SYNC_INTERVAL_MS) */
@@ -262,6 +264,8 @@ export class BackendCore {
   private readonly providerWork = new Map<number, Set<Promise<unknown>>>();
   /** accounts waiting for Google to admit them again: refused for capacity, or a pass asked for while it wasn't ready (plan 263) */
   private readonly admissionSync = new Set<number>();
+  /** plan 267: accounts whose repairs list is reading what its Gmail messages are (one opening at a time) */
+  private readonly describing = new Set<number>();
   private readonly bodyJobs = new Map<number, { threadId: number; promise: Promise<ResultOf<"reader.hydrate">> }>();
   private bodyWaiters = 0;
   /** a change arrived while syncing: run another pass when the current one ends */
@@ -1463,28 +1467,37 @@ export class BackendCore {
   /**
    * Plan 267: a page of the repairs list, the user having opened it. A Gmail repair's message was never stored, so what
    * it is (subject, sender, date) is read from Gmail's own parse of its headers now, once per message (kept on the row),
-   * a few at a time and within REPAIR_DETAIL_MS: the page shows what's known by then, the rest the next time it's opened.
+   * one at a time and within REPAIR_DETAIL_MS from the start (a provider being made counts): the page shows what's kept
+   * by then, the rest the next time it's opened. One account reads for one opening at a time (another window's just lists).
+   * A read made under other credentials, or after the account went, is dropped. The page is read again at the end, so
+   * it shows what's committed (a row another window retried meanwhile keeps its new revision).
    */
   async listCaptureRepairs(accountId: number, after?: string): Promise<import("@terno/core").CaptureRepairPage> {
     const page = await this.store.captureRepairs.list(accountId, after);
     const missing = page.items.filter((r) => !r.detail && r.locator.kind === "gmail");
-    if (!missing.length || this.stopped) return page;
-    const provider = await this.provider(accountId).catch(() => null);
-    if (!provider?.describe) return page;
-    const life = this.lifetime(accountId);
-    const signal = AbortSignal.any([this.abort.signal, AbortSignal.timeout(REPAIR_DETAIL_MS)]);
-    const found = new Map<string, import("@terno/core").CaptureDetail>();
-    const queue = [...missing];
-    await Promise.all(Array.from({ length: Math.min(4, queue.length) }, async () => {
-      for (let r = queue.shift(); r && !signal.aborted; r = queue.shift()) {
-        if (r.locator.kind !== "gmail") continue;
-        const detail = await provider.describe!(r.locator.providerId, signal).catch(() => undefined);
-        if (!detail || !this.current(life)) continue;
+    if (!missing.length || this.stopped || this.describing.has(accountId)) return page;
+    const life = this.lifetime(accountId), credentials = this.credentialsOf(accountId);
+    const valid = () => this.current(life) && credentials === this.credentialsOf(accountId);
+    const signal = AbortSignal.any([this.abort.signal, life.abort.signal, AbortSignal.timeout(this.options.repairDetailMs ?? REPAIR_DETAIL_MS)]);
+    this.describing.add(accountId);
+    const work = (async () => {
+      const provider = await this.provider(accountId).catch(() => null);
+      if (!provider?.describe) return;
+      for (const r of missing) {
+        if (signal.aborted || !valid() || r.locator.kind !== "gmail") return;
+        const detail = await provider.describe(r.locator.providerId, signal).catch(() => undefined);
+        // late (past the deadline), under other credentials or for an account that's gone: dropped
+        if (!detail || signal.aborted || !valid()) continue;
         await this.accountWrite(life, () => this.store.captureRepairs.describe(accountId, r.key, r.revision, detail)).catch(() => {});
-        found.set(r.key, detail);
       }
-    }));
-    return { ...page, items: page.items.map((r) => found.has(r.key) ? { ...r, detail: found.get(r.key) } : r) };
+    })();
+    try {
+      // whatever a provider does with the signal, the page comes back at the deadline (a late answer then writes nothing)
+      await Promise.race([work.catch(() => {}), new Promise<void>((resolve) => { if (signal.aborted) resolve(); else signal.addEventListener("abort", () => resolve(), { once: true }); })]);
+    } finally {
+      void work.catch(() => {}).finally(() => this.describing.delete(accountId));
+    }
+    return this.store.captureRepairs.list(accountId, after);
   }
 
   async retryCapture(accountId: number, key: string, revision: number): Promise<import("@terno/core").CaptureRepair | null> {
@@ -2739,6 +2752,13 @@ export class BackendCore {
         },
         // only the regular pass, which sees the whole folder, may say a message has gone
         removeMessages: async () => {},
+        // plan 267: a hit the parser refuses is a repair, as in a pass (never the end of the other hits)
+        blockCapture: async (locator, reason, revision) => {
+          check();
+          const write = () => this.accountWrite(life, () => this.store.captureRepairs.block(accountId, locator, reason, revision, check));
+          if (locator.kind === "gmail") await this.evictions.capture(accountId, pass, locator.providerId, write);
+          else await write();
+        },
         pendingMessageIds: () => this.accountRead(life, () => this.store.sync.pendingMessageIds(accountId)),
         setSyncState: async () => {},
       };

@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { createRegistry, ProviderError } from "@terno/mail";
 import imapkit from "imapkit";
+import { ImapFlow } from "../../mail/node_modules/imapflow/dist/esm/imap-flow.js";
 import { SMTPServer } from "smtp-server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
@@ -149,7 +150,7 @@ async function startDroppingSmtp() {
   return { received: [] as Captured[], port: (server.address() as { port: number }).port };
 }
 
-async function setup(opts: { smtp?: Parameters<typeof startSmtp>[0]; imap?: Record<string, unknown>; attention?: import("./attention").AttentionHost } = {}) {
+async function setup(opts: { smtp?: Parameters<typeof startSmtp>[0]; imap?: Record<string, unknown>; attention?: import("./attention").AttentionHost; bodiesPerSync?: number } = {}) {
   const imap = await startImap(opts.imap);
   const smtp = opts.smtp?.dropDuringData ? await startDroppingSmtp() : await startSmtp(opts.smtp);
   const dir = mkdtempSync(join(tmpdir(), "terno-imap-"));
@@ -157,7 +158,7 @@ async function setup(opts: { smtp?: Parameters<typeof startSmtp>[0]; imap?: Reco
     dbPath: join(dir, "u.db"),
     version: "t",
     cipher: plaintextCipher,
-    providers: createRegistry({ imap: { allowInsecure: true } }),
+    providers: createRegistry({ imap: { allowInsecure: true, ...(opts.bodiesPerSync && { bodiesPerSync: opts.bodiesPerSync }) } }),
     autoSync: false,
     attention: opts.attention,
   });
@@ -202,21 +203,39 @@ describe("IMAP provider against ImapKit", () => {
     expect((await client.call("threads.get", { threadId: thread!.id }))!.messages[0]).toMatchObject(expected);
   });
 
-  it("plan 267: a body the parser refuses (its headers past the limit) becomes a repair named by its envelope; the next body is downloaded and nothing is retried", async () => {
+  it("plan 267: a body the parser refuses (its headers past the limit) becomes a repair named by its envelope; the body run goes on to older mail, and the next pass doesn't fetch it again", async () => {
     const { imap, backend, client, addAccount } = await setup();
-    // a header block past the parser's limit (2 MB parsed in place, as here; 512 KiB in the desktop's worker)
+    // a header block past the parser's limit (2 MB parsed in place, as here; 512 KiB in the desktop's worker), the newer
+    // of the two: its refusal comes first and the older body must still arrive
     const filler = `X-Filler: ${Array.from({ length: 2300 }, () => "x".repeat(990)).join("\r\n ")}\r\n`;
-    imap.server.control.addMessage("INBOX", { raw: filler + raw({ subject: "Too many", date: new Date(Date.UTC(2026, 9, 1)) }) });
-    imap.server.control.addMessage("INBOX", { raw: raw({ subject: "Fine", body: "Ordinary body", date: new Date(Date.UTC(2026, 9, 2)) }) });
+    imap.server.control.addMessage("INBOX", { raw: raw({ subject: "Fine", body: "Ordinary body", date: new Date(Date.UTC(2026, 9, 1)) }) });
+    imap.server.control.addMessage("INBOX", { raw: filler + raw({ subject: "Too many", date: new Date(Date.UTC(2026, 9, 2)) }) });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
     const repairs = (await client.call("captureRepairs.list", { accountId: account.id })).items;
     expect(repairs).toHaveLength(1);
     expect(repairs[0]).toMatchObject({ reason: "mime-headers", state: "blocked", detail: { subject: "Too many", from: "Ana Pérez" } });
     expect(sqlDb(backend.store).get("SELECT body_state FROM messages WHERE subject = 'Fine'")).toEqual({ body_state: "full" });
-    // a second pass leaves the refused body alone: it completes, and there's still the one repair
+    // the next pass asks for no body source at all: the refused one is a repair, the other is stored
+    const sources = vi.spyOn(ImapFlow.prototype, "fetch").mockName("fetch");
     await backend.syncAccount(account.id);
+    expect(sources.mock.calls.filter(([, query]) => (query as { source?: unknown })?.source)).toEqual([]);
     expect((await client.call("captureRepairs.list", { accountId: account.id })).items).toHaveLength(1);
+  });
+
+  it("plan 267: with the repair list full, a refused body the list can't take doesn't keep an older one waiting", async () => {
+    const { imap, backend, addAccount } = await setup({ bodiesPerSync: 1 });
+    const filler = `X-Filler: ${Array.from({ length: 2300 }, () => "x".repeat(990)).join("\r\n ")}\r\n`;
+    imap.server.control.addMessage("INBOX", { raw: raw({ subject: "Older", body: "Ordinary body", date: new Date(Date.UTC(2026, 9, 1)) }) });
+    imap.server.control.addMessage("INBOX", { raw: filler + raw({ subject: "Refused", date: new Date(Date.UTC(2026, 9, 2)) }) });
+    const account = await addAccount(imap.port);
+    // the list full: 1,000 rows (the usage triggers count them)
+    const db = sqlDb(backend.store);
+    db.tx(() => { for (let i = 0; i < 1000; i++) db.run("INSERT INTO capture_repairs (account_id, key, message_id, locator, reason, state, revision, bytes) VALUES (?, ?, NULL, '{}', 'mime-parts', 'blocked', 0, 10)", account.id, `filler${i}`); });
+    await backend.syncAccount(account.id).catch(() => {});
+    await backend.syncAccount(account.id).catch(() => {});
+    expect(db.get("SELECT body_state FROM messages WHERE subject = 'Older'")).toEqual({ body_state: "full" });
+    expect(db.get("SELECT body_state FROM messages WHERE subject = 'Refused'")).not.toEqual({ body_state: "full" });
   });
 
   it("rejects a wrong password when adding the account", async () => {

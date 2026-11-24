@@ -1687,20 +1687,24 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       }
     },
     async describe(providerId, signal) {
-      ctx.google?.check({ endpoint: "gmail-api", purpose: "mail" });
+      // the same lane it's admitted on and sent in (background: never a slot a message the user opens or a send needs)
+      ctx.google?.check({ endpoint: "gmail-api", purpose: "mail" }, "background");
       const q = new URLSearchParams({ format: "metadata", fields: "id,internalDate,payload/headers" });
       q.append("metadataHeaders", "Subject");
       q.append("metadataHeaders", "From");
       try {
-        const m = await api<{ id?: unknown; internalDate?: unknown; payload?: { headers?: { name?: unknown; value?: unknown }[] } }>(`/messages/${encodeURIComponent(providerId)}?${q}`, { signal, preparationSignal: signal, admission: "reader" });
+        const m = await api<{ id?: unknown; internalDate?: unknown; payload?: { headers?: { name?: unknown; value?: unknown }[] } }>(`/messages/${encodeURIComponent(providerId)}?${q}`, { signal, preparationSignal: signal, admission: "background" });
         if (!isRecord(m) || m.id !== providerId) return;
         const header = (name: string) => {
           const value = Array.isArray(m.payload?.headers) ? m.payload.headers.find((h) => isRecord(h) && typeof h.name === "string" && h.name.toLowerCase() === name)?.value : undefined;
-          return typeof value === "string" ? decodeEncodedWords(value).trim() : undefined;
+          return typeof value === "string" ? value : undefined;
         };
+        // the sender parsed as written, then its name decoded (an encoded "Doe, Jane" is one name, never two addresses)
         const sender = parseAddressHeader(header("from") ?? "", { single: true })[0];
+        const name = sender?.name ? decodeEncodedWords(sender.name).trim() : "";
+        const subject = decodeEncodedWords(header("subject") ?? "").trim();
         const date = typeof m.internalDate === "string" && /^\d+$/.test(m.internalDate) ? Number(m.internalDate) : NaN;
-        return { ...(header("subject") && { subject: header("subject") }), ...((sender?.name || sender?.email) && { from: sender.name || sender.email }), ...(Number.isSafeInteger(date) && date > 0 && { date }) };
+        return { ...(subject && { subject }), ...((name || sender?.email) && { from: name || sender!.email }), ...(Number.isSafeInteger(date) && date > 0 && { date }) };
       } catch (error) {
         // gone, unreadable, over its bound: the row stays as it is (a cancelled read is the caller's)
         if (signal.aborted) throw error;
