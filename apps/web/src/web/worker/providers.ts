@@ -17,6 +17,11 @@ export function webRegistry(): ProviderRegistry {
     create(ctx) {
       if (ctx.config.demo) return createDemoProvider(ctx);
       if (ctx.account.kind === "gmail") return gmail.provider(ctx);
+      // plan 259: Outlook's own words, never IMAP's (its web sign-in is a later plan)
+      if (ctx.account.kind === "outlook") {
+        const notYet = async (): Promise<never> => { throw providerError(L("errors.microsoft.notYet")); };
+        return { verify: notYet, sync: notYet, execute: notYet, async close() {} };
+      }
       return {
         async verify() {
           throw desktopOnly();

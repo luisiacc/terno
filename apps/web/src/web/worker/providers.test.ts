@@ -16,6 +16,12 @@ describe("webRegistry: what a browser can't connect says so in the catalog", () 
     });
   });
 
+  it("plan 259 (Codex review #6): Outlook says it isn't supported yet, never that it's IMAP", async () => {
+    const provider = webRegistry().create({ account: { id: 1, kind: "outlook", email: "o@outlook.test" }, config: {} } as never);
+    const error = await provider.sync({} as never).catch((e: unknown) => e);
+    expect(toErrorPayload(error)).toMatchObject({ i18n: { key: "errors.microsoft.notYet" } });
+  });
+
   it("Gmail's desktop sign-in points to the page's", async () => {
     const error = await webRegistry()
       .connectGmail({} as never)
