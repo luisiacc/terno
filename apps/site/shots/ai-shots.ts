@@ -17,11 +17,11 @@
  *
  * Where the words decide whether a picture is good, each state checks them (its "bar") and asks again as a person would,
  * a few times at most; a state that can't be asked again in place and falls short keeps the previous run's picture
- * (.shots-raw-ai/ is kept between runs; `--fresh` starts it empty).
+ * (.shots-raw-ai/ is kept between runs; `--fresh` starts it empty, and so does a change of the window it was taken in).
  */
 process.env.TZ = "America/Los_Angeles";
 
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -55,8 +55,12 @@ async function main() {
   const keys = readKeys();
   guardOutput(keys.secrets);
   // kept between runs unless --fresh: a state whose words fall below the bar keeps an earlier run's picture (`both`)
-  if (fresh) rmSync(raw, { recursive: true, force: true });
+  // and never from another window: a kept picture of another size would go out under crops made for this one (Codex review)
+  const windowFile = join(raw, "window.json");
+  const otherWindow = existsSync(raw) && (!existsSync(windowFile) || readFileSync(windowFile, "utf8") !== JSON.stringify(VIEWPORT));
+  if (fresh || otherWindow) rmSync(raw, { recursive: true, force: true });
   mkdirSync(raw, { recursive: true });
+  writeFileSync(windowFile, JSON.stringify(VIEWPORT));
   mkdirSync(out, { recursive: true });
   if (debug) mkdirSync(debug, { recursive: true });
 
@@ -221,7 +225,11 @@ async function shoot(page: Page) {
   const replyGood = gaps.length === 1 && gaps[0]!.length <= 26 && !gaps[0]!.includes("?");
   // the whole draft, sign-off included: there's room for it under her message
   if (await page.getByTestId("reply-ready-all").isVisible().catch(() => false)) await page.getByTestId("reply-ready-all").click();
+  // the card's foot (Use as draft, Dismiss, Written with AI) in the picture: the window grows to it when the draft is long
+  const foot = (await page.getByTestId("reply-ready").boundingBox())!;
+  await page.setViewportSize({ width: VIEWPORT.width, height: Math.max(VIEWPORT.height, Math.min(1000, Math.ceil(foot.y + foot.height + 28))) });
   await both("ai-reply", undefined, replyGood);
+  await page.setViewportSize(VIEWPORT);
 
   // --- ⌘J: the reply opened for AI with a rough instruction, then the draft written in its place ---
   await open("Dinner Saturday?");

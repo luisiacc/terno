@@ -121,11 +121,11 @@
   },
   "ai-action-dark": {
     "width": 1035,
-    "height": 474
+    "height": 494
   },
   "ai-action-light": {
     "width": 1035,
-    "height": 474
+    "height": 494
   },
   "ai-ask-dark": {
     "width": 680,
@@ -137,11 +137,11 @@
   },
   "ai-digest-dark": {
     "width": 623,
-    "height": 792
+    "height": 755
   },
   "ai-digest-light": {
     "width": 623,
-    "height": 792
+    "height": 755
   },
   "ai-followups-dark": {
     "width": 556,
@@ -169,11 +169,11 @@
   },
   "ai-reply-dark": {
     "width": 1280,
-    "height": 800
+    "height": 879
   },
   "ai-reply-light": {
     "width": 1280,
-    "height": 800
+    "height": 879
   },
   "ai-rule-dark": {
     "width": 1080,
