@@ -135,7 +135,7 @@ export const en = {
     status: "AI available today · Plan coming soon",
     title: "Less time on email.",
     body: "Pro shows you what matters, drafts your replies and sums up long threads. You stay in charge: no email goes out until you send it.",
-    price: "Planned: US$12 a month or $108 a year, with a 14-day free trial.",
+    price: "Planned: US$15 a month.",
     reply: {
       title: "Replies, already drafted.",
       body: "When someone is waiting on you, a reply is ready under their message, in your voice. Fill the gaps, then send.",

@@ -126,7 +126,7 @@ export const es: SiteCopy = {
     status: "IA disponible hoy · Plan próximamente",
     title: "Menos tiempo en el correo.",
     body: "Pro te muestra lo importante, redacta tus respuestas y resume los hilos largos. Tú decides: ningún correo sale hasta que lo envías.",
-    price: "Previsto: US$12 al mes o US$108 al año, con una prueba gratis de 14 días.",
+    price: "Previsto: US$15 al mes.",
     reply: {
       title: "Respuestas ya redactadas.",
       body: "Cuando alguien espera tu respuesta, la tienes lista bajo su mensaje, con tu forma de escribir. Completa lo que falta y envía.",

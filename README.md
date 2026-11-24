@@ -65,6 +65,6 @@ Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before you st
 
 Terno is **source-available** under the [Business Source License 1.1](LICENSE), and each version becomes open source under the GNU AGPL-3.0 three years after its release.
 
-It's free for personal use and for organizations with fewer than 100 people and less than US$5 million in annual revenue. Larger organizations need a Pro or Business seat for each person who uses it for work. See [LICENSING.md](LICENSING.md) for the details, and [TRADEMARKS.md](TRADEMARKS.md) for the use of the name.
+It's free for personal use and for organizations with fewer than 100 people and less than US$5 million in annual revenue. Larger organizations need a Pro seat for each person who uses it for work. See [LICENSING.md](LICENSING.md) for the details, and [TRADEMARKS.md](TRADEMARKS.md) for the use of the name.
 
 Made by Luisiacc LLC.
