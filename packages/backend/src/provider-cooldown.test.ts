@@ -21,6 +21,8 @@ function fixture(initial: string | null = null) {
   const port: CooldownPersistence = { read: async () => encoded, update: async (fn) => { writes++; const v = fn(encoded); encoded = v.encoded; return v.result; } };
   const clock = { wallNow: () => wall, elapsedNow: () => elapsed, random: () => { samples++; return random; } };
   const hooks = {
+    // plan 62's explicit Check clock contract; plan 264's repair has its own tests
+    repairClock: false,
     changed: () => { wakes++; },
     setTimeout: (fn: () => void, ms: number) => { timerStarts++; const id = ++timerId; timers.set(id, { fn, at: elapsed + ms }); return id as unknown as ReturnType<typeof setTimeout>; },
     clearTimeout: (id: ReturnType<typeof setTimeout>) => { timers.delete(id as unknown as number); },

@@ -3,7 +3,7 @@ import { observeRefusals } from "./refusals";
 import { captureLocator } from "@terno/store";
 import { ProviderCooldown } from "./provider-cooldown";
 import { savedGoogleRequests, type SavedGoogleRequests } from "./google-requests";
-import { COOLDOWN_TICKETS, copyOpAdmission, rejectedRecipients, type CooldownStamp, type OpAdmission, type OpPark } from "@terno/store";
+import { copyOpAdmission, rejectedRecipients, type CooldownStamp, type OpAdmission, type OpPark } from "@terno/store";
 import { prepareCopyWire, readCopyWire } from "./sent-copy";
 import type { PendingGmailRenewal } from "./identity";
 import type { AiTasks } from "@terno/ai";
@@ -626,18 +626,20 @@ export class BackendCore {
 
   private async init(): Promise<void> {
     await this.store.ready;
-    this.cooldown = await ProviderCooldown.open(this.store.providerCooldown, { wallNow: () => this.now(), elapsedNow: () => performance.now(), random: () => Math.random() }, { changed: () => this.cooldownChanged() });
+    // plan 264: the start compacts the ledger against the accounts that exist (removed ones' bindings, retired pauses)
+    const live = new Set<string>();
+    for (const account of await this.store.accounts.list()) {
+      const stamp = await this.store.accounts.stamp(account.id);
+      if (stamp) live.add(`${stamp.id}/${stamp.createdAt}`);
+    }
+    this.cooldown = await ProviderCooldown.open(this.store.providerCooldown, { wallNow: () => this.now(), elapsedNow: () => performance.now(), random: () => Math.random() }, { changed: () => this.cooldownChanged() }, (id, createdAt) => live.has(`${id}/${createdAt}`));
     // A hold (plan 62: a clock check, or evidence it couldn't resolve) is only lifted by Check clock, and no
     // control for it ships: each start lifts them, re-waiting each hold's full retained pause from now
     // (nothing is released early). In batches below the gate's write slots, drained between.
-    const holds = this.options.checkClockOnStart === false ? [] : this.cooldown.holds();
-    for (let i = 0; i < holds.length; i += COOLDOWN_TICKETS / 2) {
-      for (const hold of holds.slice(i, i + COOLDOWN_TICKETS / 2)) this.cooldown.liftHold(hold.owner, hold.service, hold.revision);
-      if ((await this.cooldown.drain(5000)) !== "drained") break;
-    }
-    if (holds.length) {
+    const lifted = this.options.checkClockOnStart === false ? 0 : await this.cooldown.liftHolds();
+    if (lifted) {
       const wait = this.cooldown.nextWakeDelay();
-      this.log("info", `${holds.length} held Google pause(s) were lifted; ${wait === null ? "nothing waits" : `requests resume in ${Math.ceil(wait / 1000)} s`}`);
+      this.log("info", `${lifted} held Google pause(s) were lifted; ${wait === null ? "nothing waits" : `requests resume in ${Math.ceil(wait / 1000)} s`}`);
     }
     for (const id of this.cooldown.boundAccountIds()) {
       const stamp = await this.store.accounts.stamp(id);
@@ -1005,6 +1007,8 @@ export class BackendCore {
       // its policy recovery causes (plan 263, Codex code review #6)
       for (const id of this.admissionSync) if (accountId === null || accountId === id) this.admissionSync.delete(id);
       for (const [id, google] of this.google) if (accountId === null || accountId === id) google.recoverPolicy();
+      // plan 264: the gate's own way back too: a faulted store read again, a held pause lifted (re-waited from now)
+      await this.cooldown?.retry().catch(() => {});
       this.cooldownChanged();
     }
     const ids = this.connectivity.retryNow(accountId, reason);

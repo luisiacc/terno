@@ -1,5 +1,5 @@
 import { ProviderCooldownError, RequestNotDispatchedError, type ProviderRequests, type RequestDescriptor, type RequestTicket, type Observation429 } from "@terno/mail/portable";
-import { COOLDOWN_CANDIDATE_BYTES, COOLDOWN_TICKETS, COOLDOWN_LEDGER_BYTES, COOLDOWN_SERVICES, PROVIDER_COOLDOWN_KEY, decodeCooldown, encodeCooldown, mergeCooldownRows, mailboxKeyValid, mailboxDigest, nextCooldownRevision, copyOpAdmission, type CooldownLedger, type CooldownRow, type CooldownService, type CooldownStamp, type ProviderCooldownStore, type OpAdmission } from "@terno/store";
+import { COOLDOWN_CANDIDATE_BYTES, COOLDOWN_TICKETS, COOLDOWN_LEDGER_BYTES, COOLDOWN_SERVICES, PROVIDER_COOLDOWN_KEY, compactCooldown, decodeCooldown, encodeCooldown, mergeCooldownRows, mailboxKeyValid, mailboxDigest, nextCooldownRevision, copyOpAdmission, type CooldownLedger, type CooldownRow, type CooldownService, type CooldownStamp, type ProviderCooldownStore, type OpAdmission } from "@terno/store";
 import { RETRY_DELAYS_MS, retryJitter } from "./connectivity";
 export { ProviderCooldownError, PROVIDER_COOLDOWN_KEY };
 export type CooldownPersistence = Pick<ProviderCooldownStore, "read" | "update">;
@@ -9,6 +9,8 @@ export interface CooldownHooks {
   changed?(): void;
   setTimeout?(fn: () => void, ms: number): Timer;
   clearTimeout?(timer: Timer): void;
+  /** false: a clock hold waits for an explicit Check clock or a start (plan 62's contract tests); plan 264 repairs it */
+  repairClock?: boolean;
 }
 export type CooldownState =
   | { readonly kind: "ready" }
@@ -31,6 +33,11 @@ const elapsedValid = (n: number) => Number.isFinite(n) && n >= 0 && n <= Number.
 const keyOf = (owner: string, service: CooldownService) => `${owner}/${service}`;
 const byteLength = (s: string) => new TextEncoder().encode(s).byteLength;
 const larger = (a: string | null, b: string | null) => a === null ? b : b === null ? a : BigInt(a) >= BigInt(b) ? a : b;
+/** plan 264: a faulted store is read again after these (the last repeats) until it confirms; nothing while healthy */
+export const COOLDOWN_RECOVERY_MS = [1_000, 5_000, 30_000, 120_000, 300_000] as const;
+/** plan 264: a pause met at the anchor's last reading (a clock that then reads earlier can't unmeet it) */
+const met = (row: CooldownRow, anchor: Anchor) => row.minimum !== null && epoch(anchor.lastWall) && elapsedValid(anchor.lastElapsed) && elapsedValid(anchor.elapsed) &&
+  BigInt(anchor.lastWall) >= BigInt(row.minimum) && BigInt(Math.floor(anchor.lastElapsed)) - BigInt(anchor.elapsed) >= BigInt(row.replay);
 const dominates = (actual: CooldownRow | undefined, wanted: CooldownRow) => !!actual && BigInt(actual.revision) >= BigInt(wanted.revision) && actual.phaseRevision !== undefined && wanted.phaseRevision !== undefined && BigInt(actual.phaseRevision) >= BigInt(wanted.phaseRevision) && (BigInt(actual.phaseRevision) > BigInt(wanted.phaseRevision) || (actual.sample === wanted.sample && actual.position === wanted.position)) && larger(actual.minimum, wanted.minimum) === actual.minimum && BigInt(actual.replay) >= BigInt(wanted.replay) && (!wanted.hold || actual.hold === wanted.hold || (actual.hold !== null && actual.hold !== "clock"));
 
 export class ProviderCooldown {
@@ -44,8 +51,12 @@ export class ProviderCooldown {
   private readonly dependencies = new Map<symbol, { owner: string; id: number | null; createdAt: number | null }>();
   private physical: Promise<void> | null = null;
   private storageFault = false;
+  private recoveryTimer: Timer | null = null;
+  private recoveries = 0;
+  private binds: Promise<unknown> = Promise.resolve();
   private closing = false;
   private wakeQueued = false;
+  private repairing = false;
   private readonly timer: (fn: () => void, ms: number) => Timer;
   private readonly clearTimer: (timer: Timer) => void;
 
@@ -53,11 +64,20 @@ export class ProviderCooldown {
     this.timer = hooks.setTimeout ?? ((fn, ms) => setTimeout(fn, ms));
     this.clearTimer = hooks.clearTimeout ?? ((timer) => clearTimeout(timer));
   }
-  static async open(persistence: CooldownPersistence, clock: CooldownClock, hooks: CooldownHooks = {}): Promise<ProviderCooldown> {
+  /**
+   * `live` (plan 264): the accounts that exist (id, createdAt); given, the start compacts the ledger first, in one store
+   * transaction (bindings of removed accounts, retired rows, unbound rows whose pause is over; overflow when all fits).
+   */
+  static async open(persistence: CooldownPersistence, clock: CooldownClock, hooks: CooldownHooks = {}, live?: (id: number, createdAt: number) => boolean): Promise<ProviderCooldown> {
     const gate = new ProviderCooldown(persistence, clock, hooks);
     const notice = gate.timer(() => { gate.storageFault = true; gate.changed(); }, 5000);
     try {
-      gate.ledger = decodeCooldown(await persistence.read());
+      let encoded = await persistence.read();
+      if (encoded !== null && live) {
+        const wall = clock.wallNow();
+        encoded = await persistence.update((current) => { const next = compactCooldown(current, live, wall); return { encoded: next, result: next }; });
+      }
+      gate.ledger = decodeCooldown(encoded);
       gate.storageFault = false;
       for (const row of gate.ledger.rows) {
         gate.anchor(row);
@@ -68,7 +88,7 @@ export class ProviderCooldown {
         }
       }
       gate.flush();
-    } catch { gate.storageFault = true; }
+    } catch { gate.fault(); }
     finally { gate.clearTimer(notice); }
     return gate;
   }
@@ -95,10 +115,14 @@ export class ProviderCooldown {
     let merged = mergeCooldownRows(local, row);
     this.put(merged);
     if (!merged.hold && (!epoch(wall) || !elapsedValid(elapsed) || (checkpoint ? !epoch(checkpoint.wall) || !elapsedValid(checkpoint.elapsed) || wall < checkpoint.lastWall || elapsed < checkpoint.lastElapsed : merged.wall !== null && BigInt(wall) < BigInt(merged.wall)))) {
-      merged = { ...merged, hold: "clock", revision: this.revision(), repair: null };
-      this.put(merged);
-      this.enqueue(merged, false);
-      return merged;
+      if (this.hooks.repairClock === false) {
+        merged = { ...merged, hold: "clock", revision: this.revision(), repair: null };
+        this.put(merged);
+        this.enqueue(merged, false);
+        return merged;
+      }
+      const same = !!local && local.minimum === merged.minimum && local.replay === merged.replay;
+      return this.clockStepped(merged, same ? checkpoint : undefined, wall, elapsed, false);
     }
     if (!local || local.minimum !== merged.minimum || local.wall !== merged.wall || local.replay !== merged.replay || local.hold !== merged.hold || local.repair !== merged.repair) this.anchor(merged, wall, elapsed);
     else if (!merged.hold && checkpoint) {
@@ -106,6 +130,32 @@ export class ProviderCooldown {
       checkpoint.lastElapsed = elapsed;
     }
     return merged;
+  }
+  /**
+   * Plan 264: a clock read earlier than before (or invalid). A pause already met at the last reading stays met: it is
+   * written met at the new reading (nothing waits). One still waiting re-waits its full pause from now, at once
+   * (Check clock's revision-fenced repair, which keeps every known minimum): never released early, never left held
+   * while both clocks read valid. Only an invalid reading keeps the hold (Retry Now and a start lift it).
+   */
+  private clockStepped(row: CooldownRow, anchor: Anchor | undefined, wall: number, elapsed: number, flush: boolean): CooldownRow {
+    const valid = epoch(wall) && elapsedValid(elapsed);
+    if (valid && anchor && met(row, anchor)) {
+      const revision = this.revision();
+      const moved = { ...row, revision, minimum: String(wall), wall: String(wall), replay: "0", repair: row.revision };
+      this.put(moved);
+      this.anchor(moved, wall, elapsed);
+      this.enqueue(moved, flush);
+      return moved;
+    }
+    const held = { ...row, hold: "clock" as const, revision: this.revision(), repair: null };
+    this.put(held);
+    this.enqueue(held, flush);
+    if (valid && !this.awaited(keyOf(row.owner, row.service))) this.checkClock(row.owner, row.service, held.revision);
+    return this.row(row.owner, row.service)!;
+  }
+  /** a 429's reservation still waits for this scope's row to commit (its confirmation compares that exact row) */
+  private awaited(key: string): boolean {
+    return [...this.reservations].some((r) => r.key === key && r.row && r.notify);
   }
   private revision(): string {
     try { this.ledger.revision = nextCooldownRevision(this.ledger.revision); }
@@ -121,18 +171,35 @@ export class ProviderCooldown {
     if (this.ledger.overflow) return Object.freeze({ kind: "hold", reason: "overflow" });
     const row = this.row(owner, service);
     if (!row) return Object.freeze({ kind: "ready" });
+    // plan 264: a clock hold is repaired as soon as both clocks read valid (and no 429 waits on that exact row)
+    if (row.hold === "clock" && this.hooks.repairClock !== false && epoch(this.clock.wallNow()) && elapsedValid(this.clock.elapsedNow()) && !this.awaited(keyOf(owner, service)) && !this.repairing) {
+      this.repairing = true;
+      try { this.checkClock(owner, service, row.revision); } finally { this.repairing = false; }
+      const repaired = this.row(owner, service)!;
+      if (repaired.hold) return Object.freeze({ kind: "hold", reason: repaired.hold });
+      return this.state(owner, service);
+    }
     if (row.hold) return Object.freeze({ kind: "hold", reason: row.hold });
     const anchor = this.anchors.get(keyOf(owner, service))!;
     const wall = this.clock.wallNow(), elapsed = this.clock.elapsedNow();
     if (!epoch(wall) || !epoch(anchor.wall) || !elapsedValid(elapsed) || !elapsedValid(anchor.elapsed) || wall < anchor.lastWall || elapsed < anchor.lastElapsed) {
-      const held = { ...row, hold: "clock" as const, revision: this.revision(), repair: null };
-      this.put(held);
-      this.enqueue(held);
-      return Object.freeze({ kind: "hold", reason: "clock" });
+      // a clock stepping again while this repair reads it just holds (finite; the next read repairs it)
+      if (this.repairing || this.hooks.repairClock === false) {
+        const held = { ...row, hold: "clock" as const, revision: this.revision(), repair: null };
+        this.put(held);
+        this.enqueue(held);
+        return Object.freeze({ kind: "hold", reason: "clock" });
+      }
+      this.repairing = true;
+      try {
+        const next = this.clockStepped(row, epoch(anchor.wall) && elapsedValid(anchor.elapsed) ? anchor : undefined, wall, elapsed, true);
+        return next.hold ? Object.freeze({ kind: "hold", reason: next.hold }) : this.state(owner, service);
+      } finally { this.repairing = false; }
     }
     anchor.lastWall = wall;
     anchor.lastElapsed = elapsed;
-    if (row.minimum !== null && BigInt(wall) >= BigInt(row.minimum) && BigInt(Math.floor(elapsed)) - BigInt(anchor.elapsed) >= BigInt(row.replay)) return Object.freeze({ kind: "ready" });
+    // plan 264: nothing to re-wait (a retired pause) needs no elapsed reading past its anchor (rounded up)
+    if (row.minimum !== null && BigInt(wall) >= BigInt(row.minimum) && (row.replay === "0" || BigInt(Math.floor(elapsed)) - BigInt(anchor.elapsed) >= BigInt(row.replay))) return Object.freeze({ kind: "ready" });
     return row.minimum === null ? Object.freeze({ kind: "hold", reason: "clock-evidence" }) : Object.freeze({ kind: "at", atMs: Number(row.minimum) });
   }
   /** Private host scope; request arguments cannot change mailbox/service ownership. */
@@ -177,7 +244,7 @@ export class ProviderCooldown {
       accessAvailable: () => { if (alive() && this.dependencies.delete(dependency)) this.changed(); },
       tokenUnavailable: () => {
         if (!alive() || this.dependencies.has(dependency)) return;
-        if (this.dependencies.size >= COOLDOWN_TICKETS) { this.storageFault = true; this.changed(); return; }
+        if (this.dependencies.size >= COOLDOWN_TICKETS) { this.fault(); return; }
         this.dependencies.set(dependency, { owner, id: stamp?.id ?? null, createdAt: stamp?.createdAt ?? null });
         this.changed();
       },
@@ -222,10 +289,17 @@ export class ProviderCooldown {
             if (r.observed || !r.issued || r.released) return;
             r.observed = true;
             const row = this.row(owner, service);
-            if (status >= 200 && status < 300 && row && row.revision === r.revision && this.state(owner, service).kind === "ready" && row.position !== 0) {
+            if (status >= 200 && status < 300 && row && row.revision === r.revision && this.state(owner, service).kind === "ready" && (row.position !== 0 || row.replay !== "0")) {
+              // plan 264: Google took a request at the revision it was sent under, after the pause: that pause is over.
+              // It is retired (met now, nothing to re-wait), fenced on its revision so the store's larger replay can't
+              // bring it back; a 429 newer than this request has a newer revision and is untouched. While a 429's
+              // commit still waits on this row (its confirmation compares it), only the backoff resets, as before.
+              const wall = this.clock.wallNow(), elapsed = this.clock.elapsedNow();
               const revision = this.revision();
-              const reset = { ...row, position: 0, revision, phaseRevision: revision };
+              const awaited = this.awaited(r.key);
+              const reset = awaited ? { ...row, position: 0, revision, phaseRevision: revision } : { ...row, position: 0, revision, phaseRevision: revision, minimum: String(wall), wall: String(wall), replay: "0", repair: row.revision };
               this.put(reset);
+              if (!awaited) this.anchor(reset, wall, elapsed);
               this.finish(r);
               this.enqueue(reset);
             }
@@ -279,9 +353,8 @@ export class ProviderCooldown {
     const result = new Promise<"committed" | "unconfirmed">((resolve) => {
       reservation.notify = resolve;
       reservation.timer = this.timer(() => {
-        this.storageFault = true;
         this.notify(reservation, "unconfirmed");
-        this.changed();
+        this.fault();
       }, 5000);
     });
     this.flush();
@@ -301,8 +374,7 @@ export class ProviderCooldown {
       this.maintenance.add(key);
     }
     if ((this.pending.size >= COOLDOWN_TICKETS && !this.pending.has(key)) || byteLength(JSON.stringify(row)) > COOLDOWN_CANDIDATE_BYTES / COOLDOWN_TICKETS) {
-      this.storageFault = true;
-      this.changed();
+      this.fault();
       return;
     }
     this.pending.set(key, row);
@@ -378,24 +450,50 @@ export class ProviderCooldown {
       this.finish(r);
     }
     this.storageFault = false;
+    this.healthy();
     this.changed();
     return true;
   }
-  private own(work: (withinBudget: () => boolean) => Promise<void>): void {
+  /** plan 264: storage stopped confirming: admission closes everywhere, and a recovery is scheduled */
+  private fault(): void {
+    this.storageFault = true;
+    this.changed();
+    this.scheduleRecovery();
+  }
+  /** One one-shot timer while faulted, after the physical writer ended (its end schedules it otherwise). */
+  private scheduleRecovery(): void {
+    if (!this.storageFault || this.closing || this.physical || this.recoveryTimer) return;
+    const delay = COOLDOWN_RECOVERY_MS[Math.min(this.recoveries, COOLDOWN_RECOVERY_MS.length - 1)]!;
+    this.recoveries++;
+    this.recoveryTimer = this.timer(() => {
+      this.recoveryTimer = null;
+      if (!this.closing && this.storageFault) void this.recoverStorage().catch(() => this.scheduleRecovery());
+    }, delay);
+  }
+  private healthy(): void {
+    this.recoveries = 0;
+    if (this.recoveryTimer) this.clearTimer(this.recoveryTimer);
+    this.recoveryTimer = null;
+  }
+  /** `ledger` false (plan 264: a bind): the store's own transaction, not a cooldown write; its failure is the caller's */
+  private own(work: (withinBudget: () => boolean) => Promise<void>, ledger = true): Promise<void> {
     let withinBudget = true;
-    const notice = this.timer(() => { withinBudget = false; this.storageFault = true; this.changed(); }, 5000);
+    const notice = ledger ? this.timer(() => { withinBudget = false; this.storageFault = true; this.changed(); }, 5000) : null;
     // The logical deadline never drops the physical promise or starts a competing action.
-    const terminal = Promise.resolve().then(() => work(() => withinBudget)).catch(() => { this.storageFault = true; this.changed(); }).finally(() => this.clearTimer(notice));
+    const run = Promise.resolve().then(() => work(() => withinBudget));
+    const terminal = run.catch(() => { if (ledger) { this.storageFault = true; this.changed(); } }).finally(() => { if (notice) this.clearTimer(notice); });
     this.physical = terminal;
     void terminal.then(() => {
       if (this.physical === terminal) this.physical = null;
       if (!this.storageFault) this.flush();
+      else this.scheduleRecovery();
       if (!this.physical) {
         const result = this.pending.size || this.overflowRequested ? "pending-terminal" : "drained";
         const observers = [...this.drainers.values()];
         for (const observer of observers) observer.finish(result);
       }
     });
+    return run;
   }
   private flush(): void {
     if (this.physical || (this.pending.size === 0 && !this.overflowRequested) || this.storageFault) return;
@@ -479,6 +577,7 @@ export class ProviderCooldown {
       else {
         const recovered = this.storageFault;
         this.storageFault = false;
+        this.healthy();
         if (recovered || reconciled) this.changed();
       }
     });
@@ -486,6 +585,55 @@ export class ProviderCooldown {
   }
   /** After a committed bind: publish the new binding only after the same serialized local read. */
   refreshAfterBind(): Promise<"confirmed" | "pending-terminal" | "unconfirmed"> { return this.recoverStorage(); }
+  /**
+   * Plan 264: a mailbox binding, one at a time. It waits for a writer in flight (instead of answering that someone else
+   * is writing), never writes beside an unconfirmed cooldown candidate, and publishes after the same serialized local
+   * read. "unconfirmed" is a local step that didn't settle: the caller tries again later, nothing latches.
+   */
+  bind(work: () => Promise<boolean>): Promise<"confirmed" | "refused" | "unconfirmed"> {
+    const run = this.binds.then(async () => {
+      if (this.closing || !await this.settled() || this.closing || this.storageFault || this.pending.size || this.overflowRequested) return "unconfirmed" as const;
+      // the bind's transaction is the physical writer while it runs: a 429 observed meanwhile flushes after it
+      let bound = false;
+      await this.own(async () => { bound = await work(); }, false);
+      if (!bound) return "refused" as const;
+      if (!await this.settled()) return "unconfirmed" as const;
+      return await this.refreshAfterBind() === "confirmed" ? "confirmed" as const : "unconfirmed" as const;
+    });
+    this.binds = run.then(() => undefined, () => undefined);
+    return run;
+  }
+  /** no physical writer (a flush may follow the one that ends: a few bounded waits) */
+  private async settled(): Promise<boolean> {
+    for (let i = 0; i < 3 && this.physical; i++) await this.drain(5000);
+    return !this.physical;
+  }
+  /**
+   * Plan 264: Retry Now. A faulted store is read again at once; otherwise every clock hold is lifted as a start lifts
+   * it (re-waiting its row's full pause from now; nothing is released early).
+   */
+  async retry(): Promise<void> {
+    if (this.closing) return;
+    if (this.storageFault) {
+      if (this.recoveryTimer) this.clearTimer(this.recoveryTimer);
+      this.recoveryTimer = null;
+      await this.recoverStorage();
+      return;
+    }
+    await this.liftHolds(true);
+  }
+  /**
+   * Every saved hold lifted, in batches below the write slots, drained between. The count lifted. `clockOnly`: holds
+   * whose deadline is kept (a clock check); a hold on evidence that couldn't be read has none to re-wait.
+   */
+  async liftHolds(clockOnly = false): Promise<number> {
+    const holds = this.holds().filter((hold) => !clockOnly || this.row(hold.owner, hold.service)?.hold === "clock");
+    for (let i = 0; i < holds.length; i += COOLDOWN_TICKETS / 2) {
+      for (const hold of holds.slice(i, i + COOLDOWN_TICKETS / 2)) this.liftHold(hold.owner, hold.service, hold.revision);
+      if ((await this.drain(5000)) !== "drained") break;
+    }
+    return holds.length;
+  }
   boundAccountIds(): readonly number[] { return this.ledger.bindings.map((binding) => binding.id); }
   async bindingFor(input: CooldownStamp): Promise<string | null> {
     const stamp = { ...input };
@@ -552,6 +700,7 @@ export class ProviderCooldown {
   }
   async close(): Promise<void> {
     this.closing = true;
+    this.healthy();
     this.dependencies.clear();
     const unobserved = [...this.reservations];
     for (const r of unobserved) if (!r.row) this.finish(r);

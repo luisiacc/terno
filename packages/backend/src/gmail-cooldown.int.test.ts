@@ -272,8 +272,10 @@ for (const kind of ["SQL", "IndexedDB"] as const) describe(`${kind} saved Gmail 
     write.resolve();
     expect(await result).toBeInstanceOf(ProviderCooldownError);
     expect(JSON.parse((await h.backend.store.providerCooldown.read()) ?? "{}").bindings ?? []).toEqual([]);
-    await expect(provider.verify()).rejects.toBeInstanceOf(ProviderCooldownError);
-    expect(h.requests).toEqual(["/token", "/gmail/profile"]);
+    // plan 264: the stale attempt latches nothing; the kept provider proves and binds under the new credentials
+    await provider.verify();
+    expect(JSON.parse((await h.backend.store.providerCooldown.read())!).bindings).toEqual([expect.objectContaining({ id: h.account.id })]);
+    expect(h.requests).toEqual(["/token", "/gmail/profile", "/gmail/profile"]);
   });
 
   sqlite("charges an operation that actually refreshed/proved, then blocks later local attempts", async () => {
@@ -417,8 +419,9 @@ for (const kind of ["SQL", "IndexedDB"] as const) describe(`${kind} saved Gmail 
     await h.backend.signedIn(h.account.id);
     publish.resolve();
     expect(await result).toBeInstanceOf(ProviderCooldownError);
-    await expect(provider.verify()).rejects.toBeInstanceOf(ProviderCooldownError);
-    expect(h.requests).toEqual(["/token", "/gmail/profile"]);
+    // plan 264: nothing latched; the binding the stale attempt wrote is adopted without a second proof
+    await provider.verify();
+    expect(h.requests).toEqual(["/token", "/gmail/profile", "/gmail/profile"]);
   });
 
 

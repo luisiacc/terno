@@ -5,6 +5,8 @@ import type { ProviderCooldown } from "./provider-cooldown";
 import type { NetworkPolicy } from "./net-policy";
 
 const mail = { endpoint: "gmail-api", purpose: "mail" } as const;
+/** plan 264: after a bind that didn't settle locally, the account waits this long (or Retry Now) before binding again */
+export const REBIND_MS = 30_000;
 
 export interface SavedGoogleRequests extends GoogleRequests {
   readonly paused: boolean;
@@ -24,6 +26,8 @@ export async function savedGoogleRequests(input: {
   credentials(): number;
   write<T>(work: () => Promise<T>): Promise<T>;
   changed(): void;
+  setTimeout?(fn: () => void, ms: number): ReturnType<typeof setTimeout>;
+  clearTimeout?(timer: ReturnType<typeof setTimeout>): void;
 }): Promise<SavedGoogleRequests> {
   const { gate, net } = input;
   const stamp = { ...input.stamp };
@@ -32,12 +36,40 @@ export async function savedGoogleRequests(input: {
   const installation = gate.requestsFor("installation", input.live);
   const policies = new Set([scope, installation]);
   let paused = false, closed = false;
+  // plan 264: a bind that didn't settle defers the account (no op claimed and refunded in a loop) until REBIND_MS or
+  // Retry Now; the mailbox it proved stays proven for these credentials, so binding again asks Google nothing
+  let deferred: ReturnType<typeof setTimeout> | undefined;
+  let proven: { key: string; epoch: number } | undefined;
+  const timer = input.setTimeout ?? ((fn, ms) => setTimeout(fn, ms));
+  const clearTimer = input.clearTimeout ?? ((t) => clearTimeout(t));
+  const undefer = () => { if (deferred === undefined) return; clearTimer(deferred); deferred = undefined; input.changed(); };
+  const defer = () => {
+    if (deferred !== undefined || !alive()) return;
+    deferred = timer(() => { deferred = undefined; input.changed(); }, REBIND_MS);
+    input.changed();
+  };
   const policyPaused = () => input.status.policyPaused;
   let proving: Promise<void> | undefined;
   const alive = () => !closed && input.live();
   const refuse = () => new ProviderCooldownError("gmail-api", "0", "binding");
+  const unsettled = () => new ProviderCooldownError("gmail-api", "0", "storage");
+  /** the gate's binding for this account (one a recovery read back, or a bind written but not confirmed) becomes its scope */
+  const adopt = async (key: string, active: () => boolean): Promise<boolean> => {
+    if (await gate.bindingFor(stamp) !== key || !active()) return false;
+    const replacement = await gate.requestsForAccount(stamp, input.live);
+    if (!active() || owner) { replacement.close(); return !!owner; }
+    policies.add(replacement);
+    // Old tickets still own their native responses; switching does not retire them.
+    scope.accessAvailable();
+    scope = replacement;
+    owner = key;
+    undefer();
+    input.changed();
+    return true;
+  };
   const check = (request: HttpRequestContext, admission: MailAdmission = "background") => {
     if (!alive() || input.status.signInRequired || paused || (request.endpoint === "gmail-api" && policyPaused())) throw refuse();
+    if (deferred !== undefined) throw unsettled();
     installation.check({ request });
     scope.check({ request });
     if (!net.googleAvailable(admission)) throw new ProviderCooldownError(request.endpoint, "0", "capacity");
@@ -48,16 +80,16 @@ export async function savedGoogleRequests(input: {
   );
   return {
     generation: input.credentials,
-    get paused() { return paused || policyPaused(); },
+    get paused() { return paused || deferred !== undefined || policyPaused(); },
     get policyPaused() { return policyPaused(); },
-    recoverPolicy() { if (input.status.recoverPolicy()) input.changed(); },
+    recoverPolicy() { undefer(); if (input.status.recoverPolicy()) input.changed(); },
     retryAt() {
       const states = [gate.state(owner ?? "installation", "gmail-api"), gate.state("installation", "gmail-api")];
       const dates = states.flatMap((state) => state.kind === "at" ? [state.atMs] : []);
       return dates.length ? Math.max(...dates) : undefined;
     },
     check,
-    close() { closed = true; for (const policy of policies) policy.close(); },
+    close() { closed = true; if (deferred !== undefined) clearTimer(deferred); deferred = undefined; for (const policy of policies) policy.close(); },
     tokenUnavailable: () => scope.tokenUnavailable(),
     accessAvailable: () => scope.accessAvailable(),
     request(descriptor, resource, init) {
@@ -92,30 +124,34 @@ export async function savedGoogleRequests(input: {
       const epoch = input.credentials();
       const active = () => alive() && input.credentials() === epoch;
       proving = (async () => {
-        const email = await read();
+        // a binding already in the ledger (recovered, or written by a bind that wasn't confirmed) needs no proof
+        const known = await gate.bindingFor(stamp);
+        if (known && await adopt(known, active)) { check(mail, admission); return; }
         if (!active()) throw refuse();
-        if (email.trim().toLowerCase() !== stamp.email.trim().toLowerCase()) { pause(); throw refuse(); }
-        const key = await mailboxDigest(email, (bytes) => crypto.subtle.digest("SHA-256", bytes));
-        if (!active()) throw refuse();
-        // Do not interleave a bind with an unconfirmed cooldown writer.
-        if (await gate.drain(5000) !== "drained" || !active()) { pause(); throw refuse(); }
+        let key = proven?.epoch === epoch ? proven.key : undefined;
+        if (!key) {
+          const email = await read();
+          if (!active()) throw refuse();
+          // a grant for another mailbox: only a sign-in answers it
+          if (email.trim().toLowerCase() !== stamp.email.trim().toLowerCase()) { pause(); throw refuse(); }
+          key = await mailboxDigest(email, (bytes) => crypto.subtle.digest("SHA-256", bytes));
+          if (!active()) throw refuse();
+          proven = { key, epoch };
+        }
+        const mailbox = key;
         check(mail, admission);
+        // plan 264: the local steps (a writer in flight, the store, the confirming read) never latch: binds are
+        // serialized by the gate, wait for a writer instead of failing beside it, and one that doesn't settle defers
         try {
-          if (!await input.write(() => input.store.bind(stamp, key, active)) || !active()) throw refuse();
-          if (await gate.refreshAfterBind() !== "confirmed" || !active()) throw refuse();
-          const bound = await gate.bindingFor(stamp);
-          if (bound !== key || !active()) throw refuse();
-          const replacement = await gate.requestsForAccount(stamp, input.live);
-          if (!active()) { replacement.close(); throw refuse(); }
-          policies.add(replacement);
-          // Old tickets still own their native responses; switching does not retire them.
-          scope.accessAvailable();
-          scope = replacement;
-          owner = key;
-          input.changed();
+          const bound = await gate.bind(async () => { check(mail, admission); return await input.write(() => input.store.bind(stamp, mailbox, active)) && active(); });
+          if (!active()) throw refuse();
+          // the saved account is no longer this provider's (its address or creation changed under it)
+          if (bound === "refused") { pause(); throw refuse(); }
+          if (bound !== "confirmed" || !await adopt(mailbox, active)) throw unsettled();
         } catch (error) {
-          pause();
-          throw error instanceof ProviderCooldownError ? error : refuse();
+          if (!active() || (error instanceof ProviderCooldownError && error.cooldown.kind === "binding")) throw refuse();
+          if (!(error instanceof ProviderCooldownError) || error.cooldown.kind === "storage") { defer(); throw unsettled(); }
+          throw error;
         }
         check(mail, admission);
       })().finally(() => { proving = undefined; });

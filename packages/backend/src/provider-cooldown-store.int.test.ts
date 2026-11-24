@@ -698,7 +698,7 @@ for (const mode of ["SQL", "IDB off"] as const) {
       const a = await account(f.store, 1), stamp = (await f.store.accounts.stamp(a.id))!;
       expect(await actual.bind(stamp, verifiedMailbox)).toBe(true);
       let wall = 1000, elapsed = 10, samples = 0;
-      const gate = await ProviderCooldown.open(actual, { wallNow: () => wall, elapsedNow: () => elapsed, random: () => { samples++; return 0.5; } });
+      const gate = await ProviderCooldown.open(actual, { wallNow: () => wall, elapsedNow: () => elapsed, random: () => { samples++; return 0.5; } }, { repairClock: false });
       cleanup.gate(`review/F1/${mode}/clock-fence`, gate);
       const policy = await gate.requestsForAccount(stamp, () => true), ticket = policy.reserve(gmail);
       await ticket.dispatch(async () => new Response(null, { status: 429 }));
@@ -806,7 +806,7 @@ async function r2BoundClock(mode: StoreMode, initialElapsed = 10) {
   expect(await actual.bind(stamp, verifiedMailbox)).toBe(true);
   let wall = 1000, elapsed = initialElapsed, samples = 0, calls = 0;
   const clock = { wallNow: () => wall, elapsedNow: () => elapsed, random: () => { samples++; return 0.5; } };
-  const gate = await ProviderCooldown.open(actual, clock);
+  const gate = await ProviderCooldown.open(actual, clock, { repairClock: false });
   cleanup.gate(`R2/${mode}/bound-clock`, gate);
   const requests = await gate.requestsForAccount(stamp, () => true), ticket = requests.reserve(gmail);
   await ticket.dispatch(async () => { calls++; return new Response(null, { status: 429 }); });
@@ -837,7 +837,7 @@ async function r2BoundRollback(mode: StoreMode, kind: "elapsed" | "wall" | "frac
   expect(f.calls()).toBe(1); expect(f.samples()).toBe(1);
   await f.gate.close();
   const reopened = await f.f.reopen(), stored = await reopened.providerCooldown.read();
-  const after = await ProviderCooldown.open(reopened.providerCooldown, f.clock);
+  const after = await ProviderCooldown.open(reopened.providerCooldown, f.clock, { repairClock: false });
   cleanup.gate(`R2/${mode}/${kind}/reopened`, after);
   expect(after.state(verifiedMailbox, "gmail-api")).toEqual({ kind: "hold", reason: "clock" });
   f.time(4000, 100);
