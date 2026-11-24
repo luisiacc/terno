@@ -1,6 +1,6 @@
 import type { AccountStatus } from "./account-status";
 import { ProviderCooldownError, type GoogleRequests, type HttpRequestContext, type MailAdmission, type ProviderRequests } from "@terno/mail/portable";
-import { mailboxDigest, type CooldownStamp, type ProviderCooldownStore } from "@terno/store";
+import { COOLDOWN_SERVICES, mailboxDigest, type CooldownService, type CooldownStamp, type ProviderCooldownStore } from "@terno/store";
 import type { ProviderCooldown } from "./provider-cooldown";
 import type { NetworkPolicy } from "./net-policy";
 
@@ -31,6 +31,7 @@ export async function savedGoogleRequests(input: {
 }): Promise<SavedGoogleRequests> {
   const { gate, net } = input;
   const stamp = { ...input.stamp };
+  const digest = await mailboxDigest(stamp.email, (bytes) => crypto.subtle.digest("SHA-256", bytes));
   let owner = await gate.bindingFor(stamp);
   let scope = owner ? await gate.requestsForAccount(stamp, input.live) : gate.requestsFor("installation", input.live);
   const installation = gate.requestsFor("installation", input.live);
@@ -72,6 +73,13 @@ export async function savedGoogleRequests(input: {
     if (deferred !== undefined) throw unsettled();
     installation.check({ request });
     scope.check({ request });
+    // plan 264: a binding the ledger has now (read back by a recovery after this provider was made) constrains every
+    // request, a token refresh included, before the next proof adopts it as this account's scope
+    const bound = owner ? null : gate.boundOwner(stamp, digest);
+    if (bound && COOLDOWN_SERVICES.includes(request.endpoint as CooldownService)) {
+      const state = gate.state(bound, request.endpoint as CooldownService);
+      if (state.kind !== "ready") throw new ProviderCooldownError(request.endpoint, gate.revisionFor(bound, request.endpoint as CooldownService) ?? "0", state.kind === "at" ? "timed" : state.reason);
+    }
     if (!net.googleAvailable(admission)) throw new ProviderCooldownError(request.endpoint, "0", "capacity");
   };
   const pause = () => { paused = true; input.changed(); };

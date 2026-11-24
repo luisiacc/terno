@@ -113,16 +113,15 @@ export function mergeCooldownRows(old: CooldownRow | undefined, candidate: Coold
   const newer = BigInt(old.revision) > BigInt(candidate.revision) ? old : candidate;
   const max = (a: string | null, b: string | null) => a === null ? b : b === null ? a : BigInt(a) >= BigInt(b) ? a : b;
   let hold = newer.hold;
-  // a repair fenced on the held revision (Check clock, or a start lifting a hold) may clear any hold
-  const repairs = (a: CooldownRow, b: CooldownRow) => a.repair === b.revision && BigInt(a.revision) > BigInt(b.revision);
-  if (old.hold && old.hold !== "clock" && !repairs(candidate, old)) hold = old.hold;
-  else if (candidate.hold && candidate.hold !== "clock" && !repairs(old, candidate)) hold = candidate.hold;
-  else if (old.hold === "clock" && candidate.hold === null && !(candidate.repair === old.revision && BigInt(candidate.revision) > BigInt(old.revision))) hold = "clock";
-  else if (candidate.hold === "clock" && old.hold === null && !(old.repair === candidate.revision && BigInt(old.revision) > BigInt(candidate.revision))) hold = "clock";
-  // plan 264: a row fenced at or after the other's revision accounts for it, and its minimum and replay stand (a success
-  // retiring a met pause sets them to now and 0; Check clock, a start's lift and a 429 carrying the fence on never lower
-  // them, so for those this is the max)
+  // A row fenced at or after the other's revision accounts for it (plan 264: "at or after", so a repair of a later
+  // in-memory hold, one that never reached disk, still covers the saved one): a repair (Check clock, or a start lifting
+  // a hold) may clear any hold it covers, and its minimum and replay stand (a success retiring a met pause sets them to
+  // now and 0; Check clock, a start's lift and a 429 carrying the fence on never lower them, so for those this is the max)
   const covers = (a: CooldownRow, b: CooldownRow) => a.repair !== null && BigInt(b.revision) <= BigInt(a.repair) && BigInt(a.revision) > BigInt(b.revision);
+  if (old.hold && old.hold !== "clock" && !covers(candidate, old)) hold = old.hold;
+  else if (candidate.hold && candidate.hold !== "clock" && !covers(old, candidate)) hold = candidate.hold;
+  else if (old.hold === "clock" && candidate.hold === null && !covers(candidate, old)) hold = "clock";
+  else if (candidate.hold === "clock" && old.hold === null && !covers(old, candidate)) hold = "clock";
   const replay = covers(candidate, old) ? candidate.replay : covers(old, candidate) ? old.replay : max(old.replay, candidate.replay)!;
   const minimum = covers(candidate, old) ? candidate.minimum : covers(old, candidate) ? old.minimum : max(old.minimum, candidate.minimum);
   return { ...newer, phaseRevision: phaseOf(phase), sample: phase.sample, position: phase.position, minimum, replay, hold, repair: hold ? null : newer.repair };

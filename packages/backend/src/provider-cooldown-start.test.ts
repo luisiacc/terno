@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { ProviderRegistry } from "@terno/mail";
 import { decodeCooldown, encodeCooldown } from "@terno/store";
 import { afterEach, describe, expect, it } from "vitest";
-import { Backend, plaintextCipher } from "./backend";
+import { Backend, nodeStore, openNodeMailbox, plaintextCipher } from "./backend";
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
@@ -66,5 +66,21 @@ describe("a Gmail pause the clock check held (plan 62)", () => {
     await again.ready;
     expect(decodeCooldown(await again.store.providerCooldown.read()).rows[0]).toMatchObject({ hold: null, repair: "3", minimum: "65000", replay: "15000" });
     expect(again["cooldown"]!.state("installation", "gmail-api")).toEqual({ kind: "at", atMs: 65_000 });
+  });
+
+  it("plan 264 (Codex code review): an account inventory that can't be read at start leaves the ledger as it is, and the backend starts", async () => {
+    const providers: ProviderRegistry = { create: () => ({ async verify() {}, async sync() {}, async execute() {}, async close() {} }), async verifyImap() {}, connectGmail: async () => { throw new Error("unused"); } };
+    const dir = mkdtempSync(join(tmpdir(), "terno-inventory-"));
+    cleanups.push(async () => rmSync(dir, { recursive: true, force: true }));
+    const store = nodeStore(await openNodeMailbox(join(dir, "test.db")), { instantSearch: false });
+    await store.accounts.create({ kind: "gmail", email: "one@example.test", displayName: "One", color: "brown", providerConfig: {}, now: 1 });
+    const stamp = store.accounts.stamp.bind(store.accounts);
+    let failed = false;
+    store.accounts.stamp = async (id) => { if (!failed) { failed = true; throw new Error("Synthetic read failure"); } return stamp(id); };
+    const backend = new Backend({ store, version: "test", cipher: plaintextCipher, providers, autoSync: false, now: () => 50_000, instantSearch: false, iconTransport: null });
+    cleanups.push(() => backend.stop());
+    await backend.ready;
+    expect(failed).toBe(true);
+    expect(backend["cooldown"]!.state("installation", "gmail-api")).toEqual({ kind: "ready" });
   });
 });

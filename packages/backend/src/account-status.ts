@@ -1,4 +1,5 @@
 import type { AccountSyncState } from "@terno/core";
+import { keychainRefusal } from "./keychain";
 
 export interface StatusAuthority {
   generation: number;
@@ -89,6 +90,9 @@ export class AccountStatus {
 
   refuse(authority: StatusAuthority, failure: StatusFailure, scope: "send" | null = null, source: "account" | "incoming" = "account"): Promise<void> {
     if (!this.current(authority)) return Promise.resolve();
+    // plan 264: our keychain failing to open a secret never hides the server's refusal of the same credentials (the
+    // keychain's is lifted by opening the secret again; the server's only by a sign-in)
+    if (scope === null && keychainRefusal(failure.i18n?.key) && this.whole && !keychainRefusal(this.refusalKey)) return Promise.resolve();
     if (scope === "send") this.send = { failure, scope };
     else this.whole = { failure, scope, source };
     this.refusal++;
@@ -127,7 +131,7 @@ export class AccountStatus {
   localRecoveryProof(authority: StatusAuthority): () => Promise<void> {
     const refusal = this.refusal, key = this.refusalKey;
     return () => {
-      if (!this.current(authority) || refusal !== this.refusal || !key || this.refusalKey !== key) return Promise.resolve();
+      if (!this.current(authority) || refusal !== this.refusal || !keychainRefusal(key) || this.refusalKey !== key) return Promise.resolve();
       this.whole = undefined;
       this.run = undefined;
       this.state = { ...this.state, status: "idle", lastError: null, lastErrorI18n: null, authRequired: false, authScope: null, connection: null };

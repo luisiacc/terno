@@ -51,3 +51,13 @@ describe("plan 264: a start compacts the ledger", () => {
     expect(decodeCooldown(compactCooldown(encoded, () => true, 10_000)).overflow).toBe(true);
   });
 });
+
+describe("plan 264 (Codex review): a repair covers every hold up to its fence", () => {
+  it("a repair of a later in-memory clock hold still clears the saved hold an earlier lift handled", () => {
+    const saved = row({ revision: "1", phaseRevision: "1", hold: "clock-evidence" });
+    // lift (2, repair 1) queued, clock stepped: held again (3) in memory and repaired (4, repair 3); only 4 reaches disk
+    const repaired = row({ revision: "4", phaseRevision: "1", hold: null, repair: "3" });
+    expect(mergeCooldownRows(saved, repaired).hold).toBeNull();
+    expect(mergeCooldownRows(row({ revision: "5", phaseRevision: "1", hold: "range" }), repaired).hold).toBe("range");
+  });
+});

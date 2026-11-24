@@ -11,6 +11,8 @@ export interface CooldownHooks {
   clearTimeout?(timer: Timer): void;
   /** false: a clock hold waits for an explicit Check clock or a start (plan 62's contract tests); plan 264 repairs it */
   repairClock?: boolean;
+  /** plan 264: the ledger first read by a recovery (the start's read failed): what a start does on load runs now */
+  loaded?(): void;
 }
 export type CooldownState =
   | { readonly kind: "ready" }
@@ -37,7 +39,7 @@ const larger = (a: string | null, b: string | null) => a === null ? b : b === nu
 export const COOLDOWN_RECOVERY_MS = [1_000, 5_000, 30_000, 120_000, 300_000] as const;
 /** plan 264: a pause met at the anchor's last reading (a clock that then reads earlier can't unmeet it) */
 const met = (row: CooldownRow, anchor: Anchor) => row.minimum !== null && epoch(anchor.lastWall) && elapsedValid(anchor.lastElapsed) && elapsedValid(anchor.elapsed) &&
-  BigInt(anchor.lastWall) >= BigInt(row.minimum) && BigInt(Math.floor(anchor.lastElapsed)) - BigInt(anchor.elapsed) >= BigInt(row.replay);
+  BigInt(anchor.lastWall) >= BigInt(row.minimum) && (row.replay === "0" || BigInt(Math.floor(anchor.lastElapsed)) - BigInt(anchor.elapsed) >= BigInt(row.replay));
 const dominates = (actual: CooldownRow | undefined, wanted: CooldownRow) => !!actual && BigInt(actual.revision) >= BigInt(wanted.revision) && actual.phaseRevision !== undefined && wanted.phaseRevision !== undefined && BigInt(actual.phaseRevision) >= BigInt(wanted.phaseRevision) && (BigInt(actual.phaseRevision) > BigInt(wanted.phaseRevision) || (actual.sample === wanted.sample && actual.position === wanted.position)) && larger(actual.minimum, wanted.minimum) === actual.minimum && BigInt(actual.replay) >= BigInt(wanted.replay) && (!wanted.hold || actual.hold === wanted.hold || (actual.hold !== null && actual.hold !== "clock"));
 
 export class ProviderCooldown {
@@ -51,6 +53,7 @@ export class ProviderCooldown {
   private readonly dependencies = new Map<symbol, { owner: string; id: number | null; createdAt: number | null }>();
   private physical: Promise<void> | null = null;
   private storageFault = false;
+  private unread = false;
   private recoveryTimer: Timer | null = null;
   private recoveries = 0;
   private binds: Promise<unknown> = Promise.resolve();
@@ -88,7 +91,7 @@ export class ProviderCooldown {
         }
       }
       gate.flush();
-    } catch { gate.fault(); }
+    } catch { gate.unread = true; gate.fault(); }
     finally { gate.clearTimer(notice); }
     return gate;
   }
@@ -139,7 +142,8 @@ export class ProviderCooldown {
    */
   private clockStepped(row: CooldownRow, anchor: Anchor | undefined, wall: number, elapsed: number, flush: boolean): CooldownRow {
     const valid = epoch(wall) && elapsedValid(elapsed);
-    if (valid && anchor && met(row, anchor)) {
+    // a 429 still waiting for this exact row to commit keeps it (its confirmation compares it): held, as before
+    if (valid && anchor && met(row, anchor) && !this.awaited(keyOf(row.owner, row.service))) {
       const revision = this.revision();
       const moved = { ...row, revision, minimum: String(wall), wall: String(wall), replay: "0", repair: row.revision };
       this.put(moved);
@@ -471,6 +475,10 @@ export class ProviderCooldown {
     }, delay);
   }
   private healthy(): void {
+    if (this.unread && !this.closing) {
+      this.unread = false;
+      queueMicrotask(() => { if (!this.closing) this.hooks.loaded?.(); });
+    }
     this.recoveries = 0;
     if (this.recoveryTimer) this.clearTimer(this.recoveryTimer);
     this.recoveryTimer = null;
@@ -504,7 +512,8 @@ export class ProviderCooldown {
   }
   checkClock(owner: string, service: CooldownService, revision: string): CooldownState {
     const row = this.row(owner, service);
-    if (!row || row.revision !== revision || row.hold !== "clock" || this.closing || this.storageFault || this.ledger.overflow) return this.state(owner, service);
+    // plan 264: never while a 429 waits for this exact row to commit (it would never confirm, and keep its ticket)
+    if (!row || row.revision !== revision || row.hold !== "clock" || this.closing || this.storageFault || this.ledger.overflow || this.awaited(keyOf(owner, service))) return this.state(owner, service);
     const wall = this.clock.wallNow(), elapsed = this.clock.elapsedNow();
     if (!epoch(wall) || !elapsedValid(elapsed)) return this.state(owner, service);
     const repaired = { ...row, revision: this.revision(), wall: String(wall), hold: null, repair: row.revision };
@@ -524,7 +533,7 @@ export class ProviderCooldown {
    */
   liftHold(owner: string, service: CooldownService, revision: string): CooldownState {
     const row = this.row(owner, service);
-    if (!row || row.revision !== revision || !row.hold || this.closing || this.storageFault || this.ledger.overflow) return this.state(owner, service);
+    if (!row || row.revision !== revision || !row.hold || this.closing || this.storageFault || this.ledger.overflow || this.awaited(keyOf(owner, service))) return this.state(owner, service);
     if (row.hold === "clock") return this.checkClock(owner, service, revision);
     const wall = this.clock.wallNow(), elapsed = this.clock.elapsedNow();
     if (!epoch(wall) || !elapsedValid(elapsed)) return this.state(owner, service);
@@ -592,7 +601,9 @@ export class ProviderCooldown {
    */
   bind(work: () => Promise<boolean>): Promise<"confirmed" | "refused" | "unconfirmed"> {
     const run = this.binds.then(async () => {
-      if (this.closing || !await this.settled() || this.closing || this.storageFault || this.pending.size || this.overflowRequested) return "unconfirmed" as const;
+      if (this.closing || !await this.settled()) return "unconfirmed" as const;
+      // checked in the same turn the bind takes the writer: a flush that started since settled() keeps it
+      if (this.closing || this.physical || this.storageFault || this.pending.size || this.overflowRequested) return "unconfirmed" as const;
       // the bind's transaction is the physical writer while it runs: a 429 observed meanwhile flushes after it
       let bound = false;
       await this.own(async () => { bound = await work(); }, false);
@@ -635,6 +646,11 @@ export class ProviderCooldown {
     return holds.length;
   }
   boundAccountIds(): readonly number[] { return this.ledger.bindings.map((binding) => binding.id); }
+  /** plan 264: the mailbox key bound to this stamp now, given the stamp's address digest (synchronous, for admission) */
+  boundOwner(stamp: CooldownStamp, digest: string): string | null {
+    const binding = this.ledger.bindings.find((b) => b.id === stamp.id && b.createdAt === stamp.createdAt);
+    return binding && !this.storageFault && !this.closing && binding.emailDigest === digest ? binding.mailboxKey : null;
+  }
   async bindingFor(input: CooldownStamp): Promise<string | null> {
     const stamp = { ...input };
     const binding = this.ledger.bindings.find((b) => b.id === stamp.id && b.createdAt === stamp.createdAt);

@@ -224,3 +224,31 @@ re-wait needs no elapsed reading past its anchor (`gmail-cooldown.int.test.ts` "
   `repairClock: false`.
 
 Every new test except the controls (three accounts at once, address mismatch, `invalid_grant`) fails on the old code.
+
+## What the Codex code review changed
+
+One round, 8 findings, all fixed, each with a regression test that fails without the fix:
+
+1. **High: a bind could take the writer from a flush** that started between `settled()` and the bind's continuation,
+   so `close()` could return with a cooldown write in flight. The bind now rechecks `physical` (and pending, fault,
+   overflow) in the same turn it takes the writer. (`provider-cooldown-recovery.test.ts`)
+2. **High: a binding a recovery read back didn't constrain a token refresh.** A provider made while the ledger was
+   unreadable ran under the installation scope, and a cold refresh left before `prove()` adopted the binding. Every
+   `check()` now also applies the bound mailbox's state while the provider hasn't adopted it (`gate.boundOwner`, a
+   synchronous lookup with the stamp's digest computed once). (`google-requests.test.ts`)
+3. **High: a clock repair could strand a 429's ticket.** The met shortcut, `checkClock` and `liftHold` now leave a row
+   alone while a 429 waits for that exact row to commit (it is held, as before, and repaired on the next read once
+   confirmed). (`provider-cooldown-recovery.test.ts`)
+4. **High: the compaction's inventory read could fail `init()`.** It is optional now: an inventory that can't be read
+   opens the gate without compaction. (`provider-cooldown-start.test.ts`)
+5. **Medium: a ledger first read by a recovery skipped the start's lift.** The gate calls `hooks.loaded` once when a
+   recovery reads a ledger the start couldn't; the backend's `cooldownLoaded()` (the start's hold lift and the bound
+   accounts' index) runs then too. Compaction stays a start's job. (`provider-cooldown-recovery.test.ts`)
+6. **Medium: a second clock repair could bring back a saved hold** a lift had already handled (its fence then named an
+   in-memory hold that never reached disk). The merge's hold rules use the same "at or after" fence as minimum and
+   replay. (`packages/store/src/provider-cooldown.test.ts`)
+7. **Medium: a keychain refusal could replace Google's** for the same credentials, and its local recovery then lifted
+   the whole account. A keychain refusal never replaces another whole-account refusal, and `localRecoveryProof` only
+   lifts a keychain refusal. (`account-status.test.ts`)
+8. **Low: the met check used the elapsed rule a retired row doesn't need**, so a clock step right after a retirement
+   re-waited the old minimum. `met()` uses the same zero-replay rule as `state()`. (`provider-cooldown-recovery.test.ts`)

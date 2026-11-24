@@ -161,3 +161,69 @@ describe("plan 264: a pause Google has since accepted a request after is over", 
     await g.close();
   });
 });
+
+describe("plan 264 (Codex code review)", () => {
+  it("a retired pause stays met through a clock step before elapsed time passes its anchor", async () => {
+    const f = fixture(), g = await f.open();
+    await refuse(g, at(1000, 3000));
+    f.time(9000, 9010.5);
+    await succeed(g);
+    f.time(8000, 9010.7);
+    expect(g.state(A, "gmail-api")).toEqual({ kind: "ready" });
+    await g.close();
+  });
+
+  it("a clock step never replaces a refusal still waiting to commit (its ticket is confirmed and freed)", async () => {
+    const f = fixture();
+    let release!: () => void, holding = true;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const g = await f.open({ read: f.port.read, update: async (fn) => { if (holding) { holding = false; await held; } return f.port.update(fn); } });
+    // an unrelated writer holds the store; A's refusal queues behind it
+    const other = g.requestsFor("b".repeat(64)).reserve(gmail);
+    void other.dispatch(async () => new Response(null, { status: 429 })); void other.headers429(at(1000, 3000)); other.release();
+    const ack = refuse(g, at(1000, 3000));
+    await turns();
+    f.time(5000, 5010); expect(g.state(A, "gmail-api")).toEqual({ kind: "ready" });
+    f.time(4000, 5020); g.state(A, "gmail-api");
+    release();
+    expect(await ack).toBe("committed");
+    await g.drain(5000);
+    expect(g.resources().tickets).toBe(0);
+    // confirmed, the step is repaired on the next read
+    f.time(4000, 5030);
+    expect(g.state(A, "gmail-api")).not.toEqual({ kind: "hold", reason: "clock" });
+    await g.close();
+  });
+
+  it("a bind never takes the writer from a flush that started after it waited", async () => {
+    const f = fixture();
+    let release!: () => void, holding = false;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const g = await f.open({ read: f.port.read, update: async (fn) => { if (holding) { holding = false; await held; } return f.port.update(fn); } });
+    const settled = (g as unknown as { settled(): Promise<boolean> }).settled.bind(g);
+    let first = true;
+    (g as unknown as { settled(): Promise<boolean> }).settled = async () => {
+      const ok = await settled();
+      if (first) { first = false; holding = true; const t = g.requestsFor(A).reserve(gmail); void t.dispatch(async () => new Response(null, { status: 429 })); void t.headers429(at(1000, 3000)); t.release(); }
+      return ok;
+    };
+    let bound = false;
+    expect(await g.bind(async () => { bound = true; return true; })).toBe("unconfirmed");
+    expect(bound).toBe(false);
+    expect(g.resources().writer).toBe(true);
+    release(); await g.drain(5000);
+    await g.close();
+  });
+
+  it("a ledger first read by a recovery runs what a start does on load", async () => {
+    const f = fixture();
+    let broken = true, loaded = 0;
+    const g = await ProviderCooldown.open({ read: async () => { if (broken) throw new Error("Synthetic read failure"); return f.port.read(); }, update: f.port.update }, { wallNow: () => 1000, elapsedNow: () => 10, random: () => 0.5 }, { loaded: () => { loaded++; } });
+    broken = false;
+    await g.retry(); await turns();
+    expect(loaded).toBe(1);
+    await g.retry(); await turns();
+    expect(loaded).toBe(1);
+    await g.close();
+  });
+});

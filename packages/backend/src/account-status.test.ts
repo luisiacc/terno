@@ -111,3 +111,21 @@ it("a fact arriving as the persistence promise completes is also durably drained
   expect(status.project()).toMatchObject({ status: "error" });
   expect(writes).toEqual(["syncing", "error"]);
 });
+
+it("plan 264 (Codex review): a keychain refusal never hides the server's, and its local recovery lifts only itself", async () => {
+  const status = new AccountStatus({ initial, generation: () => 1, write: async () => {}, changed() {} });
+  const authority = { generation: 1, live: () => true };
+  await status.refuse(authority, { message: "Revoked", i18n: { key: "errors.gmail.revoked" } });
+  const keychain = { message: "Keychain", i18n: { key: "errors.secret.keychain.googleSession" } };
+  await status.refuse(authority, keychain);
+  expect(status.refusalKey).toBe("errors.gmail.revoked");
+  await status.localRecoveryProof(authority)();
+  expect(status.signInRequired).toBe(true);
+  // the keychain's own refusal lifts, and a policy pause beside it stays
+  const local = new AccountStatus({ initial, generation: () => 1, write: async () => {}, changed() {} });
+  await local.forbid(authority, local.policyRevision, { message: "Enable Gmail" });
+  await local.refuse(authority, keychain);
+  await local.localRecoveryProof(authority)();
+  expect(local.signInRequired).toBe(false);
+  expect(local.policyPaused).toBe(true);
+});

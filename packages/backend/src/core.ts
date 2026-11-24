@@ -626,25 +626,18 @@ export class BackendCore {
 
   private async init(): Promise<void> {
     await this.store.ready;
-    // plan 264: the start compacts the ledger against the accounts that exist (removed ones' bindings, retired pauses)
-    const live = new Set<string>();
-    for (const account of await this.store.accounts.list()) {
-      const stamp = await this.store.accounts.stamp(account.id);
-      if (stamp) live.add(`${stamp.id}/${stamp.createdAt}`);
-    }
-    this.cooldown = await ProviderCooldown.open(this.store.providerCooldown, { wallNow: () => this.now(), elapsedNow: () => performance.now(), random: () => Math.random() }, { changed: () => this.cooldownChanged() }, (id, createdAt) => live.has(`${id}/${createdAt}`));
-    // A hold (plan 62: a clock check, or evidence it couldn't resolve) is only lifted by Check clock, and no
-    // control for it ships: each start lifts them, re-waiting each hold's full retained pause from now
-    // (nothing is released early). In batches below the gate's write slots, drained between.
-    const lifted = this.options.checkClockOnStart === false ? 0 : await this.cooldown.liftHolds();
-    if (lifted) {
-      const wait = this.cooldown.nextWakeDelay();
-      this.log("info", `${lifted} held Google pause(s) were lifted; ${wait === null ? "nothing waits" : `requests resume in ${Math.ceil(wait / 1000)} s`}`);
-    }
-    for (const id of this.cooldown.boundAccountIds()) {
-      const stamp = await this.store.accounts.stamp(id);
-      if (stamp) this.cooldownAccounts.set(id, { ...stamp, kind: (await this.store.accounts.get(id))?.kind ?? "" });
-    }
+    // plan 264: the start compacts the ledger against the accounts that exist (removed ones' bindings, retired pauses);
+    // an inventory that can't be read just now leaves it as it is (a start's job, never a reason not to start)
+    let live: Set<string> | undefined = new Set<string>();
+    try {
+      for (const account of await this.store.accounts.list()) {
+        const stamp = await this.store.accounts.stamp(account.id);
+        if (stamp) live.add(`${stamp.id}/${stamp.createdAt}`);
+      }
+    } catch { live = undefined; }
+    const accounts = live;
+    this.cooldown = await ProviderCooldown.open(this.store.providerCooldown, { wallNow: () => this.now(), elapsedNow: () => performance.now(), random: () => Math.random() }, { changed: () => this.cooldownChanged(), loaded: () => void this.cooldownLoaded(true).catch(() => {}) }, accounts && ((id, createdAt) => accounts.has(`${id}/${createdAt}`)));
+    await this.cooldownLoaded();
     // plan 211: before any worker asks
     this.gate.set(await this.store.accounts.list());
     await this.categorizer.load();
@@ -653,6 +646,26 @@ export class BackendCore {
       log.info("ops.recovered", { count: recovered.requeued + recovered.unknown });
       this.log("info", "recovered ops after restart", recovered);
     }
+  }
+
+  /**
+   * What a start does with the Google ledger once it is read (plan 264: at once, or when a recovery reads it after the
+   * start's read failed). A hold (plan 62: a clock check, or evidence it couldn't resolve) is only lifted by Check clock,
+   * and no control for it ships: each start lifts them, re-waiting each hold's full retained pause from now (nothing is
+   * released early). In batches below the gate's write slots, drained between.
+   */
+  private async cooldownLoaded(late = false): Promise<void> {
+    const cooldown = this.cooldown!;
+    const lifted = this.options.checkClockOnStart === false ? 0 : await cooldown.liftHolds();
+    if (lifted) {
+      const wait = cooldown.nextWakeDelay();
+      this.log("info", `${lifted} held Google pause(s) were lifted; ${wait === null ? "nothing waits" : `requests resume in ${Math.ceil(wait / 1000)} s`}`);
+    }
+    for (const id of cooldown.boundAccountIds()) {
+      const stamp = await this.store.accounts.stamp(id);
+      if (stamp) this.cooldownAccounts.set(id, { ...stamp, kind: (await this.store.accounts.get(id))?.kind ?? "" });
+    }
+    if (late) this.cooldownChanged();
   }
 
   private cooldownChanged(): void {
