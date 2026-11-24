@@ -58,6 +58,8 @@ export const en = {
       title: "No account. No cloud. Just your Mac.",
       body: "Your mail syncs between your Mac and your mail servers, never through ours. Your mail, contacts and search index live on your Mac.",
       points: ["Private from the first launch", "Remote images only when you ask", "Zero tracking"],
+      /** the picture of where it all lives (Midnight): your Mac, your mail servers, and no server of ours between them */
+      map: { mac: "Your Mac", kept: { mail: "Mail", contacts: "Contacts", index: "Search index" }, link: "Synced directly", servers: "Your mail servers", providers: "Gmail · Outlook · IMAP", ours: "No Terno server in between" },
     },
     search: {
       title: "Instant search.",

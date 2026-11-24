@@ -225,3 +225,11 @@ The owner: "we need to retake all pictures of the marketing site because we made
 - **Crisper:** WebP at quality 92 with `-sharp_yuv` (was 82/86), so colored text and hairlines don't bleed through WebP's half-resolution chroma.
 - The AI pictures were retaken on real models (`shots:ai --fresh`; "Reply ready" asked again until its draft had one gap) and the two from the AI demo (`shots:demo`) on a copy of its profile.
 - **Codex review (three points, fixed):** Reply ready's foot (Use as draft, Dismiss, Written with AI) fell below the 800 px window once the draft was shown whole, so the window grows to the card's foot for that picture (at most 1000 px). `.shots-raw-ai/` records the window it was taken in (`window.json`) and starts empty when that changes, so a kept picture from another window never goes out under this one's crops. `render.test.ts` holds each section picture inside its own source window on both axes (the shortcuts sheet's is the taller one).
+
+## Midnight's two empty cells (2026-11-23)
+
+The owner: "we have these spaces on the marketing page that i don't like, because its too much white space, lets do something about those 2 places": the local card beside the unified inbox, and the triage card beside search.
+
+- **Local:** the two small nodes became a picture of where mail lives that takes the card's height (`LocalMap`): your Mac and what it keeps (mail, contacts, the search index), a wire straight to your mail servers (Gmail · Outlook · IMAP), and a dashed line under them, "No Terno server in between". The words are the copy's (`features.local.map`, en and es; the card's text says the same, so the picture is hidden from screen readers). On a phone and at two columns it stacks the same way, its wire short.
+- **Triage:** the snackbar alone was 181 px tall beside a 450 px search. The picture is now the filed newsletter (its subject, the Reading chip) with the offer under it, taken in a 510 px window (`file-similar-short`, a section-only shot) so the snackbar sits just under the reply bar. Search shows three results, not four, so the two read as a pair.
+- **Tests:** `render.test.ts` checks the local picture's words in both languages, and that it's hidden from screen readers.

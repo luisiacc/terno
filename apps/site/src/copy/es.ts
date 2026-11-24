@@ -55,6 +55,7 @@ export const es: SiteCopy = {
       title: "Sin cuenta. Sin nube. Solo tu Mac.",
       body: "Tu correo se sincroniza entre tu Mac y tus servidores de correo, nunca a través de los nuestros. Tu correo, tus contactos y el índice de búsqueda viven en tu Mac.",
       points: ["Privado desde el primer momento", "Imágenes remotas solo si las pides", "Cero rastreo"],
+      map: { mac: "Tu Mac", kept: { mail: "Correo", contacts: "Contactos", index: "Índice de búsqueda" }, link: "Sincronización directa", servers: "Tus servidores de correo", providers: "Gmail · Outlook · IMAP", ours: "Sin servidores de Terno en medio" },
     },
     search: {
       title: "Búsqueda instantánea.",

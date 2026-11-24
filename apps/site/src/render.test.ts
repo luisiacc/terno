@@ -63,6 +63,17 @@ describe("screenshots", () => {
     expect(doc.querySelector("dialog[data-lightbox]")).not.toBeNull();
   });
 
+  it("Midnight's local card pictures where mail lives, in each language: the Mac and what it keeps, the mail servers, no server of Terno's", () => {
+    for (const [path, copy] of [["/", COPY.en], ["/es/", COPY.es]] as const) {
+      const page = new JSDOM(render(routes().find((r) => r.path === path)!).body).window.document;
+      const card = [...page.querySelectorAll("article")].find((a) => a.querySelector("h3")?.textContent === copy.features.local.title)!;
+      const map = card.querySelector("[data-local-map]")!;
+      expect(map.getAttribute("aria-hidden"), path).toBe("true");
+      const m = copy.features.local.map;
+      for (const words of [m.mac, ...Object.values(m.kept), m.link, m.servers, m.providers, m.ours]) expect(map.textContent, `${path} ${words}`).toContain(words);
+    }
+  });
+
   it("a design that shows one part of the app shows a section picture of it, never a window moved behind a frame", () => {
     const parts: Record<string, string[]> = {
       "/designs/lumen/": ["unified", "triage", "archive", "code", "palette", "snippets"],

@@ -31,6 +31,8 @@ interface Shot {
   /** what to do before the picture; returns the element to frame (the window when nothing) */
   setup?: (page: Page) => Promise<string | void>;
   viewport?: { width: number; height: number };
+  /** only its section pictures: the window itself isn't one of the site's pictures */
+  detailsOnly?: boolean;
   /** section pictures of this state, each framed from the elements it shows: `<name>-detail` */
   details?: Record<string, (page: Page) => Promise<Box>>;
 }
@@ -58,6 +60,23 @@ async function open(page: Page, subject: string) {
 }
 async function blur(page: Page) {
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+}
+
+/** the window the triage picture is taken in: the snackbar a little under the reply bar, no empty pane between */
+const TRIAGE_HEIGHT = 510;
+
+/** a newsletter filed in Reading (l), and the offer to file everything like it opened */
+async function fileSimilar(p: Page) {
+  await open(p, "Issue 212: The quiet interface");
+  await blur(p);
+  await p.keyboard.press("l");
+  await p.getByTestId("category-picker").waitFor();
+  await p.getByTestId("category-picker").getByText("Reading", { exact: true }).click();
+  await p.getByTestId("category-snackbar").waitFor();
+  await p.getByTestId("snackbar-similar").click();
+  await p.locator("[data-testid=snack-dock]").getByText(/Fieldnotes/).first().waitFor();
+  await blur(p);
+  await p.waitForTimeout(800);
 }
 
 const SHOTS: Shot[] = [
@@ -98,7 +117,8 @@ const SHOTS: Shot[] = [
       await p.waitForTimeout(400);
     },
     // the field, what it found and the first results
-    details: { search: async (p) => around([p.getByTestId("search-button"), rows(p, 3)], { pad: 0, x: await listPane(p), top: 0 }) },
+    // three results: as tall as the triage picture beside it in Midnight's grid
+    details: { search: async (p) => around([p.getByTestId("search-button"), rows(p, 2)], { pad: 0, x: await listPane(p), top: 0 }) },
   },
   {
     name: "palette",
@@ -138,21 +158,21 @@ const SHOTS: Shot[] = [
     },
     details: { archive: (p) => around([p.getByTestId("snack")], { pad: PAD }) },
   },
+  { name: "file-similar", setup: fileSimilar },
   {
-    name: "file-similar",
-    setup: async (p) => {
-      await open(p, "Issue 212: The quiet interface");
-      await blur(p);
-      await p.keyboard.press("l");
-      await p.getByTestId("category-picker").waitFor();
-      await p.getByTestId("category-picker").getByText("Reading", { exact: true }).click();
-      await p.getByTestId("category-snackbar").waitFor();
-      await p.getByTestId("snackbar-similar").click();
-      await p.locator("[data-testid=snack-dock]").getByText(/Fieldnotes/).first().waitFor();
-      await blur(p);
-      await p.waitForTimeout(800);
+    // the filed newsletter and what Terno offers under it, in one picture: a shorter window brings the snackbar up to
+    // the message (in the full one, the empty pane between them is most of the frame)
+    name: "file-similar-short",
+    detailsOnly: true,
+    viewport: { width: VIEWPORT.width, height: TRIAGE_HEIGHT },
+    setup: fileSimilar,
+    details: {
+      triage: async (p) => {
+        const box = await around([p.getByTestId("reader-subject"), p.getByTestId("snack")], { pad: PAD + 8, window: { width: VIEWPORT.width, height: TRIAGE_HEIGHT } });
+        // closer above the title: the toolbar's buttons end just over it
+        return { ...box, y: box.y + 10, height: box.height - 10 };
+      },
     },
-    details: { triage: (p) => around([p.getByTestId("snack")], { pad: PAD }) },
   },
   {
     name: "shortcuts",
@@ -182,7 +202,7 @@ async function main() {
     const browser = await chromium.launch();
     cleanup.push(() => browser.close());
     for (const shot of SHOTS) {
-      const pictures = [shot.name, ...Object.keys(shot.details ?? {}).map((d) => `${d}-detail`)];
+      const pictures = [...(shot.detailsOnly ? [] : [shot.name]), ...Object.keys(shot.details ?? {}).map((d) => `${d}-detail`)];
       const wanted = (name: string) => !only || only.includes(name);
       if (!pictures.some(wanted)) continue;
       for (const mode of shot.modes ?? (["light", "dark"] as const)) {
@@ -200,7 +220,7 @@ async function main() {
           await page.addStyleTag({ content: "*{caret-color:transparent!important}" });
           await page.mouse.move((shot.viewport ?? VIEWPORT).width - 1, (shot.viewport ?? VIEWPORT).height - 1);
           const file = join(raw, `${shot.name}-${mode}.png`);
-          if (wanted(shot.name)) {
+          if (!shot.detailsOnly && wanted(shot.name)) {
             if (target) await page.locator(target).screenshot({ path: file });
             else await page.screenshot({ path: file });
           }

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { SiteCopy } from "../copy";
 import { DownloadMac, WaitlistLink } from "../parts/download";
-import { Check, ChevronRight, Github, Languages, Mails } from "../parts/icons";
+import { Check, ChevronRight, Github, Inbox, Languages, Mails, Search, Users, X } from "../parts/icons";
 import { Kbd } from "../parts/kbd";
 import { Logo } from "../parts/logo";
 import { AgentSession, agentsPrivacyLink } from "../parts/agents";
@@ -63,6 +63,58 @@ function Section({ name, copy, sizes, className = "mt-auto" }: { name: ShotName;
   return (
     <div className={`relative overflow-hidden rounded-xl border border-(--mn-line) bg-(--mn-shot) ${className}`}>
       <Shot name={name} copy={copy} sizes={sizes} className="block h-auto w-full" />
+    </div>
+  );
+}
+
+/**
+ * Where your mail lives, as a picture that takes the card's height (it sits beside the unified inbox): your Mac and what
+ * it keeps, a wire straight to your mail servers, and no server of Terno's between them. The card's words say the
+ * same, so it's hidden from screen readers.
+ */
+/** what the Mac keeps, each with its icon */
+const KEPT = { mail: Inbox, contacts: Users, index: Search } as const satisfies Record<keyof SiteCopy["features"]["local"]["map"]["kept"], unknown>;
+
+function LocalMap({ m }: { m: SiteCopy["features"]["local"]["map"] }) {
+  return (
+    <div className="mt-auto flex flex-1 flex-col" aria-hidden="true" data-local-map>
+      <div className="rounded-xl border border-(--mn-line) bg-(--mn-raised) p-5">
+        <p className="flex items-center gap-3 font-medium text-(--mn-fg)">
+          <span className="mn-node">
+            <Logo size={28} />
+          </span>
+          {m.mac}
+        </p>
+        <ul className="mt-4 divide-y divide-(--mn-line) border-t border-(--mn-line) text-sm text-(--mn-muted)">
+          {(Object.keys(KEPT) as (keyof typeof KEPT)[]).map((k) => {
+            const Icon = KEPT[k];
+            return (
+              <li key={k} className="flex items-center gap-3 py-2.5 last:pb-0">
+                <Icon size="1.15em" className="text-(--mn-dim)" />
+                {m.kept[k]}
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+      {/* the wire runs down from the Mac's node to the servers' (both 44 px, inside a 1 px border and 20 px of padding) */}
+      <div className="flex min-h-14 flex-1 items-center gap-3 ps-[42px]">
+        <span className="mn-wire-v self-stretch" />
+        <span className="font-mono text-[0.72rem] text-(--mn-dim)">{m.link}</span>
+      </div>
+      <div className="flex items-center gap-3 rounded-xl border border-(--mn-line) bg-(--mn-raised) p-5">
+        <span className="mn-node">
+          <Mails size={18} />
+        </span>
+        <span>
+          <span className="block font-medium text-(--mn-fg)">{m.servers}</span>
+          <span className="mt-0.5 block font-mono text-[0.72rem] text-(--mn-dim)">{m.providers}</span>
+        </span>
+      </div>
+      <p className="mt-3 flex items-center gap-2.5 rounded-xl border border-dashed border-(--mn-line) px-5 py-3.5 font-mono text-[0.72rem] text-(--mn-dim)">
+        <X size="1.15em" className="shrink-0" />
+        {m.ours}
+      </p>
     </div>
   );
 }
@@ -282,15 +334,7 @@ export const Midnight: HomeDesign = ({ copy, route }) => {
               <Section name="unified-detail" copy={copy} sizes="(min-width: 1024px) 700px, (min-width: 640px) 90vw, 470px" className="site-wide site-wide-end mt-auto" />
             </Card>
             <Card f={f.local} className="md:col-span-2 lg:col-span-2">
-              <div className="mn-local mt-auto flex items-center justify-between gap-3 rounded-xl border border-(--mn-line) bg-(--mn-raised) px-5 py-6" aria-hidden="true">
-                <span className="mn-node">
-                  <Logo size={28} />
-                </span>
-                <span className="mn-wire" />
-                <span className="mn-node">
-                  <Mails size={18} />
-                </span>
-              </div>
+              <LocalMap m={f.local.map} />
             </Card>
             <Card f={f.search} className="lg:col-span-3">
               <Section name="search-detail" copy={copy} sizes={half} />

@@ -170,9 +170,9 @@ html[data-design="midnight"] .mn-node {
   display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; color: var(--mn-muted);
   background: var(--mn-bg); box-shadow: 0 0 0 1px var(--mn-line);
 }
-html[data-design="midnight"] .mn-wire {
-  flex: 1; height: 1px;
-  background: repeating-linear-gradient(90deg, var(--mn-accent) 0 6px, transparent 6px 11px);
+html[data-design="midnight"] .mn-wire-v {
+  width: 1px; flex-shrink: 0;
+  background: repeating-linear-gradient(180deg, var(--mn-accent) 0 6px, transparent 6px 11px);
   opacity: 0.7;
 }
 
