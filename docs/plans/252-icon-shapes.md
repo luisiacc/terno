@@ -28,8 +28,8 @@ So a circle logo becomes a circle inside a circle, a full-bleed square a small t
 
 **Drawing** (`SenderIcon`): the image is placed so its content box is centered on the disc, by size and a `translate` in its own percentages (so a size cap needs no other arithmetic):
 
-- **fill** (and `px ≥ 32`, so a 16 px favicon isn't blown up): the content box spans the whole disc, clipped by the avatar's circle; no plate.
-- **mark**: the content box's longer side is 62 % of the disc (was 50 % of the whole image, padding included), at least 14 px, on the muted plate, still at most twice the image's own pixels, with the dark-mode halo.
+- **fill** (and `px ≥ 32`, so a 16 px favicon isn't blown up): the content box spans a disc of 74 % of the avatar, inset on the plate (see the revision below; first built edge to edge).
+- **mark**: the content box's longer side is 48 % of the disc (first built at 62 %) (was 50 % of the whole image, padding included), at least 14 px, on the muted plate, still at most twice the image's own pixels, with the dark-mode halo.
 - photos: unchanged.
 
 Every surface with a `SenderAvatar` gets this (rows, reader, What matters), since all share the component.
@@ -62,3 +62,12 @@ The plan critique didn't run (Codex hung at startup and was stopped); the code r
 - **E2E** picks each sender's row by name after the search settles, and Figma's ring is off center, so a wrong offset can't pass.
 
 Not taken: a tiny contrasting badge in a tile's corner (rare in fetched icons), a per-segment ring sample (a white rim on a colored disc reads fine as is), real ICO/SVG fixtures (Chromium keeps a viewBox-only SVG's aspect, checked).
+
+## Revision: the owner's sizes (variant E)
+
+The first build (circles and squares filling the whole avatar, marks at 62 %) looked too big to the owner. Six variants were compared on real icons (LinkedIn, Coinbase, Google, Sentry, OpenAI, GitHub, Figma, Stripe, Airbnb, Notion, Rappi) in light and dark; the owner chose **E**:
+
+- a circle or a square whose mark sits inside the circle is **a disc of its own at 74 % of the avatar, inset on the muted plate** (cropped as before, its hairline on that disc), so every avatar keeps the plate's edge and a brand's color doesn't outweigh the names;
+- a mark's drawn part is **48 %** of the avatar (padding trimmed; the 14 px floor and two-times cap stay).
+
+Not taken: full-bleed discs (B, C), 84 / 52 (D), each logo in its own shape at 64 % (F), and plan 158's untrimmed 50 % (A).

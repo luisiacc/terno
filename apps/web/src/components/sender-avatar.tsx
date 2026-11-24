@@ -36,8 +36,9 @@ export function SenderAvatar({ name, email, className, icon = false, person = fa
   );
 }
 
-/** Plan 252: a mark's longer side, as a share of the disc */
-const MARK = 0.62;
+/** Plan 252 (the owner chose these from six variants): a mark's longer side, and a filled icon's disc, as shares of the avatar */
+const MARK = 0.48;
+const FILL = 0.74;
 /** below this many of its own pixels across, what an icon draws is too coarse to fill the disc: it stays a mark */
 const FILL_MIN_PX = 32;
 /** a mark is never drawn smaller than this, on the smallest avatars (What matters' sentence) */
@@ -46,9 +47,10 @@ const MARK_MIN_PX = 14;
 /**
  * The icon layer: always there (it's what the visibility observer watches), empty until an icon
  * arrives. A photo fills the circle. A website's icon is drawn by what it shows (plan 252), its own
- * padding trimmed: a circle, or a square whose mark sits inside the circle, fills the disc (a hairline
- * when its edge is white or black); anything else is a mark on a muted plate, the same disc and size as
- * initials, at no more than twice its own pixels so a 16 px one stays crisp. A faint halo keeps a dark
+ * padding trimmed, on a muted plate the same disc and size as initials: a circle, or a square whose mark sits
+ * inside the circle, is a disc of its own inset on the plate (a hairline when its edge is white or black), so
+ * every avatar keeps the plate's edge and a brand's color doesn't outweigh the names; anything else is a mark,
+ * at no more than twice its own pixels so a 16 px one stays crisp. A faint halo keeps a dark
  * mark's edge on that plate. It fades in (within --motion) only when it arrives after the avatar showed;
  * one already loaded shows at once (scrolling back through a list doesn't flicker).
  */
@@ -64,6 +66,20 @@ const SenderIcon = memo(function SenderIcon({ email, person }: { email: string; 
   const photo = icon?.ref.kind === "photo";
   // the drawn part's own pixels, not the image's: a small circle in a padded favicon is still small
   const fill = !photo && icon !== null && icon.fit.fill && icon.ref.px * Math.min(icon.fit.box[2], icon.fit.box[3]) >= FILL_MIN_PX;
+  const image = icon && (
+    <img
+      key={icon.url}
+      src={icon.url}
+      alt=""
+      draggable={false}
+      decoding="async"
+      referrerPolicy="no-referrer"
+      onLoad={() => setLoaded(true)}
+      onError={() => iconFailed(email)}
+      className={cn(photo ? "size-full object-cover" : "absolute top-1/2 left-1/2 aspect-square max-w-none object-contain", !photo && !fill && "dark:drop-shadow-[0_0_0.5px_var(--muted-foreground)]", fade && "transition-opacity duration-base", fade && !loaded && "opacity-0")}
+      style={photo ? undefined : fill ? placed(icon.fit.box, "fill") : placed(icon.fit.box, "mark", Math.max(16, icon.ref.px) * 2)}
+    />
+  );
   return (
     <span
       ref={ref}
@@ -73,30 +89,26 @@ const SenderIcon = memo(function SenderIcon({ email, person }: { email: string; 
       className={cn(
         "pointer-events-none absolute inset-0 overflow-hidden rounded-full",
         icon && !photo && "bg-muted",
-        // over the image, so a white disc keeps its edge on a white card
-        fill && icon.fit.ring && "after:absolute after:inset-0 after:rounded-full after:shadow-[inset_0_0_0_var(--hairline-w)_var(--border)]",
       )}
     >
-      {icon && (
-        <img
-          key={icon.url}
-          src={icon.url}
-          alt=""
-          draggable={false}
-          decoding="async"
-          referrerPolicy="no-referrer"
-          onLoad={() => setLoaded(true)}
-          onError={() => iconFailed(email)}
-          className={cn(photo ? "size-full object-cover" : "absolute top-1/2 left-1/2 aspect-square max-w-none object-contain", !photo && !fill && "dark:drop-shadow-[0_0_0.5px_var(--muted-foreground)]", fade && "transition-opacity duration-base", fade && !loaded && "opacity-0")}
-          style={photo ? undefined : fill ? placed(icon.fit.box, "fill") : placed(icon.fit.box, "mark", Math.max(16, icon.ref.px) * 2)}
-        />
+      {icon && fill ? (
+        <span
+          data-testid="sender-icon-disc"
+          // the ring over the image, so a white disc keeps its edge on the plate
+          className={cn("absolute top-1/2 left-1/2 aspect-square -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-full", icon.fit.ring && "after:absolute after:inset-0 after:rounded-full after:shadow-[inset_0_0_0_var(--hairline-w)_var(--border)]")}
+          style={{ width: `${FILL * 100}%` }}
+        >
+          {image}
+        </span>
+      ) : (
+        image
       )}
     </span>
   );
 });
 
 /**
- * The image placed so its content box is centered on the disc: a fill's shorter side spans the disc (the crop
+ * The image placed so its content box is centered in its frame: a fill's shorter side spans its inset disc (the crop
  * the classifier approved, no crescent left on a near square); a mark's longer side is MARK of it, at least
  * MARK_MIN_PX and at most `cap` px for the whole image (the two-times rule). Its width is in the disc's
  * percentages, then a translate in the image's own, which holds whatever the floor or cap made the width.

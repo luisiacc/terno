@@ -61,20 +61,22 @@ test.describe("sender icons", () => {
     expect(new Set(pages).size).toBe(pages.length);
     expect(server.icons.requests.some((u) => /gmail\.com|outlook\.com|hotmail\.com|icloud\.com/.test(new URL(u).hostname))).toBe(false);
     expect(server.icons.requests.every((u) => !new URL(u).search)).toBe(true);
-    // plan 252: drawn by its shape, its drawn part centered on the disc: a circle (Linear) and a full-bleed touch
-    // icon (GitHub) fill it; a glyph with holes (Figma's ring, 80 % of its image, centered at 42 % of it) is a mark
-    // whose drawn part is 62 % of the disc
+    // plan 252: drawn by its shape, its drawn part centered on the avatar: a circle (Linear) and a full-bleed touch
+    // icon (GitHub) are a disc of 74 % of it, inset on the plate; a glyph with holes (Figma's ring, 80 % of its image,
+    // centered at 42 % of it) is a mark whose drawn part is 48 % of it
     if (d.variants.row !== "classic") {
       for (const [q, name, fit, share, center] of [
-        ["from:linear.app", "Linear", "fill", 1, 0.5],
-        ["from:github.com", "GitHub", "fill", 1, 0.5],
-        ["from:figma.com", "Figma", "mark", 0.62 / 0.8, 0.42],
+        ["from:linear.app", "Linear", "fill", 0.74, 0.5],
+        ["from:github.com", "GitHub", "fill", 0.74, 0.5],
+        ["from:figma.com", "Figma", "mark", 0.48 / 0.8, 0.42],
       ] as const) {
         await search(page, q);
         const row = rows(page).filter({ hasText: name }).first();
         await expect(rows(page).filter({ hasNotText: name })).toHaveCount(0);
         const icon = row.getByTestId("sender-icon");
         await expect(icon).toHaveAttribute("data-icon-fit", fit);
+        // a fill's inset disc keeps the plate's edge around it
+        await expect(icon.getByTestId("sender-icon-disc")).toHaveCount(fit === "fill" ? 1 : 0);
         const disc = (await row.getByTestId("sender-avatar").boundingBox())!;
         const img = (await icon.locator("img").boundingBox())!;
         // (measured on a 48 px square: within a pixel of it)
