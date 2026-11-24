@@ -368,12 +368,15 @@ describe("plan 227: changes during a first sync", () => {
     expect(t.cursor().reconciliation).toMatchObject({ peek: "105" });
   });
 
-  it.each(["repeated page", "too many references"] as const)("history the look can't finish (%s) starts it again from now, not the same history every chunk", async (kind) => {
+  // plan 260 (Codex critique): a message named without a change type may be an arrival the look can't place; the catch-up
+  // must still start at the baseline, so the look can't move the refresh's cut past it
+  it.each(["repeated page", "too many references", "a message with no change type"] as const)("history the look can't finish (%s) starts it again from now, not the same history every chunk", async (kind) => {
     let history = false;
     const t = listing({
       historyId: () => (history ? "300" : "100"),
       history: (url) => {
         if (!history) return { historyId: "100" };
+        if (kind === "a message with no change type") return { historyId: "105", history: [{ messages: [{ id: "m-arrived" }] }] };
         if (kind === "repeated page") return { historyId: "105", history: [relabeled(["m00001"])], nextPageToken: "again" };
         // 2,000 references a page (the most a page holds), six pages: past what a look reads
         const page = Number(url.searchParams.get("pageToken") ?? 0);

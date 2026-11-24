@@ -21,7 +21,7 @@ afterEach(async () => {
 async function mailbox(kind: "SQL" | "IndexedDB", retries = false) {
   const baseline = "90071992547409930000";
   let historyId = BigInt(baseline);
-  const messages = new Map<string, { id: string; threadId: string; labelIds: string[]; raw: string }>();
+  const messages = new Map<string, { id: string; threadId: string; labelIds: string[]; raw: string; internalDate?: string }>();
   const history: { id: string; messagesAdded?: { message: { id: string } }[]; messagesDeleted?: { message: { id: string } }[]; labelsAdded?: { message: { id: string } }[]; labelsRemoved?: { message: { id: string } }[] }[] = [];
   let abort = new AbortController();
   const requests: URL[] = [], ingested: { id: string; live: boolean }[] = [];
@@ -241,7 +241,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s public Gmail full-sync catch-up
     if (mode === "minimal") {
       t.minimalPayload((value) => ({ ...(value as object), ignored: "x".repeat(70_000) }));
       t.historyPayload(() => ({ historyId: String(BigInt(t.baseline) + 1n), history: [{ labelsAdded: [{ message: { id: "archive" } }] }] }));
-    } else t.historyPayload(() => ({ historyId: t.baseline, history: [{ messages: [{ id: "archive" }] }] }));
+    } else t.historyPayload(() => ({ historyId: t.baseline, history: [{ labelsRemoved: Array.from({ length: 2001 }, () => ({ message: { id: "archive" } })) }] }));
     await t.backend.syncAccount(t.account.id);
     expect(t.retryTimer).not.toHaveBeenCalled();
     expect((await t.backend.store.accounts.get(t.account.id))?.syncState.lastError).toBeTruthy();
@@ -369,7 +369,76 @@ describe.each(["SQL", "IndexedDB"] as const)("%s public Gmail full-sync catch-up
     await t.backend.syncAccount(t.account.id); await t.assertFinal();
   });
 
-  sqlite.each(["references", "bytes", "summary", "cycle", "pages", "traversal", "records", "token"] as const)("reconciles bounded history %s from a safe cursor across reopen", async (mode) => {
+  // plan 260 (TERNO-6): a record that names messages without a change type is read by ID; it never reconciles or fails
+  it("applies summary-only history by reading each message, without a reconciliation", async () => {
+    const t = await mailbox(kind);
+    t.seed();
+    await t.backend.syncAccount(t.account.id);
+    t.mutate();
+    const typed = (h: Record<string, unknown>) => (["messagesAdded", "messagesDeleted", "labelsAdded", "labelsRemoved"] as const).flatMap((k) => (h[k] as { message: { id: string } }[] | undefined) ?? []).map((c) => c.message);
+    t.historyPayload((page) => {
+      const p = page as { history: Record<string, unknown>[] };
+      return { ...p, history: p.history.map((h) => ({ id: h.id, messages: typed(h) })) };
+    });
+    t.requests.length = 0; t.ingested.length = 0;
+    await t.backend.syncAccount(t.account.id);
+    const account = await t.backend.store.accounts.get(t.account.id);
+    expect(account?.syncState).toMatchObject({ status: "idle", lastError: null });
+    expect(t.requests.some((r) => r.pathname === "/messages" || r.pathname === "/profile")).toBe(false);
+    // what's held is read minimal; what isn't comes in whole, not as live mail (only a typed addition says it's new)
+    expect(t.requests.filter((r) => r.pathname.startsWith("/messages/")).map((r) => `${r.pathname.slice(10)}:${r.searchParams.get("format")}`).sort())
+      .toEqual(["archive:minimal", "arrival:raw", "deleted:minimal", "read:minimal"]);
+    expect(t.ingested).toEqual([{ id: "arrival", live: false }]);
+    await t.assertFinal();
+    await t.reopen();
+    await t.assertFinal();
+  });
+
+  it("reads a message a typed record names without a typed change, and takes no unheld mail older than the window", async () => {
+    const t = await mailbox(kind);
+    t.seed();
+    await t.backend.syncAccount(t.account.id);
+    t.mutate();
+    // Gmail has old mail this account never held (outside its window); a change to it names it, and nothing else
+    t.add("old"); t.messages.get("old")!.internalDate = "86400000";
+    t.historyPayload((page) => {
+      const p = page as { history: Record<string, unknown>[] };
+      // one typed record also names the others in `messages`, with no typed change for them
+      return { ...p, history: [{ ...p.history[0], messages: [{ id: "arrival" }, { id: "archive" }, { id: "deleted" }, { id: "read" }, { id: "old" }] }] };
+    });
+    t.ingested.length = 0;
+    await t.backend.syncAccount(t.account.id);
+    expect((await t.backend.store.accounts.get(t.account.id))?.syncState).toMatchObject({ status: "idle", lastError: null });
+    expect(t.ingested).toEqual([{ id: "arrival", live: true }]);
+    await t.assertFinal();
+  });
+
+  it("replays summary-only history after a failure midway without a second insertion", async () => {
+    const t = await mailbox(kind);
+    t.seed();
+    await t.backend.syncAccount(t.account.id);
+    const old = await t.cursor();
+    t.mutate();
+    t.historyPayload((page) => {
+      const p = page as { history: Record<string, unknown>[] };
+      return { ...p, history: p.history.map((h) => ({ id: h.id, messages: (["messagesAdded", "messagesDeleted", "labelsAdded", "labelsRemoved"] as const).flatMap((k) => (h[k] as { message: { id: string } }[] | undefined) ?? []).map((c) => c.message) })) };
+    });
+    // the unheld arrival comes in, then reading a held one fails: nothing past the old cursor is claimed
+    t.getStatus("read", 400); t.ingested.length = 0;
+    await t.backend.syncAccount(t.account.id);
+    expect(await t.cursor()).toEqual(old);
+    expect(t.ingested).toEqual([{ id: "arrival", live: false }]);
+    const arrival = (await t.backend.store.debug.snapshot()).messages.find((m) => m.providerMsgId === "arrival")!;
+    t.getStatus("read", 200); await t.reopen(); t.requests.length = 0;
+    await t.backend.syncAccount(t.account.id);
+    // the replay finds the arrival held now: its labels are read, it isn't downloaded or inserted again
+    expect(t.requests.some((r) => r.pathname === "/messages/arrival" && r.searchParams.get("format") === "raw")).toBe(false);
+    expect(t.ingested).toEqual([{ id: "arrival", live: false }]);
+    expect((await t.backend.store.debug.snapshot()).messages.find((m) => m.providerMsgId === "arrival")?.id).toBe(arrival.id);
+    await t.assertFinal();
+  });
+
+  sqlite.each(["references", "bytes", "cycle", "pages", "traversal", "records", "token"] as const)("reconciles bounded history %s from a safe cursor across reopen", async (mode) => {
     const t = await mailbox(kind);
     t.seed();
     await t.backend.syncAccount(t.account.id);
@@ -382,7 +451,6 @@ describe.each(["SQL", "IndexedDB"] as const)("%s public Gmail full-sync catch-up
       if (mode === "records") return { historyId: t.terminal, history: Array.from({ length: 501 }, () => ({})) };
       if (mode === "traversal") return { historyId: t.terminal, nextPageToken: `page${calls}`, history: [{ labelsRemoved: Array.from({ length: 2000 }, () => ({ message: { id: "archive" } })) }] };
       if (mode === "bytes") return { historyId: t.terminal, ignored: "é".repeat(140_000) };
-      if (mode === "summary") return { historyId: t.terminal, history: [{ messages: [{ id: "arrival" }] }] };
       if (mode === "cycle" || mode === "pages") return { historyId: t.terminal, nextPageToken: mode === "cycle" ? "repeat" : `page${calls}` };
       return { historyId: t.terminal, history: [{ labelsRemoved: Array.from({ length: 2001 }, () => ({ message: { id: "archive" } })) }] };
     });

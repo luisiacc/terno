@@ -283,14 +283,12 @@ function readHistory(value: unknown): HistoryPage {
   let refs = 0;
   for (const h of entries) {
     if (!isRecord(h)) throw invalidResponse();
-    let typed = false;
     for (const key of ["messagesAdded", "messagesDeleted", "labelsAdded", "labelsRemoved"]) {
       const changes = h[key];
       if (changes === undefined) continue;
       if (!Array.isArray(changes)) throw invalidResponse();
       refs += changes.length;
       if (refs > HISTORY_PAGE_REFS) throw new HistoryOverflow();
-      typed ||= changes.length > 0;
       for (const change of changes) if (!isRecord(change) || !messageRef(change.message)) throw invalidResponse();
     }
     if (h.messages !== undefined) {
@@ -298,11 +296,21 @@ function readHistory(value: unknown): HistoryPage {
       refs += h.messages.length;
       if (refs > HISTORY_PAGE_REFS) throw new HistoryOverflow();
       if (!h.messages.every(messageRef)) throw invalidResponse();
-      // Summary-only records don't identify the effect. Re-enumeration owns their coverage.
-      if (h.messages.length && !typed) throw new HistoryOverflow();
+      // plan 260: a message named here without a typed change is read by ID (untyped()), not a reason to reconcile
     }
   }
   return value as unknown as HistoryPage;
+}
+
+/**
+ * Plan 260: the messages a record names in `messages` with no typed change for them. Google's typed fields "may
+ * duplicate" `messages`, so only these say nothing about how they changed (read by ID, never reconciled).
+ */
+function untyped(h: HistoryEntry): string[] {
+  if (!h.messages?.length) return [];
+  const typed = new Set<string>();
+  for (const changes of [h.messagesAdded, h.messagesDeleted, h.labelsAdded, h.labelsRemoved]) for (const c of changes ?? []) typed.add(c.message.id);
+  return h.messages.filter((m) => !typed.has(m.id)).map((m) => m.id);
 }
 
 function historyReferences(page: HistoryPage): number {
@@ -1119,6 +1127,9 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       if (page.nextPageToken !== undefined && (page.nextPageToken.length > LIST_TOKEN_MAX || pages.has(page.nextPageToken))) return lost();
       pageToken = continuation(page.nextPageToken, pages);
       if (earlierHistory(page.historyId, latest)) throw invalidResponse();
+      // plan 260 (Codex critique): a message named without a change type may be an arrival this look can't place; the
+      // catch-up then starts from the baseline (and reads it by ID) rather than after it
+      if (page.history?.some((h) => untyped(h).length)) return lost();
       for (const h of page.history ?? []) {
         for (const a of h.messagesAdded ?? []) added.add(a.message.id);
         for (const d of h.messagesDeleted ?? []) deleted.add(d.message.id);
@@ -1344,6 +1355,9 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     const added = new Set<string>();
     const changed = new Set<string>();
     const deleted = new Set<string>();
+    // plan 260: messages a record names without saying how they changed; read by ID below (Google's sync guide: only
+    // the labels might change, so labels and existence are all there is to read), never a reason to reconcile
+    const summary = new Set<string>();
     let pageToken: string | undefined;
     const pages = new Set<string>();
     let latest = cursor.historyId, references = 0, pageCount = 0;
@@ -1367,6 +1381,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         for (const d of h.messagesDeleted ?? []) deleted.add(d.message.id);
         for (const l of h.labelsAdded ?? []) changed.add(l.message.id);
         for (const l of h.labelsRemoved ?? []) changed.add(l.message.id);
+        for (const id of untyped(h)) summary.add(id);
       }
       latest = page.historyId;
       if (pageToken) { await new Promise<void>((resolve) => setTimeout(resolve, 0)); sink.check(); }
@@ -1386,6 +1401,21 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     // plan 41: what history added since the cursor is live mail (a full sync and the attachment re-fetch aren't)
     const live: SyncPass = { ...sink, ingest: (messages) => sink.ingest(messages, { live: true }) };
     for (let i = 0; i < toFetch.length; i += 50) await fetchFull(toFetch.slice(i, i + 50), live);
+    // plan 260: a summary-only message held here is relabelled (a 404 removes it); one not held comes in whole as a
+    // reconciliation would have brought it: within the account's window, and not live (only a typed addition says new)
+    const unheld: string[] = [];
+    let looked = 0;
+    for (const id of summary) {
+      if (++looked % 50 === 0) { await new Promise<void>((resolve) => setTimeout(resolve, 0)); sink.check(); }
+      if (deleted.has(id)) continue;
+      if (await known(id)) changed.add(id);
+      else if (!added.has(id)) unheld.push(id);
+    }
+    const windowed: SyncPass = { ...sink, ingest: async (messages, o) => {
+      const inWindow = messages.filter((m) => m.date >= sink.windowStart);
+      if (inWindow.length) await sink.ingest(inWindow, o);
+    } };
+    for (let i = 0; i < unheld.length; i += 50) await fetchFull(unheld.slice(i, i + 50), windowed);
 
     await relabel([...changed].filter((gid) => !deleted.has(gid)), sink, known, (gid) => deleted.add(gid));
     sink.check();
