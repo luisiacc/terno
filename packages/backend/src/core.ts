@@ -789,8 +789,10 @@ export class BackendCore {
     return this.admissionSnapshot = (async () => {
       const snapshot = await this.cooldown!.admission((id) => this.cooldownAccounts.get(id));
       const blocked = [...snapshot.blockedAccountIds, ...[...this.google].filter(([id, google]) => google.paused && !this.statuses.get(id)?.signInRequired).map(([id]) => id)];
-      const all = snapshot.blockAllGoogle || this.cooldown!.state("installation", "gmail-api").kind !== "ready";
-      return copyOpAdmission({ ...snapshot, blockGoogleSends: !this.net.googleAvailable("send"), blockGoogleBackground: !this.net.googleAvailable("background"), blockedAccountIds: blocked, blockAllGoogle: all || version !== this.cooldownVersion,
+      const gmail = snapshot.kinds.gmail;
+      const all = !!gmail?.all || this.cooldown!.state("installation", "gmail-api").kind !== "ready";
+      return copyOpAdmission({ ...snapshot, blockedAccountIds: blocked,
+        kinds: { ...snapshot.kinds, gmail: { unverified: !!gmail?.unverified, all: all || version !== this.cooldownVersion, sends: !this.net.googleAvailable("send"), background: !this.net.googleAvailable("background") } },
         // plan 107: an account changing its folders is passed by until it's done (the worker is kicked then)
         pausedAccountIds: [...this.folderChanges.keys()] });
     })();

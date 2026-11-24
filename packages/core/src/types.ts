@@ -23,6 +23,7 @@ export const signInMethod = (kind: AccountKind): SignInMethod => SIGN_IN[kind];
 export const OAUTH_SUBJECT = { gmail: "googleSubject", outlook: "microsoftSubject" } as const satisfies Partial<Record<AccountKind, string>>;
 export type OAuthKind = keyof typeof OAUTH_SUBJECT;
 export const isOAuthKind = (kind: string | null | undefined): kind is OAuthKind => kind === "gmail" || kind === "outlook";
+export const OAUTH_KINDS = Object.keys(OAUTH_SUBJECT) as readonly OAuthKind[];
 /** an exhaustive switch's default: a value no case handles is a type error */
 export function unhandled(value: never): never {
   throw new Error(`Unhandled: ${String(value)}`);

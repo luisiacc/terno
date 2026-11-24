@@ -107,7 +107,7 @@ describe("latent cooldown policy", () => {
     const tickets = policies.map((p) => p.reserve(gmail));
     expect(() => g.requestsFor(A).reserve(gmail)).toThrow(ProviderCooldownError);
     expect(g.resources()).toMatchObject({ tickets: 64, reservedBytes: 131072 });
-    expect((await g.admission(() => undefined)).blockAllGoogle).toBe(true);
+    expect((await g.admission(() => undefined)).kinds.gmail?.all).toBe(true);
     await Promise.all(tickets.map((t) => t.dispatch(async () => new Response(null, { status: 429 }))));
     const acks = tickets.map((t) => t.headers429(at(121000)));
     tickets.forEach((t) => t.release());
@@ -157,12 +157,12 @@ describe("latent cooldown delta", () => {
     const tickets = Array.from({ length: 64 }, () => policy.reserve(gmail));
     await turns();
     expect(f.wakes() - initial).toBe(1);
-    expect((await g.admission(() => undefined)).blockAllGoogle).toBe(true);
+    expect((await g.admission(() => undefined)).kinds.gmail?.all).toBe(true);
     expect(() => policy.check(gmail)).toThrow(ProviderCooldownError);
     const full = f.wakes();
     tickets[0]!.release(); await turns();
     expect(f.wakes() - full).toBe(1);
-    expect((await g.admission(() => undefined)).blockAllGoogle).toBe(false);
+    expect((await g.admission(() => undefined)).kinds.gmail?.all).toBe(false);
     expect(() => policy.check(gmail)).not.toThrow();
     const released = f.wakes(); tickets[0]!.release(); await turns();
     expect(f.wakes()).toBe(released);
@@ -483,10 +483,10 @@ describe("cooldown review unit", () => {
   it("R2 empty recovery wakes one reopening", async () => {
     const http = reviewNoHttp(), f = fixture(); let reads = 0;
     const g = await f.open({ read: async () => { if (++reads === 1) throw new Error("Synthetic initial load failure"); return f.port.read(); }, update: f.port.update });
-    await turns(); expect((await g.admission(() => undefined)).blockAllGoogle).toBe(true);
+    await turns(); expect((await g.admission(() => undefined)).kinds.gmail?.all).toBe(true);
     const wakes = f.wakes();
     expect(await g.recoverStorage()).toBe("confirmed"); await turns();
-    expect((await g.admission(() => undefined)).blockAllGoogle).toBe(false);
+    expect((await g.admission(() => undefined)).kinds.gmail?.all).toBe(false);
     expect(reads).toBe(2); expect(f.writes()).toBe(0); expect(f.samples()).toBe(0); expect(http()).toBe(0);
     expect(f.wakes() - wakes).toBe(1); expect(f.timers.size).toBe(0); expect(g.nextWakeDelay()).toBe(null);
   });
@@ -496,7 +496,7 @@ describe("cooldown review unit", () => {
     const g = await f.open({ read: async () => { reads++; return f.port.read(); }, update: f.port.update });
     await turns(); const wakes = f.wakes();
     expect(await g.recoverStorage()).toBe("confirmed"); await turns();
-    expect((await g.admission(() => undefined)).blockAllGoogle).toBe(false);
+    expect((await g.admission(() => undefined)).kinds.gmail?.all).toBe(false);
     expect(f.wakes() - wakes).toBe(0); expect(reads).toBe(2); expect(http()).toBe(0);
     expect(f.writes()).toBe(0); expect(f.samples()).toBe(0); expect(f.timers.size).toBe(0);
   });

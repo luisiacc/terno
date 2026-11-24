@@ -3,6 +3,7 @@ import { filterForwardChanged, forwardRuleGone } from "./forwards";
 import { assetError, bindFlagTarget, linkAssets, localFlagIntent, operationFlagFields, settleFlagEffects, validateAssets, type LocalFlagField } from "@terno/store";
 import { sqlFlags } from "./flag-intents";
 import { RpcError } from "@terno/core/rpc";
+import { OAUTH_KINDS } from "@terno/core";
 import { L } from "@terno/i18n";
 import { sqlAssets } from "./attachments";
 import {
@@ -451,11 +452,16 @@ const NOT_BLOCKED = `NOT EXISTS (
            WHERE mine.op_id = ops.id AND mine.grp = 'location'
              AND o2.seq < ops.seq AND o2.state IN ('queued', 'running'))`;
 
-const ADMITTED = `ops.account_id NOT IN (SELECT value FROM json_each(?)) AND NOT EXISTS (SELECT 1 FROM accounts a WHERE a.id = ops.account_id AND a.kind = 'gmail' AND
-  (? OR a.id IN (SELECT value FROM json_each(?)) OR (? AND a.id NOT IN (SELECT value FROM json_each(?))) OR (? AND ops.kind = 'send') OR (? AND ops.kind != 'send')))`;
+// opAdmitter's rule (@terno/store), one clause per OAuth kind (plan 259): its accounts' ops wait on its own lanes only
+const ADMITTED = `ops.account_id NOT IN (SELECT value FROM json_each(?))` + OAUTH_KINDS.map(() => ` AND NOT EXISTS (SELECT 1 FROM accounts a WHERE a.id = ops.account_id AND a.kind = ? AND
+  (? OR a.id IN (SELECT value FROM json_each(?)) OR (? AND a.id NOT IN (SELECT value FROM json_each(?))) OR (? AND ops.kind = 'send') OR (? AND ops.kind != 'send')))`).join("");
 function admissionParams(admission?: OpAdmission): Param[] {
   const a = copyOpAdmission(admission);
-  return [JSON.stringify(a.pausedAccountIds ?? []), a.blockAllGoogle ? 1 : 0, JSON.stringify(a.blockedAccountIds), a.blockUnverifiedGoogle ? 1 : 0, JSON.stringify(a.verifiedAccountIds), a.blockGoogleSends ? 1 : 0, a.blockGoogleBackground ? 1 : 0];
+  const blocked = JSON.stringify(a.blockedAccountIds), verified = JSON.stringify(a.verifiedAccountIds);
+  return [JSON.stringify(a.pausedAccountIds ?? []), ...OAUTH_KINDS.flatMap((kind) => {
+    const lanes = a.kinds[kind];
+    return [kind, lanes?.all ? 1 : 0, blocked, lanes?.unverified ? 1 : 0, verified, lanes?.sends ? 1 : 0, lanes?.background ? 1 : 0];
+  })];
 }
 
 export function claimReadyOps(db: Db, now = Date.now(), limit = 20, accountId?: number, admission?: OpAdmission): OpRow[] {

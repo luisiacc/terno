@@ -3,7 +3,7 @@ import type { ClosedOrder } from "./closed-order";
 import { bodyCode, codeSubject, incomingCode, readRuleState, storedReply } from "@terno/store";
 import { saveFilterForward } from "./forwards";
 import { folderPage, folderScopeIds, folderUnreadCounts, refreshFolders } from "./folders";
-import { requireGmailRefresh, copyOpAdmission, ThreadMerges, type OpAdmission } from "@terno/store";
+import { requireGmailRefresh, opAdmitter, ThreadMerges, type OpAdmission } from "@terno/store";
 import { actionTargets, assetError, linkAssets, reaffirmFlagIntent, restoreLocationOps, sameLocation, validateAssets } from "@terno/store";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
@@ -1795,13 +1795,8 @@ function locationBlockers(c: Ctx): (o: R) => boolean {
 }
 
 function admittedOps(c: Ctx, input?: OpAdmission): (o: R) => boolean {
-  const a = copyOpAdmission(input);
-  const blocked = new Set(a.blockedAccountIds), verified = new Set(a.verifiedAccountIds), paused = new Set(a.pausedAccountIds);
-  return (o) => {
-    if (paused.has(o.account_id as number)) return false;
-    if (T(c, "accounts").get(o.account_id)?.kind !== "gmail") return true;
-    return !a.blockAllGoogle && !(o.kind === "send" ? a.blockGoogleSends : a.blockGoogleBackground) && !blocked.has(o.account_id as number) && (!a.blockUnverifiedGoogle || verified.has(o.account_id as number));
-  };
+  const admits = opAdmitter(input);
+  return (o) => admits(o.account_id as number, T(c, "accounts").get(o.account_id)?.kind as string | undefined, o.kind as string);
 }
 export function claimReadyOps(c: Ctx, now: number, limit: number, admission?: OpAdmission): OpRow[] {
   const ops = T(c, "ops");

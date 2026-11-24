@@ -145,6 +145,9 @@ it.each([
   ["gmail", [], [], true, false, false],
   ["gmail", [], [1], true, false, true],
   ["imap", [1], [], true, true, true],
+  // plan 259: Gmail's lanes never hold an Outlook account; its own block does
+  ["outlook", [], [], true, true, true],
+  ["outlook", [1], [], false, false, false],
 ] as const)("candidate admission %s blocked=%j verified=%j unverified=%s all=%s admitted=%s", (kind, blockedAccountIds, verifiedAccountIds, blockUnverifiedGoogle, blockAllGoogle, admitted) => {
   const c = ctx(), targets = c.db.table("op_targets");
   c.db.tx(() => {
@@ -152,7 +155,7 @@ it.each([
     c.db.table("ops").insert(op("candidate", 1));
     targets.insert({ op_id: "candidate", message_id: 1, grp: "location" });
   });
-  const admission = { blockedAccountIds, verifiedAccountIds, blockUnverifiedGoogle, blockAllGoogle };
+  const admission = { blockedAccountIds, verifiedAccountIds, kinds: { gmail: { unverified: blockUnverifiedGoogle, all: blockAllGoogle } } };
   const reads = vi.spyOn(targets.rows, "get");
   let next: number | null, claimed: string[], count: number;
   try {

@@ -293,7 +293,7 @@ async function account(store: MailStore, n: number, kind: "gmail" | "imap" = "gm
 async function sendOp(store: MailStore, accountId: number) {
   return (await store.compose.queueSend({ accountId, to: [{ email: "recipient@example.test", name: "" }], cc: [], bcc: [], subject: "Synthetic", bodyText: "Synthetic", recordReply: false, now: 1000 })).opId;
 }
-const emptyAdmission = { blockedAccountIds: [] as number[], verifiedAccountIds: [] as number[], blockUnverifiedGoogle: false, blockAllGoogle: false };
+const emptyAdmission = { blockedAccountIds: [] as number[], verifiedAccountIds: [] as number[], kinds: { gmail: { unverified: false, all: false } } };
 function rowLedger() {
   return JSON.stringify({ version: 1, revision: "1", overflow: false, bindings: [], rows: [{ owner: mailboxA, service: "gmail-api", revision: "1", phaseRevision: "1", minimum: "121000", wall: "1000", replay: "120000", sample: 2000, position: 1, hold: null, repair: null }] });
 }
@@ -398,7 +398,7 @@ for (const mode of ["SQL", "IDB off"] as const) {
     it("09 unverified pause preserves IMAP", async () => {
       const f = await storeFixture(mode), a = await account(f.store, 1), b = await account(f.store, 2), c = await account(f.store, 3, "imap");
       await sendOp(f.store, a.id); const y = await sendOp(f.store, b.id), z = await sendOp(f.store, c.id);
-      const admission = { ...emptyAdmission, blockUnverifiedGoogle: true, verifiedAccountIds: [b.id] };
+      const admission = { ...emptyAdmission, kinds: { gmail: { unverified: true, all: false } }, verifiedAccountIds: [b.id] };
       expect((await f.store.ops.claimReady(1000, 3, admission)).map((o) => o.id)).toEqual([y, z]);
       expect(await f.store.ops.nextAttemptAt(admission)).toBe(null);
     });
@@ -758,7 +758,7 @@ for (const mode of ["SQL", "IDB off"] as const) {
       expect(result).toBeInstanceOf(ProviderCooldownError);
       expect(gate.state(verifiedMailbox, "gmail-api")).toEqual({ kind: "hold", reason: "storage" });
       const admission = await gate.admission((id) => id === a.id ? { ...stamp, kind: "gmail" } : undefined);
-      expect(admission.blockAllGoogle).toBe(true); expect(admission.verifiedAccountIds).toEqual([]);
+      expect(admission.kinds.gmail?.all).toBe(true); expect(admission.verifiedAccountIds).toEqual([]);
       await expect(reopened.providerCooldown.read()).rejects.toThrow();
     });
 
@@ -777,7 +777,7 @@ for (const mode of ["SQL", "IDB off"] as const) {
       expect(result).toBeInstanceOf(ProviderCooldownError); expect(calls).toBe(0);
       expect(gate.state(verifiedMailbox, "gmail-api")).toEqual({ kind: "at", atMs: 3000 });
       const admission = await gate.admission((id) => id === a.id ? { ...stamp, kind: "gmail" } : undefined);
-      expect(admission.blockAllGoogle).toBe(false); expect(admission.verifiedAccountIds).toEqual([a.id]); expect(admission.blockedAccountIds).toEqual([a.id]);
+      expect(admission.kinds.gmail?.all).toBe(false); expect(admission.verifiedAccountIds).toEqual([a.id]); expect(admission.blockedAccountIds).toEqual([a.id]);
     });
 
     it("F2 other verified scope and service remain live", async () => {

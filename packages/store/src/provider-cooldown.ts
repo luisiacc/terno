@@ -1,3 +1,4 @@
+import { isOAuthKind, type OAuthKind } from "@terno/core";
 export const PROVIDER_COOLDOWN_KEY = "provider-cooldown:v1";
 export const COOLDOWN_LEDGER_BYTES = 65_536;
 export const COOLDOWN_CANDIDATE_BYTES = 131_072;
@@ -39,15 +40,25 @@ export interface ProviderCooldownStore {
   update<R>(fn: (encoded: string | null) => { encoded: string; result: R }): Promise<R>;
   bind(stamp: CooldownStamp, mailboxKey: string, current?: () => boolean): Promise<boolean>;
 }
+/**
+ * Plan 259: one OAuth provider's lanes, from its own cooldowns and the shared request capacity. `all`: none of its
+ * accounts' ops run; `unverified`: only accounts in `verifiedAccountIds` run; `sends`/`background`: that lane waits.
+ */
+export interface KindAdmission {
+  all: boolean;
+  unverified: boolean;
+  sends?: boolean;
+  background?: boolean;
+}
+
 export interface OpAdmission {
+  /** OAuth accounts whose ops wait (their mailbox is cooling down or paused) */
   blockedAccountIds: readonly number[];
   /** plan 107: accounts whose ops wait whatever their kind (a folder change holds its account's provider) */
   pausedAccountIds?: readonly number[];
   verifiedAccountIds: readonly number[];
-  blockUnverifiedGoogle: boolean;
-  blockAllGoogle: boolean;
-  blockGoogleSends?: boolean;
-  blockGoogleBackground?: boolean;
+  /** plan 259: per OAuth kind, so one provider's pause never holds another's ops; a kind not listed is admitted */
+  kinds: Readonly<Partial<Record<OAuthKind, KindAdmission>>>;
 }
 
 const integer = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v);
@@ -208,8 +219,31 @@ export function copyOpAdmission(input?: OpAdmission): OpAdmission {
     if (bytes(JSON.stringify(result)) > 65_536) throw new Error("Private admission capacity");
     return Object.freeze(result);
   };
-  if (!input) return Object.freeze({ blockedAccountIds: Object.freeze([]), verifiedAccountIds: Object.freeze([]), blockUnverifiedGoogle: false, blockAllGoogle: false });
-  if (typeof input.blockAllGoogle !== "boolean" || typeof input.blockUnverifiedGoogle !== "boolean") throw new Error("Invalid private admission");
-  if ((input.blockGoogleSends !== undefined && typeof input.blockGoogleSends !== "boolean") || (input.blockGoogleBackground !== undefined && typeof input.blockGoogleBackground !== "boolean")) throw new Error("Invalid private lane admission");
-  return Object.freeze({ blockGoogleSends: input.blockGoogleSends, blockGoogleBackground: input.blockGoogleBackground, ...(input.pausedAccountIds?.length && { pausedAccountIds: list(input.pausedAccountIds) }), blockedAccountIds: list(input.blockedAccountIds), verifiedAccountIds: list(input.verifiedAccountIds), blockUnverifiedGoogle: input.blockUnverifiedGoogle, blockAllGoogle: input.blockAllGoogle });
+  if (!input) return Object.freeze({ blockedAccountIds: Object.freeze([]), verifiedAccountIds: Object.freeze([]), kinds: Object.freeze({}) });
+  if (!input.kinds || typeof input.kinds !== "object") throw new Error("Invalid private admission");
+  const kinds: Partial<Record<OAuthKind, KindAdmission>> = {};
+  for (const [kind, lanes] of Object.entries(input.kinds) as [string, KindAdmission | undefined][]) {
+    if (!isOAuthKind(kind)) throw new Error("Invalid private admission");
+    if (!lanes) continue;
+    if (typeof lanes.all !== "boolean" || typeof lanes.unverified !== "boolean") throw new Error("Invalid private admission");
+    if ((lanes.sends !== undefined && typeof lanes.sends !== "boolean") || (lanes.background !== undefined && typeof lanes.background !== "boolean")) throw new Error("Invalid private lane admission");
+    kinds[kind] = Object.freeze({ all: lanes.all, unverified: lanes.unverified, sends: lanes.sends, background: lanes.background });
+  }
+  return Object.freeze({ ...(input.pausedAccountIds?.length && { pausedAccountIds: list(input.pausedAccountIds) }), blockedAccountIds: list(input.blockedAccountIds), verifiedAccountIds: list(input.verifiedAccountIds), kinds: Object.freeze(kinds) });
+}
+
+/**
+ * Whether an op may run under an admission: a paused account's never; an OAuth account's when it isn't blocked and its
+ * kind's lanes let it (plan 259: per kind); anything else's always. The SQL store states the same rule in its claim.
+ */
+export function opAdmitter(input?: OpAdmission): (accountId: number, accountKind: string | undefined, opKind: string) => boolean {
+  const a = copyOpAdmission(input);
+  const blocked = new Set(a.blockedAccountIds), verified = new Set(a.verifiedAccountIds), paused = new Set(a.pausedAccountIds);
+  return (id, kind, op) => {
+    if (paused.has(id)) return false;
+    if (!isOAuthKind(kind)) return true;
+    if (blocked.has(id)) return false;
+    const lanes = a.kinds[kind];
+    return !lanes || (!lanes.all && !(op === "send" ? lanes.sends : lanes.background) && (!lanes.unverified || verified.has(id)));
+  };
 }
