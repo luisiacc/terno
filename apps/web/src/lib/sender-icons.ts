@@ -9,12 +9,15 @@
 import { parseSearch } from "@terno/core";
 import type { IconAnswer, IconRef } from "@terno/core/rpc";
 import { useCallback, useEffect, useSyncExternalStore } from "react";
+import { measureIcon, WHOLE, type IconFit } from "~/lib/icon-fit";
 import { client } from "~/rpc/connection";
 import { useApp, type AppState } from "~/state/app";
 
 export interface ShownIcon {
   ref: IconRef;
   url: string;
+  /** how it sits in the disc (plan 252), measured when its bytes arrived */
+  fit: IconFit;
 }
 
 type Entry = { state: "idle" } | { state: "asked" } | { state: "none" } | { state: "ref"; ref: IconRef };
@@ -30,6 +33,8 @@ const entries = new Map<string, Entry>();
 const listeners = new Map<string, Set<() => void>>();
 /** `${id}:${v}` → data: URL (LRU) */
 const data = new Map<string, string>();
+/** `${id}:${v}` → its measured fit, kept and evicted with its bytes (plan 252) */
+const fits = new Map<string, IconFit>();
 /** addresses on screen now (the observer's view) */
 const visible = new Set<string>();
 const batch = new Set<string>();
@@ -82,10 +87,15 @@ function getData(ref: IconRef): string | undefined {
   return url;
 }
 
-function putData(k: string, url: string): void {
+function putData(k: string, url: string, fit: IconFit): void {
   data.set(k, url);
+  fits.set(k, fit);
   // a mounted <img> keeps its own src: evicting only costs a refetch on the next mount
-  while (data.size > MAX_DATA) data.delete(data.keys().next().value!);
+  while (data.size > MAX_DATA) {
+    const old = data.keys().next().value!;
+    data.delete(old);
+    fits.delete(old);
+  }
 }
 
 function setEntry(email: string, e: Entry): void {
@@ -119,7 +129,7 @@ function apply(answers: Record<string, IconAnswer>): void {
     const now = entries.get(email);
     if (held.has(email) && a !== null && a !== "again" && getData(a) === undefined && !(now?.state === "ref" && dataKey(now.ref) === dataKey(a))) {
       replacing.set(email, a);
-      dataBatch.set(dataKey(a), a);
+      if (wantData(a)) dataBatch.set(dataKey(a), a);
       continue;
     }
     release(email);
@@ -129,7 +139,7 @@ function apply(answers: Record<string, IconAnswer>): void {
     } else if (a === null) setEntry(email, { state: "none" });
     else {
       setEntry(email, { state: "ref", ref: a });
-      if (getData(a) === undefined) dataBatch.set(dataKey(a), a);
+      if (wantData(a)) dataBatch.set(dataKey(a), a);
     }
   }
   // asked and not in the answer: on its way (the `icons` event); it stays "asked"
@@ -155,6 +165,9 @@ function wire(): void {
       replacing.clear();
       batch.clear();
       dataBatch.clear();
+      // measurements under way land in the old generation (dropped); their bytes are asked for again
+      measuring.clear();
+      measureQueue.length = 0;
       for (const email of visible) {
         if (entries.get(email)?.state === "ref") held.add(email);
         batch.add(email);
@@ -250,15 +263,14 @@ async function fetchData(refs: IconRef[]): Promise<void> {
   const gone = new Set<string>();
   for (const ref of refs) {
     const url = got[ref.id];
-    if (url) putData(dataKey(ref), url);
-    else gone.add(ref.id);
+    if (!url) gone.add(ref.id);
+    // a website's icon is measured first (plan 252), off this request's slot: it lands at its own size
+    else if (ref.kind === "site") measure(ref, url, epoch);
+    else landed(ref, url, WHOLE, epoch);
   }
-  // replacements whose own bytes just arrived: swapped in one step (another request's answer settles none of them)
+  // replacements whose bytes are gone: initials (one whose bytes came is swapped in when they land)
   const keys = new Set(refs.map(dataKey));
-  for (const [email, ref] of replacing) {
-    if (!keys.has(dataKey(ref))) continue;
-    release(email, gone.has(ref.id) ? { state: "none" } : { state: "ref", ref });
-  }
+  for (const [email, ref] of replacing) if (keys.has(dataKey(ref)) && gone.has(ref.id)) release(email, { state: "none" });
   // bytes the backend no longer has (evicted, a lost file): those addresses look the icon up again, once
   if (gone.size) {
     for (const [email, e] of entries) {
@@ -272,16 +284,58 @@ async function fetchData(refs: IconRef[]): Promise<void> {
       if (visible.has(email)) request(email);
     }
   }
-  // every address showing these icons
-  const ids = new Set(refs.map((r) => r.id));
-  for (const [email, e] of entries) if (e.state === "ref" && ids.has(e.ref.id)) notify(email);
+}
+
+/** An icon's bytes, stored with its fit: a replacement waiting on them is swapped in, and every address showing it redraws. */
+function landed(ref: IconRef, url: string, fit: IconFit, epoch: number): void {
+  if (epoch !== generation) return;
+  const k = dataKey(ref);
+  putData(k, url, fit);
+  for (const [email, r] of replacing) if (dataKey(r) === k) release(email, { state: "ref", ref: r });
+  for (const [email, e] of entries) if (e.state === "ref" && dataKey(e.ref) === k) notify(email);
+}
+
+/** icons measured at once: a page of new senders decodes a few at a time, never fifty */
+const MAX_MEASURING = 4;
+/** `${id}:${v}` → bytes being measured: on their way, not asked for again */
+const measuring = new Map<string, { ref: IconRef; url: string; epoch: number }>();
+const measureQueue: string[] = [];
+let measuringNow = 0;
+
+function measure(ref: IconRef, url: string, epoch: number): void {
+  const k = dataKey(ref);
+  if (measuring.has(k)) return;
+  measuring.set(k, { ref, url, epoch });
+  measureQueue.push(k);
+  drainMeasures();
+}
+
+function drainMeasures(): void {
+  while (measuringNow < MAX_MEASURING && measureQueue.length) {
+    const k = measureQueue.shift()!;
+    const job = measuring.get(k);
+    if (!job) continue;
+    measuringNow++;
+    // measureIcon never rejects: what it can't measure is the whole image as a mark
+    void measureIcon(job.url).then((fit) => {
+      measuringNow--;
+      if (measuring.get(k) === job) measuring.delete(k);
+      landed(job.ref, job.url, fit, job.epoch);
+      drainMeasures();
+    });
+  }
+}
+
+/** Bytes not here and not on their way: asked for. */
+function wantData(ref: IconRef): boolean {
+  return getData(ref) === undefined && !measuring.has(dataKey(ref));
 }
 
 function request(email: string): void {
   wire();
   const e = entries.get(email);
   if (e && e.state !== "idle") {
-    if (e.state === "ref" && getData(e.ref) === undefined) {
+    if (e.state === "ref" && wantData(e.ref)) {
       dataBatch.set(dataKey(e.ref), e.ref);
       schedule();
     }
@@ -342,7 +396,7 @@ export function shown(email: string): ShownIcon | null {
   if (snapshots.has(email)) return snapshots.get(email)!;
   const e = entries.get(email);
   const url = e?.state === "ref" ? getData(e.ref) : undefined;
-  const s = e?.state === "ref" && url ? { ref: e.ref, url } : null;
+  const s = e?.state === "ref" && url ? { ref: e.ref, url, fit: fits.get(dataKey(e.ref)) ?? WHOLE } : null;
   snapshots.set(email, s);
   return s;
 }
@@ -397,13 +451,15 @@ export function iconsAllowedForList(itemsKey: string | null): boolean {
 export const __senderIconsForTests = {
   entries,
   data,
+  fits,
   visible,
   snapshots,
   request,
   get inflight() {
     return inflight;
   },
-  reset: () => [entries, data, visible, batch, dataBatch, snapshots, listeners, refetched, held, replacing].forEach((m) => m.clear()),
+  measuring,
+  reset: () => [entries, data, fits, visible, batch, dataBatch, snapshots, listeners, refetched, held, replacing, measuring].forEach((m) => m.clear()),
 };
 
 /** Plan 158: a person is their photo or their initials; a website's icon, of any size, stands for the company. */

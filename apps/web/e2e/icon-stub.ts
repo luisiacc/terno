@@ -1,17 +1,18 @@
 /**
  * Plan 22: website icons for E2E without the internet. The backend's real fetcher runs against
  * this transport: a few seeded senders' sites have icons (a full-bleed touch icon, a sized PNG,
- * a tiny 16 px favicon), every other site answers 404. Every request is recorded.
+ * a tiny 16 px favicon, a circle and a ring), every other site answers 404. Every request is recorded.
  */
 import type { IconRequest, IconResponse, IconTransport } from "../../../packages/backend/src/icons/transport";
-import { pngBytes } from "../../../packages/backend/src/test/icons-fixtures";
+import { pngBytes, shapedPngBytes } from "../../../packages/backend/src/test/icons-fixtures";
 
 type Rgba = [number, number, number, number];
-const SITES: Record<string, { touch?: Rgba; favicon?: { px: number; rgba: Rgba } }> = {
+/** a favicon's shape (plan 252): solid (a full-bleed square), a circle, or a ring (a transparent glyph) */
+const SITES: Record<string, { touch?: Rgba; favicon?: { px: number; rgba: Rgba; shape?: "circle" | "ring" } }> = {
   "github.com": { touch: [36, 41, 47, 255] },
   "stripe.com": { touch: [99, 91, 255, 255] },
-  "figma.com": { favicon: { px: 64, rgba: [242, 78, 30, 255] } },
-  "linear.app": { favicon: { px: 64, rgba: [94, 106, 210, 255] } },
+  "figma.com": { favicon: { px: 64, rgba: [242, 78, 30, 255], shape: "ring" } },
+  "linear.app": { favicon: { px: 64, rgba: [94, 106, 210, 255], shape: "circle" } },
   "vercel.com": { touch: [0, 0, 0, 255] },
   "spotify.com": { favicon: { px: 16, rgba: [30, 215, 96, 255] } },
   "uber.com": { favicon: { px: 32, rgba: [0, 0, 0, 255] } },
@@ -49,7 +50,12 @@ export function iconStub(): IconStub {
       const ok = (b: Uint8Array): IconResponse => ({ status: 200, location: null, bytes: b, tooLarge: false });
       if (site && r.url.pathname === "/") return ok(new TextEncoder().encode(site.touch ? `<head><link rel="apple-touch-icon" href="/apple-touch-icon.png"></head>` : "<head></head>"));
       if (site?.touch && r.url.pathname === "/apple-touch-icon.png") return ok(png(`${r.url.hostname}:t`, 180, site.touch));
-      if (site?.favicon && r.url.pathname === "/favicon.ico") return ok(png(`${r.url.hostname}:f`, site.favicon.px, site.favicon.rgba));
+      if (site?.favicon && r.url.pathname === "/favicon.ico") {
+        const { px, rgba, shape } = site.favicon;
+        const key = `${r.url.hostname}:f`;
+        if (shape && !bytes.has(key)) bytes.set(key, shapedPngBytes(px, shape, rgba));
+        return ok(png(key, px, rgba));
+      }
       return { status: 404, location: null, bytes: null, tooLarge: false };
     },
   };

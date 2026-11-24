@@ -1,4 +1,4 @@
-/** Real images for the sender-icon tests and the e2e stub (plan 22): solid squares, any size. */
+/** Real images for the sender-icon tests and the e2e stub (plan 22): solid squares, any size, and (plan 252) shapes. */
 import { crc32, deflateSync } from "node:zlib";
 
 function chunk(type: string, data: Uint8Array): Buffer {
@@ -10,16 +10,39 @@ function chunk(type: string, data: Uint8Array): Buffer {
   return Buffer.concat([head, data, crc]);
 }
 
+type Rgba = [number, number, number, number];
+
 /** A w × h PNG in one color (RGBA). `extra` chunks go before the image data (an acTL makes it "animated"). */
-export function pngBytes(w: number, h = w, rgba: [number, number, number, number] = [229, 9, 20, 255], extra: { type: string; data: Uint8Array }[] = []): Uint8Array {
+export function pngBytes(w: number, h = w, rgba: Rgba = [229, 9, 20, 255], extra: { type: string; data: Uint8Array }[] = []): Uint8Array {
+  return paintedPng(w, h, () => rgba, extra);
+}
+
+/**
+ * Plan 252: a px-square PNG in one color, shaped on a transparent ground: a circle edge to edge, or a ring
+ * (a glyph with holes, like a "G") off center: 80 % of the image across, centered at 42 % of it.
+ */
+export function shapedPngBytes(px: number, shape: "circle" | "ring", rgba: Rgba): Uint8Array {
+  const clear: Rgba = [0, 0, 0, 0];
+  const c = shape === "circle" ? 0.5 : 0.42;
+  return paintedPng(px, px, (x, y) => {
+    const d = Math.hypot(x + 0.5 - c * px, y + 0.5 - c * px) / (px / 2);
+    return (shape === "circle" ? d <= 1 : d <= 0.8 && d >= 0.45) ? rgba : clear;
+  });
+}
+
+function paintedPng(w: number, h: number, at: (x: number, y: number) => Rgba, extra: { type: string; data: Uint8Array }[] = []): Uint8Array {
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(w, 0);
   ihdr.writeUInt32BE(h, 4);
   ihdr[8] = 8;
   ihdr[9] = 6;
-  const row = Buffer.alloc(1 + w * 4);
-  for (let x = 0; x < w; x++) row.set(rgba, 1 + x * 4);
-  const raw = Buffer.concat(Array.from({ length: h }, () => row));
+  const raw = Buffer.concat(
+    Array.from({ length: h }, (_, y) => {
+      const row = Buffer.alloc(1 + w * 4);
+      for (let x = 0; x < w; x++) row.set(at(x, y), 1 + x * 4);
+      return row;
+    }),
+  );
   const out = Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     chunk("IHDR", ihdr),

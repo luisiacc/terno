@@ -36,12 +36,29 @@ const fake = vi.hoisted(() => {
 
 vi.mock("~/rpc/connection", () => ({ client: fake.client }));
 vi.mock("~/state/app", () => ({ useApp: () => true }));
+// plan 252: what measuring an icon would say (the canvas isn't here)
+const measured = vi.hoisted(() => ({
+  urls: [] as string[],
+  fit: { fill: true, ring: false, box: [0.1, 0.1, 0.8, 0.8] as const },
+  /** while set, measuring waits for it */
+  hold: null as Promise<void> | null,
+}));
+vi.mock("~/lib/icon-fit", async (real) => ({
+  ...(await real<typeof import("./icon-fit")>()),
+  measureIcon: async (url: string) => {
+    measured.urls.push(url);
+    if (measured.hold) await measured.hold;
+    return measured.fit;
+  },
+}));
 
+const { WHOLE } = await import("./icon-fit");
 const { __senderIconsForTests: store, iconsAllowed, iconsAllowedForList, shown, subscribeIcon } = await import("./sender-icons");
 const frame = () => new Promise((r) => setTimeout(r, 1));
 
 beforeEach(() => {
   store.reset();
+  measured.hold = null;
   fake.pending.length = 0;
   fake.resetStats();
 });
@@ -106,6 +123,75 @@ describe("the renderer's sender icons (plan 22)", () => {
     expect(iconsAllowedForList(JSON.stringify(["all", 2, null, null, null, "Label_1", ""]))).toBe(true);
     expect(iconsAllowedForList(JSON.stringify(["inbox", null, null, null, null, ""]))).toBe(true);
     expect(iconsAllowedForList(null)).toBe(false);
+  });
+
+  it("an icon is measured once, when its bytes arrive, and its fit goes with them (plan 252)", async () => {
+    measured.urls.length = 0;
+    const site = { id: "d:acme.com", v: 1, kind: "site" as const, px: 64, full: false };
+    const photo = { id: "p:ana", v: 1, kind: "photo" as const, px: 96, full: true };
+    store.entries.set("a@acme.com", { state: "ref", ref: site });
+    store.entries.set("ana@x.com", { state: "ref", ref: photo });
+    for (const e of ["a@acme.com", "ana@x.com"]) {
+      store.visible.add(e);
+      store.request(e);
+    }
+    await frame();
+    const data = fake.pending.shift()!;
+    expect(data.method).toBe("icons.data");
+    data.resolve({ "d:acme.com": "data:site", "p:ana": "data:photo" });
+    await frame();
+    // a photo fills the disc as it is: only the website's icon is measured
+    expect(measured.urls).toEqual(["data:site"]);
+    expect(shown("a@acme.com")).toEqual({ ref: site, url: "data:site", fit: measured.fit });
+    expect(shown("ana@x.com")?.fit).toEqual(WHOLE);
+    // nothing measured (bytes put by hand): the whole image as a mark
+    store.data.set("d:other.com:1", "data:other");
+    store.entries.set("b@other.com", { state: "ref", ref: { ...site, id: "d:other.com" } });
+    expect(shown("b@other.com")?.fit).toEqual(WHOLE);
+    // the bytes' LRU takes the fit with them
+    for (let i = 0; i < 400; i++) {
+      const ref = { ...site, id: `d:s${i}.com` };
+      store.entries.set(`x@s${i}.com`, { state: "ref", ref });
+      store.visible.add(`x@s${i}.com`);
+      store.request(`x@s${i}.com`);
+    }
+    for (let i = 0; i < 20; i++) {
+      for (const p of fake.pending.splice(0)) p.resolve(Object.fromEntries((p.params.ids ?? []).map((id) => [id, `data:${id}`])));
+      await frame();
+    }
+    expect(store.data.has("d:acme.com:1")).toBe(false);
+    expect(store.fits.has("d:acme.com:1")).toBe(false);
+    expect(store.fits.size).toBeLessThanOrEqual(store.data.size);
+  });
+
+  it("measuring is off the request's slot: the next lookup goes at once, the icon lands measured, its bytes aren't asked twice (Codex review)", async () => {
+    measured.urls.length = 0;
+    let go!: () => void;
+    measured.hold = new Promise((r) => (go = r));
+    const site = { id: "d:slow.com", v: 1, kind: "site" as const, px: 64, full: false };
+    store.entries.set("a@slow.com", { state: "ref", ref: site });
+    store.visible.add("a@slow.com");
+    store.request("a@slow.com");
+    await frame();
+    fake.pending.shift()!.resolve({ "d:slow.com": "data:slow" });
+    await frame();
+    // the bytes are here, being measured: the slot is free, nothing drawn yet
+    expect(store.inflight).toBe(0);
+    expect(shown("a@slow.com")).toBeNull();
+    // another avatar of the same sender, and a new sender, while it's measured: only the new one is looked up
+    store.entries.set("b@slow.com", { state: "ref", ref: site });
+    store.visible.add("b@slow.com");
+    store.request("b@slow.com");
+    store.visible.add("c@new.com");
+    store.request("c@new.com");
+    await frame();
+    expect(fake.pending.map((p) => p.method)).toEqual(["icons.lookup"]);
+    go();
+    measured.hold = null;
+    await frame();
+    expect(measured.urls).toEqual(["data:slow"]);
+    expect(shown("a@slow.com")?.fit).toEqual(measured.fit);
+    expect(shown("b@slow.com")?.url).toBe("data:slow");
   });
 
   it("an icon whose bytes are gone (evicted, a lost file) is looked up again, once, while it's on screen (second Codex review)", async () => {
@@ -204,6 +290,36 @@ describe("holding through a reset, the edge cases", () => {
     const i = fake.pending.findIndex((p) => p.method === method);
     return fake.pending.splice(i, 1)[0]!;
   };
+
+  it("a reset while an icon is measured: the old measurement never lands, the held icon stays until the new bytes do (Codex review)", async () => {
+    showing("ana@acme.com", ref("d:acme.com"));
+    let go!: () => void;
+    measured.hold = new Promise((r) => (go = r));
+    // the lookup after a reset answers a new version: held, its bytes asked for, then measured
+    reset();
+    await frame();
+    take("icons.lookup").resolve({ "ana@acme.com": ref("d:acme.com", 2) });
+    await frame();
+    await frame();
+    take("icons.data").resolve({ "d:acme.com": "data:v2" });
+    await frame();
+    expect(shown("ana@acme.com")?.url).toBe("data:d:acme.com");
+    // another reset before it's measured: v2's measurement is dropped, the old icon still drawn, v2 asked again
+    reset();
+    await frame();
+    go();
+    measured.hold = null;
+    await frame();
+    expect(store.data.has("d:acme.com:2")).toBe(false);
+    expect(shown("ana@acme.com")?.url).toBe("data:d:acme.com");
+    take("icons.lookup").resolve({ "ana@acme.com": ref("d:acme.com", 2) });
+    await frame();
+    await frame();
+    take("icons.data").resolve({ "d:acme.com": "data:v2" });
+    await frame();
+    await frame();
+    expect(shown("ana@acme.com")?.url).toBe("data:v2");
+  });
 
   it("a replacement from before a reset never comes back for an address that left the screen", async () => {
     showing("ana@gmail.com", ref("d:gmail.com"));
