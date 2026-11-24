@@ -5,15 +5,16 @@
 //   build-linux   the deb and rpm packages, x64 and arm64 (Linux runner)
 //   draft         every platform's files in one DRAFT release (the only phase that writes to GitHub)
 //
-// `pnpm release --local` builds macOS on this Mac and drafts it (macOS only). Nothing reaches users until the
-// maintainer reviews the draft and publishes it: the zip, its blockmap, the channel file (latest-mac.yml, or
-// nightly-mac.yml for an x.y.z-nightly.n version, published as a prerelease), the DMG, and the Linux packages.
+// `pnpm release --local` builds macOS on this Mac and drafts it (macOS only). A stable release reaches users only
+// when the maintainer reviews the draft and publishes it: the zip, its blockmap, the channel file (latest-mac.yml, or
+// nightly-mac.yml for an x.y.z-nightly.n version), the DMG, and the Linux packages. A nightly built on GitHub
+// (plan 257, usually started by .github/workflows/nightly.yml) publishes itself as a prerelease that is never "Latest".
 // Never run by tests.
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { deleteFailedDraft, dispatch, isMainTip, tagExists } from "./release-ci.mjs";
+import { assertNightlyIsNewest, deleteFailedDraft, dispatch, isMainTip, KEEP_NIGHTLIES, publishNightly, pruneNightlies, tagExists } from "./release-ci.mjs";
 import { channelOf, PLATFORMS, releaseAssets } from "./release-assets.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -90,14 +91,41 @@ function checkFiles(dirs, platforms) {
   return want.map((f) => found.get(f));
 }
 
-/** The draft release with every platform's files; the one phase that writes to GitHub. */
+/**
+ * The draft release with every platform's files; the one phase that writes to GitHub. A nightly built on GitHub
+ * (plan 257) then publishes itself and prunes old nightlies; a stable release, or anything from --local, waits for review.
+ */
 function draft(dirs, platforms) {
   const files = checkFiles(dirs, platforms);
+  const nightly = prerelease && ci;
   if (run("gh", ["release", "view", `v${version}`, "--repo", REPO]).status === 0) fail(`v${version} already exists on ${REPO}: bump the version in apps/desktop/package.json`);
   if (tagExists(version)) fail(`the tag v${version} already exists on ${REPO} without a release: bump the version, or delete the tag if it's a leftover`);
+  if (nightly) {
+    try {
+      assertNightlyIsNewest(version);
+    } catch (e) {
+      fail(e.message);
+    }
+  }
   const args = ["release", "create", `v${version}`, "--repo", REPO, "--draft", "--title", `Terno ${version}`, "--generate-notes", ...(ci ? ["--target", sha] : []), ...(prerelease ? ["--prerelease"] : []), ...files];
   const created = run("gh", args, { stdio: ["ignore", "pipe", "inherit"] });
   if (created.status !== 0) fail(`gh release create failed (nothing was published)${deleteFailedDraft(version) ? "; its unfinished draft was removed, so running the release again is safe" : ""}`);
+  if (nightly) {
+    try {
+      publishNightly(version);
+    } catch (e) {
+      fail(e.message);
+    }
+    console.log(`\n✓ published nightly v${version} (${platforms.join(" and ")}): copies on the Nightly channel see it on their next check`);
+    // pruning never fails a nightly that is already out
+    try {
+      const kept = pruneNightlies();
+      if (kept.length) console.warn(`! couldn't remove ${kept.join(", ")} (the newest ${KEEP_NIGHTLIES} nightlies are kept); delete them on the Releases page`);
+    } catch (e) {
+      console.warn(`! old nightlies weren't pruned: ${e.message}`);
+    }
+    return;
+  }
   console.log(`\n✓ draft release v${version} (${prerelease ? "nightly, prerelease" : "stable"}, ${platforms.join(" and ")}): ${created.stdout.trim()}`);
   console.log("  Review the notes and assets, then publish it: until then no copy of Terno sees it.");
 }

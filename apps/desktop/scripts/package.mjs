@@ -23,6 +23,7 @@ import { join } from "node:path";
 import { build, Platform, Arch } from "electron-builder";
 import { dmgConfig } from "../src/dmg-layout.ts";
 import { dmgProblems, hasCustomIconFlag, withMounted, withRetries } from "../src/dmg-mount.ts";
+import { channelOf } from "./release-assets.mjs";
 import { builderIdentity } from "./sign-identity.mjs";
 import { appId, commonConfig, commonResources, electronDist, productName, release, root, stageApp, stampMinimumVersion, testBuild, uploadReleaseMaps, version } from "./package-stage.mjs";
 
@@ -143,8 +144,10 @@ if (arch !== "arm64") throw new Error(`unexpected architecture: ${arch}`);
 if (!existsSync(join(app, "Contents/Resources/app-update.yml"))) throw new Error("app-update.yml missing: electron-updater can't run without it");
 assertIcon(app);
 
-const channelFile = readdirSync(release).find((f) => /^[a-z]+-mac\.yml$/.test(f));
-if (!channelFile) throw new Error("no update channel file (latest-mac.yml) was written");
+// plan 257: exactly the version's channel (a nightly once wrote latest-mac.yml, which no Nightly copy reads)
+const channelFile = `${channelOf(version)}-mac.yml`;
+const channelFiles = readdirSync(release).filter((f) => /^[a-z]+-mac\.yml$/.test(f));
+if (channelFiles.length !== 1 || channelFiles[0] !== channelFile) throw new Error(`expected only ${channelFile}, the packager wrote ${channelFiles.join(", ") || "no channel file"}`);
 
 stampMinimumVersion(channelFile);
 

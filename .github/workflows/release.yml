@@ -1,11 +1,13 @@
-# Plans 126 and 189: `pnpm release` starts this. Two builds run side by side: macOS (signed and notarized on GitHub's
-# Mac) and Linux (deb and rpm for x64 and arm64, installed and smoke-tested before they're kept). When both pass, the
-# draft job creates ONE draft release with every file (apps/desktop/scripts/release.mjs, one phase per job). Nothing
-# reaches users until the maintainer publishes the draft.
+# Plans 126 and 189: `pnpm release` starts this (and nightly.yml, each night main changed: plan 257). Two builds run
+# side by side: macOS (signed and notarized on GitHub's Mac) and Linux (deb and rpm for x64 and arm64, installed and
+# smoke-tested before they're kept). When both pass, the draft job creates ONE draft release with every file
+# (apps/desktop/scripts/release.mjs, one phase per job). A stable release reaches nobody until the maintainer publishes
+# the draft; a nightly publishes itself as a prerelease.
 #
-# Only a person with write access can start it (workflow_dispatch; never pull_request, so a fork never sees a secret).
-# The build jobs' secrets live in the "release" environment, which deploys from main only; the draft job holds no
-# secret and is the only one that can write to the repository. RELEASING.md lists the secrets and how to make each one.
+# Only a person with write access, or nightly.yml on main, can start it (workflow_dispatch; never pull_request, so a
+# fork never sees a secret). The build jobs' secrets live in the "release" environment, which deploys from main only;
+# the draft job holds no secret and is the only one that can write to the repository. RELEASING.md lists the secrets
+# and how to make each one.
 name: Release
 
 on:
@@ -47,6 +49,7 @@ jobs:
 
       - name: The commit is main's tip
         run: |
+          [ "$GITHUB_REF" = refs/heads/main ] || { echo "✗ releases build from main only, not $GITHUB_REF"; exit 1; }
           [ "$GITHUB_SHA" = "$RELEASE_SHA" ] || { echo "✗ main moved since you started ($RELEASE_SHA → $GITHUB_SHA): pull, then run pnpm release again"; exit 1; }
 
       # before anything is installed: every secret this job uses, by name (never a value), and the version's shape
@@ -141,6 +144,7 @@ jobs:
 
       - name: The commit is main's tip
         run: |
+          [ "$GITHUB_REF" = refs/heads/main ] || { echo "✗ releases build from main only, not $GITHUB_REF"; exit 1; }
           [ "$GITHUB_SHA" = "$RELEASE_SHA" ] || { echo "✗ main moved since you started ($RELEASE_SHA → $GITHUB_SHA): pull, then run pnpm release again"; exit 1; }
 
       # before anything is installed: every secret this job uses, by name (never a value), and the version's shape
@@ -267,6 +271,7 @@ jobs:
 
       - name: The commit is main's tip
         run: |
+          [ "$GITHUB_REF" = refs/heads/main ] || { echo "✗ releases build from main only, not $GITHUB_REF"; exit 1; }
           [ "$GITHUB_SHA" = "$RELEASE_SHA" ] || { echo "✗ main moved since you started ($RELEASE_SHA → $GITHUB_SHA): pull, then run pnpm release again"; exit 1; }
 
       - name: Check the version

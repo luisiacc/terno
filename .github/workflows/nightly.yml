@@ -1,0 +1,43 @@
+# Plan 257: the nightly. Each night it starts release.yml for main's tip, as `pnpm release` does, unless main hasn't
+# changed since the last nightly or a release run is already queued or running. The nightly publishes itself as a
+# prerelease (never "Latest"): copies on Settings → About → Updates → Nightly take it; Stable never sees it.
+#
+# No secret and no environment here: this job only reads GitHub and dispatches. The signing and the release happen in
+# release.yml, behind the "release" environment. Schedules are best effort (GitHub can delay or skip one); "Run
+# workflow" on the Actions tab, or `gh workflow run nightly.yml`, starts a nightly now.
+name: Nightly
+
+on:
+  schedule:
+    # 08:17 UTC, the small hours in the Americas; off the hour, which GitHub delays first
+    - cron: "17 8 * * *"
+  workflow_dispatch:
+
+# nothing by default: the job asks for what it uses
+permissions: {}
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  start:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read # the releases and main's package.json
+      actions: write # starting release.yml
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - name: Start tonight's nightly
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node apps/desktop/scripts/release-ci.mjs nightly

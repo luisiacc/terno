@@ -3,11 +3,12 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync 
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { compareVersions } from "@terno/core/updates";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error a build script (plain JS)
-import { deleteFailedDraft, dispatch, dispatchArgs, isMainTip, PHASE_SECRETS, preflight, REQUIRED_SECRETS, tagExists } from "../scripts/release-ci.mjs";
+import { assertNightlyIsNewest, deleteFailedDraft, dispatch, dispatchArgs, isMainTip, isReleased, KEEP_NIGHTLIES, nightliesToPrune, nightlyPlan, PHASE_SECRETS, preflight, publishNightly, pruneNightlies, REQUIRED_SECRETS, startNightly, tagExists, VERSION } from "../scripts/release-ci.mjs";
 // @ts-expect-error a build script (plain JS)
-import { channelOf, LINUX_ARCHES, linuxPackages, packageVersion, releaseAssets } from "../scripts/release-assets.mjs";
+import { channelOf, compareRelease, LINUX_ARCHES, linuxPackages, packageVersion, publishConfig, releaseAssets } from "../scripts/release-assets.mjs";
 // @ts-expect-error a build script (plain JS)
 import { builderIdentity } from "../scripts/sign-identity.mjs";
 
@@ -312,5 +313,196 @@ describe("plan 126: the release workflow", () => {
     expect(cleanup).toContain("if: always()");
     expect(cleanup).toContain("security delete-keychain");
     expect(cleanup).toContain('rm -rf "$RUNNER_TEMP/notary"');
+  });
+});
+
+// Plan 257: the nightly. Synthetic releases and commits only.
+const later = "fedcba9876543210fedcba9876543210fedcba98";
+const night = new Date("2026-11-25T08:17:42Z");
+type Release = { tag: string; prerelease: boolean; draft: boolean };
+const rel = (tag: string, o: Partial<Release> = {}): Release => ({ tag, prerelease: /-/.test(tag), draft: false, ...o });
+type Reply = { status: number; stdout?: string; stderr?: string };
+/** A stand-in for gh that answers each GitHub read the nightly makes, and records every call. */
+const fakeGh = (o: { releases?: Release[]; main?: string; pkg?: string; released?: string[]; shas?: Record<string, string>; runs?: string[]; edit?: Reply; view?: Reply; delete?: (tag: string) => Reply }) => {
+  const calls: string[][] = [];
+  const run = (args: string[]): Reply => {
+    calls.push(args);
+    const path = args[0] === "api" ? (args[1] === "--paginate" ? args[2]! : args[1]!) : "";
+    if (path.startsWith("repos/luisiacc/terno/releases?")) return { status: 0, stdout: (o.releases ?? []).map((r) => JSON.stringify(r)).join("\n") };
+    if (path === "repos/luisiacc/terno/commits/main") return { status: 0, stdout: `${o.main ?? later}\n` };
+    if (path.startsWith("repos/luisiacc/terno/contents/apps/desktop/package.json")) return { status: 0, stdout: Buffer.from(JSON.stringify({ version: o.pkg ?? "0.1.5" })).toString("base64") };
+    if (path.startsWith("repos/luisiacc/terno/releases/tags/v")) return (o.released ?? []).includes(path.split("/v").pop()!) ? { status: 0, stdout: "false\n" } : { status: 1, stderr: "gh: Not Found (HTTP 404)" };
+    if (path.startsWith("repos/luisiacc/terno/commits/v")) return { status: 0, stdout: `${o.shas?.[path.split("/").pop()!] ?? sha}\n` };
+    if (args[0] === "run" && args[1] === "list") return { status: 0, stdout: JSON.stringify((o.runs ?? []).map((status) => ({ status }))) };
+    if (args[0] === "release" && args[1] === "edit") return o.edit ?? { status: 0 };
+    if (args[0] === "release" && args[1] === "view") return o.view ?? { status: 1 };
+    if (args[0] === "release" && args[1] === "delete") return o.delete?.(args[2]!) ?? { status: 0 };
+    return { status: 0, stdout: "" };
+  };
+  return { run, calls };
+};
+
+describe("plan 257: what a nightly is built as", () => {
+  it("a nightly names its channel in the publish config: GitHub's publisher never takes it from the version (Codex)", () => {
+    // without it the zip target wrote latest-mac.yml for a nightly, which release.mjs refused and no Nightly copy reads
+    expect(publishConfig("0.1.6-nightly.202611250817")).toEqual({ provider: "github", owner: "luisiacc", repo: "terno", channel: "nightly" });
+    expect(publishConfig("0.1.6")).toEqual({ provider: "github", owner: "luisiacc", repo: "terno" });
+  });
+
+  it("app-builder-lib still ignores the version's channel for GitHub, so the explicit one stays needed", () => {
+    const req = createRequire(createRequire(join(__dirname, "../package.json")).resolve("electron-builder"));
+    const source = readFileSync(req.resolve("app-builder-lib/out/publish/updateInfoBuilder.js"), "utf8");
+    expect(source).toMatch(/publishConfig\.provider === "github"/);
+    expect(source).toMatch(/publishConfig\.channel \|\| "latest"/);
+  });
+
+  it("orders versions as semver and the app's updater do", () => {
+    const ordered = ["0.1.5", "0.1.6-nightly.202611240817", "0.1.6-nightly.202611250817", "0.1.6", "0.1.7-nightly.1", "0.2.0"];
+    for (let i = 0; i < ordered.length; i++) {
+      for (let j = 0; j < ordered.length; j++) {
+        expect(compareRelease(ordered[i], ordered[j])).toBe(Math.sign(i - j));
+        expect(compareVersions(ordered[i]!, ordered[j]!)).toBe(Math.sign(i - j));
+      }
+    }
+    expect(() => compareRelease("0.1.6-beta.1", "0.1.6")).toThrow(/isn't x\.y\.z/);
+  });
+});
+
+describe("plan 257: tonight's nightly", () => {
+  const base = { pkgVersion: "0.1.5", pkgReleased: true, nightlies: [], mainSha: sha, busy: false, now: night };
+
+  it("after a stable release: the next patch, stamped with the run's UTC minute, a version releases accept", () => {
+    const plan = nightlyPlan(base);
+    expect(plan).toEqual({ build: true, version: "0.1.6-nightly.202611250817" });
+    expect(VERSION.test(plan.version)).toBe(true);
+    expect(compareVersions(plan.version, "0.1.5")).toBe(1);
+    expect(compareVersions(plan.version, "0.1.6")).toBe(-1);
+  });
+
+  it("a version bumped but not released yet is the nightly's base", () => {
+    expect(nightlyPlan({ ...base, pkgVersion: "0.2.0", pkgReleased: false }).version).toBe("0.2.0-nightly.202611250817");
+  });
+
+  it("skips when main is the commit the newest nightly was built from: a quiet day costs no Mac", () => {
+    const nightlies = [{ version: "0.1.6-nightly.202611240817", sha }, { version: "0.1.6-nightly.202611230817", sha: null }];
+    expect(nightlyPlan({ ...base, nightlies })).toEqual({ build: false, reason: expect.stringContaining("is already 0.1.6-nightly.202611240817") });
+    expect(nightlyPlan({ ...base, nightlies, mainSha: later })).toEqual({ build: true, version: "0.1.6-nightly.202611250817" });
+  });
+
+  it("bump, nightly, then stable published from that commit: nothing to build until main moves (Codex)", () => {
+    // the nightly was built from the very commit the stable release was, so Nightly copies already have its code
+    const nightlies = [{ version: "0.1.6-nightly.202611240817", sha }];
+    expect(nightlyPlan({ ...base, pkgVersion: "0.1.6", pkgReleased: true, nightlies }).build).toBe(false);
+    expect(nightlyPlan({ ...base, pkgVersion: "0.1.6", pkgReleased: true, nightlies, mainSha: later }).version).toBe("0.1.7-nightly.202611250817");
+  });
+
+  it("never goes below the newest nightly: a higher hand-made one raises the base (Codex)", () => {
+    const nightlies = [{ version: "1.4.0-nightly.1", sha: later }];
+    const plan = nightlyPlan({ ...base, nightlies });
+    expect(plan.version).toBe("1.4.0-nightly.202611250817");
+    expect(compareVersions(plan.version, "1.4.0-nightly.1")).toBe(1);
+    // one that would still sort below (a clock behind the newest stamp) is skipped, never published out of order
+    expect(nightlyPlan({ ...base, nightlies: [{ version: "0.1.6-nightly.209901010000", sha: later }] }).build).toBe(false);
+  });
+
+  it("skips while a release run is queued or running: GitHub keeps one waiting run per group, a nightly would replace a stable one (Codex)", () => {
+    expect(nightlyPlan({ ...base, busy: true })).toEqual({ build: false, reason: expect.stringContaining("queued or running") });
+  });
+
+  it("the scheduler reads GitHub, then dispatches main's tip with tonight's version", () => {
+    const g = fakeGh({ main: later, pkg: "0.1.5", released: ["0.1.5"], releases: [rel("v0.1.5"), rel("v0.1.6-nightly.202611240817")], shas: { "v0.1.6-nightly.202611240817": sha }, runs: ["completed"] });
+    const started: unknown[] = [];
+    const r = startNightly({ run: g.run, now: night, start: (o: unknown) => (started.push(o), "https://github.com/luisiacc/terno/actions/runs/7") });
+    expect(r).toMatchObject({ build: true, version: "0.1.6-nightly.202611250817", url: "https://github.com/luisiacc/terno/actions/runs/7" });
+    expect(started).toEqual([{ sha: later, version: "0.1.6-nightly.202611250817" }]);
+    // the package version is read at the tip it builds, not from the checkout
+    expect(g.calls.some((a) => a[1] === `repos/luisiacc/terno/contents/apps/desktop/package.json?ref=${later}`)).toBe(true);
+  });
+
+  it("the scheduler dispatches nothing on a quiet night or while a release runs", () => {
+    for (const o of [{ main: sha, runs: ["completed"] }, { main: later, runs: ["queued"] }, { main: later, runs: ["in_progress"] }]) {
+      const g = fakeGh({ ...o, released: ["0.1.5"], releases: [rel("v0.1.6-nightly.202611240817")], shas: { "v0.1.6-nightly.202611240817": sha } });
+      let dispatched = false;
+      expect(startNightly({ run: g.run, now: night, start: () => ((dispatched = true), null) }).build).toBe(false);
+      expect(dispatched).toBe(false);
+    }
+  });
+
+  it("a GitHub read that fails stops the scheduler; only a 404 means unreleased (Codex)", () => {
+    expect(isReleased("0.1.5", fakeGh({ released: ["0.1.5"] }).run)).toBe(true);
+    expect(isReleased("0.1.6", fakeGh({}).run)).toBe(false);
+    expect(() => isReleased("0.1.6", () => ({ status: 1, stderr: "HTTP 502: Bad Gateway" }))).toThrow(/couldn't read the release v0\.1\.6/);
+    const down = (args: string[]) => (args[1] === "--paginate" ? { status: 1, stderr: "HTTP 503" } : fakeGh({ released: ["0.1.5"] }).run(args));
+    expect(() => startNightly({ run: down, now: night, start: () => null })).toThrow(/couldn't read the releases/);
+  });
+});
+
+describe("plan 257: publishing and pruning", () => {
+  it("publishes a nightly as a prerelease that is never Latest", () => {
+    const g = fakeGh({});
+    publishNightly("0.1.6-nightly.202611250817", g.run);
+    expect(g.calls[0]).toEqual(["release", "edit", "v0.1.6-nightly.202611250817", "--repo", "luisiacc/terno", "--draft=false", "--prerelease", "--latest=false"]);
+  });
+
+  it("a failed edit is read back: published counts, a draft left behind is deleted and the run fails (Codex)", () => {
+    const published = fakeGh({ edit: { status: 1, stderr: "timeout" }, view: { status: 0, stdout: "false\ttrue\n" } });
+    expect(() => publishNightly("0.1.6-nightly.1", published.run)).not.toThrow();
+    expect(published.calls.some((a) => a[1] === "delete")).toBe(false);
+    // deleteFailedDraft reads isDraft itself: the view answers "true" for it
+    let views = 0;
+    const draft = fakeGh({ edit: { status: 1, stderr: "HTTP 500" } });
+    const run = (args: string[]) => (args[1] === "view" ? (views++ === 0 ? { status: 0, stdout: "true\tfalse\n" } : { status: 0, stdout: "true\n" }) : draft.run(args));
+    expect(() => publishNightly("0.1.6-nightly.1", run)).toThrow(/couldn't publish v0\.1\.6-nightly\.1: HTTP 500 \(its draft was removed/);
+    expect(draft.calls.some((a) => a[1] === "delete" && a[2] === "v0.1.6-nightly.1")).toBe(true);
+  });
+
+  it("the draft job refuses a nightly that wouldn't sort above every published one (the updater takes the feed's first)", () => {
+    const g = fakeGh({ releases: [rel("v0.1.6-nightly.202611250817"), rel("v0.1.5")] });
+    expect(() => assertNightlyIsNewest("0.1.6-nightly.202611240817", g.run)).toThrow(/doesn't sort above the published 0\.1\.6-nightly\.202611250817/);
+    expect(() => assertNightlyIsNewest("0.1.6-nightly.202611250817", g.run)).toThrow();
+    expect(() => assertNightlyIsNewest("0.1.6-nightly.202611260817", g.run)).not.toThrow();
+    expect(() => assertNightlyIsNewest("0.1.6-nightly.1", fakeGh({ releases: [rel("v0.1.5")] }).run)).not.toThrow();
+  });
+
+  it("keeps the newest nightlies and never touches a stable release, a draft or a nightly-looking full release", () => {
+    const nightlies = Array.from({ length: KEEP_NIGHTLIES + 3 }, (_, i) => rel(`v0.1.6-nightly.202611${String(i + 1).padStart(2, "0")}0817`));
+    const others = [rel("v0.1.5"), rel("v0.1.6-nightly.1", { draft: true }), rel("v0.1.4-nightly.9", { prerelease: false }), rel("v0.1.4-beta.1")];
+    // the API's order isn't the version order
+    const pruned = nightliesToPrune([...others, ...nightlies.slice().reverse()]);
+    expect(pruned).toEqual(["v0.1.6-nightly.202611030817", "v0.1.6-nightly.202611020817", "v0.1.6-nightly.202611010817"]);
+    expect(nightliesToPrune(nightlies.slice(0, KEEP_NIGHTLIES))).toEqual([]);
+  });
+
+  it("prunes with the tags, across every page of releases, and reports what it couldn't delete", () => {
+    const nightlies = Array.from({ length: KEEP_NIGHTLIES + 2 }, (_, i) => rel(`v0.1.6-nightly.${100 + i}`));
+    const g = fakeGh({ releases: nightlies, delete: (tag) => (tag === "v0.1.6-nightly.100" ? { status: 1 } : { status: 0 }) });
+    expect(pruneNightlies(g.run)).toEqual(["v0.1.6-nightly.100"]);
+    expect(g.calls[0]).toEqual(["api", "--paginate", "repos/luisiacc/terno/releases?per_page=100", "--jq", ".[] | {tag: .tag_name, prerelease, draft}"]);
+    expect(g.calls.filter((a) => a[1] === "delete")).toEqual(["v0.1.6-nightly.101", "v0.1.6-nightly.100"].map((t) => ["release", "delete", t, "--repo", "luisiacc/terno", "--cleanup-tag", "--yes"]));
+  });
+});
+
+describe("plan 257: the nightly workflow", () => {
+  const nightly = readFileSync(join(__dirname, "../../../.github/workflows/nightly.yml"), "utf8");
+
+  it("runs on a schedule or by hand, never for a push or a pull request", () => {
+    const on = nightly.slice(nightly.indexOf("\non:"), nightly.indexOf("\npermissions:"));
+    expect(on).toMatch(/schedule:\n\s+(#.*\n\s+)?- cron: "17 8 \* \* \*"/);
+    expect(on).toContain("workflow_dispatch:");
+    expect(on).not.toMatch(/pull_request|push:|workflow_run|issue|release:/);
+  });
+
+  it("holds no secret and no environment: it reads GitHub and dispatches, from main only", () => {
+    expect(nightly).not.toContain("secrets.");
+    expect(nightly).not.toContain("environment:");
+    expect(nightly).toMatch(/\npermissions: \{\}\n/);
+    expect(nightly).toMatch(/permissions:\n {6}contents: read[^\n]*\n {6}actions: write[^\n]*\n {4}steps:/);
+    expect(nightly).toContain("if: github.ref == 'refs/heads/main'");
+    expect(nightly).toContain("persist-credentials: false");
+    expect(nightly).toMatch(/GH_TOKEN: \$\{\{ github\.token \}\}\n {8}run: node apps\/desktop\/scripts\/release-ci\.mjs nightly\n/);
+  });
+
+  it("release.yml stops any run not on main before it does anything (Codex)", () => {
+    for (const j of JOBS) expect(step("The commit is main's tip", j)).toContain('[ "$GITHUB_REF" = refs/heads/main ]');
   });
 });

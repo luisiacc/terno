@@ -5,6 +5,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } fr
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { publishConfig } from "./release-assets.mjs";
 
 export const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(join(root, "package.json"));
@@ -27,7 +28,7 @@ export const appId = testBuild ? "dev.terno.updatetest" : "dev.terno.mail";
 // electron-updater's cache is ~/Library/Caches/<name>-updater
 const packageName = testBuild ? "terno-updatetest" : "terno";
 /** the feed a copy checks (plan 11): GitHub's releases, or a test build's own */
-export const publish = testBuild ? { provider: "generic", url: testBuild.feed } : { provider: "github", owner: "luisiacc", repo: "terno" };
+export const publish = testBuild ? { provider: "generic", url: testBuild.feed } : publishConfig(version);
 const dist = process.env.TERNO_BUILD_OUT || join(root, "dist");
 
 /** Checks the build is the right kind, then writes the staging app; returns its directory (electron-builder's projectDir). */

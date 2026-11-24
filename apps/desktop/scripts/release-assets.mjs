@@ -14,6 +14,32 @@ export function channelOf(version) {
   return /-/.test(version) ? (/-([a-z]+)/.exec(version)?.[1] ?? "") : "latest";
 }
 
+/**
+ * electron-builder's publish config for a release (plan 257). Its GitHub publisher never takes the channel from the
+ * version (only the generic one does), so a nightly names its own: that is what makes the zip target write
+ * nightly-mac.yml. A copy's engine sets the channel on every check, so the one in app-update.yml changes nothing.
+ */
+export function publishConfig(version) {
+  const channel = channelOf(version);
+  return { provider: "github", owner: "luisiacc", repo: "terno", ...(channel === "latest" ? {} : { channel }) };
+}
+
+/** A nightly's tag, the only kind the scheduler builds and prunes: vX.Y.Z-nightly.N */
+export const NIGHTLY_TAG = /^v(\d+)\.(\d+)\.(\d+)-nightly\.(\d+)$/;
+
+/** Orders x.y.z and x.y.z-nightly.n as semver does (a nightly before its release; nightlies by number). */
+export function compareRelease(a, b) {
+  const parse = (v) => {
+    const m = /^(\d+)\.(\d+)\.(\d+)(?:-nightly\.(\d+))?$/.exec(v);
+    if (!m) throw new Error(`${v} isn't x.y.z or x.y.z-nightly.n`);
+    return [Number(m[1]), Number(m[2]), Number(m[3]), m[4] === undefined ? Infinity : Number(m[4])];
+  };
+  const x = parse(a);
+  const y = parse(b);
+  for (let i = 0; i < 4; i++) if (x[i] !== y[i]) return x[i] < y[i] ? -1 : 1;
+  return 0;
+}
+
 /** The version deb and rpm record: a prerelease sorts before its release there only with "~" (electron-builder's own rule). */
 export function packageVersion(version) {
   return version.replace("-", "~");
