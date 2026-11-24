@@ -1,7 +1,8 @@
 # 268: the database's descriptive value lists go, without rewriting a row
 
-**Status (2026-11-24): stopped before building; the owner decides.** The plan below was drafted, critiqued and
-prototyped; the prototype was reverted. Why, and the options, are at the end ("Why it stopped").
+**Status (2026-11-24): not built; the owner chose option A** ("ok lets do A"): the lists stay, and each goes when its
+column next needs a new value. The plan below was drafted, critiqued and prototyped; the prototype was reverted. Why,
+the options and the decision are at the end.
 
 ## Request
 
@@ -106,3 +107,20 @@ Options:
   handling for each (a large change across `db`, `idb`, `backend` and `core`).
 - **C:** plan 259 (Outlook) widens `accounts.kind`, `owner.provider` and `owner.verified_by` itself; it has to deal with
   defensive mode the same way (its plan assumed `writable_schema` works).
+
+## Decision: A
+
+The 18 lists stay. When a step needs a value one of them doesn't allow, that step:
+
+1. rebuilds the table without that column's list (create, copy, drop, rename, as v75 and v80 did), naming the DROP TABLE
+   in `rewrites`. A table other tables reference uses the transactional rebuild with foreign keys off for the step and
+   `PRAGMA foreign_key_check` before it commits (plan 259's `rebuildsReferenced`), so no cascade fires. Never
+   `writable_schema`: the shipped runtime refuses it.
+2. moves the check to the store, in both engines: a write of a value the build doesn't know is refused, and a read of
+   one has a defined path (unknown, skipped, or refused, whichever is safe for what that column decides), with tests.
+3. stays within the migration budget (`migrations.perf.test.ts`). A table too large to copy within it (today only
+   `messages`) keeps its list until there's a way that doesn't copy it.
+
+Plan 259 (Outlook, stage 0b, on its branch) already does this for `accounts.kind`, `owner.provider` and
+`owner.verified_by`: its migration rebuilds both tables with foreign keys off, and both stores refuse a kind they don't
+know. AGENTS.md's rule says the same in brief.
