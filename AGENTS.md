@@ -19,7 +19,7 @@ Terno is a minimalist, fast email client: Electron (macOS first) plus a web buil
    - Lists are virtualized, and render counts are asserted.
    - Nothing blocks the backend event loop beyond the slicer's budget. Queries hold at 50k+ threads in both stores: SQLite in `packages/db`, IndexedDB in `packages/idb`.
    - **No lazy loading, ever.** Everything is a plain `import`: no `React.lazy`, no dynamic `import()` or `require()` of app code, no `Suspense` for code, no preloads, no chunk splitting (`architecture.test.ts`; only web-only code behind `VITE_TARGET` loads on demand).
-   - An update never makes the user wait: a SQLite migration changes shape only (≤ 1 s at 50k threads, `migrations.perf.test.ts`), and data work goes to the backend's background slices (plan 112).
+   - An update never makes the user wait: a SQLite migration changes shape only (≤ 1 s at 50k threads, `migrations.perf.test.ts`), and data work goes to the backend's background slices (plan 112). There is no backup before a migration (plan 255): a step adds tables, columns or indexes. One that deletes or rewrites rows it finds says why in `rewrites` (`migration-rule.test.ts`) and is rare: prefer leaving an old column or table in place and cleaning up later.
 5. **Low resource usage.** No polling where an event exists, and no work until a feature is opened. Memory, disk and logs are bounded. Idle means idle: no timers spinning, and no network outside what the user's mail and explicit choices need.
 
 ## Non-negotiables

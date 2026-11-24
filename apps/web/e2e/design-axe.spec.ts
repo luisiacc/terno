@@ -15,7 +15,7 @@ import { msg } from "@terno/store/conformance";
 import { sqlDb } from "../../backend-dev/src/server";
 import { E2E_NOW } from "./constants";
 import { addRecipients, expect, focusList, navTo, openRow, rows, search, selectedRow, test, type DevServerFixture, openReview } from "./fixtures";
-import { BACKUP, base, failed, fakeMain, gate, release, upd } from "./helpers/fake-main";
+import { base, failed, fakeMain, gate, release, upd } from "./helpers/fake-main";
 import { digestRow } from "./helpers/today";
 
 // the format bar's controls are what this drives (plan 158: closed by default)
@@ -536,12 +536,12 @@ test.describe("axe", { tag: ["@variant", "@variant-relief"] }, () => {
     await page.keyboard.press("Escape");
     await upd(page, base);
 
-    for (const [name, g] of [["upgrading", { kind: "upgrading", phase: "backup", from: 37, to: 38 }], ["no-room", { kind: "no-room", stage: "backup", needBytes: 3 * 2 ** 30, freeBytes: 2 * 2 ** 30, canSkipBackup: true }], ["migration", failed("migration")], ["unwritable", failed("unwritable")], ["backup", failed("backup")], ["corrupt", failed("corrupt", { backup: BACKUP, restoreFailed: "failed" })], ["newer", { kind: "newer", schema: 40, supported: 38 }], ["restoring", { kind: "restoring" }]] as const) {
+    for (const [name, g] of [["upgrading", { kind: "upgrading", from: 37, to: 38 }], ["no-room", { kind: "no-room", needBytes: 3 * 2 ** 30, freeBytes: 2 * 2 ** 30 }], ["migration", failed("migration")], ["unwritable", failed("unwritable")], ["corrupt", failed("corrupt")], ["newer", { kind: "newer", schema: 40, supported: 38 }]] as const) {
       await gate(page, g as MailboxGate);
       await expect(page.getByTestId("mailbox-gate")).toHaveAttribute("data-kind", name);
       await clean(page, `the mailbox gate, ${name}`, "[data-testid=mailbox-gate]");
     }
-    await gate(page, { kind: "open", restoredFrom: null });
+    await gate(page, { kind: "open" });
     await upd(page, { required: "0.2.0", status: "available", available: release });
     await expect(page.getByTestId("required-update")).toBeVisible();
     await clean(page, "a required update", "[data-testid=required-update]");

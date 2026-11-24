@@ -1,24 +1,24 @@
 /**
  * Plan 95 on the PACKAGED app, with throwaway profiles (TERNO_USER_DATA):
- * the real backend, real migrations and a real disk.
+ * the real backend, real migrations and a real disk. There is no backup
+ * before a migration (plan 255).
  *
- * - an older mailbox is backed up (a clone, plan 112), then migrated; the
- *   window opens as usual, never covered
+ * - an older mailbox is migrated; the window opens as usual, never covered,
+ *   and an earlier build's backups/ goes
  * - a mailbox from a newer Terno: the gate says so, and nothing restarts the
  *   backend on a timer (one backend.started in the log)
  * - a step that fails (a table the migration creates is already there): the
  *   gate says so, Try Again tries once more, the file stays at its version
- * - a profile on a nearly full disk image: "no room", then Update Without a
- *   Backup migrates
- * - a damaged mailbox with a backup: Restore, after which a send queued in the
- *   backup is not sent again
+ * - a profile on a full disk image: the migration rolls back, "no room", and
+ *   Try Again after freeing space migrates
+ * - a damaged mailbox: the gate says so, and the file is left as it is
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readSync, rmSync, statfsSync, statSync, writeFileSync, writeSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, statfsSync, writeFileSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
 import { MIGRATIONS, SCHEMA_VERSION } from "../../../packages/db/src/migrations";
 import { nodeSqliteDriver } from "../../../packages/db/src/node-driver";
@@ -88,8 +88,7 @@ function oldMailbox(path: string, o: { version?: number; drafts?: number; bodyKb
 }
 
 const facts = (path: string) => {
-  // a backup is read without touching it: a clone stays in WAL mode until it is settled (plan 253)
-  const db = path.includes("/backups/") ? new DatabaseSync(`${pathToFileURL(path).href}?immutable=1`, { readOnly: true }) : new DatabaseSync(path, { readOnly: true });
+  const db = new DatabaseSync(path, { readOnly: true });
   try {
     const one = <T>(sql: string) => db.prepare(sql).get() as T;
     return {
@@ -110,25 +109,19 @@ const logged = (userData: string, code: string) => {
     .reduce((a, b) => a + b, 0);
 };
 
-/** the fields of the backend's "mailbox.backup_made" line (plan 112: how it was made, and how long it took) */
-const backupMade = (userData: string): { method?: string; durationMs: number } | null => {
-  const dir = join(userData, "logs");
-  for (const f of existsSync(dir) ? readdirSync(dir).filter((x) => x.endsWith(".jsonl")) : [])
-    for (const line of readFileSync(join(dir, f), "utf8").split("\n"))
-      if (line.includes('"mailbox.backup_made"')) return (JSON.parse(line) as { fields: { method?: string; durationMs: number } }).fields;
-  return null;
-};
-
 const gate = (page: Page) => page.getByTestId("mailbox-gate");
 
-// @alone: test:startup, by itself: it holds a clone's 400 ms, and on a busy machine the backup falls back to a copy
-test("an older mailbox: backed up, migrated, and the window opens as usual, never covered (plan 112)", { tag: "@alone" }, async () => {
+// @alone: test:startup, by itself: it times the window against the cover's 400 ms
+test("an older mailbox: migrated with no backup, an earlier build's backups removed, and the window opens as usual, never covered (plan 255)", { tag: "@alone" }, async () => {
   const userData = profile("older");
   const db = join(userData, "terno.db");
-  // ~200 MB: a full copy takes seconds, past the cover's 400 ms; a clone doesn't
+  // ~200 MB: a backup of it would have taken seconds (a copy) or held its first write (a clone)
   oldMailbox(db, { drafts: 5, bodyKb: 40_000 });
+  const old = join(userData, "backups", "1000-v1-v2");
+  mkdirSync(old, { recursive: true });
+  writeFileSync(join(old, "terno.db"), Buffer.alloc(1 << 20));
   const page = await launch(userData);
-  // watched until the mailbox is ready: the cover never appeared (a sample; the log below is the proof)
+  // watched until the mailbox is ready: the cover never appeared
   let covered = false;
   for (const until = Date.now() + 60_000; ; ) {
     if (await gate(page).count()) covered = true;
@@ -138,33 +131,11 @@ test("an older mailbox: backed up, migrated, and the window opens as usual, neve
   }
   expect(covered).toBe(false);
   await expect(gate(page)).toHaveCount(0);
-  // plan 253: the backup's first write (its settle) comes after the window opened, off the backend's thread
-  const generations = readdirSync(join(userData, "backups"));
-  const copy = join(userData, "backups", generations[0]!, "terno.db");
-  const journalMode = () => {
-    const fd = openSync(copy, "r");
-    try {
-      const b = Buffer.alloc(2);
-      readSync(fd, b, 0, 2, 18);
-      return [...b];
-    } finally {
-      closeSync(fd);
-    }
-  };
-  await expect.poll(journalMode, { timeout: 30_000 }).toEqual([1, 1]);
+  await expect.poll(() => existsSync(join(userData, "backups")), { timeout: 10_000 }).toBe(false);
   await closePackaged(app);
   app = undefined;
   expect(facts(db)).toEqual({ version: SCHEMA_VERSION, drafts: 5 });
-  expect(logged(userData, "mailbox.backup_settled")).toBe(1);
-  expect(generations).toHaveLength(1);
-  const manifest = JSON.parse(readFileSync(join(userData, "backups", generations[0]!, "manifest.json"), "utf8")) as { fromSchema: number; toSchema: number };
-  expect(manifest).toMatchObject({ fromSchema: PREV, toSchema: SCHEMA_VERSION, method: "clone" });
-  expect(facts(join(userData, "backups", generations[0]!, "terno.db"))).toEqual({ version: PREV, drafts: 5 });
-  expect(logged(userData, "mailbox.backup_made")).toBe(1);
-  // the cover waits 400 ms before it shows: a backup (and its lock) done well inside that never shows it (Codex code review #5)
-  const made = backupMade(userData);
-  expect(made).toMatchObject({ method: "clone" });
-  expect(made!.durationMs).toBeLessThan(400);
+  expect(existsSync(join(userData, "backups"))).toBe(false);
 });
 
 test("a mailbox from a newer Terno: the gate says so, and the backend isn't restarted on a timer", async () => {
@@ -208,11 +179,11 @@ test("a step that fails: the gate names it, Try Again tries once more, the file 
   app = undefined;
   expect(logged(userData, "backend.started")).toBe(2);
   expect(facts(db).version).toBe(creating.version - 1);
-  // its backup was made before the step failed, and kept for the retry
-  expect(readdirSync(join(userData, "backups"))).toHaveLength(1);
+  // plan 255: the step rolled back in its transaction; no backup was made
+  expect(existsSync(join(userData, "backups"))).toBe(false);
 });
 
-test("a nearly full disk: 'no room' with the numbers, then Update Without a Backup migrates", async () => {
+test("a full disk: the migration rolls back, 'no room' says the numbers, and Try Again after freeing space migrates", async () => {
   const image = join(work, "tight.dmg");
   const made = spawnSync("hdiutil", ["create", "-size", "160m", "-fs", "HFS+", "-volname", "TernoTight", "-o", image], { encoding: "utf8" });
   test.skip(made.status !== 0, `hdiutil can't make a disk image here: ${made.stderr}`);
@@ -223,61 +194,45 @@ test("a nearly full disk: 'no room' with the numbers, then Update Without a Back
   const userData = join(mount, "profile");
   mkdirSync(userData);
   const db = join(userData, "terno.db");
-  // ~24 MB: the backup and the migration need ~100 MB, the migration alone ~76 MB
   oldMailbox(db, { drafts: 48, bodyKb: 500 });
   const free = () => {
     const s = statfsSync(mount);
     return Number(s.bavail) * Number(s.bsize);
   };
+  // the disk full to the last few blocks: the migration's first writes can't land
   const filler = join(mount, "filler.bin");
   const fd = openSync(filler, "w");
-  const block = Buffer.alloc(1 << 20, 0xab);
-  while (free() > 85 * 2 ** 20) writeSync(fd, block);
+  for (const size of [1 << 20, 1 << 14, 1 << 12]) {
+    const block = Buffer.alloc(size, 0xab);
+    try {
+      while (free() > size) writeSync(fd, block);
+    } catch {
+      /* full */
+    }
+  }
   closeSync(fd);
   const page = await launch(userData);
   await expect(gate(page)).toHaveAttribute("data-kind", "no-room", { timeout: 30_000 });
-  await expect(gate(page)).toContainText(/including a backup of it\. \d+[.,]\d MB is free now/);
-  await page.getByTestId("mailbox-skip-backup").click();
+  await expect(gate(page)).toContainText(/Updating your mailbox needs about \d+[.,]\d MB free\. [\d.,]+ (KB|MB|bytes) is free now/);
+  expect(facts(db).version).toBe(PREV);
+  rmSync(filler);
+  await page.getByTestId("mailbox-retry").click();
   await page.locator("[data-ready]").waitFor({ timeout: 60_000 });
   await expect(gate(page)).toHaveCount(0);
   await closePackaged(app);
   app = undefined;
   expect(facts(db)).toEqual({ version: SCHEMA_VERSION, drafts: 48 });
-  expect(existsSync(join(userData, "backups")) ? readdirSync(join(userData, "backups")) : []).toEqual([]);
-  expect(statSync(filler).size).toBeGreaterThan(0);
 });
 
-test("a damaged mailbox with a backup: Restore brings it back, and a queued send isn't sent again", async () => {
+test("a damaged mailbox: the gate says so with Try Again and Export Diagnostics, and the file is left as it is", async () => {
   const userData = profile("damaged");
   const db = join(userData, "terno.db");
-  // the backup an earlier upgrade made (its manifest names its file and size)
-  const gen = join(userData, "backups", `${Date.UTC(2026, 9, 20, 12)}-v${PREV}-v${SCHEMA_VERSION}`);
-  mkdirSync(gen, { recursive: true });
-  oldMailbox(join(gen, "terno.db"), { drafts: 4 });
-  const c = new DatabaseSync(join(gen, "terno.db"));
-  c.exec("PRAGMA journal_mode = DELETE");
-  c.close();
-  writeFileSync(join(gen, "manifest.json"), JSON.stringify({ file: "terno.db", fromSchema: PREV, toSchema: SCHEMA_VERSION, appVersion: "0.2.0", size: statSync(join(gen, "terno.db")).size, createdAt: Date.UTC(2026, 9, 20, 12) }));
   writeFileSync(db, Buffer.alloc(64 * 1024, 0x5a));
   const page = await launch(userData);
   await expect(gate(page)).toHaveAttribute("data-kind", "corrupt", { timeout: 30_000 });
-  await expect(gate(page)).toContainText("Terno has a copy from October 20, 2026");
-  await page.getByTestId("mailbox-restore").click();
-  await page.getByTestId("mailbox-restore-confirm-confirm").click();
-  await page.locator("[data-ready]").waitFor({ timeout: 60_000 });
-  await expect(gate(page)).toHaveCount(0);
-  await expect(page.getByTestId("snack-dock")).toContainText("Mailbox restored from the copy of October 20, 2026");
+  await expect(gate(page)).toContainText("Terno can’t read it.");
+  await expect(gate(page).getByRole("button")).toHaveText(["Try Again", "Export diagnostics…"]);
   await closePackaged(app);
   app = undefined;
-  expect(facts(db)).toEqual({ version: SCHEMA_VERSION, drafts: 4 });
-  const check = new DatabaseSync(db, { readOnly: true });
-  try {
-    expect(check.prepare("SELECT state FROM ops WHERE id = 'op-1'").get()).toEqual({ state: "failed" });
-  } finally {
-    check.close();
-  }
-  // the damaged file is kept aside, and the marker was handled
-  expect(existsSync(`${db}.before-restore`)).toBe(true);
-  expect(existsSync(`${db}.restored.json`)).toBe(false);
-  expect(existsSync(`${db}.restore.json`)).toBe(false);
+  expect(readFileSync(db)).toEqual(Buffer.alloc(64 * 1024, 0x5a));
 });

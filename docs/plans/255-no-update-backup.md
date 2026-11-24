@@ -92,3 +92,33 @@ Plan 253's narrowing stays (the owner's decision): only a mailbox the conversion
 - **Background steps** (a backfill or an index build run after the window opens, resumable) and removing the migration's fallback cover. That's the next plan, once a step needs it. Today every step is milliseconds on a 1.2 GB mailbox.
 - **A corrupt mailbox's way forward** (start over and download the mail again) is a separate feature.
 - **A copy of the local-only tables before a step that rewrites rows.** It can be revisited if a `rewrites` step ever needs it.
+
+## 6. Revisions after the Codex review
+
+These override §§2–5 where they conflict. The critique is in `/tmp/terno-scratch/p255-plan-review.txt`.
+
+1. **The scanner is about rows lost, not time spent** (points 4–6).
+   - It flags `DROP TABLE`, `DROP COLUMN`, `DELETE FROM`, `UPDATE`, and an `INSERT` that may replace a row (`OR REPLACE`, `REPLACE INTO`, the `VALUES` form included).
+   - A plain `INSERT … SELECT` (a marker row, a copy into a new table) adds and is the perf gate's.
+   - Trigger bodies are skipped from their `BEGIN` to the `END` that closes it, counting `CASE … END` inside. A `WHEN` clause's `CASE` comes before the `BEGIN`.
+   - The history it reads (v3, 4, 6, 8, 9, 14, 19, 28, 35, 37, 57, 75) is pinned in the test.
+   - A trigger created in a step and fired by a later `INSERT` in the same step isn't seen. It's rare, and a reviewer reads the step anyway.
+2. **`backups/` goes off the opening's way** (point 2). `removeOldBackups` is an `fs.promises.rm` started before the open and not awaited: a large clone takes a while to free. A quit mid-way leaves the rest to the next start. The single-instance lock keeps any other Terno out of the folder.
+3. **Checkpoints during a migration are SQLite's default again** (point 3). With no clone, a migration crossing 1,000 pages pays an ordinary checkpoint, as before plan 253. `deferCheckpoints` and the hold went with the clone.
+4. **The updater and the backend report one `no-room`** (point 8). The `openFailure` field's values are `newer`, `no-room`, `migration`, `corrupt`, `unwritable` and `other`, with a controller test.
+5. **Persisted reasons** (point 9). `forward.reason.restored` was only written by the restore's quarantine. No profile was ever restored (no users), so the key goes with it.
+6. **Tests** (points 10–12):
+   - the entry test loses `backup-cancel` and the settle cases and gains an ordinary update (no legacy owner, `backups/` removed);
+   - `incoming-node-open.int.test.ts` reads the schema instead of backing up;
+   - `upgrade.test.ts` covers a crash-left WAL holding both the step and a draft;
+   - the packaged smoke's full disk is now truly full: the migration rolls back, says no room, and Try Again migrates once the space is freed.
+7. **Left as they are:**
+   - **A restore's leftovers from an earlier build** (point 1): no profile has one.
+   - **IndexedDB** has its own version path; the web build is low priority, and its schema steps are code, not SQL.
+   - **"Your Mac is almost out of space"** says Mac on Linux too. That's a copy fix for plan 254's Linux work.
+
+## 7. As shipped
+
+- **Deleted:** `clone.ts`, `backups.ts`, `restore.ts` (db and desktop), `preparing.ts` and their tests, the hold from plan 253, `quarantineForwards`, 17 strings in each locale and 7 diagnostics codes.
+- **The cover:** "Updating your mailbox…" stays only as the fallback for a migration past 400 ms. The corrupt screen's text is `mailbox.corrupt.body`. The keys `noRoom.migrate` and `upgrading.migrate` are now `….body`.
+- **Note on history:** the deletions landed inside f832a3b63 (a site commit that took the shared index while this was being built); 608b72640 completes the change.

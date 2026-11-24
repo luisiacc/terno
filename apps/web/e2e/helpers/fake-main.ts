@@ -21,7 +21,6 @@ export const base: UpdateState = {
   updatingNow: false,
 };
 export const release = { version: "0.2.0", notes: "Fixes", size: 118_542_629, releaseDate: "2026-10-24T12:00:00.000Z" };
-export const BACKUP = { createdAt: Date.UTC(2026, 9, 20, 12), appVersion: "0.2.0", fromSchema: 37 };
 
 /** Stand-ins for main: they record what the window asks, and `gate` / `upd` push like main does. */
 export async function fakeMain(page: Page, o: { gate?: MailboxGate; updates?: Partial<UpdateState>; answers?: { updateNow?: Partial<UpdateState> } } = {}) {
@@ -47,8 +46,6 @@ export async function fakeMain(page: Page, o: { gate?: MailboxGate; updates?: Pa
       w.__terno.mailboxBridge({
         state: async () => box.gate,
         retry: asked("retry"),
-        skipBackup: asked("skipBackup"),
-        restore: asked("restore"),
         onState: (l: (g: unknown) => void) => (gateListeners.add(l), () => gateListeners.delete(l)),
       });
       const answer = (name: string, next?: unknown) => async () => {
@@ -67,7 +64,7 @@ export async function fakeMain(page: Page, o: { gate?: MailboxGate; updates?: Pa
         onState: (l: (s: unknown) => void) => (updListeners.add(l), () => updListeners.delete(l)),
       });
     },
-    { gate: o.gate ?? { kind: "open", restoredFrom: null }, updates: { ...base, ...o.updates }, answers: o.answers ?? {} },
+    { gate: o.gate ?? { kind: "open" }, updates: { ...base, ...o.updates }, answers: o.answers ?? {} },
   );
 }
 
@@ -75,4 +72,4 @@ export const gate = (page: Page, g: MailboxGate) => page.evaluate((g) => (window
 export const upd = (page: Page, s: Partial<UpdateState>) => page.evaluate((s) => (window as unknown as { __p95: { upd(s: unknown): void } }).__p95.upd(s), { ...base, ...s });
 export const calls = (page: Page) => page.evaluate(() => (window as unknown as { __p95: { calls: string[] } }).__p95.calls);
 
-export const failed = (reason: "migration" | "corrupt" | "unwritable" | "backup", o: Partial<Extract<MailboxGate, { kind: "failed" }>> = {}): MailboxGate => ({ kind: "failed", reason, step: reason === "migration" ? 38 : null, backup: null, restoreFailed: null, ...o });
+export const failed = (reason: "migration" | "corrupt" | "unwritable"): MailboxGate => ({ kind: "failed", reason, step: reason === "migration" ? 38 : null });

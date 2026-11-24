@@ -1,7 +1,8 @@
 /**
- * Plan 95's screens in the renderer: the mailbox gate (being upgraded, no
- * room, a step that failed, a damaged file with its restore, a folder that
- * can't be written, a mailbox from a newer Terno) and the required update,
+ * Plan 95's screens in the renderer: the mailbox gate (a migration past its
+ * first moments, no room, a step that failed, a damaged file, a folder that
+ * can't be written, a mailbox from a newer Terno; plan 255: no backup, so no
+ * restore) and the required update,
  * driven by stand-ins for main's gate host and updater (render-probe builds
  * expose them), in light and dark, with axe. The real gate (a real
  * migration, a real disk) is the packaged smoke in apps/desktop.
@@ -10,35 +11,28 @@ import AxeBuilder from "@axe-core/playwright";
 import type { MailboxGate } from "@terno/core/mailbox";
 import type { Page } from "@playwright/test";
 import { expect, stabilize, test, fresh, scenario } from "./fixtures";
-import { BACKUP, calls, failed, fakeMain, gate, release, upd } from "./helpers/fake-main";
+import { calls, failed, fakeMain, gate, release, upd } from "./helpers/fake-main";
 
 const cover = (page: Page) => page.getByTestId("mailbox-gate");
 
 test.describe("mailbox gate (plan 95)", () => {
-  test("every kind of gate: upgrading, no room, a failed step, Update Terno, a copy that can't update, damaged, unwritable, the engine-stopped screen", async ({ app: page }) => {
-    await scenario("an upgrade shows nothing for a quick one, then says it's updating; the mailbox opening uncovers the window", async () => {
+  test("every kind of gate: migrating, no room, a failed step, Update Terno, a copy that can't update, damaged, unwritable, the engine-stopped screen", async ({ app: page }) => {
+    await scenario("a migration shows nothing for a quick one, then says it's updating; the mailbox opening uncovers the window", async () => {
       await fakeMain(page);
-      await gate(page, { kind: "upgrading", phase: "backup", from: 37, to: 38 });
+      await gate(page, { kind: "upgrading", from: 37, to: 38 });
       await expect(cover(page)).toHaveCount(0);
       await expect(cover(page)).toHaveAttribute("data-kind", "upgrading");
-      await expect(page.getByTestId("mailbox-body")).toHaveText("Making a backup first. Your mail stays on this Mac.");
-      await gate(page, { kind: "upgrading", phase: "migrate", from: 37, to: 38 });
       await expect(page.getByTestId("mailbox-body")).toHaveText("This can take a minute on a large mailbox.");
-      await gate(page, { kind: "open", restoredFrom: null });
+      await gate(page, { kind: "open" });
       await expect(cover(page)).toHaveCount(0);
     });
-    await scenario("no room for the backup: how much is needed and free, Try Again, and Update Without a Backup when the migration fits", async () => {
+    await scenario("no room: how much is needed and free, and Try Again (no way around it)", async () => {
       await fresh(page);
-      await fakeMain(page, { gate: { kind: "no-room", stage: "backup", needBytes: 3 * 2 ** 30, freeBytes: 2 * 2 ** 30, canSkipBackup: true } });
+      await fakeMain(page, { gate: { kind: "no-room", needBytes: 3 * 2 ** 30, freeBytes: 2 * 2 ** 30 } });
       await expect(cover(page)).toHaveAttribute("data-kind", "no-room");
       await expect(cover(page)).toHaveAttribute("role", "alertdialog");
-      await expect(page.getByTestId("mailbox-body")).toContainText(/about 3[,.]0 GB free, including a backup of it\. 2[,.]0 GB is free now/);
+      await expect(page.getByTestId("mailbox-body")).toContainText(/about 3[,.]0 GB free\. 2[,.]0 GB is free now/);
       await expect(page.getByTestId("mailbox-retry")).toBeFocused();
-      await page.getByTestId("mailbox-skip-backup").click();
-      await expect.poll(() => calls(page)).toContain("skipBackup");
-      // a migration that doesn't fit offers no way around it
-      await gate(page, { kind: "no-room", stage: "migrate", needBytes: 2 ** 28, freeBytes: 2 ** 20, canSkipBackup: false });
-      await expect(page.getByTestId("mailbox-skip-backup")).toHaveCount(0);
       await page.getByTestId("mailbox-retry").click();
       await expect.poll(() => calls(page)).toContain("retry");
     });
@@ -73,36 +67,15 @@ test.describe("mailbox gate (plan 95)", () => {
       await expect(cover(page)).toContainText("Move Terno to Applications to get updates.");
       await expect(page.getByTestId("update-download-page")).toHaveText("Download Terno");
     });
-    await scenario("a damaged mailbox with a backup: Restore asks first, says what's lost; a failed restore says so in place", async () => {
-      await fresh(page);
-      await fakeMain(page, { gate: failed("corrupt", { backup: BACKUP }) });
-      await expect(cover(page)).toContainText("Terno has a copy from October 20, 2026");
-      await page.getByTestId("mailbox-restore").click();
-      const confirm = page.getByTestId("mailbox-restore-confirm");
-      await expect(confirm).toContainText("Restore the copy from October 20, 2026?");
-      await expect(confirm).toContainText("Messages waiting to be sent won’t be sent");
-      await page.getByTestId("mailbox-restore-confirm-confirm").click();
-      await expect.poll(() => calls(page)).toContain("restore");
-      await gate(page, { kind: "restoring" });
-      await expect(cover(page)).toHaveAttribute("data-kind", "restoring");
-      await gate(page, failed("corrupt", { backup: BACKUP, restoreFailed: "no-room" }));
-      await expect(page.getByTestId("mailbox-restore-failed")).toHaveText("There isn’t enough free space to restore the copy. Free up some space, then try again.");
-      // restored: the window opens, and says once what changed
-      await gate(page, { kind: "open", restoredFrom: BACKUP.createdAt });
-      await expect(cover(page)).toHaveCount(0);
-      await expect(page.getByTestId("snack-dock")).toContainText("Mailbox restored from the copy of October 20, 2026");
-    });
-    await scenario("a damaged mailbox without a backup, a folder Terno can't write, a backup that failed", async () => {
+    await scenario("a damaged mailbox: Try Again and Export Diagnostics, no restore; a folder Terno can't write", async () => {
       await fresh(page);
       await fakeMain(page, { gate: failed("corrupt") });
       await expect(cover(page)).toContainText("Terno can’t read it.");
-      await expect(page.getByTestId("mailbox-restore")).toHaveCount(0);
+      await expect(cover(page).getByRole("button")).toHaveText(["Try Again", "Export diagnostics…"]);
+      await page.getByTestId("mailbox-retry").click();
+      await expect.poll(() => calls(page)).toContain("retry");
       await gate(page, failed("unwritable"));
       await expect(cover(page)).toContainText("Terno can’t use its folder");
-      await gate(page, failed("backup"));
-      await expect(cover(page)).toContainText("Terno couldn’t back up your mailbox");
-      await page.getByTestId("mailbox-skip-backup").click();
-      await expect.poll(() => calls(page)).toContain("skipBackup");
     });
     await scenario("the engine-stopped screen stays out of the way while the gate explains", async () => {
       await fresh(page);
@@ -182,14 +155,12 @@ test.describe("plan 95 screens: light and dark, axe", () => {
         await fakeMain(page);
         await stabilize(page);
         const screens: [string, MailboxGate][] = [
-          ["upgrading", { kind: "upgrading", phase: "backup", from: 37, to: 38 }],
-          ["no-room", { kind: "no-room", stage: "backup", needBytes: 3 * 2 ** 30, freeBytes: 2 * 2 ** 30, canSkipBackup: true }],
+          ["upgrading", { kind: "upgrading", from: 37, to: 38 }],
+          ["no-room", { kind: "no-room", needBytes: 3 * 2 ** 30, freeBytes: 2 * 2 ** 30 }],
           ["migration", failed("migration")],
-          ["corrupt", failed("corrupt", { backup: BACKUP, restoreFailed: "failed" })],
+          ["corrupt", failed("corrupt")],
           ["unwritable", failed("unwritable")],
-          ["backup", failed("backup")],
           ["newer", { kind: "newer", schema: 40, supported: 38 }],
-          ["restoring", { kind: "restoring" }],
         ];
         for (const [name, g] of screens) {
           await gate(page, g);
@@ -197,7 +168,7 @@ test.describe("plan 95 screens: light and dark, axe", () => {
           const r = await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=mailbox-gate]").analyze();
           expect(r.violations.map((v) => `${name}: ${v.id}: ${v.nodes.map((n) => n.html.slice(0, 160)).join(", ")}`)).toEqual([]);
         }
-        await gate(page, { kind: "open", restoredFrom: null });
+        await gate(page, { kind: "open" });
         await upd(page, { required: "0.2.0", status: "available", available: release });
         await expect(page.getByTestId("required-update")).toBeVisible();
         const r = await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=required-update]").analyze();

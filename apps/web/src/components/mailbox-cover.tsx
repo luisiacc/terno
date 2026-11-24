@@ -83,7 +83,7 @@ function GateScreen({ gate }: { gate: Exclude<MailboxGate, { kind: "open" }> }) 
     case "no-room":
       return (
         <Cover title={t("mailbox.noRoom.title")} testId="mailbox-gate" kind="no-room">
-          <Body testId="mailbox-body">{t("mailbox.noRoom.migrate", { need: formatBytes(gate.needBytes), free: formatBytes(gate.freeBytes) })}</Body>
+          <Body testId="mailbox-body">{t("mailbox.noRoom.body", { need: formatBytes(gate.needBytes), free: formatBytes(gate.freeBytes) })}</Body>
           <Actions>
             <Button data-primary loading={busy} onClick={() => void retryMailbox()} data-testid="mailbox-retry">
               {t("updates.tryAgain")}
@@ -121,7 +121,7 @@ function GateScreen({ gate }: { gate: Exclude<MailboxGate, { kind: "open" }> }) 
         case "corrupt":
           return (
             <Cover title={t("mailbox.corrupt.title")} testId="mailbox-gate" kind="corrupt">
-              <Body>{t("mailbox.corrupt.noBackup")}</Body>
+              <Body>{t("mailbox.corrupt.body")}</Body>
               <Actions>
                 <Button data-primary disabled={busy} onClick={() => void retryMailbox()} data-testid="mailbox-retry">
                   {t("updates.tryAgain")}
@@ -144,7 +144,7 @@ function Upgrading() {
   if (!shown) return null;
   return (
     <Cover title={t("mailbox.upgrading.title")} testId="mailbox-gate" kind="upgrading" busy>
-      <Body testId="mailbox-body">{t("mailbox.upgrading.migrate")}</Body>
+      <Body testId="mailbox-body">{t("mailbox.upgrading.body")}</Body>
       <Spinner className="mt-4 text-muted-foreground" aria-hidden />
     </Cover>
   );
