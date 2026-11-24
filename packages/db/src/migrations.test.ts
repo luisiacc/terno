@@ -774,7 +774,8 @@ describe("migration v64: a confirmed send stays yours for certain (plan 210, ite
     const before = db.all<Record<string, unknown>>("SELECT * FROM messages ORDER BY id");
     expect(before.length).toBeGreaterThan(0);
     expect(migrate(db)).toEqual({ from: 63, to: SCHEMA_VERSION });
-    expect(db.all<Record<string, unknown>>("SELECT * FROM messages ORDER BY id")).toEqual(before.map((r) => ({ ...r, sent_confirmed: 0 })));
+    // (and v79's code: a statement from before the migration read the old columns until plan 267 reset them)
+    expect(db.all<Record<string, unknown>>("SELECT * FROM messages ORDER BY id")).toEqual(before.map((r) => ({ ...r, sent_confirmed: 0, code: null })));
   });
 });
 
@@ -870,7 +871,9 @@ describe("migration v77: What matters in your words (plan 249)", () => {
     const kept = () => ["threads", "messages", "dated_items", "settings"].map((t) => db.all<Record<string, unknown>>(`SELECT * FROM ${t} ORDER BY 1`));
     const before = kept();
     expect(migrate(db)).toEqual({ from: 76, to: SCHEMA_VERSION });
-    expect(kept()).toEqual(before);
+    // every row as it was, with the columns later steps add (v78's only_yours, v79's codes) at their defaults
+    const [threads, messages, ...rest] = before;
+    expect(kept()).toEqual([threads!.map((t) => ({ ...t, only_yours: 0, code: null })), messages!.map((m) => ({ ...m, code: null })), ...rest]);
     for (const t of ["preference_verdicts", "wanted_items", "wanted_marks"]) expect(db.all(`SELECT * FROM ${t}`)).toEqual([]);
     expect(db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name IN ('preference_verdicts', 'wanted_items', 'wanted_marks') AND sql IS NOT NULL ORDER BY name").map((r) => r.name)).toEqual(["preference_verdicts_at", "wanted_marks_order", "wanted_message", "wanted_open", "wanted_thread"]);
     const item = (thread: number, message: number, state: string) =>

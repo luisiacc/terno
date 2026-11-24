@@ -67,6 +67,15 @@ export class Db {
     return stmt;
   }
 
+  /**
+   * Every cached statement finalized. After a schema change: a statement prepared before it can keep the columns its
+   * `*` had then (seen with Node 24.3's SQLite 3.50.1), so what reads a changed table is prepared again.
+   */
+  resetStatements(): void {
+    for (const stmt of this.cache.values()) stmt.finalize();
+    this.cache.clear();
+  }
+
   all<T = Row>(sql: string, ...params: Param[]): T[] {
     return this.prepare(sql).all(...params) as T[];
   }

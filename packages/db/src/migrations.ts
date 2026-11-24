@@ -1836,6 +1836,10 @@ export function migrate(db: Db): { from: number; to: number } {
       throw new MigrationError(m.version, m.name, error);
     }
   }
-  if (from !== SCHEMA_VERSION) db.exec("PRAGMA optimize");
+  if (from !== SCHEMA_VERSION) {
+    // plan 267: nothing prepared against the old shape is used against the new one
+    db.resetStatements();
+    db.exec("PRAGMA optimize");
+  }
   return { from, to: SCHEMA_VERSION };
 }
