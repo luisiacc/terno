@@ -1,5 +1,5 @@
 import { Fragment, type ReactNode } from "react";
-import { ArrowLeft, ChevronRight, Download } from "./icons";
+import { ArrowLeft, Check, ChevronRight, Copy, Download } from "./icons";
 import type { SiteCopy } from "../copy";
 import { GITHUB, type Route } from "../site";
 import { Logo } from "./logo";
@@ -78,37 +78,62 @@ function LinuxPage({ copy }: { copy: SiteCopy }) {
       <p className={prose}>{l.install}</p>
       {(["deb", "rpm"] as const).map((family) => (
         <section key={family} aria-labelledby={`linux-${family}`} className="mt-12">
-          <h2 id={`linux-${family}`} className="text-xl font-semibold">
-            {l[family]}
-          </h2>
-          <ul className="mt-5 grid gap-6">
+          <div className="flex items-baseline justify-between gap-4">
+            <h2 id={`linux-${family}`} className="text-xl font-semibold">
+              {l[family]}
+            </h2>
+            <span aria-hidden="true" className="font-mono text-sm text-(--plain-muted)">
+              .{family}
+            </span>
+          </div>
+          <ul className="site-pkgs mt-4">
             {PACKAGES[family].map((pkg) => (
-              <li key={pkg.path} className="grid gap-3">
-                <a href={`${pkg.path}${query}`} className="inline-flex h-11 items-center gap-2.5 justify-self-start rounded-xl bg-(--plain-fg) px-5 font-medium whitespace-nowrap text-(--plain-bg)">
-                  <Download size="1.15em" />
-                  {l.download} .{family} · {l[pkg.arch]}
-                </a>
-                {/* on a phone it wraps between words only, never inside the file's name */}
-                <code className="block rounded-xl border border-(--plain-line) px-4 py-3 font-mono text-sm text-(--plain-fg)">
-                  {pkg.command.split(" ").map((word, i) => (
-                    <Fragment key={i}>
-                      {i > 0 && " "}
-                      <span className="whitespace-nowrap">{word}</span>
-                    </Fragment>
-                  ))}
-                </code>
+              <li key={pkg.path} className="grid gap-4 p-4 sm:p-5">
+                <div className="grid gap-3 sm:flex sm:items-center sm:justify-between sm:gap-6">
+                  <div>
+                    <p className="font-medium">{l[pkg.arch]}</p>
+                    <p className="text-sm text-(--plain-muted)">{l[`${pkg.arch}Hint`]}</p>
+                  </div>
+                  <a href={`${pkg.path}${query}`} className="site-dl">
+                    <Download size="1.15em" />
+                    {l.download} .{family}
+                    <span className="sr-only"> · {l[pkg.arch]}</span>
+                  </a>
+                </div>
+                <div className="site-cmd">
+                  <span aria-hidden="true" className="self-start select-none text-(--plain-muted)">
+                    $
+                  </span>
+                  {/* on a phone it wraps between words only, never inside the file's name */}
+                  <code className="min-w-0 flex-1">
+                    {pkg.command.split(" ").map((word, i) => (
+                      <Fragment key={i}>
+                        {i > 0 && " "}
+                        <span className="whitespace-nowrap">{word}</span>
+                      </Fragment>
+                    ))}
+                  </code>
+                  {/* only with the script (client.ts), which copies it and says so in the status beside it */}
+                  <button type="button" className="site-copy" data-copy={pkg.command} data-copied-label={l.copied} aria-label={l.copy} title={l.copy}>
+                    <Copy size={15} />
+                    <Check size={15} />
+                  </button>
+                  <span role="status" className="sr-only" data-copy-status />
+                </div>
               </li>
             ))}
           </ul>
         </section>
       ))}
-      <p className={`${prose} mt-10`}>
-        <Rich text={l.older} />
-      </p>
-      <p className={prose}>
-        <Rich text={l.which} />
-      </p>
-      <p className={prose}>{l.updates}</p>
+      <div className="mt-12 border-t border-(--plain-line) pt-6">
+        <p className={prose}>
+          <Rich text={l.older} />
+        </p>
+        <p className={prose}>
+          <Rich text={l.which} />
+        </p>
+        <p className={prose}>{l.updates}</p>
+      </div>
       <p className="mt-8">
         <a href={`${GITHUB}/releases`} className={releasesLink}>
           {l.releases}

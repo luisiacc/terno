@@ -315,6 +315,17 @@ for (const path of ["/download/linux/", "/es/download/linux/"])
         await expect(item).toHaveCount(1);
         await expect(item.locator("code")).toHaveText(command);
       }
+      // a command's copy button puts exactly that command on the clipboard and says so to screen readers (what it
+      // writes is recorded: the site's Permissions-Policy blocks clipboard-read, writing is allowed)
+      await page.context().grantPermissions(["clipboard-write"]);
+      await page.evaluate(() => {
+        const write = navigator.clipboard.writeText.bind(navigator.clipboard);
+        navigator.clipboard.writeText = (text) => ((window as { copied?: string }).copied = text, write(text));
+      });
+      const arm = page.locator("li").filter({ has: page.locator(`a[href="/download/linux/rpm-arm64${query}"]`) });
+      await arm.locator("button[data-copy]").click();
+      await expect(arm.locator("[data-copy-status]")).toHaveText(path.startsWith("/es/") ? "Copiado" : "Copied");
+      expect(await page.evaluate(() => (window as { copied?: string }).copied)).toBe("sudo dnf install ./Terno-*-linux-aarch64.rpm");
       // the notice shows only when a package couldn't be reached (#unavailable), and links to GitHub
       await expect(page.locator("#unavailable")).toBeHidden();
       await page.goto(`${path}#unavailable`);

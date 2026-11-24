@@ -30,6 +30,26 @@ for (const form of document.querySelectorAll<HTMLFormElement>("form[data-waitlis
   });
 }
 
+// /download/linux/: a command's copy button copies it, shows a check for a moment and says so to screen readers
+for (const button of document.querySelectorAll<HTMLButtonElement>("button[data-copy]")) {
+  const status = button.parentElement?.querySelector<HTMLElement>("[data-copy-status]");
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  button.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(button.dataset.copy ?? "");
+    } catch {
+      return;
+    }
+    button.dataset.copied = "";
+    if (status) status.textContent = button.dataset.copiedLabel ?? "";
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      delete button.dataset.copied;
+      if (status) status.textContent = "";
+    }, 1600);
+  });
+}
+
 // a header menu (<details data-menu>) works without this; with it, Esc and a click anywhere else close it too
 const menus = [...document.querySelectorAll<HTMLDetailsElement>("details[data-menu]")];
 document.addEventListener("click", (e) => {

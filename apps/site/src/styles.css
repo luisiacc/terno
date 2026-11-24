@@ -72,9 +72,48 @@ html {
 html[data-design="plain"] { background: #111214; color-scheme: dark; }
 .site-plain {
   --plain-bg: #111214; --plain-fg: #f2f3f5; --plain-muted: #a3a6ad; --plain-line: #34363b;
+  --plain-raised: #17181b; --plain-well: #0c0d0f; --plain-accent: #2f5bff;
   font-family: var(--font-system);
   color-scheme: dark;
 }
+
+/* /download/linux/: a family's packages in one lifted card, a hairline between them */
+.site-pkgs {
+  border-radius: 16px; background: var(--plain-raised);
+  box-shadow: inset 0 0 0 1px var(--plain-line), inset 0 1px 0 rgb(255 255 255 / 0.04), 0 12px 32px -16px rgb(0 0 0 / 0.6);
+}
+.site-pkgs > li + li { border-top: 1px solid var(--plain-line); }
+/* the download: the site's blue, lit from above, its glow growing under the pointer and the arrow dipping */
+.site-dl {
+  display: inline-flex; align-items: center; gap: 0.55rem; height: 2.5rem; padding: 0 1.05rem 0 0.9rem;
+  border-radius: 10px; font-weight: 500; font-size: 0.95rem; color: #fff; white-space: nowrap;
+  background: linear-gradient(180deg, #3d66ff, var(--plain-accent) 50%, #2a52ea);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.24), 0 0 0 1px rgb(47 91 255 / 0.9), 0 6px 18px -6px rgb(47 91 255 / 0.6);
+  transition: filter 100ms ease, transform 100ms ease, box-shadow 100ms ease;
+}
+.site-dl:hover {
+  filter: brightness(1.08);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.28), 0 0 0 1px rgb(80 118 255), 0 10px 28px -6px rgb(47 91 255 / 0.8);
+}
+@media (max-width: 639px) { .site-dl { justify-content: center; height: 2.75rem; } }
+.site-dl:active { transform: translateY(1px) scale(0.985); filter: brightness(0.97); }
+.site-dl svg { transition: transform 100ms ease; }
+.site-dl:hover svg { transform: translateY(1.5px); }
+/* the command: a terminal line sunk into the card, its copy button at the end */
+.site-cmd {
+  display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0.5rem 0.5rem 1rem; min-height: 2.75rem;
+  border-radius: 10px; background: var(--plain-well); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.06);
+  font: 400 0.875rem/1.5 var(--font-mono);
+}
+.site-copy {
+  position: relative; display: grid; place-items: center; flex: none; width: 1.75rem; height: 1.75rem; margin-left: auto;
+  border-radius: 7px; color: var(--plain-muted); cursor: pointer; transition: background-color 100ms ease, color 100ms ease;
+}
+.site-copy:hover { color: var(--plain-fg); background: rgb(255 255 255 / 0.08); }
+.site-copy > svg { grid-area: 1 / 1; transition: opacity 100ms ease, transform 100ms ease; }
+.site-copy > svg:last-child, .site-copy[data-copied] > svg:first-child { opacity: 0; transform: scale(0.6); }
+.site-copy[data-copied] > svg:last-child { opacity: 1; transform: none; color: #4ade80; }
+html:not(.js) .site-copy { display: none; }
 
 /* the design previews' switcher */
 .site-preview-bar {
