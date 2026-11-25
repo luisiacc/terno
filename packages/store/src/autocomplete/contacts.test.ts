@@ -411,3 +411,47 @@ describe("memory caps and snapshots", () => {
     expect(await new ContactIndex().restore(bytes.slice(0, bytes.length >> 1), "test", clock())).toBe(false);
   });
 });
+
+describe("People's lists (plan 281)", () => {
+  const priya = { name: "Priya Shah", email: "priya@greenway.studio" };
+  const shop = { name: "Shop", email: "no-reply@shop.example" };
+
+  it("written: only those you wrote to, never your own, best first, capped", async () => {
+    const c = await built([
+      sent([ana]),
+      sent([ana]),
+      sent([andres], { date: NOW - 30 * DAY }),
+      received(priya),
+      received(shop),
+      // an alias of yours you once sent to: never a person here
+      sent([{ name: "Luis", email: "luis@acme.studio" }]),
+    ]);
+    expect(c.written(10).map((p) => p.email)).toEqual([ana.email, andres.email]);
+    expect(c.written(1).map((p) => p.email)).toEqual([ana.email]);
+    expect(c.written(10)[0]).toMatchObject({ name: "Ana Martínez", written: true, last: NOW - DAY });
+  });
+
+  it("written follows new mail (sorted once per version of the scores)", async () => {
+    const c = await built([sent([ana]), sent([ana]), sent([andres])]);
+    expect(c.written(10).map((p) => p.email)).toEqual([ana.email, andres.email]);
+    for (let i = 0; i < 5; i++) c.add(sent([andres]));
+    expect(c.written(10).map((p) => p.email)).toEqual([andres.email, ana.email]);
+  });
+
+  it("people: names, addresses and domains by prefix, written to or not, never your own, past suggest's 20", async () => {
+    const many = Array.from({ length: 30 }, (_, i) => received({ name: `Greta ${i}`, email: `greta${i}@x${i}.com` }));
+    const c = await built([sent([ana]), received(priya), received({ name: "Luis Cordero", email: "luis@acme.studio" }), ...many]);
+    expect(c.people("pri").map((p) => p.email)).toEqual([priya.email]);
+    expect(c.people("greenway").map((p) => p.email)).toEqual([priya.email]);
+    expect(c.people("luis").map((p) => p.email)).not.toContain("luis@acme.studio");
+    expect(c.people("gre").length).toBe(31);
+    expect(c.people("gre", 25).length).toBe(25);
+    expect(c.people("pri")[0]).toMatchObject({ written: false });
+  });
+
+  it("person: what's known of one address, any case", async () => {
+    const c = await built([sent([ana])]);
+    expect(c.person("ANA.martinez@acme.studio")).toMatchObject({ name: "Ana Martínez", written: true });
+    expect(c.person("nobody@x.com")).toBeNull();
+  });
+});

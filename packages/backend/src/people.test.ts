@@ -1,0 +1,168 @@
+/**
+ * Plan 281 through the real backend: who has something open with you, everyone you've written to, the search and one
+ * person's page. The items are What matters' own (its rules are its tests'); here, whom each is given to and what's left out.
+ */
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
+import { demoRegistry } from "@terno/mail";
+import type { IncomingMessage } from "@terno/store";
+import { msg, threadOf } from "@terno/store/conformance";
+import { afterEach, describe, expect, it } from "vitest";
+import { Backend, plaintextCipher } from "./backend";
+import { personOf } from "./people";
+
+const NOW = new Date(2026, 10, 5, 9).getTime();
+const DAY = 86_400_000;
+const cleanups: (() => Promise<void> | void)[] = [];
+afterEach(async () => {
+  for (const c of cleanups.splice(0).reverse()) await c();
+});
+
+async function setup(o: { provider?: "fake" | "none"; followups?: boolean } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), "terno-people-"));
+  const backend = new Backend({ dbPath: join(dir, "a.db"), version: "t", cipher: plaintextCipher, providers: demoRegistry, autoSync: false, demoAi: true, now: () => NOW });
+  await backend.store.ready;
+  const [c, s] = createMemoryTransportPair();
+  backend.connect(s, { clientId: "r", origin: "renderer" });
+  const client = new RpcClient(c);
+  const { account } = await backend.store.accounts.create({ kind: "gmail", email: "me@terno.test", displayName: "Me", color: "brown", now: 0 });
+  if (o.provider !== "none") await client.call("settings.update", { ai: { provider: "fake", model: "demo" } });
+  if (o.followups) await client.call("settings.update", { followups: { enabled: true } });
+  cleanups.push(async () => {
+    await backend.stop();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  const raw = (backend.store as unknown as { db: { run(sql: string, ...a: unknown[]): unknown } }).db;
+  let seq = 0;
+  const me = { name: "Me", email: account.email };
+  /** a conversation from someone, waiting on your answer (or not) */
+  const from = async (name: string, email: string, o: { waiting?: boolean; over?: Partial<IncomingMessage> } = {}) => {
+    const id = `m-${seq++}`;
+    const m = msg({ accountId: account.id, date: NOW - DAY + seq, from: { name, email }, to: [me], subject: `From ${name} ${seq}`, providerMsgId: id, ...o.over });
+    await backend.store.sync.ingest([m], { applyFilters: false, now: NOW, classifier: null });
+    const thread = await threadOf(backend.store, id);
+    const waiting = o.waiting ?? true;
+    raw.run("UPDATE threads SET waiting_since = ?, has_sent = ? WHERE id = ?", waiting ? NOW - DAY + seq : null, waiting ? 1 : 0, thread);
+    return thread;
+  };
+  /** mail you sent them (the index's "written to") */
+  const to = async (name: string, email: string) => {
+    const id = `s-${seq++}`;
+    await backend.store.sync.ingest([msg({ accountId: account.id, date: NOW - 2 * DAY + seq, from: me, to: [{ name, email }], subject: `To ${name}`, providerMsgId: id, isSent: true, isRead: true })], { applyFilters: false, now: NOW, classifier: null });
+    return threadOf(backend.store, id);
+  };
+  /** a reply owed to you on this conversation */
+  const owed = (thread: number, name: string, email: string) =>
+    raw.run(
+      "INSERT INTO followups (thread_id, message_id, item, kind, text, person_name, person_email, sent_at, due_at, state, created_at) VALUES (?, (SELECT id FROM messages WHERE thread_id = ? LIMIT 1), 0, 'awaiting', 'the contract', ?, ?, ?, ?, 'open', ?)",
+      thread,
+      thread,
+      name,
+      email,
+      NOW - 3 * DAY,
+      NOW + DAY,
+      NOW - 3 * DAY,
+    );
+  return { backend, client, raw, account, from, to, owed };
+}
+
+describe("who has something open with you", () => {
+  it("nothing at all while What matters isn't offered", async () => {
+    const { client, from } = await setup({ provider: "none" });
+    await from("Ana", "ana@people.test");
+    expect(await client.call("people.list", {})).toMatchObject({ open: [], everyone: [] });
+    expect(await client.call("people.person", { email: "ana@people.test" })).toBeNull();
+    expect((await client.call("people.search", { query: "an" })).hits).toEqual([]);
+  });
+
+  it("conversations waiting on you, by who wrote, one person however their address is spelled", async () => {
+    const { client, from } = await setup();
+    const a1 = await from("Ana B", "ana.b@gmail.com");
+    const a2 = await from("Ana B", "anab+work@googlemail.com");
+    const bob = await from("Bob", "bob@people.test");
+    const { open } = await client.call("people.list", {});
+    const ana = open.find((p) => p.key === "anab@gmail.com")!;
+    expect(ana.items.map((i) => (i.kind === "today" ? i.item.thread.id : 0)).sort()).toEqual([a1, a2].sort());
+    expect(open.find((p) => p.key === "bob@people.test")!.items).toHaveLength(1);
+    expect(open.flatMap((p) => p.items).map((i) => (i.kind === "today" ? i.item.thread.id : 0))).toContain(bob);
+  });
+
+  it("replies owed to you join with follow-ups on, never from Trash, Spam or with follow-ups off", async () => {
+    const { client, raw, from, owed } = await setup({ followups: true });
+    const t = await from("Cara", "cara@people.test", { waiting: false });
+    owed(t, "Cara", "cara@people.test");
+    const binned = await from("Dan", "dan@people.test", { waiting: false });
+    owed(binned, "Dan", "dan@people.test");
+    raw.run("UPDATE threads SET in_trash = 1, in_inbox = 0 WHERE id = ?", binned);
+    const { open } = await client.call("people.list", {});
+    expect(open.map((p) => p.key)).toEqual(["cara@people.test"]);
+    expect(open[0]!.items[0]).toMatchObject({ kind: "awaiting", row: { text: "the contract" }, thread: { id: t } });
+    await client.call("settings.update", { followups: { enabled: false } });
+    expect((await client.call("people.list", {})).open).toEqual([]);
+  });
+
+  it("the grouping is read again after What matters changes, not before", async () => {
+    const { backend, client, from } = await setup();
+    await from("Ana", "ana@people.test");
+    expect((await client.call("people.list", {})).open).toHaveLength(1);
+    await from("Bob", "bob@people.test");
+    // kept: nothing said What matters changed
+    expect((await client.call("people.list", {})).open).toHaveLength(1);
+    backend.today.changed();
+    expect((await client.call("people.list", {})).open).toHaveLength(2);
+  });
+});
+
+describe("everyone and the search", () => {
+  it("everyone you've written to, less the open ones and yourself; the search finds anyone by name or domain", async () => {
+    const { client, from, to } = await setup();
+    await to("Marco", "marco@greenway.studio");
+    await to("Ana", "ana@people.test");
+    await to("Me again", "me+notes@terno.test");
+    await from("Ana", "ana@people.test");
+    await from("Priya", "priya@greenway.studio", { waiting: false });
+    expect(await client.call("people.ready", {})).toEqual({ index: "ready" });
+    const list = await client.call("people.list", {});
+    expect(list.index).toBe("ready");
+    expect(list.open.map((p) => p.key)).toEqual(["ana@people.test"]);
+    expect(list.everyone.map((p) => p.email)).toEqual(["marco@greenway.studio"]);
+    const found = await client.call("people.search", { query: "greenway" });
+    expect(found.hits.map((h) => h.email).sort()).toEqual(["marco@greenway.studio", "priya@greenway.studio"]);
+    expect((await client.call("people.search", { query: "ana" })).hits[0]).toMatchObject({ key: "ana@people.test", open: 1 });
+    expect((await client.call("people.search", { query: "me" })).hits.map((h) => h.email)).not.toContain("me+notes@terno.test");
+  });
+});
+
+describe("one person", () => {
+  it("their open items and recent conversations, never Spam or Trash, with whether there are more", async () => {
+    const { client, raw, from } = await setup();
+    const open = await from("Ana", "ana@people.test");
+    const binned = await from("Ana", "ana@people.test", { waiting: false });
+    raw.run("UPDATE threads SET in_trash = 1, in_inbox = 0 WHERE id = ?", binned);
+    for (let i = 0; i < 3; i++) await from("Ana", "ana@people.test", { waiting: false });
+    const page = (await client.call("people.person", { email: "ana@people.test", conversations: 2 }))!;
+    expect(page.items).toHaveLength(1);
+    expect(page.conversations).toHaveLength(2);
+    expect(page.conversations.map((t) => t.id)).not.toContain(binned);
+    expect(page.more).toBe(true);
+    const all = (await client.call("people.person", { email: "ana@people.test" }))!;
+    expect(all.conversations.map((t) => t.id)).toContain(open);
+    expect(all.conversations.map((t) => t.id)).not.toContain(binned);
+    expect(all.more).toBe(false);
+  });
+});
+
+describe("whom an item is between you and", () => {
+  const thread = { id: 1, fromName: "Gary", fromEmail: "gary@utility.test" } as never;
+  it("a promise's person, a waiting conversation's sender, a person's request; a bill from a stranger is nobody's", () => {
+    expect(personOf({ id: "p:1", thread, why: { kind: "promise", personEmail: "tom@x.test", personName: "Tom" } } as never, () => false)).toEqual({ email: "tom@x.test", name: "Tom" });
+    expect(personOf({ id: "w:1", thread, why: { kind: "waiting" } } as never, () => false)).toEqual({ email: "gary@utility.test", name: "Gary" });
+    const dated = (kind: string) => ({ id: "d:1", thread, why: { kind: "dated", item: { kind } }, from: { name: "Margaret", email: "m@insure.test" } }) as never;
+    expect(personOf(dated("ask"), () => false)).toEqual({ name: "Margaret", email: "m@insure.test" });
+    expect(personOf(dated("pay"), () => false)).toBeNull();
+    expect(personOf(dated("pay"), (e) => e === "m@insure.test")).toEqual({ name: "Margaret", email: "m@insure.test" });
+    expect(personOf({ id: "r:1", thread, why: { kind: "reminder" } } as never, () => true)).toBeNull();
+  });
+});

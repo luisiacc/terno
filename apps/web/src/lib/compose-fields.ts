@@ -1,4 +1,4 @@
-import { attachmentMessageBudget, type AttachmentRef, formatAddressList, forwardQuote, forwardSubject, type ForwardWording, parseAddressList, repairAddress, repairAddresses, type Account, type Address, type MessageDetail, type ThreadDetail } from "@terno/core";
+import { attachmentMessageBudget, personKey, type AttachmentRef, formatAddressList, forwardQuote, forwardSubject, type ForwardWording, parseAddressList, repairAddress, repairAddresses, type Account, type Address, type MessageDetail, type ThreadDetail } from "@terno/core";
 import type { DraftMode } from "@terno/core/rpc";
 import { formatList, t } from "@terno/i18n";
 import type { DraftFields } from "./drafts";
@@ -9,20 +9,6 @@ import { fullDate } from "./format";
  * draft between modes. Pure (no DOM, no backend): unit-tested on its own.
  */
 
-/** An address as an identity: lowercased, `+tag` dropped; Gmail ignores dots in its local parts. */
-function identityKey(email: string): string {
-  const e = email.trim().toLowerCase();
-  const at = e.lastIndexOf("@");
-  if (at <= 0) return e;
-  let local = e.slice(0, at).replace(/\+.*$/, "");
-  let domain = e.slice(at + 1);
-  if (domain === "gmail.com" || domain === "googlemail.com") {
-    local = local.replace(/\./g, "");
-    domain = "gmail.com";
-  }
-  return `${local}@${domain}`;
-}
-
 /** Is an address mine? */
 export type Mine = (email: string) => boolean;
 
@@ -32,9 +18,9 @@ export type Mine = (email: string) => boolean;
  * identity), `me+tag@` and Gmail's dotted spellings included.
  */
 export function identitiesIn(detail: ThreadDetail, accounts: readonly string[]): Mine {
-  const keys = new Set(accounts.map(identityKey));
-  for (const m of detail.messages) if (m.isSent && m.from.email) keys.add(identityKey(m.from.email));
-  return (email) => keys.has(identityKey(email));
+  const keys = new Set(accounts.map(personKey));
+  for (const m of detail.messages) if (m.isSent && m.from.email) keys.add(personKey(m.from.email));
+  return (email) => keys.has(personKey(email));
 }
 
 const asMine = (mine: Mine | string | readonly string[] | undefined, detail: ThreadDetail): Mine =>

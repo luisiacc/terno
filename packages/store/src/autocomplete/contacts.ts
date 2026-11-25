@@ -1,4 +1,4 @@
-import { cleanFromName, type Address } from "@terno/core";
+import { cleanFromName, type Address, type PersonEntry } from "@terno/core";
 import type { ContactMessage } from "../autocomplete-source";
 import type { Revision } from "../search";
 import { packSnapshot, readSnapshot, sealSnapshot, type SectionReader, type SnapshotKind } from "../instant/snapshot";
@@ -444,6 +444,8 @@ export class ContactIndex {
   /** bumped by any score change: the short-query cache is valid for one version */
   private version = 0;
   private readonly shortCache = new Map<string, { version: number; ids: number[] }>();
+  /** plan 281: the written-to contacts, best first, for one version of the scores */
+  private writtenCache: { version: number; ids: number[]; entries: PersonEntry[] } | null = null;
   private frozen = false;
   readonly caps: ContactCaps;
   private readonly now: () => number;
@@ -458,6 +460,11 @@ export class ContactIndex {
 
   get size(): number {
     return this.live;
+  }
+
+  /** Plan 281: changes with any score, name or flag: what's built from the index (People's grouping) is stale when it does. */
+  get scoreVersion(): number {
+    return this.version;
   }
 
   /** Contacts that were evicted, still holding ids. */
@@ -880,7 +887,49 @@ export class ContactIndex {
 
   /** The best `limit` contacts for what is typed (none for nothing typed). */
   suggest(query: string, o: SuggestOptions = {}): ContactHit[] {
-    const limit = Math.max(1, Math.min(o.limit ?? 6, 20));
+    return this.matching(query, o, Math.max(1, Math.min(o.limit ?? 6, 20))).map((id) => this.hit(id));
+  }
+
+  /**
+   * Plan 281: People's search: suggest's matching and ranking (names, initials, addresses, domains), never the user's own
+   * addresses, at most `limit` (50).
+   */
+  people(query: string, limit = 50): PersonEntry[] {
+    return this.matching(query, { exclude: this.own }, Math.max(1, Math.min(limit, 50)))
+      .filter((id) => !(this.flags[id]! & OWN))
+      .map((id) => this.entry(id));
+  }
+
+  /**
+   * Plan 281: People's Everyone: those you've written to, not your own, best first (how much and how recently you wrote,
+   * then they did), at most `max`. Sorted once per version of the scores.
+   */
+  written(max: number): readonly PersonEntry[] {
+    let cache = this.writtenCache;
+    if (cache?.version !== this.version) {
+      const ids: number[] = [];
+      for (let id = 0; id < this.n; id++) if (this.sent[id]! > 0 && !(this.flags[id]! & (OWN | DEAD))) ids.push(id);
+      ids.sort((a, b) => this.key[b]! - this.key[a]! || this.last[b]! - this.last[a]! || a - b);
+      cache = this.writtenCache = { version: this.version, ids, entries: [] };
+    }
+    // the entries are made once per version, as far as asked
+    for (let i = cache.entries.length; i < Math.min(max, cache.ids.length); i++) cache.entries.push(this.entry(cache.ids[i]!));
+    return max >= cache.entries.length ? cache.entries : cache.entries.slice(0, Math.max(0, max));
+  }
+
+  /** Plan 281: what the index knows of one address (its name, last date, whether you've written to it), or null. */
+  person(email: string): PersonEntry | null {
+    const key = normalizeEmail(email);
+    const id = key === null ? undefined : this.byEmail.get(key);
+    return id === undefined || this.flags[id]! & DEAD ? null : this.entry(id);
+  }
+
+  private entry(id: number): PersonEntry {
+    return { name: this.shownName(id), email: this.emails[id]!, last: this.last[id]!, written: this.sent[id]! > 0 };
+  }
+
+  /** The ids `suggest` and `people` rank for what is typed, best first. */
+  private matching(query: string, o: SuggestOptions, limit: number): number[] {
     const q = fold(query.trim()).slice(0, 320);
     if (!q) return [];
     const exclude = new Set<string>();
@@ -898,7 +947,7 @@ export class ContactIndex {
       .map((t) => (t.length > MAX_TOKEN ? t.slice(0, MAX_TOKEN) : t));
     if (terms.length === 0) return [];
     const bit = o.accountId === undefined ? 0 : this.accountBit(o.accountId, false);
-    if (scanForTests) return this.scan(terms, emailPrefix, exclude, bit, limit, q);
+    if (scanForTests) return this.scan(terms, emailPrefix, exclude, bit, limit, q).map((h) => this.byEmail.get(h.email)!);
     // a 1–2 letter word matches a large share of everyone: its top contacts are kept until a score changes
     if (terms.length === 1 && terms[0]!.length <= 2 && emailPrefix === null) {
       const key = `${terms[0]}|${bit}`;
@@ -911,9 +960,9 @@ export class ContactIndex {
       }
       const ids = cached.ids.filter((id) => !(this.flags[id]! & DEAD) && !exclude.has(this.emails[id]!));
       // complete when nothing was cut off, or enough is left after the exclusions
-      if (ids.length >= limit || cached.ids.length < SHORT_CACHE) return ids.slice(0, limit).map((id) => this.hit(id));
+      if (ids.length >= limit || cached.ids.length < SHORT_CACHE) return ids.slice(0, limit);
     }
-    return this.rank(terms, emailPrefix, exclude, bit, limit, q).map((id) => this.hit(id));
+    return this.rank(terms, emailPrefix, exclude, bit, limit, q);
   }
 
   private hit(id: number): ContactHit {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BULK_LOCAL } from "./categorize/features";
-import { addressKey, automatedLevel, bulkHeaders, FACTS_WINDOW, ROLE_WORDS, senderIsPerson, sentByService, threadFacts, threadFactsNewestFirst, waitingCutoff, waitingFactsNewestFirst, WAITING_WINDOW_MS, type FactContext, type FactRow } from "./people";
+import { addressKey, automatedLevel, personKey, bulkHeaders, FACTS_WINDOW, ROLE_WORDS, senderIsPerson, sentByService, threadFacts, threadFactsNewestFirst, waitingCutoff, waitingFactsNewestFirst, WAITING_WINDOW_MS, type FactContext, type FactRow } from "./people";
 
 const sender = (from_email: string, o: Partial<FactRow> = {}) => ({ from_email, list_id: null, is_bulk: 0, gmail_labels: null, is_spam: 0, rfc_message_id: null, ...o });
 
@@ -406,5 +406,13 @@ describe("threadFactsNewestFirst (Codex R10)", () => {
     expect(threadFactsNewestFirst(() => (read++, trashed[read - 1]), ctx())).toEqual({ person: 1, waitingSince: null });
     expect(read).toBeLessThanOrEqual(FACTS_WINDOW);
     expect(threadFacts(trashed, ctx())).toEqual({ person: 1, waitingSince: null });
+  });
+});
+
+describe("personKey (plan 281)", () => {
+  it("addressKey's, with Gmail's dots ignored and googlemail as gmail", () => {
+    expect(personKey(" Ana.B+work@GoogleMail.com")).toBe("anab@gmail.com");
+    expect(personKey("ana.b@gmail.com")).toBe("anab@gmail.com");
+    expect(personKey("ana.b+x@acme.test")).toBe("ana.b@acme.test");
   });
 });

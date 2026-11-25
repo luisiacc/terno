@@ -24,6 +24,7 @@ import {
   type DevAiProvider,
 } from "../ai";
 import { FOLLOWUP_REPLY_MAX, type FollowupRow, type FollowupsSetting, type FollowupsSnapshot } from "../followups";
+import { PERSON_CONVERSATIONS_MAX, type PeopleIndexState, type PeopleList, type PeopleSearch, type PersonPage } from "../people-view";
 import type { DatedRow, DatedSetting } from "../dated";
 import { HANDOFF_ITEMS_MAX, type Handoff, type HandoffItem } from "../handoff";
 import type { DatedMute, MuteOffer } from "../dated-mutes";
@@ -1322,6 +1323,14 @@ export const contract = {
   /** Settings → Categories: the senders kept out of a category's automatic filing, and taking one back */
   "putAway.kept": m<{ senders: { categoryId: number; sender: string; at: number }[] }>()(empty),
   "putAway.removeKept": m<{ removed: boolean }>()(z.object({ categoryId: id, sender: z.string().min(1).max(400) })),
+
+  // plan 281: People. Renderer-only (not in MCP_ALLOWED): what's open between you and each person is mail content.
+  "people.list": m<PeopleList>()(empty),
+  /** resolves once the recipient index answers (or won't this session): the list reads again then, nothing polled */
+  "people.ready": m<{ index: PeopleIndexState }>()(empty, { timeoutMs: 300_000 }),
+  /** names and addresses only, never content; latest wins per client */
+  "people.search": m<PeopleSearch>()(z.object({ query: z.string().max(320) })),
+  "people.person": m<PersonPage | null>()(z.object({ email: z.string().min(3).max(320), conversations: z.number().int().min(0).max(PERSON_CONVERSATIONS_MAX).optional() })),
 
   // plan 142. All renderer-only: none of these is in MCP_ALLOWED.
   "followups.list": m<FollowupsSnapshot>()(empty),

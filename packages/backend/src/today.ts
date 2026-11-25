@@ -174,6 +174,11 @@ export class TodayService {
     return aiFeaturesAvailable(settings) && (await aiAllowed(this.b.store));
   }
 
+  /** Plan 281: whether What matters' items exist at all (People shows nothing without them). */
+  async offered(): Promise<boolean> {
+    return this.available(await readSettings(this.b.store));
+  }
+
   private async setting(): Promise<{ available: boolean; show: boolean; prepareAt: string; notify: boolean; digest: boolean }> {
     const s = await readSettings(this.b.store);
     const today = { ...DEFAULT_TODAY, ...s.today };
@@ -641,7 +646,7 @@ export class TodayService {
    * conversations are in Spam or Trash; then rows and the counts' buckets (`projectRows`). The list reads its rows'
    * conversations once, what says Spam and Trash too (`threads`); the count asks only that (`liveAmong`).
    */
-  private async project(now: number, settings: AppSettings, o: { count?: boolean; counted?: boolean } = {}): Promise<{ rows: ProjectedRow[]; counts: TodayCounts; counted?: CountedMail; threads: ReadonlyMap<number, ThreadSummary>; hidden?: ReadonlySet<FeedRowId> }> {
+  private async project(now: number, settings: AppSettings, o: { count?: boolean; counted?: boolean; /** plan 281: People's ask: no reminders (they're nobody's) */ noReminders?: boolean } = {}): Promise<{ rows: ProjectedRow[]; counts: TodayCounts; counted?: CountedMail; threads: ReadonlyMap<number, ThreadSummary>; hidden?: ReadonlySet<FeedRowId> }> {
     const { store } = this.b;
     const read = async () => [settings.dated?.enabled ? await this.datedRows() : [], settings.followups?.enabled ? (await store.followups.active()).filter((r) => r.kind === "promise") : []] as const;
     const version = this.links.version;
@@ -662,7 +667,7 @@ export class TodayService {
     endOfDay.setHours(23, 59, 59, 999);
     // plan 210 (iteration 4, revision 8): your reminders due today are Today's to do, drawn and counted alike; the count reads
     // them as stored (a few, at most `REMINDERS_MAX`), the list as the reminders' own look has them (answered ones ended)
-    const due = (o.count ? await store.reminders.list() : (await this.b.reminders.refresh()).reminders).filter((r) => r.dueAt <= endOfDay.getTime()).map((r) => ({ threadId: r.threadId, dueAt: r.dueAt }));
+    const due = (o.noReminders ? [] : o.count ? await store.reminders.list() : (await this.b.reminders.refresh()).reminders).filter((r) => r.dueAt <= endOfDay.getTime()).map((r) => ({ threadId: r.threadId, dueAt: r.dueAt }));
     // plan 211: your reminders and what's waiting on you are local: they follow the account's What matters switch alone
     const reminders = await this.local(due, (r) => r.threadId);
     const ids = [...placedThreads(items), ...reminders.map((r) => r.threadId)];
@@ -936,25 +941,12 @@ export class TodayService {
     // a waiting row's line is its current summary, read together, for the first rows only
     const lined = shown.filter((r) => r.waiting).slice(0, SUMMARY_LINES_MAX).map((r) => r.threadId);
     const lines = new Map(await Promise.all(lined.map(async (id) => [id, await this.summaryLine(id)] as const)));
-    // plan 210 (iteration 3, revision 10): each dated row's own sender: the conversation's latest when it's theirs (most
-    // are), else its message's, one read for those
-    const senders: ({ name: string; email: string } | undefined)[] = [];
-    const elsewhere: number[] = [];
-    for (const r of shown) {
-      const t = r.source ? threads.get(r.threadId) : undefined;
-      const theirs = t && addressKey(t.fromEmail) === r.source!.senderKey;
-      senders.push(theirs ? { name: t.fromName, email: t.fromEmail } : undefined);
-      if (r.source && !theirs) elsewhere.push(r.source.messageId);
-    }
-    const from = elsewhere.length ? await store.today.fromOf(elsewhere) : null;
+    const items = await this.itemsOf(shown, threads);
     const sections: TodaySection[] = [];
     for (const [i, r] of shown.entries()) {
-      const sender = senders[i] ?? (r.source && from ? from.get(r.source.messageId) : undefined);
-      const item: TodayItem = { id: r.id, thread: threads.get(r.threadId)!, why: r.why };
+      const item = items[i]!;
       const summary = r.waiting ? lines.get(r.threadId)?.summary : undefined;
       if (summary !== undefined) item.summary = summary;
-      if (r.also) item.also = r.also;
-      if (sender) item.from = sender;
       const last = sections.at(-1);
       const day = r.day ?? undefined;
       // plan 210 (iteration 3): Today's "Waiting on you" is a section of its own, after Today's
@@ -975,7 +967,42 @@ export class TodayService {
     return { sections, digest: await this.digestRow(), now, counts, ...(history ? { history } : {}), ...(gone.length ? { hidden: gone } : {}) };
   }
 
-  private async summaryLine(threadId: number): Promise<{ summary?: string }> {
+  /**
+   * Plan 281: What matters' open part as items, in its order (the order of urgency), for People: no reminders, no summary
+   * lines, no digest, no history. Nothing when it isn't offered.
+   */
+  async openItems(): Promise<TodayItem[]> {
+    const settings = await readSettings(this.b.store);
+    if (!(await this.available(settings))) return [];
+    const { rows, threads } = await this.project(this.b.now(), settings, { noReminders: true });
+    return this.itemsOf(rows, threads);
+  }
+
+  /**
+   * The projected rows as items. Plan 210 (iteration 3, revision 10): each dated row's own sender: the conversation's latest
+   * when it's theirs (most are), else its message's, one read for those.
+   */
+  private async itemsOf(shown: readonly ProjectedRow[], threads: ReadonlyMap<number, ThreadSummary>): Promise<TodayItem[]> {
+    const senders: ({ name: string; email: string } | undefined)[] = [];
+    const elsewhere: number[] = [];
+    for (const r of shown) {
+      const t = r.source ? threads.get(r.threadId) : undefined;
+      const theirs = t && addressKey(t.fromEmail) === r.source!.senderKey;
+      senders.push(theirs ? { name: t.fromName, email: t.fromEmail } : undefined);
+      if (r.source && !theirs) elsewhere.push(r.source.messageId);
+    }
+    const from = elsewhere.length ? await this.b.store.today.fromOf(elsewhere) : null;
+    return shown.map((r, i) => {
+      const sender = senders[i] ?? (r.source && from ? from.get(r.source.messageId) : undefined);
+      const item: TodayItem = { id: r.id, thread: threads.get(r.threadId)!, why: r.why };
+      if (r.also) item.also = r.also;
+      if (sender) item.from = sender;
+      return item;
+    });
+  }
+
+  /** A conversation's current stored summary, its first sentence (plan 281: People's "Last time" too); never a new request. */
+  async summaryLine(threadId: number): Promise<{ summary?: string }> {
     const { store } = this.b;
     const row = await store.aiSummaries.get(threadId);
     if (!row || row.state !== "ready" || !row.bodyJson) return {};
@@ -1318,11 +1345,19 @@ export class TodayService {
 
   // ─── plan 204: what changes by itself ────────────────────────────────────
 
+  /** Plan 281: bumped with every `todayChanged`, so what's built from the list (People's grouping) knows it's stale. */
+  revision = 0;
+
+  private emitChanged(): void {
+    this.revision++;
+    this.b.server.emit("todayChanged", {}, { origins: ["renderer", "dev"] });
+  }
+
   /** An item read, settled or acted on, a setting: the list and the count read again, and the clock re-arms. */
   changed(): void {
     this.datedGeneration++;
     if (this.stopped) return;
-    this.b.server.emit("todayChanged", {}, { origins: ["renderer", "dev"] });
+    this.emitChanged();
     this.b.countsChanged();
     void this.armClock().catch((error: unknown) => captureError(error, { code: "ai.failed" }));
   }
@@ -1333,7 +1368,7 @@ export class TodayService {
    */
   verdictsChanged(): void {
     if (this.stopped) return;
-    this.b.server.emit("todayChanged", {}, { origins: ["renderer", "dev"] });
+    this.emitChanged();
     this.b.countsChanged();
   }
 
@@ -1344,7 +1379,7 @@ export class TodayService {
    */
   remindersChanged(): void {
     if (this.stopped) return;
-    this.b.server.emit("todayChanged", {}, { origins: ["renderer", "dev"] });
+    this.emitChanged();
     this.b.countsChanged();
   }
 

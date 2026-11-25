@@ -131,6 +131,16 @@ export class Autocomplete {
     return { items: c.suggest(query, o), ready: true };
   }
 
+  /** Plan 281: the index won't come this session (it failed and was turned off, or the service stopped). */
+  get gaveUp(): boolean {
+    return this.report.state === "disabled" || this.report.state === "closed";
+  }
+
+  /** Plan 281: People's reads of the index (null while it's cold: never "nobody"). */
+  peopleIndex(): Pick<ContactIndex, "people" | "written" | "person" | "scoreVersion"> | null {
+    return this.contacts;
+  }
+
   /** Plan 133 §5.1: `cold` is never "no such person". */
   resolveExact(token: string, o: { accountId?: number; limit?: number; excludeAccounts?: readonly number[] } = {}): { state: "ready" | "cold"; hits: ContactHit[] } {
     const c = this.contacts;

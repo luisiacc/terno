@@ -24,6 +24,7 @@ import { upgradeChecks } from "./account-checks";
 import { AccountGate, type GateChange } from "./account-gate";
 import { ActionsService } from "./actions";
 import { ReplyService } from "./replies";
+import { PeopleService } from "./people";
 import { TodayService } from "./today";
 import { AskService } from "./ask";
 import { FollowupWorker } from "./followups";
@@ -313,6 +314,8 @@ export class BackendCore {
   private lastCountsAt = -Infinity;
   private countsTimer: ReturnType<typeof setTimeout> | null = null;
   readonly searchSeq = new Map<string, number>();
+  /** plan 281: each client's People search, latest wins */
+  readonly peopleSeq = new Map<string, number>();
   /** each client's search in flight: a newer one aborts it (slow paths stop early) */
   readonly searchAborts = new Map<string, AbortController>();
   /** the excerpts being read for each client: its next ask replaces them (plan 158) */
@@ -332,6 +335,8 @@ export class BackendCore {
   readonly actions: ActionsService;
   readonly replies: ReplyService;
   readonly today: TodayService;
+  /** plan 281 */
+  readonly people: PeopleService;
   readonly followups: FollowupWorker;
   /** plan 204: dated items in mail the user got */
   readonly dated: DatedWorker;
@@ -411,6 +416,7 @@ export class BackendCore {
     this.actions = new ActionsService(this);
     this.replies = new ReplyService(this);
     this.today = new TodayService(this);
+    this.people = new PeopleService(this);
     this.followups = new FollowupWorker({
       store: this.store,
       now: () => this.now(),
@@ -418,7 +424,7 @@ export class BackendCore {
       forTask: () => this.aiService.forTask("followup", { foreground: false }),
       begin: (requestId, clientId) => this.aiService.begin(requestId, clientId),
       // plan 211: and the account's AI and What matters switches
-      accountWanted: async (accountId) => this.gate.reads(accountId) && (await this.store.accounts.config<AccountPrefs>(accountId))?.config.followups !== false,
+      accountWanted: (accountId) => this.followupsWanted(accountId),
       inFeed: (accountId) => this.gate.reads(accountId),
       allowed: async (settings) => aiFeaturesAvailable(settings) && (await aiAllowed(this.store)),
       signature: async (accountId) => (await this.store.accounts.get(accountId))?.signature ?? "",
@@ -1702,6 +1708,11 @@ export class BackendCore {
    * restore (or build, in slices) with the user's addresses and the
    * body-suggestions setting. Once; returns when recipients can answer.
    */
+  /** Plan 211: an account's follow-ups are read and shown: its AI and What matters switches, and its own follow-ups switch (plan 281: People's rule too). */
+  async followupsWanted(accountId: number): Promise<boolean> {
+    return this.gate.reads(accountId) && (await this.store.accounts.config<AccountPrefs>(accountId))?.config.followups !== false;
+  }
+
   warmAutocomplete(): Promise<void> {
     this.warming ??= (async () => {
       this.autocomplete.setOwn(ownAddresses(await this.store.accounts.list()));

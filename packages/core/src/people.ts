@@ -26,6 +26,18 @@ export function addressKey(email: string): string {
   return plus > 0 && plus < at ? e.slice(0, plus) + e.slice(at) : e;
 }
 
+/**
+ * An address as an identity (Reply's "is it mine", plan 34; plan 281: one person in People): `addressKey`'s, and Gmail's
+ * dots ignored in its local parts (googlemail.com is gmail.com).
+ */
+export function personKey(email: string): string {
+  const e = addressKey(email);
+  const at = e.lastIndexOf("@");
+  if (at <= 0) return e;
+  const domain = e.slice(at + 1);
+  return domain === "gmail.com" || domain === "googlemail.com" ? `${e.slice(0, at).replace(/\./g, "")}@gmail.com` : e;
+}
+
 /** Bulk mail's own headers: List-Unsubscribe, Precedence bulk/list/junk, Auto-Submitted other than "no". */
 export function bulkHeaders(h: { listUnsubscribe?: string | null; precedence?: string | null; autoSubmitted?: string | null }): boolean {
   if (h.listUnsubscribe?.trim()) return true;

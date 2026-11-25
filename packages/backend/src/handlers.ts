@@ -1785,6 +1785,19 @@ export function createHandlers(b: Backend): Handlers {
     "putAway.kept": async () => ({ senders: await store.putAway.kept() }),
     "putAway.removeKept": async ({ categoryId, sender }) => ({ removed: await store.putAway.removeKept(categoryId, sender) }),
 
+    // plan 281
+    "people.list": () => b.people.list(),
+    "people.ready": () => b.people.ready(),
+    "people.search": async ({ query }, ctx) => {
+      // latest wins per client: a query superseded while queued is not run (as threads.search)
+      const seq = (b.peopleSeq.get(ctx.clientId) ?? 0) + 1;
+      b.peopleSeq.set(ctx.clientId, seq);
+      await b.platform.yield();
+      // i18n-ignore: never shown; People drops CANCELLED
+      if (b.peopleSeq.get(ctx.clientId) !== seq) throw new RpcError("CANCELLED", "Superseded by a newer search");
+      return b.people.search(query);
+    },
+    "people.person": ({ email, conversations }) => b.people.person(email, conversations),
     "followups.list": () => b.followups.look(),
     "followups.threads": async ({ onTop, accountId }) => ({ items: await b.followups.threads(onTop, accountId) }),
     // plan 210 (iteration 2): a promise of yours is acted on with every item it's the same thing as (What matters' one act);
