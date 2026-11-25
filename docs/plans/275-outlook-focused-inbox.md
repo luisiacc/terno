@@ -154,3 +154,13 @@ Twelve findings, all fixed, each with a test that fails without it:
     - conformance for SQLite's hidden-category count branch;
     - a read begun before Move to Inbox landed and committed after.
     - The upgrade's replay is the first round's own path, which `graph-sync.perf` already times.
+
+### `pnpm test:all`
+
+- Lint, build, typecheck, web, ui-perf (run again alone) and startup passed.
+- Unit: the base's list, less `list-pins.test`, which runs again (jsdom, review #8).
+- db-wasm, smoke and perf: the base's lists.
+- e2e: the base's list, and `settings.spec`'s plan 246 scenario: Escape didn't close Settings after a scroll.
+  - It fails the same with this plan's Settings changes taken out (the Accounts row and its search entry).
+  - Other agents changed Settings' text fields and focus rings, and Add account, in the same hours. It's left to them.
+- `outlook-connect.spec` and `gmail-tabs.spec` pass.
