@@ -355,6 +355,7 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       await store.sync.remove([m1!, m2!]);
       expect(await ids(store, o, "AAMkF1")).toEqual([]);
       expect(await unread(store)).toEqual({});
+      expect(await count(store, o, ["AAMkF1", "AAMkF2"])).toBe(0);
       store = await harness.reopen(store); open.push(store);
       expect(await ids(store, o, "AAMkF1")).toEqual([]);
       await ingest(store, [msg({ accountId: o, providerMsgId: "o3", inInbox: false, folder: "AAMkF2" })]);
@@ -678,6 +679,8 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       expect(await count(store, o, ["F1", "F2"])).toBe(3);
       expect(await count(store, o, ["F1"])).toBe(2);
       expect(await count(store, o, ["F1", "F2", "F1"])).toBe(3);
+      // the same folder named with IMAP's exclusions is still one (Codex code review #5)
+      expect(await count(store, o, ["F1", { mailbox: "F1", except: [] }])).toBe(2);
       expect(await count(store, o, ["F2"])).toBe(1);
       expect(await count(store, other, ["F1"])).toBe(1);
       expect(await count(store, o, [])).toBe(0);
@@ -691,6 +694,24 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       expect(await count(store, o, ["F1"])).toBe(1);
       expect(await count(store, o, ["F2"])).toBe(2);
       expect(await count(store, o, ["F1", "F2"])).toBe(3);
+    });
+
+    it("Outlook (plan 259): a count goes on where it was when the folder empties and fills again between its slices: what came in is counted, as each slice saw it (Codex code review #2)", async () => {
+      const store = await fresh();
+      const o = await outlookAccount(store);
+      await ingest(store, [msg({ accountId: o, providerMsgId: "m1", inInbox: false, folder: "A" }), msg({ accountId: o, providerMsgId: "m2", inInbox: false, folder: "B" })]);
+      const first = await store.folders.count(o, ["A"], null, 1);
+      expect(first.messages).toBe(1);
+      expect(first.next).not.toBeNull();
+      // one delta read: m1 out of A (its last), then m2 in
+      await ingest(store, [msg({ accountId: o, providerMsgId: "m1", folder: null }), msg({ accountId: o, providerMsgId: "m2", inInbox: false, folder: "A" })]);
+      let total = first.messages;
+      for (let after = first.next; after; ) {
+        const r = await store.folders.count(o, ["A"], after, 1);
+        total += r.messages;
+        after = r.next;
+      }
+      expect(total).toBe(2);
     });
 
     it("plan 107: a path made again after a rename here: each UIDVALIDITY counts in its own folder, however sliced (Codex code review round 6 #2)", async () => {

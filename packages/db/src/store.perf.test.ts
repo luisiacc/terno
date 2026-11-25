@@ -441,13 +441,19 @@ describe("Outlook's one folder a message (plan 259)", () => {
     const big = store.db.get<{ n: number }>("SELECT count(*) AS n FROM message_folders WHERE account_id = ? AND folder = 'Big'", o)!.n;
     expect(big).toBe((THREADS / 2) * PER);
     meta.outlook = `${THREADS * PER} messages, ${big} in one folder; recompute of 500 conversations max ${Math.max(...recompute).toFixed(1)} ms`;
+    // 2,500 messages' membership at once, over twice an ingest slice (Codex code review #8)
+    expect(Math.max(...recompute), `recompute of 500 Outlook conversations (${meta.outlook})`).toBeLessThanOrEqual(100 * BUDGET_MULTIPLIER);
 
     // the folder's pages and the sidebar, as any folder's
     const folder = { view: "all" as const, accountId: o, folder: "Big", now: NOW };
     const first = await store.threads.list({ ...folder, limit: 100 });
     expect(first.items).toHaveLength(100);
     await gate("Outlook: list a 25,000-message folder, first page (100)", 5, () => store.threads.list({ ...folder, limit: 100 }));
-    const deep = store.db.get<{ last_date: number; id: number }>("SELECT last_date, id FROM threads WHERE account_id = ? ORDER BY last_date DESC, id DESC LIMIT 1 OFFSET 2500", o)!;
+    // (the folder's own 2,500th, never the account's: Codex code review #6)
+    const deep = store.db.get<{ last_date: number; id: number }>("SELECT last_date, thread_id AS id FROM thread_folders WHERE account_id = ? AND folder = 'Big' ORDER BY last_date DESC, thread_id DESC LIMIT 1 OFFSET 2500", o)!;
+    const deepPage = await store.threads.list({ ...folder, limit: 100, cursor: { lastDate: deep.last_date, id: deep.id } });
+    expect(deepPage.items).toHaveLength(100);
+    expect(deepPage.items[0]!.id).not.toBe(first.items[0]!.id);
     await gate("Outlook: list a 25,000-message folder, page at conversation #2,500", 5, () => store.threads.list({ ...folder, limit: 100, cursor: { lastDate: deep.last_date, id: deep.id } }));
     await gate("Outlook: sidebar unread counts with 251 folders", 5, () => store.threads.counts(NOW));
 
@@ -477,6 +483,22 @@ describe("Outlook's one folder a message (plan 259)", () => {
     expect(counted).toBe(store.db.get<{ n: number }>("SELECT count(*) AS n FROM message_folders WHERE account_id = ? AND folder IN ('Big', 'F7')", o)!.n);
     expect(Math.max(...ms), `one count slice (${meta.outlookCount})`).toBeLessThanOrEqual(16 * BUDGET_MULTIPLIER);
     expect(ms.length).toBeLessThanOrEqual(Math.ceil(counted / limit) + 3);
+    // a subtree of 10,000 folders, each named once: every slice within a frame (Codex code review #4: each key searched
+    // the keys before it, ~270 ms a call)
+    const subtree = [...Array.from({ length: 10_000 }, (_, i) => `Empty${i}`), "F7"];
+    const wide: number[] = [];
+    let inWide = 0;
+    for (let after: Parameters<typeof store.folders.count>[2] = null; ; ) {
+      const started = performance.now();
+      const r = await store.folders.count(o, subtree, after, limit);
+      wide.push(performance.now() - started);
+      inWide += r.messages;
+      if (!r.next) break;
+      after = r.next;
+    }
+    meta.outlookWideCount = `${wide.length} slices, max ${Math.max(...wide).toFixed(2)} ms`;
+    expect(inWide).toBe(store.db.get<{ n: number }>("SELECT count(*) AS n FROM message_folders WHERE account_id = ? AND folder = 'F7'", o)!.n);
+    expect(Math.max(...wide), `one count slice over 10,000 folders (${meta.outlookWideCount})`).toBeLessThanOrEqual(16 * BUDGET_MULTIPLIER);
 
     // its export's ids, a stretch at a time
     const stretches: number[] = [];

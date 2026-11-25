@@ -1092,6 +1092,109 @@ it("plan 107: a delete's count over a 50,000-location mailbox walks it once acro
   }
 }, 900_000);
 
+it("plan 259: an Outlook account's 50,000 messages each in one of 250 folders, 25,000 in one: membership written, its pages, triage beside it, a delta read, and its count and export a bounded stretch a call", async () => {
+  const o = (await store.accounts.create({ kind: "outlook", email: "me@outlook.example", displayName: "Outlook", color: "brown", now: NOW })).account.id;
+  type Table = { all(): Iterable<Record<string, unknown>>; get(id: unknown): Record<string, unknown> | undefined; allocateId(): number; put(row: Record<string, unknown>): unknown; deleteRow(row: Record<string, unknown>): void };
+  const c = (store as unknown as { c: { db: { tx<T>(fn: () => T): T; table(name: string): Table } } }).c;
+  const mem = c as unknown as Ctx;
+  const [messagesT, threadsT, placedT] = [c.db.table("messages"), c.db.table("threads"), c.db.table("message_folders")];
+  // (the shared store holds little by this test: its rows are its own) a message as ingest writes it, the copies' model,
+  // and another account's unread conversation beside them
+  const beside = (await store.accounts.create({ kind: "gmail", email: "beside@example.com", displayName: "Beside", color: "brown", now: NOW })).account.id;
+  await store.sync.ingest([msg({ accountId: o, providerMsgId: "o259-model", rfcMessageId: "o259-model@perf.test", inInbox: false, folder: "Big" }), msg({ accountId: beside, providerMsgId: "o259-beside", rfcMessageId: "o259-beside@perf.test", gmailLabels: ["INBOX", "UNREAD"] })], { applyFilters: false, now: NOW, classifier: null });
+  const seed = [...messagesT.all()].find((m) => m.provider_msg_id === "o259-model")!;
+  const other = [...messagesT.all()].find((m) => m.provider_msg_id === "o259-beside")!.thread_id as number;
+  const seedThread = threadsT.get(seed.thread_id)!;
+  // 10,000 conversations of 5 (copies, written straight into the tables): the first 5,000's in "Big", the rest over 250 folders
+  const THREADS = 10_000;
+  const PER = 5;
+  const threads = Array.from({ length: THREADS }, (_, i) => ({ ...seedThread, id: threadsT.allocateId(), account_id: o, provider_thread_id: `o259-${i}`, in_inbox: 0 }));
+  // above every message there is: ingest numbers its own past the table's (a high-water mark), so the table's next id
+  // can be one it gave already
+  const firstId = [...messagesT.all()].reduce((top, m) => Math.max(top, m.id as number), 0) + 1;
+  const copies = Array.from({ length: THREADS * PER }, (_, i) => ({ ...seed, id: firstId + i, account_id: o, thread_id: threads[Math.floor(i / PER)]!.id, provider_msg_id: `o259-${i}`, rfc_message_id: null, gmail_labels: null, in_inbox: 0, is_read: i % 3 === 0 ? 1 : 0, date: (seed.date as number) + i * 1000 }));
+  const placed = copies.map((m, i) => ({ message_id: m.id, account_id: o, folder: i < (THREADS / 2) * PER ? "Big" : `F${i % 250}` }));
+  // the model's own row goes: the folder is the copies'
+  await store.sync.remove([seed.id as number]);
+  direct(() => { threads.forEach((t) => threadsT.put(t)); copies.forEach((m) => messagesT.put(m)); placed.forEach((r) => placedT.put(r)); });
+  try {
+    // their membership, as ingest's recompute writes it (500 conversations a slice)
+    const recompute: Sample[] = [];
+    for (let i = 0; i < THREADS; i += 500) {
+      const chunk = threads.slice(i, i + 500).map((t) => t.id as number);
+      recompute.push(sampleSync(() => direct(() => refreshFolders(mem, chunk))));
+    }
+    const recomputeMs = settle(recompute).ms.sort((a, b) => a - b);
+    console.log(`Outlook membership of 500 conversations (2,500 messages): max ${recomputeMs.at(-1)!.toFixed(2)} ms`);
+    expect(recomputeMs.at(-1)!, "Outlook membership of 500 conversations").toBeLessThanOrEqual(FRAME * MULT);
+    await store.folders.replace(o, [{ key: "Big", path: ["Big"], selectable: true }, ...Array.from({ length: 250 }, (_, i) => ({ key: `F${i}`, path: [`F${i}`], selectable: true }))]);
+    const folder = { view: "all" as const, accountId: o, folder: "Big", now: NOW };
+    expect((await store.threads.list({ ...folder, limit: 100 })).items).toHaveLength(100);
+    // (its order builds in the background, as any folder's first read starts it)
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    // (the sidebar's counts read memberships alone, whoever wrote them: the own-folders case above gates them)
+    const page = await warm(() => store.threads.list({ ...folder, limit: 100 }));
+    console.log(`Outlook folder first page: ${page.ms.toFixed(2)} ms`);
+    expect(page.ms, "Outlook folder first page").toBeLessThanOrEqual(FRAME * MULT);
+    // triage beside it: another account's conversation (membership reads Outlook's folders too) and one in the folder
+    for (const [label, threadId] of [["another account's", other], ["one in the folder", threads[0]!.id as number]] as const) {
+      // every sample changes the thread (read, unread, …), and is checked to: never a no-op timed (Codex code review #7)
+      const ms: number[] = [];
+      for (const action of ["markRead", "markUnread", "markRead", "markUnread"] as const) {
+        ms.push((await timed(() => store.threads.act({ threadIds: [threadId], action, signal: null, now: NOW }))).ms);
+        expect((await store.threads.summaries([threadId]))[0]!.unread, `Outlook: ${action}, ${label}: it changed the thread`).toBe(action === "markUnread");
+      }
+      const median = ms.sort((a, b) => a - b)[2]!;
+      console.log(`Outlook: mark read or unread, ${label}: median ${median.toFixed(2)} ms`);
+      expect(median, `Outlook: mark read or unread, ${label}`).toBeLessThanOrEqual(FRAME * MULT);
+    }
+    // a delta read that saw 200 move out of Big, as ingest's slice
+    const moved = copies.slice(1000, 1200).map((m) => msg({ accountId: o, providerMsgId: m.provider_msg_id as string, inInbox: false, isRead: true, folder: "F7" }));
+    const delta = await timed(() => store.sync.ingest(moved, { applyFilters: false, now: NOW, classifier: null }));
+    console.log(`Outlook: a delta read moving 200 messages: ${delta.ms.toFixed(1)} ms`);
+    expect(delta.ms, "Outlook: a delta read moving 200 messages").toBeLessThanOrEqual(200 * MULT);
+    const big = [...placedT.all()].filter((r) => r.account_id === o && r.folder === "Big").length;
+    expect(big).toBe((THREADS / 2) * PER - 200);
+    // a delete's count, then its export: every call within a frame, the folder walked once across them
+    const counts: Sample[] = [];
+    let counted = 0;
+    for (let at: FolderCountCursor | null = null; ; ) {
+      const from = at;
+      let r!: ReturnType<typeof countFolderMessages>;
+      counts.push(sampleSync(() => (r = countFolderMessages(mem, o, ["Big", "F7", "Big"], from, 100))));
+      counted += r.messages;
+      if (!r.next) break;
+      at = r.next;
+    }
+    const countMs = settle(counts).ms;
+    const countTotal = countMs.reduce((a, b) => a + b, 0);
+    console.log(`Outlook count of ${counted}: ${counts.length} slices, ${countTotal.toFixed(1)} ms in all, max ${Math.max(...countMs).toFixed(2)} ms`);
+    expect(counted).toBe(big + [...placedT.all()].filter((r) => r.account_id === o && r.folder === "F7").length);
+    expect(counts.length).toBeLessThanOrEqual(Math.ceil(counted / 100) + 4);
+    expect(Math.max(...countMs), "Outlook count: one slice").toBeLessThanOrEqual(FRAME * MULT);
+    expect(countTotal / counted, `Outlook count: per message (${countTotal.toFixed(1)} ms in all)`).toBeLessThanOrEqual(0.005 * MULT);
+    const stretches: Sample[] = [];
+    let exported = 0;
+    for (let at: FolderExportCursor | null = null; ; ) {
+      const from = at;
+      let r!: ReturnType<typeof exportIds>;
+      stretches.push(sampleSync(() => (r = exportIds(mem, { accountId: o, folder: "Big" }, from, 1000))));
+      exported += r.messages.length;
+      if (!r.next) break;
+      at = r.next;
+    }
+    const exportMs = settle(stretches).ms;
+    console.log(`Outlook export of ${exported}: ${stretches.length} calls, max ${Math.max(...exportMs).toFixed(2)} ms`);
+    expect(exported).toBe(big);
+    expect(stretches.length).toBeLessThanOrEqual(Math.ceil(big / 1000) + 2 * Math.ceil(big / 16_384) + 2);
+    expect(Math.max(...exportMs), "Outlook export: one call").toBeLessThanOrEqual(FRAME * MULT);
+  } finally {
+    direct(() => { copies.forEach((m) => { if (messagesT.get(m.id)) messagesT.deleteRow(messagesT.get(m.id)!); }); threads.forEach((t) => { if (threadsT.get(t.id)) threadsT.deleteRow(threadsT.get(t.id)!); }); });
+    await store.accounts.remove(o);
+    await store.accounts.remove(beside);
+  }
+}, 900_000);
+
 it("plan 107: a standard view's export at 500,000 threads: an account beside them, the account itself cold and after arrivals, and when they go between its calls: a bounded stretch a call (Codex code review rounds 9 #3, 13 #2, 15 #3)", async () => {
   // a store of its own: rows no other test needs. 500,000: what these guard against is a walk or a sort of them all in one
   // call, about 30 and 50 ms here (double that at a million), over the frame either way
@@ -1244,94 +1347,3 @@ it("plan 107: an export and a count of a 500,000-message conversation read it a 
   }
 }, 900_000);
 
-it("plan 259: an Outlook account's 50,000 messages each in one of 250 folders, 25,000 in one: membership written, its pages, triage beside it, a delta read, and its count and export a bounded stretch a call", async () => {
-  type Table = { all(): Iterable<Record<string, unknown>>; get(id: unknown): Record<string, unknown> | undefined; allocateId(): number; put(row: Record<string, unknown>): unknown; deleteRow(row: Record<string, unknown>): void };
-  const c = (store as unknown as { c: { db: { tx<T>(fn: () => T): T; table(name: string): Table } } }).c;
-  const mem = c as unknown as Ctx;
-  const [messagesT, threadsT, placedT] = [c.db.table("messages"), c.db.table("threads"), c.db.table("message_folders")];
-  const o = (await store.accounts.create({ kind: "outlook", email: "me@outlook.example", displayName: "Outlook", color: "brown", now: NOW })).account.id;
-  const seed = [...messagesT.all()].find((m) => !m.is_trash && !m.is_spam && !m.is_draft && !m.is_sent)!;
-  const seedThread = threadsT.get(seed.thread_id)!;
-  // 10,000 conversations of 5 (copies, written straight into the tables): the first 5,000's in "Big", the rest over 250 folders
-  const THREADS = 10_000;
-  const PER = 5;
-  const threads = Array.from({ length: THREADS }, (_, i) => ({ ...seedThread, id: threadsT.allocateId(), account_id: o, provider_thread_id: `o259-${i}`, in_inbox: 0 }));
-  const copies = Array.from({ length: THREADS * PER }, (_, i) => ({ ...seed, id: messagesT.allocateId(), account_id: o, thread_id: threads[Math.floor(i / PER)]!.id, provider_msg_id: `o259-${i}`, rfc_message_id: null, gmail_labels: null, in_inbox: 0, is_read: i % 3 === 0 ? 1 : 0, date: (seed.date as number) + i * 1000 }));
-  const placed = copies.map((m, i) => ({ message_id: m.id, account_id: o, folder: i < (THREADS / 2) * PER ? "Big" : `F${i % 250}` }));
-  direct(() => { threads.forEach((t) => threadsT.put(t)); copies.forEach((m) => messagesT.put(m)); placed.forEach((r) => placedT.put(r)); });
-  try {
-    // their membership, as ingest's recompute writes it (500 conversations a slice)
-    const recompute: Sample[] = [];
-    for (let i = 0; i < THREADS; i += 500) {
-      const chunk = threads.slice(i, i + 500).map((t) => t.id as number);
-      recompute.push(sampleSync(() => direct(() => refreshFolders(mem, chunk))));
-    }
-    const recomputeMs = settle(recompute).ms.sort((a, b) => a - b);
-    console.log(`Outlook membership of 500 conversations (2,500 messages): max ${recomputeMs.at(-1)!.toFixed(2)} ms`);
-    expect(recomputeMs.at(-1)!, "Outlook membership of 500 conversations").toBeLessThanOrEqual(FRAME * MULT);
-    await store.folders.replace(o, [{ key: "Big", path: ["Big"], selectable: true }, ...Array.from({ length: 250 }, (_, i) => ({ key: `F${i}`, path: [`F${i}`], selectable: true }))]);
-    const folder = { view: "all" as const, accountId: o, folder: "Big", now: NOW };
-    expect((await store.threads.list({ ...folder, limit: 100 })).items).toHaveLength(100);
-    // (its order builds in the background, as any folder's first read starts it)
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    for (const [label, read] of [
-      ["first page", () => store.threads.list({ ...folder, limit: 100 })],
-      ["counts (sidebar)", () => store.threads.counts(NOW)],
-    ] as const) {
-      const r = await warm(read as () => Promise<unknown>);
-      console.log(`Outlook folder ${label}: ${r.ms.toFixed(2)} ms`);
-      expect(r.ms, `Outlook folder ${label}`).toBeLessThanOrEqual(FRAME * MULT);
-    }
-    // triage beside it: another account's conversation (membership reads Outlook's folders too) and one in the folder
-    const other = seeded.threads.find((t) => !t.inTrash && !t.inSpam)!.id;
-    for (const [label, threadId] of [["another account's", other], ["one in the folder", threads[0]!.id as number]] as const) {
-      const r = await warm(() => store.threads.act({ threadIds: [threadId], action: "markRead", signal: null, now: NOW }));
-      await store.threads.act({ threadIds: [threadId], action: "markUnread", signal: null, now: NOW });
-      console.log(`Outlook: mark read, ${label}: ${r.ms.toFixed(2)} ms`);
-      expect(r.ms, `Outlook: mark read, ${label}`).toBeLessThanOrEqual(FRAME * MULT);
-    }
-    // a delta read that saw 200 move out of Big, as ingest's slice
-    const moved = copies.slice(1000, 1200).map((m) => msg({ accountId: o, providerMsgId: m.provider_msg_id as string, inInbox: false, isRead: true, folder: "F7" }));
-    const delta = await timed(() => store.sync.ingest(moved, { applyFilters: false, now: NOW, classifier: null }));
-    console.log(`Outlook: a delta read moving 200 messages: ${delta.ms.toFixed(1)} ms`);
-    expect(delta.ms, "Outlook: a delta read moving 200 messages").toBeLessThanOrEqual(200 * MULT);
-    const big = [...placedT.all()].filter((r) => r.account_id === o && r.folder === "Big").length;
-    expect(big).toBe((THREADS / 2) * PER - 200);
-    // a delete's count, then its export: every call within a frame, the folder walked once across them
-    const counts: Sample[] = [];
-    let counted = 0;
-    for (let at: FolderCountCursor | null = null; ; ) {
-      const from = at;
-      let r!: ReturnType<typeof countFolderMessages>;
-      counts.push(sampleSync(() => (r = countFolderMessages(mem, o, ["Big", "F7", "Big"], from, 100))));
-      counted += r.messages;
-      if (!r.next) break;
-      at = r.next;
-    }
-    const countMs = settle(counts).ms;
-    const countTotal = countMs.reduce((a, b) => a + b, 0);
-    console.log(`Outlook count of ${counted}: ${counts.length} slices, ${countTotal.toFixed(1)} ms in all, max ${Math.max(...countMs).toFixed(2)} ms`);
-    expect(counted).toBe(big + [...placedT.all()].filter((r) => r.account_id === o && r.folder === "F7").length);
-    expect(counts.length).toBeLessThanOrEqual(Math.ceil(counted / 100) + 4);
-    expect(Math.max(...countMs), "Outlook count: one slice").toBeLessThanOrEqual(FRAME * MULT);
-    expect(countTotal / counted, `Outlook count: per message (${countTotal.toFixed(1)} ms in all)`).toBeLessThanOrEqual(0.005 * MULT);
-    const stretches: Sample[] = [];
-    let exported = 0;
-    for (let at: FolderExportCursor | null = null; ; ) {
-      const from = at;
-      let r!: ReturnType<typeof exportIds>;
-      stretches.push(sampleSync(() => (r = exportIds(mem, { accountId: o, folder: "Big" }, from, 1000))));
-      exported += r.messages.length;
-      if (!r.next) break;
-      at = r.next;
-    }
-    const exportMs = settle(stretches).ms;
-    console.log(`Outlook export of ${exported}: ${stretches.length} calls, max ${Math.max(...exportMs).toFixed(2)} ms`);
-    expect(exported).toBe(big);
-    expect(stretches.length).toBeLessThanOrEqual(Math.ceil(big / 1000) + 2 * Math.ceil(big / 16_384) + 2);
-    expect(Math.max(...exportMs), "Outlook export: one call").toBeLessThanOrEqual(FRAME * MULT);
-  } finally {
-    direct(() => { copies.forEach((m) => { if (messagesT.get(m.id)) messagesT.deleteRow(messagesT.get(m.id)!); }); threads.forEach((t) => { if (threadsT.get(t.id)) threadsT.deleteRow(threadsT.get(t.id)!); }); });
-    await store.accounts.remove(o);
-  }
-}, 900_000);

@@ -61,13 +61,19 @@ const keyOf = (k: FolderPlace): string | null => (typeof k === "string" ? k : "u
  * meanwhile is still there. No thread is read, so a thread merge never restarts it.
  */
 export function countMessageFolders(db: Db, accountId: number, keys: readonly FolderPlace[], after: FolderCountCursor | null, limit: number): { messages: number; next: FolderCountCursor | null } {
+  // where each key is first named, read once a call (Codex code review #4: every key searched the ones before it)
+  const firsts = new Map<string, number>();
+  keys.forEach((k, i) => {
+    const key = keyOf(k);
+    if (key !== null && !firsts.has(key)) firsts.set(key, i);
+  });
   let messages = 0;
   let budget = Math.max(1, limit);
   let at: FolderCountCursor = after ?? { key: 0, places: true, after: [] };
   while (at.key < keys.length) {
     if (budget <= 0) return { messages, next: at };
     const key = keyOf(keys[at.key]!);
-    if (key === null || keys.slice(0, at.key).some((k) => keyOf(k) === key)) { at = { key: at.key + 1, places: true, after: [] }; continue; }
+    if (key === null || firsts.get(key) !== at.key) { at = { key: at.key + 1, places: true, after: [] }; continue; }
     const asked = budget;
     const r = db.get<{ n: number; last: number | null }>(
       "SELECT count(*) AS n, max(message_id) AS last FROM (SELECT message_id FROM message_folders INDEXED BY message_folders_folder WHERE account_id = ? AND folder = ? AND message_id > ? ORDER BY message_id LIMIT ?)",

@@ -7,7 +7,8 @@ import { legacyBodyUpgrade, physicalImage } from "./test/legacy-stores";
 
 /**
  * Plan 259: version 41 adds `message_folders` (an Outlook message's one folder). A version-40 mailbox (mail and a folder
- * membership in it) opens with an empty one, the rest kept; a folder written after survives a reopen and goes with its message.
+ * membership in it) opens with an empty one, the rest kept; a folder written after survives a reopen and goes with its
+ * message, or its account.
  */
 
 const platform = { uuid: () => crypto.randomUUID(), yield: async () => {} };
@@ -60,6 +61,12 @@ it("a version-40 mailbox gains an empty message_folders store; its mail and fold
   expect(await list(reopened, outlook, "F1")).toEqual([o]);
   await reopened.sync.remove([m!]);
   expect(await list(reopened, outlook, "F1")).toEqual([]);
+  // and with its account (Codex code review #9)
+  await ingest(reopened, [msg({ accountId: outlook, providerMsgId: "o2", inInbox: false, folder: "F1" })]);
   await reopened.close();
+  expect((await rows(legacyName, "message_folders")).values).toHaveLength(1);
+  const last = await open(legacyName);
+  await last.accounts.remove(outlook);
+  await last.close();
   expect((await rows(legacyName, "message_folders")).values).toEqual([]);
 });

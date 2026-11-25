@@ -194,7 +194,9 @@ export function countFolderMessages(c: Ctx, accountId: number, keys: readonly Fo
     if (budget <= 0) return answer(at);
     const place = places[at.key]!;
     const key = place.mailbox;
-    if (firsts.get(JSON.stringify(place)) !== at.key || (one && place.uidvalidity !== undefined)) { at = { key: at.key + 1, places: true, after: [] }; continue; }
+    // (an Outlook folder is its key, however it's named: Codex code review #5)
+    const first = one ? (place.uidvalidity === undefined ? index.get(key) : undefined) : firsts.get(JSON.stringify(place));
+    if (first !== at.key) { at = { key: at.key + 1, places: true, after: [] }; continue; }
     if (at.places) {
       // the folder's places by a live walk of its index kept between slices (as carryFolder's), each slice its next
       // `budget` (Codex code review round 5 #4: each slice walked and sorted the whole mailbox). Each count has a walk of
@@ -210,7 +212,11 @@ export function countFolderMessages(c: Ctx, accountId: number, keys: readonly Fo
       if (!walks) countWalks.set(c, (walks = new Map()));
       let walk = walks.get(token);
       walks.delete(token);
-      if (!walk) walk = { keys: one ? placedIn.keysBy("account_folder", accountId, key) : locations.keysBy("mailbox", accountId, key), visited: new Set(), looked: 0 };
+      // the folder's bucket in its index: one emptied is let go and another made when a place comes back, which a walk
+      // of the old one never meets (Codex code review #2): the new one is walked, what was counted skipped
+      const bucket = one ? placedIn.bucket("account_folder", accountId, key) : locations.bucket("mailbox", accountId, key);
+      if (!walk) walk = { keys: (bucket ?? NO_KEYS).values(), bucket, visited: new Set(), looked: 0 };
+      else if (walk.bucket !== bucket) walk = { ...walk, keys: (bucket ?? NO_KEYS).values(), bucket };
       const asked = budget;
       let n = 0;
       let ended = false;
@@ -265,7 +271,8 @@ export function countFolderMessages(c: Ctx, accountId: number, keys: readonly Fo
 }
 
 /** a count's walks of a folder's places, per store, by the count's walk and the folder (exported for tests) */
-export const countWalks = new WeakMap<Ctx, Map<string, { keys: Iterator<Key>; visited: Set<number>; looked: number }>>();
+export const countWalks = new WeakMap<Ctx, Map<string, { keys: Iterator<Key>; bucket: ReadonlySet<Key> | undefined; visited: Set<number>; looked: number }>>();
+const NO_KEYS: ReadonlySet<Key> = new Set();
 /** the last walk id given (an object property: a module `let` read then reset miscompiles under the React Compiler) */
 const countWalkIds = { last: 0 };
 
