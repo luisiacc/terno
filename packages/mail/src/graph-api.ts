@@ -979,7 +979,7 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       await observe(page.items.map((m) => ({ local: m.id, providerMsgId: m.providerMsgId })), sink);
       cursor.refresh = { after: page.next };
       await save(sink, cursor);
-      if (Date.now() - budget.started > FLAG_SNAPSHOTS_MS + FIRST_SYNC_CHUNK_MS) { budget.more = true; return; }
+      if (outOfTime(budget)) { budget.more = true; return; }
     }
   }
 
