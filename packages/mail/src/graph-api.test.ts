@@ -48,8 +48,9 @@ async function setup(o: {
   pageSize?: number; flagObservation?: boolean; requests?: AccountRequests; snapshots?: () => { id: number; providerMsgId: string }[];
   /** a JSON answer as the provider will see it (a test reshapes Graph's) */
   rewrite?: (url: string, body: unknown) => unknown;
-  filteredDeltaMax?: number;
   tokens?: GraphTokenSource;
+  /** an answer of the test's own in place of Graph's */
+  respond?: (url: string) => Response | undefined;
   pendingAttachments?: () => { id: number; providerMsgId: string }[];
 } = {}) {
   const ms = await new SyntheticMicrosoft().start();
@@ -61,6 +62,7 @@ async function setup(o: {
   const removed: string[] = [];
   const folders: ProviderFolder[][] = [];
   const fetched: string[] = [];
+  const pages: (string | undefined)[] = [];
   const backfilled: unknown[] = [];
   let again = 0;
   const token = ms.accessToken();
@@ -72,6 +74,7 @@ async function setup(o: {
     store: {
       messageByProviderId: async (id: string) => { const row = db.rows.get(id); return row ? { id: row.id, subject: row.subject, fromEmail: "" } : null; },
       syncedMessagePage: async (after?: string) => {
+        pages.push(after);
         const keys = [...db.rows.keys()].sort().filter((k) => after === undefined || k > after).slice(0, 50);
         return { items: keys.map((k) => ({ id: db.rows.get(k)!.id, providerMsgId: k })), ...(keys.length && { next: keys.at(-1) }) };
       },
@@ -86,6 +89,8 @@ async function setup(o: {
     fetch: async (input: string | URL | Request, init?: RequestInit) => {
       if (o.requests) throw new Error("a provider with a request policy fetches through it");
       fetched.push(String(input));
+      const own = o.respond?.(String(input));
+      if (own) return own;
       const response = await fetch(input, init);
       if (!o.rewrite || !response.headers.get("content-type")?.includes("application/json")) return response;
       return Response.json(o.rewrite(String(input), await response.json()), { status: response.status });
@@ -105,9 +110,9 @@ async function setup(o: {
     again() { again++; },
     async backfillDone(request) { backfilled.push(request); },
   };
-  const make = () => createGraphApiProvider(ctx, { endpoints: ms.endpoints(), tokens: o.tokens ?? { get: async () => token, invalidate() {} }, requestsPerSecond: Infinity, pageSize: o.pageSize, userFoldersEveryMs: 0, filteredDeltaMax: o.filteredDeltaMax });
+  const make = () => createGraphApiProvider(ctx, { endpoints: ms.endpoints(), tokens: o.tokens ?? { get: async () => token, invalidate() {} }, requestsPerSecond: Infinity, pageSize: o.pageSize, userFoldersEveryMs: 0 });
   const t = {
-    ms, db, ingested, removed, folders, ctx, sink, fetched, backfilled,
+    ms, db, ingested, removed, folders, ctx, sink, fetched, backfilled, pages,
     provider: make(),
     get cursor() { return cursor as { folders: Record<string, Record<string, unknown>>; refresh?: unknown } | null; },
     get again() { return again; },
@@ -164,11 +169,16 @@ describe("Graph provider: the first sync", () => {
     expect(t.ingested.every((m) => !m.live)).toBe(true);
     // the person's folders: one under the Inbox shows at the top; no search folder, no Outbox
     expect(t.folders.at(-1)).toEqual([{ key: clients, path: ["Clients"], selectable: true }, { key: sub, path: ["Receipts"], selectable: true }]);
-    // the window's filtered delta, paged by nextLink to its deltaLink; under 5,000 there's nothing to list
-    const round = t.ms.graphUrls.filter((u) => u.startsWith("/v1.0/me/mailFolders/inbox-id/messages/delta?"));
+    // the window's filtered delta first, paged by nextLink to its deltaLink, then the window listed (nothing new in it)
+    const inbox = t.ms.graphUrls.filter((u) => u.startsWith("/v1.0/me/mailFolders/inbox-id/messages"));
+    const round = inbox.filter((u) => u.includes("/delta?"));
     expect(decodeURIComponent(round[0]!)).toContain("$filter=receivedDateTime ge 1970-01-01T00:00:00Z");
-    expect(round.slice(1).every((u) => u.includes("$skiptoken="))).toBe(true);
-    expect(t.ms.graphUrls.some((u) => /\/messages\?/.test(u))).toBe(false);
+    expect(round.slice(1, -1).every((u) => u.includes("$skiptoken="))).toBe(true);
+    // the round after the listing goes on from the kept deltaLink
+    expect(round.at(-1)).toContain("$deltatoken=");
+    const listed = inbox.findIndex((u) => u.includes("/messages?"));
+    expect(listed).toBeGreaterThan(inbox.findIndex((u) => u.includes("/delta?") && !u.includes("$skiptoken=") && !u.includes("$deltatoken=")));
+    expect(listed).toBeLessThan(inbox.length - 1);
     expect(Object.values(t.cursor!.folders).every((s) => typeof s.delta === "string" && (s.delta as string).includes("$deltatoken=") && !s.initial && !s.list)).toBe(true);
     expect(Object.keys(t.cursor!.folders).sort()).toEqual(["archive-id", "drafts-id", "inbox-id", "junk-id", "sent-id", "trash-id", clients, sub].sort());
     // every call asked for immutable ids
@@ -271,8 +281,8 @@ describe("Graph provider: Codex code review of stage 2a", () => {
     expect(t.removed).toEqual([gone]);
   });
 
-  it("#1: a first round that holds the filter's most lists the rest of the window, newest first, then goes on by delta", async () => {
-    const t = await setup({ pageSize: 2, filteredDeltaMax: 2 });
+  it("#1 (round 2 #1): after its first round a folder lists the rest of the window, newest first (Graph's 5,000 cut it here), then goes on by delta", async () => {
+    const t = await setup({ pageSize: 2 });
     t.ms.deltaCap = 2;
     const ids = Array.from({ length: 5 }, (_, i) => t.ms.deliver("inbox-id", { received: Date.UTC(2026, 10, 1 + i) }));
     await t.sync();
@@ -359,7 +369,11 @@ describe("Graph provider: Codex code review of stage 2a", () => {
     await t.sync({ windowStart: request.since, backfill: request });
     expect(t.row(older)).toBeDefined();
     expect(t.backfilled).toEqual([request]);
+    // deleted between the old links' last round and the new ones' first: the restart's reconciliation finds it (round 2 #2)
+    const lost = [...t.db.rows.keys()].find((id) => id !== older)!;
+    t.ms.destroy(lost);
     await t.sync({ windowStart: request.since });
+    expect(t.removed).toEqual([lost]);
     // a flag change on it: outside the old filter, Graph wouldn't say (only read states and removals cross it)
     t.ms.setFlag(older, "flagged");
     await t.sync({ windowStart: request.since });
@@ -384,6 +398,89 @@ describe("Graph provider: Codex code review of stage 2a", () => {
     for (let i = 0; i < 1001; i++) t.ms.deliver("inbox-id", { subject: `Invoice ${i}`, received: now + 10_000 + i });
     const result = await t.provider.search!({ queries: [{ terms: ["invoice"] }], before: now, limit: 250, signal: new AbortController().signal });
     expect(result).toEqual({ hits: [], partial: true });
+  });
+});
+
+describe("Graph provider: Codex code review of stage 2a, round 2", () => {
+  it("#3: a 404 whose body says nothing (no error code) removes nothing", async () => {
+    let targets: { id: number; providerMsgId: string }[] = [];
+    let silent: string | undefined;
+    const t = await setup({ flagObservation: true, snapshots: () => targets.splice(0), respond: (url) => silent && url.includes(`/me/messages/${encodeURIComponent(silent)}?`) ? new Response("", { status: 404 }) : undefined });
+    const a = t.ms.deliver("inbox-id");
+    await t.sync();
+    silent = a;
+    targets = [{ id: t.row(a)!.id, providerMsgId: a }];
+    await expect(t.sync()).rejects.toMatchObject({ status: 404, codes: [] });
+    expect(t.removed).toEqual([]);
+  });
+
+  it("#4: a reconciliation asked for again while one runs keeps its place and starts over once it ends", async () => {
+    const t = await setup();
+    t.ms.deliver("inbox-id");
+    await t.sync();
+    const at = [...t.db.rows.keys()][0]!;
+    t.ctx.loadCursor = (async () => ({ ...t.cursor, refresh: { after: at } })) as typeof t.ctx.loadCursor;
+    t.ms.expireDelta("inbox-id");
+    await t.sync();
+    // the one under way went on from its place, then the new one from the top
+    expect(t.pages).toEqual([at, undefined, at]);
+    expect(t.cursor!.refresh).toBeUndefined();
+  });
+
+  it("#10: an undated Inbox entry the read finds in another folder is stored there, quietly", async () => {
+    let target: string | undefined;
+    const t = await setup({
+      rewrite: (url, body) => {
+        if (!target || !url.includes("/mailFolders/inbox-id/messages/delta") || !url.includes("$deltatoken=")) return body;
+        (body as { value: unknown[] }).value.push({ id: target, isRead: true });
+        return body;
+      },
+    });
+    t.ms.deliver("inbox-id");
+    await t.sync();
+    target = t.ms.deliver("archive-id", { received: Date.now() });
+    await t.sync();
+    expect(t.ingested.filter((m) => m.id === target)).toEqual([{ id: target, live: false }]);
+    expect(t.row(target)).toMatchObject({ inInbox: false, folder: null });
+  });
+
+  it("#12: a deltaLink off Graph's root is never kept: the place stays where it was", async () => {
+    let poison = false;
+    const t = await setup({
+      rewrite: (url, body) => {
+        if (!poison || !url.includes("/mailFolders/inbox-id/messages/delta")) return body;
+        const page = body as Record<string, unknown>;
+        if (page["@odata.deltaLink"]) page["@odata.deltaLink"] = "https://elsewhere.example/v1.0/me/x?$deltatoken=y";
+        return page;
+      },
+    });
+    t.ms.deliver("inbox-id");
+    await t.sync();
+    const place = t.cursor!.folders["inbox-id"]!.delta;
+    poison = true;
+    await expect(t.sync()).rejects.toMatchObject({ i18n: { key: "errors.outlook.invalidResponse" } });
+    expect(t.cursor!.folders["inbox-id"]!.delta).toBe(place);
+  });
+
+  it("#6: an undated change to a message outside the window is read once, not at every change", async () => {
+    let old: string | undefined;
+    const t = await setup({
+      rewrite: (url, body) => {
+        if (!old || !url.includes("/messages/delta")) return body;
+        const page = body as { value: Record<string, unknown>[] };
+        page.value = page.value.map((v) => v.id === old ? { id: old, isRead: v.isRead } : v);
+        return page;
+      },
+    });
+    const windowStart = Date.now() - 86_400_000;
+    old = t.ms.deliver("inbox-id", { received: Date.now() - 30 * 86_400_000 });
+    await t.sync({ windowStart });
+    t.ms.setRead(old, true);
+    await t.sync({ windowStart });
+    t.ms.setRead(old, false);
+    await t.sync({ windowStart });
+    expect(t.row(old)).toBeUndefined();
+    expect(reads(t.ms, old)).toBe(1);
   });
 });
 
