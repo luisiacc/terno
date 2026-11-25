@@ -309,6 +309,12 @@ export interface MailProvider {
   /** Explicit cached-message body read; never enumerates mail or loads embedded resources. */
   readBody?(target: { id: number; providerMsgId: string }, signal: AbortSignal): Promise<{ parsed: import("./mime").ParsedMessage; release(): void } | null>;
   /**
+   * Plan 272: the message's source as its server holds it (Show original), read on the user's click and stored nowhere;
+   * at most MAX_INCOMING_MIME_BYTES (larger: a ProviderError). null: the server no longer has it. The provider holds its
+   * read permits only while it reads: the bytes it returns are the caller's.
+   */
+  readOriginal?(target: { id: number; providerMsgId: string }, signal: AbortSignal): Promise<Uint8Array | null>;
+  /**
    * Plan 68: after a pass that worked, the account's own folders when the provider keeps them apart from its
    * mail (Gmail's /labels: read when unknown, stale or met in the pass; otherwise nothing). IMAP lists them in sync.
    */

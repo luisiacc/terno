@@ -57,6 +57,7 @@ import { Marked } from "./match-mark";
 import { firstHolding, MAIL_INTERACTION, readerMarks, revealMark, useReaderMarks, useSearchMarks } from "~/lib/reader-marks";
 import { MailReaderView, useMailReaderView } from "./mail-reader-view";
 import { backgroundMenu, MessageActions, MessageMenu } from "./message-menu";
+import { OriginalHost } from "./original-message";
 import { reasonText } from "~/lib/reasons";
 import { useDesign, variant } from "~/lib/design";
 import { renderProbe } from "~/lib/render-probe";
@@ -1102,7 +1103,7 @@ export function Reader() {
   const focusRequest = useApp((s) => s.draftFocus?.seq ?? null);
   // plan 145: the digest's row reads here, and isn't a thread
   if (selectedId === DIGEST_ROW_ID) return <DigestPage />;
-  return <MailReaderView identity={selectedId} focusRequest={focusRequest}><ReaderContent /></MailReaderView>;
+  return <MailReaderView identity={selectedId} focusRequest={focusRequest}><OriginalHost><ReaderContent /></OriginalHost></MailReaderView>;
 }
 
 /** One conversation, from its subject to its last message: keyed by thread, so what's open starts afresh with each. */

@@ -36,6 +36,8 @@ import { BODY_READ_MAX } from "../writing/body";
 import { FILL_GAPS_MAX, GENERATION_TEXT_MAX, WRITING_INSTRUCTIONS_MAX, WRITING_ONE_OFF_MAX, type AiComposeDelta, type AiFillDelta, type AiComposeResult, type AiIntentResult, type AiStudyProgress, type WritingPrefs, type WritingProfileView, type WritingStatus, type WritingStudyResult } from "../writing/contract";
 import type { AlwaysScope, CategoryModelStats, Prediction, QuickActions } from "../categorize/bulk";
 import type { I18nRef } from "./envelope";
+import { ORIGINAL_PIECE, type OriginalResult } from "../original";
+import { MAX_INCOMING_MIME_BYTES } from "../attachments";
 import type { AutoCategorize } from "../categorize/policy";
 import type { LearnedProposal } from "../learning/propose";
 import { SIMILAR_ACTIONS, type SimilarOffers } from "../similar";
@@ -837,6 +839,16 @@ export const contract = {
   "links.of": m<{ threads: Record<number, string>; messages: Record<number, string> }>()(z.object({ threadIds: z.array(id).max(100).default([]), messageIds: z.array(id).max(100).default([]) })),
   "threads.bodyPart": m<string>()(z.object({ accountId: id, messageId: id, version: z.string().min(1).max(100), field: z.enum(["text", "html"]), ordinal: z.number().int().min(0) })),
   "reader.hydrate": m<{ changed: boolean; unavailable?: true }>()(z.object({ threadId: id, messageId: id })),
+  /**
+   * Plan 272: Show original. Reads the message's source from its server (the message must be in that conversation)
+   * and keeps it for its download, by this client and its `requestId`, until `reader.originalClose`, two minutes
+   * untouched or a third original. Renderer only.
+   */
+  "reader.original": m<OriginalResult>()(z.object({ threadId: id, messageId: id, requestId }), { timeoutMs: 180_000 }),
+  /** Plan 272: a piece of a kept original (ORIGINAL_PIECE bytes, base64); NOT_FOUND once it went */
+  "reader.originalPiece": m<{ dataBase64: string }>()(z.object({ requestId, index: z.number().int().min(0).max(Math.ceil(MAX_INCOMING_MIME_BYTES / ORIGINAL_PIECE)) })),
+  /** Plan 272: the view went: a read in flight stops, kept bytes go */
+  "reader.originalClose": m<{ ok: true }>()(z.object({ requestId })),
   /** `undoId` (null when nothing changed) puts back exactly the messages it changed (threads.undo) */
   "threads.act": m<{ affected: number; undoId: number | null }>()(
     z.object({

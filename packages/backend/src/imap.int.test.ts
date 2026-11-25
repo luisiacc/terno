@@ -981,6 +981,37 @@ describe("IMAP provider against ImapKit", () => {
     expect.soft((await client.call("ops.list", {}))[0]).toMatchObject({ state: progress ? "unknown" : "succeeded", attempts: 1 });
   });
 
+  it("plan 272: Show original reads the message's exact source from the server, in pieces; gone from the server, it says so", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    const source = raw({ subject: "Original", html: "<p>Hola</p>" });
+    imap.server.control.addMessage("INBOX", { raw: source });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const [t] = (await client.call("threads.list", { view: "inbox" })).items;
+    const [m] = (await client.call("threads.get", { threadId: t!.id }))!.messages;
+    const view = await client.call("reader.original", { threadId: t!.id, messageId: m!.id, requestId: "q1" });
+    if ("unavailable" in view) throw new Error("no original");
+    expect(view).toMatchObject({ size: Buffer.byteLength(source), pieces: 1, summary: { subject: "Original", from: "Ana Pérez <ana@example.com>" } });
+    expect(Buffer.from((await client.call("reader.originalPiece", { requestId: "q1", index: 0 })).dataBase64, "base64").toString()).toBe(source);
+    await client.call("reader.originalClose", { requestId: "q1" });
+    await expect(client.call("reader.originalPiece", { requestId: "q1", index: 0 })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    // not in that conversation: nothing is read
+    await expect(client.call("reader.original", { threadId: t!.id + 1, messageId: m!.id, requestId: "q2" })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    imap.server.control.expungeMessages("INBOX", imap.server.control.listMessages("INBOX").map((x: { uid: number }) => x.uid));
+    expect(await client.call("reader.original", { threadId: t!.id, messageId: m!.id, requestId: "q3" })).toEqual({ unavailable: "gone" });
+  });
+
+  it("plan 272: a place whose UIDVALIDITY changed is no answer: try again, never gone", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    imap.server.control.addMessage("INBOX", { raw: raw({ subject: "Renumbered" }) });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const [t] = (await client.call("threads.list", { view: "inbox" })).items;
+    const [m] = (await client.call("threads.get", { threadId: t!.id }))!.messages;
+    imap.server.control.resetUidValidity("INBOX", { uids: "renumber" });
+    await expect(client.call("reader.original", { threadId: t!.id, messageId: m!.id, requestId: "q1" })).rejects.toMatchObject({ code: "UNAVAILABLE", i18n: { key: "errors.original.settling" } });
+  });
+
   it("archives on the server with MOVE and keeps the message (now in Archive) after resync", async () => {
     const { imap, backend, client, addAccount } = await setup();
     imap.server.control.addMessage("INBOX", { raw: raw({ subject: "Archívame" }) });

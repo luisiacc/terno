@@ -180,11 +180,15 @@ export async function attachmentBlob(accountId: number, ref: AttachmentRef): Pro
 }
 
 export async function downloadAttachment(accountId: number, ref: AttachmentRef): Promise<void> {
-  const blob = await attachmentBlob(accountId, ref);
+  saveBlob(await attachmentBlob(accountId, ref), ref.filename);
+}
+
+/** Bytes this page holds saved as a file, where downloads go (an attachment, plan 272's original) */
+export function saveBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = attachmentFilename(ref.filename);
+  a.download = attachmentFilename(filename);
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

@@ -531,6 +531,20 @@ export function createHandlers(b: Backend): Handlers {
       if (ctx.origin !== "renderer") throw new RpcError("FORBIDDEN", L("attachments.unavailable"));
       return b.hydrateBody(threadId, messageId);
     },
+    // plan 272: the renderer's own Show original; its bytes are the opening client's alone
+    "reader.original": (p, ctx) => {
+      if (ctx.origin !== "renderer") throw new RpcError("FORBIDDEN", L("attachments.unavailable"));
+      return b.originals.open(p, ctx.clientId);
+    },
+    "reader.originalPiece": async ({ requestId, index }, ctx) => {
+      if (ctx.origin !== "renderer") throw new RpcError("FORBIDDEN", L("attachments.unavailable"));
+      return b.originals.piece(requestId, index, ctx.clientId);
+    },
+    "reader.originalClose": async ({ requestId }, ctx) => {
+      if (ctx.origin !== "renderer") throw new RpcError("FORBIDDEN", L("attachments.unavailable"));
+      b.originals.close(requestId, ctx.clientId);
+      return { ok: true as const };
+    },
 
     "threads.get": async ({ threadId, bodyFormat }) => {
       const thread = await store.threads.get(threadId, { bodyFormat });

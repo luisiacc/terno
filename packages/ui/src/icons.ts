@@ -30,6 +30,7 @@ export { CircleAlert } from "./iconset/generated/CircleAlert";
 export { CircleCheck } from "./iconset/generated/CircleCheck";
 export { Clock } from "./iconset/generated/Clock";
 export { Cloud } from "./iconset/generated/Cloud";
+export { Code } from "./iconset/generated/Code";
 export { Columns2 } from "./iconset/generated/Columns2";
 export { Command } from "./iconset/generated/Command";
 export { Copy } from "./iconset/generated/Copy";

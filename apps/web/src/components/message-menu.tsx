@@ -5,7 +5,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { Button } from "@terno/ui/components/button";
 import { cn } from "@terno/ui/lib/utils";
 import { t } from "@terno/i18n";
-import { Copy, Download, Ellipsis, FileDown, Forward, Printer, Reply, ReplyAll } from "@terno/ui/icons";
+import { Code, Copy, Download, Ellipsis, FileDown, Forward, Printer, Reply, ReplyAll } from "@terno/ui/icons";
 import { messageParts } from "@terno/core";
 import { useMemo, useRef, useState, type MouseEvent, type ReactElement } from "react";
 import { composeLanding, type ComposeLanding } from "~/lib/compose";
@@ -19,6 +19,8 @@ import { messagePerson, type ThreadPerson } from "~/lib/thread-overview";
 import { PersonItems, type PersonParts } from "./person-menu";
 import { saveFile } from "./attachments";
 import { formatBytes } from "~/lib/format";
+import { originalBack, useOriginalOpener } from "./original-message";
+import { useMailReaderView } from "./mail-reader-view";
 
 /**
  * A right-click on the reader's background is the conversation's too, so it is passed to the trigger as a mail
@@ -55,7 +57,7 @@ function useMessagePerson(threadId: number, messageId: number | null): { person:
  * What a message offers, in its ⋯ menu and on a right-click alike (off a message, only the conversation's copy). Plan 194:
  * then what's done about whom it's between, as their chip's menu offers (useMessagePerson)
  */
-function MessageItems({ threadId, messageId, respond, compose, parts }: { threadId: number; messageId: number | null; respond: (mode: Respond) => void; compose: (open: () => Promise<ComposeLanding>) => void; parts: PersonParts }) {
+function MessageItems({ threadId, messageId, respond, compose, showOriginal, parts }: { threadId: number; messageId: number | null; respond: (mode: Respond) => void; compose: (open: () => Promise<ComposeLanding>) => void; /** plan 272: absent where it can't open (inside another view) */ showOriginal?: () => void; parts: PersonParts }) {
   const { Item, Separator, Sub, SubTrigger, SubContent } = parts;
   const replyAll = useReachesSeveral(threadId, messageId);
   const detail = useThread(threadId);
@@ -122,6 +124,12 @@ function MessageItems({ threadId, messageId, respond, compose, parts }: { thread
             <FileDown />
             <span className="flex-1">{t("threadMenu.exportMessagePdf")}</span>
           </Item>
+          {showOriginal && (
+            <Item data-testid="message-menu-original" onClick={showOriginal}>
+              <Code />
+              <span className="flex-1">{t("threadMenu.showOriginal")}</span>
+            </Item>
+          )}
         </>
       )}
     </>
@@ -137,6 +145,10 @@ const DROPDOWN_PARTS: PersonParts = { Item: DropdownMenuItem, Separator: Dropdow
  */
 function useRespond(threadId: number, messageId: number | null, fallback: () => HTMLElement | null | undefined) {
   const handedOff = useRef(false);
+  /** plan 272: a view opened from the menu takes focus once the menu has closed */
+  const handedTo = useRef<(() => HTMLElement | null) | null>(null);
+  const originals = useOriginalOpener();
+  const view = useMailReaderView();
   const compose = (open: () => Promise<ComposeLanding>) => {
     handedOff.current = true;
     void open().then((landing) => {
@@ -150,10 +162,20 @@ function useRespond(threadId: number, messageId: number | null, fallback: () => 
     compose(() => composeLanding(mode, threadId, 0, undefined, undefined, { sourceId: messageId }));
   };
   const opened = (open: boolean) => {
-    if (open) handedOff.current = false;
+    if (open) { handedOff.current = false; handedTo.current = null; }
     setApp({ menuOpen: open });
   };
-  return { respond, compose, opened, finalFocus: () => !handedOff.current };
+  /** Show original (plan 272), from the conversation only: one view over it at a time. `trigger`: where focus goes back. */
+  const showOriginal = (trigger: () => HTMLElement | null | undefined) => {
+    if (!originals || view?.active || messageId === null) return undefined;
+    return () => {
+      const back = trigger();
+      if (!back) return;
+      handedTo.current = originalBack;
+      originals.open(threadId, messageId, back);
+    };
+  };
+  return { respond, compose, opened, showOriginal, finalFocus: () => handedTo.current?.() ?? !handedOff.current };
 }
 
 /**
@@ -163,7 +185,7 @@ function useRespond(threadId: number, messageId: number | null, fallback: () => 
  */
 export function MessageActions({ threadId, messageId, label, className }: { threadId: number; messageId: number; /** plan 188: whose message it is ("More for Ana's message, …"): every message's ⋯ told apart */ label?: string; className?: string }) {
   const trigger = useRef<HTMLButtonElement>(null);
-  const { respond, compose, opened, finalFocus } = useRespond(threadId, messageId, () => trigger.current);
+  const { respond, compose, opened, showOriginal, finalFocus } = useRespond(threadId, messageId, () => trigger.current);
   return (
     <div
       role="group"
@@ -185,7 +207,7 @@ export function MessageActions({ threadId, messageId, label, className }: { thre
           <TooltipContent>{t("reader.message.more")}</TooltipContent>
         </Tooltip>
         <DropdownMenuContent align="end" sideOffset={4} className="w-60" data-testid="message-actions-menu" finalFocus={finalFocus}>
-          <MessageItems threadId={threadId} messageId={messageId} respond={respond} compose={compose} parts={DROPDOWN_PARTS} />
+          <MessageItems threadId={threadId} messageId={messageId} respond={respond} compose={compose} showOriginal={showOriginal(() => trigger.current)} parts={DROPDOWN_PARTS} />
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
@@ -201,7 +223,7 @@ export function MessageActions({ threadId, messageId, label, className }: { thre
 export function MessageMenu({ threadId, children }: { threadId: number; children: ReactElement }) {
   const [messageId, setMessageId] = useState<number | null>(null);
   const [selected, setSelected] = useState("");
-  const { respond, compose, opened, finalFocus } = useRespond(threadId, messageId, () => document.querySelector<HTMLElement>(`[aria-controls="msg-body-${messageId}"]`));
+  const { respond, compose, opened, showOriginal, finalFocus } = useRespond(threadId, messageId, () => document.querySelector<HTMLElement>(`[aria-controls="msg-body-${messageId}"]`));
   return (
     <ContextMenu onOpenChange={opened}>
       {/* the trigger wraps the whole conversation: mail stays selectable (the primitive defaults to select-none) */}
@@ -233,7 +255,8 @@ export function MessageMenu({ threadId, children }: { threadId: number; children
             <ContextMenuSeparator />
           </>
         )}
-        <MessageItems threadId={threadId} messageId={messageId} respond={respond} compose={compose} parts={CONTEXT_PARTS} />
+        {/* the message's ⋯ is where focus goes back to (its header while it's folded) */}
+        <MessageItems threadId={threadId} messageId={messageId} respond={respond} compose={compose} showOriginal={showOriginal(() => document.querySelector<HTMLElement>(`[data-message-id="${messageId}"] [data-testid="message-more"]`) ?? document.querySelector<HTMLElement>(`[aria-controls="msg-body-${messageId}"]`))} parts={CONTEXT_PARTS} />
       </ContextMenuContent>
     </ContextMenu>
   );

@@ -2585,6 +2585,54 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       }
     },
 
+    /**
+     * Plan 272: a message's source from one of its places, each tried in turn, with the repair fetch's checks (one
+     * answer, for that UID, the command exhausted before its bytes count). A place still being matched to its message,
+     * or whose UIDVALIDITY changed, is no answer: it's an error to try again, never "gone". Only every place confirmed
+     * empty (no such mailbox, no such UID) is null.
+     */
+    async readOriginal(target, signal) {
+      if ((await locations.unresolved([target.id])).length) throw new ProviderError(L("errors.original.settling"), true);
+      const places = await locations.of([target.id]);
+      const reset = incomingReset.signal;
+      const releaseRead = await ctx.incoming?.acquire(accountId, signal, reset, "reader");
+      let releaseLarge: (() => void) | undefined;
+      try {
+        releaseLarge = await ctx.incoming?.promote?.(accountId, signal, reset, "reader");
+        let unsettled = false;
+        for (const place of places) {
+          signal.throwIfAborted();
+          const read = await withConnection(async (c) => {
+            let lock: Awaited<ReturnType<ImapFlow["getMailboxLock"]>>;
+            try {
+              lock = await c.getMailboxLock(place.mailbox);
+            } catch (error) {
+              const e = toProviderError(error);
+              if (e.retryable || e instanceof ProviderAuthError) throw e;
+              return "missing" as const;
+            }
+            try {
+              if (place.uidvalidity !== Number(c.mailbox && c.mailbox.uidValidity)) return "unsettled" as const;
+              let source: Buffer | undefined;
+              let invalid = false, answered = false;
+              for await (const msg of c.fetch([place.uid], { uid: true, source: { start: 0, maxLength: MAX_INCOMING_MIME_BYTES + 1 } }, { uid: true })) {
+                if (msg.uid !== place.uid || answered) invalid = true;
+                else { answered = true; source = msg.source; }
+              }
+              if (invalid) throw new ProviderError(L("errors.original.unreadable"), true);
+              if (!source) return "missing" as const;
+              if (source.byteLength > MAX_INCOMING_MIME_BYTES) throw new ProviderError(L("errors.mail.processingLimit"), false);
+              return new Uint8Array(source.buffer, source.byteOffset, source.byteLength);
+            } finally { lock.release(); }
+          }, signal);
+          if (read instanceof Uint8Array) return read;
+          if (read === "unsettled") unsettled = true;
+        }
+        if (unsettled) throw new ProviderError(L("errors.original.settling"), true);
+        return null;
+      } finally { releaseLarge?.(); releaseRead?.(); }
+    },
+
     async execute(op: ProviderOp) {
       if (op.kind === "send") return send(op.payload as SendPayload, op);
       if (!["markRead", "markUnread", "star", "unstar", "archive", "trash", "spam", "notSpam", "moveToInbox", MOVE_TO_FOLDER, LEAVE_FOLDER].includes(op.kind)) throw new ProviderError(`Unsupported operation ${op.kind}`, false);

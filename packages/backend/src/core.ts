@@ -55,6 +55,7 @@ import type { IconTransport } from "./icons/transport";
 import { browserUnsubscribeTransport, type UnsubscribeTransport } from "./unsubscribe";
 import { BULK_SLICE, SliceSizer, type SliceBudget } from "./slicer";
 import { Evictions } from "./storage";
+import { Originals, type OriginalRead } from "./originals";
 
 class FlagConnectionError extends ProviderError {
   constructor() { super(L("errors.mail.flagConnection"), false); }
@@ -268,6 +269,8 @@ export class BackendCore {
   private readonly describing = new Set<number>();
   private readonly bodyJobs = new Map<number, { threadId: number; promise: Promise<ResultOf<"reader.hydrate">> }>();
   private bodyWaiters = 0;
+  /** plan 272: Show original's reads and the bytes kept for their downloads */
+  readonly originals = new Originals((threadId, messageId, signal) => this.readOriginal(threadId, messageId, signal));
   /** a change arrived while syncing: run another pass when the current one ends */
   private readonly syncAgain = new Set<number>();
   private readonly flagSyncAgain = new Set<number>();
@@ -2224,6 +2227,7 @@ export class BackendCore {
   }
 
   accountRemoved(accountId: number): void {
+    this.originals.dropAccount(accountId);
     // plan 211: its checks are forgotten: its id may come back as another account's
     void this.dated.accountRemoved(accountId);
     void this.followups.accountRemoved(accountId);
@@ -2294,6 +2298,38 @@ export class BackendCore {
       this.bodyArrived(messageId);
       return { changed: result.touched.length > 0 };
     } finally { body.release(); }
+  }
+
+  /**
+   * Plan 272: a message's source from its server, for Show original (`originals`): read on the click, stored nowhere.
+   * What stops it short without anything going wrong is a reason: a message only on this computer, gone from the
+   * server, an account to sign in to again, a provider that can't. The message must be in the conversation named.
+   */
+  async readOriginal(threadId: number, messageId: number, signal: AbortSignal): Promise<OriginalRead> {
+    await this.ready;
+    const detail = await this.store.threads.get(threadId, { bodyFormat: "parts" });
+    const message = detail?.messages.find((m) => m.id === messageId);
+    if (!message) throw new RpcError("NOT_FOUND", L("errors.original.gone"));
+    const life = this.lifetime(message.accountId);
+    const credentials = this.credentialsOf(message.accountId);
+    const check = () => {
+      signal.throwIfAborted();
+      this.assertCurrent(life);
+      if (life.abort.signal.aborted || credentials !== this.credentialsOf(message.accountId)) throw new RequestNotDispatchedError(L("errors.accountGone"));
+    };
+    check();
+    const account = await this.accountRead(life, () => this.store.accounts.get(message.accountId));
+    if (!account) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
+    if ((await this.accountStatus(message.accountId)).signInRequired) return { unavailable: "signin" };
+    const providerMsgId = (await this.providerStore(life).providerIds([messageId])).get(messageId);
+    if (!providerMsgId || providerMsgId.startsWith("local:")) return { unavailable: "local" };
+    const provider = await this.provider(message.accountId);
+    check();
+    if (!provider?.readOriginal) return { unavailable: "unsupported" };
+    // a refused sign-in marks the account at the provider's boundary (plan 184)
+    const bytes = await this.afterFolderChange(message.accountId, () => provider.readOriginal!({ id: messageId, providerMsgId }, AbortSignal.any([signal, life.abort.signal, this.abort.signal])));
+    check();
+    return bytes ? { accountId: message.accountId, bytes } : { unavailable: "gone" };
   }
 
   /**

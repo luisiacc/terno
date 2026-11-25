@@ -41,6 +41,8 @@ export const ICONS = {
   CircleCheck: "CheckmarkCircle01Icon",
   Clock: "Clock01Icon",
   Cloud: "CloudIcon",
+  // plan 272: a message's Show original
+  Code: "SourceCodeIcon",
   Columns2: "Layout2ColumnIcon",
   Command: "CommandIcon",
   Copy: "Copy01Icon",

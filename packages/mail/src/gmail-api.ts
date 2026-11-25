@@ -7,6 +7,7 @@ import { CATEGORY_ACTIONS, CATEGORY_LABELS, FOLDER_NAME_MAX, FOLDERS_PER_ACCOUNT
 import { parseRaw, type ParsedMessage } from "./mime";
 import { cancelResponse, readResponseText, ResponseBodyLimitError, untilAborted } from "./http-body";
 import { readIncomingBody, type IncomingBody } from "./incoming-body";
+import { decodeGmailRaw } from "./gmail-original";
 import { captureHttpResponseEvidence } from "./http-response-evidence";
 import { captureReasonOf, IncomingProcessingError, INCOMING_GMAIL_WIRE_BYTES } from "./incoming-processing";
 import { failedBeforeRequest, isFetchNetworkFailure, ProviderCooldownError, RequestNotDispatchedError } from "./net-errors";
@@ -680,13 +681,35 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     } catch (error) { body?.release(); throw error; }
   }
 
+  /**
+   * Plan 272: a message's source, read bounded as incoming mail is (its large-read permit past the first 256 KB) and
+   * decoded a slice at a time on this loop: nothing is parsed, so nothing goes to the worker.
+   */
+  async function originalResponse(response: Response, expectedId: string, deadline: RequestDeadline, preparation?: AbortSignal, admission?: MailAdmission): Promise<Uint8Array> {
+    const body = await readIncomingBody(response, {
+      signal: deadline.signal, limit: INCOMING_GMAIL_WIRE_BYTES,
+      async promote(signal) {
+        const resume = deadline.pause();
+        try {
+          if (!ctx.incoming?.promote) return () => {};
+          return await ctx.incoming.promote(accountId, signal, undefined, admission);
+        } finally { resume(); }
+      },
+    });
+    try {
+      deadline.stopClock();
+      preparation?.throwIfAborted();
+      return await decodeGmailRaw(body.chunks, expectedId, async () => { await yieldPage(); deadline.signal.throwIfAborted(); preparation?.throwIfAborted(); });
+    } finally { body.release(); }
+  }
+
   function discard(response: Response) {
     if (!ctx.google) { cancelResponse(response); return; }
     const deadline = deadlineSignal(reads.signal, undefined, options.readTimeoutMs ?? READ_TIMEOUT_MS);
     void readResponseText(response, 65_536, deadline.signal).catch(() => "").finally(() => deadline.done());
   }
 
-  async function api<T>(path: string, init: RequestInit & { ambiguousOnFailure?: boolean; responseMode?: "json" | "void" | "incoming"; incomingId?: string; readReset?: AbortSignal; preparationSignal?: AbortSignal; httpContext?: HttpRequestContext; requestRun?: RequestRun; proofToken?: string; requestGeneration?: number; admission?: MailAdmission; prepaid?: boolean } = {}, retried = false): Promise<T> {
+  async function api<T>(path: string, init: RequestInit & { ambiguousOnFailure?: boolean; responseMode?: "json" | "void" | "incoming" | "original"; incomingId?: string; readReset?: AbortSignal; preparationSignal?: AbortSignal; httpContext?: HttpRequestContext; requestRun?: RequestRun; proofToken?: string; requestGeneration?: number; admission?: MailAdmission; prepaid?: boolean } = {}, retried = false): Promise<T> {
     const { ambiguousOnFailure, responseMode = "json", incomingId, readReset, preparationSignal, httpContext, requestRun, proofToken, requestGeneration, admission, prepaid, ...request } = init;
     // a path under the Gmail API (plan 258: nothing else goes through here since Photos from Google left)
     const context = httpContext ?? { endpoint: "gmail-api", purpose: "mail" } as const;
@@ -798,6 +821,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       }
       try {
         if (responseMode === "incoming") return await incomingResponse(res, incomingId!, deadline, preparationSignal, admission) as T;
+        if (responseMode === "original") return await originalResponse(res, incomingId!, deadline, preparationSignal, admission) as T;
         if (path === "/profile" || path === "/messages/send") return JSON.parse(await readResponseText(res, 65_536, deadline.signal, yieldPage)) as T;
         if (path === "/labels") return JSON.parse(await readResponseText(res, LABELS_BYTES, deadline.signal, yieldPage)) as T;
         if (path.startsWith("/history?") || path.startsWith("/messages?")) return JSON.parse(await readResponseText(res, HISTORY_BYTES, deadline.signal, yieldPage)) as T;
@@ -808,7 +832,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       } catch (e) {
         if (path.startsWith("/history?") && e instanceof ResponseBodyLimitError) throw new HistoryOverflow();
         if (!sending && responseMode === "json" && e instanceof ResponseBodyLimitError && path.startsWith("/messages")) throw new ProviderError(L("errors.gmail.invalidResponse"), false);
-        if (responseMode === "incoming" && (e instanceof IncomingProcessingError || e instanceof ResponseBodyLimitError)) throw processingError(e);
+        if ((responseMode === "incoming" || responseMode === "original") && (e instanceof IncomingProcessingError || e instanceof ResponseBodyLimitError)) throw processingError(e);
         // The request was accepted; a send whose answer can't be read has an unknown outcome (no resend).
         if (sending) throw invalidResponse(true);
         if (!deadline.signal.aborted && !isFetchNetworkFailure(e)) throw invalidResponse();
@@ -1723,6 +1747,16 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         if (error instanceof GmailApiError && error.status === 404 && error.resource === path) return null;
         throw error;
       }
+    },
+    async readOriginal(target, signal) {
+      const path = `/messages/${encodeURIComponent(target.providerMsgId)}?format=raw&fields=id,raw`;
+      const release = await ctx.incoming?.acquire(accountId, signal, reads.signal, "reader");
+      try {
+        return await api<Uint8Array>(path, { signal, preparationSignal: signal, responseMode: "original", incomingId: target.providerMsgId, admission: "reader" });
+      } catch (error) {
+        if (error instanceof GmailApiError && error.status === 404 && error.resource === path) return null;
+        throw error;
+      } finally { release?.(); }
     },
     async verify() {
       readBaseline(await api<unknown>("/profile"));

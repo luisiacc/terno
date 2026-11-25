@@ -54,6 +54,39 @@ function olderIncoming(account: { id: number; email: string; displayName?: strin
  * Provider for demo/mock accounts: ops succeed after a short, realistic delay
  * and nothing leaves the machine. Used by the seeded demo and visual tests.
  */
+/** Plan 272: a demo message's made-up source, with the headers Show original reads (a header kept ASCII: an encoded word) */
+function demoOriginal(id: string, m: { subject: string; fromEmail: string }, to: string): Uint8Array {
+  const word = (s: string) => (/^[\x20-\x7e]*$/.test(s) ? s : `=?UTF-8?B?${btoa(String.fromCharCode(...new TextEncoder().encode(s)))}?=`);
+  const domain = m.fromEmail.split("@")[1] ?? "demo.example.test";
+  const lines = [
+    `Delivered-To: ${to}`,
+    `Received: from mail.${domain} (mail.${domain} [192.0.2.10])`,
+    "        by mx.demo.example.test with ESMTPS id demo;",
+    `Authentication-Results: mx.demo.example.test;`,
+    `       dkim=pass header.i=@${domain} header.s=demo;`,
+    `       spf=pass (mx.demo.example.test: domain of ${m.fromEmail} designates 192.0.2.10 as permitted sender) smtp.mailfrom=${m.fromEmail};`,
+    `       dmarc=pass (p=NONE) header.from=${domain}`,
+    `Message-ID: <${id}@demo.example.test>`,
+    `From: ${m.fromEmail}`,
+    `To: ${to}`,
+    `Subject: ${word(m.subject)}`,
+    "MIME-Version: 1.0",
+    "Content-Type: multipart/alternative; boundary=\"demo\"",
+    "",
+    "--demo",
+    "Content-Type: text/plain; charset=utf-8",
+    "",
+    "A demo message: its original is made up from what Terno stored.",
+    "--demo",
+    "Content-Type: text/html; charset=utf-8",
+    "",
+    "<p>A demo message: its original is made up from what Terno stored.</p>",
+    "--demo--",
+    "",
+  ];
+  return new TextEncoder().encode(lines.join("\r\n"));
+}
+
 export function createDemoProvider(ctx: ProviderContext, latencyMs = 40): MailProvider {
   const wait = () => new Promise((r) => setTimeout(r, latencyMs));
   // plan 107: folders change in the list the backend keeps (Gmail-like accounts by label id, the rest by path)
@@ -153,6 +186,12 @@ export function createDemoProvider(ctx: ProviderContext, latencyMs = 40): MailPr
       await wait();
       const wanted = new Set(hits.map((h) => h.id));
       await sink.ingest(OLDER_MAIL.filter((m) => wanted.has(m.id)).map((m) => olderIncoming(ctx.account, m)), { live: false });
+    },
+    // plan 272: an original made up from what's stored (its subject and sender), so Show original has one to show
+    async readOriginal(target) {
+      await wait();
+      const stored = await ctx.store.messageByProviderId(target.providerMsgId);
+      return stored ? demoOriginal(target.providerMsgId, stored, ctx.account.email) : null;
     },
     async verify() {},
     async sync(sink) {
