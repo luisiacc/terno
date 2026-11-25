@@ -139,7 +139,9 @@ const CREDIT = `credit it to whoever said it: by name (their address when there'
  * compact one is at its window's floor). The summary and items keep the whole conversation's words.
  */
 const SINCE = `
-- "since": messages marked new="yes" arrived after the reader last read this conversation; they change nothing about the summary and items above, which still cover the whole conversation. "since" is one or two plain sentences on what those messages change about where things stand: what was decided, what moved (from what to what), and what arrived that the reader was waiting on. Never what the reader has to do or answer: that stays in the items, even when it's the only thing new. Only what is new in them: what a new message quotes or forwards from earlier in the conversation isn't new, nor anything said before them, and the reader's own messages are context, not news. Empty is the usual answer when the new messages change nothing: thanks, an acknowledgement, "will do", what was already known, a new ask of the reader alone. A restatement of the new mail isn't a change, and "since" never repeats the summary.`;
+- "since": messages marked new="yes" arrived after the reader last read this conversation. Write the summary and items first, exactly as you would with nothing marked new: the summary gives where things stand now, the new messages included (a moved date is the new date there too), and an action still open stays an item with its current deadline. The reader sees either the summary or "since", never both, so "since" stands on its own and says the change again in its own words: one short sentence, 25 words at most, on the most important thing the new messages change, a decision, an approval, a cancellation, or a date or amount that moved (from what to what), before any detail; a second sentence only for another change the reader needs. With several new messages, say where things ended up, not each message in turn. Start with who and what changed ("Ana moved the call to Friday 6 March"), credited as in the summary; never "a new reply", "the latest message" or when it arrived.
+  Say only what the new messages say, never what they leave out or don't confirm. When a short reply's meaning depends on earlier mail, say it with that meaning ("Ana approved the second quote"). An earlier message may be cut short, so call something added or replaced only when the mail shows what was there before. What a new message quotes or forwards from earlier isn't new, and the reader's own messages are context, not news. Call something done, received or booked only when a new message says so. Never copy a password, a code or another secret: say it was sent.
+  "since" never says what the reader has to do or answer, nor a question or offer put to them: those are items, even when that's all that's new. Empty is the usual answer when the new messages change nothing: thanks, "got it", a receipt confirmed, "will do" (never say what they'll do unless the message does), a promise to explain later, an opinion, a joke or an aside, what was already known. Never pad it.`;
 
 const SYSTEM = (language: string, today: string, full = true, since = false) =>
   `You summarize one email conversation for the person reading it, so they know what it says and what it asks of them without opening it.
@@ -166,7 +168,7 @@ ${full ? WHO_ACTS : ""}Return:
   - "date" (a date or deadline that matters) and "decision" (something settled), when the summary doesn't already say it.
   Nothing that's already done, withdrawn or overtaken is an item, nor a question the reader has answered, a joke or an aside. Never restate the summary in an item, even in other words. When there's nothing to add, return no items: no item is better than a padded one.${since ? SINCE : ""}
 
-Write dates with the day and the month, as a person would: "Friday 6 March", never 2026-03-06. Never write "today", "tomorrow", "this weekend" or "next week": this is read on later days. A relative date in a message counts from that message's date. Plain text only: no markdown, no HTML.${full ? `\n\n${CHECK}${since ? ' Then check "since": only what the new messages change, nothing the reader has to do, and nothing the summary says.' : ""}` : ""}`;
+Write dates with the day and the month, as a person would: "Friday 6 March", never 2026-03-06. Never write "today", "tomorrow", "this weekend" or "next week": this is read on later days. A relative date in a message counts from that message's date. Plain text only: no markdown, no HTML.${full ? `\n\n${CHECK}${since ? ' Then check "since": the biggest change first, only what the new messages say, nothing the reader has to do or answer; and check the summary and items lost nothing to it.' : ""}` : ""}`;
 
 /** After the mail, the last thing read: who has to act is what a summary gets wrong (plan 202). */
 const CLOSING = "Write the card for the reader above. Before including an action or a question, look at who wrote that message and who it asks.";
@@ -252,6 +254,20 @@ const amountsIn = (text: string) => new Set((text.match(NUMBER) ?? []).map(amoun
 /** A weekday with no date beside it reads as the coming one. It can be right ("Monday to Friday"), so it's only asked about. */
 const FLOATING = new RegExp(`(?<![\\p{L}])(?<!every |each |cada |los )(${WEEKDAYS_EN}|${WEEKDAYS_ES})(?![\\p{L}])${DATE_NEXT}`, "iu");
 
+/** Plan 279 (Astra review 12): "Monday to Friday" is a schedule, not a day that floats. */
+const RANGES = new RegExp(`(?:${WEEKDAYS_EN}|${WEEKDAYS_ES})\\s*(?:to|through|thru|-|–|a|al|hasta(?: el)?)\\s*(?:${WEEKDAYS_EN}|${WEEKDAYS_ES})`, "giu");
+
+/**
+ * Plan 279 (Astra review 8, Fable review 6): plain text within `max`, cut at the last sentence that fits, so a since never
+ * ends mid-claim; with no sentence end inside it, cut at a word as `clean` does.
+ */
+function sentences(text: string, max: number): string {
+  const flat = clean(text, Infinity);
+  if (flat.length <= max) return flat;
+  const fits = flat.slice(0, max).match(/^[\s\S]*[.!?](?=\s|$)/)?.[0];
+  return fits && fits.length > max * 0.4 ? fits.trim() : clean(flat, max);
+}
+
 /**
  * What a card says that the mail can be shown not to: an amount or a currency it never gives, or a word that fades.
  * Only what code can hold: meaning is the prompt's. Three digits or a currency mark, since a day of the month can be
@@ -302,11 +318,13 @@ export function summarizeTask(input: SummarizeInput): StructuredTask<Wire, Threa
         .filter((i) => i.text)
         .slice(0, SUMMARY_MAX_ITEMS);
       // plan 279: held to the summary's checks; one still wrong after the repair goes, and the card stands
-      const written = since ? clean(w.since ?? "", SINCE_MAX_CHARS) : "";
+      const written = since ? sentences(w.since ?? "", SINCE_MAX_CHARS) : "";
       // one the summary already says adds nothing: the card shows the whole summary then (Fable review 2)
       // held to the summary's checks, but never sent back: a repair rewrites the whole card, and could lose a row the
       // first answer had right (Codex code review 4). One that fails goes, and the card stands
-      const changed = written && !repeats(said, written) && !unsupported(written, source, amounts) && !FLOATING.test(written) ? written : "";
+      // the summary again (the whole of it, as good as) is no view of its own; a sentence of it is: they're never both shown
+      const again = repeats(said, written) && written.length >= summary.length * 0.8;
+      const changed = written && !again && !unsupported(written, source, amounts) && !FLOATING.test(written.replace(RANGES, "")) ? written : "";
       // only what will show: a row that's going anyway is nothing to send back
       const shown = [summary, ...items.map((i) => i.text)];
       const floating = shown.map((t) => FLOATING.exec(t)?.[0]).find(Boolean);

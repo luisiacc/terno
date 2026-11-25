@@ -37,6 +37,13 @@ describe("plan 279: where what's new starts", () => {
     expect(sinceBoundary(one, at())).toBe(one[1]!.id);
   });
 
+  it("only your own mail before it (you wrote, the replies came): the whole summary is the news, no since", () => {
+    expect(sinceBoundary([m({ own: true }), m({ read: false })], at())).toBeNull();
+    expect(sinceBoundary([m({ own: true }), m({ read: false }), m({ read: false })], at())).toBeNull();
+    const after = [m(), m({ own: true }), m({ read: false })];
+    expect(sinceBoundary(after, at())).toBe(after[2]!.id);
+  });
+
   it("nothing read before it, or nothing new: no since", () => {
     expect(sinceBoundary([m({ read: false }), m({ read: false })], at())).toBeNull();
     expect(sinceBoundary([m(), m()], at())).toBeNull();

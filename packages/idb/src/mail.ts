@@ -1496,6 +1496,7 @@ export function getThread(c: Ctx, threadId: number): ThreadDetail | null {
         hasAttachments: m.has_attachments === 1,
         isSpam: m.is_spam === 1,
         isTrash: m.is_trash === 1,
+        isDraft: m.is_draft === 1,
         rfcMessageId: m.rfc_message_id,
         references: JSON.parse(m.references_json),
         listId: m.list_id,

@@ -29,7 +29,9 @@ export function sinceBoundary(messages: readonly SummarySourceMessage[], o: { fl
   const isNew = (m: SummarySourceMessage, i: number) => !m.own && (!m.read || fresh(m) || (seen >= 0 && i >= seen));
   let anchor = list.length - 1;
   while (anchor >= 0 && isNew(list[anchor]!, anchor)) anchor--;
-  if (anchor < 0) return null;
+  // what came before has to hold someone else's mail: after only your own (you wrote, a reply came; your post to a list
+  // and every answer new) the whole summary is the news, and a since would say it twice (Fable review, round 2: 2, 8)
+  if (!list.slice(0, anchor + 1).some((m) => !m.own)) return null;
   if (anchor < list.length - 1) return list[anchor + 1]!.id;
   const kept = at(o.stored?.from);
   if (kept <= 0 || list.slice(kept).some((m) => m.own || m.id > o.stored!.through)) return null;

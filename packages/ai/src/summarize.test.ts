@@ -150,8 +150,14 @@ describe("the prompt", () => {
       expect(task.prompt).not.toMatch(/<message id="m1"[^\n]* new="yes">/);
       expect(task.system).toContain('- "since":');
       expect(task.system.indexOf('- "since":')).toBeGreaterThan(task.system.indexOf('- "items":'));
-      expect(task.system).toMatch(/change nothing about the summary and items above/);
-      expect(task.system).toMatch(/Never what the reader has to do or answer/);
+      // the summary and rows stay what they'd be with nothing new (Fable and Astra, round 2: the news was split between them)
+      expect(task.system).toMatch(/exactly as you would with nothing marked new/);
+      expect(task.system).toMatch(/never both, so "since" stands on its own/);
+      expect(task.system).toMatch(/never says what the reader has to do or answer, nor a question or offer put to them/);
+      // concise: one short sentence, the biggest change first, no filler
+      expect(task.system).toMatch(/one short sentence, 25 words at most/);
+      expect(task.system).toMatch(/never "a new reply", "the latest message" or when it arrived/);
+      expect(task.system).toMatch(/Never copy a password/);
       // an example a small model would copy says nothing
       expect(task.example).toMatchObject({ since: "" });
       const plain = summarizeTask(input());
@@ -191,8 +197,21 @@ describe("the prompt", () => {
       }
     });
 
-    it("one the summary already says is dropped", async () => {
+    it("the summary again is dropped; a sentence of it stays, since the two are never shown together", async () => {
       await expect(ask([answer("Ana now proposes the 19th.")]).run).resolves.toMatchObject({ since: "" });
+      const long = { summary: "Ana wanted the 12th. Ana now proposes the 19th, at the notary.", items: [] };
+      const { run } = ask([{ ...long, since: "Ana now proposes the 19th." }]);
+      await expect(run).resolves.toMatchObject({ since: "Ana now proposes the 19th." });
+    });
+
+    it("a long one ends at its last whole sentence, never mid-claim", async () => {
+      const first = `Ana moved the signing from the 12th to the 19th, at the notary on Calle Mayor, and ${"asked everyone to come early ".repeat(6).trim()}.`;
+      const { run } = ask([answer(`${first} Then she said the deposit is 1,250 and ${"x ".repeat(200)}`)]);
+      await expect(run).resolves.toMatchObject({ since: first });
+    });
+
+    it.each(["Support now runs Monday to Friday.", "El soporte ahora es de lunes a viernes."])("a weekday range is a schedule, not a floating day: %s stays", async (since) => {
+      await expect(ask([answer(since)]).run).resolves.toMatchObject({ since });
     });
 
     it.each(["Ana moved it to tomorrow.", "Ana wants $500 more.", "Ana moved it to Monday."])("is held to the summary's checks, never repaired: %s goes, and the card and its rows stand", async (since) => {

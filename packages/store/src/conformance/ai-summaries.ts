@@ -359,6 +359,15 @@ export function defineAiSummariesConformance(fresh: () => Promise<MailStore>, re
         expect(s.messages.map((m) => [m.fromName, m.own, m.markedAt])).toEqual([["Ana", false, NOW], ["Me", true, null]]);
       });
 
+      it("plan 279 (Astra review 10): a copy back from a send-as alias you've sent from is yours, not someone else's news", async () => {
+        const { store, accountId, arrive } = await setup();
+        const alias = { name: "Me at work", email: "me.alias@work.test" };
+        await store.sync.ingest([msg({ accountId, providerThreadId: "al", isSent: true, from: alias, date: NOW - 3000 })], { applyFilters: false, now: NOW, classifier: null });
+        const copy = await arrive({ providerThreadId: "al", from: alias, listId: "team.work.test", date: NOW - 1000 });
+        const s = (await store.aiSummaries.sources(copy.thread))!;
+        expect(s.messages.map((m) => m.own)).toEqual([true, true]);
+      });
+
       it("says which messages are read (plan 279: where what's new starts), and Mark as unread clears only the latest", async () => {
         const { store, accountId, arrive } = await setup();
         const first = await arrive({ providerThreadId: "r", date: NOW - 2000 });

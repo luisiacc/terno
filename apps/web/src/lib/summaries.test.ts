@@ -126,6 +126,26 @@ describe("plan 279: a summary by hand starts at what the showing drew unread", (
     expect(asked("ai.summarize").at(-1)!.params).not.toHaveProperty("since");
   });
 
+  it("shown again with nothing unread, the last one holds while nothing arrived; mail arriving in a showing starts afresh (Fable review, round 2)", async () => {
+    useSummaries.setState({ byThread: new Map() });
+    noteShown(T, [m(1, true), m(2, false)], true);
+    noteShown(T, [m(1, true), m(2, true)], false);
+    // away and back a moment later: the dwell read it, the start holds
+    noteShown(T, [m(1, true), m(2, true)], true);
+    await summarize(T);
+    expect(asked("ai.summarize").at(-1)!.params.since).toBe(2);
+    // left open overnight: what was read stays read, the new mail is what's new
+    noteShown(T, [m(1, true), m(2, true), m(3, false)], false);
+    useSummaries.setState({ byThread: new Map() });
+    await summarize(T);
+    expect(asked("ai.summarize").at(-1)!.params.since).toBe(3);
+    // shown again after more mail came, all read elsewhere: nothing is kept
+    noteShown(T, [m(1, true), m(2, true), m(3, true), m(4, true)], true);
+    useSummaries.setState({ byThread: new Map() });
+    await summarize(T);
+    expect(asked("ai.summarize").at(-1)!.params).not.toHaveProperty("since");
+  });
+
   it("a reminder left unread further up doesn't take in what was read after it, and trash or spam is never it (Codex code review 2, 6)", async () => {
     useSummaries.setState({ byThread: new Map() });
     noteShown(T, [m(1, true), m(2, false), m(3, true), m(4, false)], true);

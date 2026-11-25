@@ -155,3 +155,20 @@ Codex (read-only, against `58f126279`) and Fable 5.2 (read-only, a product and p
 ### The eval
 
 16. **Boundaries by kind, reported apart:** one new message of many, a run of two to four, almost all new, a new message quoting old facts, and built tails added to fictional conversations: a courtesy tail ("Thanks, got it", "Gracias, recibido"), which should give an empty since, and a material one ("Let's do Thursday instead", "Approved"), which shouldn't. Arms: version 8, and version 9 with the same boundaries. Each run records the boundary, the since, and any failure or cut-off. Measured by script: rows lost against version 8, especially asks (What matters' regression), the since's word overlap with the summary, and whether every date or amount in the since appears in a new message's own text, quotes stripped (a proxy for old news). Then the blind audit (plan 153's) by Claude and Codex, on changed cards only, paired. (Fable 6, Codex 12.)
+
+## What the code review changed
+
+Codex (read-only, against `e3d3b7875`) raised 12 points. Eleven are fixed in `0db93c2d8`, each with a test unless noted.
+
+1. **A stored since kept absorbing newer mail.** With automatic summaries off, a reply read on the phone and unmarked made the request fall back to the stored since, which then covered the old update and the new reply as one. The stored since now records `through`, the newest message it read, and the fallback holds only while nothing came after it.
+2. **The snapshot erased a read hole.** It took the earliest unread message, so a reminder left unread further up took in a reply that had been read. It now follows the backend's rule: the last unread run, after the last message that's yours or read.
+3. **Not fixed: a request waiting on the worker can lose its own boundary.** It needs the worker to start at one boundary, a read-state sync to move the request's boundary to a marked message, and the worker's write to consume that mark while the request waits. Recorded as a known edge case.
+4. **A since that failed a check sent the whole card back for repair.** The repair could drop a row the first answer had right, and an empty card could take the conversation out of Needs you. A since is now checked but never sent back: one that fails goes, and the card stands.
+5. **An empty since lost where the new mail starts.** "The only change is a new ask" (revision 5) left the rows unordered. The boundary is now stored with empty text: rows citing new mail still come first, and the card shows only the whole summary.
+6. **Trash and spam in the snapshot.** The reader's detail keeps trashed messages, so a trashed unread message could become the snapshot, which the backend then ignored. Both are skipped now.
+7. **A trashed start stayed on screen.** The card's reload key now includes whether each message is in the trash, and a start that's trashed isn't drawn. (No new test: the existing trash flow covers the reload.)
+8. **An expired mark waived the 60 words.** Only a fresh mark from a person does now. (No test: the daily prune removes expired marks before the worker's pass, so this is defensive.)
+9. **A newer summary remounted the card** under the keyboard. The view is now held with the `generatedAt` it was chosen for, with no `key`.
+10. **The e2e passed without the dwell having read anything:** an unread message drawn open shows no dot. It now waits for the backend's read.
+11. **The window test ingested 1 of its 50 messages** (`||=`). All 50 now, and it still holds at 2,000, 4,096, 8,192 and 32,000 tokens.
+12. **The corpus runner marked a run whose start had been cut,** which production wouldn't ask about. It now asks only as production does, and the scoring leaves such rows out of the runs made before the fix.

@@ -71,20 +71,31 @@ function put(threadId: number, ui: SummaryUi): void {
  * the showing ends counts (a cached copy drawn read can come back unread inside the dwell: Codex review 2); the earliest
  * wins. Kept past the showing, so Try again from elsewhere still has it.
  */
-const shownUnread = new Map<number, number>();
+/** where the run began, and how many messages the conversation had then: what came after is mail that arrived since */
+const shownUnread = new Map<number, { id: number; count: number }>();
 
-type Shown = Pick<MessageDetail, "id" | "isRead" | "isSent" | "isTrash" | "isSpam">;
+type Shown = Pick<MessageDetail, "id" | "isRead" | "isSent" | "isTrash" | "isSpam" | "isDraft">;
 
 export function noteShown(threadId: number, all: readonly Shown[], fresh: boolean): void {
-  if (fresh) shownUnread.delete(threadId);
-  const messages = all.filter((m) => !m.isTrash && !m.isSpam);
+  // drafts aren't the conversation either: a draft synced from elsewhere would end the run (Astra review 9)
+  const messages = all.filter((m) => !m.isTrash && !m.isSpam && !m.isDraft);
   let anchor = messages.length - 1;
   while (anchor >= 0 && !messages[anchor]!.isRead && !messages[anchor]!.isSent) anchor--;
-  const unread = anchor + 1;
-  if (unread >= messages.length) return;
+  const start = anchor + 1;
+  const run = start < messages.length ? { id: messages[start]!.id, count: messages.length } : null;
   const was = shownUnread.get(threadId);
-  const at = was === undefined ? -1 : messages.findIndex((m) => m.id === was);
-  if (at < 0 || unread < at) shownUnread.set(threadId, messages[unread]!.id);
+  const at = was ? messages.findIndex((m) => m.id === was.id) : -1;
+  if (fresh) {
+    // shown again with nothing unread (read in the last showing, back a moment later): the last one holds while nothing
+    // has arrived since (Fable review, round 2: 10)
+    if (run) shownUnread.set(threadId, run);
+    else if (at < 0 || messages.length !== was!.count) shownUnread.delete(threadId);
+    return;
+  }
+  if (!run) return;
+  // within a showing an earlier start wins (a cached copy drawn read came back unread), but a run of only mail that
+  // arrived during the showing, after what was read in it, starts afresh (Fable review, round 2: 9)
+  if (at < 0 || start < at || (start > at && start >= was!.count)) shownUnread.set(threadId, run);
 }
 
 const reads = new Map<number, number>();
@@ -147,7 +158,7 @@ export async function summarize(threadId: number, o: { again?: boolean } = {}): 
     return now?.kind === "running" && now.requestId === requestId;
   };
   try {
-    const since = shownUnread.get(threadId);
+    const since = shownUnread.get(threadId)?.id;
     const result = await client.call("ai.summarize", { threadId, requestId, ...(asked.again ? { again: true as const } : {}), ...(since !== undefined ? { since } : {}) });
     if (!mine()) return;
     if (result.status === "ready") put(threadId, { kind: "ready", summary: result.summary });

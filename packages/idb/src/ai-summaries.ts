@@ -130,6 +130,8 @@ export function summarySources(c: Ctx, threadId: number): SummarySources | null 
   const marks = T(c, "ai_new_mail");
   const accounts = [...T(c, "accounts").all()];
   const own = new Set(accounts.map((a) => String(a.email).toLowerCase()));
+  // plan 279 (Astra review 10): an address plan 17 learned is theirs (a send-as alias) is theirs here too
+  const known = receivedOwn(c);
   const rows = T(c, "messages").by("fk_thread_id", threadId).sort((a, b) => a.date - b.date || a.id - b.id);
   const messages = rows.filter((r) => !r.is_draft);
   // plan 269: asked only of a marked arrival from a role address (plan 17's level 1), once per sender
@@ -156,7 +158,7 @@ export function summarySources(c: Ctx, threadId: number): SummarySources | null 
         date: r.date,
         snippet: r.snippet,
         subject: r.subject,
-        own: r.is_sent === 1 || own.has(String(r.from_email).toLowerCase()),
+        own: r.is_sent === 1 || known.has(String(r.from_email).toLowerCase()),
         read: r.is_read === 1,
         to: repairAddresses(addressesOf(r.to_json)),
         cc: repairAddresses(addressesOf(r.cc_json)),

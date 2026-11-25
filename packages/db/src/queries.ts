@@ -323,6 +323,7 @@ interface MessageRow {
   has_attachments: number;
   is_spam: number;
   is_trash: number;
+  is_draft: number;
   rfc_message_id: string | null;
   references_json: string;
   list_id: string | null;
@@ -347,7 +348,7 @@ function loadThread(db: Db, threadId: number): ThreadDetail | null {
   const messages = db.all<MessageRow>(
     `SELECT m.id, m.thread_id, m.account_id, m.from_name, m.from_email, m.to_json, m.cc_json, m.reply_to_json, m.subject, m.date, m.snippet,
             b.body_text, b.body_html, m.body_state, m.attachments_captured, m.is_read, m.is_starred, m.is_sent, m.has_attachments, m.is_spam, m.is_trash,
-            m.rfc_message_id, m.references_json, m.list_id
+            m.is_draft, m.rfc_message_id, m.references_json, m.list_id
      FROM messages m LEFT JOIN message_bodies b ON b.message_id = m.id WHERE m.thread_id = ? ORDER BY m.date ASC, m.id ASC`,
     threadId,
   );
@@ -386,6 +387,7 @@ function loadThread(db: Db, threadId: number): ThreadDetail | null {
         hasAttachments: m.has_attachments === 1,
         isSpam: m.is_spam === 1,
         isTrash: m.is_trash === 1,
+        isDraft: m.is_draft === 1,
         rfcMessageId: m.rfc_message_id,
         references: JSON.parse(m.references_json),
         listId: m.list_id,

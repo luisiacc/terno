@@ -293,6 +293,8 @@ export interface MessageDetail {
   /** plan 185: where this message lives, which can differ from its conversation's place (absent from an older backend) */
   isSpam?: boolean;
   isTrash?: boolean;
+  /** plan 279: a draft synced from elsewhere, which summaries leave out (absent from an older backend) */
+  isDraft?: boolean;
   rfcMessageId: string | null;
   references: string[];
   listId: string | null;

@@ -98,8 +98,12 @@ async function assemble(store: MailStore, sources: SummarySources, contextTokens
   const newest = [...messages].reverse().find((m) => !m.own) ?? messages[messages.length - 1]!;
   const others = messages.filter((m) => m !== newest).slice(-OTHERS);
   // a small window: the newest message first, the others share what's left (plan 133 §1.3's way of sizing down)
-  // plan 279: the since's words count whenever one may be asked; a whole-only fallback then has room to spare
-  const { promptChars: room, compact } = summaryBudget(contextTokens, since !== null);
+  // plan 279: the since's words count whenever one may be asked; a whole-only fallback then has room to spare. A window
+  // the since alone would make compact sends the whole summary's full prompt instead (Astra review 11)
+  const plain = summaryBudget(contextTokens);
+  const withSince = since === null ? plain : summaryBudget(contextTokens, true);
+  if (withSince.compact && !plain.compact) since = null;
+  const { promptChars: room, compact } = since === null ? plain : withSince;
   const newestLimit = Math.min(NEWEST_TOKENS * CHARS_PER_TOKEN, Math.floor(room * 0.6));
   const otherLimit = Math.min(OTHER_TOKENS * CHARS_PER_TOKEN, Math.floor((room * 0.3) / Math.max(1, others.length)));
   const last = messages[messages.length - 1]!;
