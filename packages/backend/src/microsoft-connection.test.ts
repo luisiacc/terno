@@ -197,6 +197,20 @@ describe("an Outlook account signs in again (plan 259)", () => {
     expect(folderOf(first)).toBe(clients);
   });
 
+  it("stage 2a (Codex code review #12): Graph's 503 with a Retry-After waits on the ledger's pause, never a connectivity retry", async () => {
+    const { ms, backend, client } = await setup();
+    ms.deliver("inbox-id");
+    const account = await client.call("accounts.connectMicrosoft", {});
+    await backend.syncAccount(account.id);
+    ms.throttle = { status: 503, retryAfter: "120", match: /\/mailFolders\/inbox-id\/messages\/delta/, times: 1 };
+    await backend.syncAccount(account.id);
+    expect(ms.throttle.times).toBe(0);
+    // the ledger holds it (its error is the pause's, no retry of its own is scheduled), as a 429's would
+    const [view] = await backend.accountViews([(await backend.store.accounts.get(account.id))!]);
+    expect(view!.syncState).toMatchObject({ status: "error", connection: null });
+    expect(backend.connectivity.failures(account.id)).toBe(0);
+  });
+
   it("removing it deletes its refresh token here; there is no grant at Microsoft to revoke", async () => {
     const { ms, backend, client } = await setup();
     const account = await client.call("accounts.connectMicrosoft", {});

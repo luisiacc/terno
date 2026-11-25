@@ -28,7 +28,7 @@ export interface GraphMessageFixture {
   /** the raw source, when a test gives its own (else one is built) */
   mime?: string;
 }
-interface Change { seq: number; folder: string; id: string }
+interface Change { seq: number; folder: string; id: string; kind: "read" | "other" }
 
 export class SyntheticMicrosoft {
   clientId = "00000000-0000-0000-0000-00000000c11e";
@@ -81,6 +81,15 @@ export class SyntheticMicrosoft {
   expiry: "gone" | "syncStateNotFound" = "gone";
   /** the default page size when a request names none */
   defaultPage = 10;
+  /** what a filtered delta's first round names at most (Graph's 5,000) */
+  deltaCap = 5000;
+  /** called with each Graph mail request's path and query before it's answered (a test changes the mailbox mid-pass) */
+  onRequest: ((pathAndQuery: string) => void) | null = null;
+  /** a 401's body is held until this settles (the answer stays open) */
+  unauthorizedGate: Promise<void> | null = null;
+  /** a first round's messages, kept for its pages */
+  private rounds = new Map<number, string[]>();
+  private roundSeq = 0;
   private inflight = 0;
   private changes: Change[] = [];
   private changeSeq = 0;
@@ -159,7 +168,7 @@ export class SyntheticMicrosoft {
   setRead(id: string, isRead: boolean): void {
     const m = this.messages.get(id)!;
     m.isRead = isRead;
-    this.changed(m.folder, id);
+    this.changed(m.folder, id, "read");
   }
 
   setFlag(id: string, flag: GraphMessageFixture["flag"]): void {
@@ -175,6 +184,12 @@ export class SyntheticMicrosoft {
     this.changed(m.folder, id);
   }
 
+  /** deleted for good, with everything in it (no change is logged: its links now 404) */
+  deleteFolder(id: string): void {
+    this.folders.delete(id);
+    for (const [key, m] of this.messages) if (m.folder === id) this.messages.delete(key);
+  }
+
   /** every link this folder handed out so far is refused from now on */
   expireDelta(folder: string): void {
     this.expiredAt.set(folder, this.changeSeq);
@@ -184,8 +199,8 @@ export class SyntheticMicrosoft {
     return m.mime ?? `From: ${m.from}\r\nTo: ana@contoso.com\r\nSubject: ${m.subject}\r\nMessage-ID: <${m.id.replace(/=/g, "")}@example.test>\r\nDate: ${new Date(m.received).toUTCString()}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n${m.body}`;
   }
 
-  private changed(folder: string, id: string): void {
-    this.changes.push({ seq: ++this.changeSeq, folder, id });
+  private changed(folder: string, id: string, kind: Change["kind"] = "other"): void {
+    this.changes.push({ seq: ++this.changeSeq, folder, id, kind });
   }
 
   /**
@@ -269,6 +284,15 @@ export class SyntheticMicrosoft {
       if (redirect) return void res.writeHead(307, { location: redirect }).end();
     }
     const authorized = this.access.has((req.headers.authorization ?? "").replace(/^Bearer /, ""));
+    if (!authorized && url.pathname.startsWith("/v1.0/me") && this.unauthorizedGate) {
+      this.inflight++;
+      this.maxInflight = Math.max(this.maxInflight, this.inflight);
+      res.once("close", () => { this.inflight--; });
+      res.writeHead(401, { "content-type": "application/json" });
+      res.flushHeaders();
+      await this.unauthorizedGate;
+      return void res.end(JSON.stringify({ error: { code: "InvalidAuthenticationToken" } }));
+    }
     if (url.pathname === "/v1.0/me") {
       if (!authorized) return json(401, { error: { code: "InvalidAuthenticationToken" } });
       return json(200, { id: "graph-id", mail: this.mail, userPrincipalName: this.userPrincipalName, displayName: this.displayName });
@@ -282,6 +306,7 @@ export class SyntheticMicrosoft {
         res.writeHead(throttle.status, { "content-type": "application/json", ...(throttle.retryAfter !== undefined && { "retry-after": throttle.retryAfter }) });
         return void res.end(JSON.stringify({ error: { code: throttle.status === 429 ? "TooManyRequests" : "ServiceUnavailable" } }));
       }
+      this.onRequest?.(`${url.pathname}${url.search}`);
       this.inflight++;
       this.maxInflight = Math.max(this.maxInflight, this.inflight);
       res.once("close", () => { this.inflight--; });
@@ -349,21 +374,30 @@ export class SyntheticMicrosoft {
       if (url.searchParams.has("$deltatoken")) state = { folder: folder.id, filter: state.filter, since: state.upto, upto: this.changeSeq, skip: 0, issued: this.changeSeq };
     } else state = { folder: folder.id, filter: url.searchParams.get("$filter"), since: null, upto: this.changeSeq, skip: 0, issued: this.changeSeq };
     const { from } = this.window(state.filter as string | null);
-    let entries: Record<string, unknown>[];
+    let entries: (Record<string, unknown> | null)[];
     if (state.since === null) {
-      // the first round: what's in the folder now, at most 5,000 with a filter (delta-query-messages)
-      const now = [...this.messages.values()].filter((m) => m.folder === folder.id && m.received >= from).sort((a, b) => (a.id < b.id ? -1 : 1));
-      entries = (state.filter ? now.slice(0, 5000) : now).map((m) => this.envelope(m));
+      // the first round: what's in the folder as it began, at most 5,000 with a filter (delta-query-messages), the newest
+      if (state.round === undefined) {
+        const now = [...this.messages.values()].filter((m) => m.folder === folder.id && m.received >= from).sort((a, b) => b.received - a.received || (a.id < b.id ? -1 : 1));
+        state = { ...state, round: ++this.roundSeq };
+        this.rounds.set(state.round as number, (state.filter ? now.slice(0, this.deltaCap) : now).map((m) => m.id));
+      }
+      // (one gone since keeps its place in the pages, and isn't named)
+      entries = this.rounds.get(state.round as number)!.map((id) => { const m = this.messages.get(id); return m && m.folder === folder.id ? this.envelope(m) : null; });
     } else {
-      const ids = new Set(this.changes.filter((c) => c.folder === folder.id && c.seq > (state.since as number) && c.seq <= (state.upto as number)).map((c) => c.id));
+      const changes = this.changes.filter((c) => c.folder === folder.id && c.seq > (state.since as number) && c.seq <= (state.upto as number));
+      const ids = new Set(changes.map((c) => c.id));
       entries = [...ids].sort().map((id) => {
         const m = this.messages.get(id);
         // gone, or moved out: "@removed with reason deleted when an item is deleted or moved from the folder"
-        return m && m.folder === folder.id ? this.envelope(m) : { "@odata.type": "#microsoft.graph.message", id, "@removed": { reason: "deleted" } };
+        if (!m || m.folder !== folder.id) return { "@odata.type": "#microsoft.graph.message", id, "@removed": { reason: "deleted" } };
+        // outside the round's filter only a read state change is said (message-delta: "Read/unread state changes")
+        if (m.received < from && !changes.some((c) => c.id === id && c.kind === "read")) return null;
+        return this.envelope(m);
       });
     }
     const skip = state.skip as number;
-    const page = entries.slice(skip, skip + size);
+    const page = entries.slice(skip, skip + size).filter((entry) => entry !== null);
     const more = skip + size < entries.length;
     return json(200, {
       value: page,

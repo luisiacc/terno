@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { FlagUpdate, IncomingMessage, ProviderFolder } from "@terno/store";
 import { createNodeIncomingProcessor } from "../../backend/src/incoming-worker";
-import { createGraphApiProvider, GRAPH_CONCURRENCY, GraphApiError, graphSearch } from "./graph-api";
+import { createGraphApiProvider, GRAPH_CONCURRENCY, GraphApiError, graphSearch, type GraphTokenSource } from "./graph-api";
 import { IncomingPipeline } from "./incoming";
 import { requestHttp } from "./provider-http";
 import { SyntheticMicrosoft } from "./test/microsoft.fixture";
@@ -44,7 +44,14 @@ function memoryStore() {
 const opened: { close(): Promise<void> }[] = [];
 afterEach(async () => { for (const o of opened.splice(0).reverse()) await o.close(); });
 
-async function setup(o: { pageSize?: number; flagObservation?: boolean; requests?: AccountRequests; snapshots?: () => { id: number; providerMsgId: string }[] } = {}) {
+async function setup(o: {
+  pageSize?: number; flagObservation?: boolean; requests?: AccountRequests; snapshots?: () => { id: number; providerMsgId: string }[];
+  /** a JSON answer as the provider will see it (a test reshapes Graph's) */
+  rewrite?: (url: string, body: unknown) => unknown;
+  filteredDeltaMax?: number;
+  tokens?: GraphTokenSource;
+  pendingAttachments?: () => { id: number; providerMsgId: string }[];
+} = {}) {
   const ms = await new SyntheticMicrosoft().start();
   const processor = createNodeIncomingProcessor();
   const incoming = new IncomingPipeline(processor);
@@ -53,6 +60,8 @@ async function setup(o: { pageSize?: number; flagObservation?: boolean; requests
   const ingested: { id: string; live: boolean }[] = [];
   const removed: string[] = [];
   const folders: ProviderFolder[][] = [];
+  const fetched: string[] = [];
+  const backfilled: unknown[] = [];
   let again = 0;
   const token = ms.accessToken();
   const ctx = {
@@ -70,13 +79,16 @@ async function setup(o: { pageSize?: number; flagObservation?: boolean; requests
         const items = o.snapshots?.() ?? [];
         return { items, throughMessageId: items.at(-1)?.id ?? 0, hasMore: false };
       },
-      pendingAttachmentBodies: async () => [],
+      pendingAttachmentBodies: async () => o.pendingAttachments?.() ?? [],
     },
     loadCursor: async () => structuredClone(cursor),
     saveCursor: async (value: unknown) => { cursor = structuredClone(value); },
-    fetch: (input: string | URL | Request, init?: RequestInit) => {
+    fetch: async (input: string | URL | Request, init?: RequestInit) => {
       if (o.requests) throw new Error("a provider with a request policy fetches through it");
-      return fetch(input, init);
+      fetched.push(String(input));
+      const response = await fetch(input, init);
+      if (!o.rewrite || !response.headers.get("content-type")?.includes("application/json")) return response;
+      return Response.json(o.rewrite(String(input), await response.json()), { status: response.status });
     },
   } as unknown as ProviderContext;
   const signal = new AbortController();
@@ -91,10 +103,11 @@ async function setup(o: { pageSize?: number; flagObservation?: boolean; requests
     async setBody() {}, async setSyncState() {}, async pendingMessageIds() { return new Set(); },
     async setFolders(list) { folders.push([...list]); },
     again() { again++; },
+    async backfillDone(request) { backfilled.push(request); },
   };
-  const make = () => createGraphApiProvider(ctx, { endpoints: ms.endpoints(), tokens: { get: async () => token, invalidate() {} }, requestsPerSecond: Infinity, pageSize: o.pageSize, userFoldersEveryMs: 0 });
+  const make = () => createGraphApiProvider(ctx, { endpoints: ms.endpoints(), tokens: o.tokens ?? { get: async () => token, invalidate() {} }, requestsPerSecond: Infinity, pageSize: o.pageSize, userFoldersEveryMs: 0, filteredDeltaMax: o.filteredDeltaMax });
   const t = {
-    ms, db, ingested, removed, folders, ctx, sink,
+    ms, db, ingested, removed, folders, ctx, sink, fetched, backfilled,
     provider: make(),
     get cursor() { return cursor as { folders: Record<string, Record<string, unknown>>; refresh?: unknown } | null; },
     get again() { return again; },
@@ -118,7 +131,7 @@ function deep(levels: number): string {
 const reads = (ms: SyntheticMicrosoft, id: string) => ms.graphUrls.filter((u) => u.startsWith(`/v1.0/me/messages/${encodeURIComponent(id)}?`)).length;
 
 describe("Graph provider: the first sync", () => {
-  it("lists each synced folder's window newest first, then reads its delta; the folder list is the person's own, nested, without system folders", async () => {
+  it("reads each synced folder's first delta round (the window's filter), keeping its deltaLink; the folder list is the person's own, nested, without system folders", async () => {
     const t = await setup({ pageSize: 2 });
     const clients = t.ms.folder("Clients");
     const sub = t.ms.folder("Receipts", "inbox-id");
@@ -151,12 +164,12 @@ describe("Graph provider: the first sync", () => {
     expect(t.ingested.every((m) => !m.live)).toBe(true);
     // the person's folders: one under the Inbox shows at the top; no search folder, no Outbox
     expect(t.folders.at(-1)).toEqual([{ key: clients, path: ["Clients"], selectable: true }, { key: sub, path: ["Receipts"], selectable: true }]);
-    // listed newest first (the window filter, the order Graph asks to share the filter's property), paged by nextLink
-    const listing = t.ms.graphUrls.filter((u) => u.startsWith("/v1.0/me/mailFolders/inbox-id/messages?"));
-    expect(decodeURIComponent(listing[0]!)).toContain("$filter=receivedDateTime ge 1970-01-01T00:00:00Z&$orderby=receivedDateTime desc&$top=2");
-    expect(listing.slice(1).every((u) => u.includes("$skiptoken="))).toBe(true);
-    // then each folder's delta of the same window, to its deltaLink
-    expect(Object.values(t.cursor!.folders).every((s) => typeof s.delta === "string" && (s.delta as string).includes("$deltatoken=") && !s.initial)).toBe(true);
+    // the window's filtered delta, paged by nextLink to its deltaLink; under 5,000 there's nothing to list
+    const round = t.ms.graphUrls.filter((u) => u.startsWith("/v1.0/me/mailFolders/inbox-id/messages/delta?"));
+    expect(decodeURIComponent(round[0]!)).toContain("$filter=receivedDateTime ge 1970-01-01T00:00:00Z");
+    expect(round.slice(1).every((u) => u.includes("$skiptoken="))).toBe(true);
+    expect(t.ms.graphUrls.some((u) => /\/messages\?/.test(u))).toBe(false);
+    expect(Object.values(t.cursor!.folders).every((s) => typeof s.delta === "string" && (s.delta as string).includes("$deltatoken=") && !s.initial && !s.list)).toBe(true);
     expect(Object.keys(t.cursor!.folders).sort()).toEqual(["archive-id", "drafts-id", "inbox-id", "junk-id", "sent-id", "trash-id", clients, sub].sort());
     // every call asked for immutable ids
     expect(t.ms.missingPrefer).toEqual([]);
@@ -240,6 +253,140 @@ describe("Graph provider: deltas", () => {
   });
 });
 
+describe("Graph provider: Codex code review of stage 2a", () => {
+  it("#1: a message deleted while a first sync reads its folder goes on the next pass (the round's link was kept first)", async () => {
+    const t = await setup({ pageSize: 1 });
+    t.ms.deliver("inbox-id", { received: Date.now() - 2000 });
+    t.ms.deliver("inbox-id", { received: Date.now() - 1000 });
+    let gone: string | undefined;
+    t.ms.onRequest = (url) => {
+      if (gone || !url.includes("$skiptoken=")) return;
+      gone = [...t.db.rows.keys()][0];
+      if (gone) t.ms.destroy(gone);
+    };
+    await t.sync();
+    expect(gone).toBeDefined();
+    t.ms.onRequest = null;
+    await t.sync();
+    expect(t.removed).toEqual([gone]);
+  });
+
+  it("#1: a first round that holds the filter's most lists the rest of the window, newest first, then goes on by delta", async () => {
+    const t = await setup({ pageSize: 2, filteredDeltaMax: 2 });
+    t.ms.deltaCap = 2;
+    const ids = Array.from({ length: 5 }, (_, i) => t.ms.deliver("inbox-id", { received: Date.UTC(2026, 10, 1 + i) }));
+    await t.sync();
+    expect(ids.every((id) => t.row(id))).toBe(true);
+    const listing = t.ms.graphUrls.filter((u) => u.startsWith("/v1.0/me/mailFolders/inbox-id/messages?"));
+    expect(decodeURIComponent(listing[0]!)).toContain("$orderby=receivedDateTime desc&$top=2");
+    expect(t.cursor!.folders["inbox-id"]!.list).toBeUndefined();
+    // what's stored isn't downloaded twice
+    expect(t.ms.graphUrls.filter((u) => u.endsWith("/$value"))).toHaveLength(5);
+    const late = t.ms.deliver("inbox-id");
+    await t.sync();
+    expect(t.ingested.filter((m) => m.id === late)).toEqual([{ id: late, live: true }]);
+  });
+
+  it("#2: a new message whose delta entries are a full one then a sparse one, or a sparse one alone, is still downloaded", async () => {
+    let shape: "duplicate" | "sparse" = "duplicate";
+    let target: string | undefined;
+    const t = await setup({
+      rewrite: (url, body) => {
+        if (!target || !url.includes("/messages/delta") || !url.includes("$deltatoken=")) return body;
+        const page = body as { value: Record<string, unknown>[] };
+        const full = page.value.find((v) => v.id === target);
+        if (!full) return body;
+        page.value = shape === "duplicate" ? [...page.value, { id: target, isRead: true }] : page.value.map((v) => v.id === target ? { id: target, isRead: true } : v);
+        return page;
+      },
+    });
+    t.ms.deliver("inbox-id");
+    await t.sync();
+    target = t.ms.deliver("inbox-id");
+    await t.sync();
+    expect(t.row(target)).toMatchObject({ isRead: true });
+    shape = "sparse";
+    target = t.ms.deliver("inbox-id");
+    await t.sync();
+    expect(t.row(target)).toBeDefined();
+  });
+
+  it("#3: a mailbox Graph refuses (MailboxNotEnabledForRESTAPI) removes nothing", async () => {
+    let targets: { id: number; providerMsgId: string }[] = [];
+    const t = await setup({ flagObservation: true, snapshots: () => targets.splice(0) });
+    const a = t.ms.deliver("inbox-id");
+    await t.sync();
+    t.ms.mailbox = false;
+    targets = [{ id: t.row(a)!.id, providerMsgId: a }];
+    await expect(t.sync()).rejects.toMatchObject({ status: 404, codes: ["MailboxNotEnabledForRESTAPI"] });
+    expect(t.removed).toEqual([]);
+    expect(t.row(a)).toBeDefined();
+  });
+
+  it("#4: a folder deleted for good drops its place and what Terno had of it, read again by id", async () => {
+    const t = await setup();
+    const clients = t.ms.folder("Clients");
+    const filed = t.ms.deliver(clients), kept = t.ms.deliver("inbox-id");
+    await t.sync();
+    t.ms.deleteFolder(clients);
+    await t.sync();
+    expect(t.removed).toEqual([filed]);
+    expect(t.row(kept)).toBeDefined();
+    expect(t.cursor!.folders[clients]).toBeUndefined();
+    expect(t.cursor!.refresh).toBeUndefined();
+  });
+
+  it("#5: an old message moved into the Inbox is stored quietly; only new mail notifies", async () => {
+    const t = await setup();
+    const old = t.ms.deliver("outbox-id", { received: Date.now() - 21 * 86_400_000 });
+    await t.sync();
+    t.ms.move(old, "inbox-id");
+    const fresh = t.ms.deliver("inbox-id");
+    await t.sync();
+    expect(t.ingested.filter((m) => m.id === old)).toEqual([{ id: old, live: false }]);
+    expect(t.ingested.filter((m) => m.id === fresh)).toEqual([{ id: fresh, live: true }]);
+  });
+
+  it("#6: mail a widened window brought in is tracked by the deltas after (each folder starts again from the wider window)", async () => {
+    const t = await setup();
+    const now = Date.now();
+    const recent = now - 30 * 86_400_000;
+    const older = t.ms.deliver("inbox-id", { received: now - 60 * 86_400_000 });
+    t.ms.deliver("inbox-id", { received: now - 86_400_000 });
+    await t.sync({ windowStart: recent });
+    expect(t.row(older)).toBeUndefined();
+    const request = { since: now - 90 * 86_400_000, until: recent };
+    await t.sync({ windowStart: request.since, backfill: request });
+    expect(t.row(older)).toBeDefined();
+    expect(t.backfilled).toEqual([request]);
+    await t.sync({ windowStart: request.since });
+    // a flag change on it: outside the old filter, Graph wouldn't say (only read states and removals cross it)
+    t.ms.setFlag(older, "flagged");
+    await t.sync({ windowStart: request.since });
+    expect(t.row(older)).toMatchObject({ isStarred: true });
+  });
+
+  it("#7: a stored message missing its attachments that's gone on Graph goes here, so the rest of the list comes next", async () => {
+    const t = await setup({ pendingAttachments: () => [...t.db.rows.values()].filter((r) => r.subject.startsWith("Pending")).map((r) => ({ id: r.id, providerMsgId: r.providerMsgId })) });
+    const gone = t.ms.deliver("inbox-id", { subject: "Pending gone" });
+    const kept = t.ms.deliver("inbox-id", { subject: "Pending kept" });
+    await t.sync();
+    t.ms.messages.delete(gone);
+    const downloads = t.ms.graphUrls.filter((u) => u.endsWith(`${encodeURIComponent(kept)}/$value`)).length;
+    await t.sync();
+    expect(t.removed).toEqual([gone]);
+    expect(t.ms.graphUrls.filter((u) => u.endsWith(`${encodeURIComponent(kept)}/$value`)).length).toBeGreaterThan(downloads);
+  });
+
+  it("#10: a search Graph's 1,000 cut short (all of them newer than asked) is partial", async () => {
+    const t = await setup();
+    const now = Date.now();
+    for (let i = 0; i < 1001; i++) t.ms.deliver("inbox-id", { subject: `Invoice ${i}`, received: now + 10_000 + i });
+    const result = await t.provider.search!({ queries: [{ terms: ["invoice"] }], before: now, limit: 250, signal: new AbortController().signal });
+    expect(result).toEqual({ hits: [], partial: true });
+  });
+});
+
 describe("Graph provider: a message leaving a folder (revision 4)", () => {
   it("moved from the Inbox to a folder read after it: the Inbox's @removed is read by id and placed; nothing is removed", async () => {
     const t = await setup();
@@ -308,9 +455,10 @@ describe("Graph provider: an expired delta", () => {
       expect(t.removed).toEqual([lost]);
       expect(t.row(keep)).toMatchObject({ isRead: true });
       expect(t.cursor!.refresh).toBeUndefined();
-      expect(t.cursor!.folders["inbox-id"]).toHaveProperty("list");
+      expect(t.cursor!.folders["inbox-id"]).toMatchObject({ initial: true });
+      expect(t.cursor!.folders["inbox-id"]!.delta).toBeUndefined();
       expect(t.again).toBe(1);
-      // the next pass lists the window again (what's stored isn't downloaded again) and starts a new round
+      // the next pass reads a new first round (what's stored isn't downloaded again)
       const downloads = t.ms.graphUrls.filter((u) => u.endsWith("/$value")).length;
       await t.sync();
       expect(t.row(arrived)).toBeDefined();
@@ -350,14 +498,14 @@ describe("Graph provider: requests", () => {
     };
     const t = await setup({ requests });
     t.ms.deliver("inbox-id");
-    t.ms.throttle = { status: 429, retryAfter: "7", match: /\/mailFolders\/inbox-id\/messages\?/, times: 1 };
+    t.ms.throttle = { status: 429, retryAfter: "7", match: /\/mailFolders\/inbox-id\/messages\/delta\?/, times: 1 };
     const error = await t.sync().catch((e: unknown) => e);
     expect(error).toBeInstanceOf(GraphApiError);
     expect(error).toMatchObject({ status: 429, retryable: true });
     expect(observed).toHaveLength(1);
     expect(observed[0]!.minimum).toMatchObject({ kind: "at", basis: "delay" });
-    expect(t.ms.graphUrls.filter((u) => u.startsWith("/v1.0/me/mailFolders/inbox-id/messages?"))).toHaveLength(1);
-    t.ms.throttle = { status: 503, retryAfter: "3", match: /\/mailFolders\/inbox-id\/messages\?/, times: 1 };
+    expect(t.ms.graphUrls.filter((u) => u.startsWith("/v1.0/me/mailFolders/inbox-id/messages/delta?"))).toHaveLength(1);
+    t.ms.throttle = { status: 503, retryAfter: "3", match: /\/mailFolders\/inbox-id\/messages\/delta\?/, times: 1 };
     await expect(t.sync()).rejects.toMatchObject({ status: 503, retryable: true });
     expect(observed).toHaveLength(2);
     await t.sync();
@@ -366,13 +514,33 @@ describe("Graph provider: requests", () => {
     expect(proofs).toBeGreaterThan(0);
   });
 
-  it("refuses a link that leaves Graph's own root", async () => {
+  it("refuses a link that leaves Graph's own root, absolute or a relative one that climbs out (Codex code review #8)", async () => {
     const t = await setup();
     t.ms.deliver("inbox-id");
     await t.sync();
-    t.ctx.loadCursor = async <T,>() => ({ v: 1, folders: { "inbox-id": { delta: "https://elsewhere.example/v1.0/me/mailFolders/inbox-id/messages/delta?$deltatoken=x" } } }) as T;
-    await expect(t.sync()).rejects.toMatchObject({ i18n: { key: "errors.outlook.invalidResponse" } });
-    expect(t.ms.graphUrls.some((u) => u.includes("elsewhere"))).toBe(false);
+    for (const delta of ["https://elsewhere.example/v1.0/me/mailFolders/inbox-id/messages/delta?$deltatoken=x", "/%2e%2e/beta/me/messages", "/../../beta/me/messages"]) {
+      t.ctx.loadCursor = async <T,>() => ({ v: 1, folders: { "inbox-id": { after: 0, startedAt: 0, delta } } }) as T;
+      const before = t.fetched.length;
+      await expect(t.sync()).rejects.toMatchObject({ i18n: { key: "errors.outlook.invalidResponse" } });
+      expect(t.fetched.slice(before).some((u) => u.includes("elsewhere") || u.includes("/beta/"))).toBe(false);
+    }
+  });
+
+  it("holds a slot until a 401's answer is over: renewals never put a fifth request on the mailbox (Codex code review #11)", async () => {
+    let bad = GRAPH_CONCURRENCY;
+    const t = await setup({ tokens: { get: async () => bad-- > 0 ? "access-stale" : good, invalidate() {} } });
+    const good = t.ms.accessToken();
+    let release!: () => void;
+    t.ms.unauthorizedGate = new Promise<void>((resolve) => { release = resolve; });
+    t.ms.deliver("inbox-id");
+    const pass = t.sync();
+    await expect.poll(() => t.ms.maxInflight).toBe(GRAPH_CONCURRENCY);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(t.ms.maxInflight).toBe(GRAPH_CONCURRENCY);
+    release();
+    await pass;
+    expect(t.ms.maxInflight).toBe(GRAPH_CONCURRENCY);
+    expect(t.db.rows.size).toBe(1);
   });
 });
 

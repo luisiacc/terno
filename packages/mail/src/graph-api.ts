@@ -36,6 +36,10 @@ const LINK_MAX = 16_384;
 const ID_MAX = 1024;
 /** a pass's share of a first sync's listings; then another pass (Inbox first again) */
 export const FIRST_SYNC_CHUNK_MS = 60_000;
+/** a filtered delta's first round names at most this many (learn.microsoft.com/graph/delta-query-messages) */
+const FILTERED_DELTA_MAX = 5000;
+/** new mail is what was received after the last round ended, less this (Graph's clock and this one's) */
+const LIVE_MARGIN_MS = 10 * 60_000;
 /** a pass reads at most this many pages of one folder's delta; then another pass */
 export const DELTA_PAGES_PER_PASS = 100;
 /** the folder list again at most this often (Graph has no change feed we use for it) */
@@ -44,6 +48,8 @@ export const CATALOG_EVERY_MS = 15 * 60_000;
 export const USER_FOLDERS_EVERY_MS = 5 * 60_000;
 /** a pass's share of flag snapshots and of a reconciliation's reads */
 export const FLAG_SNAPSHOTS_MS = 30_000;
+/** "A `$search` request returns up to 1,000 results" (learn.microsoft.com/graph/search-query-parameter) */
+const SEARCH_MAX = 1000;
 /** what an envelope read selects: all a sync needs to place and flag a message */
 const SELECT = "id,receivedDateTime,isRead,isDraft,flag,parentFolderId";
 const IMMUTABLE = 'IdType="ImmutableId"';
@@ -93,8 +99,15 @@ function graphCodes(text: string): string[] {
   return codes;
 }
 
-/** Messages a 404 says aren't there (the message, or its folder) — never a list or a link. */
-const notFound = (error: unknown, target: string) => error instanceof GraphApiError && error.status === 404 && error.target === target;
+/**
+ * The mailbox itself refused ("REST API is not yet supported for this mailbox": learn.microsoft.com/troubleshoot/exchange/
+ * user-and-shared-mailboxes/rest-api-is-not-yet-supported-for-this-mailbox-error): a 404 that says nothing of a message.
+ */
+const MAILBOX_REFUSED = new Set(["mailboxnotenabledforrestapi", "mailboxnotsupportedforrestapi"]);
+const mailboxRefused = (error: GraphApiError) => error.codes.some((code) => MAILBOX_REFUSED.has(code.toLowerCase()));
+
+/** What a 404 on this very request says isn't there (a message, a folder) — never the mailbox (Codex code review #3). */
+const notFound = (error: unknown, target: string) => error instanceof GraphApiError && error.status === 404 && error.target === target && !mailboxRefused(error);
 
 /** An envelope as a listing, a delta page or a targeted read gives it. Absent fields weren't said (a delta update). */
 interface Envelope {
@@ -142,12 +155,14 @@ function readPage(value: unknown): Page {
   if (!isRecord(value) || !Array.isArray(value.value) || value.value.length > 1000) throw invalid();
   const next = value["@odata.nextLink"], delta = value["@odata.deltaLink"];
   if ((next !== undefined && (!nonempty(next) || next.length > LINK_MAX)) || (delta !== undefined && (!nonempty(delta) || delta.length > LINK_MAX)) || (next !== undefined && delta !== undefined)) throw invalid();
-  // a delta may name an entity more than once (learn.microsoft.com/graph/delta-query-overview): its last word stands
+  // a delta may name an entity more than once, and an update carries only what changed (learn.microsoft.com/graph/
+  // delta-query-overview): a later entry adds to an earlier one's fields (Codex code review #2); a removal ends it
   const items = new Map<string, Envelope>();
   for (const raw of value.value) {
     const item = readEnvelope(raw);
+    const was = items.get(item.id);
     items.delete(item.id);
-    items.set(item.id, item);
+    items.set(item.id, was && !was.removed && !item.removed ? { ...was, ...item } : item);
   }
   return { items: [...items.values()], ...(next !== undefined && { next: next as string }), ...(delta !== undefined && { delta: delta as string }) };
 }
@@ -162,9 +177,13 @@ interface Catalog {
   folders: ProviderFolder[];
 }
 
-interface ListState { after: number; startedAt: number; next?: string }
-/** A folder's place: its first listing, or its delta link (`initial`: still the round the listing started). */
-type FolderState = { list: ListState } | { delta: string; initial?: true; startedAt?: number };
+/**
+ * A folder's place. `after`: where its delta's window starts. `delta`: the link to read next (absent: its first round,
+ * from the window's filter). `initial`: still that first round, `count` what it named so far. `list`: the window listed
+ * after a first round that held a filtered delta's 5,000 (`next` its page). `at`: when its last round ended (new mail
+ * is what was received after it). `startedAt`: when this folder's first round began.
+ */
+interface FolderState { after: number; startedAt: number; delta?: string; initial?: true; count?: number; list?: { next?: string }; at?: number }
 interface BackfillProgress { since: number; until: number; next?: string }
 interface Cursor {
   v: 1;
@@ -199,6 +218,8 @@ export interface GraphApiOptions {
   pageSize?: number;
   /** tests only: how often a user folder's delta is read (USER_FOLDERS_EVERY_MS) */
   userFoldersEveryMs?: number;
+  /** tests only: what a filtered first round names at most (FILTERED_DELTA_MAX, Graph's 5,000) */
+  filteredDeltaMax?: number;
 }
 
 interface IncomingResource { parsed: ParsedMessage; bytes: number; promoted: boolean; release(): void }
@@ -304,16 +325,11 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
 
   /** A path under Graph's root, or a link Graph handed back: only ever to Graph's own root (privacy: plan 97). */
   function resolve(target: string): string {
-    if (target.startsWith("/")) return `${ep.graph}${target}`;
+    // both as the URL parser normalizes them (a `%2e%2e` segment climbs out of a prefix): Codex code review #8
     let url: URL;
-    try { url = new URL(target); } catch { throw invalid(); }
+    try { url = new URL(target.startsWith("/") ? `${ep.graph}${target}` : target); } catch { throw invalid(); }
     if (target.length > LINK_MAX || url.origin !== graphBase.origin || !url.pathname.startsWith(`${graphBase.pathname.replace(/\/$/, "")}/`) || url.username || url.password) throw invalid();
     return url.href;
-  }
-
-  function discard(response: Response) {
-    const deadline = deadlineSignal(reads.signal, undefined, readTimeout);
-    void readResponseText(response, SMALL_BYTES, deadline.signal).catch(() => "").finally(() => deadline.done());
   }
 
   async function refused(generation: number | undefined, evidence?: HttpResponseEvidence): Promise<ProviderAuthError> {
@@ -408,7 +424,8 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
         }), deadline.signal);
       } catch (error) { throw failed(error); }
       if (response.status === 401) {
-        discard(response);
+        // the slot is the mailbox's until this answer is over (Codex code review #11): a bounded read, then the retry
+        await readResponseText(response, SMALL_BYTES, deadline.signal).catch(() => "");
         free();
         tokens.invalidate(token);
         if (call.proofToken) throw call.proofFinal ? await refused(generation, evidence) : new ProofTokenExpired();
@@ -529,10 +546,12 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
         if (path.length > 64) { ok = false; break; }
       }
       if (!ok) continue;
+      // the folders synced are the ones listed, within the account's cap (Codex code review #9)
+      if (folders.length >= FOLDERS_PER_ACCOUNT_MAX) break;
       synced.set(node.id, { id: node.id });
       folders.push({ key: node.id, path, selectable: true });
     }
-    const next: Catalog = { at: Date.now(), byRole, synced, folders: folders.slice(0, FOLDERS_PER_ACCOUNT_MAX) };
+    const next: Catalog = { at: Date.now(), byRole, synced, folders };
     // the cache moves only once the list is stored (a failed write reads it again next pass)
     await sink.setFolders?.(next.folders);
     catalog = next;
@@ -792,7 +811,7 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
   async function applyPage(folder: SyncedFolder, items: readonly Envelope[], sink: Pass, live: (envelope: Envelope) => boolean): Promise<boolean> {
     const holds = sink.held.count;
     const lookup = lookups(sink);
-    const updates: FlagUpdate[] = [], fresh: Wanted[] = [], removed: string[] = [];
+    const updates: FlagUpdate[] = [], fresh: Wanted[] = [], removed: string[] = [], undated: string[] = [];
     for (const envelope of items) {
       if (envelope.removed) {
         const where = sink.seen.get(envelope.id);
@@ -802,8 +821,26 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       sink.seen.set(envelope.id, folder.id);
       const stored = await lookup(envelope.id);
       if (stored) updates.push(update(stored.id, folder, envelope));
+      // an update says only what changed: one Terno doesn't have and that names no date is read whole (Codex #2)
+      else if (envelope.received === undefined) undated.push(envelope.id);
       // only what the window holds; a change to an older message it doesn't have (a read state) is nothing here
-      else if (envelope.received !== undefined && envelope.received >= sink.windowStart) fresh.push({ envelope, folder });
+      else if (envelope.received >= sink.windowStart) fresh.push({ envelope, folder });
+    }
+    if (undated.length) {
+      const place = placer(sink);
+      await download(undated, async (id) => {
+        const path = `/me/messages/${enc(id)}?$select=${SELECT}`;
+        let envelope: Envelope;
+        try {
+          envelope = readEnvelope(await api(path, { signal: sink.signal, preparation: sink.signal, limit: SMALL_BYTES }));
+          if (envelope.id !== id || envelope.removed) throw invalid();
+        } catch (error) {
+          if (notFound(error, path)) return;
+          throw error;
+        }
+        const where = await place(envelope.parent);
+        if (where && envelope.received !== undefined && envelope.received >= sink.windowStart) fresh.push({ envelope, folder: where });
+      }, GRAPH_CONCURRENCY);
     }
     sink.check();
     for (let i = 0; i < updates.length; i += 200) await sink.updateFlags(updates.slice(i, i + 200));
@@ -831,14 +868,17 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
     const link = (v: unknown): v is string => typeof v === "string" && v.length > 0 && v.length <= LINK_MAX;
     const ms = (v: unknown): v is number => Number.isSafeInteger(v) && (v as number) >= 0;
     const entries = Object.entries(value.folders);
-    if (entries.length > FOLDERS_PER_ACCOUNT_MAX + 16) return cursor;
+    if (entries.length > FOLDERS_PER_ACCOUNT_MAX + Object.keys(ROLES).length) return cursor;
     for (const [id, state] of entries) {
-      if (!isRecord(state) || id.length > ID_MAX) continue;
-      if (isRecord(state.list) && ms(state.list.after) && ms(state.list.startedAt) && (state.list.next === undefined || link(state.list.next))) {
-        cursor.folders[id] = { list: { after: state.list.after, startedAt: state.list.startedAt, ...(state.list.next !== undefined && { next: state.list.next as string }) } };
-      } else if (link(state.delta) && (state.initial === undefined || state.initial === true) && (state.startedAt === undefined || ms(state.startedAt))) {
-        cursor.folders[id] = { delta: state.delta, ...(state.initial && { initial: true as const }), ...(state.startedAt !== undefined && { startedAt: state.startedAt as number }) };
-      }
+      if (!isRecord(state) || id.length > ID_MAX || !ms(state.after) || !ms(state.startedAt)) continue;
+      if ((state.delta !== undefined && !link(state.delta)) || (state.initial !== undefined && state.initial !== true) || (state.count !== undefined && !ms(state.count)) || (state.at !== undefined && !ms(state.at))) continue;
+      if (state.list !== undefined && (!isRecord(state.list) || (state.list.next !== undefined && !link(state.list.next)))) continue;
+      cursor.folders[id] = {
+        after: state.after, startedAt: state.startedAt,
+        ...(state.delta !== undefined && { delta: state.delta as string }), ...(state.initial && { initial: true as const }),
+        ...(state.count !== undefined && { count: state.count as number }), ...(state.at !== undefined && { at: state.at as number }),
+        ...(isRecord(state.list) && { list: { ...(state.list.next !== undefined && { next: state.list.next as string }) } }),
+      };
     }
     if (isRecord(value.refresh) && (value.refresh.after === undefined || (typeof value.refresh.after === "string" && value.refresh.after.length <= LINK_MAX))) cursor.refresh = { ...(value.refresh.after !== undefined && { after: value.refresh.after as string }) };
     if (isRecord(value.backfill) && ms(value.backfill.since) && ms(value.backfill.until) && (value.backfill.next === undefined || link(value.backfill.next))) {
@@ -853,29 +893,41 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
     sink.check();
   }
 
-  const firstListing = (folder: SyncedFolder, list: ListState) =>
-    `/me/mailFolders/${enc(folder.id)}/messages?$select=${SELECT}&$filter=${enc(`receivedDateTime ge ${iso(list.after)}`)}&$orderby=${enc("receivedDateTime desc")}&$top=${pageSize}`;
-  /** the round after the listing: the delta of the same window (a filtered delta's first round holds at most 5,000) */
-  const firstDelta = (folder: SyncedFolder, list: ListState) =>
-    `/me/mailFolders/${enc(folder.id)}/messages/delta?$select=${SELECT}&$filter=${enc(`receivedDateTime ge ${iso(list.after)}`)}`;
+  const firstListing = (folder: SyncedFolder, state: FolderState) =>
+    `/me/mailFolders/${enc(folder.id)}/messages?$select=${SELECT}&$filter=${enc(`receivedDateTime ge ${iso(state.after)}`)}&$orderby=${enc("receivedDateTime desc")}&$top=${pageSize}`;
+  /** a folder's first round: the window's filtered delta (it names at most 5,000: learn.microsoft.com/graph/delta-query-messages) */
+  const firstDelta = (folder: SyncedFolder, state: FolderState) =>
+    `/me/mailFolders/${enc(folder.id)}/messages/delta?$select=${SELECT}&$filter=${enc(`receivedDateTime ge ${iso(state.after)}`)}`;
+  /** a new first round for a folder (a first sync, an expired link, a wider window) */
+  const fresh = (after: number): FolderState => ({ after, startedAt: Date.now(), initial: true });
 
   interface Budget { started: number; more: boolean; out: boolean }
   const outOfTime = (budget: Budget) => Date.now() - budget.started > FIRST_SYNC_CHUNK_MS;
 
-  /** The window listed newest first, a page at a time, each page's effects before its place is saved. True: all listed. */
+  /**
+   * New mail (plan 41) is the Inbox's, received after its first round began or (past it) after its last round ended,
+   * within a margin for the two clocks: never an old message moved into the Inbox (Codex code review #5).
+   */
+  const isNew = (folder: SyncedFolder, state: FolderState) => (envelope: Envelope) =>
+    folder.role === "inbox" && envelope.received !== undefined && envelope.received >= (state.initial ? state.startedAt : (state.at ?? state.startedAt) - LIVE_MARGIN_MS);
+
+  /**
+   * Past a first round that held a filtered delta's 5,000, the rest of the window listed newest first, a page at a
+   * time, each page's effects before its place is saved. Changes meanwhile are the delta's: its link was kept first
+   * (Codex code review #1). True: all listed.
+   */
   async function listFolder(folder: SyncedFolder, cursor: Cursor, sink: Pass, budget: Budget): Promise<boolean> {
     for (;;) {
       const state = cursor.folders[folder.id];
-      if (!state || !("list" in state)) return false;
-      const list = state.list;
+      if (!state?.list) return true;
       sink.check();
-      const target = list.next ?? firstListing(folder, list);
+      const target = state.list.next ?? firstListing(folder, state);
       let page: Page;
       try { page = readPage(await api(target, { signal: sink.signal, preparation: sink.signal })); }
       catch (error) {
         // a continuation Graph no longer takes: the listing starts over (what's stored isn't downloaded again)
-        if (list.next && error instanceof GraphApiError && error.target === target && error.status >= 400 && error.status < 500 && error.status !== 429) {
-          cursor.folders[folder.id] = { list: { after: list.after, startedAt: list.startedAt } };
+        if (state.list.next && error instanceof GraphApiError && error.target === target && error.status >= 400 && error.status < 500 && error.status !== 429 && !mailboxRefused(error)) {
+          cursor.folders[folder.id] = { ...state, list: {} };
           await save(sink, cursor);
           budget.more = true;
           return false;
@@ -883,36 +935,34 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
         throw error;
       }
       if (page.delta || page.items.some((item) => item.removed)) throw invalid();
-      // what was received after this sync began is new mail (it notifies), as a delta would have said a moment later
-      const done = await applyPage(folder, page.items, sink, (envelope) => folder.role === "inbox" && (envelope.received ?? -1) >= list.startedAt);
-      if (!done) return false;
-      if (!page.next) return true;
-      cursor.folders[folder.id] = { list: { ...list, next: page.next } };
+      if (!(await applyPage(folder, page.items, sink, (envelope) => folder.role === "inbox" && (envelope.received ?? -1) >= state.startedAt))) return false;
+      const { list: _list, ...rest } = state;
+      cursor.folders[folder.id] = page.next ? { ...state, list: { next: page.next } } : rest;
       await save(sink, cursor);
+      if (!page.next) return true;
       if (outOfTime(budget)) { budget.more = true; budget.out = true; return false; }
       if (!page.items.length) await yieldPage();
     }
   }
 
-  /** The folder's delta from its link: pages applied, then their link saved; the round's deltaLink ends it. */
+  /** The folder's delta from its link (or its first round): pages applied, then their link saved; a deltaLink ends the round. */
   async function deltaFolder(folder: SyncedFolder, cursor: Cursor, sink: Pass, budget: Budget): Promise<void> {
     for (let pages = 0; ; pages++) {
       const state = cursor.folders[folder.id];
-      if (!state || !("delta" in state)) return;
+      if (!state || state.list) return;
       sink.check();
-      const page = readPage(await api(state.delta, { signal: sink.signal, preparation: sink.signal, page: true, delta: true }));
-      // plan 41: only the Inbox's changes past a saved round notify (a first round's are the window's mail, unless they
-      // came after the sync began)
-      const live = (envelope: Envelope) => folder.role === "inbox" && (!state.initial || (state.startedAt !== undefined && (envelope.received ?? -1) >= state.startedAt));
-      if (!(await applyPage(folder, page.items, sink, live))) return;
+      const page = readPage(await api(state.delta ?? firstDelta(folder, state), { signal: sink.signal, preparation: sink.signal, page: true, delta: true }));
+      if (!(await applyPage(folder, page.items, sink, isNew(folder, state)))) return;
+      const count = (state.count ?? 0) + page.items.length;
       if (page.delta) {
-        cursor.folders[folder.id] = { delta: page.delta };
+        // a first round that named the filter's 5,000 lists the rest of the window next
+        cursor.folders[folder.id] = { after: state.after, startedAt: state.startedAt, delta: page.delta, at: Date.now(), ...(state.initial && count >= (options.filteredDeltaMax ?? FILTERED_DELTA_MAX) && { list: {} }) };
         await save(sink, cursor);
         lastDelta.set(folder.id, Date.now());
         return;
       }
       if (!page.next) throw invalid();
-      cursor.folders[folder.id] = { delta: page.next, ...(state.initial && { initial: true as const }), ...(state.startedAt !== undefined && { startedAt: state.startedAt }) };
+      cursor.folders[folder.id] = { ...state, delta: page.next, ...(state.initial && { count }) };
       await save(sink, cursor);
       if (pages + 1 >= DELTA_PAGES_PER_PASS || (state.initial && outOfTime(budget))) { budget.more = true; return; }
       if (!page.items.length) await yieldPage();
@@ -923,36 +973,35 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
   const lastDelta = new Map<string, number>();
 
   /**
-   * One folder: its first listing (then its first delta round), or its delta when due. An expired delta (410,
-   * syncStateNotFound) lists the window again and reads every stored message again by id (the reconciliation): moves
-   * and deletions during the gap are found that way, never by guessing from what's missing.
+   * One folder: its first round (the window's filtered delta, whose link is kept before anything is listed, so what
+   * changes during a first sync is the next round's), the rest of the window listed when that round held 5,000, then its
+   * delta when due. An expired link (410, syncStateNotFound) starts a new first round and reads every stored message
+   * again by id (the reconciliation): moves and deletions in the gap are found that way, never guessed from what's
+   * missing. A folder gone (a 404 that isn't the mailbox's) drops its place and starts the same reconciliation.
    */
   async function syncFolder(folder: SyncedFolder, cursor: Cursor, sink: Pass, budget: Budget): Promise<void> {
     let state = cursor.folders[folder.id];
-    if (state && "delta" in state && !state.initial && !folder.role && Date.now() - (lastDelta.get(folder.id) ?? -Infinity) < (options.userFoldersEveryMs ?? USER_FOLDERS_EVERY_MS)) return;
+    if (state?.delta && !state.initial && !state.list && !folder.role && Date.now() - (lastDelta.get(folder.id) ?? -Infinity) < (options.userFoldersEveryMs ?? USER_FOLDERS_EVERY_MS)) return;
     if (!state) {
-      state = cursor.folders[folder.id] = { list: { after: sink.windowStart, startedAt: Date.now() } };
+      state = cursor.folders[folder.id] = fresh(sink.windowStart);
       await save(sink, cursor);
     }
     try {
-      if ("list" in state) {
-        const list = state.list;
-        if (!(await listFolder(folder, cursor, sink, budget))) return;
-        cursor.folders[folder.id] = { delta: firstDelta(folder, list), initial: true, startedAt: list.startedAt };
-        await save(sink, cursor);
-      }
-      await deltaFolder(folder, cursor, sink, budget);
+      if (!state.list) await deltaFolder(folder, cursor, sink, budget);
+      if (budget.out || !cursor.folders[folder.id]?.list) return;
+      if (await listFolder(folder, cursor, sink, budget)) await deltaFolder(folder, cursor, sink, budget);
     } catch (error) {
       if (error instanceof DeltaExpired) {
-        cursor.folders[folder.id] = { list: { after: sink.windowStart, startedAt: Date.now() } };
+        cursor.folders[folder.id] = fresh(cursor.folders[folder.id]?.after ?? sink.windowStart);
         cursor.refresh = {};
         await save(sink, cursor);
         budget.more = true;
         return;
       }
-      // the folder went (deleted elsewhere): its place goes, and the list is read again next pass
-      if (error instanceof GraphApiError && error.status === 404 && error.target.startsWith(`/me/mailFolders/${enc(folder.id)}/`)) {
+      // a 404 on the folder's own listing or delta (its saved link included): the folder went (Codex code review #4)
+      if (error instanceof GraphApiError && error.status === 404 && !mailboxRefused(error) && !error.target.startsWith("/me/messages/")) {
         delete cursor.folders[folder.id];
+        cursor.refresh = {};
         catalog = null;
         await save(sink, cursor);
         budget.more = true;
@@ -1003,35 +1052,46 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
     }
   }
 
-  /** Messages by id (a repair retried, a search hit, a stored message missing its attachments): read, placed, downloaded. */
-  async function fetchById(ids: readonly string[], sink: Pass, hold: boolean): Promise<void> {
+  /**
+   * Messages by id (a repair retried, a search hit, a stored message missing its attachments): read, placed, downloaded.
+   * A stored one (`local`) that's gone, or in no folder Terno syncs, goes here too, so it never comes back to the head
+   * of a list again (Codex code review #7); a repair whose message is gone is retired (revision 3: an Outlook outcome,
+   * never an identity error).
+   */
+  async function fetchById(targets: readonly { local?: number; providerMsgId: string }[], sink: Pass, hold: boolean): Promise<void> {
     const place = placer(sink);
-    const wanted: Wanted[] = [], gone: string[] = [];
-    await download([...ids], async (id) => {
-      const path = `/me/messages/${enc(id)}?$select=${SELECT}`;
+    const wanted: Wanted[] = [], gone: { local?: number; providerMsgId: string }[] = [];
+    await download([...targets], async (target) => {
+      const path = `/me/messages/${enc(target.providerMsgId)}?$select=${SELECT}`;
       try {
         const envelope = readEnvelope(await api(path, { signal: sink.signal, preparation: sink.signal, limit: SMALL_BYTES }));
-        if (envelope.id !== id || envelope.removed) throw invalid();
+        if (envelope.id !== target.providerMsgId || envelope.removed) throw invalid();
         const folder = await place(envelope.parent);
         if (folder) wanted.push({ envelope, folder });
+        else if (target.local !== undefined) gone.push(target);
       } catch (error) {
-        if (notFound(error, path)) { gone.push(id); return; }
+        if (notFound(error, path)) { gone.push(target); return; }
         throw error;
       }
     }, GRAPH_CONCURRENCY);
-    // revision 3: a repair whose message is gone is retired (an Outlook outcome, never an identity error)
-    for (const id of gone) {
-      const locator = { kind: "outlook" as const, providerId: id };
+    const local = new Map(targets.flatMap((t) => t.local === undefined ? [] : [[t.providerMsgId, t.local] as const]));
+    for (let i = 0; i < wanted.length; i += 50) {
+      const missing = await fetchFull(wanted.slice(i, i + 50), sink, hold);
+      for (const id of missing) gone.push({ local: local.get(id), providerMsgId: id });
+    }
+    for (const target of gone) {
+      const locator = { kind: "outlook" as const, providerId: target.providerMsgId };
       if (await store.repairs?.get(accountId, locator)) await sink.retireCapture?.(locator);
     }
-    for (let i = 0; i < wanted.length; i += 50) await fetchFull(wanted.slice(i, i + 50), sink, hold);
+    const removals = gone.flatMap((target) => target.local === undefined ? [] : [target.local]);
+    for (let i = 0; i < removals.length; i += 50) await sink.removeMessages(removals.slice(i, i + 50));
   }
 
   async function captureAttachments(sink: Pass) {
     if (sink.signal.aborted) return;
     const pending = await store.pendingAttachmentBodies(50);
     if (!pending.length || sink.signal.aborted) return;
-    await fetchById(pending.map((m) => m.providerMsgId), sink, false);
+    await fetchById(pending.map((m) => ({ local: m.id, providerMsgId: m.providerMsgId })), sink, false);
   }
 
   /**
@@ -1075,6 +1135,10 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       if (Date.now() - started > BACKFILL_CHUNK_MS) { sink.backfillMore?.(); return; }
     }
     delete cursor.backfill;
+    // a folder's delta filter keeps the window it began with, so what came in is outside it (flag changes to it would
+    // never be reported): each folder whose window began later starts a new first round from the wider one (Codex
+    // code review #6); what's stored isn't downloaded again
+    for (const [id, state] of Object.entries(cursor.folders)) if (state.after > request.since) cursor.folders[id] = fresh(request.since);
     await save(sink, cursor);
     await sink.backfillDone?.(request);
   }
@@ -1104,7 +1168,7 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
     const cursor = readCursor(await ctx.loadCursor<unknown>());
     sink.check();
     const state = inbox && cursor.folders[inbox.id];
-    if (!inbox || !state || !("delta" in state) || state.initial) return void sink.again?.();
+    if (!inbox || !state?.delta || state.initial || state.list) return void sink.again?.();
     const budget: Budget = { started: Date.now(), more: false, out: false };
     try { await deltaFolder(inbox, cursor, sink, budget); }
     catch (error) {
@@ -1134,15 +1198,20 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       const requested = sink.captureRetry;
       if (requested?.locator.kind === "outlook") {
         const repair = await store.repairs?.get(accountId, requested.locator);
-        if (repair?.state === "pending" && repair.revision === requested.revision) await fetchById([requested.locator.providerId], sink, true);
+        if (repair?.state === "pending" && repair.revision === requested.revision) await fetchById([{ providerMsgId: requested.locator.providerId }], sink, true);
       }
       sink.check();
       // a share of the flag backlog before the deltas (a snapshot read under its old epoch is refused: plan 38)
       await reconcileFlags(sink);
       const cursor = readCursor(await ctx.loadCursor<unknown>());
       sink.check();
-      // a folder no longer synced keeps no place
-      for (const id of Object.keys(cursor.folders)) if (!current.synced.has(id)) delete cursor.folders[id];
+      // a folder no longer synced keeps no place, and what Terno stored of it is read again by id (Codex code review #4)
+      const dropped = Object.keys(cursor.folders).filter((id) => !current.synced.has(id));
+      if (dropped.length) {
+        for (const id of dropped) delete cursor.folders[id];
+        cursor.refresh = {};
+        await save(sink, cursor);
+      }
       for (const folder of ordered(current)) {
         if (budget.out) break;
         await syncFolder(folder, cursor, sink, budget);
@@ -1153,7 +1222,7 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       if (requested?.locator.kind !== "outlook") {
         const retry = await store.repairs?.list(accountId, "", "pending");
         const ids = retry?.items.flatMap((r) => r.locator.kind === "outlook" ? [r.locator.providerId] : []) ?? [];
-        if (ids.length) await fetchById(ids, sink, true);
+        if (ids.length) await fetchById(ids.map((providerMsgId) => ({ providerMsgId })), sink, true);
       }
       sink.check();
       await captureAttachments(sink);
@@ -1162,7 +1231,7 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       // a held message keeps its folder's place back: its error, and what to do about it, comes first
       if (sink.held.error !== undefined) throw sink.held.error;
       // plan 101: older mail, after everything new, once no first listing is under way
-      if (!budget.more && !Object.values(cursor.folders).some((state) => "list" in state || state.initial)) await backfill(cursor, sink);
+      if (!budget.more && !Object.values(cursor.folders).some((state) => state.list || state.initial)) await backfill(cursor, sink);
     },
 
     async folders(sink) {
@@ -1194,8 +1263,10 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
             if (hits.size >= limit) break;
           }
           next = page.next;
-          if (seen >= 1000) break;
+          if (seen >= SEARCH_MAX) break;
         }
+        // short of the limit with more Graph didn't give (its page bound or its 1,000): not the whole answer (Codex #10)
+        if (hits.size < limit && (next !== undefined || seen >= SEARCH_MAX)) partial = true;
       }
       return { hits: [...hits].map(([id, date]): ProviderHit => ({ id, date })), partial };
     },
@@ -1204,7 +1275,7 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       const pass = passOf(sink);
       for (let i = 0; i < hits.length; i += 50) {
         pass.check();
-        await fetchById(hits.slice(i, i + 50).map((h) => h.id), pass, false);
+        await fetchById(hits.slice(i, i + 50).map((h) => ({ providerMsgId: h.id })), pass, false);
       }
     },
 

@@ -13,7 +13,7 @@ import { RpcError, RpcServer, type AppSettings, type CallContext, type HostInfo,
 import { L } from "@terno/i18n";
 import { AWAITING_AUTH, FlagObservationError, isFolderOp, operationFlagFields, type FlagObservation, type ClassifierInput, type IncomingMessage, type MailStore, type OpRow, type Platform, type ProviderStore } from "@terno/store";
 import type { ImapAccountConfig } from "@terno/mail";
-import { IncomingPipeline, ProviderIdentityError, ProviderCooldownError, ProviderAuthError, ProviderError, RequestNotDispatchedError, type IncomingProcessor, type MailProvider, type ProviderRegistry, type RequestDescriptor, type MailAdmission, type SendPayload, type SyncSink } from "@terno/mail/portable";
+import { IncomingPipeline, throttled, ProviderIdentityError, ProviderCooldownError, ProviderAuthError, ProviderError, RequestNotDispatchedError, type IncomingProcessor, type MailProvider, type ProviderRegistry, type RequestDescriptor, type MailAdmission, type SendPayload, type SyncSink } from "@terno/mail/portable";
 import { Autocomplete, DESKTOP_AUTOCOMPLETE_PEAK, DESKTOP_CONTACT_CAPS, DESKTOP_PHRASE_CAPS, WEB_AUTOCOMPLETE_PEAK, WEB_CONTACT_CAPS, WEB_PHRASE_CAPS, type OwnAddress } from "@terno/store/autocomplete";
 import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
 import { Connectivity, type ConnectivityOptions, type NetReason } from "./connectivity";
@@ -2613,7 +2613,9 @@ export class BackendCore {
         const wake = error instanceof ProviderCooldownError ? this.cooldown?.nextWakeDelay() : null;
         this.log("warn", `sync failed for account ${accountId}`, `${message}${syncFailureDetail(error)}${wake != null ? ` (tries again in ${Math.ceil(wake / 1000)} s)` : error instanceof ProviderCooldownError ? " (no retry scheduled)" : ""}`);
         if (!this.store.isOpen) return;
-        if (error instanceof ProviderCooldownError || (this.requests.has(accountId) && error instanceof ProviderError && (error.httpResponse?.status === 429 || (error.httpResponse?.status === 403 && (error.retryable || this.requests.get(accountId)?.paused))))) {
+        // plan 259 (Codex code review #12): a throttle the ledger recorded (a 429, Graph's 503 with a Retry-After) waits for it
+        const throttle = error instanceof ProviderError && error.httpResponse && throttled(error.httpResponse.request, error.httpResponse.status, error.httpResponse.retryAfter.kind === "value");
+        if (error instanceof ProviderCooldownError || (this.requests.has(accountId) && error instanceof ProviderError && (throttle || (error.httpResponse?.status === 403 && (error.retryable || this.requests.get(accountId)?.paused))))) {
           this.connectivity.succeeded(accountId);
           await status.constrain(authority, { message, i18n: lastErrorI18n }, () => !this.requestsReady(accountId));
           await statusRun.end({ status: "error", lastError: message, lastErrorI18n, connection: null });

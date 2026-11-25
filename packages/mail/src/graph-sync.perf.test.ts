@@ -1,7 +1,7 @@
 // Plan 259 stage 2a: the Graph provider's first-sync throughput gate, Gmail's (gmail-batches.perf.test.ts) for Outlook:
-// a 20,000-message Inbox listed, downloaded (`$value`) and stored 50 at a time, then its first delta round (a filtered
-// delta's 5,000) read back as flag updates, within a CPU budget by the message and a bounded number of requests,
-// transactions and cursor writes.
+// a 20,000-message Inbox's first delta round (a filtered delta's 5,000, downloaded), the rest of the window listed (the
+// 5,000 read back as flag updates, 15,000 downloaded), all stored 50 at a time, then the next round, within a CPU budget
+// by the message and exact counts of requests, transactions and cursor writes.
 import { IncomingReads } from "./incoming";
 import { expect, it } from "vitest";
 import { BUDGET_MULTIPLIER } from "../../db/src/test/perf";
@@ -9,7 +9,7 @@ import { threadCpuMs } from "../../db/src/test/timing";
 import { createGraphApiProvider, GRAPH_PAGE } from "./graph-api";
 import type { ProviderContext, SyncSink } from "./types";
 
-it("keeps a first sync's listing, downloads and delta round within their CPU and transaction budgets, by the message", async () => {
+it("keeps a first sync's delta round, listing and downloads within their CPU and transaction budgets, by the message", async () => {
   const count = 20_000;
   const graph = "https://graph.example/v1.0";
   const mime = new TextEncoder().encode("From: sender@example.test\r\nSubject: Synthetic\r\nContent-Type: text/plain\r\n\r\nOrdinary small mail");
@@ -43,6 +43,8 @@ it("keeps a first sync's listing, downloads and delta round within their CPU and
       }
       if (path === "/me/mailFolders/inbox/messages/delta") {
         deltaPages++;
+        // the round after: nothing changed
+        if (url.searchParams.has("$deltatoken")) return Response.json({ value: [], "@odata.deltaLink": `${graph}/me/mailFolders/inbox/messages/delta?$deltatoken=done` });
         // a filtered delta's first round: at most 5,000 (learn.microsoft.com/graph/delta-query-messages)
         const end = Math.min(5000, skip + GRAPH_PAGE);
         return Response.json({ value: Array.from({ length: end - skip }, (_, i) => envelope(skip + i)), ...(end < 5000 ? { "@odata.nextLink": `${graph}/me/mailFolders/inbox/messages/delta?$skiptoken=${end}` } : { "@odata.deltaLink": `${graph}/me/mailFolders/inbox/messages/delta?$deltatoken=done` }) });
@@ -75,12 +77,13 @@ it("keeps a first sync's listing, downloads and delta round within their CPU and
   expect(downloads).toBe(count);
   expect(transactions).toBe(count / 50);
   expect(listingPages).toBe(count / GRAPH_PAGE);
-  expect(deltaPages).toBe(5000 / GRAPH_PAGE);
+  // the first round's pages, then the round after the listing
+  expect(deltaPages).toBe(5000 / GRAPH_PAGE + 1);
   expect(flagWrites).toBe(5000);
   // nine well-known names (six roles, three never synced) and the folder list
   expect(catalogReads).toBe(10);
   expect(requests).toBe(count + listingPages + deltaPages + catalogReads);
-  // the listing's start, a place a page, the delta's start and its pages
-  expect(cursorWrites).toBe(1 + count / GRAPH_PAGE + 5000 / GRAPH_PAGE);
+  // the folder's start, the first round's pages (its last with its deltaLink), a place a listing page, the next round's link
+  expect(cursorWrites).toBe(1 + 5000 / GRAPH_PAGE + count / GRAPH_PAGE + 1);
   expect(maxCursorBytes).toBeLessThan(512);
 });
