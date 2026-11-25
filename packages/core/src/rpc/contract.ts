@@ -1290,7 +1290,8 @@ export const contract = {
    * with `ai.cancel`. It runs at once: where AI sends mail is said where the provider is chosen (plan 131, no per-use consent).
    */
   // plan 242: `again`, Dev mode's only (a local build): what's stored isn't handed back, the model is asked
-  "ai.summarize": m<AiSummarizeResult>()(z.object({ threadId: id, requestId: z.string().min(1).max(64), again: z.literal(true).optional() }), { timeoutMs: 120_000 }),
+  // plan 279: `since`, the earliest message the reader saw unread in this showing (the dwell reads it before anyone asks)
+  "ai.summarize": m<AiSummarizeResult>()(z.object({ threadId: id, requestId: z.string().min(1).max(64), again: z.literal(true).optional(), since: id.optional() }), { timeoutMs: 120_000 }),
   /** Plan 132 §6: the summary an open reader shows. Mail content: renderer only, never for MCP. */
   "ai.summaries.get": m<AiSummaryRead>()(z.object({ threadId: id })),
   /** What the automatic summaries are doing, for Settings → AI. */

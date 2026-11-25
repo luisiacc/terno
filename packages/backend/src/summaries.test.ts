@@ -389,6 +389,31 @@ describe("what's sent", () => {
     expect(labels).toEqual(labels.map((_, i) => i + 1));
   });
 
+  it.each([2000, 4096, 8192, 32_000])("plan 279: a %i-token window with new mail after what was read still holds, and asks for a since only of what's sent", async (tokens) => {
+    const { client, backend, model, arrive, row } = await setup({ enabled: false });
+    await backend.store.settings.update("app", {}, (s: Record<string, unknown>) => {
+      const ai = (s.ai ?? {}) as Record<string, unknown>;
+      return { value: { ...s, ai: { ...ai, capabilities: { "fake|||demo": { output: "json_schema", contextTokens: tokens, embeddings: false, probedAt: 1 } } } }, result: undefined };
+    });
+    await client.call("settings.update", { summaries: { enabled: true } });
+    const snippet = "s".repeat(180);
+    let first = 0;
+    for (let i = 0; i < 50; i++) first ||= (await arrive({ providerThreadId: "long", date: START - 90_000 + i, snippet, bodyText: `body ${i} ${"z".repeat(2000)}`, from: { name: "A rather long display name for a person", email: `someone-with-a-long-address-${i}@books.test` } }, false)).thread;
+    await backend.store.threads.act({ threadIds: [first], action: "markRead", signal: null, now: START });
+    const last = await arrive({ providerThreadId: "long", subject: "q".repeat(900), bodyText: `${WORDS}${"y".repeat(40_000)}` });
+    await until(async () => expect((await row(last.thread))?.state).toBe("ready"));
+    const req = model.requests[0]!;
+    const prompt = promptText(req.messages[0]!.content);
+    expect(promptText(req.system).length + 1000 + prompt.length + req.maxTokens * 4).toBeLessThanOrEqual(tokens * 4);
+    const marked = [...prompt.matchAll(/<message id="m(\d+)"[^\n]*?( new="yes")?>\n/g)];
+    const asked = promptText(req.system).includes('- "since":');
+    // asked exactly when the new message went with something before it, and never of the compact prompt
+    expect(asked).toBe(marked.length > 1 && marked.at(-1)![2] !== undefined && marked[0]![2] === undefined);
+    expect(marked.filter((m) => m[2]).length).toBe(asked ? 1 : 0);
+    if (tokens >= 8192) expect(asked).toBe(true);
+    if (tokens === 2000) expect(asked).toBe(false);
+  });
+
   it("keeps an own message's words out of quotes in both languages", () => {
     // plan 151: an answer between quoted lines is theirs, and an unmarked quote still ends it
     expect(withoutQuotes("Yes.\n> Are you coming?\nOn Mon, 3 Mar, Ana wrote:\n> old\nAlready sent it.")).toBe("Yes.\nAlready sent it.");
@@ -1141,5 +1166,95 @@ describe("plan 211: an account with AI off", () => {
     // kept until Clear AI data: back on, it shows again
     await client.call("accounts.update", { id: account.id, ai: true });
     await expect(read(made.thread)).resolves.toMatchObject({ state: "ready" });
+  });
+});
+
+describe("plan 279: what's new since you read", () => {
+  const SINCE = { ...ANSWER, since: "Ana sent the signed copy to the bank." };
+  const promptOf = (req: CompletionRequest) => promptText(req.messages[0]!.content);
+  /** a conversation already here (a first sync: nothing summarized), read */
+  async function readConversation(s: Awaited<ReturnType<typeof setup>>, n = 1) {
+    const here = [];
+    for (let i = 0; i < n; i++) here.push(await s.arrive({ providerThreadId: "since", bodyText: `${WORDS} (${i})` }, false));
+    await s.backend.store.threads.act({ threadIds: [here[0]!.thread], action: "markRead", signal: null, now: START });
+    return here;
+  }
+
+  it("new mail after what was read: only it is marked new, and the since is stored and read with where it starts", async () => {
+    const s = await setup();
+    await readConversation(s);
+    s.model.answer = () => replying(SINCE);
+    const next = await s.arrive({ providerThreadId: "since" });
+    await until(async () => expect((await s.row(next.thread))?.state).toBe("ready"));
+    expect(promptOf(s.model.requests[0]!)).toMatch(/<message id="m2"[^\n]* new="yes">/);
+    expect(promptOf(s.model.requests[0]!)).not.toMatch(/<message id="m1"[^\n]* new="yes">/);
+    expect(promptText(s.model.requests[0]!.system)).toContain('- "since":');
+    await expect(s.read(next.thread)).resolves.toMatchObject({ state: "ready", summary: { since: { from: next.id, text: SINCE.since } } });
+  });
+
+  it("mail read on arrival (another device, or the dwell before the summary) is still what's new: its mark says so", async () => {
+    const s = await setup();
+    await readConversation(s);
+    s.model.answer = () => replying(SINCE);
+    const next = await s.arrive({ providerThreadId: "since", isRead: true });
+    await until(async () => expect((await s.row(next.thread))?.state).toBe("ready"));
+    expect(promptOf(s.model.requests[0]!)).toMatch(/<message id="m2"[^\n]* new="yes">/);
+  });
+
+  it("a conversation with nothing read before asks for no since, and an empty since stores none", async () => {
+    const s = await setup();
+    s.model.answer = () => replying(SINCE);
+    const only = await s.arrive();
+    await until(async () => expect((await s.row(only.thread))?.state).toBe("ready"));
+    expect(promptOf(s.model.requests[0]!)).not.toContain('new="yes"');
+    expect(promptText(s.model.requests[0]!.system)).not.toContain('"since"');
+    expect(JSON.parse((await s.row(only.thread))!.bodyJson!)).not.toHaveProperty("since");
+
+    await readConversation(s);
+    s.model.answer = () => replying({ ...ANSWER, since: "" });
+    const thanks = await s.arrive({ providerThreadId: "since" });
+    await until(async () => expect((await s.row(thanks.thread))?.state).toBe("ready"));
+    expect(promptText(s.model.requests[1]!.system)).toContain('- "since":');
+    expect(JSON.parse((await s.row(thanks.thread))!.bodyJson!)).not.toHaveProperty("since");
+  });
+
+  it("by hand, what the reader saw unread in this showing; the same again reuses it, with or without the snapshot", async () => {
+    const s = await setup({ enabled: false });
+    const [, second] = await readConversation(s, 2);
+    s.model.answer = () => replying(SINCE);
+    const got = await s.client.call("ai.summarize", { threadId: second!.thread, requestId: requestId(), since: second!.id });
+    expect(got).toMatchObject({ status: "ready", summary: { since: { from: second!.id } } });
+    expect(promptOf(s.model.requests[0]!)).toMatch(/<message id="m2"[^\n]* new="yes">/);
+    // a stored since stays until newer mail: made again with nothing new, it keeps where it starts and costs nothing
+    for (const since of [second!.id, undefined]) await s.client.call("ai.summarize", { threadId: second!.thread, requestId: requestId(), ...(since ? { since } : {}) });
+    expect(s.model.requests).toHaveLength(1);
+  });
+
+  it("a request joins a run only about the same new mail; otherwise it asks with its own once that ends", async () => {
+    const s = await setup();
+    const [, second] = await readConversation(s, 2);
+    const g = gate();
+    s.model.answer = (req, n) => (n === 0 ? held(req, g.opened) : replying({ ...ANSWER, since: "Mine." }));
+    const third = await s.arrive({ providerThreadId: "since" });
+    await until(() => expect(s.model.requests).toHaveLength(1));
+    // the worker's run starts at the new message; the reader saw the one before it unread too
+    const asked = s.client.call("ai.summarize", { threadId: third.thread, requestId: requestId(), since: second!.id });
+    await settle();
+    g.open(replying({ ...ANSWER, since: "Worker's." }));
+    await expect(asked).resolves.toMatchObject({ status: "ready", summary: { since: { from: second!.id, text: "Mine." } } });
+    expect(s.model.requests).toHaveLength(2);
+  });
+
+  it("a short reply from a person in a conversation that had a summary is summarized (the 60 words aren't asked)", async () => {
+    const s = await setup();
+    const [first] = await readConversation(s);
+    await s.client.call("ai.summarize", { threadId: first!.thread, requestId: requestId() });
+    s.model.answer = () => replying({ ...ANSWER, since: "Ana moved it to Thursday." });
+    const short = await s.arrive({ providerThreadId: "since", bodyText: "Let's do Thursday instead." });
+    await until(async () => expect(await s.read(short.thread)).toMatchObject({ summary: { since: { from: short.id } } }));
+    // with no summary before, a short mail still gets none
+    const alone = await s.arrive({ bodyText: "Let's do Thursday instead." });
+    await settle();
+    expect(await s.row(alone.thread)).toBeNull();
   });
 });

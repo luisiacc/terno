@@ -8,6 +8,7 @@ import { NEW_MAIL_MS, SUMMARY_MAX_ROWS, summaryBlocked, type AiSummaryRow, type 
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import { toRpcError } from "./ai-service";
 import { UI_LOCALE_KEY } from "./forwarding";
+import { sinceBoundary, storedSince } from "./summary-since";
 
 /** Attempts a queued summary gets at a passing failure before it's failed. */
 const MAX_ATTEMPTS = 3;
@@ -89,7 +90,7 @@ function readerOf(sources: SummarySources, own: ReadonlySet<string>): SummaryRea
 }
 
 /** What goes to the model, and which message each label stands for. */
-async function assemble(store: MailStore, sources: SummarySources, contextTokens: number | null): Promise<{ subject: string; thread: ThreadText[]; reader: SummaryReader; labels: Map<string, number>; compact: boolean }> {
+async function assemble(store: MailStore, sources: SummarySources, contextTokens: number | null, since: number | null): Promise<{ subject: string; thread: ThreadText[]; reader: SummaryReader; labels: Map<string, number>; compact: boolean; since: number | null }> {
   const messages = sources.messages.filter((m) => !m.trash && !m.spam);
   // an alias shows up as the address their own mail came from
   const own = new Set([...sources.ownEmails, ...sources.messages.filter((m) => m.own).map((m) => m.fromEmail.trim().toLowerCase())]);
@@ -97,7 +98,8 @@ async function assemble(store: MailStore, sources: SummarySources, contextTokens
   const newest = [...messages].reverse().find((m) => !m.own) ?? messages[messages.length - 1]!;
   const others = messages.filter((m) => m !== newest).slice(-OTHERS);
   // a small window: the newest message first, the others share what's left (plan 133 §1.3's way of sizing down)
-  const { promptChars: room, compact } = summaryBudget(contextTokens);
+  // plan 279: the since's words count whenever one may be asked; a whole-only fallback then has room to spare
+  const { promptChars: room, compact } = summaryBudget(contextTokens, since !== null);
   const newestLimit = Math.min(NEWEST_TOKENS * CHARS_PER_TOKEN, Math.floor(room * 0.6));
   const otherLimit = Math.min(OTHER_TOKENS * CHARS_PER_TOKEN, Math.floor((room * 0.3) / Math.max(1, others.length)));
   const last = messages[messages.length - 1]!;
@@ -108,14 +110,20 @@ async function assemble(store: MailStore, sources: SummarySources, contextTokens
   ]);
   const rest = new Set(messages.filter((m) => m !== newest && !others.includes(m)).slice(-REST).map((m) => m.id));
   const chosen = messages.filter((m) => m === newest || others.includes(m) || rest.has(m.id));
+  const from = since === null ? -1 : messages.findIndex((m) => m.id === since);
   const drafted = chosen.map((m): ThreadText => {
     const stored = texts.get(m.id);
     const authored = stored == null ? null : withoutQuotes(stored).slice(0, otherLimit);
     // their own words come first, whatever the quote's size; what it quotes follows in the room left
     const text = m === newest ? stored : stored == null ? null : m === last && room >= ROOM_FOR_QUOTES && stored !== authored ? `${authored}\n\n${stored.slice(0, lastLimit)}` : authored;
-    return { label: `m${m.id}`, from: nameOf(m), ...deliveryOf(m, own), date: day(m.date), own: m.own, text: text || m.snippet };
+    const isNew = from >= 0 && messages.indexOf(m) >= from;
+    return { label: `m${m.id}`, from: nameOf(m), ...deliveryOf(m, own), date: day(m.date), own: m.own, text: text || m.snippet, ...(isNew ? { isNew } : {}) };
   });
-  const { subject, thread: fitted } = fit(sources.subject, drafted, chosen.indexOf(newest), room, reader, compact);
+  const { subject, thread: cut } = fit(sources.subject, drafted, chosen.indexOf(newest), room, reader, compact);
+  // plan 279 (Codex review 6): asked of what's actually sent: the first new message and something before it, or none
+  const first = cut.findIndex((t) => t.isNew);
+  const asked = !compact && first > 0 && cut[first]!.label === `m${since}`;
+  const fitted = asked ? cut : cut.map((t) => ({ ...t, isNew: undefined }));
   const labels = new Map<string, number>();
   // labelled last: what's dropped leaves no gap in what the model can cite
   const thread = fitted.map((t, i): ThreadText => {
@@ -123,7 +131,7 @@ async function assemble(store: MailStore, sources: SummarySources, contextTokens
     labels.set(label, Number(t.label.slice(1)));
     return { ...t, label };
   });
-  return { subject, thread, reader, labels, compact };
+  return { subject, thread, reader, labels, compact, since: asked ? since : null };
 }
 
 async function sha256(text: string): Promise<string> {
@@ -131,18 +139,33 @@ async function sha256(text: string): Promise<string> {
   return Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-/** What a row reads as, for the reader. */
-function viewOf(row: AiSummaryRow): AiSummary | null {
+/**
+ * What a row reads as, for the reader. Plan 279: a since naming a message the conversation no longer has (trashed, gone)
+ * isn't shown, and neither is a malformed one.
+ */
+function viewOf(row: AiSummaryRow, sources: SummarySources): AiSummary | null {
   if (!row.bodyJson || !row.provider || !row.model || row.generatedAt === null) return null;
   try {
-    const body = JSON.parse(row.bodyJson) as Pick<AiSummary, "summary" | "items">;
-    return { threadId: row.threadId, summary: body.summary, items: body.items, provider: row.provider as AiProviderId, model: row.model, generatedAt: row.generatedAt };
+    const body = JSON.parse(row.bodyJson) as Pick<AiSummary, "summary" | "items"> & { since?: { from?: unknown; text?: unknown } };
+    const from = body.since?.from, text = body.since?.text;
+    const there = typeof from === "number" && typeof text === "string" && !!text && sources.messages.some((m) => m.id === from && !m.trash && !m.spam);
+    return { threadId: row.threadId, summary: body.summary, items: body.items, ...(there ? { since: { from: from as number, text: text as string } } : {}), provider: row.provider as AiProviderId, model: row.model, generatedAt: row.generatedAt };
   } catch {
     return null;
   }
 }
 
 type Run = { outcome: "written" | "moved" | "blocked" | "gone"; summary?: AiSummary };
+/** A request on a thread, with where what's new starts for it: another request joins it only at the same boundary (Codex review 3). */
+type Running = { run: Promise<Run>; since: number | null };
+interface RunOptions {
+  foreground: boolean;
+  signal: AbortSignal;
+  ai?: AiTasks;
+  again?: boolean;
+  /** plan 279: where what's new starts, from `sinceBoundary` (null: no since asked) */
+  since: number | null;
+}
 
 /**
  * Plan 132: makes a thread's summary, as new mail arrives (a durable queue, drained through the limiter, oldest first,
@@ -173,7 +196,7 @@ export class SummaryWorker {
   private prunedDay: string | null = null;
   private rateTimer: ReturnType<typeof setTimeout> | null = null;
   /** requests in flight, by thread: a request on the same thread joins instead of paying twice */
-  private readonly inflight = new Map<number, Promise<Run>>();
+  private readonly inflight = new Map<number, Running>();
   /** plan 211: each run with its account, so that account's "Use AI" going off stops it at the provider */
   private readonly runs = new Set<{ accountId: number; controller: AbortController }>();
 
@@ -324,16 +347,19 @@ export class SummaryWorker {
       const own = withoutQuotes(texts.get(m.id) ?? "");
       return n + (m.person ? wordsIn(own) : readingWords(own));
     }, 0);
-    if (words < MIN_WORDS) {
+    // plan 279 (Fable review 5): a short reply from a person in a conversation that had a summary is what changed
+    // ("Let's do Thursday instead"): it's summarized, and a courtesy reply gets an empty since
+    if (words < MIN_WORDS && !(row.bodyJson !== null && marks.some((m) => m.person === true))) {
       await store.aiSummaries.drop(row.threadId, row.throughMessageId);
       return "next";
     }
     const { signal, release } = this.host.begin(`summary-worker:${row.threadId}`, "summary-worker");
     try {
-      const { running, joined } = this.single(row.threadId, () => this.run(sources, row, { foreground: false, signal: AbortSignal.any([signal, generation.signal]) }));
+      const since = sinceBoundary(sources.messages, { floor, snapshot: null, stored: storedSince(row.bodyJson) });
+      const { running, joined } = this.single(row.threadId, since, () => this.run(sources, row, { foreground: false, signal: AbortSignal.any([signal, generation.signal]), since }));
       // someone asked by hand while this looked: theirs is this thread's request, and its result lands on the row
       if (joined) return "next";
-      const run = await running;
+      const run = await running.run;
       if (run.outcome === "blocked") await store.aiSummaries.drop(row.threadId, row.throughMessageId);
       // a newer message or a change of its sources: the row is still queued, behind this pass
       if (run.outcome === "moved") this.again = true;
@@ -390,12 +416,15 @@ export class SummaryWorker {
   }
 
   /** One request a thread at a time. Looks and takes the place with nothing awaited between, so two can't both pay. */
-  private single(threadId: number, work: () => Promise<Run>): { running: Promise<Run>; joined: boolean } {
+  private single(threadId: number, since: number | null, work: () => Promise<Run>): { running: Running; joined: boolean } {
     const already = this.inflight.get(threadId);
     if (already) return { running: already, joined: true };
-    const running = work().finally(() => {
-      if (this.inflight.get(threadId) === running) this.inflight.delete(threadId);
-    });
+    const running: Running = {
+      since,
+      run: work().finally(() => {
+        if (this.inflight.get(threadId) === running) this.inflight.delete(threadId);
+      }),
+    };
     this.inflight.set(threadId, running);
     return { running, joined: false };
   }
@@ -410,7 +439,7 @@ export class SummaryWorker {
   }
 
   /** Assemble, reuse or ask, then write: the write re-checks everything the request took time over. */
-  private async run(sources: SummarySources, row: AiSummaryRow | null, o: { foreground: boolean; signal: AbortSignal; ai?: AiTasks; again?: boolean }): Promise<Run> {
+  private async run(sources: SummarySources, row: AiSummaryRow | null, o: RunOptions): Promise<Run> {
     const { store } = this.host;
     // before anything it writes was read: a clear after this point makes the write refuse itself
     const clearGeneration = store.aiSummaries.clearGeneration();
@@ -423,19 +452,21 @@ export class SummaryWorker {
     }
   }
 
-  private async runFor(sources: SummarySources, row: AiSummaryRow | null, o: { foreground: boolean; signal: AbortSignal; ai?: AiTasks; again?: boolean }, clearGeneration: number): Promise<Run> {
+  private async runFor(sources: SummarySources, row: AiSummaryRow | null, o: RunOptions, clearGeneration: number): Promise<Run> {
     const { store } = this.host;
     const signal = AbortSignal.any([o.signal, this.cleared.signal]);
     const ai = o.ai ?? (await this.host.forTask({ foreground: o.foreground }));
-    const { subject, thread, reader, labels, compact } = await assemble(store, sources, ai.contextTokens);
-    // the shorter prompt is another prompt: a window that grows asks again (plan 202)
-    const contentHash = await sha256(JSON.stringify({ subject, thread, reader, compact }));
+    const { subject, thread, reader, labels, compact, since } = await assemble(store, sources, ai.contextTokens, o.since);
+    // the shorter prompt is another prompt: a window that grows asks again (plan 202). Plan 279 (Codex review 5): which
+    // messages were sent, by id, and where what's new starts: relabelled m1, m2, the same words from other messages
+    // would reuse rows and a since naming messages that aren't there
+    const contentHash = await sha256(JSON.stringify({ subject, thread, reader, compact, ids: [...labels.values()], since }));
     const language = await this.readerLanguage();
     const base = { threadId: sources.threadId, stamp: sources.stamp, expectThrough: row?.throughMessageId ?? null, now: this.host.now(), clearGeneration };
     if (!o.again && reusable(row, { contentHash, language, ai })) {
       const outcome = await store.aiSummaries.finish({ ...base, reuse: true });
       if (outcome === "written") this.host.ready(sources.threadId);
-      return { outcome, summary: outcome === "written" ? (viewOf(row!) ?? undefined) : undefined };
+      return { outcome, summary: outcome === "written" ? (viewOf(row!, sources) ?? undefined) : undefined };
     }
     // plan 211: the last look before anything leaves (the limiter may have held it)
     if (signal.aborted || !this.host.allowed(sources.accountId)) throw new AiError(L("errors.ai.cancelled"), "cancelled");
@@ -446,7 +477,9 @@ export class SummaryWorker {
       const messageId = labels.get(item.message);
       return messageId === undefined ? [] : [{ kind: item.kind, text: item.text, messageId }];
     });
-    const bodyJson = JSON.stringify({ summary: result.summary, items });
+    // plan 279: kept only when asked and something changed; empty, the card shows the whole summary alone
+    const changed = since !== null && result.since ? { from: since, text: result.since } : null;
+    const bodyJson = JSON.stringify({ summary: result.summary, items, ...(changed ? { since: changed } : {}) });
     const outcome = await store.aiSummaries.finish({ ...base, now: this.host.now(), contentHash, promptVersion: SUMMARY_PROMPT_VERSION, language, model: ai.model, provider: ai.providerId, endpoint: ai.endpoint, bodyJson });
     if (outcome !== "written") {
       // a clear won the race: to the one who asked, that's a cancel, not a thread gone
@@ -454,7 +487,7 @@ export class SummaryWorker {
       return { outcome };
     }
     this.host.ready(sources.threadId);
-    return { outcome, summary: { threadId: sources.threadId, summary: result.summary, items, provider: ai.providerId, model: ai.model, generatedAt: base.now } };
+    return { outcome, summary: { threadId: sources.threadId, summary: result.summary, items, ...(changed ? { since: changed } : {}), provider: ai.providerId, model: ai.model, generatedAt: base.now } };
   }
 
   /** What an open reader shows. Reading is never gated; spam and trash show nothing, and bring it back with Not spam. */
@@ -465,7 +498,7 @@ export class SummaryWorker {
     // plan 211: an account with AI off shows none (kept until Clear AI data: turned back on, it's there again)
     if (!sources || summaryBlocked(sources) || !this.host.allowed(sources.accountId)) return { state: "none" };
     if (row.state !== "ready" || row.sourceStamp !== sources.stamp) return { state: "stale" };
-    const summary = viewOf(row);
+    const summary = viewOf(row, sources);
     return summary ? { state: "ready", summary } : { state: "none" };
   }
 
@@ -473,7 +506,7 @@ export class SummaryWorker {
    * §7: a summary by hand. Its limits are spam and trash, and the user's word on where it goes. Plan 242: `again` (Dev
    * mode's, checked by the handler) never takes what's stored, nor a run it joins, which may have.
    */
-  async request(threadId: number, requestId: string, clientId: string, o: { again?: boolean } = {}): Promise<AiSummarizeResult> {
+  async request(threadId: number, requestId: string, clientId: string, o: { again?: boolean; since?: number } = {}): Promise<AiSummarizeResult> {
     const { store } = this.host;
     const { signal, release } = this.host.begin(requestId, clientId);
     try {
@@ -487,24 +520,27 @@ export class SummaryWorker {
         const newest = [...included].reverse().find((m) => !m.own) ?? included[included.length - 1]!;
         if (newest.bodyState === "none" && !newest.bodyUnavailable) return { status: "waitingBody" };
 
-        // the worker is on this thread right now: its answer is this answer
+        // plan 279: where what's new starts, with what the reader saw unread in this showing (the dwell has read it since)
+        const row = await store.aiSummaries.get(threadId);
+        const since = sinceBoundary(sources.messages, { floor: await this.floor(), snapshot: o.since ?? null, stored: storedSince(row?.bodyJson ?? null) });
+        // the worker is on this thread right now: its answer is this answer, when it's about the same new mail (Codex
+        // review 3); otherwise it ends first, and this one asks with its own
         const running = this.inflight.get(threadId);
         if (running) {
-          const joined = await Promise.race([running.catch(() => null), aborted(signal)]);
-          if (!o.again && joined?.outcome === "written" && joined.summary) return { status: "ready", summary: joined.summary };
+          const joined = await Promise.race([running.run.catch(() => null), aborted(signal)]);
+          if (!o.again && running.since === since && joined?.outcome === "written" && joined.summary) return { status: "ready", summary: joined.summary };
           continue;
         }
 
-        const row = await store.aiSummaries.get(threadId);
         const ai = await this.host.forTask({ foreground: true });
-        const { running: mine, joined } = this.single(threadId, () => this.run(sources, row, { foreground: true, signal, ai, again: o.again }));
+        const { running: mine, joined } = this.single(threadId, since, () => this.run(sources, row, { foreground: true, signal, ai, again: o.again, since }));
         // another caller got there during the awaits above: same as finding it running at the top
         if (joined) {
-          const settled = await Promise.race([mine.catch(() => null), aborted(signal)]);
-          if (!o.again && settled?.outcome === "written" && settled.summary) return { status: "ready", summary: settled.summary };
+          const settled = await Promise.race([mine.run.catch(() => null), aborted(signal)]);
+          if (!o.again && mine.since === since && settled?.outcome === "written" && settled.summary) return { status: "ready", summary: settled.summary };
           continue;
         }
-        const run = await mine;
+        const run = await mine.run;
         if (run.outcome === "written" && run.summary) return { status: "ready", summary: run.summary };
         if (run.outcome === "gone") throw new RpcError("NOT_FOUND", L("errors.threadGone"));
         if (run.outcome === "blocked") throw new RpcError("BAD_REQUEST", L("errors.ai.summaryBlocked"));
@@ -516,6 +552,11 @@ export class SummaryWorker {
     } finally {
       release();
     }
+  }
+
+  /** Plan 279: a mark older than this, or from before summaries were on, says nothing about what's new (`consider`'s floor). */
+  private async floor(): Promise<number> {
+    return Math.max(this.host.now() - NEW_MAIL_MS, (await this.host.settings()).summaries.enabledAt ?? 0);
   }
 
   /** The setting, or while that follows the system, what the window said: the backend can't see the system's. */

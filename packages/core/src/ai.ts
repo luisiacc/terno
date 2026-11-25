@@ -72,6 +72,11 @@ export interface AiSummary {
   threadId: number;
   summary: string;
   items: AiSummaryItem[];
+  /**
+   * Plan 279: what changed from `from` on (the first message new to the reader when it was made), when something did.
+   * It stays until newer mail replaces the summary.
+   */
+  since?: { from: number; text: string };
   /** who wrote it, for its tooltip */
   provider: AiProviderId;
   model: string;
