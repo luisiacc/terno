@@ -23,7 +23,7 @@ function staysInView(s: Pick<AppState, "view" | "gmailTab" | "categoryId" | "rev
   // plan 218: an archived, deleted or spam conversation's follow-ups go: it leaves the Follow-ups list
   if (s.followups && (action === "archive" || action === "trash" || action === "spam")) return false;
   // plan 86: a Gmail tab holds its own category only; the Inbox none of the tabs (Move to Inbox takes a thread out of them)
-  if (isCategoryAction(action)) return s.gmailTab ? action === TAB_ACTION[s.gmailTab] : !(inPlainInbox(s) && (action === "toPromotions" || action === "toSocial"));
+  if (isCategoryAction(action)) return s.gmailTab ? action === TAB_ACTION[s.gmailTab] : !(inPlainInbox(s) && (action === "toPromotions" || action === "toSocial" || action === "toOther"));
   if (action === "moveToInbox" && s.gmailTab) return false;
   const view = s.view;
   switch (action) {
@@ -58,6 +58,7 @@ const DONE = {
   toPrimary: "actions.done.inbox",
   toPromotions: "actions.done.promotions",
   toSocial: "actions.done.social",
+  toOther: "actions.done.other",
   // undo's own (never asked for by the UI)
   toUpdates: "actions.done.inbox",
   toForums: "actions.done.inbox",
@@ -77,6 +78,7 @@ const DOING = {
   toPrimary: "actions.doing.inbox",
   toPromotions: "actions.doing.promotions",
   toSocial: "actions.doing.social",
+  toOther: "actions.doing.other",
   toUpdates: "actions.doing.inbox",
   toForums: "actions.doing.inbox",
   toNoCategory: "actions.doing.inbox",
@@ -95,12 +97,13 @@ const UNDO_NAME = {
   toPrimary: "actions.undo.inbox",
   toPromotions: "actions.undo.promotions",
   toSocial: "actions.undo.social",
+  toOther: "actions.undo.other",
   toUpdates: "actions.undo.inbox",
   toForums: "actions.undo.inbox",
   toNoCategory: "actions.undo.inbox",
 } as const satisfies Record<ThreadAction, string>;
 /** One thread's undo snack only for these (reads and stars show in the row itself); several threads always get one. */
-const SNACK_ALWAYS = new Set<ThreadAction>(["archive", "trash", "spam", "notSpam", "moveToInbox", "toPrimary", "toPromotions", "toSocial"]);
+const SNACK_ALWAYS = new Set<ThreadAction>(["archive", "trash", "spam", "notSpam", "moveToInbox", "toPrimary", "toPromotions", "toSocial", "toOther"]);
 
 /** z / ⌘Z (the dock's store keeps it: one undo, run once by z or by a snack's Undo). */
 export { undoLast } from "~/lib/snack";
@@ -147,6 +150,9 @@ export function patched(t: ThreadSummary, action: ThreadAction): ThreadSummary {
       return { ...t, tab: TAB_CODE.promotions };
     case "toSocial":
       return { ...t, tab: TAB_CODE.social };
+    // plan 275: Outlook's Other
+    case "toOther":
+      return { ...t, tab: TAB_CODE.other };
     default:
       return t;
   }
@@ -224,7 +230,7 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
 
 const SIMILAR = new Set<ThreadAction>(["archive", "trash", "spam"]);
 /** What took conversations out of where they were: undoing it brings them back ("Restored"); anything else is "Undone" */
-const RESTORES = new Set<ThreadAction>(["archive", "trash", "spam", "notSpam", "moveToInbox", "toPrimary", "toPromotions", "toSocial"]);
+const RESTORES = new Set<ThreadAction>(["archive", "trash", "spam", "notSpam", "moveToInbox", "toPrimary", "toPromotions", "toSocial", "toOther"]);
 /** an undo's word that it worked: short, there's nothing to do with it */
 const UNDONE_MS = 2500;
 

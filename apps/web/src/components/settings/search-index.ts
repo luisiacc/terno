@@ -129,6 +129,7 @@ export const SETTINGS_INDEX = [
   { id: "account.syncWindow", tab: "accounts", label: "settings.general.syncWindow", words: "settings.find.words.syncWindow", scope: "account" },
   { id: "account.allInbox", tab: "accounts", label: "account.allInbox", hint: "account.allInbox.hint", words: "settings.find.words.allInbox", scope: "account", when: (ctx, a) => !!a && allInboxOffered(a, ctx.accounts) },
   { id: "account.separateTabs", tab: "accounts", label: "account.separateTabs", hint: "account.separateTabs.hint", words: "settings.find.words.separateTabs", scope: "account", when: (_c, a) => a?.kind === "gmail" },
+  { id: "account.separateOther", tab: "accounts", label: "account.separateOther", hint: "account.separateOther.hint", words: "settings.find.words.separateOther", scope: "account", when: (_c, a) => a?.kind === "outlook" },
   { id: "account.followups", tab: "accounts", label: "account.followups", hint: "account.followups.hint", scope: "account", when: accountAi },
   { id: "account.connection", tab: "accounts", label: "account.connection", words: "settings.find.words.connection", scope: "account" },
   { id: "account.sentCopies", tab: "accounts", label: "account.sentCopies", hint: "account.sentCopies.hint", scope: "account", when: (_c, a) => a?.kind === "imap" },

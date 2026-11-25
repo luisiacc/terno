@@ -241,6 +241,12 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
           {(a) => <Switch {...a} data-testid="account-separate-tabs" checked={separatesTabs(account)} onCheckedChange={(on) => void setSeparateTabs(account.id, on)} />}
         </SettingsRow>
       )}
+      {/* plan 275: Outlook's Focused Inbox Other, the same preference */}
+      {account.kind === "outlook" && (
+        <SettingsRow find="account.separateOther" label={t("account.separateOther")} hint={t("account.separateOther.hint")}>
+          {(a) => <Switch {...a} data-testid="account-separate-other" checked={separatesTabs(account)} onCheckedChange={(on) => void setSeparateTabs(account.id, on)} />}
+        </SettingsRow>
+      )}
       {/* plan 142 */}
       {aiOn && (
         <SettingsRow find="account.followups" label={t("account.followups")} hint={t("account.followups.hint")}>

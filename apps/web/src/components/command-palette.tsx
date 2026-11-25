@@ -1,7 +1,7 @@
 import { DIGEST_ROW_ID, shortcutsFor, type Command as KeyCommand, type ThreadSummary } from "@terno/core";
 import { conversationKeys } from "~/lib/conversation-keys";
 import { focusAccount, goToAccount, goToFolder } from "~/lib/account-folders";
-import { normalizeText, remindPresets, separatesTabs, snippetPreview, TABS, type CategoryColor, type ReminderKind, type Snippet } from "@terno/core";
+import { normalizeText, remindPresets, separatesTabs, snippetPreview, tabsOf, type CategoryColor, type ReminderKind, type Snippet } from "@terno/core";
 import { t, type TextKey } from "@terno/i18n";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { cn } from "@terno/ui/lib/utils";
@@ -442,10 +442,10 @@ export function CommandPalette() {
         add({ id: `focus:${a.id}`, group: "goTo", label: t("palette.focusAccount", { account: a.displayName }), hint: a.email, search: `${t("palette.focusAccount", { account: a.displayName })} ${a.email}`, icon: <Focus />, testId: `palette-focus-${a.id}`, keywords: english("account.menu.focus"), run: () => focusAccount(a.id) });
       }
     }
-    // plan 86: a Gmail account's Promotions and Social
+    // plan 86: a Gmail account's Promotions and Social; plan 275: an Outlook account's Other
     for (const a of accounts.filter(separatesTabs)) {
-      for (const tab of TABS) {
-        add({ id: `tab:${a.id}:${tab}`, group: "goTo", label: t(`view.tab.${tab}`), hint: a.displayName, search: `${t(`view.tab.${tab}`)} ${a.displayName} ${a.email}`, icon: tab === "promotions" ? <Tag /> : <Users />, keywords: english(`view.tab.${tab}`), run: () => navigate({ accountId: a.id, gmailTab: tab }) });
+      for (const tab of tabsOf(a.kind)) {
+        add({ id: `tab:${a.id}:${tab}`, group: "goTo", label: t(`view.tab.${tab}`), hint: a.displayName, search: `${t(`view.tab.${tab}`)} ${a.displayName} ${a.email}`, icon: tab === "promotions" ? <Tag /> : tab === "social" ? <Users /> : <Mails />, keywords: english(`view.tab.${tab}`), run: () => navigate({ accountId: a.id, gmailTab: tab }) });
       }
     }
 

@@ -428,6 +428,21 @@ describe("Gmail's Promotions and Social (plan 86)", () => {
     expect(sent.map((s) => s.action)).toEqual(["toPromotions", "moveToInbox", "toSocial"]);
   });
 
+  it("plan 275: in Outlook's Other, Move to Inbox takes the row away; in the Inbox, Move to Other does, with its own snack and Undo", async () => {
+    navigate({ accountId: 1, gmailTab: "other" });
+    const items = [tabbed(1, 1, 3), tabbed(4, 1, 3)];
+    useList.setState({ items, index: new Map(items.map((t, i) => [t.id, i])) });
+    await act("moveToInbox", [1]);
+    expect(useList.getState().items.map((t) => t.id)).toEqual([4]);
+    navigate({ view: "inbox", accountId: 1 });
+    const inbox = [tabbed(5, 1, 0)];
+    useList.setState({ items: inbox, index: new Map(inbox.map((t, i) => [t.id, i])) });
+    await act("toOther", [5]);
+    expect(useList.getState().items).toEqual([]);
+    expect(useSnack.getState().current?.message).toBe("Moved to Other");
+    expect(sent.map((s) => s.action)).toEqual(["moveToInbox", "toOther"]);
+  });
+
   it("a tab is its account's Inbox, alone: anywhere else leaves it; an account that stops separating sends you to its Inbox", () => {
     navigate({ accountId: 1, gmailTab: "social" });
     setApp({ categoryId: 7 });

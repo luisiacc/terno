@@ -1,12 +1,12 @@
 import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { create } from "zustand";
-import { COUNTED_VIEWS, FOLDER_VIEWS, folderRef, inAllInbox, leadScreen, separatesTabs, tabRef, TABS, viewRef, type Account, type FirstScreen, type Category, type CategoryColor, type CountedView, type Folder, type FolderView, type Tab, type View } from "@terno/core";
+import { COUNTED_VIEWS, FOLDER_VIEWS, folderRef, inAllInbox, leadScreen, separatesTabs, tabRef, tabsOf, viewRef, type Account, type FirstScreen, type Category, type CategoryColor, type CountedView, type Folder, type FolderView, type Tab, type View } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
 import { AccountMark, CategoryDot } from "@terno/ui/components/category-dot";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { Sun, Archive, ArrowLeft, AlarmClock, Check, ChevronDown, ChevronRight, EyeOff, Folder as FolderIcon, Forward, Inbox, Layers, OctagonAlert, Plus, Route, Send, Settings2, SquarePen, Star, Tag, Tags, Trash2, Users, ListChecks } from "@terno/ui/icons";
+import { Sun, Archive, ArrowLeft, AlarmClock, Check, ChevronDown, ChevronRight, EyeOff, Folder as FolderIcon, Forward, Inbox, Layers, Mails, OctagonAlert, Plus, Route, Send, Settings2, SquarePen, Star, Tag, Tags, Trash2, Users, ListChecks } from "@terno/ui/icons";
 import { openCompose } from "~/lib/actions";
 import { useDesign, variant } from "~/lib/design";
 import { formatNumber, t } from "@terno/i18n";
@@ -941,10 +941,10 @@ function AccountFolders({
               <Fragment key={v}>{item}</Fragment>
             );
           })}
-        {/* plan 86: Gmail's Promotions and Social, out of the Inbox, after its standard folders */}
+        {/* plan 86: Gmail's Promotions and Social (plan 275: Outlook's Other), out of the Inbox, after its standard folders */}
         {mounted &&
           tabs &&
-          TABS.map((tab) => {
+          tabsOf(account.kind).map((tab) => {
             const Icon = TAB_ICONS[tab];
             return (
               <NavItem
@@ -1017,7 +1017,7 @@ function AccountFolders({
 }
 
 const NO_UNREAD: Record<string, number> = {};
-const TAB_ICONS: Record<Tab, typeof Tag> = { promotions: Tag, social: Users };
+const TAB_ICONS: Record<Tab, typeof Tag> = { promotions: Tag, social: Users, other: Mails };
 
 /**
  * Folder unread counts per account, each account's slice kept as the same object while its numbers are the same
@@ -1141,6 +1141,7 @@ const AccountEntry = memo(function AccountEntry({
   gmailTab,
   promotionsUnread,
   socialUnread,
+  otherUnread,
   archiveUnread,
   spamUnread,
 }: {
@@ -1158,6 +1159,7 @@ const AccountEntry = memo(function AccountEntry({
   gmailTab: Tab | null;
   promotionsUnread: number;
   socialUnread: number;
+  otherUnread: number;
   archiveUnread: number;
   spamUnread: number;
 }) {
@@ -1172,7 +1174,7 @@ const AccountEntry = memo(function AccountEntry({
   const tabActive = here && open && tabs && gmailTab !== null;
   const child = here && open && ownFolder === null && gmailTab === null && view !== null ? (inCategory ? "inbox" : view) : null;
   const childActive = ownActive || tabActive || (child !== null && listedByAccount(child));
-  const tabUnread = useMemo(() => ({ promotions: promotionsUnread, social: socialUnread }), [promotionsUnread, socialUnread]);
+  const tabUnread = useMemo(() => ({ promotions: promotionsUnread, social: socialUnread, other: otherUnread }), [promotionsUnread, socialUnread, otherUnread]);
   const viewUnread = useMemo(() => ({ archive: archiveUnread, spam: spamUnread }), [archiveUnread, spamUnread]);
   // plan 106: Rename puts a field where the name is
   const [renaming, setRenaming] = useState(false);
@@ -1252,7 +1254,7 @@ function SoloSidebar({ account: a, countTone }: { account: Account; countTone: C
   const rows = useFolderRows(folders, a.id, true);
   const tabs = separatesTabs(a);
   const unread = counts.inboxUnreadByAccount[a.id];
-  const tabUnread = useMemo(() => ({ promotions: counts.tabUnread?.[tabRef(a.id, "promotions")] ?? 0, social: counts.tabUnread?.[tabRef(a.id, "social")] ?? 0 }), [counts.tabUnread, a.id]);
+  const tabUnread = useMemo(() => ({ promotions: counts.tabUnread?.[tabRef(a.id, "promotions")] ?? 0, social: counts.tabUnread?.[tabRef(a.id, "social")] ?? 0, other: counts.tabUnread?.[tabRef(a.id, "other")] ?? 0 }), [counts.tabUnread, a.id]);
   const viewUnread = useMemo(() => ({ archive: counts.viewUnread?.[viewRef(a.id, "archive")] ?? 0, spam: counts.viewUnread?.[viewRef(a.id, "spam")] ?? 0 }), [counts.viewUnread, a.id]);
   const [renaming, setRenaming] = useState(false);
   const ownActive = ownFolder !== null && rows.some((r) => r.key === ownFolder) && !searching;
@@ -1600,6 +1602,7 @@ export function Sidebar() {
               gmailTab={accountId === a.id && !searching ? gmailTab : null}
               promotionsUnread={counts.tabUnread?.[tabRef(a.id, "promotions")] ?? 0}
               socialUnread={counts.tabUnread?.[tabRef(a.id, "social")] ?? 0}
+              otherUnread={counts.tabUnread?.[tabRef(a.id, "other")] ?? 0}
               archiveUnread={counts.viewUnread?.[viewRef(a.id, "archive")] ?? 0}
               spamUnread={counts.viewUnread?.[viewRef(a.id, "spam")] ?? 0}
             />

@@ -1,4 +1,4 @@
-import { remindPresets, separatesTabs, shortcutsFor, subjectTemplate, TAB_CODE, type Category, type CategoryColor, type ReminderKind, type Tab, type Command, type SimilarAction, type SimilarOffers, type SimilarScope, type ThreadAction, type ThreadSummary, type UnsubscribeOffer, type View } from "@terno/core";
+import { hasTab, remindPresets, separatesTabs, shortcutsFor, subjectTemplate, TAB_CODE, type Category, type CategoryColor, type ReminderKind, type Tab, type Command, type SimilarAction, type SimilarOffers, type SimilarScope, type ThreadAction, type ThreadSummary, type UnsubscribeOffer, type View } from "@terno/core";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { cn } from "@terno/ui/lib/utils";
@@ -52,6 +52,7 @@ import {
   Trash2,
   Users,
   X,
+  Mails,
 } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { useCallback, useEffect, useId, useState, type ReactElement, type ReactNode } from "react";
@@ -765,8 +766,13 @@ function MenuItems() {
   const accounts = useApp((s) => s.accounts);
   const tabbed = scope ? [] : rows.filter((r) => inSeparateTab(r, accounts)).map((r) => r.id);
   const tabbable = !scope && rows.length > 0 && rows.every((r) => { const a = accounts.find((x) => x.id === r.accountId); return !!a && separatesTabs(a) && r.inInbox !== false && !r.inTrash && !r.inSpam; });
-  // plan 256: a conversation of only your own mail takes no tab (plan 86: yours never decides one), so it's offered none
-  const intoTab = (tab: Tab) => (scope ? gmailTab !== null && gmailTab !== tab : tabbable && rows.some((r) => r.tab !== TAB_CODE[tab] && !r.onlyYours));
+  // plan 256: a conversation of only your own mail takes no tab (plan 86: yours never decides one), so it's offered none.
+  // Plan 275 (Codex critique #12): only a tab every conversation's account has (Gmail's two, Outlook's Other)
+  const scopeAccount = useApp((s) => s.accountId);
+  const kindOf = (accountId: number | null | undefined) => accounts.find((a) => a.id === accountId)?.kind ?? "";
+  const intoTab = (tab: Tab) => (scope
+    ? gmailTab !== null && gmailTab !== tab && hasTab(kindOf(scopeAccount), tab)
+    : tabbable && rows.every((r) => hasTab(kindOf(r.accountId), tab)) && rows.some((r) => r.tab !== TAB_CODE[tab] && !r.onlyYours));
   const single = !scope && ids.length === 1 ? rows[0] : undefined;
   // plan 158: a row that isn't the one open says itself: the reader beside the menu shows another conversation
   const openId = useApp((s) => s.selectedId);
@@ -776,7 +782,7 @@ function MenuItems() {
   // plan 256: a tab move takes only the conversations a tab can take (Codex critique: a note to yourself picked with
   // others would slide out of the Inbox and be counted as moved, though it stays)
   const yours = new Set(rows.filter((r) => r.onlyYours).map((r) => r.id));
-  const runTab = (action: "toPromotions" | "toSocial") => run(action, yours.size ? ids.filter((id) => !yours.has(id)) : ids);
+  const runTab = (action: "toPromotions" | "toSocial" | "toOther") => run(action, yours.size ? ids.filter((id) => !yours.has(id)) : ids);
   const anyUnread = scope !== null || rows.some((t) => t.unread);
   const anyRead = scope !== null || rows.some((t) => !t.unread);
   const anyStarred = scope !== null || rows.some((t) => t.starred);
@@ -831,6 +837,7 @@ function MenuItems() {
     ...(!searchPlaces && view === "inbox" && (gmailTab !== null || tabbed.length > 0) ? [{ icon: <Inbox />, label: t("actions.moveToInbox"), testId: "menu-inbox", onClick: () => run("moveToInbox") }] : []),
     ...(intoTab("promotions") ? [{ icon: <Tag />, label: t("actions.toPromotions"), testId: "menu-to-promotions", onClick: () => runTab("toPromotions") }] : []),
     ...(intoTab("social") ? [{ icon: <Users />, label: t("actions.toSocial"), testId: "menu-to-social", onClick: () => runTab("toSocial") }] : []),
+    ...(intoTab("other") ? [{ icon: <Mails />, label: t("actions.toOther"), testId: "menu-to-other", onClick: () => runTab("toOther") }] : []),
   ];
   // a "select all N" goes to no folder: only out of a Gmail tab, or into one. Whether the account has a folder is
   // a short scan; the folders themselves are built once the submenu opens

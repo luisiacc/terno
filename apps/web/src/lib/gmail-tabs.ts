@@ -8,8 +8,8 @@ import { getApp, setAccounts } from "~/state/app";
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /**
- * Plan 86: whether a Gmail account keeps Promotions and Social out of the
- * Inbox. The Inbox shows them (or not) as soon as the backend has it (it says
+ * Plan 86: whether a Gmail account keeps Promotions and Social (plan 275: an
+ * Outlook account its Other) out of the Inbox. The Inbox shows them (or not) as soon as the backend has it (it says
  * so with a list reload); the snack's Undo sets the value it had.
  */
 export async function setSeparateTabs(accountId: number, on: boolean): Promise<boolean> {
@@ -24,7 +24,9 @@ export async function setSeparateTabs(accountId: number, on: boolean): Promise<b
   }
   if (was === on) return true;
   const undo = registerUndo(() => apply(accountId, was));
-  const text = on ? t("account.tabs.hidden", { account: before.displayName }) : t("account.tabs.shown");
+  // plan 275: an Outlook account's is its Other
+  const other = before.kind === "outlook";
+  const text = on ? t(other ? "account.otherTab.hidden" : "account.tabs.hidden", { account: before.displayName }) : t(other ? "account.otherTab.shown" : "account.tabs.shown");
   snack.success(text, { duration: 6000, action: undoAction(undo, t("common.undo")) });
   return true;
 }
