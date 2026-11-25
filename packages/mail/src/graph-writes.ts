@@ -29,6 +29,12 @@ const BATCH_BYTES = 32 * 1024 * 1024;
 /** a draft's answer is the message with its body */
 const DRAFT_BYTES = 16 * 1024 * 1024;
 const ID_MAX = 1024;
+/**
+ * Review round 4: a send's draft carries its op's id in a single-value extended property of Terno's own, so a retry
+ * finds an earlier attempt's draft by it, after a restart too (learn.microsoft.com/graph/api/singlevalueextendedproperty-get:
+ * `$filter=singleValueExtendedProperties/Any(ep: ep/id eq … and ep/value eq …)`)
+ */
+const SEND_MARK = "String {6b1f8f0e-3c2a-4d7e-9a51-8f2c4e0d7b13} Name TernoSendOp";
 
 const enc = encodeURIComponent;
 const nonempty = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0;
@@ -118,12 +124,20 @@ export function createGraphWrites(deps: GraphWriteDeps) {
       const answers = await batch(chunk.map((t) => ({ method: "PATCH", url: `/me/messages/${enc(t.graphId)}`, body })), run);
       let first: ProviderError | undefined;
       for (const a of answers) {
-        if (!a) first ??= unanswered();
-        else if (!ok(a) && !gone(a)) first ??= failure(a);
+        if (!a) first = worse(first, unanswered());
+        else if (!ok(a) && !gone(a)) first = worse(first, failure(a));
       }
       refused = settleChunk(first, refused);
     }
     if (refused) throw refused;
+  }
+
+  /**
+   * A chunk's failure from two of its answers: one to try again wins over Graph's refusal of another message, so the op
+   * is retried (and the refusal thrown then) rather than failed for good with a message still to go (review round 4)
+   */
+  function worse(kept: ProviderError | undefined, next: ProviderError): ProviderError {
+    return !kept || (next.retryable && !kept.retryable) ? next : kept;
   }
 
   /**
@@ -181,13 +195,13 @@ export function createGraphWrites(deps: GraphWriteDeps) {
       const moves: Target[] = [];
       chunk.forEach((t, n) => {
         const a = reads[n];
-        if (!a) return void (first ??= unanswered());
+        if (!a) return void (first = worse(first, unanswered()));
         if (gone(a)) return;
-        if (!ok(a)) return void (first ??= failure(a));
+        if (!ok(a)) return void (first = worse(first, failure(a)));
         let parent: string | undefined;
         // one malformed answer is that message's failure, never its siblings' (round 2 #5)
-        try { parent = parentOf(a.body); } catch (error) { return void (first ??= error as ProviderError); }
-        if (parent === undefined) return void (first ??= invalid());
+        try { parent = parentOf(a.body); } catch (error) { return void (first = worse(first, error as ProviderError)); }
+        if (parent === undefined) return void (first = worse(first, invalid()));
         const place = placeOf(parent, roles);
         // already there (a move whose answer was lost, or one never needed): its folder is known
         if (at(rule.to, place, roles)) placements.push({ messageId: t.local, providerMsgId: t.graphId, folder: folderKey(parent, roles) });
@@ -199,12 +213,12 @@ export function createGraphWrites(deps: GraphWriteDeps) {
         const answers = await batch(moves.map((t) => ({ method: "POST", url: `/me/messages/${enc(t.graphId)}/move`, body: { destinationId: rule.to } })), run);
         moves.forEach((t, n) => {
           const a = answers[n];
-          if (!a) return void (first ??= unanswered());
+          if (!a) return void (first = worse(first, unanswered()));
           // read a moment ago: a 404 now is the destination's (a folder deleted meanwhile), never a message to forget
-          if (a.status === 404) return void (first ??= new ProviderError(L("errors.folder.notFound"), false));
-          if (!ok(a)) return void (first ??= failure(a));
+          if (a.status === 404) return void (first = worse(first, new ProviderError(L("errors.folder.notFound"), false)));
+          if (!ok(a)) return void (first = worse(first, failure(a)));
           let parent: string | undefined;
-          try { parent = parentOf(a.body); } catch (error) { return void (first ??= error as ProviderError); }
+          try { parent = parentOf(a.body); } catch (error) { return void (first = worse(first, error as ProviderError)); }
           const to = parent ?? (destination ? roles[destination]! : rule.to);
           placements.push({ messageId: t.local, providerMsgId: t.graphId, folder: folderKey(to, roles) });
         });
@@ -224,8 +238,9 @@ export function createGraphWrites(deps: GraphWriteDeps) {
     // your own mail never goes to Junk
     case "spam": return { to: ROLES.junk, moves: (p) => p.role !== "sent" };
     case "notSpam": return { to: ROLES.inbox, moves: (p) => p.role === "junk" };
-    // your own mail stays in Sent and a draft in Drafts
-    case "moveToInbox": return { to: ROLES.inbox, moves: (p) => p.role !== "sent" && p.role !== "drafts" };
+    // every message the op names: the store already kept your own mail in Sent unless it's all a conversation has, and
+    // what it marked in the Inbox goes there on Graph too (review round 4: a sent-only conversation stayed in Sent Items)
+    case "moveToInbox": return { to: ROLES.inbox, moves: () => true };
     case MOVE_TO_FOLDER: return { to: (op.payload as MoveToFolderPayload).folder, moves: () => true };
     // an undo back to Archive, Sent Items or Drafts, from wherever the message is (plan 259, exact undo)
     case RETURN_TO: {
@@ -317,15 +332,19 @@ export function createGraphWrites(deps: GraphWriteDeps) {
     const checked = await checkedAttachments(payload);
     const raw = await deps.buildRaw({ ...payload, attachments: [] });
     if (encoded(raw.byteLength) > limit) throw new ProviderError(L("attachments.tooLarge"), false);
+    // an earlier attempt's draft (this session's, or one a restart forgot): gone before a new one, or already sent
+    if (await earlierAttempt(op)) return;
     await clearLeftovers();
     const created = await api("/me/messages", { method: "POST", body: await graphMimeBody(raw), contentType: "text/plain", admission: "send", run: op.requestRun, limit: DRAFT_BYTES });
     if (!isRecord(created) || !nonempty(created.id) || created.id.length > ID_MAX) throw invalid();
     const draft = created.id;
     deps.staging.add(draft);
     // one whose DELETE can't go now (a throttle pauses every request, a DELETE too) goes before the next send's draft
-    const discard = async () => { if (!(await removeDraft(draft))) leftovers.add(draft); };
+    const discard = async () => { if (await removeDraft(draft) === "kept") leftovers.set(draft, op.id); };
     try {
       try {
+        // the op's own mark on its draft, so a retry after a restart finds it (learn.microsoft.com/graph/api/singlevalueextendedproperty-post-singlevalueextendedproperties)
+        await api(`/me/messages/${enc(draft)}`, { method: "PATCH", body: JSON.stringify({ singleValueExtendedProperties: [{ id: SEND_MARK, value: op.id }] }), admission: "send", run: op.requestRun, limit: DRAFT_BYTES });
         // a file whose request (the JSON with its base64, as sent) fits goes whole; a larger one through a session
         // (round 2 #8: measured, never estimated; one whose base64 alone is over the limit is never encoded to see)
         for (const file of checked) {
@@ -351,23 +370,59 @@ export function createGraphWrites(deps: GraphWriteDeps) {
     }
   }
 
-  /** drafts of failed sends whose DELETE didn't go: kept out of the sync (`staging`) until one does */
-  const leftovers = new Set<string>();
+  /** drafts of failed sends whose DELETE didn't go, by the op that made each: kept out of the sync (`staging`) until one does */
+  const leftovers = new Map<string, string>();
 
-  /** A send's draft deleted: true once it's gone (a 404 says it already is), false when the DELETE didn't go. */
-  async function removeDraft(draft: string): Promise<boolean> {
-    try { await api(`/me/messages/${enc(draft)}`, { method: "DELETE", empty: true, admission: "send" }); }
-    catch (error) { if (deps.refusal(error)?.status !== 404) return false; }
-    return true;
+  /**
+   * A failed send's draft deleted: `gone` once it is (a 404 says it already was); `sent` when it's no longer a draft
+   * (the person sent it in Outlook meanwhile: its Sent copy keeps the draft's id), never deleted; `kept` when a request
+   * didn't go (review round 4: a DELETE without the check deleted the Sent copy)
+   */
+  async function removeDraft(draft: string): Promise<"gone" | "sent" | "kept"> {
+    const target = `/me/messages/${enc(draft)}`;
+    try {
+      const now = await api(`${target}?$select=id,isDraft`, { admission: "send", limit: 65_536 });
+      if (!isRecord(now) || typeof now.isDraft !== "boolean") throw invalid();
+      if (!now.isDraft) return "sent";
+      await api(target, { method: "DELETE", empty: true, admission: "send" });
+    } catch (error) {
+      return deps.refusal(error)?.status === 404 ? "gone" : "kept";
+    }
+    return "gone";
   }
 
-  /** what earlier sends left, deleted before a new draft is made: a retry never leaves two */
+  /** what other sends left, deleted before a new draft is made (best effort: each op clears its own in `earlierAttempt`) */
   async function clearLeftovers(): Promise<void> {
-    for (const draft of leftovers) {
-      if (!(await removeDraft(draft))) continue;
+    for (const draft of leftovers.keys()) {
+      if (await removeDraft(draft) === "kept") continue;
       leftovers.delete(draft);
       deps.staging.delete(draft);
     }
+  }
+
+  /**
+   * This op's drafts from an earlier attempt: its mark found on Graph (a restart forgets the leftovers), and the ones
+   * this session kept. One still a draft is deleted, and one that can't be yet fails the attempt (a second draft would
+   * be two messages); true when one was sent meanwhile (in Outlook, from the draft a pause left): the op is done.
+   */
+  async function earlierAttempt(op: ProviderOp): Promise<boolean> {
+    const mark = `singleValueExtendedProperties/Any(ep: ep/id eq '${SEND_MARK}' and ep/value eq '${op.id.replace(/'/g, "''")}')`;
+    const found = await api(`/me/messages?$filter=${enc(mark)}&$select=id,isDraft`, { admission: "send", run: op.requestRun, limit: 65_536 });
+    if (!isRecord(found) || !Array.isArray(found.value)) throw invalid();
+    const drafts = new Set([...leftovers].flatMap(([draft, owner]) => owner === op.id ? [draft] : []));
+    for (const item of found.value) {
+      if (!isRecord(item) || !nonempty(item.id) || item.id.length > ID_MAX) throw invalid();
+      drafts.add(item.id);
+    }
+    let sent = false;
+    for (const draft of drafts) {
+      const outcome = await removeDraft(draft);
+      if (outcome === "kept") throw new ProviderError(L("errors.outlook.requestOffline"), true);
+      if (outcome === "sent") sent = true;
+      leftovers.delete(draft);
+      deps.staging.delete(draft);
+    }
+    return sent;
   }
 
   // ───────────────────────────── folders (plan 107) ─────────────────────────────

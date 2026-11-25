@@ -16,7 +16,7 @@ interface Row { id: number; providerMsgId: string; folder: string | null; inInbo
 const opened: { close(): Promise<void> }[] = [];
 afterEach(async () => { for (const o of opened.splice(0).reverse()) await o.close(); });
 
-async function setup(o: { requests?: AccountRequests; writeMaxBytes?: number; quota?: import("./gmail-quota").QuotaPacer; uploadPieceBytes?: number; sendTimeoutMs?: number; rewrite?: (url: string, body: unknown) => unknown } = {}) {
+async function setup(o: { requests?: AccountRequests; writeMaxBytes?: number; quota?: import("./gmail-quota").QuotaPacer; uploadPieceBytes?: number; sendTimeoutMs?: number; readTimeoutMs?: number; rewrite?: (url: string, body: unknown) => unknown; delay?: (url: string, method: string) => number } = {}) {
   const ms = await new SyntheticMicrosoft().start();
   const processor = createNodeIncomingProcessor();
   const incoming = new IncomingPipeline(processor);
@@ -53,6 +53,8 @@ async function setup(o: { requests?: AccountRequests; writeMaxBytes?: number; qu
     loadCursor: async () => structuredClone(cursor),
     saveCursor: async (value: unknown) => { cursor = structuredClone(value); },
     fetch: async (input: string | URL | Request, init?: RequestInit) => {
+      const wait = o.delay?.(String(input), init?.method ?? "GET") ?? 0;
+      if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
       const response = await fetch(input, init);
       if (!o.rewrite || !response.headers.get("content-type")?.includes("application/json")) return response;
       return Response.json(o.rewrite(String(input), await response.json()), { status: response.status });
@@ -80,14 +82,17 @@ async function setup(o: { requests?: AccountRequests; writeMaxBytes?: number; qu
     async setBody() {}, async setSyncState() {}, async pendingMessageIds() { return new Set(); },
     async setFolders() {},
   };
-  const provider = createGraphApiProvider(ctx, {
+  const make = () => createGraphApiProvider(ctx, {
     endpoints: ms.endpoints(), tokens: { get: async () => token, invalidate(t) { invalidated.push(t); } }, requestsPerSecond: Infinity, userFoldersEveryMs: 0,
     buildRaw: (payload) => buildRaw(payload, { keepBcc: true }),
-    writeMaxBytes: o.writeMaxBytes, uploadPieceBytes: o.uploadPieceBytes, sendTimeoutMs: o.sendTimeoutMs, ...(o.quota && { quota: o.quota }),
+    writeMaxBytes: o.writeMaxBytes, uploadPieceBytes: o.uploadPieceBytes, sendTimeoutMs: o.sendTimeoutMs, ...(o.readTimeoutMs && { readTimeoutMs: o.readTimeoutMs }), ...(o.quota && { quota: o.quota }),
   });
+  const provider = make();
   let ops = 0;
   const t = {
     ms, rows, byId, placements, provider, store, token, invalidated,
+    /** a new provider, as a restart makes (nothing in memory carried over) */
+    async restart() { await t.provider.close(); t.provider = make(); },
     row: (graphId: string) => rows.get(graphId)!,
     op: (kind: string, graphIds: string[], payload: unknown = null, extra: Partial<ProviderOp> = {}): ProviderOp => ({ id: `op-${++ops}`, kind, target: { messageIds: graphIds.map((g) => rows.get(g)!.id) }, payload, ...extra }),
     run: (kind: string, graphIds: string[], payload: unknown = null) => t.provider.execute(t.op(kind, graphIds, payload)),
@@ -154,6 +159,19 @@ describe("Graph writes: flags", () => {
     expect(t.ms.batches).toHaveLength(1);
   });
 
+  it("review round 4 #7: in one batch, a refusal before a server error still leaves the op to try again: the retry marks the other message", async () => {
+    const t = await setup();
+    const [a, b] = [t.ms.deliver("inbox-id"), t.ms.deliver("inbox-id")];
+    for (const id of [a, b]) t.store(id);
+    t.ms.batchThrottles = [
+      { status: 403, match: new RegExp(`^PATCH /me/messages/${encodeURIComponent(a)}$`), times: 2 },
+      { status: 500, match: new RegExp(`^PATCH /me/messages/${encodeURIComponent(b)}$`), times: 1 },
+    ];
+    await expect(t.run("markRead", [a, b])).rejects.toMatchObject({ retryable: true });
+    await expect(t.run("markRead", [a, b])).rejects.toMatchObject({ retryable: false });
+    expect(t.ms.messages.get(b)!.isRead).toBe(true);
+  });
+
   it("review round 3 #5: a request inside a batch refusing the token (401) drops it, so the retry asks for a new one", async () => {
     const t = await setup();
     const id = t.ms.deliver("inbox-id");
@@ -192,7 +210,7 @@ describe("Graph writes: moves", () => {
     expect(t.placements.flat().map((p) => p.providerMsgId).sort()).toEqual([a, c].sort());
   });
 
-  it("trash, spam, not spam and back to the Inbox move as IMAP's do: your own mail never to Junk, Sent and Drafts never to the Inbox", async () => {
+  it("trash, spam, not spam and back to the Inbox move as IMAP's do: your own mail never to Junk; back to the Inbox takes whatever the store named, your own too (review round 4)", async () => {
     const t = await setup();
     const project = t.ms.folder("Project");
     const inbox = t.ms.deliver("inbox-id"), filed = t.ms.deliver(project), sent = t.ms.deliver("sent-id"), draft = t.ms.deliver("drafts-id", { isDraft: true });
@@ -205,7 +223,8 @@ describe("Graph writes: moves", () => {
     expect([inbox, sent].map((id) => t.ms.messages.get(id)!.folder)).toEqual(["trash-id", "trash-id"]);
     t.ms.move(sent, "sent-id");
     await t.run("moveToInbox", [inbox, filed, sent, draft]);
-    expect([inbox, filed, sent, draft].map((id) => t.ms.messages.get(id)!.folder)).toEqual(["inbox-id", "inbox-id", "sent-id", "drafts-id"]);
+    // the store names your own mail only when it's all a conversation has (a sent-only conversation brought back)
+    expect([inbox, filed, sent, draft].map((id) => t.ms.messages.get(id)!.folder)).toEqual(["inbox-id", "inbox-id", "inbox-id", "inbox-id"]);
     expect(t.row(filed).folder).toBeNull();
   });
 
@@ -602,6 +621,48 @@ describe("Graph writes: send", () => {
     await t.sync();
     expect(t.rows.has(leftover)).toBe(false);
     await send();
+    expect(t.ms.sent).toHaveLength(1);
+    expect(t.ms.inFolder("drafts")).toEqual([]);
+  });
+
+  it("review round 4 #1, #4: the draft a pause left, sent from Outlook meanwhile, is the send (never deleted, never sent twice); after a restart the retry still finds its draft by its mark", async () => {
+    let cooling = false;
+    const policy = {
+      check() { if (cooling) throw new ProviderError("cooling down", true); }, accessAvailable() {}, tokenUnavailable() {}, close() {},
+      reserve: (d: { request: import("./types").HttpRequestContext }) => ({ request: d.request, dispatch: (transport: () => Promise<Response>) => transport(), headers429: async () => { cooling = true; return "committed" as const; }, headers() {}, release() {} }),
+    };
+    const requests: AccountRequests = {
+      generation: () => 1, check() {}, tokenUnavailable() {}, accessAvailable() {}, async prove() {},
+      request: (descriptor, input, init) => requestHttp(policy, descriptor, () => fetch(input, init), Date.now),
+    };
+    const t = await setup({ requests, writeMaxBytes: 12_000, uploadPieceBytes: 3000 });
+    t.ms.writeMax = 12_000;
+    t.ms.uploadMin = 9000;
+    const send = (id: string, messageId: string) => t.provider.execute({ id, kind: "send", target: {}, payload: payload({ messageId, attachments: [file("big.bin", 9000)] }) });
+    // the person sends the draft the pause left, in Outlook: Terno's retry is that send
+    t.ms.throttle = { status: 429, retryAfter: "1", match: /\/send$/, times: 1 };
+    await expect(send("s1", "one@x")).rejects.toMatchObject({ retryable: true });
+    const draft = t.ms.inFolder("drafts")[0]!.id;
+    t.ms.sendDraft(draft);
+    cooling = false;
+    await send("s1", "one@x");
+    expect(t.ms.sent).toHaveLength(1);
+    expect(t.ms.messages.get(draft)).toMatchObject({ isDraft: false, folder: "sent-id" });
+    // a restart forgets the draft a pause left: the retry finds it by its mark, deletes it, and sends one
+    t.ms.throttle = { status: 429, retryAfter: "1", match: /\/send$/, times: 1 };
+    await expect(send("s2", "two@x")).rejects.toMatchObject({ retryable: true });
+    expect(t.ms.inFolder("drafts")).toHaveLength(1);
+    await t.restart();
+    cooling = false;
+    await send("s2", "two@x");
+    expect(t.ms.sent).toHaveLength(2);
+    expect(t.ms.inFolder("drafts")).toEqual([]);
+  });
+
+  it("review round 4 (Fable #3): a draft send's own requests (the draft, a file with its bytes) have a send's time, not a read's", async () => {
+    const t = await setup({ writeMaxBytes: 12_000, readTimeoutMs: 100, sendTimeoutMs: 10_000, delay: (url, method) => method === "POST" && /\/me\/messages(\/[^/]+\/attachments)?$/.test(new URL(url).pathname.replace(/^\/v1\.0/, "")) ? 300 : 0 });
+    t.ms.writeMax = 12_000;
+    await t.provider.execute({ id: "s1", kind: "send", target: {}, payload: payload({ attachments: [file("a.bin", 5000), file("b.bin", 5000)] }) });
     expect(t.ms.sent).toHaveLength(1);
     expect(t.ms.inFolder("drafts")).toEqual([]);
   });

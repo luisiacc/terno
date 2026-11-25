@@ -423,7 +423,8 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
     const free = () => { if (holding) { holding = false; release(); } };
     const sending = call.submission === true;
     // a send isn't cut by a network change and has a send's deadline; anything else is safe to repeat
-    const deadline = deadlineSignal(sending ? NEVER : (call.readReset ?? reads.signal), call.signal, sending ? (options.sendTimeoutMs ?? SEND_TIMEOUT_MS) : readTimeout);
+    // a send's other steps (its draft, its files, its mark) carry up to 4 MB each: a send's time, not a read's (review round 4)
+    const deadline = deadlineSignal(sending ? NEVER : (call.readReset ?? reads.signal), call.signal, sending || call.admission === "send" ? (options.sendTimeoutMs ?? SEND_TIMEOUT_MS) : readTimeout);
     const failed = (error: unknown) => {
       if (error instanceof RequestNotDispatchedError) return error;
       // a send that never connected never left (it waits for the network); one that may have left is unknown (plan 65)

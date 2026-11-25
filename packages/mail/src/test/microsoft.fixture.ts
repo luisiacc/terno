@@ -30,6 +30,8 @@ export interface GraphMessageFixture {
   body: string;
   /** the raw source, when a test gives its own (else one is built) */
   mime?: string;
+  /** single-value extended properties, by id */
+  marks?: Record<string, string>;
 }
 interface Change { seq: number; folder: string; id: string; kind: "read" | "other" }
 /** what reached the outside world: a sendMail's MIME, or a draft's (with the files uploaded into it) */
@@ -104,7 +106,9 @@ export class SyntheticMicrosoft {
   /** each JSON batch's requests (method and url), in order */
   batches: { method: string; url: string }[][] = [];
   /** the next requests inside batches that match fail with this status (a throttle: 429, or 503 with a Retry-After; a refusal: 401, 403) */
-  batchThrottle: { status: 429 | 503 | 401 | 403; retryAfter?: string; match?: RegExp; times: number } | null = null;
+  batchThrottle: { status: 429 | 503 | 401 | 403 | 500; retryAfter?: string; match?: RegExp; times: number } | null = null;
+  /** more of them, each its own requests */
+  batchThrottles: NonNullable<SyntheticMicrosoft["batchThrottle"]>[] = [];
   /** requests inside batches that came without `Prefer: IdType="ImmutableId"` */
   batchMissingPrefer: string[] = [];
   /** upload PUTs that carried an Authorization header (the page says never) */
@@ -212,6 +216,14 @@ export class SyntheticMicrosoft {
     Object.assign(m, fields);
     if (folder !== undefined && folder !== m.folder) return this.move(id, folder);
     this.changed(m.folder, id);
+  }
+
+  /** the person sends a draft from Outlook: it keeps its id and goes to Sent Items */
+  sendDraft(id: string): void {
+    const m = this.messages.get(id)!;
+    this.sent.push({ via: "draft", mime: this.mimeOf(m), files: this.files.get(m.id) ?? [] });
+    m.isDraft = false;
+    this.move(id, this.folderOf("sentitems")!.id);
   }
 
   setRead(id: string, isRead: boolean): void {
@@ -511,10 +523,10 @@ export class SyntheticMicrosoft {
       const path = `/v1.0${String(r.url).split("?")[0]}`;
       const headers = (r.headers ?? {}) as Record<string, string>;
       if (!/IdType="ImmutableId"/.test(String(headers.prefer ?? headers.Prefer ?? ""))) this.batchMissingPrefer.push(String(r.url));
-      const throttle = this.batchThrottle;
-      if (throttle && throttle.times > 0 && (!throttle.match || throttle.match.test(`${r.method} ${String(r.url)}`))) {
+      const throttle = [this.batchThrottle, ...this.batchThrottles].find((x) => x && x.times > 0 && (!x.match || x.match.test(`${r.method} ${String(r.url)}`)));
+      if (throttle) {
         throttle.times--;
-        responses.push({ id: String(r.id), status: throttle.status, headers: throttle.retryAfter !== undefined ? { "Retry-After": throttle.retryAfter } : {}, body: { error: { code: ({ 429: "TooManyRequests", 503: "ServiceUnavailable", 401: "InvalidAuthenticationToken", 403: "ErrorAccessDenied" } as const)[throttle.status] } } });
+        responses.push({ id: String(r.id), status: throttle.status, headers: throttle.retryAfter !== undefined ? { "Retry-After": throttle.retryAfter } : {}, body: { error: { code: ({ 429: "TooManyRequests", 503: "ServiceUnavailable", 401: "InvalidAuthenticationToken", 403: "ErrorAccessDenied", 500: "generalException" } as const)[throttle.status] } } });
         continue;
       }
       this.onRequest?.(`${path}${new URL(String(r.url), "http://x").search}`);
@@ -605,6 +617,10 @@ export class SyntheticMicrosoft {
         const flag = read.flag as { flagStatus?: string } | undefined;
         if (flag && (flag.flagStatus === "flagged" || flag.flagStatus === "notFlagged" || flag.flagStatus === "complete")) this.setFlag(m.id, flag.flagStatus);
         return json(200, this.resource(m));
+        for (const p of Array.isArray(read.singleValueExtendedProperties) ? read.singleValueExtendedProperties as { id?: unknown; value?: unknown }[] : []) {
+          if (typeof p.id !== "string" || typeof p.value !== "string") return json(400, { error: { code: "ErrorInvalidProperty" } });
+          (m.marks ??= {})[p.id] = p.value;
+        }
       }
       if (parts.length === 2 && method === "DELETE") {
         this.destroy(m.id);
@@ -686,6 +702,9 @@ export class SyntheticMicrosoft {
         return this.listing([...this.messages.values()], req, url, "/me/messages", json);
       }
       const m = this.messages.get(parts[1]!);
+        // singleValueExtendedProperties/Any(ep: ep/id eq '…' and ep/value eq '…')
+        const marked = /^singleValueExtendedProperties\/Any\(ep: ep\/id eq '([^']+)' and ep\/value eq '((?:[^']|'')*)'\)$/.exec(url.searchParams.get("$filter") ?? "");
+        if (marked) return json(200, { value: [...this.messages.values()].filter((m) => m.marks?.[marked[1]!] === marked[2]!.replace(/''/g, "'")).map((m) => this.envelope(m)) });
       if (!m) return json(404, { error: { code: "ErrorItemNotFound" } });
       if (parts.length === 2) return json(200, this.envelope(m, select));
       if (parts[2] === "$value" && parts.length === 3) {
