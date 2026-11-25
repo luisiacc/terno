@@ -27,8 +27,10 @@ plan 210's disclosure (`Collapsible` + `CollapsibleTrigger`, BoardUI's) dressed 
 
 Two levels, two looks, by what already decides the level (`part`):
 
-- **A group's heading is a section title**: the type scale's `text-lg`, semibold, tight tracking, the ink (not the quiet
-  ink), sentence case as the catalog writes it. Its count is BoardUI's neutral `Badge` beside it. Missed, Today, Waiting on
+- **A group's heading is a section title**: semibold, the ink (not the quiet ink), sentence case as the catalog writes it,
+  a step under the page's title: the scale's `text-lg` with tight tracking where the header is the large display title
+  (Lumen, Atelier), `text-base` where it's the small title (macOS, Luma, Relief, Graphite), by `variant()` over the header's
+  kinds. Its count is BoardUI's neutral `Badge` beside it. Missed, Today, Waiting on
   you on its own, a day or week ahead, Ahead, Coming up and Earlier.
 - **A part of a group is a quiet subheading**: `text-sm`, medium, the quiet ink, sentence case (no capitals), its count in
   the same ink at the regular weight. Today's Waiting on you and Coming up's buckets ("Sun, Dec 6", "Week of Jan 11, 2027").
@@ -82,3 +84,19 @@ is its base size: there the title differs by weight and ink).
 9. **Screenshots in every design**, Relief added to the loop, and Coming up open at 1100 px in each, light and dark.
 10. **Virtualizer estimates** per level (above).
 11. `ui:rate` / `ui:gate` (plan 158): see the end of this plan.
+
+## The Codex code review
+
+1. **Section titles above the page's title.** In macOS, Luma and Relief the header is the small title (`text-md`), so
+   `text-lg` section titles stood larger than "What matters". The title's size now follows the header's kind (above).
+   Regression: today.spec asserts Coming up's title is no larger than `list-title` in the e2e default (macOS), which
+   `text-lg` (17 px against 15) fails.
+2. **The design loop's shots** scroll to the end before reading Coming up's state and bring it into view before each shot.
+3. **axe with the new headings on screen**: the title, its badge and a bucket in the viewport, and the theme's class
+   applied, before each pass.
+4. **The badge is BoardUI's**: its `data-slot="badge"` asserted in e2e; the empty feed's line has none (unit).
+
+## UI rating
+
+What matters' rating set (`--screens whatmatters`, plan 158) runs on real models; it's offered to the owner rather than
+run unasked (a spend).

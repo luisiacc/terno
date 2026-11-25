@@ -4,11 +4,13 @@ import { formatNumber, getLocale, t } from "@terno/i18n";
 import { Badge } from "@terno/ui/components/badge";
 import { Collapsible, CollapsibleTrigger } from "@terno/ui/components/collapsible";
 import { Skeleton } from "@terno/ui/components/skeleton";
+import { designById, type DesignDefinition } from "@terno/ui/designs/index";
 import { Newspaper, Sun } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef } from "react";
 import type { TodayTask } from "~/lib/dated";
-import { useDesign } from "~/lib/design";
+import { useAppearance } from "~/lib/appearance";
+import { useDesign, variant } from "~/lib/design";
 import { listDate } from "~/lib/format";
 import { dayHeading, weekHeading } from "~/lib/when";
 import { LIST_TITLE } from "~/lib/list-title";
@@ -368,9 +370,10 @@ function Heading({ kind, count, part }: { kind: FeedGroupKind; count: number; pa
   // a part of a group is a level under it, for a screen reader's headings too
   const Tag = part ? "h3" : "h2";
   const dataKind = comingBucket(kind) !== null ? "coming" : groupDay(kind) !== null ? "day" : groupWeek(kind) !== null ? "week" : kind;
+  const title = useSectionTitle();
   return (
     <div className={cn("ms-4 me-3 flex", part ? "items-baseline gap-1.5 pt-4 pb-1" : "items-center gap-2 pt-7 pb-1.5")}>
-      <Tag data-testid="wm-heading" data-kind={dataKind} data-day={groupDay(kind) ?? groupWeek(kind) ?? undefined} className={part ? SUBHEADING : SECTION_TITLE}>
+      <Tag data-testid="wm-heading" data-kind={dataKind} data-day={groupDay(kind) ?? groupWeek(kind) ?? undefined} className={part ? SUBHEADING : title}>
         {headingName(kind)}
       </Tag>
       {count > 0 && <HeadingCount count={count} part={part} />}
@@ -378,8 +381,20 @@ function Heading({ kind, count, part }: { kind: FeedGroupKind; count: number; pa
   );
 }
 
-/** Plan 274: a group's heading, the section's title: the scale's large size, semibold, in the ink. */
-const SECTION_TITLE = "text-lg font-semibold tracking-tight text-foreground";
+/**
+ * Plan 274: a group's heading, the section's title: semibold, in the ink, a step under the page's own title (the Codex
+ * code review: never above it). Where the design's header is the large display title (Lumen, Atelier) it's the scale's
+ * large size; where the header is the small title (macOS, Luma, Relief, Graphite), the base size, apart by weight and ink.
+ */
+const SECTION_TITLE: Record<DesignDefinition["variants"]["listHeader"], string> = {
+  display: "text-lg font-semibold tracking-tight text-foreground",
+  greeting: "text-lg font-semibold tracking-tight text-foreground",
+  title: "text-base font-semibold text-foreground",
+};
+
+/** The section title's words in the design in effect (its header's kind). */
+const useSectionTitle = (): string => variant(useAppearance((s) => designById(s.design).variants.listHeader), SECTION_TITLE);
+
 /** Plan 274: a part of a group, under its title: small, medium, the quiet ink (AA on the pane), sentence case. */
 const SUBHEADING = "text-sm font-medium text-muted-foreground";
 
@@ -435,6 +450,7 @@ function FeedSlot({ slot, index, start, measure, children }: { slot: string; ind
 function ComingUpHeading({ empty = false }: { /** under the empty feed's words, quietly, rather than among headings */ empty?: boolean }) {
   const count = useToday((s) => s.comingUp);
   const open = useToday((s) => s.comingUpOpen);
+  const title = useSectionTitle();
   // plan 274: among the headings, a section title that is the button (its title, its count's badge, the chevron after
   // them), so it reads apart from the quiet days it opens; its title on the rows' text line, the trigger unpadded
   return (
@@ -448,7 +464,7 @@ function ComingUpHeading({ empty = false }: { /** under the empty feed's words, 
           {t("whatMatters.comingUp", { count })}
         </CollapsibleTrigger>
       ) : (
-        <CollapsibleTrigger data-testid="wm-coming-up" aria-controls={FEED_ROWS_ID} className={cn("w-auto gap-2 [&>[data-slot=collapsible-chevron]]:ms-0", SECTION_TITLE)}>
+        <CollapsibleTrigger data-testid="wm-coming-up" aria-controls={FEED_ROWS_ID} className={cn("w-auto gap-2 [&>[data-slot=collapsible-chevron]]:ms-0", title)}>
           <span data-testid="wm-coming-up-title">{t("whatMatters.comingUpTitle")}</span>
           <Badge data-testid="wm-heading-count" variant="neutral" className="tabular">
             {formatNumber(count)}

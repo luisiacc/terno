@@ -1053,6 +1053,10 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       expect(await ink(bucket)).toBe(await themeInk("text-muted-foreground"));
       expect(await page.locator(`${FEED} [data-testid=wm-heading][data-kind=comingUp]`).evaluate((el) => el.tagName)).toBe("H2");
       expect(await bucket.evaluate((el) => el.tagName)).toBe("H3");
+      // its count in BoardUI's neutral badge, and never larger than the page's own title (the Codex code review)
+      await expect(toggle.getByTestId("wm-heading-count")).toHaveAttribute("data-slot", "badge");
+      const size = (l: Locator) => l.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+      expect(await size(toggle.getByTestId("wm-coming-up-title"))).toBeLessThanOrEqual(await size(page.getByTestId("list-title")));
       if (SHOTS) {
         for (const mode of ["light", "dark"] as const) {
           await page.emulateMedia({ colorScheme: mode });
@@ -1064,8 +1068,13 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
         await page.emulateMedia({ colorScheme: "light" });
         await toEnd(page);
       }
+      // plan 274: axe with the section title, its badge and a quiet bucket on screen (the Codex code review)
+      await toggle.evaluate((el) => el.scrollIntoView({ block: "start" }));
+      await expect(toggle).toBeInViewport();
+      await expect(bucket).toBeInViewport();
       for (const mode of ["dark", "light"] as const) {
         await page.emulateMedia({ colorScheme: mode });
+        await expect(page.locator("html")).toHaveClass(mode === "dark" ? /\bdark\b/ : /^(?!.*\bdark\b)/);
         const results = await new AxeBuilder({ page }).include(FEED).analyze();
         expect(results.violations.map((v) => `${mode} ${v.id}: ${v.nodes[0]?.html.slice(0, 120)}`)).toEqual([]);
       }
@@ -1628,13 +1637,13 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
         }
         // plan 274: Coming up open at the feed's end, its title over its quiet days, in each design
         await page.setViewportSize({ width: 1100, height: 900 });
-        if ((await page.getByTestId("wm-coming-up").getAttribute("aria-expanded")) !== "true") {
-          await toEnd(page);
-          await page.getByTestId("wm-coming-up").click();
-        }
+        await toEnd(page);
+        if ((await page.getByTestId("wm-coming-up").getAttribute("aria-expanded")) !== "true") await page.getByTestId("wm-coming-up").click();
         for (const mode of ["light", "dark"] as const) {
           await page.emulateMedia({ colorScheme: mode });
           await toEnd(page);
+          await page.getByTestId("wm-coming-up").evaluate((el) => el.scrollIntoView({ block: "center" }));
+          await expect(page.getByTestId("wm-coming-up")).toBeInViewport();
           await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-dated-${design}-coming-up-${mode}.png` });
         }
         await page.setViewportSize({ width: 1440, height: 900 });

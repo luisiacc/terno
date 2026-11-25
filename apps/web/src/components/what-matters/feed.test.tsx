@@ -49,7 +49,7 @@ describe("plan 222: an empty, clear What matters", () => {
     // plan 274: under the horizon, Coming up stays a quiet line (no section title, no badge)
     const coming = empty.querySelector("[data-testid=wm-coming-up]")!;
     expect(coming.textContent).toBe("Coming up · 1");
-    expect(coming.querySelector("[data-testid=wm-heading-count]")).toBeNull();
+    expect(coming.querySelector("[data-testid=wm-heading-count], [data-slot=badge]")).toBeNull();
     act(() => root.unmount());
   });
 
