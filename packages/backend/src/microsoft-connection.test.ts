@@ -13,14 +13,16 @@ import { Backend, plaintextCipher } from "./backend";
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
 
-async function setup(options: { clients?: boolean; openExternal?: boolean; providers?: ProviderRegistry } = {}) {
+async function setup(options: { clients?: boolean; openExternal?: boolean; providers?: ProviderRegistry; quiet?: boolean } = {}) {
   const ms = await new SyntheticMicrosoft().start();
   cleanups.push(() => ms.stop());
   let browser = ms.browser();
   const dir = mkdtempSync(join(tmpdir(), "terno-outlook-"));
+  const registry = createRegistry({ microsoft: { endpoints: ms.endpoints() } });
   const backend = new Backend({
     dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, autoSync: false,
-    providers: options.providers ?? createRegistry({ microsoft: { endpoints: ms.endpoints() } }),
+    // quiet: the account's provider (stage 2a's Graph provider) reads nothing, so its refresh token rotates only by a sign-in
+    providers: options.providers ?? (options.quiet ? { ...registry, create: () => ({ async verify() {}, async sync() {}, async execute() {}, async close() {} }) } : registry),
     ...(options.openExternal !== false && { openExternal: (url: string) => browser(url) }),
     // the build's Microsoft app registration: a public client (no secret)
     microsoftClients: options.clients === false ? null : { preferred: ms.clientId, clients: [{ clientId: ms.clientId, clientSecret: "" }] },
@@ -143,7 +145,7 @@ describe("an Outlook account signs in again (plan 259)", () => {
   });
 
   it("reconnect: another mailbox, or another person behind the same address, changes nothing", async () => {
-    const { ms, backend, client, config } = await setup();
+    const { ms, backend, client, config } = await setup({ quiet: true });
     const account = await client.call("accounts.connectMicrosoft", {});
     const before = { secret: await backend.getSecret(`account:${account.id}:refreshToken`), config: await config(account.id) };
     ms.mail = ms.userPrincipalName = "someone@contoso.com";

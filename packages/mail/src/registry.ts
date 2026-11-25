@@ -5,9 +5,10 @@ import { createGmailProvider, connectGmail } from "./gmail";
 import { revokeGoogleToken } from "./google-revoke";
 import { createImapProvider, type ImapProviderOptions } from "./imap";
 import { connectMicrosoft, type MicrosoftEndpoints } from "./microsoft";
+import { createGraphProvider } from "./graph-api";
 import { sendViaSmtp, verifySmtp } from "./smtp";
 import { unhandled } from "@terno/core";
-import { ProviderError, type ImapAccountConfig, type MailProvider, type ProviderRegistry, type SendPayload } from "./types";
+import { ProviderError, type ImapAccountConfig, type ProviderRegistry, type SendPayload } from "./types";
 import { ImapFlow } from "imapflow";
 
 export interface RegistryOptions {
@@ -16,8 +17,8 @@ export interface RegistryOptions {
   demoSmtpPort?: number;
   /** unitsPerSecond: Gmail quota units a second (default Google's per-user limit; synthetic servers lift it) */
   gmail?: { endpoints?: Partial<import("./gmail").GmailEndpoints>; unitsPerSecond?: number };
-  /** plan 259: a synthetic Microsoft (sign-in, token and Graph moved) */
-  microsoft?: { endpoints?: Partial<MicrosoftEndpoints> };
+  /** plan 259: a synthetic Microsoft (sign-in, token and Graph moved); requestsPerSecond: Graph's pace (synthetic servers lift it) */
+  microsoft?: { endpoints?: Partial<MicrosoftEndpoints>; requestsPerSecond?: number };
 }
 
 /** The demo provider, except that a send is built and sent over SMTP to a local test server (the packaged smoke). */
@@ -33,12 +34,6 @@ function demoOverSmtp(ctx: Parameters<typeof createDemoProvider>[0], port: numbe
   };
 }
 
-/** Plan 259: Outlook has no provider until stage 2 builds it over Microsoft Graph; never the IMAP one by default. */
-function outlookNotYet(): MailProvider {
-  const refuse = async (): Promise<never> => { throw new ProviderError(L("errors.microsoft.notYet"), false); };
-  return { verify: refuse, sync: refuse, execute: refuse, async close() {} };
-}
-
 /**
  * Production registry: real providers per account kind; accounts created by
  * the demo seed (config.demo) use the offline demo provider.
@@ -50,7 +45,8 @@ export function createRegistry(options: RegistryOptions = {}): ProviderRegistry 
       const kind = ctx.account.kind;
       switch (kind) {
       case "gmail": return createGmailProvider(ctx, options.gmail);
-      case "outlook": return outlookNotYet();
+      // plan 259 stage 2a: Outlook over Microsoft Graph (reads; its writes are stage 2b's)
+      case "outlook": return createGraphProvider(ctx, options.microsoft);
       case "imap": return createImapProvider(ctx, options.imap);
       default: return unhandled(kind);
       }
