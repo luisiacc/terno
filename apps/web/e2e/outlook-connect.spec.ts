@@ -104,8 +104,11 @@ test("plan 259: add an Outlook account, use its mail over Graph, sign in again a
     await expect(threadRow("Lunch on Friday")).toBeVisible();
     await expect.poll(() => ms.messages.get(lunch)!.folder).toBe("inbox-id");
     await expect.poll(folderOf).toBeNull();
-    // exact undo: filed again, then out of the folder with Move to Inbox, then z: back in the folder, on Graph too
-    await dropOn(page, threadRow("Lunch on Friday"), page.getByTestId(`nav-own-${id}-${projects}`));
+    // exact undo: filed again (Move to's folder, the keyboard's way), then out of the folder with Move to Inbox, then z:
+    // back in the folder, on Graph too
+    await threadRow("Lunch on Friday").click({ button: "right" });
+    await menuPath(page, "menu-move");
+    await page.getByTestId(`menu-move-folder-${projects}`).click();
     await expect.poll(() => ms.messages.get(lunch)!.folder).toBe(projects);
     await page.getByTestId(`nav-own-${id}-${projects}`).click();
     await threadRow("Lunch on Friday").click({ button: "right" });
