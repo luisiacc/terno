@@ -122,16 +122,8 @@
 [data-ai-hint] .rt-body.is-empty::before {
   content: var(--ai-hint);
 }
-/* plan 162 (after ai162-r04): a note for AI, not the email: a faint wash of the primary behind the body, inset, no edge;
-   its first line keeps clear the place where "For AI" sits at its end */
-[data-ai-note]::before {
-  content: "";
-  position: absolute;
-  inset: 0.25rem 0.5rem;
-  border-radius: var(--radius-lg);
-  background: color-mix(in oklab, var(--primary) 5%, transparent);
-  pointer-events: none;
-}
+/* plan 162 (after ai162-r04): a note for AI, not the email: no wash behind the body (the owner, 2026-11-24), only
+   "For AI" at its first line's end, which that line keeps clear */
 [data-ai-note] .rt-body > :first-child {
   /* plan 162 (after ai162-r05): "For AI · not sent" (es "Para la IA · no se envía") with its glyph */
   padding-inline-end: 11rem;

@@ -1236,3 +1236,6 @@ Nine findings; seven fixed, each with a test that fails without the fix, two dec
 - **Grouping Needs you by reason** ("Your turn" and "Waiting for your reply" as two groups, three reports) would reorder Today. Wanted?
 - **The permission error at a 401:** OpenAI can send `insufficient_permissions` with a 401; it now reads "doesn't have permission", not "key rejected". And a 403 that isn't about permission (OpenAI's unsupported region) reads as no permission too. Keep?
 - **An edited greeting's weight:** typed over another, it now keeps that one's share (it was a fixed 10%), so a draft uses "Hi" as often as it used "Hello". Keep?
+
+### The owner, 2026-11-24: no wash in the reply box
+- The primary-at-5% wash behind a note for AI is gone ("no background there, ever"). The note says so by "✦ For AI · not sent" at its first line's end alone, and the editor's description; the first line still keeps that place clear. `[data-ai-note]` stays as the state's hook.

@@ -117,8 +117,9 @@ export function AiDraftButton({ draftKey, threadId, disabled, testId }: { draftK
 }
 
 /**
- * Plan 162 (after ai162-r04): the body says it's a note for AI while it is one: a faint wash behind it and "✦ For AI" at
- * its first line's end (which that line keeps clear), and the editor's description says the same. Nothing on a plain draft.
+ * Plan 162 (after ai162-r04): the body says it's a note for AI while it is one: "✦ For AI" at its first line's end
+ * (which that line keeps clear; no wash behind it, the owner 2026-11-24), and the editor's description says the same.
+ * Nothing on a plain draft.
  */
 export function AiNoteSlot({ draftKey }: { draftKey: string }) {
   const offered = useCanDraft({ key: draftKey });

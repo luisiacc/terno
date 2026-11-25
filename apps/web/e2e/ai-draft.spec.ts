@@ -693,9 +693,11 @@ test.describe("drafting with AI (plan 133)", () => {
         await openThread(page, /Contract review/);
         await page.getByTestId("quick-ai").click();
         await body(page).fill("fine by me, tell him that");
-        // the body says it's a note for AI (a wash, "For AI · not sent"), described to assistive tech; a plain draft has none of it
+        // the body says it's a note for AI ("For AI · not sent"), described to assistive tech; a plain draft has none of it.
+        // No wash behind it (the owner, 2026-11-24): the body has no background in this state either
         await expect(page.getByTestId("ai-note-label")).toHaveText(/For AI · not sent/);
         await expect(page.locator("[data-ai-note]")).toHaveCount(1);
+        expect(await page.locator("[data-ai-note]").evaluate((el) => getComputedStyle(el, "::before").backgroundColor)).toBe("rgba(0, 0, 0, 0)");
         await expect(body(page)).toHaveAccessibleDescription(/Your note for AI. Press .+ to generate the email from it/);
         // the owner: Send stays the primary, first, and Generate (named "Generate with AI") is a secondary (bordered on the
         // card) right after it, its word shown at both widths, the foot on one line
