@@ -62,7 +62,7 @@ it("a version-41 mailbox gains person_rules, and its facts are checked again onc
   await upgraded.facts.rules.set({ id: "r", email: "hello@app.test", name: "App", person: true, at: 1 });
   await upgraded.close();
   expect(await rows(legacyName, "person_rules")).toMatchObject({ version: IDB_VERSION, values: [{ key: "hello@app.test", id: "r", person: 1 }] });
-  expect((await rows(legacyName, "settings")).keys).not.toContain("facts_rules");
+  expect((await rows(legacyName, "settings")).values).toContainEqual({ key: "facts_rules", value_json: "2" });
   const reopened = await open(legacyName);
   expect(await reopened.facts.idle()).toBe(true);
   expect((await reopened.threads.summaries([app]))[0]!.person).toBe(true);

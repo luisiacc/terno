@@ -67,15 +67,17 @@ const AUTOMATED_DOMAINS: ReadonlySet<string> = new Set(["facebookmail.com", "lin
  * `sac@`), and writing to that address once (to its support) doesn't make its receipts a person's.
  */
 const SERVICE_DOMAINS = ["amazonses.com", "sendgrid.net", "mtasv.net", "sparkpostmail.com", "prd.sparkpost"];
-/** SendGrid's bare host (no domain): `ismtpd0012p1mdw1`, `geopod-ismtpd-54` */
-const SENDGRID_HOST = /^(?:geopod-)?ismtpd[-0-9a-z]*$/;
+/** SendGrid's bare host (no domain), only the shapes seen: `ismtpd0012p1mdw1`, `geopod-ismtpd-54`, `geopod-ismtpd-3-0` */
+const SENDGRID_HOST = /^(?:ismtpd\d+(?:p\d+[a-z]+\d+)?|geopod-ismtpd-\d+(?:-\d+)*)$/;
 
 /** Was this message sent through a sending service, by its Message-ID's domain (plan 278)? Exact domains or their subdomains. */
 export function sentByService(rfcMessageId: string | null): boolean {
   if (!rfcMessageId) return false;
-  const at = rfcMessageId.lastIndexOf("@");
-  if (at < 0) return false;
-  const host = rfcMessageId.slice(at + 1).trim().replace(/>$/, "").toLowerCase();
+  const id = rfcMessageId.trim().replace(/^</, "").replace(/>$/, "");
+  const at = id.lastIndexOf("@");
+  // a malformed one (nothing before the @) says nothing (Codex code review #10)
+  if (at <= 0) return false;
+  const host = id.slice(at + 1).toLowerCase();
   return SENDGRID_HOST.test(host) || SERVICE_DOMAINS.some((d) => host === d || host.endsWith(`.${d}`));
 }
 
@@ -84,6 +86,11 @@ export function sentByService(rfcMessageId: string | null): boolean {
  * it differs. 1: plan 17's; 2: sending services. A change to who is a person bumps it.
  */
 export const PEOPLE_RULES_V = 2;
+/**
+ * What a store's facts were computed with when it says nothing: a store made after plan 278 (v83 stamps an older mailbox
+ * with 1). A later bump finds these too (Codex code review #11).
+ */
+export const PEOPLE_RULES_BASE = 2;
 
 /** Gmail's categories: the strong ones are never a person; Updates is weak. */
 const GMAIL_STRONG = ["CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL", "CATEGORY_FORUMS"];

@@ -13,20 +13,31 @@ export const usePersonRules = create<{ rules: PersonRule[] | null }>(() => ({ ru
 let reading: Promise<void> | null = null;
 /** bumped by every event and reconnection: a read answered after one is stale and dropped */
 let generation = 0;
+/** something has asked: a reconnection reads again even when the first read never answered (Codex code review #4) */
+let wanted = false;
 
 /** Once, unless it failed (then the next ask reads again). */
 export function readPersonRules(): Promise<void> {
+  wanted = true;
   const asked = generation;
-  reading ??= client.call("people.rules", {}).then(
+  const read: Promise<void> = (reading ??= client.call("people.rules", {}).then(
     ({ rules }) => {
       if (asked === generation) usePersonRules.setState({ rules });
-      else reading = null;
+      else if (reading === read) reading = null;
     },
     () => {
-      reading = null;
+      // only this read's slot: a newer one may have taken it
+      if (reading === read) reading = null;
     },
-  );
-  return reading;
+  ));
+  return read;
+}
+
+/** Read again whatever is held (a change that failed may have left a row out of step). */
+export function rereadPersonRules(): Promise<void> {
+  generation++;
+  reading = null;
+  return readPersonRules();
 }
 
 /** At boot, once there's a connection to listen on. */
@@ -38,8 +49,8 @@ export function installPersonRules(): void {
   client.onAttach(() => {
     generation++;
     reading = null;
-    // read again only if something has read it: no work before a menu or Settings asks
-    if (usePersonRules.getState().rules !== null) void readPersonRules();
+    // read again only if something has asked: no work before a menu or Settings does
+    if (wanted) void readPersonRules();
   });
 }
 

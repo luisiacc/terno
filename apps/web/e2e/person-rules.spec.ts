@@ -91,4 +91,14 @@ test("plan 278: Counts as a person from a sender's menu, with Undo; Reset in Set
     await expect(rowOf(page, service)).toBeVisible();
     await expect(rowOf(page, person)).toBeVisible();
   });
+
+  await scenario("Settings search opens the group with its title in view, however long the list (Codex code review #8)", async () => {
+    // through the backend, as a window would: every window hears the list
+    for (let i = 0; i < 30; i++) await server.backend.server.invoke("people.setRule", { email: `sender${i}@lists.test`, name: `Sender ${i}`, person: false }, { clientId: "setup", origin: "dev" });
+    await page.getByTestId("open-settings").click();
+    await page.getByTestId("settings-find").fill("counts as a person");
+    await page.getByTestId("settings-find-result").first().click();
+    await expect(page.getByTestId("people-rules-list-item")).toHaveCount(31);
+    await expect(page.getByTestId("people-group").getByText("People", { exact: true })).toBeInViewport();
+  });
 });

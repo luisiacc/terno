@@ -133,7 +133,7 @@ describe("the facts backfill (plan 17)", () => {
     expect(await backend.store.facts.idle()).toBe(false);
     // the first slice commits the new version and the rescan's start, then the app quits
     await backend.store.facts.backfill({ limit: 5 });
-    expect(await backend.store.settings.get("facts_rules", null)).toBeNull();
+    expect(await backend.store.settings.get("facts_rules", null)).toBe(2);
     expect(await backend.store.settings.get<{ phase: string } | null>("facts_backfill", null)).toMatchObject({ phase: "rescan" });
     await backend.stop();
     const again = backendAt(dir);

@@ -248,8 +248,8 @@ export function GeneralTab({ settings, update }: { settings: AppSettings; update
       </SettingsGroup>
 
       {/* plan 278: your word on who is a person; the last one reset, the keys land on the sync window's field above */}
-      <SettingsGroup title={t("settings.general.people")} testId="people-group">
-        <SettingsRow find="general.people" label={t("settings.general.peopleRules")} hint={t("settings.general.people.hint")} stacked testId="people-rules">
+      <SettingsGroup title={t("settings.general.people")} testId="people-group" find="general.people">
+        <SettingsRow find={false} label={t("settings.general.peopleRules")} hint={t("settings.general.people.hint")} stacked testId="people-rules">
           {(a) => <PersonRulesList testId="people-rules-list" labelledBy={a["aria-labelledby"]} describedBy={a["aria-describedby"]} fallback={() => document.querySelector<HTMLElement>("[data-testid=sync-window] input, input[data-testid=sync-window]")} />}
         </SettingsRow>
       </SettingsGroup>

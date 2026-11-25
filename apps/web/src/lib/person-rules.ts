@@ -13,11 +13,14 @@ export type PersonChoice = "auto" | "always" | "never";
 
 const who = (s: { email: string; name: string }) => s.name.trim() || s.email;
 
-/** False: it failed (said in the snack). */
-export async function choosePerson(sender: { email: string; name: string }, choice: PersonChoice): Promise<boolean> {
+/**
+ * False: it failed (said in the snack). `id`: Automatically takes off only that entry, the one a list showed (another window
+ * may have changed it since: Codex code review #3).
+ */
+export async function choosePerson(sender: { email: string; name: string }, choice: PersonChoice, id?: string): Promise<boolean> {
   try {
     if (choice === "auto") {
-      const { removed } = await client.call("people.removeRule", { email: sender.email });
+      const { removed } = await client.call("people.removeRule", { email: sender.email, ...(id !== undefined ? { id } : {}) });
       // none (another window reset it): nothing to say or undo
       if (removed) said(t("personRules.autoDone", { sender: who(sender) }), sender, () => restore(removed.email, null, removed));
       return true;

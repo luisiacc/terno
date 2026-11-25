@@ -1,4 +1,4 @@
-import { addressKey, addressOnly, automatedLevel, PEOPLE_RULES_V, threadFactsNewestFirst, waitingFactsNewestFirst, type Address, type ArrivalRow, type FactContext, type FactRow, type ThreadFacts, type WaitingFacts } from "@terno/core";
+import { addressKey, addressOnly, automatedLevel, PEOPLE_RULES_BASE, PEOPLE_RULES_V, threadFactsNewestFirst, waitingFactsNewestFirst, type Address, type ArrivalRow, type FactContext, type FactRow, type ThreadFacts, type WaitingFacts } from "@terno/core";
 import type { Db } from "./sqlite";
 import { hidingSql, inboxHiding } from "./inbox-hiding";
 import { requestTabRefresh } from "./tabs";
@@ -48,11 +48,11 @@ const RULES_KEY = "facts_rules";
 
 /**
  * Plan 278: the facts were computed with other rules of who is a person (`PEOPLE_RULES_V`): the backfill's next slice
- * checks every thread again. Absent: the current ones (v83 stamps a mailbox that had threads with plan 17's, 1).
+ * checks every thread again, then writes the current version. Absent: `PEOPLE_RULES_BASE` (v83 stamps an older mailbox with 1).
  */
 function rulesStale(db: Db): boolean {
   const r = db.get<{ value_json: string }>("SELECT value_json FROM settings WHERE key = ?", RULES_KEY);
-  return r !== undefined && Number(JSON.parse(r.value_json)) !== PEOPLE_RULES_V;
+  return Number(r ? JSON.parse(r.value_json) : PEOPLE_RULES_BASE) !== PEOPLE_RULES_V;
 }
 
 /** Every thread's facts are current: the counts may say how many wait. */
@@ -403,7 +403,7 @@ export function backfillSlice(db: Db, limit: number): SliceResult {
   // (while senders are collected, nothing is computed yet: the queue uses the current rules)
   if (rulesStale(db)) {
     scheduleRescan(db);
-    db.run("DELETE FROM settings WHERE key = ?", RULES_KEY);
+    db.run("INSERT OR REPLACE INTO settings (key, value_json) VALUES (?, ?)", RULES_KEY, JSON.stringify(PEOPLE_RULES_V));
     return { phase: factsPhase(db).phase, processed: 1, more: true };
   }
   const state = factsPhase(db);

@@ -191,6 +191,12 @@ describe("the facts backfill at 145,000 threads (IndexedDB)", () => {
     const runs: { stall: number; ms: number; slices: number; line: string }[] = [];
     for (let attempt = 1; attempt <= ATTEMPTS && !(runs.length && Math.min(...runs.map((r) => r.stall)) <= STALL_MS * MULT); attempt++) {
       await store.debug.stampRules(1);
+      // facts the older rules left that the rescan must put right, every one (a run that skipped the walk would leave them)
+      for (const id of ids) {
+        const row = mirror(store).db.table("threads").rows.get(id)!;
+        if (row.person != null) row.person = row.person ? 0 : 1;
+      }
+      expect(facts(store)).not.toEqual(ruled);
       expect(await store.facts.idle()).toBe(false);
       const loop = watchLoop(STALL_MS * MULT);
       const gc = watchGc();

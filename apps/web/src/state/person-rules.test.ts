@@ -113,6 +113,31 @@ it("each choice says what changed, and its Undo asks for exactly what was before
   expect(said.at(-1)).toEqual({ kind: "error", message: "You’ve already chosen for 500 senders, the most Terno keeps." });
 });
 
+it("Codex code review #4: a first read the connection dropped is asked again on the next one", async () => {
+  usePersonRules.setState({ rules: null });
+  const first = attach();
+  await tick();
+  void readPersonRules();
+  await tick();
+  expect(first.requests.at(-1)!.m).toBe("people.rules");
+  // the connection goes before the answer
+  const second = attach();
+  await tick();
+  expect(second.requests.map((r) => r.m)).toContain("people.rules");
+  second.reply(second.requests.find((r) => r.m === "people.rules")!, { rules: [ana] });
+  await tick();
+  expect(usePersonRules.getState().rules).toEqual([ana]);
+});
+
+it("Codex code review #3: Reset from a list takes off only the entry it showed", async () => {
+  const s = attach();
+  const done = choosePerson({ email: "ana@friends.test", name: "Ana" }, "auto", "a");
+  await tick();
+  expect(s.requests.at(-1)!.p).toEqual({ email: "ana@friends.test", id: "a" });
+  s.reply(s.requests.at(-1)!, { removed: null });
+  expect(await done).toBe(true);
+});
+
 it("Spanish copy", async () => {
   setLocale("es", es);
   const s = attach();

@@ -1152,7 +1152,7 @@ describe("migration v83: who is a person, corrected (plan 278)", () => {
     expect(slices).toBeGreaterThan(3);
     expect(factsIdle(db)).toBe(true);
     expect(db.get("SELECT person FROM threads WHERE id = ?", m.thread_id)).toEqual({ person: 0 });
-    expect(db.get("SELECT 1 FROM settings WHERE key = 'facts_rules'")).toBeUndefined();
+    expect(db.get("SELECT value_json FROM settings WHERE key = 'facts_rules'")).toEqual({ value_json: "2" });
     expect(db.all<{ name: string }>("SELECT name FROM pragma_table_info('person_rules') ORDER BY cid").map((r) => r.name)).toEqual(["key", "id", "email", "name", "person", "created_at"]);
     expect(() => db.run("INSERT INTO person_rules (key, id, email, person, created_at) VALUES ('a@b.test', 'x', 'a@b.test', 2, 1)")).toThrow();
   });

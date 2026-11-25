@@ -1,4 +1,4 @@
-import { addressKey, addressOnly, automatedLevel, FACTS_WINDOW, PEOPLE_RULES_V, newestMessages, threadFacts, waitingFactsNewestFirst, type Address, type ArrivalRow, type FactContext, type FactRow, type ThreadFacts, type WaitingFacts } from "@terno/core";
+import { addressKey, addressOnly, automatedLevel, FACTS_WINDOW, PEOPLE_RULES_BASE, PEOPLE_RULES_V, newestMessages, threadFacts, waitingFactsNewestFirst, type Address, type ArrivalRow, type FactContext, type FactRow, type ThreadFacts, type WaitingFacts } from "@terno/core";
 import type { MemDb, Row, Table } from "./mem";
 import { hiddenCategories, hiddenFromInbox, tabHiddenTest } from "./inbox-hidden";
 import { requestTabRefresh } from "./tabs";
@@ -170,11 +170,11 @@ function setPhase(db: MemDb, p: FactsPhase): void {
 }
 
 const RULES_KEY = "facts_rules";
-
+/** Plan 278, as SQL's: the facts were computed with other rules of who is a person (absent: `PEOPLE_RULES_BASE`). */
 /** Plan 278, as SQL's: the facts were computed with other rules of who is a person (absent: the current ones). */
 function rulesStale(db: MemDb): boolean {
   const r = t(db, "settings").get(RULES_KEY);
-  return r !== undefined && Number(JSON.parse(r.value_json)) !== PEOPLE_RULES_V;
+  return Number(r ? JSON.parse(r.value_json) : PEOPLE_RULES_BASE) !== PEOPLE_RULES_V;
 }
 
 export function factsReady(db: MemDb, queue: FactsQueue): boolean {
@@ -495,7 +495,7 @@ export function backfillSlice(db: MemDb, queue: FactsQueue, recency: RecencyOrde
   // plan 278, as SQL's: other rules computed these facts: every thread again, the version written in the same command
   if (rulesStale(db)) {
     scheduleRescan(db);
-    t(db, "settings").delete(RULES_KEY);
+    t(db, "settings").put({ key: RULES_KEY, value_json: JSON.stringify(PEOPLE_RULES_V) });
     return { phase: factsPhase(db).phase, processed: 1, more: true };
   }
   const state = factsPhase(db);

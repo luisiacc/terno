@@ -3,7 +3,7 @@ import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { useEffect, useId, useRef } from "react";
 import { choosePerson } from "~/lib/person-rules";
-import { readPersonRules, usePersonRules } from "~/state/person-rules";
+import { readPersonRules, rereadPersonRules, usePersonRules } from "~/state/person-rules";
 
 /**
  * Plan 278: the senders you've said are or aren't people, each with Reset (Terno decides again; Undo in the snack). A sender's
@@ -22,8 +22,8 @@ export function PersonRulesList({ testId, labelledBy, describedBy, fallback }: {
     const next = buttons[at + 1] ?? buttons[at - 1] ?? fallback();
     usePersonRules.setState(({ rules: held }) => ({ rules: held && held.filter((x) => x.key !== r.key) }));
     next?.focus({ preventScroll: true });
-    // failed: back where it was
-    if (!(await choosePerson(r, "auto"))) usePersonRules.setState(({ rules: held }) => ({ rules: held && [...held.filter((x) => x.key !== r.key), r].sort((a, b) => b.at - a.at) }));
+    // only the entry shown; failed, the list is read again rather than this row put back over a newer change (Codex code review #3)
+    if (!(await choosePerson(r, "auto", r.id))) void rereadPersonRules();
   };
   return (
     <ul ref={list} aria-labelledby={labelledBy} aria-describedby={describedBy} className="flex flex-col" data-testid={testId}>

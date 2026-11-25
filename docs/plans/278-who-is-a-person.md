@@ -105,4 +105,22 @@ Codex (read-only) raised 12 points. All are taken, some by narrowing. These over
 - **The cap is 500**, plan 240's. The Settings list draws every rule, and a list of 2,000 would need virtualizing. Nobody hand-picks that many senders.
 - **The Settings group always shows.** Empty, it says how a sender gets there ("No one yet. Right-click a sender’s mail and choose More, then Counts as a person."), so Settings search always has its target (`general.people`). Resetting the last rule moves focus to the sync window's field just above.
 - **Where the menu sits:** "Counts as a person" is in the sender's section of More (after "Always show in “What matters”", before "File all their mail"), in the row's menu, a message's menu and a person's menu alike (`MenuParts` gains the radio parts).
-- **The version stamp:** SQLite's v83 and IndexedDB's v42 write `facts_rules = 1` only on a mailbox that has threads. The key absent means the current rules, so a new install has nothing to check again. The rescan's first slice deletes the key in the same transaction that schedules the rescan.
+- **The version stamp:** SQLite's v83 and IndexedDB's v42 write `facts_rules = 1` only on a mailbox that has threads. The key absent means `PEOPLE_RULES_BASE` (2), so a new install has nothing to check again. The rescan's first slice writes the current version in the same transaction that schedules the rescan.
+
+## What the Codex code review changed
+
+Codex reviewed the branch (read-only) and raised 12 findings. Seven are fixed, each with a test that fails without the fix:
+
+- **#3, Reset from a stale list.** Reset removed whatever rule the sender had, even one another window had just set. It now takes off only the entry the list showed (`id`). When it fails, the list is read again instead of putting the old row back over a newer change. Web test: the request names the entry.
+- **#4, a first read lost to a reconnection.** The client store re-read on reconnect only once it held rules, so a read the connection dropped left the menu disabled and Settings blank. It now remembers that something asked (`wanted`), and only the read that owns the in-flight slot clears it. Web test: the read is asked again on the next connection.
+- **#8, Settings search.** The search target was the row, so with a long list the search centred the row and the group's title went off screen. The target is the group now. E2E: 31 rules, the search opens with "People" in view (fails with the row as the target).
+- **#9, the perf cases proved nothing.** They timed a recheck of facts that were already right, so skipping the walk would have passed. Both gates now flip every thread's stored fact before the timed run and require every fact put right.
+- **#10, loose SendGrid shapes and malformed IDs.** `ismtpdinternal` matched, and so did `@email.amazonses.com` with nothing before the `@`. Bare SendGrid hosts are now only the shapes seen (`ismtpd0012p1mdw1`, `geopod-ismtpd-54`, `geopod-ismtpd-3-0`), and an ID with an empty local part says nothing. Core tests cover both.
+- **#11, a later bump would miss finished mailboxes.** Deleting the stamp made "absent" mean "current", so bumping `PEOPLE_RULES_V` would skip every mailbox already rechecked. The recheck now writes the version, and absent means `PEOPLE_RULES_BASE`. Backend test: the stamp reads 2 after the recheck.
+- **#12, the hint overpromised.** "Never" doesn't stop "What matters" from showing a sender you asked it to always show. The hint says so, in en and es.
+
+Not taken:
+
+- **#1, filing and the digest read `person`.** "Move similar mail" offers itself when every target is from a sender who isn't a person, and the newsletter digest takes conversations that aren't a person's. Both follow your rule. That is the point of the rule: you said who is and isn't a person, and the app treats them that way everywhere it reads the thread's fact. The offers stay offers you choose.
+- **#2, an Undo across two windows.** Window A resets, window B sets and then resets, then A's Undo puts A's rule back. This needs three steps in two windows inside one snack's life, and its result is a rule the user did choose once. Skipped as very rare.
+- **#5, #6 and #7: requeue and rescan cost in plan 17's code.** These are the IndexedDB `+tag` walk, the inline bound counted in messages, and a rescan's last slice holding a giant conversation. All three are the existing shared paths that plan 17, plan 240 and writing to a new address already use, not new code. Left for their own plan.
