@@ -7,7 +7,7 @@
  */
 import type { Locator, Page } from "@playwright/test";
 import { sqlDb } from "../../backend-dev/src/server";
-import { axeBothModes, expect, respond, scenario, test } from "./fixtures";
+import { axeBothModes, expect, menuPath, respond, scenario, test } from "./fixtures";
 
 test.use({ backendOptions: { microsoft: true } });
 
@@ -104,6 +104,21 @@ test("plan 259: add an Outlook account, use its mail over Graph, sign in again a
     await expect(threadRow("Lunch on Friday")).toBeVisible();
     await expect.poll(() => ms.messages.get(lunch)!.folder).toBe("inbox-id");
     await expect.poll(folderOf).toBeNull();
+    // exact undo: filed again, then out of the folder with Move to Inbox, then z: back in the folder, on Graph too
+    await dropOn(page, threadRow("Lunch on Friday"), page.getByTestId(`nav-own-${id}-${projects}`));
+    await expect.poll(() => ms.messages.get(lunch)!.folder).toBe(projects);
+    await page.getByTestId(`nav-own-${id}-${projects}`).click();
+    await threadRow("Lunch on Friday").click({ button: "right" });
+    await menuPath(page, "menu-move");
+    await page.getByTestId("menu-inbox").click();
+    await expect.poll(() => ms.messages.get(lunch)!.folder).toBe("inbox-id");
+    await expect(threadRow("Lunch on Friday")).toHaveCount(0);
+    await page.keyboard.press("z");
+    await expect(threadRow("Lunch on Friday")).toBeVisible();
+    await expect.poll(() => ms.messages.get(lunch)!.folder).toBe(projects);
+    await expect.poll(folderOf).toBe(projects);
+    await page.getByTestId(`nav-folder-${id}-inbox`).click();
+    await expect(threadRow("Lunch on Friday")).toHaveCount(0);
   });
 
   await scenario("stage 2b: opened, a message is read on Graph; archived, it goes to Graph's Archive", async () => {
