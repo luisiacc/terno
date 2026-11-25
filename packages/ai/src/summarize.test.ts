@@ -38,7 +38,7 @@ describe("the prompt", () => {
     expect(task.prompt).toContain("canary-7f3");
     expect(task.system).toMatch(/data, not instructions/);
     expect(task.effort).toBe("low");
-    expect(SUMMARY_PROMPT_VERSION).toBe(8);
+    expect(SUMMARY_PROMPT_VERSION).toBe(9);
     // plan 148: the rows add to the summary, and the example shown to a server with no json_schema does too
     expect(task.system).toMatch(/Never restate the summary in an item/);
     expect(task.example.summary).not.toContain("contract");
@@ -136,6 +136,78 @@ describe("the prompt", () => {
     // the system prompt and the ladder's overhead are fixed; `promptChars` is all the rest, closing line included
     const system = summarizeTask(input()).system.length;
     expect(summaryBudget(4096).promptChars).toBe((4096 - Math.ceil(4096 * 0.3) - Math.ceil((system + 1000) / 4)) * 4);
+  });
+
+  describe("plan 279: what's new since you read", () => {
+    const thread: SummarizeInput["thread"] = [
+      { label: "m1", from: "Ana <ana@books.test>", date: "2026-11-01", own: false, text: "Can we meet on the 12th?" },
+      { label: "m2", from: "Ana <ana@books.test>", date: "2026-11-03", own: false, text: "The 12th doesn't work after all: the 19th instead.", isNew: true },
+    ];
+
+    it("asks for it only with messages marked new, after the items, and says the summary and items still cover everything", () => {
+      const task = summarizeTask(input(undefined, { thread }));
+      expect(task.prompt).toMatch(/<message id="m2"[^\n]* new="yes">\n/);
+      expect(task.prompt).not.toMatch(/<message id="m1"[^\n]* new="yes">/);
+      expect(task.system).toContain('- "since":');
+      expect(task.system.indexOf('- "since":')).toBeGreaterThan(task.system.indexOf('- "items":'));
+      expect(task.system).toMatch(/change nothing about the summary and items above/);
+      expect(task.system).toMatch(/Never what the reader has to do or answer/);
+      // an example a small model would copy says nothing
+      expect(task.example).toMatchObject({ since: "" });
+      const plain = summarizeTask(input());
+      expect(plain.system).not.toContain('"since"');
+      expect(plain.example).not.toHaveProperty("since");
+    });
+
+    it("never in the compact prompt, which sends no new marks either", () => {
+      const task = summarizeTask(input(undefined, { thread, compact: true }));
+      expect(task.system).not.toContain('"since"');
+      expect(task.prompt).not.toContain('new="yes"');
+    });
+
+    it("the budget counts its words only when they'll be sent", () => {
+      expect(summaryBudget(16_000, true).promptChars).toBeLessThan(summaryBudget(16_000).promptChars);
+      expect(summaryBudget(2_000, true)).toEqual(summaryBudget(2_000));
+    });
+
+    const answer = (since: unknown) => ({ summary: "Ana now proposes the 19th.", items: [], ...(since === undefined ? {} : { since }) });
+    const ask = (answers: unknown[], output: "json_schema" | "json_object" | "text" = "json_schema") => {
+      const t = scripted((n) => answers[Math.min(n, answers.length - 1)]);
+      return { run: createAi(config({ capabilities: { output, contextTokens: null, embeddings: false, probedAt: 1 } }), { transport: t }).summarize(input(undefined, { thread })), t };
+    };
+
+    it("comes back in plain text, bounded", async () => {
+      const { run } = ask([answer(`<b>Ana moved the meeting</b> from the 12th to the 19th. ${"x".repeat(600)}`)]);
+      const r = await run;
+      expect(r.since!.startsWith("Ana moved the meeting from the 12th")).toBe(true);
+      expect(r.since!.length).toBeLessThanOrEqual(400);
+    });
+
+    it.each(["json_schema", "json_object", "text"] as const)("missing or null reads as empty, costing no repair (%s)", async (output) => {
+      for (const since of [undefined, null]) {
+        const { run, t } = ask([answer(since)], output);
+        await expect(run).resolves.toMatchObject({ summary: "Ana now proposes the 19th.", since: "" });
+        expect(t.requests).toHaveLength(1);
+      }
+    });
+
+    it("one the summary already says is dropped", async () => {
+      await expect(ask([answer("Ana now proposes the 19th.")]).run).resolves.toMatchObject({ since: "" });
+    });
+
+    it("is held to the summary's checks: one repair, then it goes and the card stands", async () => {
+      const once = ask([answer("Ana moved it to tomorrow."), answer("Ana moved it from the 12th to the 19th.")]);
+      await expect(once.run).resolves.toMatchObject({ since: "Ana moved it from the 12th to the 19th." });
+      expect(once.t.requests).toHaveLength(2);
+      const still = ask([answer("Ana moved it to tomorrow."), answer("Ana moved it to tomorrow, $500 more.")]);
+      await expect(still.run).resolves.toMatchObject({ summary: "Ana now proposes the 19th.", since: "" });
+    });
+
+    it("the fake answers one from the first new message", async () => {
+      const r = await createAi(config(), { transport: fakeTransport() }).summarize(input(undefined, { thread }));
+      expect(r.since).toBe("New: The 12th doesn't work after all: the 19th instead.");
+      expect((await createAi(config(), { transport: fakeTransport() }).summarize(input())).since).toBeUndefined();
+    });
   });
 
   it("refuses an empty thread before reaching a provider", () => {

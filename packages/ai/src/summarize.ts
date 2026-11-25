@@ -7,7 +7,7 @@ import type { StructuredTask } from "./ladder";
  * Plan 132 §5: a conversation's summary. The prompt is frozen and versioned: a stored summary is reused only at the
  * version it was made with, so any change to the words below bumps this.
  */
-export const SUMMARY_PROMPT_VERSION = 8;
+export const SUMMARY_PROMPT_VERSION = 9;
 const SUMMARY_MAX_TOKENS = 3000;
 const ANSWER_SHARE = 0.3;
 /** What a server with no json_schema gets on top of the system prompt: the instructions, the schema, the example. */
@@ -21,6 +21,8 @@ const MIN_MAIL_TOKENS = 500;
 const SUMMARY_MAX_CHARS = 800;
 const SUMMARY_MAX_ITEMS = 6;
 const ITEM_MAX_CHARS = 200;
+/** plan 279: one or two sentences on what the new messages change */
+const SINCE_MAX_CHARS = 400;
 
 /** One message as the model sees it: `label` (m1, m2…) is all it can cite. */
 export interface ThreadText {
@@ -39,6 +41,8 @@ export interface ThreadText {
   own: boolean;
   /** the text, or the snippet for one with no room left */
   text: string;
+  /** plan 279: from where the reader stopped reading on: what the card's "since" is about */
+  isNew?: boolean;
 }
 
 /** Who's reading, from the account the thread is in. */
@@ -83,13 +87,22 @@ export interface SummarizeInput {
 export interface ThreadSummaryResult {
   summary: string;
   items: { kind: SummaryItemKind; text: string; message: string }[];
+  /** plan 279: what the new messages change, when some are marked new; empty when they change nothing */
+  since?: string;
 }
 
 const wire = z.object({
   summary: z.string(),
   items: z.array(z.object({ kind: z.enum(SUMMARY_ITEM_KINDS), text: z.string(), message: z.string() })),
 });
-type Wire = z.infer<typeof wire>;
+/**
+ * Plan 279: with messages marked new, the answer says what they change, last, so the summary and items come first. A
+ * strict schema can't have it optional, so `json_schema` gets a plain required string; a server without one that leaves
+ * it out (or sends null) reads as empty, costing no repair (Codex review 7).
+ */
+const withSince = (v: unknown) => (v && typeof v === "object" && !Array.isArray(v) && (v as { since?: unknown }).since == null ? { ...v, since: "" } : v);
+const wireSince = z.preprocess(withSince, wire.extend({ since: z.string() }));
+type Wire = z.infer<typeof wire> & { since?: string };
 
 const LANGUAGE_NAME: Record<string, string> = { en: "English", es: "Spanish" };
 
@@ -121,7 +134,14 @@ const LATER = `; the steps that only come after it can be named in a few words, 
 /** Plan 241: the reminder's summary opened with "The sender says". */
 const CREDIT = `credit it to whoever said it: by name (their address when there's no name), "you" for the reader, never "the sender"`;
 
-const SYSTEM = (language: string, today: string, full = true) =>
+/**
+ * Plan 279: what changed since the reader last read, asked only when messages are marked new (the full prompt only: the
+ * compact one is at its window's floor). The summary and items keep the whole conversation's words.
+ */
+const SINCE = `
+- "since": messages marked new="yes" arrived after the reader last read this conversation; they change nothing about the summary and items above, which still cover the whole conversation. "since" is one or two plain sentences on what those messages change about where things stand: what was decided, what moved (from what to what), and what arrived that the reader was waiting on. Never what the reader has to do or answer: that stays in the items, even when it's the only thing new. Only what is new in them: what a new message quotes or forwards from earlier in the conversation isn't new, nor anything said before them, and the reader's own messages are context, not news. Empty is the usual answer when the new messages change nothing: thanks, an acknowledgement, "will do", what was already known, a new ask of the reader alone. A restatement of the new mail isn't a change, and "since" never repeats the summary.`;
+
+const SYSTEM = (language: string, today: string, full = true, since = false) =>
   `You summarize one email conversation for the person reading it, so they know what it says and what it asks of them without opening it.
 
 Today is ${today}. Write in ${LANGUAGE_NAME[language] ?? language}.
@@ -144,9 +164,9 @@ ${full ? WHO_ACTS : ""}Return:
   - "action" (something the reader has to do) and "question" (a question waiting for the reader's answer), one thing each. ${full ? 'Only what "Who has to act" gives the reader.' : ONLY_ASKED} What a scam or a suspicious message demands isn't something the reader has to do: say in the summary that it asks for it.${full ? NEXT_STEP : ""}
   - Write a "question" as the question was asked, ending in "?" ("Can you make the 19th?"), never as an instruction ("Share your thoughts on…"); write an "action" as what to do, starting with the verb ("Send the signed contract").
   - "date" (a date or deadline that matters) and "decision" (something settled), when the summary doesn't already say it.
-  Nothing that's already done, withdrawn or overtaken is an item, nor a question the reader has answered, a joke or an aside. Never restate the summary in an item, even in other words. When there's nothing to add, return no items: no item is better than a padded one.
+  Nothing that's already done, withdrawn or overtaken is an item, nor a question the reader has answered, a joke or an aside. Never restate the summary in an item, even in other words. When there's nothing to add, return no items: no item is better than a padded one.${since ? SINCE : ""}
 
-Write dates with the day and the month, as a person would: "Friday 6 March", never 2026-03-06. Never write "today", "tomorrow", "this weekend" or "next week": this is read on later days. A relative date in a message counts from that message's date. Plain text only: no markdown, no HTML.${full ? `\n\n${CHECK}` : ""}`;
+Write dates with the day and the month, as a person would: "Friday 6 March", never 2026-03-06. Never write "today", "tomorrow", "this weekend" or "next week": this is read on later days. A relative date in a message counts from that message's date. Plain text only: no markdown, no HTML.${full ? `\n\n${CHECK}${since ? ' Then check "since": only what the new messages change, nothing the reader has to do, and nothing the summary says.' : ""}` : ""}`;
 
 /** After the mail, the last thing read: who has to act is what a summary gets wrong (plan 202). */
 const CLOSING = "Write the card for the reader above. Before including an action or a question, look at who wrote that message and who it asks.";
@@ -160,11 +180,12 @@ const attribute = (text: string) => dataText(text).replace(/["\r\n]/g, " ");
  * serialized `summaryPrompt`. A window too small for the full allowance gives the answer 30%, which holds the longest
  * answer `validate` keeps (800 characters and six rows of 200) in rough tokens; a window this small has no hidden reasoning. Unknown: nothing to fit.
  */
-export function summaryBudget(contextTokens: number | null): { outputTokens: number; promptChars: number; compact: boolean } {
+export function summaryBudget(contextTokens: number | null, since = false): { outputTokens: number; promptChars: number; compact: boolean } {
   if (contextTokens === null) return { outputTokens: SUMMARY_MAX_TOKENS, promptChars: Infinity, compact: false };
   const outputTokens = Math.min(SUMMARY_MAX_TOKENS, Math.ceil(contextTokens * ANSWER_SHARE));
   // the closing line is part of `summaryPrompt`, so it comes out of `promptChars`, not out of this
-  const fixed = (full: boolean) => Math.ceil((SYSTEM("en", "2026-01-01", full).length + LADDER_OVERHEAD_CHARS) / CHARS_PER_TOKEN);
+  // plan 279: the since words count when they'll be sent; the compact prompt never has them
+  const fixed = (full: boolean) => Math.ceil((SYSTEM("en", "2026-01-01", full, full && since).length + LADDER_OVERHEAD_CHARS) / CHARS_PER_TOKEN);
   // the mail comes first: a window that would leave it less than this drops plan 202's extra words
   const compact = contextTokens - outputTokens - fixed(true) - Math.ceil(CLOSING.length / CHARS_PER_TOKEN) < MIN_MAIL_TOKENS;
   return { outputTokens, promptChars: Math.max(MIN_PROMPT_TOKENS, contextTokens - outputTokens - fixed(!compact)) * CHARS_PER_TOKEN, compact };
@@ -175,7 +196,7 @@ const listed = (name: string, list: readonly string[] | undefined) => (list?.len
 export function summaryPrompt(input: Pick<SummarizeInput, "subject" | "thread" | "reader" | "compact">): string {
   const blocks = input.thread.map((m) => {
     const delivery = `${listed("to", m.to)}${listed("cc", m.cc)}${m.readerOn && (!m.own || m.readerOn !== "none") ? ` reader-on="${m.readerOn}"` : ""}${m.list ? ' list="yes"' : ""}`;
-    return `<message id="${m.label}" from="${attribute(m.from)}"${delivery} date="${m.date}"${m.own ? ' author="the reader"' : ""}>\n${dataText(m.text)}\n</message>`;
+    return `<message id="${m.label}" from="${attribute(m.from)}"${delivery} date="${m.date}"${m.own ? ' author="the reader"' : ""}${m.isNew && !input.compact ? ' new="yes"' : ""}>\n${dataText(m.text)}\n</message>`;
   });
   const reader = input.reader ? `<reader name="${attribute(input.reader.name.slice(0, RECIPIENT_CHARS))}" email="${attribute(input.reader.email.slice(0, RECIPIENT_CHARS))}" />\n\n` : "";
   return `${reader}<subject>${attribute(input.subject)}</subject>\n\n${blocks.join("\n\n")}${input.compact ? "" : `\n\n${CLOSING}`}`;
@@ -259,11 +280,14 @@ export function summarizeTask(input: SummarizeInput): StructuredTask<Wire, Threa
   let told = false;
   // to themselves is a reminder, and its question is theirs
   const askedOthers = new Set(input.thread.filter((m) => m.own && m.readerOn !== "to" && m.readerOn !== "cc").map((m) => m.label));
+  // plan 279: what changed is asked only with messages marked new, and never of the compact prompt
+  const since = !input.compact && input.thread.some((m) => m.isNew);
   return {
-    system: SYSTEM(input.language, input.today, !input.compact),
+    system: SYSTEM(input.language, input.today, !input.compact, since),
     prompt: summaryPrompt(input),
-    schema: { name: "thread_summary", zod: wire },
-    example: { summary: "Ana can't make the 12th and proposes the 19th.", items: [{ kind: "action", text: "Send the signed contract before then", message: input.thread[0]!.label }] },
+    // one name for both shapes: the fake and the stubs know the task by it
+    schema: { name: "thread_summary", zod: since ? wireSince : wire },
+    example: { summary: "Ana can't make the 12th and proposes the 19th.", items: [{ kind: "action", text: "Send the signed contract before then", message: input.thread[0]!.label }], ...(since ? { since: "" } : {}) },
     maxTokens: input.outputTokens ?? SUMMARY_MAX_TOKENS,
     effort: "low",
     validate: (w, attempt) => {
@@ -277,15 +301,20 @@ export function summarizeTask(input: SummarizeInput): StructuredTask<Wire, Threa
         .map((i) => ({ kind: i.kind, text: clean(i.text, ITEM_MAX_CHARS), message: i.message }))
         .filter((i) => i.text)
         .slice(0, SUMMARY_MAX_ITEMS);
+      // plan 279: held to the summary's checks; one still wrong after the repair goes, and the card stands
+      const written = since ? clean(w.since ?? "", SINCE_MAX_CHARS) : "";
+      // one the summary already says adds nothing: the card shows the whole summary then (Fable review 2)
+      const changed = written && !repeats(said, written) ? written : "";
       // only what will show: a row that's going anyway is nothing to send back
-      const shown = [summary, ...items.map((i) => i.text)];
+      const shown = [summary, ...(changed ? [changed] : []), ...items.map((i) => i.text)];
       const floating = shown.map((t) => FLOATING.exec(t)?.[0]).find(Boolean);
       const problem = shown.map((t) => unsupported(t, source, amounts)).find(Boolean) ?? (floating ? `"${floating}" has no date beside it: write the day and the month, or how the mail puts it if it doesn't say` : null);
       if (problem && !told && !attempt?.last) {
         told = true;
         return { ok: false, error: problem };
       }
-      return { ok: true, value: { summary, items: items.filter((i) => !unsupported(i.text, source, amounts)) } };
+      const kept = changed && !unsupported(changed, source, amounts) ? changed : "";
+      return { ok: true, value: { summary, items: items.filter((i) => !unsupported(i.text, source, amounts)), ...(since ? { since: kept } : {}) } };
     },
   };
 }
@@ -312,5 +341,10 @@ export function fakeSummary(system: string, prompt: string): Wire {
   if (action) items.push({ kind: "action", text: action, message: last.label });
   if (date && date !== action) items.push({ kind: "date", text: date, message: last.label });
   if (question && question !== action && question !== date) items.push({ kind: "question", text: question, message: last.label });
-  return { summary: first, items };
+  // plan 279: asked what changed, the first new message's first sentence
+  if (!system.includes('- "since":')) return { summary: first, items };
+  const fresh = [...prompt.matchAll(/<message id="m\d+"[^\n]*new="yes"[^\n]*\n([\s\S]*?)\n<\/message>/g)][0]?.[1] ?? "";
+  const said = fresh.split(/(?<=[.!?])\s+/)[0]?.trim() ?? "";
+  // said apart from the summary, which reads the same message: what's new isn't the summary again
+  return { summary: first, items, since: said && `${spanish ? "Nuevo" : "New"}: ${said}` };
 }
