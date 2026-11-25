@@ -211,6 +211,62 @@ describe("an Outlook account signs in again (plan 259)", () => {
     expect(backend.connectivity.failures(account.id)).toBe(0);
   });
 
+  it("stage 2b: through the backend's ops: a folder made, a thread filed into it and back (undo), archived, read; the move's answer written at once", async () => {
+    const { ms, backend, client } = await setup();
+    const a = ms.deliver("inbox-id", { subject: "Contract" }), b = ms.deliver("inbox-id", { subject: "Lunch" });
+    const account = await client.call("accounts.connectMicrosoft", {});
+    await backend.syncAccount(account.id);
+    const db = sqlDb(backend.store);
+    const row = (id: string) => db.get<{ thread_id: number; in_inbox: number; is_read: number }>("SELECT thread_id, in_inbox, is_read FROM messages WHERE provider_msg_id = ?", id)!;
+    const folderOf = (id: string) => db.get<{ folder: string }>("SELECT f.folder FROM message_folders f JOIN messages m ON m.id = f.message_id WHERE m.provider_msg_id = ?", id)?.folder ?? null;
+    const created = await client.call("folders.create", { accountId: account.id, parent: null, name: "Clients" });
+    expect(ms.folders.get(created.key)?.displayName).toBe("Clients");
+    const filed = await client.call("folders.moveThreads", { accountId: account.id, folder: created.key, from: null, threadIds: [row(a).thread_id] });
+    expect(filed).toMatchObject({ affected: 1, kept: 0 });
+    await backend.runWorker();
+    expect(ms.messages.get(a)!.folder).toBe(created.key);
+    expect(folderOf(a)).toBe(created.key);
+    expect(row(a).in_inbox).toBe(0);
+    // one move: the archive after it found nothing left in the Inbox
+    expect(ms.batches.flat().filter((r) => r.url.endsWith("/move"))).toHaveLength(1);
+    await client.call("threads.undo", { undoId: filed.undoId! });
+    await backend.runWorker();
+    expect(ms.messages.get(a)!.folder).toBe("inbox-id");
+    expect(folderOf(a)).toBeNull();
+    expect(row(a).in_inbox).toBe(1);
+    await client.call("threads.act", { threadIds: [row(b).thread_id], action: "archive" });
+    await client.call("threads.act", { threadIds: [row(a).thread_id], action: "markRead" });
+    await backend.runWorker();
+    expect(ms.messages.get(b)!.folder).toBe("archive-id");
+    expect(ms.messages.get(a)!.isRead).toBe(true);
+    // a later read agrees with what was written
+    await backend.syncAccount(account.id);
+    expect(row(b).in_inbox).toBe(0);
+    expect(row(a)).toMatchObject({ in_inbox: 1, is_read: 1 });
+    await client.call("folders.rename", { accountId: account.id, key: created.key, name: "Customers" });
+    expect(ms.folders.get(created.key)?.displayName).toBe("Customers");
+    expect((await client.call("folders.delete", { accountId: account.id, key: created.key })).deleted).toEqual([created.key]);
+    expect(ms.folders.has(created.key)).toBe(false);
+  });
+
+  it("stage 2b: a throttled request inside a batch pauses the mailbox as a 429 does: the action waits, and the next sync asks Graph nothing", async () => {
+    const { ms, backend, client } = await setup();
+    const a = ms.deliver("inbox-id");
+    const account = await client.call("accounts.connectMicrosoft", {});
+    await backend.syncAccount(account.id);
+    const thread = sqlDb(backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = ?", a)!.thread_id;
+    ms.batchThrottle = { status: 429, retryAfter: "120", match: /^PATCH /, times: 1 };
+    await client.call("threads.act", { threadIds: [thread], action: "markRead" });
+    await backend.runWorker();
+    expect(ms.batchThrottle.times).toBe(0);
+    expect(ms.messages.get(a)!.isRead).toBe(false);
+    const [op] = (await backend.store.ops.recent(5)).filter((o) => o.kind === "markRead");
+    expect(op!.state).toBe("queued");
+    const asked = ms.graphRequests.length;
+    await backend.syncAccount(account.id);
+    expect(ms.graphRequests.length).toBe(asked);
+  });
+
   it("removing it deletes its refresh token here; there is no grant at Microsoft to revoke", async () => {
     const { ms, backend, client } = await setup();
     const account = await client.call("accounts.connectMicrosoft", {});

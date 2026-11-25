@@ -2538,6 +2538,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "errors.outlook.requestFailed": "Outlook no pudo completar la solicitud ({status}). Inténtalo de nuevo o revisa el acceso de esta cuenta.",
   "errors.outlook.requestOffline": "No se pudo contactar a Outlook. Revisa tu conexión e inténtalo de nuevo.",
   "errors.outlook.actionNotYet": "Terno todavía no puede cambiar el correo de Outlook, así que este cambio no se hizo en Outlook.",
+  "errors.outlook.noArchive": "Este buzón de Outlook no tiene carpeta Archivo, así que no se archivó nada. Archívalo en Outlook o muévelo a una carpeta.",
   "errors.passwordRequired": "Escribe la contraseña de la cuenta.",
   "errors.passwordToVerify": "Escribe la contraseña de la cuenta para verificarla.",
   "errors.couldNotConnect": "No se pudo conectar: {detail}",

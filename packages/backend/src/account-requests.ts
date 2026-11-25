@@ -124,6 +124,11 @@ export async function savedAccountRequests(input: {
         if (current && kind === "policy" && error && descriptor.request.endpoint === service) void input.status.forbid({ generation: epoch, live: active }, revision, error);
         await settle(current ? kind : "none");
         if (current && kind === "quota") void constraint(epoch, active);
+      }) : undefined, onBatch: descriptor.onBatch ? (settle) => descriptor.onBatch!(async (observation) => {
+        // plan 259: a throttled request inside a batch pauses the mailbox as a top-level 429 does
+        const current = active() && !init?.signal?.aborted;
+        await settle(current ? observation : undefined);
+        if (current && observation) void constraint(epoch, active);
       }) : undefined })(resource, init).then((response) => {
         if (throttled(descriptor.request, response.status, response.headers.has("retry-after")) && active()) void constraint(epoch, active);
         return response;

@@ -3,7 +3,10 @@
 // id_token with oid and tid, a mailbox probe, and (stage 2a) a Graph mailbox: well-known folders and folders of the
 // person's own, messages with MIME, per-folder delta rounds (nextLink, deltaLink, `@removed` when a message leaves a
 // folder, 410 or syncStateNotFound once a folder's links expire), listings newest first, `$search`, throttling with a
-// Retry-After, and a count of requests at once.
+// Retry-After, and a count of requests at once. Stage 2b: the writes: PATCH and DELETE of a message, its move, folders
+// created, renamed and deleted, JSON batches (with a throttled request inside one), sendMail with MIME, a draft from MIME,
+// upload sessions (their PUTs refused with an Authorization header) and a draft's send, and answers lost after the
+// change was made.
 import { createHash } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { MicrosoftEndpoints } from "../microsoft";
@@ -29,6 +32,10 @@ export interface GraphMessageFixture {
   mime?: string;
 }
 interface Change { seq: number; folder: string; id: string; kind: "read" | "other" }
+/** what reached the outside world: a sendMail's MIME, or a draft's (with the files uploaded into it) */
+export interface SentFixture { via: "sendMail" | "draft"; mime: string; files: { name: string; size: number; isInline: boolean; contentId?: string; bytes: Buffer }[] }
+interface UploadSession { id: string; draft: string; name: string; size: number; isInline: boolean; contentId?: string; received: Buffer[]; at: number }
+type Answer = { status: number; headers?: Record<string, string>; body?: unknown };
 
 export class SyntheticMicrosoft {
   clientId = "00000000-0000-0000-0000-00000000c11e";
@@ -75,6 +82,8 @@ export class SyntheticMicrosoft {
   maxInflight = 0;
   /** `$value` answers wait for this, when set */
   valueGate: Promise<void> | null = null;
+  /** the smallest file an upload session takes (the page's 3 MB; tests lower it) */
+  uploadMin = 3 * 1024 * 1024;
   /** the next matching requests are throttled: a 429 (or a 503) with this Retry-After */
   throttle: { status: 429 | 503; retryAfter?: string; match?: RegExp; times: number } | null = null;
   /** how an expired link is refused: 410 Gone, or a 400 with error.code syncStateNotFound */
@@ -87,6 +96,26 @@ export class SyntheticMicrosoft {
   onRequest: ((pathAndQuery: string) => void) | null = null;
   /** a 401's body is held until this settles (the answer stays open) */
   unauthorizedGate: Promise<void> | null = null;
+  // ── stage 2b ──
+  /** what was sent, in order */
+  sent: SentFixture[] = [];
+  /** each JSON batch's requests (method and url), in order */
+  batches: { method: string; url: string }[][] = [];
+  /** the next requests inside batches that match are throttled (429, or 503 with a Retry-After) */
+  batchThrottle: { status: 429 | 503; retryAfter?: string; match?: RegExp; times: number } | null = null;
+  /** requests inside batches that came without `Prefer: IdType="ImmutableId"` */
+  batchMissingPrefer: string[] = [];
+  /** upload PUTs that carried an Authorization header (the page says never) */
+  uploadAuthorized = 0;
+  /** upload PUTs, in order: session and range */
+  uploads: { session: string; range: string }[] = [];
+  /**
+   * The change is made and its answer lost (the connection drops), for a request this matches: `method path?query`, a
+   * batch's as `POST /$batch`, an upload's as `PUT /upload`. `before`: the connection drops first, nothing changed.
+   */
+  lose: ((request: string) => "after" | "before" | undefined) | null = null;
+  /** sendMail and a draft's send wait for this, when set */
+  sendGate: Promise<void> | null = null;
   /** a first round's messages, kept for its pages */
   private rounds = new Map<number, string[]>();
   private roundSeq = 0;
@@ -101,6 +130,8 @@ export class SyntheticMicrosoft {
   private challenges = new Map<string, { challenge: string; redirectUri: string; clientId: string }>();
   private access = new Set<string>();
   private seq = 0;
+  private sessions = new Map<string, UploadSession>();
+  private sessionSeq = 0;
   private server = createServer((req, res) => void this.handle(req, res));
 
   constructor() {
@@ -184,10 +215,17 @@ export class SyntheticMicrosoft {
     this.changed(m.folder, id);
   }
 
-  /** deleted for good, with everything in it (no change is logged: its links now 404) */
+  /** deleted for good, with everything in it and every folder under it (no change is logged: its links now 404) */
   deleteFolder(id: string): void {
+    for (const child of [...this.folders.values()].filter((f) => f.parentFolderId === id)) this.deleteFolder(child.id);
     this.folders.delete(id);
     for (const [key, m] of this.messages) if (m.folder === id) this.messages.delete(key);
+  }
+
+  /** a message in the folder that has its well-known name (inbox, sentitems, …) or id */
+  inFolder(key: string): GraphMessageFixture[] {
+    const folder = this.folderOf(key);
+    return [...this.messages.values()].filter((m) => m.folder === folder?.id);
   }
 
   /** every link this folder handed out so far is refused from now on */
@@ -243,12 +281,19 @@ export class SyntheticMicrosoft {
 
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? "/", this.url);
-    let body = "";
-    for await (const chunk of req) body += chunk;
-    const json = (status: number, data: unknown) => {
-      res.writeHead(status, { "content-type": "application/json" });
-      res.end(JSON.stringify(data));
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(chunk as Buffer);
+    const raw = Buffer.concat(chunks);
+    const body = raw.toString("utf8");
+    const losing = this.lose?.(`${req.method} ${url.pathname.startsWith("/v1.0/upload/") ? "/upload" : url.pathname.replace(/^\/v1\.0/, "")}${url.pathname.startsWith("/v1.0/upload/") ? "" : url.search}`);
+    if (losing === "before") return void res.destroy();
+    const json = (status: number, data: unknown, headers: Record<string, string> = {}) => {
+      if (losing === "after") return void res.destroy();
+      res.writeHead(status, { "content-type": "application/json", ...headers });
+      res.end(data === undefined ? undefined : JSON.stringify(data));
     };
+    // an upload session's PUT: its URL carries its own authorization, and the page says to send none
+    if (url.pathname.startsWith("/v1.0/upload/") && req.method === "PUT") return this.uploadPut(url.pathname.slice("/v1.0/upload/".length), req, raw, json);
     if (url.pathname === "/common/oauth2/v2.0/token" && req.method === "POST") {
       const form = new URLSearchParams(body);
       this.tokenRequests.push(form);
@@ -293,6 +338,14 @@ export class SyntheticMicrosoft {
       await this.unauthorizedGate;
       return void res.end(JSON.stringify({ error: { code: "InvalidAuthenticationToken" } }));
     }
+    if (url.pathname === "/v1.0/$batch" && req.method === "POST") {
+      if (!authorized) return json(401, { error: { code: "InvalidAuthenticationToken" } });
+      if (!this.mailbox) return json(404, { error: { code: "MailboxNotEnabledForRESTAPI" } });
+      this.inflight++;
+      this.maxInflight = Math.max(this.maxInflight, this.inflight);
+      res.once("close", () => { this.inflight--; });
+      return this.batch(body, json);
+    }
     if (url.pathname === "/v1.0/me") {
       if (!authorized) return json(401, { error: { code: "InvalidAuthenticationToken" } });
       return json(200, { id: "graph-id", mail: this.mail, userPrincipalName: this.userPrincipalName, displayName: this.displayName });
@@ -310,7 +363,7 @@ export class SyntheticMicrosoft {
       this.inflight++;
       this.maxInflight = Math.max(this.maxInflight, this.inflight);
       res.once("close", () => { this.inflight--; });
-      try { return await this.graph(req, url, json, res); }
+      try { return await this.graph(req, url, json, res, body); }
       catch { if (!res.headersSent) json(500, { error: { code: "generalException" } }); }
       return;
     }
@@ -405,9 +458,165 @@ export class SyntheticMicrosoft {
     });
   }
 
-  private async graph(req: IncomingMessage, url: URL, json: (status: number, data: unknown) => void, res: ServerResponse): Promise<void> {
+  /** a request's JSON body (a batch's is already one) */
+  private static read(body: string): Record<string, unknown> {
+    try { const value = JSON.parse(body) as unknown; return value !== null && typeof value === "object" ? value as Record<string, unknown> : {}; } catch { return {}; }
+  }
+
+  /** a MIME message as Graph takes one: base64 in a text/plain body */
+  private static mime(body: string): string | null {
+    const text = body.trim();
+    if (!/^[A-Za-z0-9+/]+=*$/.test(text)) return null;
+    return Buffer.from(text, "base64").toString("utf8");
+  }
+
+  private messageFromMime(folder: string, mime: string, isDraft: boolean): string {
+    const subject = /^Subject: (.*)$/m.exec(mime)?.[1] ?? "";
+    const from = /^From: (?:.*<)?([^<>\s]+@[^<>\s]+?)>?$/m.exec(mime)?.[1] ?? this.userPrincipalName;
+    return this.deliver(folder, { mime, subject, from, isDraft, isRead: true });
+  }
+
+  /** a message as a write's answer gives it (the whole resource: its body too) */
+  private resource(m: GraphMessageFixture): Record<string, unknown> {
+    return { ...this.envelope(m, ["subject", "from"]), body: { contentType: "text", content: m.body } };
+  }
+
+  private async batch(body: string, json: (status: number, data: unknown) => void): Promise<void> {
+    const requests = SyntheticMicrosoft.read(body).requests;
+    if (!Array.isArray(requests) || requests.length > 20) return json(400, { error: { code: "BadRequest" } });
+    this.batches.push(requests.map((r: Record<string, unknown>) => ({ method: String(r.method), url: String(r.url) })));
+    const responses: { id: string; status: number; headers?: Record<string, string>; body?: unknown }[] = [];
+    // answered in parallel, so in any order (json-batching: "might appear in a different order"): the last first here
+    for (const r of [...requests].reverse() as Record<string, unknown>[]) {
+      const path = `/v1.0${String(r.url).split("?")[0]}`;
+      const headers = (r.headers ?? {}) as Record<string, string>;
+      if (!/IdType="ImmutableId"/.test(String(headers.prefer ?? headers.Prefer ?? ""))) this.batchMissingPrefer.push(String(r.url));
+      const throttle = this.batchThrottle;
+      if (throttle && throttle.times > 0 && (!throttle.match || throttle.match.test(`${r.method} ${String(r.url)}`))) {
+        throttle.times--;
+        responses.push({ id: String(r.id), status: throttle.status, headers: throttle.retryAfter !== undefined ? { "Retry-After": throttle.retryAfter } : {}, body: { error: { code: throttle.status === 429 ? "TooManyRequests" : "ServiceUnavailable" } } });
+        continue;
+      }
+      this.onRequest?.(`${path}${new URL(String(r.url), "http://x").search}`);
+      let answer: Answer = { status: 500 };
+      const capture = (status: number, data: unknown) => { answer = { status, body: data }; };
+      const fake = { method: r.method, headers: { prefer: headers.prefer ?? "" } } as unknown as IncomingMessage;
+      const url = new URL(`${this.url}${path}${new URL(String(r.url), "http://x").search}`);
+      try { await this.graph(fake, url, capture, null as unknown as ServerResponse, r.body === undefined ? "" : JSON.stringify(r.body)); }
+      catch { answer = { status: 500, body: { error: { code: "generalException" } } }; }
+      responses.push({ id: String(r.id), status: answer.status, ...(answer.body !== undefined && { body: answer.body }) });
+    }
+    return json(200, { responses });
+  }
+
+  private async uploadPut(id: string, req: IncomingMessage, raw: Buffer, json: (status: number, data: unknown, headers?: Record<string, string>) => void): Promise<void> {
+    if (req.headers.authorization) this.uploadAuthorized++;
+    const session = this.sessions.get(id);
+    const range = String(req.headers["content-range"] ?? "");
+    this.uploads.push({ session: id, range });
+    if (!session) return json(404, { error: { code: "ErrorItemNotFound" } });
+    const m = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(range);
+    const have = session.received.reduce((n, b) => n + b.length, 0);
+    // "You must upload bytes in a file in order"
+    if (!m || Number(m[1]) !== have || Number(m[2]) - Number(m[1]) + 1 !== raw.length || Number(m[3]) !== session.size || req.headers["content-type"] !== "application/octet-stream") return json(400, { error: { code: "InvalidRange" } });
+    session.received.push(raw);
+    const now = have + raw.length;
+    if (now < session.size) return json(200, { expirationDateTime: new Date(Date.now() + 3600_000).toISOString(), nextExpectedRanges: [`${now}-`] });
+    this.sessions.delete(id);
+    const draft = this.messages.get(session.draft);
+    if (draft) (this.files.get(draft.id) ?? this.files.set(draft.id, []).get(draft.id)!).push({ name: session.name, size: session.size, isInline: session.isInline, ...(session.contentId && { contentId: session.contentId }), bytes: Buffer.concat(session.received) });
+    return json(201, undefined, { location: `${this.url}/v1.0/me/messages/${encodeURIComponent(session.draft)}/attachments/${id}` });
+  }
+
+  /** files uploaded into each draft */
+  private files = new Map<string, SentFixture["files"]>();
+
+  private async graph(req: IncomingMessage, url: URL, json: (status: number, data: unknown) => void, res: ServerResponse, body = ""): Promise<void> {
     const parts = url.pathname.split("/").slice(3).map(decodeURIComponent);
     const select = (url.searchParams.get("$select") ?? "").split(",");
+    const method = req.method ?? "GET";
+    if (parts[0] === "sendMail" && parts.length === 1 && method === "POST") {
+      const mime = SyntheticMicrosoft.mime(body);
+      if (mime === null) return json(400, { error: { code: "ErrorMimeContentInvalidBase64String" } });
+      if (this.sendGate) await this.sendGate;
+      this.sent.push({ via: "sendMail", mime, files: [] });
+      // "This method saves the message in the Sent Items folder"
+      this.messageFromMime(this.folderOf("sentitems")!.id, mime, false);
+      return json(202, undefined);
+    }
+    if (parts[0] === "messages" && parts.length === 1 && method === "POST") {
+      const mime = SyntheticMicrosoft.mime(body);
+      if (mime === null) return json(400, { error: { code: "ErrorMimeContentInvalidBase64String" } });
+      // "By default, this operation saves the draft in the Drafts folder"
+      const id = this.messageFromMime(this.folderOf("drafts")!.id, mime, true);
+      return json(201, this.resource(this.messages.get(id)!));
+    }
+    if (parts[0] === "mailFolders" && method !== "GET") {
+      const read = SyntheticMicrosoft.read(body);
+      const folderAnswer = (f: GraphFolderFixture) => ({ id: f.id, displayName: f.displayName, parentFolderId: f.parentFolderId, childFolderCount: 0 });
+      const taken = (parent: string, name: string, except?: string) => [...this.folders.values()].some((f) => f.id !== except && f.parentFolderId === parent && f.displayName.toLowerCase() === name.toLowerCase());
+      if (method === "POST" && (parts.length === 1 || (parts.length === 3 && parts[2] === "childFolders"))) {
+        const parent = parts.length === 1 ? this.folderOf("msgfolderroot")! : this.folderOf(parts[1]!);
+        if (!parent) return json(404, { error: { code: "ErrorItemNotFound" } });
+        if (typeof read.displayName !== "string" || !read.displayName) return json(400, { error: { code: "ErrorInvalidRequest" } });
+        if (taken(parent.id, read.displayName)) return json(409, { error: { code: "ErrorFolderExists" } });
+        return json(201, folderAnswer(this.folders.get(this.folder(read.displayName, parent.id))!));
+      }
+      const folder = parts.length === 2 ? this.folderOf(parts[1]!) : undefined;
+      if (!folder) return json(404, { error: { code: "ErrorItemNotFound" } });
+      if (method === "PATCH") {
+        if (typeof read.displayName !== "string" || !read.displayName) return json(400, { error: { code: "ErrorInvalidRequest" } });
+        if (taken(folder.parentFolderId, read.displayName, folder.id)) return json(409, { error: { code: "ErrorFolderExists" } });
+        folder.displayName = read.displayName;
+        return json(200, folderAnswer(folder));
+      }
+      if (method === "DELETE") {
+        if (folder.wellKnown) return json(403, { error: { code: "ErrorDeleteDistinguishedFolder" } });
+        this.deleteFolder(folder.id);
+        return json(204, undefined);
+      }
+    }
+    if (parts[0] === "messages" && parts.length >= 2 && method !== "GET") {
+      const m = this.messages.get(parts[1]!);
+      if (!m) return json(404, { error: { code: "ErrorItemNotFound" } });
+      const read = SyntheticMicrosoft.read(body);
+      if (parts.length === 2 && method === "PATCH") {
+        if (typeof read.isRead === "boolean") this.setRead(m.id, read.isRead);
+        const flag = read.flag as { flagStatus?: string } | undefined;
+        if (flag && (flag.flagStatus === "flagged" || flag.flagStatus === "notFlagged" || flag.flagStatus === "complete")) this.setFlag(m.id, flag.flagStatus);
+        return json(200, this.resource(m));
+      }
+      if (parts.length === 2 && method === "DELETE") {
+        this.destroy(m.id);
+        return json(204, undefined);
+      }
+      if (parts[2] === "move" && parts.length === 3 && method === "POST") {
+        const to = typeof read.destinationId === "string" ? this.folderOf(read.destinationId) : undefined;
+        if (!to || to.searchFolder) return json(404, { error: { code: "ErrorItemNotFound" } });
+        this.move(m.id, to.id);
+        // "returns 201 Created response code and a message resource"
+        return json(201, this.resource(m));
+      }
+      if (parts[2] === "attachments" && parts[3] === "createUploadSession" && parts.length === 4 && method === "POST") {
+        const item = read.AttachmentItem as Record<string, unknown> | undefined;
+        if (!item || item.attachmentType !== "file" || typeof item.name !== "string" || typeof item.size !== "number") return json(400, { error: { code: "ErrorInvalidRequest" } });
+        // "a file … between 3 MB and 150 MB"
+        if (item.size < this.uploadMin || item.size > 150 * 1024 * 1024) return json(400, { error: { code: "ErrorAttachmentSizeShouldNotBeLessThanMinimumSize" } });
+        const id = `session-${++this.sessionSeq}`;
+        this.sessions.set(id, { id, draft: m.id, name: item.name, size: item.size, isInline: item.isInline === true, ...(typeof item.contentId === "string" && { contentId: item.contentId }), received: [], at: Date.now() });
+        return json(201, { uploadUrl: `${this.url}/v1.0/upload/${id}`, expirationDateTime: new Date(Date.now() + 3600_000).toISOString(), nextExpectedRanges: ["0-"] });
+      }
+      if (parts[2] === "send" && parts.length === 3 && method === "POST") {
+        if (!m.isDraft) return json(400, { error: { code: "ErrorInvalidOperation" } });
+        if (this.sendGate) await this.sendGate;
+        this.sent.push({ via: "draft", mime: this.mimeOf(m), files: this.files.get(m.id) ?? [] });
+        m.isDraft = false;
+        // "This method saves the message in the Sent Items folder"
+        this.move(m.id, this.folderOf("sentitems")!.id);
+        return json(202, undefined);
+      }
+      return json(400, { error: { code: "badRequest" } });
+    }
     // /me/mailFolders, /me/mailFolders/{id}, …/childFolders, …/messages, …/messages/delta
     if (parts[0] === "mailFolders") {
       const children = (parent: string, path: string) => {

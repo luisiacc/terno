@@ -4,7 +4,7 @@
 // throttling-limits), paced under its 10,000 requests in ten minutes, and redirects refused. Each synced folder keeps a
 // delta cursor (learn.microsoft.com/graph/delta-query-messages): a first sync lists the window newest first, then starts
 // the folder's delta; `@removed` only says a message left that folder. Bodies are `$value` MIME through the incoming
-// pool, as Gmail's are. Writes (flags, moves, folders, send) are stage 2b's: `execute` refuses them for now.
+// pool, as Gmail's are. Writes (flags, moves, folders, send) are stage 2b's, in graph-writes.ts.
 import { FOLDER_NAME_MAX, FOLDERS_PER_ACCOUNT_MAX, MAX_INCOMING_MIME_BYTES, isValidEmail } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
@@ -16,10 +16,14 @@ import { readIncomingBody, type IncomingBody } from "./incoming-body";
 import { IncomingProcessingError } from "./incoming-processing";
 import { retainedIncomingBytes } from "./incoming-size";
 import { createMicrosoftSession, MICROSOFT_ENDPOINTS, type MicrosoftEndpoints } from "./microsoft";
+import { codesOf, IMMUTABLE, isRecord, mailboxRefusedCodes, ROLES, type Call, type Catalog, type Role, type SyncedFolder } from "./graph-shared";
+import { createGraphWrites } from "./graph-writes";
 import { parseRaw, type ParsedMessage } from "./mime";
-import { isFetchNetworkFailure, RequestNotDispatchedError } from "./net-errors";
-import { deadlineSignal, download, inlineCandidate, IncomingCaptureRefusal, IncomingResourceError, MESSAGE_FAILURES, processingError, READ_TIMEOUT_MS, type Held, type RequestDeadline } from "./rest-provider";
-import { BACKFILL_CHUNK_MS, ProviderAuthError, ProviderError, type HttpRequestContext, type HttpResponseEvidence, type MailAdmission, type MailProvider, type ProviderContext, type ProviderHit, type ProviderOp, type ProviderQuery, type RequestRun, type SyncSink } from "./types";
+import { failedBeforeRequest, isFetchNetworkFailure, RequestNotDispatchedError } from "./net-errors";
+import { throttled } from "./provider-http";
+import { deadlineSignal, download, inlineCandidate, IncomingCaptureRefusal, IncomingResourceError, MESSAGE_FAILURES, NEVER, processingError, READ_TIMEOUT_MS, SEND_TIMEOUT_MS, type Held, type RequestDeadline } from "./rest-provider";
+import { resolveRetryMinimum, type RetryMinimum } from "./retry-after-deadline";
+import { BACKFILL_CHUNK_MS, ProviderAuthError, ProviderError, type BoundedHttpHeader, type HttpReceipt, type HttpRequestContext, type HttpResponseEvidence, type MailAdmission, type MailProvider, type Observation429, type ProviderContext, type ProviderHit, type ProviderOp, type ProviderQuery, type RequestRun, type SendPayload, type SyncSink } from "./types";
 
 /** Outlook's limit per app and mailbox (learn.microsoft.com/graph/throttling-limits, "Outlook service limits") */
 export const GRAPH_CONCURRENCY = 4;
@@ -52,31 +56,47 @@ export const FLAG_SNAPSHOTS_MS = 30_000;
 const SEARCH_MAX = 1000;
 /** what an envelope read selects: all a sync needs to place and flag a message */
 const SELECT = "id,receivedDateTime,isRead,isDraft,flag,parentFolderId";
-const IMMUTABLE = 'IdType="ImmutableId"';
 const MAIL: HttpRequestContext = { endpoint: "graph-api", purpose: "mail" };
 const IDENTITY: HttpRequestContext = { endpoint: "microsoft-identity", purpose: "identity-proof" };
 
-type Role = "inbox" | "sent" | "drafts" | "trash" | "junk" | "archive";
-/** Graph's well-known folder names (learn.microsoft.com/graph/api/resources/mailfolder) for Terno's roles */
-const ROLES: Record<Role, string> = { inbox: "inbox", sent: "sentitems", drafts: "drafts", trash: "deleteditems", junk: "junkemail", archive: "archive" };
 /** folders that hold no mail of the person's: never synced, nor anything under them */
 const EXCLUDED = ["outbox", "conversationhistory", "syncissues"];
 
 const enc = encodeURIComponent;
 const iso = (ms: number) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
 const nonempty = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0;
 const invalid = () => new ProviderError(L("errors.outlook.invalidResponse"), true);
 const offline = () => L("errors.outlook.requestOffline");
 
 /** Graph refused a request: its status, and Graph's codes (error.code and the nested innererror codes). */
 export class GraphApiError extends ProviderError {
-  constructor(readonly target: string, readonly status: number, readonly codes: readonly string[], retryable: boolean, httpResponse?: HttpResponseEvidence) {
-    super(L("errors.outlook.requestFailed", { status }), retryable, false, false, httpResponse);
+  constructor(readonly target: string, readonly status: number, readonly codes: readonly string[], retryable: boolean, httpResponse?: HttpResponseEvidence, ambiguous = false) {
+    super(L("errors.outlook.requestFailed", { status }), retryable && !ambiguous, ambiguous, false, httpResponse);
   }
+}
+
+/** a pause's end, comparable: none (no Retry-After) waits least */
+const pauseEnd = (m: RetryMinimum) => m.kind === "at" ? m.atMs : m.kind === "hold" ? Number.MAX_SAFE_INTEGER : -1;
+
+/**
+ * Plan 259 stage 2b: the longest wait a JSON batch's throttled requests ask for ("if any request exceeds the limits, it
+ * fails with a status of 429": learn.microsoft.com/graph/json-batching), read as a top-level 429's headers are. A
+ * Retry-After inside a sub-response isn't promised by the page: without one the pause is the ledger's own.
+ */
+export function batchThrottle(value: unknown, now = Date.now()): Observation429 | undefined {
+  if (!isRecord(value) || !Array.isArray(value.responses)) return;
+  const received: HttpReceipt = { source: "date-now", kind: "wall", wallMs: now };
+  let found: Observation429 | undefined;
+  for (const r of value.responses) {
+    if (!isRecord(r) || typeof r.status !== "number") continue;
+    const header = isRecord(r.headers) ? Object.entries(r.headers).find(([name]) => name.toLowerCase() === "retry-after")?.[1] : undefined;
+    const retryAfter: BoundedHttpHeader = header === undefined ? { kind: "not-visible" } : typeof header === "string" && header.length <= 256 ? { kind: "value", value: header } : { kind: "too-long" };
+    if (!throttled(MAIL, r.status, retryAfter.kind === "value")) continue;
+    const minimum = resolveRetryMinimum({ received, retryAfter, serverDate: { kind: "not-visible" } });
+    if (!found || pauseEnd(minimum) > pauseEnd(found.minimum)) found = { received, minimum };
+  }
+  return found;
 }
 
 /** A delta link Graph no longer takes: `410 Gone` or a `syncStateNotFound` (learn.microsoft.com/graph/delta-query-overview). */
@@ -86,25 +106,12 @@ class DeltaExpired extends ProviderError {
 
 class ProofTokenExpired extends Error {}
 
-/** Graph's error codes, top-level and nested (only tokens; never message text). */
+/** Graph's error codes in an answer's text (an unreadable body says only its status). */
 function graphCodes(text: string): string[] {
-  const codes: string[] = [];
-  try {
-    let error: unknown = (JSON.parse(text) as Record<string, unknown> | null)?.error;
-    for (let depth = 0; isRecord(error) && depth < 5; depth++) {
-      if (typeof error.code === "string" && /^[A-Za-z0-9_.]{1,64}$/.test(error.code)) codes.push(error.code);
-      error = error.innererror ?? error.innerError;
-    }
-  } catch { /* an unreadable body says only its status */ }
-  return codes;
+  try { return codesOf(JSON.parse(text)); } catch { return []; }
 }
 
-/**
- * The mailbox itself refused ("REST API is not yet supported for this mailbox": learn.microsoft.com/troubleshoot/exchange/
- * user-and-shared-mailboxes/rest-api-is-not-yet-supported-for-this-mailbox-error): a 404 that says nothing of a message.
- */
-const MAILBOX_REFUSED = new Set(["mailboxnotenabledforrestapi", "mailboxnotsupportedforrestapi"]);
-const mailboxRefused = (error: GraphApiError) => error.codes.some((code) => MAILBOX_REFUSED.has(code.toLowerCase()));
+const mailboxRefused = (error: GraphApiError) => mailboxRefusedCodes(error.codes);
 
 /**
  * What a 404 on this very request says isn't there (a message, a folder): Graph's own error code read, and not the
@@ -173,16 +180,6 @@ function readPage(value: unknown): Page {
   return { items: [...items.values()], ...(next !== undefined && { next: next as string }), ...(delta !== undefined && { delta: delta as string }) };
 }
 
-/** A folder Terno syncs: a role folder (its flags say where) or one of the person's own (its id is the folder key). */
-interface SyncedFolder { id: string; role?: Role }
-
-interface Catalog {
-  at: number;
-  byRole: Partial<Record<Role, string>>;
-  synced: Map<string, SyncedFolder>;
-  folders: ProviderFolder[];
-}
-
 /**
  * A folder's place. `after`: where its delta's window starts. `delta`: the link to read next (absent: its first round,
  * from the window's filter). `initial`: still that first round. `round`: when the round under way began. `list`: the
@@ -229,28 +226,17 @@ export interface GraphApiOptions {
   pageSize?: number;
   /** tests only: how often a user folder's delta is read (USER_FOLDERS_EVERY_MS) */
   userFoldersEveryMs?: number;
+  /** stage 2b: the MIME a send carries (desktop: nodemailer's, Bcc kept: Graph reads a MIME message's headers) */
+  buildRaw?: (payload: SendPayload) => Promise<Uint8Array>;
+  /** tests only: a send's deadline (SEND_TIMEOUT_MS) */
+  sendTimeoutMs?: number;
+  /** tests only: the attachment size from which a send goes through a draft and upload sessions */
+  largeAttachmentBytes?: number;
+  /** tests only: an upload session's piece */
+  uploadPieceBytes?: number;
 }
 
 interface IncomingResource { parsed: ParsedMessage; bytes: number; promoted: boolean; release(): void }
-
-interface Call {
-  /** the caller's (a pass's, a reader's) */
-  signal?: AbortSignal;
-  readReset?: AbortSignal;
-  /** a pass that gave up: its queued requests never leave */
-  preparation?: AbortSignal;
-  context?: HttpRequestContext;
-  admission?: MailAdmission;
-  proofToken?: string;
-  /** the proof's read with a token already renewed once: a 401 now means signing in again */
-  proofFinal?: boolean;
-  generation?: number;
-  limit?: number;
-  /** `Prefer: odata.maxpagesize` */
-  page?: boolean;
-  /** a delta link: its expiry is DeltaExpired */
-  delta?: boolean;
-}
 
 /** At most `width` requests at once; a waiter that's aborted leaves the queue. */
 function createSlots(width: number) {
@@ -402,7 +388,7 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
     const generation = call.generation ?? ctx.requests?.generation();
     const waitOn = call.preparation ?? call.signal;
     waitOn?.throwIfAborted();
-    const token = call.proofToken ?? (waitOn ? await untilAborted(tokens.get(undefined, call.admission), waitOn) : await tokens.get(undefined, call.admission));
+    const token = call.proofToken ?? (waitOn ? await untilAborted(tokens.get(call.run, call.admission), waitOn) : await tokens.get(call.run, call.admission));
     if (ctx.requests && !call.proofToken) {
       try {
         await ctx.requests.prove(() => mailbox({ signal: call.signal, readReset: call.readReset, preparation: call.preparation, admission: call.admission, proofToken: token, proofFinal: retried, generation }), call.admission);
@@ -412,20 +398,38 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       }
     }
     const url = resolve(target);
-    // Outlook's own pace and its four at once: what's queued leaves only for a pass still going
-    if (!quota.unpaced) await quota.spend(1, waitOn);
+    // Outlook's own pace and its four at once: what's queued leaves only for a pass still going; a send the person
+    // asked for counts but never waits on the pace
+    if (call.submission) quota.charge(1);
+    else if (!quota.unpaced) await quota.spend(1, waitOn);
     const release = await slots.acquire(waitOn);
     let holding = true;
     const free = () => { if (holding) { holding = false; release(); } };
-    const deadline = deadlineSignal(call.readReset ?? reads.signal, call.signal, readTimeout);
-    const failed = (error: unknown) => error instanceof RequestNotDispatchedError ? error : isFetchNetworkFailure(error) ? ProviderError.network(offline()) : new ProviderError(offline(), true);
+    const sending = call.submission === true;
+    // a send isn't cut by a network change and has a send's deadline; anything else is safe to repeat
+    const deadline = deadlineSignal(sending ? NEVER : (call.readReset ?? reads.signal), call.signal, sending ? (options.sendTimeoutMs ?? SEND_TIMEOUT_MS) : readTimeout);
+    const failed = (error: unknown) => {
+      if (error instanceof RequestNotDispatchedError) return error;
+      // a send that never connected never left (it waits for the network); one that may have left is unknown (plan 65)
+      if (sending) return failedBeforeRequest(error) ? ProviderError.network(offline()) : new ProviderError(offline(), false, true);
+      return isFetchNetworkFailure(error) ? ProviderError.network(offline()) : new ProviderError(offline(), true);
+    };
+    let settleBatch: ((throttled?: Observation429) => Promise<void>) | undefined;
     try {
       let response: Response;
       let evidence: HttpResponseEvidence | undefined;
       try {
         deadline.signal.throwIfAborted();
-        const init: RequestInit = { method: "GET", redirect: "error", signal: deadline.signal, headers: { authorization: `Bearer ${token}`, prefer: call.page ? `${IMMUTABLE}, odata.maxpagesize=${pageSize}` : IMMUTABLE } };
-        const sent = ctx.requests ? ctx.requests.request({ request: context, admission: call.admission, generation, onHeaders: (_status, observed) => { evidence = observed; } }, url, init) : netFetch(url, init);
+        const headers: Record<string, string> = { authorization: `Bearer ${token}`, prefer: call.page ? `${IMMUTABLE}, odata.maxpagesize=${pageSize}` : IMMUTABLE };
+        if (call.body !== undefined) headers["content-type"] = call.contentType ?? "application/json";
+        const init: RequestInit = { method: call.method ?? "GET", redirect: "error", signal: deadline.signal, headers, ...(call.body !== undefined && { body: call.body }) };
+        // the submission marks itself as the boundary: past it, the message may have gone
+        const run = sending && call.run ? { markDispatched() { call.run!.markDispatched(); call.run!.markSubmissionDispatched?.(); } } : call.run;
+        const sent = ctx.requests ? ctx.requests.request({
+          request: context, admission: call.admission, generation, ...(run && { run }),
+          ...(call.batch && { onBatch: (settle: (throttled?: Observation429) => Promise<void>) => { if (deadline.signal.aborted) void settle(); else settleBatch = settle; } }),
+          onHeaders: (_status, observed) => { evidence = observed; },
+        }, url, init) : netFetch(url, init);
         response = await untilAborted(sent.then((r) => {
           if (deadline.signal.aborted) { cancelResponse(r); throw deadline.signal.reason; }
           if (!r.ok && !evidence) evidence = captureHttpResponseEvidence(r, context, Date.now());
@@ -447,7 +451,8 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
         const codes = graphCodes(text);
         // learn.microsoft.com/graph/delta-query-overview: "410 Gone", or "a 40X-series error with error codes such as syncStateNotFound"
         if (call.delta && (response.status === 410 || (response.status >= 400 && response.status < 500 && codes.some((c) => c.toLowerCase() === "syncstatenotfound")))) throw new DeltaExpired();
-        throw new GraphApiError(target, response.status, codes, response.status === 429 || response.status >= 500, evidence);
+        // a send Graph failed with a server error may still have gone: unknown, never sent again (plan 65)
+        throw new GraphApiError(target, response.status, codes, response.status === 429 || response.status >= 500, evidence, sending && response.status >= 500);
       }
       if (call.mime) {
         try { return await incomingResponse(response, deadline, call, free); }
@@ -457,20 +462,36 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
           throw failed(error);
         }
       }
+      if (call.empty) {
+        // 202 Accepted / 204 No Content: the status is the answer (a body that doesn't end changes nothing)
+        await readResponseText(response, SMALL_BYTES, deadline.signal).catch(() => "");
+        free();
+        return undefined;
+      }
       let text: string;
       try { text = await readResponseText(response, call.limit ?? PAGE_BYTES, deadline.signal, yieldPage); }
       catch (error) {
+        // accepted, and its answer unreadable: a send's outcome is still the status's (a draft path step is retried)
         if (error instanceof ResponseBodyLimitError) throw invalid();
         if (!deadline.signal.aborted && !isFetchNetworkFailure(error)) throw invalid();
         throw failed(error);
       }
       free();
-      try { return JSON.parse(text) as unknown; } catch { throw invalid(); }
+      let value: unknown;
+      try { value = JSON.parse(text) as unknown; } catch { throw invalid(); }
+      if (settleBatch) {
+        const settle = settleBatch;
+        settleBatch = undefined;
+        await settle(batchThrottle(value));
+      }
+      return value;
     } finally {
+      if (settleBatch) await settleBatch().catch(() => {});
       deadline.done();
       free();
     }
   }
+
 
   // ───────────────────────────── folders ─────────────────────────────
 
@@ -563,7 +584,8 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       synced.set(node.id, { id: node.id });
       folders.push({ key: node.id, path, selectable: true });
     }
-    const next: Catalog = { at: Date.now(), byRole, synced, folders };
+    const tree = new Map([...nodes.values()].map((node) => [node.id, { name: node.name, parent: node.parent }]));
+    const next: Catalog = { at: Date.now(), byRole, synced, folders, tree };
     // the cache moves only once the list is stored (a failed write reads it again next pass)
     await sink.setFolders?.(next.folders);
     catalog = next;
@@ -1233,6 +1255,77 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
     if (sink.held.error !== undefined) throw sink.held.error;
   }
 
+  // ───────────────────────────── writes (stage 2b) ─────────────────────────────
+
+  /** the role folders' ids for the writes: the catalog's, else each read by its well-known name once (ids never change) */
+  let roles: Partial<Record<Role, string>> | undefined;
+  async function roleIds(): Promise<Partial<Record<Role, string>>> {
+    if (catalog) return catalog.byRole;
+    if (roles) return roles;
+    const found: Partial<Record<Role, string>> = {};
+    await download(Object.entries(ROLES) as [Role, string][], async ([role, name]) => {
+      const target = `/me/mailFolders/${name}?$select=id`;
+      try {
+        const folder = await api(target, { limit: SMALL_BYTES });
+        if (!isRecord(folder) || !nonempty(folder.id) || folder.id.length > ID_MAX) throw invalid();
+        found[role] = folder.id;
+      } catch (error) {
+        if (!notFound(error, target)) throw error;
+      }
+    }, GRAPH_CONCURRENCY);
+    return (roles = found);
+  }
+
+  /**
+   * An upload session's URL, which Graph hands back "in the https://outlook.office.com domain" (learn.microsoft.com/
+   * graph/outlook-large-attachments): that host over https, or Graph's own root (a synthetic Graph's). Nowhere else.
+   */
+  function uploadTarget(target: string): string {
+    let url: URL;
+    try { url = new URL(target); } catch { throw invalid(); }
+    const graphs = url.origin === graphBase.origin && url.pathname.startsWith(`${graphBase.pathname.replace(/\/$/, "")}/`);
+    if (target.length > LINK_MAX || url.username || url.password || !(graphs || (url.protocol === "https:" && url.hostname === "outlook.office.com"))) throw invalid();
+    return url.href;
+  }
+
+  /**
+   * One piece of an upload session: a PUT of its bytes with their Content-Range, and no Authorization ("Do not specify
+   * an Authorization request header": the URL carries its own). 200 asks for more; 201 Created was the last.
+   */
+  async function upload(target: string, piece: Uint8Array, start: number, total: number, run?: RequestRun): Promise<boolean> {
+    ctx.requests?.check(MAIL, "send");
+    const url = uploadTarget(target);
+    quota.charge(1);
+    const release = await slots.acquire();
+    const generation = ctx.requests?.generation();
+    const deadline = deadlineSignal(reads.signal, undefined, options.sendTimeoutMs ?? SEND_TIMEOUT_MS);
+    try {
+      let response: Response;
+      let evidence: HttpResponseEvidence | undefined;
+      try {
+        const init: RequestInit = { method: "PUT", redirect: "error", signal: deadline.signal, body: piece as Uint8Array<ArrayBuffer>, headers: { "content-type": "application/octet-stream", "content-range": `bytes ${start}-${start + piece.byteLength - 1}/${total}` } };
+        const sent = ctx.requests ? ctx.requests.request({ request: MAIL, admission: "send", generation, ...(run && { run }), onHeaders: (_status, observed) => { evidence = observed; } }, url, init) : netFetch(url, init);
+        response = await untilAborted(sent, deadline.signal);
+      } catch (error) {
+        if (error instanceof RequestNotDispatchedError) throw error;
+        throw isFetchNetworkFailure(error) ? ProviderError.network(offline()) : new ProviderError(offline(), true);
+      }
+      const text = await readResponseText(response, SMALL_BYTES, deadline.signal).catch(() => "");
+      if (response.status === 200 || response.status === 201) return response.status === 201;
+      throw new GraphApiError("upload", response.status, graphCodes(text), response.status === 429 || response.status >= 500, evidence ?? captureHttpResponseEvidence(response, MAIL, Date.now()));
+    } finally {
+      deadline.done();
+      release();
+    }
+  }
+
+  const writes = createGraphWrites({
+    ctx, api, roleIds, upload,
+    readCatalog: () => readCatalog({ signal: NEVER }),
+    refusal: (error) => error instanceof GraphApiError ? { status: error.status, codes: error.codes } : undefined,
+    buildRaw: options.buildRaw, largeAttachmentBytes: options.largeAttachmentBytes, uploadPieceBytes: options.uploadPieceBytes,
+  });
+
   return {
     flagSnapshots: true,
     // plan 176: a quick pass is one Inbox delta request when nothing is new
@@ -1363,10 +1456,26 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       }
     },
 
-    // Stage 2b: flags, moves, archive, trash, spam, folder changes and send. Until then an Outlook op says so plainly.
+    // stage 2b (graph-writes.ts): flags, moves, archive, trash, spam, a filing and its undo, and send
     async execute(op: ProviderOp) {
       ctx.requests?.check(MAIL, op.kind === "send" ? "send" : "background");
-      throw new ProviderError(L("errors.outlook.actionNotYet"), false);
+      await writes.execute(op);
+    },
+
+    // plan 107, stage 2b: the host holds the account's sync and ops meanwhile
+    async createFolder(input) {
+      ctx.requests?.check(MAIL);
+      return writes.createFolder(input);
+    },
+
+    async renameFolder(input) {
+      ctx.requests?.check(MAIL);
+      return writes.renameFolder(input);
+    },
+
+    async deleteFolder(input) {
+      ctx.requests?.check(MAIL);
+      return writes.deleteFolder(input);
     },
 
     reset() {
@@ -1382,9 +1491,9 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
 }
 
 /** Desktop: the Graph client over the account's rotating refresh token (createMicrosoftSession). */
-export function createGraphProvider(ctx: ProviderContext, options: { endpoints?: Partial<MicrosoftEndpoints>; requestsPerSecond?: number } = {}): MailProvider {
+export function createGraphProvider(ctx: ProviderContext, options: { endpoints?: Partial<MicrosoftEndpoints>; requestsPerSecond?: number; buildRaw?: GraphApiOptions["buildRaw"] } = {}): MailProvider {
   const session = createMicrosoftSession(ctx, { endpoints: options.endpoints });
-  const provider = createGraphApiProvider(ctx, { endpoints: options.endpoints, requestsPerSecond: options.requestsPerSecond, tokens: { get: session.get, invalidate: session.invalidate } });
+  const provider = createGraphApiProvider(ctx, { endpoints: options.endpoints, requestsPerSecond: options.requestsPerSecond, buildRaw: options.buildRaw, tokens: { get: session.get, invalidate: session.invalidate } });
   const close = provider.close.bind(provider);
   provider.close = async () => {
     session.close();

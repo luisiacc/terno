@@ -6,6 +6,7 @@ import { revokeGoogleToken } from "./google-revoke";
 import { createImapProvider, type ImapProviderOptions } from "./imap";
 import { connectMicrosoft, type MicrosoftEndpoints } from "./microsoft";
 import { createGraphProvider } from "./graph-api";
+import { buildRaw } from "./compose";
 import { sendViaSmtp, verifySmtp } from "./smtp";
 import { unhandled } from "@terno/core";
 import { ProviderError, type ImapAccountConfig, type ProviderRegistry, type SendPayload } from "./types";
@@ -45,8 +46,8 @@ export function createRegistry(options: RegistryOptions = {}): ProviderRegistry 
       const kind = ctx.account.kind;
       switch (kind) {
       case "gmail": return createGmailProvider(ctx, options.gmail);
-      // plan 259 stage 2a: Outlook over Microsoft Graph (reads; its writes are stage 2b's)
-      case "outlook": return createGraphProvider(ctx, options.microsoft);
+      // plan 259: Outlook over Microsoft Graph; a send's MIME is nodemailer's, its Bcc kept (Graph reads the headers)
+      case "outlook": return createGraphProvider(ctx, { ...options.microsoft, buildRaw: (payload) => buildRaw(payload, { keepBcc: true }) });
       case "imap": return createImapProvider(ctx, options.imap);
       default: return unhandled(kind);
       }

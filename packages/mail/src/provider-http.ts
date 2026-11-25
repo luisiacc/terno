@@ -44,6 +44,18 @@ export async function requestHttp(
         } finally { ticket.release(); }
       });
       transferred = true;
+    } else if (response.ok && descriptor.onBatch) {
+      // plan 259: a batch's sub-responses are read first; the reader settles the ticket (a throttled one as a 429)
+      let settled = false;
+      descriptor.onBatch(async (observation) => {
+        if (settled) return;
+        settled = true;
+        try {
+          if (observation) await ticket.headers429(observation);
+          else ticket.headers(response.status);
+        } finally { ticket.release(); }
+      });
+      transferred = true;
     } else {
       ticket.headers(response.status);
     }

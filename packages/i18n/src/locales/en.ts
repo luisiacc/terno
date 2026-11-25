@@ -2565,6 +2565,7 @@ It contains none of your mail, contacts, settings or keys.
   "errors.outlook.requestFailed": "Outlook couldn’t complete the request ({status}). Try again or check this account’s access.",
   "errors.outlook.requestOffline": "Couldn’t reach Outlook. Check your connection and try again.",
   "errors.outlook.actionNotYet": "Terno can’t change Outlook mail yet, so this change wasn’t made in Outlook.",
+  "errors.outlook.noArchive": "This Outlook mailbox has no Archive folder, so nothing was archived. Archive it in Outlook, or move it to a folder.",
   "errors.passwordRequired": "Enter the account’s password.",
   "errors.passwordToVerify": "Enter the account’s password to verify it.",
   "errors.couldNotConnect": "Couldn’t connect: {detail}",

@@ -7,7 +7,7 @@ let ms: SyntheticMicrosoft | undefined;
 afterEach(async () => { await ms?.stop(); ms = undefined; });
 
 describe("the registry per account kind (plan 259)", () => {
-  it("stage 2a: Outlook gets its Graph provider, never IMAP's: it verifies against Graph with the stored refresh token, and refuses writes until stage 2b", async () => {
+  it("Outlook gets its Graph provider, never IMAP's: it verifies against Graph with the stored refresh token, and sends with nodemailer's MIME (stage 2b)", async () => {
     ms = await new SyntheticMicrosoft().start();
     const refresh = ms.accessToken().replace("access-", "refresh-");
     ms.refreshTokens.add(refresh);
@@ -26,10 +26,11 @@ describe("the registry per account kind (plan 259)", () => {
     expect(ms.graphRequests).toEqual(["/v1.0/me"]);
     // the refresh token rotated and was kept
     expect(secret).not.toBe(refresh);
-    const refusal = await provider.execute({ id: "1", kind: "markRead", target: { messageIds: [1] }, payload: {} }).catch((error: unknown) => error);
-    expect(refusal).toBeInstanceOf(ProviderError);
-    expect((refusal as ProviderError).i18n?.key).toBe("errors.outlook.actionNotYet");
-    expect((refusal as ProviderError).retryable).toBe(false);
+    // stage 2b: a send's MIME is nodemailer's, its Bcc kept (Graph reads a MIME message's headers)
+    const sent = await provider.execute({ id: "1", kind: "send", target: {}, payload: { from: { name: "Ana", email: "ana@contoso.com" }, to: [{ name: "", email: "bo@example.test" }], cc: [], bcc: [{ name: "", email: "hidden@example.test" }], subject: "Hi", text: "Hello", messageId: "r1@contoso.com", inReplyTo: null, references: [], providerThreadId: null } }).catch((error: unknown) => error);
+    expect(sent).not.toBeInstanceOf(ProviderError);
+    expect(ms.sent).toHaveLength(1);
+    expect(ms.sent[0]!.mime).toMatch(/^Bcc: hidden@example\.test/m);
     await provider.close();
   });
 });

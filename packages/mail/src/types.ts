@@ -497,6 +497,12 @@ export interface RequestDescriptor {
   /** Host-owned synchronous status capture; no I/O, throw or await. */
   /** Gmail hands back one bounded-body classification; the ticket stays owned until settlement. */
   readonly onForbidden?: (settle: (kind: "quota" | "policy" | "none", policyError?: ProviderError) => Promise<void>) => void;
+  /**
+   * Plan 259: a JSON batch (Graph's `$batch`). Its 200 says nothing of the requests inside, any of which may be throttled
+   * ("it fails with a status of 429": learn.microsoft.com/graph/json-batching). The ticket stays owned until the reader
+   * settles: with a throttled sub-response's observation (recorded as a top-level 429 is), or none.
+   */
+  readonly onBatch?: (settle: (throttled?: Observation429) => Promise<void>) => void;
   readonly onHeaders?: (status: number, evidence?: HttpResponseEvidence) => void;
 }
 export interface Observation429 {

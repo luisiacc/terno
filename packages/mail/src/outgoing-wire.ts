@@ -19,3 +19,21 @@ export async function gmailSendBody(raw: Uint8Array, threadId: string | null): P
   parts.push(new Blob([suffix]));
   return new Blob(parts, { type: "application/json" });
 }
+
+/**
+ * Plan 259: a MIME message as Graph takes one (sendMail, a draft): the bytes in base64 as a `text/plain` body
+ * (learn.microsoft.com/graph/api/user-sendmail). Encoded a piece at a time, yielding between.
+ */
+export async function graphMimeBody(raw: Uint8Array): Promise<Blob> {
+  checkMimeSize(raw.byteLength);
+  const parts: string[] = [];
+  // divisible by three: only the last piece is padded
+  for (let i = 0; i < raw.length; i += 24576) {
+    const bytes = raw.subarray(i, i + 24576);
+    let binary = "";
+    for (let j = 0; j < bytes.length; j += 8192) binary += String.fromCharCode(...bytes.subarray(j, j + 8192));
+    parts.push(btoa(binary));
+    if (i + 24576 < raw.length) await yieldPreparation();
+  }
+  return new Blob(parts, { type: "text/plain" });
+}
