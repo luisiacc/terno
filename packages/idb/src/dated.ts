@@ -147,7 +147,7 @@ export function datedSource(c: Ctx, messageId: number): DatedSource | null {
     id: m.id, threadId: m.thread_id, accountId: m.account_id, subject: m.subject ?? "", date: m.date, fromName: m.from_name ?? "", fromEmail: email, senderKey: addressKey(email),
     to, cc, readerIn: readerIn(to, cc, mine),
     automated: !!m.is_bulk || m.list_id != null, tab: datedTab(Number(thread.tab ?? 0), m.category ?? null),
-    person: senderIsPerson({ from_email: email, list_id: m.list_id ?? null, is_bulk: m.is_bulk ? 1 : 0, gmail_labels: m.gmail_labels ?? null, is_spam: m.is_spam ? 1 : 0 }, { written: (key) => T(c, "correspondents").get(key)?.written === 1 }),
+    person: senderIsPerson({ from_email: email, list_id: m.list_id ?? null, is_bulk: m.is_bulk ? 1 : 0, gmail_labels: m.gmail_labels ?? null, is_spam: m.is_spam ? 1 : 0, rfc_message_id: m.rfc_message_id ?? null }, { written: (key) => T(c, "correspondents").get(key)?.written === 1 }),
     draft: !!m.is_draft, sent: !!m.is_sent, spam: !!m.is_spam, trash: !!m.is_trash, threadSpam: messages.by("fk_thread_id", m.thread_id).some((x) => !!x.is_spam), own: receivedOwn(c).has(email.toLowerCase()),
     bodyState: m.body_state, bodyUnavailable: m.attachments_captured === 2 && m.body_state !== "full",
   };

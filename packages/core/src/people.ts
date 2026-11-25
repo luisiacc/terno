@@ -60,6 +60,31 @@ const SENDING_LABELS: ReadonlySet<string> = new Set(["mail", "email", "e", "em",
 /** Domains whose mail is automated in practice. Weak: someone there you wrote to is a person. */
 const AUTOMATED_DOMAINS: ReadonlySet<string> = new Set(["facebookmail.com", "linkedin.com", "x.com", "twitter.com", "pinterest.com", "mail.instagram.com", "accounts.google.com"]);
 
+/**
+ * Plan 278: the Message-ID's domain of mail sent through a sending service (Amazon SES, SendGrid, Postmark, SparkPost).
+ * A heuristic, as the role words are: no service documents its format (SES says only that it sets its own), so a change
+ * there only means its mail stops being caught. Strong: an app sends through these from any address it likes (`hello@`,
+ * `sac@`), and writing to that address once (to its support) doesn't make its receipts a person's.
+ */
+const SERVICE_DOMAINS = ["amazonses.com", "sendgrid.net", "mtasv.net", "sparkpostmail.com", "prd.sparkpost"];
+/** SendGrid's bare host (no domain): `ismtpd0012p1mdw1`, `geopod-ismtpd-54` */
+const SENDGRID_HOST = /^(?:geopod-)?ismtpd[-0-9a-z]*$/;
+
+/** Was this message sent through a sending service, by its Message-ID's domain (plan 278)? Exact domains or their subdomains. */
+export function sentByService(rfcMessageId: string | null): boolean {
+  if (!rfcMessageId) return false;
+  const at = rfcMessageId.lastIndexOf("@");
+  if (at < 0) return false;
+  const host = rfcMessageId.slice(at + 1).trim().replace(/>$/, "").toLowerCase();
+  return SENDGRID_HOST.test(host) || SERVICE_DOMAINS.some((d) => host === d || host.endsWith(`.${d}`));
+}
+
+/**
+ * The version of the rules here (plan 278): each store keeps the one its facts were computed with and rescans once when
+ * it differs. 1: plan 17's; 2: sending services. A change to who is a person bumps it.
+ */
+export const PEOPLE_RULES_V = 2;
+
 /** Gmail's categories: the strong ones are never a person; Updates is weak. */
 const GMAIL_STRONG = ["CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL", "CATEGORY_FORUMS"];
 const GMAIL_WEAK = "CATEGORY_UPDATES";
@@ -69,7 +94,7 @@ export interface FactRow {
   id: number;
   date: number;
   from_email: string;
-  /** To, Cc and the Message-ID are read only for the newest message: a store may leave them out and answer `details` */
+  /** To, Cc and the Message-ID are read for one message a thread: a store may leave them out and answer `details` */
   to_json?: string;
   cc_json?: string;
   is_sent: number;
@@ -84,11 +109,18 @@ export interface FactRow {
   provider_msg_id: string | null;
 }
 
-export type SenderSignals = Pick<FactRow, "from_email" | "list_id" | "is_bulk" | "gmail_labels" | "is_spam">;
+/**
+ * What judges a message's sender, its Message-ID included (plan 278: `sentByService`); an address alone has none of the
+ * message's own parts (`addressOnly`).
+ */
+export type SenderSignals = Pick<FactRow, "from_email" | "list_id" | "is_bulk" | "gmail_labels" | "is_spam"> & { rfc_message_id: string | null };
+
+/** The signals of an address alone, no message: what judges an address rather than mail. */
+export const addressOnly = (email: string): SenderSignals => ({ from_email: email, list_id: null, is_bulk: 0, gmail_labels: null, is_spam: 0, rfc_message_id: null });
 
 /** How automated a sender looks: 2 never a person, 1 a person only if you have written to them, 0 a person. */
 export function automatedLevel(m: SenderSignals): 0 | 1 | 2 {
-  if (m.is_spam || m.list_id || m.is_bulk) return 2;
+  if (m.is_spam || m.list_id || m.is_bulk || sentByService(m.rfc_message_id)) return 2;
   const labels = m.gmail_labels;
   if (labels && GMAIL_STRONG.some((l) => labels.includes(l))) return 2;
   const email = addressKey(m.from_email);
@@ -108,7 +140,7 @@ export function automatedLevel(m: SenderSignals): 0 | 1 | 2 {
 
 /** An address that looks automated by itself (no headers or labels): what being written to can change. */
 export function weakAddress(email: string): boolean {
-  return automatedLevel({ from_email: email, list_id: null, is_bulk: 0, gmail_labels: null, is_spam: 0 }) === 1;
+  return automatedLevel(addressOnly(email)) === 1;
 }
 
 /** What the facts need besides the rows: your addresses, who you have written to, and replies elsewhere. */
@@ -133,10 +165,18 @@ export interface FactContext {
    * on you as a person's does, whatever their mail looks like; who is a person (`person`) doesn't change
    */
   shown?(key: string): boolean;
+  /**
+   * plan 278: your word on a sender (an addressKey): true a person, false not, undefined none. It outranks every guess but
+   * Spam's. The facts ask it; the dated reader and summaries don't (their own gates would only half follow it)
+   */
+  rule?(key: string): boolean | undefined;
 }
 
-/** Is an inbound message's sender a person (plan 17 §2.2)? */
-export function senderIsPerson(m: SenderSignals, ctx: Pick<FactContext, "written">): boolean {
+/** Is an inbound message's sender a person (plan 17 §2.2)? Spam never; then your word on the sender (plan 278); then the guesses. */
+export function senderIsPerson(m: SenderSignals, ctx: Pick<FactContext, "written" | "rule">): boolean {
+  if (m.is_spam) return false;
+  const rule = ctx.rule?.(addressKey(m.from_email));
+  if (rule !== undefined) return rule;
   const level = automatedLevel(m);
   return level === 0 || (level === 1 && ctx.written(addressKey(m.from_email)));
 }
@@ -171,12 +211,22 @@ const visibleOf = (m: FactRow) => !m.is_trash && !m.is_spam;
 
 /** The facts from the newest visible message and the newest inbound one of the right pool. */
 function decide(newest: FactRow | null, inbound: FactRow | null, ctx: FactContext): WaitingFacts {
-  const person = inbound !== null && senderIsPerson(inbound, ctx);
+  // a row's To, Cc and Message-ID: its own, else the store's, read once a message (the inbound one is often the newest)
+  let held: { id: number; d: NonNullable<ReturnType<NonNullable<FactContext["details"]>>> } | null = null;
+  const detailsOf = (m: FactRow) => {
+    if ((m.to_json === undefined || m.rfc_message_id === undefined) && ctx.details) {
+      if (held?.id !== m.id) held = { id: m.id, d: ctx.details(m.id) };
+      return held.d;
+    }
+    return { to_json: m.to_json ?? "[]", cc_json: m.cc_json ?? "[]", rfc_message_id: m.rfc_message_id ?? null };
+  };
+  // plan 278: the Message-ID says whether a sending service sent it
+  const person = inbound !== null && senderIsPerson({ ...inbound, rfc_message_id: inbound.rfc_message_id !== undefined ? inbound.rfc_message_id : detailsOf(inbound).rfc_message_id }, ctx);
   // plan 240: a shown sender's message may wait too (never Spam's: the inbound pool leaves it out)
   const waits = person || (inbound !== null && !inbound.is_spam && ctx.shown?.(addressKey(inbound.from_email)) === true);
   // the newest visible message is inbound only if it is also the newest inbound one
   if (!newest || newest !== inbound || !waits) return { person: person ? 1 : 0, waitingSince: null, waitingMessageId: null };
-  const d = newest.to_json === undefined && ctx.details ? ctx.details(newest.id) : { to_json: newest.to_json ?? "[]", cc_json: newest.cc_json ?? "[]", rfc_message_id: newest.rfc_message_id ?? null };
+  const d = detailsOf(newest);
   const to = addressesOf(d.to_json);
   const ccOnly = !to.some(ctx.own) && addressesOf(d.cc_json).some(ctx.own);
   // plan 215: "no reply needed", said by hand, is answered (asked last: only of a message that would wait)

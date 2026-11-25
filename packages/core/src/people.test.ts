@@ -1,8 +1,66 @@
 import { describe, expect, it } from "vitest";
 import { BULK_LOCAL } from "./categorize/features";
-import { addressKey, automatedLevel, bulkHeaders, FACTS_WINDOW, ROLE_WORDS, senderIsPerson, threadFacts, threadFactsNewestFirst, waitingCutoff, waitingFactsNewestFirst, WAITING_WINDOW_MS, type FactContext, type FactRow } from "./people";
+import { addressKey, automatedLevel, bulkHeaders, FACTS_WINDOW, ROLE_WORDS, senderIsPerson, sentByService, threadFacts, threadFactsNewestFirst, waitingCutoff, waitingFactsNewestFirst, WAITING_WINDOW_MS, type FactContext, type FactRow } from "./people";
 
-const sender = (from_email: string, o: Partial<FactRow> = {}) => ({ from_email, list_id: null, is_bulk: 0, gmail_labels: null, is_spam: 0, ...o });
+const sender = (from_email: string, o: Partial<FactRow> = {}) => ({ from_email, list_id: null, is_bulk: 0, gmail_labels: null, is_spam: 0, rfc_message_id: null, ...o });
+
+describe("plan 278: mail a sending service sent", () => {
+  it("knows each service by its Message-ID's domain, any case, in brackets or not; nothing else", () => {
+    for (const id of [
+      "010001a2137e934d-0015bcc7-d756-44e5-b50f-0663cb19358e-000000@email.amazonses.com",
+      "0100abc@us-west-2.AmazonSES.com",
+      "x@amazonses.com",
+      "xb0ge6gwtn6gsxib_kilvg@geopod-ismtpd-54",
+      "abc@ismtpd0012p1mdw1",
+      "abc@geopod-ismtpd-3-0",
+      "abc@sendgrid.net",
+      "abc@xyz.sendgrid.net",
+      "a1b2@mtasv.net",
+      "a1b2@pm.mtasv.net",
+      "x@mta12.prd.sparkpost",
+      "x@sparkpostmail.com",
+      "<abc@email.amazonses.com>",
+      " abc@email.amazonses.com> ",
+    ])
+      expect(sentByService(id), id).toBe(true);
+    for (const id of [
+      null,
+      "",
+      "no-at-sign",
+      "ca+3jzeuppaw3mxhytgbhqnub02e3rdgvn3mcdnwm8oz5=y8chw@mail.gmail.com",
+      "sj0pr17mb434904101f1052d56295763f9b442@sj0pr17mb4349.namprd17.prod.outlook.com",
+      "x@notamazonses.com",
+      "x@amazonses.com.evil.org",
+      "x@ismtpd.example.org",
+      "x@notismtpd-1",
+      "x@mtasv.network",
+      "x@sparkpost",
+      "x@bncr.fi.cr",
+    ])
+      expect(sentByService(id), String(id)).toBe(false);
+  });
+
+  it("is never a person, even someone you wrote to (an app's hello@ or sac@)", () => {
+    const written = { written: () => true };
+    for (const from of ["hello@iuspro.com", "sac@tilopay.com", "ana@friends.com"]) {
+      const s = sender(from, { rfc_message_id: "01@email.amazonses.com" });
+      expect(automatedLevel(s), from).toBe(2);
+      expect(senderIsPerson(s, written), from).toBe(false);
+      // the same address from a person's mail server stays what it was
+      expect(senderIsPerson(sender(from, { rfc_message_id: "x@mail.gmail.com" }), written), from).toBe(true);
+    }
+  });
+
+  it("your word outranks every guess, both ways, but never makes Spam a person", () => {
+    const always = { written: () => false, rule: () => true };
+    const never = { written: () => true, rule: () => false };
+    for (const s of [sender("ana@friends.com", { list_id: "l" }), sender("noreply@bank.mx"), sender("hello@iuspro.com", { rfc_message_id: "1@email.amazonses.com" }), sender("support@shop.com")]) expect(senderIsPerson(s, always), s.from_email).toBe(true);
+    for (const s of [sender("ana.lopez@gmail.com"), sender("support@shop.com")]) expect(senderIsPerson(s, never), s.from_email).toBe(false);
+    expect(senderIsPerson(sender("ana@friends.com", { is_spam: 1 }), always)).toBe(false);
+    // asked by the address's key: a +tag and case don't escape it
+    expect(senderIsPerson(sender("Ana+x@Friends.com"), { written: () => false, rule: (k) => (k === "ana@friends.com" ? false : undefined) })).toBe(false);
+  });
+});
 
 describe("who is a person (plan 17 §2.2)", () => {
   it("compares addresses lowercased, trimmed, without a +tag", () => {
@@ -247,6 +305,40 @@ describe("plan 240: a sender always shown in What matters", () => {
   });
 });
 
+describe("plan 278: a thread's facts with sending services and your word", () => {
+  it("an app's receipt from an address you wrote to is neither from a person nor waiting; Always makes it both", () => {
+    const m = msg({ date: 5, from: "sac@tilopay.com", rfc_message_id: "abc@geopod-ismtpd-54" });
+    const wrote = ctx({ written: (k) => k === "sac@tilopay.com" });
+    expect(threadFacts([m], wrote)).toEqual({ person: 0, waitingSince: null });
+    expect(threadFacts([m], ctx({ rule: (k) => (k === "sac@tilopay.com" ? true : undefined) }))).toEqual({ person: 1, waitingSince: 5 });
+  });
+
+  it("Never takes a person out of People and waiting, but an always shown sender still waits (plan 240)", () => {
+    const m = msg({ date: 5, from: "ana@friends.com" });
+    const never = (k: string) => (k === "ana@friends.com" ? false : undefined);
+    expect(threadFacts([m], ctx({ rule: never }))).toEqual({ person: 0, waitingSince: null });
+    expect(threadFacts([m], ctx({ rule: never, shown: (k) => k === "ana@friends.com" }))).toEqual({ person: 0, waitingSince: 5 });
+  });
+
+  it("Always keeps the usual reply checks: answered, or only on Cc, doesn't wait", () => {
+    const always = () => true;
+    const asked = msg({ date: 5, from: "news@list.shop.com", list_id: "l", rfc_message_id: "q@x" });
+    expect(threadFacts([asked], ctx({ rule: always, answered: (id) => id === "q@x" }))).toEqual({ person: 1, waitingSince: null });
+    expect(threadFacts([msg({ date: 5, from: "news@list.shop.com", to: ["boss@acme.com"], cc: [ME] })], ctx({ rule: always }))).toEqual({ person: 1, waitingSince: null });
+  });
+
+  it("a store that left out the Message-ID is asked for it once, for the inbound message, and it's reused when that's the newest", () => {
+    const m = msg({ date: 5, from: "carlos@acme.com" });
+    const { to_json, cc_json, rfc_message_id, ...bare } = m;
+    const asked: number[] = [];
+    expect(threadFacts([bare], ctx({ details: (id) => (asked.push(id), { to_json: to_json!, cc_json: cc_json!, rfc_message_id: "1@email.amazonses.com" }) }))).toEqual({ person: 0, waitingSince: null });
+    expect(asked).toEqual([m.id]);
+    asked.length = 0;
+    expect(threadFacts([bare], ctx({ details: (id) => (asked.push(id), { to_json: to_json!, cc_json: cc_json!, rfc_message_id: rfc_message_id ?? null }) }))).toEqual({ person: 1, waitingSince: 5 });
+    expect(asked).toEqual([m.id]);
+  });
+});
+
 describe("threadFactsNewestFirst (Codex R10)", () => {
   /** mulberry32 */
   const prng = (seed: number) => () => {
@@ -275,9 +367,10 @@ describe("threadFactsNewestFirst (Codex R10)", () => {
           is_spam: r() < 0.1 ? 1 : 0,
           list_id: r() < 0.1 ? "l.x.com" : null,
           provider_msg_id: r() < 0.2 ? "local:1" : "p",
+          ...(r() < 0.2 ? { rfc_message_id: `s${k}@email.amazonses.com` } : {}),
         }),
       );
-      const c = ctx({ written: (key) => key === "support@shop.com", answered: (id) => id.length % 3 === 0, failedSend: (id) => id % 2 === 0, shown: (key) => key === "noreply@x.com" });
+      const c = ctx({ written: (key) => key === "support@shop.com", answered: (id) => id.length % 3 === 0, failedSend: (id) => id % 2 === 0, shown: (key) => key === "noreply@x.com", rule: (key) => (key === "carlos@acme.com" ? false : key === "noreply@x.com" ? true : undefined) });
       const ordered = newestFirst(rows);
       let i = 0;
       expect(threadFactsNewestFirst(() => ordered[i++], c), JSON.stringify(rows)).toEqual(threadFacts(rows, c));

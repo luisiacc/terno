@@ -1,6 +1,6 @@
 import { REMIND_MORNING } from "./reminders";
 import { followupWakeAt, localDay } from "./followups";
-import { addressKey, automatedLevel, WAITING_WINDOW_MS } from "./people";
+import { addressKey, addressOnly, automatedLevel, WAITING_WINDOW_MS } from "./people";
 import type { ItemSchedule, ScheduleProposal } from "./schedule";
 import { dueCutoff, type PartOfDay } from "./part-of-day";
 
@@ -32,7 +32,7 @@ export const ANSWERED_KINDS: readonly DatedKind[] = ["respond", "ask"];
  */
 export const replyAnswers = (row: { kind: string; senderKey: string }, recipients: ReadonlySet<string>): boolean =>
   (ANSWERED_KINDS as readonly string[]).includes(row.kind) ||
-  (row.kind === "pay" && row.senderKey !== "" && recipients.has(row.senderKey) && automatedLevel({ from_email: row.senderKey, list_id: null, is_bulk: 0, gmail_labels: null, is_spam: 0 }) === 0);
+  (row.kind === "pay" && row.senderKey !== "" && recipients.has(row.senderKey) && automatedLevel(addressOnly(row.senderKey)) === 0);
 /** How a reply's verdict closes what it settles (`closedReason`): a bill paid ("settled", Earlier's "Paid"), a request answered. */
 export const replyClosedReason = (kind: string): "settled" | "answered" => (kind === "pay" ? "settled" : "answered");
 /** A reply's recipients as `replyAnswers` reads them. */

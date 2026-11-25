@@ -78,7 +78,8 @@ const GMAIL_STRONG = ["CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL", "CATEGORY_FORUMS
  */
 export function importance(m: Pick<ArrivalRow, "fromEmail" | "listId" | "isBulk" | "gmailLabels" | "isSpam" | "written" | "yourConversation">): "written" | "reply" | "gmail" | null {
   if (m.isSpam) return null;
-  const level = automatedLevel({ from_email: m.fromEmail, list_id: m.listId, is_bulk: m.isBulk ? 1 : 0, gmail_labels: m.gmailLabels, is_spam: 0 });
+  // plan 278: notifications keep their own rule: a sending service's Message-ID decides nothing here
+  const level = automatedLevel({ from_email: m.fromEmail, list_id: m.listId, is_bulk: m.isBulk ? 1 : 0, gmail_labels: m.gmailLabels, is_spam: 0, rfc_message_id: null });
   if (m.written && level <= 1) return "written";
   if (m.yourConversation && level === 0) return "reply";
   const labels = m.gmailLabels;

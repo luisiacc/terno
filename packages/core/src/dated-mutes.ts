@@ -1,4 +1,4 @@
-import { addressKey, automatedLevel } from "./people";
+import { addressKey, addressOnly, automatedLevel } from "./people";
 import { DATED_KINDS, type DatedKind } from "./dated";
 
 /**
@@ -125,4 +125,4 @@ export function calendarService(src: { fromEmail: string }): string | null {
  * has written to them is checked apart (`dated.written`), before any offer and again on taking it.
  */
 export const automatedSender = (src: { automated: boolean; fromEmail: string }): boolean =>
-  src.automated || automatedLevel({ from_email: src.fromEmail, list_id: null, is_bulk: 0, gmail_labels: null, is_spam: 0 }) === 2;
+  src.automated || automatedLevel(addressOnly(src.fromEmail)) === 2;

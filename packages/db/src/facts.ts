@@ -1,4 +1,4 @@
-import { addressKey, automatedLevel, threadFactsNewestFirst, waitingFactsNewestFirst, type Address, type ArrivalRow, type FactContext, type FactRow, type ThreadFacts, type WaitingFacts } from "@terno/core";
+import { addressKey, addressOnly, automatedLevel, threadFactsNewestFirst, waitingFactsNewestFirst, type Address, type ArrivalRow, type FactContext, type FactRow, type ThreadFacts, type WaitingFacts } from "@terno/core";
 import type { Db } from "./sqlite";
 import { hidingSql, inboxHiding } from "./inbox-hiding";
 import { requestTabRefresh } from "./tabs";
@@ -104,7 +104,7 @@ export function factContext(db: Db, own: ReadonlySet<string>): FactContext {
  * each ingest. Gmail's labels come as the one category that decides (the same
  * lists as core's automatedLevel; the conformance oracle reads the raw
  * labels), a local copy as its prefix; To, Cc and the Message-ID are read
- * for the newest message only (`details`).
+ * for the one message a thread that needs them (`details`).
  */
 export const FACT_COLUMNS = `is_draft, is_bulk, list_id,
   CASE WHEN gmail_labels IS NULL THEN NULL
@@ -282,7 +282,7 @@ export function noteSentMail(db: Db, from: string, recipients: readonly Address[
     if (!to.includes("@")) continue;
     if (db.run("INSERT INTO correspondents (email, written) VALUES (?, 1) ON CONFLICT (email) DO UPDATE SET written = 1 WHERE written = 0", to).changes === 0) continue;
     // writing to it can change who it is (a role address, or one Gmail filed under Updates: Codex review 1, #5); a no-reply address stays one
-    if (automatedLevel({ from_email: to, list_id: null, is_bulk: 0, gmail_labels: null, is_spam: 0 }) !== 2 && requeueSender(db, to)) queued = true;
+    if (automatedLevel(addressOnly(to)) !== 2 && requeueSender(db, to)) queued = true;
   }
   return queued;
 }
@@ -294,7 +294,7 @@ export function noteSentMailPrepared(db: Db, from: string, chunks: readonly stri
     const changed = new Set(db.all<{ email: string }>(`INSERT INTO correspondents (email, written)
       SELECT value, 1 FROM json_each(?) WHERE instr(value, '@') > 0
       ON CONFLICT (email) DO UPDATE SET written = 1 WHERE written = 0 RETURNING email`, JSON.stringify(chunk)).map((row) => row.email));
-    const eligible = chunk.filter((key) => changed.has(key) && automatedLevel({ from_email: key, list_id: null, is_bulk: 0, gmail_labels: null, is_spam: 0 }) !== 2);
+    const eligible = chunk.filter((key) => changed.has(key) && automatedLevel(addressOnly(key)) !== 2);
     if (!eligible.length || factsPhase(db).phase === "senders") continue;
     const probes = eligible.map((key) => { const at = key.lastIndexOf("@"); const local = at > 0 ? key.slice(0, at) : null; return { key, lower: local === null ? null : `${local}+`, upper: local === null ? null : `${local},` }; });
     const candidates = new Set(db.all<{ email: string }>(`SELECT json_extract(j.value, '$.key') AS email FROM json_each(?) j

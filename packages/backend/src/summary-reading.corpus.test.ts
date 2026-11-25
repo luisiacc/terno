@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { automatedLevel, readingWords, wordsIn } from "@terno/core";
+import { addressOnly, automatedLevel, readingWords, wordsIn } from "@terno/core";
 import { describe, expect, it } from "vitest";
 
 /** The summary worker's floor (summaries.ts). */
@@ -21,7 +21,7 @@ describe("the fictional corpus (plan 269)", () => {
   const SKIPPED: Record<string, string> = { "steps-004#0": "a setup nudge: verify your address, then four bullets of tips" };
   const address = (from: string) => /<([^>]+)>/.exec(from)?.[1] ?? from;
   // nobody in the corpus has written to them: a role address is a machine here, as for a stranger
-  const machine = (from: string) => automatedLevel({ from_email: address(from), list_id: null, is_bulk: 0, gmail_labels: null, is_spam: 0 }) > 0;
+  const machine = (from: string) => automatedLevel(addressOnly(address(from))) > 0;
 
   it("loses no summary but the notes it means to skip: each machine's message that reaches the floor alone still does", () => {
     expect(conversations.length).toBeGreaterThan(100);

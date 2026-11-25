@@ -1,4 +1,4 @@
-import { addressKey, automatedLevel, FACTS_WINDOW, newestMessages, threadFacts, waitingFactsNewestFirst, type Address, type ArrivalRow, type FactContext, type FactRow, type ThreadFacts, type WaitingFacts } from "@terno/core";
+import { addressKey, addressOnly, automatedLevel, FACTS_WINDOW, newestMessages, threadFacts, waitingFactsNewestFirst, type Address, type ArrivalRow, type FactContext, type FactRow, type ThreadFacts, type WaitingFacts } from "@terno/core";
 import type { MemDb, Row, Table } from "./mem";
 import { hiddenCategories, hiddenFromInbox, tabHiddenTest } from "./inbox-hidden";
 import { requestTabRefresh } from "./tabs";
@@ -420,7 +420,7 @@ export function noteSentMail(db: MemDb, from: string, recipients: readonly Addre
   for (const a of recipients) {
     const to = addressKey(a.email);
     // writing to it can change who it is (a role address, or one Gmail filed under Updates: Codex review 1, #5); a no-reply address stays one
-    if (to.includes("@") && upsert(db, to, "written") && automatedLevel({ from_email: to, list_id: null, is_bulk: 0, gmail_labels: null, is_spam: 0 }) !== 2) requeueSender(db, to);
+    if (to.includes("@") && upsert(db, to, "written") && automatedLevel(addressOnly(to)) !== 2) requeueSender(db, to);
   }
 }
 

@@ -160,7 +160,7 @@ export function summarySources(c: Ctx, threadId: number): SummarySources | null 
         to: repairAddresses(addressesOf(r.to_json)),
         cc: repairAddresses(addressesOf(r.cc_json)),
         list: !!r.list_id,
-        person: mark?.wants_summary !== 1 ? null : senderIsPerson({ from_email: r.from_email, list_id: r.list_id ?? null, is_bulk: r.is_bulk ? 1 : 0, gmail_labels: r.gmail_labels ?? null, is_spam: r.is_spam ? 1 : 0 }, { written }),
+        person: mark?.wants_summary !== 1 ? null : senderIsPerson({ from_email: r.from_email, list_id: r.list_id ?? null, is_bulk: r.is_bulk ? 1 : 0, gmail_labels: r.gmail_labels ?? null, is_spam: r.is_spam ? 1 : 0, rfc_message_id: r.rfc_message_id ?? null }, { written }),
         trash: r.is_trash === 1,
         spam: r.is_spam === 1,
         bodyState: r.body_state,
