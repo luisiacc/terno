@@ -2,7 +2,8 @@
 // 2): PKCE checked, public client (a secret is refused), rotating refresh tokens, and an id_token with oid and tid.
 import { createHash } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { CONSUMER_TENANT, type MicrosoftEndpoints } from "../microsoft";
+import type { MicrosoftEndpoints } from "../microsoft";
+import { CONSUMER_TENANT } from "../microsoft-scopes";
 
 const b64url = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
 

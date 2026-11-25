@@ -3,9 +3,9 @@ import { RpcError, type Draft, type DraftAddress, type Handlers } from "@terno/c
 import { agentsMaySend, nextColor, parseHandoff, capFilterName, categoryRule, folderRule, isFilterable, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, matchExcerpt, parseSearch, resolveSearch, rowMatchOf, searchWithFilter, type ThreadAction, type AccountPrefs, PINS_MAX, REMINDERS_MAX, SCHEDULED_MAX, FORWARD_ADDRESSES_MAX_CHARS } from "@terno/core";
 import { L } from "@terno/i18n";
 import { movedNothing, SearchCancelledError, StaleCursorError, wantedAsDated, type AddedBy, type DraftRow, type FolderMoved, type MessageState } from "@terno/store";
-import type { GmailAccountConfig, ImapAccountConfig } from "@terno/mail";
+import type { GmailAccountConfig, ImapAccountConfig, OutlookAccountConfig } from "@terno/mail";
 import { BackendCore as Backend } from "./core";
-import { forgetSignInVersion, signInVersion, admitBrowserGoogle, beginSignIn, endSignIn, oauthAdmission, changeOwnerTo, gmailClaim, googleFlowActive, imapClaim, loginFailed, reconnectAccount, validateGoogleConnection } from "./identity";
+import { forgetSignInVersion, signInVersion, admitBrowserGoogle, beginSignIn, endSignIn, oauthAdmission, changeOwnerTo, gmailClaim, googleFlowActive, imapClaim, loginFailed, microsoftClaim, microsoftFlowActive, reconnectAccount, validateGoogleConnection, validateMicrosoftConnection } from "./identity";
 import { accountLabel } from "./account-label";
 import { toRpcError } from "./ai-service";
 import { exportMailbox, importMailbox, restorePending } from "./import";
@@ -1336,6 +1336,42 @@ export function createHandlers(b: Backend): Handlers {
       await b.emitAccounts();
       if (claimed) await b.emitOwner();
       // what an import kept for this mailbox goes in now
+      await restorePending(b);
+      b.startAccount(account);
+      return (await b.accountViews([account]))[0]!;
+    },
+
+    // plan 259: Outlook over Microsoft Graph. Microsoft has no grant to revoke, so no removal waits on one here.
+    "accounts.connectMicrosoft": async ({ syncWindowDays }) => {
+      const connect = b.options.providers.connectMicrosoft;
+      if (!connect || !b.options.openExternal) throw new RpcError("UNAVAILABLE", L("errors.microsoft.needsDesktop"));
+      // the app registration this build carries; a build without one can't connect Microsoft
+      const oauth = await oauthClientFor(b, "microsoft");
+      if (!oauth) throw new RpcError("BAD_REQUEST", L("errors.microsoft.noClient"));
+      const result = await connect({ clientId: oauth.clientId, openExternal: b.options.openExternal, signal: b.abort.signal, fetch: b.net.fetchFor("mail") });
+      microsoftFlowActive(b);
+      validateMicrosoftConnection(result);
+      const existing = (await store.accounts.list()).find((a) => a.email === result.email.toLowerCase());
+      if (existing) throw new RpcError("BAD_REQUEST", L("errors.alreadyConnected", { email: result.email }));
+      const config: OutlookAccountConfig & AccountPrefs = { senderName: result.name || result.email, microsoftSubject: result.subject, microsoftClientId: oauth.clientId, tenant: result.tenant, ...(syncWindowDays !== undefined && { syncWindowDays }) };
+      const blob = await b.options.cipher.encrypt(result.refreshToken);
+      const accounts = await store.accounts.list();
+      const color = newAccountColor(accounts);
+      const label = accountLabel(result.email.split("@")[0]!, result.email, accounts);
+      microsoftFlowActive(b);
+      const { account, claimed } = await store.accounts.create({
+        kind: "outlook",
+        email: result.email,
+        displayName: label.displayName,
+        color,
+        providerConfig: config,
+        secret: { key: "refreshToken", blob },
+        ownerClaim: b.canClaimOwner() ? microsoftClaim({ ...result, name: result.name || result.email }) : undefined,
+        now: b.now(),
+      });
+      for (const r of label.renames) await store.accounts.update(r.id, { displayName: r.displayName });
+      await b.emitAccounts();
+      if (claimed) await b.emitOwner();
       await restorePending(b);
       b.startAccount(account);
       return (await b.accountViews([account]))[0]!;

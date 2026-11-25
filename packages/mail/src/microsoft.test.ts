@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { connectMicrosoft, createMicrosoftSession, idTokenSubject, microsoftMailGranted, microsoftRefusal, MICROSOFT_SCOPES } from "./microsoft";
+import { connectMicrosoft, createMicrosoftSession, idTokenSubject, microsoftRefusal } from "./microsoft";
+import { microsoftMailGranted, MICROSOFT_SCOPES } from "./microsoft-scopes";
 import { SyntheticMicrosoft } from "./test/microsoft.fixture";
 import { ProviderAuthError, ProviderError, type ProviderContext } from "./types";
 

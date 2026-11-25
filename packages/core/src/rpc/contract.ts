@@ -1167,6 +1167,8 @@ export const contract = {
     { timeoutMs: 60_000 },
   ),
   "accounts.connectGmail": m<Account>()(z.object({ syncWindowDays: syncWindow.optional() }).strict(), { timeoutMs: 300_000 }),
+  /** plan 259: an Outlook mailbox through Microsoft's sign-in in the browser (desktop: the loopback) */
+  "accounts.connectMicrosoft": m<Account>()(z.object({ syncWindowDays: syncWindow.optional() }).strict(), { timeoutMs: 300_000 }),
   /**
    * web: an access token from Google's token model (the page signs in); connects the mailbox or renews its token.
    * With `accountId` (plan 25: signing that account in again) the token must be that account's, else nothing changes.

@@ -2,7 +2,7 @@ import { isOAuthKind, isValidEmail, messageOf, OAUTH_SUBJECT, signInMethod, unha
 import { RpcError, type OwnerIdentity } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { OAuthAdmission, OwnerClaim, OwnerDecision, SecretIntent } from "@terno/store";
-import type { GmailAccountConfig, GmailConnectResult, GmailRenewalProof, ImapAccountConfig } from "@terno/mail";
+import { microsoftMailGranted, type GmailAccountConfig, type GmailConnectResult, type GmailRenewalProof, type ImapAccountConfig, type MicrosoftConnectResult, type OutlookAccountConfig } from "@terno/mail/portable";
 import type { BackendCore as Backend } from "./core";
 import { oauthClientFor, rememberedClient } from "./oauth-clients";
 
@@ -53,6 +53,40 @@ export function gmailClaim(result: Omit<GmailConnectResult, "refreshToken">): Om
     verifiedBy: "google_oauth",
     evidence: { googleSub: result.sub, emailVerified: result.emailVerified },
   };
+}
+
+const MICROSOFT_SUBJECT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** Plan 259: Microsoft's sign-in crosses the registry boundary too; only a well-formed identity with mail is kept. */
+export function validateMicrosoftConnection(result: unknown): asserts result is MicrosoftConnectResult {
+  const value = result as Record<string, unknown> | null;
+  if (!value || typeof value !== "object" || Array.isArray(value) ||
+    typeof value.email !== "string" || value.email.length > 254 || !isValidEmail(value.email) || /\p{Cc}/u.test(value.email) ||
+    typeof value.name !== "string" ||
+    typeof value.subject !== "string" || !MICROSOFT_SUBJECT.test(value.subject) ||
+    (value.tenant !== "consumers" && value.tenant !== "organizations") ||
+    typeof value.refreshToken !== "string" || value.refreshToken.length > 4096 || !/^[\x21-\x7e]+$/.test(value.refreshToken) ||
+    !Array.isArray(value.grantedScopes) || !value.grantedScopes.every((scope) => typeof scope === "string")) throw new RpcError("BAD_REQUEST", L("errors.microsoft.invalidResponse"));
+  if (!microsoftMailGranted(value.grantedScopes as string[])) throw new RpcError("BAD_REQUEST", L("errors.microsoft.mailScopeRequired"));
+}
+
+export function microsoftFlowActive(b: Backend): void {
+  if (b.abort.signal.aborted) throw new RpcError("BAD_REQUEST", L("errors.microsoft.cancelled"));
+}
+
+export function microsoftClaim(result: Pick<MicrosoftConnectResult, "name" | "subject" | "tenant">): Omit<OwnerClaim, "accountId" | "email"> {
+  return {
+    displayName: result.name,
+    provider: "outlook",
+    verifiedBy: "microsoft_oauth",
+    evidence: { microsoftSubject: result.subject, tenant: result.tenant },
+  };
+}
+
+/** What an OAuth sign-in hands the credential commit: the refresh token (Google may omit it) and the subject it proved. */
+export interface OAuthGrant {
+  refreshToken: string | null;
+  sub: string;
 }
 
 export interface PendingGmailRenewal {
@@ -107,8 +141,11 @@ async function credentialSnapshot(b: Backend, accountId: number, flow: AbortCont
   return blob && Uint8Array.from(blob);
 }
 
-/** Called after old provider drain, under the account's finalization owner. */
-export async function googleCredentialIntent(b: Backend, account: Account, stamp: { id: number; email: string; createdAt: number }, result: GmailConnectResult, flow: AbortController, freshBlob?: Uint8Array): Promise<{ intent: SecretIntent; pending?: PendingGmailRenewal }> {
+/**
+ * Called after old provider drain, under the account's finalization owner. A new refresh token replaces the stored
+ * one (every OAuth kind); only Google may omit it, and then proves the stored grant with a cold renewal.
+ */
+export async function oauthCredentialIntent(b: Backend, account: Account, stamp: { id: number; email: string; createdAt: number }, result: OAuthGrant, flow: AbortController, freshBlob?: Uint8Array): Promise<{ intent: SecretIntent; pending?: PendingGmailRenewal }> {
   await sameAccount(b, stamp, flow);
   const name = `account:${account.id}:refreshToken`;
   const current = await credentialSnapshot(b, account.id, flow, "refreshToken");
@@ -116,7 +153,7 @@ export async function googleCredentialIntent(b: Backend, account: Account, stamp
     b.gmailRenewals.delete(account.id);
     return { intent: { kind: "replace", name, expectedBlob: current, blob: freshBlob! } };
   }
-  if (!current || !b.options.providers.beginGmailRenewal) throw invalidRenewal();
+  if (account.kind !== "gmail" || !current || !b.options.providers.beginGmailRenewal) throw invalidRenewal();
   let pending = b.gmailRenewals.get(account.id);
   if (pending && (pending.stamp.email !== stamp.email || pending.stamp.createdAt !== stamp.createdAt || (!sameBytes(current, pending.expectedBlob) && !(pending.blob && sameBytes(current, pending.blob))))) {
     b.gmailRenewals.delete(account.id);
@@ -213,6 +250,40 @@ export async function connectExistingGoogle(b: Backend, account: Account, flow: 
   return result;
 }
 
+/**
+ * Plan 259: an Outlook account signs in again with the app registration that connected it, its address pre-filled.
+ * Microsoft always issues a refresh token with offline_access, so there is no cold renewal beside it; its refusals
+ * (denied, an administrator's approval) reach the person in its own words.
+ */
+export async function connectExistingMicrosoft(b: Backend, account: Account, flow: AbortController): Promise<MicrosoftConnectResult> {
+  const connect = b.options.providers.connectMicrosoft;
+  if (!connect || !b.options.openExternal) throw new RpcError("UNAVAILABLE", L("errors.microsoft.needsDesktop"));
+  const remembered = await rememberedClient(b, account.id, "microsoft");
+  const oauth = await oauthClientFor(b, "microsoft", remembered);
+  b.assertSignIn(account.id, flow);
+  if (!oauth) throw new RpcError("BAD_REQUEST", L(remembered ? "errors.microsoft.clientGone" : "errors.microsoft.noClient"));
+  let result: MicrosoftConnectResult;
+  try { result = await connect({ clientId: oauth.clientId, openExternal: b.options.openExternal, signal: AbortSignal.any([b.abort.signal, flow.signal]), fetch: b.net.fetchFor("mail"), loginHint: account.email }); }
+  catch (error) { b.assertSignIn(account.id, flow); throw error; }
+  b.assertSignIn(account.id, flow);
+  validateMicrosoftConnection(result);
+  if (result.email.toLowerCase() !== account.email.toLowerCase()) throw new RpcError("BAD_REQUEST", L("errors.microsoft.connectedOther", { got: result.email, expected: account.email }));
+  return result;
+}
+
+/** The account's OAuth sign-in, whichever provider: its grant, checked against the subject the account keeps. */
+async function signInAgain(b: Backend, account: Account, flow: AbortController, method: "google" | "microsoft", expectedSubject: string | null): Promise<{ grant: OAuthGrant; blob?: Uint8Array; google?: GmailConnectResult; microsoft?: MicrosoftConnectResult }> {
+  if (method === "google") {
+    const google = await connectExistingGoogle(b, account, flow);
+    if (expectedSubject !== null && expectedSubject !== google.sub) throw invalidRenewal();
+    return { grant: { refreshToken: google.refreshToken, sub: google.sub! }, blob: google.refreshToken !== null ? await encryptCredential(b, google.refreshToken) : undefined, google };
+  }
+  const microsoft = await connectExistingMicrosoft(b, account, flow);
+  // another person behind the same address (a recreated mailbox): never this account's
+  if (expectedSubject !== null && expectedSubject !== microsoft.subject) throw new RpcError("BAD_REQUEST", L("errors.microsoft.invalidResponse"));
+  return { grant: { refreshToken: microsoft.refreshToken, sub: microsoft.subject }, blob: await encryptCredential(b, microsoft.refreshToken), microsoft };
+}
+
 /** Explicit credential changes retain one owner through preparation, durable commit and state publication. */
 export async function reconnectAccount(b: Backend, accountId: number, password: string | undefined): Promise<Account> {
   const flow = beginSignIn(b, accountId);
@@ -222,8 +293,8 @@ export async function reconnectAccount(b: Backend, accountId: number, password: 
     if (!account || !stamp) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
     // plan 184: each kind's way, named in SIGN_IN (a new kind can't compile without one)
     const method = signInMethod(account.kind);
-    const admission = method === "google" ? await oauthAdmission(b, accountId, flow) : undefined;
-    let result: GmailConnectResult | undefined;
+    const admission = method !== "password" ? await oauthAdmission(b, accountId, flow) : undefined;
+    let grant: OAuthGrant | undefined;
     let blob: Uint8Array | undefined;
     switch (method) {
     case "password": {
@@ -236,12 +307,9 @@ export async function reconnectAccount(b: Backend, accountId: number, password: 
       break;
     }
     case "google":
-      result = await connectExistingGoogle(b, account, flow);
-      if (admission!.expectedSubject !== null && admission!.expectedSubject !== result.sub) throw invalidRenewal();
-      if (result.refreshToken !== null) blob = await encryptCredential(b, result.refreshToken);
+    case "microsoft":
+      ({ grant, blob } = await signInAgain(b, account, flow, method, admission!.expectedSubject));
       break;
-    // plan 259: Outlook signs in from stage 1 on; until then no account of its kind exists to get here
-    case "microsoft": throw new RpcError("UNAVAILABLE", L("errors.microsoft.notYet"));
     default: unhandled(method);
     }
     b.assertSignIn(accountId, flow);
@@ -249,8 +317,8 @@ export async function reconnectAccount(b: Backend, accountId: number, password: 
       await sameAccount(b, stamp, flow);
       await b.dropAccount(accountId);
       b.assertSignIn(accountId, flow);
-      const prepared = result ? await googleCredentialIntent(b, account, stamp, result, flow, blob) : { intent: { kind: "replace" as const, name: `account:${accountId}:password`, expectedBlob: await credentialSnapshot(b, accountId, flow, "password"), blob: blob! } };
-      if (result) prepared.intent.oauth = { ...admission!, subject: result.sub! };
+      const prepared = grant ? await oauthCredentialIntent(b, account, stamp, grant, flow, blob) : { intent: { kind: "replace" as const, name: `account:${accountId}:password`, expectedBlob: await credentialSnapshot(b, accountId, flow, "password"), blob: blob! } };
+      if (grant) prepared.intent.oauth = { ...admission!, subject: grant.sub };
       await commitGoogleCredential(b, accountId, stamp, flow, prepared.intent);
       if (prepared.pending && prepared.pending.proof.expiresAt <= Date.now()) throw invalidRenewal();
       await b.signedIn(accountId, undefined, flow);
@@ -278,8 +346,8 @@ export async function changeOwnerTo(b: Backend, accountId: number, password: str
     if (current?.accountId === accountId) throw new RpcError("BAD_REQUEST", L("errors.alreadyOwner", { email: account.email }));
     let claim: Omit<OwnerClaim, "accountId" | "email">;
     const method = signInMethod(account.kind);
-    const admission = method === "google" ? await oauthAdmission(b, accountId, flow) : undefined;
-    let result: GmailConnectResult | undefined;
+    const admission = method !== "password" ? await oauthAdmission(b, accountId, flow) : undefined;
+    let grant: OAuthGrant | undefined;
     let blob: Uint8Array | undefined;
     switch (method) {
     case "password":
@@ -289,14 +357,18 @@ export async function changeOwnerTo(b: Backend, accountId: number, password: str
       blob = await encryptCredential(b, password);
       claim = imapClaim(account, config as unknown as ImapAccountConfig, (config as unknown as ImapAccountConfig).senderName || account.displayName);
       break;
-    case "google":
-      result = await connectExistingGoogle(b, account, flow);
-      if (admission!.expectedSubject !== null && admission!.expectedSubject !== result.sub) throw invalidRenewal();
-      if (result.refreshToken !== null) blob = await encryptCredential(b, result.refreshToken);
-      claim = gmailClaim({ ...result, name: result.name || (config as unknown as GmailAccountConfig).senderName });
+    case "google": {
+      const signedIn = await signInAgain(b, account, flow, method, admission!.expectedSubject);
+      ({ grant, blob } = signedIn);
+      claim = gmailClaim({ ...signedIn.google!, name: signedIn.google!.name || (config as unknown as GmailAccountConfig).senderName });
       break;
-    // plan 259: Outlook signs in from stage 1 on; until then no account of its kind exists to get here
-    case "microsoft": throw new RpcError("UNAVAILABLE", L("errors.microsoft.notYet"));
+    }
+    case "microsoft": {
+      const signedIn = await signInAgain(b, account, flow, method, admission!.expectedSubject);
+      ({ grant, blob } = signedIn);
+      claim = microsoftClaim({ ...signedIn.microsoft!, name: signedIn.microsoft!.name || (config as unknown as OutlookAccountConfig).senderName });
+      break;
+    }
     default: unhandled(method);
     }
     b.assertSignIn(accountId, flow);
@@ -304,8 +376,8 @@ export async function changeOwnerTo(b: Backend, accountId: number, password: str
       await sameAccount(b, stamp, flow);
       await b.dropAccount(accountId);
       b.assertSignIn(accountId, flow);
-      const prepared = result ? await googleCredentialIntent(b, account, stamp, result, flow, blob) : { intent: { kind: "replace" as const, name: `account:${accountId}:password`, expectedBlob: await credentialSnapshot(b, accountId, flow, "password"), blob: blob! } };
-      if (result) prepared.intent.oauth = { ...admission!, subject: result.sub! };
+      const prepared = grant ? await oauthCredentialIntent(b, account, stamp, grant, flow, blob) : { intent: { kind: "replace" as const, name: `account:${accountId}:password`, expectedBlob: await credentialSnapshot(b, accountId, flow, "password"), blob: blob! } };
+      if (grant) prepared.intent.oauth = { ...admission!, subject: grant.sub };
       if (prepared.pending && prepared.pending.proof.expiresAt <= Date.now()) {
         await commitGoogleCredential(b, accountId, stamp, flow, prepared.intent);
         throw invalidRenewal();

@@ -7,6 +7,7 @@ export * from "./smtp";
 export * from "./imap";
 export * from "./gmail";
 export * from "./microsoft";
+export * from "./microsoft-scopes";
 export * from "./registry";
 export * from "./compose-portable";
 export * from "./gmail-web";
