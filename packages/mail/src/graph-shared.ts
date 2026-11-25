@@ -74,6 +74,10 @@ export interface Call {
   submission?: true;
   /** 202 or 204: the answer has no body */
   empty?: true;
-  /** a JSON batch: its throttled requests reach the ledger as a top-level 429 does (onBatch) */
-  batch?: true;
+  /**
+   * A JSON batch of this many requests: its throttled ones reach the ledger as a top-level 429 does (onBatch); each counts
+   * against Outlook's pace, and it holds as many of the four slots as Graph runs of it at once ("up to four individual
+   * requests from the batch at a time": learn.microsoft.com/graph/throttling-limits)
+   */
+  batch?: number;
 }

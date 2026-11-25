@@ -16,7 +16,7 @@ interface Row { id: number; providerMsgId: string; folder: string | null; inInbo
 const opened: { close(): Promise<void> }[] = [];
 afterEach(async () => { for (const o of opened.splice(0).reverse()) await o.close(); });
 
-async function setup(o: { requests?: AccountRequests; largeAttachmentBytes?: number; uploadPieceBytes?: number; sendTimeoutMs?: number; rewrite?: (url: string, body: unknown) => unknown } = {}) {
+async function setup(o: { requests?: AccountRequests; writeMaxBytes?: number; quota?: import("./gmail-quota").QuotaPacer; uploadPieceBytes?: number; sendTimeoutMs?: number; rewrite?: (url: string, body: unknown) => unknown } = {}) {
   const ms = await new SyntheticMicrosoft().start();
   const processor = createNodeIncomingProcessor();
   const incoming = new IncomingPipeline(processor);
@@ -82,7 +82,7 @@ async function setup(o: { requests?: AccountRequests; largeAttachmentBytes?: num
   const provider = createGraphApiProvider(ctx, {
     endpoints: ms.endpoints(), tokens: { get: async () => token, invalidate() {} }, requestsPerSecond: Infinity, userFoldersEveryMs: 0,
     buildRaw: (payload) => buildRaw(payload, { keepBcc: true }),
-    largeAttachmentBytes: o.largeAttachmentBytes, uploadPieceBytes: o.uploadPieceBytes, sendTimeoutMs: o.sendTimeoutMs,
+    writeMaxBytes: o.writeMaxBytes, uploadPieceBytes: o.uploadPieceBytes, sendTimeoutMs: o.sendTimeoutMs, ...(o.quota && { quota: o.quota }),
   });
   let ops = 0;
   const t = {
@@ -230,6 +230,39 @@ describe("Graph writes: moves", () => {
     expect(t.row(id).folder).toBe(project);
   });
 
+  it("what the read found already moved is written before the moves go (Codex code review #8): a lost move batch keeps it", async () => {
+    const t = await setup();
+    const project = t.ms.folder("Project");
+    const there = t.ms.deliver(project), left = t.ms.deliver("inbox-id");
+    t.store(there); t.store(left);
+    let batches = 0;
+    t.ms.lose = (request) => request === "POST /$batch" && ++batches === 2 ? "before" : undefined;
+    await expect(t.run(MOVE_TO_FOLDER, [there, left], { folder: project, from: null, keepInbox: false })).rejects.toMatchObject({ retryable: true });
+    expect(t.row(there).folder).toBe(project);
+    expect(t.row(left).folder).toBeNull();
+  });
+
+  it("a batch counts each request against Outlook's pace and takes as many slots as Graph runs of it (Codex code review #10)", async () => {
+    const spent: number[] = [];
+    const t = await setup({ quota: { async spend(units) { spent.push(units); }, charge() {} } });
+    const ids = Array.from({ length: 6 }, () => t.ms.deliver("inbox-id"));
+    for (const id of ids) t.store(id);
+    await t.run("markRead", ids);
+    expect(spent).toEqual([6]);
+    // a body being read holds one of the four slots: the batch waits for all four it needs
+    let open!: () => void;
+    t.ms.valueGate = new Promise((resolve) => { open = resolve; });
+    const reading = t.provider.readBody!({ id: t.rows.get(ids[0]!)!.id, providerMsgId: ids[0]! }, new AbortController().signal);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const marking = t.run("markUnread", ids);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(t.ms.batches).toHaveLength(1);
+    open();
+    (await reading)?.release();
+    await marking;
+    expect(t.ms.batches).toHaveLength(2);
+  });
+
   it("a destination folder deleted meanwhile fails the op (never forgets the message); a mailbox with no Archive says so", async () => {
     const t = await setup();
     const gone = t.ms.folder("Gone");
@@ -340,6 +373,18 @@ describe("Graph writes: folders (plan 107)", () => {
     t.ms.lose = (request) => request === "POST /me/mailFolders" ? "before" : undefined;
     await expect(t.provider.createFolder!({ parent: null, name: "Never", folders: [] })).rejects.toMatchObject({ retryable: true });
     t.ms.lose = null;
+    // Graph deleted it and the list can't be read after (Codex code review #9): the deletion is still reported
+    const parent = await t.provider.createFolder!({ parent: null, name: "Old", folders: [] });
+    const child = await t.provider.createFolder!({ parent: parent.key, name: "Older", folders: [] });
+    let deleted = false;
+    t.ms.lose = (request) => {
+      if (request.startsWith("DELETE /me/mailFolders/")) { deleted = true; return undefined; }
+      return deleted && request.startsWith("GET /me/mailFolders") ? "before" : undefined;
+    };
+    const gone = await t.provider.deleteFolder!({ key: parent.key, folders: [] });
+    expect(gone.deleted.sort()).toEqual([parent.key, child.key].sort());
+    expect(gone.folders.map((f) => f.key)).not.toContain(parent.key);
+    t.ms.lose = null;
     // a name another app took between the list's read and the request: Graph's refusal, in its own words
     t.ms.onRequest = (path) => { if (path === "/v1.0/me/mailFolders" && ![...t.ms.folders.values()].some((f) => f.displayName === "Twin")) t.ms.folder("Twin"); };
     await expect(t.provider.createFolder!({ parent: null, name: "Twin", folders: [] })).rejects.toMatchObject({ retryable: false, i18n: { key: "errors.folder.refused", params: { server: "Outlook", reason: "ErrorFolderExists" } } });
@@ -382,53 +427,94 @@ describe("Graph writes: send", () => {
     await expect(t.provider.execute({ id: "s4", kind: "send", target: {}, payload: payload({ messageId: "m4@x" }) })).rejects.toMatchObject({ ambiguous: false, retryable: true });
   });
 
-  it("with a large file: a draft from the MIME without it, an upload session in order with no Authorization, then the draft's send", async () => {
-    const t = await setup({ largeAttachmentBytes: 5000, uploadPieceBytes: 3000 });
-    t.ms.uploadMin = 5000;
+  it("over Graph's 4 MB write limit (Codex code review #2): a draft without the files, a small file with its bytes, a large one through an upload session in order with no Authorization, then the draft's send", async () => {
+    const t = await setup({ writeMaxBytes: 12_000, uploadPieceBytes: 3000 });
+    t.ms.writeMax = 12_000;
+    t.ms.uploadMin = 9000;
     const order: string[] = [];
     t.ms.onRequest = (path) => { if (path.endsWith("/send")) order.push("send"); };
-    await t.provider.execute({ id: "s1", kind: "send", target: {}, payload: payload({ attachments: [file("big.bin", 7000, 0x62), file("small.txt", 100)] }), beforeSubmission: async () => { order.push("before"); } });
+    await t.provider.execute({ id: "s1", kind: "send", target: {}, payload: payload({ attachments: [file("big.bin", 9000, 0x62), file("small.txt", 100)] }), beforeSubmission: async () => { order.push("before"); } });
     expect(order).toEqual(["before", "send"]);
     expect(t.ms.sent).toHaveLength(1);
     const sent = t.ms.sent[0]!;
     expect(sent.via).toBe("draft");
-    expect(sent.mime).toContain("small.txt");
+    expect(sent.mime).not.toContain("small.txt");
     expect(sent.mime).not.toContain("big.bin");
-    expect(sent.files).toEqual([expect.objectContaining({ name: "big.bin", size: 7000 })]);
-    expect(sent.files[0]!.bytes.equals(Buffer.alloc(7000, 0x62))).toBe(true);
-    expect(t.ms.uploads.map((u) => u.range)).toEqual(["bytes 0-2999/7000", "bytes 3000-5999/7000", "bytes 6000-6999/7000"]);
+    expect(sent.files.map((f) => [f.name, f.size])).toEqual([["big.bin", 9000], ["small.txt", 100]]);
+    expect(sent.files[0]!.bytes.equals(Buffer.alloc(9000, 0x62))).toBe(true);
+    expect(sent.files[1]!.bytes.equals(Buffer.alloc(100, 0x61))).toBe(true);
+    expect(t.ms.uploads.map((u) => u.range)).toEqual(["bytes 0-2999/9000", "bytes 3000-5999/9000", "bytes 6000-8999/9000"]);
     expect(t.ms.uploadAuthorized).toBe(0);
     expect(t.ms.inFolder("sentitems")).toHaveLength(1);
     expect(t.ms.inFolder("drafts")).toHaveLength(0);
   });
 
-  it("interrupted before the submission (an upload): retryable, the draft goes, nothing sent; after it (the draft's send): unknown", async () => {
-    const t = await setup({ largeAttachmentBytes: 5000, uploadPieceBytes: 3000 });
-    t.ms.uploadMin = 5000;
+  it("files each small enough on their own, but over the limit together, go through the draft with their bytes; one under the limit goes straight through sendMail", async () => {
+    const t = await setup({ writeMaxBytes: 12_000, uploadPieceBytes: 3000 });
+    t.ms.writeMax = 12_000;
+    await t.provider.execute({ id: "s1", kind: "send", target: {}, payload: payload({ attachments: [file("a.bin", 3000), file("b.bin", 3000), file("c.bin", 3000)] }) });
+    expect(t.ms.sent.map((s) => s.via)).toEqual(["draft"]);
+    expect(t.ms.sent[0]!.files.map((f) => f.name)).toEqual(["a.bin", "b.bin", "c.bin"]);
+    expect(t.ms.uploads).toEqual([]);
+    await t.provider.execute({ id: "s2", kind: "send", target: {}, payload: payload({ messageId: "m2@x", attachments: [file("d.bin", 1000)] }) });
+    expect(t.ms.sent.map((s) => s.via)).toEqual(["draft", "sendMail"]);
+    expect(t.ms.sent[1]!.mime).toContain("d.bin");
+  });
+
+  it("a sync while the draft is still being built stores none of it (Codex code review #1); the Sent copy comes whole after", async () => {
+    const t = await setup({ writeMaxBytes: 12_000, uploadPieceBytes: 3000 });
+    t.ms.writeMax = 12_000;
+    t.ms.uploadMin = 9000;
+    await t.sync();
+    let draft: string | undefined;
+    await t.provider.execute({ id: "s1", kind: "send", target: {}, payload: payload({ attachments: [file("big.bin", 9000)] }), beforeSubmission: async () => {
+      draft = t.ms.inFolder("drafts")[0]!.id;
+      await t.sync();
+      expect(t.rows.has(draft)).toBe(false);
+    } });
+    await t.sync();
+    expect(t.rows.has(draft!)).toBe(true);
+    expect(t.row(draft!)).toMatchObject({ inInbox: false, isTrash: false });
+  });
+
+  it("interrupted before the submission (an upload): retryable, the draft goes, nothing sent; after it (the draft's send): unknown; refused at it (Codex code review #5): the draft goes", async () => {
+    const t = await setup({ writeMaxBytes: 12_000, uploadPieceBytes: 3000 });
+    t.ms.writeMax = 12_000;
+    t.ms.uploadMin = 9000;
     let puts = 0;
     t.ms.lose = (request) => request === "PUT /upload" && ++puts === 2 ? "after" : undefined;
-    const before = await t.provider.execute({ id: "s1", kind: "send", target: {}, payload: payload({ attachments: [file("big.bin", 7000)] }) }).catch((e: unknown) => e);
+    const before = await t.provider.execute({ id: "s1", kind: "send", target: {}, payload: payload({ attachments: [file("big.bin", 9000)] }) }).catch((e: unknown) => e);
     expect(before).toMatchObject({ retryable: true, ambiguous: false });
     expect(t.ms.sent).toEqual([]);
     expect(t.ms.inFolder("drafts")).toEqual([]);
     t.ms.lose = null;
-    await t.provider.execute({ id: "s1", kind: "send", target: {}, payload: payload({ attachments: [file("big.bin", 7000)] }) });
+    await t.provider.execute({ id: "s1", kind: "send", target: {}, payload: payload({ attachments: [file("big.bin", 9000)] }) });
     expect(t.ms.sent).toHaveLength(1);
     t.ms.lose = (request) => /^POST \/me\/messages\/[^/]+\/send$/.test(request) ? "after" : undefined;
-    const after = await t.provider.execute({ id: "s2", kind: "send", target: {}, payload: payload({ messageId: "m2@x", attachments: [file("big.bin", 7000)] }) }).catch((e: unknown) => e);
+    const after = await t.provider.execute({ id: "s2", kind: "send", target: {}, payload: payload({ messageId: "m2@x", attachments: [file("big.bin", 9000)] }) }).catch((e: unknown) => e);
     expect(after).toMatchObject({ ambiguous: true, retryable: false });
     expect(t.ms.sent).toHaveLength(2);
-    // beforeSubmission refusing (the send was cancelled meanwhile) sends nothing and leaves no draft
+    // an unknown send's draft is left alone (it may be the message that went)
     t.ms.lose = null;
-    await expect(t.provider.execute({ id: "s3", kind: "send", target: {}, payload: payload({ messageId: "m3@x", attachments: [file("big.bin", 7000)] }), beforeSubmission: async () => { throw new ProviderError("cancelled", false); } })).rejects.toThrow("cancelled");
-    expect(t.ms.sent).toHaveLength(2);
-    expect(t.ms.inFolder("drafts")).toEqual([]);
+    // Graph refused the draft's send (a throttle): not sent, the draft goes, and the retry sends one
+    t.ms.throttle = { status: 429, retryAfter: "1", match: /\/send$/, times: 1 };
+    const drafts = t.ms.inFolder("drafts").length;
+    await expect(t.provider.execute({ id: "s3", kind: "send", target: {}, payload: payload({ messageId: "m3@x", attachments: [file("big.bin", 9000)] }) })).rejects.toMatchObject({ retryable: true, ambiguous: false });
+    expect(t.ms.inFolder("drafts")).toHaveLength(drafts);
+    await t.provider.execute({ id: "s3", kind: "send", target: {}, payload: payload({ messageId: "m3@x", attachments: [file("big.bin", 9000)] }) });
+    expect(t.ms.sent).toHaveLength(3);
+    expect(t.ms.inFolder("drafts")).toHaveLength(drafts);
+    // beforeSubmission refusing (the send was cancelled meanwhile) sends nothing and leaves no draft
+    await expect(t.provider.execute({ id: "s4", kind: "send", target: {}, payload: payload({ messageId: "m4@x", attachments: [file("big.bin", 9000)] }), beforeSubmission: async () => { throw new ProviderError("cancelled", false); } })).rejects.toThrow("cancelled");
+    expect(t.ms.sent).toHaveLength(3);
+    expect(t.ms.inFolder("drafts")).toHaveLength(drafts);
   });
 
   it("refuses an upload URL anywhere but outlook.office.com or Graph's own root", async () => {
-    const t = await setup({ largeAttachmentBytes: 5000, uploadPieceBytes: 3000, rewrite: (url, body) => url.endsWith("/createUploadSession") ? { ...(body as object), uploadUrl: "https://upload.example.test/session" } : body });
-    t.ms.uploadMin = 5000;
-    await expect(t.provider.execute({ id: "s1", kind: "send", target: {}, payload: payload({ attachments: [file("big.bin", 7000)] }) })).rejects.toMatchObject({ i18n: { key: "errors.outlook.invalidResponse" } });
+    const t = await setup({ writeMaxBytes: 12_000, uploadPieceBytes: 3000, rewrite: (url, body) => url.endsWith("/createUploadSession") ? { ...(body as object), uploadUrl: "https://upload.example.test/session" } : body });
+    t.ms.writeMax = 12_000;
+    t.ms.uploadMin = 9000;
+    await expect(t.provider.execute({ id: "s1", kind: "send", target: {}, payload: payload({ attachments: [file("big.bin", 9000)] }) })).rejects.toMatchObject({ i18n: { key: "errors.outlook.invalidResponse" } });
     expect(t.ms.uploads).toEqual([]);
     expect(t.ms.sent).toEqual([]);
   });

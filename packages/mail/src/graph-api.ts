@@ -230,40 +230,46 @@ export interface GraphApiOptions {
   buildRaw?: (payload: SendPayload) => Promise<Uint8Array>;
   /** tests only: a send's deadline (SEND_TIMEOUT_MS) */
   sendTimeoutMs?: number;
-  /** tests only: the attachment size from which a send goes through a draft and upload sessions */
-  largeAttachmentBytes?: number;
+  /** tests only: Graph's write limit, over which a send goes through a draft (WRITE_MAX_BYTES) */
+  writeMaxBytes?: number;
   /** tests only: an upload session's piece */
   uploadPieceBytes?: number;
 }
 
 interface IncomingResource { parsed: ParsedMessage; bytes: number; promoted: boolean; release(): void }
 
-/** At most `width` requests at once; a waiter that's aborted leaves the queue. */
+/**
+ * At most `width` requests at once, in the order asked; a waiter that's aborted leaves the queue. A JSON batch takes as
+ * many as Graph runs of it at once (stage 2b, Codex code review #10), all together, so two never deadlock.
+ */
 function createSlots(width: number) {
   let active = 0;
-  const waiting: { go(): void }[] = [];
-  const release = () => {
-    const next = waiting.shift();
-    if (next) next.go();
-    else active--;
+  const waiting: { n: number; go(): void }[] = [];
+  const admit = () => {
+    while (waiting.length && active + waiting[0]!.n <= width) {
+      const next = waiting.shift()!;
+      active += next.n;
+      next.go();
+    }
   };
   return {
     get active() { return active; },
-    async acquire(signal?: AbortSignal): Promise<() => void> {
+    async acquire(signal?: AbortSignal, n = 1): Promise<() => void> {
       signal?.throwIfAborted();
-      if (active < width) active++;
+      if (!waiting.length && active + n <= width) active += n;
       else await new Promise<void>((resolve, reject) => {
-        const waiter = { go: () => { signal?.removeEventListener("abort", abort); resolve(); } };
+        const waiter = { n, go: () => { signal?.removeEventListener("abort", abort); resolve(); } };
         const abort = () => {
           const at = waiting.indexOf(waiter);
           if (at >= 0) waiting.splice(at, 1);
+          admit();
           reject(signal!.reason);
         };
         waiting.push(waiter);
         signal?.addEventListener("abort", abort, { once: true });
       });
       let released = false;
-      return () => { if (!released) { released = true; release(); } };
+      return () => { if (!released) { released = true; active -= n; admit(); } };
     },
   };
 }
@@ -317,6 +323,8 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
   const yieldPage = () => ctx.yield?.() ?? new Promise<void>((resolve) => setTimeout(resolve, 0));
   /** reads in flight listen here: reset() aborts them all at once */
   let reads = new AbortController();
+  /** stage 2b: drafts a send is building (graph-writes.ts); a sync stores none of them */
+  const staging = new Set<string>();
 
   /** A path under Graph's root, or a link Graph handed back: only ever to Graph's own root (privacy: plan 97). */
   function resolve(target: string): string {
@@ -400,9 +408,10 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
     const url = resolve(target);
     // Outlook's own pace and its four at once: what's queued leaves only for a pass still going; a send the person
     // asked for counts but never waits on the pace
+    const requests = Math.max(1, call.batch ?? 1);
     if (call.submission) quota.charge(1);
-    else if (!quota.unpaced) await quota.spend(1, waitOn);
-    const release = await slots.acquire(waitOn);
+    else if (!quota.unpaced) await quota.spend(requests, waitOn);
+    const release = await slots.acquire(waitOn, Math.min(GRAPH_CONCURRENCY, requests));
     let holding = true;
     const free = () => { if (holding) { holding = false; release(); } };
     const sending = call.submission === true;
@@ -853,6 +862,8 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
     const lookup = lookups(sink);
     const updates: FlagUpdate[] = [], fresh: Wanted[] = [], removed: string[] = [], undated: string[] = [];
     for (const envelope of items) {
+      // a send's draft on its way (its files still going up): the Sent copy comes whole after it (Codex code review #1)
+      if (staging.has(envelope.id)) continue;
       if (envelope.removed) {
         const where = sink.seen.get(envelope.id);
         if (where === undefined || where === folder.id) removed.push(envelope.id);
@@ -1320,10 +1331,11 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
   }
 
   const writes = createGraphWrites({
+    // stage 2b (Codex code review #1): a send's drafts on their way are never stored
     ctx, api, roleIds, upload,
     readCatalog: () => readCatalog({ signal: NEVER }),
     refusal: (error) => error instanceof GraphApiError ? { status: error.status, codes: error.codes } : undefined,
-    buildRaw: options.buildRaw, largeAttachmentBytes: options.largeAttachmentBytes, uploadPieceBytes: options.uploadPieceBytes,
+    buildRaw: options.buildRaw, writeMaxBytes: options.writeMaxBytes, uploadPieceBytes: options.uploadPieceBytes, staging,
   });
 
   return {

@@ -120,6 +120,12 @@ describe("an Outlook account signs in again (plan 259)", () => {
     expect(await config(account.id)).toMatchObject({ microsoftUsername: "ana.ruiz@contoso.onmicrosoft.com" });
     await client.call("accounts.reconnect", { id: account.id });
     expect(ms.authorizations.at(-1)!.get("login_hint")).toBe("ana.ruiz@contoso.onmicrosoft.com");
+    // Codex code review #11: a sign-in name that changed is learned when signing in again, for the next time
+    ms.userPrincipalName = "ana.r@contoso.onmicrosoft.com";
+    await client.call("accounts.reconnect", { id: account.id });
+    expect(await config(account.id)).toMatchObject({ microsoftUsername: "ana.r@contoso.onmicrosoft.com", microsoftSubject: `${ms.tid}:${ms.oid}` });
+    await client.call("accounts.reconnect", { id: account.id });
+    expect(ms.authorizations.at(-1)!.get("login_hint")).toBe("ana.r@contoso.onmicrosoft.com");
   });
 
   it("Codex code review #9: reconnect uses the registration that connected the account, not the build's preferred one", async () => {

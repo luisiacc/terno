@@ -17,10 +17,11 @@ import { ProviderError, type FolderChange, type FolderMove, type ProviderContext
 /** "Microsoft Graph supports batching up to 20 requests" (learn.microsoft.com/graph/json-batching) */
 export const BATCH_MAX = 20;
 /**
- * Upload sessions take a file "between 3 MB and 150 MB" (learn.microsoft.com/graph/outlook-large-attachments). A send
- * with a file this size or larger goes through a draft; 3 MiB is inside that range whichever megabyte the page means.
+ * "Write requests in the Microsoft Graph API have a size limit of 4 MB" (learn.microsoft.com/graph/use-the-api): the
+ * smaller reading of a megabyte. A send's base64 MIME over it goes through a draft; a file whose own request would be
+ * over it goes through an upload session ("between 3 MB and 150 MB": learn.microsoft.com/graph/outlook-large-attachments).
  */
-export const LARGE_ATTACHMENT_BYTES = 3 * 1024 * 1024;
+export const WRITE_MAX_BYTES = 4_000_000;
 /** "keep each byte range less than 4 MB" (outlook-large-attachments); divisible by three, so base64 cuts cleanly */
 export const UPLOAD_PIECE_BYTES = 3 * 1024 * 1024;
 /** a batch's answers carry each moved or changed message whole (bodies too): bounded, generously */
@@ -46,8 +47,11 @@ export interface GraphWriteDeps {
   /** whether a 4xx says Graph refused this very request (GraphApiError's status and codes) */
   refusal(error: unknown): { status: number; codes: readonly string[] } | undefined;
   buildRaw?: (payload: SendPayload) => Promise<Uint8Array>;
-  largeAttachmentBytes?: number;
+  /** tests only: Graph's write limit (WRITE_MAX_BYTES) */
+  writeMaxBytes?: number;
   uploadPieceBytes?: number;
+  /** drafts a send is building right now: a sync stores none of them (the Sent copy comes whole) */
+  staging: Set<string>;
 }
 
 /** A batch's sub-request, and what came back for it. */
@@ -78,7 +82,7 @@ export function createGraphWrites(deps: GraphWriteDeps) {
       headers: { prefer: IMMUTABLE, ...(s.body !== undefined && { "content-type": "application/json" }) },
       ...(s.body !== undefined && { body: s.body }),
     }));
-    const value = await api("/$batch", { method: "POST", body: JSON.stringify({ requests }), batch: true, run, admission: "background", limit: BATCH_BYTES });
+    const value = await api("/$batch", { method: "POST", body: JSON.stringify({ requests }), batch: subs.length, run, admission: "background", limit: BATCH_BYTES });
     if (!isRecord(value) || !Array.isArray(value.responses) || value.responses.length > subs.length) throw invalid();
     const out: (Answer | undefined)[] = subs.map(() => undefined);
     for (const r of value.responses) {
@@ -147,8 +151,9 @@ export function createGraphWrites(deps: GraphWriteDeps) {
    * A location op over these messages, 20 a batch: where each is read first (a GET of its parentFolderId), then those
    * the rule moves are moved (POST /move, whose answer is the message in its new folder: 201 Created). What's already
    * where it's going isn't moved: a retry after a partial success moves only what's left, and Graph's answer to a move
-   * into the folder a message is in isn't one its pages give. Each chunk's confirmed folders are written before the next
-   * (and before a failure is thrown), so what's done stays done.
+   * into the folder a message is in isn't one its pages give. What the read found already there is written before the
+   * moves go, and each move's answer before any sibling's failure is thrown (Codex code review #8), so what's done stays
+   * done.
    */
   async function relocate(targets: readonly Target[], rule: Rule, run?: RequestRun): Promise<void> {
     if (!targets.length) return;
@@ -159,7 +164,7 @@ export function createGraphWrites(deps: GraphWriteDeps) {
     for (let i = 0; i < targets.length; i += BATCH_MAX) {
       const chunk = targets.slice(i, i + BATCH_MAX);
       let first: ProviderError | undefined;
-      const placements: MessagePlacement[] = [];
+      let placements: MessagePlacement[] = [];
       const reads = await batch(chunk.map((t) => ({ method: "GET", url: `/me/messages/${enc(t.graphId)}?$select=id,parentFolderId` })), run);
       const moves: Target[] = [];
       chunk.forEach((t, n) => {
@@ -174,6 +179,8 @@ export function createGraphWrites(deps: GraphWriteDeps) {
         if (at(rule.to, place, roles)) placements.push({ messageId: t.local, providerMsgId: t.graphId, folder: folderKey(parent, roles) });
         else if (rule.moves(place)) moves.push(t);
       });
+      if (placements.length) await store.placeMessages(placements);
+      placements = [];
       if (moves.length) {
         const answers = await batch(moves.map((t) => ({ method: "POST", url: `/me/messages/${enc(t.graphId)}/move`, body: { destinationId: rule.to } })), run);
         moves.forEach((t, n) => {
@@ -182,7 +189,8 @@ export function createGraphWrites(deps: GraphWriteDeps) {
           // read a moment ago: a 404 now is the destination's (a folder deleted meanwhile), never a message to forget
           if (a.status === 404) return void (first ??= new ProviderError(L("errors.folder.notFound"), false));
           if (!ok(a)) return void (first ??= failure(a));
-          const parent = parentOf(a.body);
+          let parent: string | undefined;
+          try { parent = parentOf(a.body); } catch (error) { return void (first ??= error as ProviderError); }
           const to = parent ?? (destination ? roles[destination]! : rule.to);
           placements.push({ messageId: t.local, providerMsgId: t.graphId, folder: folderKey(to, roles) });
         });
@@ -243,50 +251,88 @@ export function createGraphWrites(deps: GraphWriteDeps) {
     }
   }
 
+  /** a base64 body's length, as Graph receives it */
+  const encoded = (bytes: number) => Math.ceil(bytes / 3) * 4;
+
   /**
-   * Plan 259 revision 9: a send. With no file at or over LARGE_ATTACHMENT_BYTES, `POST /me/sendMail` with the MIME
-   * (202 Accepted, nothing in the body: its Sent copy comes with the Sent Items delta and takes the local row's place by
-   * its Message-ID). Otherwise a draft from the MIME without the large files (`POST /me/messages`: 201 with its id), an
-   * upload session for each, then `POST /me/messages/{id}/send`. The draft and uploads are safe to repeat (a failure
-   * before the send deletes the draft); `beforeSubmission` runs right before the submission; once the submission may
-   * have left, a failure is unknown and the message is never sent again (plan 65).
+   * A small file into the draft: `POST /me/messages/{id}/attachments` with its bytes in `contentBytes` (for "a file
+   * that's smaller than 3 MB": learn.microsoft.com/graph/outlook-large-attachments).
+   */
+  async function attachFile(draft: string, file: NonNullable<SendPayload["attachments"]>[number] & { dataBase64: string }, run?: RequestRun): Promise<void> {
+    const body = JSON.stringify({ "@odata.type": "#microsoft.graph.fileAttachment", name: file.filename, contentType: file.mime, contentBytes: file.dataBase64, ...(file.contentId && { isInline: true, contentId: file.contentId }) });
+    const answer = await api(`/me/messages/${enc(draft)}/attachments`, { method: "POST", body, admission: "send", run, limit: 65_536 });
+    if (!isRecord(answer)) throw invalid();
+  }
+
+  /**
+   * Plan 259 revision 9: a send. "Write requests in the Microsoft Graph API have a size limit of 4 MB"
+   * (learn.microsoft.com/graph/use-the-api), so the MIME goes as it is through `POST /me/sendMail` (202 Accepted, nothing
+   * in the body) only while its base64 fits (Codex code review #2). Otherwise it's a draft: the MIME without its files
+   * (`POST /me/messages`: 201 with its id), each file added (a small one with its bytes, one too large for a request
+   * through an upload session), then `POST /me/messages/{id}/send`. The Sent copy comes with the Sent Items delta and takes
+   * the local row's place by its Message-ID; the draft is never stored on its way (`staging`: Codex code review #1).
+   * The draft and its files are safe to repeat: a failure before the send, or a send Graph refused, deletes the draft
+   * (Codex code review #5). `beforeSubmission` runs right before the submission; once it may have left, a failure is
+   * unknown and the message is never sent again (plan 65), nor its draft touched.
    */
   async function send(op: ProviderOp): Promise<void> {
     if (!deps.buildRaw) throw new ProviderError(L("errors.outlook.actionNotYet"), false);
     const payload = op.payload as SendPayload;
     const files = payload.attachments ?? [];
-    const threshold = deps.largeAttachmentBytes ?? LARGE_ATTACHMENT_BYTES;
-    const isLarge = files.map((f) => f.size >= threshold);
+    const limit = deps.writeMaxBytes ?? WRITE_MAX_BYTES;
     const submit = (target: string, body?: Blob) => api(target, { method: "POST", ...(body && { body, contentType: "text/plain" }), submission: true, empty: true, run: op.requestRun, admission: "send" });
-    if (!isLarge.includes(true)) {
-      const body = await graphMimeBody(await deps.buildRaw(payload));
-      await op.beforeSubmission?.();
-      await submit("/me/sendMail", body);
-      return;
+    // what the files alone come to in the MIME, then in its base64: a message clearly too large isn't built whole
+    if (encoded(files.reduce((n, f) => n + encoded(f.size), 0)) <= limit) {
+      const raw = await deps.buildRaw(payload);
+      if (encoded(raw.byteLength) <= limit) {
+        const body = await graphMimeBody(raw);
+        await op.beforeSubmission?.();
+        await submit("/me/sendMail", body);
+        return;
+      }
     }
     // checked as buildRaw checks what it carries: present, canonical, the size said
-    const large = await checkedAttachments({ ...payload, attachments: files.filter((_, i) => isLarge[i]) });
-    const raw = await deps.buildRaw({ ...payload, attachments: files.filter((_, i) => !isLarge[i]) });
+    const checked = await checkedAttachments(payload);
+    const raw = await deps.buildRaw({ ...payload, attachments: [] });
+    if (encoded(raw.byteLength) > limit) throw new ProviderError(L("attachments.tooLarge"), false);
     const created = await api("/me/messages", { method: "POST", body: await graphMimeBody(raw), contentType: "text/plain", admission: "send", run: op.requestRun, limit: DRAFT_BYTES });
     if (!isRecord(created) || !nonempty(created.id) || created.id.length > ID_MAX) throw invalid();
     const draft = created.id;
+    deps.staging.add(draft);
+    const discard = () => api(`/me/messages/${enc(draft)}`, { method: "DELETE", empty: true, admission: "send" }).catch(() => {});
     try {
-      for (const file of large) await uploadFile(draft, file, op.requestRun);
-      await op.beforeSubmission?.();
-    } catch (error) {
-      // nothing was sent: the draft goes (best effort; one left over is an ordinary draft the person can delete)
-      await api(`/me/messages/${enc(draft)}`, { method: "DELETE", empty: true, admission: "send" }).catch(() => {});
-      throw error;
+      try {
+        // a file whose request (its base64 and the JSON around it) fits goes whole; a larger one through a session
+        for (const file of checked) {
+          if (encoded(file.size) + 4096 <= limit) await attachFile(draft, file, op.requestRun);
+          else await uploadFile(draft, file, op.requestRun);
+        }
+        await op.beforeSubmission?.();
+      } catch (error) {
+        // nothing was sent: the draft goes (best effort; one left over is an ordinary draft the person can delete)
+        await discard();
+        throw error;
+      }
+      try { await submit(`/me/messages/${enc(draft)}/send`); }
+      catch (error) {
+        // Graph refused it (a throttle, a 4xx): not sent, so its draft goes too and the retry starts clean
+        if (error instanceof ProviderError && !error.ambiguous && !error.network) await discard();
+        throw error;
+      }
+    } finally {
+      deps.staging.delete(draft);
     }
-    await submit(`/me/messages/${enc(draft)}/send`);
   }
 
   // ───────────────────────────── folders (plan 107) ─────────────────────────────
 
-  /** the folder and every folder under it, as the tree says */
+  /** the folder and every folder under it, as the tree says (children indexed once: Codex code review #12) */
   function subtree(tree: Catalog["tree"], key: string): string[] {
+    const children = new Map<string, string[]>();
+    for (const [id, node] of tree) if (node.parent !== null) (children.get(node.parent) ?? children.set(node.parent, []).get(node.parent)!).push(id);
     const out = [key];
-    for (let i = 0; i < out.length; i++) for (const [id, node] of tree) if (node.parent === out[i] && !out.includes(id)) out.push(id);
+    const seen = new Set(out);
+    for (let i = 0; i < out.length; i++) for (const id of children.get(out[i]!) ?? []) if (!seen.has(id)) { seen.add(id); out.push(id); }
     return out;
   }
 
@@ -385,10 +431,17 @@ export function createGraphWrites(deps: GraphWriteDeps) {
         }
         return true;
       }, (after) => after.tree.has(key) ? undefined : true);
-      const after = await deps.readCatalog();
       const listed = new Set(before.folders.map((f) => f.key));
+      const below = subtree(before.tree, key).filter((k) => listed.has(k));
+      // Graph said it's gone: if the list can't be read now, it's the one before without the folder and what was under
+      // it, so the host still follows the deletion (filters, favorites: Codex code review #9)
+      const after = await deps.readCatalog().catch(() => undefined);
+      if (!after) {
+        const went = new Set(below);
+        return { folders: before.folders.filter((f) => !went.has(f.key)), deleted: below };
+      }
       // what went is what the list no longer has: the folder, and every folder that was under it
-      return { folders: after.folders, deleted: subtree(before.tree, key).filter((k) => listed.has(k) && !after.tree.has(k)) };
+      return { folders: after.folders, deleted: below.filter((k) => !after.tree.has(k)) };
     },
   };
 }

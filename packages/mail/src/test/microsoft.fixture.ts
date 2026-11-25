@@ -83,7 +83,9 @@ export class SyntheticMicrosoft {
   /** `$value` answers wait for this, when set */
   valueGate: Promise<void> | null = null;
   /** the smallest file an upload session takes (the page's 3 MB; tests lower it) */
-  uploadMin = 3 * 1024 * 1024;
+  uploadMin = 3_000_000;
+  /** the largest write request (Graph's 4 MB; tests lower it) */
+  writeMax = 4 * 1024 * 1024;
   /** the next matching requests are throttled: a 429 (or a 503) with this Retry-After */
   throttle: { status: 429 | 503; retryAfter?: string; match?: RegExp; times: number } | null = null;
   /** how an expired link is refused: 410 Gone, or a 400 with error.code syncStateNotFound */
@@ -298,6 +300,8 @@ export class SyntheticMicrosoft {
       res.writeHead(status, { "content-type": "application/json", ...headers });
       res.end(data === undefined ? undefined : JSON.stringify(data));
     };
+    // "Write requests … have a size limit of 4 MB … fail with the status code HTTP 413" (use-the-api); an upload's piece too
+    if (raw.length > this.writeMax && req.method !== "GET") return json(413, { error: { code: "RequestEntityTooLarge" } });
     // an upload session's PUT: its URL carries its own authorization, and the page says to send none
     if (url.pathname.startsWith("/v1.0/upload/") && req.method === "PUT") return this.uploadPut(url.pathname.slice("/v1.0/upload/".length), req, raw, json);
     if (url.pathname === "/common/oauth2/v2.0/token" && req.method === "POST") {
@@ -602,6 +606,13 @@ export class SyntheticMicrosoft {
         this.move(m.id, to.id);
         // "returns 201 Created response code and a message resource"
         return json(201, this.resource(m));
+      }
+      if (parts[2] === "attachments" && parts.length === 3 && method === "POST") {
+        // a small file with its bytes ("smaller than 3 MB": outlook-large-attachments)
+        if (read["@odata.type"] !== "#microsoft.graph.fileAttachment" || typeof read.name !== "string" || typeof read.contentBytes !== "string") return json(400, { error: { code: "ErrorInvalidRequest" } });
+        const bytes = Buffer.from(read.contentBytes, "base64");
+        (this.files.get(m.id) ?? this.files.set(m.id, []).get(m.id)!).push({ name: read.name, size: bytes.length, isInline: read.isInline === true, ...(typeof read.contentId === "string" && { contentId: read.contentId }), bytes });
+        return json(201, { "@odata.type": "#microsoft.graph.fileAttachment", id: `att-${bytes.length}`, name: read.name, size: bytes.length });
       }
       if (parts[2] === "attachments" && parts[3] === "createUploadSession" && parts.length === 4 && method === "POST") {
         const item = read.AttachmentItem as Record<string, unknown> | undefined;

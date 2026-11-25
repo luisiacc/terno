@@ -275,6 +275,13 @@ export async function connectExistingMicrosoft(b: Backend, account: Account, flo
   return result;
 }
 
+/** Plan 259 stage 2b: an Outlook account's sign-in name, kept for the next sign-in's hint when it changed (a hint only). */
+async function rememberMicrosoftUsername(b: Backend, accountId: number, username: string): Promise<void> {
+  const stored = await b.store.accounts.config<Partial<OutlookAccountConfig>>(accountId);
+  if (!stored || stored.config.microsoftUsername === username) return;
+  await b.store.accounts.setProviderConfig(accountId, { ...stored.config, microsoftUsername: username });
+}
+
 /** The account's OAuth sign-in, whichever provider: its grant, checked against the subject the account keeps. */
 async function signInAgain(b: Backend, account: Account, flow: AbortController, method: "google" | "microsoft", expectedSubject: string | null): Promise<{ grant: OAuthGrant; blob?: Uint8Array; google?: GmailConnectResult; microsoft?: MicrosoftConnectResult }> {
   if (method === "google") {
@@ -300,6 +307,7 @@ export async function reconnectAccount(b: Backend, accountId: number, password: 
     const admission = method !== "password" ? await oauthAdmission(b, accountId, flow) : undefined;
     let grant: OAuthGrant | undefined;
     let blob: Uint8Array | undefined;
+    let username: string | undefined;
     switch (method) {
     case "password": {
       if (!b.host.capabilities.imap) throw new RpcError("UNAVAILABLE", L("errors.imapNeedsDesktop"));
@@ -311,9 +319,12 @@ export async function reconnectAccount(b: Backend, accountId: number, password: 
       break;
     }
     case "google":
-    case "microsoft":
-      ({ grant, blob } = await signInAgain(b, account, flow, method, admission!.expectedSubject));
+    case "microsoft": {
+      const signed = await signInAgain(b, account, flow, method, admission!.expectedSubject);
+      ({ grant, blob } = signed);
+      username = signed.microsoft?.username;
       break;
+    }
     default: unhandled(method);
     }
     b.assertSignIn(accountId, flow);
@@ -321,6 +332,9 @@ export async function reconnectAccount(b: Backend, accountId: number, password: 
       await sameAccount(b, stamp, flow);
       await b.dropAccount(accountId);
       b.assertSignIn(accountId, flow);
+      // plan 259 stage 2b (Codex code review #11): the sign-in name Microsoft gave now is the next sign-in's hint, kept
+      // while the account's sync is stopped (its cursor shares the config)
+      if (username) await rememberMicrosoftUsername(b, accountId, username);
       const prepared = grant ? await oauthCredentialIntent(b, account, stamp, grant, flow, blob) : { intent: { kind: "replace" as const, name: `account:${accountId}:password`, expectedBlob: await credentialSnapshot(b, accountId, flow, "password"), blob: blob! } };
       if (grant) prepared.intent.oauth = { ...admission!, subject: grant.sub };
       await commitGoogleCredential(b, accountId, stamp, flow, prepared.intent);
