@@ -5,11 +5,13 @@
  */
 import { generateDataset } from "@terno/mock-data";
 import { markOrder, type IncomingMessage } from "@terno/store";
+import { msg } from "@terno/store/conformance";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { openDatabase } from "./index";
+import { recomputeThreads } from "./ingest";
 import { SqlMailStore } from "./sql-store";
 import { BUDGET_MULTIPLIER, measureAsync, report, type Stat } from "./test/perf";
 import { copyMailbox, MAILBOX_NOW as NOW, PERF_MAILBOX } from "./test/perf-mailbox";
@@ -399,5 +401,96 @@ describe("an account out of the all-accounts Inbox (plan 238)", () => {
         for (const r of inbox) store.db.run("UPDATE threads SET account_id = ?, provider_thread_id = ? WHERE id = ?", r.account_id, r.provider_thread_id, r.id);
       });
     }
+  });
+});
+
+describe("Outlook's one folder a message (plan 259)", () => {
+  it("50,000 messages in 250 folders, 25,000 in one: triage beside them, the folder's pages, a delta read moving 200, and its count and export a slice at a time, within budget", async () => {
+    const o = (await store.accounts.create({ kind: "outlook", email: "me@outlook.example", displayName: "Outlook", color: "brown", now: NOW })).account.id;
+    const columns = (table: string) => store.db.all<{ name: string }>(`PRAGMA table_info(${table})`).map((c) => c.name).filter((c) => c !== "id");
+    const seed = store.db.get<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE is_trash = 0 AND is_spam = 0 AND is_draft = 0 AND is_sent = 0 LIMIT 1")!;
+    // 10,000 conversations of 5 (copies, written here: ingesting 50,000 is minutes), the first 5,000's in "Big", the rest
+    // over 250 folders; a third read
+    const THREADS = 10_000;
+    const PER = 5;
+    const tc = columns("threads");
+    const mc = columns("messages");
+    const base = store.db.get<{ id: number }>("SELECT max(id) AS id FROM threads")!.id;
+    store.db.tx(() => {
+      store.db.run(
+        `WITH RECURSIVE k(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM k WHERE i < ?)
+         INSERT INTO threads (id, ${tc.join(", ")}) SELECT ${base} + k.i, ${tc.map((c) => (c === "account_id" ? String(o) : c === "provider_thread_id" ? "'o259-' || k.i" : c)).join(", ")} FROM threads, k WHERE threads.id = ?`,
+        THREADS, seed.thread_id,
+      );
+      store.db.run(
+        `WITH RECURSIVE k(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM k WHERE i < ?)
+         INSERT INTO messages (${mc.join(", ")}) SELECT ${mc.map((c) => (c === "thread_id" ? `${base} + 1 + (k.i - 1) / ${PER}` : c === "account_id" ? String(o) : c === "provider_msg_id" ? "'o259-' || k.i" : c === "rfc_message_id" ? "NULL" : c === "gmail_labels" ? "NULL" : c === "in_inbox" ? "0" : c === "is_read" ? "k.i % 3 = 0" : c === "date" ? "date + k.i * 1000" : c)).join(", ")} FROM messages, k WHERE messages.id = ?`,
+        THREADS * PER, seed.id,
+      );
+      store.db.run("INSERT INTO message_folders (message_id, account_id, folder) SELECT id, account_id, CASE WHEN thread_id <= ? THEN 'Big' ELSE 'F' || (id % 250) END FROM messages WHERE account_id = ?", base + THREADS / 2, o);
+    });
+    const threads = Array.from({ length: THREADS }, (_, i) => base + 1 + i);
+    // their membership, as ingest's recompute writes it (500 conversations a slice)
+    const recompute: number[] = [];
+    for (let i = 0; i < threads.length; i += 500) {
+      const t = performance.now();
+      store.db.tx(() => recomputeThreads(store.db, threads.slice(i, i + 500)));
+      recompute.push(performance.now() - t);
+    }
+    await store.folders.replace(o, [{ key: "Big", path: ["Big"], selectable: true }, ...Array.from({ length: 250 }, (_, i) => ({ key: `F${i}`, path: [`F${i}`], selectable: true }))]);
+    const big = store.db.get<{ n: number }>("SELECT count(*) AS n FROM message_folders WHERE account_id = ? AND folder = 'Big'", o)!.n;
+    expect(big).toBe((THREADS / 2) * PER);
+    meta.outlook = `${THREADS * PER} messages, ${big} in one folder; recompute of 500 conversations max ${Math.max(...recompute).toFixed(1)} ms`;
+
+    // the folder's pages and the sidebar, as any folder's
+    const folder = { view: "all" as const, accountId: o, folder: "Big", now: NOW };
+    const first = await store.threads.list({ ...folder, limit: 100 });
+    expect(first.items).toHaveLength(100);
+    await gate("Outlook: list a 25,000-message folder, first page (100)", 5, () => store.threads.list({ ...folder, limit: 100 }));
+    const deep = store.db.get<{ last_date: number; id: number }>("SELECT last_date, id FROM threads WHERE account_id = ? ORDER BY last_date DESC, id DESC LIMIT 1 OFFSET 2500", o)!;
+    await gate("Outlook: list a 25,000-message folder, page at conversation #2,500", 5, () => store.threads.list({ ...folder, limit: 100, cursor: { lastDate: deep.last_date, id: deep.id } }));
+    await gate("Outlook: sidebar unread counts with 251 folders", 5, () => store.threads.counts(NOW));
+
+    // triage: an Outlook conversation's, and another account's with Outlook's folders populated (membership reads them)
+    const others = store.db.all<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1 AND account_id != ? LIMIT 200", o).map((r) => r.id);
+    await gate("Outlook: archive / restore one conversation of another account (+ op)", 5, (i) => store.threads.act({ threadIds: [others[i % others.length]!], action: i % 2 ? "moveToInbox" : "archive", signal: null, now: NOW }), 60);
+    await gate("Outlook: mark read / unread one conversation in a folder (+ op)", 5, (i) => store.threads.act({ threadIds: [threads[i % 200]!], action: i % 2 ? "markUnread" : "markRead", signal: null, now: NOW }), 60);
+
+    // a delta read that saw 200 move out of Big: one slice, as ingest's (≥ 1k msgs/s)
+    const moved = store.db.all<{ provider_msg_id: string }>("SELECT provider_msg_id FROM messages INDEXED BY messages_thread WHERE thread_id > ? AND thread_id <= ? ORDER BY thread_id LIMIT 200", base + 200, base + THREADS / 2);
+    const delta = (to: string) => moved.map((m) => msg({ accountId: o, providerMsgId: m.provider_msg_id, inInbox: false, isRead: true, folder: to }));
+    await gate("Outlook: a delta read moving 200 messages between folders", 200, (i) => store.sync.ingest(delta(i % 2 ? "Big" : "F7"), { applyFilters: false, now: NOW, classifier: null }), 10);
+
+    // a delete's count of the folder, a slice at a time: each within a frame, each message looked at once
+    const limit = 1000;
+    const ms: number[] = [];
+    let counted = 0;
+    for (let after: Parameters<typeof store.folders.count>[2] = null; ; ) {
+      const started = performance.now();
+      const r = await store.folders.count(o, ["Big", "F7", "Big"], after, limit);
+      ms.push(performance.now() - started);
+      counted += r.messages;
+      if (!r.next) break;
+      after = r.next;
+    }
+    meta.outlookCount = `${ms.length} slices, ${ms.reduce((a, b) => a + b, 0).toFixed(1)} ms in all, max ${Math.max(...ms).toFixed(2)} ms`;
+    expect(counted).toBe(store.db.get<{ n: number }>("SELECT count(*) AS n FROM message_folders WHERE account_id = ? AND folder IN ('Big', 'F7')", o)!.n);
+    expect(Math.max(...ms), `one count slice (${meta.outlookCount})`).toBeLessThanOrEqual(16 * BUDGET_MULTIPLIER);
+    expect(ms.length).toBeLessThanOrEqual(Math.ceil(counted / limit) + 3);
+
+    // its export's ids, a stretch at a time
+    const stretches: number[] = [];
+    let exported = 0;
+    for (let after: Parameters<typeof store.folderExport.ids>[1] = null; ; ) {
+      const started = performance.now();
+      const r = await store.folderExport.ids({ accountId: o, folder: "Big" }, after, limit);
+      stretches.push(performance.now() - started);
+      exported += r.messages.length;
+      if (!r.next) break;
+      after = r.next;
+    }
+    meta.outlookExport = `${stretches.length} stretches, max ${Math.max(...stretches).toFixed(2)} ms`;
+    expect(exported).toBe(store.db.get<{ n: number }>("SELECT count(*) AS n FROM message_folders WHERE account_id = ? AND folder = 'Big'", o)!.n);
+    expect(Math.max(...stretches), `one export stretch (${meta.outlookExport})`).toBeLessThanOrEqual(16 * BUDGET_MULTIPLIER);
   });
 });

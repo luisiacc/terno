@@ -35,8 +35,9 @@ afterAll(() => {
 
 const yieldTurn = () => new Promise<void>((r) => setTimeout(r, 0));
 
-async function seed(store: MailStore): Promise<number> {
-  const { account } = await store.accounts.create({ kind: "gmail", email: "me@example.com", displayName: "Me", color: "brown", now: 0 });
+/** plan 259: an Outlook account's folder is its messages' own (`folder`), never a label */
+async function seed(store: MailStore, kind: "gmail" | "outlook" = "gmail"): Promise<number> {
+  const { account } = await store.accounts.create({ kind, email: "me@example.com", displayName: "Me", color: "brown", now: 0 });
   await store.folders.replace(account.id, [{ key: "Label_big", path: ["Clients"], selectable: true }]);
   const bytes = new Uint8Array(200 * 1024).map((_, i) => i % 251);
   const all: IncomingMessage[] = [];
@@ -50,7 +51,7 @@ async function seed(store: MailStore): Promise<number> {
       date: NOW - (i % 4000) * 60_000,
       bodyText: `Hola ${i}\n${"palabra ".repeat(300 + (i % 7) * 100)}\nFrom here`,
       bodyHtml: i % 2 ? `<p>Hola ${i}</p>${"<p>texto</p>".repeat(200)}` : null,
-      gmailLabels: inFolder ? ["INBOX", "Label_big"] : ["INBOX"],
+      ...(kind === "outlook" ? { inInbox: !inFolder, folder: inFolder ? "Label_big" : null } : { gmailLabels: inFolder ? ["INBOX", "Label_big"] : ["INBOX"] }),
       ...(inFolder && i % 100 === 0 ? { hasAttachments: true, attachments: [{ filename: `doc-${i}.bin`, mime: "application/octet-stream", size: bytes.length, bytes }] } : {}),
     }));
   }
@@ -282,6 +283,26 @@ describe("folder export (plan 107)", () => {
     const store = await IdbMailStore.open({ name: `export-perf-${Date.now()}`, factory: indexedDB, platform: { uuid: () => crypto.randomUUID(), yield: yieldTurn }, instantSearch: false });
     try {
       await exportAll("IndexedDB", store, await seed(store));
+    } finally {
+      await store.close();
+    }
+  }, 600_000);
+
+  it("plan 259: SQLite: an Outlook folder (walked by message), each next within budget", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "terno-export-perf-"));
+    dirs.push(dir);
+    const store = new SqlMailStore(openDatabase(join(dir, "perf.db")));
+    try {
+      await exportAll("SQLite, Outlook", store, await seed(store, "outlook"));
+    } finally {
+      await store.close();
+    }
+  }, 300_000);
+
+  it("plan 259: IndexedDB: an Outlook folder (walked by message), each next within budget", async () => {
+    const store = await IdbMailStore.open({ name: `export-outlook-perf-${Date.now()}`, factory: indexedDB, platform: { uuid: () => crypto.randomUUID(), yield: yieldTurn }, instantSearch: false });
+    try {
+      await exportAll("IndexedDB, Outlook", store, await seed(store, "outlook"));
     } finally {
       await store.close();
     }
