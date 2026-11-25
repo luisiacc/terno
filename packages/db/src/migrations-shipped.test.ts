@@ -90,6 +90,7 @@ const SHIPPED: [number, string][] = [
   [80, "207ba6c75b90efa6"],
   [81, "e313fee17fcb27c9"],
   [82, "47990565ee0b1b43"],
+  [83, "0888720ea4266fcf"],
 ];
 
 it("a shipped migration's SQL never changes, and a new one is added here", () => {

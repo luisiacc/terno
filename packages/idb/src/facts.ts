@@ -1,4 +1,4 @@
-import { addressKey, addressOnly, automatedLevel, FACTS_WINDOW, newestMessages, threadFacts, waitingFactsNewestFirst, type Address, type ArrivalRow, type FactContext, type FactRow, type ThreadFacts, type WaitingFacts } from "@terno/core";
+import { addressKey, addressOnly, automatedLevel, FACTS_WINDOW, PEOPLE_RULES_V, newestMessages, threadFacts, waitingFactsNewestFirst, type Address, type ArrivalRow, type FactContext, type FactRow, type ThreadFacts, type WaitingFacts } from "@terno/core";
 import type { MemDb, Row, Table } from "./mem";
 import { hiddenCategories, hiddenFromInbox, tabHiddenTest } from "./inbox-hidden";
 import { requestTabRefresh } from "./tabs";
@@ -169,8 +169,16 @@ function setPhase(db: MemDb, p: FactsPhase): void {
   t(db, "settings").put({ key: KEY, value_json: JSON.stringify(p) });
 }
 
+const RULES_KEY = "facts_rules";
+
+/** Plan 278, as SQL's: the facts were computed with other rules of who is a person (absent: the current ones). */
+function rulesStale(db: MemDb): boolean {
+  const r = t(db, "settings").get(RULES_KEY);
+  return r !== undefined && Number(JSON.parse(r.value_json)) !== PEOPLE_RULES_V;
+}
+
 export function factsReady(db: MemDb, queue: FactsQueue): boolean {
-  return factsPhase(db).phase === "done" && queue.size === 0 && senderJobs(db).length === 0;
+  return factsPhase(db).phase === "done" && queue.size === 0 && senderJobs(db).length === 0 && !rulesStale(db);
 }
 
 /** Your addresses: every account's, and every address your sent mail came from. */
@@ -199,6 +207,11 @@ export function factContext(db: MemDb, own: ReadonlySet<string>): FactContext {
     cleared: (id) => t(db, "waiting_acts").get(id)?.state === "done",
     // plan 240: a sender always shown in What matters (a key lookup; the store is early, empty on most mailboxes)
     shown: (key) => t(db, "shown_senders").get(key) !== undefined,
+    // plan 278: your word on the sender (a key lookup; early, empty on most mailboxes)
+    rule: (key) => {
+      const r = t(db, "person_rules").get(key);
+      return r === undefined ? undefined : r.person === 1;
+    },
     answered: (rfcMessageId) => {
       for (const a of t(db, "accounts").all()) {
         for (const ref of t(db, "message_refs").by("ref", a.id, rfcMessageId)) {
@@ -391,13 +404,18 @@ function senderSlice(db: MemDb, n: number): number {
   return Math.max(1, read);
 }
 
-export function startRescan(db: MemDb): void {
+/** As SQL's: every thread's facts again, the facts alone (plan 278); false when there's nothing to check again. */
+function scheduleRescan(db: MemDb): boolean {
   const p = factsPhase(db);
-  if (p.phase === "senders" || t(db, "threads").size === 0) return;
+  if (p.phase === "senders" || t(db, "threads").size === 0) return false;
   if (p.phase === "threads") setPhase(db, { phase: "threads", rescan: true });
   else setPhase(db, { phase: "rescan", after: 0 });
+  return true;
+}
+
+export function startRescan(db: MemDb): void {
   // plan 86: what's yours decides no tab
-  requestTabRefresh(db);
+  if (scheduleRescan(db)) requestTabRefresh(db);
 }
 
 function upsert(db: MemDb, email: string, column: "own" | "written"): boolean {
@@ -474,6 +492,12 @@ export interface SliceResult {
 /** One slice of the backfill, inside the caller's transaction (SQLite's backfillSlice). */
 export function backfillSlice(db: MemDb, queue: FactsQueue, recency: RecencyOrder, limit: number): SliceResult {
   const n = Math.max(1, Math.floor(limit));
+  // plan 278, as SQL's: other rules computed these facts: every thread again, the version written in the same command
+  if (rulesStale(db)) {
+    scheduleRescan(db);
+    t(db, "settings").delete(RULES_KEY);
+    return { phase: factsPhase(db).phase, processed: 1, more: true };
+  }
   const state = factsPhase(db);
   if (state.phase === "senders") {
     const messages = t(db, "messages");
@@ -536,6 +560,11 @@ export function backfillSlice(db: MemDb, queue: FactsQueue, recency: RecencyOrde
     return { phase: "rescan", processed: Math.max(1, ids.length), more: !done };
   }
   return { phase: "done", processed: 0, more: false };
+}
+
+/** Test-only (plan 278): the facts as if computed with this version of the rules. */
+export function stampRules(db: MemDb, version: number): void {
+  t(db, "settings").put({ key: RULES_KEY, value_json: JSON.stringify(version) });
 }
 
 /** Test-only: the state right after the upgrade. */

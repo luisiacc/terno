@@ -122,6 +122,30 @@ describe("the facts backfill (plan 17)", () => {
     expect(slices).toBe(done);
   });
 
+  it("plan 278: a mailbox at rest whose facts older rules computed is checked again at start; a quit after the first slice resumes", async () => {
+    const dir = tempDir();
+    const backend = backendAt(dir);
+    await backend.store.ready;
+    seedDataset(sqlDb(backend.store), generateDataset({ threads: 300, accounts: 2, seed: 8, now: NOW }), { now: NOW });
+    const expected = await factsOf(backend.store);
+    expect(await backend.store.facts.idle()).toBe(true);
+    await backend.store.debug.stampRules(1);
+    expect(await backend.store.facts.idle()).toBe(false);
+    // the first slice commits the new version and the rescan's start, then the app quits
+    await backend.store.facts.backfill({ limit: 5 });
+    expect(await backend.store.settings.get("facts_rules", null)).toBeNull();
+    expect(await backend.store.settings.get<{ phase: string } | null>("facts_backfill", null)).toMatchObject({ phase: "rescan" });
+    await backend.stop();
+    const again = backendAt(dir);
+    expect(await again.store.facts.idle()).toBe(false);
+    const backfill = vi.spyOn(again.store.facts, "backfill");
+    await again.start();
+    await again.facts.idle();
+    expect(backfill.mock.calls.length).toBeGreaterThan(3);
+    expect(await again.store.facts.idle()).toBe(true);
+    expect(await factsOf(again.store)).toEqual(expected);
+  });
+
   it("wakes on a change, sleeps when nothing is pending, announces at most once a second and at the end", async () => {
     vi.useFakeTimers({ toFake: ["performance"] });
     try {

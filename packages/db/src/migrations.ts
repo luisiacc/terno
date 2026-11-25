@@ -1899,6 +1899,20 @@ CREATE TABLE message_folders (
 );
 CREATE INDEX message_folders_folder ON message_folders(account_id, folder, message_id);
 ` },
+  // plan 278: your word on who is a person (by hand, one sender at a time, at most PERSON_RULES_MAX), and the version of the
+  // rules a mailbox's facts were computed with: one that has threads was computed with plan 17's (1), and its facts' backfill
+  // checks them again once, in slices (an empty one starts with the current rules: the key absent). A new table and a new key
+  { version: 83, name: "Who is a person: your word on a sender (plan 278)", sql: `
+CREATE TABLE person_rules (
+  key TEXT PRIMARY KEY,
+  id TEXT NOT NULL,
+  email TEXT NOT NULL,
+  name TEXT NOT NULL DEFAULT '',
+  person INTEGER NOT NULL CHECK (person IN (0, 1)),
+  created_at INTEGER NOT NULL
+) WITHOUT ROWID;
+INSERT INTO settings (key, value_json) SELECT 'facts_rules', '1' WHERE EXISTS (SELECT 1 FROM threads);
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

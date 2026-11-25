@@ -5,6 +5,7 @@ import { actOnWaiting, restoreWaiting, waitingDonePage, waitingMoments, waitingR
 import { scheduleItems, unscheduleItems } from "./schedule";
 import { clearReplies, finishReply, getReply, transitionReply } from "./replies";
 import { addShown, listShown, removeShown, trustedSenders } from "./shown-senders";
+import { listRules, removeRule, restoreRule, setRule } from "./person-rules";
 import { activeWanted, actWanted, addWantedMark, clearLookMarks, clearVerdicts, clearWanted, countWantedMarks, finishWanted, getDraft, getPreferences, getVerdicts, getWanted, pruneVerdicts, pruneWantedMarks, putDraft, putVerdicts, reconcileWanted, restoreWanted, savePreferences, threadWanted, wantedLookCandidates, wantedMarkPage } from "./what-matters";
 import { activeDated, addDatedMute, datedMutes, removeDatedMute, closedDatedPage, claimDatedLook, clearDated, datedMarkCount, datedMarksAmong, datedPendingOn, datedMarkPage, datedMarksRaw, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, datedWritten, updateDated } from "./dated";
 import { activeFollowups, closedFollowupPage, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupsInTrashOrSpam, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
@@ -200,7 +201,7 @@ import { deleteScheduled, failScheduled, getScheduled, listScheduled, putSchedul
 import { answeredReminders, deleteExactReminders, deleteReminders, listReminders, putReminders } from "./reminders";
 import { addPins, deleteExactPins, deletePins, listPins } from "./pins";
 import { requestTabRefresh, startTabsBackfill, tabsIdle, tabsSlice } from "./tabs";
-import { answeredThreads, arrivalRows, backfillSlice, FactsQueue, factsReady, ownMailChanged, referencesOfOwn, resetFacts, startRescan } from "./facts";
+import { answeredThreads, arrivalRows, backfillSlice, FactsQueue, factsReady, ownMailChanged, referencesOfOwn, resetFacts, stampRules, startRescan } from "./facts";
 import { sameRevision, SearchCancelledError, type AutocompleteSource, type ContactBatch, type ContactMessage, type SentText } from "@terno/store";
 import { contactOf, isLearnable, sentOf } from "./autocomplete";
 import { appendOutbox, checkCursor, columnsOf, materializeChanges, pageOf, planScan, scanPage, searchChangeIds, searchHead } from "./search";
@@ -2899,6 +2900,7 @@ export class IdbMailStore implements MailStore {
       });
     },
     resetFacts: () => this.command(() => resetFacts(this.db)),
+    stampRules: (version) => this.command(() => stampRules(this.db, version)),
   };
 
   // ───────────────────────────── facts (plan 17) ─────────────────────────────
@@ -2907,6 +2909,13 @@ export class IdbMailStore implements MailStore {
   readonly facts: MailStore["facts"] = {
     backfill: ({ limit }) => this.command(() => backfillSlice(this.db, this.c.facts, this.c.order, limit), { durability: "relaxed" }),
     idle: () => this.early(() => factsReady(this.db, this.c.facts)),
+    // plan 278: the facts it recomputes read messages, so the changes wait for them as any command does
+    rules: {
+      list: () => this.early(() => listRules(this.c)),
+      set: (r) => this.command(() => setRule(this.c, r)),
+      remove: (key, id) => this.command(() => removeRule(this.c, key, id)),
+      restore: (key, expect, to) => this.command(() => restoreRule(this.c, key, expect, to)),
+    },
   };
 
   readonly tabs: MailStore["tabs"] = {

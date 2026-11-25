@@ -55,7 +55,7 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  */
 export { IDB_VERSION };
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 82;
+export const LOGICAL_SCHEMA = 83;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 
@@ -149,6 +149,8 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   { name: "dated_mute_pairs", early: true, key: ["sender_key", "kind"], indexes: { sender: ["sender_key"] } },
   // plan 240: the senders always shown in What matters (the facts and Needs you's walk read it, so it loads early)
   { name: "shown_senders", early: true, key: ["key"], indexes: {} },
+  // plan 278: your word on who is a person (the facts read it, so it loads early)
+  { name: "person_rules", early: true, key: ["key"], indexes: {} },
   // plan 249: the words' verdicts and what a show rule brought load early (the first screen places by them); the marks hang off
   // messages. `open` holds only open items (SQL's partial index); a memory index has no order, so the pages sort
   { name: "preference_verdicts", early: true, key: ["target"], indexes: {} },
@@ -451,6 +453,13 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
       if (event.oldVersion >= 1 && event.oldVersion < 40) for (const name of ["preference_verdicts", "wanted_items", "wanted_marks"]) if (!db.objectStoreNames.contains(name)) db.createObjectStore(name);
       // plan 259 (likewise)
       if (event.oldVersion >= 1 && event.oldVersion < 41 && !db.objectStoreNames.contains("message_folders")) db.createObjectStore("message_folders");
+      // plan 278 (likewise), and SQL v83's stamp: a mailbox with threads computed its facts with plan 17's rules (1)
+      if (event.oldVersion >= 1 && event.oldVersion < 42) {
+        if (!db.objectStoreNames.contains("person_rules")) db.createObjectStore("person_rules");
+        track(tx.objectStore("threads").count(), (count) => {
+          if (count > 0) track(tx.objectStore("settings").put({ key: "facts_rules", value_json: "1" }, "facts_rules"));
+        });
+      }
       // plan 144 (likewise)
       if (event.oldVersion >= 1 && event.oldVersion < 31 && !db.objectStoreNames.contains("ai_prepared_replies")) db.createObjectStore("ai_prepared_replies");
       // plan 142 (likewise)

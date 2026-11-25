@@ -10,6 +10,7 @@ import { actOnWaiting, restoreWaiting, waitingDonePage, waitingMoments, waitingR
 import { clearReplies, finishReply, getReply, transitionReply } from "./replies";
 import { scheduleItems, unscheduleItems } from "./schedule";
 import { addShown, listShown, removeShown, trustedSenders } from "./shown-senders";
+import { listRules, removeRule, restoreRule, setRule } from "./person-rules";
 import { actWanted, activeWanted, addWantedMark, clearWanted, countWantedMarks, finishWanted, getDraft, getPreferences, getVerdicts, getWanted, pruneVerdicts, pruneWantedMarks, putDraft, putVerdicts, reconcileWanted, restoreWanted, savePreferences, threadWanted, wantedLookCandidates, wantedMarkPage } from "./what-matters";
 import { activeDated, addDatedMute, datedMutes, removeDatedMute, closedDatedPage, claimDatedLook, clearDated, datedMarkCount, datedMarksAmong, datedPendingOn, datedMarkPage, datedMarksRaw, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, datedWritten, updateDated } from "./dated";
 import { activeFollowups, closedFollowupPage, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupsInTrashOrSpam, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
@@ -113,7 +114,7 @@ import { startCheckpointWorker, type CheckpointWorker } from "./checkpoint";
 import { adoptProviderThread, deleteMessages, findIngestMessage, ingestMessages, recomputeThreads, setMessageBody } from "./ingest";
 import { oneFolderAccounts, placeReadFolder } from "./message-folders";
 import { tabsIdle, tabsSlice } from "./tabs";
-import { answeredThreads, arrivalRows, backfillSlice, factsIdle, ownMailChanged, referencesOfOwn, resetFacts, startRescan } from "./facts";
+import { answeredThreads, arrivalRows, backfillSlice, factsIdle, ownMailChanged, referencesOfOwn, resetFacts, stampRules, startRescan } from "./facts";
 import { changeOwner, claimOwner, getOwner } from "./owner";
 import { countScopeThreads, getCounts, getSummaries, getThread, warmThreadRead, listThreads, scopeThreadIds, SUMMARY_COLUMNS, toSummary, type SummaryRow } from "./queries";
 import {
@@ -1865,6 +1866,13 @@ export class SqlMailStore implements MailStore {
   readonly facts: MailStore["facts"] = {
     backfill: async ({ limit }) => this.db.tx(() => backfillSlice(this.db, limit)),
     idle: async () => factsIdle(this.db),
+    // plan 278
+    rules: {
+      list: async () => listRules(this.db),
+      set: async (r) => setRule(this.db, r),
+      remove: async (key, id) => removeRule(this.db, key, id),
+      restore: async (key, expect, to) => restoreRule(this.db, key, expect, to),
+    },
   };
 
   readonly tabs: MailStore["tabs"] = {
@@ -1892,6 +1900,7 @@ export class SqlMailStore implements MailStore {
       this.db.exec("INSERT INTO messages_fts(messages_fts, rank) VALUES('integrity-check', 1)");
     },
     resetFacts: async () => resetFacts(this.db),
+    stampRules: async (version) => stampRules(this.db, version),
   };
 
   readonly dev: MailStore["dev"] = {

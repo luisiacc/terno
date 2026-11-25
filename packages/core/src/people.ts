@@ -332,3 +332,19 @@ export function waitingFactsNewestFirst(next: () => FactRow | undefined, ctx: Fa
   }
   return decide(newest, newest ? inbound : hiddenInbound, ctx);
 }
+
+/** Plan 278: your word on a sender: a person or not, whatever their mail looks like. */
+export interface PersonRule {
+  /** this entry's: an Undo takes back only the change it made */
+  id: string;
+  /** the sender's addressKey */
+  key: string;
+  email: string;
+  name: string;
+  /** true: a person; false: not */
+  person: boolean;
+  at: number;
+}
+
+/** At most this many senders have a rule (a change to one that has one is always taken). */
+export const PERSON_RULES_MAX = 2000;

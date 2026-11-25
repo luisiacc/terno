@@ -490,6 +490,8 @@ describe("migration v14: what the code actually runs (Codex review 3, #2)", () =
     migrate(db);
     db.exec("ANALYZE");
     db.run("UPDATE settings SET value_json = '{\"phase\":\"done\"}' WHERE key = 'facts_backfill'");
+    // plan 278: v83 stamps a mailbox with threads as computed with the older rules; these are current here
+    db.run("DELETE FROM settings WHERE key = 'facts_rules'");
     db.run("UPDATE threads SET person = 0");
     // every statement the calls prepare, with dummy values for EXPLAIN
     const seen: string[] = [];
@@ -972,9 +974,11 @@ describe("migration v77: What matters in your words (plan 249)", () => {
     const kept = () => ["threads", "messages", "dated_items", "settings"].map((t) => db.all<Record<string, unknown>>(`SELECT * FROM ${t} ORDER BY 1`));
     const before = kept();
     expect(migrate(db)).toEqual({ from: 76, to: SCHEMA_VERSION });
-    // every row as it was, with the columns later steps add (v78's only_yours, v79's codes) at their defaults
-    const [threads, messages, ...rest] = before;
-    expect(kept()).toEqual([threads!.map((t) => ({ ...t, only_yours: 0, code: null })), messages!.map((m) => ({ ...m, code: null })), ...rest]);
+    // every row as it was, with the columns later steps add (v78's only_yours, v79's codes) at their defaults, and v83's stamp
+    // of the rules a mailbox with threads was computed with (plan 278)
+    const [threads, messages, items, settings] = before;
+    const stamped = [...settings!, { key: "facts_rules", value_json: "1" }].sort((a, b) => (String(a.key) < String(b.key) ? -1 : 1));
+    expect(kept()).toEqual([threads!.map((t) => ({ ...t, only_yours: 0, code: null })), messages!.map((m) => ({ ...m, code: null })), items, stamped]);
     for (const t of ["preference_verdicts", "wanted_items", "wanted_marks"]) expect(db.all(`SELECT * FROM ${t}`)).toEqual([]);
     expect(db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name IN ('preference_verdicts', 'wanted_items', 'wanted_marks') AND sql IS NOT NULL ORDER BY name").map((r) => r.name)).toEqual(["preference_verdicts_at", "wanted_marks_order", "wanted_message", "wanted_open", "wanted_thread"]);
     const item = (thread: number, message: number, state: string) =>
@@ -1127,5 +1131,39 @@ describe("migration v72: a kind muted from one sender (plan 210, iteration 5)", 
     db.run("INSERT INTO dated_mute_pairs (sender_key, kind, created_at) VALUES ('track@parcelo.test', 'delivery', 1)");
     db.run("INSERT INTO dated_mute_pairs (sender_key, kind, created_at) VALUES ('track@parcelo.test', 'pay', 1)");
     expect(() => db.run("INSERT INTO dated_mute_pairs (sender_key, kind, created_at) VALUES ('track@parcelo.test', 'delivery', 2)")).toThrow();
+  });
+});
+
+describe("migration v83: who is a person, corrected (plan 278)", () => {
+  it("adds the rules' table and stamps a mailbox with threads; its facts' backfill then checks every thread once", async () => {
+    const { backfillSlice, factsIdle } = await import("./facts");
+    const { db } = legacyMail(82, { threads: 30, seed: 9 });
+    // before plan 278, an app's receipt through Amazon SES was a person's
+    const m = db.get<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE is_sent = 0 AND is_draft = 0 AND is_spam = 0 AND is_trash = 0 AND list_id IS NULL AND is_bulk = 0 ORDER BY date DESC, id DESC LIMIT 1")!;
+    db.run("UPDATE messages SET rfc_message_id = '0100-a@email.amazonses.com' WHERE id = ?", m.id);
+    db.run("UPDATE threads SET person = 1 WHERE id = ?", m.thread_id);
+    const before = db.all<Record<string, unknown>>("SELECT id, thread_id, rfc_message_id FROM messages ORDER BY id");
+    expect(migrate(db)).toEqual({ from: 82, to: SCHEMA_VERSION });
+    expect(db.all<Record<string, unknown>>("SELECT id, thread_id, rfc_message_id FROM messages ORDER BY id")).toEqual(before);
+    expect(db.get("SELECT value_json FROM settings WHERE key = 'facts_rules'")).toEqual({ value_json: "1" });
+    expect(factsIdle(db)).toBe(false);
+    let slices = 0;
+    while (db.tx(() => backfillSlice(db, 7)).more) slices++;
+    expect(slices).toBeGreaterThan(3);
+    expect(factsIdle(db)).toBe(true);
+    expect(db.get("SELECT person FROM threads WHERE id = ?", m.thread_id)).toEqual({ person: 0 });
+    expect(db.get("SELECT 1 FROM settings WHERE key = 'facts_rules'")).toBeUndefined();
+    expect(db.all<{ name: string }>("SELECT name FROM pragma_table_info('person_rules') ORDER BY cid").map((r) => r.name)).toEqual(["key", "id", "email", "name", "person", "created_at"]);
+    expect(() => db.run("INSERT INTO person_rules (key, id, email, person, created_at) VALUES ('a@b.test', 'x', 'a@b.test', 2, 1)")).toThrow();
+  });
+
+  it("an empty mailbox starts with the current rules: no stamp, nothing to check", async () => {
+    const { factsIdle } = await import("./facts");
+    const dir = mkdtempSync(join(tmpdir(), "terno-mig83-"));
+    dirs.push(dir);
+    const db = openDatabase(join(dir, "fresh.db"));
+    dbs.push(db);
+    expect(db.get("SELECT 1 FROM settings WHERE key = 'facts_rules'")).toBeUndefined();
+    expect(factsIdle(db)).toBe(true);
   });
 });

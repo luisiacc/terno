@@ -21,6 +21,7 @@ import type {
   FilterState,
   FilterRule,
   OpState,
+  PersonRule,
   Prediction,
   QuickActions,
   Reason,
@@ -402,6 +403,13 @@ export interface ActionThreadFacts {
   inSpam: boolean;
   inCategory: boolean;
 }
+
+/** Plan 278: the threads whose facts a rule's change recomputed inline (a sender with more: the facts' job, woken by the caller). */
+export interface PersonRuleChange {
+  threadIds: number[];
+}
+/** Plan 278: a rule set (`set` null: the sender had that rule already), the one it replaced (`prior`), or the cap reached. */
+export type PersonRuleSet = (PersonRuleChange & { set: PersonRule | null; prior: PersonRule | null }) | "full";
 
 export interface MailStore {
   /** Ordinary commands wait until exclusive durable upgrades have retired. */
@@ -1047,6 +1055,21 @@ export interface MailStore {
     backfill(o: { limit: number }): Promise<{ phase: "senders" | "threads" | "rescan" | "done"; processed: number; more: boolean; next?: "senders" | "threads" }>;
     /** nothing is pending (cheap: what a wake checks first) */
     idle(): Promise<boolean>;
+    /**
+     * Plan 278: your word on who is a person (at most `PERSON_RULES_MAX` senders, newest first). Each change is one command:
+     * the rule and the sender's threads' facts, recomputed inline when few (`threadIds`), else by the facts' sender job
+     */
+    rules: {
+      list(): Promise<PersonRule[]>;
+      set(r: Omit<PersonRule, "key">): Promise<PersonRuleSet>;
+      /** `id`: only that entry */
+      remove(key: string, id?: string): Promise<PersonRuleChange & { removed: PersonRule | null }>;
+      /**
+       * An exact Undo: the sender's rule becomes `to` (none when null) only while it's still `expect` (an entry's id, or none),
+       * so a later change from another window stays. Past the cap if it must
+       */
+      restore(key: string, expect: string | null, to: PersonRule | null): Promise<PersonRuleChange & { restored: boolean }>;
+    };
   };
 
   /**
@@ -1068,6 +1091,8 @@ export interface MailStore {
     verify(): Promise<void>;
     /** plan 17: back to the state right after the facts migration (no facts, no correspondents, the backfill from its start) */
     resetFacts(): Promise<void>;
+    /** plan 278: the facts as if computed with this version of who is a person (what an upgrade from an older one finds) */
+    stampRules(version: number): Promise<void>;
   };
 
   /** development hosts and tests */

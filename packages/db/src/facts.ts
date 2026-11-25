@@ -1,4 +1,4 @@
-import { addressKey, addressOnly, automatedLevel, threadFactsNewestFirst, waitingFactsNewestFirst, type Address, type ArrivalRow, type FactContext, type FactRow, type ThreadFacts, type WaitingFacts } from "@terno/core";
+import { addressKey, addressOnly, automatedLevel, PEOPLE_RULES_V, threadFactsNewestFirst, waitingFactsNewestFirst, type Address, type ArrivalRow, type FactContext, type FactRow, type ThreadFacts, type WaitingFacts } from "@terno/core";
 import type { Db } from "./sqlite";
 import { hidingSql, inboxHiding } from "./inbox-hiding";
 import { requestTabRefresh } from "./tabs";
@@ -44,9 +44,20 @@ function setPhase(db: Db, p: FactsPhase): void {
 
 const hasPending = (db: Db) => db.get("SELECT 1 FROM threads INDEXED BY threads_facts_pending WHERE person IS NULL LIMIT 1") !== undefined;
 
+const RULES_KEY = "facts_rules";
+
+/**
+ * Plan 278: the facts were computed with other rules of who is a person (`PEOPLE_RULES_V`): the backfill's next slice
+ * checks every thread again. Absent: the current ones (v83 stamps a mailbox that had threads with plan 17's, 1).
+ */
+function rulesStale(db: Db): boolean {
+  const r = db.get<{ value_json: string }>("SELECT value_json FROM settings WHERE key = ?", RULES_KEY);
+  return r !== undefined && Number(JSON.parse(r.value_json)) !== PEOPLE_RULES_V;
+}
+
 /** Every thread's facts are current: the counts may say how many wait. */
 export function factsReady(db: Db): boolean {
-  return factsPhase(db).phase === "done" && !hasPending(db) && senderJobs(db).length === 0;
+  return factsPhase(db).phase === "done" && !hasPending(db) && senderJobs(db).length === 0 && !rulesStale(db);
 }
 
 /** Your addresses (plan 17 §2.1): every account's, and every address your sent mail came from. */
@@ -70,8 +81,15 @@ export function factContext(db: Db, own: ReadonlySet<string>): FactContext {
   let acts: boolean | undefined;
   // plan 240: whether any sender is shown, once a context, the same way (a schema before v76 has none)
   let shownAny: boolean | undefined;
+  // plan 278: whether any sender has a rule, the same way (before v83, none)
+  let rulesAny: boolean | undefined;
   return {
     own: (key) => own.has(key),
+    rule: (key) => {
+      if (!(rulesAny ??= db.get("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'person_rules'") !== undefined && db.get("SELECT 1 FROM person_rules LIMIT 1") !== undefined)) return undefined;
+      const r = db.get<{ person: number }>("SELECT person FROM person_rules WHERE key = ?", key);
+      return r === undefined ? undefined : r.person === 1;
+    },
     written: (key) => db.get<{ written: number }>("SELECT written FROM correspondents WHERE email = ?", key)?.written === 1,
     shown: (key) =>
       (shownAny ??= db.get("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'shown_senders'") !== undefined && db.get("SELECT 1 FROM shown_senders LIMIT 1") !== undefined) &&
@@ -249,16 +267,21 @@ function senderSlice(db: Db, n: number): number {
   return Math.max(1, rows.length);
 }
 
-/** Something changed what counts as yours (an alias, an account): every thread's facts are checked again, in slices. */
-export function startRescan(db: Db): void {
+/** Every thread's facts are checked again, in slices; false when there's nothing to check again. The facts alone (plan 278). */
+function scheduleRescan(db: Db): boolean {
   const p = factsPhase(db);
   // while senders are collected nothing is computed yet: the queue gets everything with what is known by then;
   // and with no thread there is nothing to check (the first account of an install)
-  if (p.phase === "senders" || db.get("SELECT 1 FROM threads LIMIT 1") === undefined) return;
+  if (p.phase === "senders" || db.get("SELECT 1 FROM threads LIMIT 1") === undefined) return false;
   if (p.phase === "threads") setPhase(db, { phase: "threads", rescan: true });
   else setPhase(db, { phase: "rescan", after: 0 });
+  return true;
+}
+
+/** Something changed what counts as yours (an alias, an account): every thread's facts are checked again, in slices. */
+export function startRescan(db: Db): void {
   // plan 86: what's yours decides no tab
-  requestTabRefresh(db);
+  if (scheduleRescan(db)) requestTabRefresh(db);
 }
 
 /**
@@ -376,6 +399,13 @@ export interface SliceResult {
  */
 export function backfillSlice(db: Db, limit: number): SliceResult {
   const n = Math.max(1, Math.floor(limit));
+  // plan 278: the rules changed since these facts were computed: every thread again, the version written in the same unit
+  // (while senders are collected, nothing is computed yet: the queue uses the current rules)
+  if (rulesStale(db)) {
+    scheduleRescan(db);
+    db.run("DELETE FROM settings WHERE key = ?", RULES_KEY);
+    return { phase: factsPhase(db).phase, processed: 1, more: true };
+  }
   const state = factsPhase(db);
   if (state.phase === "senders") {
     const max = db.get<{ m: number | null }>("SELECT max(id) AS m FROM messages")!.m ?? 0;
@@ -425,6 +455,11 @@ export function backfillSlice(db: Db, limit: number): SliceResult {
 /** Nothing to do: the phase is done and the queue is empty (two index probes). */
 export function factsIdle(db: Db): boolean {
   return factsReady(db);
+}
+
+/** Test-only (plan 278): the facts as if computed with this version of the rules. */
+export function stampRules(db: Db, version: number): void {
+  db.run("INSERT OR REPLACE INTO settings (key, value_json) VALUES (?, ?)", RULES_KEY, JSON.stringify(version));
 }
 
 /** Test-only: the state right after v14 (no facts, no correspondents, the backfill from its start). */
