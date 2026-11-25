@@ -1,9 +1,10 @@
 import { REMIND_MORNING } from "./reminders";
 import type { ItemSchedule, ScheduleProposal } from "./schedule";
 
-/** Plan 142: Follow-ups: what you promised, and who hasn't replied to you. */
+/** Plan 142: Follow-ups: what you promised, and who hasn't replied to you. Plan 280: and what someone promised you. */
 
-export const FOLLOWUP_KINDS = ["promise", "awaiting"] as const;
+/** Plan 280: `theirs`, a person's promise to you ("Owed to you"); the store reads a kind it doesn't know as unknown, never shown */
+export const FOLLOWUP_KINDS = ["promise", "awaiting", "theirs"] as const;
 export type FollowupKind = (typeof FOLLOWUP_KINDS)[number];
 export const FOLLOWUP_STATES = ["open", "due", "done", "dismissed"] as const;
 export type FollowupState = (typeof FOLLOWUP_STATES)[number];
@@ -87,7 +88,26 @@ export interface FollowupRow {
    * written into its words; untimed, it's over at that part's end (`dueCutoff`). Absent or null: the whole day.
    */
   partOfDay?: import("./part-of-day").PartOfDay | null;
+  /** Plan 280 (`theirs` only): false for a tentative promise ("I'll try to…"), kept quietly: never on the Inbox's top. Absent: firm */
+  firm?: boolean;
+  /**
+   * Plan 280 (revision 8, `theirs` only): the local day it was promised for (YYYY-MM-DD), shown and moved; `dueAt` is the
+   * moment it's late (`theirDue`). Null: undated
+   */
+  dueDay?: string | null;
+  /** Plan 280 (`theirs` only): `addressKey` of who owes it, the only sender whose mail can keep, move or withdraw it */
+  personKey?: string | null;
+  /** Plan 280 (revision 5): a service's mail naming the debtor's address and the thing: it may have arrived, never closed by it */
+  arrivedHint?: number | null;
 }
+
+export const isFollowupKind = (kind: unknown): kind is FollowupKind => (FOLLOWUP_KINDS as readonly unknown[]).includes(kind);
+
+/**
+ * Plan 280 (revision 7): the item ids a message's promises of theirs take, apart from your promises (0…) and the one wait
+ * (`AWAITING_ITEM`, 100): `THEIRS_ITEM + i`
+ */
+export const THEIRS_ITEM = 200;
 
 export interface FollowupsSetting {
   enabled: boolean;
@@ -193,3 +213,62 @@ export function mostUrgent<T extends Urgency>(rows: readonly T[]): T | undefined
 
 /** Whole days since it was sent, for "hasn't replied in 5 days": 0 until a full day has passed (plan 161: "yet", never "in 1 day" minutes after). */
 export const followupDaysSince = (sentAt: number, now: number): number => Math.max(0, Math.floor((now - sentAt) / 86_400_000));
+
+// ─── plan 280: their promises to you ───────────────────────────────────────
+
+/** Saturday and Sunday (plan 280: weekends don't count). */
+const weekend = (d: Date): boolean => d.getDay() === 0 || d.getDay() === 6;
+
+/** The morning of the `n`th working day after this day (n ≥ 1), in local time. */
+function workingMorning(day: Date, n: number): number {
+  const d = new Date(day);
+  d.setHours(0, 0, 0, 0);
+  for (let left = n; left > 0; ) {
+    d.setDate(d.getDate() + 1);
+    if (!weekend(d)) left--;
+  }
+  d.setHours(REMIND_MORNING, 0, 0, 0);
+  return d.getTime();
+}
+
+/**
+ * Plan 280 §5: when a promise of theirs is late, in local time. Late is one working day after its day: the morning of the
+ * next working day after the due day ends (due Thursday: Friday 9:00; due Friday: Monday 9:00). Undated ("let me check
+ * and get back to you"): `nudgeAfterDays` working days after it was made, at 9:00. `dueDay` is the day promised.
+ */
+export function theirDue(o: { madeAt: number; due: string | null; nudgeAfterDays: number }): { dueAt: number; dated: boolean; dueDay: string | null } {
+  const day = o.due ? localDay(o.due) : null;
+  if (!day) return { dueAt: workingMorning(new Date(o.madeAt), Math.max(1, o.nudgeAfterDays)), dated: false, dueDay: null };
+  return { dueAt: workingMorning(day, 1), dated: true, dueDay: o.due };
+}
+
+/** Plan 280 revision 11: a row of theirs goes on the Inbox's top only when it's firm and not from a check. */
+export const onTopEligible = (r: Pick<FollowupRow, "kind" | "fromScan" | "firm">): boolean => !r.fromScan && (r.kind !== "theirs" || r.firm !== false);
+
+const COMMITMENT = new RegExp(
+  [
+    // English: what they'll do, or that they'll come back
+    "\\b(?:i|we)(?:'|’)?ll\\b",
+    "\\b(?:i|we) (?:will|shall|am going to|are going to|plan to|hope to|intend to|promise to|can get|should (?:have|be able))\\b",
+    "\\b(?:let me|allow me to)\\b",
+    "\\b(?:get back to you|circle back|follow up|keep you posted|send (?:it|them|you|over)|have (?:it|them) (?:to|for) you)\\b",
+    "\\bby (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|tonight|end of (?:the )?(?:day|week|month)|eod|eow|cob|next week)\\b",
+    "\\bwill do\\b",
+    // Spanish: "te mando", "le envío", "quedo de", "me comprometo", "voy a", "vamos a"
+    "\\b(?:te|le|les|se) (?:lo |la |los |las )?(?:mando|envío|envio|paso|hago llegar|comparto|confirmo|aviso|digo|respondo|contesto|llamo|escribo)\\b",
+    "\\b(?:quedo|quedamos) (?:de|en)\\b",
+    "\\bme comprometo\\b",
+    "\\b(?:voy|vamos) a\\b",
+    "\\b(?:lo|la|los|las) (?:reviso|revisamos|veo|vemos|preparo|preparamos|mando|mandamos|envío|enviamos)\\b",
+    "\\b(?:mañana|manana|el (?:lunes|martes|miércoles|miercoles|jueves|viernes)) (?:te|le|les) \\w+",
+  ].join("|"),
+  "iu",
+);
+
+/**
+ * Plan 280 §2: whether their words may hold a promise to the reader, in English or Spanish. A cost filter, not a judgment:
+ * it errs towards reading, and the model decides.
+ */
+export function hasCommitmentCue(text: string): boolean {
+  return COMMITMENT.test(text);
+}
