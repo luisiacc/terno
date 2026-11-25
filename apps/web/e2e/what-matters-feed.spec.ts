@@ -715,11 +715,11 @@ test("plan 210 (iteration 3): the header says missed, today and waiting; Waiting
     await expect(page.getByTestId("today-line")).not.toContainText(/coming up/i);
     const toggle = page.getByTestId("wm-coming-up");
     await scroller(page).evaluate((el) => (el.scrollTop = el.scrollHeight));
-    await expect(toggle).toHaveText("Coming up · 3");
+    await expect(toggle).toHaveAccessibleName("Coming up 3");
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
-    await expect(toggle).toHaveText("Coming up · 3");
+    await expect(toggle).toHaveAccessibleName("Coming up 3");
     const { rows } = await walk(page);
     const order = rows.filter((r) => r.kind === "open" || r.kind.startsWith("#")).map((r) => (r.kind === "open" ? r.text : r.kind));
     // after every day of the open part: Coming up's heading, then its buckets (the demo's own Coming up, if any, in them too)
@@ -917,7 +917,7 @@ test("plan 210 (iteration 4): 'to do today'; a broken promise first in Waiting o
     await expect(page.getByTestId("today-line")).not.toContainText(/coming up/i);
     const toggle = page.getByTestId("wm-coming-up");
     await scroller(page).evaluate((el) => (el.scrollTop = el.scrollHeight));
-    await expect(toggle).toHaveText("Coming up · 2");
+    await expect(toggle).toHaveAccessibleName("Coming up 2");
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
     await reach(page, "Pay the club dues");
@@ -1060,7 +1060,7 @@ test("plan 210 (iteration 5): Today's own by one key, a broken promise needed to
       await expect(openLine(page, text)).toHaveAttribute("data-tone", "later");
     }
     await scroller(page).evaluate((el) => (el.scrollTop = el.scrollHeight));
-    await expect(toggle).toHaveText("Coming up · 2");
+    await expect(toggle).toHaveAccessibleName("Coming up 2");
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-expanded", "true");

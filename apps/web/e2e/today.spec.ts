@@ -984,7 +984,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await expect(item(page, "Domain renewal")).toHaveCount(0);
       await expect(page.getByTestId("today-line")).not.toContainText(/coming up/i);
       await toEnd(page);
-      await expect(page.getByTestId("wm-coming-up")).toHaveText("Coming up · 2");
+      await expect(page.getByTestId("wm-coming-up")).toHaveAccessibleName("Coming up 2");
       await expect(page.getByTestId("wm-coming-up")).toHaveAttribute("aria-expanded", "false");
     });
 
@@ -1013,7 +1013,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await page.keyboard.press("Enter");
       await expect(toggle).toHaveAttribute("aria-expanded", "true");
       // plan 210 (iteration 3): the catalog's disclosure: the same words open or shut, its chevron turned
-      await expect(toggle).toHaveText("Coming up · 2");
+      await expect(toggle).toHaveAccessibleName("Coming up 2");
       await expect(toggle.locator("[data-slot=collapsible-chevron]")).toHaveCount(1);
       await expect(toggle).toBeFocused();
       // last, past the demo's Needs you (the feed is virtualized: scrolled to its end, focus left on the toggle)
@@ -1035,6 +1035,24 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await expect.poll(async () => (await toEnd(page), await item(page, "Domain renewal").count())).toBe(1);
       const left = async (l: Locator) => l.evaluate((el) => el.getBoundingClientRect().left + parseFloat(getComputedStyle(el).paddingLeft));
       expect(Math.abs((await left(page.locator(`${FEED} [data-testid=wm-heading][data-kind=coming]`).first())) - (await left(renewal.getByTestId("wm-sentence"))))).toBeLessThanOrEqual(1);
+      // plan 274: Coming up a section title (its words, its count's badge) on the same line as the days it opens, which
+      // are quiet subheadings: a different ink
+      const bucket = page.locator(`${FEED} [data-testid=wm-heading][data-kind=coming]`).first();
+      await expect(toggle.getByTestId("wm-coming-up-title")).toHaveText("Coming up");
+      await expect(toggle.getByTestId("wm-heading-count")).toHaveText("2");
+      expect(Math.abs((await left(toggle.getByTestId("wm-coming-up-title"))) - (await left(bucket)))).toBeLessThanOrEqual(1);
+      // in the ink and the quiet ink, by the theme's own (a probe of each in the feed), and a level apart for a screen reader
+      const themeInk = (cls: string) => page.locator(FEED).evaluate((feed, c) => {
+        const probe = feed.appendChild(document.createElement("span"));
+        probe.className = c;
+        const color = getComputedStyle(probe).color;
+        probe.remove();
+        return color;
+      }, cls);
+      expect(await ink(toggle.getByTestId("wm-coming-up-title"))).toBe(await themeInk("text-foreground"));
+      expect(await ink(bucket)).toBe(await themeInk("text-muted-foreground"));
+      expect(await page.locator(`${FEED} [data-testid=wm-heading][data-kind=comingUp]`).evaluate((el) => el.tagName)).toBe("H2");
+      expect(await bucket.evaluate((el) => el.tagName)).toBe("H3");
       if (SHOTS) {
         for (const mode of ["light", "dark"] as const) {
           await page.emulateMedia({ colorScheme: mode });
@@ -1596,7 +1614,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
     // the screenshots AGENTS.md asks for: the groups, in every design, light and dark, at 1440 and 1100 (looked at, not compared)
     if (SHOTS) {
       test.setTimeout(240_000);
-      for (const design of ["macos", "atelier", "lumen", "luma", "graphite"] as const) {
+      for (const design of ["macos", "atelier", "lumen", "luma", "graphite", "relief"] as const) {
         await settingUp(page, server, { design });
         await expect(page.locator(`html[data-design=${design}]`)).toHaveCount(1);
         await page.getByTestId("nav-today").click();
@@ -1607,6 +1625,17 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
             await page.emulateMedia({ colorScheme: mode });
             await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-dated-${design}-${width}-${mode}.png` });
           }
+        }
+        // plan 274: Coming up open at the feed's end, its title over its quiet days, in each design
+        await page.setViewportSize({ width: 1100, height: 900 });
+        if ((await page.getByTestId("wm-coming-up").getAttribute("aria-expanded")) !== "true") {
+          await toEnd(page);
+          await page.getByTestId("wm-coming-up").click();
+        }
+        for (const mode of ["light", "dark"] as const) {
+          await page.emulateMedia({ colorScheme: mode });
+          await toEnd(page);
+          await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-dated-${design}-coming-up-${mode}.png` });
         }
         await page.setViewportSize({ width: 1440, height: 900 });
         await page.emulateMedia({ colorScheme: "light" });

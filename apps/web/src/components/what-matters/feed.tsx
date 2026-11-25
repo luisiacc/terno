@@ -1,6 +1,7 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { DIGEST_ROW_ID, localDay, todayBadge, type FeedRowId, type ThreadSummary, type TodayItem } from "@terno/core";
-import { getLocale, t } from "@terno/i18n";
+import { formatNumber, getLocale, t } from "@terno/i18n";
+import { Badge } from "@terno/ui/components/badge";
 import { Collapsible, CollapsibleTrigger } from "@terno/ui/components/collapsible";
 import { Skeleton } from "@terno/ui/components/skeleton";
 import { Newspaper, Sun } from "@terno/ui/icons";
@@ -181,7 +182,11 @@ export function WhatMattersFeed() {
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: (i) => (rows[i]!.type === "clear" ? 210 : rows[i]!.type === "heading" || rows[i]!.type === "comingUp" ? 44 : 68),
+    // (plan 274: a section title stands taller than a part's quiet subheading)
+    estimateSize: (i) => {
+      const r = rows[i]!;
+      return r.type === "clear" ? 210 : r.type === "comingUp" ? 58 : r.type === "heading" ? (r.part ? 42 : 60) : 68;
+    },
     getItemKey: (i) => rows[i]!.key,
     overscan: 6,
     paddingEnd: 24,
@@ -354,31 +359,42 @@ export function WhatMattersFeed() {
 }
 
 /**
- * A group's heading (plan 214, Ledger): its name as a small-caps label in the quiet ink, its count beside it, on the rows'
- * text line; no hairline (the rows have theirs). Today's "Waiting on you" (plan 210, iteration 3) under Today's rows and
- * Coming up's buckets (iteration 4) are parts of a group: the same label, closer to what's above. The count sits outside the heading's own
- * words, so its name is what a screen reader's heading list and the tests read.
+ * A group's heading (plan 214, Ledger; plan 274: two levels, two looks). A group's own is a section title in the ink with
+ * its count in a badge; a part of a group (Today's "Waiting on you", plan 210, iteration 3; Coming up's buckets, iteration
+ * 4) is a quiet subheading under it, closer to what's above. Both start on the rows' text line. The count sits outside the
+ * heading's own words, so its name is what a screen reader's heading list and the tests read.
  */
 function Heading({ kind, count, part }: { kind: FeedGroupKind; count: number; part?: boolean }) {
   // a part of a group is a level under it, for a screen reader's headings too
   const Tag = part ? "h3" : "h2";
   const dataKind = comingBucket(kind) !== null ? "coming" : groupDay(kind) !== null ? "day" : groupWeek(kind) !== null ? "week" : kind;
   return (
-    <div className={cn("ms-4 me-3 flex items-baseline gap-1.5 pb-1.5", part ? "pt-4" : "pt-6")}>
-      <Tag data-testid="wm-heading" data-kind={dataKind} data-day={groupDay(kind) ?? groupWeek(kind) ?? undefined} className={LABEL}>
+    <div className={cn("ms-4 me-3 flex", part ? "items-baseline gap-1.5 pt-4 pb-1" : "items-center gap-2 pt-7 pb-1.5")}>
+      <Tag data-testid="wm-heading" data-kind={dataKind} data-day={groupDay(kind) ?? groupWeek(kind) ?? undefined} className={part ? SUBHEADING : SECTION_TITLE}>
         {headingName(kind)}
       </Tag>
-      {count > 0 && (
-        <span data-testid="wm-heading-count" className={cn(LABEL, "font-medium tabular")}>
-          {count}
-        </span>
-      )}
+      {count > 0 && <HeadingCount count={count} part={part} />}
     </div>
   );
 }
 
-/** A heading's words (plan 214): the caption size, semibold, spaced capitals, the quiet ink (AA on the pane). */
-const LABEL = "text-xs font-semibold tracking-wide text-muted-foreground uppercase";
+/** Plan 274: a group's heading, the section's title: the scale's large size, semibold, in the ink. */
+const SECTION_TITLE = "text-lg font-semibold tracking-tight text-foreground";
+/** Plan 274: a part of a group, under its title: small, medium, the quiet ink (AA on the pane), sentence case. */
+const SUBHEADING = "text-sm font-medium text-muted-foreground";
+
+/** A heading's count (plan 214): a section title's in BoardUI's neutral badge, a part's in its own quiet words. */
+function HeadingCount({ count, part }: { count: number; part?: boolean }) {
+  return part ? (
+    <span data-testid="wm-heading-count" className="tabular text-sm text-muted-foreground">
+      {formatNumber(count)}
+    </span>
+  ) : (
+    <Badge data-testid="wm-heading-count" variant="neutral" className="tabular">
+      {formatNumber(count)}
+    </Badge>
+  );
+}
 
 /**
  * Plan 271: one drawn row's place in the feed. Within a change that moves the feed (`lib/feed-moves`: Done, an Undo,
@@ -419,15 +435,26 @@ function FeedSlot({ slot, index, start, measure, children }: { slot: string; ind
 function ComingUpHeading({ empty = false }: { /** under the empty feed's words, quietly, rather than among headings */ empty?: boolean }) {
   const count = useToday((s) => s.comingUp);
   const open = useToday((s) => s.comingUpOpen);
+  // plan 274: among the headings, a section title that is the button (its title, its count's badge, the chevron after
+  // them), so it reads apart from the quiet days it opens; its title on the rows' text line, the trigger unpadded
   return (
     <Collapsible
       open={open}
       onOpenChange={setComingUpOpen}
-      render={<h2 data-testid="wm-heading" data-kind="comingUp" className={empty ? "mt-2 text-sm font-normal text-muted-foreground" : cn("ms-4 me-3 pt-6 pb-1.5", LABEL)} />}
+      render={<h2 data-testid="wm-heading" data-kind="comingUp" className={empty ? "mt-2 text-sm font-normal text-muted-foreground" : "ms-4 me-3 pt-7 pb-1"} />}
     >
-      <CollapsibleTrigger data-testid="wm-coming-up" aria-controls={FEED_ROWS_ID} className={cn("w-auto gap-1 text-[length:inherit] leading-[inherit] [&>[data-slot=collapsible-chevron]]:ms-0 [&>[data-slot=collapsible-chevron]]:size-3.5", empty ? "font-normal text-muted-foreground hover:text-foreground" : "tracking-[inherit] text-muted-foreground uppercase hover:text-foreground aria-expanded:text-foreground")}>
-        {t("whatMatters.comingUp", { count })}
-      </CollapsibleTrigger>
+      {empty ? (
+        <CollapsibleTrigger data-testid="wm-coming-up" aria-controls={FEED_ROWS_ID} className="w-auto gap-1 text-[length:inherit] leading-[inherit] font-normal text-muted-foreground hover:text-foreground [&>[data-slot=collapsible-chevron]]:ms-0 [&>[data-slot=collapsible-chevron]]:size-3.5">
+          {t("whatMatters.comingUp", { count })}
+        </CollapsibleTrigger>
+      ) : (
+        <CollapsibleTrigger data-testid="wm-coming-up" aria-controls={FEED_ROWS_ID} className={cn("w-auto gap-2 [&>[data-slot=collapsible-chevron]]:ms-0", SECTION_TITLE)}>
+          <span data-testid="wm-coming-up-title">{t("whatMatters.comingUpTitle")}</span>
+          <Badge data-testid="wm-heading-count" variant="neutral" className="tabular">
+            {formatNumber(count)}
+          </Badge>
+        </CollapsibleTrigger>
+      )}
     </Collapsible>
   );
 }

@@ -2888,6 +2888,7 @@ It contains none of your mail, contacts, settings or keys.
   "today.line.overdue": { one: "{waiting}, # overdue", other: "{waiting}, # overdue" },
   // plan 210 (iteration 4, revision 9): the feed's last heading, a disclosure
   "whatMatters.comingUp": { one: "Coming up · #", other: "Coming up · #" },
+  "whatMatters.comingUpTitle": "Coming up",
   "today.countHelp": { one: "# needs you: something due today or soon, something you missed, or someone waiting for your answer", other: "# need you: what's due today or soon, what you missed, and people waiting for your answer" },
   "today.settings.pro": "Today is a Pro feature",
   "today.settings.proHint": "It shows in the sidebar while Pro AI is on in Dev mode.",

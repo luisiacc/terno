@@ -2840,6 +2840,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "today.line.joined": "{a} · {b}",
   "today.line.overdue": { one: "{waiting}, # con retraso", other: "{waiting}, # con retraso" },
   "whatMatters.comingUp": { one: "Más adelante · #", other: "Más adelante · #" },
+  "whatMatters.comingUpTitle": "Más adelante",
   "today.countHelp": { one: "# te necesita: algo que vence hoy o pronto, algo que se te pasó, o alguien que espera tu respuesta", other: "# te necesitan: lo que vence hoy o pronto, lo que se te pasó, y quienes esperan tu respuesta" },
   "today.settings.pro": "Hoy es una función de Pro",
   "today.settings.proHint": "Aparece en la barra lateral mientras la IA de Pro esté activada en el modo desarrollador.",

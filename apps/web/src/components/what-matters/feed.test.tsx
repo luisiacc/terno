@@ -46,6 +46,10 @@ describe("plan 222: an empty, clear What matters", () => {
     // the feed's column, as the header's; one title, the horizon's words (no second, empty paragraph)
     expect(empty.className).toContain("max-w-[44rem]");
     expect(empty.querySelectorAll("p").length).toBe(2);
+    // plan 274: under the horizon, Coming up stays a quiet line (no section title, no badge)
+    const coming = empty.querySelector("[data-testid=wm-coming-up]")!;
+    expect(coming.textContent).toBe("Coming up · 1");
+    expect(coming.querySelector("[data-testid=wm-heading-count]")).toBeNull();
     act(() => root.unmount());
   });
 
