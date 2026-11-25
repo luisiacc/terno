@@ -675,3 +675,67 @@ Two rounds, each finding fixed with a regression test that fails without the fix
 - **Run per change:**
   - the mail, store, IndexedDB and backend files named above, in both engines
   - `graph-sync.perf` and `gmail-batches.perf` alone (both pass)
+
+## Stage 3 as built
+
+The renderer's Outlook account, on the desktop. Nothing in the provider, the store or the backend changed. The web build shows no Microsoft option (owner decision 4).
+
+- **Add account** (`add-account-dialog.tsx`; the first run uses the same form).
+  - "Continue with Microsoft" sits under "Continue with Google": the same outline button, full width, stacked. Side by side, the Microsoft label overflowed the first run's narrower column, and a longer translation would too.
+  - Both glyphs come from the catalog as Hugeicons' monochrome `GoogleIcon` and `MicrosoftIcon` (`Google`, `Microsoft`). Google's button had used `Mail`; a mail glyph beside a Microsoft mark would read as two kinds of thing, so both now show their provider's mark.
+  - Busy and error state are one `SignInMethod` each (`google`, `microsoft`, `password` for the IMAP form). A failure shows under the way it was tried. `BROWSER_METHODS` is `["google"]` on the web and `["google", "microsoft"]` on the desktop.
+  - The outlook.com and hotmail.com IMAP presets are gone. An address on one of Outlook.com's domains (an explicit list with the best-known country versions) gets a hint under the field: "hotmail.com no longer takes passwords from other apps." It is followed by a Continue with Microsoft link, and the field is described by it. Progress and failure show beside whichever control started the sign-in.
+  - The first run's subtitle names Outlook on the desktop: "Connect Gmail, Outlook, or any account with IMAP." The web keeps the old line (`firstRun.account.descriptionWeb`).
+  - Settings search finds Add account by "Outlook", "Hotmail" or "Microsoft".
+- **Sign-in panel** (`sign-in-panel.tsx`, `lib/sign-in.ts`). An Outlook account's action is "Continue with Microsoft". While the browser's page is open it shows Google's desktop state: "Finish in your browser" and "Open again" (the keys are now `signIn.browser.*`; the test ids are `sign-in-<method>` and `sign-in-<method>-again`). Reconnect goes through `accounts.reconnect`, so stage 1's `connectExistingMicrosoft` and its `login_hint`. Focus on the action stays on it as it changes shape: to Open again, and back after a refusal.
+- **Settings → Accounts.**
+  - Each row names its service: Gmail, Outlook or IMAP/SMTP (`serviceLabel`).
+  - A working Outlook account's Reconnect says "Connect with Microsoft". One that needs a sign-in says "Sign in again", on its row too.
+  - The owner card says "Verified with Microsoft" for `microsoft_oauth`. Making an Outlook mailbox the Terno account asks for no password and says "Verify with Microsoft". The change hint names Google or Microsoft.
+- **Remove dialog** (`account-remove-dialog.tsx`). Microsoft has no endpoint for an app to withdraw its own grant, so the dialog says so and links the two places a person can. Both links were checked on 2026-11-24:
+  - **Personal account:** `https://account.live.com/consent/Manage`. `microsoft.com/consent` redirects there (301), and an unsigned request lands on the consumer sign-in.
+  - **Work or school account:** `https://myapplications.microsoft.com/`. This is the address Microsoft's support article "Edit or revoke application permissions in the My Apps portal" links. `myapps.microsoft.com` also answers as My Apps, but the article names the other.
+  - An administrator's approval for everyone can't be withdrawn there, so the dialog says to ask the administrator.
+  - The renderer's `Account` has no tenant, and adding one would touch the store's projection, so both links are shown.
+  - `ConfirmDialog` now gives Cancel the initial focus explicitly, since Base UI would otherwise focus the first link.
+- **i18n** (en and es): `account.continueMicrosoft`, `account.imapMicrosoft`, `account.remove.descriptionMicrosoft`, `account.remove.microsoftPersonal` and `account.remove.microsoftWork`, plus:
+  - `account.owner.verifiedMicrosoft`, `account.owner.verifiedMicrosoftOn` and `account.owner.verifyMicrosoft`
+  - `signIn.microsoft`, and `signIn.browser.waiting` and `signIn.browser.again` (renamed from `signIn.google.*`)
+  - `firstRun.account.descriptionWeb`
+  - new wording for `account.owner.changeHint` and `settings.find.words.addAccount`
+- **Tests.**
+  - `outlook-account.test.tsx` covers:
+    - Add account: the method, the chosen window, busy, both error places, the hint, the dropped presets, the domain list, and a late finish.
+    - The sign-in panel, including focus.
+    - The Settings row, the owner card and the remove dialog.
+  - `add-account-web.test.tsx`: the web build offers no Microsoft.
+  - `settings-search.test.ts`: the new search words.
+  - `e2e/outlook-connect.spec.ts`, one test of five `scenario()`s against `SyntheticMicrosoft`:
+    1. Add account offers Microsoft, and the Outlook.com hint shows (axe in light and dark).
+    2. A refused consent is shown in the form.
+    3. An approved sign-in adds the account, which Settings names Outlook.
+    4. Microsoft stops honouring the token, the row asks, and Continue with Microsoft clears it with `login_hint`.
+    5. The remove dialog (axe in light and dark), with Cancel focused.
+  - `fixtures.ts` gains `backendOptions.microsoft`. It starts a synthetic Microsoft with the build's registration and adds `connectMicrosoft` from `createRegistry({ microsoft: { endpoints } })`. An Outlook account gets the demo provider, refused with `errors.microsoft.revoked` while its refresh token isn't one Microsoft still honours. The sync and send checks join this spec with stage 2's provider.
+  - Visual baselines `add-account.png`, `first-run-account.png` and `first-run-account-dark.png` were regenerated.
+- **UI rating.** Add account and Settings aren't screens `docs/ui-rating.md` rates, so `ui:rate` wasn't run.
+- **Codex code review.** Round 1 found 10 issues, all fixed with a test that fails without the fix:
+  1. A late sign-in closed a later Add account.
+  2. The remove dialog didn't mention an administrator's approval.
+  3. A hint-started sign-in showed its progress and failure out of view.
+  4. Focus was lost when the panel's action changed shape.
+  5. The domain pattern matched live.fm.
+  6. Settings search didn't find Outlook.
+  7. Nothing proved the web build has no Microsoft option.
+  8. The dropped presets were untested.
+  9. The chosen window was untested.
+  10. A date in the test depended on the time zone.
+
+  Round 2 found 6:
+  1. Fix 1 guarded the form rather than the dialog. When the new account's event unmounted the first run before the answer arrived, the first run was never marked finished. The guard moved to the dialog host. Fixed.
+  2. A failure from the hint vanished once the address was edited away. Fixed.
+  3. Focus on Open again is lost if a second account needs a sign-in during the attempt: the panel moves from one account's layout to several and remounts the action. Left: this is the panel's structure from plan 184, Google's too, and rare.
+  4. The web's search finds Add account for "Outlook", and the owner hint names Microsoft on the web. Left, because the web is out of scope for now (owner decision 4).
+  5. Tests added for the owner change to an Outlook mailbox.
+  6. Tests added for the dialog's administrator note.
+- **Still open from stage 1.** Reconnect's `login_hint` is the mailbox address, not the id_token's `preferred_username`. Keeping the latter needs the backend and the stored config, outside this UI stage.
