@@ -194,13 +194,17 @@ export function settleFolderOp(db: Db, op: { kind: string; account_id: number; t
       if (next) db.run("UPDATE messages SET gmail_labels = ? WHERE id = ?", JSON.stringify(next), m.id);
     }
   }
-  // plan 259: an Outlook filing that never landed puts back in the Inbox what it took out of it here (what the server
-  // confirmed in the folder stays filed)
+  // plan 259: an Outlook filing's Inbox part, settled with it. Landed, what the server confirmed in the folder is out of
+  // the Inbox (a stale read on its way can't leave it in both: round 2 #6). Never landed, what it took out of the Inbox
+  // here comes back, unless the server has it in a folder or something newer is on its way for it (round 2 #7).
   const p = op.kind === MOVE_TO_FOLDER ? JSON.parse(op.payload_json) as MoveToFolderPayload : undefined;
-  if (!succeeded && p?.fromInbox?.length && isOneFolder(db, op.account_id)) {
+  if (p?.fromInbox?.length && isOneFolder(db, op.account_id)) {
+    const untouched = "NOT EXISTS (SELECT 1 FROM op_targets t INDEXED BY op_targets_msg JOIN ops o ON o.id = t.op_id WHERE t.message_id = messages.id AND o.state IN ('queued', 'running'))";
     for (const chunk of byChunks(p.fromInbox, (c) => [c])) {
-      db.run(`UPDATE messages SET in_inbox = 1 WHERE id IN (${placeholders(chunk.length)}) AND account_id = ? AND in_inbox = 0 AND is_trash = 0 AND is_spam = 0
-        AND NOT EXISTS (SELECT 1 FROM message_folders f WHERE f.message_id = messages.id AND f.folder = ?)`, ...chunk, op.account_id, p.folder);
+      if (succeeded) db.run(`UPDATE messages SET in_inbox = 0 WHERE id IN (${placeholders(chunk.length)}) AND account_id = ? AND in_inbox = 1
+        AND EXISTS (SELECT 1 FROM message_folders f WHERE f.message_id = messages.id AND f.folder = ?) AND ${untouched}`, ...chunk, op.account_id, p.folder);
+      else db.run(`UPDATE messages SET in_inbox = 1 WHERE id IN (${placeholders(chunk.length)}) AND account_id = ? AND in_inbox = 0 AND is_trash = 0 AND is_spam = 0
+        AND NOT EXISTS (SELECT 1 FROM message_folders f WHERE f.message_id = messages.id) AND ${untouched}`, ...chunk, op.account_id);
     }
   }
   const threads = [...new Set(rows.map((m) => m.thread_id))];

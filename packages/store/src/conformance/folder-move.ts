@@ -272,6 +272,33 @@ export function defineFolderMoveConformance(name: string, harness: StoreHarness)
       void b;
     });
 
+    it("Outlook (round 2 #6, #7): a landed filing ends a stale Inbox read; a failed one never brings back what something newer moves", async () => {
+      const { store } = await fresh();
+      const outlook = await outlookAccount(store);
+      await store.folders.replace(outlook, ["F1", "F2"].map((key) => ({ key, path: [key], selectable: true })));
+      const { inserted } = await ingest(store, [msg({ accountId: outlook, providerMsgId: "a", rfcMessageId: "a@t", inInbox: true, folder: null })]);
+      const a = inserted[0]!;
+      const thread = await threadOf(store, "a");
+      await store.threads.moveToFolder({ threadIds: [thread], accountId: outlook, folder: "F1", from: null, now: NOW });
+      // a delta page read before the move landed puts it back in the Inbox while the move is on its way
+      await store.sync.updateFlags(outlook, [{ messageId: a, expectedProviderMsgId: "a", flags: { inInbox: true }, folder: null }]);
+      const [op] = await store.ops.claimReady(NOW + 1, 1);
+      await store.providerStore(outlook).placeMessages([{ messageId: a, providerMsgId: "a", folder: "F1" }]);
+      await store.ops.complete(op!.id, {}, NOW);
+      // landed: in the folder, and out of the Inbox
+      expect(await inbox(store)).toEqual([]);
+      expect(await list(store, outlook, "F1")).toEqual([thread]);
+      // filed back to the Inbox's sibling, then on to F2 before the first settles: the first failing brings nothing back
+      const { inserted: more } = await ingest(store, [msg({ accountId: outlook, providerMsgId: "b", rfcMessageId: "b@t", inInbox: true, folder: null })]);
+      const tb = await threadOf(store, "b");
+      await store.threads.moveToFolder({ threadIds: [tb], accountId: outlook, folder: "F1", from: null, now: NOW });
+      await store.threads.moveToFolder({ threadIds: [tb], accountId: outlook, folder: "F2", from: "F1", now: NOW });
+      const [first] = await store.ops.claimReady(NOW + 1, 1);
+      await store.ops.fail(first!.id, "refused", false, NOW);
+      expect(await inbox(store)).toEqual([]);
+      void more;
+    });
+
     it("Outlook (stage 2b): a delta read racing a settlement shows the move while it's on its way, and the next read decides", async () => {
       const { store } = await fresh();
       const outlook = await outlookAccount(store);

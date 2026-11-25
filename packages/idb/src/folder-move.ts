@@ -158,15 +158,19 @@ export function settleFolderOp(c: Ctx, op: { kind: string; account_id: number; t
       if (next) messages.update(m, { gmail_labels: JSON.stringify(next) });
     }
   }
-  // plan 259: an Outlook filing that never landed puts back in the Inbox what it took out of it here (what the server
-  // confirmed in the folder stays filed)
+  // plan 259: an Outlook filing's Inbox part, settled with it (the SQL adapter's settleFolderOp): landed, what the server
+  // confirmed in the folder is out of the Inbox (round 2 #6); never landed, what it took out comes back unless the
+  // server has it in a folder or something newer is on its way for it (round 2 #7)
   const p = op.kind === MOVE_TO_FOLDER ? JSON.parse(op.payload_json) as MoveToFolderPayload : undefined;
-  if (!succeeded && p?.fromInbox?.length && isOneFolder(c, op.account_id)) {
-    const folders = T(c, "message_folders");
+  if (p?.fromInbox?.length && isOneFolder(c, op.account_id)) {
+    const folders = T(c, "message_folders"), ops = T(c, "ops");
+    const untouched = (id: number) => !T(c, "op_targets").by("message", id).some((t) => { const o = ops.get(t.op_id); return !!o && (o.state === "queued" || o.state === "running"); });
     for (const id of p.fromInbox) {
       const m = messages.get(id);
-      if (!m || m.account_id !== op.account_id || m.in_inbox || m.is_trash || m.is_spam || folders.get(id)?.folder === p.folder) continue;
-      messages.update(m, { in_inbox: 1 });
+      if (!m || m.account_id !== op.account_id || !untouched(id)) continue;
+      const at = folders.get(id)?.folder as string | undefined;
+      if (succeeded ? !(m.in_inbox && at === p.folder) : (m.in_inbox || m.is_trash || m.is_spam || at !== undefined)) continue;
+      messages.update(m, { in_inbox: succeeded ? 0 : 1 });
       if (!rows.includes(m)) rows.push(m);
     }
   }
