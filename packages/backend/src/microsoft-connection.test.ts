@@ -264,6 +264,30 @@ describe("an Outlook account signs in again (plan 259)", () => {
     expect(backend.connectivity.failures(account.id)).toBe(0);
   });
 
+  it("plan 275: Focused Inbox's Other lives under the account; select all in it acts on Other alone (critique #1), Move to Inbox teaches Outlook, and only Outlook's tab is accepted", async () => {
+    const { ms, backend, client } = await setup();
+    const other = ms.deliver("inbox-id", { subject: "Weekly deals", inference: "other" }), focused = ms.deliver("inbox-id", { subject: "Lunch" });
+    const account = await client.call("accounts.connectMicrosoft", {});
+    await backend.syncAccount(account.id);
+    const thread = (id: string) => sqlDb(backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = ?", id)!.thread_id;
+    const list = async (tab?: "other") => (await client.call("threads.list", { view: "inbox", accountId: account.id, ...(tab && { tab }), limit: 10 })).items.map((t) => t.id);
+    expect(await list()).toEqual([thread(focused)]);
+    expect(await list("other")).toEqual([thread(other)]);
+    await expect(client.call("threads.list", { view: "inbox", accountId: account.id, tab: "promotions", limit: 10 })).rejects.toMatchObject({ code: "BAD_REQUEST", i18n: { key: "errors.tab.notThisAccount" } });
+    const scope = { kind: "view" as const, view: "inbox" as const, accountId: account.id, tab: "other" as const };
+    expect(await client.call("threads.scopeCount", { scope })).toMatchObject({ count: 1 });
+    const moved = await client.call("threads.actScope", { scope, action: "moveToInbox" });
+    expect(moved).toMatchObject({ affected: 1, total: 1 });
+    await backend.runWorker();
+    expect(ms.messages.get(other)!.inference).toBe("focused");
+    expect(ms.messages.get(focused)!.inference ?? "focused").toBe("focused");
+    expect((await list()).sort()).toEqual([thread(focused), thread(other)].sort());
+    await client.call("threads.undo", { undoId: moved.undoId! });
+    await backend.runWorker();
+    expect(ms.messages.get(other)!.inference).toBe("other");
+    expect(await list("other")).toEqual([thread(other)]);
+  });
+
   it("stage 2b: through the backend's ops: a folder made, a thread filed into it and back (undo), archived, read; the move's answer written at once", async () => {
     const { ms, backend, client } = await setup();
     const a = ms.deliver("inbox-id", { subject: "Contract" }), b = ms.deliver("inbox-id", { subject: "Lunch" });

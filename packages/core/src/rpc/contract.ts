@@ -694,7 +694,7 @@ const similarScope = z.discriminatedUnion("kind", [
 /** the filter's name in the user's language (the backend falls back to English) */
 const filterName = z.string().trim().min(1).max(120).optional();
 
-export const THREAD_ACTIONS = ["archive", "trash", "spam", "notSpam", "moveToInbox", "markRead", "markUnread", "star", "unstar", "toPrimary", "toPromotions", "toSocial", "toUpdates", "toForums", "toNoCategory"] as const;
+export const THREAD_ACTIONS = ["archive", "trash", "spam", "notSpam", "moveToInbox", "markRead", "markUnread", "star", "unstar", "toPrimary", "toPromotions", "toSocial", "toUpdates", "toForums", "toNoCategory", "toOther"] as const;
 const jobId = z.string().min(1).max(64);
 
 const imapServer = z.object({

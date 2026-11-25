@@ -9,7 +9,7 @@ import { forgetSignInVersion, signInVersion, admitBrowserGoogle, beginSignIn, en
 import { accountLabel } from "./account-label";
 import { toRpcError } from "./ai-service";
 import { exportMailbox, importMailbox, restorePending } from "./import";
-import { countThreadScope, progressReporter, resolveThreadScope, SCOPE_CAP, UndoJournal } from "./scope";
+import { checkTab, countThreadScope, progressReporter, resolveThreadScope, SCOPE_CAP, UndoJournal } from "./scope";
 import { followFolderFilters, SimilarFilters } from "./similar";
 import { UI_LOCALE_KEY } from "./forwarding";
 import { findUnsubscribe, runUnsubscribe } from "./unsubscribe";
@@ -461,7 +461,7 @@ export function createHandlers(b: Backend): Handlers {
     "app.import": ({ data }) => importMailbox(b, data),
 
     // the Waiting filter reads its window from the backend's clock
-    "threads.list": (p) => store.threads.list({ ...p, now: b.now() }),
+    "threads.list": async (p) => { await checkTab(b, p); return store.threads.list({ ...p, now: b.now() }); },
 
     "threads.search": async ({ unreadOnly, filter: asked, ...p }, ctx) => {
       // Latest-wins per client: a query superseded while queued is not executed.

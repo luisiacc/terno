@@ -7,7 +7,9 @@
  * then goes through runSliced: one store command per slice, each its own
  * transaction with one provider op per account.
  */
-import { listFilterOf, searchWithFilter } from "@terno/core";
+import { hasTab, listFilterOf, searchWithFilter, type Tab } from "@terno/core";
+import { RpcError } from "@terno/core/rpc";
+import { L } from "@terno/i18n";
 import type { ThreadScope } from "@terno/core/rpc";
 import { StaleCursorError, type MessageState } from "@terno/store";
 import { SliceSizer } from "./slicer";
@@ -17,6 +19,16 @@ import type { BackendCore } from "./core";
 export const SCOPE_CAP = 100_000;
 const PAGE = 500;
 
+/**
+ * Plan 275 (Codex critique #11): a tab is one of the account's own (Gmail's Promotions and Social, Outlook's Other):
+ * the schema checks a request's shape, this its account's kind.
+ */
+export async function checkTab(b: BackendCore, p: { accountId?: number; tab?: Tab }): Promise<void> {
+  if (p.tab === undefined) return;
+  const account = p.accountId === undefined ? undefined : await b.store.accounts.get(p.accountId);
+  if (!account || !hasTab(account.kind, p.tab)) throw new RpcError("BAD_REQUEST", L("errors.tab.notThisAccount"));
+}
+
 export async function resolveThreadScope(b: BackendCore, scope: ThreadScope, cap = SCOPE_CAP): Promise<{ ids: number[]; capped: boolean }> {
   const ids: number[] = [];
   const { accountId, categoryId } = scope;
@@ -24,12 +36,14 @@ export async function resolveThreadScope(b: BackendCore, scope: ThreadScope, cap
   // one clock for every page: the Waiting filter's window doesn't move under the walk
   const now = b.now();
   if (scope.kind === "view") {
+    await checkTab(b, scope);
     // keyset pages sized by the time they take (an 18,000-row read in one go is a stall on a busy machine)
     const sizer = new SliceSizer({ targetMs: 15, initial: 500, floor: 100, ceiling: 20_000 });
     for (let after = 0; ids.length <= cap; ) {
       const limit = sizer.size;
       const started = performance.now();
-      const page = await b.store.threads.scopeIds({ view: scope.view, accountId, categoryId, folder: scope.folder, filter, now, after, limit });
+      // the tab too (plan 275, Codex critique #1: without it a select all in a tab acted on the account's Inbox)
+      const page = await b.store.threads.scopeIds({ view: scope.view, accountId, categoryId, folder: scope.folder, tab: scope.tab, filter, now, after, limit });
       sizer.record(Math.max(1, page.length), performance.now() - started);
       for (const id of page) ids.push(id);
       if (page.length < limit) break;
@@ -66,7 +80,8 @@ export async function resolveThreadScope(b: BackendCore, scope: ThreadScope, cap
 /** How many threads a scope holds: a view is counted, a search is resolved. */
 export async function countThreadScope(b: BackendCore, scope: ThreadScope, cap = SCOPE_CAP): Promise<{ count: number; capped: boolean }> {
   if (scope.kind === "view") {
-    const n = await b.store.threads.scopeCount({ view: scope.view, accountId: scope.accountId, categoryId: scope.categoryId, folder: scope.folder, filter: listFilterOf(scope), now: b.now(), limit: cap + 1 });
+    await checkTab(b, scope);
+    const n = await b.store.threads.scopeCount({ view: scope.view, accountId: scope.accountId, categoryId: scope.categoryId, folder: scope.folder, tab: scope.tab, filter: listFilterOf(scope), now: b.now(), limit: cap + 1 });
     return { count: Math.min(n, cap), capped: n > cap };
   }
   const { ids, capped } = await resolveThreadScope(b, scope, cap);
