@@ -321,6 +321,18 @@ export async function scenario(name: string, body: () => Promise<void>): Promise
   }
 }
 
+/** Plan 276: Add account's IMAP form is a step of its own, after Other mail account (`scope`: the dialog or the first run). */
+export async function imapForm(scope: Page | Locator): Promise<void> {
+  await scope.getByTestId("connect-imap").click();
+  await expect(scope.getByTestId("imap-email")).toBeVisible();
+}
+
+/** Plan 276: from the IMAP form back to the ways in (Google, Microsoft, Other mail account); what was typed is kept. */
+export async function waysIn(scope: Page | Locator): Promise<void> {
+  await scope.getByTestId("imap-back").click();
+  await expect(scope.getByTestId("connect-imap")).toBeVisible();
+}
+
 /** The app again on the same backend, for a scenario that needs a clean page: focus, selection, dialogs and open drafts go, what the backend holds stays. */
 export async function fresh(page: Page): Promise<void> {
   await page.reload();

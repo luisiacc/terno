@@ -63,7 +63,7 @@ Terno's shared controls (`src/components/`) are BoardUI's free **Base** componen
 | Select | `select.tsx` | rows from `menu-styles.ts` |
 | Skeleton | `skeleton.tsx` | |
 | Slider | port on first use | |
-| Social Button | port on first use | |
+| Social Button | `social-button.tsx` | the outlined `white` appearance only (plan 276), on our `outline` Button at `lg`, full width; Google and Microsoft, their marks in `brand/provider-marks.tsx` |
 | Spinner | `spinner.tsx` | |
 | Switch | `switch.tsx` | |
 | Table | port on first use | |
@@ -97,6 +97,7 @@ Each item says what differs from BoardUI and why.
   - Cells are 4 px apart, not 12, so the calendar fits the 320 px popover.
 - **Command palette:** stays 640 px wide at 18 % from the top, because long subjects need the room. Rows are 36 px, not 40, so more of them show; the list keeps one height so the hint row never moves, and a section's heading stays while its rows scroll.
 - **Skeleton and spinner:** the skeleton pulses without BoardUI's sheen, and the spinner has no glow layers. Both effects would repaint continuously.
+- **Social Button (plan 276):** only BoardUI's outlined `white` appearance, the one that carries each provider's real mark (no colorful, black, icon-only or `href`: our sign-ins are calls). It is our `outline` Button, so it loads, focuses and presses as every button does; its words come from the caller's catalog, never a built-in English default. The marks are React paths, not `dangerouslySetInnerHTML`, and Microsoft's squares have soft corners and a wider gap (the owner's pick).
 - **Radio card:** BoardUI's radio has no card variant, so Terno's is the radio drawn as a bordered card.
 - **Progress:** plain markup rather than Base UI's.
 - **Search clear:** out of the tab order, as BoardUI's.

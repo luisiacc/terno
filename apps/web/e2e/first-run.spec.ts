@@ -3,7 +3,7 @@
  * each previewed as the whole app in sample mail, then the first account.
  */
 import type { Page } from "@playwright/test";
-import { axeBothModes, expect, test } from "./fixtures";
+import { axeBothModes, expect, imapForm, test } from "./fixtures";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
 
@@ -164,9 +164,13 @@ test.describe("first-run setup", () => {
     await page.getByTestId("first-run-continue").click();
     await page.getByTestId("first-run-continue").click();
     await expect(step(page)).toHaveAttribute("data-step", "account");
+    await imapForm(step(page));
     await page.getByTestId("imap-email").fill("ana@icloud.com");
     await page.getByTestId("first-run-back").click();
     await page.getByTestId("first-run-continue").click();
+    // plan 276: back at the IMAP form it left, without moving in again (the setup's own step move is enough)
+    await expect(step(page).getByTestId("add-account-way")).toHaveAttribute("data-way", "imap");
+    await expect(step(page).getByTestId("add-account-way")).not.toHaveClass(/animate-in/);
     await expect(page.getByTestId("imap-email")).toHaveValue("ana@icloud.com");
     await expect(page.getByTestId("imap-host")).toHaveValue("imap.mail.me.com");
     await page.getByTestId("imap-password").fill("app-password");
@@ -262,6 +266,7 @@ test.describe("first-run setup", () => {
     await open(page);
     await page.getByTestId("first-run-continue").click();
     await page.getByTestId("first-run-continue").click();
+    await imapForm(step(page));
     await page.getByTestId("imap-email").fill("ana@icloud.com");
     await page.keyboard.press("ControlOrMeta+Comma");
     await expect(page.getByTestId("settings-dialog")).toBeVisible();
@@ -303,5 +308,8 @@ test.describe("first-run setup", () => {
       await axeBothModes(page, "[data-testid=first-run]");
       if (s !== "account") await page.getByTestId("first-run-continue").click();
     }
+    // plan 276: the account step's IMAP form
+    await imapForm(step(page));
+    await axeBothModes(page, "[data-testid=first-run]");
   });
 });

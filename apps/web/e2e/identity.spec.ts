@@ -1,8 +1,9 @@
-import { expect, test } from "./fixtures";
+import { expect, imapForm, test } from "./fixtures";
 import { startOllamaStub } from "./ollama-stub";
 import type { Page } from "@playwright/test";
 
 async function addImap(page: Page, email: string) {
+  await imapForm(page);
   await page.getByTestId("imap-email").fill(email);
   await page.getByTestId("imap-password").fill("app-password");
   await page.getByTestId("imap-submit").click();
@@ -98,6 +99,7 @@ test.describe("first run", () => {
       // nothing to sign in to or bill yet, so the account step promises neither
       await expect(dialog).toHaveAttribute("data-step", "account");
       await expect(dialog).not.toContainText("Terno account");
+      await imapForm(dialog);
       await page.getByTestId("imap-email").fill("ana@icloud.com");
       await page.getByTestId("imap-password").fill("app-password");
       await page.getByTestId("imap-submit").click();

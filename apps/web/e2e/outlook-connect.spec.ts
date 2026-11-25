@@ -7,7 +7,7 @@
  */
 import type { Locator, Page } from "@playwright/test";
 import { sqlDb } from "../../backend-dev/src/server";
-import { axeBothModes, expect, menuPath, respond, scenario, test } from "./fixtures";
+import { axeBothModes, expect, imapForm, menuPath, respond, scenario, test, waysIn } from "./fixtures";
 
 test.use({ backendOptions: { microsoft: true } });
 
@@ -54,6 +54,7 @@ test("plan 259: add an Outlook account, use its mail over Graph, sign in again a
     expect(box!.x).toBe(google!.x);
     expect(box!.y).toBeGreaterThan(google!.y);
     expect([box!.width, box!.height]).toEqual([google!.width, google!.height]);
+    await imapForm(dialog);
     await dialog.getByTestId("imap-email").fill("ana@outlook.com");
     await expect(dialog.getByTestId("imap-microsoft-hint")).toHaveText("outlook.com no longer takes passwords from other apps. Continue with Microsoft");
     await axeBothModes(page, "[data-testid=add-account-dialog]");
@@ -61,8 +62,10 @@ test("plan 259: add an Outlook account, use its mail over Graph, sign in again a
 
   await scenario("a refused consent is said under the buttons; the form keeps what was typed", async () => {
     microsoft.behaviour = "deny";
+    await waysIn(dialog);
     await dialog.getByTestId("connect-microsoft").click();
     await expect(dialog.getByTestId("add-account-error")).toHaveText("Microsoft access was denied.");
+    await imapForm(dialog);
     await expect(dialog.getByTestId("imap-email")).toHaveValue("ana@outlook.com");
   });
 

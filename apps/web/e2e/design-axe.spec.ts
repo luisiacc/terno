@@ -14,7 +14,7 @@ import type { Page } from "@playwright/test";
 import { msg } from "@terno/store/conformance";
 import { sqlDb } from "../../backend-dev/src/server";
 import { E2E_NOW } from "./constants";
-import { addRecipients, expect, focusList, navTo, openRow, rows, search, selectedRow, test, type DevServerFixture, openReview } from "./fixtures";
+import { addRecipients, expect, focusList, imapForm, navTo, openRow, rows, search, selectedRow, test, type DevServerFixture, openReview } from "./fixtures";
 import { base, failed, fakeMain, gate, release, upd } from "./helpers/fake-main";
 import { digestRow } from "./helpers/today";
 
@@ -179,6 +179,9 @@ test.describe("axe", { tag: ["@variant", "@variant-relief"] }, () => {
     await page.keyboard.press("Escape");
     await page.getByTestId("sidebar").getByRole("button", { name: "Add account", exact: true }).click();
     await clean(page, "add account", "[data-testid=add-account-dialog]");
+    // plan 276: its IMAP form, a step of its own
+    await imapForm(page.getByTestId("add-account-dialog"));
+    await clean(page, "add account, IMAP", "[data-testid=add-account-dialog]");
     await page.keyboard.press("Escape");
 
     // the snack: plain, then an error

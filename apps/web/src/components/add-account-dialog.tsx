@@ -4,10 +4,13 @@ import { Input } from "@terno/ui/components/input";
 import { Label } from "@terno/ui/components/label";
 import { NumberField } from "@terno/ui/components/number-field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
-import { Google, Microsoft } from "@terno/ui/icons";
+import { SocialButton } from "@terno/ui/components/social-button";
+import { ArrowLeft, Mail } from "@terno/ui/icons";
 import { unhandled, type SignInMethod } from "@terno/core";
 import { t } from "@terno/i18n";
 import { useEffect, useId, useRef, useState } from "react";
+import { cn } from "@terno/ui/lib/utils";
+import { hideFocusRing } from "~/lib/focus-ring";
 import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
@@ -57,8 +60,8 @@ const BROWSER_METHODS: readonly BrowserMethod[] = WEB ? ["google"] : ["google", 
 
 function browserButton(method: BrowserMethod) {
   switch (method) {
-  case "google": return { icon: <Google />, label: t("account.continueGoogle"), testId: "connect-gmail" };
-  case "microsoft": return { icon: <Microsoft />, label: t("account.continueMicrosoft"), testId: "connect-microsoft" };
+  case "google": return { label: t("account.continueGoogle"), testId: "connect-gmail" };
+  case "microsoft": return { label: t("account.continueMicrosoft"), testId: "connect-microsoft" };
   default: return unhandled(method);
   }
 }
@@ -67,10 +70,12 @@ function browserButton(method: BrowserMethod) {
 export interface AccountDraft {
   /** null: not chosen yet, the General setting (read when the host has it) */
   picked: number | null;
+  /** plan 276: the ways in, or the IMAP form (the first run comes back to the step it left) */
+  way: "choose" | "imap";
   form: { email: string; name: string; password: string; imapHost: string; imapPort: number; smtpHost: string; smtpPort: number; user: string };
 }
 
-export const EMPTY_ACCOUNT_DRAFT: AccountDraft = { picked: null, form: { email: "", name: "", password: "", imapHost: "", imapPort: 993, smtpHost: "", smtpPort: 465, user: "" } };
+export const EMPTY_ACCOUNT_DRAFT: AccountDraft = { picked: null, way: "choose", form: { email: "", name: "", password: "", imapHost: "", imapPort: 993, smtpHost: "", smtpPort: 465, user: "" } };
 
 export function AddAccountDialog() {
   const open = useApp((s) => s.dialog === "addAccount");
@@ -106,24 +111,50 @@ interface FormProps {
   onBusy?: (busy: boolean) => void;
 }
 
-/** The sync window, Google and Microsoft, then IMAP: the add-account dialog's body, and the first-run setup's last step (plan 98). */
+/**
+ * The sync window, then the ways in (Google, Microsoft, Other mail account), or the IMAP form once Other mail account is
+ * chosen (plan 276): the add-account dialog's body, and the first-run setup's last step (plan 98).
+ */
 export function AddAccountForm({ draft, onDraft, onDone, onBusy }: FormProps) {
   const imapHere = useApp((s) => s.host?.capabilities.imap ?? true);
   const generalWindow = useApp((s) => s.settings?.syncWindowDays ?? 180);
   const syncWindowDays = draft.picked ?? generalWindow;
   const form = draft.form;
+  const way = draft.way;
   // one connection at a time, whichever way; its progress and failure show where it was started (Microsoft also from the
   // IMAP form's hint, Codex review of plan 259 stage 3 #3)
   const [busy, setBusyState] = useState<SignInMethod | null>(null);
   const [from, setFrom] = useState<"buttons" | "hint">("buttons");
+  /** the Outlook.com domain whose hint started a Microsoft sign-in: the hint stays until it settles (plan 276) */
+  const [hintFor, setHintFor] = useState<string | null>(null);
   const [error, setError] = useState<{ method: SignInMethod; text: NonNullable<Attempt["error"]> } | null>(null);
+  /** moved between the steps since mounting: only then does a step come in moving, and take focus (plan 276) */
+  const [moved, setMoved] = useState(false);
   const hintId = useId();
+  const emailField = useRef<HTMLInputElement>(null);
+  const imapButton = useRef<HTMLButtonElement>(null);
+  const hintButton = useRef<HTMLButtonElement>(null);
   const set = (patch: Partial<AccountDraft["form"]>) => onDraft((d) => ({ ...d, form: { ...d.form, ...patch } }));
   const setPicked = (picked: number) => onDraft((d) => ({ ...d, picked }));
   const setBusy = (b: SignInMethod | null) => {
     setBusyState(b);
     onBusy?.(b !== null);
   };
+  const go = (next: AccountDraft["way"]) => {
+    setMoved(true);
+    setError(null);
+    onDraft((d) => ({ ...d, way: next }));
+  };
+
+  // a step chosen here takes focus: the caret in Email, or back on Other mail account (no ring: the app moved it, plan 54)
+  useEffect(() => {
+    if (!moved) return;
+    if (way === "imap") emailField.current?.focus();
+    else {
+      hideFocusRing();
+      imapButton.current?.focus();
+    }
+  }, [way, moved]);
 
   const onEmail = (email: string) => {
     const preset = PRESETS[email.split("@")[1]?.toLowerCase() ?? ""];
@@ -144,9 +175,13 @@ export function AddAccountForm({ draft, onDraft, onDone, onBusy }: FormProps) {
     }
   };
 
+  // plan 259: an Outlook.com address typed here connects with Microsoft (where this build has it)
+  const outlook = BROWSER_METHODS.includes("microsoft") ? microsoftDomain(form.email) : null;
+
   const connectWith = async (method: BrowserMethod, place: "buttons" | "hint" = "buttons") => {
     setBusy(method);
     setFrom(place);
+    setHintFor(place === "hint" ? outlook : null);
     setError(null);
     try {
       const a = await connect(method);
@@ -155,12 +190,12 @@ export function AddAccountForm({ draft, onDraft, onDone, onBusy }: FormProps) {
     } catch (error) {
       setError({ method, text: attemptError(error)! });
     } finally {
+      // the hint goes once it settles if the address was edited away meanwhile: focus on its button goes back to Email
+      if (place === "hint" && document.activeElement === hintButton.current && !microsoftDomain(emailField.current?.value ?? "")) emailField.current?.focus();
       setBusy(null);
+      setHintFor(null);
     }
   };
-
-  // plan 259: an Outlook.com address typed here connects with Microsoft (where this build has it)
-  const outlook = BROWSER_METHODS.includes("microsoft") ? microsoftDomain(form.email) : null;
 
   const addImap = async () => {
     setBusy("password");
@@ -190,9 +225,95 @@ export function AddAccountForm({ draft, onDraft, onDone, onBusy }: FormProps) {
     </div>
   );
 
+  // where the host can't do IMAP (the web without it), the Mac download says where it can
+  const imapShown = imapHere || !DesktopOnly;
+  // a sign-in the hint started keeps the hint (and its spinner) even if the address was edited away meanwhile
+  const hint = (busy === "microsoft" && from === "hint" && hintFor) || outlook;
+
+  const choose = (
+    <>
+      {/* stacked: side by side, "Continue with Microsoft" overflows the first-run's column and longer translations */}
+      <div className="flex flex-col gap-2">
+        {BROWSER_METHODS.map((method) => {
+          const b = browserButton(method);
+          return (
+            <SocialButton key={method} brand={method} onClick={() => void connectWith(method)} focusableWhenDisabled disabled={busy !== null} loading={busy === method && from === "buttons"} data-testid={b.testId}>
+              {b.label}
+            </SocialButton>
+          );
+        })}
+        {imapShown && (
+          <Button ref={imapButton} variant="outline" size="lg" className="w-full" onClick={() => go("imap")} focusableWhenDisabled disabled={busy !== null} data-testid="connect-imap">
+            <Mail /> {t("account.otherMail")} <span className="font-normal text-muted-foreground">{t("account.otherMailKind")}</span>
+          </Button>
+        )}
+      </div>
+      {error && error.method !== "password" && from === "buttons" && failure}
+      {!imapShown && DesktopOnly && <DesktopOnly feature="imap" />}
+    </>
+  );
+
+  const imap = (
+    <>
+      <Button variant="link-secondary" className="justify-self-start" onClick={() => go("choose")} focusableWhenDisabled disabled={busy !== null} data-testid="imap-back">
+        <ArrowLeft /> {t("account.chooseAnother")}
+      </Button>
+      <form
+        className="space-y-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (busy === null) void addImap();
+        }}
+      >
+        <div className="grid grid-cols-2 gap-3">
+          <div className="col-span-2 space-y-1">
+            <Label htmlFor="acc-email">{t("account.email")}</Label>
+            <Input ref={emailField} id="acc-email" data-testid="imap-email" type="email" required value={form.email} onChange={(e) => onEmail(e.target.value)} placeholder={t("account.email.placeholder")} aria-describedby={hint ? hintId : undefined} />
+            {hint && (
+              <p id={hintId} className="text-xs leading-relaxed text-muted-foreground" data-testid="imap-microsoft-hint">
+                {t("account.imapMicrosoft", { domain: hint })}{" "}
+                <Button ref={hintButton} variant="link" className="text-xs" focusableWhenDisabled disabled={busy !== null} loading={busy === "microsoft" && from === "hint"} onClick={() => void connectWith("microsoft", "hint")} data-testid="imap-microsoft-connect">
+                  {t("account.continueMicrosoft")}
+                </Button>
+              </p>
+            )}
+            {/* under the address even once it's edited away from Outlook.com (Codex review round 2 #2) */}
+            {error?.method === "microsoft" && from === "hint" && failure}
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="acc-name">{t("account.yourName")}</Label>
+            <Input id="acc-name" value={form.name} onChange={(e) => set({ name: e.target.value })} />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="acc-pass">{t("account.appPassword")}</Label>
+            <Input id="acc-pass" data-testid="imap-password" type="password" required value={form.password} onChange={(e) => set({ password: e.target.value })} />
+          </div>
+          <div className="col-span-2 space-y-1">
+            <Label htmlFor="acc-imap">{t("account.imapServer")}</Label>
+            <div className="flex gap-1.5">
+              <Input id="acc-imap" data-testid="imap-host" required value={form.imapHost} onChange={(e) => set({ imapHost: e.target.value })} />
+              <NumberField aria-label={t("account.imapPort")} {...PORT} value={form.imapPort} onValueChange={(port) => set({ imapPort: port ?? 0 })} />
+            </div>
+          </div>
+          <div className="col-span-2 space-y-1">
+            <Label htmlFor="acc-smtp">{t("account.smtpServer")}</Label>
+            <div className="flex gap-1.5">
+              <Input id="acc-smtp" data-testid="smtp-host" required value={form.smtpHost} onChange={(e) => set({ smtpHost: e.target.value })} />
+              <NumberField aria-label={t("account.smtpPort")} {...PORT} value={form.smtpPort} onValueChange={(port) => set({ smtpPort: port ?? 0 })} />
+            </div>
+          </div>
+        </div>
+        <Button type="submit" className="w-full" focusableWhenDisabled disabled={busy !== null} loading={busy === "password"} data-testid="imap-submit">
+          {t("account.connectAccount")}
+        </Button>
+        {error?.method === "password" && failure}
+      </form>
+    </>
+  );
+
   return (
     <>
-      {/* asked once, for whichever way the account connects */}
+      {/* asked once, for whichever way the account connects; it stays put while the steps change under it */}
       <div className="flex items-center justify-between gap-3">
         <Label htmlFor="acc-window">{t("account.window.label")}</Label>
         <Select value={String(syncWindowDays)} onValueChange={(v) => setPicked(Number(v))} items={windowChoices(generalWindow).map((d) => ({ value: String(d), label: windowLabel(d) }))} disabled={busy !== null}>
@@ -208,77 +329,16 @@ export function AddAccountForm({ draft, onDraft, onDone, onBusy }: FormProps) {
           </SelectContent>
         </Select>
       </div>
-      {/* stacked: side by side, "Continue with Microsoft" overflows the first-run's column and longer translations */}
-      <div className="flex flex-col gap-2">
-        {BROWSER_METHODS.map((method) => {
-          const b = browserButton(method);
-          return (
-            <Button key={method} variant="outline" className="h-10 justify-center gap-2" onClick={() => void connectWith(method)} focusableWhenDisabled disabled={busy !== null} loading={busy === method && (from === "buttons" || !outlook)} data-testid={b.testId}>
-              {b.icon} {b.label}
-            </Button>
-          );
-        })}
+      {/* keyed by step: chosen here, the new one comes in as the first run's steps do (one --motion-base fade and a 6 px
+          slide from the side it came from, nothing fading out); opened or restored, it's simply there */}
+      <div
+        key={way}
+        data-way={way}
+        data-testid="add-account-way"
+        className={cn("grid gap-4", moved && "animate-in fade-in-0 duration-base ease-motion", moved && (way === "imap" ? "slide-in-from-right-1.5" : "slide-in-from-left-1.5"))}
+      >
+        {way === "imap" && imapShown ? imap : choose}
       </div>
-      {error && error.method !== "password" && from === "buttons" && failure}
-      {!imapHere && DesktopOnly ? (
-        <DesktopOnly feature="imap" />
-      ) : (
-        <>
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          <span className="h-px flex-1 bg-border" /> {t("account.orImap")} <span className="h-px flex-1 bg-border" />
-        </div>
-        <form
-          className="space-y-3"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (busy === null) void addImap();
-          }}
-        >
-          <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2 space-y-1">
-              <Label htmlFor="acc-email">{t("account.email")}</Label>
-              <Input id="acc-email" data-testid="imap-email" type="email" required value={form.email} onChange={(e) => onEmail(e.target.value)} placeholder={t("account.email.placeholder")} aria-describedby={outlook ? hintId : undefined} />
-              {outlook && (
-                <p id={hintId} className="text-xs leading-relaxed text-muted-foreground" data-testid="imap-microsoft-hint">
-                  {t("account.imapMicrosoft", { domain: outlook })}{" "}
-                  <Button variant="link" className="text-xs" focusableWhenDisabled disabled={busy !== null} loading={busy === "microsoft" && from === "hint"} onClick={() => void connectWith("microsoft", "hint")} data-testid="imap-microsoft-connect">
-                    {t("account.continueMicrosoft")}
-                  </Button>
-                </p>
-              )}
-              {/* under the address even once it's edited away from Outlook.com (Codex review round 2 #2) */}
-              {error?.method === "microsoft" && from === "hint" && failure}
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="acc-name">{t("account.yourName")}</Label>
-              <Input id="acc-name" value={form.name} onChange={(e) => set({ name: e.target.value })} />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="acc-pass">{t("account.appPassword")}</Label>
-              <Input id="acc-pass" data-testid="imap-password" type="password" required value={form.password} onChange={(e) => set({ password: e.target.value })} />
-            </div>
-            <div className="col-span-2 space-y-1">
-              <Label htmlFor="acc-imap">{t("account.imapServer")}</Label>
-              <div className="flex gap-1.5">
-                <Input id="acc-imap" data-testid="imap-host" required value={form.imapHost} onChange={(e) => set({ imapHost: e.target.value })} />
-                <NumberField aria-label={t("account.imapPort")} {...PORT} value={form.imapPort} onValueChange={(port) => set({ imapPort: port ?? 0 })} />
-              </div>
-            </div>
-            <div className="col-span-2 space-y-1">
-              <Label htmlFor="acc-smtp">{t("account.smtpServer")}</Label>
-              <div className="flex gap-1.5">
-                <Input id="acc-smtp" data-testid="smtp-host" required value={form.smtpHost} onChange={(e) => set({ smtpHost: e.target.value })} />
-                <NumberField aria-label={t("account.smtpPort")} {...PORT} value={form.smtpPort} onValueChange={(port) => set({ smtpPort: port ?? 0 })} />
-              </div>
-            </div>
-          </div>
-          <Button type="submit" className="w-full" focusableWhenDisabled disabled={busy !== null} loading={busy === "password"} data-testid="imap-submit">
-            {t("account.connectAccount")}
-          </Button>
-          {error?.method === "password" && failure}
-        </form>
-        </>
-      )}
     </>
   );
 }

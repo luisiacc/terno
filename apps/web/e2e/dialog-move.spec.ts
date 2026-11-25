@@ -4,7 +4,7 @@
  */
 import type { Locator, Page } from "@playwright/test";
 import { sqlDb } from "../../backend-dev/src/server";
-import { expect, focusList, test, scenario, freshStart } from "./fixtures";
+import { expect, focusList, imapForm, test, scenario, freshStart } from "./fixtures";
 
 const settings = (page: Page) => page.getByTestId("settings-dialog");
 /** The popup's own entrance is over (a tab may hold a spinner that never ends: not its subtree). */
@@ -131,6 +131,7 @@ test.describe("config dialogs move (plan 129)", () => {
       await page.getByTestId("settings-add-account").click();
       const dialog = page.getByTestId("add-account-dialog");
       await expect(dialog).toBeVisible();
+      await imapForm(dialog);
       const field = page.getByTestId("imap-email");
       await field.fill("a@b.test");
       await field.focus();

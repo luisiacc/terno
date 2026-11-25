@@ -603,7 +603,9 @@ const en = {
   "account.continueMicrosoft": "Continue with Microsoft",
   // plan 259: an Outlook.com address typed in the IMAP form (basic-auth IMAP is gone there)
   "account.imapMicrosoft": "{domain} no longer takes passwords from other apps.",
-  "account.orImap": "or with IMAP/SMTP",
+  "account.otherMail": "Other mail account",
+  "account.otherMailKind": "IMAP/SMTP",
+  "account.chooseAnother": "Choose another way",
   // plan 79: how far back a new account downloads, asked when connecting
   "account.window.label": "Download mail from",
   "account.window.days": "The last {days} days",

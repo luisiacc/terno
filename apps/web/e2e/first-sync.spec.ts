@@ -5,6 +5,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 import { createDemoProvider, demoRegistry } from "@terno/mail";
 import { startDevServer, type DevServer } from "../../backend-dev/src/server";
+import { imapForm } from "./fixtures";
 
 const ctx = { clientId: "synthetic", origin: "dev" as const };
 const NEW = "new-account@example.test";
@@ -28,7 +29,7 @@ for (const theme of ["light", "dark"] as const) {
           },
         },
       });
-      await server.backend.server.invoke("settings.update", { theme, senderIcons: false }, ctx);
+      await server.backend.server.invoke("settings.update", { theme, senderIcons: false, firstScreen: "inbox" }, ctx);
       await page.goto(`/?backend=${encodeURIComponent(server.url)}&token=synthetic`);
       await page.locator("[data-ready]").waitFor();
       await page.getByTestId("thread-row").first().waitFor();
@@ -44,6 +45,7 @@ for (const theme of ["light", "dark"] as const) {
       await page.getByTestId("sync-window-30").click();
       await expect(choice).toHaveText(/The last 30 days/);
 
+      await imapForm(dialog);
       await dialog.getByTestId("imap-email").fill(NEW);
       await dialog.getByTestId("imap-password").fill("synthetic-password");
       // five-digit ports fit, not cut by the host field beside them

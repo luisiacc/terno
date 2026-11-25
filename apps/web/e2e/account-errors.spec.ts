@@ -2,7 +2,7 @@ import { copyFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { axeBothModes } from "./fixtures";
+import { axeBothModes, imapForm, waysIn } from "./fixtures";
 import { TEMPLATE_ENV } from "./constants";
 import { L, loadLocale, t } from "@terno/i18n";
 import { createDemoProvider, demoRegistry, ProviderAuthError } from "@terno/mail";
@@ -110,7 +110,7 @@ for (const [design, language, surface, closeKey] of RUNS) {
       const accounts = await backend.store.accounts.list();
       const account = accounts.find((a) => a.kind === "imap")!;
       await backend.store.accounts.setSyncState(account.id, { status: "error", authRequired: true });
-      await backend.server.invoke("settings.update", { design, layout: "list", language, theme: "system", senderIcons: false }, ctx);
+      await backend.server.invoke("settings.update", { design, layout: "list", language, theme: "system", senderIcons: false, firstScreen: "inbox" }, ctx);
       await page.addInitScript((language) => localStorage.setItem("terno:language", language), language);
       await page.goto(`/?backend=${encodeURIComponent(server.url)}&token=synthetic`);
       await page.locator("[data-ready]").waitFor();
@@ -154,6 +154,7 @@ for (const [design, language, surface, closeKey] of RUNS) {
         await expect(submit).toHaveAccessibleName(copy[language].verify);
       } else {
         await expect(dialog).toHaveAccessibleName(copy[language].title);
+        await imapForm(dialog);
         await page.getByTestId("imap-email").fill("synthetic@icloud.com");
         await expect(page.getByTestId("imap-host")).toHaveValue("imap.mail.me.com");
         await expect(page.getByTestId("smtp-host")).toHaveValue("smtp.mail.me.com");
@@ -286,7 +287,7 @@ for (const language of ["en", "es"] as const) {
       const imap = accounts.find((a) => a.kind === "imap")!;
       const gmail = accounts.find((a) => a.kind === "gmail")!;
       await backend.store.accounts.setSyncState(imap.id, { status: "error", authRequired: false, lastError: detail });
-      await backend.server.invoke("settings.update", { language, theme: "system", senderIcons: false }, ctx);
+      await backend.server.invoke("settings.update", { language, theme: "system", senderIcons: false, firstScreen: "inbox" }, ctx);
       await page.addInitScript((language) => localStorage.setItem("terno:language", language), language);
       await page.goto(`/?backend=${encodeURIComponent(server.url)}&token=synthetic`);
       await page.getByTestId("thread-row").first().waitFor();
@@ -336,10 +337,12 @@ for (const language of ["en", "es"] as const) {
       const trigger = page.getByTestId("sidebar").getByRole("button", { name: copy[language].add, exact: true });
       await trigger.click();
       const dialog = page.getByTestId("add-account-dialog");
+      await imapForm(dialog);
       await page.getByTestId("imap-email").fill("synthetic@icloud.com");
       await dialog.locator("#acc-name").fill("Synthetic author");
       await page.getByTestId("imap-password").fill(password);
-      const nameNode = await dialog.locator("#acc-name").elementHandle();
+      // plan 276: Google is one of the ways in, a step back from the form
+      await waysIn(dialog);
       await dialog.getByTestId("connect-gmail").focus();
       await page.keyboard.press("Enter");
       const error = dialog.getByRole("alert");
@@ -352,16 +355,19 @@ for (const language of ["en", "es"] as const) {
       await expect.poll(() => googleCalls.length).toBe(3);
       await expect(error).toHaveText(t("errors.couldNotConnect", { detail }));
       await expect(dialog.getByTestId("connect-gmail")).toBeFocused();
-      await expect(dialog.locator("#acc-name")).toHaveValue("Synthetic author");
-      await expect(page.getByTestId("imap-password")).toHaveValue(password);
-      expect(await dialog.locator("#acc-name").evaluate((el, saved) => el === saved, nameNode)).toBe(true);
       await axeBothModes(page, '[data-testid="add-account-dialog"]');
       if (shots) await page.screenshot({ path: join(shots, `controls-${language}-google-error.png`) });
+      // what was typed is the draft's: the form drawn again has it
+      await imapForm(dialog);
+      await expect(dialog.locator("#acc-name")).toHaveValue("Synthetic author");
+      await expect(page.getByTestId("imap-password")).toHaveValue(password);
       await page.keyboard.press("Escape");
       await expect(dialog).toHaveCount(0);
       await trigger.click();
       await expect(dialog.getByRole("alert")).toHaveCount(0);
+      await imapForm(dialog);
       await expect(page.getByTestId("imap-email")).toHaveValue("");
+      await waysIn(dialog);
       // plan 123: a build without Terno's Google client says so where the other errors show (no detour)
       (backend.options as { googleClients?: unknown }).googleClients = null;
       await dialog.getByTestId("connect-gmail").click();
@@ -371,6 +377,7 @@ for (const language of ["en", "es"] as const) {
       await trigger.click();
       // The normal preset/required-field/success flow still uses the same consumer controls.
       refuse = false;
+      await imapForm(dialog);
       await page.getByTestId("imap-email").fill("synthetic@icloud.com");
       await expect(page.getByTestId("imap-host")).toHaveValue("imap.mail.me.com");
       await expect(page.getByTestId("smtp-host")).toHaveValue("smtp.mail.me.com");

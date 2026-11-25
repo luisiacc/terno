@@ -1,4 +1,4 @@
-import { expect, test } from "./fixtures";
+import { expect, imapForm, test, waysIn } from "./fixtures";
 
 // Plan 123: Gmail connects only through Terno's own Google client; there is nothing to set up.
 test.describe("plan 123: no Google client of your own", () => {
@@ -19,9 +19,12 @@ test.describe("plan 123: no Google client of your own", () => {
       await page.getByTestId("tab-accounts").click();
       await page.getByTestId("settings-add-account").click();
       const dialog = page.getByTestId("add-account-dialog");
+      await imapForm(dialog);
       await dialog.getByTestId("imap-email").fill("ana@icloud.com");
+      await waysIn(dialog);
       await dialog.getByTestId("connect-gmail").click();
       await expect(dialog.getByRole("alert")).toHaveText("This copy of Terno can’t connect Google accounts. Add the account with IMAP instead.");
+      await imapForm(dialog);
       await expect(dialog.getByTestId("imap-email")).toHaveValue("ana@icloud.com");
       await expect(page.getByTestId("tab-accounts")).toHaveCount(0);
     });

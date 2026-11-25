@@ -6,11 +6,13 @@ import { describe, expect, it } from "vitest";
 /**
  * App and design-system code use tokens only: no literal colors, no literal
  * durations (everything runs on --motion), no translucent text (alpha text
- * can't be contrast-tested). The registry (src/themes) is the one place colors live.
+ * can't be contrast-tested). The registry (src/themes) is the one place colors live, beside the sign-in providers' own
+ * marks (brand/provider-marks.tsx).
  */
 const ROOT = join(import.meta.dirname, "../../../..");
 const SCANNED = ["packages/ui/src", "apps/web/src"];
-const EXEMPT = [/\/themes\//, /\.test\.tsx?$/, /themes\.generated\.css$/];
+// plan 276: a sign-in provider's own mark keeps its company's colors in every palette (BoardUI's Social Button)
+const EXEMPT = [/\/themes\//, /\.test\.tsx?$/, /themes\.generated\.css$/, /\/brand\/provider-marks\.tsx$/];
 
 const CODE_RULES: [string, RegExp][] = [
   ["hex color", /(?<![\w&/])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})\b/],

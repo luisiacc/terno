@@ -2,7 +2,7 @@
  * Visual regression of the key screens (light + dark). Baselines live in
  * e2e/__screenshots__; regenerate with `pnpm test:e2e --update-snapshots`.
  */
-import { expect, focusList, forgetOffer, openRow, search, stabilize, test, freshStart, scenario } from "./fixtures";
+import { expect, focusList, forgetOffer, imapForm, openRow, search, stabilize, test, freshStart, scenario } from "./fixtures";
 import { startOllamaStub } from "./ollama-stub";
 import type { Page } from "@playwright/test";
 import { sqlDb } from "../../backend-dev/src/server";
@@ -105,9 +105,13 @@ test.describe("light", () => {
       await forgetOffer(page);
       await ready(page);
       await page.getByTestId("sidebar").getByText("Add account").click();
-      await page.getByTestId("imap-email").fill("ana@icloud.com");
       await stabilize(page);
       await expect(page).toHaveScreenshot("add-account.png");
+      // plan 276: the IMAP form, a step of its own
+      await imapForm(page);
+      await page.getByTestId("imap-email").fill("ana@icloud.com");
+      await stabilize(page);
+      await expect(page).toHaveScreenshot("add-account-imap.png");
     });
     await scenario("AI filter builder with live preview", async () => {
       await forgetOffer(page);
@@ -197,6 +201,7 @@ test.describe("owner identity", () => {
   test("settings: accounts with the owner card", async ({ app: page }) => {
     await ready(page);
     await page.getByTestId("sidebar").getByText("Add account").click();
+    await imapForm(page);
     await page.getByTestId("imap-email").fill("luis@fastmail.com");
     await page.getByTestId("imap-password").fill("app-password");
     await page.getByTestId("imap-submit").click();
@@ -223,6 +228,10 @@ for (const scheme of ["light", "dark"] as const) {
         await expect(page).toHaveScreenshot(`first-run-${step}${suffix}.png`);
         if (step !== "account") await page.getByTestId("first-run-continue").click();
       }
+      // plan 276: the account step's IMAP form
+      await imapForm(dialog);
+      await stabilize(page);
+      await expect(page).toHaveScreenshot(`first-run-account-imap${suffix}.png`);
     });
   });
 }

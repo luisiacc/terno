@@ -148,6 +148,8 @@ test("what the browser can't do is said plainly: IMAP and agents locked, honest 
   const add = page.getByTestId("add-account-dialog");
   await expect(add.getByTestId("desktop-only-imap")).toBeVisible();
   await expect(add.getByTestId("imap-email")).toHaveCount(0);
+  // plan 276: the Mac download in Other mail account's place
+  await expect(add.getByTestId("connect-imap")).toHaveCount(0);
   await expect(add.getByTestId("connect-gmail")).toBeVisible();
 });
 

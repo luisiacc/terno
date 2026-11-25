@@ -139,6 +139,8 @@ test("the Dock shows the sidebar's Inbox count, and the setting clears it", asyn
 
 test("after an IMAP account's first sync, a person's mail through IDLE makes one notification; list mail none; its click opens the conversation", async () => {
   await page.getByTestId("sidebar").getByText("Add account").click();
+  // plan 276: the IMAP form is the step after Other mail account
+  await page.getByTestId("connect-imap").click();
   await page.getByTestId("imap-email").fill(ME);
   await page.getByTestId("imap-password").fill("smoke-password");
   await page.getByTestId("imap-host").fill("127.0.0.1");

@@ -1,13 +1,14 @@
 import { sqlDb } from "../../backend-dev/src/server";
 import { existsSync, readFileSync } from "node:fs";
 import { connect } from "node:net";
-import { expect, navTo, test, fresh, scenario } from "./fixtures";
+import { expect, imapForm, navTo, test, fresh, scenario } from "./fixtures";
 
 test.describe("accounts, settings and command palette", () => {
   test("accounts, tabs and the palette: IMAP, the vertical tabs, every tab, ⌘K, g i and ?", async ({ app: page }) => {
     await scenario("IMAP presets autofill servers; the account is added and appears in the sidebar", async () => {
       await page.getByTestId("sidebar").getByText("Add account").click();
       const dialog = page.getByTestId("add-account-dialog");
+      await imapForm(dialog);
       await page.getByTestId("imap-email").fill("ana@icloud.com");
       await expect(page.getByTestId("imap-host")).toHaveValue("imap.mail.me.com");
       await expect(page.getByTestId("smtp-host")).toHaveValue("smtp.mail.me.com");
