@@ -349,25 +349,41 @@ export const listArrival: { on?: () => boolean; arm?: () => void; play?: (ids: r
  * act's read does. The Inbox pays it in its commit (`reloadList`); What matters' feed as its rows are published (a feed
  * row isn't a listed conversation: a Done leaves its conversation listed).
  */
-let owedMoves: { key: string; until: number; ids: ReadonlySet<number> | null } | null = null;
+interface OwedMoves {
+  key: string;
+  until: number;
+  /** an Undo's conversations; null: any change */
+  ids: ReadonlySet<number> | null;
+  /** Coming up's: owed to a change in its rows only (a page of Earlier arriving meanwhile isn't it) */
+  ahead: boolean;
+}
+/** one of each kind at most (an Undo's, Coming up's): neither takes the other's place (Codex code review #5) */
+let owedMoves: OwedMoves[] = [];
 const MOVES_WITHIN_MS = 2000;
-export function moveNextRows(ids: readonly number[] | null = null): void {
-  owedMoves = { key: listKey(), until: performance.now() + MOVES_WITHIN_MS, ids: ids && new Set(ids) };
+const live = (m: OwedMoves, key: string) => m.key === key && performance.now() < m.until;
+export function moveNextRows(ids: readonly number[] | null = null, { ahead = false }: { ahead?: boolean } = {}): void {
+  const key = listKey();
+  owedMoves = [...owedMoves.filter((m) => m.ahead !== ahead && live(m, m.key)), { key, until: performance.now() + MOVES_WITHIN_MS, ids: ids && new Set(ids), ahead }];
 }
 /** What an answer changes in a list's rows: the conversations (or the feed's rows' conversations) it brings, how many go. */
 export interface RowsChange {
   came: readonly number[];
   went: number;
+  /** some of Coming up's rows came or went */
+  ahead?: boolean;
 }
-/** Motion is owed to this list (and, given a change, to that change); the caller that moves the rows pays it (`movesPaid`). */
-export function movesOwed(key: string, change?: RowsChange): boolean {
-  const owed = owedMoves;
-  if (!owed || owed.key !== key || performance.now() >= owed.until) return false;
-  if (!change) return true;
-  return owed.ids ? change.came.some((id) => owed.ids!.has(id)) : change.came.length + change.went > 0;
+/** Motion is owed to this list's next change. */
+export const movesOwed = (key: string): boolean => owedMoves.some((m) => live(m, key));
+/** Motion owed to this change: taken (paid) if so. */
+export function takeMoves(key: string, change: RowsChange): boolean {
+  const i = owedMoves.findIndex((m) => live(m, key) && (m.ahead ? change.ahead === true : m.ids ? change.came.some((id) => m.ids!.has(id)) : change.came.length + change.went > 0));
+  if (i < 0) return false;
+  owedMoves = owedMoves.filter((_, j) => j !== i);
+  return true;
 }
-export function movesPaid(): void {
-  owedMoves = null;
+/** Nothing owed any more (tests). */
+export function clearMoves(): void {
+  owedMoves = [];
 }
 /** Plan 271: at most this many rows move at once; more just appear (a large Undo isn't a moment to watch). */
 export const MOVES_MAX = 50;
@@ -518,12 +534,12 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
     const arrived = options.arrived?.length && sameView && shown && !restore && scope?.kind === "view" && !listAnchor.scrolled?.() && useDrag.getState().phase === "idle" && listArrival.on?.() ? arrivedOnTop(current.index, page.items, onTop, new Set(options.arrived)) : [];
     if (arrived.length) listArrival.arm?.();
     // plan 271: an answer owed motion (an Undo's): the rows it brings arrive and the rest slide, as they left (What matters'
-    // feed moves its own rows as they're published). A change bigger than a moment just appears
-    const change = !arrived.length && !getApp().today && sameView && shown && useDrag.getState().phase === "idle" && listArrival.on?.() && movesOwed(key) ? rowsChange(current.index, current.items, page.items) : null;
-    const owed = change !== null && movesOwed(key, change);
-    if (owed) movesPaid();
-    const moving = owed && change.came.length + change.went <= MOVES_MAX ? change.came : null;
-    if (moving) listArrival.arm?.();
+    // feed moves its own rows as they're published; live mail in the same answer arrives with them). A change bigger than
+    // a moment just appears
+    const change = !getApp().today && sameView && shown && useDrag.getState().phase === "idle" && listArrival.on?.() && movesOwed(key) ? rowsChange(current.index, current.items, page.items) : null;
+    const owed = change !== null && takeMoves(key, change);
+    const moving = owed && change.came.length + change.went <= MOVES_MAX ? change.came.filter((id) => !arrived.includes(id)) : null;
+    if (moving && !arrived.length) listArrival.arm?.();
     const commit = (fn: () => void) => (restore || arrives || arrived.length || moving ? flushSync(fn) : fn());
     commit(() => {
       // Today's maps and the history's lines with the rows they describe, never before (Codex code review of plan 210)

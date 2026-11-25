@@ -136,8 +136,14 @@ describe("Undo", () => {
     // a second press, or z, runs nothing more
     undoHeld(11);
     expect(cancel).toHaveBeenCalledTimes(1);
-    // its send's own deadlines are retired: a reconnect's catch-up doesn't take the card mid-reopen
-    settleOverdue();
+    // past its window: a reconnect's catch-up doesn't take the card mid-reopen (Codex code review #8)
+    const now = Date.now;
+    Date.now = () => now() + 60_000;
+    try {
+      settleOverdue();
+    } finally {
+      Date.now = now;
+    }
     expect(heldById(11)).toBeDefined();
     // another draft shown: not its own
     useDrafts.setState({ drafts: { k11: { id: 11 }, other: { id: 99 } } as never });
@@ -153,6 +159,27 @@ describe("Undo", () => {
     reopened();
     unmount();
     setApp({ draftShown: null });
+  });
+
+  it("won, its draft slow to show: its send's own deadlines are retired, so the card waits for it (plan 271, Codex code review #8)", async () => {
+    vi.useFakeTimers();
+    let reopened!: () => void;
+    hold(16, 10, async (cancelled) => {
+      cancelled();
+      await new Promise<void>((r) => (reopened = r));
+      return true;
+    });
+    const unmount = card(16);
+    undoHeld(16);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(reopened).toBeTypeOf("function");
+    // past the window and the send's own deadline
+    await vi.advanceTimersByTimeAsync(HOLD + 31_000);
+    expect(heldById(16)?.phase).toBe("undoing");
+    reopened();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(heldById(16)).toBeUndefined();
+    unmount();
   });
 
   it("won, its draft never shown (kept in Drafts, the reopen failed): the Undo's end settles it (plan 271)", async () => {
@@ -282,6 +309,29 @@ describe("its copy", () => {
     expect(open).toHaveBeenCalledWith(91);
     expect(heldById(31)).toBeUndefined();
     expect(getApp().heldView).toBeNull();
+    unmount();
+  });
+
+  it("plan 271: a reconnect's catch-up while the pane reads its conversation leaves it be: it opens when the read comes (Codex code review #1)", async () => {
+    const open = vi.fn();
+    let ready!: (ok: boolean) => void;
+    setHeldThreadOpener({ open, ready: () => new Promise<boolean>((r) => (ready = r)) });
+    const unmount = card(35);
+    hold(35, null);
+    setApp({ heldView: 35 });
+    heldWent({ draftId: 35, threadId: 95, messageId: 605 });
+    await vi.waitFor(() => expect(ready).toBeTypeOf("function"));
+    const now = Date.now;
+    Date.now = () => now() + 60_000;
+    try {
+      settleOverdue();
+    } finally {
+      Date.now = now;
+    }
+    expect(heldById(35)).toBeDefined();
+    // (the old connection's read answers nothing: it opens the conversation it knows)
+    ready(false);
+    await vi.waitFor(() => expect(open).toHaveBeenCalledWith(95));
     unmount();
   });
 

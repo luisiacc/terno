@@ -84,6 +84,10 @@ function clearTimers(draftId: number): void {
 
 /** Plan 271: holds taken back whose cards wait for their drafts to show, and how each stops watching. */
 const takingBack = new Map<number, () => void>();
+/** Plan 271: cards that gave way to their drafts this frame: the draft's reopen owns focus, not the card's fallback. */
+const focusToDraft = new Set<number>();
+/** Plan 271: new messages whose panes are becoming their conversations (a reconnect's catch-up leaves them be). */
+const handingOver = new Set<number>();
 
 /**
  * Plan 271: Undo won (nothing can take it back again now: plan 182's critique #7). The recording showed a beat of neither:
@@ -97,7 +101,12 @@ function takenBack(draftId: number): void {
   const mine = (key: string | null | undefined) => key != null && useDrafts.getState().drafts[key]?.id === draftId;
   const check = () => {
     const app = getApp();
-    if (mine(app.compose?.key) || mine(app.draftShown?.key) || mine(usePinned.getState().key)) settleHeld(draftId);
+    if (!mine(app.compose?.key) && !mine(app.draftShown?.key) && !mine(usePinned.getState().key)) return;
+    // the reopen puts focus in its draft: the card's own way of keeping focus (to the conversation) would take it from
+    // there, and end the draft's claim to it (Codex code review #2)
+    focusToDraft.add(draftId);
+    soon(() => focusToDraft.delete(draftId));
+    settleHeld(draftId);
   };
   const stops = [useApp.subscribe(check), usePinned.subscribe(check)];
   takingBack.set(draftId, () => stops.forEach((stop) => stop()));
@@ -180,7 +189,7 @@ export function cardLeaving(draftId: number): void {
 
 /** Focus on a card that goes: to its copy's header if it's there, else the conversation (never left on nothing). */
 function keepFocus(draftId: number, copy: number | null): void {
-  if (typeof document === "undefined" || !document.activeElement?.closest(`[data-held-send="${draftId}"]`)) return;
+  if (typeof document === "undefined" || focusToDraft.has(draftId) || !document.activeElement?.closest(`[data-held-send="${draftId}"]`)) return;
   const reader = document.activeElement.closest<HTMLElement>("[data-testid=reader], [data-testid=held-view]");
   soon(() => {
     // the user has put it elsewhere meanwhile: theirs
@@ -322,8 +331,9 @@ export function copyShown(draftId: number): void {
 
 /** A connection again (a restart of the backend, a takeover): what may have been missed meanwhile is over here. */
 export function settleOverdue(): void {
-  // (one taken back waits for its draft, or its Undo's end: plan 271)
-  for (const h of useHeldSends.getState().holds) if (Date.now() >= h.goesAt && !takingBack.has(h.draftId)) settleHeld(h.draftId);
+  // (one taken back waits for its draft, or its Undo's end; a new message's pane handing over opens its conversation
+  // when its read comes, whatever connection brings it: plan 271, Codex code review #1)
+  for (const h of useHeldSends.getState().holds) if (Date.now() >= h.goesAt && !takingBack.has(h.draftId) && !handingOver.has(h.draftId)) settleHeld(h.draftId);
 }
 
 /**
@@ -359,6 +369,7 @@ function openSentView(sent: ScheduledSent): void {
   const { draftId, threadId, messageId } = sent;
   const still = () => getApp().heldView === draftId && heldById(draftId) !== undefined;
   const open = () => {
+    handingOver.delete(draftId);
     if (still()) {
       revealSent(messageId);
       openSentThread(threadId);
@@ -366,6 +377,7 @@ function openSentView(sent: ScheduledSent): void {
     settleHeld(draftId);
     pane?.letGo?.();
   };
+  handingOver.add(draftId);
   const pair = { name: "sent-message", find: () => document.querySelector<HTMLElement>(`[data-held-send="${draftId}"]`) ?? document.querySelector<HTMLElement>(`[data-reader-scroller] article[data-message-id="${messageId}"]`) };
   const timeout = new Promise<boolean>((r) => setTimeout(() => r(false), READY_WAIT_MS));
   void Promise.race([pane?.ready?.(threadId, messageId).catch(() => false) ?? Promise.resolve(false), timeout]).then((ready) => {
@@ -380,6 +392,8 @@ export function resetHeldSends(): void {
   cards.clear();
   early.clear();
   revealed.clear();
+  handingOver.clear();
+  focusToDraft.clear();
 }
 
 // the sent view is the pane's while nothing else takes it: a composer opened, rows checked (a click on a row is openThread)

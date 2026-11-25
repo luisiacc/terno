@@ -54,7 +54,7 @@ const sampled = (page: Page): Promise<Sample> =>
 /** Plans 195–198: every arrival asked for, as it starts (one runs ≤ 100 ms: by the time a locator answers it may be over), and whether it fades */
 async function recordArrivals(page: Page) {
   await page.evaluate(() => {
-    const w = window as unknown as { __arrivals: { id: string | null; testid: string | null; thread: string | null; fades: boolean }[] };
+    const w = window as unknown as { __arrivals: { id: string | null; testid: string | null; thread: string | null; row: string | null; fades: boolean }[] };
     // installed once per page; a new recording clears what the last one saw (wrapping again would count each twice)
     const installed = (w as unknown as { __arrivalsOn?: boolean }).__arrivalsOn;
     w.__arrivals = [];
@@ -62,12 +62,12 @@ async function recordArrivals(page: Page) {
     (w as unknown as { __arrivalsOn?: boolean }).__arrivalsOn = true;
     const original = Element.prototype.animate;
     Element.prototype.animate = function (this: Element, keyframes: Keyframe[] | PropertyIndexedKeyframes | null, options?: number | KeyframeAnimationOptions) {
-      if (typeof options === "object" && options.id === "arrive") w.__arrivals.push({ id: options.id, testid: this.getAttribute("data-testid") ?? (this.hasAttribute("data-keep-scroll") ? "list" : this.getAttribute("data-slot")), thread: this.getAttribute("data-thread-id"), fades: Array.isArray(keyframes) && keyframes.some((k) => "opacity" in k) });
+      if (typeof options === "object" && options.id === "arrive") w.__arrivals.push({ id: options.id, testid: this.getAttribute("data-testid") ?? (this.hasAttribute("data-keep-scroll") ? "list" : this.getAttribute("data-slot")), thread: this.getAttribute("data-thread-id"), row: this.querySelector("[data-row-id]")?.getAttribute("data-row-id") ?? null, fades: Array.isArray(keyframes) && keyframes.some((k) => "opacity" in k) });
       return original.call(this, keyframes, options);
     };
   });
 }
-const arrivals = (page: Page) => page.evaluate(() => (window as unknown as { __arrivals: { id: string; testid: string | null; thread: string | null; fades: boolean }[] }).__arrivals);
+const arrivals = (page: Page) => page.evaluate(() => (window as unknown as { __arrivals: { id: string; testid: string | null; thread: string | null; row: string | null; fades: boolean }[] }).__arrivals);
 
 /** Holds a backend method until released, so its loading state (spinner, skeleton) stays on screen. */
 function hold(server: DevServer, method: string) {
@@ -118,7 +118,7 @@ const slid = (tops: number[]) => {
  * Plan 271: a new message sent with Undo send on, its window ended at once: what each painted frame showed through its
  * handoff to the conversation (the message there, the held one or its copy; the view transition's parts running)
  */
-async function sentHandoff(page: Page, server: DevServer): Promise<{ shown: boolean; vt: string[] }[]> {
+async function sentHandoff(page: Page, server: DevServer): Promise<{ shown: boolean; still: boolean; vt: string[] }[]> {
   await server.backend.server.invoke("settings.update", { undoSend: true }, ctx);
   await page.reload();
   await page.locator("[data-ready]").waitFor();
@@ -132,7 +132,7 @@ async function sentHandoff(page: Page, server: DevServer): Promise<{ shown: bool
   const view = page.getByTestId("held-view");
   await expect(view.getByTestId("held-message")).toBeVisible();
   await startSampler(page);
-  await recordFrames(page, `() => ({ shown: !!document.querySelector("[data-reader-scroller] article"), vt: document.getAnimations().map((a) => a.effect?.pseudoElement ?? "").filter((p) => p.includes("view-transition")) })`);
+  await recordFrames(page, `() => ({ shown: !!document.querySelector("[data-reader-scroller] article"), still: document.documentElement.hasAttribute("data-morph-still"), vt: document.getAnimations().map((a) => a.effect?.pseudoElement ?? "").filter((p) => p.includes("view-transition")) })`);
   const { draftId } = (await server.backend.store.scheduled.list())[0]!;
   await server.backend.server.invoke("scheduled.reschedule", { draftId, sendAt: E2E_NOW - 1 }, ctx);
   await expect(view).toHaveCount(0, { timeout: 8000 });
@@ -544,7 +544,9 @@ test.describe("motion", () => {
   test("plan 271: a new message becomes its conversation with no empty frame, its message gliding as the conversation fades in", async ({ app: page, server }) => {
     const seen = await sentHandoff(page, server);
     expect(seen.every((f) => f.shown), "a frame without the message").toBe(true);
+    // the message glided as one (its pair matched: never two pictures of it blended, Codex code review #8)
     expect(seen.flatMap((f) => f.vt)).toContain("::view-transition-group(sent-message)");
+    expect(seen.some((f) => f.still)).toBe(false);
     const r = await sampled(page);
     expect(r.max, r.names.join(",")).toBeLessThanOrEqual(100);
   });
@@ -564,7 +566,8 @@ test.describe("motion", () => {
       await recordFrames(page, `() => !!document.querySelector("[data-testid=held-message]") || !!document.querySelector("[data-testid=draft-slot][data-state=open]")`);
       await page.getByTestId("held-undo").click();
       await expect(page.getByTestId("held-message")).toHaveCount(0);
-      await expect(page.getByTestId("compose-body")).toBeVisible();
+      // and the keys in the draft: the card's leaving doesn't take them to the conversation (Codex code review #2)
+      await expect(page.getByTestId("compose-body")).toBeFocused();
       await frames(page);
       expect((await framesSeen<boolean>(page)).every(Boolean), "a frame of neither").toBe(true);
       await page.keyboard.press("Escape");
@@ -581,6 +584,8 @@ test.describe("motion", () => {
       await recordFrames(page, `() => !!document.querySelector("[data-testid=held-view]") || !!document.querySelector("[data-testid=compose-subject]")`);
       await page.getByTestId("held-undo").click();
       await expect(page.getByTestId("compose-subject")).toHaveValue("Taken back");
+      await expect(page.locator("[data-testid=compose-body], [data-testid=compose-subject], [data-testid=compose-to] input").first()).toBeVisible();
+      await expect.poll(() => page.evaluate(() => !!document.activeElement?.closest("[data-draft-key]"))).toBe(true);
       await frames(page);
       expect((await framesSeen<boolean>(page)).every(Boolean), "a frame of neither").toBe(true);
     });
@@ -642,7 +647,8 @@ test.describe("plan 271: What matters' rows move as the Inbox's do", () => {
       const tops = (await framesSeen<{ top: number | null }>(page)).map((f) => f.top).filter((t): t is number => t !== null);
       expect(tops.at(-1)!).toBeGreaterThan(tops[0]!);
       expect(slid(tops), tops.join(",")).toBe(true);
-      expect((await arrivals(page)).some((a) => a.fades)).toBe(true);
+      // the row itself fades in (drawn anew: it was under Earlier), not just its heading (Codex code review #8)
+      expect(await arrivals(page)).toContainEqual(expect.objectContaining({ row: leaving, fades: true }));
     });
   });
 });

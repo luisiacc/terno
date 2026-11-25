@@ -266,7 +266,7 @@ export function WhatMattersFeed() {
   );
 
   // plan 271: a change that moves the feed arms its slots before it's drawn, by the keys of what it draws
-  useEffect(() => installFeedMoves((s) => drawn(s.rows, s.comingUp, clearOf(s)).map((d) => d.key)), []);
+  useEffect(() => installFeedMoves((s) => drawn(s.rows, s.comingUp, clearOf(s)).map((d) => (d.type === "heading" ? { key: d.key, same: `h-${d.kind}` } : { key: d.key }))), []);
 
   // the header's hairline once the feed is scrolled, as the list's
   useEffect(() => {

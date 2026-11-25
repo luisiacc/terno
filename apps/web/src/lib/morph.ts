@@ -36,7 +36,9 @@ export function morph(update: () => void, pairs: readonly MorphPair[] = []): voi
       clear(named);
       flushSync(update);
       named = nameShown();
-      if (!matchPairs(pairs, before, named)) document.documentElement.dataset.morphStill = "";
+      // a pair not wholly in view before (a message taller than the pane), or drawn otherwise after: the change is still
+      // (both pictures of it would be in the cross-fade, its words doubled: Codex code review #3)
+      if (before.size < pairs.length || !matchPairs(pairs, before, named)) document.documentElement.dataset.morphStill = "";
     });
   } catch (error) {
     clear(named);
@@ -55,9 +57,9 @@ export function morph(update: () => void, pairs: readonly MorphPair[] = []): voi
 /**
  * Plan 271: one element that is the same thing on both sides of this one change (a sent message and its copy), found
  * afresh before and after it. It glides, never resizes: named before only if wholly in view of its scroller, and after
- * only if it's there, wholly in view and the same size; it shows its new picture at once (`morph-swap`). Unmatched (a
- * design that draws it otherwise: Lumen's sender card), the change is still (`data-morph-still`): a cross-fade would
- * show two pictures of the one message, its words doubled.
+ * only if it's there, wholly in view and the same size; it shows its new picture at once (`morph-swap`). Not wholly in
+ * view before, or unmatched after (a design that draws it otherwise: Lumen's sender card), the change is still
+ * (`data-morph-still`): a cross-fade would show two pictures of the one message, its words doubled.
  */
 export interface MorphPair {
   name: string;
@@ -84,7 +86,7 @@ function namePairs(pairs: readonly MorphPair[], named: HTMLElement[]): Map<strin
   return sizes;
 }
 
-/** Names each pair's element after the change; false if one named before has no match (the change is then still). */
+/** Names each pair's element after the change; false if one named before has no match. */
 function matchPairs(pairs: readonly MorphPair[], before: ReadonlyMap<string, DOMRect>, named: HTMLElement[]): boolean {
   let all = true;
   for (const p of pairs) {

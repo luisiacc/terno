@@ -95,3 +95,14 @@ Nothing on a hot path. The feed's listener returns at once unless an act or an o
 ## Also fixed on the way
 
 `state/list.test.ts` and `state/threads.test.ts` had not loaded since plan 251 (7b19b9620: `state/today.ts` reaches `lib/appearance`, which reads the document at import). They run in jsdom with the `matchMedia` stub now, and pass.
+
+## Codex code review
+
+1. **A reconnect while the new message's pane reads its conversation** settled the hold, and the read's answer then opened nothing. Fixed: a pane handing over is left be by the reconnect's catch-up (`handingOver`); the old connection's read answers nothing, and it opens the conversation it knows. Unit test.
+2. **Focus after Undo send**: the card settling on its draft's publication could send focus to the conversation before the draft took it. Guarded: a card that gave way to its draft leaves focus to the reopen (`focusToDraft`). Not reproduced in Split or List (focus lands in the composer either way); the e2e now checks the keys are in the draft after Undo send, reply and new message.
+3. **A sent message taller than the pane** wasn't named before, and the pair counted as matched: the cross-fade doubled it. Fixed: a pair not wholly in view before makes the change still too. Unit test, failing without the fix.
+4. **An unrelated row arriving above a Done row** counted as moving it (its index shifted). Fixed: a row moves only when it changes part (Earlier back to Today, its group); only those, among rows not drawn before, arrive.
+5. **Coming up's motion and an Undo's overwrote each other**, and a page of Earlier could take Coming up's. Fixed: one owed motion of each kind, each taken by its own change (`takeMoves`); Coming up's by its own rows coming or going.
+6. **The Inbox's Undo**: the moment started when `z` was pressed, so a slow Archive's answer could outlast it; and an answer bringing live mail with the restored row skipped the Undo's. Fixed: owed when the undo itself starts; both arrive from the same answer.
+7. **Done on Today's first item** re-keyed Today's heading (it's keyed by the row under it): one heading faded out as another faded in. Fixed: a heading keyed anew for the same group neither leaves nor arrives (`DrawnKey.same`). Unit test.
+8. **Tests weaker than their names.** The first send's e2e now checks the pair matched (the change was never still); What matters' Undo checks the restored row itself arrived; the Undo send test now passes the window and the send's deadline (fake timers) while the reopen is held.

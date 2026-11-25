@@ -288,7 +288,7 @@ export function setComingUpOpen(open: boolean): void {
   useToday.setState({ comingUpOpen: open });
   if (!getApp().today) return;
   // plan 271: its rows arrive (or leave) while the rest slide, in the answer that brings (or takes) them
-  moveNextRows();
+  moveNextRows(null, { ahead: true });
   void reloadList({ keepSelection: true });
 }
 

@@ -191,8 +191,9 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
   const connection = client.connectionVersion;
   const undoIds = deferred<number[]>();
   // (what's been said is read when Undo is asked for, before the action's own answer is awaited)
-  // (plan 271: the rows it brings back come back as they left: they arrive, the rest slide down)
-  const undo = options.quiet ? null : registerUndo(() => { const published = snackPublication(), focus = focusAtUndo(); moveNextRows(targets); return undoIds.promise.then((ids) => (ids.length ? undoActions(ids, targets.length, () => restoreSelection(before, focus), RESTORES.has(action), published) : undefined)); });
+  // (plan 271: the rows it brings back come back as they left: they arrive, the rest slide down; owed from when the undo
+  // itself starts, however long the action's own answer took)
+  const undo = options.quiet ? null : registerUndo(() => { const published = snackPublication(), focus = focusAtUndo(); return undoIds.promise.then((ids) => (ids.length ? (moveNextRows(targets), undoActions(ids, targets.length, () => restoreSelection(before, focus), RESTORES.has(action), published)) : undefined)); });
   try {
     // the contract takes ≤ 5,000 ids a call (the backend slices each); each call can be undone exactly
     const ids: number[] = [];

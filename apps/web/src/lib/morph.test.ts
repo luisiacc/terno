@@ -112,3 +112,67 @@ test("a change while one runs ends it and goes at once", async () => {
   morph(() => {});
   expect(calls).toBe(2);
 });
+
+/** plan 271: a pair's element, its box as given, in a reader's scroller 0–300 */
+function pairEl(box: { top: number; height: number; width?: number }, id = "a"): HTMLElement {
+  let scroller = document.querySelector<HTMLElement>("[data-reader-scroller]");
+  if (!scroller) {
+    scroller = document.createElement("div");
+    scroller.setAttribute("data-reader-scroller", "");
+    scroller.getBoundingClientRect = () => ({ top: 0, bottom: 300, height: 300, width: 640 }) as DOMRect;
+    document.body.append(scroller);
+  }
+  const el = document.createElement("article");
+  el.id = id;
+  el.getBoundingClientRect = () => ({ top: box.top, bottom: box.top + box.height, height: box.height, width: box.width ?? 640 }) as DOMRect;
+  scroller.append(el);
+  return el;
+}
+const still = () => document.documentElement.hasAttribute("data-morph-still");
+/** an earlier test's transition, ended: morph runs a change at once while one runs */
+async function idle(): Promise<void> {
+  finish?.();
+  for (let i = 0; i < 3; i++) await Promise.resolve();
+}
+
+test("plan 271: a pair of the same size glides with its new picture at once; the change isn't still", async () => {
+  await idle();
+  document.body.innerHTML = "";
+  let el = pairEl({ top: 100, height: 104 }, "held");
+  const pair = { name: "sent-message", find: () => el };
+  morph(() => {
+    el.remove();
+    el = pairEl({ top: 122, height: 104 }, "copy");
+  }, [pair]);
+  expect(el.style.getPropertyValue("view-transition-name")).toBe("sent-message");
+  pending!();
+  expect(el.id).toBe("copy");
+  expect(el.style.getPropertyValue("view-transition-name")).toBe("sent-message");
+  expect(el.style.getPropertyValue("view-transition-class")).toBe("morph-swap");
+  expect(still()).toBe(false);
+  finish();
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(el.style.getPropertyValue("view-transition-name")).toBe("");
+});
+
+test("plan 271: a pair drawn otherwise after (another size), or not wholly in view before (Codex code review #3): the change is still", async () => {
+  for (const [before, after] of [
+    [{ top: 100, height: 104 }, { top: 122, height: 160 }],
+    [{ top: 100, height: 400 }, { top: 122, height: 400 }],
+  ] as const) {
+    await idle();
+    document.body.innerHTML = "";
+    let el = pairEl(before);
+    morph(() => {
+      el.remove();
+      el = pairEl(after);
+    }, [{ name: "sent-message", find: () => el }]);
+    pending!();
+    expect(still()).toBe(true);
+    finish();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(still()).toBe(false);
+  }
+});
