@@ -2680,6 +2680,8 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "settings.general.badgeWhatMatters": "Mostrar el número de «Lo importante» en el Dock",
   "settings.general.badgeWhatMattersWeb": "Mostrar el número de «Lo importante» en el icono de la app",
   "settings.general.badgeWhatMatters.hint": "Lo que te necesita en «Lo importante», el mismo número que en la barra lateral.",
+  "settings.general.notify.hintWhatMatters": "Correo nuevo que te necesita en «Lo importante», mientras Terno está abierto. macOS pide permiso la primera vez; si se ven en la pantalla bloqueada lo decide Ajustes del Sistema → Notificaciones.",
+  "settings.general.notify.hintWhatMattersWeb": "Correo nuevo que te necesita en «Lo importante», mientras esta pestaña está abierta en segundo plano.",
   "today.title": "Lo importante",
   "today.empty": "Hoy no hay nada que te necesite.",
   "today.missed": "Se pasaron",

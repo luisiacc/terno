@@ -1185,6 +1185,17 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         expect(await store.dated.marks.pendingOn(a.thread, NOW)).toBe(false);
       });
 
+      it("plan 273: which of these messages are still marked, by the message", async () => {
+        const { store, got, finish } = await setup();
+        const a = await got({ date: NOW - 5000 });
+        const b = await got({ date: NOW - 4000 });
+        const unmarked = await got({ date: NOW - 3000 }, null);
+        expect(await store.dated.marks.among([])).toEqual(new Set());
+        expect(await store.dated.marks.among([a.id, b.id, unmarked.id, b.id + 1000])).toEqual(new Set([a.id, b.id]));
+        await finish(a.id, a.thread);
+        expect(await store.dated.marks.among([a.id, b.id, unmarked.id])).toEqual(new Set([b.id]));
+      });
+
       it("a closed request an open promise answers outlives the keep; one whose promise closed doesn't", async () => {
         const { store, request, reply, read, promise } = await talk();
         const r = await reply();

@@ -52,6 +52,8 @@ export interface DatedHost {
   replies(): { since: number | null } | undefined;
   /** Plan 210 (iteration 3): the reader read what it could: a reply of yours waiting on it (or marked again) may be read */
   caughtUp(): void;
+  /** Plan 273: a message was looked at (read, dropped, or failed): a notice waiting for its reading may be decided */
+  looked?(messageId: number): void;
   statusChanged(status: { blockedBy: { kind: AiErrorKind; message: string; i18n?: I18nRef; limit?: "daily" | "monthly" } | null }): void;
   /** work over a list in the backend's slices */
   runBudgeted<T>(items: readonly T[], work: (chunk: T[]) => void | Promise<void>): Promise<void>;
@@ -1339,6 +1341,7 @@ export class DatedWorker {
       seen.add(mark.messageId);
       if (heldThreads.has(mark.threadId)) continue;
       const next = await this.consider(mark, generation, heldSenders);
+      this.host.looked?.(mark.messageId);
       if (next === "stop") return;
       if (typeof next === "object") {
         heldThreads.add(mark.threadId);

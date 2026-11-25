@@ -72,6 +72,12 @@ export const datedMarkCount = (db: Db): number => db.get<{ n: number }>("SELECT 
 /** Plan 210 (iteration 3): a message of this conversation from before then still to be read (the marks are few: no index). */
 export const datedPendingOn = (db: Db, threadId: number, before: number): boolean => !!db.get("SELECT 1 FROM ai_dated_mail WHERE thread_id = ? AND arrived_at < ? LIMIT 1", threadId, before);
 
+/** Plan 273: of these messages, those still marked (by the key). */
+export function datedMarksAmong(db: Db, messageIds: readonly number[]): Set<number> {
+  if (!messageIds.length) return new Set();
+  return new Set(db.all<{ message_id: number }>("SELECT message_id FROM ai_dated_mail WHERE message_id IN (SELECT value FROM json_each(?))", JSON.stringify(messageIds)).map((r) => r.message_id));
+}
+
 /** Plan 210 (iteration 5, revision 3): the second look's one claim, in one statement (a mark claimed or gone changes nothing). */
 export const claimDatedLook = (db: Db, messageId: number, now: number): boolean => Number(db.run("UPDATE ai_dated_mail SET looked_at = ? WHERE message_id = ? AND looked_at IS NULL", now, messageId).changes) === 1;
 

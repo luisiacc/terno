@@ -2702,6 +2702,8 @@ It contains none of your mail, contacts, settings or keys.
   "settings.general.badgeWhatMatters": "Show the “What matters” number in the Dock",
   "settings.general.badgeWhatMattersWeb": "Show the “What matters” number on the app icon",
   "settings.general.badgeWhatMatters.hint": "What needs you in “What matters”, the same number as in the sidebar.",
+  "settings.general.notify.hintWhatMatters": "New mail that needs you in “What matters”, while Terno is running. macOS asks the first time; whether previews show on the lock screen is up to System Settings → Notifications.",
+  "settings.general.notify.hintWhatMattersWeb": "New mail that needs you in “What matters”, while this tab is open in the background.",
   "today.title": "What matters",
   "today.empty": "Nothing needs you today.",
   "today.missed": "Missed",

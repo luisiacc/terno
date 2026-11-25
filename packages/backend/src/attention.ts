@@ -9,8 +9,13 @@
  * bodies (it may still archive it). The queue is read again and said in one
  * notice at most every NOTICE_GAP_MS. Nothing is collected, read or timed
  * while they're off.
+ *
+ * Plan 273: which mail is worth one follows the first screen, as the badge
+ * does. With What matters first and shown, it's mail What matters counts
+ * (`whatMatters`); mail its reader hasn't read yet waits for that reading.
+ * Otherwise plan 41's importance.
  */
-import { badgeCount, importance, ruleAwaitsBody, redact, stillNew, summarize, type Counts, type FirstScreen, type MailNotice } from "@terno/core";
+import { badgeCount, importance, ruleAwaitsBody, redact, stillNew, summarize, type ArrivalRow, type Counts, type FirstScreen, type MailNotice } from "@terno/core";
 import { captureError, log } from "@terno/core/diag";
 import type { MailStore } from "@terno/store";
 import { readAttention } from "./settings";
@@ -34,6 +39,15 @@ export const READ_CHUNK = 200;
 export const MAX_IMPORTANT = READ_CHUNK;
 /** passes a message whose body hasn't arrived waits for it while a filter reads bodies, then it's let go quietly */
 export const BODY_WAITS = 3;
+/** plan 273: how long after it was first looked at mail may still be said (it waited for What matters' reader): later isn't news */
+export const READING_WAIT_MS = 5 * 60_000;
+/** plan 273: the reader's latest looks remembered (by message), so a look during a judgement is never lost */
+export const LOOKS_KEPT = 1000;
+/** plan 273: a judgement the reader or a setting overtook is made again, at most this many times */
+const JUDGE_TRIES = 3;
+
+/** Plan 273: with What matters first, of these arrivals those it counts and those its reader has still to read; null: it isn't shown */
+export type WhatMattersVerdict = (arrivals: readonly { id: number; threadId: number }[]) => Promise<{ counted: ReadonlySet<number>; reading: ReadonlySet<number> } | null>;
 
 export interface AttentionOptions {
   store: Pick<MailStore, "settings" | "secrets" | "sync" | "filters">;
@@ -48,6 +62,19 @@ export interface AttentionOptions {
   yieldTurn?(): Promise<void>;
   /** the gather and the gap run on real elapsed time (a monotonic clock), whatever `now` says; tests fake it */
   timers?: { setTimeout(fn: () => void, ms: number): unknown; clearTimeout(handle: unknown): void; now(): number };
+  /** plan 273: What matters' verdict, asked only while it's the first screen */
+  whatMatters?: WhatMattersVerdict;
+}
+
+/** Plan 273: what becomes of a message still news: said, waiting for its body, waiting for What matters' reader (absent: nothing). */
+type Verdict = "say" | "body" | "reading";
+/** mail on its way to a notice: whose, the account's life it came in, its date */
+interface Held {
+  accountId: number;
+  epoch: number;
+  date: number;
+  /** plan 273: once it waited for What matters' reader, the moment (monotonic) past which it's no longer said, whatever queue it's in */
+  until: number | null;
 }
 
 /** What one sync pass inserted as live mail, handed over when the pass ends. */
@@ -73,9 +100,18 @@ export class Attention {
   /** bumped per account when it's forgotten (removed, closed): what it brought before is dropped wherever it is */
   private readonly epochs = new Map<number, number>();
   /** screened: still news and important, waiting for the notice */
-  private readonly important = new Map<number, { accountId: number; epoch: number; date: number }>();
+  private readonly important = new Map<number, Held>();
   /** important, but its body hasn't arrived and a filter reads bodies: looked at again after the account's next pass */
-  private readonly waiting = new Map<number, { accountId: number; waits: number }>();
+  private readonly waiting = new Map<number, { accountId: number; waits: number; until: number | null }>();
+  /** plan 273: still news, with What matters first, and its reader hasn't read it: looked at again when the reader looks at one */
+  private readonly reading = new Map<number, Held>();
+  /** plan 273: the reader's looks so far, and the latest each message had (bounded): one during a judgement isn't lost */
+  private looks = 0;
+  private readonly lookedAt = new Map<number, number>();
+  /** plan 273: bumped when the first screen changes: a judgement made under the old one is made again */
+  private policy = 0;
+  /** plan 273: a look at the reader's waits is queued and hasn't started */
+  private recheckQueued = false;
   /** screens run one at a time, in the order passes ended */
   private screening: Promise<void> = Promise.resolve();
   private timer: unknown = null;
@@ -107,6 +143,11 @@ export class Attention {
   async refresh(): Promise<void> {
     const s = await readAttention(this.o.store);
     this.dockBadge = s.dockBadge;
+    // plan 273: what waits for What matters' reader was kept by its rule: another first screen lets it go
+    if (s.firstScreen !== this.firstScreen) {
+      this.reading.clear();
+      this.policy++;
+    }
     this.firstScreen = s.firstScreen;
     this.preview = s.notificationPreview;
     if (this.notifications && !s.notifications) this.drop();
@@ -167,6 +208,7 @@ export class Attention {
     this.epochs.set(accountId, this.epochOf(accountId) + 1);
     for (const [id, m] of this.important) if (m.accountId === accountId) this.important.delete(id);
     for (const [id, w] of this.waiting) if (w.accountId === accountId) this.waiting.delete(id);
+    for (const [id, r] of this.reading) if (r.accountId === accountId) this.reading.delete(id);
   }
 
   private epochOf(accountId: number): number {
@@ -179,8 +221,121 @@ export class Attention {
   }
 
   /** Keeps it waiting for its body (one more pass), or lets it go quietly after BODY_WAITS. */
-  private wait(id: number, accountId: number, waits: number): void {
-    if (waits + 1 < BODY_WAITS) this.waiting.set(id, { accountId, waits: waits + 1 });
+  private wait(id: number, accountId: number, waits: number, until: number | null): void {
+    if (waits + 1 < BODY_WAITS) this.waiting.set(id, { accountId, waits: waits + 1, until });
+  }
+
+  /** Plan 273: not past the deadline a wait for What matters' reader set (none: plan 41's bounds alone). */
+  private timely(until: number | null): boolean {
+    return until === null || this.timers.now() <= until;
+  }
+
+  /**
+   * Plan 273: what becomes of each of these messages (read back just now) by the rule the first screen leads with: What
+   * matters' verdict while it's first and shown, else plan 41's importance, but never for one that waited for What matters
+   * (`waited`: it was kept by What matters' rule, Codex code review #4). Mail no longer news gets nothing. A body filter holds
+   * what's said until its body is here (it may still archive it). A verdict the first screen or the reader overtook (a
+   * candidate looked at during it, not counted) is made again (Codex code review #1, #2). `seq`: the looks it saw.
+   */
+  private async judge(rows: readonly ArrivalRow[], bodyFilters: boolean, now: number, waited: (id: number) => boolean): Promise<{ verdicts: Map<number, Verdict>; seq: number }> {
+    const verdicts = new Map<number, Verdict>();
+    const fresh = rows.filter((m) => stillNew(m, now));
+    let seq = this.looks;
+    if (fresh.length === 0) return { verdicts, seq };
+    let whatMatters: Awaited<ReturnType<WhatMattersVerdict>> = null;
+    for (let tries = 0; tries < JUDGE_TRIES; tries++) {
+      seq = this.looks;
+      const policy = this.policy;
+      whatMatters = this.firstScreen === "whatMatters" && this.o.whatMatters ? await this.o.whatMatters(fresh.map((m) => ({ id: m.id, threadId: m.threadId }))) : null;
+      if (policy === this.policy && !fresh.some((m) => !whatMatters?.counted.has(m.id) && this.lookedSince(m.id, seq))) break;
+    }
+    for (const m of fresh) {
+      const said = whatMatters ? whatMatters.counted.has(m.id) : !waited(m.id) && importance(m) !== null;
+      if (said) verdicts.set(m.id, bodyFilters && m.bodyPending ? "body" : "say");
+      else if (whatMatters?.reading.has(m.id)) verdicts.set(m.id, "reading");
+    }
+    return { verdicts, seq };
+  }
+
+  /** Plan 273: the reader looked at this message after `seq`. */
+  private lookedSince(id: number, seq: number): boolean {
+    return (this.lookedAt.get(id) ?? 0) > seq;
+  }
+
+  /** Plan 273: waits for What matters' reader (READING_WAIT_MS from the first wait); `trimReading` bounds them once a batch. */
+  private waitReading(id: number, held: Held): void {
+    this.reading.set(id, { ...held, until: held.until ?? this.timers.now() + READING_WAIT_MS });
+  }
+
+  /**
+   * Plan 273: after a batch: the expired go first, then the newest MAX_IMPORTANT are kept (Codex code review #6, #8); one the
+   * reader looked at since the judgement that put it here (`seq`) is looked at again.
+   */
+  private trimReading(seq: number): void {
+    for (const [id, r] of this.reading) if (!this.timely(r.until)) this.reading.delete(id);
+    if (this.reading.size > MAX_IMPORTANT) {
+      const keep = [...this.reading].sort((a, b) => b[1].date - a[1].date || b[0] - a[0]).slice(0, MAX_IMPORTANT);
+      this.reading.clear();
+      for (const [k, v] of keep) this.reading.set(k, v);
+    }
+    for (const id of this.reading.keys())
+      if (this.lookedSince(id, seq)) {
+        this.queueRecheck();
+        break;
+      }
+  }
+
+  /**
+   * Plan 273: What matters' reader looked at a message (read it, dropped it, or failed): if it's one a notice waits for,
+   * what waits is looked at again (once for every look that comes while one is queued). Remembered for a judgement
+   * running now. Nothing while notifications are off.
+   */
+  readerLooked(messageId: number): void {
+    if (!this.notifications || this.stopped) return;
+    this.lookedAt.delete(messageId);
+    this.lookedAt.set(messageId, ++this.looks);
+    if (this.lookedAt.size > LOOKS_KEPT) this.lookedAt.delete(this.lookedAt.keys().next().value!);
+    if (this.reading.has(messageId)) this.queueRecheck();
+  }
+
+  private queueRecheck(): void {
+    if (this.reading.size === 0 || this.recheckQueued || this.stopped) return;
+    this.recheckQueued = true;
+    const recheck = () => {
+      this.recheckQueued = false;
+      return this.recheck();
+    };
+    this.screening = this.screening.then(recheck, recheck).catch((error: unknown) => void captureError(error, { code: "notify.failed" }));
+  }
+
+  /** Plan 273: the reader's waits read back and judged by What matters alone: said, still waiting, or let go. */
+  private async recheck(): Promise<void> {
+    const generation = this.generation;
+    const held = new Map<number, Held>();
+    for (const [id, r] of this.reading) if (r.epoch === this.epochOf(r.accountId) && this.timely(r.until)) held.set(id, r);
+    this.reading.clear();
+    if (held.size === 0 || this.stopped) return;
+    const [rows, bodyFilters] = await Promise.all([this.o.store.sync.arrivals([...held.keys()]), this.bodyFilters()]);
+    if (generation !== this.generation || this.stopped) return;
+    const { verdicts, seq } = await this.judge(rows, bodyFilters, this.o.now(), () => true);
+    if (generation !== this.generation || this.stopped) return;
+    for (const [id, verdict] of verdicts) {
+      const h = held.get(id)!;
+      if (h.epoch !== this.epochOf(h.accountId)) continue;
+      if (verdict === "say") this.important.set(id, h);
+      else if (verdict === "reading") this.waitReading(id, h);
+      else this.wait(id, h.accountId, 0, h.until);
+    }
+    this.trimImportant();
+    this.trimReading(seq);
+    this.schedule();
+  }
+
+  private trimImportant(): void {
+    if (this.important.size <= MAX_IMPORTANT) return;
+    const keep = [...this.important].sort((a, b) => b[1].date - a[1].date || b[0] - a[0]).slice(0, MAX_IMPORTANT);
+    this.important.clear();
+    for (const [id, m] of keep) this.important.set(id, m);
   }
 
   /**
@@ -193,16 +348,18 @@ export class Attention {
   private async screen(accountId: number, epoch: number, generation: number, passIds: ReadonlySet<number>): Promise<void> {
     const current = () => generation === this.generation && epoch === this.epochOf(accountId) && !this.stopped;
     if (!current()) return;
-    const retries = new Map<number, number>();
+    const retries = new Map<number, { waits: number; until: number | null }>();
     for (const [id, w] of this.waiting) {
       if (w.accountId !== accountId) continue;
-      retries.set(id, w.waits);
+      if (this.timely(w.until)) retries.set(id, w);
       this.waiting.delete(id);
     }
     const ids = [...new Set([...passIds, ...retries.keys()])].sort((a, b) => b - a);
     if (ids.length === 0) return;
     const bodyFilters = await this.bodyFilters();
-    const found = new Map<number, { accountId: number; epoch: number; date: number }>();
+    // still news, read in bounded chunks, then judged together (What matters' verdict is one projection, Codex critique #8);
+    // every one kept for the rule that leads when they're judged (a first screen changed meanwhile: Codex code review #5)
+    const fresh: ArrivalRow[] = [];
     for (let i = 0; i < ids.length; i += READ_CHUNK) {
       if (i > 0) await this.o.yieldTurn?.();
       if (!current()) return;
@@ -210,20 +367,21 @@ export class Attention {
       const rows = await this.o.store.sync.arrivals(chunk);
       if (!current()) return;
       const now = this.o.now();
-      for (const m of rows) {
-        if (!stillNew(m, now) || importance(m) === null) continue;
-        // a filter may still archive or read it once its body is here
-        if (bodyFilters && m.bodyPending) this.wait(m.id, accountId, retries.get(m.id) ?? 0);
-        else found.set(m.id, { accountId, epoch, date: m.date });
-      }
+      for (const m of rows) if (stillNew(m, now)) fresh.push(m);
     }
+    const { verdicts, seq } = await this.judge(fresh, bodyFilters, this.o.now(), (id) => retries.get(id)?.until != null);
     if (!current()) return;
-    for (const [id, m] of found) this.important.set(id, m);
-    if (this.important.size > MAX_IMPORTANT) {
-      const keep = [...this.important].sort((a, b) => b[1].date - a[1].date || b[0] - a[0]).slice(0, MAX_IMPORTANT);
-      this.important.clear();
-      for (const [id, m] of keep) this.important.set(id, m);
+    const dates = new Map(fresh.map((m) => [m.id, m.date]));
+    for (const [id, verdict] of verdicts) {
+      const retry = retries.get(id);
+      const held: Held = { accountId, epoch, date: dates.get(id)!, until: retry?.until ?? null };
+      if (verdict === "say") this.important.set(id, held);
+      else if (verdict === "reading") this.waitReading(id, held);
+      // a filter may still archive or read it once its body is here
+      else this.wait(id, accountId, retry?.waits ?? 0, held.until);
     }
+    this.trimImportant();
+    this.trimReading(seq);
     this.schedule();
   }
 
@@ -253,15 +411,19 @@ export class Attention {
     const [rows, bodyFilters] = await Promise.all([this.o.store.sync.arrivals([...queued.keys()]), this.bodyFilters()]);
     if (generation !== this.generation || this.stopped) return;
     const now = this.o.now();
+    // judged again by the rule that leads now (plan 273: a first screen changed, a row done, What matters' reader settled)
+    const { verdicts, seq } = await this.judge(rows, bodyFilters, now, (id) => queued.get(id)?.until != null);
+    if (generation !== this.generation || this.stopped) return;
     const news = rows.filter((m) => {
       const q = queued.get(m.id);
-      if (!q || q.epoch !== this.epochOf(q.accountId) || !stillNew(m, now) || importance(m) === null) return false;
-      if (bodyFilters && m.bodyPending) {
-        this.wait(m.id, q.accountId, 0);
-        return false;
-      }
-      return true;
+      // (plan 273: a wait for the reader's deadline holds whatever queue it went through: Codex critique #7)
+      if (!q || q.epoch !== this.epochOf(q.accountId) || !this.timely(q.until)) return false;
+      const verdict = verdicts.get(m.id);
+      if (verdict === "body") this.wait(m.id, q.accountId, 0, q.until);
+      else if (verdict === "reading") this.waitReading(m.id, q);
+      return verdict === "say";
     });
+    this.trimReading(seq);
     const notice = summarize(news, `mail-${now.toString(36)}-${++this.seq}`);
     if (!notice) return;
     this.lastNoticeAt = this.timers.now();
@@ -286,6 +448,8 @@ export class Attention {
     this.generation++;
     this.important.clear();
     this.waiting.clear();
+    this.reading.clear();
+    this.lookedAt.clear();
     if (this.timer !== null) this.timers.clearTimeout(this.timer);
     this.timer = null;
   }

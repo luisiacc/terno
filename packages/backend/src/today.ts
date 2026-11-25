@@ -36,6 +36,7 @@ import {
   type ProjectedRow,
   type PlacedItem,
   type FollowupRow,
+  type CountedMail,
   type NeedingPromise,
   type TodayCounts,
   type ThreadSummary,
@@ -640,7 +641,7 @@ export class TodayService {
    * conversations are in Spam or Trash; then rows and the counts' buckets (`projectRows`). The list reads its rows'
    * conversations once, what says Spam and Trash too (`threads`); the count asks only that (`liveAmong`).
    */
-  private async project(now: number, settings: AppSettings, o: { count?: boolean } = {}): Promise<{ rows: ProjectedRow[]; counts: TodayCounts; threads: ReadonlyMap<number, ThreadSummary>; hidden?: ReadonlySet<FeedRowId> }> {
+  private async project(now: number, settings: AppSettings, o: { count?: boolean; counted?: boolean } = {}): Promise<{ rows: ProjectedRow[]; counts: TodayCounts; counted?: CountedMail; threads: ReadonlyMap<number, ThreadSummary>; hidden?: ReadonlySet<FeedRowId> }> {
     const { store } = this.b;
     const read = async () => [settings.dated?.enabled ? await this.datedRows() : [], settings.followups?.enabled ? (await store.followups.active()).filter((r) => r.kind === "promise") : []] as const;
     const version = this.links.version;
@@ -848,6 +849,28 @@ export class TodayService {
     // (one read for all of them; the members that join them aren't wanted here)
     if (missing.size) for (const r of (await this.b.store.today.members([...missing].map((id) => refKey({ source: "dated", id })))).dated) if (missing.has(r.id)) known.set(r.id, r);
     return withNeeds(promises, known);
+  }
+
+  /**
+   * Plan 273: with What matters first, what a notice for new mail may say: of these arrivals, those a counted row stands for
+   * (read from them, or their conversation waiting on you), and of the rest those the reader has still to read. The marks
+   * are read before the projection, so a reading that commits between the two is in the projection, never lost. Null while
+   * What matters isn't shown: the Inbox leads (`leadScreen`).
+   */
+  async noticeVerdict(arrivals: readonly { id: number; threadId: number }[]): Promise<{ counted: Set<number>; reading: Set<number> } | null> {
+    const { store } = this.b;
+    const settings = await readSettings(store);
+    if (!{ ...DEFAULT_TODAY, ...settings.today }.show || !(await this.available(settings))) return null;
+    const counted = new Set<number>();
+    const reading = new Set<number>();
+    if (!arrivals.length) return { counted, reading };
+    const marked = await store.dated.marks.among(arrivals.map((m) => m.id));
+    const mail = (await this.project(this.b.now(), settings, { count: true, counted: true })).counted;
+    for (const m of arrivals) {
+      if (mail?.messages.has(m.id) || mail?.waiting.has(m.threadId)) counted.add(m.id);
+      else if (marked.has(m.id)) reading.add(m.id);
+    }
+    return { counted, reading };
   }
 
   /** Plan 210 (iteration 2): the header's, the sidebar's and the notice's numbers, as the list has them. */

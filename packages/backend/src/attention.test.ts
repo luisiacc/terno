@@ -1,6 +1,6 @@
 import type { ArrivalRow, Counts, MailNotice } from "@terno/core";
 import { describe, expect, it } from "vitest";
-import { Attention, BODY_WAITS, GATHER_MS, MAX_PENDING, NOTICE_GAP_MS, READ_CHUNK } from "./attention";
+import { Attention, BODY_WAITS, GATHER_MS, MAX_PENDING, NOTICE_GAP_MS, READ_CHUNK, READING_WAIT_MS } from "./attention";
 
 const NOW = Date.UTC(2026, 9, 26, 12);
 const counts = (inboxUnread: number): Counts => ({ inboxUnread, inboxUnreadByAccount: {}, categoryUnread: {}, categoryTotal: {}, categorySuggestions: {} });
@@ -15,6 +15,8 @@ function person(id: number, o: Partial<ArrivalRow> = {}): ArrivalRow {
 
 /** A fake clock and timers, a fake store answering from `rows`, and the host's calls. */
 function setup(o: { settings?: Record<string, unknown>; host?: boolean; rows?: Map<number, ArrivalRow>; bodyFilter?: boolean } = {}) {
+  // plan 273: What matters' verdict, as the test sets it (`shown` false: it isn't shown, null)
+  const whatMatters = { shown: true, counted: new Set<number>(), reading: new Set<number>(), asked: [] as number[][], hold: null as Promise<void> | null };
   const filters = { body: o.bodyFilter ?? false };
   let now = NOW;
   const timers: { at: number; fn: () => void; id: number }[] = [];
@@ -44,6 +46,13 @@ function setup(o: { settings?: Record<string, unknown>; host?: boolean; rows?: M
     emit: (n) => emitted.push(n),
     publishCounts: () => void published++,
     now: () => now,
+    whatMatters: async (arrivals) => {
+      whatMatters.asked.push(arrivals.map((m) => m.id));
+      // read when asked, as the store's reads are: what changes while it's on its way isn't in it (Codex code review #2)
+      const verdict = whatMatters.shown ? { counted: new Set(arrivals.filter((m) => whatMatters.counted.has(m.id)).map((m) => m.id)), reading: new Set(arrivals.filter((m) => whatMatters.reading.has(m.id)).map((m) => m.id)) } : null;
+      if (whatMatters.hold) await whatMatters.hold;
+      return verdict;
+    },
     timers: {
       setTimeout: (fn, ms) => (timers.push({ at: now + ms, fn, id: ++seq }), seq),
       clearTimeout: (id) => {
@@ -73,7 +82,7 @@ function setup(o: { settings?: Record<string, unknown>; host?: boolean; rows?: M
     await settle();
   };
   return {
-    attention, app, rows, reads, badges, notices, emitted, advance, filters,
+    attention, app, rows, reads, badges, notices, emitted, advance, filters, whatMatters,
     timers: () => timers.length,
     published: () => published,
     filterReads: () => filterReads,
@@ -527,6 +536,244 @@ describe("notifications", () => {
     await t.advance(60_000);
     // the pass's screen ran before the stop; nothing is read again or said
     expect(t.reads).toEqual([[1]]);
+    expect(t.notices).toEqual([]);
+  });
+});
+
+describe("plan 273: with What matters first, a notice is for what it counts", () => {
+  /** the reported mail: LinkedIn's job alert, Gmail Important, in Updates, bulk with no List-Id, never written to */
+  const alert = (id: number) => person(id, { fromName: "LinkedIn Job Alerts", fromEmail: "jobalerts-noreply@linkedin.com", written: false, isBulk: true, gmailLabels: '["IMPORTANT","CATEGORY_UPDATES","INBOX"]' });
+
+  async function arrive(t: ReturnType<typeof setup>, ids: number[]) {
+    const pass = t.attention.beginPass(1);
+    pass.add(ids);
+    pass.end();
+    await t.advance(GATHER_MS);
+  }
+
+  it("the reported case: Gmail's Important alert What matters doesn't count says nothing; the Inbox first, it's said", async () => {
+    const t = setup({ settings: { firstScreen: "whatMatters" }, rows: new Map([[1, alert(1)], [2, alert(2)]]) });
+    await primed(t);
+    await arrive(t, [1]);
+    expect(t.whatMatters.asked).toEqual([[1]]);
+    expect(t.notices).toEqual([]);
+    // plan 41's rule with the Inbox first: Gmail marked it Important
+    t.app.firstScreen = "inbox";
+    await t.attention.refresh();
+    await arrive(t, [2]);
+    expect(t.whatMatters.asked).toEqual([[1]]);
+    expect(t.notices.map((n) => n.senders)).toEqual([["LinkedIn Job Alerts"]]);
+  });
+
+  it("what What matters counts is said, whatever Gmail or plan 41 think of it; what it doesn't, isn't", async () => {
+    const t = setup({ settings: { firstScreen: "whatMatters" }, rows: new Map([[1, person(1)], [2, alert(2)], [3, person(3, { written: false })]]) });
+    await primed(t);
+    t.whatMatters.counted = new Set([2, 3]);
+    await arrive(t, [1, 2, 3]);
+    expect(t.notices).toHaveLength(1);
+    expect(t.notices[0]).toMatchObject({ count: 2, senderCount: 2 });
+  });
+
+  it("not shown (AI off, its row hidden): the Inbox leads, plan 41's rule", async () => {
+    const t = setup({ settings: { firstScreen: "whatMatters" }, rows: new Map([[1, person(1)], [2, person(2, { written: false })]]) });
+    await primed(t);
+    t.whatMatters.shown = false;
+    await arrive(t, [1, 2]);
+    expect(t.notices).toHaveLength(1);
+    expect(t.notices[0]).toMatchObject({ count: 1, threadId: 101 });
+  });
+
+  it("mail its reader hasn't read waits, and is said when a look counts it, once", async () => {
+    const t = setup({ settings: { firstScreen: "whatMatters" }, rows: new Map([[1, alert(1)]]) });
+    await primed(t);
+    t.whatMatters.reading = new Set([1]);
+    await arrive(t, [1]);
+    expect(t.notices).toEqual([]);
+    // a look at another message reads nothing (Codex code review #7)
+    const before = t.reads.length;
+    t.attention.readerLooked(2);
+    await t.advance(GATHER_MS);
+    expect(t.reads.length).toBe(before);
+    // a look at it while it's still being read (a failure kept its mark): it keeps waiting
+    t.attention.readerLooked(1);
+    await t.advance(GATHER_MS);
+    expect(t.notices).toEqual([]);
+    // read: a bill due today
+    t.whatMatters.reading.clear();
+    t.whatMatters.counted.add(1);
+    t.attention.readerLooked(1);
+    await t.advance(GATHER_MS);
+    expect(t.notices).toHaveLength(1);
+    // said once: nothing waits any more, so a look reads nothing
+    const reads = t.reads.length;
+    t.attention.readerLooked(1);
+    await t.advance(NOTICE_GAP_MS);
+    expect(t.notices).toHaveLength(1);
+    expect(t.reads.length).toBe(reads);
+  });
+
+  it("read with nothing that counts: let go quietly; never read within READING_WAIT_MS: let go too", async () => {
+    const t = setup({ settings: { firstScreen: "whatMatters" }, rows: new Map([[1, alert(1)], [2, alert(2)]]) });
+    await primed(t);
+    t.whatMatters.reading = new Set([1, 2]);
+    await arrive(t, [1, 2]);
+    t.whatMatters.reading.delete(1);
+    t.attention.readerLooked(1);
+    await t.advance(GATHER_MS);
+    // the reader takes too long with the other one: no longer news when it's done
+    await t.advance(READING_WAIT_MS);
+    t.whatMatters.reading.clear();
+    t.whatMatters.counted = new Set([1, 2]);
+    const reads = t.reads.length;
+    t.attention.readerLooked(2);
+    await t.advance(NOTICE_GAP_MS);
+    expect(t.notices).toEqual([]);
+    expect(t.reads.length).toBe(reads);
+  });
+
+  it("the deadline holds through the notice's gap (Codex critique #7)", async () => {
+    const t = setup({ settings: { firstScreen: "whatMatters" }, rows: new Map([[1, person(1)], [2, alert(2)], [3, person(3)]]) });
+    await primed(t);
+    t.whatMatters.counted = new Set([1, 3]);
+    t.whatMatters.reading = new Set([2]);
+    await arrive(t, [1, 2]);
+    expect(t.notices).toHaveLength(1);
+    // a notice just before its deadline starts a gap that ends past it
+    await t.advance(READING_WAIT_MS - NOTICE_GAP_MS / 2 - 2 * GATHER_MS);
+    await arrive(t, [3]);
+    expect(t.notices).toHaveLength(2);
+    // counted now, before the deadline: but its notice could only come after it
+    t.whatMatters.reading.clear();
+    t.whatMatters.counted.add(2);
+    t.attention.readerLooked(2);
+    await t.advance(2 * NOTICE_GAP_MS);
+    expect(t.notices).toHaveLength(2);
+  });
+
+  it("a look during the verdict isn't lost (Codex critique #3)", async () => {
+    const t = setup({ settings: { firstScreen: "whatMatters" }, rows: new Map([[1, alert(1)]]) });
+    await primed(t);
+    t.whatMatters.reading = new Set([1]);
+    let release!: () => void;
+    t.whatMatters.hold = new Promise<void>((r) => (release = r));
+    const pass = t.attention.beginPass(1);
+    pass.add([1]);
+    pass.end();
+    await t.advance(1);
+    expect(t.whatMatters.asked).toEqual([[1]]);
+    // the reader finishes it while the verdict (read before: still being read) is on its way, and looks before the wait exists
+    t.whatMatters.reading.clear();
+    t.whatMatters.counted.add(1);
+    t.attention.readerLooked(1);
+    t.whatMatters.hold = null;
+    release();
+    await t.advance(GATHER_MS);
+    // judged again, at once
+    expect(t.whatMatters.asked).toEqual([[1], [1], [1]]);
+    expect(t.notices).toHaveLength(1);
+  });
+
+  it("the first screen changed, notifications off, or the account gone: what waits for the reader goes", async () => {
+    const t = setup({ settings: { firstScreen: "whatMatters" }, rows: new Map([[1, alert(1)], [2, alert(2)], [3, alert(3)]]) });
+    await primed(t);
+    t.whatMatters.reading = new Set([1, 2, 3]);
+    await arrive(t, [1]);
+    t.app.firstScreen = "inbox";
+    await t.attention.refresh();
+    t.app.firstScreen = "whatMatters";
+    await t.attention.refresh();
+    await arrive(t, [2]);
+    t.attention.forget(1);
+    t.attention.prime(1);
+    await arrive(t, [3]);
+    t.app.notifications = false;
+    await t.attention.refresh();
+    t.app.notifications = true;
+    await t.attention.refresh();
+    t.whatMatters.reading.clear();
+    t.whatMatters.counted = new Set([1, 2, 3]);
+    const reads = t.reads.length;
+    for (const id of [1, 2, 3]) t.attention.readerLooked(id);
+    await t.advance(NOTICE_GAP_MS);
+    expect(t.notices).toEqual([]);
+    expect(t.reads.length).toBe(reads);
+  });
+
+  it("turned off during the verdict: nothing is said (Codex critique #4)", async () => {
+    const t = setup({ settings: { firstScreen: "whatMatters" }, rows: new Map([[1, person(1)]]) });
+    await primed(t);
+    t.whatMatters.counted = new Set([1]);
+    let release!: () => void;
+    t.whatMatters.hold = new Promise<void>((r) => (release = r));
+    const pass = t.attention.beginPass(1);
+    pass.add([1]);
+    pass.end();
+    await t.advance(1);
+    t.app.notifications = false;
+    await t.attention.refresh();
+    release();
+    await t.advance(60_000);
+    expect(t.notices).toEqual([]);
+  });
+
+  it("the last look judges again: done in What matters (or the Inbox first now) before the notice, nothing", async () => {
+    const t = setup({ settings: { firstScreen: "whatMatters" }, rows: new Map([[1, alert(1)]]) });
+    await primed(t);
+    t.whatMatters.counted = new Set([1]);
+    const pass = t.attention.beginPass(1);
+    pass.add([1]);
+    pass.end();
+    await t.advance(1);
+    t.whatMatters.counted.clear();
+    await t.advance(GATHER_MS);
+    expect(t.whatMatters.asked).toEqual([[1], [1]]);
+    expect(t.notices).toEqual([]);
+  });
+
+  it("idle: a look with nothing waiting reads nothing", async () => {
+    const t = setup({ settings: { firstScreen: "whatMatters" } });
+    await primed(t);
+    t.attention.readerLooked(1);
+    await t.advance(60_000);
+    expect(t.reads).toEqual([]);
+    expect(t.whatMatters.asked).toEqual([]);
+  });
+
+  it("mail that waited for What matters never falls back to plan 41's rule: hidden before its notice, nothing (Codex code review #4)", async () => {
+    const t = setup({ settings: { firstScreen: "whatMatters" }, rows: new Map([[1, alert(1)], [2, alert(2)]]) });
+    await primed(t);
+    t.whatMatters.reading = new Set([1]);
+    t.whatMatters.counted = new Set([2]);
+    await arrive(t, [1, 2]);
+    expect(t.notices).toHaveLength(1);
+    // counted while the gap holds its notice; then What matters is hidden: Gmail's Important would say it, but it waited
+    t.whatMatters.reading.clear();
+    t.whatMatters.counted.add(1);
+    t.attention.readerLooked(1);
+    await t.advance(1);
+    t.whatMatters.shown = false;
+    await t.advance(NOTICE_GAP_MS);
+    expect(t.notices).toHaveLength(1);
+  });
+
+  it("the first screen changed during the verdict: judged again by the one that leads (Codex code review #1)", async () => {
+    // a bill only What matters would say (plan 41: a stranger, not Important)
+    const bill = person(1, { fromName: "Power Co", fromEmail: "billing@power.test", written: false });
+    const t = setup({ settings: { firstScreen: "whatMatters" }, rows: new Map([[1, bill]]) });
+    await primed(t);
+    t.whatMatters.counted = new Set([1]);
+    let release!: () => void;
+    t.whatMatters.hold = new Promise<void>((r) => (release = r));
+    const pass = t.attention.beginPass(1);
+    pass.add([1]);
+    pass.end();
+    await t.advance(1);
+    t.app.firstScreen = "inbox";
+    await t.attention.refresh();
+    t.whatMatters.hold = null;
+    release();
+    await t.advance(GATHER_MS);
+    expect(t.whatMatters.asked).toEqual([[1]]);
     expect(t.notices).toEqual([]);
   });
 });

@@ -445,6 +445,8 @@ export class BackendCore {
         this.followups.wake();
         this.words.worker.wake();
       },
+      // plan 273: a notice that waits for this reading
+      looked: (messageId) => this.attention.readerLooked(messageId),
       statusChanged: (status) => this.server.emit("datedStatus", status, { origins: ["renderer", "dev"] }),
       runBudgeted: (items, work) => this.runBudgeted(items, work),
       log: (level, message, extra) => this.log(level, message, extra),
@@ -581,6 +583,8 @@ export class BackendCore {
       publishCounts: () => this.emitCounts(),
       now: () => this.now(),
       yieldTurn: () => this.platform.yield(),
+      // plan 273: with What matters first, what it counts
+      whatMatters: (arrivals) => this.today.noticeVerdict(arrivals),
     });
     this.gate.onChange((changes) => this.switchesChanged(changes));
     this.ready = this.init();

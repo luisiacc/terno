@@ -247,6 +247,17 @@ interface Placed extends ProjectedRow {
    * today, Today's own first; needed ahead, first in Waiting on you and overdue
    */
   broken?: BrokenPromise;
+  /** plan 273 (asked with `counted`): the messages its dated items were read from */
+  messages?: number[];
+}
+
+/**
+ * Plan 273: what the counted rows (`todayCounted`, the badge's) stand for: the messages their dated items were read from,
+ * and the conversations waiting on you. A notice for new mail, with What matters first, is for these.
+ */
+export interface CountedMail {
+  messages: Set<number>;
+  waiting: Set<number>;
 }
 
 /** A canonical item in its group, before anything of its conversation is known (`placeItems`). */
@@ -377,12 +388,15 @@ export const placedThreads = (items: readonly PlacedItem[]): number[] => [...new
  * day ahead and Coming up by their day, then the same order), and the counts. `count`: only the counts are wanted (nothing
  * ordered, no words made, no reminders).
  */
-export function projectToday(f: ProjectionFacts, o: { count?: boolean } = {}): { rows: ProjectedRow[]; counts: TodayCounts } {
-  return projectRows(placeItems(f.dated, f.promises, f.now, o), f, o);
+export function projectToday(f: ProjectionFacts, o: { count?: boolean; counted?: boolean } = {}): { rows: ProjectedRow[]; counts: TodayCounts; counted?: CountedMail } {
+  return projectRows(placeItems(f.dated, f.promises, f.now, { count: o.count }), f, o);
 }
 
-/** The projection's second step: placed items, what's waiting and your reminders as rows, and the counts' buckets. */
-export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFacts, "now" | "waiting" | "reminders" | "live" | "zone" | "visibility">, o: { count?: boolean } = {}): { rows: ProjectedRow[]; counts: TodayCounts } {
+/**
+ * The projection's second step: placed items, what's waiting and your reminders as rows, and the counts' buckets; with
+ * `counted` (plan 273), what the counted rows stand for, from the same pass.
+ */
+export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFacts, "now" | "waiting" | "reminders" | "live" | "zone" | "visibility">, o: { count?: boolean; counted?: boolean } = {}): { rows: ProjectedRow[]; counts: TodayCounts; counted?: CountedMail } {
   const today = dayKeyOf(f.now);
   const placed: Placed[] = [];
   // each day's heading once (most rows share a few days)
@@ -428,6 +442,7 @@ export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFact
     // (fields set as they apply, not spread: this runs over the 1,000-item bound on every read)
     const row: Placed = { id: item.id, threadId: lead.row.threadId, group: at.group, day: at.day, why, dueAt: why.dueAt ?? lead.row.dueAt, came };
     if (seen?.first) row.first = true;
+    if (o.counted) row.messages = item.entries.flatMap((e) => (e.source === "dated" ? [e.row.messageId] : []));
     // (plan 210, iteration 4, revision 8: someone waits on a promise broken with a live day, in the list and the count alike;
     // iteration 5, revision 6: needed today, it's Today's own, a thing to do now; needed ahead, Waiting on you's, overdue)
     const broken = at.group === "today" && lead.source === "promise" ? promiseBroken(lead.row, f.now) : null;
@@ -482,14 +497,26 @@ export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFact
     .map((r) => ({ id: reminderRowId(r.threadId), threadId: r.threadId, group: "today", day: null, why: { kind: "reminder", dueAt: r.dueAt }, dueAt: r.dueAt, came: r.dueAt }));
   const rows = all.concat(reminders);
   const counts = countsOf(rows);
-  if (o.count) return { rows: [], counts };
-  return { rows: ordered(rows), counts };
+  const counted = o.counted ? countedMail(rows) : undefined;
+  if (o.count) return { rows: [], counts, ...(counted && { counted }) };
+  return { rows: ordered(rows), counts, ...(counted && { counted }) };
 }
 
 /** Plan 249: the rows the user's words put first, then the rest, each in the order it had. */
 function firstUp<T extends { first?: boolean }>(list: T[]): T[] {
   if (!list.some((r) => r.first)) return list;
   return list.filter((r) => r.first).concat(list.filter((r) => !r.first));
+}
+
+/** Plan 273: what the rows `countsOf` counts stand for (`CountedMail`). */
+function countedMail(rows: readonly Placed[]): CountedMail {
+  const counted: CountedMail = { messages: new Set(), waiting: new Set() };
+  for (const r of rows) {
+    if (!todayCounted(r.group, r.why)) continue;
+    if (r.waiting) counted.waiting.add(r.threadId);
+    for (const m of r.messages ?? []) counted.messages.add(m);
+  }
+  return counted;
 }
 
 /**

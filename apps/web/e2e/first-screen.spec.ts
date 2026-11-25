@@ -106,6 +106,14 @@ test("asked once AI is on, after Settings closes; What matters leads the sidebar
     await expect(page.getByTestId("today-show")).toHaveCount(0);
     await expect(page.getByTestId("badge-row")).toContainText("Show the “What matters” number on the app icon");
     await expect(page.getByTestId("badge-row")).toContainText("What needs you in “What matters”, the same number as in the sidebar.");
+    // plan 273: notifications follow it too
+    await expect(page.getByTestId("notify-row")).toContainText("New mail that needs you in “What matters”, while this tab is open in the background.");
+    if (SHOTS) {
+      await page.getByTestId("notifications-group").screenshot({ path: `${SHOTS}/notify-light.png` });
+      await page.emulateMedia({ colorScheme: "dark" });
+      await page.getByTestId("notifications-group").screenshot({ path: `${SHOTS}/notify-dark.png` });
+      await page.emulateMedia({ colorScheme: "light" });
+    }
     await page.getByTestId("settings-find").fill("launch");
     const result = page.getByTestId("settings-find-result").first();
     await expect(result.getByTestId("settings-find-name")).toHaveText("Open at launch");
@@ -130,6 +138,7 @@ test("asked once AI is on, after Settings closes; What matters leads the sidebar
     await expect(page.getByTestId("first-screen-inbox")).toHaveAttribute("aria-pressed", "true");
     await page.getByTestId("tab-general").click();
     await expect(page.getByTestId("badge-row")).toContainText("Show unread count on the app icon");
+    await expect(page.getByTestId("notify-row")).toContainText("New mail from people you’ve written to, replies in your conversations, and mail Gmail marks important");
     await expect.poll(() => appBadge(page)).toBe(Number(unread));
     await page.keyboard.press("Escape");
     await expect(drawn(inbox)).toHaveText(unread!);

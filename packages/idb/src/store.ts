@@ -6,7 +6,7 @@ import { scheduleItems, unscheduleItems } from "./schedule";
 import { clearReplies, finishReply, getReply, transitionReply } from "./replies";
 import { addShown, listShown, removeShown, trustedSenders } from "./shown-senders";
 import { activeWanted, actWanted, addWantedMark, clearLookMarks, clearVerdicts, clearWanted, countWantedMarks, finishWanted, getDraft, getPreferences, getVerdicts, getWanted, pruneVerdicts, pruneWantedMarks, putDraft, putVerdicts, reconcileWanted, restoreWanted, savePreferences, threadWanted, wantedLookCandidates, wantedMarkPage } from "./what-matters";
-import { activeDated, addDatedMute, datedMutes, removeDatedMute, closedDatedPage, claimDatedLook, clearDated, datedMarkCount, datedPendingOn, datedMarkPage, datedMarksRaw, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, datedWritten, updateDated } from "./dated";
+import { activeDated, addDatedMute, datedMutes, removeDatedMute, closedDatedPage, claimDatedLook, clearDated, datedMarkCount, datedMarksAmong, datedPendingOn, datedMarkPage, datedMarksRaw, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, datedWritten, updateDated } from "./dated";
 import { activeFollowups, closedFollowupPage, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, closeArchivedFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupsPutAway, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
 import { findLinked, newestLinked } from "./links";
 import { addAskTurn, askAccountsOf, askCandidates, askHeaders, askNewest, askTurnCount, askTurns, clearAsk, listAskConversations, removeAskConversation, removeAskForAccount, restoreAskConversation } from "./ask";
@@ -2132,6 +2132,7 @@ export class IdbMailStore implements MailStore {
       }),
       prune: (now) => this.command(() => pruneDatedMarks(this.c, now)),
       pendingOn: (threadId, before) => this.read(() => datedPendingOn(this.c, threadId, before)),
+      among: (ids) => this.read(() => datedMarksAmong(this.c, ids)),
       claimLook: (id, now) => this.command(() => claimDatedLook(this.c, id, now)),
     },
     scanCandidates: (since, limit, accountId) => this.read(() => datedScanCandidates(this.c, since, limit, accountId)),

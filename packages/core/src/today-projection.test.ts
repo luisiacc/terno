@@ -24,6 +24,24 @@ function promise(dueAt: number, more: Partial<FollowupRow> = {}): FollowupRow {
 
 const facts = (more: Partial<ProjectionFacts>): ProjectionFacts => ({ now: NOW, dated: [], promises: [], waiting: [], reminders: [], live: () => true, zone: "America/New_York", ...more });
 
+describe("plan 273: what the counted rows stand for", () => {
+  it("the messages of counted items (a merged row's every one) and the conversations waiting on you; never what isn't counted", () => {
+    const bill = dated("pay", "2026-11-18", { threadId: 1, messageId: 10 });
+    const again = dated("pay", "2026-11-18", { threadId: 2, messageId: 11, sameAs: `dated:${bill.id}` });
+    const parcel = dated("delivery", "2026-11-18", { threadId: 3, messageId: 12 });
+    const later = dated("pay", "2026-11-25", { threadId: 4, messageId: 13 });
+    const waiting = [{ id: 5, lastDate: NOW - 5, hasSent: false, waitingSince: NOW - 5 }, { id: 6, lastDate: NOW - 6, hasSent: false, waitingSince: NOW - 6, deferredUntil: at(2026, 11, 20, 9) }];
+    const f = facts({ dated: [bill, again, parcel, later], waiting, reminders: [{ threadId: 7, dueAt: NOW - 1 }] });
+    for (const count of [true, false]) {
+      const out = projectToday(f, { count, counted: true });
+      expect(out.counted).toEqual({ messages: new Set([10, 11]), waiting: new Set([5]) });
+      expect(out.counts).toEqual(projectToday(f, { count }).counts);
+    }
+    // asked for nothing, nothing more comes back (the count's rows stay none)
+    expect(projectToday(f, { count: true })).toEqual({ rows: [], counts: projectToday(f, { count: true }).counts });
+  });
+});
+
 describe("plan 215: a conversation waiting on you, put off with Later", () => {
   const friday = at(2026, 11, 20, 9);
   const waiting = [{ id: 4, lastDate: NOW - 4, hasSent: true, waitingSince: NOW - 4, message: 40, rev: 0 }, { id: 5, lastDate: NOW - 5, hasSent: false, waitingSince: NOW - 5, message: 50, rev: 2 }];

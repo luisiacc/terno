@@ -6,7 +6,8 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { MailNotice } from "@terno/core";
+import { createAi, promptText, type AiOptions, type Completion, type CompletionRequest, type ProviderConfig } from "@terno/ai";
+import { dayKeyOf, type MailNotice } from "@terno/core";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { createAccount, sqlDb, type IncomingMessage } from "@terno/db";
 import type { ProviderRegistry } from "@terno/mail";
@@ -56,9 +57,11 @@ function mail(accountId: number, over: Partial<IncomingMessage> = {}): IncomingM
 /** you wrote to Carlos once: he is someone you have written to */
 const wroteToCarlos = (a: number) => [mail(a, { from: { name: "Me", email: ME }, to: [{ name: "Carlos", email: "carlos@acme.com" }], isSent: true, inInbox: false, isRead: true, date: Date.now() - 86_400_000 * 3 })];
 
-async function setup(passes: Parameters<typeof scripted>[0], dir = mkdtempSync(join(tmpdir(), "terno-notify-")), keep = false) {
+async function setup(passes: Parameters<typeof scripted>[0], dir = mkdtempSync(join(tmpdir(), "terno-notify-")), keep = false, ai?: { answer(req: CompletionRequest): Promise<Completion> }) {
   const badges: number[] = [];
   const notices: MailNotice[] = [];
+  // plan 273: a scripted model, for What matters
+  const aiFactory = ai && ((config: ProviderConfig, options: AiOptions) => createAi(config, { ...options, transport: { complete: (req) => ai.answer(req) } }));
   const backend = new Backend({
     dbPath: join(dir, "terno.db"),
     version: "test",
@@ -66,6 +69,7 @@ async function setup(passes: Parameters<typeof scripted>[0], dir = mkdtempSync(j
     providers: scripted(passes),
     autoSync: false,
     attention: { badge: (c) => badges.push(c), notify: (x) => notices.push(x) },
+    ...(aiFactory && { demoAi: true, aiFactory }),
   });
   noGather(backend);
   await backend.store.ready;
@@ -219,3 +223,66 @@ describe("notifications through the backend (plan 41)", () => {
     expect(t.notices).toEqual([]);
   });
 });
+
+describe("plan 273: with What matters first, notifications follow it", () => {
+  const ASK = "¿Me mandas el presupuesto antes del viernes?";
+  it("Gmail's Important job alert says nothing, a person waiting on you is said, a bill due today once the reader finds it; the Inbox first, plan 41's rule", async () => {
+    const today = new Date();
+    const dueWords = today.toLocaleDateString("en-US", { month: "long", day: "numeric" });
+    const billText = `Your electricity bill of $54.20 is due on ${dueWords}.`;
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    const ai = {
+      answer: async (req: CompletionRequest): Promise<Completion> => {
+        const prompt = promptText(req.messages[0]!.content);
+        const items = (list: object[]): Completion => ({ text: JSON.stringify({ items: list, settled: [], moved: [], replaced: [] }), stop: "end" });
+        // Carlos asks something (a reading that found nothing asked takes his conversation out of Waiting on you)
+        if (prompt.includes(ASK)) return items([{ kind: "ask", text: "Send Carlos the budget", quote: ASK, due: null, time: null }]);
+        if (!prompt.includes("electricity")) return items([]);
+        await held;
+        return items([{ kind: "pay", text: "Pay the electricity bill", quote: `due on ${dueWords}`, due: dayKeyOf(today.getTime()), time: null }]);
+      },
+    };
+    // the reported mail: Gmail Important, in Updates, bulk, no List-Id
+    const alert = (a: number, subject: string) => mail(a, { from: { name: "LinkedIn Job Alerts", email: "jobalerts-noreply@linkedin.com" }, subject, gmailLabels: ["IMPORTANT", "CATEGORY_UPDATES", "INBOX"], bulk: true, date: Date.now() });
+    const t = await setup(
+      [
+        { messages: (a) => wroteToCarlos(a), live: true },
+        {
+          live: true,
+          messages: (a) => [
+            alert(a, "Pasito is hiring a Fullstack Engineer"),
+            mail(a, { subject: "Presupuesto", bodyText: ASK, snippet: ASK, date: Date.now() }),
+            mail(a, { from: { name: "Power Co", email: "billing@power.test" }, subject: "Your bill", bodyText: billText, snippet: billText, date: Date.now() }),
+          ],
+        },
+        { messages: (a) => [alert(a, "Acme is hiring")], live: true },
+      ],
+      undefined,
+      false,
+      ai,
+    );
+    const accountId = createAccount(sqlDb(t.backend.store), { kind: "gmail", email: ME, displayName: "Me", color: "brown" }).id;
+    await t.client.call("settings.update", { ai: { provider: "fake", model: "demo" } });
+    await t.client.call("settings.update", { firstScreen: "whatMatters" });
+    await t.backend.start();
+    await t.backend.syncAccount(accountId);
+    await settle(t.backend);
+    expect((await t.client.call("counts.get", {})).today).not.toBeUndefined();
+
+    await t.backend.syncAccount(accountId);
+    await settle(t.backend);
+    // Carlos waits on you; the alert isn't What matters'; the bill is still being read
+    expect(t.notices.map((x) => x.subject)).toEqual(["Presupuesto"]);
+    release();
+    await expect.poll(() => t.notices.map((x) => x.subject), { timeout: 10_000 }).toEqual(["Presupuesto", "Your bill"]);
+    expect(t.notices[1]).toMatchObject({ count: 1, senders: ["Power Co"] });
+
+    // the Inbox first: plan 41's rule says Gmail's Important alert
+    await t.client.call("settings.update", { firstScreen: "inbox" });
+    await t.backend.syncAccount(accountId);
+    await settle(t.backend);
+    expect(t.notices.map((x) => x.subject)).toEqual(["Presupuesto", "Your bill", "Acme is hiring"]);
+  });
+});
+

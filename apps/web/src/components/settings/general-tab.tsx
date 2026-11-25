@@ -118,6 +118,9 @@ const badgeLabel = (desktop: boolean, lead: FirstScreen): string =>
   lead === "whatMatters" ? t(desktop ? "settings.general.badgeWhatMatters" : "settings.general.badgeWhatMattersWeb") : t(desktop ? "settings.general.badge" : "settings.general.badgeWeb");
 const badgeHint = (desktop: boolean, lead: FirstScreen): string =>
   lead === "whatMatters" ? t("settings.general.badgeWhatMatters.hint") : t(desktop ? "settings.general.badge.hint" : "settings.general.badgeWeb.hint");
+/** plan 273: what's said follows the first screen, as the badge does */
+const notifyHint = (desktop: boolean, lead: FirstScreen): string =>
+  lead === "whatMatters" ? t(desktop ? "settings.general.notify.hintWhatMatters" : "settings.general.notify.hintWhatMattersWeb") : t(desktop ? "settings.general.notify.hint" : "settings.general.notify.hintWeb");
 
 function NotificationsGroup({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
   const desktop = !!window.ternoDesktop;
@@ -152,7 +155,7 @@ function NotificationsGroup({ settings, update }: { settings: AppSettings; updat
   return (
     <SettingsGroup title={t("settings.general.notifications")} testId="notifications-group">
       {(desktop || page) && (
-        <SettingsRow find="general.notify" label={t("settings.general.notify")} hint={t(desktop ? "settings.general.notify.hint" : "settings.general.notify.hintWeb")} testId="notify-row">
+        <SettingsRow find="general.notify" label={t("settings.general.notify")} hint={notifyHint(desktop, lead)} testId="notify-row">
           {(a) => <Switch {...a} data-testid="notify-switch" checked={on} onCheckedChange={(next) => void toggle(next)} />}
         </SettingsRow>
       )}

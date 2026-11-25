@@ -330,6 +330,8 @@ export interface DatedStore {
      * after it waits for its requests (the follow-ups reader's verdict is on what's known)
      */
     pendingOn(threadId: number, before: number): Promise<boolean>;
+    /** Plan 273: of these messages, those still marked for the reader (one keyed read; a notice waits for their reading) */
+    among(messageIds: readonly number[]): Promise<Set<number>>;
     /**
      * Plan 210 (iteration 5, revision 3): the mark's one second look, claimed before it's asked: true the first time, false
      * once claimed or with no mark, so a failure, a retry or a restart never asks it again (the mark keeps the claim until
