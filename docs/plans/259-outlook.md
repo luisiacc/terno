@@ -1196,3 +1196,53 @@ The owner asked for one more round over everything (`git diff main...HEAD`), by 
   - perf: three of its files.
 - `migrations.perf` times v81 through `runMigration`: 7 ms.
 - ui-perf: `autocomplete-perf`'s 200 chips dropped 1 or 2 frames. It drops the same on the commit before this round (`512f84cb0`), run twice; nothing here touches the composer.
+
+## Review round 4: what would fail (GPT Astra 6.2 and Fable 5.2)
+
+The owner asked for a round on failures only: mail not received or sent, misdelivery, wrong tagging, crashes, sign-in. Both reviewers got one brief that pooled round 3's knowledge (Graph's quirks the code leans on, the store model, sending, receiving, OAuth). GPT Astra found 9; Fable found 5, two of them in round 4's own first fixes. Every fix has a test that fails without it.
+
+### Fixed
+
+**Sending**
+
+- **A draft the person sends from Outlook during a pause is the send** (Astra #1).
+  - The cleanup's DELETE used to delete it in Sent Items (same immutable id), and the retry sent it again.
+  - `removeDraft` now reads `isDraft` first. One no longer a draft is `sent`: never deleted, and its op is done.
+- **A restart no longer leaves a send's draft behind** (Astra #4).
+  - Each send's draft carries its op's id in a single-value extended property of Terno's own (`SEND_MARK`).
+  - Before a retry makes a draft, it finds the op's drafts by that mark (documented `$filter=singleValueExtendedProperties/Any(...)`): one still a draft goes, one sent ends the op, and one it can't delete yet fails the attempt rather than make two.
+- **A draft on the server is never an outgoing message's Sent copy** (Astra #4). `findIngestMessage` (both engines) adopts a `local:` row by Message-ID only for a message that isn't a draft.
+- **A send's other steps have a send's time** (Fable #3). The draft, its files and its mark can carry 4 MB each, and had a read's 60 s.
+
+**Receiving**
+
+- **A folder Graph won't list the children of no longer stops the folder list, and with it every pass** (Astra #2).
+- **A refused folder no longer fails the pass** (Astra #5).
+  - Round 3 threw its error at the pass's end. Notifications are turned on only after a pass that ends well, so they never came, and a refused first round held back older mail.
+  - The folder is skipped for that pass and asked again the next.
+  - A folder refusal is now only a 4xx on the folder's own requests (`/mailFolders/`). Round 4's first cut also took one message's download error for its folder's (Fable #1).
+- **A message whose content Graph refuses is a repair** (Fable #1).
+  - A 4xx on its own `$value` (not 404, a throttle or the mailbox's) blocks it with the new reason `server-refused`, so its folder (the Inbox too) goes on.
+  - Settings → Mail recovery says "Your mail server won't send this message's content." (en, es). Retry asks again.
+- **A saved delta link Graph calls a 400 starts its folder again** (Fable #2), as an expired one does. A 403 is the folder's refusal.
+- **Mail that arrived while a delta link expired is still announced** (Astra #8). The new round's `startedAt` is the last finished round's start.
+- **A Microsoft token past 4 KiB is accepted** (Fable #4), up to 16 KiB, the id_token's bound: at sign-in, on refresh, and in the backend's check. A work account's JWT grows with its claims, and Microsoft names no maximum.
+
+**Wrong place, wrong state**
+
+- **Move to Inbox moves what the store marked** (Astra #6). A sent-only conversation brought back stayed in Sent Items on Graph while Terno showed it in the Inbox.
+- **A batch's failure to try again wins over a refusal in the same chunk** (Astra #7), so the op is retried for the other messages rather than failed for good.
+- **A draft that only moved keeps its row** (Astra #3). Round 3's refresh replaced a trashed draft's row, so Undo, and actions already queued for it, named a message that was gone. Only a draft edited in Drafts, or one no longer a draft, is read again whole.
+- **Two copies of one message are one conversation** (found checking Fable #5 against the live test's profile).
+  - Mail to yourself is two items on Graph: Sent's copy and the received one, with one Message-ID. The live test's profile showed them as two conversations.
+  - Threading (both engines) now joins a message to one with its own Message-ID.
+
+**Signing in**
+
+- **Signing in again goes through the request ledger** (Astra #9), as a new sign-in does since round 3.
+
+### Checked, not changed
+
+- **Fable #5: the Sent copy keeps the MIME's Message-ID.** The live test's profile shows it does for `sendMail`: the outgoing row took the server's id, and nothing was left `local:`. The draft path's `/send` wasn't in the live test; Learn's immutable-id page describes that send by the draft's id.
+- **What a refused folder looks like.** It's skipped quietly, with no message in Settings: there's no warning channel short of an error, and an error stops notifications. A later change could list it as unselectable.
+
