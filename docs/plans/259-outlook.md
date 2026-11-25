@@ -1246,3 +1246,10 @@ The owner asked for a round on failures only: mail not received or sent, misdeli
 - **Fable #5: the Sent copy keeps the MIME's Message-ID.** The live test's profile shows it does for `sendMail`: the outgoing row took the server's id, and nothing was left `local:`. The draft path's `/send` wasn't in the live test; Learn's immutable-id page describes that send by the draft's id.
 - **What a refused folder looks like.** It's skipped quietly, with no message in Settings: there's no warning channel short of an error, and an error stops notifications. A later change could list it as unselectable.
 
+### `pnpm test:all`
+
+- Lint, build, typecheck, web, ui-perf (run again alone) and startup passed.
+- `gmail-refresh.test` still refused a 4,097-character token; it now tests the shared 16 KiB bound.
+- `perf.perf`'s quick-filters gate failed in both loaded runs and passed alone (33 of 33); nothing in this round touches it.
+- Everything else that failed is the base's list: unit's 36 files, db-wasm's `tabs.test`, e2e's 16, smoke's 10, and perf's other four files.
+
