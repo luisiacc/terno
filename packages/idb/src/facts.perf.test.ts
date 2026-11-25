@@ -177,4 +177,34 @@ describe("the facts backfill at 145,000 threads (IndexedDB)", () => {
     // of them per slice is 40 ms, and 4 minutes in all) shows here
     expect(Math.min(...runs.map((r) => r.ms)), "the whole backfill (ms)").toBeLessThanOrEqual(30_000 * MULT);
   });
+
+  it(`plan 278: a mailbox at rest computed with older rules is checked again in slices, rules present, the loop never held past ${STALL_MS} ms`, { timeout: 300_000 }, async () => {
+    if (!(await store.facts.idle())) await runBackfill(store);
+    // your word on the busiest senders, half each way
+    const counts = new Map<string, number>();
+    for (const m of mirror(store).db.table("messages").rows.values()) if (!m.is_sent) counts.set(m.from_email as string, (counts.get(m.from_email as string) ?? 0) + 1);
+    const senders = [...counts].sort((a, b) => b[1] - a[1]).slice(0, 40).map(([email]) => email);
+    for (const [i, email] of senders.entries()) await store.facts.rules.set({ id: `r${i}`, email, name: "", person: i % 2 === 0, at: NOW });
+    await runBackfill(store);
+    const ruled = facts(store);
+    expect(ruled).not.toEqual(expected);
+    const runs: { stall: number; ms: number; slices: number; line: string }[] = [];
+    for (let attempt = 1; attempt <= ATTEMPTS && !(runs.length && Math.min(...runs.map((r) => r.stall)) <= STALL_MS * MULT); attempt++) {
+      await store.debug.stampRules(1);
+      expect(await store.facts.idle()).toBe(false);
+      const loop = watchLoop(STALL_MS * MULT);
+      const gc = watchGc();
+      const started = performance.now();
+      const slices = await runBackfill(store);
+      const ms = performance.now() - started;
+      const r = loop.stop();
+      const stall = stallLessGc(r, await gc.stop());
+      runs.push({ stall, ms: ms - r.held, slices, line: `${(ms - r.held).toFixed(0)} ms, ${slices} slices, stall ${stall.toFixed(1)} ms less GC (${r.stall.toFixed(1)} with it; longest gap ${describeGap(r.longest)})` });
+      expect(facts(store)).toEqual(ruled);
+    }
+    for (const run of runs) console.log(`facts rescan (IndexedDB, ${mirror(store).db.table("threads").rows.size} threads): ${run.line}`);
+    const best = runs.reduce((a, b) => (b.stall < a.stall ? b : a));
+    expect(best.stall, best.line).toBeLessThanOrEqual(STALL_MS * MULT);
+    expect(Math.min(...runs.map((r) => r.ms)), "the whole rescan (ms)").toBeLessThanOrEqual(30_000 * MULT);
+  });
 });

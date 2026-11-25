@@ -152,6 +152,37 @@ if (CHILD) {
       expect(best.stall, `longest stall: ${best.line}`).toBeLessThanOrEqual(STALL_MS * MULT);
     });
 
+    it(`plan 278: a mailbox at rest computed with older rules is checked again in slices, rules present, the event loop never held past ${STALL_MS} ms`, { timeout: 1_800_000 }, async () => {
+      // the mailbox complete (the test before), and your word on its busiest senders, half each way
+      if (!(await store.facts.idle())) await runBackfill(store);
+      const senders = sqlDb(store).all<{ from_email: string }>("SELECT from_email FROM messages WHERE is_sent = 0 GROUP BY from_email ORDER BY count(*) DESC LIMIT 40");
+      for (const [i, s] of senders.entries()) await store.facts.rules.set({ id: `r${i}`, email: s.from_email, name: "", person: i % 2 === 0, at: NOW });
+      await runBackfill(store);
+      const ruled = factsRows(store);
+      expect(ruled).not.toEqual(expected);
+      const runs: { stall: number; ms: number; slices: number; line: string }[] = [];
+      for (let attempt = 1; attempt <= ATTEMPTS && !(runs.length && Math.min(...runs.map((r) => r.stall)) <= STALL_MS * MULT); attempt++) {
+        await store.debug.stampRules(1);
+        expect(await store.facts.idle()).toBe(false);
+        const loop = watchLoop(STALL_MS * MULT);
+        const gc = watchGc();
+        const started = performance.now();
+        const slices = await runBackfill(store);
+        const ms = performance.now() - started;
+        const r = loop.stop();
+        const stall = stallLessGc(r, await gc.stop());
+        runs.push({ stall, ms: ms - r.held, slices, line: `${(ms - r.held).toFixed(0)} ms, ${slices} slices, stall ${stall.toFixed(1)} ms less GC (${r.stall.toFixed(1)} with it; longest gap ${describeGap(r.longest)})` });
+        expect(await store.facts.idle()).toBe(true);
+        expect(factsRows(store)).toEqual(ruled);
+      }
+      for (const run of runs) console.log(`facts rescan: ${run.line}`);
+      const best = runs.reduce((a, b) => (b.stall < a.stall ? b : a));
+      stats.push({ name: `plan 278 rescan ${meta.threads} threads, ${senders.length} rules: ${runs[0]!.ms.toFixed(0)} ms, ${runs[0]!.slices} slices; longest stall ${best.stall.toFixed(1)} ms`, budgetMs: STALL_MS, p50: best.stall, p95: best.stall, max: best.stall, iterations: runs.length });
+      expect(best.stall, `longest stall: ${best.line}`).toBeLessThanOrEqual(STALL_MS * MULT);
+      // back as the kill test expects it
+      for (const s of senders) await store.facts.rules.remove(s.from_email.toLowerCase());
+    });
+
     it("killed mid-way (SIGKILL, in a child process), a new store resumes from what committed and ends the same", { timeout: 1_800_000 }, async () => {
       const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
       const child = spawn(process.execPath, [join(root, "node_modules/vitest/vitest.mjs"), "run", "--project", "perf", fileURLToPath(import.meta.url), "-t", "child"], {

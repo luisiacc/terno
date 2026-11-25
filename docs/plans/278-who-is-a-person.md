@@ -1,6 +1,6 @@
 # Plan 278: who is a person, corrected
 
-- **Status:** planned.
+- **Status:** built. "Revisions after the Codex review" and "Changed while building" override the sections before them.
 - **Builds on:** plan 17 (People, waiting for your reply), plan 240 (a sender rule in the sender's menu, exact Undo).
 
 ## The request
@@ -99,3 +99,10 @@ Codex (read-only) raised 12 points. All are taken, some by narrowing. These over
 10. **The e2e started from a row the filter had already hidden.** Taken: "Never" on an automatically included sender (it leaves People, `z` brings it back, then Settings removes the rule), and "Always" on a service sender from All (it appears in People).
 11. **Gates.** Taken: a version 1 → 2 rescan case in both stores' facts perf gates (a populated mailbox, rules present), the SQLite migration and the IndexedDB upgrade tested on stored data, and `pnpm test:all` (a schema change). UI rating: the change adds a submenu and a Settings list, not a main screen's look, so `ui:rate` doesn't apply. Screenshots of both, in light and dark.
 12. **The Message-ID match was loose.** Taken: exact domains or their subdomains (`amazonses.com`, `mtasv.net`, `sparkpostmail.com`, `sendgrid.net`), and SendGrid's bare host only as `ismtpd` or `geopod-ismtpd` followed by digits and dashes (no dot). Tests cover near misses (`notamazonses.com`, `ismtpd.example.org`), brackets, case, malformed IDs and null.
+
+## Changed while building
+
+- **The cap is 500**, plan 240's. The Settings list draws every rule, and a list of 2,000 would need virtualizing. Nobody hand-picks that many senders.
+- **The Settings group always shows.** Empty, it says how a sender gets there ("No one yet. Right-click a sender’s mail and choose More, then Counts as a person."), so Settings search always has its target (`general.people`). Resetting the last rule moves focus to the sync window's field just above.
+- **Where the menu sits:** "Counts as a person" is in the sender's section of More (after "Always show in “What matters”", before "File all their mail"), in the row's menu, a message's menu and a person's menu alike (`MenuParts` gains the radio parts).
+- **The version stamp:** SQLite's v83 and IndexedDB's v42 write `facts_rules = 1` only on a mailbox that has threads. The key absent means the current rules, so a new install has nothing to check again. The rescan's first slice deletes the key in the same transaction that schedules the rescan.
