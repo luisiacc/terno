@@ -59,6 +59,20 @@ export function weekdayName(ms: number): string {
   return name.charAt(0).toLocaleUpperCase() + name.slice(1);
 }
 
+/**
+ * Plan 279: a calendar day, never a time: "today", "yesterday" (in every language: the caller words them), else the day
+ * as `dayDate` writes it.
+ */
+export function calendarDay(ms: number, now = Date.now()): { day: "today" | "yesterday" } | { date: string } {
+  const d = new Date(ms);
+  const n = new Date(now);
+  if (d.toDateString() === n.toDateString()) return { day: "today" };
+  const y = new Date(n);
+  y.setDate(n.getDate() - 1);
+  if (d.toDateString() === y.toDateString()) return { day: "yesterday" };
+  return { date: dayDate(ms, now) };
+}
+
 /** A message's own date: the list's, with the time added on an earlier day, so a conversation's messages can be told apart and put in order. */
 export function messageDate(ms: number, now = Date.now()): string {
   const day = listDate(ms, now);

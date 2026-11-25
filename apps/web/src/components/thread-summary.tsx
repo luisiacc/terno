@@ -7,10 +7,11 @@ import { Spinner } from "@terno/ui/components/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { ArrowRight, Reply } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { routeOf } from "~/lib/ai";
 import { repeatsItem } from "~/lib/reader-items";
-import { messageDate } from "~/lib/format";
+import { calendarDay, messageDate } from "~/lib/format";
 import { bodyArrivedForSummary, dismissSummary, loadSummary, revealSummaryMessage, setSummaryOpen, stopSummary, summarizable, summarize, useSummaries } from "~/lib/summaries";
 import { replyFromItem } from "~/lib/summary-reply";
 import { useApp } from "~/state/app";
@@ -94,11 +95,37 @@ export function summaryText(summary: Pick<AiSummary, "summary" | "items">): stri
 /** Plan 210 (iteration 3, Codex revision 10): what it asks of you that the reader's line already says isn't said twice. */
 const ASKED = new Set<AiSummaryItem["kind"]>(["action"]);
 
+/**
+ * Plan 279 (the owner: "list first only"): with a since, the rows citing a message from where it starts come first, each
+ * group in its own order; no word or mark says so. The rows are the whole conversation's in both views, and don't move.
+ */
+export function newFirst<I extends Pick<AiSummaryItem, "messageId">>(items: readonly I[], messages: readonly Pick<MessageDetail, "id">[], from: number | null): I[] {
+  const start = from === null ? -1 : messages.findIndex((m) => m.id === from);
+  if (start < 0) return [...items];
+  const isNew = (i: I) => messages.findIndex((m) => m.id === i.messageId) >= start;
+  return [...items.filter(isNew), ...items.filter((i) => !isNew(i))];
+}
+
+/** Plan 279: the since's control, worded by its first message's calendar day ("Since Nov 3", "Since yesterday"). */
+function sinceLabel(at: number): string {
+  const day = calendarDay(at);
+  return "date" in day ? t("summary.view.since", { date: day.date }) : t(day.day === "today" ? "summary.view.sinceToday" : "summary.view.sinceYesterday");
+}
+
+type View = "since" | "whole";
+
 function Ready({ summary, messages, said }: { summary: AiSummary; messages: readonly MessageDetail[]; said: readonly string[] }) {
   const open = useSummaries((s) => s.open);
   const mine = useApp((s) => s.accounts).map((a) => a.email);
+  // plan 279: what's new opens first, every time (the choice isn't kept); a since whose message isn't drawn has no label
+  const start = summary.since ? messages.find((m) => m.id === summary.since!.from) : undefined;
+  const [view, setView] = useState<View>("since");
+  const since = start && summary.since ? summary.since : null;
+  const shown: View = since ? view : "whole";
+  const text = shown === "since" && since ? since.text : summary.summary;
+  const all = newFirst(summary.items, messages, since?.from ?? null);
   // in this view only: the summary itself (and Copy) keeps every item
-  const items = summary.items.filter((i) => !ASKED.has(i.kind) || !repeatsItem(i.text, said));
+  const items = all.filter((i) => !ASKED.has(i.kind) || !repeatsItem(i.text, said));
   return (
     <Collapsible open={open} onOpenChange={setSummaryOpen} data-testid="summary-block" data-state="ready" className={CARD}>
       {/* plan 181: one row, open or closed: the name (its chevron beside it, the trigger as wide as its words), then who
@@ -110,16 +137,29 @@ function Ready({ summary, messages, said }: { summary: AiSummary; messages: read
         <div className="-me-1.5 ms-auto flex items-center gap-0.5" data-testid="summary-tools">
           <AiProvenance model={summary.model} at={summary.generatedAt} testId="summary-provenance" />
           {/* plan 162: Copy is quiet; plan 181: its glyph alone, named, with a tooltip */}
-          <AiCopyButton iconOnly text={() => summaryText(summary)} failed={t("summary.copyFailed")} testId="summary-copy" />
+          {/* plan 279: what's on screen, its paragraph and every row */}
+          <AiCopyButton iconOnly text={() => summaryText({ summary: text, items: all })} failed={t("summary.copyFailed")} testId="summary-copy" />
         </div>
       </div>
       {/* plan 162 (after ai162-r04): closing, the words fade as the card closes, so no half-cut line shows on the way */}
       <CollapsiblePanel className="mx-0 px-0 transition-[height,opacity] data-ending-style:opacity-0 data-starting-style:opacity-0">
         {/* the padding inside the panel: a padded panel can't ease down to 0 */}
         <div className={AI_PAD}>
+          {/* plan 279 (Codex and Fable reviews): the panel's first line, on the paragraph's edge, not the header (two labels
+              don't fit beside the title, Copy and who wrote it); it closes with the card. Swapped in place: the rows stay */}
+          {since && start && (
+            <ToggleGroup aria-label={t("summary.view")} variant="segmented" size="sm" value={[shown]} onValueChange={(v: string[]) => v[0] && setView(v[0] as View)} className="mb-2 max-w-full" data-testid="summary-view">
+              <ToggleGroupItem value="since" data-testid="summary-view-since" className="min-w-0 px-2.5 text-xs">
+                {sinceLabel(start.date)}
+              </ToggleGroupItem>
+              <ToggleGroupItem value="whole" data-testid="summary-view-whole" className="min-w-0 px-2.5 text-xs">
+                {t("summary.view.whole")}
+              </ToggleGroupItem>
+            </ToggleGroup>
+          )}
           {/* plain text, never HTML: a model's markup has no way in. Plan 162: the card's width (the measure left a dead column) */}
-          <p data-testid="summary-text" className="max-w-(--read-max) text-sm leading-relaxed wrap-anywhere whitespace-pre-line text-pretty">
-            {summary.summary}
+          <p data-testid="summary-text" data-view={shown} className="max-w-(--read-max) text-sm leading-relaxed wrap-anywhere whitespace-pre-line text-pretty">
+            {text}
           </p>
           {items.length > 0 && <ul className="mt-2 max-w-(--read-max)" data-testid="summary-items">{items.map((item) => <Item key={`${item.messageId}:${item.kind}:${item.text}`} item={item} mine={mine} from={messages.find((m) => m.id === item.messageId)} source={messageSource(messages, item.messageId, mine)} short={messageSourceShort(messages, item.messageId)} />)}</ul>}
         </div>
@@ -193,7 +233,8 @@ export default function ThreadSummary({ detail, said = [] }: { detail: ThreadDet
   const content = (() => {
     switch (ui?.kind) {
       case "ready":
-        return <Ready summary={ui.summary} messages={detail.messages} said={said} />;
+        // plan 279: a new summary opens on its own since
+        return <Ready key={ui.summary.generatedAt} summary={ui.summary} messages={detail.messages} said={said} />;
       case "running":
         return (
           <Line

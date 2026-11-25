@@ -190,6 +190,68 @@ test.describe("summaries (plan 132)", () => {
     await expect(page.locator("[data-slot=tooltip-content][data-open]")).toContainText(/⌘\s*J/);
   });
 
+  test("plan 279: what's new since you read opens first, swaps in place with the whole conversation, and asks by hand from what the showing drew unread", { tag: "@design" }, async ({ app: page, server }, testInfo) => {
+    const accountId = await firstAccount(server);
+    await settingUp(page, server, { ai: { provider: "fake" } });
+    // a conversation already here (no automatic summary): read, then a reply that moves the date, unread
+    const thread = { providerThreadId: "since-thread" };
+    await server.backend.store.sync.ingest(
+      [
+        incoming(accountId, "The signing", { ...thread, providerMsgId: "since-1", rfcMessageId: "since-1@summary.test", isRead: true, gmailLabels: ["INBOX"], date: E2E_NOW - 3 * 86_400_000, bodyText: "Can we sign the contract on the 12th at the notary? Please bring the deposit and both IDs." }),
+        incoming(accountId, "Re: The signing", { ...thread, providerMsgId: "since-2", rfcMessageId: "since-2@summary.test", inReplyTo: "<since-1@summary.test>", references: ["<since-1@summary.test>"], date: E2E_NOW - 60_000, bodyText: "The 12th doesn't work after all. We sign on the 19th instead, same place and time." }),
+      ],
+      { applyFilters: false, now: E2E_NOW, classifier: null },
+    );
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await openSubject(page, "The signing");
+    // the dwell reads what's shown (plan 225) before anyone asks: the request still starts at what was drawn unread
+    await expect(page.getByTestId("message-unread-dot")).toHaveCount(0);
+    await page.getByTestId("action-summarize").click();
+    const block = page.getByTestId("summary-block");
+    await expect(block).toHaveAttribute("data-state", "ready");
+
+    const text = page.getByTestId("summary-text");
+    const view = page.getByTestId("summary-view");
+    await expect(text).toHaveAttribute("data-view", "since");
+    await expect(text).toHaveText("New: The 12th doesn't work after all.");
+    await expect(page.getByTestId("summary-view-since")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("summary-view-since")).toHaveText(/^Since /);
+    await expect(view).toHaveAccessibleName("Summary of");
+
+    // on the paragraph's edge, inside the card; the card keeps its edges whichever view
+    const card = (await block.boundingBox())!;
+    expect((await view.boundingBox())!.x).toBe((await text.boundingBox())!.x);
+    const rowsBefore = await page.getByTestId("summary-item").allTextContents();
+    await page.getByTestId("summary-view-whole").click();
+    await expect(text).toHaveAttribute("data-view", "whole");
+    await expect(text).not.toHaveText("New: The 12th doesn't work after all.");
+    const after = (await block.boundingBox())!;
+    expect([after.x, after.width]).toEqual([card.x, card.width]);
+    // the rows are the whole conversation's in both views, and don't move
+    expect(await page.getByTestId("summary-item").allTextContents()).toEqual(rowsBefore);
+    // by keyboard too
+    await page.getByTestId("summary-view-whole").focus();
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("Space");
+    await expect(text).toHaveAttribute("data-view", "since");
+
+    for (const mode of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: mode });
+      await page.waitForFunction((dark) => document.documentElement.classList.contains("dark") === dark, mode === "dark");
+      expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-summary-card]").analyze()).violations, mode).toEqual([]);
+      await block.screenshot({ path: testInfo.outputPath(`since-${mode}.png`) });
+    }
+    await page.emulateMedia({ colorScheme: "light" });
+
+    // the minimum window: the control stays inside the card
+    await page.setViewportSize({ width: 980, height: 600 });
+    const narrow = (await block.boundingBox())!;
+    const control = (await view.boundingBox())!;
+    expect(control.x + control.width).toBeLessThanOrEqual(narrow.x + narrow.width);
+    await block.screenshot({ path: testInfo.outputPath("since-narrow.png") });
+  });
+
   test("plan 148: a card in every design, its edges on the column and its text inset; nothing spills out of it", { tag: "@design" }, async ({ app: page, server }) => {
     const accountId = await firstAccount(server);
     await settingUp(page, server, { ai: { provider: "fake" } });

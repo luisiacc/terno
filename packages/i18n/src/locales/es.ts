@@ -1451,6 +1451,11 @@ const es = {
   "summary.downloading": "Este mensaje aún se está descargando",
   "summary.noProvider": "Los resúmenes necesitan un proveedor.",
   "summary.tryAgain": "Volver a intentar",
+  "summary.view": "Resumen de",
+  "summary.view.since": "Desde el {date}",
+  "summary.view.sinceToday": "Desde hoy",
+  "summary.view.sinceYesterday": "Desde ayer",
+  "summary.view.whole": "Toda la conversación",
   "aiDraft.label": "IA",
   // plan 163: escribir en el borrador
   "aiDraft.bodyHint.reply": "Escribe la respuesta, o lo que debe decir, y pulsa {keys}",

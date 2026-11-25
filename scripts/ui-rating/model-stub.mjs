@@ -194,7 +194,12 @@ export function summarize(system, prompt) {
   // a question the stand-in can't put in its own words is asked as written, its days anchored
   const asked = said.asks.length ? said.asks.map((a) => ({ kind: a.kind, text: es ? a.es : a.en })) : said.other.filter((o) => o.endsWith("?")).map((o) => ({ kind: "question", text: anchor(o, last.date) }));
   const items = last.own ? [] : asked.slice(0, 3).map((a) => ({ ...a, message: last.label }));
-  return { summary: sentences.join(" "), items };
+  // plan 279: asked what the new messages change, the first new one's news in a sentence, or nothing
+  if (!system.includes('- "since":')) return { summary: sentences.join(" "), items };
+  const fresh = blocksOf(prompt, "message").find(({ head }) => /new="yes"/.test(head) && !/author="the reader"/.test(head));
+  const news = fresh && read(fresh.body, dayOf(attr(fresh.head, "date")) ?? 0).says[0];
+  const by = fresh && person(attr(fresh.head, "from")).first;
+  return { summary: sentences.join(" "), items, since: news ? `${es ? "Ahora" : "Now"} ${by} ${es ? news.es : news.en}.` : "" };
 }
 
 const STOP = new Set("a an the and or of in on at to for from is are was were my me i you your do does did when what where who why how which it its this that with about any anything there have has had did say said tell told el la los las un una de del en y o que qué cuando cuándo cual cuál donde dónde mi mis es son como cómo por para me dijo sobre algo hay".split(" "));

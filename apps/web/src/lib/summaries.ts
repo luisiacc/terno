@@ -1,4 +1,4 @@
-import type { AiErrorKind, AiSummary, ThreadSummary } from "@terno/core";
+import type { AiErrorKind, AiSummary, MessageDetail, ThreadSummary } from "@terno/core";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";
 import { forgetAsk } from "~/lib/ask";
@@ -63,6 +63,23 @@ function put(threadId: number, ui: SummaryUi): void {
   });
 }
 
+/**
+ * Plan 279: the earliest message someone else wrote that each conversation's latest showing drew unread. What's shown is
+ * read after 450 ms (plan 225), before anyone clicks Summarize or a body that was downloading arrives, so a request by
+ * hand sends this. Every drawn copy until the showing ends counts (a cached copy drawn read can come back unread inside
+ * the dwell: Codex review 2); the earliest wins. Kept past the showing, so Try again from elsewhere still has it.
+ */
+const shownUnread = new Map<number, number>();
+
+export function noteShown(threadId: number, messages: readonly Pick<MessageDetail, "id" | "isRead" | "isSent">[], fresh: boolean): void {
+  if (fresh) shownUnread.delete(threadId);
+  const unread = messages.findIndex((m) => !m.isRead && !m.isSent);
+  if (unread < 0) return;
+  const was = shownUnread.get(threadId);
+  const at = was === undefined ? -1 : messages.findIndex((m) => m.id === was);
+  if (at < 0 || unread < at) shownUnread.set(threadId, messages[unread]!.id);
+}
+
 const reads = new Map<number, number>();
 /** a read already sent answers for what was there then: one that lands after a new summary would put the old one back */
 const forgetReads = (threadId: number) => reads.set(threadId, (reads.get(threadId) ?? 0) + 1);
@@ -123,7 +140,8 @@ export async function summarize(threadId: number, o: { again?: boolean } = {}): 
     return now?.kind === "running" && now.requestId === requestId;
   };
   try {
-    const result = await client.call("ai.summarize", { threadId, requestId, ...(asked.again ? { again: true as const } : {}) });
+    const since = shownUnread.get(threadId);
+    const result = await client.call("ai.summarize", { threadId, requestId, ...(asked.again ? { again: true as const } : {}), ...(since !== undefined ? { since } : {}) });
     if (!mine()) return;
     if (result.status === "ready") put(threadId, { kind: "ready", summary: result.summary });
     else put(threadId, { kind: "waitingBody", ...asked });

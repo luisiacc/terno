@@ -70,7 +70,7 @@ import { viewLabel } from "~/lib/format";
 import { listKey, useList } from "~/state/list";
 import { useSnack } from "~/lib/snack";
 import { aiAllowed, repliesOffered, summariesOffered } from "~/lib/ai";
-import { summarizable, summarize, useSummaries } from "~/lib/summaries";
+import { noteShown, summarizable, summarize, useSummaries } from "~/lib/summaries";
 import { RemindPicker } from "./remind-picker";
 import DigestPage from "./digest-page";
 import ReplyReady, { replyAllTo } from "./reply-ready";
@@ -1117,6 +1117,12 @@ export function Reader() {
 /** One conversation, from its subject to its last message: keyed by thread, so what's open starts afresh with each. */
 function Thread({ detail, account, cats, summaryShown }: { detail: ThreadDetail; account: Account | undefined; cats: Category[]; summaryShown: boolean }) {
   const fold = useFold(detail.messages);
+  // plan 279: what this showing drew unread, before the dwell reads it: a summary asked by hand starts its since there
+  const showing = useRef(false);
+  useEffect(() => {
+    noteShown(detail.thread.id, detail.messages, !showing.current);
+    showing.current = true;
+  }, [detail.messages]);
   const cardHeader = useDesign().variants.readerHeader === "sender-card";
   // plan 210 (iteration 3): the conversation's items resolved once, for their line and for what the summary leaves out
   const items = useReaderItems(detail);

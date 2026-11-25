@@ -18,7 +18,7 @@ vi.mock("~/rpc/connection", () => ({
 // what Clear AI data also forgets; nothing here reaches it
 vi.mock("~/lib/ask", () => ({ forgetAsk: () => {} }));
 
-const { bodyArrivedForSummary, dismissSummary, stopSummary, summarize, useSummaries } = await import("./summaries");
+const { bodyArrivedForSummary, dismissSummary, noteShown, stopSummary, summarize, useSummaries } = await import("./summaries");
 
 const T = 7;
 const card = (summary: string): AiSummary => ({ threadId: T, summary, items: [], provider: "openai", model: "m", generatedAt: 1 });
@@ -105,5 +105,24 @@ describe("plan 242: Summarize again", () => {
     read.resolve({ state: "ready", summary: STORED });
     await settle();
     expect(ui()).toEqual({ kind: "ready", summary: NEW });
+  });
+});
+
+describe("plan 279: a summary by hand starts at what the showing drew unread", () => {
+  const m = (id: number, isRead: boolean, isSent = false) => ({ id, isRead, isSent });
+
+  it("sends the earliest unread message someone else wrote; a later copy drawn read keeps it, and a new showing starts again", async () => {
+    useSummaries.setState({ byThread: new Map() });
+    noteShown(T, [m(1, true), m(2, true), m(3, false)], true);
+    // a cached copy came back with an earlier one unread, then the dwell read them all
+    noteShown(T, [m(1, true), m(2, false), m(3, false)], false);
+    noteShown(T, [m(1, true), m(2, true), m(3, true)], false);
+    await summarize(T);
+    expect(asked("ai.summarize").at(-1)!.params.since).toBe(2);
+    // your own unread message is never it; a new showing with nothing unread sends nothing
+    noteShown(T, [m(1, true), m(4, false, true)], true);
+    useSummaries.setState({ byThread: new Map() });
+    await summarize(T);
+    expect(asked("ai.summarize").at(-1)!.params).not.toHaveProperty("since");
   });
 });

@@ -1468,6 +1468,12 @@ const en = {
   "summary.downloading": "Still downloading this message",
   "summary.noProvider": "Summaries need a provider.",
   "summary.tryAgain": "Try again",
+  // plan 279: what's new since you read, or the whole conversation, swapped in place; a calendar date, never a time
+  "summary.view": "Summary of",
+  "summary.view.since": "Since {date}",
+  "summary.view.sinceToday": "Since today",
+  "summary.view.sinceYesterday": "Since yesterday",
+  "summary.view.whole": "Whole conversation",
   "aiDraft.label": "AI",
   // plan 163: write in the draft
   "aiDraft.bodyHint.reply": "Write the reply, or what it should say, then press {keys}",
