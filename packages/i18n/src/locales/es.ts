@@ -2529,6 +2529,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "errors.microsoft.connectedOther": "Microsoft conectó {got}, no {expected}. Elige esa cuenta en la ventana de Microsoft.",
   "errors.microsoft.reconnect": "Vuelve a conectar esta cuenta de Outlook.",
   "errors.microsoft.revoked": "El inicio de sesión de Microsoft de esta cuenta caducó o se revocó.",
+  "errors.microsoft.capacity": "Las conexiones de Microsoft están ocupadas en este dispositivo. Espera a que terminen e inténtalo de nuevo.",
   "errors.microsoft.permissionRequired": "El inicio de sesión de Microsoft de esta cuenta no permite el correo. Vuelve a iniciar sesión y permite el acceso a tu correo.",
   "errors.microsoft.clientUnread": "No se pudo leer la configuración guardada de esta cuenta de Outlook. Terno lo intentará de nuevo en breve.",
   "errors.microsoft.refreshFailed": "No se pudo renovar el acceso a Outlook ({status}).",

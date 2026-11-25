@@ -1348,7 +1348,9 @@ export function createHandlers(b: Backend): Handlers {
       // the app registration this build carries; a build without one can't connect Microsoft
       const oauth = await oauthClientFor(b, "microsoft");
       if (!oauth) throw new RpcError("BAD_REQUEST", L("errors.microsoft.noClient"));
-      const result = await connect({ clientId: oauth.clientId, openExternal: b.options.openExternal, signal: b.abort.signal, fetch: b.net.fetchFor("mail") });
+      // admitted by the ledger as Google's sign-in is (review round 3)
+      const requests = await b.initialOAuthRequests("outlook", true);
+      const result = await connect({ clientId: oauth.clientId, openExternal: b.options.openExternal, signal: b.abort.signal, fetch: b.net.fetchFor("mail"), requests }).finally(() => requests.close());
       microsoftFlowActive(b);
       validateMicrosoftConnection(result);
       const existing = (await store.accounts.list()).find((a) => a.email === result.email.toLowerCase());

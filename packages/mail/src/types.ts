@@ -446,6 +446,8 @@ export interface MicrosoftConnectOptions {
   fetch: typeof fetch;
   /** pre-fills the account on Microsoft's sign-in page (signing an account in again) */
   loginHint?: string;
+  /** the cooldown ledger's admission for the code exchange and the identity reads (as Gmail's `google`): review round 3 */
+  requests?: Pick<AccountRequests, "request">;
 }
 
 /** The web's Gmail sign-in: short-lived access tokens from Google's token model, kept in memory. */

@@ -75,6 +75,17 @@ describe("accounts.connectMicrosoft (plan 259)", () => {
     expect((await backend.store.accounts.list()).map((a) => a.email)).toEqual(["ana@contoso.com"]);
   });
 
+  it("review round 3: a sign-in goes through the request ledger: a throttled code exchange pauses Microsoft's token service, and the next sign-in waits on it", async () => {
+    const { ms, client } = await setup();
+    ms.tokenFailure = { status: 429, body: { error: "temporarily_unavailable" } };
+    await expect(client.call("accounts.connectMicrosoft", {})).rejects.toBeDefined();
+    const exchanges = ms.tokenRequests.length, opened = ms.authorizations.length;
+    await expect(client.call("accounts.connectMicrosoft", {})).rejects.toBeDefined();
+    // refused before the browser opened or Microsoft was asked again
+    expect(ms.tokenRequests).toHaveLength(exchanges);
+    expect(ms.authorizations).toHaveLength(opened);
+  });
+
   it("a build without Microsoft's app registration, or a host without a browser, can't connect Microsoft", async () => {
     const none = await setup({ clients: false });
     await expect(none.client.call("accounts.connectMicrosoft", {})).rejects.toMatchObject({ code: "BAD_REQUEST", i18n: { key: "errors.microsoft.noClient" } });

@@ -750,7 +750,17 @@ export class BackendCore {
   }
 
   /** Before mailbox proof, Google admission belongs to the installation, never a claimed address. */
-  async initialGoogleRequests(codeExchange = false, accountId?: number) {
+  initialGoogleRequests(codeExchange = false, accountId?: number) {
+    return this.initialOAuthRequests("gmail", codeExchange, accountId);
+  }
+
+  /**
+   * A sign-in's requests (the code exchange, the identity reads), admitted by the installation's ledger for that
+   * provider's services, and by the account's once it's bound (plan 259, review round 3: Microsoft's too).
+   */
+  async initialOAuthRequests(kind: OAuthKind, codeExchange = false, accountId?: number) {
+    const services = OAUTH_SERVICES[kind]!;
+    const busy = kind === "outlook" ? "errors.microsoft.capacity" : "errors.google.capacity";
     await this.ready;
     const policy = this.cooldown!.requestsFor("installation", () => !this.stopped && !this.abort.signal.aborted);
     const stamp = accountId === undefined ? null : await this.store.accounts.stamp(accountId);
@@ -758,16 +768,16 @@ export class BackendCore {
     const bound = stamp && await this.cooldown!.bindingFor(stamp) ? await this.cooldown!.requestsForAccount(stamp, () => !this.stopped && !this.abort.signal.aborted) : undefined;
     const close = () => { policy.close(); bound?.close(); };
     const failure = (error: unknown) => {
-      return error instanceof ProviderCooldownError && error.cooldown.kind === "capacity" ? new ProviderError(L("errors.google.capacity"), true) : error;
+      return error instanceof ProviderCooldownError && error.cooldown.kind === "capacity" ? new ProviderError(L(busy), true) : error;
     };
     const check = () => {
       try {
         for (const scope of [policy, ...(bound ? [bound] : [])]) {
-          scope.check({ request: { endpoint: "gmail-api", purpose: "identity-proof" } });
-          scope.check({ request: { endpoint: "google-userinfo", purpose: "identity-proof" } });
-          if (codeExchange) scope.check({ request: { endpoint: "oauth-token", purpose: "authorization-code" } });
+          scope.check({ request: { endpoint: services.mail, purpose: "identity-proof" } });
+          scope.check({ request: { endpoint: services.identity, purpose: "identity-proof" } });
+          if (codeExchange) scope.check({ request: { endpoint: services.token, purpose: "authorization-code" } });
         }
-        if (this.net.providerPending() >= 64) throw new ProviderError(L("errors.google.capacity"), true);
+        if (this.net.providerPending() >= 64) throw new ProviderError(L(busy), true);
       } catch (error) { throw failure(error); }
     };
     try { check(); } catch (error) { close(); throw error; }
@@ -2018,6 +2028,7 @@ export class BackendCore {
       },
       messageByProviderId: (id) => read(() => store.messageByProviderId(id)),
       syncedMessagePage: (after) => read(() => store.syncedMessagePage(after)),
+      folderMessagePage: (folder, after) => read(() => store.folderMessagePage(folder, after)),
       syncedMessages: () => read(() => store.syncedMessages()),
       pendingAttachmentBodies: (limit) => read(() => store.pendingAttachmentBodies(limit)),
       pendingFlagSnapshots: (request) => read(() => store.pendingFlagSnapshots(request)),
@@ -2028,7 +2039,6 @@ export class BackendCore {
       // plan 259 stage 2b: an Outlook move's answer, written as it comes: the lists it changed read again now
       placeMessages: (placements) => write(async () => {
         const touched = await store.placeMessages(placements);
-      folderMessagePage: (folder, after) => read(() => store.folderMessagePage(folder, after)),
         if (touched.length) this.notifyChanged(touched);
         return touched;
       }),

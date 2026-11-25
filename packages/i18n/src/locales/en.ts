@@ -2555,6 +2555,7 @@ It contains none of your mail, contacts, settings or keys.
   "errors.microsoft.connectedOther": "Microsoft connected {got}, not {expected}. Choose that account in the Microsoft window.",
   "errors.microsoft.reconnect": "Reconnect this Outlook account.",
   "errors.microsoft.revoked": "Microsoft’s sign-in for this account expired or was revoked.",
+  "errors.microsoft.capacity": "Microsoft connections are busy on this device. Wait for them to finish, then try again.",
   "errors.microsoft.permissionRequired": "Microsoft’s sign-in for this account doesn’t allow mail. Sign in again and allow access to your mail.",
   "errors.microsoft.clientUnread": "Couldn’t read this Outlook account’s saved settings. Terno tries again shortly.",
   "errors.microsoft.refreshFailed": "Couldn’t renew Outlook access ({status}).",
