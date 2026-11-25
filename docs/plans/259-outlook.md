@@ -1268,3 +1268,9 @@ Plan 272's Show original landed on main while this plan was on its branch, with 
 - **Tests:**
   - `graph-api.test`: the bytes are the source Graph holds, from `$value`; the reader lane's permit is taken and given back; a message gone is `null`; nothing is stored.
   - `microsoft-connection.test`: through the backend's `reader.original`, an Outlook message's summary and source come from Graph; a message deleted on Graph answers `gone`.
+- **What the Codex code review changed** (5 findings, all fixed, each with a test that fails without it):
+  - #1: a read waiting on a mailbox proof another request started now stops waiting when it's cancelled (`untilAborted`), so a closed Show original gives its read permit back at once. The proof goes on for the rest. This is in `attempt`, for every Graph request.
+  - #2: only the message's own size, one byte over the cap, says "too large". Another of the reader's bounds (one piece of the answer over 1 MiB) is an unreadable answer.
+  - #3: `truncated` cancels the rest of an answer cut at its bound before its reader sees the end, and lets the source reader go. The Graph slot freed at the end is then really free (shared with sync's downloads).
+  - #4: the source is copied four incoming chunks at a time, with the backend's turn given between them. Up to 75 MB never holds the event loop in one slice, and a closed view stops the copy.
+  - #5: a 200 without a body, or an empty one, is an unreadable answer: never "offline", never a zero-byte original.

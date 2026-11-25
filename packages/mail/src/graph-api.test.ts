@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { FlagUpdate, IncomingMessage, ProviderFolder } from "@terno/store";
 import { createNodeIncomingProcessor } from "../../backend/src/incoming-worker";
-import { createGraphApiProvider, GRAPH_CONCURRENCY, GraphApiError, graphSearch, type GraphTokenSource } from "./graph-api";
+import { createGraphApiProvider, GRAPH_CONCURRENCY, GraphApiError, graphSearch, truncated, type GraphTokenSource } from "./graph-api";
 import { IncomingPipeline } from "./incoming";
 import { requestHttp } from "./provider-http";
 import { SyntheticMicrosoft } from "./test/microsoft.fixture";
@@ -701,6 +701,64 @@ describe("Graph provider: flag snapshots, bodies, search", () => {
     expect(await t.provider.readOriginal!({ id: 2, providerMsgId: "AAMkGone=" }, new AbortController().signal)).toBeNull();
     // nothing of it is stored
     expect(t.row(id)).toBeUndefined();
+  });
+
+  it("plan 272's code review: an answer without a body, an empty one, or a piece past the reader's bound is unreadable, never offline nor too large (#2, #5); a large source is copied with yields (#4)", async () => {
+    let answer: (() => Response) | undefined;
+    const t = await setup({ respond: (url) => answer && url.includes("/$value") ? answer() : undefined });
+    const id = t.ms.deliver("inbox-id");
+    const read = () => t.provider.readOriginal!({ id: 1, providerMsgId: id }, new AbortController().signal);
+    answer = () => new Response(new Uint8Array(0), { status: 200 });
+    await expect(read()).rejects.toMatchObject({ i18n: { key: "errors.original.unreadable" }, retryable: true });
+    answer = () => new Response(null, { status: 200 });
+    await expect(read()).rejects.toMatchObject({ i18n: { key: "errors.original.unreadable" } });
+    answer = () => new Response(new ReadableStream({ start(c) { c.enqueue(new Uint8Array(2 * 1024 * 1024).fill(0x61)); c.close(); } }), { status: 200 });
+    await expect(read()).rejects.toMatchObject({ i18n: { key: "errors.original.unreadable" } });
+    // 6 MB in pieces: copied a few at a time, the backend's turn given between them
+    const big = new Uint8Array(6 * 1024 * 1024).fill(0x62);
+    answer = () => new Response(new ReadableStream({ start(c) { for (let at = 0; at < big.length; at += 65_536) c.enqueue(big.slice(at, at + 65_536)); c.close(); } }), { status: 200 });
+    let turns = 0;
+    (t.ctx as { yield?: () => Promise<void> }).yield = async () => { turns++; };
+    expect((await read())!.byteLength).toBe(big.length);
+    expect(turns).toBeGreaterThan(0);
+  });
+
+  it("plan 272's code review #3: an answer cut at its bound ends for its reader only once the rest is cancelled, the source reader let go", async () => {
+    let cancelled!: () => void;
+    const cancelling = new Promise<void>((resolve) => { cancelled = resolve; });
+    let cancelSeen = false;
+    const source = new Response(new ReadableStream<Uint8Array>({
+      pull(c) { c.enqueue(new Uint8Array(10).fill(0x61)); },
+      cancel() { cancelSeen = true; return cancelling; },
+    }));
+    const reader = truncated(source, 15).body!.getReader();
+    expect((await reader.read()).value!.byteLength).toBe(10);
+    let ended = false;
+    const end = (async () => { while (!(await reader.read()).done); ended = true; })();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(cancelSeen).toBe(true);
+    expect(ended).toBe(false);
+    cancelled();
+    await end;
+    expect(ended).toBe(true);
+    expect(source.body!.locked).toBe(false);
+  });
+
+  it("plan 272's code review #1: a closed Show original stops waiting on a mailbox proof another request started, and gives its read permit back", async () => {
+    const held: string[] = [];
+    const requests: AccountRequests = {
+      generation: () => 1, check() {}, tokenUnavailable() {}, accessAvailable() {},
+      prove: () => new Promise<void>(() => {}),
+      request: (_d, input, init) => fetch(input, init),
+    };
+    const t = await setup({ requests });
+    (t.ctx as { incoming: unknown }).incoming = { acquire: async () => { held.push("take"); return () => held.push("give"); } };
+    const stop = new AbortController();
+    const reading = t.provider.readOriginal!({ id: 1, providerMsgId: "AAMkAny=" }, stop.signal);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    stop.abort(new Error("closed"));
+    await expect(reading).rejects.toThrow("closed");
+    expect(held).toEqual(["take", "give"]);
   });
 
   it("searches Graph's $search, honours before and the limit, skips what's stored, and fetches hits as old mail", async () => {

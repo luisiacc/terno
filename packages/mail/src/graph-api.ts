@@ -126,6 +126,9 @@ const folderRefused = (error: unknown): error is GraphApiError => error instance
  */
 const messageRefused = (error: unknown, target: string): error is GraphApiError => error instanceof GraphApiError && error.target === target && error.status >= 400 && error.status < 500 && error.status !== 404 && !error.retryable && !mailboxRefused(error);
 
+/** plan 272: a source is copied this many incoming chunks (1 MiB each at most) between yields */
+const ORIGINAL_COPY_CHUNKS = 4;
+
 const notFound = (error: unknown, target: string) => error instanceof GraphApiError && error.status === 404 && error.target === target && error.codes.length > 0 && !mailboxRefused(error);
 
 /** A folder's own listing or delta answered that the folder isn't there (round 2 #5: classified where it's asked). */
@@ -291,20 +294,24 @@ function createSlots(width: number) {
 }
 
 /** The first `max` bytes of a body, the rest cancelled: over the capture policy, the worker reads its headers only. */
-function truncated(response: Response, max: number): Response {
+/** A response cut at `max` bytes (exported for its test) */
+export function truncated(response: Response, max: number): Response {
   const reader = response.body?.getReader();
   if (!reader) return response;
   let seen = 0;
   const stream = new ReadableStream<Uint8Array>({
     async pull(controller) {
       const next = await reader.read();
-      if (next.done) { controller.close(); return; }
+      if (next.done) { reader.releaseLock(); controller.close(); return; }
       const room = max - seen;
       if (next.value.byteLength < room) { seen += next.value.byteLength; controller.enqueue(next.value); return; }
       controller.enqueue(next.value.subarray(0, room));
       seen = max;
+      // the rest is cancelled before the reader sees the end, so what's freed at the end (a Graph slot) is free
+      // (plan 272's code review #3)
+      await reader.cancel().catch(() => {});
+      reader.releaseLock();
       controller.close();
-      void reader.cancel().catch(() => {});
     },
     cancel(reason) { return reader.cancel(reason); },
   });
@@ -414,9 +421,22 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       deadline.stopClock();
       call.preparation?.throwIfAborted();
       if (body.bytes > MAX_INCOMING_MIME_BYTES) throw new ProviderError(L("errors.mail.processingLimit"), false);
+      // a 200 with nothing in it is no message's source (plan 272's code review #5)
+      if (body.bytes === 0) throw new ProviderError(L("errors.original.unreadable"), true);
+      // copied a few chunks at a time, yielding between them: up to 75 MB never holds the backend in one slice, and a
+      // closed view stops it (code review #4)
       const bytes = new Uint8Array(body.bytes);
       let at = 0;
-      for (const chunk of body.chunks) { bytes.set(chunk, at); at += chunk.byteLength; }
+      for (let i = 0; i < body.chunks.length; i++) {
+        const chunk = body.chunks[i]!;
+        bytes.set(chunk, at);
+        at += chunk.byteLength;
+        if (i % ORIGINAL_COPY_CHUNKS === ORIGINAL_COPY_CHUNKS - 1) {
+          await yieldPage();
+          deadline.signal.throwIfAborted();
+          call.preparation?.throwIfAborted();
+        }
+      }
       return bytes;
     } finally { body.release(); }
   }
@@ -443,7 +463,10 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
     const token = call.proofToken ?? (waitOn ? await untilAborted(tokens.get(call.run, call.admission), waitOn) : await tokens.get(call.run, call.admission));
     if (ctx.requests && !call.proofToken) {
       try {
-        await ctx.requests.prove(() => mailbox({ signal: call.signal, readReset: call.readReset, preparation: call.preparation, admission: call.admission, proofToken: token, proofFinal: retried, generation }), call.admission);
+        // a proof another request started is shared: this caller stops waiting when it's cancelled (a closed Show
+        // original gives back its read permit at once), and the proof goes on for the rest (plan 272's code review #1)
+        const proof = ctx.requests.prove(() => mailbox({ signal: call.signal, readReset: call.readReset, preparation: call.preparation, admission: call.admission, proofToken: token, proofFinal: retried, generation }), call.admission);
+        await (waitOn ? untilAborted(proof, waitOn) : proof);
       } catch (error) {
         if (error instanceof ProofTokenExpired && !retried) return RETRY;
         throw error;
@@ -511,7 +534,10 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       if (call.original) {
         try { return await originalResponse(response, deadline, call, free); }
         catch (error) {
-          if (error instanceof ResponseBodyLimitError) throw new ProviderError(L("errors.mail.processingLimit"), false);
+          // the message's own size, against the cap; any other bound (one piece of the answer too large) and an answer
+          // without a body are an unreadable answer, never "too large" nor "offline" (code review #2, #5)
+          if (error instanceof ResponseBodyLimitError) throw new ProviderError(L(error.limit === MAX_INCOMING_MIME_BYTES + 1 ? "errors.mail.processingLimit" : "errors.original.unreadable"), error.limit !== MAX_INCOMING_MIME_BYTES + 1);
+          if (error instanceof SyntaxError) throw new ProviderError(L("errors.original.unreadable"), true);
           if (error instanceof ProviderError || error instanceof RequestNotDispatchedError) throw error;
           throw failed(error);
         }
