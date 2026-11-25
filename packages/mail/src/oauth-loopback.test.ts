@@ -14,7 +14,7 @@ function open(redirectHost: "127.0.0.1" | "localhost", state = "s1") {
     authorize: "https://login.example.test/authorize", state, redirectHost, page, signal: new AbortController().signal,
     params: { client_id: "public-client", response_type: "code", state, prompt: "select_account" },
     refused: (error, description) => ({ page: "backend.oauth.denied", error: new ProviderError(`refused ${error} ${description ?? "-"}`, false) }),
-    invalid: () => new ProviderError("invalid", false),
+    invalid: () => new ProviderError("invalid", false), invalidPage: "backend.oauth.invalid",
     openExternal: async (url) => { opened = new URL(url); },
   });
   const ready = async () => { while (!opened) await new Promise((r) => setTimeout(r, 5)); return opened; };

@@ -1,6 +1,7 @@
 import { L } from "@terno/i18n";
 import { callbackPage } from "./oauth-page";
 import { openLoopback, pkce } from "./oauth-loopback";
+import { validTokenResponse } from "./oauth-flow";
 import { createOAuthSession } from "./oauth-session";
 import { buildRaw } from "./compose";
 import { readGoogleIdentity, withGoogleSignIn } from "./gmail-web";
@@ -43,7 +44,7 @@ export async function connectGmail(options: ConnectOptions): Promise<GmailConnec
     const page = await flow.wait(callbackPage());
     const invalid = () => new ProviderError(L("errors.google.invalidResponse"), false);
     const loopback = openLoopback({
-      authorize: ep.auth, state, redirectHost: "127.0.0.1", page, invalid, openExternal: options.openExternal, signal: flow.signal,
+      authorize: ep.auth, state, redirectHost: "127.0.0.1", page, invalid, invalidPage: "backend.oauth.invalid", openExternal: options.openExternal, signal: flow.signal,
       params: {
         client_id: options.clientId,
         response_type: "code",
@@ -65,12 +66,8 @@ export async function connectGmail(options: ConnectOptions): Promise<GmailConnec
       const body = new URLSearchParams({ client_id: options.clientId, code: code.code, code_verifier: verifier, grant_type: "authorization_code", redirect_uri: code.redirectUri });
       if (options.clientSecret) body.set("client_secret", options.clientSecret);
       const tokens = await flow.json(ep.token, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body }, { endpoint: "oauth-token", purpose: "authorization-code" });
-      if (typeof tokens.access_token !== "string" || tokens.access_token.length > 4096 || !/^[\x21-\x7e]+$/.test(tokens.access_token) ||
-        (Object.hasOwn(tokens, "refresh_token") ? (typeof tokens.refresh_token !== "string" || tokens.refresh_token.length > 4096 || !/^[\x21-\x7e]+$/.test(tokens.refresh_token)) : !options.allowOmittedRefreshToken) ||
-        typeof tokens.token_type !== "string" || tokens.token_type.toLowerCase() !== "bearer" ||
-        (tokens.expires_in !== undefined && (typeof tokens.expires_in !== "number" || !Number.isFinite(tokens.expires_in) || tokens.expires_in <= 0)) ||
-        (tokens.scope !== undefined && typeof tokens.scope !== "string")) throw new ProviderError(L("errors.google.invalidResponse"), false);
-      const grantedScopes = tokens.scope === undefined ? requestedScopes : tokens.scope.split(/\s+/).filter(Boolean);
+      if (!validTokenResponse(tokens, { allowOmittedRefreshToken: options.allowOmittedRefreshToken })) throw new ProviderError(L("errors.google.invalidResponse"), false);
+      const grantedScopes = typeof tokens.scope === "string" ? tokens.scope.split(/\s+/).filter(Boolean) : requestedScopes;
       if (!grantedScopes.includes("https://www.googleapis.com/auth/gmail.modify") && !grantedScopes.includes("https://mail.google.com/")) throw new ProviderError(L("errors.google.mailScopeRequired"), false);
       const identity = await readGoogleIdentity(tokens.access_token, ep, flow);
       return { ...identity, refreshToken: (tokens.refresh_token as string | undefined) ?? null, grantedScopes };

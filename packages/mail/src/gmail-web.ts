@@ -6,113 +6,57 @@ import { buildRawPortable } from "./compose-portable";
 import { ProviderAuthError, ProviderError, type AccountRequests, type GmailTokenBroker, type HttpRequestContext, type HttpResponseEvidence, type MailProvider, type ProviderContext } from "./types";
 import { readResponseText } from "./http-body";
 import { captureHttpResponseEvidence } from "./http-response-evidence";
+import { readJsonObject, withSignIn, type SignInFlow, type SignInWords } from "./oauth-flow";
 
-interface GoogleSignInFlow {
-  signal: AbortSignal;
-  wait<T>(work: Promise<T>): Promise<T>;
+interface GoogleSignInFlow extends SignInFlow {
   json(url: string, init?: RequestInit, httpContext?: HttpRequestContext): Promise<Record<string, unknown>>;
 }
 
-/**
- * Plan 260: the sign-in's own end, its deadline or its caller's cancel. The person left the consent unfinished (or
- * Google didn't answer in time): shown to them and logged, never reported as our bug. Not retryable: retrying is theirs.
- */
-class GoogleSignInEnded extends ProviderError {
-  override get expected(): boolean {
-    return true;
-  }
-}
+const GOOGLE_SIGN_IN: SignInWords = {
+  cancelled: () => L("errors.google.cancelled"),
+  timedOut: () => L("errors.google.timedOut"),
+  unavailable: () => L("errors.google.unavailable"),
+};
 
-/** One deadline covers headers and bodies, including fetch implementations that ignore abort. */
+/** Plan 259: the shared sign-in flow (oauth-flow.ts) with Google's words, its request policy and its quota answer. */
 export async function withGoogleSignIn<T>(options: { signal?: AbortSignal; timeoutMs?: number; fetch: typeof fetch; google?: Pick<AccountRequests, "request"> }, run: (flow: GoogleSignInFlow) => Promise<T>): Promise<T> {
-  const abort = new AbortController();
-  const cancel = () => abort.abort(new GoogleSignInEnded(L("errors.google.cancelled"), false));
-  const timer = setTimeout(() => abort.abort(new GoogleSignInEnded(L("errors.google.timedOut"), false)), options.timeoutMs ?? 30_000);
-  if (options.signal?.aborted) cancel();
-  else options.signal?.addEventListener("abort", cancel, { once: true });
-  const signal = abort.signal;
-  const wait = async <V,>(work: Promise<V>): Promise<V> => {
-    let stop: (() => void) | undefined;
-    try {
-      return await Promise.race([work, new Promise<never>((_resolve, reject) => {
-        stop = () => reject(signal.reason);
-        if (signal.aborted) stop();
-        else signal.addEventListener("abort", stop, { once: true });
-      })]);
-    } finally {
-      if (stop) signal.removeEventListener("abort", stop);
-    }
-  };
-  const json = async (url: string, init?: RequestInit, httpContext: HttpRequestContext = { endpoint: "unknown", purpose: "unknown" }): Promise<Record<string, unknown>> => {
-    signal.throwIfAborted();
-    let httpResponse: HttpResponseEvidence | undefined;
-    let settleForbidden: ((kind: "quota" | "policy" | "none") => Promise<void>) | undefined;
-    const wire = { ...init, signal };
-    const response = await wait((options.google ? options.google.request({ request: httpContext, onForbidden: (settle) => {
-      if (signal.aborted) void settle("none");
-      else settleForbidden = settle;
-    } }, url, wire) : options.fetch(url, wire)).then((res) => {
-      if (signal.aborted) {
-        void res.body?.cancel().catch(() => {});
-        throw signal.reason;
+  return withSignIn({ signal: options.signal, timeoutMs: options.timeoutMs, words: GOOGLE_SIGN_IN, keep: (error) => error instanceof ProviderError && error.i18n?.key === "errors.google.quota" }, (flow) => {
+    const { signal, wait } = flow;
+    const json = async (url: string, init?: RequestInit, httpContext: HttpRequestContext = { endpoint: "unknown", purpose: "unknown" }): Promise<Record<string, unknown>> => {
+      signal.throwIfAborted();
+      let httpResponse: HttpResponseEvidence | undefined;
+      let settleForbidden: ((kind: "quota" | "policy" | "none") => Promise<void>) | undefined;
+      const wire = { ...init, signal };
+      const response = await wait((options.google ? options.google.request({ request: httpContext, onForbidden: (settle) => {
+        if (signal.aborted) void settle("none");
+        else settleForbidden = settle;
+      } }, url, wire) : options.fetch(url, wire)).then((res) => {
+        if (signal.aborted) {
+          void res.body?.cancel().catch(() => {});
+          throw signal.reason;
+        }
+        if (!res.ok) httpResponse = captureHttpResponseEvidence(res, httpContext, Date.now());
+        return res;
+      })).catch(async (error: unknown) => {
+        await settleForbidden?.("none");
+        throw error;
+      });
+      if (!response.ok) {
+        // Only a bounded, structured Google quota reason can turn 403 into quota admission.
+        let quota = response.status === 429;
+        try {
+          const text = await wait(readResponseText(response, 65_536, signal)).catch(() => "");
+          quota ||= response.status === 403 && !signal.aborted && isRateLimit(text);
+        } finally {
+          // Logical sign-in can end while the coordinator still owns the durable ticket.
+          if (settleForbidden) await wait(settleForbidden(quota && !signal.aborted ? "quota" : "none"));
+        }
+        throw new ProviderError(quota ? L("errors.google.quota") : L("errors.google.signInFailed", { detail: response.status }), quota || response.status >= 500, false, false, httpResponse);
       }
-      if (!res.ok) httpResponse = captureHttpResponseEvidence(res, httpContext, Date.now());
-      return res;
-    })).catch(async (error: unknown) => {
-      await settleForbidden?.("none");
-      throw error;
-    });
-    if (!response.ok) {
-      // Only a bounded, structured Google quota reason can turn 403 into quota admission.
-      let quota = response.status === 429;
-      try {
-        const text = await wait(readResponseText(response, 65_536, signal)).catch(() => "");
-        quota ||= response.status === 403 && !signal.aborted && isRateLimit(text);
-      } finally {
-        // Logical sign-in can end while the coordinator still owns the durable ticket.
-        if (settleForbidden) await wait(settleForbidden(quota && !signal.aborted ? "quota" : "none"));
-      }
-      throw new ProviderError(quota ? L("errors.google.quota") : L("errors.google.signInFailed", { detail: response.status }), quota || response.status >= 500, false, false, httpResponse);
-    }
-    const reader = response.body?.getReader();
-    if (!reader) throw new ProviderError(L("errors.google.invalidResponse"), false);
-    let complete = false;
-    try {
-      const decoder = new TextDecoder();
-      const parts: string[] = [];
-      let size = 0;
-      while (true) {
-        const chunk = await wait(reader.read());
-        if (chunk.done) break;
-        size += chunk.value.byteLength;
-        if (size > 65_536) throw new ProviderError(L("errors.google.invalidResponse"), false);
-        parts.push(decoder.decode(chunk.value, { stream: true }));
-      }
-      complete = true;
-      parts.push(decoder.decode());
-      let value: unknown;
-      try { value = JSON.parse(parts.join("")); } catch { throw new ProviderError(L("errors.google.invalidResponse"), false); }
-      if (value === null || typeof value !== "object" || Array.isArray(value)) throw new ProviderError(L("errors.google.invalidResponse"), false);
-      return value as Record<string, unknown>;
-    } finally {
-      if (!complete) void reader.cancel().catch(() => {});
-      reader.releaseLock();
-    }
-  };
-  try {
-    signal.throwIfAborted();
-    const result = await run({ signal, wait, json });
-    signal.throwIfAborted();
-    return result;
-  } catch (error) {
-    if (error instanceof ProviderError && error.i18n?.key === "errors.google.quota") throw error;
-    if (signal.aborted) throw signal.reason;
-    if (error instanceof ProviderError) throw error;
-    throw new ProviderError(L("errors.google.unavailable"), true);
-  } finally {
-    clearTimeout(timer);
-    options.signal?.removeEventListener("abort", cancel);
-  }
+      return readJsonObject(response, flow, () => new ProviderError(L("errors.google.invalidResponse"), false));
+    };
+    return run({ ...flow, json });
+  });
 }
 
 /** Gmail proves the mailbox; userinfo supplies stable owner evidence for that same token. */

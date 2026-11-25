@@ -34,6 +34,8 @@ export interface LoopbackAuthorization {
   refused(error: string, description: string | null): { page: CallbackKey; error: Error };
   /** a malformed answer (several errors, an error beside a code, no code) */
   invalid(): Error;
+  /** what the page says to a malformed or forged answer (it names the provider) */
+  invalidPage: CallbackKey;
   openExternal(url: string): Promise<void>;
   /** the flow's signal: once aborted, the browser is never opened */
   signal: AbortSignal;
@@ -53,7 +55,7 @@ export function openLoopback(a: LoopbackAuthorization): { code: Promise<{ code: 
         res.end(a.page(ok, msg));
       };
       if (url.searchParams.get("state") !== a.state) {
-        done(false, "backend.oauth.invalid");
+        done(false, a.invalidPage);
         return; // ignore forged/stale redirects, keep waiting for the real one
       }
       if (settled) return void res.writeHead(409).end();
@@ -61,7 +63,7 @@ export function openLoopback(a: LoopbackAuthorization): { code: Promise<{ code: 
       const errors = url.searchParams.getAll("error");
       if (errors.length) {
         if (errors.length !== 1 || !errors[0] || url.searchParams.has("code")) {
-          done(false, "backend.oauth.invalid");
+          done(false, a.invalidPage);
           reject(a.invalid());
           return;
         }
@@ -72,7 +74,7 @@ export function openLoopback(a: LoopbackAuthorization): { code: Promise<{ code: 
       }
       const authorizationCode = url.searchParams.get("code");
       if (!authorizationCode?.trim() || url.searchParams.getAll("code").length !== 1) {
-        done(false, "backend.oauth.invalid");
+        done(false, a.invalidPage);
         reject(a.invalid());
         return;
       }
