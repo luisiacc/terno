@@ -61,14 +61,14 @@ export function microsoftRefusal(error: string, description: string | null): { p
  * refused: the form carries the code and its verifier, and the answer becomes the account's identity (Codex code
  * review #3). `notFound`: what a 404 means here.
  */
-async function microsoftJson(flow: SignInFlow, net: MicrosoftNet, url: string, init: RequestInit, httpContext: HttpRequestContext, notFound?: () => ProviderError): Promise<Record<string, unknown>> {
+async function microsoftJson(flow: SignInFlow, reach: MicrosoftNet, url: string, init: RequestInit, httpContext: HttpRequestContext, notFound?: () => ProviderError): Promise<Record<string, unknown>> {
   const { signal, wait } = flow;
   signal.throwIfAborted();
   let httpResponse: HttpResponseEvidence | undefined;
   const wire: RequestInit = { ...init, redirect: "error", signal };
   // through the ledger when the host gives one: a pause on Microsoft's token or Graph service holds a sign-in too, and
   // a throttle answered here pauses them
-  const sent = net.requests ? net.requests.request({ request: httpContext }, url, wire) : net.fetch(url, wire);
+  const sent = reach.requests ? reach.requests.request({ request: httpContext }, url, wire) : reach.fetch(url, wire);
   const response = await wait(sent.then((res) => {
     if (signal.aborted) {
       void res.body?.cancel().catch(() => {});
@@ -123,17 +123,17 @@ export function idTokenSubject(idToken: unknown, clientId: string, now = Date.no
 /** How a sign-in reaches Microsoft: the host's fetch, through its request ledger when it has one. */
 export interface MicrosoftNet { fetch: typeof fetch; requests?: Pick<AccountRequests, "request"> }
 
-export async function readMicrosoftIdentity(flow: SignInFlow, net: MicrosoftNet, ep: MicrosoftEndpoints, tokens: { accessToken: string; idToken: unknown; clientId: string }): Promise<Omit<MicrosoftConnectResult, "refreshToken" | "grantedScopes">> {
+export async function readMicrosoftIdentity(flow: SignInFlow, reach: MicrosoftNet, ep: MicrosoftEndpoints, tokens: { accessToken: string; idToken: unknown; clientId: string }): Promise<Omit<MicrosoftConnectResult, "refreshToken" | "grantedScopes">> {
   const ids = idTokenSubject(tokens.idToken, tokens.clientId);
   if (!ids) throw invalid();
-  const me = await microsoftJson(flow, net, `${ep.graph}/me?$select=mail,userPrincipalName,displayName`, { headers: { authorization: `Bearer ${tokens.accessToken}` } }, { endpoint: "microsoft-identity", purpose: "identity-proof" });
+  const me = await microsoftJson(flow, reach, `${ep.graph}/me?$select=mail,userPrincipalName,displayName`, { headers: { authorization: `Bearer ${tokens.accessToken}` } }, { endpoint: "microsoft-identity", purpose: "identity-proof" });
   // personal accounts often have no `mail`; their user principal name is the address
   const email = typeof me.mail === "string" && me.mail ? me.mail : me.userPrincipalName;
   if (typeof email !== "string" || email.length > 254 || !isValidEmail(email) || /\p{Cc}/u.test(email)) throw invalid();
   if (me.displayName !== undefined && me.displayName !== null && typeof me.displayName !== "string") throw invalid();
   // a profile isn't a mailbox: a work account without an Exchange Online licence, or a personal Microsoft account
   // under another provider's address, signs in but has no mail to keep (Codex code review #5)
-  const inbox = await microsoftJson(flow, net, `${ep.graph}/me/mailFolders/inbox?$select=id`, { headers: { authorization: `Bearer ${tokens.accessToken}` } }, { endpoint: "graph-api", purpose: "identity-proof" }, () => new ProviderError(L("errors.microsoft.noMailbox"), false));
+  const inbox = await microsoftJson(flow, reach, `${ep.graph}/me/mailFolders/inbox?$select=id`, { headers: { authorization: `Bearer ${tokens.accessToken}` } }, { endpoint: "graph-api", purpose: "identity-proof" }, () => new ProviderError(L("errors.microsoft.noMailbox"), false));
   if (typeof inbox.id !== "string" || !inbox.id) throw invalid();
   const tenant: MicrosoftTenant = ids.tid === CONSUMER_TENANT ? "consumers" : "organizations";
   return { email, name: typeof me.displayName === "string" ? me.displayName.slice(0, 256) : "", subject: `${ids.tid}:${ids.oid}`, tenant, ...(ids.username && { username: ids.username }) };
@@ -168,12 +168,12 @@ export async function connectMicrosoft(options: MicrosoftConnectOptions & { endp
       const code = await flow.wait(loopback.code);
       // a public client: PKCE and the loopback protect the code, there is no secret
       const body = new URLSearchParams({ client_id: options.clientId, scope, code: code.code, redirect_uri: code.redirectUri, grant_type: "authorization_code", code_verifier: verifier });
-      const net: MicrosoftNet = { fetch: options.fetch, ...(options.requests && { requests: options.requests }) };
-      const tokens = await microsoftJson(flow, net, ep.token, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body }, { endpoint: "microsoft-token", purpose: "authorization-code" });
+      const reach: MicrosoftNet = { fetch: options.fetch, ...(options.requests && { requests: options.requests }) };
+      const tokens = await microsoftJson(flow, reach, ep.token, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body }, { endpoint: "microsoft-token", purpose: "authorization-code" });
       if (!validTokenResponse(tokens)) throw invalid();
       const grantedScopes = typeof tokens.scope === "string" ? tokens.scope.split(/\s+/).filter(Boolean) : [...MICROSOFT_SCOPES];
       if (!microsoftMailGranted(grantedScopes)) throw new ProviderError(L("errors.microsoft.mailScopeRequired"), false);
-      const identity = await readMicrosoftIdentity(flow, net, ep, { accessToken: tokens.access_token, idToken: tokens.id_token, clientId: options.clientId });
+      const identity = await readMicrosoftIdentity(flow, reach, ep, { accessToken: tokens.access_token, idToken: tokens.id_token, clientId: options.clientId });
       return { ...identity, refreshToken: tokens.refresh_token as string, grantedScopes };
     } finally {
       await loopback.close();
