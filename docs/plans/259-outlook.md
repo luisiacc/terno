@@ -438,3 +438,68 @@ The storage-and-membership half, as revised after the critique. Move semantics a
   - It found one more defect. Fixtures that run today's ingest against an older mailbox (the opening and legacy-body tests) failed with "no such table". SQLite membership now reads `message_folders` only while it has rows, and a schema before v82 counts as having none, as `folderOpsPending` does for a missing index.
   - Everything else that failed also fails on the base: unit, `db-wasm` (`tabs.test`), 17 e2e, 10 smoke, and the five perf files already failing there.
   - The `idb.perf` gates missed by a few milliseconds on the loaded first pass, and all 25 pass run alone.
+||||||| parent of 1d29622d0 (docs(plans): plan 259, stage 1 as built: Microsoft sign-in, the Outlook account and owner, the shared OAuth pieces, the deviations (no cold renewal; Outlook's ledger services wait for stage 2), what stage 2 plugs into, and both Codex review rounds)
+
+
+## Stage 1 as built
+
+Everything in stage 1 except the visible "Continue with Microsoft" button, which is stage 3. The schema step is stage 0a's v81. The build wiring of `TERNO_MICROSOFT_CLIENTS` was also already in place from stage 0a.
+
+- **Shared OAuth pieces, lifted out of the Gmail code.** Gmail moved onto them, and its suites pass unchanged.
+  - `oauth-flow.ts`: the sign-in's deadline and cancel, bounded JSON answers, and the RFC 6749 token-response check. Each provider names its own words.
+  - `oauth-refresh.ts`: the refresh exchange. The provider names its refusals, its scope check, extra form fields (Microsoft's `scope`) and its words.
+  - The loopback's redirect path and malformed-answer page are now per provider.
+- **`packages/mail/src/microsoft.ts`.**
+  - `connectMicrosoft` signs in on `http://localhost:<port>` with no path. The listener is on 127.0.0.1, and Entra matches the registered `http://localhost` by its path and ignores only the port.
+  - It uses PKCE S256, a state, and `response_mode=query`. A new connection sends `prompt=select_account`; an account signing in again sends `login_hint` instead, since Microsoft doesn't take the two together.
+  - The code exchange is a public client's: no secret, with `scope` sent.
+  - The person comes from Graph's `/me` (`mail`, else `userPrincipalName`, and `displayName`) and the id_token's `tid` and `oid`. The subject is `<tid>:<oid>`, and the tenant is `consumers` for the documented consumer tenant id, else `organizations`.
+  - The id_token isn't signature-checked: it comes straight from the token endpoint over TLS (OIDC Core §3.1.3.7). Its `aud`, `iss` (the tenant's v2.0 issuer) and `exp` are checked.
+  - A mailbox probe (`/me/mailFolders/inbox?$select=id`) refuses an account with no Outlook mailbox before anything is kept. Examples are a work account without an Exchange Online licence, or a personal Microsoft account under another provider's address.
+  - Token and Graph requests, and every refresh (Gmail's too), refuse redirects. A code, its verifier or a refresh token is never replayed elsewhere.
+  - `exchangeMicrosoftRefresh` and `createMicrosoftSession` are the rotating refresh session over `createOAuthSession`. `invalid_grant`, `interaction_required` and `consent_required` mean signing in again (`errors.microsoft.revoked`). A renewed grant without mail means `errors.microsoft.permissionRequired`.
+- **`microsoft-scopes.ts` (portable).** It holds the scopes, the consumer tenant, and `microsoftMailGranted`. The grant check reads Microsoft's bare or resource-URL spellings in any case, so the backend checks a grant on every host.
+- **Error words** (`errors.microsoft.*`, en and es):
+  - `denied`: `access_denied`.
+  - `consentRequired`: AADSTS65001 or `consent_required`. This is consent not given, which the person may still give; the copy also says an administrator may have to allow Terno.
+  - `adminConsent`: AADSTS90093, 90094, 90095 or 900941, an administrator's approval.
+  - `noMailbox`, `mailScopeRequired`, `invalidResponse`, and the flow and refresh words.
+  - The callback page has its own Microsoft keys.
+- **Registry.** `connectMicrosoft` is optional on `ProviderRegistry`: test and demo registries lack it, and the backend then says Microsoft needs the desktop app. The web worker's registry refuses it with `errors.microsoft.needsDesktop`. `create()` for an outlook account still returns the not-yet provider.
+- **Endpoints move for tests** like Google's. They go through `createRegistry({ microsoft: { endpoints } })`, and `startDevServer` takes `microsoftClients`. `packages/mail/src/test/microsoft.fixture.ts` is a synthetic Microsoft. It matches the registered redirect as Entra does, checks PKCE, takes public clients only, rotates refresh tokens, and issues an id_token. It also answers `/me` and the mailbox probe. Stage 2's Graph tests can extend it.
+- **Backend.**
+  - `accounts.connectMicrosoft` keeps `OutlookAccountConfig { senderName, microsoftSubject, microsoftClientId, tenant }` and the refresh token in `account:N:refreshToken`. When it may, it claims the owner as `provider: "outlook"`, `verifiedBy: "microsoft_oauth"`, with evidence `{ microsoftSubject, tenant }`.
+  - `validateMicrosoftConnection` checks the identity, the refresh token and `Mail.ReadWrite` with `Mail.Send`.
+  - Reconnect and owner change go through `connectExistingMicrosoft`: the remembered registration, `login_hint`, and Microsoft's own refusal words. Another mailbox is refused as `errors.microsoft.connectedOther`, and another person behind the same address (a new `oid`) as `errors.microsoft.invalidResponse`. Admission compares `microsoftSubject` atomically through stage 0a's `oauthAdmission`.
+  - `oauthCredentialIntent` (renamed from `googleCredentialIntent`) refuses an omitted refresh token for any kind but Gmail.
+  - Removal changes nothing: the store deletes the secret, and no revoke is tried.
+- **Deviations from the plan.**
+  - There is no `beginMicrosoftRenewal`. Microsoft documents a refresh token on every code exchange that asks for `offline_access`, so a missing one is an invalid response. A cold renewal path would be built on undocumented behaviour.
+  - `HttpRequestContext` gained `graph-api`, `microsoft-token` and `microsoft-identity`. `COOLDOWN_SERVICES` and `OAUTH_SERVICES` did not, for two reasons:
+    - Stage 1's only Microsoft traffic is the interactive sign-in, one bounded flow through `fetchFor("mail")`, and nothing refreshes while `create()` is not-yet.
+    - The ledger would carry rows per owner for services nothing asks.
+    Stage 2 adds the three to both, with the Graph provider, and gives the sign-in an installation-scoped policy if Graph's throttling calls for it.
+- **For stage 2.**
+  - The provider gets its access tokens from `createMicrosoftSession(ctx, { endpoints })`, through `get(run?, admission?)`, `invalidate(token)` and `close()`.
+  - `ctx.oauthClient()` resolves the account's `microsoftClientId` (stage 0a), and `ctx.requests` stays undefined until `OAUTH_SERVICES.outlook` exists.
+  - Graph calls should refuse redirects as the sign-in does.
+- **Left as they are.**
+  - Two connects of the same address finishing together can both pass the "already connected" check. This is the same check-then-create race Gmail and IMAP have; a store-level uniqueness guard belongs to its own change across kinds.
+  - An Outlook account connected over RPC before stage 2 polls into the not-yet error. No UI can create one until stage 3, and stage 2 replaces the provider, so no special scheduling was added for the placeholder.
+- **Codex code review.** It found 10 issues. These were fixed, each with a test that fails without the fix:
+  1. The redirect path.
+  2. `prompt` beside `login_hint`.
+  3. Redirects on token requests.
+  5. The mailbox probe.
+  6. The id_token's `iss` and `exp`.
+  8. Consent versus an administrator's approval.
+  9. The remembered registration on reconnect.
+  10. The rotating fixture and the delayed write.
+
+  Issues 4 and 7 were left as described above.
+
+  A second round on the fixes found four more:
+  1. AADSTS90093 and 900941 are administrator blocks too. Fixed.
+  2. Reconnect's `login_hint` is the mailbox address, which can differ from a work account's sign-in name. Left: Entra then asks for the name, and stage 3 can keep the id_token's `preferred_username` for the hint if that proves common.
+  3. Graph's identity read and mailbox probe had no redirect test. Added.
+  4. The rotation test now holds the write itself.
