@@ -2505,6 +2505,8 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "errors.microsoft.notYet": "Esta versión de Terno todavía no admite cuentas de Outlook.",
   "errors.microsoft.denied": "Se denegó el acceso de Microsoft.",
   "errors.microsoft.adminConsent": "El administrador de tu organización tiene que permitir Terno antes de que puedas conectar esta cuenta. Pídele que lo apruebe e inténtalo de nuevo.",
+  "errors.microsoft.consentRequired": "Microsoft no le dio a Terno el acceso que necesita. Inténtalo de nuevo y acepta los permisos. Si tu organización administra esta cuenta, puede que su administrador tenga que permitir Terno.",
+  "errors.microsoft.noMailbox": "Esta cuenta de Microsoft no tiene un buzón de Outlook. Inicia sesión con una cuenta que lo tenga.",
   "errors.microsoft.invalidResponse": "Microsoft devolvió una respuesta de inicio de sesión no válida. Intenta iniciar sesión de nuevo.",
   "errors.microsoft.mailScopeRequired": "Microsoft no le dio a Terno acceso a tu correo. Permítelo en la ventana de Microsoft e inténtalo de nuevo.",
   "errors.microsoft.unavailable": "No se pudo completar el inicio de sesión con Microsoft. Revisa tu conexión e inténtalo de nuevo.",

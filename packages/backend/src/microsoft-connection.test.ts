@@ -61,8 +61,13 @@ describe("accounts.connectMicrosoft (plan 259)", () => {
     browse("deny");
     await expect(client.call("accounts.connectMicrosoft", {})).rejects.toMatchObject({ i18n: { key: "errors.microsoft.denied" } });
     browse({ error: "consent_required" });
+    await expect(client.call("accounts.connectMicrosoft", {})).rejects.toMatchObject({ i18n: { key: "errors.microsoft.consentRequired" } });
+    browse({ error: "access_denied", description: "AADSTS90094: The grant requires admin permission." });
     await expect(client.call("accounts.connectMicrosoft", {})).rejects.toMatchObject({ i18n: { key: "errors.microsoft.adminConsent" } });
     browse("approve");
+    ms.mailbox = false;
+    await expect(client.call("accounts.connectMicrosoft", {})).rejects.toMatchObject({ i18n: { key: "errors.microsoft.noMailbox" } });
+    ms.mailbox = true;
     ms.grantedScope = "openid https://graph.microsoft.com/Mail.ReadWrite";
     await expect(client.call("accounts.connectMicrosoft", {})).rejects.toMatchObject({ i18n: { key: "errors.microsoft.mailScopeRequired" } });
     expect((await backend.store.accounts.list()).map((a) => a.email)).toEqual(["ana@contoso.com"]);
@@ -98,10 +103,43 @@ describe("an Outlook account signs in again (plan 259)", () => {
     const first = await backend.getSecret(`account:${account.id}:refreshToken`);
     await client.call("accounts.reconnect", { id: account.id });
     expect(ms.authorizations.at(-1)!.get("login_hint")).toBe("ana@contoso.com");
+    expect(ms.authorizations.at(-1)!.has("prompt")).toBe(false);
     expect(ms.tokenRequests.at(-1)!.get("client_id")).toBe(ms.clientId);
     const second = await backend.getSecret(`account:${account.id}:refreshToken`);
     expect(second).not.toBe(first);
     expect(ms.refreshTokens.has(second!)).toBe(true);
+  });
+
+  it("Codex code review #9: reconnect uses the registration that connected the account, not the build's preferred one", async () => {
+    const ms = await new SyntheticMicrosoft().start();
+    cleanups.push(() => ms.stop());
+    const dir = mkdtempSync(join(tmpdir(), "terno-outlook-clients-"));
+    cleanups.push(async () => rmSync(dir, { recursive: true, force: true }));
+    const older = ms.clientId, newer = "00000000-0000-0000-0000-0000000000b2";
+    ms.clients.add(newer);
+    const open = (preferred: string) => {
+      const backend = new Backend({
+        dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, autoSync: false, openExternal: ms.browser(),
+        providers: createRegistry({ microsoft: { endpoints: ms.endpoints() } }),
+        microsoftClients: { preferred, clients: [{ clientId: older, clientSecret: "" }, { clientId: newer, clientSecret: "" }] },
+      });
+      const [c, s] = createMemoryTransportPair();
+      backend.connect(s, { clientId: "r", origin: "renderer" });
+      return { backend, client: new RpcClient(c, { defaultTimeoutMs: 20_000 }) };
+    };
+    const first = open(older);
+    const account = await first.client.call("accounts.connectMicrosoft", {});
+    await first.backend.stop();
+    const later = open(newer);
+    cleanups.push(() => later.backend.stop());
+    await later.client.call("accounts.reconnect", { id: account.id });
+    expect(ms.authorizations.at(-1)!.get("client_id")).toBe(older);
+    expect(ms.tokenRequests.at(-1)!.get("client_id")).toBe(older);
+    expect((await later.backend.store.accounts.config<Record<string, unknown>>(account.id))!.config.microsoftClientId).toBe(older);
+    ms.mail = ms.userPrincipalName = "bea@contoso.com";
+    ms.oid = "22222222-2222-3333-4444-555555555555";
+    await later.client.call("accounts.connectMicrosoft", {});
+    expect(ms.tokenRequests.at(-1)!.get("client_id")).toBe(newer);
   });
 
   it("reconnect: another mailbox, or another person behind the same address, changes nothing", async () => {

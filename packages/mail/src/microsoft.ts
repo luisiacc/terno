@@ -36,26 +36,35 @@ const MICROSOFT_SIGN_IN: SignInWords = {
 const invalid = () => new ProviderError(L("errors.microsoft.invalidResponse"), false);
 
 /**
- * An organisation that requires an administrator's approval refuses in the error_description (AADSTS65001: not
- * consented; AADSTS90094: the grant requires admin permission) or as consent_required. The person can't fix it by
- * trying again, so it says who can.
+ * A refusal about consent, named only in the error_description's AADSTS code. Only AADSTS90094 (the grant requires
+ * admin permission) and AADSTS90095 (an admin consent request) say an administrator must approve; AADSTS65001 and
+ * consent_required say consent wasn't given, which the person may still give (Codex code review #8).
  */
-const needsAdmin = (error: unknown, description: unknown) =>
-  error === "consent_required" || (typeof description === "string" && /\bAADSTS(?:65001|90094)\b|\badmin/i.test(description));
+function consentRefusal(error: unknown, description: unknown): "errors.microsoft.adminConsent" | "errors.microsoft.consentRequired" | null {
+  const text = typeof description === "string" ? description : "";
+  if (/\bAADSTS9009[45]\b/.test(text)) return "errors.microsoft.adminConsent";
+  if (error === "consent_required" || /\bAADSTS65001\b/.test(text)) return "errors.microsoft.consentRequired";
+  return null;
+}
 
 /** A refused authorization (the redirect's ?error=): what the page says and what the caller hears. */
 export function microsoftRefusal(error: string, description: string | null): { page: CallbackKey; error: ProviderError } {
-  if (needsAdmin(error, description)) return { page: "errors.microsoft.adminConsent", error: new ProviderError(L("errors.microsoft.adminConsent"), false) };
+  const consent = consentRefusal(error, description);
+  if (consent) return { page: consent, error: new ProviderError(L(consent), false) };
   if (error === "access_denied") return { page: "backend.oauth.microsoftDenied", error: new ProviderError(L("errors.microsoft.denied"), false) };
   return { page: "backend.oauth.microsoftInvalid", error: invalid() };
 }
 
-/** One bounded JSON answer from Microsoft's token endpoint or Graph, within the sign-in's deadline. */
-async function microsoftJson(flow: SignInFlow, netFetch: typeof fetch, url: string, init: RequestInit, httpContext: HttpRequestContext): Promise<Record<string, unknown>> {
+/**
+ * One bounded JSON answer from Microsoft's token endpoint or Graph, within the sign-in's deadline. A redirect is
+ * refused: the form carries the code and its verifier, and the answer becomes the account's identity (Codex code
+ * review #3). `notFound`: what a 404 means here.
+ */
+async function microsoftJson(flow: SignInFlow, netFetch: typeof fetch, url: string, init: RequestInit, httpContext: HttpRequestContext, notFound?: () => ProviderError): Promise<Record<string, unknown>> {
   const { signal, wait } = flow;
   signal.throwIfAborted();
   let httpResponse: HttpResponseEvidence | undefined;
-  const response = await wait(netFetch(url, { ...init, signal }).then((res) => {
+  const response = await wait(netFetch(url, { ...init, redirect: "error", signal }).then((res) => {
     if (signal.aborted) {
       void res.body?.cancel().catch(() => {});
       throw signal.reason;
@@ -69,8 +78,10 @@ async function microsoftJson(flow: SignInFlow, netFetch: typeof fetch, url: stri
       const parsed: unknown = JSON.parse(await wait(readResponseText(response, 65_536, signal)).catch(() => ""));
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) body = parsed as Record<string, unknown>;
     } catch { /* an unreadable error body says only its status */ }
-    // the code exchange is where a tenant's admin-consent requirement can surface too
-    if (needsAdmin(body.error, body.error_description)) throw new ProviderError(L("errors.microsoft.adminConsent"), false, false, false, httpResponse);
+    // the code exchange is where a tenant's consent requirement can surface too
+    const consent = consentRefusal(body.error, body.error_description);
+    if (consent) throw new ProviderError(L(consent), false, false, false, httpResponse);
+    if (response.status === 404 && notFound) throw notFound();
     throw new ProviderError(L("errors.microsoft.signInFailed", { detail: response.status }), response.status === 429 || response.status >= 500, false, false, httpResponse);
   }
   return readJsonObject(response, flow, invalid);
@@ -80,9 +91,10 @@ const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * The id_token's tenant and object ids. It came straight from the token endpoint over TLS, which OpenID Connect
- * Core §3.1.3.7 accepts in place of its signature; its audience must still be this client.
+ * Core §3.1.3.7 accepts in place of its signature; its issuer (the tenant's v2.0 issuer), audience (this client) and
+ * expiry are still checked (Codex code review #6). `now` allows five minutes of clock skew.
  */
-export function idTokenSubject(idToken: unknown, clientId: string): { tid: string; oid: string } | null {
+export function idTokenSubject(idToken: unknown, clientId: string, now = Date.now()): { tid: string; oid: string } | null {
   if (typeof idToken !== "string" || idToken.length > 16_384) return null;
   const parts = idToken.split(".");
   if (parts.length !== 3 || !/^[A-Za-z0-9_-]+$/.test(parts[1]!)) return null;
@@ -93,8 +105,10 @@ export function idTokenSubject(idToken: unknown, clientId: string): { tid: strin
     claims = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(binary, (c) => c.charCodeAt(0))));
   } catch { return null; }
   if (!claims || typeof claims !== "object" || Array.isArray(claims)) return null;
-  const { aud, tid, oid } = claims as Record<string, unknown>;
+  const { aud, tid, oid, iss, exp } = claims as Record<string, unknown>;
   if (aud !== clientId || typeof tid !== "string" || !GUID.test(tid) || typeof oid !== "string" || !GUID.test(oid)) return null;
+  if (typeof iss !== "string" || iss.toLowerCase() !== `https://login.microsoftonline.com/${tid.toLowerCase()}/v2.0`) return null;
+  if (typeof exp !== "number" || !Number.isFinite(exp) || exp * 1000 <= now - 300_000) return null;
   return { tid: tid.toLowerCase(), oid: oid.toLowerCase() };
 }
 
@@ -107,13 +121,18 @@ export async function readMicrosoftIdentity(flow: SignInFlow, netFetch: typeof f
   const email = typeof me.mail === "string" && me.mail ? me.mail : me.userPrincipalName;
   if (typeof email !== "string" || email.length > 254 || !isValidEmail(email) || /\p{Cc}/u.test(email)) throw invalid();
   if (me.displayName !== undefined && me.displayName !== null && typeof me.displayName !== "string") throw invalid();
+  // a profile isn't a mailbox: a work account without an Exchange Online licence, or a personal Microsoft account
+  // under another provider's address, signs in but has no mail to keep (Codex code review #5)
+  const inbox = await microsoftJson(flow, netFetch, `${ep.graph}/me/mailFolders/inbox?$select=id`, { headers: { authorization: `Bearer ${tokens.accessToken}` } }, { endpoint: "graph-api", purpose: "identity-proof" }, () => new ProviderError(L("errors.microsoft.noMailbox"), false));
+  if (typeof inbox.id !== "string" || !inbox.id) throw invalid();
   const tenant: MicrosoftTenant = ids.tid === CONSUMER_TENANT ? "consumers" : "organizations";
   return { email, name: typeof me.displayName === "string" ? me.displayName.slice(0, 256) : "", subject: `${ids.tid}:${ids.oid}`, tenant };
 }
 
 /**
- * RFC 8252 flow on http://localhost:<random>/callback (the listener is on 127.0.0.1), PKCE S256 and a random state;
- * `prompt=select_account` so a second mailbox can be picked, and `login_hint` when an account signs in again.
+ * RFC 8252 flow on http://localhost:<random> (the listener is on 127.0.0.1), PKCE S256 and a random state. A new
+ * connection asks `prompt=select_account` so a second mailbox can be picked; an account signing in again sends
+ * `login_hint` instead, since Microsoft doesn't take the two together (Codex code review #2).
  */
 export async function connectMicrosoft(options: MicrosoftConnectOptions & { endpoints?: Partial<MicrosoftEndpoints>; timeoutMs?: number }): Promise<MicrosoftConnectResult> {
   return withSignIn({ signal: options.signal, timeoutMs: options.timeoutMs ?? 300_000, words: MICROSOFT_SIGN_IN }, async (flow) => {
@@ -122,7 +141,7 @@ export async function connectMicrosoft(options: MicrosoftConnectOptions & { endp
     const { verifier, challenge, state } = pkce();
     const page = await flow.wait(callbackPage());
     const loopback = openLoopback({
-      authorize: ep.authorize, state, redirectHost: "localhost", page, invalid, invalidPage: "backend.oauth.microsoftInvalid", openExternal: options.openExternal, signal: flow.signal,
+      authorize: ep.authorize, state, redirectHost: "localhost", redirectPath: "", page, invalid, invalidPage: "backend.oauth.microsoftInvalid", openExternal: options.openExternal, signal: flow.signal,
       params: {
         client_id: options.clientId,
         response_type: "code",
@@ -131,8 +150,7 @@ export async function connectMicrosoft(options: MicrosoftConnectOptions & { endp
         code_challenge: challenge,
         code_challenge_method: "S256",
         state,
-        prompt: "select_account",
-        ...(options.loginHint && { login_hint: options.loginHint }),
+        ...(options.loginHint ? { login_hint: options.loginHint } : { prompt: "select_account" }),
       },
       refused: microsoftRefusal,
     });

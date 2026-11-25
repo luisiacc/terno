@@ -44,7 +44,7 @@ export async function connectGmail(options: ConnectOptions): Promise<GmailConnec
     const page = await flow.wait(callbackPage());
     const invalid = () => new ProviderError(L("errors.google.invalidResponse"), false);
     const loopback = openLoopback({
-      authorize: ep.auth, state, redirectHost: "127.0.0.1", page, invalid, invalidPage: "backend.oauth.invalid", openExternal: options.openExternal, signal: flow.signal,
+      authorize: ep.auth, state, redirectHost: "127.0.0.1", redirectPath: "/callback", page, invalid, invalidPage: "backend.oauth.invalid", openExternal: options.openExternal, signal: flow.signal,
       params: {
         client_id: options.clientId,
         response_type: "code",

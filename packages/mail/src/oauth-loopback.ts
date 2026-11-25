@@ -25,6 +25,11 @@ export interface LoopbackAuthorization {
    * matches a desktop client's loopback port only for `localhost` (plan 259).
    */
   redirectHost: "127.0.0.1" | "localhost";
+  /**
+   * The path the redirect names, as the app registration has it: Google's `/callback`; Microsoft's none, since Entra
+   * matches the registered `http://localhost` by its path too and ignores only the port (Codex code review #1).
+   */
+  redirectPath: "/callback" | "";
   /** the page the browser shows after the redirect */
   page: (ok: boolean, key: CallbackKey) => string;
   /**
@@ -45,11 +50,11 @@ export interface LoopbackAuthorization {
 export function openLoopback(a: LoopbackAuthorization): { code: Promise<{ code: string; redirectUri: string }>; close(): Promise<void> } {
   let server: Server | null = null;
   let settled = false;
-  const redirectUri = (port: number) => `http://${a.redirectHost}:${port}/callback`;
+  const redirectUri = (port: number) => `http://${a.redirectHost}:${port}${a.redirectPath}`;
   const code = new Promise<{ code: string; redirectUri: string }>((resolve, reject) => {
     server = createServer((req, res) => {
       const url = new URL(req.url ?? "/", "http://127.0.0.1");
-      if (url.pathname !== "/callback") return void res.writeHead(404).end();
+      if (url.pathname !== (a.redirectPath || "/")) return void res.writeHead(404).end();
       const done = (ok: boolean, msg: CallbackKey) => {
         res.writeHead(ok ? 200 : 400, { "content-type": "text/html; charset=utf-8" });
         res.end(a.page(ok, msg));

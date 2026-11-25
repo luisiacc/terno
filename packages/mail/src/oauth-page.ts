@@ -1,7 +1,7 @@
 import { DEFAULT_LOCALE, LOCALE_IDS, LOCALES } from "@terno/i18n";
 
 export type CallbackKey = "backend.oauth.invalid" | "backend.oauth.denied" | "backend.oauth.back" | "errors.google.adminPolicy"
-  | "backend.oauth.microsoftInvalid" | "backend.oauth.microsoftDenied" | "errors.microsoft.adminConsent";
+  | "backend.oauth.microsoftInvalid" | "backend.oauth.microsoftDenied" | "errors.microsoft.adminConsent" | "errors.microsoft.consentRequired";
 
 // brand/terno-icon.svg: the app icon the user knows from the Dock
 const ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="24" fill="#2F5BFF"/><rect x="18" y="30" width="64" height="44" rx="7" fill="none" stroke="#FFFFFF" stroke-opacity="0.45" stroke-width="4"/><path d="M24 40 L45 56 M76 40 L55 56" fill="none" stroke="#FFFFFF" stroke-opacity="0.45" stroke-width="4" stroke-linecap="round"/><rect x="18" y="28" width="64" height="12" rx="6" fill="#FFFFFF"/><rect x="44" y="28" width="12" height="46" rx="6" fill="#FFFFFF"/></svg>`;

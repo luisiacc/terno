@@ -2527,6 +2527,8 @@ It contains none of your mail, contacts, settings or keys.
   // plan 259: Microsoft sign-in (Outlook over Microsoft Graph)
   "errors.microsoft.denied": "Microsoft access was denied.",
   "errors.microsoft.adminConsent": "Your organization’s administrator has to allow Terno before you can connect this account. Ask them to approve it, then try again.",
+  "errors.microsoft.consentRequired": "Microsoft didn’t give Terno the access it needs. Try again and accept the permissions. If your organization manages this account, its administrator may have to allow Terno.",
+  "errors.microsoft.noMailbox": "This Microsoft account has no Outlook mailbox. Sign in with an account that has one.",
   "errors.microsoft.invalidResponse": "Microsoft returned an invalid sign-in response. Try signing in again.",
   "errors.microsoft.mailScopeRequired": "Microsoft didn’t give Terno access to your mail. Allow it in the Microsoft window and try again.",
   "errors.microsoft.unavailable": "Couldn’t finish Microsoft sign-in. Check your connection and try again.",

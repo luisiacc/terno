@@ -19,8 +19,23 @@ const connect = (ms: SyntheticMicrosoft, behaviour?: Parameters<SyntheticMicroso
 
 const key = (error: unknown) => (error as ProviderError).i18n?.key;
 
+function context(ms: SyntheticMicrosoft, initial: string) {
+  const stored = { refreshToken: initial as string | null };
+  const ctx = {
+    fetch,
+    getSecret: async () => stored.refreshToken,
+    replaceSecret: async (_name: string, expected: string, next: string) => {
+      if (stored.refreshToken !== expected && stored.refreshToken !== next) return false;
+      stored.refreshToken = next;
+      return true;
+    },
+    oauthClient: async () => ({ clientId: ms.clientId, clientSecret: null }),
+  } as unknown as ProviderContext;
+  return { ctx, stored };
+}
+
 describe("connectMicrosoft (plan 259)", () => {
-  it("asks Microsoft for exactly Outlook's scopes on the localhost loopback, as a public client, and reads who signed in", async () => {
+  it("asks Microsoft for exactly Outlook's scopes on the registered localhost redirect, as a public client, and reads who signed in", async () => {
     const ms = await microsoft();
     const result = await connect(ms);
     const asked = ms.authorizations[0]!;
@@ -28,7 +43,8 @@ describe("connectMicrosoft (plan 259)", () => {
       client_id: ms.clientId, response_type: "code", response_mode: "query", scope: "openid email profile offline_access User.Read Mail.ReadWrite Mail.Send",
       code_challenge_method: "S256", prompt: "select_account",
     });
-    expect(new URL(asked.get("redirect_uri")!)).toMatchObject({ protocol: "http:", hostname: "localhost", pathname: "/callback" });
+    // Codex code review #1: the registration is http://localhost, and Entra ignores only the port
+    expect(asked.get("redirect_uri")).toMatch(/^http:\/\/localhost:\d+$/);
     const exchange = ms.tokenRequests[0]!;
     expect(exchange.has("client_secret")).toBe(false);
     expect(exchange.get("redirect_uri")).toBe(asked.get("redirect_uri"));
@@ -45,10 +61,17 @@ describe("connectMicrosoft (plan 259)", () => {
     expect(await connect(ms)).toMatchObject({ email: "ana@outlook.com", name: "", tenant: "consumers", subject: `9188040d-6c67-4c5b-b112-36a304b66dad:${ms.oid}` });
   });
 
-  it("signing an account in again pre-fills it on Microsoft's page", async () => {
+  it("Codex code review #2: signing an account in again pre-fills it on Microsoft's page, without prompt=select_account", async () => {
     const ms = await microsoft();
     await connect(ms, "approve", { loginHint: "ana@contoso.com" });
     expect(ms.authorizations[0]!.get("login_hint")).toBe("ana@contoso.com");
+    expect(ms.authorizations[0]!.has("prompt")).toBe(false);
+  });
+
+  it("Codex code review #5: an account without an Outlook mailbox is refused in its own words", async () => {
+    const ms = (await microsoft()).personal("ana@gmail.com");
+    ms.mailbox = false;
+    expect(key(await connect(ms).catch((e: unknown) => e))).toBe("errors.microsoft.noMailbox");
   });
 
   it("an omitted scope is the request's; a grant without mail is refused in Microsoft's words", async () => {
@@ -59,33 +82,53 @@ describe("connectMicrosoft (plan 259)", () => {
     expect(key(await connect(ms).catch((e: unknown) => e))).toBe("errors.microsoft.mailScopeRequired");
   });
 
-  it("an id_token for another client, or none, is an invalid response", async () => {
+  it("an id_token for another client, from another issuer, expired, or none, is an invalid response (Codex code review #6)", async () => {
     const ms = await microsoft();
-    ms.audience = "someone-else";
-    expect(key(await connect(ms).catch((e: unknown) => e))).toBe("errors.microsoft.invalidResponse");
+    for (const claims of [{ aud: "someone-else" }, { iss: "https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/v2.0" }, { iss: undefined }, { exp: Math.floor(Date.now() / 1000) - 3600 }, { exp: undefined }]) {
+      ms.claims = claims;
+      expect(key(await connect(ms).catch((e: unknown) => e))).toBe("errors.microsoft.invalidResponse");
+    }
+    ms.claims = {};
+    expect(await connect(ms)).toMatchObject({ subject: `${ms.tid}:${ms.oid}` });
     expect(idTokenSubject(undefined, ms.clientId)).toBeNull();
     expect(idTokenSubject("not.a.jwt", ms.clientId)).toBeNull();
   });
 
-  it("maps Microsoft's refusals: denied, an administrator's approval needed, anything else invalid", async () => {
+  it("maps Microsoft's refusals: denied, consent not given, an administrator's approval needed, anything else invalid", async () => {
     const ms = await microsoft();
     expect(key(await connect(ms, "deny").catch((e: unknown) => e))).toBe("errors.microsoft.denied");
-    expect(key(await connect(ms, { error: "consent_required" }).catch((e: unknown) => e))).toBe("errors.microsoft.adminConsent");
-    expect(key(await connect(ms, { error: "interaction_required", description: "AADSTS65001: The user or administrator has not consented to use the application" }).catch((e: unknown) => e))).toBe("errors.microsoft.adminConsent");
+    // Codex code review #8: consent not given isn't an administrator's block
+    expect(key(await connect(ms, { error: "consent_required" }).catch((e: unknown) => e))).toBe("errors.microsoft.consentRequired");
+    expect(key(await connect(ms, { error: "interaction_required", description: "AADSTS65001: The user or administrator has not consented to use the application" }).catch((e: unknown) => e))).toBe("errors.microsoft.consentRequired");
+    expect(key(await connect(ms, { error: "access_denied", description: "AADSTS90094: The grant requires admin permission." }).catch((e: unknown) => e))).toBe("errors.microsoft.adminConsent");
     expect(key(await connect(ms, { error: "server_error" }).catch((e: unknown) => e))).toBe("errors.microsoft.invalidResponse");
-    expect(microsoftRefusal("access_denied", "AADSTS90094: The grant requires admin permission.").page).toBe("errors.microsoft.adminConsent");
+    expect(microsoftRefusal("access_denied", "AADSTS90095: Admin consent is required for the permissions requested by this application.").page).toBe("errors.microsoft.adminConsent");
+    expect(microsoftRefusal("access_denied", "the administrator can't be reached").page).toBe("backend.oauth.microsoftDenied");
     expect(microsoftRefusal("access_denied", null).page).toBe("backend.oauth.microsoftDenied");
     expect(microsoftRefusal("invalid_request", null).page).toBe("backend.oauth.microsoftInvalid");
   });
 
-  it("the code exchange's answer: an administrator's refusal says so; a server failure is retryable", async () => {
+  it("the code exchange's answer: a consent refusal says so; a server failure is retryable", async () => {
     const ms = await microsoft();
     ms.tokenFailure = { status: 400, body: { error: "invalid_grant", error_description: "AADSTS65001: The user or administrator has not consented" } };
+    expect(key(await connect(ms).catch((e: unknown) => e))).toBe("errors.microsoft.consentRequired");
+    ms.tokenFailure = { status: 400, body: { error: "invalid_grant", error_description: "AADSTS90094: The grant requires admin permission." } };
     expect(key(await connect(ms).catch((e: unknown) => e))).toBe("errors.microsoft.adminConsent");
     ms.tokenFailure = { status: 503, body: {} };
     const failure = await connect(ms).catch((e: unknown) => e) as ProviderError;
     expect(key(failure)).toBe("errors.microsoft.signInFailed");
     expect(failure.retryable).toBe(true);
+  });
+
+  it("Codex code review #3: a token endpoint that redirects never gets the code or the refresh token replayed elsewhere", async () => {
+    const ms = await microsoft();
+    const elsewhere = await microsoft();
+    ms.tokenRedirect = `${elsewhere.url}/common/oauth2/v2.0/token`;
+    await expect(connect(ms)).rejects.toBeInstanceOf(ProviderError);
+    const session = createMicrosoftSession(context(ms, "refresh-any").ctx, { endpoints: ms.endpoints() });
+    try { await expect(session.get()).rejects.toBeInstanceOf(Error); } finally { session.close(); }
+    expect(ms.tokenRequests.length).toBe(2);
+    expect(elsewhere.tokenRequests).toEqual([]);
   });
 
   it("names Outlook's mail scopes in either of Microsoft's spellings", () => {
@@ -97,40 +140,37 @@ describe("connectMicrosoft (plan 259)", () => {
 });
 
 describe("Microsoft's refresh session (plan 259)", () => {
-  function context(ms: SyntheticMicrosoft, initial: string) {
-    const stored = { refreshToken: initial as string | null };
-    const ctx = {
-      fetch,
-      getSecret: async () => stored.refreshToken,
-      replaceSecret: async (_name: string, expected: string, next: string) => {
-        if (stored.refreshToken !== expected && stored.refreshToken !== next) return false;
-        stored.refreshToken = next;
-        return true;
-      },
-      oauthClient: async () => ({ clientId: ms.clientId, clientSecret: null }),
-    } as unknown as ProviderContext;
-    return { ctx, stored };
-  }
-
-  it("refreshes as a public client and keeps each rotated refresh token before using its access", async () => {
+  it("refreshes as a public client, keeps each new refresh token before using its access, and refreshes with it next", async () => {
     const ms = await microsoft();
     const signedIn = await connect(ms);
     const { ctx, stored } = context(ms, signedIn.refreshToken);
+    // Codex code review #10: the write is slow; no access token comes back before it has committed
+    let release!: () => void;
+    const written = new Promise<void>((resolve) => { release = resolve; });
+    const replace = ctx.replaceSecret.bind(ctx);
+    ctx.replaceSecret = async (name, expected, next) => { await written; return replace(name, expected, next); };
     const session = createMicrosoftSession(ctx, { endpoints: ms.endpoints() });
     try {
-      const first = await session.get();
-      expect(ms.refreshCalls).toBe(1);
+      let settled = false;
+      const pending = session.get().then((token) => { settled = true; return token; });
+      while (ms.refreshCalls === 0) await new Promise((r) => setTimeout(r, 5));
+      await new Promise((r) => setTimeout(r, 20));
+      expect(settled).toBe(false);
+      expect(stored.refreshToken).toBe(signedIn.refreshToken);
+      release();
+      const first = await pending;
       const refresh = ms.tokenRequests.at(-1)!;
       expect(refresh.get("grant_type")).toBe("refresh_token");
+      expect(refresh.get("refresh_token")).toBe(signedIn.refreshToken);
       expect(refresh.has("client_secret")).toBe(false);
       expect(refresh.get("scope")).toBe(MICROSOFT_SCOPES.join(" "));
-      // the old one is spent at Microsoft; the new one is what's stored
-      expect(stored.refreshToken).not.toBe(signedIn.refreshToken);
-      expect(ms.refreshTokens.has(stored.refreshToken!)).toBe(true);
+      const rotated = stored.refreshToken;
+      expect(rotated).not.toBe(signedIn.refreshToken);
       expect(await session.get()).toBe(first);
       session.invalidate(first);
       expect(await session.get()).not.toBe(first);
       expect(ms.refreshCalls).toBe(2);
+      expect(ms.tokenRequests.at(-1)!.get("refresh_token")).toBe(rotated);
     } finally { session.close(); }
   });
 

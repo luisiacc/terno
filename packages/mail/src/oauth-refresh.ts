@@ -71,7 +71,8 @@ export async function exchangeOAuthRefresh(options: OAuthRefreshOptions, provide
     signal.throwIfAborted();
     const body = new URLSearchParams({ grant_type: "refresh_token", refresh_token: options.refreshToken, client_id: options.clientId, ...provider.params });
     if (options.clientSecret) body.set("client_secret", options.clientSecret);
-    const init = { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body, signal };
+    // the form carries the refresh token: a redirect would replay it to wherever it points (Codex code review #3)
+    const init: RequestInit = { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body, redirect: "error", signal };
     const dispatched = options.requests ? options.requests.request({ request: provider.request, admission: options.admission, run: options.run, generation: options.generation ?? options.requests.generation(), onHeaders: (status, evidence) => { responseStatus = status; httpResponse = evidence; } }, options.url, init) : options.fetch(options.url, init);
     const response = await wait(dispatched.then((res) => {
       if (signal.aborted) {

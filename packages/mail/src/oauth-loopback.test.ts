@@ -8,10 +8,10 @@ import { ProviderAuthError, ProviderError, type ProviderContext } from "./types"
 // depth); here, what a second provider relies on: its own redirect host, refusals and words.
 const page = (ok: boolean, key: string) => `${ok}:${key}`;
 
-function open(redirectHost: "127.0.0.1" | "localhost", state = "s1") {
+function open(redirectHost: "127.0.0.1" | "localhost", state = "s1", redirectPath: "/callback" | "" = "/callback") {
   let opened!: URL;
   const loopback = openLoopback({
-    authorize: "https://login.example.test/authorize", state, redirectHost, page, signal: new AbortController().signal,
+    authorize: "https://login.example.test/authorize", state, redirectHost, redirectPath, page, signal: new AbortController().signal,
     params: { client_id: "public-client", response_type: "code", state, prompt: "select_account" },
     refused: (error, description) => ({ page: "backend.oauth.denied", error: new ProviderError(`refused ${error} ${description ?? "-"}`, false) }),
     invalid: () => new ProviderError("invalid", false), invalidPage: "backend.oauth.invalid",
@@ -35,6 +35,18 @@ describe("the shared OAuth loopback (plan 259)", () => {
       const answer = await fetch(`http://127.0.0.1:${redirect.port}/callback?state=s1&code=the-code`);
       expect(await answer.text()).toBe("true:backend.oauth.back");
       expect(await loopback.code).toEqual({ code: "the-code", redirectUri: `http://localhost:${redirect.port}/callback` });
+    } finally { await loopback.close(); }
+  });
+
+  it("Codex code review #1: a redirect with no path (Entra's registered http://localhost) is answered at the root", async () => {
+    const { loopback, ready } = open("localhost", "s1", "");
+    try {
+      const url = await ready();
+      const port = new URL(url.searchParams.get("redirect_uri")!).port;
+      expect(url.searchParams.get("redirect_uri")).toBe(`http://localhost:${port}`);
+      expect((await fetch(`http://127.0.0.1:${port}/callback?state=s1&code=x`)).status).toBe(404);
+      expect(await (await fetch(`http://127.0.0.1:${port}/?state=s1&code=the-code`)).text()).toBe("true:backend.oauth.back");
+      expect(await loopback.code).toEqual({ code: "the-code", redirectUri: `http://localhost:${port}` });
     } finally { await loopback.close(); }
   });
 
