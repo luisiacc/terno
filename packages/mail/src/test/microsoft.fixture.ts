@@ -206,6 +206,14 @@ export class SyntheticMicrosoft {
     this.changed(folder, id);
   }
 
+  /** another app changes the message (a draft's text, its subject), and moves it when `folder` is given (a draft sent) */
+  edit(id: string, fields: Partial<Omit<GraphMessageFixture, "id" | "folder">>, folder?: string): void {
+    const m = this.messages.get(id)!;
+    Object.assign(m, fields);
+    if (folder !== undefined && folder !== m.folder) return this.move(id, folder);
+    this.changed(m.folder, id);
+  }
+
   setRead(id: string, isRead: boolean): void {
     const m = this.messages.get(id)!;
     m.isRead = isRead;
@@ -674,6 +682,7 @@ export class SyntheticMicrosoft {
           })).slice(0, 1000);
           return this.listing(found, req, url, "/me/messages", json, { search });
         }
+        if (url.searchParams.has("$filter") && url.searchParams.has("$orderby") && url.searchParams.get("$orderby") !== "receivedDateTime desc") return json(400, { error: { code: "InefficientFilter" } });
         return this.listing([...this.messages.values()], req, url, "/me/messages", json);
       }
       const m = this.messages.get(parts[1]!);

@@ -52,6 +52,8 @@ async function setup(o: {
   /** an answer of the test's own in place of Graph's */
   respond?: (url: string) => Response | undefined;
   pendingAttachments?: () => { id: number; providerMsgId: string }[];
+  /** Graph ids with a pending capture repair (retired ones leave it) */
+  repairs?: Set<string>;
 } = {}) {
   const ms = await new SyntheticMicrosoft().start();
   const processor = createNodeIncomingProcessor();
@@ -64,7 +66,9 @@ async function setup(o: {
   const fetched: string[] = [];
   const pages: (string | undefined)[] = [];
   const backfilled: unknown[] = [];
-  let again = 0;
+  const folderPages: string[] = [];
+  const retired: string[] = [];
+  let again = 0, saves = 0;
   const token = ms.accessToken();
   const ctx = {
     incoming, incomingProcessor: processor,
@@ -72,7 +76,12 @@ async function setup(o: {
     ...(o.flagObservation && { flagObservation: true }),
     ...(o.requests && { requests: o.requests }),
     store: {
-      messageByProviderId: async (id: string) => { const row = db.rows.get(id); return row ? { id: row.id, subject: row.subject, fromEmail: "" } : null; },
+      messageByProviderId: async (id: string) => { const row = db.rows.get(id); return row ? { id: row.id, subject: row.subject, fromEmail: "", isDraft: !!row.isDraft } : null; },
+      folderMessagePage: async (folder: string, after = 0) => {
+        folderPages.push(folder);
+        const rows = [...db.byId.values()].filter((r) => r.folder === folder && r.id > after).sort((a, b) => a.id - b.id).slice(0, 50);
+        return { items: rows.map((r) => ({ id: r.id, providerMsgId: r.providerMsgId })), ...(rows.length === 50 && { next: rows.at(-1)!.id }) };
+      },
       syncedMessagePage: async (after?: string) => {
         pages.push(after);
         const keys = [...db.rows.keys()].sort().filter((k) => after === undefined || k > after).slice(0, 50);
@@ -83,9 +92,13 @@ async function setup(o: {
         return { items, throughMessageId: items.at(-1)?.id ?? 0, hasMore: false };
       },
       pendingAttachmentBodies: async () => o.pendingAttachments?.() ?? [],
+      ...(o.repairs && { repairs: {
+        get: async (_account: number, locator: { kind: string; providerId?: string }) => locator.kind === "outlook" && o.repairs!.has(locator.providerId!) ? { state: "pending", revision: 1, locator } : null,
+        list: async () => ({ items: [...o.repairs!].map((providerId) => ({ state: "pending", revision: 1, locator: { kind: "outlook", providerId } })) }),
+      } }),
     },
     loadCursor: async () => structuredClone(cursor),
-    saveCursor: async (value: unknown) => { cursor = structuredClone(value); },
+    saveCursor: async (value: unknown) => { saves++; cursor = structuredClone(value); },
     fetch: async (input: string | URL | Request, init?: RequestInit) => {
       if (o.requests) throw new Error("a provider with a request policy fetches through it");
       fetched.push(String(input));
@@ -109,10 +122,12 @@ async function setup(o: {
     async setFolders(list) { folders.push([...list]); },
     again() { again++; },
     async backfillDone(request) { backfilled.push(request); },
+    async retireCapture(locator) { if (locator.kind === "outlook") { retired.push(locator.providerId); o.repairs?.delete(locator.providerId); } },
   };
   const make = () => createGraphApiProvider(ctx, { endpoints: ms.endpoints(), tokens: o.tokens ?? { get: async () => token, invalidate() {} }, requestsPerSecond: Infinity, pageSize: o.pageSize, userFoldersEveryMs: 0 });
   const t = {
-    ms, db, ingested, removed, folders, ctx, sink, fetched, backfilled, pages,
+    ms, db, ingested, removed, folders, ctx, sink, fetched, backfilled, pages, folderPages, retired,
+    get saves() { return saves; },
     provider: make(),
     get cursor() { return cursor as { folders: Record<string, Record<string, unknown>>; refresh?: unknown } | null; },
     get again() { return again; },
@@ -696,6 +711,129 @@ describe("Graph provider: flag snapshots, bodies, search", () => {
     expect(graphSearch({ terms: ["quarterly report"], from: "ana@contoso.com", subject: 'Q3 "final"', anyOf: [["pdf", "xlsx"]], hasAttachment: true }))
       .toBe("quarterly report (pdf OR xlsx) from:ana@contoso.com subject:Q3 subject:final hasAttachments:true");
     expect(graphSearch({ terms: ["a AND b", "c)"] })).toBe("a b c");
+  });
+});
+
+describe("Graph provider: review round 3", () => {
+  it("#2: a draft another app edits, then sends, is read again whole each time (the Sent copy keeps the draft's id)", async () => {
+    const t = await setup();
+    const draft = t.ms.deliver("drafts-id", { subject: "Plan", body: "first words", isDraft: true });
+    await t.sync();
+    expect(t.row(draft)).toMatchObject({ isDraft: true, subject: "Plan" });
+    t.ms.edit(draft, { subject: "Plan v2", body: "second words" });
+    await t.sync();
+    expect(t.row(draft)).toMatchObject({ isDraft: true, subject: "Plan v2" });
+    expect(t.row(draft)!.text).toContain("second words");
+    t.ms.edit(draft, { subject: "Plan final", body: "what went", isDraft: false, from: "ana@contoso.com" }, "sent-id");
+    await t.sync();
+    expect(t.row(draft)).toMatchObject({ isDraft: false, isSent: true, subject: "Plan final", folder: null });
+    expect(t.row(draft)!.text).toContain("what went");
+    // nothing about it notifies, and a message that isn't a draft is never read again for a change
+    expect(t.ingested.filter((m) => m.id === draft).every((m) => !m.live)).toBe(true);
+    const downloads = t.ms.graphUrls.filter((u) => u.endsWith(`${encodeURIComponent(draft)}/$value`)).length;
+    t.ms.setFlag(draft, "flagged");
+    await t.sync();
+    expect(t.ms.graphUrls.filter((u) => u.endsWith(`${encodeURIComponent(draft)}/$value`))).toHaveLength(downloads);
+    expect(t.row(draft)).toMatchObject({ isStarred: true });
+  });
+
+  it("#6: a repair whose message is now where Terno doesn't sync is retired, never read again each pass", async () => {
+    const repairs = new Set<string>();
+    const t = await setup({ repairs });
+    const away = t.ms.deliver("outbox-id");
+    repairs.add(away);
+    await t.sync();
+    expect(t.retired).toEqual([away]);
+    const reads = t.ms.graphUrls.filter((u) => u.includes(encodeURIComponent(away))).length;
+    await t.sync();
+    expect(t.ms.graphUrls.filter((u) => u.includes(encodeURIComponent(away)))).toHaveLength(reads);
+  });
+
+  it("#7: the folder list a folder change read is used, but the next pass reads and stores it again", async () => {
+    const t = await setup();
+    await t.sync();
+    const lists = t.folders.length;
+    const made = await t.provider.createFolder!({ parent: null, name: "Projects", folders: [] });
+    // the host's write of this list failed: the pass after the change still reads it and hands it over
+    await t.sync();
+    expect(t.folders.length).toBe(lists + 1);
+    expect(t.folders.at(-1)!.map((f) => f.key)).toContain(made.key);
+  });
+
+  it("#8: a search by dates alone (mail from last February) asks Graph for those dates, newest first", async () => {
+    const t = await setup();
+    const day = 86_400_000, now = Date.now();
+    const inside = t.ms.deliver("inbox-id", { received: now - 300 * day });
+    t.ms.deliver("inbox-id", { received: now - 400 * day });
+    t.ms.deliver("inbox-id", { received: now - 10 * day });
+    const result = await t.provider.search!({ queries: [{ terms: [], after: now - 330 * day, before: now - 280 * day }], before: now - 30 * day, limit: 50, signal: new AbortController().signal });
+    expect(result).toEqual({ hits: [{ id: inside, date: now - 300 * day }], partial: false });
+    const asked = decodeURIComponent(t.ms.graphUrls.find((u) => u.startsWith("/v1.0/me/messages?"))!);
+    expect(asked).toContain("$orderby=receivedDateTime desc");
+    expect(asked).toContain("receivedDateTime ge ");
+    // nothing to search by at all is still no request
+    const count = t.ms.graphUrls.length;
+    expect(await t.provider.search!({ queries: [{ terms: ["((("] }], before: now, limit: 50, signal: new AbortController().signal })).toEqual({ hits: [], partial: false });
+    expect(t.ms.graphUrls).toHaveLength(count);
+  });
+
+  it("#9: a quiet pass saves the cursor once, not once a folder", async () => {
+    const t = await setup();
+    for (let i = 0; i < 5; i++) t.ms.deliver(t.ms.folder(`F${i}`));
+    await t.sync();
+    const saves = t.saves;
+    await t.sync();
+    expect(t.saves - saves).toBe(1);
+    // a change in one folder is saved with its round, and the quiet ones once after the sweep
+    t.ms.deliver("inbox-id");
+    const next = t.saves;
+    await t.sync();
+    expect(t.saves - next).toBe(2);
+  });
+
+  it("Fable #1: a folder inside Deleted Items or Junk Email is neither listed nor synced; one Outlook deletes into Deleted Items goes", async () => {
+    const t = await setup();
+    const old = t.ms.folder("Old project", "trash-id"), junkSub = t.ms.folder("Caught", "junk-id"), live = t.ms.folder("Live");
+    const gone = t.ms.deliver(old), caught = t.ms.deliver(junkSub), kept = t.ms.deliver(live);
+    await t.sync();
+    expect(t.folders.at(-1)!.map((f) => f.key)).toEqual([live]);
+    expect(t.row(gone)).toBeUndefined();
+    expect(t.row(caught)).toBeUndefined();
+    expect(t.row(kept)).toMatchObject({ folder: live });
+    // Outlook's own delete: the folder moves under Deleted Items
+    t.ms.folders.get(live)!.parentFolderId = "trash-id";
+    // the list is read again (a quarter-hour on, or a launch)
+    await t.restart();
+    await t.sync();
+    expect(t.folders.at(-1)).toEqual([]);
+    expect(t.row(kept)).toBeUndefined();
+  });
+
+  it("Fable #3: a folder that went is read again by its own messages only, never the whole account", async () => {
+    const t = await setup();
+    const clients = t.ms.folder("Clients");
+    const filed = t.ms.deliver(clients);
+    for (let i = 0; i < 5; i++) t.ms.deliver("inbox-id");
+    await t.sync();
+    t.ms.folders.get(clients)!.parentFolderId = "outbox-id";
+    await t.restart();
+    await t.sync();
+    expect(t.folderPages).toEqual([clients]);
+    expect(t.pages).toEqual([]);
+    expect(t.removed).toEqual([filed]);
+    expect(t.cursor).not.toHaveProperty("left");
+    expect(t.cursor!.refresh).toBeUndefined();
+  });
+
+  it("Fable #5: a folder Graph refuses (403) is that folder's: the others still sync, and the pass then says so", async () => {
+    let refuse: string | undefined;
+    const t = await setup({ respond: (url) => refuse && url.includes(`/mailFolders/${encodeURIComponent(refuse)}/messages`) ? Response.json({ error: { code: "ErrorAccessDenied" } }, { status: 403 }) : undefined });
+    const a = t.ms.folder("A"), b = t.ms.folder("B");
+    await t.sync();
+    refuse = a;
+    const later = t.ms.deliver(b);
+    await expect(t.sync()).rejects.toMatchObject({ status: 403 });
+    expect(t.row(later)).toMatchObject({ folder: b });
   });
 });
 

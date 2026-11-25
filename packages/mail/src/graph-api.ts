@@ -196,6 +196,11 @@ interface Cursor {
    * for again while it ran (it starts over once it ends, never from the top mid-way: round 2 #4)
    */
   refresh?: { after?: string; again?: true };
+  /**
+   * Folders of the person's own no longer synced (deleted, moved where Terno doesn't sync): what Terno stored in each is
+   * read again by id, a folder at a time past `after` (a message id), never the whole account (review round 3)
+   */
+  left?: { folders: string[]; after?: number };
   backfill?: BackfillProgress;
 }
 
@@ -209,6 +214,8 @@ interface Pass extends SyncSink {
 }
 
 interface Wanted { envelope: Envelope; folder: SyncedFolder; quiet?: true }
+/** a stored draft to read again whole (`local`: its row) */
+interface Redraft { local: number; wanted: Wanted }
 
 export interface GraphTokenSource {
   get(run?: RequestRun, admission?: MailAdmission): Promise<string>;
@@ -488,6 +495,9 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       free();
       let value: unknown;
       try { value = JSON.parse(text) as unknown; } catch { throw invalid(); }
+      // a request inside the batch refused its token (revoked before its expiry): the retry asks for a new one, as a 401
+      // on the batch itself would
+      if (call.batch && isRecord(value) && Array.isArray(value.responses) && value.responses.some((r) => isRecord(r) && r.status === 401)) tokens.invalidate(token);
       if (settleBatch) {
         const settle = settleBatch;
         settleBatch = undefined;
@@ -495,9 +505,6 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       }
       return value;
     } finally {
-      // a request inside the batch refused its token (revoked before its expiry): the retry asks for a new one, as a 401
-      // on the batch itself would
-      if (call.batch && isRecord(value) && Array.isArray(value.responses) && value.responses.some((r) => isRecord(r) && r.status === 401)) tokens.invalidate(token);
       if (settleBatch) await settleBatch().catch(() => {});
       deadline.done();
       free();
@@ -508,6 +515,8 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
   // ───────────────────────────── folders ─────────────────────────────
 
   let catalog: Catalog | null = null;
+  /** every role folder's id a list has named (ids never change): a folder that stops being synced is told apart by it */
+  const roleFolders = new Set<string>();
 
   /** One collection, every page (bounded), each item's raw record. */
   async function collection(first: string, signal: AbortSignal | undefined, limit: number): Promise<Record<string, unknown>[]> {
@@ -547,6 +556,7 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
     const byRole: Partial<Record<Role, string>> = {};
     for (const [role, name] of Object.entries(ROLES) as [Role, string][]) if (known.has(name)) byRole[role] = known.get(name)!;
     const roleOf = new Map(Object.entries(byRole).map(([role, id]) => [id, role as Role]));
+    for (const id of roleOf.keys()) roleFolders.add(id);
     const excluded = new Set(EXCLUDED.flatMap((name) => known.has(name) ? [known.get(name)!] : []));
     const limit = FOLDERS_PER_ACCOUNT_MAX + 100;
     const query = `$top=${pageSize}&$select=id,displayName,parentFolderId,childFolderCount`;
@@ -584,7 +594,11 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       const path: string[] = [];
       let ok = true;
       for (let at: Node | undefined = node; at; at = at.parent === null ? undefined : nodes.get(at.parent)) {
-        if (at !== node && roleOf.get(at.id) === "inbox") break;
+        const above = at !== node ? roleOf.get(at.id) : undefined;
+        if (above === "inbox") break;
+        // inside Deleted Items or Junk Email (a folder deleted in Outlook lands in Deleted Items): its mail is deleted or
+        // junk, never the person's live mail, so it's neither listed nor synced, as Outbox isn't (review round 3)
+        if (above === "trash" || above === "junk") { ok = false; break; }
         const name = at.name.trim().slice(0, FOLDER_NAME_MAX);
         if (!name) { ok = false; break; }
         path.unshift(name);
@@ -597,8 +611,9 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       folders.push({ key: node.id, path, selectable: true });
     }
     const tree = new Map([...nodes.values()].map((node) => [node.id, { name: node.name, parent: node.parent }]));
-    const next: Catalog = { at: Date.now(), byRole, synced, folders, tree };
-    // the cache moves only once the list is stored (a failed write reads it again next pass)
+    // the cache moves only once the list is stored (a failed write reads it again next pass); one read without storing it
+    // (a folder change's) is used, but never counts as fresh: the next pass reads and stores the list
+    const next: Catalog = { at: sink.setFolders ? Date.now() : 0, byRole, synced, folders, tree };
     await sink.setFolders?.(next.folders);
     catalog = next;
     return next;
@@ -815,7 +830,7 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
   }
 
   /** The stored message a Graph id names, yielding every 50 lookups. */
-  function lookups(sink: Pass): (id: string) => Promise<{ id: number } | null> {
+  function lookups(sink: Pass): (id: string) => Promise<{ id: number; isDraft?: boolean } | null> {
     let examined = 0;
     return async (id) => {
       if (++examined % 50 === 0) await new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -825,13 +840,26 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
   }
 
   /**
+   * Stored drafts another app changed or sent: Outlook keeps a draft's id through its edits and its send, so the stored
+   * copy is dropped and the message read whole again (its subject, recipients and body may all have changed). A read that
+   * fails holds the page (`hold`), so its delta is read again.
+   */
+  async function readDraftsAgain(redrafted: readonly Redraft[], sink: Pass): Promise<void> {
+    for (let i = 0; i < redrafted.length; i += 50) {
+      const chunk = redrafted.slice(i, i + 50);
+      await sink.removeMessages(chunk.map((r) => r.local));
+      await fetchFull(chunk.map((r) => r.wanted), sink, true);
+    }
+  }
+
+  /**
    * Messages read again by id (`$select` of the envelope): each placed where the server has it now (flags and folder by
    * updateFlags), or removed here when it isn't anywhere Terno syncs (a 404, or a folder it doesn't sync). Plan 259
    * revisions 4 and 8: what a `@removed` and a flag snapshot both come to.
    */
   async function observe(targets: readonly { local?: number; providerMsgId: string }[], sink: Pass): Promise<void> {
     const place = placeIn(sink);
-    const updates: FlagUpdate[] = [], gone: { local?: number; providerMsgId: string }[] = [];
+    const updates: FlagUpdate[] = [], gone: { local?: number; providerMsgId: string }[] = [], redrafted: Redraft[] = [];
     await download([...targets], async (target) => {
       const path = `/me/messages/${enc(target.providerMsgId)}?$select=${SELECT}`;
       let envelope: Envelope;
@@ -845,10 +873,15 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       const folder = await place(envelope.parent);
       if (!folder) { gone.push(target); return; }
       sink.seen.set(envelope.id, folder.id);
-      if (target.local !== undefined) updates.push(update(target.local, folder, envelope));
+      if (target.local === undefined) return;
+      // a draft still (changed elsewhere), or one now sent: read again whole, as a page's is (only these ask the store)
+      if ((envelope.isDraft === true || folder.role === "sent") && (await store.messageByProviderId(target.providerMsgId))?.isDraft) {
+        redrafted.push({ local: target.local, wanted: { envelope, folder, quiet: true } });
+      } else updates.push(update(target.local, folder, envelope));
     }, GRAPH_CONCURRENCY);
     sink.check();
     for (let i = 0; i < updates.length; i += 200) await sink.updateFlags(updates.slice(i, i + 200));
+    await readDraftsAgain(redrafted, sink);
     for (const target of gone) {
       const locator = { kind: "outlook" as const, providerId: target.providerMsgId };
       if (await store.repairs?.get(accountId, locator)) await sink.retireCapture?.(locator);
@@ -862,10 +895,10 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
    * the window come down whole (`live` says which notify); a `@removed` (it left this folder: revision 4) is read again
    * by id unless this pass already saw it elsewhere. False: a message was held back, so nothing is saved past this page.
    */
-  async function applyPage(folder: SyncedFolder, items: readonly Envelope[], sink: Pass, live: (envelope: Envelope) => boolean): Promise<boolean> {
+  async function applyPage(folder: SyncedFolder, items: readonly Envelope[], sink: Pass, live: (envelope: Envelope) => boolean, changes = false): Promise<boolean> {
     const holds = sink.held.count;
     const lookup = lookups(sink);
-    const updates: FlagUpdate[] = [], fresh: Wanted[] = [], removed: string[] = [], undated: string[] = [];
+    const updates: FlagUpdate[] = [], fresh: Wanted[] = [], removed: string[] = [], undated: string[] = [], redrafted: Redraft[] = [];
     for (const envelope of items) {
       // a send's draft on its way (its files still going up): the Sent copy comes whole after it (Codex code review #1);
       // the copy in Sent keeps the draft's id, and is stored whenever it's seen (round 2 #2)
@@ -877,7 +910,10 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       }
       sink.seen.set(envelope.id, folder.id);
       const stored = await lookup(envelope.id);
-      if (stored) updates.push(update(stored.id, folder, envelope));
+      // a draft another app changed, or sent (the Sent copy keeps the draft's id: learn.microsoft.com/graph/outlook-immutable-id):
+      // its content is read again, never only its flags (`changes`: a delta round's entry is a change)
+      if (changes && stored?.isDraft) redrafted.push({ local: stored.id, wanted: { envelope, folder, quiet: true } });
+      else if (stored) updates.push(update(stored.id, folder, envelope));
       // an update says only what changed: one Terno doesn't have and that names no date is read whole (Codex #2)
       else if (envelope.received === undefined) undated.push(envelope.id);
       // only what the window holds; a change to an older message it doesn't have (a read state) is nothing here
@@ -909,6 +945,7 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
     }
     sink.check();
     for (let i = 0; i < updates.length; i += 200) await sink.updateFlags(updates.slice(i, i + 200));
+    await readDraftsAgain(redrafted, sink);
     const liveSink: Pass = { ...sink, ingest: (messages) => sink.ingest(messages, { live: true }) };
     const now = fresh.filter((w) => !w.quiet && live(w.envelope)), older = fresh.filter((w) => w.quiet || !live(w.envelope));
     for (let i = 0; i < now.length; i += 50) await fetchFull(now.slice(i, i + 50), liveSink, true);
@@ -946,6 +983,9 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       };
     }
     if (isRecord(value.refresh) && (value.refresh.after === undefined || (typeof value.refresh.after === "string" && value.refresh.after.length <= LINK_MAX))) cursor.refresh = { ...(value.refresh.after !== undefined && { after: value.refresh.after as string }), ...(value.refresh.again === true && { again: true as const }) };
+    if (isRecord(value.left) && Array.isArray(value.left.folders) && value.left.folders.length <= 4 * FOLDERS_PER_ACCOUNT_MAX && value.left.folders.every((f) => typeof f === "string" && f.length > 0 && f.length <= ID_MAX) && (value.left.after === undefined || ms(value.left.after))) {
+      cursor.left = { folders: [...value.left.folders as string[]], ...(value.left.after !== undefined && { after: value.left.after as number }) };
+    }
     if (isRecord(value.backfill) && ms(value.backfill.since) && ms(value.backfill.until) && (value.backfill.next === undefined || link(value.backfill.next))) {
       cursor.backfill = { since: value.backfill.since, until: value.backfill.until, ...(value.backfill.next !== undefined && { next: value.backfill.next as string }) };
     }
@@ -965,10 +1005,23 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
     `/me/mailFolders/${enc(folder.id)}/messages/delta?$select=${SELECT}&$filter=${enc(`receivedDateTime ge ${iso(state.after)}`)}`;
   /** a reconciliation asked for: from the top, or after the one under way */
   const reconcile = (cursor: Cursor) => { cursor.refresh = cursor.refresh?.after !== undefined ? { ...cursor.refresh, again: true } : {}; };
+  /**
+   * Folders that stopped being synced: one of the person's own has its stored messages read again by id (`left`); a role
+   * folder's are flags, not rows, so only the whole reconciliation finds them
+   */
+  const leave = (cursor: Cursor, folders: readonly string[], roles: ReadonlySet<string>) => {
+    if (folders.some((id) => roles.has(id))) reconcile(cursor);
+    const own = folders.filter((id) => !roles.has(id) && !cursor.left?.folders.includes(id));
+    if (own.length) cursor.left = { folders: [...(cursor.left?.folders ?? []), ...own], ...(cursor.left?.after !== undefined && { after: cursor.left.after }) };
+  };
   /** a new first round for a folder (a first sync, an expired link, a wider window) */
   const fresh = (after: number): FolderState => ({ after, startedAt: Date.now(), initial: true });
 
-  interface Budget { started: number; more: boolean; out: boolean }
+  /**
+   * `unsaved`: the full pass's folder sweep saves an empty round's new link once, after the sweep, not once a folder (the
+   * cursor holds every folder's state); a pass cut short reads the older link again, which repeats nothing harmful
+   */
+  interface Budget { started: number; more: boolean; out: boolean; unsaved?: boolean }
   const outOfTime = (budget: Budget) => Date.now() - budget.started > FIRST_SYNC_CHUNK_MS;
 
   /**
@@ -1031,12 +1084,14 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       }
       // a link that can't be used is never kept (round 2 #12)
       resolve(page.delta ?? page.next ?? target);
-      if (!(await applyPage(folder, page.items, sink, isNew(folder, state)))) return;
+      // a round after the first names what changed (a first round, like a listing, names everything)
+      if (!(await applyPage(folder, page.items, sink, isNew(folder, state), !state.initial))) return;
       if (page.delta) {
         // a first round is followed by the rest of the window, listed: Graph names at most 5,000, and how many it named
         // never says it named them all (round 2 #1); the list skips what's stored
         cursor.folders[folder.id] = { after: state.after, startedAt: state.startedAt, delta: page.delta, at: round, ...(state.initial && { list: {} }) };
-        await save(sink, cursor);
+        if (budget.unsaved !== undefined && pages === 0 && !page.items.length && state.delta && !state.initial) budget.unsaved = true;
+        else await save(sink, cursor);
         lastDelta.set(folder.id, Date.now());
         return;
       }
@@ -1082,7 +1137,7 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       // a 404 on the folder's own listing or delta (its saved link included): the folder went (Codex code review #4)
       if (error instanceof FolderGone) {
         delete cursor.folders[folder.id];
-        reconcile(cursor);
+        leave(cursor, [folder.id], roleFolders);
         catalog = null;
         await save(sink, cursor);
         budget.more = true;
@@ -1096,6 +1151,24 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
   function ordered(current: Catalog): SyncedFolder[] {
     const roles = (["inbox", "sent", "drafts", "archive", "junk", "trash"] as Role[]).flatMap((role) => current.byRole[role] ? [current.synced.get(current.byRole[role]!)!] : []);
     return [...roles, ...[...current.synced.values()].filter((f) => !f.role)];
+  }
+
+  /** What folders no longer synced held, read again by id a page at a time (each placed where it is now, or removed). */
+  async function refreshLeft(cursor: Cursor, sink: Pass, budget: Budget): Promise<void> {
+    while (cursor.left) {
+      sink.check();
+      const [folder] = cursor.left.folders;
+      if (folder === undefined) { delete cursor.left; await save(sink, cursor); return; }
+      const page = await store.folderMessagePage(folder, cursor.left.after);
+      sink.check();
+      if (page.next !== undefined && (page.items.length > 50 || (cursor.left.after !== undefined && page.next <= cursor.left.after))) throw invalid();
+      if (page.items.length) await observe(page.items.map((m) => ({ local: m.id, providerMsgId: m.providerMsgId })), sink);
+      const rest = cursor.left.folders.slice(1);
+      cursor.left = page.next !== undefined ? { folders: cursor.left.folders, after: page.next } : { folders: rest };
+      if (!cursor.left.folders.length) delete cursor.left;
+      await save(sink, cursor);
+      if (outOfTime(budget)) { budget.more = true; return; }
+    }
   }
 
   /** The reconciliation after an expired delta: every stored message read again by id, a page at a time. */
@@ -1154,8 +1227,9 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
         const envelope = readEnvelope(await api(path, { signal: sink.signal, preparation: sink.signal, limit: SMALL_BYTES }));
         if (envelope.id !== target.providerMsgId || envelope.removed) throw invalid();
         const folder = await place(envelope.parent);
+        // in no folder Terno syncs: a stored one goes, and a repair of one is retired (never read again each pass)
         if (folder) wanted.push({ envelope, folder });
-        else if (target.local !== undefined) gone.push(target);
+        else gone.push(target);
       } catch (error) {
         if (notFound(error, path)) { gone.push(target); return; }
         throw error;
@@ -1357,7 +1431,7 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       const sink = passOf(outer);
       sink.check();
       if (outer.quick) return quickPass(sink);
-      const budget: Budget = { started: Date.now(), more: false, out: false };
+      const budget: Budget = { started: Date.now(), more: false, out: false, unsaved: false };
       const current = await ensureCatalog(sink);
       // a repair asked for now goes first (plan 265: one its own content fails again stays pending, held)
       const requested = sink.captureRetry;
@@ -1374,14 +1448,23 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       const dropped = Object.keys(cursor.folders).filter((id) => !current.synced.has(id));
       if (dropped.length) {
         for (const id of dropped) delete cursor.folders[id];
-        reconcile(cursor);
+        leave(cursor, dropped, roleFolders);
         await save(sink, cursor);
       }
+      // one folder Graph refuses (a 403, a 400 on its link) is that folder's: the rest still sync, and its error is the
+      // pass's once they have (review round 3)
+      let refusedFolder: GraphApiError | undefined;
       for (const folder of ordered(current)) {
         if (budget.out) break;
-        await syncFolder(folder, cursor, sink, budget);
+        try { await syncFolder(folder, cursor, sink, budget); }
+        catch (error) {
+          if (!(error instanceof GraphApiError) || error.retryable || error.status < 400 || error.status >= 500 || mailboxRefused(error)) throw error;
+          refusedFolder ??= error;
+        }
       }
+      if (budget.unsaved) { budget.unsaved = false; await save(sink, cursor); }
       sink.check();
+      await refreshLeft(cursor, sink, budget);
       await refreshStored(cursor, sink, budget);
       // retries asked for earlier (a page of them) after new mail
       if (requested?.locator.kind !== "outlook") {
@@ -1397,6 +1480,7 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       if (sink.held.error !== undefined) throw sink.held.error;
       // plan 101: older mail, after everything new, once no first listing is under way
       if (!budget.more && !Object.values(cursor.folders).some((state) => state.list || state.initial)) await backfill(cursor, sink);
+      if (refusedFolder) throw refusedFolder;
     },
 
     async folders(sink) {
@@ -1412,10 +1496,17 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       for (const query of queries) {
         signal.throwIfAborted();
         const kql = graphSearch(query);
-        if (!kql) continue;
+        const top = Math.min(Math.max(limit, 1), 250);
+        let next: string | undefined;
         // learn.microsoft.com/graph/search-query-parameter: results by date sent, newest first, at most 1,000; `before`
         // and `after` are read from each hit's own receivedDateTime
-        let next: string | undefined = `/me/messages?$search=${enc(`"${kql}"`)}&$select=id,receivedDateTime&$top=${Math.min(Math.max(limit, 1), 250)}`;
+        if (kql) next = `/me/messages?$search=${enc(`"${kql}"`)}&$select=id,receivedDateTime&$top=${top}`;
+        // dates alone ("mail from last February"): $search documents no range for `received`, so a $filter on
+        // receivedDateTime, newest first (the property it orders by is filtered first: learn.microsoft.com/graph/query-parameters)
+        else if (query.after !== undefined || query.before !== undefined) {
+          const range = [`receivedDateTime lt ${iso(Math.min(before, query.before ?? before))}`, ...(query.after !== undefined ? [`receivedDateTime ge ${iso(query.after)}`] : [])].join(" and ");
+          next = `/me/messages?$filter=${enc(range)}&$orderby=${enc("receivedDateTime desc")}&$select=id,receivedDateTime&$top=${top}`;
+        } else continue;
         let seen = 0;
         for (let pages = 0; next !== undefined && hits.size < limit; pages++) {
           if (pages >= 8) { partial = true; break; }

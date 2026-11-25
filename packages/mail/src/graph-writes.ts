@@ -476,7 +476,7 @@ export function createGraphWrites(deps: GraphWriteDeps) {
           if (!(r?.status === 404 && r.codes.length && !mailboxRefusedCodes(r.codes))) throw error;
         }
         return true;
-      }, (after) => after.tree.has(key) ? undefined : true);
+      }, (after) => after.folders.some((f) => f.key === key) ? undefined : true);
       const listed = new Set(before.folders.map((f) => f.key));
       const below = subtree(before.tree, key).filter((k) => listed.has(k));
       // Graph said it's gone: if the list can't be read now, it's the one before without the folder and what was under
@@ -486,8 +486,10 @@ export function createGraphWrites(deps: GraphWriteDeps) {
         const went = new Set(below);
         return { folders: before.folders.filter((f) => !went.has(f.key)), deleted: below };
       }
-      // what went is what the list no longer has: the folder, and every folder that was under it
-      return { folders: after.folders, deleted: below.filter((k) => !after.tree.has(k)) };
+      // what went is what the list no longer has: the folder, and every folder that was under it (one Graph keeps in Deleted
+      // Items, as a deletion there may do, isn't listed: review round 3)
+      const still = new Set(after.folders.map((f) => f.key));
+      return { folders: after.folders, deleted: below.filter((k) => !still.has(k)) };
     },
   };
 }
