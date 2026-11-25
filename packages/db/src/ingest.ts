@@ -369,7 +369,7 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
         b(msg.bulk ?? false),
         JSON.stringify(msg.replyTo ?? []),
         capture ? (msg.attachments!.every((p) => p.assetId) ? 1 : 2) : 0,
-        categoryOf(msg.gmailLabels),
+        msg.category ?? categoryOf(msg.gmailLabels),
         unsubscribeJson(msg.unsubscribe),
         incomingCode(msg),
       ).lastInsertRowid;
@@ -441,8 +441,8 @@ function updateExisting(db: Db, id: number, msg: IncomingMessage, observation?: 
     msg.gmailLabels ? JSON.stringify(msg.gmailLabels) : null,
     msg.replyTo === undefined ? null : JSON.stringify(msg.replyTo),
     // plan 86: a category the user just set is theirs until Gmail confirms it
-    b(!msg.gmailLabels || !!protectedField("category")),
-    categoryOf(msg.gmailLabels),
+    b((!msg.gmailLabels && msg.category === undefined) || !!protectedField("category")),
+    msg.category ?? categoryOf(msg.gmailLabels),
     // plan 96: a copy without the header (an older parse, a header-only fetch) keeps what was read
     unsubscribeJson(msg.unsubscribe),
     id,

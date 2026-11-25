@@ -26,6 +26,7 @@ const EFFECTS = {
   toUpdates: ["category"],
   toForums: ["category"],
   toNoCategory: ["category"],
+  toOther: ["category"],
 } as const satisfies Record<ThreadAction, readonly LocalFlagField[]>;
 
 /**
@@ -34,24 +35,31 @@ const EFFECTS = {
  */
 export function mergeBefore(first: readonly MessageState[], then: readonly MessageState[]): MessageState[] {
   const out = new Map(first.map((m) => [m.id, { ...m }]));
+  // a message the action moved puts back its place and its category; one only the move untabbed, its category alone
+  // (plan 275, Codex critique #7)
   for (const m of then) {
     const was = out.get(m.id);
-    out.set(m.id, was ? { ...was, category: m.category } : m);
+    out.set(m.id, was ? { ...was, category: m.category } : { ...m, only: "category" });
   }
   return [...out.values()];
 }
 
-/** Plan 259: the one flag a read or star action changes, which is all its undo puts back (`MessageState.only`). */
+/**
+ * Plan 259: the one field a read, star or (plan 275, Codex critique #7) category action changes, which is all its undo
+ * puts back (`MessageState.only`).
+ */
 export function flagScope(action: ThreadAction): MessageState["only"] {
   if (action === "markRead" || action === "markUnread") return "read";
   if (action === "star" || action === "unstar") return "star";
+  if ((EFFECTS[action] as readonly LocalFlagField[]).includes("category")) return "category";
   return undefined;
 }
 
-/** What an undo puts back: the snapshot, or for a read or star action that flag alone over the message as it is now. */
+/** What an undo puts back: the snapshot, or for a read, star or category action that field alone over the message as it is now. */
 export function undoTarget(saved: MessageState, now: MessageState): MessageState {
   if (saved.only === "read") return { ...now, isRead: saved.isRead };
   if (saved.only === "star") return { ...now, isStarred: saved.isStarred };
+  if (saved.only === "category") return { ...now, category: saved.category };
   return saved;
 }
 

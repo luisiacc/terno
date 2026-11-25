@@ -1376,6 +1376,9 @@ export class IdbMailStore implements MailStore {
               // plan 86: the category, unless a move of the user's owns it until Gmail confirms it
               const category = categoryOf(u.gmailLabels)!;
               if (!pending.has("category") && acceptFlagObservation(idbFlags(this.c), u.messageId, "category", observation, category, () => { reconciliation.flagReconcileAccounts ??= [accountId]; })) sets.push(["category", category]);
+            } else if (u.category !== undefined && !pending.has("category") && acceptFlagObservation(idbFlags(this.c), u.messageId, "category", observation, u.category, () => { reconciliation.flagReconcileAccounts ??= [accountId]; })) {
+              // plan 275: Outlook's classification as Graph says it now, under the same owner and epoch checks
+              sets.push(["category", u.category]);
             }
             // plan 259 stage 2a: an Outlook message's folder as the server has it now (a pending move is replayed over it)
             if (u.folder !== undefined && placeMessage(this.c, u.messageId, { accountId, folder: u.folder }) && !sets.length) threads.add(identity.thread_id as number);

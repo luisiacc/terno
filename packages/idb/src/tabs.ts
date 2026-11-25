@@ -41,7 +41,8 @@ function writeTab(db: MemDb, thread: R, own: ReadonlySet<string>): number {
  * threads phase starts again, or what it passed would keep the old addresses' tab (plan 256, Codex critique).
  */
 export function requestTabRefresh(db: MemDb): void {
-  if (![...t(db, "accounts").all()].some((a) => a.kind === "gmail")) return;
+  // the kinds with tabs (plan 275: Outlook's Other too, Codex critique #9)
+  if (![...t(db, "accounts").all()].some((a) => a.kind === "gmail" || a.kind === "outlook")) return;
   const row = t(db, "settings").get(KEY);
   if (row && (JSON.parse(row.value_json as string) as Progress).phase === "messages") return;
   t(db, "settings").put({ key: KEY, value_json: JSON.stringify({ phase: "threads", after: 0 } satisfies Progress) });
@@ -72,7 +73,7 @@ export function tabsSlice(db: MemDb, limit: number): { processed: number; more: 
     return { processed: Math.max(1, to - state.after), more: true };
   }
   const threads = t(db, "threads");
-  const gmail = new Set([...t(db, "accounts").all()].filter((a) => a.kind === "gmail").map((a) => a.id as number));
+  const gmail = new Set([...t(db, "accounts").all()].filter((a) => a.kind === "gmail" || a.kind === "outlook").map((a) => a.id as number));
   const max = state.max ?? lastId(threads.rows.keys());
   const to = Math.min(max, state.after + n);
   let read = 0;

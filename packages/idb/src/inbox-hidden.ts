@@ -25,7 +25,8 @@ export function hiddenFromInbox(db: MemDb, hidden: ReadonlySet<number> | null, t
 export function tabHiddenTest(db: MemDb): ((t: Row & Record<string, any>) => boolean) | null {
   let separated: Set<number> | null = null;
   for (const a of db.table<Row & Record<string, any>>("accounts").all()) {
-    if (a.kind === "gmail" && (JSON.parse(a.provider_config as string) as { separateTabs?: boolean }).separateTabs !== false) (separated ??= new Set()).add(a.id as number);
+    // plan 275: Outlook's Other too, each account by its own setting
+    if ((a.kind === "gmail" || a.kind === "outlook") && (JSON.parse(a.provider_config as string) as { separateTabs?: boolean }).separateTabs !== false) (separated ??= new Set()).add(a.id as number);
   }
   if (!separated) return null;
   const s = separated;

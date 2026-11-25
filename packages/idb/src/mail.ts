@@ -66,8 +66,9 @@ import {
   categoryOfJson,
   CATEGORY_ACTIONS,
   isCategoryAction,
+  categoriesOf,
+  tabsOf,
   TAB_CODE,
-  tabOfCode,
   tabRef,
   threadTabState,
   COUNTED_VIEWS,
@@ -867,7 +868,7 @@ export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: n
         has_attachments: b(msg.hasAttachments),
         gmail_labels: msg.gmailLabels ? JSON.stringify(msg.gmailLabels) : null,
         // plan 86
-        category: categoryOf(msg.gmailLabels),
+        category: msg.category ?? categoryOf(msg.gmailLabels),
         size: msg.size,
         created_at: now,
         is_bulk: b(msg.bulk ?? false),
@@ -914,7 +915,7 @@ function updateExisting(c: Ctx, row: R, msg: IncomingMessage, observation?: Flag
     is_spam: protectedField("isSpam") ? row.is_spam : b(msg.isSpam),
     gmail_labels: msg.gmailLabels ? JSON.stringify(msg.gmailLabels) : row.gmail_labels,
     // plan 86: a category the user just set is theirs until Gmail confirms it
-    category: !msg.gmailLabels || protectedField("category") ? (row.category ?? null) : categoryOf(msg.gmailLabels),
+    category: (!msg.gmailLabels && msg.category === undefined) || protectedField("category") ? (row.category ?? null) : (msg.category ?? categoryOf(msg.gmailLabels)),
     ...(msg.replyTo === undefined ? {} : { reply_to_json: JSON.stringify(msg.replyTo) }),
     // plan 96: a copy without the header (an older parse, a header-only fetch) keeps what was read
     ...(unsubscribeJson(msg.unsubscribe) === null ? {} : { unsubscribe: unsubscribeJson(msg.unsubscribe) }),
@@ -1064,7 +1065,7 @@ export interface ActionResult {
   before: MessageState[];
 }
 
-function plan(action: ThreadAction, msgs: R[], explicit: boolean): { ids: number[]; set: Partial<R>; scope?: number[] } {
+function plan(action: ThreadAction, msgs: R[], explicit: boolean, kindOf: (accountId: number) => string = () => ""): { ids: number[]; set: Partial<R>; scope?: number[] } {
   const latestPerThread = new Map<number, R>();
   for (const m of msgs) {
     const cur = latestPerThread.get(m.thread_id);
@@ -1073,9 +1074,10 @@ function plan(action: ThreadAction, msgs: R[], explicit: boolean): { ids: number
   const latest = explicit ? msgs : [...latestPerThread.values()];
   const ids = (list: R[]) => list.map((m) => m.id as number);
   if (isCategoryAction(action)) {
-    // plan 86: Gmail messages someone else wrote (yours never decide a tab); only Gmail has categories
+    // plan 86: messages someone else wrote (yours never decide a tab), of an account whose kind has this category
+    // (plan 275, Codex critique #5: Gmail's labels, Outlook's focused and other; never another kind's)
     const target = CATEGORY_ACTIONS[action];
-    const chosen = msgs.filter((m) => categoryOfRow(m) !== null && !m.is_sent && !m.is_draft);
+    const chosen = msgs.filter((m) => categoryOfRow(m) !== null && !m.is_sent && !m.is_draft && !!categoriesOf(kindOf(m.account_id))?.has(target));
     return { ids: ids(chosen.filter((m) => categoryOfRow(m) !== target)), set: { category: target }, scope: ids(chosen) };
   }
   switch (action) {
@@ -1109,18 +1111,19 @@ export function applyThreadAction(c: Ctx, threadIds: readonly number[], action: 
 }
 
 /**
- * Plan 86 (SQLite's untabThreads): Move to Inbox also takes these threads out of Gmail's Promotions and Social,
- * where their account keeps them apart: their tabbed messages of someone else's go to Primary.
+ * Plan 86 (SQLite's untabThreads): Move to Inbox also takes these threads out of Gmail's Promotions and Social, and
+ * (plan 275) Outlook's Other, where their account keeps them apart: their tabbed messages of someone else's go to Primary.
  */
 export function untabThreads(c: Ctx, threadIds: readonly number[]): ActionResult {
   const messages = T(c, "messages");
   const accounts = T(c, "accounts");
   const separating = (id: number) => {
     const a = accounts.get(id);
-    return !!a && a.kind === "gmail" && (JSON.parse(a.provider_config as string) as AccountPrefs).separateTabs !== false;
+    return !!a && (a.kind === "gmail" || a.kind === "outlook") && (JSON.parse(a.provider_config as string) as AccountPrefs).separateTabs !== false;
   };
+  const tabbed = (m: R) => (T(c, "accounts").get(m.account_id)?.kind === "outlook" ? [6] : [2, 3]).includes(categoryOfRow(m) ?? -1);
   return c.db.tx(() => {
-    const msgs = threadIds.flatMap((t) => messages.by("fk_thread_id", t)).filter((m) => separating(m.account_id) && [2, 3].includes(categoryOfRow(m) ?? -1));
+    const msgs = threadIds.flatMap((t) => messages.by("fk_thread_id", t)).filter((m) => separating(m.account_id) && tabbed(m));
     return applyToMessages(c, msgs.sort((x, y) => x.id - y.id), "toPrimary", true);
   });
 }
@@ -1131,7 +1134,7 @@ export function applyMessageAction(c: Ctx, messageIds: readonly number[], action
 }
 
 function applyToMessages(c: Ctx, msgs: R[], action: ThreadAction, explicit: boolean): ActionResult {
-  const { ids, set, scope } = plan(action, msgs, explicit);
+  const { ids, set, scope } = plan(action, msgs, explicit, (accountId) => T(c, "accounts").get(accountId)?.kind ?? "");
   const changed = new Set(ids);
   reaffirmFlagIntent(idbFlags(c), (scope ?? msgs.map((m) => m.id as number)).filter((id) => !changed.has(id)), action);
   const messages = T(c, "messages");
@@ -1535,11 +1538,11 @@ export function getCounts(c: Ctx, now: number): Counts {
     }
     for (const v of COUNTED_VIEWS) if (VIEW_TEST[v](t)) viewUnread[viewRef(t.account_id, v)] = (viewUnread[viewRef(t.account_id, v)] ?? 0) + 1;
   }
+  // each account's own tabs (plan 275: Outlook's Other, bucket 3)
   for (const a of T(c, "accounts").all()) {
-    if (a.kind !== "gmail") continue;
-    for (const code of [1, 2] as const) {
-      const n = threads.bucket("tab_unread", a.id, code)?.size ?? 0;
-      if (n) tabUnread[tabRef(a.id, tabOfCode(code)!)] = n;
+    for (const tab of tabsOf(a.kind as string)) {
+      const n = threads.bucket("tab_unread", a.id, TAB_CODE[tab])?.size ?? 0;
+      if (n) tabUnread[tabRef(a.id, tab)] = n;
     }
   }
   const categoryUnread: Record<number, number> = {};

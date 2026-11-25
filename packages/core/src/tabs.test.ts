@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CAT_PERSONAL, CAT_PROMOTIONS, CAT_SOCIAL, threadTabState, type TabMessage } from "./tabs";
+import { CAT_OTHER, CAT_PERSONAL, CAT_PROMOTIONS, CAT_SOCIAL, categoriesOf, CATEGORY_ACTIONS, hasTab, isCategoryAction, separatesTabs, tabOfCode, tabsOf, threadTabState, type TabMessage } from "./tabs";
 
 let next = 1;
 const msg = (o: Partial<TabMessage> & { from?: string } = {}): TabMessage & { from: string } => ({
@@ -25,5 +25,31 @@ describe("threadTabState (plans 86, 256)", () => {
   it("someone else's mail out of the Inbox (archived, trashed, spam) doesn't count", () => {
     const mine = msg({ is_sent: 1, category: 0 });
     for (const other of [msg({ in_inbox: 0 }), msg({ is_trash: 1 }), msg({ is_spam: 1 })]) expect(threadTabState([mine, other], own)).toEqual({ tab: 0, onlyYours: true });
+  });
+});
+
+describe("Outlook's Focused Inbox, Other (plan 275)", () => {
+  it("a conversation whose Inbox mail is all Other is in tab 3; one Focused message keeps it in the Inbox", () => {
+    expect(threadTabState([msg({ category: CAT_OTHER }), msg({ category: CAT_OTHER })], own)).toEqual({ tab: 3, onlyYours: false });
+    expect(threadTabState([msg({ category: CAT_OTHER }), msg({ category: CAT_PERSONAL })], own)).toEqual({ tab: 0, onlyYours: false });
+    // an Other message out of the Inbox decides nothing (Microsoft: other folders are Focused)
+    expect(threadTabState([msg({ category: CAT_OTHER, in_inbox: 0 }), msg({ category: CAT_PERSONAL })], own)).toEqual({ tab: 0, onlyYours: false });
+    expect(tabOfCode(3)).toBe("other");
+  });
+
+  it("each kind has its own tabs and categories: Gmail's two and its labels, Outlook's Other with focused and other, IMAP none", () => {
+    expect(tabsOf("gmail")).toEqual(["promotions", "social"]);
+    expect(tabsOf("outlook")).toEqual(["other"]);
+    expect(tabsOf("imap")).toEqual([]);
+    expect(hasTab("outlook", "promotions")).toBe(false);
+    expect(hasTab("gmail", "other")).toBe(false);
+    expect([...categoriesOf("outlook")!]).toEqual([CAT_PERSONAL, CAT_OTHER]);
+    expect(categoriesOf("gmail")!.has(CAT_OTHER)).toBe(false);
+    expect(categoriesOf("imap")).toBeNull();
+    expect(isCategoryAction("toOther")).toBe(true);
+    expect(CATEGORY_ACTIONS.toOther).toBe(CAT_OTHER);
+    expect(separatesTabs({ kind: "outlook" })).toBe(true);
+    expect(separatesTabs({ kind: "outlook", separateTabs: false })).toBe(false);
+    expect(separatesTabs({ kind: "imap" })).toBe(false);
   });
 });

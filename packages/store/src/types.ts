@@ -63,6 +63,11 @@ export interface IncomingMessage {
   isSpam: boolean;
   hasAttachments: boolean;
   gmailLabels?: string[] | null;
+  /**
+   * Plan 275: a category the provider says outright (Outlook's Focused Inbox: 1 focused, 6 other), for a kind without
+   * Gmail's labels; absent: Gmail's from `gmailLabels`, or none
+   */
+  category?: import("@terno/core").MessageCategory;
   size: number;
   attachments?: IncomingAttachment[];
   captureUnavailable?: "size";
@@ -94,7 +99,7 @@ export interface MessageState {
    * The one flag a read or star action changed (`flagScope`): its undo puts back that flag alone, never a place or the
    * other flag the message took since (another app moved it, the person starred it). Absent: the whole state, as before.
    */
-  only?: "read" | "star";
+  only?: "read" | "star" | "category";
 }
 
 export interface FlagUpdate {
@@ -105,6 +110,8 @@ export interface FlagUpdate {
   flags: Partial<{ isRead: boolean; isStarred: boolean; inInbox: boolean; isTrash: boolean; isSpam: boolean; isSent: boolean; isDraft: boolean }>;
   /** Gmail: the message's labels now (its category decides who it's from, plan 17); absent: unchanged */
   gmailLabels?: string[];
+  /** plan 275: Outlook's classification now (1 focused, 6 other); absent: unchanged (a sparse delta update never invents one) */
+  category?: import("@terno/core").MessageCategory;
   /**
    * Plan 259 stage 2a: an Outlook message's user folder now, as a targeted read or a delta page saw it (another app moved
    * it): IncomingMessage.folder's rule (null: a role folder; absent: unchanged). Another provider's is ignored.
@@ -154,7 +161,7 @@ export interface ScopeParams {
   /** plan 68: one of the account's own folders (with accountId; never with a category) */
   folder?: string;
   /** plan 86: a Gmail tab of the account's Inbox (with accountId, view "inbox") */
-  tab?: "promotions" | "social";
+  tab?: import("@terno/core").Tab;
   /** only threads with something unread (the list's unread filter; `filter: "unread"` since plan 15) */
   unreadOnly?: boolean;
   /** the list's quick filter (wins over unreadOnly) */
@@ -170,7 +177,7 @@ export interface ListParams {
   /** plan 68: one of the account's own folders (with accountId; never with a category) */
   folder?: string;
   /** plan 86: a Gmail tab of the account's Inbox (with accountId, view "inbox") */
-  tab?: "promotions" | "social";
+  tab?: import("@terno/core").Tab;
   /** only threads with something unread (the list's unread filter; `filter: "unread"` since plan 15) */
   unreadOnly?: boolean;
   /** the list's quick filter (wins over unreadOnly) */

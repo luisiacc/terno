@@ -32,7 +32,8 @@ function writeTab(db: Db, threadId: number, own: ReadonlySet<string>): number {
  * threads phase starts again, or what it passed would keep the old addresses' tab (plan 256, Codex critique).
  */
 export function requestTabRefresh(db: Db): void {
-  if (!db.get("SELECT 1 FROM accounts WHERE kind = 'gmail'")) return;
+  // the kinds with tabs (plan 275: Outlook's Other too, Codex critique #9)
+  if (!db.get("SELECT 1 FROM accounts WHERE kind IN ('gmail', 'outlook')")) return;
   const row = db.get<{ value_json: string }>("SELECT value_json FROM settings WHERE key = ?", KEY);
   if (row && (JSON.parse(row.value_json) as Progress).phase === "messages") return;
   db.run("INSERT OR REPLACE INTO settings (key, value_json) VALUES (?, ?)", KEY, JSON.stringify({ phase: "threads", after: 0 } satisfies Progress));
@@ -63,7 +64,7 @@ export function tabsSlice(db: Db, limit: number): { processed: number; more: boo
   const ids = db
     // in id order: a slice its budget stops goes on after the last thread it did, so none below it may come later
     // (plan 256, Codex code review: the planner can walk the window account by account)
-    .all<{ id: number }>("SELECT t.id FROM threads t JOIN accounts a ON a.id = t.account_id WHERE t.id > ? AND t.id <= ? AND t.in_inbox = 1 AND a.kind = 'gmail' ORDER BY t.id", state.after, to)
+    .all<{ id: number }>("SELECT t.id FROM threads t JOIN accounts a ON a.id = t.account_id WHERE t.id > ? AND t.id <= ? AND t.in_inbox = 1 AND a.kind IN ('gmail', 'outlook') ORDER BY t.id", state.after, to)
     .map((r) => r.id);
   let read = 0;
   let last = to;

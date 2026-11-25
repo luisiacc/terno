@@ -25,6 +25,8 @@ import { AccountChecks, DATED_CHECKED_KEY } from "./account-checks";
 const MAX_ATTEMPTS = 3;
 /** plan 239: the queue is read this many marks at a time to order a pass */
 const MARKS_CHUNK = 1000;
+/** plan 210, 275: what a provider sorted as bulk (Gmail's Social and Promotions, Outlook's Other) is read only for a relayed ask */
+const bulkTab = (tab: DatedSource["tab"]) => tab === "social" || tab === "promotions" || tab === "other";
 const RETRY_WAIT_MS = 60_000;
 /** what a message costs to read, for the check's estimate: ~600 tokens in, ~100 out */
 /** the 14-day check walks this many received messages at most, to find the `DATED_SCAN_MAX` worth reading (Codex code review) */
@@ -1409,7 +1411,7 @@ export class DatedWorker {
     // plan 210 (iteration 5, revision 8): Social and Promotions only for a person's ask a service relays (its body tells)
     // plan 240: a sender always shown is read in full, whatever their tab or their words
     const always = (await store.today.shown.list()).some((s) => s.key === src.senderKey);
-    const filtered = !always && !open.length && (src.tab === "social" || src.tab === "promotions");
+    const filtered = !always && !open.length && bulkTab(src.tab);
     if (filtered && !mayRelay(src.subject) && src.bodyState !== "full") return drop();
     if (src.bodyState !== "full" && !src.bodyUnavailable) return { hold: src.senderKey };
     const { text, whole } = await this.text(src);
@@ -1601,7 +1603,7 @@ export class DatedWorker {
       // plan 211: nor an account with AI or What matters off
       const sources = (await Promise.all(chunk.map((id) => store.dated.source(id)))).filter((s): s is DatedSource => !!s && !s.spam && !s.trash && !s.threadSpam && !s.draft && !s.sent && !s.own && !silenced(s, silence) && this.host.gate.reads(s.accountId));
       // plan 210 (iteration 5, revision 8): Social and Promotions only for a person's ask a service relays, read in its body
-      const social = (s: DatedSource) => s.tab === "social" || s.tab === "promotions";
+      const social = (s: DatedSource) => bulkTab(s.tab);
       // round 2: a body not here yet can't be judged; it's read, and the worker waits for it (the filter errs towards reading)
       const judged = sources.filter((s) => (s.automated || social(s)) && (s.bodyState === "full" || s.bodyUnavailable));
       const texts = judged.length ? await store.aiSummaries.text(judged.map((s) => ({ messageId: s.id, limit: DATED_TEXT_CHARS }))) : new Map<number, string | null>();

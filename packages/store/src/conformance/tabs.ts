@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MailStore } from "../mail-store";
-import { backfillFacts, ingest, msg, threadOf, withAccounts } from "./fixtures";
+import { backfillFacts, ingest, msg, outlookAccount, threadOf, withAccounts } from "./fixtures";
 
 const NOW = Date.UTC(2026, 9, 31, 12);
 const DAY = 86_400_000;
@@ -237,6 +237,98 @@ export function defineTabsConformance(fresh: () => Promise<MailStore>, reopen: (
       await store.sync.updateFlags(gmail, [{ messageId: promoMsg, flags: {}, gmailLabels: PROMO }]);
       expect(await ids(store, { view: "inbox", accountId: gmail, tab: "promotions", limit: 10 })).toEqual([]);
       expect(await ids(store, { view: "inbox", accountId: gmail, limit: 10 })).toContain(promo);
+    });
+  });
+
+  describe("Outlook's Focused Inbox, Other out of the Inbox (plan 275)", () => {
+    const FOCUSED = 1, OTHER = 6;
+    async function setup() {
+      const store = await fresh();
+      const [gmail] = await withAccounts(store, 1);
+      const outlook = await outlookAccount(store);
+      const thread = async (pid: string, over: Partial<Parameters<typeof msg>[0]> = {}) => {
+        await ingest(store, [msg({ accountId: outlook, providerMsgId: pid, date: NOW - DAY, folder: null, ...over })]);
+        return threadOf(store, pid);
+      };
+      const news = await thread("news", { from: addr("news@shop.com"), category: OTHER, date: NOW - 5 * DAY });
+      const person = await thread("person", { from: addr("ana@friends.com"), category: FOCUSED, date: NOW - 4 * DAY });
+      // one Focused message keeps the conversation in the Inbox
+      const mixed = await thread("mixed-1", { from: addr("news@shop.com"), category: OTHER, date: NOW - 3 * DAY, rfcMessageId: "mixed@o" });
+      await ingest(store, [msg({ accountId: outlook, providerMsgId: "mixed-2", from: addr("ana@friends.com"), category: FOCUSED, date: NOW - 3 * DAY + 1, inReplyTo: "mixed@o", references: ["mixed@o"], subject: "Re: Subject", folder: null })]);
+      await ingest(store, [msg({ accountId: gmail!, providerMsgId: "promo", from: addr("deals@shop.com"), gmailLabels: PROMO, date: NOW - 2 * DAY })]);
+      const promo = await threadOf(store, "promo");
+      return { store, gmail: gmail!, outlook, news, person, mixed, promo };
+    }
+    const ids = async (store: MailStore, p: Parameters<MailStore["threads"]["list"]>[0]) => (await store.threads.list(p)).items.map((t) => t.id);
+    const messageOf = async (store: MailStore, thread: number) => (await store.threads.get(thread))!.messages[0]!.id;
+
+    it("a conversation that's all Other leaves the unified and the account's Inbox, lives in Other, counts there, and isn't news", async () => {
+      const { store, outlook, news, person, mixed } = await setup();
+      expect(await ids(store, { view: "inbox", accountId: outlook, limit: 10 })).toEqual([mixed, person]);
+      expect(await ids(store, { view: "inbox", limit: 10 })).not.toContain(news);
+      expect(await ids(store, { view: "inbox", accountId: outlook, tab: "other", limit: 10 })).toEqual([news]);
+      expect((await store.threads.list({ view: "inbox", accountId: outlook, tab: "other", limit: 10 })).items[0]).toMatchObject({ id: news, tab: 3 });
+      expect(await store.threads.scopeIds({ view: "inbox", accountId: outlook, tab: "other", limit: 10 })).toEqual([news]);
+      expect(await store.threads.scopeCount({ view: "inbox", accountId: outlook, tab: "other", limit: 10 })).toBe(1);
+      const counts = await store.threads.counts(NOW);
+      expect(counts.tabUnread?.[`${outlook}:other`]).toBe(1);
+      expect(counts.inboxUnreadByAccount[outlook]).toBe(2);
+      const r = await ingest(store, [msg({ accountId: outlook, providerMsgId: "new-other", from: addr("deals@else.com"), category: OTHER, date: NOW, folder: null })]);
+      expect((await store.sync.arrivals(r.inserted)).map((a) => a.inInbox)).toEqual([false]);
+    });
+
+    it("each account follows its own setting: Outlook's off shows its Other whatever Gmail's is, and the reverse", async () => {
+      const { store, gmail, outlook, news, promo } = await setup();
+      await store.accounts.update(outlook, { separateTabs: false });
+      expect(await ids(store, { view: "inbox", limit: 10 })).toContain(news);
+      expect(await ids(store, { view: "inbox", limit: 10 })).not.toContain(promo);
+      expect((await store.threads.counts(NOW)).inboxUnreadByAccount[outlook]).toBe(3);
+      await store.accounts.update(outlook, { separateTabs: true });
+      await store.accounts.update(gmail, { separateTabs: false });
+      expect(await ids(store, { view: "inbox", limit: 10 })).not.toContain(news);
+      expect(await ids(store, { view: "inbox", limit: 10 })).toContain(promo);
+    });
+
+    it("Outlook's classification as a flag update re-tabs it; Move to Other and Move to Inbox are Outlook's only, and each undo puts back the category alone", async () => {
+      const { store, gmail, outlook, news, person, promo } = await setup();
+      await store.sync.updateFlags(outlook, [{ messageId: await messageOf(store, person), flags: {}, category: OTHER }]);
+      expect(await ids(store, { view: "inbox", accountId: outlook, tab: "other", limit: 10 })).toEqual([person, news]);
+      await store.sync.updateFlags(outlook, [{ messageId: await messageOf(store, person), flags: {}, category: FOCUSED }]);
+      // Move to Other: the Outlook conversation only (a Gmail one has no Other), and its undo leaves a later read alone
+      const moved = await store.threads.act({ threadIds: [person, promo], action: "toOther", signal: null, now: NOW });
+      expect(moved.threadIds).toEqual([person]);
+      expect(moved.before).toEqual([expect.objectContaining({ category: FOCUSED, only: "category" })]);
+      expect((await store.ops.claimReady(NOW + 1, 10)).map((o) => [o.kind, o.account_id])).toEqual([["toOther", outlook]]);
+      await store.threads.act({ threadIds: [person], action: "markRead", signal: null, now: NOW + 2 });
+      await store.threads.restore({ messages: moved.before, now: NOW + 3 });
+      expect(await ids(store, { view: "inbox", accountId: outlook, limit: 10 })).toContain(person);
+      expect((await store.threads.summaries([person]))[0]!.unread).toBe(false);
+      // Move to Promotions never reaches an Outlook conversation
+      const wrong = await store.threads.act({ threadIds: [news], action: "toPromotions", signal: null, now: NOW + 4 });
+      expect(wrong.threadIds).toEqual([]);
+      // Move to Inbox out of Other: one action, one undo back to Other
+      const back = await store.threads.act({ threadIds: [news], action: "moveToInbox", signal: null, now: NOW + 5 });
+      expect(back.threadIds).toEqual([news]);
+      expect(await ids(store, { view: "inbox", accountId: outlook, tab: "other", limit: 10 })).toEqual([]);
+      expect((await store.ops.claimReady(NOW + 6, 10)).map((o) => o.kind)).toContain("toPrimary");
+      await store.threads.restore({ messages: back.before, now: NOW + 7 });
+      expect(await ids(store, { view: "inbox", accountId: outlook, tab: "other", limit: 10 })).toEqual([news]);
+      void gmail;
+    });
+
+    it("a stale classification never takes back a move still on its way; a fresh one after it lands is taken", async () => {
+      const { store, outlook, news } = await setup();
+      await store.threads.act({ threadIds: [news], action: "toPrimary", signal: null, now: NOW });
+      const id = await messageOf(store, news);
+      // what a delta read before the move, committed after it
+      await store.sync.updateFlags(outlook, [{ messageId: id, flags: {}, category: OTHER }]);
+      expect(await ids(store, { view: "inbox", accountId: outlook, tab: "other", limit: 10 })).toEqual([]);
+      for (const op of await store.ops.claimReady(NOW + 1, 10)) await store.ops.complete(op.id, undefined, NOW + 2);
+      // a read begun after it landed
+      const observation = await store.sync.beginObservation?.(outlook, { authoritativeFlags: true });
+      if (!observation) return;
+      await store.sync.updateFlags(outlook, [{ messageId: id, expectedProviderMsgId: "news", flags: {}, category: OTHER }], observation);
+      expect(await ids(store, { view: "inbox", accountId: outlook, tab: "other", limit: 10 })).toEqual([news]);
     });
   });
 }

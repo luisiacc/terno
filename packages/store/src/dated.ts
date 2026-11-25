@@ -122,7 +122,8 @@ export interface DatedSource {
   /** plan 17's `senderIsPerson` (a role address only if you've written to it): who an ask may come from (third panel round) */
   person: boolean;
   /** Gmail's tab for its thread, or null where there are none (plan 86) */
-  tab: "primary" | "social" | "promotions" | "updates" | "forums" | null;
+  /** plan 275: "other" is Outlook's Focused Inbox Other */
+  tab: "primary" | "social" | "promotions" | "updates" | "forums" | "other" | null;
   draft: boolean;
   sent: boolean;
   spam: boolean;
@@ -154,7 +155,7 @@ export function datedTab(threadTab: number, category: number | null): DatedSourc
   if (tab) return tab;
   if (category == null) return null;
   // Gmail's own category, whether or not this account shows the tabs apart: Promotions is Promotions
-  return category === 2 ? "promotions" : category === 3 ? "social" : category === 4 ? "updates" : category === 5 ? "forums" : "primary";
+  return category === 2 ? "promotions" : category === 3 ? "social" : category === 4 ? "updates" : category === 5 ? "forums" : category === 6 ? "other" : "primary";
 }
 
 export interface DatedWrite {

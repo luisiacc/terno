@@ -1,3 +1,4 @@
+import type { ThreadAction } from "@terno/core";
 import { FlagObservationError, operationFlagFields, type LocalFlagField } from "./flag-intents";
 import { RETURN_TO } from "./folder-move";
 import type { FlagObservation, FlagReconciliation, FlagSnapshotRequest, MessageState } from "./types";
@@ -9,12 +10,15 @@ export interface FlagOp { id: string; account_id: number; seq: number; kind: str
 export interface FlagMessage { id: number; account_id: number; provider_msg_id: string | null; is_read: number; is_starred: number; in_inbox: number; is_trash: number; is_spam: number; category: number | null }
 
 export const FLAG_COLUMNS: Record<LocalFlagField, keyof FlagMessage> = { isRead: "is_read", isStarred: "is_starred", inInbox: "in_inbox", isTrash: "is_trash", isSpam: "is_spam", category: "category" };
-const VALUES: Record<string, Partial<Record<LocalFlagField, number>>> = {
+// every thread action, so a new one can't be left out (plan 275: toOther was, and only an account with a flag clock met it)
+const VALUES: Record<ThreadAction | typeof RETURN_TO, Partial<Record<LocalFlagField, number>>> & Record<string, Partial<Record<LocalFlagField, number>>> = {
   markRead: { isRead: 1 }, markUnread: { isRead: 0 }, star: { isStarred: 1 }, unstar: { isStarred: 0 },
   archive: { inInbox: 0 }, trash: { isTrash: 1, inInbox: 0 }, spam: { isSpam: 1, inInbox: 0 },
   notSpam: { isSpam: 0, inInbox: 1 }, moveToInbox: { inInbox: 1, isTrash: 0, isSpam: 0 },
   // plan 86: a Gmail message's category (MessageCategory)
   toNoCategory: { category: 0 }, toPrimary: { category: 1 }, toPromotions: { category: 2 }, toSocial: { category: 3 }, toUpdates: { category: 4 }, toForums: { category: 5 },
+  // plan 275: an Outlook message to Focused Inbox's Other
+  toOther: { category: 6 },
   // plan 259 (exact undo): a one-folder message back to Archive or Sent
   [RETURN_TO]: { inInbox: 0, isTrash: 0, isSpam: 0 },
 };
@@ -143,13 +147,16 @@ export function reaffirmFlagIntent(repo: FlagRepository, messageIds: readonly nu
 }
 
 /** Reaffirm saved values only when a current parked effect would reverse them. */
+/** the field a scoped snapshot (`MessageState.only`) puts back */
+const ONLY_FIELD = { read: "isRead", star: "isStarred", category: "category" } as const satisfies Record<NonNullable<MessageState["only"]>, LocalFlagField>;
+
 export function reaffirmSavedFlagIntent(repo: FlagRepository, saved: readonly MessageState[], versions: Map<number, number>): void {
   for (const state of saved) {
     const message = repo.message(state.id);
     if (!stable(message) || !repo.clock(message.account_id)) continue;
     for (const field of Object.keys(FLAG_COLUMNS) as LocalFlagField[]) {
-      // a snapshot from before plan 86, or not Gmail: no category to reaffirm
-      if (state[field] == null) continue;
+      // a snapshot from before plan 86, or not Gmail: no category to reaffirm; a scoped one (plan 275 critique #7), its field alone
+      if (state[field] == null || (state.only && field !== ONLY_FIELD[state.only])) continue;
       const row = repo.intent(message.id, field);
       if (!row || Number(state[field]) !== Number(message[FLAG_COLUMNS[field]]) || row.desired === Number(state[field]) || !repo.hasCurrentUnknownEffect(message.id, field, row.intent_version, row.desired)) continue;
       let version = versions.get(message.account_id);

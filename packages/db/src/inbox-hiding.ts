@@ -16,7 +16,10 @@ export function shownInInbox(alias: string, hidden: readonly number[]): { where:
 /** What the plain Inbox leaves out: plan 83's hidden categories, plan 86's Gmail tabs, plan 238's accounts. */
 export interface InboxHiding {
   categories: readonly number[];
-  /** plan 86: null when no Gmail account separates its tabs (no test at all); else the Gmail accounts that don't */
+  /**
+   * plan 86, 275: null when no account with tabs (Gmail's, Outlook's Other) separates them (no test at all); else those
+   * of them that don't (each account by its own setting, whatever another kind's is)
+   */
   tabsOff: readonly number[] | null;
   /** plan 238: the accounts out of the all-accounts Inbox (an account's own Inbox keeps them) */
   accountsOff: readonly number[];
@@ -25,13 +28,13 @@ export const NO_HIDING: InboxHiding = { categories: [], tabsOff: null, accountsO
 
 /** Read per query: the categories table and the accounts are a handful of rows. */
 export function inboxHiding(db: Db): InboxHiding {
-  const accounts = db.all<{ id: number; gmail: number; tabsOff: number; out: number }>(
-    "SELECT id, kind = 'gmail' AS gmail, coalesce(json_extract(provider_config, '$.separateTabs') = 0, 0) AS tabsOff, coalesce(json_extract(provider_config, '$.unified') = 0, 0) AS out FROM accounts ORDER BY id",
+  const accounts = db.all<{ id: number; tabbed: number; tabsOff: number; out: number }>(
+    "SELECT id, kind IN ('gmail', 'outlook') AS tabbed, coalesce(json_extract(provider_config, '$.separateTabs') = 0, 0) AS tabsOff, coalesce(json_extract(provider_config, '$.unified') = 0, 0) AS out FROM accounts ORDER BY id",
   );
-  const gmail = accounts.filter((a) => a.gmail);
+  const tabbed = accounts.filter((a) => a.tabbed);
   return {
     categories: hiddenCategories(db),
-    tabsOff: gmail.some((a) => !a.tabsOff) ? gmail.filter((a) => a.tabsOff).map((a) => a.id) : null,
+    tabsOff: tabbed.some((a) => !a.tabsOff) ? tabbed.filter((a) => a.tabsOff).map((a) => a.id) : null,
     accountsOff: accounts.filter((a) => a.out).map((a) => a.id),
   };
 }

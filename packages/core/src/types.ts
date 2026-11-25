@@ -397,7 +397,7 @@ export const FOLDERS_PER_ACCOUNT_MAX = 10_000;
 /** A folder's place in counts: "accountId:key" */
 export const folderRef = (accountId: AccountId, key: string) => `${accountId}:${key}`;
 /** A Gmail tab's place in counts: "accountId:promotions" (plan 86) */
-export const tabRef = (accountId: AccountId, tab: "promotions" | "social") => `${accountId}:${tab}`;
+export const tabRef = (accountId: AccountId, tab: import("./tabs").Tab) => `${accountId}:${tab}`;
 /**
  * The standard folders whose unread threads the sidebar counts besides the Inbox: Sent's would only repeat it, and
  * Trash has none (a trashed message is never unread).
@@ -521,7 +521,9 @@ export type ThreadAction =
   | "toSocial"
   | "toUpdates"
   | "toForums"
-  | "toNoCategory";
+  | "toNoCategory"
+  // plan 275: an Outlook message to Focused Inbox's Other (toPrimary takes it back to Focused)
+  | "toOther";
 
 export type UserActionKind = "archive" | "trash" | "spam" | "star" | "reply" | "markImportant" | "read";
 

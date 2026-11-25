@@ -1,4 +1,4 @@
-import { categoryAction, categoryOfJson, CATEGORY_ACTIONS, isCategoryAction, type MessageCategory, type ThreadAction } from "@terno/core";
+import { categoriesOf, categoryAction, categoryOfJson, CATEGORY_ACTIONS, isCategoryAction, type MessageCategory, type ThreadAction } from "@terno/core";
 import { actionTargets, flagScope, isLocationAction, undoTarget, oneFolderFlags, reaffirmFlagIntent, restoreLocationOps, restoreDestination, restoreOneFolderOps, sameLocation, samePlace, MOVE_TO_FOLDER, RETURN_TO, type MessageState, type MoveToFolderPayload, type ReturnToPayload } from "@terno/store";
 import { sqlFlags } from "./flag-intents";
 import { oneFolderFolders } from "./folders";
@@ -47,7 +47,7 @@ function withCategory(rows: (Msg & { gmail_labels?: string | null })[]): Msg[] {
 }
 
 /** Which messages an action changes, and the column updates applied to them. */
-function plan(action: ThreadAction, msgs: Msg[], explicit = false): { ids: number[]; set: string; scope?: number[] } {
+function plan(action: ThreadAction, msgs: Msg[], explicit = false, kindOf: (accountId: number) => string = () => ""): { ids: number[]; set: string; scope?: number[] } {
   const latestPerThread = new Map<number, Msg>();
   for (const m of msgs) {
     const cur = latestPerThread.get(m.thread_id);
@@ -57,9 +57,10 @@ function plan(action: ThreadAction, msgs: Msg[], explicit = false): { ids: numbe
   const latest = explicit ? msgs : [...latestPerThread.values()];
   const ids = (list: Msg[]) => list.map((m) => m.id);
   if (isCategoryAction(action)) {
-    // plan 86: Gmail messages someone else wrote (yours never decide a tab); only Gmail has categories
+    // plan 86: messages someone else wrote (yours never decide a tab), of an account whose kind has this category
+    // (plan 275, Codex critique #5: Gmail's labels, Outlook's focused and other; never another kind's)
     const target = CATEGORY_ACTIONS[action];
-    const chosen = msgs.filter((m) => m.category !== null && !m.is_sent && !m.is_draft);
+    const chosen = msgs.filter((m) => m.category !== null && !m.is_sent && !m.is_draft && !!categoriesOf(kindOf(m.account_id))?.has(target));
     return { ids: ids(chosen.filter((m) => m.category !== target)), set: `category = ${target}`, scope: ids(chosen) };
   }
   switch (action) {
@@ -111,9 +112,16 @@ export function applyThreadAction(db: Db, threadIds: readonly number[], action: 
   });
 }
 
+/** Each account's kind, read once an action (a handful of rows). */
+function accountKinds(db: Db): (accountId: number) => string {
+  const kinds = new Map(db.all<{ id: number; kind: string }>("SELECT id, kind FROM accounts").map((a) => [a.id, a.kind]));
+  return (accountId) => kinds.get(accountId) ?? "";
+}
+
 /**
- * Plan 86: Move to Inbox also takes these threads out of Gmail's Promotions and Social, where their account keeps
- * them apart (else they'd land in the tab again): their tabbed messages of someone else's go to Primary.
+ * Plan 86: Move to Inbox also takes these threads out of Gmail's Promotions and Social, and (plan 275) Outlook's Other,
+ * where their account keeps them apart (else they'd land in the tab again): their tabbed messages of someone else's go
+ * to Primary (Focused).
  */
 export function untabThreads(db: Db, threadIds: readonly number[]): ActionResult {
   return db.tx(() => {
@@ -122,8 +130,8 @@ export function untabThreads(db: Db, threadIds: readonly number[]): ActionResult
       const chunk = threadIds.slice(i, i + 500);
       for (const r of db.all<{ id: number }>(
         `SELECT m.id FROM messages m JOIN accounts a ON a.id = m.account_id
-         WHERE m.thread_id IN (${placeholders(chunk.length)}) AND a.kind = 'gmail' AND coalesce(json_extract(a.provider_config, '$.separateTabs'), 1) != 0
-           AND (m.category IN (2, 3) OR (m.category IS NULL AND m.gmail_labels IS NOT NULL))`,
+         WHERE m.thread_id IN (${placeholders(chunk.length)}) AND coalesce(json_extract(a.provider_config, '$.separateTabs'), 1) != 0
+           AND ((a.kind = 'gmail' AND (m.category IN (2, 3) OR (m.category IS NULL AND m.gmail_labels IS NOT NULL))) OR (a.kind = 'outlook' AND m.category = 6))`,
         ...chunk,
       )) ids.push(r.id);
     }
@@ -132,7 +140,7 @@ export function untabThreads(db: Db, threadIds: readonly number[]): ActionResult
       const chunk = ids.slice(i, i + 500);
       msgs.push(...withCategory(db.all<Msg>(`SELECT ${MSG_COLUMNS} FROM messages WHERE id IN (${placeholders(chunk.length)})`, ...chunk)));
     }
-    return applyToMessages(db, msgs.filter((m) => m.category === 2 || m.category === 3), "toPrimary", true);
+    return applyToMessages(db, msgs.filter((m) => m.category === 2 || m.category === 3 || m.category === 6), "toPrimary", true);
   });
 }
 
@@ -151,7 +159,7 @@ export function applyMessageAction(db: Db, messageIds: readonly number[], action
 }
 
 function applyToMessages(db: Db, msgs: Msg[], action: ThreadAction, explicit: boolean): ActionResult {
-  const { ids, set, scope } = plan(action, msgs, explicit);
+  const { ids, set, scope } = plan(action, msgs, explicit, isCategoryAction(action) ? accountKinds(db) : undefined);
   const changed = new Set(ids);
   reaffirmFlagIntent(sqlFlags(db), (scope ?? msgs.map((m) => m.id)).filter((id) => !changed.has(id)), action);
   const byId = new Map(msgs.map((m) => [m.id, m]));

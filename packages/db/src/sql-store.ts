@@ -736,6 +736,9 @@ export class SqlMailStore implements MailStore {
             // plan 86: the category, unless a move of the user's owns it until Gmail confirms it
             const category = categoryOf(u.gmailLabels)!;
             if (!owned?.has("category") && acceptFlagObservation(sqlFlags(this.db), u.messageId, "category", observation, category, () => { reconciliation.flagReconcileAccounts ??= [accountId]; })) sets.push(["category", category]);
+          } else if (u.category !== undefined && !owned?.has("category") && acceptFlagObservation(sqlFlags(this.db), u.messageId, "category", observation, u.category, () => { reconciliation.flagReconcileAccounts ??= [accountId]; })) {
+            // plan 275: Outlook's classification as Graph says it now, under the same owner and epoch checks
+            sets.push(["category", u.category]);
           }
           // plan 259 stage 2a: an Outlook message's folder as the server has it now (a pending move is replayed over it)
           if (u.folder !== undefined && placeReadFolder(this.db, u.messageId, accountId, u.folder, oneFolder) && !sets.length) {
