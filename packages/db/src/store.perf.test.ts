@@ -472,6 +472,20 @@ describe("Outlook's one folder a message (plan 259)", () => {
       await store.threads.act({ threadIds: [id], action: i % 2 ? "markUnread" : "markRead", signal: null, now: NOW });
       expect(unreadOf(id) > 0).toBe(i % 2 === 1);
     }, 60);
+    // the exact undo (plan 259): 50 conversations of the folder to the Inbox, then undone back to it, with every earlier
+    // pair's ops still queued (each message's place replays them)
+    let undo: Awaited<ReturnType<typeof store.threads.act>>["before"] = [];
+    let calls = 0;
+    await gate("Outlook: Move to Inbox 50 conversations of a folder, then undo it (+ ops)", 40, async () => {
+      const i = calls++;
+      const slice = threads.slice(1000 + Math.floor(i / 2) * 50, 1000 + Math.floor(i / 2) * 50 + 50);
+      if (i % 2 === 0) undo = (await store.threads.act({ threadIds: slice, action: "moveToInbox", signal: null, now: NOW })).before;
+      else {
+        const r = await store.threads.restore({ messages: undo, now: NOW });
+        expect(r.opIds).toHaveLength(1);
+      }
+    }, 20);
+    expect(store.db.get<{ n: number }>(`SELECT count(*) AS n FROM thread_folders WHERE folder = 'Big' AND thread_id IN (${threads.slice(1000, 1500).join()})`)!.n).toBe(500);
 
     // a delta read that saw 200 move out of Big: one slice, as ingest's (≥ 1k msgs/s)
     const moved = store.db.all<{ provider_msg_id: string }>("SELECT provider_msg_id FROM messages INDEXED BY messages_thread WHERE thread_id > ? AND thread_id <= ? ORDER BY thread_id LIMIT 200", base + 200, base + THREADS / 2);
