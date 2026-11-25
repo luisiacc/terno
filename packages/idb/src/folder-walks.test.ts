@@ -27,6 +27,36 @@ afterEach(async () => {
 
 const message = (id: number, thread: number, extra: Record<string, unknown> = {}) => ({ id, account_id: account, thread_id: thread, provider_msg_id: `w-${id}`, date: id, is_draft: 0, is_trash: 0, is_spam: 0, is_read: 0, gmail_labels: '["Label_w"]', ...extra });
 
+it("plan 259, Codex code review round 2 #3: a place another generation held, met again under this folder's own in a new bucket, is counted", () => {
+  c.db.tx(() => {
+    c.db.table("folders").put({ account_id: account, key: "A", path_json: '["A"]', selectable: 1, position: 0, except: [7] });
+    for (const id of [1, 2]) {
+      c.db.table("threads").put({ id, account_id: account, last_date: id, message_count: 1, unread_count: 0 });
+      c.db.table("messages").put(message(id, id, { gmail_labels: null }));
+    }
+    c.db.table("message_locations").put({ message_id: 1, account_id: account, mailbox: "A", uidvalidity: 7, uid: 1, flags: "[]" });
+    c.db.table("message_locations").put({ message_id: 2, account_id: account, mailbox: "A", uidvalidity: 7, uid: 2, flags: "[]" });
+  });
+  const keys = [{ mailbox: "A", except: [7] }];
+  // the first slice looks at message 1, another generation's: none counted
+  const first = countFolderMessages(c, account, keys, null, 1);
+  expect(first.messages).toBe(0);
+  expect(first.next).not.toBeNull();
+  // A emptied, then message 1 back under A's own generation (8): the index makes another bucket
+  const locations = c.db.table("message_locations") as unknown as { get(...k: unknown[]): Record<string, unknown> | undefined; deleteRow(row: Record<string, unknown>): void; put(row: Record<string, unknown>): unknown };
+  c.db.tx(() => {
+    for (const id of [1, 2]) locations.deleteRow(locations.get(id, "A")!);
+    locations.put({ message_id: 1, account_id: account, mailbox: "A", uidvalidity: 8, uid: 1, flags: "[]" });
+  });
+  let messages = first.messages;
+  for (let at = first.next; at; ) {
+    const r = countFolderMessages(c, account, keys, at, 1);
+    messages += r.messages;
+    at = r.next;
+  }
+  expect(messages).toBe(1);
+});
+
 it("an export of a conversation longer than a run takes a message updated between its runs once", () => {
   // longer than a run (16,384 ids a call): its order is read over two calls, the first message updated between them
   const N = 17_000;
@@ -140,6 +170,8 @@ it("two counts of one mailbox interleaved each walk their own places, every slic
     visits = 0;
     const r = countFolderMessages(c, account, ["Work"], at, LIMIT);
     expect(visits).toBeLessThanOrEqual(LIMIT + 1);
+    // the walk is what's instrumented: a slice that counted visited (Codex code review of plan 259, round 2 #5)
+    if (r.messages) expect(visits).toBeGreaterThan(0);
     return r;
   };
   try {

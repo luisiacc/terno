@@ -459,8 +459,19 @@ describe("Outlook's one folder a message (plan 259)", () => {
 
     // triage: an Outlook conversation's, and another account's with Outlook's folders populated (membership reads them)
     const others = store.db.all<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1 AND account_id != ? LIMIT 200", o).map((r) => r.id);
-    await gate("Outlook: archive / restore one conversation of another account (+ op)", 5, (i) => store.threads.act({ threadIds: [others[i % others.length]!], action: i % 2 ? "moveToInbox" : "archive", signal: null, now: NOW }), 60);
-    await gate("Outlook: mark read / unread one conversation in a folder (+ op)", 5, (i) => store.threads.act({ threadIds: [threads[i % 200]!], action: i % 2 ? "markUnread" : "markRead", signal: null, now: NOW }), 60);
+    // each pair of samples one thread's change and its undoing, so none is a no-op (Codex code review round 2 #6)
+    const inbox = (id: number) => store.db.get<{ in_inbox: number }>("SELECT in_inbox FROM threads WHERE id = ?", id)!.in_inbox;
+    const unreadOf = (id: number) => store.db.get<{ unread_count: number }>("SELECT unread_count FROM threads WHERE id = ?", id)!.unread_count;
+    expect(others.every((id) => inbox(id) === 1)).toBe(true);
+    await gate("Outlook: archive / restore one conversation of another account (+ op)", 5, (i) => store.threads.act({ threadIds: [others[Math.floor(i / 2) % others.length]!], action: i % 2 ? "moveToInbox" : "archive", signal: null, now: NOW }), 60);
+    expect(others.every((id) => inbox(id) === 1)).toBe(true);
+    store.db.run(`UPDATE messages SET is_read = 0 WHERE thread_id IN (${threads.slice(0, 30).join()})`);
+    store.db.tx(() => recomputeThreads(store.db, threads.slice(0, 30)));
+    await gate("Outlook: mark read / unread one conversation in a folder (+ op)", 5, async (i) => {
+      const id = threads[Math.floor(i / 2) % 30]!;
+      await store.threads.act({ threadIds: [id], action: i % 2 ? "markUnread" : "markRead", signal: null, now: NOW });
+      expect(unreadOf(id) > 0).toBe(i % 2 === 1);
+    }, 60);
 
     // a delta read that saw 200 move out of Big: one slice, as ingest's (≥ 1k msgs/s)
     const moved = store.db.all<{ provider_msg_id: string }>("SELECT provider_msg_id FROM messages INDEXED BY messages_thread WHERE thread_id > ? AND thread_id <= ? ORDER BY thread_id LIMIT 200", base + 200, base + THREADS / 2);

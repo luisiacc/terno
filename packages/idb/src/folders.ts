@@ -215,8 +215,9 @@ export function countFolderMessages(c: Ctx, accountId: number, keys: readonly Fo
       // the folder's bucket in its index: one emptied is let go and another made when a place comes back, which a walk
       // of the old one never meets (Codex code review #2): the new one is walked, what was counted skipped
       const bucket = one ? placedIn.bucket("account_folder", accountId, key) : locations.bucket("mailbox", accountId, key);
-      if (!walk) walk = { keys: (bucket ?? NO_KEYS).values(), bucket, visited: new Set(), looked: 0 };
-      else if (walk.bucket !== bucket) walk = { ...walk, keys: (bucket ?? NO_KEYS).values(), bucket };
+      const keysOf = () => (one ? placedIn.keysBy("account_folder", accountId, key) : locations.keysBy("mailbox", accountId, key));
+      if (!walk) walk = { keys: keysOf(), bucket, visited: new Set(), looked: 0 };
+      else if (walk.bucket !== bucket) walk = { ...walk, keys: keysOf(), bucket };
       const asked = budget;
       let n = 0;
       let ended = false;
@@ -228,8 +229,11 @@ export function countFolderMessages(c: Ctx, accountId: number, keys: readonly Fo
         const again = walk.looked++ < seen;
         const l = one ? placedIn.rows.get(k.value) : locations.rows.get(k.value);
         if (!l || walk.visited.has(l.message_id as number) || (one && l.folder !== key)) continue;
-        walk.visited.add(l.message_id as number);
-        if (!again && (one || firstPlace(l.message_id as number) === at.key)) messages++;
+        // a message is passed for good once counted here (or before the walk was lost); one this folder doesn't place
+        // (another generation) is looked at again if it comes back (Codex code review round 2 #3)
+        const here = one || firstPlace(l.message_id as number) === at.key;
+        if (again || here) walk.visited.add(l.message_id as number);
+        if (!again && here) messages++;
       }
       budget -= Math.max(1, n);
       // (an Outlook folder has no rows of threads to read after its places)
@@ -272,7 +276,6 @@ export function countFolderMessages(c: Ctx, accountId: number, keys: readonly Fo
 
 /** a count's walks of a folder's places, per store, by the count's walk and the folder (exported for tests) */
 export const countWalks = new WeakMap<Ctx, Map<string, { keys: Iterator<Key>; bucket: ReadonlySet<Key> | undefined; visited: Set<number>; looked: number }>>();
-const NO_KEYS: ReadonlySet<Key> = new Set();
 /** the last walk id given (an object property: a module `let` read then reset miscompiles under the React Compiler) */
 const countWalkIds = { last: 0 };
 
