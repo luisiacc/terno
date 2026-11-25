@@ -39,6 +39,8 @@ export interface DevServerOptions {
   openExternal?: BackendOptions["openExternal"];
   /** plan 123: the Google clients a build carries, the only way to connect Gmail (E2E passes a test one) */
   googleClients?: BackendOptions["googleClients"];
+  /** plan 259: the Microsoft app registration a build carries (E2E passes a test one beside a synthetic Microsoft) */
+  microsoftClients?: BackendOptions["microsoftClients"];
 }
 
 export interface DevServer {
@@ -78,6 +80,7 @@ export async function startDevServer(o: DevServerOptions): Promise<DevServer> {
     unsubscribeTransport: o.unsubscribeTransport,
     openExternal: o.openExternal,
     googleClients: o.googleClients,
+    microsoftClients: o.microsoftClients,
     log: logBackend,
   });
   if (o.seed !== false && (await seedDemo(backend.store, { threads: o.threads, accounts: o.accounts }))) {
