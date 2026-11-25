@@ -11,8 +11,10 @@ export const ORIGINAL_HEADERS_MAX = 256 * 1024;
 export const ORIGINAL_SOURCE_MAX = 1024 * 1024;
 /** One summary value, at most */
 export const ORIGINAL_VALUE_MAX = 2000;
-/** One piece of a download */
-export const ORIGINAL_PIECE = 512 * 1024;
+/** One piece of a download: small enough to encode and decode within a turn's budget on either side */
+export const ORIGINAL_PIECE = 192 * 1024;
+/** One field's value read for the summary, at most (a header block of one huge folded field stays linear) */
+const FIELD_MAX = 16 * 1024;
 /** The HTML shown, at most (UTF-16 code units) */
 export const ORIGINAL_HTML_MAX = 2_000_000;
 
@@ -66,18 +68,20 @@ function headerEnd(bytes: Uint8Array, max: number): number {
 
 /** The headers' fields, unfolded, in order (names lower case) */
 export function originalFields(headers: string): { name: string; value: string }[] {
-  const fields: { name: string; value: string }[] = [];
+  const fields: { name: string; parts: string[]; size: number }[] = [];
   for (const line of headers.split(/\r?\n/)) {
     if (/^[ \t]/.test(line)) {
       const last = fields.at(-1);
-      if (last) last.value += ` ${line.trim()}`;
+      // parts joined once at the end: a field folded over thousands of lines never copies itself each time
+      if (last && last.size < FIELD_MAX) { const part = line.trim(); last.parts.push(part); last.size += part.length + 1; }
       continue;
     }
     const colon = line.indexOf(":");
     if (colon <= 0) continue;
-    fields.push({ name: line.slice(0, colon).trim().toLowerCase(), value: line.slice(colon + 1).trim() });
+    const value = line.slice(colon + 1, colon + 1 + FIELD_MAX).trim();
+    fields.push({ name: line.slice(0, colon).trim().toLowerCase(), parts: [value], size: value.length });
   }
-  return fields;
+  return fields.map((f) => ({ name: f.name, value: f.parts.join(" ").slice(0, FIELD_MAX) }));
 }
 
 /** A header value without its (nested) comments */
@@ -99,18 +103,38 @@ function uncommented(value: string): string {
 const METHODS = ["spf", "dkim", "dmarc"] as const;
 const ABOUT: Record<(typeof METHODS)[number], readonly string[]> = { spf: ["smtp.mailfrom", "smtp.helo"], dkim: ["header.d", "header.i"], dmarc: ["header.from"] };
 
+/** A header value cut at `;` outside quoted strings (a `reason="a; dmarc=pass"` is one clause, never two) */
+function clauses(value: string): string[] {
+  const out: string[] = [];
+  let at = 0;
+  let quoted = false;
+  for (let i = 0; i < value.length; i++) {
+    const c = value[i];
+    if (c === "\\" && quoted) { i++; continue; }
+    if (c === "\"") quoted = !quoted;
+    else if (c === ";" && !quoted) { out.push(value.slice(at, i)); at = i + 1; }
+  }
+  out.push(value.slice(at));
+  return out.map((x) => x.trim());
+}
+
+/** `name=value` pairs (whitespace around `=` allowed, values quoted or not) and bare words, in order */
+const TOKEN = /([^\s="]+)\s*=\s*("(?:[^"\\]|\\.)*"|[^\s"]+)|"(?:[^"\\]|\\.)*"|[^\s="]+/g;
+
 /** RFC 8601: `authserv-id; method=result prop=value …; …`. Of several results for one method, a pass, else the first. */
 export function authenticationResults(value: string): OriginalSummary["auth"] | undefined {
-  const [head, ...results] = uncommented(value).split(";").map((s) => s.trim());
+  const [head, ...results] = clauses(uncommented(value));
   const reporter = head?.split(/\s+/)[0];
-  if (!reporter || reporter.includes("=")) return undefined;
+  if (!reporter || reporter.includes("=") || reporter.includes("\"")) return undefined;
   const auth: NonNullable<OriginalSummary["auth"]> = { reporter: cap(reporter) };
   for (const result of results) {
-    const tokens = result.split(/\s+/).filter(Boolean);
-    const [method, verdict] = (tokens[0] ?? "").split("=").map((s) => s.trim().toLowerCase());
-    if (!verdict || !(METHODS as readonly string[]).includes(method!)) continue;
+    const tokens = [...result.matchAll(TOKEN)];
+    const [first, ...rest] = tokens;
+    const method = first?.[1]?.toLowerCase();
+    const verdict = first?.[2]?.toLowerCase().replace(/^"|"$/g, "");
+    if (!method || !verdict || !(METHODS as readonly string[]).includes(method)) continue;
     const m = method as (typeof METHODS)[number];
-    const props = new Map(tokens.slice(1).map((t) => t.split("=")).filter((p) => p.length >= 2).map(([k, ...v]) => [k!.toLowerCase(), v.join("=").replace(/^"|"$/g, "")]));
+    const props = new Map(rest.filter((t) => t[1] !== undefined).map((t) => [t[1]!.toLowerCase(), t[2]!.replace(/^"|"$/g, "")]));
     const about = ABOUT[m].map((k) => props.get(k)).find(Boolean);
     const found: AuthVerdict = { result: verdict.slice(0, 40), ...(about && { about: cap(about.replace(/^@/, "")) }) };
     if (!auth[m] || (auth[m].result !== "pass" && found.result === "pass")) auth[m] = found;
@@ -160,6 +184,16 @@ export function describeOriginal(bytes: Uint8Array): OriginalView {
   // a header block cut short may end inside a folded field: that field's start still reads
   const summary = originalSummary(headersCut ? headers.slice(0, headers.lastIndexOf("\n") + 1 || undefined) : headers);
   return { size: bytes.length, headers, headersCut, source: decoder().decode(bytes.subarray(0, cut)), sourceCut, summary };
+}
+
+/**
+ * The original's file name: the subject as a name (no path separators or control characters, at most 100 characters)
+ * and `.eml`, which a long subject never cuts off (Codex code review #11). `fallback`: the name with no subject.
+ */
+export function originalFilename(subject: string, fallback: string): string {
+  // oxlint-disable-next-line no-control-regex -- file names exclude control characters
+  const stem = subject.replace(/[\\/:]/g, "-").replace(/[\x00-\x1f\x7f\u202a-\u202e\u2066-\u2069]/g, "").replace(/\s+/g, " ").trim().slice(0, 100).replace(/[\ud800-\udbff]$/u, "").replace(/^[.\s]+|[.\s]+$/gu, "");
+  return `${stem || fallback}.eml`;
 }
 
 /** Why a message's original isn't shown when nothing went wrong: there's no source to read */

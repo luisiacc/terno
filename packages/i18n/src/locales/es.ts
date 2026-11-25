@@ -1362,6 +1362,7 @@ const es = {
   "reader.original.downloaded": "Original descargado",
   "reader.original.downloadFailed": "No se pudo descargar el original. Inténtalo de nuevo.",
   "reader.original.tryAgain": "Intentar de nuevo",
+  "reader.original.filename": "mensaje",
   "reader.original.messageId": "ID del mensaje",
   "reader.original.created": "Creado el",
   "reader.original.from": "De",

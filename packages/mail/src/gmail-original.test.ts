@@ -33,6 +33,12 @@ describe("decodeGmailRaw (plan 272)", () => {
     expect(turns).toBeGreaterThan(0);
   });
 
+  it("refuses a source over the message bound, however the answer fits its own (Codex code review #12)", async () => {
+    const answer = (n: number) => chunked(`{"id":"x","raw":"${base64url(new Uint8Array(n).fill(65))}"}`, 1000);
+    expect((await decodeGmailRaw(answer(3000), "x", noTurn, 3000)).length).toBe(3000);
+    await expect(decodeGmailRaw(answer(3001), "x", noTurn, 3000)).rejects.toMatchObject({ code: "input-limit" });
+  });
+
   it("refuses an answer that isn't exactly the message asked for", async () => {
     const raw = base64url(source);
     await expect(decodeGmailRaw(chunked(`{"id":"other","raw":"${raw}"}`, 50), "18c1", noTurn)).rejects.toMatchObject({ code: "malformed-resource" });

@@ -596,6 +596,8 @@ export class BackendCore {
         return this.authorize(method, ctx);
       },
       onDisconnect: (ctx) => {
+        // plan 272: a renderer that went (closed, reloaded) leaves no read running and no bytes kept
+        this.originals.dropClient(ctx.clientId);
         this.aiService.disconnected(ctx.clientId);
         this.writing.disconnected(ctx.clientId);
         this.actions.disconnected(ctx.clientId);
@@ -1221,6 +1223,7 @@ export class BackendCore {
 
   async stop(): Promise<void> {
     this.stopped = true;
+    this.originals.stop();
     for (const timer of this.backfillTimers.values()) clearTimeout(timer);
     this.backfillTimers.clear();
     this.gmailRenewals.clear();

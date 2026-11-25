@@ -1012,6 +1012,21 @@ describe("IMAP provider against ImapKit", () => {
     await expect(client.call("reader.original", { threadId: t!.id, messageId: m!.id, requestId: "q1" })).rejects.toMatchObject({ code: "UNAVAILABLE", i18n: { key: "errors.original.settling" } });
   });
 
+  it("plan 272: a mailbox the server refuses, or a FETCH with no source, is an error, never gone (Codex code review #7)", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    imap.server.control.addMessage("Archive", { raw: raw({ subject: "Kept apart" }) });
+    imap.server.control.addMessage("INBOX", { raw: raw({ subject: "Last" }) });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const t = (await client.call("threads.list", { view: "archive" })).items.find((x) => x.subject === "Kept apart")!;
+    const [m] = (await client.call("threads.get", { threadId: t.id }))!.messages;
+    const refused = imap.server.script.add({ on: "command", command: "SELECT", match: /Archive/, send: "$TAG NO [NOPERM] Archive can't be opened now\r\n" });
+    await expect(client.call("reader.original", { threadId: t.id, messageId: m!.id, requestId: "q1" })).rejects.toMatchObject({ code: "UNAVAILABLE" });
+    refused.remove();
+    imap.server.script.add({ on: "command", command: "UID FETCH", mailbox: "Archive", match: /BODY\.PEEK\[\]/, send: "* 1 FETCH (UID 1)\r\n$TAG OK done\r\n" });
+    await expect(client.call("reader.original", { threadId: t.id, messageId: m!.id, requestId: "q2" })).rejects.toMatchObject({ code: "UNAVAILABLE", i18n: { key: "errors.original.unreadable" } });
+  });
+
   it("archives on the server with MOVE and keeps the message (now in Archive) after resync", async () => {
     const { imap, backend, client, addAccount } = await setup();
     imap.server.control.addMessage("INBOX", { raw: raw({ subject: "Archívame" }) });

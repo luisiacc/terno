@@ -2,10 +2,12 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import { createPortal } from "react-dom";
 import { ORIGINAL_HTML_MAX, ORIGINAL_SOURCE_MAX, type AuthVerdict, type OriginalResult, type OriginalSummary } from "@terno/core";
 import { t } from "@terno/i18n";
+import { Button } from "@terno/ui/components/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@terno/ui/components/tabs";
 import { announce } from "~/lib/announce";
 import { formatBytes, fullDate } from "~/lib/format";
 import { downloadOriginal, readOriginal } from "~/lib/original";
+import { originalFilename } from "@terno/core";
 import { snack } from "~/lib/snack";
 import { useThread } from "~/state/threads";
 import { useMailReaderView } from "./mail-reader-view";
@@ -34,6 +36,13 @@ export function OriginalHost({ children }: { children: ReactNode }) {
       view.open(lease, trigger);
     },
   }, [view]);
+  // another conversation took the reader: this one's original is over, never shown again on coming back (Codex code review #4)
+  const threadShown = view?.threadId ?? null;
+  useEffect(() => {
+    if (!open || threadShown === open.threadId) return;
+    view?.close(open.lease, false);
+    setOpen(null);
+  }, [threadShown, open, view]);
   const shown = open && view?.active === open.lease && view.target ? open : null;
   return (
     <Context.Provider value={opener}>
@@ -63,20 +72,34 @@ function OriginalMessage({ threadId, messageId, onClose }: { threadId: number; m
   const [part, setPart] = useState<Part>("headers");
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState<Part | null>(null);
-  const current = useRef<ReturnType<typeof readOriginal> | null>(null);
+  /** every reading this view started, each closed when it's replaced or the view goes (Codex code review #3) */
+  const readings = useRef(new Set<ReturnType<typeof readOriginal>>());
+  /** the view's life: a download stops with it */
+  const life = useRef<AbortController | null>(null);
   useLayoutEffect(() => { view?.focus(back.current); }, []);
+  useEffect(() => {
+    const controller = new AbortController();
+    life.current = controller;
+    const open = readings.current;
+    return () => { controller.abort(); for (const r of open) r.close(); open.clear(); };
+  }, []);
+  const start = useCallback(() => {
+    const r = readOriginal(threadId, messageId);
+    readings.current.add(r);
+    return r;
+  }, [threadId, messageId]);
+  const retire = (r: ReturnType<typeof readOriginal>) => { r.close(); readings.current.delete(r); };
 
   useEffect(() => {
-    const r = readOriginal(threadId, messageId);
-    current.current = r;
+    const r = start();
     let live = true;
     setReading({ state: "reading" });
     r.result.then(
       (result) => { if (live) setReading("unavailable" in result ? { state: "none", reason: result.unavailable } : { state: "read", view: result, requestId: r.requestId }); },
       (error: unknown) => { if (live) setReading({ state: "failed", message: error instanceof Error ? error.message : t("errors.original.unreachable") }); },
     );
-    return () => { live = false; r.close(); if (current.current === r) current.current = null; };
-  }, [threadId, messageId, attempt]);
+    return () => { live = false; retire(r); };
+  }, [start, attempt]);
 
   const read = reading.state === "read" ? reading.view : null;
   const text: Record<Part, string> = { headers: read?.headers ?? "", html: html ?? "", source: read?.source ?? "" };
@@ -92,38 +115,39 @@ function OriginalMessage({ threadId, messageId, onClose }: { threadId: number; m
     } catch { setCopied(null); snack.error(t("threadMenu.copyFailed")); }
   };
 
-  // a fresh reading for the download whose kept bytes went: this view's reading is replaced by it
-  const again = useCallback(async () => {
-    const r = readOriginal(threadId, messageId);
-    const result = await r.result.catch(() => null);
-    if (!result || "unavailable" in result) { r.close(); return null; }
-    current.current?.close();
-    current.current = r;
-    setReading({ state: "read", view: result, requestId: r.requestId });
-    return { requestId: r.requestId, size: result.size };
-  }, [threadId, messageId]);
-
   const download = async () => {
-    if (reading.state !== "read" || busy) return;
+    const signal = life.current?.signal;
+    if (reading.state !== "read" || busy || !signal || signal.aborted) return;
+    const previous = [...readings.current].find((r) => r.requestId === reading.requestId);
+    // the kept bytes went (two minutes untouched): a fresh reading, kept by this view, replaces the one shown
+    const again = async () => {
+      const r = start();
+      const result = await r.result.catch(() => null);
+      if (signal.aborted || !result || "unavailable" in result) { retire(r); return null; }
+      if (previous) retire(previous);
+      setReading({ state: "read", view: result, requestId: r.requestId });
+      return { requestId: r.requestId, size: result.size };
+    };
     setBusy(true);
     try {
-      await downloadOriginal({ requestId: reading.requestId, size: reading.view.size }, again, message?.subject ?? "");
-      announce(t("reader.original.downloaded"));
+      if (await downloadOriginal({ requestId: reading.requestId, size: reading.view.size }, again, originalFilename(message?.subject ?? "", t("reader.original.filename")), signal)) announce(t("reader.original.downloaded"));
     } catch (error) {
-      snack.error(error instanceof Error && error.message ? error.message : t("reader.original.downloadFailed"));
-    } finally { setBusy(false); }
+      if (!signal.aborted) snack.error(error instanceof Error && error.message ? error.message : t("reader.original.downloadFailed"));
+    } finally { if (!signal.aborted) setBusy(false); }
   };
 
   const copyLabel = copied === tab ? t("common.copied") : t(tab === "headers" ? "reader.original.copyHeaders" : tab === "html" ? "reader.original.copyHtml" : "reader.original.copySource");
-  const control = "rounded-md text-sm text-muted-foreground hover:text-foreground disabled:opacity-50 focus-visible:ring-2";
+  // BoardUI's secondary link, quiet as the full message's header is; unavailable ones stay focusable (Codex code review #10)
+  const control = "font-normal text-muted-foreground hover:text-foreground hover:no-underline";
   return (
-    <section className="flex h-full min-h-0 flex-col bg-background" data-testid="original-message" aria-busy={reading.state === "reading"}>
+    // data-own-keys: arrows, Delete and Backspace are this view's (scrolling), never the conversation's (Codex code review #2)
+    <section className="flex h-full min-h-0 flex-col bg-background" data-testid="original-message" data-own-keys aria-busy={reading.state === "reading"}>
       <header className="flex shrink-0 items-center gap-3 border-b border-border px-3.5 py-3">
-        <button ref={back} type="button" data-original-back onClick={onClose} className={control}>{t("reader.full.back")}</button>
+        <Button ref={back} variant="link-secondary" data-original-back onClick={onClose} className={control}>{t("reader.full.back")}</Button>
         <h2 className="type-body font-semibold">{t("reader.original.title")}</h2>
         <div className="ml-auto flex items-center gap-4">
-          <button type="button" data-testid="original-copy" className={control} disabled={!text[tab]} onClick={() => void copy()}>{copyLabel}</button>
-          <button type="button" data-testid="original-download" className={control} disabled={!read || busy} onClick={() => void download()}>{t(busy ? "reader.original.downloading" : "reader.original.download")}</button>
+          <Button variant="link-secondary" data-testid="original-copy" className={control} disabled={!text[tab]} focusableWhenDisabled onClick={() => void copy()}>{copyLabel}</Button>
+          <Button variant="link-secondary" data-testid="original-download" className={control} disabled={!read} focusableWhenDisabled loading={busy} onClick={() => void download()}>{t(busy ? "reader.original.downloading" : "reader.original.download")}</Button>
         </div>
       </header>
       <div tabIndex={0} role="region" aria-label={t("reader.original.title")} className="min-h-0 flex-1 overflow-y-auto outline-none" data-original-scroller>
@@ -132,7 +156,8 @@ function OriginalMessage({ threadId, messageId, onClose }: { threadId: number; m
         {reading.state === "failed" && (
           <p role="alert" data-testid="original-failed" className="flex flex-wrap items-baseline gap-x-3 px-3.5 py-3 text-sm">
             <span>{reading.message}</span>
-            <button type="button" className="rounded-md text-sm text-primary hover:underline focus-visible:ring-2" onClick={() => setAttempt((a) => a + 1)}>{t("reader.original.tryAgain")}</button>
+            {/* the button goes with the failure it answers: focus waits on Back meanwhile */}
+            <Button variant="link" data-testid="original-retry" onClick={() => { back.current?.focus(); setAttempt((a) => a + 1); }}>{t("reader.original.tryAgain")}</Button>
           </p>
         )}
         {read && <Summary summary={read.summary} />}

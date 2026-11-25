@@ -345,7 +345,8 @@ function isEditable(el: Element | null): boolean {
 const OWN_KEYS = "select, summary, [role=tab], [role=menuitem], [role=menuitemradio], [role=menuitemcheckbox], [role=switch], [role=checkbox], [role=radio], [role=slider], [role=separator], [role=treeitem], [role=combobox], [role=spinbutton]";
 function onControl(el: Element | null): boolean {
   if (!el || el === document.body) return false;
-  return !!el.closest("#app-sidebar") || el.matches(OWN_KEYS);
+  // plan 272: a view over the conversation that scrolls by them (Show original) marks itself data-own-keys
+  return !!el.closest("#app-sidebar, [data-own-keys]") || el.matches(OWN_KEYS);
 }
 
 /** A focused control that Enter and Space activate natively (disclosures, buttons, links). */

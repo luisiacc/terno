@@ -1,4 +1,4 @@
-import { base64Bytes, ORIGINAL_PIECE } from "@terno/core";
+import { base64Bytes, ORIGINAL_PIECE, ORIGINAL_SOURCE_MAX } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { ProviderError } from "@terno/mail/portable";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -22,17 +22,19 @@ afterEach(() => { vi.useRealTimers(); });
 
 describe("Originals (plan 272)", () => {
   it("describes what it read and hands it back in pieces that add up to it", async () => {
-    const bytes = source(ORIGINAL_PIECE * 2 + 10);
+    const bytes = source(ORIGINAL_SOURCE_MAX + 10);
+    const count = Math.ceil(bytes.length / ORIGINAL_PIECE);
     const originals = new Originals(async () => ({ accountId: 1, bytes }));
     const view = await originals.open({ threadId: 1, messageId: 2, requestId: "r1" }, "c1");
-    expect(view).toMatchObject({ size: bytes.length, pieces: 3, summary: { subject: "big" }, sourceCut: true });
-    const pieces = [0, 1, 2].map((index) => base64Bytes(originals.piece("r1", index, "c1").dataBase64, ORIGINAL_PIECE));
-    expect(pieces.map((p) => p.length)).toEqual([ORIGINAL_PIECE, ORIGINAL_PIECE, 10]);
+    expect(view).toMatchObject({ size: bytes.length, pieces: count, summary: { subject: "big" }, sourceCut: true });
+    const pieces = Array.from({ length: count }, (_, index) => base64Bytes(originals.piece("r1", index, "c1").dataBase64, ORIGINAL_PIECE));
+    expect(pieces.slice(0, -1).every((p) => p.length === ORIGINAL_PIECE)).toBe(true);
     const whole = new Uint8Array(bytes.length);
     let at = 0;
     for (const p of pieces) { whole.set(p, at); at += p.length; }
+    expect(at).toBe(bytes.length);
     expect(whole).toEqual(bytes);
-    expect(() => originals.piece("r1", 3, "c1")).toThrow(RpcError);
+    expect(() => originals.piece("r1", count, "c1")).toThrow(RpcError);
   });
 
   it("is another client's to read only by that client", async () => {
@@ -85,6 +87,36 @@ describe("Originals (plan 272)", () => {
     void originals.open({ threadId: 1, messageId: 2, requestId: "r1" }, "c1").catch(() => {});
     void originals.open({ threadId: 1, messageId: 3, requestId: "r2" }, "c1").catch(() => {});
     await expect(originals.open({ threadId: 1, messageId: 4, requestId: "r3" }, "c1")).rejects.toMatchObject({ code: "UNAVAILABLE" });
+  });
+
+  it("counts a closed read until it has stopped: closing frees no slot early (Codex code review #5)", async () => {
+    const { originals, answer } = reads();
+    const first = originals.open({ threadId: 1, messageId: 2, requestId: "r1" }, "c1").catch(() => {});
+    void originals.open({ threadId: 1, messageId: 3, requestId: "r2" }, "c1").catch(() => {});
+    originals.close("r1", "c1");
+    await expect(originals.open({ threadId: 1, messageId: 4, requestId: "r3" }, "c1")).rejects.toMatchObject({ code: "UNAVAILABLE" });
+    await answer(0, { accountId: 1, bytes: source(100) });
+    await first;
+    const third = originals.open({ threadId: 1, messageId: 4, requestId: "r3" }, "c1");
+    await answer(2, { accountId: 1, bytes: source(100) });
+    await expect(third).resolves.toMatchObject({ size: 100 });
+  });
+
+  it("lets a renderer's reads and kept bytes go when it does, and everything when the backend stops (Codex code review #6)", async () => {
+    const { originals, pending } = reads();
+    const kept = new Originals(async () => ({ accountId: 1, bytes: source(100) }));
+    await kept.open({ threadId: 1, messageId: 2, requestId: "r1" }, "c1");
+    await kept.open({ threadId: 1, messageId: 3, requestId: "r2" }, "c2");
+    kept.dropClient("c1");
+    expect(() => kept.piece("r1", 0, "c1")).toThrow(expect.objectContaining({ code: "NOT_FOUND" }));
+    expect(kept.piece("r2", 0, "c2").dataBase64).toBeTruthy();
+    kept.stop();
+    expect(kept.size).toBe(0);
+    await expect(kept.open({ threadId: 1, messageId: 2, requestId: "r3" }, "c2")).rejects.toMatchObject({ code: "CANCELLED" });
+    void originals.open({ threadId: 1, messageId: 2, requestId: "r1" }, "c1").catch(() => {});
+    await Promise.resolve();
+    originals.dropClient("c1");
+    expect(pending[0]!.signal.aborted).toBe(true);
   });
 
   it("lets an account's originals go with it", async () => {

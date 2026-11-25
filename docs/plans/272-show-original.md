@@ -94,3 +94,20 @@ Twelve points; each changed the design as follows (this section supersedes the s
 - `apps/web`: `components/original-message.tsx` (`OriginalHost`, the view, `Summary`, `Code`: text in blocks laid out with `content-visibility: auto`), `lib/original.ts` (reading, download), `saveBlob` shared with attachments, the menu row in `message-menu.tsx` (its focus handed to Back through `finalFocus`), the `Code` icon.
 - Tests: `original.test.ts`, `gmail-original.test.ts` (decoder and the Gmail provider), `originals.test.ts`, two cases in `imap.int.test.ts` (exact source in pieces, gone, a changed UIDVALIDITY), `e2e/original-message.spec.ts` (@variant: Classic, Lumen's sender card, Atelier); `copy-thread.spec.ts` lists the new row.
 - Screenshots of the menu and the three parts, light and dark, looked at: the tabs' hairline was inset to the summary's.
+
+## Codex code review
+
+Twelve findings, all fixed, each with a test that fails without its fix where one could be written:
+
+1. **IMAP lock order.** Show original took the large-read permit before the mailbox lock; sync takes the lock first, so the two could wait on each other. The read now takes the lock, then the permits. (No test: the stall needs both paused at their acquisition points; the order is the fix and is commented.)
+2. **Keys in the view.** Arrows, Delete and Backspace reached the conversation's shortcuts (Delete trashed it under the view). The view is `data-own-keys`, which `onControl` (keyboard.ts) honours. e2e: Delete and Backspace in the view leave the conversation out of the Trash.
+3. **A download outliving the view.** The view now owns every reading it starts (closed when replaced or when it goes), and a download stops with it: no fresh read, no save after Back.
+4. **A→B→A.** Leaving the conversation retires its original's lease, so coming back shows the conversation. e2e.
+5. **Admission.** A closed read counts until its answer settles; IMAP checks cancellation after the mailbox lock. `originals.test.ts`.
+6. **A renderer that went, a backend that stops.** `onDisconnect` drops that client's reads and bytes; `stop` drops everything and refuses new reads. `originals.test.ts`.
+7. **IMAP "gone".** Only a mailbox the server says doesn't exist (NONEXISTENT, or its words for it) or a FETCH with no row is missing; a refusal is an error, and a row without its source is "unreadable". `imap.int.test.ts`.
+8. **Event-loop budget.** Header fields are unfolded in linear time with a 16 KB bound per field (a 256 KB folded header: ~4–8 ms), pieces are 192 KiB (~8 ms to encode), and the renderer decodes them plainly (~2 ms).
+9. **A quoted `;`.** Authentication-Results is cut into clauses outside quoted strings, and `spf = pass` reads. `original.test.ts`.
+10. **Focus.** The header's controls and Try again are BoardUI's link buttons (Download stays focusable while busy); Try again leaves focus on Back. e2e: by keyboard from ⋯ through Show original to Back, Esc back to ⋯.
+11. **File name.** `originalFilename`: the subject as a name (no `/`, `\`, `:` or control characters, at most 100 characters) and `.eml`, never cut; "message" / "mensaje" with no subject. `original.test.ts`.
+12. **Gmail's decoded bound.** `decodeGmailRaw` refuses a source over `MAX_INCOMING_MIME_BYTES` as it decodes. `gmail-original.test.ts`.

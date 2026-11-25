@@ -713,6 +713,14 @@ export function temporaryRefusal(error: unknown): boolean {
   return TEMPORARY_TEXT.test(text);
 }
 
+/** Plan 272: a SELECT refused because the mailbox isn't there (RFC 5530 NONEXISTENT, or a server's words for it); any other refusal is a refusal */
+function mailboxMissing(error: unknown): boolean {
+  const e = error as { serverResponseCode?: unknown; response?: unknown; responseText?: unknown } | null;
+  if (typeof e?.serverResponseCode === "string" && e.serverResponseCode.toUpperCase() === "NONEXISTENT") return true;
+  const text = [e?.response, e?.responseText].filter((part): part is string => typeof part === "string").join(" ");
+  return /\b(?:non-?existent|does ?n[o'’]t exist|no such (?:mailbox|folder)|unknown (?:mailbox|folder)|mailbox not found)\b/i.test(text);
+}
+
 class ImapIncomingResourceError extends ProviderError {
   constructor(readonly code: string, message: ReturnType<typeof L>) { super(message, false); }
   override get expected(): boolean { return true; }
@@ -2587,50 +2595,56 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
 
     /**
      * Plan 272: a message's source from one of its places, each tried in turn, with the repair fetch's checks (one
-     * answer, for that UID, the command exhausted before its bytes count). A place still being matched to its message,
-     * or whose UIDVALIDITY changed, is no answer: it's an error to try again, never "gone". Only every place confirmed
-     * empty (no such mailbox, no such UID) is null.
+     * answer, for that UID, with its source, the command exhausted before its bytes count). A place still being matched
+     * to its message, or whose UIDVALIDITY changed, is no answer: an error to try again, never "gone"; so is a mailbox the
+     * server refused. Only every place confirmed empty (no such mailbox, a FETCH with no row) is null. The mailbox lock
+     * comes before the read permits, as sync takes them (Codex code review #1: the other order could stall both).
      */
     async readOriginal(target, signal) {
       if ((await locations.unresolved([target.id])).length) throw new ProviderError(L("errors.original.settling"), true);
       const places = await locations.of([target.id]);
       const reset = incomingReset.signal;
-      const releaseRead = await ctx.incoming?.acquire(accountId, signal, reset, "reader");
-      let releaseLarge: (() => void) | undefined;
-      try {
-        releaseLarge = await ctx.incoming?.promote?.(accountId, signal, reset, "reader");
-        let unsettled = false;
-        for (const place of places) {
-          signal.throwIfAborted();
-          const read = await withConnection(async (c) => {
-            let lock: Awaited<ReturnType<ImapFlow["getMailboxLock"]>>;
-            try {
-              lock = await c.getMailboxLock(place.mailbox);
-            } catch (error) {
-              const e = toProviderError(error);
-              if (e.retryable || e instanceof ProviderAuthError) throw e;
-              return "missing" as const;
+      let unsettled = false;
+      let refused: ProviderError | undefined;
+      for (const place of places) {
+        signal.throwIfAborted();
+        const read = await withConnection(async (c) => {
+          let lock: Awaited<ReturnType<ImapFlow["getMailboxLock"]>>;
+          try {
+            lock = await c.getMailboxLock(place.mailbox);
+          } catch (error) {
+            const e = toProviderError(error);
+            if (e.retryable || e instanceof ProviderAuthError) throw e;
+            return mailboxMissing(error) ? "missing" as const : e;
+          }
+          let releaseRead: (() => void) | undefined;
+          let releaseLarge: (() => void) | undefined;
+          try {
+            // closed while the lock was awaited: nothing is asked of the server
+            signal.throwIfAborted();
+            if (place.uidvalidity !== Number(c.mailbox && c.mailbox.uidValidity)) return "unsettled" as const;
+            releaseRead = await ctx.incoming?.acquire(accountId, signal, reset, "reader");
+            releaseLarge = await ctx.incoming?.promote?.(accountId, signal, reset, "reader");
+            signal.throwIfAborted();
+            let source: Buffer | undefined;
+            let invalid = false, answered = false;
+            for await (const msg of c.fetch([place.uid], { uid: true, source: { start: 0, maxLength: MAX_INCOMING_MIME_BYTES + 1 } }, { uid: true })) {
+              if (msg.uid !== place.uid || answered || !msg.source) invalid = true;
+              else { answered = true; source = msg.source; }
             }
-            try {
-              if (place.uidvalidity !== Number(c.mailbox && c.mailbox.uidValidity)) return "unsettled" as const;
-              let source: Buffer | undefined;
-              let invalid = false, answered = false;
-              for await (const msg of c.fetch([place.uid], { uid: true, source: { start: 0, maxLength: MAX_INCOMING_MIME_BYTES + 1 } }, { uid: true })) {
-                if (msg.uid !== place.uid || answered) invalid = true;
-                else { answered = true; source = msg.source; }
-              }
-              if (invalid) throw new ProviderError(L("errors.original.unreadable"), true);
-              if (!source) return "missing" as const;
-              if (source.byteLength > MAX_INCOMING_MIME_BYTES) throw new ProviderError(L("errors.mail.processingLimit"), false);
-              return new Uint8Array(source.buffer, source.byteOffset, source.byteLength);
-            } finally { lock.release(); }
-          }, signal);
-          if (read instanceof Uint8Array) return read;
-          if (read === "unsettled") unsettled = true;
-        }
-        if (unsettled) throw new ProviderError(L("errors.original.settling"), true);
-        return null;
-      } finally { releaseLarge?.(); releaseRead?.(); }
+            if (invalid) throw new ProviderError(L("errors.original.unreadable"), true);
+            if (!source) return "missing" as const;
+            if (source.byteLength > MAX_INCOMING_MIME_BYTES) throw new ProviderError(L("errors.mail.processingLimit"), false);
+            return new Uint8Array(source.buffer, source.byteOffset, source.byteLength);
+          } finally { releaseLarge?.(); releaseRead?.(); lock.release(); }
+        }, signal);
+        if (read instanceof Uint8Array) return read;
+        if (read === "unsettled") unsettled = true;
+        else if (read instanceof ProviderError) refused = read;
+      }
+      if (unsettled) throw new ProviderError(L("errors.original.settling"), true);
+      if (refused) throw refused;
+      return null;
     },
 
     async execute(op: ProviderOp) {

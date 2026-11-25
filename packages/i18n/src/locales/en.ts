@@ -1374,6 +1374,7 @@ const en = {
   "reader.original.downloaded": "Original downloaded",
   "reader.original.downloadFailed": "Couldn’t download the original. Try again.",
   "reader.original.tryAgain": "Try again",
+  "reader.original.filename": "message",
   "reader.original.messageId": "Message ID",
   "reader.original.created": "Created at",
   "reader.original.from": "From",

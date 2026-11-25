@@ -1,3 +1,4 @@
+import { MAX_INCOMING_MIME_BYTES } from "@terno/core";
 import { IncomingProcessingError } from "./incoming-processing";
 
 /** Bytes either side of the source in Gmail's answer (`{ "id": …, "raw": … }`), at most */
@@ -14,9 +15,9 @@ const isBase64url = (b: number) => (b >= 0x41 && b <= 0x5a) || (b >= 0x61 && b <
  * escapes, so the `raw` value is the bytes between its quotes; the rest of the answer, with that value emptied, must
  * parse as JSON to exactly `{ id: expectedId, raw: "" }`, so a malformed answer is never read as a message.
  */
-export async function decodeGmailRaw(chunks: readonly Uint8Array[], expectedId: string, turn: () => Promise<void>): Promise<Uint8Array> {
+export async function decodeGmailRaw(chunks: readonly Uint8Array[], expectedId: string, turn: () => Promise<void>, limit = MAX_INCOMING_MIME_BYTES): Promise<Uint8Array> {
   const total = chunks.reduce((n, c) => n + c.byteLength, 0);
-  const out = new Uint8Array(Math.floor((total * 3) / 4) + 3);
+  const out = new Uint8Array(Math.min(Math.floor((total * 3) / 4) + 3, limit + 3));
   let written = 0;
   let state: "before" | "value" | "after" = "before";
   const before: number[] = [];
@@ -32,6 +33,8 @@ export async function decodeGmailRaw(chunks: readonly Uint8Array[], expectedId: 
     const text = pending.slice(0, usable);
     pending = pending.slice(usable);
     const binary = atob(text.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(text.length / 4) * 4, "="));
+    // the message's own bound, not only the answer's (its JSON allowance is larger: Codex code review #12)
+    if (written + binary.length > limit) throw new IncomingProcessingError("input-limit");
     for (let i = 0; i < binary.length; i++) out[written++] = binary.charCodeAt(i);
   };
   for (const chunk of chunks) {

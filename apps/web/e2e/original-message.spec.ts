@@ -85,8 +85,41 @@ test("Show original: the summary, headers, HTML and source; Copy, Download, and 
     await expect(more).toBeFocused();
   });
 
+  await scenario("by keyboard from ⋯ to Back; arrows and Delete scroll the view, never the list or the conversation (Codex code review #2, #10)", async () => {
+    await more.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("message-actions-menu")).toBeVisible();
+    // down the rows to the last, as a keyboard goes
+    const item = page.getByTestId("message-menu-original");
+    for (let i = 0; i < 20 && !(await item.evaluate((el) => el === document.activeElement)); i++) await page.keyboard.press("ArrowDown");
+    await expect(item).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page.locator("[data-original-back]")).toBeFocused();
+    await page.locator("[data-original-scroller]").focus();
+    for (const key of ["ArrowDown", "ArrowUp", "Delete", "Backspace"]) await page.keyboard.press(key);
+    await expect(view(page)).toBeVisible();
+    await expect(page.getByTestId("reader-subject")).toHaveText("Boletín de noviembre");
+    // (searched mail includes the Trash, so a trashed conversation would stay on screen: what's stored says)
+    await page.waitForTimeout(300);
+    expect((await server.backend.store.threads.get(threadId))!.thread.inTrash).toBe(false);
+    await page.keyboard.press("Escape");
+    await expect(view(page)).toHaveCount(0);
+    await expect(more).toBeFocused();
+  });
+
+  const local = await ingest(server, "local:orig-2", "Solo aquí", "<p>Borrador local</p>");
+  await scenario("leaving for another conversation ends it: coming back shows the conversation (Codex code review #4)", async () => {
+    await more.click();
+    await page.getByTestId("message-menu-original").click();
+    await expect(view(page)).toBeVisible();
+    await selectThread(page, local, 'subject:"Solo aquí"');
+    await expect(view(page)).toHaveCount(0);
+    await selectThread(page, threadId, 'subject:"Boletín de noviembre"');
+    await expect(page.getByTestId("reader-subject")).toHaveText("Boletín de noviembre");
+    await expect(view(page)).toHaveCount(0);
+  });
+
   await scenario("a message only on this computer: no original, and its HTML still shows", async () => {
-    const local = await ingest(server, "local:orig-2", "Solo aquí", "<p>Borrador local</p>");
     await selectThread(page, local, 'subject:"Solo aquí"');
     await page.getByTestId("reader").getByTestId("message-more").first().click();
     await page.getByTestId("message-menu-original").click();
