@@ -31,13 +31,13 @@ vi.mock("~/rpc/connection", () => ({
 const opened = vi.hoisted(() => [] as string[]);
 vi.mock("~/lib/open-link", () => ({ openLink: (href: string) => opened.push(href) }));
 
-const { AddAccountForm, EMPTY_ACCOUNT_DRAFT, microsoftDomain } = await import("./add-account-dialog");
+const { AddAccountDialog, AddAccountForm, EMPTY_ACCOUNT_DRAFT, microsoftDomain } = await import("./add-account-dialog");
 const { default: SignInPanel } = await import("./sign-in-panel");
 const { AccountRemoveDialog, MICROSOFT_APPS } = await import("./account-remove-dialog");
 const { AccountsTab, serviceLabel } = await import("./settings/accounts-tab");
 const { OwnerCard } = await import("./settings/owner-card");
 const { resetSignIn } = await import("~/lib/sign-in");
-const { setApp } = await import("~/state/app");
+const { getApp, setApp, useApp } = await import("~/state/app");
 
 const outlook = (patch: Partial<Account["syncState"]> = {}): Account =>
   ({ id: 7, kind: "outlook", email: "ana@outlook.com", displayName: "Ana", color: "brown", senderName: "Ana", signature: "", syncWindowDays: null, syncState: { status: "idle", authScope: null, ...patch } }) as unknown as Account;
@@ -144,14 +144,44 @@ describe("Add account (plan 259)", () => {
     expect(q("imap-microsoft-connect")!.getAttribute("aria-busy")).toBeNull();
   });
 
-  it("Codex review #1: a sign-in finishing after its form went closes nothing (another Add account may be open)", async () => {
+  it("Codex review #1: a sign-in finishing after its dialog closed closes nothing (another Add account opened since)", async () => {
+    // as the app draws it: only while it's the dialog
+    function Host() {
+      const open = useApp((s) => s.dialog === "addAccount");
+      return open ? <AddAccountDialog /> : null;
+    }
+    setApp({ dialog: "addAccount" });
+    await render(<Host />);
+    await act(async () => q("connect-microsoft")!.click());
+    await act(async () => setApp({ dialog: null }));
+    await act(async () => setApp({ dialog: "addAccount" }));
+    await act(async () => { calls.at(-1)!.settle({ email: "ana@outlook.com" }); await new Promise((r) => setTimeout(r, 0)); });
+    expect(getApp().dialog).toBe("addAccount");
+    expect(q("add-account-dialog")).not.toBeNull();
+    setApp({ dialog: null });
+  });
+
+  it("Codex review round 2 #1: the first run's form gone first (the new account's event came before the answer), it's still finished", async () => {
     const done = vi.fn();
     await render(<Form onDone={done} />);
     await act(async () => q("connect-microsoft")!.click());
     cleanup!();
     cleanup = null;
     await act(async () => { calls.at(-1)!.settle({ email: "ana@outlook.com" }); await new Promise((r) => setTimeout(r, 0)); });
-    expect(done).not.toHaveBeenCalled();
+    expect(done).toHaveBeenCalledTimes(1);
+  });
+
+  it("Codex review round 2 #2: started from the hint and the address edited away, the failure still shows under it", async () => {
+    await render(<Form />);
+    const email = q<HTMLInputElement>("imap-email")!;
+    await type(email, "ana@outlook.com");
+    await act(async () => q("imap-microsoft-connect")!.click());
+    await type(email, "ana@icloud.com");
+    // the hint went: Continue with Microsoft shows the progress
+    expect(q("imap-microsoft-hint")).toBeNull();
+    expect(q("connect-microsoft")!.getAttribute("aria-busy")).toBe("true");
+    await settle(undefined, new RpcError("BAD_REQUEST", "Microsoft access was denied."));
+    expect(email.parentElement!.querySelector("[data-testid=add-account-error]")!.textContent).toBe("Microsoft access was denied.");
   });
 
   it("knows Outlook.com's domains and their country versions, and nothing else", () => {
@@ -204,6 +234,17 @@ describe("the owner card (plan 259)", () => {
     const host = await render(<OwnerCard owner={owner} demo={false} accounts={[outlook()]} />);
     expect(host.textContent).toContain("Verified with Microsoft · Nov 24, 2026");
   });
+
+  it("Codex review round 2 #5: an Outlook mailbox becomes the Terno account by signing in with Microsoft, no password asked", async () => {
+    const owner = { accountId: 1, email: "luis@icloud.com", displayName: "Luis", provider: "imap", verifiedBy: "imap_login", verifiedAt: null, migrated: false } as unknown as OwnerIdentity;
+    await render(<OwnerCard owner={owner} demo={false} accounts={[{ ...outlook(), id: 1, kind: "imap", email: "luis@icloud.com" } as Account, outlook()]} />);
+    await act(async () => q("change-owner-open")!.click());
+    expect(q("change-owner-password")).toBeNull();
+    const submit = q<HTMLButtonElement>("change-owner-submit")!;
+    expect(submit.textContent!.trim()).toBe("Verify with Microsoft");
+    await act(async () => submit.click());
+    expect(calls).toEqual([expect.objectContaining({ method: "identity.changeOwner", params: { accountId: 7, password: undefined } })]);
+  });
 });
 
 describe("removing an Outlook account (plan 259)", () => {
@@ -211,6 +252,8 @@ describe("removing an Outlook account (plan 259)", () => {
     await render(<AccountRemoveDialog account={outlook()} open onOpenChange={() => {}} from="settings" />);
     const dialog = q("account-remove-dialog")!;
     expect(dialog.textContent).toContain("Your mail in Outlook doesn’t change. Terno can’t withdraw its own access at Microsoft");
+    // an organization's approval is its administrator's to withdraw (Codex review round 2 #6)
+    expect(dialog.textContent).toContain("If your organization approved Terno for everyone, ask its administrator.");
     // Cancel, not the first link, has focus (Base UI would take the first tabbable)
     await act(async () => new Promise((r) => setTimeout(r, 20)));
     expect(document.activeElement?.textContent).toBe("Cancel");

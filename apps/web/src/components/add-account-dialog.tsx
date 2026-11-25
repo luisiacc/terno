@@ -75,6 +75,15 @@ export const EMPTY_ACCOUNT_DRAFT: AccountDraft = { picked: null, form: { email: 
 export function AddAccountDialog() {
   const open = useApp((s) => s.dialog === "addAccount");
   const [draft, setDraft] = useState(EMPTY_ACCOUNT_DRAFT);
+  // a sign-in finishing after this dialog went (closed while the browser's page was open, another Add account opened
+  // since) closes nothing (Codex review of plan 259 stage 3 #1)
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
   return (
     <Dialog open={open} onOpenChange={(o) => !o && setApp({ dialog: null })}>
       <DialogContent movable="add-account" className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md" data-testid="add-account-dialog">
@@ -82,7 +91,7 @@ export function AddAccountDialog() {
           <DialogTitle>{t("account.addTitle")}</DialogTitle>
           <DialogDescription>{t("account.addDescription")}</DialogDescription>
         </DialogHeader>
-        <AddAccountForm draft={draft} onDraft={setDraft} onDone={() => setApp({ dialog: null })} />
+        <AddAccountForm draft={draft} onDraft={setDraft} onDone={() => alive.current && setApp({ dialog: null })} />
       </DialogContent>
     </Dialog>
   );
@@ -91,7 +100,7 @@ export function AddAccountDialog() {
 interface FormProps {
   draft: AccountDraft;
   onDraft: (update: (d: AccountDraft) => AccountDraft) => void;
-  /** connected: the host closes */
+  /** connected: the host closes, or (gone meanwhile) keeps its books: the first run is finished all the same */
   onDone: () => void;
   /** a connection is in flight (the setup holds Back and Skip meanwhile) */
   onBusy?: (busy: boolean) => void;
@@ -109,15 +118,6 @@ export function AddAccountForm({ draft, onDraft, onDone, onBusy }: FormProps) {
   const [from, setFrom] = useState<"buttons" | "hint">("buttons");
   const [error, setError] = useState<{ method: SignInMethod; text: NonNullable<Attempt["error"]> } | null>(null);
   const hintId = useId();
-  // a sign-in finishing after its form went (the dialog closed, another opened) says it connected and closes nothing
-  // (Codex review of plan 259 stage 3 #1)
-  const alive = useRef(true);
-  useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-    };
-  }, []);
   const set = (patch: Partial<AccountDraft["form"]>) => onDraft((d) => ({ ...d, form: { ...d.form, ...patch } }));
   const setPicked = (picked: number) => onDraft((d) => ({ ...d, picked }));
   const setBusy = (b: SignInMethod | null) => {
@@ -151,12 +151,11 @@ export function AddAccountForm({ draft, onDraft, onDone, onBusy }: FormProps) {
     try {
       const a = await connect(method);
       snack.success(t("account.connected", { email: a.email }));
-      if (alive.current) onDone();
+      onDone();
     } catch (error) {
-      if (alive.current) setError({ method, text: attemptError(error)! });
+      setError({ method, text: attemptError(error)! });
     } finally {
-      if (alive.current) setBusy(null);
-      else onBusy?.(false);
+      setBusy(null);
     }
   };
 
@@ -176,12 +175,11 @@ export function AddAccountForm({ draft, onDraft, onDone, onBusy }: FormProps) {
         syncWindowDays,
       });
       snack.success(t("account.connectedSyncing", { email: a.email }));
-      if (alive.current) onDone();
+      onDone();
     } catch (error) {
-      if (alive.current) setError({ method: "password", text: attemptError(error)! });
+      setError({ method: "password", text: attemptError(error)! });
     } finally {
-      if (alive.current) setBusy(null);
-      else onBusy?.(false);
+      setBusy(null);
     }
   };
 
@@ -215,7 +213,7 @@ export function AddAccountForm({ draft, onDraft, onDone, onBusy }: FormProps) {
         {BROWSER_METHODS.map((method) => {
           const b = browserButton(method);
           return (
-            <Button key={method} variant="outline" className="h-10 justify-center gap-2" onClick={() => void connectWith(method)} focusableWhenDisabled disabled={busy !== null} loading={busy === method && from === "buttons"} data-testid={b.testId}>
+            <Button key={method} variant="outline" className="h-10 justify-center gap-2" onClick={() => void connectWith(method)} focusableWhenDisabled disabled={busy !== null} loading={busy === method && (from === "buttons" || !outlook)} data-testid={b.testId}>
               {b.icon} {b.label}
             </Button>
           );
@@ -248,7 +246,8 @@ export function AddAccountForm({ draft, onDraft, onDone, onBusy }: FormProps) {
                   </Button>
                 </p>
               )}
-              {outlook && error?.method === "microsoft" && from === "hint" && failure}
+              {/* under the address even once it's edited away from Outlook.com (Codex review round 2 #2) */}
+              {error?.method === "microsoft" && from === "hint" && failure}
             </div>
             <div className="space-y-1">
               <Label htmlFor="acc-name">{t("account.yourName")}</Label>
