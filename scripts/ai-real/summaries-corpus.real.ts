@@ -23,6 +23,11 @@ import { realKeys, realTransport, spendReport } from "./harness";
  * - TERNO_AI_SUMMARY_EFFORT: low, medium or high in place of the task's own, or default for none at all
  * - TERNO_AI_SUMMARY_VERIFY=1: a second pass that checks the first against the mail
  * - TERNO_AI_SUMMARY_IDS: a file of JSON ids, to run only those
+ * - TERNO_AI_SUMMARY_SINCE=1 (plan 279): each conversation of two or more messages is read up to its last run of
+ *   mail from others after the reader's last reply (the last message alone when the reader never wrote and everything
+ *   is theirs), and that run is marked new="yes". Unset, the same conversations go with no marks: version 8's words
+ * - TERNO_AI_SUMMARY_TAIL_MAIL=courtesy|material (plan 279): a short reply from the last sender is added to each
+ *   conversation, today, and is the only new message: a courtesy one should leave the since empty, a material one not
  *
  * A run already on disk carries on from where it stopped, and the harness's ledger holds the spend.
  */
@@ -79,6 +84,31 @@ function thread(c: Conversation): ThreadText[] {
     }));
 }
 
+/** Plan 279: what a short reply adds, by kind and language; the since is judged against these. */
+const TAILS = {
+  courtesy: { en: ["Thanks, got it.", "Great, thank you!", "Will do.", "Perfect, thanks for the update."], es: ["Gracias, recibido.", "¡Perfecto, gracias!", "De acuerdo, lo hago.", "Genial, gracias por avisar."] },
+  material: { en: ["Change of plan: let's do Thursday 14 May instead, same time.", "Approved. Go ahead with the second option.", "Sorry, we have to cancel this. I'll explain later.", "The price is now 1,450 instead, final offer."], es: ["Cambio de planes: mejor el jueves 14 de mayo, a la misma hora.", "Aprobado. Adelante con la segunda opción.", "Lo siento, tenemos que cancelarlo. Luego te explico.", "El precio ahora es 1.450, última oferta."] },
+} as const;
+
+/** A short reply from the last person who wrote, on the conversation's today: its only new message. */
+function withTail(c: Conversation, kind: keyof typeof TAILS): Conversation {
+  const last = [...c.messages].reverse().find((m) => !m.own) ?? c.messages[c.messages.length - 1]!;
+  const pool = TAILS[kind][c.language === "es" ? "es" : "en"];
+  let h = 0;
+  for (const ch of c.id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return { ...c, messages: [...c.messages, { from: last.own ? c.messages.find((m) => !m.own)?.from ?? last.from : last.from, date: c.today, own: false, to: [c.reader.email], text: pool[h % pool.length]! }] };
+}
+
+/** Plan 279: where the new run starts, by index: after the reader's last reply, or the last message alone (null: none) */
+function newFrom(c: Conversation, tail: boolean): number | null {
+  const n = c.messages.length;
+  if (n < 2) return null;
+  if (tail) return n - 1;
+  const lastOwn = c.messages.map((m) => m.own).lastIndexOf(true);
+  if (lastOwn === n - 1) return null;
+  return lastOwn >= 0 ? lastOwn + 1 : n - 1;
+}
+
 /** The app's language, as a reader of this mail would have it. */
 const readerLanguage = (c: Conversation) => (c.language === "es" || c.language === "mixed" ? "es" : "en");
 
@@ -123,10 +153,16 @@ describe.skipIf(!RUN)("summaries over the corpus", () => {
     await Promise.all(
       Array.from({ length: CONCURRENCY }, async () => {
         for (let c = queue.shift(); c; c = queue.shift()) {
-          const input = thread(c);
+          const tailKind = process.env.TERNO_AI_SUMMARY_TAIL_MAIL as keyof typeof TAILS | undefined;
+          const conv = tailKind ? withTail(c, tailKind) : c;
+          const from = process.env.TERNO_AI_SUMMARY_SINCE === "1" || tailKind ? newFrom(conv, !!tailKind) : null;
+          // the same labels thread() gives: what was sent of each message, newest last
+          const sent = thread(conv);
+          const offset = conv.messages.length - sent.length;
+          const input = from === null ? sent : sent.map((t, i) => (i + offset >= from ? { ...t, isNew: true } : t));
           const started = Date.now();
           try {
-            const request = { subject: c.subject, thread: input, reader: c.reader, language: readerLanguage(c), today: c.today, outputTokens: summaryBudget(null).outputTokens };
+            const request = { subject: conv.subject, thread: input, reader: conv.reader, language: readerLanguage(conv), today: conv.today, outputTokens: summaryBudget(null, from !== null).outputTokens };
             let r = await ai.summarize(request);
             if (process.env.TERNO_AI_SUMMARY_VERIFY === "1") {
               const task = summarizeTask(request);
@@ -136,7 +172,8 @@ describe.skipIf(!RUN)("summaries over the corpus", () => {
                 prompt: `${task.prompt}\n\n<draft>${JSON.stringify(r)}</draft>`,
               }, { output: "json_schema", signal: new AbortController().signal });
             }
-            appendFileSync(path, `${JSON.stringify({ id: c.id, set: c.set, language: readerLanguage(c), ms: Date.now() - started, summary: r.summary, items: r.items })}\n`);
+            const newLabels = input.filter((t) => t.isNew).map((t) => t.label);
+            appendFileSync(path, `${JSON.stringify({ id: c.id, set: c.set, language: readerLanguage(c), ms: Date.now() - started, summary: r.summary, items: r.items, ...(from !== null ? { newLabels, since: r.since ?? "" } : {}), ...(tailKind ? { tail: conv.messages.at(-1)!.text } : {}) })}\n`);
           } catch (e) {
             failed++;
             appendFileSync(path, `${JSON.stringify({ id: c.id, set: c.set, language: readerLanguage(c), ms: Date.now() - started, error: e instanceof Error ? `${e.name}: ${e.message}`.slice(0, 200) : "unknown" })}\n`);
