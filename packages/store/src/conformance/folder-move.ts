@@ -213,6 +213,42 @@ export function defineFolderMoveConformance(name: string, harness: StoreHarness)
       expect(await list(store, outlook, "F2")).toEqual([threads[2]]);
     });
 
+    it("Outlook (review round 3): a folder's stored messages page by id; a stored draft says it's one", async () => {
+      const { store } = await fresh();
+      const outlook = await outlookAccount(store);
+      await store.folders.replace(outlook, ["F1", "F2"].map((key) => ({ key, path: [key], selectable: true })));
+      const { inserted } = await ingest(store, [
+        ...Array.from({ length: 52 }, (_, i) => msg({ accountId: outlook, providerMsgId: `f1-${i}`, rfcMessageId: `f1-${i}@t`, inInbox: false, folder: "F1" })),
+        msg({ accountId: outlook, providerMsgId: "f2", rfcMessageId: "f2@t", inInbox: false, folder: "F2" }),
+        msg({ accountId: outlook, providerMsgId: "draft", rfcMessageId: "draft@t", inInbox: false, isDraft: true, folder: null }),
+      ]);
+      const provider = store.providerStore(outlook);
+      const first = await provider.folderMessagePage("F1");
+      expect(first.items).toHaveLength(50);
+      expect(first.items.map((m) => m.providerMsgId)).toEqual(Array.from({ length: 50 }, (_, i) => `f1-${i}`));
+      const second = await provider.folderMessagePage("F1", first.next);
+      expect(second).toEqual({ items: [{ id: inserted[50], providerMsgId: "f1-50" }, { id: inserted[51], providerMsgId: "f1-51" }] });
+      expect(await provider.folderMessagePage("F2")).toEqual({ items: [{ id: inserted[52], providerMsgId: "f2" }] });
+      expect(await provider.folderMessagePage("gone")).toEqual({ items: [] });
+      expect(await provider.messageByProviderId("draft")).toMatchObject({ isDraft: true });
+      expect(await provider.messageByProviderId("f2")).toMatchObject({ isDraft: false });
+    });
+
+    it("Outlook (review round 3): your own message in the Inbox (a note to yourself) goes with its conversation, so it leaves the Inbox", async () => {
+      const { store } = await fresh();
+      const outlook = await outlookAccount(store);
+      await store.folders.replace(outlook, [{ key: "F1", path: ["F1"], selectable: true }]);
+      const { inserted: [inId, selfId] } = await ingest(store, [
+        msg({ accountId: outlook, providerMsgId: "in", rfcMessageId: "in@t", inInbox: true, folder: null }),
+        msg({ accountId: outlook, providerMsgId: "self", rfcMessageId: "self@t", inReplyTo: "in@t", references: ["in@t"], isSent: true, inInbox: true, folder: null }),
+      ]);
+      const thread = await threadOf(store, "in");
+      const r = await store.threads.moveToFolder({ threadIds: [thread], accountId: outlook, folder: "F1", from: null, now: NOW });
+      expect(r.moved.fromInbox.sort()).toEqual([inId, selfId].sort());
+      expect(await inbox(store)).toEqual([]);
+      expect(await list(store, outlook, "F1")).toEqual([thread]);
+    });
+
     it("Outlook (stage 2b): the provider's answers are written as they come; a partial success keeps what was done, and an unknown outcome shows only what's confirmed", async () => {
       const { store } = await fresh();
       const outlook = await outlookAccount(store);
@@ -678,6 +714,19 @@ export function defineFolderMoveConformance(name: string, harness: StoreHarness)
       await land(store, outlook, new Map([[m.id, "read"]]));
       await store.threads.restore({ messages: read.before, now: NOW });
       expect((await queued(store)).map((o) => o.kind)).toEqual(["markUnread"]);
+      await land(store, outlook, new Map([[m.id, "read"]]));
+      // a star's undo after another app moved the message to Deleted Items (and it was read meanwhile): the star alone
+      // goes, the message stays where it is now and read (review round 3 #1)
+      const s = await one(store, { accountId: outlook, providerMsgId: "star", inInbox: true, folder: null });
+      const starred = await store.threads.act({ threadIds: [s.thread], action: "star", signal: null, now: NOW });
+      expect(starred.before[0]!.only).toBe("star");
+      await land(store, outlook, new Map([[s.id, "star"]]));
+      await store.sync.updateFlags(outlook, [{ messageId: s.id, expectedProviderMsgId: "star", flags: { inInbox: false, isTrash: true, isRead: true }, folder: null }]);
+      await store.threads.restore({ messages: starred.before, now: NOW });
+      expect(await flagsOf(store, s.id)).toEqual({ inInbox: false, isTrash: true, isSpam: false });
+      const after = (await store.debug.snapshot()).messages.find((x) => x.id === s.id)!;
+      expect({ isRead: after.isRead, isStarred: after.isStarred }).toEqual({ isRead: true, isStarred: false });
+      expect((await queued(store)).map((o) => o.kind)).toEqual(["unstar"]);
     });
 
     it("undone before the action's op ran: the filing back follows it in order; several folders are one op each; IMAP's undo is unchanged", async () => {

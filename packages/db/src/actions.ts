@@ -1,5 +1,5 @@
 import { categoryAction, categoryOfJson, CATEGORY_ACTIONS, isCategoryAction, type MessageCategory, type ThreadAction } from "@terno/core";
-import { actionTargets, isLocationAction, oneFolderFlags, reaffirmFlagIntent, restoreLocationOps, restoreDestination, restoreOneFolderOps, sameLocation, samePlace, MOVE_TO_FOLDER, RETURN_TO, type MessageState, type MoveToFolderPayload, type ReturnToPayload } from "@terno/store";
+import { actionTargets, flagScope, isLocationAction, undoTarget, oneFolderFlags, reaffirmFlagIntent, restoreLocationOps, restoreDestination, restoreOneFolderOps, sameLocation, samePlace, MOVE_TO_FOLDER, RETURN_TO, type MessageState, type MoveToFolderPayload, type ReturnToPayload } from "@terno/store";
 import { sqlFlags } from "./flag-intents";
 import { oneFolderFolders } from "./folders";
 import { oneFolderAccounts } from "./message-folders";
@@ -177,7 +177,8 @@ function applyToMessages(db: Db, msgs: Msg[], action: ThreadAction, explicit: bo
     // plan 86: only a category move's undo puts a category back (an archive's never touches one Gmail changed since)
     before: ids.map((id) => {
       const state = stateOf(byId.get(id)!, isCategoryAction(action));
-      return folders?.has(id) ? { ...state, folder: folders.get(id)! } : state;
+      const only = flagScope(action);
+      return folders?.has(id) ? { ...state, folder: folders.get(id)! } : only ? { ...state, only } : state;
     }),
   };
 }
@@ -237,8 +238,9 @@ export function restoreMessages(db: Db, states: readonly MessageState[]): Restor
     const folders = oneFolderPlaces(db, msgs.filter((m) => wanted.get(m.id)!.folder !== undefined));
     const touched = new Set<number>();
     for (const m of msgs) {
-      const saved = wanted.get(m.id)!;
       const now = stateOf(m);
+      // plan 259: a read or star action's undo puts back that flag alone
+      const saved = undoTarget(wanted.get(m.id)!, now);
       const placed = saved.folder !== undefined && folders.has(m.id) ? { now: { ...now, folder: folders.get(m.id)! }, was: oneFolderFlags({ ...saved, folder: saved.folder }) } : undefined;
       const was: MessageState = placed?.was ?? saved;
       // plan 86: a snapshot from before it, or of a message without a category, leaves the category as it is

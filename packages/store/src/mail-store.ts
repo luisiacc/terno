@@ -209,9 +209,15 @@ export interface SendCommand {
 export interface ProviderStore {
   repairs?: Pick<import("./capture-repair").CaptureRepairs, "get" | "list">;
   pendingFlagSnapshots(request: FlagSnapshotRequest): Promise<FlagSnapshotPage>;
-  messageByProviderId(providerMsgId: string): Promise<{ id: number; subject: string; fromEmail: string } | null>;
+  /** `isDraft`: plan 259, a draft whose content another app may still change (Outlook keeps its id when it sends it) */
+  messageByProviderId(providerMsgId: string): Promise<{ id: number; subject: string; fromEmail: string; isDraft?: boolean } | null>;
   /** Scan at most 50 account/provider keys, then exclude local rows. next is the last scanned key; absent only on an empty scan. */
   syncedMessagePage(after?: string): Promise<{ items: { id: number; providerMsgId: string }[]; next?: string }>;
+  /**
+   * Plan 259 (review round 3): one folder's stored messages (`message_folders`), 50 past `after` (a message id) in id
+   * order; `next` is the last, absent once there are no more. What a folder no longer synced had is read again by id.
+   */
+  folderMessagePage(folder: string, after?: number): Promise<{ items: { id: number; providerMsgId: string }[]; next?: number }>;
   /** synced (non-local) messages of the account */
   syncedMessages(): Promise<{ id: number; providerMsgId: string; date: number }[]>;
   /** messages whose body hasn't been downloaded, newest first, with one IMAP location each */

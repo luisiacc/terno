@@ -1,5 +1,5 @@
 import type { OwnerIdentity } from "@terno/core/rpc";
-import type { OwnerClaim } from "@terno/store";
+import { checkOwnerClaim, type OwnerClaim } from "@terno/store";
 import type { Db } from "./sqlite";
 
 export type { OwnerClaim } from "@terno/store";
@@ -37,6 +37,7 @@ export function getOwner(db: Db): OwnerIdentity | null {
 
 /** First verified account wins: INSERT OR IGNORE on the singleton row makes concurrent claims race-free. */
 export function claimOwner(db: Db, claim: OwnerClaim, now = Date.now()): boolean {
+  checkOwnerClaim(claim);
   return (
     db.run(
       `INSERT OR IGNORE INTO owner (id, user_id, email, display_name, provider, verified_by, evidence_json, verified_at, account_id, created_at, updated_at)
@@ -57,6 +58,7 @@ export function claimOwner(db: Db, claim: OwnerClaim, now = Date.now()): boolean
 
 /** Moves ownership to a freshly re-verified account. The user id is stable; the previous owner goes to history. */
 export function changeOwner(db: Db, claim: OwnerClaim, reason: string, now = Date.now()): void {
+  checkOwnerClaim(claim);
   db.tx(() => {
     const changed = db.run(
       `INSERT INTO owner_history (user_id, email, provider, verified_by, evidence_json, verified_at, replaced_at, reason)

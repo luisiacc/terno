@@ -125,11 +125,23 @@ export class IdbProviderStore implements ProviderStore {
   messageByProviderId(providerMsgId: string) {
     return this.read(() => {
       const r = T(this.c, "messages").by("provider", this.accountId, providerMsgId)[0];
-      return r ? { id: r.id as number, subject: r.subject as string, fromEmail: r.from_email as string } : null;
+      return r ? { id: r.id as number, subject: r.subject as string, fromEmail: r.from_email as string, isDraft: !!r.is_draft } : null;
     });
   }
 
   syncedMessagePage(after?: string) { return this.cachedPage(after); }
+
+  folderMessagePage(folder: string, after = 0) {
+    return this.read(() => {
+      const messages = T(this.c, "messages");
+      const ids = T(this.c, "message_folders").by("account_folder", this.accountId, folder).map((r) => r.message_id as number).filter((id) => id > after).sort((a, b) => a - b).slice(0, 50);
+      const items = ids.flatMap((id) => {
+        const providerMsgId = messages.get(id)?.provider_msg_id;
+        return providerMsgId != null && !String(providerMsgId).startsWith("local:") ? [{ id, providerMsgId: String(providerMsgId) }] : [];
+      });
+      return { items, ...(ids.length === 50 && { next: ids.at(-1)! }) };
+    });
+  }
 
   syncedMessages() {
     return this.read(() =>
@@ -141,11 +153,21 @@ export class IdbProviderStore implements ProviderStore {
   }
 
   pendingAttachmentBodies(limit: number) {
-    return this.read(() => T(this.c, "messages").by("attachment_pending", this.accountId, 1)
-      .filter((m) => m.provider_msg_id != null && !String(m.provider_msg_id).startsWith("local:"))
-      // a blocked repair of a provider-id message (Gmail's, Outlook's: plan 259 stage 2a) isn't downloaded again
-      .filter((m) => (["gmail", "outlook"] as const).every((kind) => T(this.c,"capture_repairs").get(this.accountId,captureKey({kind,providerId:String(m.provider_msg_id)}))?.state !== "blocked"))
-      .slice(0, Math.max(0, Math.min(50, limit))).map((m) => ({ id: m.id as number, providerMsgId: m.provider_msg_id as string })));
+    return this.read(() => {
+      const max = Math.max(0, Math.min(50, limit));
+      const repairs = T(this.c, "capture_repairs");
+      const out: { id: number; providerMsgId: string }[] = [];
+      // stops at the page: the repairs are looked up for what it takes, never for the whole backlog
+      for (const m of T(this.c, "messages").by("attachment_pending", this.accountId, 1)) {
+        if (out.length >= max) break;
+        if (m.provider_msg_id == null || String(m.provider_msg_id).startsWith("local:")) continue;
+        // a blocked repair of a provider-id message (Gmail's, Outlook's: plan 259 stage 2a) isn't downloaded again
+        const providerId = String(m.provider_msg_id);
+        if ((["gmail", "outlook"] as const).some((kind) => repairs.get(this.accountId, captureKey({ kind, providerId }))?.state === "blocked")) continue;
+        out.push({ id: m.id as number, providerMsgId: providerId });
+      }
+      return out;
+    });
   }
 
   pendingBodies(limit: number) {

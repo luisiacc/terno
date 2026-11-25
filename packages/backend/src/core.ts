@@ -2028,6 +2028,7 @@ export class BackendCore {
       // plan 259 stage 2b: an Outlook move's answer, written as it comes: the lists it changed read again now
       placeMessages: (placements) => write(async () => {
         const touched = await store.placeMessages(placements);
+      folderMessagePage: (folder, after) => read(() => store.folderMessagePage(folder, after)),
         if (touched.length) this.notifyChanged(touched);
         return touched;
       }),

@@ -24,12 +24,22 @@ export class SqlProviderStore implements ProviderStore {
   }
 
   async messageByProviderId(providerMsgId: string) {
-    const r = this.db.get<{ id: number; subject: string; from_email: string }>(
-      "SELECT id, subject, from_email FROM messages WHERE account_id = ? AND provider_msg_id = ?",
+    const r = this.db.get<{ id: number; subject: string; from_email: string; is_draft: number }>(
+      "SELECT id, subject, from_email, is_draft FROM messages WHERE account_id = ? AND provider_msg_id = ?",
       this.accountId,
       providerMsgId,
     );
-    return r ? { id: r.id, subject: r.subject, fromEmail: r.from_email } : null;
+    return r ? { id: r.id, subject: r.subject, fromEmail: r.from_email, isDraft: !!r.is_draft } : null;
+  }
+
+  async folderMessagePage(folder: string, after = 0) {
+    // message_folders_folder: (account_id, folder, message_id)
+    const items = this.db.all<{ id: number; providerMsgId: string }>(
+      `SELECT f.message_id AS id, m.provider_msg_id AS providerMsgId FROM message_folders f JOIN messages m ON m.id = f.message_id
+       WHERE f.account_id = ? AND f.folder = ? AND f.message_id > ? ORDER BY f.message_id LIMIT 50`,
+      this.accountId, folder, after,
+    );
+    return { items: items.filter((r) => r.providerMsgId !== null && !r.providerMsgId.startsWith("local:")), ...(items.length === 50 && { next: items.at(-1)!.id }) };
   }
 
   async syncedMessagePage(after = "") {

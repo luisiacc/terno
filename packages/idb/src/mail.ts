@@ -5,7 +5,7 @@ import { saveFilterForward } from "./forwards";
 import { folderPage, folderScopeIds, folderUnreadCounts, oneFolderFolders, refreshFolders } from "./folders";
 import { placeMessage } from "./message-folders";
 import { requireGmailRefresh, opAdmitter, ThreadMerges, type OpAdmission } from "@terno/store";
-import { actionTargets, assetError, isLocationAction, linkAssets, oneFolderFlags, oneFolderPerMessage, reaffirmFlagIntent, restoreDestination, restoreLocationOps, restoreOneFolderOps, sameLocation, samePlace, validateAssets, MOVE_TO_FOLDER, RETURN_TO, type MoveToFolderPayload, type ReturnToPayload } from "@terno/store";
+import { actionTargets, assetError, checkOwnerClaim, flagScope, isLocationAction, undoTarget, linkAssets, oneFolderFlags, oneFolderPerMessage, reaffirmFlagIntent, restoreDestination, restoreLocationOps, restoreOneFolderOps, sameLocation, samePlace, validateAssets, MOVE_TO_FOLDER, RETURN_TO, type MoveToFolderPayload, type ReturnToPayload } from "@terno/store";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import { idbAssets, replaceAttachments } from "./attachments";
@@ -1141,7 +1141,8 @@ function applyToMessages(c: Ctx, msgs: R[], action: ThreadAction, explicit: bool
     const m = messages.get(id)!;
     // plan 86: only a category move's undo puts a category back (an archive's never touches one Gmail changed since)
     const state = stateOf(m, isCategoryAction(action));
-    before.push(folders?.has(id) ? { ...state, folder: folders.get(id)! } : state);
+    const only = flagScope(action);
+    before.push(folders?.has(id) ? { ...state, folder: folders.get(id)! } : only ? { ...state, only } : state);
     // plan 259 (Codex code review #1): Graph keeps a message in one place, so one trashed is out of Junk and one marked
     // spam out of Deleted Items, and its undo knows which it came from
     const one = folders?.has(id) && (action === "trash" || action === "spam");
@@ -1188,10 +1189,12 @@ export function restoreMessages(c: Ctx, states: readonly MessageState[]): { thre
     // plan 259: an Outlook snapshot of a location action says its folder: where each is now is read the same way
     const folders = oneFolderPlaces(c, sorted.flatMap((s) => (s.folder !== undefined ? messages.get(s.id) ?? [] : [])));
     const touched = new Set<number>();
-    for (const saved of sorted) {
-      const m = messages.get(saved.id);
+    for (const snapshot of sorted) {
+      const m = messages.get(snapshot.id);
       if (!m) continue;
       const now = stateOf(m);
+      // plan 259: a read or star action's undo puts back that flag alone
+      const saved = undoTarget(snapshot, now);
       const placed = saved.folder !== undefined && folders.has(m.id) ? { now: { ...now, folder: folders.get(m.id)! }, was: oneFolderFlags({ ...saved, folder: saved.folder }) } : undefined;
       const was: MessageState = placed?.was ?? saved;
       // plan 86: a snapshot from before it, or of a message without a category, leaves the category as it is
@@ -2219,6 +2222,7 @@ export function getOwner(c: Ctx): OwnerIdentity | null {
 }
 
 export function claimOwner(c: Ctx, claim: OwnerClaim, now: number): boolean {
+  checkOwnerClaim(claim);
   return T(c, "owner").insert({
     id: 1,
     user_id: c.uuid(),
@@ -2236,6 +2240,7 @@ export function claimOwner(c: Ctx, claim: OwnerClaim, now: number): boolean {
 }
 
 export function changeOwner(c: Ctx, claim: OwnerClaim, reason: string, now: number): void {
+  checkOwnerClaim(claim);
   const owner = T(c, "owner");
   const current = owner.get(1);
   if (!current) {

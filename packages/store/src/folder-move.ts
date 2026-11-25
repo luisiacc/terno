@@ -222,7 +222,9 @@ export function planOneFolderMove(to: { accountId: number; folder: string; from:
   for (const m of rows) {
     if (m.folder === folder) continue;
     const inFrom = from !== null && m.folder === from;
-    if (m.is_sent && received.has(m.thread_id) && !inFrom) continue;
+    // your own mail stays in Sent, never your own in the Inbox (a note to yourself, a copy to you): it goes with the
+    // conversation, or the conversation would still show in the Inbox (review round 3)
+    if (m.is_sent && received.has(m.thread_id) && !inFrom && !m.in_inbox) continue;
     messageIds.push(m.id);
     if (inFrom) moved.fromFolder.push(m.id);
     else if (m.folder !== null) back(`folder:${m.folder}`, { back: m.folder }, m.id);

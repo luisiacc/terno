@@ -1,3 +1,4 @@
+import { isAccountKind } from "@terno/core";
 import type { Address, FeatureSource, ListFilter, OpState, Reason, ThreadFeatures, ThreadSummary, TrainExample, View } from "@terno/core";
 
 // ───────────────────────────── ingestion ─────────────────────────────
@@ -89,6 +90,11 @@ export interface MessageState {
    * null, a role folder its flags name. Absent: another provider, or an action that doesn't move mail.
    */
   folder?: string | null;
+  /**
+   * The one flag a read or star action changed (`flagScope`): its undo puts back that flag alone, never a place or the
+   * other flag the message took since (another app moved it, the person starred it). Absent: the whole state, as before.
+   */
+  only?: "read" | "star";
 }
 
 export interface FlagUpdate {
@@ -305,6 +311,14 @@ export interface OwnerClaim {
   /** {googleSub, emailVerified} | {imapHost, loginUser, emailMatchesLogin}; never leaves the backend */
   evidence: Record<string, unknown>;
   accountId: number;
+}
+
+const OWNER_VERIFIERS: readonly string[] = ["google_oauth", "imap_login", "microsoft_oauth"] satisfies OwnerClaim["verifiedBy"][];
+
+/** Plan 267: `owner.provider` and `verified_by` have no CHECK list (v81), so both engines check what they write here. */
+export function checkOwnerClaim(claim: OwnerClaim): void {
+  if (!isAccountKind(claim.provider)) throw new Error("Unknown owner provider");
+  if (!OWNER_VERIFIERS.includes(claim.verifiedBy)) throw new Error("Unknown owner verification");
 }
 
 export interface DraftRow {

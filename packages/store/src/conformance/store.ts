@@ -528,7 +528,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
           const ts = [await threadOf(store, "a1"), await threadOf(store, "b1")];
           const r = await store.threads.act({ threadIds: ts, action: "markRead", signal: null, now: NOW });
           // only the message that changed is journaled, as it was
-          expect(r.before).toEqual(before.filter((m) => !m.isRead));
+          expect(r.before).toEqual(before.filter((m) => !m.isRead).map((m) => ({ ...m, only: "read" })));
           const back = await store.threads.restore({ messages: r.before, now: NOW + 1 });
           expect(await states(store)).toEqual(before);
           expect(back.threadIds).toEqual([ts[0]]);
@@ -2118,6 +2118,21 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         expect(await store.owner.confirm(request)).toBe(false);
         await store.accounts.remove(account.id);
         expect(await store.owner.confirm(request)).toBe(false);
+      });
+
+      it("review round 3: the owner's provider and verification are checked as they're written (their columns keep no list)", async () => {
+        const store = await fresh();
+        const claim = { displayName: "Synthetic", provider: "outlook" as const, verifiedBy: "microsoft_oauth" as const, evidence: {} };
+        await store.accounts.create({ kind: "outlook", email: "owner@example.test", displayName: "Synthetic", color: "brown", providerConfig: {}, ownerClaim: claim, now: NOW });
+        expect(await store.owner.get()).toMatchObject({ provider: "outlook", verifiedBy: "microsoft_oauth" });
+        const { account } = await store.accounts.create({ kind: "gmail", email: "target@example.test", displayName: "Synthetic", color: "brown", providerConfig: {}, now: NOW });
+        const stamp = (await store.accounts.stamp(account.id))!, name = `account:${account.id}:refreshToken`;
+        await store.secrets.put(name, Uint8Array.of(1));
+        const request = (c: Record<string, unknown>) => ({ claim: { ...claim, accountId: account.id, email: account.email, ...c }, stamp, secret: { kind: "replace" as const, name, expectedBlob: Uint8Array.of(1), blob: Uint8Array.of(2) }, reason: "synthetic", now: NOW + 1 }) as unknown as Parameters<typeof store.owner.change>[0];
+        await expect(store.owner.change(request({ provider: "fax" }))).rejects.toThrow("Unknown owner provider");
+        await expect(store.owner.change(request({ verifiedBy: "guess" }))).rejects.toThrow("Unknown owner verification");
+        expect(await store.owner.get()).toMatchObject({ provider: "outlook", email: "owner@example.test" });
+        expect(await store.secrets.get(name)).toEqual(Uint8Array.of(1));
       });
 
       it("owner eligibility refuses or throws before any owner or secret mutation", async () => {

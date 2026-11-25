@@ -2,8 +2,8 @@ import type { ThreadAction } from "@terno/core";
 import { MOVE_TO_FOLDER, RETURN_TO, type ReturnToRole } from "./folder-move";
 import type { MessageState } from "./types";
 
-/** plan 259: an undo snapshot's `folder` is a place, not a flag */
-export type LocalFlagField = Exclude<keyof MessageState, "id" | "folder">;
+/** plan 259: an undo snapshot's `folder` is a place, and `only` its scope, not flags */
+export type LocalFlagField = Exclude<keyof MessageState, "id" | "folder" | "only">;
 
 export class FlagObservationError extends Error {
   readonly code = "AUTHORITATIVE_FLAGS_UNAVAILABLE";
@@ -39,6 +39,20 @@ export function mergeBefore(first: readonly MessageState[], then: readonly Messa
     out.set(m.id, was ? { ...was, category: m.category } : m);
   }
   return [...out.values()];
+}
+
+/** Plan 259: the one flag a read or star action changes, which is all its undo puts back (`MessageState.only`). */
+export function flagScope(action: ThreadAction): MessageState["only"] {
+  if (action === "markRead" || action === "markUnread") return "read";
+  if (action === "star" || action === "unstar") return "star";
+  return undefined;
+}
+
+/** What an undo puts back: the snapshot, or for a read or star action that flag alone over the message as it is now. */
+export function undoTarget(saved: MessageState, now: MessageState): MessageState {
+  if (saved.only === "read") return { ...now, isRead: saved.isRead };
+  if (saved.only === "star") return { ...now, isStarred: saved.isStarred };
+  return saved;
 }
 
 /** An action that moves mail (archive, trash, spam, not spam, back to the Inbox), not one that marks or files it. */
