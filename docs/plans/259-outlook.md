@@ -375,3 +375,62 @@ The critique (11 points) showed that 0b is two pieces of different weight:
   - A confirmed destination per message for every location op (archive, trash, spam, notSpam, moveToInbox, move, leave), including partial success, unknown outcomes and a delta read racing a settlement.
 
   Until stage 2 no Outlook op runs: the registry refuses the kind.
+
+## Stage 0b as built
+
+The storage-and-membership half, as revised after the critique. Move semantics and settlement wait for stage 2.
+
+- **The table.**
+  - SQLite v82 `message_folders` and its `(account_id, folder, message_id)` index are shape only, with no `rewrites`.
+  - IndexedDB v41 adds the `message_folders` store: keyed by `message_id`, with `fk_message_id` and `account_folder` indexes, cascaded with its message, and loaded with the late tables. `LOGICAL_SCHEMA` is 82.
+  - Two tests that name the newest step learned of it. `upgrade.test.ts` now runs v81 as `migrate` does, with foreign keys off. `idb.uncertain-upgrade.test.ts` lists the new store.
+- **Ingest.** `IncomingMessage.folder` is written on insert and on the existing-row path. Absent keeps the stored folder, and null deletes it. Ingest ignores it for an account that is not one-folder (`oneFolderPerMessage(kind)`, Outlook only). The shared rule lives in `@terno/store` (`folder-move.ts`), the SQL in `db/message-folders.ts` and the IndexedDB code in `idb/message-folders.ts`.
+- **Membership.** `MEMBERSHIP`, `writeFolders` and IndexedDB's `refreshFolders` read `message_folders` beside labels and locations.
+  - SQLite seeks by the thread index, then by the primary key. A test pins that query plan.
+  - `writeFolders` and IndexedDB read the table only while it has rows, so an IMAP or Gmail mailbox pays one probe.
+  - The pending-move overlay replays an Outlook message's ops with `applyFolderOpOne`. A move replaces the one folder whatever its `from` says, so A → B never shows the message in both.
+- **Counts.** An Outlook account's `folders.count` walks `(account, folder, message_id)` past the last id: by the index in SQLite, and by the folder's index bucket kept between slices in IndexedDB.
+  - It counts where the server has the message now. A move on its way has moved nothing yet, and mail trashed locally still counts, as with IMAP's locations.
+  - A key named twice counts once. There are no thread rows, labels or merge restarts.
+- **Export.** An Outlook folder's export walks its messages by id: by the index in SQLite, and by sorted runs of the bucket in IndexedDB, with the `folderMessage` cursor. It reads one state at both steps, so a message mid-move is exported once, from the folder the server has it in.
+- **Deviation: no rebuild for Outlook.** The plan asked for a rebuild cursor with pending moves preserved. Outlook membership, like Gmail's labels, never waits on the folder list: Graph's ids are the keys and survive renames. So listing, unlisting or relisting a folder has nothing to rebuild, and `replaceFolders`' gate stays IMAP's. The conformance suite covers ingest before listing and unlist then relist.
+- **Not read for Outlook.** Identity holds, dispatch, `mappedMove`, aliases, UID walks, `pendingBodies` and capture locators never read `message_folders`. No `body_protocol` trigger watches it, since Graph reads a body by id.
+- **The seam for stage 2.**
+  - `queueFolderMoves` still plans an Outlook move as IMAP does: it reads `message_locations`, which is empty for Outlook.
+  - `settleFolderOp` writes nothing for Outlook, so until a delta read reports the move, a settled move shows the confirmed folder again.
+  - Stage 2 adds the Outlook branch to `queueFolderMoves`, using `applyFolderOpOne` for the replayed source. It also writes the confirmed folder in `settleFolderOp` and for the other location ops. The registry still refuses Outlook ops, so none of this runs before then.
+- **Tests.**
+  - Conformance in both engines, including SQLite-WASM:
+    - membership from `folder`
+    - a re-ingest move, absent and null
+    - reopen, trash, removal and a mixed thread
+    - unlisting and relisting
+    - the overlay, replayed in order, with failures
+    - counts, sliced and across a refilled bucket
+    - export, including during and after a move
+  - An IndexedDB v40 → v41 upgrade with rows, a reopen, and deletion with the message and with the account.
+  - A SQLite test of the cascades and the query plan.
+- **Perf at 50k.** The Outlook cases put 50,000 messages over 250 folders, 25,000 of them in one.
+  - SQLite (`store.perf`): pages, sidebar counts, triage and a 200-message delta read, plus counts and export a slice at a time, including a 10,000-folder subtree.
+  - IndexedDB (`idb.perf`): the same, with the export's pending runs.
+  - `filter-folder.perf`: Outlook filing stays within 2.5× an archive.
+  - `folder-export.perf`: the backend's nexts for an Outlook folder in both engines.
+- **What the Codex code review changed.** There were two rounds. Each fix came with a test that fails without it.
+  - Round 1 (9 findings):
+    - #2: an IndexedDB count missed a message that arrived after the folder's index bucket emptied and was remade. The walk now notices the new bucket and walks it, skipping what it already counted.
+    - #4: SQLite searched the earlier keys for every key, about 270 ms a slice at 10,000 folders. Each key's first place is now found once a call, and the perf case counts a 10,000-folder subtree.
+    - #5: IndexedDB counted `"A"` and `{ mailbox: "A", except: [] }` as two folders.
+    - #6–#8: the perf cases now page the folder's own deep page, change state in every triage sample, and gate the membership recompute.
+    - #9: tests now show that a folder row goes with its message and with its account, in both engines.
+    - Skipped, as rare and shared with existing paths:
+      - #1: a message moved between two folders of one subtree between count slices is counted twice. IMAP's count does the same, and the number is only a delete confirmation's.
+      - #3: an IndexedDB export misses a message moved into the folder, ahead of its cursor, after the walk's runs were read. Every IndexedDB folder export already behaves this way.
+      - #8's backend export over 16,384 messages: `idb.perf` gates the pending-run path at 24,800.
+  - Round 2 (6 findings):
+    - #5: the count walked the bucket directly, so the existing visits test measured nothing. It walks the index's keys again.
+    - #3: a message another generation held was marked as passed, so it was missed when it came back under this folder's own generation in a new bucket. Only a counted message is passed for good now.
+    - #6: the SQLite triage gates pair each change with its undoing on one thread, and check it.
+    - Skipped:
+      - #1, a rebuild for Outlook keys: no Outlook path asks for one (see the deviation above).
+      - #2: SQLite's id cursor misses an older message that moves in behind it mid-count. This is the same race as #1, and as rare.
+      - #4: a lost IndexedDB walk replays by position. This predates the series and needs a walk evicted mid-count.
