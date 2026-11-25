@@ -129,6 +129,17 @@ describe("the entries a search runs on", async () => {
     expect(findSettings(entries, "receipts color")[0]?.entry.key).toBe("category.color:7");
   });
 
+  it("plan 259 (Codex review #6): Outlook, Hotmail or Microsoft finds Add account, in English and Spanish", () => {
+    const first = (q: string) => findSettings(findEntries(ctx, accounts, []), q)[0]?.entry.data.id;
+    for (const q of ["outlook", "hotmail", "microsoft"]) expect(first(q), q).toBe("accounts.add");
+    setLocale("es", es);
+    try {
+      for (const q of ["outlook", "microsoft"]) expect(first(q), q).toBe("accounts.add");
+    } finally {
+      setLocale("en", en);
+    }
+  });
+
   it("plan 238: the all-accounts Inbox's switch with several accounts, found as the unified inbox; with one, only while it's out", () => {
     const keys = (c: typeof ctx, list: typeof accounts) => findEntries(c, list, []).filter((e) => e.data.id === "account.allInbox").map((e) => e.key);
     expect(keys(ctx, accounts)).toEqual(["account.allInbox:1", "account.allInbox:2"]);

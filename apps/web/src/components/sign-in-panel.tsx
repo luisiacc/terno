@@ -6,7 +6,7 @@ import { Input } from "@terno/ui/components/input";
 import { PopoverDescription, PopoverTitle } from "@terno/ui/components/popover";
 import { cn } from "@terno/ui/lib/utils";
 import { Spinner } from "@terno/ui/components/spinner";
-import { createContext, useContext, useEffect, useId, useRef, useState, type RefObject } from "react";
+import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { canStart, clearAttemptError, needsGoogleScript, prepareGoogle, sendOnly, signInAgain, useSignIn, type Attempt } from "~/lib/sign-in";
 
 const WEB = import.meta.env.VITE_TARGET === "web";
@@ -131,6 +131,21 @@ function Action({ account, attempt, google, onAsk }: { account: Account; attempt
   const common = { "data-sign-in-action": true, "data-account-id": account.id } as const;
   const run = useRun();
   const method = signInMethod(account.kind);
+  // the action changes shape while the browser's page is open (Open again) and back: focus that was on it, now on the
+  // page for want of anything else, goes to what took its place (Codex review of plan 259 stage 3 #4)
+  const slot = useRef<HTMLDivElement>(null);
+  const last = useRef<Element | null>(null);
+  const waiting = Boolean(attempt?.busy) && !WEB;
+  useLayoutEffect(() => {
+    const active = document.activeElement;
+    if (!last.current || last.current.isConnected || (active && active !== document.body)) return;
+    slot.current?.querySelector<HTMLElement>("[data-sign-in-action]")?.focus();
+  }, [waiting]);
+  const keep = (node: React.ReactNode) => (
+    <div ref={slot} className="contents" onFocus={(e) => (last.current = e.target)}>
+      {node}
+    </div>
+  );
   let label: string;
   switch (method) {
   case "password":
@@ -149,8 +164,8 @@ function Action({ account, attempt, google, onAsk }: { account: Account; attempt
   default: return unhandled(method);
   }
   // the desktop's sign-in page is open in the browser: say where the user is expected, and offer it again
-  if (attempt?.busy && !WEB) {
-    return (
+  if (waiting) {
+    return keep(
       <div className="flex items-center gap-2">
         <p aria-live="polite" className="flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="sign-in-waiting">
           <Spinner className="size-3.5 text-current" aria-hidden />
@@ -167,7 +182,7 @@ function Action({ account, attempt, google, onAsk }: { account: Account; attempt
   const loading = !ready && google === "loading";
   const failed = !ready && google === "failed";
   const busy = Boolean(attempt?.busy);
-  return (
+  return keep(
     <Button
       size="sm"
       aria-disabled={(!ready && !failed) || busy || undefined}

@@ -68,8 +68,8 @@ async function render(node: React.ReactNode) {
 const q = <T extends HTMLElement = HTMLElement>(testId: string) => document.querySelector<T>(`[data-testid="${testId}"]`);
 const settle = (value?: unknown, error?: Error) => act(async () => { calls.at(-1)!.settle(value, error); await new Promise((r) => setTimeout(r, 0)); });
 
-function Form({ onDone = () => {} }: { onDone?: () => void }) {
-  const [draft, setDraft] = useState(EMPTY_ACCOUNT_DRAFT);
+function Form({ onDone = () => {}, picked = null }: { onDone?: () => void; picked?: number | null }) {
+  const [draft, setDraft] = useState({ ...EMPTY_ACCOUNT_DRAFT, picked });
   return <AddAccountForm draft={draft} onDraft={setDraft} onDone={onDone} />;
 }
 
@@ -81,16 +81,17 @@ async function type(input: HTMLInputElement, value: string) {
 }
 
 describe("Add account (plan 259)", () => {
-  it("Continue with Microsoft sits beside Google's and connects with the chosen window; one way at a time", async () => {
+  it("Continue with Microsoft sits under Google's and connects with the chosen window; one way at a time", async () => {
     const done = vi.fn();
-    await render(<Form onDone={done} />);
+    // a window chosen other than the General one (Codex review #9)
+    await render(<Form onDone={done} picked={365} />);
     const google = q<HTMLButtonElement>("connect-gmail")!, microsoft = q<HTMLButtonElement>("connect-microsoft")!;
     expect(microsoft.textContent!.trim()).toBe("Continue with Microsoft");
     // the pair, stacked in one group, Google first
     expect(microsoft.parentElement).toBe(google.parentElement);
     expect(google.nextElementSibling).toBe(microsoft);
     await act(async () => microsoft.click());
-    expect(calls).toEqual([expect.objectContaining({ method: "accounts.connectMicrosoft", params: { syncWindowDays: 180 } })]);
+    expect(calls).toEqual([expect.objectContaining({ method: "accounts.connectMicrosoft", params: { syncWindowDays: 365 } })]);
     // busy: Microsoft's spins, Google's and the IMAP form wait
     expect(microsoft.getAttribute("aria-busy")).toBe("true");
     expect(google.getAttribute("aria-busy")).toBeNull();
@@ -114,11 +115,15 @@ describe("Add account (plan 259)", () => {
   it("an Outlook.com address in the IMAP form points to Continue with Microsoft, with no Office 365 servers filled in", async () => {
     await render(<Form />);
     const email = q<HTMLInputElement>("imap-email")!;
-    await type(email, "ana@hotmail.co.uk");
+    const servers = () => [q<HTMLInputElement>("imap-host")!.value, q<HTMLInputElement>("smtp-host")!.value];
+    // the two that had Office 365 presets (Codex review #8)
+    await type(email, "ana@outlook.com");
+    expect(servers()).toEqual(["imap.outlook.com", "smtp.outlook.com"]);
+    await type(email, "ana@hotmail.com");
+    expect(servers()).toEqual(["imap.hotmail.com", "smtp.hotmail.com"]);
     const hint = q("imap-microsoft-hint")!;
-    expect(hint.textContent).toBe("hotmail.co.uk no longer takes passwords from other apps. Continue with Microsoft");
+    expect(hint.textContent).toBe("hotmail.com no longer takes passwords from other apps. Continue with Microsoft");
     expect(email.getAttribute("aria-describedby")).toBe(hint.id);
-    expect(q<HTMLInputElement>("imap-host")!.value).toBe("imap.hotmail.co.uk");
     await act(async () => q("imap-microsoft-connect")!.click());
     expect(calls.map((c) => c.method)).toEqual(["accounts.connectMicrosoft"]);
     await type(email, "ana@icloud.com");
@@ -126,9 +131,33 @@ describe("Add account (plan 259)", () => {
     expect(email.getAttribute("aria-describedby")).toBeNull();
   });
 
+  it("Codex review #3: started from the hint, its progress and its failure show at the hint, not above the IMAP divider", async () => {
+    await render(<Form />);
+    await type(q<HTMLInputElement>("imap-email")!, "ana@outlook.com");
+    await act(async () => q("imap-microsoft-connect")!.click());
+    expect(q("imap-microsoft-connect")!.getAttribute("aria-busy")).toBe("true");
+    expect(q("connect-microsoft")!.getAttribute("aria-busy")).toBeNull();
+    await settle(undefined, new RpcError("BAD_REQUEST", "Microsoft access was denied."));
+    const error = q("add-account-error")!;
+    expect(error.textContent).toBe("Microsoft access was denied.");
+    expect(q("imap-microsoft-hint")!.nextElementSibling).toBe(error);
+    expect(q("imap-microsoft-connect")!.getAttribute("aria-busy")).toBeNull();
+  });
+
+  it("Codex review #1: a sign-in finishing after its form went closes nothing (another Add account may be open)", async () => {
+    const done = vi.fn();
+    await render(<Form onDone={done} />);
+    await act(async () => q("connect-microsoft")!.click());
+    cleanup!();
+    cleanup = null;
+    await act(async () => { calls.at(-1)!.settle({ email: "ana@outlook.com" }); await new Promise((r) => setTimeout(r, 0)); });
+    expect(done).not.toHaveBeenCalled();
+  });
+
   it("knows Outlook.com's domains and their country versions, and nothing else", () => {
     for (const a of ["a@outlook.com", "a@Hotmail.com", "a@live.com", "a@msn.com", "a@outlook.es", "a@hotmail.co.uk", "a@live.com.mx", " a@live.fr "]) expect(microsoftDomain(a)).not.toBeNull();
-    for (const a of ["a@contoso.com", "a@outlook.contoso.com", "a@myhotmail.com", "a@live.example.org", "a@gmail.com", "a@", "outlook.com"]) expect(microsoftDomain(a)).toBeNull();
+    // Codex review #5: live.fm and its like aren't Microsoft's
+    for (const a of ["a@contoso.com", "a@outlook.contoso.com", "a@myhotmail.com", "a@live.example.org", "a@live.fm", "a@hotmail.xy", "a@gmail.com", "a@", "outlook.com"]) expect(microsoftDomain(a)).toBeNull();
   });
 });
 
@@ -146,6 +175,16 @@ describe("signing an Outlook account in again (plan 259)", () => {
     expect(q("sign-in-waiting")).toBeNull();
   });
 
+  it("Codex review #4: focus on the action stays on it while the page is open and after a refusal", async () => {
+    await render(<Popover open><PopoverTrigger render={<button>Open</button>} /><PopoverContent><SignInPanel accounts={[outlook({ authRequired: true } as never)]} onLater={() => {}} /></PopoverContent></Popover>);
+    await act(async () => q("sign-in-microsoft")!.focus());
+    await act(async () => q("sign-in-microsoft")!.click());
+    expect(document.activeElement).toBe(q("sign-in-microsoft-again"));
+    await settle(undefined, new RpcError("BAD_REQUEST", "Microsoft access was denied."));
+    expect(document.activeElement).toBe(q("sign-in-microsoft"));
+    expect(q("sign-in-error")!.textContent).toBe("Microsoft access was denied.");
+  });
+
   it("Settings names the service Outlook, and its Reconnect signs in with Microsoft", async () => {
     expect([serviceLabel("gmail"), serviceLabel("outlook"), serviceLabel("imap")]).toEqual(["Gmail", "Outlook", "IMAP/SMTP"]);
     const account = outlook();
@@ -161,7 +200,7 @@ describe("signing an Outlook account in again (plan 259)", () => {
 
 describe("the owner card (plan 259)", () => {
   it("says the Terno account was verified with Microsoft", async () => {
-    const owner = { accountId: 7, email: "ana@outlook.com", displayName: "Ana", provider: "outlook", verifiedBy: "microsoft_oauth", verifiedAt: Date.UTC(2026, 10, 24, 12), migrated: false } as unknown as OwnerIdentity;
+    const owner = { accountId: 7, email: "ana@outlook.com", displayName: "Ana", provider: "outlook", verifiedBy: "microsoft_oauth", verifiedAt: new Date(2026, 10, 24, 12).getTime(), migrated: false } as unknown as OwnerIdentity;
     const host = await render(<OwnerCard owner={owner} demo={false} accounts={[outlook()]} />);
     expect(host.textContent).toContain("Verified with Microsoft · Nov 24, 2026");
   });

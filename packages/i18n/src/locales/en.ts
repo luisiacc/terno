@@ -299,7 +299,7 @@ const en = {
   "settings.find.words.siteIcons": "logos, avatars, favicons, company icons",
   "settings.find.words.customThemes": "import, JSON, colors",
   "settings.find.words.owner": "billing, sign in, license, Pro",
-  "settings.find.words.addAccount": "new account, connect, Gmail, IMAP",
+  "settings.find.words.addAccount": "new account, connect, Gmail, Outlook, Hotmail, Microsoft, IMAP",
   "settings.find.words.instructions": "tone, prompt, how to write",
   "settings.find.words.separateTabs": "promotions, social, Gmail tabs",
   "settings.find.words.allInbox": "unified inbox, combined inbox, all inboxes, hide account, unread count",
@@ -517,7 +517,7 @@ const en = {
   "account.remove.descriptionGoogleWeb": "Its mail, drafts and pending actions are deleted from this computer. Your mail in Gmail doesn’t change. To withdraw Terno’s access to your Google Account too, remove Terno at myaccount.google.com/permissions.",
   "account.remove.stays": "It stays your Terno account.",
   // plan 259: Microsoft has no way for an app to withdraw its own access, so the dialog says where the person does it
-  "account.remove.descriptionMicrosoft": "Its mail, drafts and pending actions are deleted from this computer. Your mail in Outlook doesn’t change. Terno can’t withdraw its own access at Microsoft: to withdraw it too, remove Terno from your account’s apps.",
+  "account.remove.descriptionMicrosoft": "Its mail, drafts and pending actions are deleted from this computer. Your mail in Outlook doesn’t change. Terno can’t withdraw its own access at Microsoft: to withdraw it too, remove Terno from your account’s apps. If your organization approved Terno for everyone, ask its administrator.",
   "account.remove.microsoftPersonal": "Personal account",
   "account.remove.microsoftWork": "Work or school account",
   "account.removed.googleFailedHint": "Google didn’t confirm Terno lost access.",

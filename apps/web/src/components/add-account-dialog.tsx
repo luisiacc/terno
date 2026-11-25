@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Google, Microsoft } from "@terno/ui/icons";
 import { unhandled, type SignInMethod } from "@terno/core";
 import { t } from "@terno/i18n";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
@@ -34,13 +34,21 @@ const PRESETS: Record<string, { imap: string; smtp: string; smtpPort: number }> 
   "proton.me": { imap: "127.0.0.1", smtp: "127.0.0.1", smtpPort: 1025 },
 };
 
-/** Outlook.com's own domains, and their country versions (hotmail.co.uk, outlook.es, live.com.mx) */
-const MICROSOFT_DOMAIN = /^(?:(?:outlook|hotmail|live)\.(?:com|[a-z]{2}|co\.[a-z]{2}|com\.[a-z]{2})|msn\.com)$/;
+/**
+ * Outlook.com's own domains and their best-known country versions, listed (a pattern like `live.xx` would claim
+ * unrelated domains such as live.fm, Codex review of plan 259 stage 3 #5). One missing only loses the hint.
+ */
+const MICROSOFT_DOMAINS = new Set([
+  "outlook.com", "outlook.es", "outlook.fr", "outlook.de", "outlook.it", "outlook.jp", "outlook.com.ar", "outlook.com.au", "outlook.com.br",
+  "hotmail.com", "hotmail.co.uk", "hotmail.fr", "hotmail.de", "hotmail.it", "hotmail.es", "hotmail.com.ar", "hotmail.com.br",
+  "live.com", "live.co.uk", "live.fr", "live.de", "live.it", "live.nl", "live.ca", "live.com.mx", "live.com.ar", "live.com.au",
+  "msn.com", "windowslive.com",
+]);
 
 /** plan 259: an address that connects with Microsoft, not IMAP: its domain, else null */
 export function microsoftDomain(email: string): string | null {
   const domain = email.trim().split("@")[1]?.toLowerCase() ?? "";
-  return MICROSOFT_DOMAIN.test(domain) ? domain : null;
+  return MICROSOFT_DOMAINS.has(domain) ? domain : null;
 }
 
 /** the ways in that sign in in the browser: Google, and on the desktop Microsoft (plan 259: the web's waits for its stage 4) */
@@ -95,10 +103,21 @@ export function AddAccountForm({ draft, onDraft, onDone, onBusy }: FormProps) {
   const generalWindow = useApp((s) => s.settings?.syncWindowDays ?? 180);
   const syncWindowDays = draft.picked ?? generalWindow;
   const form = draft.form;
-  // one connection at a time, whichever way; its failure shows under the way it was tried
+  // one connection at a time, whichever way; its progress and failure show where it was started (Microsoft also from the
+  // IMAP form's hint, Codex review of plan 259 stage 3 #3)
   const [busy, setBusyState] = useState<SignInMethod | null>(null);
+  const [from, setFrom] = useState<"buttons" | "hint">("buttons");
   const [error, setError] = useState<{ method: SignInMethod; text: NonNullable<Attempt["error"]> } | null>(null);
   const hintId = useId();
+  // a sign-in finishing after its form went (the dialog closed, another opened) says it connected and closes nothing
+  // (Codex review of plan 259 stage 3 #1)
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
   const set = (patch: Partial<AccountDraft["form"]>) => onDraft((d) => ({ ...d, form: { ...d.form, ...patch } }));
   const setPicked = (picked: number) => onDraft((d) => ({ ...d, picked }));
   const setBusy = (b: SignInMethod | null) => {
@@ -125,17 +144,19 @@ export function AddAccountForm({ draft, onDraft, onDone, onBusy }: FormProps) {
     }
   };
 
-  const connectWith = async (method: BrowserMethod) => {
+  const connectWith = async (method: BrowserMethod, place: "buttons" | "hint" = "buttons") => {
     setBusy(method);
+    setFrom(place);
     setError(null);
     try {
       const a = await connect(method);
       snack.success(t("account.connected", { email: a.email }));
-      onDone();
+      if (alive.current) onDone();
     } catch (error) {
-      setError({ method, text: attemptError(error)! });
+      if (alive.current) setError({ method, text: attemptError(error)! });
     } finally {
-      setBusy(null);
+      if (alive.current) setBusy(null);
+      else onBusy?.(false);
     }
   };
 
@@ -155,11 +176,12 @@ export function AddAccountForm({ draft, onDraft, onDone, onBusy }: FormProps) {
         syncWindowDays,
       });
       snack.success(t("account.connectedSyncing", { email: a.email }));
-      onDone();
+      if (alive.current) onDone();
     } catch (error) {
-      setError({ method: "password", text: attemptError(error)! });
+      if (alive.current) setError({ method: "password", text: attemptError(error)! });
     } finally {
-      setBusy(null);
+      if (alive.current) setBusy(null);
+      else onBusy?.(false);
     }
   };
 
@@ -193,13 +215,13 @@ export function AddAccountForm({ draft, onDraft, onDone, onBusy }: FormProps) {
         {BROWSER_METHODS.map((method) => {
           const b = browserButton(method);
           return (
-            <Button key={method} variant="outline" className="h-10 justify-center gap-2" onClick={() => void connectWith(method)} focusableWhenDisabled disabled={busy !== null} loading={busy === method} data-testid={b.testId}>
+            <Button key={method} variant="outline" className="h-10 justify-center gap-2" onClick={() => void connectWith(method)} focusableWhenDisabled disabled={busy !== null} loading={busy === method && from === "buttons"} data-testid={b.testId}>
               {b.icon} {b.label}
             </Button>
           );
         })}
       </div>
-      {error && error.method !== "password" && failure}
+      {error && error.method !== "password" && from === "buttons" && failure}
       {!imapHere && DesktopOnly ? (
         <DesktopOnly feature="imap" />
       ) : (
@@ -221,11 +243,12 @@ export function AddAccountForm({ draft, onDraft, onDone, onBusy }: FormProps) {
               {outlook && (
                 <p id={hintId} className="text-xs leading-relaxed text-muted-foreground" data-testid="imap-microsoft-hint">
                   {t("account.imapMicrosoft", { domain: outlook })}{" "}
-                  <Button variant="link" className="text-xs" focusableWhenDisabled disabled={busy !== null} onClick={() => void connectWith("microsoft")} data-testid="imap-microsoft-connect">
+                  <Button variant="link" className="text-xs" focusableWhenDisabled disabled={busy !== null} loading={busy === "microsoft" && from === "hint"} onClick={() => void connectWith("microsoft", "hint")} data-testid="imap-microsoft-connect">
                     {t("account.continueMicrosoft")}
                   </Button>
                 </p>
               )}
+              {outlook && error?.method === "microsoft" && from === "hint" && failure}
             </div>
             <div className="space-y-1">
               <Label htmlFor="acc-name">{t("account.yourName")}</Label>
