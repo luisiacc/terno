@@ -2,7 +2,7 @@
 // their answers, JSON batches (a partial failure, a throttled request inside one, a lost answer), folder changes with a
 // lost answer, sendMail, the large-file draft path, and interruptions on both sides of the submission.
 import { afterEach, describe, expect, it } from "vitest";
-import { LEAVE_FOLDER, MOVE_TO_FOLDER, type FlagUpdate, type IncomingMessage, type MessagePlacement } from "@terno/store";
+import { LEAVE_FOLDER, MOVE_TO_FOLDER, RETURN_TO, type FlagUpdate, type IncomingMessage, type MessagePlacement } from "@terno/store";
 import { createNodeIncomingProcessor } from "../../backend/src/incoming-worker";
 import { buildRaw } from "./compose";
 import { batchThrottle, createGraphApiProvider } from "./graph-api";
@@ -194,6 +194,23 @@ describe("Graph writes: moves", () => {
     t.ms.move(there, other);
     await t.run(LEAVE_FOLDER, [there], { folder: project, back: null, toInbox: true, stays: false });
     expect(t.ms.messages.get(there)!.folder).toBe(other);
+  });
+
+  it("an undo (plan 259, exact undo): returnTo takes each back to Archive, Sent Items or Drafts from wherever it is, and a filing back from Deleted Items", async () => {
+    const t = await setup();
+    const project = t.ms.folder("Project");
+    const archived = t.ms.deliver("trash-id"), own = t.ms.deliver("trash-id"), draft = t.ms.deliver("trash-id", { isDraft: true }), inbox = t.ms.deliver("inbox-id"), there = t.ms.deliver("archive-id"), filed = t.ms.deliver("trash-id");
+    for (const id of [archived, own, draft, inbox, there, filed]) t.store(id);
+    await t.run(RETURN_TO, [archived, inbox, there], { role: "archive" });
+    await t.run(RETURN_TO, [own], { role: "sent" });
+    await t.run(RETURN_TO, [draft], { role: "drafts" });
+    await t.run(MOVE_TO_FOLDER, [filed], { folder: project, from: null, keepInbox: false });
+    expect([archived, inbox, there, own, draft, filed].map((id) => t.ms.messages.get(id)!.folder)).toEqual(["archive-id", "archive-id", "archive-id", "sent-id", "drafts-id", project]);
+    // one already there is only placed, never moved again
+    expect(t.moves().sort()).toEqual([archived, inbox, own, draft, filed].sort());
+    expect([archived, own, draft, filed].map((id) => t.row(id).folder)).toEqual([null, null, null, project]);
+    // a role it doesn't know is refused for good
+    await expect(t.run(RETURN_TO, [inbox], { role: "inbox" })).rejects.toMatchObject({ retryable: false });
   });
 
   it("a batch that partly fails keeps what was done, and the retry moves only what's left", async () => {

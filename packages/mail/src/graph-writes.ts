@@ -7,7 +7,7 @@
 // `send` when a file is too large to go inline. No Node APIs.
 import { FOLDERS_PER_ACCOUNT_MAX } from "@terno/core";
 import { L } from "@terno/i18n";
-import { LEAVE_FOLDER, MOVE_TO_FOLDER, type LeaveFolderPayload, type MessagePlacement, type MoveToFolderPayload } from "@terno/store";
+import { LEAVE_FOLDER, MOVE_TO_FOLDER, RETURN_TO, type LeaveFolderPayload, type MessagePlacement, type MoveToFolderPayload, type ReturnToPayload } from "@terno/store";
 import { checkedAttachments } from "./attachment-payload";
 import { checkName, nameTaken, notFound as folderNotFound, refusedBy, sameName, standardFolder } from "./folder-changes";
 import { IMMUTABLE, isRecord, mailboxRefusedCodes, codesOf, ROLES, type Call, type Catalog, type Role } from "./graph-shared";
@@ -214,6 +214,11 @@ export function createGraphWrites(deps: GraphWriteDeps) {
     // your own mail stays in Sent and a draft in Drafts
     case "moveToInbox": return { to: ROLES.inbox, moves: (p) => p.role !== "sent" && p.role !== "drafts" };
     case MOVE_TO_FOLDER: return { to: (op.payload as MoveToFolderPayload).folder, moves: () => true };
+    // an undo back to Archive, Sent Items or Drafts, from wherever the message is (plan 259, exact undo)
+    case RETURN_TO: {
+      const role = (op.payload as ReturnToPayload | null)?.role;
+      return role === "archive" || role === "sent" || role === "drafts" ? { to: ROLES[role], moves: () => true } : undefined;
+    }
     case LEAVE_FOLDER: {
       // only what's still in the folder goes back: to the Inbox, the folder it came from, or Archive or Sent
       const p = op.payload as LeaveFolderPayload;
