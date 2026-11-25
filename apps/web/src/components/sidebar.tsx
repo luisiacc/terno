@@ -1571,7 +1571,7 @@ export function Sidebar() {
             autoFocus
             data-testid="new-category-input"
             placeholder={t("sidebar.categoryName")}
-            className="mt-0.5 h-7 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+            className="mt-0.5 h-7 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring"
             onBlur={(e) => void createCategory(e.currentTarget.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") void createCategory(e.currentTarget.value);
