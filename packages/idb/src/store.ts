@@ -9,6 +9,7 @@ import { clearReplies, finishReply, getReply, transitionReply } from "./replies"
 import { addShown, listShown, removeShown, trustedSenders } from "./shown-senders";
 import { listRules, removeRule, restoreRule, setRule } from "./person-rules";
 import { activeWanted, actWanted, addWantedMark, clearLookMarks, clearVerdicts, clearWanted, countWantedMarks, finishWanted, getDraft, getPreferences, getVerdicts, getWanted, pruneVerdicts, pruneWantedMarks, putDraft, putVerdicts, reconcileWanted, restoreWanted, savePreferences, threadWanted, wantedLookCandidates, wantedMarkPage } from "./what-matters";
+import { clearOwedMarks, consumeOwedMark, finishOwed, markOwedMail, openOwedFor, owedMarkCount, owedMarkPage, owedScanCandidates, owedSource, pruneOwedMarks, queueOwedScan, requeueOwed } from "./owed";
 import { activeDated, addDatedMute, datedMutes, removeDatedMute, closedDatedPage, claimDatedLook, clearDated, datedMarkCount, datedMarksAmong, datedPendingOn, datedMarkPage, datedMarksRaw, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, datedWritten, updateDated } from "./dated";
 import { activeFollowups, closedFollowupPage, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupsInTrashOrSpam, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
 import { findLinked, newestLinked } from "./links";
@@ -1297,7 +1298,7 @@ export class IdbMailStore implements MailStore {
         return { accountId, protocolId: current.protocol_id, epoch: flagTick(repo, accountId) };
       });
     },
-    ingest: async (batch, { applyFilters, now, classifier, observation, check, forwardEligible, newMail, liveSent, datedMail }) => this.bodyCommand(async () => {
+    ingest: async (batch, { applyFilters, now, classifier, observation, check, forwardEligible, newMail, liveSent, datedMail, owedMail }) => this.bodyCommand(async () => {
       const callerCheck = check; check = () => { if (this.bodyClosing) throw new Error("The store is closing"); callerCheck?.(); };
       await this.bodyCleanup;
       const staged: IncomingMessage[] = [];
@@ -1324,6 +1325,8 @@ export class IdbMailStore implements MailStore {
         if (liveSent) followupLiveSent(this.c, result.inserted, now, liveSent.wanted, liveSent.since);
         // plan 204: received mail the dated reader wants, by the same rule as new mail's
         if (datedMail) markDatedMail(this.c, result.inserted, now, datedMail.since);
+        // plan 280 (revision 1): as SQL's
+        if (owedMail) markOwedMail(this.c, result.inserted, now, owedMail.since);
           const touched = new Set(result.touchedThreads);
           const opIds: string[] = [];
           const folderMoves: FolderFilterMove[] = [];
@@ -2138,6 +2141,22 @@ export class IdbMailStore implements MailStore {
     clearGeneration: () => this.replyClears,
   };
   readonly followups: MailStore["followups"] = {
+    // plan 280: what reads or writes messages waits for them (as the dated reader's)
+    owed: {
+      marks: {
+        page: (after, limit) => this.read(() => owedMarkPage(this.c, after, limit)),
+        count: () => this.read(() => owedMarkCount(this.c)),
+        queueScan: (ids, now) => this.command(() => queueOwedScan(this.c, ids, now)),
+        requeue: (person, accountId, since, now) => this.command(() => requeueOwed(this.c, person, accountId, since, now)),
+        consume: (id) => this.command(() => consumeOwedMark(this.c, id)),
+        clear: () => this.command(() => clearOwedMarks(this.c)),
+        prune: (now) => this.command(() => pruneOwedMarks(this.c, now)),
+      },
+      scanCandidates: (since, limit, accountId) => this.read(() => owedScanCandidates(this.c, since, limit, accountId)),
+      source: (id) => this.read(() => owedSource(this.c, id)),
+      openFor: (o) => this.read(() => openOwedFor(this.c, o)),
+      finish: (w) => this.command(() => (w.clearGeneration === this.followupClears ? finishOwed(this.c, w) : "gone")),
+    },
     marks: {
       page: (after, limit) => this.read(() => sentMarkPage(this.c, after, limit)),
       count: () => this.read(() => sentMarkCount(this.c)),

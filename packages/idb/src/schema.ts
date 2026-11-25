@@ -54,10 +54,13 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  * Version 41 adds an Outlook message's folder (SQL v82, plan 259).
  * Version 42 adds your word on who is a person (SQL v83, plan 278).
  * Version 43 adds Put away's placements and the senders kept out of a category's automatic filing (SQL v84, plan 282).
+ * Version 44 adds the follow-ups reader's marks of received mail (SQL v85, plan 280); SQL v85's rebuild of `followups` drops
+ * the kind's CHECK (none here) and adds `firm`, `due_day`, `person_key` and `arrived_hint`: absent on older records reads as
+ * a firm promise with none of the rest, and `owed` is an in-memory index.
  */
 export { IDB_VERSION };
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 84;
+export const LOGICAL_SCHEMA = 85;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 
@@ -139,7 +142,10 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   { name: "ai_prepared_replies", early: true, key: ["thread_id"], indexes: {} },
   // plan 210 (iteration 2): `same` holds a duplicate's canonical; iteration 3, `answers` a promise's request (in memory, a
   // null left out: no version bump)
-  { name: "followups", early: true, key: ["id"], autoId: true, indexes: { ...fk("thread_id"), identity: ["message_id", "item"], state: ["state"], top: ["inbox_state"], same: ["same_as"], answers: ["answers"] } },
+  // plan 280: `owed` holds a debtor's open promises to you (SQL's partial `followups_owed`)
+  { name: "followups", early: true, key: ["id"], autoId: true, indexes: { ...fk("thread_id"), identity: ["message_id", "item"], state: ["state"], top: ["inbox_state"], same: ["same_as"], answers: ["answers"], owed: { columns: ["person_key"], where: (r) => r.kind === "theirs" && (r.state === "open" || r.state === "due") } } },
+  // plan 280: received mail the follow-ups reader may read for promises owed to you
+  { name: "ai_owed_mail", key: ["message_id"], indexes: { ...fk("message_id"), thread: ["thread_id"], sender: ["sender_key"] } },
   // plan 204: as plan 142's; `open` and `sender` hold only open rows (SQL's partial indexes)
   { name: "ai_dated_mail", key: ["message_id"], indexes: { ...fk("message_id"), thread: ["thread_id"] } },
   { name: "dated_items", early: true, key: ["id"], autoId: true, indexes: { ...fk("thread_id"), identity: ["message_id", "item"], message: ["message_id"], state: ["state"], sender: { columns: ["sender_key"], where: (r) => r.state === "open" }, same: ["same_as"] } },
@@ -247,6 +253,7 @@ export const FOREIGN_KEYS: readonly ForeignKey[] = [
   c("ai_sent_mail", "message_id", "messages"),
   c("ai_prepared_replies", "thread_id", "threads"),
   c("followups", "thread_id", "threads"),
+  c("ai_owed_mail", "message_id", "messages"),
   c("ai_dated_mail", "message_id", "messages"),
   c("dated_items", "thread_id", "threads"),
   c("dated_nothing_asked", "message_id", "messages"),
@@ -469,6 +476,8 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
       }
       // plan 282 (likewise)
       if (event.oldVersion >= 1 && event.oldVersion < 43) for (const name of ["placements", "cls_kept_senders"]) if (!db.objectStoreNames.contains(name)) db.createObjectStore(name);
+      // plan 280 (likewise)
+      if (event.oldVersion >= 1 && event.oldVersion < 44 && !db.objectStoreNames.contains("ai_owed_mail")) db.createObjectStore("ai_owed_mail");
       // plan 144 (likewise)
       if (event.oldVersion >= 1 && event.oldVersion < 31 && !db.objectStoreNames.contains("ai_prepared_replies")) db.createObjectStore("ai_prepared_replies");
       // plan 142 (likewise)

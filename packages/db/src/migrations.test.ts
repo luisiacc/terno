@@ -19,7 +19,7 @@ const dbs: Db[] = [];
  * plan 210 (iteration 4): the columns each of its shape-only migrations adds, null on every row migrated from before it.
  * A migration's test starts from the version just before it, and expects its own columns and every later one's.
  */
-const ADDED: Record<number, { dated?: Record<string, null>; followups?: Record<string, null>; drafts?: Record<string, null> }> = {
+const ADDED: Record<number, { dated?: Record<string, unknown>; followups?: Record<string, unknown>; drafts?: Record<string, unknown> }> = {
   65: { dated: { settled_by: null, settled_at: null }, followups: { settled_by: null, settled_at: null } },
   66: { followups: { holds: null } },
   67: { dated: { before_day: null, confirms: null, wall: null }, followups: { before_day: null } },
@@ -27,9 +27,11 @@ const ADDED: Record<number, { dated?: Record<string, null>; followups?: Record<s
   70: { dated: { handed_to: null }, followups: { handed_to: null }, drafts: { handoff_json: null } },
   // (iteration 5)
   71: { dated: { part_of_day: null }, followups: { part_of_day: null } },
+  // plan 280: their promises (a firm one by default)
+  85: { followups: { firm: 1, due_day: null, person_key: null, arrived_hint: null } },
 };
 /** the columns `table` gains migrating from `from` to today's schema, from iteration 4's migrations */
-const addedSince = (from: number, table: "dated" | "followups" | "drafts"): Record<string, null> =>
+const addedSince = (from: number, table: "dated" | "followups" | "drafts"): Record<string, unknown> =>
   Object.assign({}, ...Object.entries(ADDED).filter(([v]) => Number(v) > from).map(([, t]) => t[table] ?? {}));
 const DATED_IT4 = addedSince(64, "dated");
 const FOLLOWUPS_IT4 = addedSince(64, "followups");
@@ -702,7 +704,7 @@ describe("migration v58: a promise's Later (plan 204, the fifth panel round)", (
     expect(before).toHaveLength(1);
     expect(migrate(db)).toEqual({ from: 57, to: SCHEMA_VERSION });
     expect(db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id")).toEqual(before.map((r) => ({ ...r, deferred_until: null, same_as: null, broken_due_at: null, timed: 0, answers: null, ...FOLLOWUPS_IT4 })));
-    expect(db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'followups' AND sql IS NOT NULL ORDER BY name").map((r) => r.name)).toEqual(["followups_active", "followups_answers", "followups_closed", "followups_same", "followups_thread", "followups_top"]);
+    expect(db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'followups' AND sql IS NOT NULL ORDER BY name").map((r) => r.name)).toEqual(["followups_active", "followups_answers", "followups_closed", "followups_owed", "followups_same", "followups_thread", "followups_top"]);
   });
 });
 
@@ -861,6 +863,41 @@ describe("migration v75: Remove on a conversation waiting on you (plan 216)", ()
     expect(db.get<{ n: number }>("SELECT count(*) AS n FROM waiting_acts INDEXED BY waiting_acts_removed WHERE state = 'removed'")!.n).toBe(1);
     db.run("DELETE FROM messages WHERE id = ?", c);
     expect(db.all<{ message_id: number }>("SELECT message_id FROM waiting_acts ORDER BY message_id").map((r) => r.message_id)).toEqual([a, b]);
+  });
+});
+
+describe("migration v85: their promises to you (plan 280)", () => {
+  it("rebuilds follow-ups without the kind's list: every row with its id and revision, every index by name, the ids' high mark; a promise of theirs goes in", () => {
+    const { db } = legacyMail(84, { threads: 3, seed: 41 });
+    const thread = db.get<{ id: number }>("SELECT id FROM threads ORDER BY id LIMIT 1")!.id;
+    const insert = (id: number | null, kind: string, state = "open", revision = 0) =>
+      db.run(
+        `INSERT INTO followups (id, thread_id, message_id, item, kind, text, quote, person_name, person_email, sent_at, due_at, dated, state, inbox_state, revision, created_at, deferred_until, same_as, timed, answers, part_of_day)
+         VALUES (?, ?, ?, 0, ?, 'send the deck', 'I''ll send it', 'Ana', 'ana@x.mx', 1, 5, 1, ?, 'onTop', ?, 2, 7, 'promise:9', 1, 4, 'morning')`,
+        id, thread, id ?? 100, kind, state, revision,
+      );
+    insert(1, "promise", "due", 3);
+    insert(2, "awaiting", "done", 1);
+    insert(3, "promise");
+    db.run("DELETE FROM followups WHERE id = 3");
+    expect(() => insert(4, "theirs")).toThrow(/CHECK/);
+    const before = db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id");
+    expect(migrate(db)).toEqual({ from: 84, to: SCHEMA_VERSION });
+    expect(db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id")).toEqual(before.map((r) => ({ ...r, ...addedSince(84, "followups") })));
+    expect(db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'followups' AND sql IS NOT NULL ORDER BY name").map((r) => r.name))
+      .toEqual(["followups_active", "followups_answers", "followups_closed", "followups_owed", "followups_same", "followups_thread", "followups_top"]);
+    expect(db.get("SELECT name FROM sqlite_master WHERE name = 'followups_v85'")).toBeUndefined();
+    // a promise of theirs now; the next id is past the pruned one, as before the upgrade
+    insert(null, "theirs");
+    expect(db.get<{ id: number; kind: string; firm: number }>("SELECT id, kind, firm FROM followups WHERE message_id = 100")).toEqual({ id: 4, kind: "theirs", firm: 1 });
+    // a state's list stays (it's behaviour)
+    expect(() => insert(null, "theirs", "lost")).toThrow(/CHECK/);
+    // the marker of received mail, and its cascade with the message
+    const message = db.get<{ id: number }>("SELECT id FROM messages ORDER BY id LIMIT 1")!.id;
+    db.run("INSERT INTO ai_owed_mail (message_id, thread_id, sender_key, arrived_at, queued_at, source) VALUES (?, ?, 'ana@x.mx', 1, 2, 'live')", message, thread);
+    db.exec("PRAGMA foreign_keys = ON");
+    db.run("DELETE FROM messages WHERE id = ?", message);
+    expect(db.get("SELECT 1 FROM ai_owed_mail")).toBeUndefined();
   });
 });
 

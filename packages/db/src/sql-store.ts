@@ -13,6 +13,7 @@ import { addShown, listShown, removeShown, trustedSenders } from "./shown-sender
 import { listRules, removeRule, restoreRule, setRule } from "./person-rules";
 import { actWanted, activeWanted, addWantedMark, clearWanted, countWantedMarks, finishWanted, getDraft, getPreferences, getVerdicts, getWanted, pruneVerdicts, pruneWantedMarks, putDraft, putVerdicts, reconcileWanted, restoreWanted, savePreferences, threadWanted, wantedLookCandidates, wantedMarkPage } from "./what-matters";
 import { activeDated, addDatedMute, datedMutes, removeDatedMute, closedDatedPage, claimDatedLook, clearDated, datedMarkCount, datedMarksAmong, datedPendingOn, datedMarkPage, datedMarksRaw, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, datedWritten, updateDated } from "./dated";
+import { clearOwedMarks, consumeOwedMark, finishOwed, markOwedMail, openOwedFor, owedMarkCount, owedMarkPage, owedScanCandidates, owedSource, pruneOwedMarks, queueOwedScan, requeueOwed } from "./owed";
 import { activeFollowups, closedFollowupPage, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupsInTrashOrSpam, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
 import { addAskTurn, askAccountsOf, askHeaders, askMatching, askNewest, askText, askTurnCount, askTurns, clearAsk, listAskConversations, removeAskConversation, removeAskForAccount, restoreAskConversation } from "./ask";
 import { retainBody, observeBodyRetirement, bodyReadReference, sqlBodyParts, cleanupBodies, finishBodyStage, withBodySelection, hydrateBodyReference, stageBody, prepareBodyMatches, withBodyMatches } from "./body-parts";
@@ -665,7 +666,7 @@ export class SqlMailStore implements MailStore {
     // Messages, filter claims, filter actions and their ops, and the categorizer's decisions
     // commit together: a crash can't record a filter as applied without its effects, nor an
     // auto-categorization without its message.
-    ingest: async (batch, { applyFilters, now, classifier, observation, check, forwardEligible, newMail, liveSent, datedMail }) => this.bodyCommand(async () => {
+    ingest: async (batch, { applyFilters, now, classifier, observation, check, forwardEligible, newMail, liveSent, datedMail, owedMail }) => this.bodyCommand(async () => {
       const callerCheck = check; check = () => { if (this.bodyClosing) throw new Error("The store is closing"); callerCheck?.(); };
       await this.bodyCleanup;
       const staged: IncomingMessage[] = [];
@@ -691,6 +692,8 @@ export class SqlMailStore implements MailStore {
         if (liveSent) followupLiveSent(this.db, result.inserted, now, liveSent.wanted, liveSent.since);
         // plan 204: received mail the dated reader wants, by the same rule as new mail's
         if (datedMail) markDatedMail(this.db, result.inserted, now, datedMail.since);
+        // plan 280 (revision 1): received mail the follow-ups reader wants, its own marker
+        if (owedMail) markOwedMail(this.db, result.inserted, now, owedMail.since);
         const touched = new Set(result.touchedThreads);
         const opIds: string[] = [];
         const folderMoves: FolderFilterMove[] = [];
@@ -1237,6 +1240,21 @@ export class SqlMailStore implements MailStore {
     clearGeneration: () => this.replyClears,
   };
   readonly followups: MailStore["followups"] = {
+    owed: {
+      marks: {
+        page: async (after, limit) => owedMarkPage(this.db, after, limit),
+        count: async () => owedMarkCount(this.db),
+        queueScan: async (ids, now) => queueOwedScan(this.db, ids, now),
+        requeue: async (person, accountId, since, now) => requeueOwed(this.db, person, accountId, since, now),
+        consume: async (id) => consumeOwedMark(this.db, id),
+        clear: async () => clearOwedMarks(this.db),
+        prune: async (now) => pruneOwedMarks(this.db, now),
+      },
+      scanCandidates: async (since, limit, accountId) => owedScanCandidates(this.db, since, limit, accountId),
+      source: async (id) => owedSource(this.db, id),
+      openFor: async (o) => openOwedFor(this.db, o),
+      finish: async (w) => (w.clearGeneration === this.followupClears ? finishOwed(this.db, w) : "gone"),
+    },
     marks: {
       page: async (after, limit) => sentMarkPage(this.db, after, limit),
       count: async () => sentMarkCount(this.db),

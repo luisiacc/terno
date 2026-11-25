@@ -48,6 +48,7 @@ export interface FollowupSource {
 }
 
 export interface FollowupWrite {
+  /** plan 280: `theirs`, a promise of theirs your message records ("as agreed, you'll send it Thursday"): only from a trusted send */
   kind: FollowupKind;
   item: number;
   text: string;
@@ -60,6 +61,10 @@ export interface FollowupWrite {
   timed?: boolean;
   /** plan 210 (iteration 5, revision 4): the part of its day it's promised for (`FollowupRow.partOfDay`); absent, the whole day */
   partOfDay?: PartOfDay | null;
+  /** plan 280 (`theirs` only): tentative is false, the day promised, and the debtor's key */
+  firm?: boolean;
+  dueDay?: string | null;
+  personKey?: string | null;
   /**
    * Plan 210 (round 14's faults, the second morning): a promise you'd already made, still open, said again (the same person,
    * conversation and deliverable: Theo's "full written update" for Monday morning after Friday's): that row takes it, never
@@ -94,6 +99,11 @@ export interface FollowupFinish {
    * own confirmed send: `followupSendConfirmed`). Absent: none
    */
   verdicts?: readonly ({ request: { id: number; revision: number }; verdict: "fulfilled" } | { request: { id: number; revision: number }; verdict: "promise" | "holding"; item: number })[];
+  /**
+   * Plan 280 (§3, revision 7): open promises of theirs your message says arrived ("got the contract, thanks"), only the row
+   * shown at its revision, only from a trusted send of yours. Absent: none
+   */
+  owedKept?: readonly { id: number; revision: number }[];
   /** a wait is added only if no reply or later send has come */
   now: number;
   model: string | null;
@@ -122,12 +132,29 @@ export interface FollowupSnapshot {
   closedAt: number | null;
 }
 
+/**
+ * Plan 280 (revision 9): what a row is worth when the active bound is full, the one admission rule of both stores: a new
+ * row takes the place of the oldest active row worth strictly less, the least worth first (a tentative undated promise of
+ * theirs, then a wait, then an undated promise of theirs, then a dated one); a promise of yours is never taken. With none
+ * worth less, the new row isn't added. An Undo never takes anyone's place: past the bound it's refused.
+ */
+export function followupWorth(r: { kind: string; dated: boolean | number; firm?: boolean | number | null }): number {
+  const dated = r.dated === true || r.dated === 1;
+  if (r.kind === "promise") return 4;
+  if (r.kind === "awaiting") return 1;
+  if (r.kind === "theirs") return dated ? 3 : r.firm === false || r.firm === 0 ? 0 : 2;
+  return 0;
+}
+export const FOLLOWUP_WORTH_KEPT = 4;
+
 export const snapshotOf = (r: FollowupRow): FollowupSnapshot => ({ id: r.id, revision: r.revision, state: r.state, dueAt: r.dueAt, deferredUntil: r.deferredUntil, inboxState: r.inboxState, closedReason: r.closedReason, closedAt: r.closedAt });
 
 /** A wait no one's a person to wait on: "noreply@…" and friends never owe anyone. Recipients are filtered by the worker. */
 export const ownRecipientsOnly = (to: readonly { email: string }[], own: ReadonlySet<string>): boolean => to.length > 0 && to.every((r) => own.has(addressKey(r.email)));
 
 export interface FollowupStore {
+  /** Plan 280: their promises to you, read from received mail */
+  owed: import("./owed").OwedStore;
   /** Live sent mail or a confirmed send: marked once, with its waits on the thread closing in the same commit. */
   marks: {
     page(after: { sentAt: number; messageId: number } | null, limit: number): Promise<SentMark[]>;
@@ -166,7 +193,10 @@ export interface FollowupStore {
   inTrashOrSpam(threadIds: readonly number[]): Promise<Set<number>>;
   /** a change by the user, conditional on the revision they saw */
   update(id: number, revision: number, patch: Partial<Pick<FollowupRow, "state" | "dueAt" | "deferredUntil" | "inboxState" | "closedReason" | "closedAt">>): Promise<FollowupSnapshot | null>;
-  /** Undo: each row only if nothing else changed it since */
+  /**
+   * Undo: each row only if nothing else changed it since. Plan 280 (revision 9): a row it would make active again past the
+   * bound is left as it is (counted out), so the caller can say why
+   */
   restore(rows: readonly { snapshot: FollowupSnapshot; expectRevision: number }[]): Promise<number>;
   prune(now: number): Promise<number>;
   clear(): Promise<void>;

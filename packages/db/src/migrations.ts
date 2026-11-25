@@ -1938,6 +1938,83 @@ CREATE TABLE cls_kept_senders (
   PRIMARY KEY (category_id, sender)
 ) WITHOUT ROWID;
 ` },
+  // plan 280: their promises to you are a third follow-up kind. `kind` is a descriptive value the app checks (plan 268:
+  // a CHECK list goes when its column next needs a value), so the table is rebuilt once without it, every column of today's
+  // copied as it is, ids and AUTOINCREMENT's high mark kept (v57's way: a pruned id is never reused by an Undo's journal),
+  // and every index made again by name. `state` and `inbox_state` keep theirs (behaviour). Nothing references `followups`,
+  // so foreign keys stay on. New: `firm`, `due_day`, `person_key` and `arrived_hint` (theirs only), the debtor's open
+  // promises' index, and `ai_owed_mail`, the follow-ups reader's own marker of received mail (revision 1), in
+  // `ai_sent_mail`'s shape with no CHECK on its source (plan 267)
+  { version: 85, name: "Their promises to you (plan 280)", rewrites: "the DROP TABLE of followups after every row is copied unchanged into its rebuilt table (the kind's CHECK can't be dropped in place): at most 1,000 active rows and 90 days of closed ones", sql: `
+CREATE TABLE followups_v85 (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  thread_id INTEGER NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+  message_id INTEGER NOT NULL,
+  rfc_message_id TEXT,
+  item INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  text TEXT NOT NULL,
+  quote TEXT,
+  person_name TEXT,
+  person_email TEXT,
+  sent_at INTEGER NOT NULL,
+  due_at INTEGER NOT NULL,
+  dated INTEGER NOT NULL DEFAULT 0,
+  state TEXT NOT NULL CHECK (state IN ('open','due','done','dismissed')),
+  inbox_state TEXT NOT NULL DEFAULT 'none' CHECK (inbox_state IN ('none','onTop','seen')),
+  closed_reason TEXT,
+  closed_at INTEGER,
+  notified_at INTEGER,
+  from_scan INTEGER NOT NULL DEFAULT 0,
+  revision INTEGER NOT NULL DEFAULT 0,
+  model TEXT,
+  provider TEXT,
+  prompt_version INTEGER,
+  created_at INTEGER NOT NULL,
+  deferred_until INTEGER,
+  same_as TEXT,
+  broken_due_at INTEGER,
+  timed INTEGER NOT NULL DEFAULT 0,
+  answers INTEGER,
+  settled_by INTEGER,
+  settled_at INTEGER,
+  holds INTEGER,
+  before_day TEXT,
+  changed_at INTEGER,
+  changed_from TEXT,
+  proposal TEXT,
+  handed_to TEXT,
+  part_of_day TEXT,
+  firm INTEGER NOT NULL DEFAULT 1,
+  due_day TEXT,
+  person_key TEXT,
+  arrived_hint INTEGER,
+  UNIQUE (message_id, item)
+);
+INSERT INTO followups_v85 (id, thread_id, message_id, rfc_message_id, item, kind, text, quote, person_name, person_email, sent_at, due_at, dated, state, inbox_state, closed_reason, closed_at, notified_at, from_scan, revision, model, provider, prompt_version, created_at, deferred_until, same_as, broken_due_at, timed, answers, settled_by, settled_at, holds, before_day, changed_at, changed_from, proposal, handed_to, part_of_day)
+  SELECT id, thread_id, message_id, rfc_message_id, item, kind, text, quote, person_name, person_email, sent_at, due_at, dated, state, inbox_state, closed_reason, closed_at, notified_at, from_scan, revision, model, provider, prompt_version, created_at, deferred_until, same_as, broken_due_at, timed, answers, settled_by, settled_at, holds, before_day, changed_at, changed_from, proposal, handed_to, part_of_day FROM followups;
+INSERT INTO sqlite_sequence (name, seq) SELECT 'followups_v85', seq FROM sqlite_sequence WHERE name = 'followups' AND NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'followups_v85');
+UPDATE sqlite_sequence SET seq = max(seq, (SELECT coalesce(max(seq), 0) FROM sqlite_sequence WHERE name = 'followups')) WHERE name = 'followups_v85';
+DROP TABLE followups;
+ALTER TABLE followups_v85 RENAME TO followups;
+CREATE INDEX followups_active ON followups(due_at, id) WHERE state IN ('open','due');
+CREATE INDEX followups_answers ON followups(answers) WHERE answers IS NOT NULL;
+CREATE INDEX followups_closed ON followups(closed_at DESC, id DESC) WHERE kind = 'promise' AND state IN ('done','dismissed');
+CREATE INDEX followups_same ON followups(same_as) WHERE same_as IS NOT NULL;
+CREATE INDEX followups_thread ON followups(thread_id, state);
+CREATE INDEX followups_top ON followups(thread_id) WHERE inbox_state = 'onTop';
+CREATE INDEX followups_owed ON followups(person_key) WHERE kind = 'theirs' AND state IN ('open','due');
+CREATE TABLE ai_owed_mail (
+  message_id INTEGER PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
+  thread_id INTEGER NOT NULL,
+  sender_key TEXT NOT NULL,
+  arrived_at INTEGER NOT NULL,
+  queued_at INTEGER NOT NULL,
+  source TEXT NOT NULL
+) WITHOUT ROWID;
+CREATE INDEX ai_owed_mail_order ON ai_owed_mail(arrived_at, message_id);
+CREATE INDEX ai_owed_mail_thread ON ai_owed_mail(thread_id);
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

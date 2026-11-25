@@ -1,11 +1,11 @@
-import { addressKey, ANSWERED_KINDS, parseHandedTo, readPartOfDay, refKey, replyAnswers, replyClosedReason, replyRecipients, type FollowupRow } from "@terno/core";
-import { FOLLOWUP_CLOSED_KEEP_MS, FOLLOWUPS_ACTIVE_MAX, recipientList, SCAN_MARK_MS, SENT_MARK_MS, type ClosedAt, type FollowupFinish, type FollowupFinishOutcome, type FollowupSnapshot, type FollowupSource, type SentMark } from "@terno/store";
+import { addressKey, ANSWERED_KINDS, isFollowupKind, onTopEligible, parseHandedTo, readPartOfDay, refKey, replyAnswers, replyClosedReason, replyRecipients, type FollowupRow } from "@terno/core";
+import { FOLLOWUP_CLOSED_KEEP_MS, FOLLOWUP_WORTH_KEPT, FOLLOWUPS_ACTIVE_MAX, followupWorth, recipientList, SCAN_MARK_MS, SENT_MARK_MS, type ClosedAt, type FollowupFinish, type FollowupFinishOutcome, type FollowupSnapshot, type FollowupSource, type SentMark } from "@terno/store";
 import { T, type Ctx, type R } from "./mail";
 import { scheduleFields } from "./schedule";
 
 /** Plan 142 on IndexedDB, like SQL's (packages/db/src/followups.ts). */
 
-const toRow = (r: R): FollowupRow => ({ id: r.id, threadId: r.thread_id, messageId: r.message_id, rfcMessageId: r.rfc_message_id ?? null, item: r.item, kind: r.kind, text: r.text, quote: r.quote ?? null, personName: r.person_name ?? null, personEmail: r.person_email ?? null, sentAt: r.sent_at, dueAt: r.due_at, dated: r.dated === 1, deferredUntil: r.deferred_until ?? null, state: r.state, inboxState: r.inbox_state, closedReason: r.closed_reason ?? null, closedAt: r.closed_at ?? null, notifiedAt: r.notified_at ?? null, fromScan: r.from_scan === 1, revision: r.revision, model: r.model ?? null, provider: r.provider ?? null, createdAt: r.created_at, sameAs: r.same_as ?? null, brokenDueAt: r.broken_due_at ?? null, timed: r.timed === 1, answers: r.answers ?? null, ...scheduleFields(r), handedTo: parseHandedTo(r.handed_to), settledBy: r.settled_by ?? null, settledAt: r.settled_at ?? null, before: r.before_day ?? null, holds: r.holds ?? null, partOfDay: readPartOfDay(r.part_of_day) });
+const toRow = (r: R): FollowupRow => ({ id: r.id, threadId: r.thread_id, messageId: r.message_id, rfcMessageId: r.rfc_message_id ?? null, item: r.item, kind: r.kind, text: r.text, quote: r.quote ?? null, personName: r.person_name ?? null, personEmail: r.person_email ?? null, sentAt: r.sent_at, dueAt: r.due_at, dated: r.dated === 1, deferredUntil: r.deferred_until ?? null, state: r.state, inboxState: r.inbox_state, closedReason: r.closed_reason ?? null, closedAt: r.closed_at ?? null, notifiedAt: r.notified_at ?? null, fromScan: r.from_scan === 1, revision: r.revision, model: r.model ?? null, provider: r.provider ?? null, createdAt: r.created_at, sameAs: r.same_as ?? null, brokenDueAt: r.broken_due_at ?? null, timed: r.timed === 1, answers: r.answers ?? null, ...scheduleFields(r), handedTo: parseHandedTo(r.handed_to), settledBy: r.settled_by ?? null, settledAt: r.settled_at ?? null, before: r.before_day ?? null, holds: r.holds ?? null, partOfDay: readPartOfDay(r.part_of_day), firm: r.firm !== 0, dueDay: r.due_day ?? null, personKey: r.person_key ?? null, arrivedHint: r.arrived_hint ?? null });
 
 export function own(c: Ctx): Set<string> {
   const out = new Set<string>();
@@ -15,13 +15,32 @@ export function own(c: Ctx): Set<string> {
 }
 
 const live = (r: R) => r.state === "open" || r.state === "due";
+/** Plan 280: a kind the app doesn't know is read as unknown and never shown */
+const known = (r: R) => isFollowupKind(r.kind);
+const activeCount = (c: Ctx) => T(c, "followups").by("state", "open").length + T(c, "followups").by("state", "due").length;
+
+/** As SQL's `admitFollowup` (plan 280, revision 9). */
+export function admitFollowup(c: Ctx, worth: number): boolean {
+  if (activeCount(c) < FOLLOWUPS_ACTIVE_MAX) return true;
+  if (worth <= 0) return false;
+  const rows = T(c, "followups");
+  let best: { r: R; worth: number } | null = null;
+  for (const v of [...rows.by("state", "open"), ...rows.by("state", "due")].filter((x) => x.kind !== "promise").sort((a, b) => a.sent_at - b.sent_at || a.id - b.id)) {
+    const w = known(v) ? followupWorth({ kind: v.kind, dated: v.dated, firm: v.firm ?? 1 }) : -1;
+    if (w >= worth || w >= FOLLOWUP_WORTH_KEPT) continue;
+    if (!best || w < best.worth) best = { r: v, worth: w };
+  }
+  if (!best) return false;
+  rows.deleteRow(best.r);
+  return true;
+}
 const unconfirmed = (m: R) => String(m.provider_msg_id ?? "local:").startsWith("local:");
 
 /**
  * As SQL's `TRUSTED_SENT` (packages/db/src/followups.ts): mail that is yours for certain, never a forged From nor a local
  * copy not confirmed; Terno's own confirmed send (`sent_confirmed`, absent on older records: not confirmed here) too.
  */
-const trustedSend = (m: R): boolean => !!m.is_sent && !m.is_draft && !m.is_spam && !m.is_trash && (m.sent_confirmed === 1 || (!String(m.provider_msg_id ?? "local:").startsWith("local:") && String(m.gmail_labels ?? "").includes('"SENT"')));
+export const trustedSend = (m: R): boolean => !!m.is_sent && !m.is_draft && !m.is_spam && !m.is_trash && (m.sent_confirmed === 1 || (!String(m.provider_msg_id ?? "local:").startsWith("local:") && String(m.gmail_labels ?? "").includes('"SENT"')));
 
 /** `confirmed`: Terno's own send, confirmed (plan 210, iteration 3): yours for certain without Gmail's label. */
 function markSent(c: Ctx, messageId: number, now: number, source: "live" | "scan", since?: number | null, confirmed = false): void {
@@ -73,6 +92,8 @@ export function followupLiveSent(c: Ctx, messageIds: readonly number[], now: num
 export function mergeFollowups(c: Ctx, into: number, from: number): void {
   const marks = T(c, "ai_sent_mail");
   for (const m of marks.by("thread", from)) marks.update(m, { thread_id: into });
+  const owed = T(c, "ai_owed_mail");
+  for (const m of owed.by("thread", from)) owed.update(m, { thread_id: into });
   const rows = T(c, "followups");
   for (const r of rows.by("fk_thread_id", from)) rows.update(r, { thread_id: into, revision: r.revision + 1 });
 }
@@ -206,7 +227,8 @@ export function finishFollowups(c: Ctx, w: FollowupFinish): FollowupFinishOutcom
   }
   const rows = T(c, "followups");
   const mine = own(c);
-  let active = rows.by("state", "open").length + rows.by("state", "due").length;
+  // as SQL's: only a reply that's yours for certain decides a request, or records or closes a promise of theirs (plan 280)
+  const yours = mark.confirmed === 1 || trustedSend(T(c, "messages").get(w.messageId) ?? {});
   const later = T(c, "messages").by("fk_thread_id", src.threadId).some((m) => m.date > src.date && m.is_sent && !m.is_draft && !m.is_trash && !m.is_spam && !String(m.provider_msg_id ?? "").startsWith("local:"));
   // as SQL's (plan 210, round 14's faults, the second morning): a promise said again is the older's
   const renewed = new Map<number, number>();
@@ -225,18 +247,11 @@ export function finishFollowups(c: Ctx, w: FollowupFinish): FollowupFinishOutcom
     if (r.kind === "awaiting" && (later || replied(c, mine, { accountId: src.accountId, threadId: src.threadId, sentAt: src.date, rfcMessageId: src.rfcMessageId }))) continue;
     if (rows.by("identity", w.messageId, r.item).length) continue;
     if (r.kind === "promise" && r.renews && renew(r, r.renews)) continue;
-    if (active >= FOLLOWUPS_ACTIVE_MAX) {
-      if (r.kind === "awaiting") continue;
-      const oldest = [...rows.by("state", "open"), ...rows.by("state", "due")].filter((x) => x.kind === "awaiting").sort((a, b) => a.sent_at - b.sent_at || a.id - b.id)[0];
-      if (!oldest) continue;
-      rows.deleteRow(oldest);
-      active--;
-    }
-    rows.put({ thread_id: src.threadId, message_id: w.messageId, rfc_message_id: src.rfcMessageId, item: r.item, kind: r.kind, text: r.text, quote: r.quote, person_name: r.personName, person_email: r.personEmail, sent_at: src.date, due_at: r.dueAt, dated: r.dated ? 1 : 0, deferred_until: null, state: "open", inbox_state: "none", closed_reason: null, closed_at: null, notified_at: null, from_scan: w.fromScan ? 1 : 0, revision: 0, model: w.model, provider: w.provider, prompt_version: w.promptVersion, created_at: w.now, timed: r.timed ? 1 : 0, part_of_day: r.partOfDay ?? null });
-    active++;
+    if (r.kind === "theirs" && (!yours || !r.personEmail)) continue;
+    // plan 280 (revision 9): one admission rule for every row that becomes active
+    if (!admitFollowup(c, followupWorth(r))) continue;
+    rows.put({ thread_id: src.threadId, message_id: w.messageId, rfc_message_id: src.rfcMessageId, item: r.item, kind: r.kind, text: r.text, quote: r.quote, person_name: r.personName, person_email: r.personEmail, sent_at: src.date, due_at: r.dueAt, dated: r.dated ? 1 : 0, deferred_until: null, state: "open", inbox_state: "none", closed_reason: null, closed_at: null, notified_at: null, from_scan: w.fromScan ? 1 : 0, revision: 0, model: w.model, provider: w.provider, prompt_version: w.promptVersion, created_at: w.now, timed: r.timed ? 1 : 0, part_of_day: r.partOfDay ?? null, firm: r.firm === false ? 0 : 1, due_day: r.kind === "theirs" ? (r.dueDay ?? null) : null, person_key: r.kind === "theirs" && r.personEmail ? addressKey(r.personEmail) : null, arrived_hint: null });
   }
-  // plan 210 (iteration 3): only a reply that's yours for certain decides anything about a request
-  const yours = mark.confirmed === 1 || trustedSend(T(c, "messages").get(w.messageId) ?? {});
   const dated = T(c, "dated_items");
   const settle = (r: R, revision: number): boolean => {
     if (r.revision !== revision || r.state !== "open") return false;
@@ -280,6 +295,11 @@ export function finishFollowups(c: Ctx, w: FollowupFinish): FollowupFinishOutcom
       if (request) settle(request, request.revision);
     }
   }
+  // plan 280 (§3): your words say a promise of theirs arrived: this conversation's, at the revision shown
+  for (const k of yours ? (w.owedKept ?? []) : []) {
+    const r = rows.get(k.id);
+    if (r && r.revision === k.revision && r.thread_id === src.threadId && r.kind === "theirs" && live(r) && r.sent_at < src.date) rows.update(r, { state: "done", closed_reason: "kept", closed_at: w.now, settled_by: w.messageId, settled_at: src.date, inbox_state: "none", revision: r.revision + 1 });
+  }
   marks.deleteRow(mark);
   return "written";
 }
@@ -290,20 +310,20 @@ const wakeAt = (r: R): number => Math.max(r.due_at, r.deferred_until ?? r.due_at
 
 export function activeFollowups(c: Ctx): FollowupRow[] {
   const rows = T(c, "followups");
-  return [...rows.by("state", "open"), ...rows.by("state", "due")].sort(byDue).slice(0, FOLLOWUPS_ACTIVE_MAX).map(toRow);
+  return [...rows.by("state", "open"), ...rows.by("state", "due")].sort(byDue).slice(0, FOLLOWUPS_ACTIVE_MAX).filter(known).map(toRow);
 }
 /** Plan 210: your closed promises newest first by `(closed_at, id)`, strictly after `after` (SQLite's `followups_closed`). */
 export function closedFollowupPage(c: Ctx, o: { since: number; after: ClosedAt | null; limit: number }): FollowupRow[] {
   return c.closedOrders.followups.page(T(c, "followups"), o).map(toRow);
 }
 
-export const threadFollowups = (c: Ctx, threadId: number): FollowupRow[] => T(c, "followups").by("fk_thread_id", threadId).filter(live).sort(byDue).map(toRow);
+export const threadFollowups = (c: Ctx, threadId: number): FollowupRow[] => T(c, "followups").by("fk_thread_id", threadId).filter((r) => live(r) && known(r)).sort(byDue).map(toRow);
 /** As SQL's: a whole row as stored, for a batch read elsewhere (`itemMembers`). */
 export { toRow as followupRow };
 
 export function getFollowup(c: Ctx, id: number): FollowupRow | null {
   const r = T(c, "followups").get(id);
-  return r ? toRow(r) : null;
+  return r && known(r) ? toRow(r) : null;
 }
 export function nextFollowupDue(c: Ctx): number | null {
   let at: number | null = null;
@@ -315,8 +335,9 @@ export function makeFollowupsDue(c: Ctx, now: number): FollowupRow[] {
   const rows = T(c, "followups");
   const out: FollowupRow[] = [];
   for (const r of rows.by("state", "open")) {
-    if (wakeAt(r) > now) continue;
-    out.push(toRow(rows.update(r, { state: "due", inbox_state: r.from_scan ? "none" : "onTop", revision: r.revision + 1 })));
+    if (wakeAt(r) > now || !known(r)) continue;
+    // plan 280 (revision 11): as SQL's, one rule for the top
+    out.push(toRow(rows.update(r, { state: "due", inbox_state: onTopEligible(toRow(r)) ? "onTop" : "none", revision: r.revision + 1 })));
   }
   return out;
 }
@@ -388,6 +409,8 @@ export function restoreFollowups(c: Ctx, list: readonly { snapshot: FollowupSnap
   for (const { snapshot: s, expectRevision } of list) {
     const r = rows.get(s.id);
     if (!r || r.revision !== expectRevision) continue;
+    // plan 280 (revision 9): as SQL's, an Undo never takes anyone's place
+    if (!live(r) && (s.state === "open" || s.state === "due") && activeCount(c) >= FOLLOWUPS_ACTIVE_MAX) continue;
     // the deferral as it was, null too (a journal from before it has none)
     rows.update(r, { state: s.state, due_at: s.dueAt, deferred_until: s.deferredUntil ?? null, inbox_state: s.inboxState, closed_reason: s.closedReason, closed_at: s.closedAt, revision: r.revision + 1 });
     n++;
@@ -407,4 +430,6 @@ export function clearFollowups(c: Ctx): void {
   for (const r of rows.all()) rows.deleteRow(r);
   const marks = T(c, "ai_sent_mail");
   for (const r of marks.all()) marks.deleteRow(r);
+  const owed = T(c, "ai_owed_mail");
+  for (const r of owed.all()) owed.deleteRow(r);
 }

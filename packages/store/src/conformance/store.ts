@@ -26,6 +26,7 @@ import { defineSpamConformance } from "./spam";
 import { defineTodayConformance } from "./today";
 import { defineWaitingActsConformance } from "./waiting-acts";
 import { defineFollowupsConformance } from "./followups";
+import { defineOwedConformance } from "./owed";
 import { defineDatedConformance } from "./dated";
 import { defineScheduleConformance } from "./schedule";
 import { defineHandoffConformance } from "./handoff";
@@ -159,6 +160,11 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
     defineWaitingActsConformance(fresh);
     defineSpamConformance(fresh);
     defineFollowupsConformance(fresh, async (s) => {
+      const next = await harness.reopen(s);
+      open.push(next);
+      return next;
+    });
+    defineOwedConformance(fresh, async (s) => {
       const next = await harness.reopen(s);
       open.push(next);
       return next;
