@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { sqlDb } from "@terno/db";
 import { createRegistry, type ProviderRegistry } from "@terno/mail";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { SyntheticMicrosoft } from "../../mail/src/test/microsoft.fixture";
 import { Backend, plaintextCipher } from "./backend";
 
@@ -263,6 +263,32 @@ describe("an Outlook account signs in again (plan 259)", () => {
     expect(ms.folders.get(created.key)?.displayName).toBe("Customers");
     expect((await client.call("folders.delete", { accountId: account.id, key: created.key })).deleted).toEqual([created.key]);
     expect(ms.folders.has(created.key)).toBe(false);
+  });
+
+  it("exact undo: Move to Inbox out of a folder, then Undo, puts it back in the folder on Graph; a filing back that fails (the folder deleted meanwhile) asks for a read at once", async () => {
+    const { ms, backend, client } = await setup();
+    const projects = ms.folder("Projects");
+    const a = ms.deliver(projects, { subject: "Plans" });
+    const account = await client.call("accounts.connectMicrosoft", {});
+    await backend.syncAccount(account.id);
+    const db = sqlDb(backend.store);
+    const thread = db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = ?", a)!.thread_id;
+    const out = await client.call("threads.act", { threadIds: [thread], action: "moveToInbox" });
+    await backend.runWorker();
+    expect(ms.messages.get(a)!.folder).toBe("inbox-id");
+    await client.call("threads.undo", { undoId: out.undoId! });
+    await backend.runWorker();
+    expect(ms.messages.get(a)!.folder).toBe(projects);
+    // again, with the folder gone on the server before the undo lands: the failure wakes a read of where it is
+    const again = await client.call("threads.act", { threadIds: [thread], action: "moveToInbox" });
+    await backend.runWorker();
+    ms.deleteFolder(projects);
+    await client.call("threads.undo", { undoId: again.undoId! });
+    // the undo's own command may ask too; what counts is the op's failure asking
+    const reads = vi.spyOn(backend, "reconcileFlags");
+    await backend.runWorker();
+    expect(ms.messages.get(a)!.folder).toBe("inbox-id");
+    expect(reads).toHaveBeenCalledWith([account.id]);
   });
 
   it("stage 2b: a throttled request inside a batch pauses the mailbox as a 429 does: the action waits, and the next sync asks Graph nothing", async () => {

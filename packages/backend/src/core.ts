@@ -3305,6 +3305,8 @@ export class BackendCore {
 
   private announceOp(op: OpRow, reconciliations: Set<number>): void {
     if (operationFlagFields(op.kind).length && ["succeeded", "failed", "unknown"].includes(op.state)) reconciliations.add(op.account_id);
+    // plan 259 (exact undo, code review #7): a filing that didn't land asked where its messages really are: read it now
+    else if (isFolderOp(op.kind) && (op.state === "failed" || op.state === "unknown")) reconciliations.add(op.account_id);
     this.server.emit("op", this.opInfo(op));
     // plan 116: a forward's send settled
     if (op.kind === "send") this.forwards.opSettled(op.id);
