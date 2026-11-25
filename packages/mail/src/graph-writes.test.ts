@@ -183,6 +183,20 @@ describe("Graph writes: flags", () => {
     expect(t.invalidated).toEqual([t.token]);
   });
 
+  it("plan 275: Move to Other and Move to Inbox out of it write Focused Inbox's classification, 20 a batch; Gmail's category moves are refused", async () => {
+    const t = await setup();
+    const ids = Array.from({ length: 21 }, () => t.ms.deliver("inbox-id"));
+    for (const id of ids) t.store(id);
+    await t.run("toOther", ids);
+    expect(t.ms.batches.map((b) => b.length)).toEqual([20, 1]);
+    expect(ids.every((id) => t.ms.messages.get(id)!.inference === "other")).toBe(true);
+    await t.run("toPrimary", [ids[0]!]);
+    expect(t.ms.messages.get(ids[0]!)!.inference).toBe("focused");
+    expect(t.ms.batchMissingPrefer).toEqual([]);
+    await expect(t.run("toPromotions", [ids[1]!])).rejects.toMatchObject({ retryable: false });
+    expect(t.ms.messages.get(ids[1]!)!.inference).toBe("other");
+  });
+
   it("skips a message that never reached the server (a local row) and an op with none", async () => {
     const t = await setup();
     const local = t.store("local:abc");

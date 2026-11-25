@@ -5,7 +5,7 @@
 // delta cursor (learn.microsoft.com/graph/delta-query-messages): a first sync lists the window newest first, then starts
 // the folder's delta; `@removed` only says a message left that folder. Bodies are `$value` MIME through the incoming
 // pool, as Gmail's are. Writes (flags, moves, folders, send) are stage 2b's, in graph-writes.ts.
-import { FOLDER_NAME_MAX, FOLDERS_PER_ACCOUNT_MAX, MAX_INCOMING_MIME_BYTES, isValidEmail } from "@terno/core";
+import { CAT_OTHER, CAT_PERSONAL, FOLDER_NAME_MAX, FOLDERS_PER_ACCOUNT_MAX, MAX_INCOMING_MIME_BYTES, isValidEmail, type MessageCategory } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { FlagUpdate, IncomingMessage, ProviderFolder } from "@terno/store";
@@ -55,7 +55,12 @@ export const FLAG_SNAPSHOTS_MS = 30_000;
 /** "A `$search` request returns up to 1,000 results" (learn.microsoft.com/graph/search-query-parameter) */
 const SEARCH_MAX = 1000;
 /** what an envelope read selects: all a sync needs to place and flag a message */
-const SELECT = "id,receivedDateTime,isRead,isDraft,flag,parentFolderId";
+const SELECT = "id,receivedDateTime,isRead,isDraft,flag,parentFolderId,inferenceClassification";
+/**
+ * Plan 275 (Codex critique #2): what SELECT asks for, as a number. Graph keeps a delta link's `$select`, so a cursor
+ * saved under an older one has every folder's round started again (its window listed, nothing downloaded again).
+ */
+const PROJECTION = 1;
 const MAIL: HttpRequestContext = { endpoint: "graph-api", purpose: "mail" };
 const IDENTITY: HttpRequestContext = { endpoint: "microsoft-identity", purpose: "identity-proof" };
 
@@ -117,6 +122,9 @@ const mailboxRefused = (error: GraphApiError) => mailboxRefusedCodes(error.codes
  * What a 404 on this very request says isn't there (a message, a folder): Graph's own error code read, and not the
  * mailbox's (Codex code review #3). An unreadable body proves nothing, and nothing is removed for it (round 2 #3).
  */
+/** plan 275: Outlook's classification as a message category (Primary for Focused, Other) */
+const categoryOfInference = (inference: "focused" | "other"): MessageCategory => (inference === "other" ? CAT_OTHER : CAT_PERSONAL);
+
 /** One folder Graph won't open for this mailbox (a 403 that isn't the mailbox's, nor a throttle): that folder's alone. */
 const folderRefused = (error: unknown): error is GraphApiError => error instanceof GraphApiError && error.target.includes("/mailFolders/") && error.status >= 400 && error.status < 500 && error.status !== 404 && !error.retryable && !mailboxRefused(error);
 
@@ -146,6 +154,8 @@ interface Envelope {
   /** a search's exact-address check (review of the reliability checklist, B36): the sender's and recipients' addresses, lower case */
   from?: string;
   recipients?: string[];
+  /** plan 275: Focused Inbox's classification, only when Graph sent it (a sparse update never invents one) */
+  inference?: "focused" | "other";
 }
 
 function readEnvelope(value: unknown): Envelope {
@@ -172,6 +182,11 @@ function readEnvelope(value: unknown): Envelope {
   if (value.parentFolderId !== undefined && value.parentFolderId !== null) {
     if (!nonempty(value.parentFolderId) || value.parentFolderId.length > ID_MAX) throw invalid();
     out.parent = value.parentFolderId;
+  }
+  if (value.inferenceClassification !== undefined && value.inferenceClassification !== null) {
+    if (typeof value.inferenceClassification !== "string") throw invalid();
+    // a value Graph adds later is read as Focused: shown, the safe side
+    out.inference = value.inferenceClassification.toLowerCase() === "other" ? "other" : "focused";
   }
   // only what a request selected: an address is { emailAddress: { address } }, a recipient list an array of them
   const address = (v: unknown) => isRecord(v) && isRecord(v.emailAddress) && typeof v.emailAddress.address === "string" ? v.emailAddress.address.trim().toLowerCase() : undefined;
@@ -214,6 +229,8 @@ interface BackfillProgress { since: number; until: number; next?: string }
 interface Cursor {
   v: 1;
   folders: Record<string, FolderState>;
+  /** plan 275: the PROJECTION the folders' links were made with (absent: 0, before Focused Inbox) */
+  projection?: number;
   /**
    * The reconciliation: every stored message read again by id, past `after` (the store's page key); `again`: asked
    * for again while it ran (it starts over once it ends, never from the top mid-way: round 2 #4)
@@ -743,7 +760,7 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
   }
 
   const update = (messageId: number, folder: SyncedFolder, envelope: Envelope): FlagUpdate =>
-    ({ messageId, expectedProviderMsgId: envelope.id, flags: stateOf(folder, envelope), folder: folder.role ? null : folder.id });
+    ({ messageId, expectedProviderMsgId: envelope.id, flags: stateOf(folder, envelope), folder: folder.role ? null : folder.id, ...(envelope.inference && { category: categoryOfInference(envelope.inference) }) });
 
   function incoming(item: Wanted, resource: IncomingResource, repair?: { key: string; revision: number }): IncomingMessage {
     const { envelope, folder } = item;
@@ -786,6 +803,8 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       size: resource.bytes,
       attachments: parsed.captureUnavailable ? undefined : parsed.attachments,
       folder: folder.role ? null : folder.id,
+      // plan 275: Graph's classification, wherever the message is (only the Inbox's decides a tab); none said is Focused
+      category: categoryOfInference(envelope.inference ?? "focused"),
     };
   }
 
@@ -1076,6 +1095,7 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       };
     }
     if (isRecord(value.refresh) && (value.refresh.after === undefined || (typeof value.refresh.after === "string" && value.refresh.after.length <= LINK_MAX))) cursor.refresh = { ...(value.refresh.after !== undefined && { after: value.refresh.after as string }), ...(value.refresh.again === true && { again: true as const }) };
+    if (Number.isSafeInteger(value.projection) && (value.projection as number) > 0) cursor.projection = value.projection as number;
     if (isRecord(value.left) && Array.isArray(value.left.folders) && value.left.folders.length <= 4 * FOLDERS_PER_ACCOUNT_MAX && value.left.folders.every((f) => typeof f === "string" && f.length > 0 && f.length <= ID_MAX) && (value.left.after === undefined || ms(value.left.after))) {
       cursor.left = { folders: [...value.left.folders as string[]], ...(value.left.after !== undefined && { after: value.left.after as number }) };
     }
@@ -1441,7 +1461,8 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
     const cursor = readCursor(await ctx.loadCursor<unknown>());
     sink.check();
     const state = inbox && cursor.folders[inbox.id];
-    if (!inbox || !state?.delta || state.initial || state.list) return void sink.again?.();
+    // links made with an older projection are started again by a full pass first (plan 275)
+    if (!inbox || !state?.delta || state.initial || state.list || (cursor.projection ?? 0) < PROJECTION) return void sink.again?.();
     const budget: Budget = { started: Date.now(), more: false, out: false };
     try { await deltaFolder(inbox, cursor, sink, budget); }
     catch (error) {
@@ -1550,6 +1571,16 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       await reconcileFlags(sink);
       const cursor = readCursor(await ctx.loadCursor<unknown>());
       sink.check();
+      // plan 275 (Codex critique #2, #4): links made with an older SELECT keep it, so each folder's round starts again
+      // from its window, mail since its last finished round still new (as an expired link's): the listing gives what's
+      // stored its classification as a flag update, and downloads nothing again
+      if ((cursor.projection ?? 0) < PROJECTION) {
+        for (const [id, state] of Object.entries(cursor.folders)) {
+          cursor.folders[id] = { ...fresh(state.after), startedAt: Math.min(Date.now(), (state.at ?? state.startedAt) - LIVE_MARGIN_MS) };
+        }
+        cursor.projection = PROJECTION;
+        await save(sink, cursor);
+      }
       // a folder no longer synced keeps no place, and what Terno stored of it is read again by id (Codex code review #4)
       const dropped = Object.keys(cursor.folders).filter((id) => !current.synced.has(id));
       if (dropped.length) {

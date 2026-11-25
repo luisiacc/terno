@@ -8,7 +8,7 @@ import { requestHttp } from "./provider-http";
 import { SyntheticMicrosoft } from "./test/microsoft.fixture";
 import { type AccountRequests, type MailProvider, type Observation429, type ProviderContext, type SyncSink } from "./types";
 
-interface Row { id: number; providerMsgId: string; folder: string | null; inInbox: boolean; isTrash: boolean; isSpam: boolean; isSent: boolean; isDraft: boolean; isRead: boolean; isStarred: boolean; subject: string; text: string | null; date: number; threadId: string | null; size: number }
+interface Row { id: number; providerMsgId: string; folder: string | null; category?: number; inInbox: boolean; isTrash: boolean; isSpam: boolean; isSent: boolean; isDraft: boolean; isRead: boolean; isStarred: boolean; subject: string; text: string | null; date: number; threadId: string | null; size: number }
 
 /** What a store keeps of the provider's word: rows by Graph id, the flags and folder updateFlags and ingest write. */
 function memoryStore() {
@@ -20,7 +20,7 @@ function memoryStore() {
     ingest(messages: IncomingMessage[]) {
       for (const m of messages) {
         const existing = rows.get(m.providerMsgId!);
-        const fields = { inInbox: m.inInbox, isTrash: m.isTrash, isSpam: m.isSpam, isSent: m.isSent, isDraft: m.isDraft, isRead: m.isRead, isStarred: m.isStarred, ...(m.folder !== undefined && { folder: m.folder }) };
+        const fields = { inInbox: m.inInbox, isTrash: m.isTrash, isSpam: m.isSpam, isSent: m.isSent, isDraft: m.isDraft, isRead: m.isRead, isStarred: m.isStarred, ...(m.folder !== undefined && { folder: m.folder }), ...(m.category !== undefined && { category: m.category }) };
         if (existing) { Object.assign(existing, fields); continue; }
         const row: Row = { id: next++, providerMsgId: m.providerMsgId!, folder: null, subject: m.subject, text: m.bodyText, date: m.date, threadId: m.providerThreadId, size: m.size, ...fields };
         rows.set(row.providerMsgId, row);
@@ -33,6 +33,7 @@ function memoryStore() {
         if (!row || row.providerMsgId !== u.expectedProviderMsgId) continue;
         Object.assign(row, u.flags);
         if (u.folder !== undefined) row.folder = u.folder;
+        if (u.category !== undefined) row.category = u.category;
       }
     },
     remove(ids: number[]) {
@@ -635,7 +636,7 @@ describe("Graph provider: requests", () => {
     t.ms.deliver("inbox-id");
     await t.sync();
     for (const delta of ["https://elsewhere.example/v1.0/me/mailFolders/inbox-id/messages/delta?$deltatoken=x", "/%2e%2e/beta/me/messages", "/../../beta/me/messages"]) {
-      t.ctx.loadCursor = async <T,>() => ({ v: 1, folders: { "inbox-id": { after: 0, startedAt: 0, delta } } }) as T;
+      t.ctx.loadCursor = async <T,>() => ({ v: 1, projection: 1, folders: { "inbox-id": { after: 0, startedAt: 0, delta } } }) as T;
       const before = t.fetched.length;
       await expect(t.sync()).rejects.toMatchObject({ i18n: { key: "errors.outlook.invalidResponse" } });
       expect(t.fetched.slice(before).some((u) => u.includes("elsewhere") || u.includes("/beta/"))).toBe(false);
@@ -998,6 +999,44 @@ describe("Graph provider: review round 3", () => {
     await t.sync();
     expect(t.row(mail)).toBeDefined();
     expect(t.folders.at(-1)!.map((f) => f.key).sort()).toEqual([shared, other].sort());
+  });
+});
+
+describe("Graph provider: Focused Inbox (plan 275)", () => {
+  it("each message takes Graph's classification as its category (Other 6, Focused 1), and a change in Outlook arrives with the next round", async () => {
+    const t = await setup();
+    const other = t.ms.deliver("inbox-id", { inference: "other" }), focused = t.ms.deliver("inbox-id"), archived = t.ms.deliver("archive-id", { inference: "other" });
+    await t.sync();
+    expect(t.ms.graphUrls.find((u) => u.includes("/delta?"))).toContain("inferenceClassification");
+    const category = (id: string) => t.row(id)?.category;
+    expect([category(other), category(focused), category(archived)]).toEqual([6, 1, 6]);
+    t.ms.classify(other, "focused");
+    t.ms.classify(focused, "other");
+    await t.sync();
+    expect([category(other), category(focused)]).toEqual([1, 6]);
+    // a sparse update (a read state) never invents a classification
+    t.ms.setRead(focused, true);
+    await t.sync();
+    expect(category(focused)).toBe(6);
+  });
+
+  it("links saved before the classification was asked for start every folder's round again, once: what's stored takes its classification, nothing is downloaded again", async () => {
+    const t = await setup();
+    const id = t.ms.deliver("inbox-id");
+    await t.sync();
+    const saved = structuredClone(t.cursor) as { projection?: number };
+    delete saved.projection;
+    t.ctx.loadCursor = async <T,>() => structuredClone(saved) as T;
+    t.ctx.saveCursor = async () => {};
+    t.ms.messages.get(id)!.inference = "other";
+    const downloads = t.ms.graphUrls.filter((u) => u.endsWith("/$value")).length;
+    // a quick check waits for that pass
+    const again = t.again;
+    await t.sync({ quick: true });
+    expect(t.again).toBe(again + 1);
+    await t.sync();
+    expect(t.row(id)?.category).toBe(6);
+    expect(t.ms.graphUrls.filter((u) => u.endsWith("/$value"))).toHaveLength(downloads);
   });
 });
 

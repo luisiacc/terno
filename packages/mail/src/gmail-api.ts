@@ -426,7 +426,8 @@ const LABEL_OPS: Record<string, { add?: string[]; remove?: string[] }> = {
   star: { add: ["STARRED"] },
   unstar: { remove: ["STARRED"] },
   // plan 86: a message's category (its inbox tab): the one asked for, none of the others
-  ...Object.fromEntries(Object.entries(CATEGORY_ACTIONS).map(([kind, c]) => [kind, { add: c ? [CATEGORY_LABELS[c]] : [], remove: CATEGORY_LABELS.filter((l, i) => l && i !== c) }])),
+  // only the categories that are Gmail labels (plan 275: Outlook's Other has none, and never reaches Gmail)
+  ...Object.fromEntries(Object.entries(CATEGORY_ACTIONS).filter(([, c]) => c === 0 || CATEGORY_LABELS[c]).map(([kind, c]) => [kind, { add: c ? [CATEGORY_LABELS[c]] : [], remove: CATEGORY_LABELS.filter((l, i) => l && i !== c) }])),
 };
 
 const folderLabels = ({ folder, from }: MoveToFolderPayload) => ({ add: [folder], remove: from === null ? [] : [from] });

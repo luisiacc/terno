@@ -480,6 +480,8 @@ export function createGraphWrites(deps: GraphWriteDeps) {
       switch (op.kind) {
       case "markRead": case "markUnread": return patch(targets, { isRead: op.kind === "markRead" }, op.requestRun);
       case "star": case "unstar": return patch(targets, { flag: { flagStatus: op.kind === "star" ? "flagged" : "notFlagged" } }, op.requestRun);
+      // plan 275: Focused Inbox's classification (learn.microsoft.com/graph/api/message-update: inferenceClassification)
+      case "toPrimary": case "toOther": return patch(targets, { inferenceClassification: op.kind === "toOther" ? "other" : "focused" }, op.requestRun);
       }
       const rule = ruleOf(op);
       if (!rule) throw new ProviderError(`Unsupported operation ${op.kind}`, false);

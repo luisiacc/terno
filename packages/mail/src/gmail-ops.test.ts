@@ -120,6 +120,14 @@ describe("Gmail categories (plan 86)", () => {
     expect([...box.labels.get("g1")!].sort()).toEqual(["INBOX", "UNREAD", "custom", ...category].sort());
     expect(box.requests).toHaveLength(1);
   });
+
+  it("plan 275: Outlook's Move to Other never reaches Gmail (no label to write): refused, nothing sent", async () => {
+    const box = mailbox(1);
+    box.labels.set("g1", new Set(["INBOX", "CATEGORY_PROMOTIONS"]));
+    await expect(run(box, "toOther")).rejects.toBeDefined();
+    expect([...box.labels.get("g1")!].sort()).toEqual(["CATEGORY_PROMOTIONS", "INBOX"]);
+    expect(box.requests).toHaveLength(0);
+  });
 });
 
 describe("Gmail: an account's folders (plan 127)", () => {

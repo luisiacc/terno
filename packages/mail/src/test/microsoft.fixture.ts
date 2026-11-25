@@ -32,6 +32,8 @@ export interface GraphMessageFixture {
   mime?: string;
   /** its To addresses (default: the mailbox's) */
   to?: string[];
+  /** Focused Inbox's classification (default: focused) */
+  inference?: "focused" | "other";
   /** single-value extended properties, by id */
   marks?: Record<string, string>;
 }
@@ -199,7 +201,7 @@ export class SyntheticMicrosoft {
   deliver(folder: string, o: Partial<Omit<GraphMessageFixture, "id" | "folder">> = {}): string {
     const id = `AAMkMsg${String(++this.messageSeq).padStart(6, "0")}=`;
     const n = this.messageSeq;
-    this.messages.set(id, { id, folder, received: o.received ?? Date.now(), isRead: o.isRead ?? false, flag: o.flag ?? "notFlagged", isDraft: o.isDraft ?? false, subject: o.subject ?? `Message ${n}`, from: o.from ?? "sender@example.test", body: o.body ?? `Body ${n}`, ...(o.mime !== undefined && { mime: o.mime }), ...(o.to !== undefined && { to: o.to }) });
+    this.messages.set(id, { id, folder, received: o.received ?? Date.now(), isRead: o.isRead ?? false, flag: o.flag ?? "notFlagged", isDraft: o.isDraft ?? false, subject: o.subject ?? `Message ${n}`, from: o.from ?? "sender@example.test", body: o.body ?? `Body ${n}`, ...(o.mime !== undefined && { mime: o.mime }), ...(o.to !== undefined && { to: o.to }), ...(o.inference !== undefined && { inference: o.inference }) });
     this.changed(folder, id);
     return id;
   }
@@ -226,6 +228,13 @@ export class SyntheticMicrosoft {
     this.sent.push({ via: "draft", mime: this.mimeOf(m), files: this.files.get(m.id) ?? [] });
     m.isDraft = false;
     this.move(id, this.folderOf("sentitems")!.id);
+  }
+
+  /** Focused Inbox sorts the message (or the person corrects it), as a change its folder's delta reports */
+  classify(id: string, inference: "focused" | "other"): void {
+    const m = this.messages.get(id)!;
+    m.inference = inference;
+    this.changed(m.folder, id);
   }
 
   setRead(id: string, isRead: boolean): void {
@@ -413,7 +422,7 @@ export class SyntheticMicrosoft {
 
   private envelope(m: GraphMessageFixture, extra: string[] = []): Record<string, unknown> {
     return {
-      "@odata.etag": `W/"${m.id}"`, id: m.id, receivedDateTime: new Date(m.received).toISOString(), isRead: m.isRead, isDraft: m.isDraft, flag: { flagStatus: m.flag }, parentFolderId: m.folder,
+      "@odata.etag": `W/"${m.id}"`, id: m.id, receivedDateTime: new Date(m.received).toISOString(), isRead: m.isRead, isDraft: m.isDraft, flag: { flagStatus: m.flag }, parentFolderId: m.folder, inferenceClassification: m.inference ?? "focused",
       ...(extra.includes("subject") && { subject: m.subject }),
       ...(extra.includes("from") && { from: { emailAddress: { name: "", address: m.from } } }),
       ...(extra.includes("toRecipients") && { toRecipients: (m.to ?? ["ana@contoso.com"]).map((address) => ({ emailAddress: { name: "", address } })) }),
@@ -623,6 +632,7 @@ export class SyntheticMicrosoft {
       const read = SyntheticMicrosoft.read(body);
       if (parts.length === 2 && method === "PATCH") {
         if (typeof read.isRead === "boolean") this.setRead(m.id, read.isRead);
+        if (read.inferenceClassification === "focused" || read.inferenceClassification === "other") this.classify(m.id, read.inferenceClassification);
         for (const p of Array.isArray(read.singleValueExtendedProperties) ? read.singleValueExtendedProperties as { id?: unknown; value?: unknown }[] : []) {
           if (typeof p.id !== "string" || typeof p.value !== "string") return json(400, { error: { code: "ErrorInvalidProperty" } });
           (m.marks ??= {})[p.id] = p.value;
