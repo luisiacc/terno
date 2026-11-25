@@ -325,7 +325,7 @@ export function claimFollowupNotice(c: Ctx, ids: readonly number[], now: number)
   const rows = T(c, "followups");
   return ids.filter((id) => {
     const r = rows.get(id);
-    // (plan 218: never a closed one: an archive may have closed it since the look that's saying it)
+    // (plan 218: never a closed one: Done or Dismiss may have closed it since the look that's saying it)
     if (!r || r.notified_at != null || !live(r)) return false;
     rows.update(r, { notified_at: now });
     return true;

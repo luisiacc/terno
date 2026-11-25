@@ -479,11 +479,13 @@ describe("when they come due", () => {
     const spy = vi.spyOn(backend.store.followups, "inTrashOrSpam").mockImplementationOnce(async (ids) => (await held, inTrashOrSpam(ids)));
     const older = backend.followups.look();
     await expect.poll(() => spy.mock.calls.length).toBe(1);
+    // deleted, committed in the store, before the older look goes on (Codex code review of plan 277; the action's own
+    // look waits behind it)
     const deleted = client.call("threads.act", { threadIds: [threadId], action: "trash" });
+    await expect.poll(async () => (await backend.store.threads.get(threadId))!.thread.inTrash).toBe(true);
     release();
     await Promise.all([older, deleted]);
     spy.mockRestore();
-    await backend.followups.look();
     expect(notices).toEqual([]);
     expect((await client.call("followups.list", {})).rows).toEqual([]);
   });
@@ -503,6 +505,8 @@ describe("when they come due", () => {
     expect((await client.call("followups.list", {})).rows.map((r) => [r.threadId, r.state])).toEqual([[threadId, "due"]]);
     expect((await client.call("followups.threads", { onTop: false })).items.map((t) => t.id)).toEqual([threadId]);
     expect((await backend.followups.awayAmong([threadId])).has(threadId)).toBe(false);
+    // due, it's back on the Inbox's top though archived elsewhere (Codex code review of plan 277)
+    expect((await client.call("followups.threads", { onTop: true })).items.map((t) => t.id)).toEqual([threadId]);
     expect(notices).toHaveLength(1);
     // deleted: gone, and Undo brings it back
     const { undoId } = await client.call("threads.act", { threadIds: [threadId], action: "trash" });

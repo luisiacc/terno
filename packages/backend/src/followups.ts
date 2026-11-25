@@ -811,8 +811,8 @@ export class FollowupWorker {
   }
 
   /**
-   * The rows now. One look at a time, in the order asked (Codex code review of plan 218): an older one finishing after an
-   * archive's would publish, and say, what the archive ended. Asked while one runs, the next one is shared.
+   * The rows now. One look at a time, in the order asked (Codex code review of plan 218): an older one finishing after a
+   * newer one would publish, and say, what a Dismiss or a Delete ended since. Asked while one runs, the next one is shared.
    */
   look(): Promise<FollowupsSnapshot> {
     if (this.lookNext) return this.lookNext;
@@ -994,12 +994,12 @@ export class FollowupWorker {
     const rows = (await this.host.store.followups.active()).filter((r) => !onTop || r.inboxState === "onTop");
     // the row's own order (`byUrgency`, as its line picks), so a thread is placed by the promise it shows
     const order = [...new Set(rows.sort(byUrgency).map((r) => r.threadId))];
-    // plans 218, 277: in Trash or Spam it shows nowhere, and comes back with its conversation (archived, it shows); read now, not the last look's
-    const away = await this.readAway(order);
-    const threads = new Map((await this.host.summaries(order.filter((id) => !away.has(id)))).map((t) => [t.id, t]));
+    const threads = new Map((await this.host.summaries(order)).map((t) => [t.id, t]));
     return order.flatMap((id) => {
       const t = threads.get(id);
-      return t && (accountId === undefined || t.accountId === accountId) ? [t] : [];
+      // plans 218, 277: in Trash or Spam it shows nowhere, and comes back with its conversation (archived, it shows); by the
+      // summary read now, so a move between two reads can't slip a hidden one through (Codex code review)
+      return t && !t.inTrash && !t.inSpam && (accountId === undefined || t.accountId === accountId) ? [t] : [];
     });
   }
 

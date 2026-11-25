@@ -107,8 +107,13 @@ test.describe("follow-ups (plan 142)", () => {
       // the archive landed: the conversation is out of the Inbox, its follow-up still tracked
       await expect.poll(async () => (await server.backend.store.threads.get(threadId))!.thread.inInbox).toBe(false);
       await expect.poll(async () => (await server.backend.store.followups.active()).map((r) => r.threadId)).toEqual([threadId]);
+      // read afresh, not the list from before the archive (Codex code review)
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      await page.getByTestId("palette-go-followups").or(page.getByTestId("nav-followups")).first().click();
       await expect(rows(page)).toHaveCount(1);
       await expect(count).toHaveText("1");
+      await rows(page).first().click();
       await page.getByTestId("action-trash").click();
       await expect(rows(page)).toHaveCount(0);
       await expect(count).toHaveCount(0);

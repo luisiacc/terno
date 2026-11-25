@@ -61,3 +61,30 @@ Codex's critique of the plan (10 points), and what changed:
 7. **The Follow-ups e2e** (point 9) waits for the conversation to leave the Inbox before it checks that the row and its count stayed.
 8. **The perf gates** (point 10): the follow-ups gate keeps its 1,000 active rows and its 100-id slice, over thread reads only; the 50,000-message sender fixture goes. `today.perf.test.ts` runs as before.
 9. **Kept as designed, rare** (points 2, 3): `endTop`'s early return before the worker's first look, and a notice in flight while the same conversation is archived off the top, are pre-plan-218 behaviour; the first needs the feature off or a cold start, the second an archive in the one turn before a claim.
+
+## What was built
+
+As designed, with the revisions above. The store contract's `putAway` and `closeArchived` became `inTrashOrSpam` (the threads' flags, an early read in IndexedDB); the worker's Archive close and the handler's call went; the app keeps a row on Archive in the Follow-ups list and What matters' feed.
+
+## Codex code review
+
+**Round 1** (3 findings and 5 on tests and comments). Fixed:
+
+- **The list read the flags twice** (finding 2): `threads()` read what's in Trash or Spam, then the summaries; a Delete between the two reads slipped a hidden conversation through. It now filters by the summaries' own `inTrash`/`inSpam`, one read, as before plan 218.
+- **The race test** waits for the Delete to commit in the store before the held look goes on, so a stale publication would show.
+- **The e2e** reloads and reopens Follow-ups after Archive before it checks the row and the count.
+- **The Inbox's top** for a conversation archived elsewhere is asserted (back on the top when due).
+- **Two comments** still gave plan 218's Archive as the reason for the ordered looks and the notice claim's guard; they now name Done, Dismiss and Delete.
+
+Left, as very rare or not this change's (the review rounds stop here):
+
+- A notice claimed in the one turn while a sync elsewhere moves the conversation to Trash or Spam (finding 1): plan 218's round 2 left the same window.
+- A checked row in What matters kept for a moment after its conversation is deleted elsewhere (finding 3): held rows behave so for every kind of row; not a follow-up rule.
+- No startup test for IndexedDB's early read; the conformance suite covers the answer.
+
+## Tests run
+
+- Conformance, both stores (the follow-ups cases); the follow-ups perf gate on both (`inTrashOrSpam`, a slice of 100: SQLite 0.05 ms, IndexedDB 0.03 ms, was 1.8 and 1.1 ms).
+- Backend `followups.test.ts`, `today.test.ts`; core `today-projection.test.ts`; web `actions.test.ts`, `feed-leave.test.ts`.
+- e2e `followups.spec.ts`, every design.
+- Typecheck, lint.
