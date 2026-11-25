@@ -143,6 +143,9 @@ interface Envelope {
   isDraft?: boolean;
   flagged?: boolean;
   parent?: string;
+  /** a search's exact-address check (review of the reliability checklist, B36): the sender's and recipients' addresses, lower case */
+  from?: string;
+  recipients?: string[];
 }
 
 function readEnvelope(value: unknown): Envelope {
@@ -169,6 +172,14 @@ function readEnvelope(value: unknown): Envelope {
   if (value.parentFolderId !== undefined && value.parentFolderId !== null) {
     if (!nonempty(value.parentFolderId) || value.parentFolderId.length > ID_MAX) throw invalid();
     out.parent = value.parentFolderId;
+  }
+  // only what a request selected: an address is { emailAddress: { address } }, a recipient list an array of them
+  const address = (v: unknown) => isRecord(v) && isRecord(v.emailAddress) && typeof v.emailAddress.address === "string" ? v.emailAddress.address.trim().toLowerCase() : undefined;
+  if (value.from !== undefined && value.from !== null) out.from = address(value.from) ?? "";
+  for (const key of ["toRecipients", "ccRecipients", "bccRecipients"] as const) {
+    if (value[key] === undefined || value[key] === null) continue;
+    if (!Array.isArray(value[key]) || (value[key] as unknown[]).length > 1000) throw invalid();
+    (out.recipients ??= []).push(...(value[key] as unknown[]).flatMap((r) => { const a = address(r); return a ? [a] : []; }));
   }
   return out;
 }
@@ -1307,14 +1318,20 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
    * of a list again (Codex code review #7); a repair whose message is gone is retired (revision 3: an Outlook outcome,
    * never an identity error).
    */
-  async function fetchById(targets: readonly { local?: number; providerMsgId: string }[], sink: Pass, hold: boolean): Promise<void> {
+  async function fetchById(targets: readonly { local?: number; providerMsgId: string }[], sink: Pass, hold: boolean, hits = false): Promise<void> {
     const place = placeIn(sink);
     const wanted: Wanted[] = [], gone: { local?: number; providerMsgId: string }[] = [];
     await download([...targets], async (target) => {
       const path = `/me/messages/${enc(target.providerMsgId)}?$select=${SELECT}`;
       try {
         const envelope = readEnvelope(await api(path, { signal: sink.signal, preparation: sink.signal, limit: SMALL_BYTES }));
-        if (envelope.id !== target.providerMsgId || envelope.removed) throw invalid();
+        if (envelope.removed) throw invalid();
+        if (envelope.id !== target.providerMsgId) {
+          // a search hit named by another id than the one this read (asking for immutable ids) answers with: the
+          // answer's is the message's (the reliability checklist's B44); anything else naming another message is broken
+          if (!hits || target.local !== undefined) throw invalid();
+          if (await store.messageByProviderId(envelope.id)) return;
+        }
         const folder = await place(envelope.parent);
         // in no folder Terno syncs: a stored one goes, and a repair of one is retired (never read again each pass)
         if (folder) wanted.push({ envelope, folder });
@@ -1586,15 +1603,20 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
         signal.throwIfAborted();
         const kql = graphSearch(query);
         const top = Math.min(Math.max(limit, 1), 250);
+        // KQL's from:/to: match words, so alice@example.com also finds alice+news@example.com: an address asked for is
+        // checked exactly on each hit (the reliability checklist's B36)
+        const exact = (v?: string) => v && v.includes("@") ? v.trim().toLowerCase() : undefined;
+        const from = exact(query.from), to = exact(query.to);
+        const select = `id,receivedDateTime${from ? ",from" : ""}${to ? ",toRecipients,ccRecipients,bccRecipients" : ""}`;
         let next: string | undefined;
         // learn.microsoft.com/graph/search-query-parameter: results by date sent, newest first, at most 1,000; `before`
         // and `after` are read from each hit's own receivedDateTime
-        if (kql) next = `/me/messages?$search=${enc(`"${kql}"`)}&$select=id,receivedDateTime&$top=${top}`;
+        if (kql) next = `/me/messages?$search=${enc(`"${kql}"`)}&$select=${select}&$top=${top}`;
         // dates alone ("mail from last February"): $search documents no range for `received`, so a $filter on
         // receivedDateTime, newest first (the property it orders by is filtered first: learn.microsoft.com/graph/query-parameters)
         else if (query.after !== undefined || query.before !== undefined) {
           const range = [`receivedDateTime lt ${iso(Math.min(before, query.before ?? before))}`, ...(query.after !== undefined ? [`receivedDateTime ge ${iso(query.after)}`] : [])].join(" and ");
-          next = `/me/messages?$filter=${enc(range)}&$orderby=${enc("receivedDateTime desc")}&$select=id,receivedDateTime&$top=${top}`;
+          next = `/me/messages?$filter=${enc(range)}&$orderby=${enc("receivedDateTime desc")}&$select=${select}&$top=${top}`;
         } else continue;
         let seen = 0;
         for (let pages = 0; next !== undefined && hits.size < limit; pages++) {
@@ -1603,6 +1625,7 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
           for (const envelope of page.items) {
             seen++;
             if (envelope.removed || envelope.received === undefined || envelope.received >= before || (query.before !== undefined && envelope.received >= query.before) || (query.after !== undefined && envelope.received < query.after)) continue;
+            if ((from && envelope.from !== from) || (to && !envelope.recipients?.includes(to))) continue;
             if (hits.has(envelope.id) || await lookupStored(envelope.id)) continue;
             hits.set(envelope.id, envelope.received);
             if (hits.size >= limit) break;
@@ -1620,7 +1643,7 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       const pass = passOf(sink);
       for (let i = 0; i < hits.length; i += 50) {
         pass.check();
-        await fetchById(hits.slice(i, i + 50).map((h) => ({ providerMsgId: h.id })), pass, false);
+        await fetchById(hits.slice(i, i + 50).map((h) => ({ providerMsgId: h.id })), pass, false, true);
       }
     },
 

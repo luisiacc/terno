@@ -30,6 +30,8 @@ export interface GraphMessageFixture {
   body: string;
   /** the raw source, when a test gives its own (else one is built) */
   mime?: string;
+  /** its To addresses (default: the mailbox's) */
+  to?: string[];
   /** single-value extended properties, by id */
   marks?: Record<string, string>;
 }
@@ -197,7 +199,7 @@ export class SyntheticMicrosoft {
   deliver(folder: string, o: Partial<Omit<GraphMessageFixture, "id" | "folder">> = {}): string {
     const id = `AAMkMsg${String(++this.messageSeq).padStart(6, "0")}=`;
     const n = this.messageSeq;
-    this.messages.set(id, { id, folder, received: o.received ?? Date.now(), isRead: o.isRead ?? false, flag: o.flag ?? "notFlagged", isDraft: o.isDraft ?? false, subject: o.subject ?? `Message ${n}`, from: o.from ?? "sender@example.test", body: o.body ?? `Body ${n}`, ...(o.mime !== undefined && { mime: o.mime }) });
+    this.messages.set(id, { id, folder, received: o.received ?? Date.now(), isRead: o.isRead ?? false, flag: o.flag ?? "notFlagged", isDraft: o.isDraft ?? false, subject: o.subject ?? `Message ${n}`, from: o.from ?? "sender@example.test", body: o.body ?? `Body ${n}`, ...(o.mime !== undefined && { mime: o.mime }), ...(o.to !== undefined && { to: o.to }) });
     this.changed(folder, id);
     return id;
   }
@@ -301,6 +303,8 @@ export class SyntheticMicrosoft {
     return `${b64url({ alg: "none", typ: "JWT" })}.${b64url(claims)}.c2ln`;
   }
 
+  /** $search answers with ids of another kind than the immutable ones asked for (a read by one answers with the immutable) */
+  searchRestIds = false;
   /** how long the access tokens it grants are (a work account's JWT grows with its claims) */
   accessLength = 0;
 
@@ -412,6 +416,8 @@ export class SyntheticMicrosoft {
       "@odata.etag": `W/"${m.id}"`, id: m.id, receivedDateTime: new Date(m.received).toISOString(), isRead: m.isRead, isDraft: m.isDraft, flag: { flagStatus: m.flag }, parentFolderId: m.folder,
       ...(extra.includes("subject") && { subject: m.subject }),
       ...(extra.includes("from") && { from: { emailAddress: { name: "", address: m.from } } }),
+      ...(extra.includes("toRecipients") && { toRecipients: (m.to ?? ["ana@contoso.com"]).map((address) => ({ emailAddress: { name: "", address } })) }),
+      ...(extra.includes("ccRecipients") && { ccRecipients: [] }),
     };
   }
 
@@ -443,7 +449,7 @@ export class SyntheticMicrosoft {
     const sorted = all.filter((m) => m.received >= from && m.received < until).sort((a, b) => b.received - a.received || (a.id < b.id ? -1 : 1));
     const skip = state.skip as number, top = state.top as number;
     const page = sorted.slice(skip, skip + top);
-    return json(200, { value: page.map((m) => this.envelope(m)), ...(skip + top < sorted.length && { "@odata.nextLink": this.link(path, { ...state, skip: skip + top }, "$skiptoken") }) });
+    return json(200, { value: page.map((m) => this.envelope(m, (url.searchParams.get("$select") ?? "").split(","))), ...(skip + top < sorted.length && { "@odata.nextLink": this.link(path, { ...state, skip: skip + top }, "$skiptoken") }) });
   }
 
   private delta(folder: GraphFolderFixture, req: IncomingMessage, url: URL, json: (status: number, data: unknown) => void) {
@@ -699,7 +705,8 @@ export class SyntheticMicrosoft {
             const field = property === "from" ? m.from : property === "subject" ? m.subject : property === "hasAttachments" ? "true" : `${m.subject} ${m.from} ${m.body}`;
             return field.toLowerCase().includes(value.toLowerCase());
           })).slice(0, 1000);
-          return this.listing(found, req, url, "/me/messages", json, { search });
+          // a search that names its hits by another id than the immutable one asked for (the reliability checklist's B44)
+          return this.listing(this.searchRestIds ? found.map((m) => ({ ...m, id: `REST-${m.id}` })) : found, req, url, "/me/messages", json, { search });
         }
         if (url.searchParams.has("$filter") && url.searchParams.has("$orderby") && url.searchParams.get("$orderby") !== "receivedDateTime desc") return json(400, { error: { code: "InefficientFilter" } });
         // singleValueExtendedProperties/Any(ep: ep/id eq '…' and ep/value eq '…')
@@ -707,7 +714,7 @@ export class SyntheticMicrosoft {
         if (marked) return json(200, { value: [...this.messages.values()].filter((m) => m.marks?.[marked[1]!] === marked[2]!.replace(/''/g, "'")).map((m) => this.envelope(m)) });
         return this.listing([...this.messages.values()], req, url, "/me/messages", json);
       }
-      const m = this.messages.get(parts[1]!);
+      const m = this.messages.get(parts[1]!) ?? (parts[1]!.startsWith("REST-") ? this.messages.get(parts[1]!.slice(5)) : undefined);
       if (!m) return json(404, { error: { code: "ErrorItemNotFound" } });
       if (parts.length === 2) return json(200, this.envelope(m, select));
       if (parts[2] === "$value" && parts.length === 3) {

@@ -785,6 +785,32 @@ describe("Graph provider: flag snapshots, bodies, search", () => {
     expect(t.ingested.filter((m) => m.id === older)).toEqual([{ id: older, live: false }]);
   });
 
+  it("the reliability checklist's B36: an address asked for is matched exactly (KQL's from: also finds lookalikes)", async () => {
+    const t = await setup();
+    const now = Date.now(), old = now - 90 * 86_400_000;
+    const exact = t.ms.deliver("inbox-id", { from: "alice@example.com", subject: "Invoice", received: old });
+    t.ms.deliver("inbox-id", { from: "malice@example.com", subject: "Invoice", received: old });
+    const result = await t.provider.search!({ queries: [{ terms: [], from: "Alice@Example.com" }], before: now - 30 * 86_400_000, limit: 50, signal: new AbortController().signal });
+    expect(result.hits.map((h) => h.id)).toEqual([exact]);
+    expect(decodeURIComponent(t.ms.graphUrls.find((u) => u.includes("$search"))!)).toContain("$select=id,receivedDateTime,from");
+  });
+
+  it("the reliability checklist's B44: a search hit named by another id than the immutable one is fetched and stored by the immutable id its read answers with", async () => {
+    const t = await setup();
+    t.ms.searchRestIds = true;
+    const now = Date.now();
+    const id = t.ms.deliver("inbox-id", { subject: "Quarterly report", received: now - 90 * 86_400_000 });
+    const result = await t.provider.search!({ queries: [{ terms: ["quarterly"] }], before: now - 30 * 86_400_000, limit: 50, signal: new AbortController().signal });
+    expect(result.hits.map((h) => h.id)).toEqual([`REST-${id}`]);
+    await t.provider.fetchHits!(result.hits, t.sink);
+    expect(t.row(id)).toMatchObject({ subject: "Quarterly report" });
+    expect(t.row(`REST-${id}`)).toBeUndefined();
+    // stored already: not read whole again
+    const downloads = t.ms.graphUrls.filter((u) => u.endsWith("/$value")).length;
+    await t.provider.fetchHits!(result.hits, t.sink);
+    expect(t.ms.graphUrls.filter((u) => u.endsWith("/$value"))).toHaveLength(downloads);
+  });
+
   it("builds KQL from a query's words only", () => {
     expect(graphSearch({ terms: ["quarterly report"], from: "ana@contoso.com", subject: 'Q3 "final"', anyOf: [["pdf", "xlsx"]], hasAttachment: true }))
       .toBe("quarterly report (pdf OR xlsx) from:ana@contoso.com subject:Q3 subject:final hasAttachments:true");
