@@ -129,6 +129,27 @@ export function defineAttachmentConformance(name: string, h: StoreHarness): void
       await store.sync.remove([local.id]);
       await store.attachments.discard(a!, ref.assetId);
     });
+    it("review round 4: a draft on the server with the outgoing message's Message-ID is never its Sent copy; the Sent copy after it is", async () => {
+      const [a] = await fresh();
+      const queued = await store.compose.queueSend(send(a!, []));
+      const local = (await store.threads.get(queued.threadId))!.messages[0]!;
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "left-draft", rfcMessageId: `<${local.rfcMessageId!}>`, inInbox: false, isDraft: true })], 3);
+      const after = (await store.debug.snapshot()).messages;
+      expect(after.find((m) => m.id === local.id)!.providerMsgId).toMatch(/^local:/);
+      expect(after.find((m) => m.providerMsgId === "left-draft")).toMatchObject({ isDraft: true });
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "server-sent-id", rfcMessageId: `<${local.rfcMessageId!}>`, inInbox: false, isSent: true })], 4);
+      expect((await store.debug.snapshot()).messages.find((m) => m.id === local.id)!.providerMsgId).toBe("server-sent-id");
+    });
+
+    it("review round 4: two copies of one message (Sent's and the one received of mail to yourself) are one conversation", async () => {
+      const [a] = await fresh();
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "sent-copy", rfcMessageId: "<self@x>", inInbox: false, isSent: true })], 3);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "inbox-copy", rfcMessageId: "<self@x>", inInbox: true, isSent: true })], 4);
+      const rows = (await store.debug.snapshot()).messages.filter((m) => m.providerMsgId === "sent-copy" || m.providerMsgId === "inbox-copy");
+      expect(rows).toHaveLength(2);
+      expect(new Set(rows.map((m) => m.threadId)).size).toBe(1);
+    });
+
     it("stages against the provider match before a local RFC collision, never a foreign account or nonlocal RFC match", async () => {
       const [a, b] = await fresh();
       const ref = await upload(a!);

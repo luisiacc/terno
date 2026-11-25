@@ -695,7 +695,8 @@ function resolveThread(c: Ctx, msg: IncomingMessage, rfcId: string | null, refs:
   }
   const messages = T(c, "messages");
   const candidates = new Set<number>();
-  for (const ref of refs) for (const m of messages.by("rfc", msg.accountId, ref)) candidates.add(m.thread_id);
+  // plan 259 (review round 4): another copy of this very message (Sent's and the received one) shares its conversation
+  for (const ref of rfcId ? [...refs, rfcId] : refs) for (const m of messages.by("rfc", msg.accountId, ref)) candidates.add(m.thread_id);
   if (rfcId) for (const r of T(c, "message_refs").by("ref", msg.accountId, rfcId)) candidates.add(messages.get(r.message_id)!.thread_id);
   if (candidates.size === 0) return newThread(c, msg.accountId, null);
   const sorted = [...candidates].sort((x, y) => x - y);
@@ -782,11 +783,12 @@ function messageIdAllocator(c: Ctx): { next(): number; persist(): void } {
 }
 
 
-export function findIngestMessage(c: Ctx, msg: Pick<IncomingMessage, "accountId" | "providerMsgId" | "rfcMessageId">): R | undefined {
+export function findIngestMessage(c: Ctx, msg: Pick<IncomingMessage, "accountId" | "providerMsgId" | "rfcMessageId"> & { isDraft?: boolean }): R | undefined {
   const messages = T(c, "messages");
   const byProvider = msg.providerMsgId === null ? undefined : messages.by("provider", msg.accountId, msg.providerMsgId)[0];
   if (byProvider) return byProvider;
-  if (T(c, "accounts").get(msg.accountId)?.kind === "imap") return undefined;
+  // plan 259 (review round 4): a draft on the server is never a sent message's copy
+  if (msg.isDraft || T(c, "accounts").get(msg.accountId)?.kind === "imap") return undefined;
   const rfcLookup = normalizeMessageId(msg.rfcMessageId);
   return rfcLookup ? messages.by("rfc", msg.accountId, rfcLookup).filter((m) => String(m.provider_msg_id ?? "").startsWith("local:")).sort((x, y) => x.id - y.id)[0] : undefined;
 }

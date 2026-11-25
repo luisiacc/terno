@@ -92,11 +92,14 @@ function resolveThread(db: Db, msg: IncomingMessage, rfcId: string | null, refs:
   }
 
   const candidates = new Set<number>();
-  if (refs.length > 0) {
+  // plan 259 (review round 4): another copy of this very message (the Sent copy and the one received of mail to
+  // yourself, two items on Graph) is in the same conversation, never one of its own
+  const known = rfcId ? [...refs, rfcId] : refs;
+  if (known.length > 0) {
     for (const row of db.all<{ thread_id: number }>(
-      `SELECT DISTINCT thread_id FROM messages WHERE account_id = ? AND rfc_message_id IN (${placeholders(refs.length)})`,
+      `SELECT DISTINCT thread_id FROM messages WHERE account_id = ? AND rfc_message_id IN (${placeholders(known.length)})`,
       msg.accountId,
-      ...refs,
+      ...known,
     )) {
       candidates.add(row.thread_id);
     }
@@ -230,12 +233,14 @@ function nextMessageIdAllocator(db: Db): { next(): number; persist(): void } {
 }
 
 /** Staging and ingestion must select the same account-bound message revision. */
-export function findIngestMessage(db: Db, msg: Pick<IncomingMessage, "accountId" | "providerMsgId" | "rfcMessageId">): { id: number; thread_id: number; by_provider: number } | undefined {
+export function findIngestMessage(db: Db, msg: Pick<IncomingMessage, "accountId" | "providerMsgId" | "rfcMessageId"> & { isDraft?: boolean }): { id: number; thread_id: number; by_provider: number } | undefined {
+  // plan 259 (review round 4): a draft on the server is never a sent message's copy (an Outlook send's draft a restart
+  // left took the outgoing row's place, and the real Sent copy came in beside it)
   return db.get(
     `SELECT id, thread_id, provider_msg_id IS ? AS by_provider FROM messages
-     WHERE account_id = ? AND (provider_msg_id = ? OR (rfc_message_id = ? AND provider_msg_id LIKE 'local:%' AND (SELECT kind FROM accounts WHERE id=?) <> 'imap'))
+     WHERE account_id = ? AND (provider_msg_id = ? OR (? AND rfc_message_id = ? AND provider_msg_id LIKE 'local:%' AND (SELECT kind FROM accounts WHERE id=?) <> 'imap'))
      ORDER BY by_provider DESC, id LIMIT 1`,
-    msg.providerMsgId, msg.accountId, msg.providerMsgId, normalizeMessageId(msg.rfcMessageId), msg.accountId,
+    msg.providerMsgId, msg.accountId, msg.providerMsgId, msg.isDraft ? 0 : 1, normalizeMessageId(msg.rfcMessageId), msg.accountId,
   );
 }
 
