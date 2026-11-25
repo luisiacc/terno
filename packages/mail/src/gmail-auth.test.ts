@@ -156,7 +156,7 @@ describe("deliberate installed renewal", () => {
     await expect(desktop({ token: () => json(omitted), options: { allowOmittedRefreshToken: true } }).result).resolves.toMatchObject({ refreshToken: null, email: profile.emailAddress });
   });
 
-  it.each([null, "", " ", 12, [], "x".repeat(4097)])("rejects malformed present refresh in renewal: %s", async (refresh_token) => {
+  it.each([null, "", " ", 12, [], "x".repeat(16_385)])("rejects malformed present refresh in renewal: %s", async (refresh_token) => {
     await expect(desktop({ token: () => json({ ...token, refresh_token }), options: { allowOmittedRefreshToken: true } }).result).rejects.toThrow("invalid sign-in response");
   });
 });

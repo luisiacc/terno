@@ -92,8 +92,13 @@ export async function readJsonObject(response: Response, flow: Pick<SignInFlow, 
   }
 }
 
-/** An OAuth credential as it may travel: printable ASCII, bounded. */
-export const oauthToken = (value: unknown): value is string => typeof value === "string" && value.length <= 4096 && /^[\x21-\x7e]+$/.test(value);
+/**
+ * An OAuth credential as it may travel: printable ASCII, bounded. Plan 259 (review round 4): a work account's Graph
+ * token is a JWT whose size grows with its claims, and Microsoft names no maximum, so the bound is the id_token's
+ * (16 KiB), not Google's short opaque tokens' 4 KiB.
+ */
+export const OAUTH_TOKEN_MAX = 16_384;
+export const oauthToken = (value: unknown): value is string => typeof value === "string" && value.length <= OAUTH_TOKEN_MAX && /^[\x21-\x7e]+$/.test(value);
 
 /**
  * RFC 6749 §5.1: an authorization-code answer every provider shares. A refresh token is required unless the caller

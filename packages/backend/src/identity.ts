@@ -2,7 +2,7 @@ import { isOAuthKind, isValidEmail, messageOf, OAUTH_SUBJECT, signInMethod, unha
 import { RpcError, type OwnerIdentity } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { OAuthAdmission, OwnerClaim, OwnerDecision, SecretIntent } from "@terno/store";
-import { microsoftMailGranted, type GmailAccountConfig, type GmailConnectResult, type GmailRenewalProof, type ImapAccountConfig, type MicrosoftConnectResult, type OutlookAccountConfig } from "@terno/mail/portable";
+import { microsoftMailGranted, oauthToken, type GmailAccountConfig, type GmailConnectResult, type GmailRenewalProof, type ImapAccountConfig, type MicrosoftConnectResult, type OutlookAccountConfig } from "@terno/mail/portable";
 import type { BackendCore as Backend } from "./core";
 import { oauthClientFor, rememberedClient } from "./oauth-clients";
 
@@ -65,7 +65,7 @@ export function validateMicrosoftConnection(result: unknown): asserts result is 
     typeof value.name !== "string" ||
     typeof value.subject !== "string" || !MICROSOFT_SUBJECT.test(value.subject) ||
     (value.tenant !== "consumers" && value.tenant !== "organizations") ||
-    typeof value.refreshToken !== "string" || value.refreshToken.length > 4096 || !/^[\x21-\x7e]+$/.test(value.refreshToken) ||
+    !oauthToken(value.refreshToken) ||
     !Array.isArray(value.grantedScopes) || !value.grantedScopes.every((scope) => typeof scope === "string") ||
     (value.username !== undefined && (typeof value.username !== "string" || !value.username || value.username.length > 254 || /[\s\p{Cc}]/u.test(value.username)))) throw new RpcError("BAD_REQUEST", L("errors.microsoft.invalidResponse"));
   if (!microsoftMailGranted(value.grantedScopes as string[])) throw new RpcError("BAD_REQUEST", L("errors.microsoft.mailScopeRequired"));
@@ -267,8 +267,11 @@ export async function connectExistingMicrosoft(b: Backend, account: Account, flo
   b.assertSignIn(account.id, flow);
   if (!oauth) throw new RpcError("BAD_REQUEST", L(remembered ? "errors.microsoft.clientGone" : "errors.microsoft.noClient"));
   let result: MicrosoftConnectResult;
-  try { result = await connect({ clientId: oauth.clientId, openExternal: b.options.openExternal, signal: AbortSignal.any([b.abort.signal, flow.signal]), fetch: b.net.fetchFor("mail"), loginHint: typeof username === "string" && username ? username : account.email }); }
+  // through the request ledger, as a new sign-in is: a pause on Microsoft's token service holds this one too (review round 4)
+  const requests = await b.initialOAuthRequests("outlook", true, account.id);
+  try { result = await connect({ clientId: oauth.clientId, openExternal: b.options.openExternal, signal: AbortSignal.any([b.abort.signal, flow.signal]), fetch: b.net.fetchFor("mail"), requests, loginHint: typeof username === "string" && username ? username : account.email }); }
   catch (error) { b.assertSignIn(account.id, flow); throw error; }
+  finally { requests.close(); }
   b.assertSignIn(account.id, flow);
   validateMicrosoftConnection(result);
   if (result.email.toLowerCase() !== account.email.toLowerCase()) throw new RpcError("BAD_REQUEST", L("errors.microsoft.connectedOther", { got: result.email, expected: account.email }));

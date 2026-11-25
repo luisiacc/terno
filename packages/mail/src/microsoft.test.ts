@@ -55,6 +55,14 @@ describe("connectMicrosoft (plan 259)", () => {
     });
   });
 
+  it("review round 4 (Fable #4): a work account's long access token (a JWT past 4 KiB) signs in; one past 16 KiB is still refused", async () => {
+    const ms = await microsoft();
+    ms.accessLength = 9000;
+    await expect(connect(ms)).resolves.toMatchObject({ email: "ana@contoso.com" });
+    ms.accessLength = 16_385;
+    await expect(connect(ms)).rejects.toMatchObject({ i18n: { key: "errors.microsoft.invalidResponse" } });
+  });
+
   it("a personal account is the consumer tenant, and its address is the user principal name when Graph has no mail", async () => {
     const ms = (await microsoft()).personal("ana@outlook.com");
     ms.displayName = null;

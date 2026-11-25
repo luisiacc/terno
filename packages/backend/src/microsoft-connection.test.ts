@@ -123,6 +123,17 @@ describe("an Outlook account signs in again (plan 259)", () => {
     expect(ms.refreshTokens.has(second!)).toBe(true);
   });
 
+  it("review round 4 #9: signing in again goes through the request ledger: a throttled code exchange holds the next sign-in, which never opens the browser", async () => {
+    const { ms, client } = await setup({ quiet: true });
+    const account = await client.call("accounts.connectMicrosoft", {});
+    ms.tokenFailure = { status: 429, body: { error: "temporarily_unavailable" } };
+    await expect(client.call("accounts.reconnect", { id: account.id })).rejects.toBeDefined();
+    const exchanges = ms.tokenRequests.length, opened = ms.authorizations.length;
+    await expect(client.call("accounts.reconnect", { id: account.id })).rejects.toBeDefined();
+    expect(ms.tokenRequests).toHaveLength(exchanges);
+    expect(ms.authorizations).toHaveLength(opened);
+  });
+
   it("stage 2b (stage 1's open note): a work account whose sign-in name isn't its address is pre-filled with the name Microsoft gave", async () => {
     const { ms, client, config } = await setup({ quiet: true });
     ms.userPrincipalName = "ana.ruiz@contoso.onmicrosoft.com";

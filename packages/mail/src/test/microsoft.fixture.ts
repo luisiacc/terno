@@ -301,8 +301,11 @@ export class SyntheticMicrosoft {
     return `${b64url({ alg: "none", typ: "JWT" })}.${b64url(claims)}.c2ln`;
   }
 
+  /** how long the access tokens it grants are (a work account's JWT grows with its claims) */
+  accessLength = 0;
+
   private grant(clientId: string): Record<string, unknown> {
-    const access = `access-${++this.seq}`;
+    const access = `access-${++this.seq}`.padEnd(this.accessLength, "x");
     const refresh = `refresh-${this.seq}`;
     this.access.add(access);
     this.refreshTokens.add(refresh);
@@ -614,13 +617,13 @@ export class SyntheticMicrosoft {
       const read = SyntheticMicrosoft.read(body);
       if (parts.length === 2 && method === "PATCH") {
         if (typeof read.isRead === "boolean") this.setRead(m.id, read.isRead);
-        const flag = read.flag as { flagStatus?: string } | undefined;
-        if (flag && (flag.flagStatus === "flagged" || flag.flagStatus === "notFlagged" || flag.flagStatus === "complete")) this.setFlag(m.id, flag.flagStatus);
-        return json(200, this.resource(m));
         for (const p of Array.isArray(read.singleValueExtendedProperties) ? read.singleValueExtendedProperties as { id?: unknown; value?: unknown }[] : []) {
           if (typeof p.id !== "string" || typeof p.value !== "string") return json(400, { error: { code: "ErrorInvalidProperty" } });
           (m.marks ??= {})[p.id] = p.value;
         }
+        const flag = read.flag as { flagStatus?: string } | undefined;
+        if (flag && (flag.flagStatus === "flagged" || flag.flagStatus === "notFlagged" || flag.flagStatus === "complete")) this.setFlag(m.id, flag.flagStatus);
+        return json(200, this.resource(m));
       }
       if (parts.length === 2 && method === "DELETE") {
         this.destroy(m.id);
@@ -699,12 +702,12 @@ export class SyntheticMicrosoft {
           return this.listing(found, req, url, "/me/messages", json, { search });
         }
         if (url.searchParams.has("$filter") && url.searchParams.has("$orderby") && url.searchParams.get("$orderby") !== "receivedDateTime desc") return json(400, { error: { code: "InefficientFilter" } });
-        return this.listing([...this.messages.values()], req, url, "/me/messages", json);
-      }
-      const m = this.messages.get(parts[1]!);
         // singleValueExtendedProperties/Any(ep: ep/id eq '…' and ep/value eq '…')
         const marked = /^singleValueExtendedProperties\/Any\(ep: ep\/id eq '([^']+)' and ep\/value eq '((?:[^']|'')*)'\)$/.exec(url.searchParams.get("$filter") ?? "");
         if (marked) return json(200, { value: [...this.messages.values()].filter((m) => m.marks?.[marked[1]!] === marked[2]!.replace(/''/g, "'")).map((m) => this.envelope(m)) });
+        return this.listing([...this.messages.values()], req, url, "/me/messages", json);
+      }
+      const m = this.messages.get(parts[1]!);
       if (!m) return json(404, { error: { code: "ErrorItemNotFound" } });
       if (parts.length === 2) return json(200, this.envelope(m, select));
       if (parts[2] === "$value" && parts.length === 3) {
