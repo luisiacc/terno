@@ -359,6 +359,18 @@ export function defineAiSummariesConformance(fresh: () => Promise<MailStore>, re
         expect(s.messages.map((m) => [m.fromName, m.own, m.markedAt])).toEqual([["Ana", false, NOW], ["Me", true, null]]);
       });
 
+      it("says which messages are read (plan 279: where what's new starts), and Mark as unread clears only the latest", async () => {
+        const { store, accountId, arrive } = await setup();
+        const first = await arrive({ providerThreadId: "r", date: NOW - 2000 });
+        await store.sync.ingest([msg({ accountId, providerThreadId: "r", date: NOW - 1000 })], { applyFilters: false, now: NOW, classifier: null });
+        const read = async () => (await store.aiSummaries.sources(first.thread))!.messages.map((m) => m.read);
+        expect(await read()).toEqual([false, false]);
+        await store.threads.act({ threadIds: [first.thread], action: "markRead", signal: null, now: NOW });
+        expect(await read()).toEqual([true, true]);
+        await store.threads.act({ threadIds: [first.thread], action: "markUnread", signal: null, now: NOW });
+        expect(await read()).toEqual([true, false]);
+      });
+
       it("reads the start of a long body, whatever way it's stored, and nothing for a thread that isn't there", async () => {
         const { store, arrive } = await setup();
         const long = "word ".repeat(40_000);

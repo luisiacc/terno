@@ -157,6 +157,7 @@ export function summarySources(c: Ctx, threadId: number): SummarySources | null 
         snippet: r.snippet,
         subject: r.subject,
         own: r.is_sent === 1 || own.has(String(r.from_email).toLowerCase()),
+        read: r.is_read === 1,
         to: repairAddresses(addressesOf(r.to_json)),
         cc: repairAddresses(addressesOf(r.cc_json)),
         list: !!r.list_id,

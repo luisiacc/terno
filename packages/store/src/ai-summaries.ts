@@ -64,6 +64,8 @@ export interface SummarySourceMessage {
   subject: string;
   /** the user sent it, or it's from one of their addresses */
   own: boolean;
+  /** plan 279: the user has read it (the server's flag, so another device's reading counts) */
+  read: boolean;
   /** who it went to (plan 151): what a summary needs to tell who was asked */
   to: readonly Address[];
   cc: readonly Address[];

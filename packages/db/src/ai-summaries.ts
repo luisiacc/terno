@@ -145,8 +145,8 @@ export function getSummary(db: Db, threadId: number): AiSummaryRow | null {
 export function summarySources(db: Db, threadId: number): SummarySources | null {
   const thread = db.get<{ account_id: number; subject: string; in_inbox: number; in_spam: number; in_trash: number; tab: number | null }>("SELECT account_id, subject, in_inbox, in_spam, in_trash, tab FROM threads WHERE id = ?", threadId);
   if (!thread) return null;
-  const rows = db.all<{ id: number; from_name: string; from_email: string; date: number; snippet: string; subject: string; is_sent: number; is_draft: number; is_trash: number; is_spam: number; body_state: "none" | "partial" | "full"; body_tail_norm: string | null; attachments_captured: number; capture_id: string | null; marked_at: number | null; to_json: string; cc_json: string; list_id: string | null; is_bulk: number; gmail_labels: string | null; code: string | null; rfc_message_id: string | null }>(
-    `SELECT m.id, m.from_name, m.from_email, m.date, m.snippet, m.subject, m.code, m.to_json, m.cc_json, m.list_id, m.is_bulk, m.gmail_labels, m.rfc_message_id, m.is_sent, m.is_draft, m.is_trash, m.is_spam, m.body_state, m.body_tail_norm, m.attachments_captured, h.capture_id,
+  const rows = db.all<{ id: number; from_name: string; from_email: string; date: number; snippet: string; subject: string; is_sent: number; is_read: number; is_draft: number; is_trash: number; is_spam: number; body_state: "none" | "partial" | "full"; body_tail_norm: string | null; attachments_captured: number; capture_id: string | null; marked_at: number | null; to_json: string; cc_json: string; list_id: string | null; is_bulk: number; gmail_labels: string | null; code: string | null; rfc_message_id: string | null }>(
+    `SELECT m.id, m.from_name, m.from_email, m.date, m.snippet, m.subject, m.code, m.to_json, m.cc_json, m.list_id, m.is_bulk, m.gmail_labels, m.rfc_message_id, m.is_sent, m.is_read, m.is_draft, m.is_trash, m.is_spam, m.body_state, m.body_tail_norm, m.attachments_captured, h.capture_id,
             (SELECT n.arrived_at FROM ai_new_mail n WHERE n.message_id = m.id AND n.wants_summary = 1) AS marked_at
      FROM messages m LEFT JOIN body_heads h ON h.message_id = m.id WHERE m.thread_id = ? ORDER BY m.date, m.id`,
     threadId,
@@ -177,6 +177,7 @@ export function summarySources(db: Db, threadId: number): SummarySources | null 
       snippet: r.snippet,
       subject: r.subject,
       own: r.is_sent === 1 || own.has(r.from_email.toLowerCase()),
+      read: r.is_read === 1,
       to: repairAddresses(addressesOf(r.to_json)),
       cc: repairAddresses(addressesOf(r.cc_json)),
       list: r.list_id !== null,
