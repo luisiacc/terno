@@ -48,8 +48,10 @@ describe("before an open (plan 255)", () => {
   it("a crash-left WAL: the schema read is SQLite's own, and the commit only in the WAL survives the migration (Codex plan review #12)", () => {
     const w = workdir();
     oldMailbox(w.db, PREV - 1, 1);
-    // the step to PREV (its real SQL) and a draft, both only in the WAL: the main file's header still says PREV - 1
-    crashAfter(w.db, `${MIGRATIONS.find((m) => m.version === PREV)!.sql}; PRAGMA user_version = ${PREV}; INSERT INTO drafts (id, generation, account_id, format, mode, to_json, cc_json, subject, body_text, body_html, updated_at) VALUES (99, 'g', 1, 2, 'new', '[]', '[]', 'only in the WAL', '', '', 5)`);
+    // the step to PREV (its real SQL, as migrate runs it: a rebuild of a referenced table with foreign keys off, plan 259)
+    // and a draft, both only in the WAL: the main file's header still says PREV - 1
+    const step = MIGRATIONS.find((m) => m.version === PREV)!;
+    crashAfter(w.db, `${step.rebuildsReferenced ? "PRAGMA foreign_keys = OFF; " : ""}${step.sql}; PRAGMA user_version = ${PREV}; INSERT INTO drafts (id, generation, account_id, format, mode, to_json, cc_json, subject, body_text, body_html, updated_at) VALUES (99, 'g', 1, 2, 'new', '[]', '[]', 'only in the WAL', '', '', 5)`);
     expect(mailboxSchema(w.db)).toBe(PREV);
     const db = openDatabaseWith(nodeSqliteDriver, w.db);
     try {

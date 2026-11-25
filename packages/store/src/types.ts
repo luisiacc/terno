@@ -66,6 +66,12 @@ export interface IncomingMessage {
   attachments?: IncomingAttachment[];
   captureUnavailable?: "size";
   locations?: IncomingLocation[];
+  /**
+   * Plan 259: an Outlook message's user folder (Graph's folder id), beside IMAP's `locations` and Gmail's `gmailLabels`.
+   * null: a role folder (Inbox, Sent, Deleted Items, Junk, Archive…: the flags say which); absent: unchanged (a new
+   * message has none). Another provider's is ignored.
+   */
+  folder?: string | null;
 }
 
 /** A message's state an action may change: what an undo puts back, exactly. */

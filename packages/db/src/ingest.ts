@@ -1,4 +1,5 @@
 import { userLabels, writeFolders, type FoldedThread } from "./folders";
+import { oneFolderAccounts, placeMessage } from "./message-folders";
 import { insertAttachments, replaceAttachments } from "./attachments";
 import { addressKey, canonicalMessageId, BODY_TAIL_TOKENS, baseSubject, categoryOf, threadTabState, emailDomain, unsubscribeJson, featuresFromBlob, normalizeText, threadFacts, trailingTokens, type Address, type FactContext, type FactRow } from "@terno/core";
 import { bodyCode, codeSubject, incomingCode, storedReply, requireGmailRefresh, acceptFlagObservation, ThreadMerges, flagObservationValid, type LocalFlagField, type FlagObservation, type IncomingMessage, type ModelDelta } from "@terno/store";
@@ -273,6 +274,8 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
   db.tx(() => {
     const ids = nextMessageIdAllocator(db);
     const freshIds = prepareNewBodies(db, messages, ids);
+    // plan 259: an Outlook message's folder, its account's kind read once
+    const oneFolder = oneFolderAccounts(db);
     const pendingRefs: [number, string, number][] = [];
     const flushRefs = () => {
       if (!pendingRefs.length) return;
@@ -294,6 +297,7 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
         flushRefs();
         const before = db.get<{ body_state: string; is_sent: number; is_draft: number }>("SELECT body_state, is_sent, is_draft FROM messages WHERE id = ?", existing.id)!;
         updateExisting(db, existing.id, msg, observation);
+        placeMessage(db, existing.id, msg, oneFolder);
         if (before.body_state !== "full" && msg.bodyState === "full") result.bodyCompleted.push(existing.id);
         // plan 17 (Codex review 1, #4): a draft that comes back sent (or the reverse) is your mail appearing or going
         if (before.is_sent !== b(msg.isSent) || before.is_draft !== b(msg.isDraft)) {
@@ -385,6 +389,7 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
       if (capture && msg.attachments!.length) insertAttachments(db, id, msg.accountId, msg.attachments!);
       if (msg.captureUnavailable) db.run("UPDATE messages SET attachments_captured = 2 WHERE id = ?", id);
       upsertLocations(db, id, msg);
+      placeMessage(db, id, msg, oneFolder);
       result.inserted.push(id);
       result.touchedThreads.add(threadId);
     }

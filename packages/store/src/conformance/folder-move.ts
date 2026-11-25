@@ -2,7 +2,7 @@ import { folderRef, type FilterRule } from "@terno/core";
 import { afterEach, describe, expect, it } from "vitest";
 import type { MailStore } from "../mail-store";
 import type { IncomingMessage } from "../types";
-import { ingest, msg, threadOf, withAccounts } from "./fixtures";
+import { ingest, msg, outlookAccount, threadOf, withAccounts } from "./fixtures";
 import type { StoreHarness } from "./store";
 
 const NOW = Date.UTC(2026, 10, 3, 15, 30);
@@ -123,6 +123,40 @@ export function defineFolderMoveConformance(name: string, harness: StoreHarness)
       await store.threads.moveToFolder({ threadIds: [thread], accountId: imap, folder: "A", from: "B", now: NOW });
       expect(await list(store, imap, "A")).toEqual([thread]);
       expect(await list(store, imap, "B")).toEqual([]);
+    });
+
+    it("Outlook (plan 259): a move on its way replaces the message's one folder, never leaves it in both; a read from before doesn't undo it; failing shows what's true", async () => {
+      const { store } = await fresh();
+      const outlook = await outlookAccount(store);
+      await store.folders.replace(outlook, ["F1", "F2", "F3"].map((key) => ({ key, path: [key], selectable: true })));
+      await ingest(store, [msg({ accountId: outlook, providerMsgId: "o", inInbox: false, folder: "F1" })]);
+      const thread = await threadOf(store, "o");
+      const where = async () => Object.fromEntries(await Promise.all(["F1", "F2", "F3"].map(async (f) => [f, (await list(store, outlook, f)).length] as const)));
+      // `from` unsaid: Graph still has it in one place only
+      const first = await store.threads.moveToFolder({ threadIds: [thread], accountId: outlook, folder: "F2", from: null, now: NOW });
+      expect(await where()).toEqual({ F1: 0, F2: 1, F3: 0 });
+      // a delta read from before the move, and a recompute, keep it where it's going
+      await ingest(store, [msg({ accountId: outlook, providerMsgId: "o", inInbox: false, folder: "F1" })]);
+      await store.threads.act({ threadIds: [thread], action: "markRead", signal: null, now: NOW });
+      expect(await where()).toEqual({ F1: 0, F2: 1, F3: 0 });
+      // replayed in order: the last one decides
+      const second = await store.threads.moveToFolder({ threadIds: [thread], accountId: outlook, folder: "F3", from: "F2", now: NOW });
+      expect(await where()).toEqual({ F1: 0, F2: 0, F3: 1 });
+      // each fails: what's left on its way, then what the server said
+      expect([...first.opIds, ...second.opIds]).toHaveLength(2);
+      // (the read mark's op settles on its way)
+      const fail = async (id: string) => {
+        for (;;) {
+          const [op] = await store.ops.claimReady(NOW + 1, 1);
+          if (op!.kind !== "moveToFolder") { await store.ops.complete(op!.id, {}, NOW); continue; }
+          expect(op!.id).toBe(id);
+          return store.ops.fail(op!.id, "refused", false, NOW);
+        }
+      };
+      await fail(first.opIds[0]!);
+      expect(await where()).toEqual({ F1: 0, F2: 0, F3: 1 });
+      await fail(second.opIds[0]!);
+      expect(await where()).toEqual({ F1: 1, F2: 0, F3: 0 });
     });
 
     it("a failed move shows what's true: gone from the folder, no label left behind", async () => {

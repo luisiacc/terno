@@ -92,6 +92,24 @@ export function applyFolderOp(folders: Set<string>, kind: string, payload: MoveT
   if (p.back !== null) folders.add(p.back);
 }
 
+/**
+ * Plan 259: a provider that keeps a message in exactly one folder (Microsoft Graph). Its user folder is the store's
+ * `message_folders` row (a role folder has none: the message's flags say which), never IMAP's locations or Gmail's labels.
+ */
+export const oneFolderPerMessage = (kind: string | null | undefined): boolean => kind === "outlook";
+
+/**
+ * Plan 259: applyFolderOp for a one-folder message: the user folder it's in (null: none) once the op lands. A move
+ * replaces where it was, whatever `from` says (Graph has no second place for it: A → B never leaves it in both); an
+ * undo puts it back where it came from, or out of the folder when it came from no user folder.
+ */
+export function applyFolderOpOne(folder: string | null, kind: string, payload: MoveToFolderPayload | LeaveFolderPayload): string | null {
+  if (kind === MOVE_TO_FOLDER) return (payload as MoveToFolderPayload).folder;
+  const p = payload as LeaveFolderPayload;
+  if (p.back !== null) return p.back;
+  return !p.stays && folder === p.folder ? null : folder;
+}
+
 /** The op groups of what a move changed, ready to queue. Empty groups stay out. */
 export function leaveFolderOps(m: FolderMoved): { payload: LeaveFolderPayload; messageIds: number[] }[] {
   const op = (messageIds: number[], o: Pick<LeaveFolderPayload, "back" | "toInbox" | "stays">) => ({ payload: { folder: m.folder, ...o }, messageIds });

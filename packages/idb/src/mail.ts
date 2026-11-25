@@ -3,6 +3,7 @@ import type { ClosedOrder } from "./closed-order";
 import { bodyCode, codeSubject, incomingCode, readRuleState, storedReply } from "@terno/store";
 import { saveFilterForward } from "./forwards";
 import { folderPage, folderScopeIds, folderUnreadCounts, refreshFolders } from "./folders";
+import { placeMessage } from "./message-folders";
 import { requireGmailRefresh, opAdmitter, ThreadMerges, type OpAdmission } from "@terno/store";
 import { actionTargets, assetError, linkAssets, reaffirmFlagIntent, restoreLocationOps, sameLocation, validateAssets } from "@terno/store";
 import { RpcError } from "@terno/core/rpc";
@@ -807,6 +808,7 @@ export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: n
       if (existing) {
         const before = existing.body_state;
         updateExisting(c, existing, msg, observation);
+        placeMessage(c, existing.id as number, msg);
         // plan 17 (Codex review 1, #4): a draft that comes back sent (or the reverse) is your mail appearing or going
         if (existing.is_sent !== b(msg.isSent) || existing.is_draft !== b(msg.isDraft)) {
           own = null;
@@ -886,6 +888,7 @@ export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: n
       if (msg.attachments !== undefined && !msg.captureUnavailable) replaceAttachments(c.db, id, msg.attachments);
       if (msg.captureUnavailable) messages.update(messages.get(id)!, { attachments_captured: 2, attachment_pending: 0 });
       upsertLocations(c, id, msg);
+      placeMessage(c, id, msg);
       result.inserted.push(id);
       result.touchedThreads.add(threadId);
     }

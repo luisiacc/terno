@@ -50,10 +50,12 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  * has none stored (a code shows for two hours).
  * SQL v80 (plan 267) drops the capture repairs' reason CHECK and adds `detail`: IndexedDB has no CHECKs, and an absent
  * `detail` reads as none, so no version change.
+ * SQL v81 (plan 259) drops the account kind and owner provider CHECKs: none here, so no version change.
+ * Version 41 adds an Outlook message's folder (SQL v82, plan 259).
  */
 export { IDB_VERSION };
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 79;
+export const LOGICAL_SCHEMA = 82;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 
@@ -86,6 +88,8 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   { name: "message_refs", key: ["account_id", "ref", "message_id"], indexes: { ...fk("message_id"), ref: ["account_id", "ref"] } },
   { name: "imap_identity_holds", key: ["message_id"], indexes: { ...fk("message_id"), ...fk("account_id") } },
   { name: "message_locations", key: ["message_id", "mailbox"], indexes: { ...fk("message_id"), uid: ["account_id", "mailbox", "uidvalidity", "uid"], mailbox: ["account_id", "mailbox"] } },
+  // plan 259: an Outlook message's one user folder (Graph's id; a role folder has none), by message and by folder
+  { name: "message_folders", key: ["message_id"], indexes: { ...fk("message_id"), account_folder: ["account_id", "folder"] } },
   { name: "attachment_assets", key: ["id"], indexes: fk("account_id") },
   { name: "attachment_chunks", key: ["id"], indexes: fk("asset_id") },
   { name: "attachment_bytes", key: ["chunk_id"], lazy: true },
@@ -197,6 +201,7 @@ export const FOREIGN_KEYS: readonly ForeignKey[] = [
   c("imap_identity_holds", "message_id", "messages"),
   c("imap_identity_holds", "account_id", "accounts"),
   c("message_locations", "message_id", "messages"),
+  c("message_folders", "message_id", "messages"),
   c("attachment_assets", "account_id", "accounts"),
   c("attachment_chunks", "asset_id", "attachment_assets"),
   c("attachment_bytes", "chunk_id", "attachment_chunks"),
@@ -444,6 +449,8 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
       if (event.oldVersion >= 1 && event.oldVersion < 39 && !db.objectStoreNames.contains("shown_senders")) db.createObjectStore("shown_senders");
       // plan 249 (likewise)
       if (event.oldVersion >= 1 && event.oldVersion < 40) for (const name of ["preference_verdicts", "wanted_items", "wanted_marks"]) if (!db.objectStoreNames.contains(name)) db.createObjectStore(name);
+      // plan 259 (likewise)
+      if (event.oldVersion >= 1 && event.oldVersion < 41 && !db.objectStoreNames.contains("message_folders")) db.createObjectStore("message_folders");
       // plan 144 (likewise)
       if (event.oldVersion >= 1 && event.oldVersion < 31 && !db.objectStoreNames.contains("ai_prepared_replies")) db.createObjectStore("ai_prepared_replies");
       // plan 142 (likewise)

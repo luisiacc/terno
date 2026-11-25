@@ -1,6 +1,7 @@
 import type { Folder } from "@terno/core";
-import { applyFolderOp, mergedBehind, type FolderCountCursor, type FolderPlace, type LeaveFolderPayload, type MoveToFolderPayload, type ProviderFolder } from "@terno/store";
+import { applyFolderOp, applyFolderOpOne, mergedBehind, oneFolderPerMessage, type FolderCountCursor, type FolderPlace, type LeaveFolderPayload, type MoveToFolderPayload, type ProviderFolder } from "@terno/store";
 import { threadMerges } from "./ingest";
+import { anyMessageFolders, IN_MESSAGE_FOLDERS, MESSAGE_FOLDERS } from "./message-folders";
 import { unreadSlot } from "./migrations";
 import { placeholders, type Db } from "./sqlite";
 
@@ -11,7 +12,8 @@ import { placeholders, type Db } from "./sqlite";
  * flag and label updates, actions, deletion) and every IMAP location write. A thread is in a folder when one
  * of its messages (not in trash or spam) carries the folder's key:
  *  - Gmail: a user label id (`Label_*`) in its labels, listed or not yet, so nothing waits for /labels;
- *  - IMAP: a location in a mailbox the account lists as a folder (role mailboxes never are).
+ *  - IMAP: a location in a mailbox the account lists as a folder (role mailboxes never are);
+ *  - Outlook (plan 259): its one user folder (`message_folders`), listed or not yet, as Gmail's labels.
  * `last_date` and `unread` are the thread's, so pages and counts never touch threads.
  */
 /**
@@ -42,6 +44,8 @@ SELECT t.id, t.account_id, k.folder, t.last_date, t.unread_count > 0 FROM (
    WHERE m.thread_id IN (SELECT value FROM json_each(?)) AND m.is_trash = 0 AND m.is_spam = 0 AND ${OWN("l", "f")}
   UNION
   ${ALIASED("?")}
+  UNION
+  ${IN_MESSAGE_FOLDERS("?")}
 ) k JOIN threads t ON t.id = k.tid`;
 
 /**
@@ -71,9 +75,13 @@ function overlayFolderOps(db: Db, json: string): void {
   );
   if (!pending.length) return;
   const threads = JSON.stringify([...new Set(pending.map((p) => p.thread_id))]);
-  const byMessage = new Map<number, { thread: number; folders: Set<string> }>();
-  for (const m of db.all<{ id: number; thread_id: number; labels: string | null }>("SELECT id, thread_id, CASE WHEN instr(gmail_labels, 'Label_') THEN gmail_labels END AS labels FROM messages WHERE thread_id IN (SELECT value FROM json_each(?)) AND is_trash = 0 AND is_spam = 0", threads)) {
-    byMessage.set(m.id, { thread: m.thread_id, folders: new Set(m.labels ? userLabels(m.labels) : []) });
+  // plan 259: an Outlook message's ops replace its one folder (`one`), never add a second
+  const byMessage = new Map<number, { thread: number; folders: Set<string>; one: boolean }>();
+  for (const m of db.all<{ id: number; thread_id: number; labels: string | null; kind: string | null }>(
+    "SELECT id, thread_id, CASE WHEN instr(gmail_labels, 'Label_') THEN gmail_labels END AS labels, (SELECT kind FROM accounts a WHERE a.id = m.account_id) AS kind FROM messages m WHERE thread_id IN (SELECT value FROM json_each(?)) AND is_trash = 0 AND is_spam = 0",
+    threads,
+  )) {
+    byMessage.set(m.id, { thread: m.thread_id, folders: new Set(m.labels ? userLabels(m.labels) : []), one: oneFolderPerMessage(m.kind) });
   }
   for (const r of db.all<{ id: number; folder: string }>(
     `SELECT m.id, l.mailbox AS folder FROM messages m JOIN message_locations l ON l.message_id = m.id JOIN folders f ON f.account_id = l.account_id AND f.key = l.mailbox
@@ -83,9 +91,16 @@ function overlayFolderOps(db: Db, json: string): void {
     threads,
     threads,
   )) byMessage.get(r.id)?.folders.add(r.folder);
+  for (const r of db.all<{ id: number; folder: string }>(MESSAGE_FOLDERS("?"), threads)) byMessage.get(r.id)?.folders.add(r.folder);
   for (const p of pending) {
     const m = byMessage.get(p.message_id);
-    if (m) applyFolderOp(m.folders, p.kind, JSON.parse(p.payload_json) as MoveToFolderPayload | LeaveFolderPayload);
+    if (!m) continue;
+    const payload = JSON.parse(p.payload_json) as MoveToFolderPayload | LeaveFolderPayload;
+    if (!m.one) applyFolderOp(m.folders, p.kind, payload);
+    else {
+      const now = applyFolderOpOne(m.folders.values().next().value ?? null, p.kind, payload);
+      m.folders = new Set(now === null ? [] : [now]);
+    }
   }
   const want = new Map<number, Set<string>>();
   for (const m of byMessage.values()) {
@@ -108,7 +123,7 @@ export function refreshFolders(db: Db, threadIds: Iterable<number>): void {
   if (!ids.length) return;
   const json = JSON.stringify(ids);
   db.run("DELETE FROM thread_folders WHERE thread_id IN (SELECT value FROM json_each(?))", json);
-  db.run(MEMBERSHIP, json, json, json);
+  db.run(MEMBERSHIP, json, json, json, json);
   overlayFolderOps(db, json);
 }
 
@@ -149,6 +164,8 @@ export function writeFolders(db: Db, threads: readonly FoldedThread[]): void {
     // and a pending rename's (round 16 #1): read only while one is
     if (db.get("SELECT 1 FROM folder_aliases LIMIT 1")) for (const r of db.all<{ tid: number; folder: string }>(ALIASED("?"), json)) want.get(r.tid)?.add(r.folder);
   }
+  // plan 259: an Outlook message's folder, listed or not (as Gmail's labels): read only while any message has one
+  if (anyMessageFolders(db)) for (const r of db.all<{ tid: number; folder: string }>(IN_MESSAGE_FOLDERS("?"), json)) want.get(r.tid)?.add(r.folder);
   const have = new Map<number, Map<string, { last_date: number; unread: number }>>();
   for (const r of db.all<{ thread_id: number; folder: string; last_date: number; unread: number }>("SELECT thread_id, folder, last_date, unread FROM thread_folders WHERE thread_id IN (SELECT value FROM json_each(?))", json)) {
     let rows = have.get(r.thread_id);

@@ -1886,6 +1886,18 @@ INSERT INTO owner_v81 (id, user_id, email, display_name, provider, verified_by, 
 DROP TABLE owner;
 ALTER TABLE owner_v81 RENAME TO owner;
 ` },
+  // plan 259 (stage 0b): where an Outlook message is. Graph keeps a message in exactly one folder and names it by an
+  // immutable id, so this is a folder per message (the primary key is the rule: a move is one write), never IMAP's
+  // locations (mailbox, UIDVALIDITY, UID) with made-up numbers. Only a user folder has a row (a role folder is the
+  // message's flags); the index is a folder's messages in id order (membership, counts, export). Shape only.
+  { version: 82, name: "Outlook: a message's folder (plan 259)", sql: `
+CREATE TABLE message_folders (
+  message_id INTEGER PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
+  account_id INTEGER NOT NULL,
+  folder TEXT NOT NULL
+);
+CREATE INDEX message_folders_folder ON message_folders(account_id, folder, message_id);
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

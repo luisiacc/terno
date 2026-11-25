@@ -46,6 +46,11 @@ export async function withAccounts(store: MailStore, n = 2): Promise<number[]> {
   return ids;
 }
 
+/** Plan 259: an Outlook account (a message is in one folder, `IncomingMessage.folder`). */
+export async function outlookAccount(store: MailStore, email = "me@outlook.example"): Promise<number> {
+  return (await store.accounts.create({ kind: "outlook", email, displayName: "Outlook", color: "brown", now: 0 })).account.id;
+}
+
 /** Runs plan 17's facts backfill to the end, a slice at a time (what the backend's runner does). */
 export async function backfillFacts(store: MailStore, limit = 500): Promise<number> {
   let slices = 0;

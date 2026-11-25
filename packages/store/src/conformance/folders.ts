@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { AWAITING_IDENTITY, type FolderPlace } from "../types";
 import type { MailStore } from "../mail-store";
 import { generateDataset } from "@terno/mock-data";
-import { ingest, msg, seedThroughCommands, threadOf, withAccounts } from "./fixtures";
+import { ingest, msg, outlookAccount, seedThroughCommands, threadOf, withAccounts } from "./fixtures";
 import type { StoreHarness } from "./store";
 
 const NOW = Date.UTC(2026, 9, 22, 15, 30);
@@ -311,6 +311,77 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       // UIDVALIDITY reset: every location in Work goes, so does membership
       await locations.resetMailbox("Work");
       expect(await ids(store, m!, "Work")).toEqual([]);
+    });
+
+    it("Outlook (plan 259): a message's one folder is membership at once, listed or not; a re-ingest moves it, absent keeps it, null (a role folder) ends it; it survives a reopen and goes with its message", async () => {
+      let store = await fresh();
+      const [g] = await withAccounts(store);
+      const o = await outlookAccount(store);
+      const { inserted: [m1, m2] } = await ingest(store, [
+        msg({ accountId: o, providerMsgId: "o1", inInbox: false, folder: "AAMkF1" }),
+        // in the Inbox: a role folder, so no folder of its own
+        msg({ accountId: o, providerMsgId: "o2", folder: null }),
+        // another provider's folder is never one
+        msg({ accountId: g!, providerMsgId: "g1", folder: "AAMkF1" }),
+      ]);
+      const [t1, t2] = [await threadOf(store, "o1"), await threadOf(store, "o2")];
+      // not listed yet: a folder reads through the list (nothing to rebuild when it comes: Graph's id is the key)
+      expect(await ids(store, o, "AAMkF1")).toEqual([]);
+      expect(await store.folders.replace(o, [{ key: "AAMkF1", path: ["Clients"], selectable: true }, { key: "AAMkF2", path: ["Done"], selectable: true }])).toEqual({ changed: true, touched: [] });
+      expect(await drain(store)).toEqual([]);
+      await store.folders.replace(g!, [{ key: "AAMkF1", path: ["x"], selectable: true }]);
+      expect(await ids(store, o, "AAMkF1")).toEqual([t1]);
+      expect(await ids(store, g!, "AAMkF1")).toEqual([]);
+      expect(await unread(store)).toEqual({ [folderRef(o, "AAMkF1")]: 1 });
+      // a delta read saw it move: one folder, the new one
+      await ingest(store, [msg({ accountId: o, providerMsgId: "o1", inInbox: false, folder: "AAMkF2" })]);
+      expect(await ids(store, o, "AAMkF1")).toEqual([]);
+      expect(await ids(store, o, "AAMkF2")).toEqual([t1]);
+      expect(await unread(store)).toEqual({ [folderRef(o, "AAMkF2")]: 1 });
+      // a copy that doesn't say (a flags-only read) keeps it, across a reopen
+      store = await harness.reopen(store); open.push(store);
+      await ingest(store, [msg({ accountId: o, providerMsgId: "o1", inInbox: false, isRead: true })]);
+      expect(await ids(store, o, "AAMkF2")).toEqual([t1]);
+      expect(await unread(store)).toEqual({});
+      // moved to the Inbox (a role folder)
+      await ingest(store, [msg({ accountId: o, providerMsgId: "o1", inInbox: true, folder: null })]);
+      expect(await ids(store, o, "AAMkF2")).toEqual([]);
+      // the other one moved in; trash takes it out, as any folder's
+      await ingest(store, [msg({ accountId: o, providerMsgId: "o2", inInbox: false, folder: "AAMkF1" })]);
+      expect(await ids(store, o, "AAMkF1")).toEqual([t2]);
+      await store.threads.act({ threadIds: [t2], action: "trash", signal: null, now: NOW });
+      expect(await ids(store, o, "AAMkF1")).toEqual([]);
+      // removed: its folder goes with it (a new message under the same id would start in none)
+      await store.sync.remove([m1!, m2!]);
+      expect(await ids(store, o, "AAMkF1")).toEqual([]);
+      expect(await unread(store)).toEqual({});
+      store = await harness.reopen(store); open.push(store);
+      expect(await ids(store, o, "AAMkF1")).toEqual([]);
+      await ingest(store, [msg({ accountId: o, providerMsgId: "o3", inInbox: false, folder: "AAMkF2" })]);
+      expect(await ids(store, o, "AAMkF2")).toEqual([await threadOf(store, "o3")]);
+    });
+
+    it("Outlook (plan 259): a thread is in each folder one of its messages is in; unlisting hides it, relisting shows it again with nothing rebuilt", async () => {
+      const store = await fresh();
+      const o = await outlookAccount(store);
+      await store.folders.replace(o, [{ key: "F1", path: ["One"], selectable: true }, { key: "F2", path: ["Two"], selectable: true }]);
+      await ingest(store, [
+        msg({ accountId: o, providerMsgId: "a", rfcMessageId: "a@t", providerThreadId: "conv", inInbox: false, folder: "F1" }),
+        msg({ accountId: o, providerMsgId: "b", rfcMessageId: "b@t", providerThreadId: "conv", inReplyTo: "a@t", references: ["a@t"], inInbox: false, folder: "F2" }),
+      ]);
+      const t = await threadOf(store, "a");
+      expect(await threadOf(store, "b")).toBe(t);
+      expect(await ids(store, o, "F1")).toEqual([t]);
+      expect(await ids(store, o, "F2")).toEqual([t]);
+      // one leaves F1: the thread stays in F2 only
+      await ingest(store, [msg({ accountId: o, providerMsgId: "a", rfcMessageId: "a@t", providerThreadId: "conv", inInbox: false, folder: "F2" })]);
+      expect(await ids(store, o, "F1")).toEqual([]);
+      expect(await ids(store, o, "F2")).toEqual([t]);
+      expect(await store.folders.replace(o, [{ key: "F1", path: ["One"], selectable: true }])).toEqual({ changed: true, touched: [] });
+      expect(await ids(store, o, "F2")).toEqual([]);
+      expect(await store.folders.replace(o, [{ key: "F1", path: ["One"], selectable: true }, { key: "F2", path: ["Two"], selectable: true }])).toEqual({ changed: true, touched: [] });
+      expect(await drain(store)).toEqual([]);
+      expect(await ids(store, o, "F2")).toEqual([t]);
     });
 
     it("IMAP: many places written at once are each an upsert: membership in a listed folder, a held message skipped (plan 107, Codex code review round 20 #5)", async () => {

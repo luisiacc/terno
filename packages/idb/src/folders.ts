@@ -1,6 +1,6 @@
 import { folderRef, listFilterOf, waitingCutoff, type Folder, type ThreadSummary } from "@terno/core";
 import type { FolderCountCursor, FolderPlace, LeaveFolderPayload, ListParams, MoveToFolderPayload, Page, ProviderFolder, ScopeParams } from "@terno/store";
-import { applyFolderOp, isFolderOp, keepInPage, mergedBehind } from "@terno/store";
+import { applyFolderOp, applyFolderOpOne, isFolderOp, keepInPage, mergedBehind, oneFolderPerMessage } from "@terno/store";
 import { forgetStretch, pendingAfter, stretch, threadStretch } from "./folder-export";
 import { FILTER_TEST, seekAfter, T, threadMerges, toSummary, VIEW_TEST, type Ctx, type R } from "./mail";
 import type { Key } from "./mem";
@@ -9,7 +9,8 @@ import type { Key } from "./mem";
  * Plan 68: an account's own folders and which threads are in them (the SQL adapter's folders.ts). Membership is
  * written in the same unit as what decides it: recomputeThreads and every IMAP location write. A thread is in a
  * folder when one of its messages (not in trash or spam) carries the key: a Gmail user label (`Label_*`, listed
- * or not yet), or a location in a mailbox the account lists. Rows carry the thread's date and unread state.
+ * or not yet), a location in a mailbox the account lists, or an Outlook message's one user folder (plan 259,
+ * `message_folders`, listed or not yet). Rows carry the thread's date and unread state.
  */
 const userLabels = (m: R): string[] => {
   if (!m.gmail_labels) return [];
@@ -41,6 +42,9 @@ export function refreshFolders(c: Ctx, threadIds: Iterable<number>): void {
   const locations = T(c, "message_locations");
   const folders = T(c, "folders");
   const ops = T(c, "ops");
+  // plan 259: an Outlook message's folder, read only while any message has one
+  const placed = T(c, "message_folders");
+  const anyPlaced = placed.size > 0;
   for (const id of threadIds) {
     const t = threads.get(id);
     const keys = new Set<string>();
@@ -49,6 +53,8 @@ export function refreshFolders(c: Ctx, threadIds: Iterable<number>): void {
       const aliased = folders.count("aliased", t.account_id) ? folders.by("aliased", t.account_id) : null;
       // plan 127: a folder move or its undo on its way decides membership, replayed per message: only while one is
       const moving = ops.count("folder_moves", t.account_id) > 0;
+      // its ops replace an Outlook message's one folder, never add a second
+      const one = moving && oneFolderPerMessage(T(c, "accounts").get(t.account_id)?.kind as string | undefined);
       for (const m of messages.by("fk_thread_id", id)) {
         if (m.is_trash || m.is_spam) continue;
         const own = moving ? new Set<string>() : keys;
@@ -57,9 +63,17 @@ export function refreshFolders(c: Ctx, threadIds: Iterable<number>): void {
           if (ownGeneration(folders.get(t.account_id, l.mailbox), l.uidvalidity as number)) own.add(l.mailbox as string);
           if (aliased) for (const f of aliased) if (aliasOf(f, l)) own.add(f.key as string);
         }
+        const folder = anyPlaced ? ((placed.get(m.id)?.folder as string | undefined) ?? null) : null;
+        if (folder !== null) own.add(folder);
         if (moving) {
-          for (const op of pendingFolderOps(c, m.id as number)) applyFolderOp(own, op.kind as string, JSON.parse(op.payload_json as string) as MoveToFolderPayload | LeaveFolderPayload);
-          for (const f of own) keys.add(f);
+          let at = folder;
+          for (const op of pendingFolderOps(c, m.id as number)) {
+            const payload = JSON.parse(op.payload_json as string) as MoveToFolderPayload | LeaveFolderPayload;
+            if (one) at = applyFolderOpOne(at, op.kind as string, payload);
+            else applyFolderOp(own, op.kind as string, payload);
+          }
+          if (one) { if (at !== null) keys.add(at); }
+          else for (const f of own) keys.add(f);
         }
       }
     }
