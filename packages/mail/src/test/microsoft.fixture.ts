@@ -312,6 +312,9 @@ export class SyntheticMicrosoft {
     return `${b64url({ alg: "none", typ: "JWT" })}.${b64url(claims)}.c2ln`;
   }
 
+  /** plan 275: Focused Inbox's sender overrides, by id */
+  overrides = new Map<string, { id: string; address: string; classifyAs: "focused" | "other" }>();
+  private overrideSeq = 0;
   /** $search answers with ids of another kind than the immutable ones asked for (a read by one answers with the immutable) */
   searchRestIds = false;
   /** how long the access tokens it grants are (a work account's JWT grows with its claims) */
@@ -585,6 +588,23 @@ export class SyntheticMicrosoft {
     const parts = url.pathname.split("/").slice(3).map(decodeURIComponent);
     const select = (url.searchParams.get("$select") ?? "").split(",");
     const method = req.method ?? "GET";
+    // plan 275: Focused Inbox's sender overrides (one an address: a POST for one already there updates it)
+    if (parts[0] === "inferenceClassification" && parts[1] === "overrides") {
+      if (parts.length === 2 && method === "POST") {
+        const read = SyntheticMicrosoft.read(body);
+        const address = (read.senderEmailAddress as { address?: unknown } | undefined)?.address;
+        if ((read.classifyAs !== "focused" && read.classifyAs !== "other") || typeof address !== "string") return json(400, { error: { code: "ErrorInvalidRequest" } });
+        const existing = [...this.overrides.values()].find((o) => o.address.toLowerCase() === address.toLowerCase());
+        const id = existing?.id ?? `override-${++this.overrideSeq}`;
+        this.overrides.set(id, { id, address, classifyAs: read.classifyAs });
+        return json(201, { id, classifyAs: read.classifyAs, senderEmailAddress: { name: "", address } });
+      }
+      if (parts.length === 2 && method === "GET") return json(200, { value: [...this.overrides.values()].map((o) => ({ id: o.id, classifyAs: o.classifyAs, senderEmailAddress: { name: "", address: o.address } })) });
+      if (parts.length === 3 && method === "DELETE") {
+        if (!this.overrides.delete(parts[2]!)) return json(404, { error: { code: "ErrorItemNotFound" } });
+        return json(204, undefined);
+      }
+    }
     if (parts[0] === "sendMail" && parts.length === 1 && method === "POST") {
       const mime = SyntheticMicrosoft.mime(body);
       if (mime === null) return json(400, { error: { code: "ErrorMimeContentInvalidBase64String" } });

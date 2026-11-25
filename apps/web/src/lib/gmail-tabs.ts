@@ -35,3 +35,18 @@ async function apply(accountId: number, on: boolean): Promise<void> {
   const next = await client.call("accounts.update", { id: accountId, separateTabs: on });
   setAccounts(getApp().accounts.map((a) => (a.id === next.id ? next : a)));
 }
+
+/**
+ * Plan 275: Focused Inbox's sender override: these conversations move now (to the Inbox, or to Other), and Outlook
+ * sorts the sender's future mail the same way. Its Undo takes back both.
+ */
+export async function classifySender(threadIds: readonly number[], sender: { email: string; name: string }, as: "focused" | "other"): Promise<void> {
+  const label = sender.name || sender.email;
+  try {
+    const r = await client.call("threads.classifySender", { threadIds: [...threadIds], address: sender.email, as });
+    const undo = registerUndo(async () => { await client.call("threads.undo", { undoId: r.undoId }); });
+    snack.success(t(as === "other" ? "senderOverride.doneOther" : "senderOverride.doneInbox", { sender: label }), { duration: 6000, action: undoAction(undo, t("senderOverride.undo")) });
+  } catch (error) {
+    snack.error(t("actions.failed", { error: errorText(error) }));
+  }
+}

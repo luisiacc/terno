@@ -499,6 +499,8 @@ export interface MailStore {
     nextAttemptAt(admission?: OpAdmission): Promise<number | null>;
     defer(id: string, now: number, o: { refundClaim: boolean }): Promise<void>;
     recent(limit: number): Promise<OpRow[]>;
+    /** plan 275: an op of the account's that names no messages (`ACCOUNT_OPS`: Focused Inbox's sender override); its id */
+    enqueueAccount(c: { accountId: number; kind: string; payload: unknown; now: number }): Promise<string>;
     resolveUnknown(id: string, resolution: "markSent" | "retry" | "discard", now: number): Promise<{ touched: number[] } & FlagReconciliation>;
   };
 

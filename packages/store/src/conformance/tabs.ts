@@ -316,6 +316,16 @@ export function defineTabsConformance(fresh: () => Promise<MailStore>, reopen: (
       void gmail;
     });
 
+    it("the sender override is an op of the account's, naming no messages; no other kind is queued that way", async () => {
+      const { store, outlook } = await setup();
+      const id = await store.ops.enqueueAccount({ accountId: outlook, kind: "classifySender", payload: { address: "news@shop.com", as: "other" }, now: NOW });
+      const [op] = await store.ops.claimReady(NOW + 1, 10);
+      expect(op).toMatchObject({ id, kind: "classifySender", account_id: outlook });
+      expect(JSON.parse(op!.payload_json)).toEqual({ address: "news@shop.com", as: "other" });
+      expect(JSON.parse(op!.target_json)).toEqual({ messageIds: [] });
+      await expect(store.ops.enqueueAccount({ accountId: outlook, kind: "archive", payload: {}, now: NOW })).rejects.toThrow();
+    });
+
     it("a stale classification never takes back a move still on its way; a fresh one after it lands is taken", async () => {
       const { store, outlook, news } = await setup();
       await store.threads.act({ threadIds: [news], action: "toPrimary", signal: null, now: NOW });

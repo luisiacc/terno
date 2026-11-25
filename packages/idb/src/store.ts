@@ -10,7 +10,7 @@ import { activeDated, addDatedMute, datedMutes, removeDatedMute, closedDatedPage
 import { activeFollowups, closedFollowupPage, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, closeArchivedFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupsPutAway, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
 import { findLinked, newestLinked } from "./links";
 import { addAskTurn, askAccountsOf, askCandidates, askHeaders, askNewest, askTurnCount, askTurns, clearAsk, listAskConversations, removeAskConversation, removeAskForAccount, restoreAskConversation } from "./ask";
-import { bodyCode, codeSubject, storedReply, projectBodyTokens, messageBodiesReleased } from "@terno/store";
+import { ACCOUNT_OPS, bodyCode, codeSubject, storedReply, projectBodyTokens, messageBodiesReleased } from "@terno/store";
 import { releaseIndexBodies, releaseBodyChanges, type IndexChange } from "@terno/store";
 import { releaseMessageBodies } from "@terno/store";
 import { BodyProtocol, BodyEpochChanged, BODY_FACT_TABLES, publishBody, type BodyTicket } from "@terno/store";
@@ -1516,6 +1516,10 @@ export class IdbMailStore implements MailStore {
       return this.command(() => deferOp(this.c, id, now, refund), { early: true });
     },
     recent: (limit) => this.early(() => listRecentOps(this.c, limit).map((op) => this.copyOp(op)!)),
+    enqueueAccount: ({ accountId, kind, payload, now }) => this.command(() => {
+      if (!ACCOUNT_OPS.has(kind)) throw new Error(`Not an account op: ${kind}`);
+      return enqueueOp(this.c, { accountId, kind, target: { messageIds: [] }, payload }, now)!;
+    }),
     resolveUnknown: (id, resolution, now) =>
       this.preparedFlagOutcome(id, () => {
         const flagBefore = flagEpochs(idbFlags(this.c));

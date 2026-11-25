@@ -1,5 +1,5 @@
 import { bodyPrefix, bodyTestKey, bodyPartRange, CORPUS_TEXTS_MAX, finishBodyClose, readPassages, readThreadContext } from "@terno/store";
-import { releaseIndexBodies, releaseBodyChanges, type IndexChange } from "@terno/store";
+import { ACCOUNT_OPS, releaseIndexBodies, releaseBodyChanges, type IndexChange } from "@terno/store";
 import { publishBody, storedReply } from "@terno/store";
 import { resolvable, parseSearch, searchTerms, isOAuthKind } from "@terno/core";
 import { oauthAdmits, oauthAdmittedConfig } from "@terno/store";
@@ -857,6 +857,10 @@ export class SqlMailStore implements MailStore {
     nextAttemptAt: async (admission) => nextOpAttemptAt(this.db, admission && copyOpAdmission(admission)),
     defer: async (id, now, o) => deferOp(this.db, id, now, o.refundClaim),
     recent: async (limit) => listRecentOps(this.db, limit).map((op) => this.copyOp(op)!),
+    enqueueAccount: async ({ accountId, kind, payload, now }) => {
+      if (!ACCOUNT_OPS.has(kind)) throw new Error(`Not an account op: ${kind}`);
+      return enqueueOp(this.db, { accountId, kind, target: { messageIds: [] }, payload }, now)!;
+    },
     resolveUnknown: async (id, resolution, now) =>
       this.preparedFlagOutcome(id, () => this.db.tx(() => {
         const flagBefore = flagEpochs(sqlFlags(this.db));

@@ -197,6 +197,19 @@ describe("Graph writes: flags", () => {
     expect(t.ms.messages.get(ids[1]!)!.inference).toBe("other");
   });
 
+  it("plan 275: a sender override asks Graph for it (again: one already there is updated), and its undo deletes the sender's only, once gone is done", async () => {
+    const t = await setup();
+    const op = (kind: string, payload: unknown) => t.provider.execute({ id: kind, kind, target: { messageIds: [] }, payload });
+    await op("classifySender", { address: "News@Shop.example", as: "other" });
+    await op("classifySender", { address: "news@shop.example", as: "focused" });
+    await op("classifySender", { address: "ana@friends.example", as: "other" });
+    expect([...t.ms.overrides.values()].map((o) => [o.address.toLowerCase(), o.classifyAs])).toEqual([["news@shop.example", "focused"], ["ana@friends.example", "other"]]);
+    await op("unclassifySender", { address: "news@shop.example" });
+    expect([...t.ms.overrides.values()].map((o) => o.address)).toEqual(["ana@friends.example"]);
+    await op("unclassifySender", { address: "news@shop.example" });
+    await expect(op("classifySender", { address: "nobody", as: "other" })).rejects.toMatchObject({ retryable: false });
+  });
+
   it("skips a message that never reached the server (a local row) and an op with none", async () => {
     const t = await setup();
     const local = t.store("local:abc");

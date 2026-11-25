@@ -1,8 +1,8 @@
 import { costAt, priceOf } from "@terno/ai";
 import { RpcError, type Draft, type DraftAddress, type Handlers } from "@terno/core/rpc";
-import { agentsMaySend, nextColor, parseHandoff, capFilterName, categoryRule, folderRule, isFilterable, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, matchExcerpt, parseSearch, resolveSearch, rowMatchOf, searchWithFilter, type ThreadAction, type AccountPrefs, PINS_MAX, REMINDERS_MAX, SCHEDULED_MAX, FORWARD_ADDRESSES_MAX_CHARS } from "@terno/core";
+import { hasTab, agentsMaySend, nextColor, parseHandoff, capFilterName, categoryRule, folderRule, isFilterable, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, matchExcerpt, parseSearch, resolveSearch, rowMatchOf, searchWithFilter, type ThreadAction, type AccountPrefs, PINS_MAX, REMINDERS_MAX, SCHEDULED_MAX, FORWARD_ADDRESSES_MAX_CHARS } from "@terno/core";
 import { L } from "@terno/i18n";
-import { movedNothing, SearchCancelledError, StaleCursorError, wantedAsDated, type AddedBy, type DraftRow, type FolderMoved, type MessageState } from "@terno/store";
+import { CLASSIFY_SENDER, UNCLASSIFY_SENDER, type SenderClassificationPayload, movedNothing, SearchCancelledError, StaleCursorError, wantedAsDated, type AddedBy, type DraftRow, type FolderMoved, type MessageState } from "@terno/store";
 import type { GmailAccountConfig, ImapAccountConfig, OutlookAccountConfig } from "@terno/mail";
 import { BackendCore as Backend } from "./core";
 import { forgetSignInVersion, signInVersion, admitBrowserGoogle, beginSignIn, endSignIn, oauthAdmission, changeOwnerTo, gmailClaim, googleFlowActive, imapClaim, loginFailed, microsoftClaim, microsoftFlowActive, reconnectAccount, validateGoogleConnection, validateMicrosoftConnection } from "./identity";
@@ -297,9 +297,16 @@ export function createHandlers(b: Backend): Handlers {
     return { affected: changed.size, kept, undoId: save() };
   };
   /** Takes back an action by its undo id: its messages, then the reminders it ended (plan 87). How many threads came back. */
+  /** plan 275: the sender override each undo id asked Outlook for (its undo asks for it to go) */
+  const senderOverrides = new Map<number, { accountId: number; address: string }>();
   const undoActs = async (undoId: number, jobId: string | undefined) => {
     const before = undoJournal.take(undoId);
     if (!before) throw new RpcError("NOT_FOUND", L("errors.undoGone"));
+    const override = senderOverrides.get(undoId);
+    if (override) {
+      b.opsQueued([await store.ops.enqueueAccount({ accountId: override.accountId, kind: UNCLASSIFY_SENDER, payload: { address: override.address } satisfies SenderClassificationPayload, now: b.now() })]);
+      senderOverrides.delete(undoId);
+    }
     try {
       // what the top held first: refused (a cap), nothing is taken back and the Undo stays for a retry
       const count = await returnTop(b, endedTop.get(undoId) ?? nothingLeft(), async () => {
@@ -579,6 +586,20 @@ export function createHandlers(b: Backend): Handlers {
       const r = await actOn(ids, action, null, progress, true);
       progress(ids.length);
       return { undoId: r.undoId, affected: r.threads.length, total: ids.length };
+    },
+    // plan 275: Focused Inbox's "always in the Inbox" / "always to Other" for one Outlook sender
+    "threads.classifySender": async ({ threadIds, address, as }) => {
+      const ids = [...new Set(threadIds)];
+      const accountIds = new Set((await store.threads.summaries(ids)).map((t) => t.accountId));
+      const account = accountIds.size === 1 ? await store.accounts.get([...accountIds][0]!) : null;
+      if (!account || !hasTab(account.kind, "other")) throw new RpcError("BAD_REQUEST", L("errors.tab.notThisAccount"));
+      const moved = await actOn(ids, as === "other" ? "toOther" : "moveToInbox", null);
+      b.opsQueued([await store.ops.enqueueAccount({ accountId: account.id, kind: CLASSIFY_SENDER, payload: { address: address.toLowerCase(), as } satisfies SenderClassificationPayload, now: b.now() })]);
+      // an undo id even when the conversations were already there: the override is what it takes back
+      const undoId = moved.undoId ?? remember([]);
+      senderOverrides.set(undoId, { accountId: account.id, address: address.toLowerCase() });
+      for (const key of senderOverrides.keys()) if (senderOverrides.size > 16) senderOverrides.delete(key);
+      return { undoId, affected: moved.threads.length };
     },
     "threads.undo": async ({ undoId, jobId }) => {
       return { restored: await undoActs(undoId, jobId) };

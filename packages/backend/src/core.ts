@@ -3,7 +3,7 @@ import { observeRefusals } from "./refusals";
 import { captureLocator } from "@terno/store";
 import { ProviderCooldown } from "./provider-cooldown";
 import { savedAccountRequests, type SavedAccountRequests } from "./account-requests";
-import { copyOpAdmission, OAUTH_SERVICES, rejectedRecipients, type CooldownStamp, type KindAdmission, type OAuthServices, type OpAdmission, type OpPark } from "@terno/store";
+import { CLASSIFY_SENDER, UNCLASSIFY_SENDER, copyOpAdmission, OAUTH_SERVICES, rejectedRecipients, type CooldownStamp, type KindAdmission, type OAuthServices, type OpAdmission, type OpPark } from "@terno/store";
 import { prepareCopyWire, readCopyWire } from "./sent-copy";
 import type { PendingGmailRenewal } from "./identity";
 import type { AiTasks } from "@terno/ai";
@@ -167,7 +167,7 @@ interface AccountLifetime {
 const COUNTS_EVERY_MS = 200;
 
 const accountKindOf = (kind: string | undefined): FieldValueOf<"accountKind"> => (kind === "imap" || kind === "gmail" || kind === "outlook" ? kind : "other");
-const OP_KINDS = new Set<string>(["archive", "trash", "spam", "notSpam", "moveToInbox", "markRead", "markUnread", "star", "unstar", "send", "move", "moveToFolder", "leaveFolder", "returnTo", "toPrimary", "toPromotions", "toSocial", "toUpdates", "toForums", "toNoCategory", "toOther"]);
+const OP_KINDS = new Set<string>(["archive", "trash", "spam", "notSpam", "moveToInbox", "markRead", "markUnread", "star", "unstar", "send", "move", "moveToFolder", "leaveFolder", "returnTo", "toPrimary", "toPromotions", "toSocial", "toUpdates", "toForums", "toNoCategory", "toOther", "classifySender", "unclassifySender"]);
 const opKindOf = (kind: string): FieldValueOf<"opKind"> => (OP_KINDS.has(kind) ? (kind as FieldValueOf<"opKind">) : "other");
 
 const OP_SUMMARY = {
@@ -188,7 +188,8 @@ const OP_SUMMARY = {
 
 /** What an op is, for the outbox and failure notices: English, plus the catalog message the renderer shows. */
 export function opSummary(kind: string, subject: string, count: number): Pick<OpInfo, "summary" | "summaryI18n"> {
-  const m = kind === "send" ? L("backend.op.send", { subject }) : Object.hasOwn(OP_SUMMARY, kind) ? L(OP_SUMMARY[kind as keyof typeof OP_SUMMARY], { count }) : L("backend.op.other", { kind, count });
+  // plan 275: Focused Inbox's sender override is the account's, with no messages to count
+  const m = kind === "send" ? L("backend.op.send", { subject }) : kind === CLASSIFY_SENDER || kind === UNCLASSIFY_SENDER ? L("backend.op.senderOverride") : Object.hasOwn(OP_SUMMARY, kind) ? L(OP_SUMMARY[kind as keyof typeof OP_SUMMARY], { count }) : L("backend.op.other", { kind, count });
   return { summary: m.message, summaryI18n: textRef(m)! };
 }
 

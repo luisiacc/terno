@@ -35,6 +35,7 @@ export * from "./schedule";
 export * from "./handoff";
 export * from "./writing";
 export * from "./folder-move";
+export * from "./sender-classification";
 export * from "./action-targets";
 
 export * from "./body-parts";

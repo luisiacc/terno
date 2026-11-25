@@ -288,6 +288,25 @@ describe("an Outlook account signs in again (plan 259)", () => {
     expect(await list("other")).toEqual([thread(other)]);
   });
 
+  it("plan 275: the sender override moves the conversation now and asks Outlook to sort the sender's mail the same way; one Undo takes back both", async () => {
+    const { ms, backend, client } = await setup();
+    const id = ms.deliver("inbox-id", { subject: "Weekly deals", from: "news@shop.example", inference: "other" });
+    const account = await client.call("accounts.connectMicrosoft", {});
+    await backend.syncAccount(account.id);
+    const thread = sqlDb(backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = ?", id)!.thread_id;
+    const r = await client.call("threads.classifySender", { threadIds: [thread], address: "news@shop.example", as: "focused" });
+    expect(r.affected).toBe(1);
+    await backend.runWorker();
+    expect(ms.messages.get(id)!.inference).toBe("focused");
+    expect([...ms.overrides.values()]).toEqual([expect.objectContaining({ address: "news@shop.example", classifyAs: "focused" })]);
+    await client.call("threads.undo", { undoId: r.undoId });
+    await backend.runWorker();
+    expect(ms.messages.get(id)!.inference).toBe("other");
+    expect([...ms.overrides.values()]).toEqual([]);
+    // an account without Focused Inbox never gets one
+    await expect(client.call("threads.classifySender", { threadIds: [999_999], address: "news@shop.example", as: "other" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
   it("stage 2b: through the backend's ops: a folder made, a thread filed into it and back (undo), archived, read; the move's answer written at once", async () => {
     const { ms, backend, client } = await setup();
     const a = ms.deliver("inbox-id", { subject: "Contract" }), b = ms.deliver("inbox-id", { subject: "Lunch" });

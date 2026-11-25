@@ -868,6 +868,13 @@ export const contract = {
     z.object({ scope: threadScope, action: z.enum(THREAD_ACTIONS), jobId: jobId.optional() }),
     { timeoutMs: 300_000 },
   ),
+  /**
+   * Plan 275: Focused Inbox's sender override for an Outlook account's conversations: moves them now (to the Inbox, or to
+   * Other) and asks Outlook to sort that sender's future mail the same way. `threads.undo` takes back both.
+   */
+  "threads.classifySender": m<{ undoId: number; affected: number }>()(
+    z.object({ threadIds: z.array(id).min(1).max(500), address: z.string().max(320).refine(isValidEmail, "Invalid email address"), as: z.enum(["focused", "other"]) }),
+  ),
   /** Takes an action back (threads.act or actScope): each message it changed returns to its previous read, star and place. Once. */
   "threads.undo": m<{ restored: number }>()(z.object({ undoId: id, jobId: jobId.optional() }), { timeoutMs: 300_000 }),
 

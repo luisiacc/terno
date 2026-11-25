@@ -1,4 +1,5 @@
 import { hasTab, remindPresets, separatesTabs, shortcutsFor, subjectTemplate, TAB_CODE, type Category, type CategoryColor, type ReminderKind, type Tab, type Command, type SimilarAction, type SimilarOffers, type SimilarScope, type ThreadAction, type ThreadSummary, type UnsubscribeOffer, type View } from "@terno/core";
+import { classifySender } from "~/lib/gmail-tabs";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { cn } from "@terno/ui/lib/utils";
@@ -794,6 +795,12 @@ function MenuItems() {
   const sender = scope ? null : sharedSender(rows);
   // plan 240: the account their mail here is in, when it's one (What matters' own switch is the account's)
   const senderAccount = sender && rows.every((r) => r.accountId === rows[0]!.accountId) ? rows[0]!.accountId : null;
+  // plan 275: from Other, "always in the Inbox"; from the Inbox, "always to Other" (an Outlook account keeping Other apart)
+  const overrideAccount = senderAccount !== null ? accounts.find((a) => a.id === senderAccount) : undefined;
+  const overrideTo = !overrideAccount || !hasTab(overrideAccount.kind, "other") || !separatesTabs(overrideAccount) || searching
+    ? null
+    : gmailTab === "other" || rows.every((r) => r.tab === TAB_CODE.other) ? ("focused" as const)
+    : view === "inbox" && gmailTab === null && rows.every((r) => r.tab === 0 && r.inInbox !== false && !r.onlyYours) ? ("other" as const) : null;
   const filedIn = sender ? categories.filter((c) => rows.some((r) => r.categoryIds.includes(c.id))) : [];
   const reply = (mode: "reply" | "replyAll" | "forward") => {
     if (!single) return;
@@ -838,6 +845,8 @@ function MenuItems() {
     ...(intoTab("promotions") ? [{ icon: <Tag />, label: t("actions.toPromotions"), testId: "menu-to-promotions", onClick: () => runTab("toPromotions") }] : []),
     ...(intoTab("social") ? [{ icon: <Users />, label: t("actions.toSocial"), testId: "menu-to-social", onClick: () => runTab("toSocial") }] : []),
     ...(intoTab("other") ? [{ icon: <Mails />, label: t("actions.toOther"), testId: "menu-to-other", onClick: () => runTab("toOther") }] : []),
+    // plan 275: Focused Inbox's sender override, for one sender's conversations in one Outlook account
+    ...(overrideTo ? [{ icon: overrideTo === "other" ? <Mails /> : <Inbox />, label: t(overrideTo === "other" ? "senderOverride.toOther" : "senderOverride.toInbox", { sender: sender!.name || sender!.email }), testId: `menu-always-${overrideTo}`, onClick: () => void classifySender(ids, sender!, overrideTo) }] : []),
   ];
   // a "select all N" goes to no folder: only out of a Gmail tab, or into one. Whether the account has a folder is
   // a short scan; the folders themselves are built once the submenu opens

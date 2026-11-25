@@ -7,7 +7,7 @@
 // `send` when a file is too large to go inline. No Node APIs.
 import { FOLDERS_PER_ACCOUNT_MAX } from "@terno/core";
 import { L } from "@terno/i18n";
-import { LEAVE_FOLDER, MOVE_TO_FOLDER, RETURN_TO, type LeaveFolderPayload, type MessagePlacement, type MoveToFolderPayload, type ReturnToPayload } from "@terno/store";
+import { CLASSIFY_SENDER, LEAVE_FOLDER, MOVE_TO_FOLDER, RETURN_TO, UNCLASSIFY_SENDER, type SenderClassificationPayload, type LeaveFolderPayload, type MessagePlacement, type MoveToFolderPayload, type ReturnToPayload } from "@terno/store";
 import { checkedAttachments } from "./attachment-payload";
 import { checkName, nameTaken, notFound as folderNotFound, refusedBy, sameName, standardFolder } from "./folder-changes";
 import { IMMUTABLE, isRecord, mailboxRefusedCodes, codesOf, ROLES, type Call, type Catalog, type Role } from "./graph-shared";
@@ -425,6 +425,45 @@ export function createGraphWrites(deps: GraphWriteDeps) {
     return sent;
   }
 
+  // ───────────────────────────── Focused Inbox's sender override (plan 275) ─────────────────────────────
+
+  /**
+   * "Always Focused" / "always Other" for one sender's future mail (learn.microsoft.com/graph/api/
+   * inferenceclassification-post-overrides: one already there for the address is updated, so a retry is safe), and its
+   * undo: the sender's override found in the mailbox's list and deleted (inferenceclassificationoverride-delete); one
+   * already gone is what was asked.
+   */
+  async function classifySender(op: ProviderOp): Promise<void> {
+    const p = op.payload as SenderClassificationPayload | null;
+    if (!p || typeof p.address !== "string" || !p.address.includes("@") || p.address.length > 254) throw new ProviderError(L("errors.outlook.invalidResponse"), false);
+    const address = p.address.toLowerCase();
+    if (op.kind === CLASSIFY_SENDER) {
+      if (p.as !== "focused" && p.as !== "other") throw new ProviderError(L("errors.outlook.invalidResponse"), false);
+      await api("/me/inferenceClassification/overrides", { method: "POST", body: JSON.stringify({ classifyAs: p.as, senderEmailAddress: { address } }), run: op.requestRun, limit: 65_536 });
+      return;
+    }
+    // the mailbox's list, page by page (at most 1,000 overrides a mailbox: manage-focused-inbox)
+    const found: string[] = [];
+    let next: string | undefined = "/me/inferenceClassification/overrides";
+    for (let pages = 0; next !== undefined; pages++) {
+      if (pages >= 20) throw invalid();
+      const listed = await api(next, { run: op.requestRun, limit: 4 * 1024 * 1024 });
+      if (!isRecord(listed) || !Array.isArray(listed.value)) throw invalid();
+      for (const item of listed.value) {
+        if (!isRecord(item) || !nonempty(item.id) || item.id.length > ID_MAX) throw invalid();
+        const sender = isRecord(item.senderEmailAddress) && typeof item.senderEmailAddress.address === "string" ? item.senderEmailAddress.address.toLowerCase() : "";
+        if (sender === address) found.push(item.id);
+      }
+      const link = listed["@odata.nextLink"];
+      if (link !== undefined && !nonempty(link)) throw invalid();
+      next = link as string | undefined;
+    }
+    for (const id of found) {
+      try { await api(`/me/inferenceClassification/overrides/${enc(id)}`, { method: "DELETE", empty: true, run: op.requestRun }); }
+      catch (error) { if (deps.refusal(error)?.status !== 404) throw error; }
+    }
+  }
+
   // ───────────────────────────── folders (plan 107) ─────────────────────────────
 
   /** the folder and every folder under it, as the tree says (children indexed once: Codex code review #12) */
@@ -476,6 +515,7 @@ export function createGraphWrites(deps: GraphWriteDeps) {
   return {
     async execute(op: ProviderOp) {
       if (op.kind === "send") return send(op);
+      if (op.kind === CLASSIFY_SENDER || op.kind === UNCLASSIFY_SENDER) return classifySender(op);
       const targets = await targetsOf(op);
       switch (op.kind) {
       case "markRead": case "markUnread": return patch(targets, { isRead: op.kind === "markRead" }, op.requestRun);
