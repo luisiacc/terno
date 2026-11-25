@@ -1748,6 +1748,10 @@ export function createHandlers(b: Backend): Handlers {
     "today.shownSenders": async () => ({ senders: await b.shown.list() }),
     "today.showSender": (p) => b.shown.show({ email: p.email, name: p.name, ...(p.id !== undefined ? { id: p.id } : {}), ...(p.at !== undefined ? { at: p.at } : {}) }),
     "today.stopShowingSender": (p) => b.shown.stop({ email: p.email, ...(p.id !== undefined ? { id: p.id } : {}), ...(p.mute ? { mute: p.mute } : {}) }),
+    "people.rules": async () => ({ rules: await b.personRules.list() }),
+    "people.setRule": (p) => b.personRules.set(p),
+    "people.removeRule": (p) => b.personRules.remove({ email: p.email, ...(p.id !== undefined ? { id: p.id } : {}) }),
+    "people.restoreRule": (p) => b.personRules.restore(p),
     "ai.prepareReply": (p, ctx) => b.replies.prepare(p, ctx.clientId),
     "ai.replyLeave": async (p, ctx) => {
       b.replies.leave(p.threadId, ctx.clientId);

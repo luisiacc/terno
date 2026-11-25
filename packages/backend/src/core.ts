@@ -30,6 +30,7 @@ import { FollowupWorker } from "./followups";
 import { DatedWorker } from "./dated";
 import { DatedMutes } from "./dated-mutes";
 import { ShownSenders } from "./shown-senders";
+import { PersonRules } from "./person-rules";
 import { WhatMattersWords } from "./preferences";
 import { SummaryWorker } from "./summaries";
 import { WritingService } from "./writing";
@@ -338,6 +339,8 @@ export class BackendCore {
   readonly mutes: DatedMutes;
   /** plan 240: the senders always shown in What matters */
   readonly shown: ShownSenders;
+  /** plan 278: your word on who is a person */
+  readonly personRules: PersonRules;
   /** plan 249: What matters in the user's words, and its background worker (idle with no rules) */
   readonly words: WhatMattersWords;
   /** plan 133: drafting: what goes into a draft, and the learner, asleep until the feature is used */
@@ -491,6 +494,14 @@ export class BackendCore {
         // What matters reads its rows again (the dated rows' trust, the digest's senders), the digest's exclusions too
         this.today.shownChanged();
       },
+    });
+    this.personRules = new PersonRules({
+      store: this.store,
+      now: () => this.now(),
+      uuid: () => globalThis.crypto.randomUUID(),
+      // lists, counts and What matters read the facts again; the facts' job wakes for a sender with more threads
+      threadsChanged: (threadIds) => this.notifyChanged(threadIds),
+      listChanged: (rules) => this.server.emit("personRules", { rules: [...rules] }, { origins: ["renderer", "dev"] }),
     });
     this.facts = new FactsBackfill(this);
     this.reminders = new Reminders({

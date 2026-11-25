@@ -45,6 +45,7 @@ import { UNSUBSCRIBE_METHODS } from "../unsubscribe";
 import { REMOVABLE_BUCKETS, STORAGE_AGES, type StorageReport } from "../storage";
 import { filterRuleSchema, type Filter, type FilterRule } from "../rules/schema";
 import { LIST_FILTERS, type ListFilter } from "../list-filter";
+import type { PersonRule } from "../people";
 import { snippetFieldsSchema, snippetIdSchema, type Snippet } from "../snippets";
 import { customThemesSchema, DESIGN_IDS, isStyleFont, type CustomTheme, type DesignFonts, type DesignId, type DesignPalettes, type MotionMs } from "../themes";
 import {
@@ -1415,6 +1416,21 @@ export const contract = {
   "today.showSender": m<{ added: ShownSender | null; unmuted: DatedMute | null }>()(z.object({ email: z.string().trim().min(3).max(320), /** kept to its first 200 characters */ name: z.string().max(2000), id: z.string().min(1).max(400).optional(), at: z.number().int().optional() })),
   /** "Stop always showing". `id`: only that entry (a Show's Undo); `mute`: the sender mute that Show ended, put back as it was */
   "today.stopShowingSender": m<{ removed: ShownSender | null }>()(z.object({ email: z.string().trim().min(3).max(320), id: z.string().min(1).max(400).optional(), mute: z.object({ name: z.string().max(2000), at: z.number().int() }).optional() })),
+  // plan 278: your word on who is a person. Renderer-only (not in MCP_ALLOWED): the sender's menu, Settings and Undo's
+  /** newest first */
+  "people.rules": m<{ rules: PersonRule[] }>()(empty),
+  /** "Counts as a person: Always / Never". `prior`: the rule it replaced (its Undo puts it back); `set` null: that rule already */
+  "people.setRule": m<{ set: PersonRule | null; prior: PersonRule | null }>()(z.object({ email: z.string().trim().min(3).max(320), /** kept to its first 200 characters */ name: z.string().max(2000), person: z.boolean() })),
+  /** "Automatically": the rule gone. `id`: only that entry */
+  "people.removeRule": m<{ removed: PersonRule | null }>()(z.object({ email: z.string().trim().min(3).max(320), id: z.string().min(1).max(400).optional() })),
+  /** An Undo: the sender's rule becomes `to` (none when null) only while it's still `expect` (an entry's id, or none) */
+  "people.restoreRule": m<{ restored: boolean }>()(
+    z.object({
+      email: z.string().trim().min(3).max(320),
+      expect: z.string().min(1).max(400).nullable(),
+      to: z.object({ id: z.string().min(1).max(400), email: z.string().trim().min(3).max(320), name: z.string().max(2000), person: z.boolean(), at: z.number().int() }).nullable(),
+    }),
+  ),
   /**
    * Plan 144: a conversation that waits for an answer stayed open. It reads the switch, the thread and what's stored
    * again, whatever the window thought, and goes on in `aiReply`. Never MCP. Nothing is ever sent from here.
@@ -1678,6 +1694,8 @@ export interface Events {
   todayChanged: Record<string, never>;
   /** plan 240: the senders always shown in What matters, newest first (every window's menus) */
   shownSenders: { senders: ShownSender[] };
+  /** plan 278: your word on who is a person, newest first (every window's menus and Settings) */
+  personRules: { rules: PersonRule[] };
   /** plan 234: the learned-filter offers may have changed (an action of the user's kept, an offer answered, a learned filter deleted): never MCP */
   learningChanged: Record<string, never>;
   /** plan 204: the dated reader stopped, or it's going again */
