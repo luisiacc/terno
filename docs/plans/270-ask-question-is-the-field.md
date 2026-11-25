@@ -38,11 +38,10 @@ of questions. The owner chose:
 
 The header's question becomes a text field (`AskTitle`, `ask-title`), with the same words, size and place as now.
 
-- **At rest** it reads as the title it was: no box, no ring, the text in the ink, truncated with an ellipsis. Hover shows
-  only the text cursor (the owner, 2026-11-24: no wash on hover). Focused or changed, it has a quiet wash (`bg-muted`),
-  which reaches 4 px before the text and 6 px after it, so the words stay
-  where they are now (`-ms-1 ps-1 pe-1.5`; 6 px crowded the Sparkles glyph in the screenshots).
-- **Focused** (a click or Tab), it keeps the wash, and the whole question is selected, so typing replaces it. Like a
+- **At rest** it reads as the title it was: no box, no ring, the text in the ink, truncated with an ellipsis, in the same
+  place. Hover shows only the text cursor. No wash at all, focused or changed (the owner, 2026-11-24, twice: first on
+  hover, then on focus): the caret, the selection and the hint show it has the keys.
+- **Focused** (a click or Tab), the whole question is selected, so typing replaces it. Like a
   browser's address bar, a second click places the caret. At the end of the header, before the buttons, a quiet hint says
   what the field does: "Type a new question" while it holds the question, and "↵ New question" once it's changed. The
   hint is `aria-hidden`; the field's accessible name is "Question" and its description is "Change it and press Return to
@@ -53,7 +52,7 @@ The header's question becomes a text field (`AskTitle`, `ask-title`), with the s
   it again).
 - **Esc** with changed words puts the question back and moves focus to the follow-up box. With the question unchanged,
   Esc does what it does today (stop, back, close). `paletteKeys.escape` asks the title first, only while it has focus.
-- **Leaving it** (a click elsewhere, Tab) keeps changed words, with the wash and "↵ New question", so nothing typed is
+- **Leaving it** (a click elsewhere, Tab) keeps changed words, with "↵ New question" after them, so nothing typed is
   lost. An emptied field gets the question back.
 - **While a source is shown** (the peek), the field is read-only and keeps any changed words. **While Ask is off**, it's
   read-only. **While an answer comes**, it can be edited, and Return stops that answer and asks the new question.
@@ -160,7 +159,7 @@ One round, 12 findings. Changes:
 5. **A source shown while the title had the keys** clears its focus state, so the keys' line doesn't stay in title mode.
 6. **Narrow windows:** the field keeps at least 6 rem (`min-w-24`), and the hint truncates rather than taking it.
 7. **Tab:** Chromium selects a text field's whole value when Tab or Shift+Tab reaches it. e2e checks Shift+Tab from +. No
-   ring: like the follow-up box and the palette's field, the caret and the wash show focus.
+   ring: like the follow-up box and the palette's field, the caret shows focus (the wash it had then is gone too).
 8. **Esc on words that are no change** (the question again, or with a trailing space) is the page's, as the keys' line
    says. Such words also aren't restored on mount. e2e.
 9. **The history's filter** went into the empty field that + opened. Opening a conversation from the history clears it.

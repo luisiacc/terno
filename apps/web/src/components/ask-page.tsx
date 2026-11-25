@@ -629,7 +629,7 @@ function AskTitle({ title, draft, setDraft, onFocusChange, focused, peek, readOn
           setDraft(null);
           startOver(draft);
         }}
-        className="h-7 min-w-24 flex-1 truncate rounded-md -ms-1 ps-1 pe-1.5 text-sm outline-none read-only:cursor-default not-read-only:focus:bg-muted data-changed:bg-muted"
+        className="h-7 min-w-24 flex-1 truncate bg-transparent text-sm outline-none read-only:cursor-default"
       />
       {!readOnly && <span id={described} className="sr-only">{t("ask.title.description")}</span>}
       {/* what the field is for, once it has the keys; changed words left there say they're still to be asked (the keys'
