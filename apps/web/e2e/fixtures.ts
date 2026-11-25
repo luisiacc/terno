@@ -11,6 +11,7 @@ import { seedPrintFixtures } from "@terno/backend";
 import type { PrintFixtureKey } from "@terno/mock-data";
 import { E2E_NOW, TEMPLATE_ENV } from "./constants";
 import { iconStub, type IconStub } from "./icon-stub";
+import { SyntheticMicrosoft } from "../../../packages/mail/src/test/microsoft.fixture";
 
 export { expect };
 
@@ -161,6 +162,47 @@ async function networkRegistry(net: TestNetwork): Promise<import("@terno/mail").
   };
 }
 
+/**
+ * Plan 259: a synthetic Microsoft (sign-in, token, Graph's /me) beside the test's providers. The browser page it opens
+ * answers as `behaviour` says; an Outlook account syncs the demo's mail while its saved refresh token is one Microsoft
+ * still honours (clear `ms.refreshTokens` to revoke them all), and is refused as Microsoft refuses it otherwise.
+ */
+export interface TestMicrosoft {
+  ms: SyntheticMicrosoft;
+  behaviour: Parameters<SyntheticMicrosoft["browser"]>[0];
+}
+
+async function microsoftRegistry(base: import("@terno/mail").ProviderRegistry, microsoft: TestMicrosoft): Promise<import("@terno/mail").ProviderRegistry> {
+  const { createDemoProvider, createRegistry, ProviderAuthError } = await import("@terno/mail");
+  const { L } = await import("@terno/i18n");
+  const real = createRegistry({ microsoft: { endpoints: microsoft.ms.endpoints() } });
+  const honoured = async (ctx: import("@terno/mail").ProviderContext) => microsoft.ms.refreshTokens.has((await ctx.getSecret("refreshToken")) ?? "");
+  return {
+    ...base,
+    connectMicrosoft: real.connectMicrosoft,
+    create(ctx) {
+      if (ctx.account.kind !== "outlook") return base.create(ctx);
+      const demo = createDemoProvider(ctx, 5);
+      const refused = () => new ProviderAuthError(L("errors.microsoft.revoked"));
+      return {
+        ...demo,
+        async sync(sink) {
+          if (!(await honoured(ctx))) throw refused();
+          return demo.sync(sink);
+        },
+        async execute(op) {
+          if (!(await honoured(ctx))) throw refused();
+          return demo.execute(op);
+        },
+        async verify() {
+          if (!(await honoured(ctx))) throw refused();
+          return demo.verify();
+        },
+      };
+    },
+  };
+}
+
 /** plan 96: the one-click POSTs a test's backend made (none leave the machine), and the status they get */
 export interface UnsubscribeRecorder {
   posted: string[];
@@ -176,7 +218,7 @@ interface Fixtures {
   fixedClock: boolean;
   /** backend-dev knobs: a fresh install with no mailbox, and owner claims through the demo registry */
   /** noGoogle (plan 123): a build without Terno's Google client, which can't connect Gmail */
-  backendOptions: { empty?: boolean; ownerClaims?: boolean; agentSocket?: boolean; smtpCapture?: boolean; network?: boolean; noGoogle?: boolean; /** plan 146: a local build's keys; every host refused, so nothing they could reach is reached */ devAi?: DevAiKeys };
+  backendOptions: { empty?: boolean; ownerClaims?: boolean; agentSocket?: boolean; smtpCapture?: boolean; network?: boolean; noGoogle?: boolean; /** plan 146: a local build's keys; every host refused, so nothing they could reach is reached */ devAi?: DevAiKeys; /** plan 259: a synthetic Microsoft and the build's Microsoft app registration */ microsoft?: boolean };
   /** the design the app opens in (plan 15): each Playwright project sets its own; null leaves the install's default (Lumen) */
   design: DesignId | null;
   /** plan 24: the layout the app opens in (null: the install's default, Split) */
@@ -191,7 +233,7 @@ interface Fixtures {
   today: boolean;
   /** plan 207: the first-screen question answered ("inbox") unless a test asks for it (null), or for another answer */
   firstScreen: "inbox" | "whatMatters" | null;
-  server: DevServer & { smtp: CapturedMail[]; net: TestNetwork; icons: IconStub; unsubscribes: UnsubscribeRecorder };
+  server: DevServer & { smtp: CapturedMail[]; net: TestNetwork; icons: IconStub; unsubscribes: UnsubscribeRecorder; /** with `backendOptions.microsoft` */ microsoft: TestMicrosoft | null };
   /** the app, loaded, connected and showing the inbox */
   app: Page;
 }
@@ -217,14 +259,19 @@ export const test = base.extend<Fixtures>({
     }
     const capture = backendOptions.smtpCapture ? await smtpRegistry() : null;
     const net: TestNetwork = { down: false, hold: null, refused: new Set(), google: null, incoming: [] };
-    const providers = backendOptions.network ? await networkRegistry(net) : capture?.registry;
+    const microsoft: TestMicrosoft | null = backendOptions.microsoft ? { ms: await new SyntheticMicrosoft().start(), behaviour: "approve" } : null;
+    const base = backendOptions.network ? await networkRegistry(net) : capture?.registry;
+    const providers = microsoft ? await microsoftRegistry(base ?? (await import("@terno/mail")).demoRegistry, microsoft) : base;
+    // the Microsoft page opens in the synthetic browser; anything else opens nowhere (as with `network`)
+    const openExternal = microsoft ? async (url: string) => { if (url.startsWith(microsoft.ms.url)) await microsoft.ms.browser(microsoft.behaviour)(url); } : backendOptions.network ? async () => {} : undefined;
+    const microsoftClients = microsoft ? { preferred: microsoft.ms.clientId, clients: [{ clientId: microsoft.ms.clientId, clientSecret: "" }] } : undefined;
     // plan 20: the retry after a first failure comes in a second, then a minute (time enough to look)
     const connectivity = backendOptions.network ? { delays: [1000, 60_000] } : undefined;
     // plan 22: website icons never reach the internet from a test (a few seeded sites have icons, the rest 404)
     const icons = iconStub();
     // plan 96: one-click unsubscribes never reach the internet either: recorded, answered 200
     const unsubscribes: UnsubscribeRecorder = { posted: [], status: 200, post: async (url) => (unsubscribes.posted.push(url.href), { status: unsubscribes.status }) };
-    const server = await startDevServer({ ...(backendOptions.devAi ? { devAi: backendOptions.devAi, lookup: async () => { throw new Error("no network in e2e"); } } : {}), port: 0, dataDir: dir, token: "e2e", now: () => E2E_NOW, autoSync: true, seed: !backendOptions.empty, ownerClaims: backendOptions.ownerClaims, agentSocket: backendOptions.agentSocket, providers, connectivity, iconTransport: icons, unsubscribeTransport: unsubscribes, openExternal: backendOptions.network ? async () => {} : undefined, googleClients: backendOptions.noGoogle ? null : E2E_GOOGLE });
+    const server = await startDevServer({ ...(backendOptions.devAi ? { devAi: backendOptions.devAi, lookup: async () => { throw new Error("no network in e2e"); } } : {}), port: 0, dataDir: dir, token: "e2e", now: () => E2E_NOW, autoSync: true, seed: !backendOptions.empty, ownerClaims: backendOptions.ownerClaims, agentSocket: backendOptions.agentSocket, providers, connectivity, iconTransport: icons, unsubscribeTransport: unsubscribes, openExternal, googleClients: backendOptions.noGoogle ? null : E2E_GOOGLE, microsoftClients });
     if (!siteIcons) await server.backend.server.invoke("settings.update", { senderIcons: false }, { clientId: "setup", origin: "dev" as const });
     if (!today) await server.backend.server.invoke("settings.update", { today: { show: false } }, { clientId: "setup", origin: "dev" as const });
     // plan 207: with the demo's AI, every test would meet the question
@@ -232,12 +279,13 @@ export const test = base.extend<Fixtures>({
     // plan 158: Send's five seconds would be every send's, in every test: a test about them turns it on
     // plan 211: and What matters' readers (on by default with the demo's AI) would read every test's new and sent mail
     await server.backend.server.invoke("settings.update", { undoSend: false, dated: { enabled: false }, followups: { enabled: false } }, { clientId: "setup", origin: "dev" as const });
-    await use(Object.assign(server, { smtp: capture?.received ?? [], net, icons, unsubscribes }));
+    await use(Object.assign(server, { smtp: capture?.received ?? [], net, icons, unsubscribes, microsoft }));
     // Backend.stop() doesn't wait for an in-flight ops batch; let it settle first.
     const b = server.backend as unknown as { workerRunning: boolean };
     for (let i = 0; i < 100 && b.workerRunning; i++) await new Promise((r) => setTimeout(r, 20));
     await server.close();
     await capture?.close();
+    await microsoft?.ms.stop();
     rmSync(dir, { recursive: true, force: true });
   },
   app: async ({ page, server, fixedClock, backendOptions, design, layout, tips, formatBar, firstScreen }, use) => {
