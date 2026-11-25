@@ -117,6 +117,15 @@ const mailboxRefused = (error: GraphApiError) => mailboxRefusedCodes(error.codes
  * What a 404 on this very request says isn't there (a message, a folder): Graph's own error code read, and not the
  * mailbox's (Codex code review #3). An unreadable body proves nothing, and nothing is removed for it (round 2 #3).
  */
+/** One folder Graph won't open for this mailbox (a 403 that isn't the mailbox's, nor a throttle): that folder's alone. */
+const folderRefused = (error: unknown): error is GraphApiError => error instanceof GraphApiError && error.target.includes("/mailFolders/") && error.status >= 400 && error.status < 500 && error.status !== 404 && !error.retryable && !mailboxRefused(error);
+
+/**
+ * Graph refusing one message's content (a 4xx on its own `$value` that isn't a throttle, a 404 or the mailbox's):
+ * that message's repair (review round 4: it held its folder's place, the Inbox's too, on every pass)
+ */
+const messageRefused = (error: unknown, target: string): error is GraphApiError => error instanceof GraphApiError && error.target === target && error.status >= 400 && error.status < 500 && error.status !== 404 && !error.retryable && !mailboxRefused(error);
+
 const notFound = (error: unknown, target: string) => error instanceof GraphApiError && error.status === 404 && error.target === target && error.codes.length > 0 && !mailboxRefused(error);
 
 /** A folder's own listing or delta answered that the folder isn't there (round 2 #5: classified where it's asked). */
@@ -582,7 +591,9 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       const children = new Map<string, Record<string, unknown>[]>();
       await download(parents, async (parent) => {
         try { children.set(parent.id, await collection(`/me/mailFolders/${enc(parent.id)}/childFolders?${query}`, signal, limit)); }
-        catch (error) { if (!notFound(error, `/me/mailFolders/${enc(parent.id)}/childFolders?${query}`)) throw error; }
+        // gone, or one Graph won't open (403: a folder shared to the mailbox without access, review round 4): its
+        // children aren't listed, and the rest of the list, and the Inbox after it, still are
+        catch (error) { if (!notFound(error, `/me/mailFolders/${enc(parent.id)}/childFolders?${query}`) && !folderRefused(error)) throw error; }
       }, GRAPH_CONCURRENCY);
       for (const parent of parents) take(children.get(parent.id) ?? [], parent.id, parent.depth + 1);
     }
@@ -782,9 +793,10 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
           } catch (error) {
             // a listing isn't a snapshot: a message may go before its download (revision 3: gone, never an identity error)
             if (notFound(error, target)) { await sink.retireCapture?.(locator); gone.add(id); return; }
-            if (error instanceof IncomingCaptureRefusal && sink.blockCapture) {
+            const reason = error instanceof IncomingCaptureRefusal ? error.reason : messageRefused(error, target) ? "server-refused" as const : undefined;
+            if (reason && sink.blockCapture) {
               check();
-              try { await sink.blockCapture(locator, error.reason, repair?.revision ?? 0); }
+              try { await sink.blockCapture(locator, reason, repair?.revision ?? 0); }
               catch (blocked) {
                 if (!held || !(blocked instanceof RpcError && blocked.code === "UNAVAILABLE" && blocked.i18n?.key === "capture.capacity")) throw blocked;
                 check(); held.error ??= blocked; held.count++; return;
@@ -841,6 +853,13 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
   }
 
   /**
+   * Whether a stored draft's change is to its content: still a draft in Drafts (edited there), or no longer a draft
+   * (sent). A draft moved elsewhere (trashed) changed only its place, and keeps its row: an undo and the actions on
+   * their way name it (review round 4).
+   */
+  const redraft = (folder: SyncedFolder, envelope: Envelope) => envelope.isDraft === false || (envelope.isDraft === true && folder.role === "drafts");
+
+  /**
    * Stored drafts another app changed or sent: Outlook keeps a draft's id through its edits and its send, so the stored
    * copy is dropped and the message read whole again (its subject, recipients and body may all have changed). A read that
    * fails holds the page (`hold`), so its delta is read again.
@@ -876,7 +895,7 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       sink.seen.set(envelope.id, folder.id);
       if (target.local === undefined) return;
       // a draft still (changed elsewhere), or one now sent: read again whole, as a page's is (only these ask the store)
-      if ((envelope.isDraft === true || folder.role === "sent") && (await store.messageByProviderId(target.providerMsgId))?.isDraft) {
+      if (redraft(folder, envelope) && (envelope.isDraft || folder.role === "sent") && (await store.messageByProviderId(target.providerMsgId))?.isDraft) {
         redrafted.push({ local: target.local, wanted: { envelope, folder, quiet: true } });
       } else updates.push(update(target.local, folder, envelope));
     }, GRAPH_CONCURRENCY);
@@ -913,7 +932,7 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       const stored = await lookup(envelope.id);
       // a draft another app changed, or sent (the Sent copy keeps the draft's id: learn.microsoft.com/graph/outlook-immutable-id):
       // its content is read again, never only its flags (`changes`: a delta round's entry is a change)
-      if (changes && stored?.isDraft) redrafted.push({ local: stored.id, wanted: { envelope, folder, quiet: true } });
+      if (changes && stored?.isDraft && redraft(folder, envelope)) redrafted.push({ local: stored.id, wanted: { envelope, folder, quiet: true } });
       else if (stored) updates.push(update(stored.id, folder, envelope));
       // an update says only what changed: one Terno doesn't have and that names no date is read whole (Codex #2)
       else if (envelope.received === undefined) undated.push(envelope.id);
@@ -1081,6 +1100,9 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       try { page = readPage(await api(target, { signal: sink.signal, preparation: sink.signal, page: true, delta: true })); }
       catch (error) {
         if (notFound(error, target)) throw new FolderGone();
+        // a saved link Graph calls a bad request (no longer one it takes, beyond the documented expiry codes): the folder
+        // starts again as an expired link does, never retried as it is forever (review round 4)
+        if (state.delta && error instanceof GraphApiError && error.target === target && error.status === 400 && !mailboxRefused(error)) throw new DeltaExpired();
         throw error;
       }
       // a link that can't be used is never kept (round 2 #12)
@@ -1129,7 +1151,11 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       if (await listFolder(folder, cursor, sink, budget)) await deltaFolder(folder, cursor, sink, budget);
     } catch (error) {
       if (error instanceof DeltaExpired) {
-        cursor.folders[folder.id] = fresh(cursor.folders[folder.id]?.after ?? sink.windowStart);
+        const was = cursor.folders[folder.id];
+        const next = fresh(was?.after ?? sink.windowStart);
+        // mail since the last round that finished is still new (review round 4: what came in the gap went unannounced)
+        if (was) next.startedAt = Math.min(next.startedAt, (was.at ?? was.startedAt) - LIVE_MARGIN_MS);
+        cursor.folders[folder.id] = next;
         reconcile(cursor);
         await save(sink, cursor);
         budget.more = true;
@@ -1452,15 +1478,16 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
         leave(cursor, dropped, roleFolders);
         await save(sink, cursor);
       }
-      // one folder Graph refuses (a 403, a 400 on its link) is that folder's: the rest still sync, and its error is the
-      // pass's once they have (review round 3)
-      let refusedFolder: GraphApiError | undefined;
+      // one folder Graph refuses (a 403, a 400 on its link) is that folder's: the rest still sync (review round 3), and
+      // the pass still ends well, so new mail is announced and older mail fetched (round 4: a pass that always failed
+      // left the account silent); it's asked again next pass, its place kept
+      const refused = new Set<string>();
       for (const folder of ordered(current)) {
         if (budget.out) break;
         try { await syncFolder(folder, cursor, sink, budget); }
         catch (error) {
-          if (!(error instanceof GraphApiError) || error.retryable || error.status < 400 || error.status >= 500 || mailboxRefused(error)) throw error;
-          refusedFolder ??= error;
+          if (!folderRefused(error)) throw error;
+          refused.add(folder.id);
         }
       }
       if (budget.unsaved) { budget.unsaved = false; await save(sink, cursor); }
@@ -1480,8 +1507,7 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       // a held message keeps its folder's place back: its error, and what to do about it, comes first
       if (sink.held.error !== undefined) throw sink.held.error;
       // plan 101: older mail, after everything new, once no first listing is under way
-      if (!budget.more && !Object.values(cursor.folders).some((state) => state.list || state.initial)) await backfill(cursor, sink);
-      if (refusedFolder) throw refusedFolder;
+      if (!budget.more && !Object.entries(cursor.folders).some(([id, state]) => !refused.has(id) && (state.list || state.initial))) await backfill(cursor, sink);
     },
 
     async folders(sink) {

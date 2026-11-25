@@ -7,7 +7,8 @@ export type CaptureLocator =
  * Why a message's own content can't be read safely (plan 267). The database stores the reason as text with no list of
  * its own: a new one is a change here, never a migration.
  */
-export const CAPTURE_REASONS = ["mime-parts", "mime-depth", "mime-headers", "mime-addresses"] as const;
+// "server-refused" (plan 259, review round 4): the server won't hand over the message's content (Graph's 4xx on its $value)
+export const CAPTURE_REASONS = ["mime-parts", "mime-depth", "mime-headers", "mime-addresses", "server-refused"] as const;
 export type CaptureReason = typeof CAPTURE_REASONS[number];
 export const isCaptureReason = (value: unknown): value is CaptureReason => (CAPTURE_REASONS as readonly unknown[]).includes(value);
 /** What Terno knows about a message it couldn't read, for the list (plan 267): each part optional, the whole bounded. */

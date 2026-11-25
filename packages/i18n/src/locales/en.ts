@@ -24,6 +24,7 @@ const en = {
   "capture.headers": "This message's headers are too large to process safely.",
   "capture.addresses": "This message's address list is too large to process safely.",
   "capture.unknown": "This message can't be processed safely.",
+  "capture.serverRefused": "Your mail server won't send this message's content.",
   "capture.noSubject": "No subject",
   "capture.retry": "Retry",
   "capture.refresh": "Refresh list",

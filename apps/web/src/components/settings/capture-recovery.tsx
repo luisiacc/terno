@@ -9,7 +9,7 @@ import { client } from "~/rpc/connection";
 /** plan 267: each reason's line; one this build doesn't know (a newer build wrote it) gets the generic one */
 const REASON_COPY = {
   "mime-parts": "capture.parts", "mime-depth": "capture.depth", "mime-headers": "capture.headers",
-  "mime-addresses": "capture.addresses", unknown: "capture.unknown",
+  "mime-addresses": "capture.addresses", "server-refused": "capture.serverRefused", unknown: "capture.unknown",
 } as const satisfies Record<CaptureRepair["reason"], string>;
 
 /** No requests until opened; subsequent reads follow explicit actions only. */

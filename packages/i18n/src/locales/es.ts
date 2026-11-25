@@ -18,6 +18,7 @@ const es = {
   "capture.headers": "Los encabezados de este mensaje son demasiado grandes para procesarlo de forma segura.",
   "capture.addresses": "La lista de direcciones de este mensaje es demasiado grande para procesarlo de forma segura.",
   "capture.unknown": "Este mensaje no se puede procesar de forma segura.",
+  "capture.serverRefused": "Tu servidor de correo no envía el contenido de este mensaje.",
   "capture.noSubject": "Sin asunto",
   "capture.retry": "Reintentar",
   "capture.refresh": "Actualizar lista",

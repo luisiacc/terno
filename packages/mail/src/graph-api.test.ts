@@ -68,6 +68,7 @@ async function setup(o: {
   const backfilled: unknown[] = [];
   const folderPages: string[] = [];
   const retired: string[] = [];
+  const blocked = new Map<string, string>();
   let again = 0, saves = 0;
   const token = ms.accessToken();
   const ctx = {
@@ -93,7 +94,7 @@ async function setup(o: {
       },
       pendingAttachmentBodies: async () => o.pendingAttachments?.() ?? [],
       ...(o.repairs && { repairs: {
-        get: async (_account: number, locator: { kind: string; providerId?: string }) => locator.kind === "outlook" && o.repairs!.has(locator.providerId!) ? { state: "pending", revision: 1, locator } : null,
+        get: async (_account: number, locator: { kind: string; providerId?: string }) => locator.kind !== "outlook" ? null : blocked.has(locator.providerId!) ? { state: "blocked", revision: 1, locator } : o.repairs!.has(locator.providerId!) ? { state: "pending", revision: 1, locator } : null,
         list: async () => ({ items: [...o.repairs!].map((providerId) => ({ state: "pending", revision: 1, locator: { kind: "outlook", providerId } })) }),
       } }),
     },
@@ -123,10 +124,11 @@ async function setup(o: {
     again() { again++; },
     async backfillDone(request) { backfilled.push(request); },
     async retireCapture(locator) { if (locator.kind === "outlook") { retired.push(locator.providerId); o.repairs?.delete(locator.providerId); } },
+    ...(o.repairs && { async blockCapture(locator: import("@terno/core").CaptureLocator, reason: string) { if (locator.kind === "outlook") blocked.set(locator.providerId, reason); } }),
   };
   const make = () => createGraphApiProvider(ctx, { endpoints: ms.endpoints(), tokens: o.tokens ?? { get: async () => token, invalidate() {} }, requestsPerSecond: Infinity, pageSize: o.pageSize, userFoldersEveryMs: 0 });
   const t = {
-    ms, db, ingested, removed, folders, ctx, sink, fetched, backfilled, pages, folderPages, retired,
+    ms, db, ingested, removed, folders, ctx, sink, fetched, backfilled, pages, folderPages, retired, blocked,
     get saves() { return saves; },
     provider: make(),
     get cursor() { return cursor as { folders: Record<string, Record<string, unknown>>; refresh?: unknown } | null; },
@@ -574,6 +576,8 @@ describe("Graph provider: an expired delta", () => {
       const downloads = t.ms.graphUrls.filter((u) => u.endsWith("/$value")).length;
       await t.sync();
       expect(t.row(arrived)).toBeDefined();
+      // new mail that came in the gap is still announced (review round 4 #8)
+      expect(t.ingested.filter((m) => m.id === arrived)).toEqual([{ id: arrived, live: true }]);
       expect(t.ms.graphUrls.filter((u) => u.endsWith("/$value")).length - downloads).toBe(1);
       expect(t.cursor!.folders["inbox-id"]!.delta).toEqual(expect.stringContaining("$deltatoken="));
     });
@@ -737,6 +741,45 @@ describe("Graph provider: review round 3", () => {
     expect(t.row(draft)).toMatchObject({ isStarred: true });
   });
 
+  it("round 4 (Fable #1): a message whose content Graph refuses (403 on its $value) is a repair; its folder, the Inbox, goes on and the pass ends well", async () => {
+    let refuse: string | undefined;
+    const t = await setup({ repairs: new Set(), respond: (url) => refuse && url.includes(`/messages/${encodeURIComponent(refuse)}/$value`) ? Response.json({ error: { code: "ErrorAccessDenied" } }, { status: 403 }) : undefined });
+    await t.sync();
+    const bad = t.ms.deliver("inbox-id");
+    refuse = bad;
+    await t.sync();
+    expect(t.blocked.get(bad)).toBe("server-refused");
+    const next = t.ms.deliver("inbox-id");
+    await t.sync();
+    expect(t.row(next)).toBeDefined();
+    expect(t.row(bad)).toBeUndefined();
+  });
+
+  it("round 4 (Fable #2): a saved delta link Graph calls a bad request (400) starts the folder again, never kept", async () => {
+    let bad = false;
+    const t = await setup({ respond: (url) => bad && url.includes("/mailFolders/inbox-id/messages/delta?") && url.includes("deltatoken") ? Response.json({ error: { code: "BadRequest" } }, { status: 400 }) : undefined });
+    await t.sync();
+    bad = true;
+    await t.sync();
+    expect(t.cursor!.folders["inbox-id"]).toMatchObject({ initial: true });
+    bad = false;
+    const later = t.ms.deliver("inbox-id");
+    await t.sync();
+    await t.sync();
+    expect(t.row(later)).toBeDefined();
+  });
+
+  it("round 4 #3: a draft that only moved (trashed) keeps its row, so an undo and the actions on their way still name it", async () => {
+    const t = await setup();
+    const draft = t.ms.deliver("drafts-id", { subject: "Plan", isDraft: true });
+    await t.sync();
+    const id = t.row(draft)!.id;
+    t.ms.move(draft, "trash-id");
+    await t.sync();
+    expect(t.row(draft)).toMatchObject({ id, isTrash: true, isDraft: true });
+    expect(t.removed).toEqual([]);
+  });
+
   it("#6: a repair whose message is now where Terno doesn't sync is retired, never read again each pass", async () => {
     const repairs = new Set<string>();
     const t = await setup({ repairs });
@@ -825,15 +868,36 @@ describe("Graph provider: review round 3", () => {
     expect(t.cursor!.refresh).toBeUndefined();
   });
 
-  it("Fable #5: a folder Graph refuses (403) is that folder's: the others still sync, and the pass then says so", async () => {
+  it("Fable #5, round 4 #5: a folder Graph refuses (403) is that folder's: the others still sync, the pass ends well (new mail announced), and older mail still comes", async () => {
     let refuse: string | undefined;
     const t = await setup({ respond: (url) => refuse && url.includes(`/mailFolders/${encodeURIComponent(refuse)}/messages`) ? Response.json({ error: { code: "ErrorAccessDenied" } }, { status: 403 }) : undefined });
     const a = t.ms.folder("A"), b = t.ms.folder("B");
     await t.sync();
     refuse = a;
-    const later = t.ms.deliver(b);
-    await expect(t.sync()).rejects.toMatchObject({ status: 403 });
+    const later = t.ms.deliver(b), fresh = t.ms.deliver("inbox-id");
+    await t.sync();
     expect(t.row(later)).toMatchObject({ folder: b });
+    expect(t.ingested.filter((m) => m.id === fresh)).toEqual([{ id: fresh, live: true }]);
+    // refused from its first round on: a widened window's older mail still comes for the rest
+    const c = t.ms.folder("C");
+    refuse = c;
+    const old = t.ms.deliver("inbox-id", { received: Date.now() - 400 * 86_400_000 });
+    await t.restart();
+    await t.sync({ windowStart: Date.now() - 30 * 86_400_000 });
+    await t.sync({ windowStart: Date.now() - 30 * 86_400_000, backfill: { since: Date.now() - 500 * 86_400_000, until: Date.now() - 30 * 86_400_000 } });
+    expect(t.row(old)).toBeDefined();
+  });
+
+  it("round 4 #2: a folder whose subfolders Graph won't list (403) leaves them out; the rest of the list and the Inbox still sync", async () => {
+    let refuse: string | undefined;
+    const t = await setup({ respond: (url) => refuse && url.includes(`/mailFolders/${encodeURIComponent(refuse)}/childFolders`) ? Response.json({ error: { code: "ErrorAccessDenied" } }, { status: 403 }) : undefined });
+    const shared = t.ms.folder("Shared"), other = t.ms.folder("Other");
+    t.ms.folder("Inside", shared);
+    refuse = shared;
+    const mail = t.ms.deliver("inbox-id");
+    await t.sync();
+    expect(t.row(mail)).toBeDefined();
+    expect(t.folders.at(-1)!.map((f) => f.key).sort()).toEqual([shared, other].sort());
   });
 });
 
