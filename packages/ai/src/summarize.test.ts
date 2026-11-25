@@ -153,7 +153,8 @@ describe("the prompt", () => {
       // the summary and rows stay what they'd be with nothing new (Fable and Astra, round 2: the news was split between them)
       expect(task.system).toMatch(/exactly as you would with nothing marked new/);
       expect(task.system).toMatch(/never both, so "since" stands on its own/);
-      expect(task.system).toMatch(/never says what the reader has to do or answer, nor a question or offer put to them/);
+      expect(task.system).toMatch(/never says what the reader has to do, answer or has promised, nor a question or offer put to them/);
+      expect(task.system).toMatch(/one still open stays an item when "since" tells what led to it/);
       // concise: one short sentence, the biggest change first, no filler
       expect(task.system).toMatch(/one short sentence, 25 words at most/);
       expect(task.system).toMatch(/never "a new reply", "the latest message" or when it arrived/);
