@@ -502,3 +502,176 @@ Everything in stage 1 except the visible "Continue with Microsoft" button, which
   2. Reconnect's `login_hint` is the mailbox address, which can differ from a work account's sign-in name. Left: Entra then asks for the name, and stage 3 can keep the id_token's `preferred_username` for the hint if that proves common.
   3. Graph's identity read and mailbox probe had no redirect test. Added.
   4. The rotation test now holds the write itself.
+
+## Stage 2a as built
+
+The read side of the Graph provider. Writes (flags, moves, archive, trash, spam, folder changes, send), the store's Outlook move semantics and `$batch` are stage 2b's.
+
+### What Microsoft's docs say, and what each choice rests on (checked 2026-11-24)
+
+- **Immutable ids** ([outlook-immutable-id](https://learn.microsoft.com/graph/outlook-immutable-id)): `Prefer: IdType="ImmutableId"` "only applies to the request it is included with", so every Graph call sends it. An id "will NOT change if the item is moved to a different folder in the mailbox"; it changes only when moved to an archive mailbox or exported and re-imported. Delta links "are compatible with both ID formats". Folder ids aren't immutable ids, but "their regular IDs were already constant".
+- **Limits** ([throttling-limits](https://learn.microsoft.com/graph/throttling-limits), "Outlook service limits"): per app and mailbox, "10,000 API requests in a 10-minute period" and "Four concurrent requests". The provider holds four slots (every Graph call takes one until its body is read) and paces 15 requests a second with a burst of 900 (under 10,000 in ten minutes). A JSON batch runs "up to four individual requests from the batch at a time" (stage 2b).
+- **Throttling** ([throttling](https://learn.microsoft.com/graph/throttling), [errors](https://learn.microsoft.com/graph/errors)): a throttled request gets "429 Too Many Requests" with `Retry-After`; a 503 is "overloaded. You can repeat the request after a delay, the length of which can be specified in a Retry-After header". `requestHttp` (`throttled()`) records a 429, and a Microsoft endpoint's 503 with a Retry-After, in the cooldown ledger. A throttled sub-response of a `$batch` "fails with a status code of 429" inside a 200 batch: stage 2b records those through the same ticket.
+- **Delta** ([delta-query-messages](https://learn.microsoft.com/graph/delta-query-messages), [message-delta](https://learn.microsoft.com/graph/api/message-delta), [delta-query-overview](https://learn.microsoft.com/graph/delta-query-overview)):
+  - "Delta query is a per-folder operation." The only filters are `receivedDateTime ge|gt`, the only order `receivedDateTime desc`, and "Applying `$filter` in a delta query returns only up to 5,000 messages."
+  - `Prefer: odata.maxpagesize` sets a page's size. A page holds `@odata.nextLink` or `@odata.deltaLink`, never both.
+  - "`@removed` entries with `"reason": "deleted"` when an item is deleted or moved from the folder", and read changes are returned even for messages the filter doesn't match.
+  - "A single entity can be contained multiple times in the response" and replays happen: a page keeps each id's last entry.
+  - An expired link is "410 Gone" or "a 40X-series error with error codes such as syncStateNotFound"; Outlook's token lifetime "isn't fixed".
+- **Listing** ([user-list-messages](https://learn.microsoft.com/graph/api/user-list-messages)): `$orderby` properties "must also appear in `$filter`", in the same order; `$top` is 1 to 1000; the next page is the whole `@odata.nextLink`.
+- **Bodies** ([message-get](https://learn.microsoft.com/graph/api/message-get)): `GET /me/messages/{id}/$value` "returns the message content in MIME format".
+- **Folders** ([mailfolder](https://learn.microsoft.com/graph/api/resources/mailfolder)): well-known names "work regardless of the locale". v1.0's mailFolder has no well-known-name property, so each role is read by its name (`GET /me/mailFolders/inbox`, …). Listing returns non-hidden folders only by default; `childFolderCount` says whether to read `childFolders`; a search folder is a `mailSearchFolder`.
+- **Search** ([search-query-parameter](https://learn.microsoft.com/graph/search-query-parameter)): "Search results are sorted by the date and time the message was sent", "up to 1,000 results", with KQL properties `from`, `to`, `subject`, `hasAttachments` and the default from/subject/body.
+
+### The provider (`packages/mail/src/graph-api.ts`)
+
+- **Requests.**
+  - `createGraphApiProvider(ctx, { tokens, endpoints })` is the adapter. `createGraphProvider` puts it over `createMicrosoftSession` (stage 1), and `close` ends both.
+  - Every call goes through `ctx.requests.request` when the backend installed a policy (never `ctx.fetch` then), with `redirect: "error"`.
+  - Every target is checked after the URL parser's normalization. A path or link must keep Graph's origin and its `/v1.0/` prefix (a `%2e%2e` segment can't climb out), or it's refused as an invalid answer. Mail never goes anywhere else (plan 97).
+  - A slot is held until a response's body is read. A 401's is drained (bounded) before its retry.
+  - A 404 means "not there" only when Graph's error code was read and it isn't the mailbox's own (`MailboxNotEnabledForRESTAPI` / `MailboxNotSupportedForRESTAPI`, [Exchange troubleshooting](https://learn.microsoft.com/troubleshoot/exchange/user-and-shared-mailboxes/rest-api-is-not-yet-supported-for-this-mailbox-error)). Nothing is removed on the mailbox's refusal.
+  - JSON bodies are bounded (2 MiB a page, 64 KiB otherwise).
+  - A 401 renews the token once; a second is `ProviderAuthError(errors.microsoft.revoked)` through `tokenResult`.
+  - The mailbox proof is `/me` (`mail`, else `userPrincipalName`, as the sign-in read it), under `microsoft-identity`.
+- **The ledger.**
+  - `COOLDOWN_SERVICES` gains `graph-api`, `microsoft-token` and `microsoft-identity`, and `OAUTH_SERVICES.outlook` names them, so the backend installs Outlook's request policy (`core.ts`).
+  - Op admission (`provider-cooldown.ts`, `core.ts operationAdmission`) gives each OAuth kind its own lanes from its own services, so a Gmail pause never holds Outlook's ops and the reverse.
+  - A sync that failed on a recorded throttle (a 429, or Graph's 503 with a Retry-After) waits on the ledger's pause, never a connectivity retry beside it (`core.ts`, the same `throttled()`).
+  - A pause says "Outlook is paused" for Microsoft's services (`net-errors.ts`, en and es).
+- **Folders.**
+  - The roles (Inbox, Sent Items, Drafts, Deleted Items, Junk Email, Archive) are read by their well-known names. A 404 is a role the mailbox doesn't have.
+  - The Outbox, Conversation History and Sync Issues, and everything under them, are never synced.
+  - Every other folder from the top, and its children where `childFolderCount` says so, is a folder keyed by its Graph id (renames keep keys). Children are read four at once and taken in their parents' order. This is bounded at the account folder cap and 64 levels. The folders synced are exactly the listed ones.
+  - A folder under the Inbox shows at the top, as IMAP's INBOX children do.
+  - The list goes to `setFolders` when read: on the first pass, every 15 minutes, and when a message is met in a folder the list doesn't have (once a pass).
+- **Sync.**
+  - Each synced folder's place is in the cursor: `{ after, startedAt, delta?, initial?, round?, list?: { next? }, at? }`.
+    - `after` is where its delta's window starts.
+    - `delta` is the link to read next; absent, it's the first round from the filter.
+    - `round` is when the round under way began.
+    - `list` is the rest of the window still to list.
+    - `at` is when the last finished round began.
+  - **A first sync** reads the folder's filtered delta round first (`$filter=receivedDateTime ge <window>`), downloading what it names, and keeps its deltaLink. It then lists the rest of the window, newest first (`$filter=…&$orderby=receivedDateTime desc`, what's stored skipped). The round names at most 5,000, and how many it named never proves it named them all. What changes meanwhile is the next round's.
+    - This deviates from the plan's "list first, then start delta": that order leaves a gap. A message listed and then deleted before the delta's first round is never reported (Codex code review #1).
+  - Each page's place is saved only after its effects. A message held back by its own content (plan 265) keeps the page to be read again.
+  - The Inbox goes first, then the other roles, then the person's folders. The roles' deltas are read every pass and the person's folders' at most every 5 minutes (in memory).
+  - A first sync's listing works FIRST_SYNC_CHUNK_MS a pass, then `again()`. A delta reads at most 100 pages a pass.
+  - Flags come from the folder's role (`inInbox`, `isTrash`, `isSpam`; `isSent` set in Sent and never cleared by a move, as Gmail's label), plus `isRead`, `isDraft` and `flag.flagStatus === "flagged"`.
+  - `folder` is the Graph id for a person's folder and null for a role folder. `providerThreadId` is null: RFC references thread (revision 3).
+  - A delta's update entry carries only what changed, so absent fields are left unchanged. Entries for one id in a page merge.
+  - A message the store doesn't have, received inside the window, is downloaded. One whose entry names no date is read by id first; one found outside the window is remembered for that window (up to 10,000), so its read changes aren't read again. A change to one outside the window (a read state the docs say is always returned) is nothing.
+  - A nextLink or deltaLink that can't be used is never saved. A first round out of the pass's share stops the pass's folders, as a listing does.
+  - **`@removed`** (revision 4) is "left this folder". If this pass already saw the message in another folder, nothing is done. Otherwise it's read again by id: a 404, or a folder Terno doesn't sync (after one list refresh), removes it here; anywhere else, its flags and folder are written.
+  - **An expired delta** (410 or syncStateNotFound) starts that folder's first round again and asks for the reconciliation. One already under way keeps its place, and the new one runs after it. Every stored message is read again by id (`syncedMessagePage`, 50 at a time, within the pass's share) and placed or removed by the same rule. What went during the gap is found that way, never guessed from what's missing.
+    - This costs a read per stored message, paced. Expiry and a folder's deletion are the rare events that pay it.
+  - **A folder gone**: its own listing or delta 404s (not the mailbox's 404), or it drops out of the list. Its place goes and the same reconciliation runs. A quick check that meets it leaves it to an ordinary pass.
+  - **Live** (plan 41): Inbox mail received after the folder's first round began, or, past it, after the last finished round began (less 10 minutes for the two clocks). An old message moved into the Inbox never notifies, nor does one an undated Inbox entry turns out to be in another folder.
+  - **A wider window**: when a backfill finishes, each folder whose window began later starts a new first round from the wider one, and the reconciliation runs. A filtered delta reports only read states and removals across its filter, so flag changes to backfilled mail would otherwise go unseen. The reconciliation covers what the old links would have reported between their last round and the new first one.
+- **Bodies.**
+  - `$value` MIME streams through the incoming pool (`ctx.incoming.acquire`/`promote`, 50-message or 4 MB batches, read credits) four at once.
+  - A small plain message is parsed inline; everything else goes to the worker as `{ kind: "mime" }`.
+  - Over the capture policy (`MAX_INCOMING_MIME_BYTES`), the body is cut at one byte past it and the worker reads its headers only (`captureUnavailable: "size"`), as IMAP's does, so a huge message never holds a folder's place.
+  - `readBody` reads `$value` with a reader credit and releases it. `describe` reads `subject`, `from` and `receivedDateTime`.
+- **Attachment capture**: a stored message missing its attachments is read by id and downloaded. One that's gone, or in no folder Terno syncs, is removed, so it never holds the head of the list.
+- **Flag snapshots** (revision 8): `pendingFlagSnapshots` are answered by targeted reads (`$select=id,receivedDateTime,isRead,isDraft,flag,parentFolderId`) applied through `updateFlags`. A share goes each pass (FLAG_SNAPSHOTS_MS, then `again()`). `FlagUpdate` gained `folder` (ingest's rule), written by both engines in `updateFlags`.
+- **Capture repair** (revision 3): `{ kind: "outlook", providerId }` (the immutable id) goes through `captureKey`/`captureLocator`, both validators (an Outlook locator only on an Outlook account), both engines' attachment-body skip, the repairs list's `describe`, and the backend's eviction fence. A repaired message that 404s is retired: an Outlook "gone", never `ProviderIdentityError`.
+- **Quick checks** (`quickChecks: true`): one Inbox delta request when nothing is new. No folder list yet, a first sync, or an expired link asks for an ordinary pass with `again()`.
+- **Search**: `GET /me/messages?$search="<KQL>"` from the query's words only. `before`, `after` and `limit` are applied to each hit's `receivedDateTime`, and stored messages are skipped. `partial` is set when the page bound or Graph's 1,000 cuts it short of the limit.
+  - No date restriction is put in the KQL: its date comparisons aren't on Graph's page. `fetchHits` reads each hit's folder and downloads it as old mail; a hit in a folder Terno doesn't sync isn't stored.
+- **Backfill** (plan 101): a widened window lists `/me/messages` over the asked span, newest first. Messages in synced folders that aren't stored are downloaded, the place goes in the cursor, and `backfillDone` comes at the end. It waits for every folder's first listing and round.
+- **`execute`** refuses every op with `errors.outlook.actionNotYet` (non-retryable) until stage 2b.
+- **The registry** gives an `outlook` account the Graph provider. The web worker keeps its not-yet provider.
+
+### Shared changes
+
+- `rest-provider.ts`: Gmail's request deadline, download pool (now with a width), inline-parse check and message-failure classes moved out of `gmail-api.ts` unchanged; the Gmail suites pass as they were.
+- The synthetic Microsoft (`test/microsoft.fixture.ts`) is now a Graph mailbox. It has well-known and personal folders (and a search folder), messages with MIME, delta rounds per folder (5,000 with a filter, `@removed` when a message leaves, 410 or syncStateNotFound once links expire), listings newest first, `$search`, throttling with a Retry-After, a count of requests at once, and a record of any call without the immutable-id header.
+- `apps/backend-dev` needed no change: `startDevServer({ providers: createRegistry({ microsoft: { endpoints, requestsPerSecond } }), microsoftClients, openExternal })` connects and syncs an Outlook account against the synthetic Microsoft (`server-outlook.test.ts`).
+
+### Tests
+
+- `graph-api.test.ts` (against the synthetic Graph):
+  - the first sync (listing, then delta; flags, folders, the catalog without system or search folders; the immutable-id header on every call)
+  - a quiet pass at one delta request per folder, and a quick check at one in all
+  - live and quiet arrivals, delta paging with each page's place saved after its effects
+  - a held message keeping its page, and a repair letting it go on
+  - a move seen in both folder orders and across a restart, deletion and a move to an unsynced folder
+  - both kinds of expiry with the reconciliation
+  - four at once asserted, a 429 and a 503 with Retry-After reaching the ledger with no retry of their own, a link off Graph's root refused
+  - flag snapshots with folder and a 404, `readBody`, search with `before`, `limit` and hits fetched as old mail, KQL, and the 401 path
+- `registry.test.ts`: an Outlook account gets the Graph provider and verifies with a rotated token.
+- `microsoft-connection.test.ts`: a full backend sync through the request policy, and a move followed. The reconnect test now uses a quiet provider, since a real one rotates the token on its own pass.
+- `provider-http.test.ts` (503 rules), `net-errors.test.ts` (pause words), `provider-cooldown.test.ts` (Outlook's own pause and lanes).
+- `capture-repair-store.int.test.ts` (the Outlook locator in SQLite, IndexedDB and WASM), and the `folders` conformance case (a flag update's folder) in both engines.
+- The Codex regression tests in `graph-api.test.ts` (rounds 1 and 2) each fail on the code before their fix. `microsoft-connection.test.ts` holds round 1's #12. `oauth-retry.test.ts` (stage 0a #4) now uses an IMAP account: Outlook has its request policy now.
+- **Perf:** `graph-sync.perf.test.ts`, Gmail's batches gate for Graph. A 20,000-message Inbox goes through:
+  - the first round's 5,000, downloaded
+  - the window listed: the 5,000 back as flag updates, 15,000 downloaded
+  - the next round
+
+  All of it is stored 50 at a time, within 50 µs a message of CPU, with exact request, transaction and cursor-write counts.
+
+### For stage 2b
+
+- **`execute`**: the ops land here. A move is `POST /messages/{id}/move` and its answer (the message in its new folder) settles the op. `settleFolderOp` and the other location ops write the confirmed folder (stage 0b's seam), and `queueFolderMoves` gets its Outlook branch.
+- **`$batch`**: a throttled sub-response must reach the ledger like a top-level 429. `requestHttp`'s ticket sees only the batch's 200, so the batch's reader calls the ticket's `headers429` for its sub-responses (a descriptor hook beside `onForbidden`), and the four-slot gate counts a batch as one request (Graph runs at most four of its requests at once).
+- **Settlement against deltas**: a delta read can race a settled move. The stored folder is server truth and the overlay replays pending ops (stage 0b), so stage 2b writes the move's answer and lets the next delta confirm it.
+- **The fixture**: `SyntheticMicrosoft` has `move`, `setRead`, `setFlag`, `destroy` and `expireDelta`, and logs every change for the deltas. Stage 2b adds POST/PATCH/DELETE routes on `/me/messages/{id}` (`/move`, `isRead`, `flag`), `/me/mailFolders/{id}/childFolders`, `/me/sendMail` and `$batch` beside them.
+- **Send**: `POST /me/sendMail` and the draft path (plan revision 9); the Sent copy arrives through the Sent folder's delta.
+
+### What the Codex code review changed
+
+Two rounds, each finding fixed with a regression test that fails without the fix, except where noted.
+
+**Round 1 (12 findings, all fixed):**
+
+1. Listing first and starting the delta after left a gap: a message listed and then deleted before the delta began was never reported. The first round's link is kept first now.
+2. A sparse duplicate replaced a full entry, so a new message was skipped. Entries for one id merge, and an undated new one is read by id.
+3. A mailbox-level 404 (`MailboxNotEnabledForRESTAPI`) removed messages. It never does now.
+4. A deleted folder's messages stayed. Its own 404, or its leaving the list, reconciles.
+5. An old message moved into the Inbox notified. Live mail must be received after the last round.
+6. A widened window's mail sat outside the delta filter, so flag changes were never seen. Each folder restarts from the wider window.
+7. Attachment capture never removed gone messages, so they could hold the head of the list. They're removed.
+8. A relative path with `%2e%2e` escaped the prefix check. Every target is checked after normalization, at the transport.
+9. The folder cap and the cursor's bound disagreed. The synced folders are the capped list.
+10. A search cut short by Graph's 1,000 said it was complete. It's partial.
+11. A 401 freed its slot before its body ended. The body is drained first.
+12. The backend scheduled a connectivity retry beside the ledger's 503 pause. It uses `throttled()` too.
+
+**Round 2 (12 findings):**
+
+- Fixed:
+  - #1: always list after the first round.
+  - #2: a widened window's restart reconciles.
+  - #3: an unreadable 404 removes nothing.
+  - #4: a reconciliation asked for again keeps its place.
+  - #5: a folder is gone only by its own request's 404, and a quick check hands that to a pass.
+  - #6: one list refresh a pass; an undated out-of-window change is read once.
+  - #7: a first round out of time stops the pass's folders.
+  - #8: the live watermark is the last round's start.
+  - #10: an undated entry found in another folder is stored there, quietly.
+  - #11: the catalog keeps its order at the cap.
+  - #12: unusable links are never saved.
+- Tested: #1, #2, #3, #4, #6, #10, #12. Left untested, as each needs a minute-long pass or a 10,000-folder mailbox to show: #5's classification (#4's folder test goes through it), #7, #8, #11.
+- Skipped, as rare:
+  - #9: a stale replay with a conflicting value in a later entry. The next change to the message corrects it, and resolving every conflict by a read would cost a request per replay.
+  - Part of #1: a deletion that shifts the listing's `$skip` between pages can skip one unchanged message until its next change. This is Graph's own paging.
+  - Part of #12: a nextLink cycle across passes. A cycle within a listing is caught.
+  - Part of #4: a server that lists a folder whose messages 404 every pass reconciles every pass.
+
+### `pnpm test:all`
+
+- **Ran once, at the end:**
+  - lint, typecheck, build, web and `ui-perf` (`ui-perf` flaky on the loaded first pass) and `startup` passed.
+  - Every other failure is the base's:
+    - `db-wasm`: `tabs.test`. Its `store.conformance` timing passed again alone.
+    - The same 17 e2e and 10 smoke.
+    - Four of the base's five perf files.
+  - `unit` added two failures:
+    - `oauth-retry.test`: its account "with no request policy" was an Outlook one. It now uses IMAP's.
+    - `idb.conformance` timeouts, which pass alone.
+  - Three opening tests failed on the second pass with "no such table: message_folders" and pass alone. They run their own older schemas, so this looks like a fixture collision under the shared machine's load; noted, not changed.
+- **Run per change:**
+  - the mail, store, IndexedDB and backend files named above, in both engines
+  - `graph-sync.perf` and `gmail-batches.perf` alone (both pass)
