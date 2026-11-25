@@ -9,7 +9,8 @@ import { cancelResponse, readResponseText, ResponseBodyLimitError, untilAborted 
 import { readIncomingBody, type IncomingBody } from "./incoming-body";
 import { decodeGmailRaw } from "./gmail-original";
 import { captureHttpResponseEvidence } from "./http-response-evidence";
-import { captureReasonOf, IncomingProcessingError, INCOMING_GMAIL_WIRE_BYTES } from "./incoming-processing";
+import { IncomingProcessingError, INCOMING_GMAIL_WIRE_BYTES } from "./incoming-processing";
+import { deadlineSignal, download, inlineCandidate, IncomingCaptureRefusal, IncomingResourceError, MESSAGE_FAILURES, NEVER, processingError, READ_TIMEOUT_MS, SEND_TIMEOUT_MS, type Held, type RequestDeadline } from "./rest-provider";
 import { failedBeforeRequest, isFetchNetworkFailure, ProviderCooldownError, RequestNotDispatchedError } from "./net-errors";
 import { createQuotaPacer, gmailUnits, type QuotaPacer } from "./gmail-quota";
 import { nameTaken, planLabelCreate, planLabelDelete, planLabelRename, refusedBy } from "./folder-changes";
@@ -339,22 +340,6 @@ function continuation(value: unknown, seen: Set<string>): string | undefined {
   return value;
 }
 
-async function download<T>(items: T[], work: (item: T) => Promise<void>): Promise<void> {
-  let next = 0;
-  let failure: { error: unknown } | undefined;
-  await Promise.all(Array.from({ length: Math.min(6, items.length) }, async () => {
-    while (!failure && next < items.length) {
-      const item = items[next++]!;
-      try {
-        await work(item);
-      } catch (error) {
-        failure ??= { error };
-      }
-    }
-  }));
-  if (failure) throw failure.error;
-}
-
 type GmailFailureReason = "SERVICE_DISABLED" | "ACCESS_TOKEN_SCOPE_INSUFFICIENT" | "DOMAIN_POLICY";
 
 /** Google's own reason for a refusal (e.g. "rateLimitExceeded"), for the console: a short token, never body text. */
@@ -472,63 +457,6 @@ export interface GmailApiOptions {
   sendTimeoutMs?: number;
 }
 
-/** A read that hasn't finished in a minute is on a dead socket (undici's own wait is 5 minutes). */
-const READ_TIMEOUT_MS = 60_000;
-/** A send may upload 35 MB over a slow link; past this its outcome is unknown (never retried). */
-const SEND_TIMEOUT_MS = 15 * 60_000;
-const NEVER = new AbortController().signal;
-
-/**
- * One request's signal: aborted by its deadline, by reset (`reset`) or by the caller. `done()`
- * clears the timer and the listeners (an `AbortSignal.timeout` would keep a timer per request alive).
- */
-interface RequestDeadline {
-  signal: AbortSignal;
-  pause(): () => void;
-  stopClock(): void;
-  done(): void;
-}
-
-function deadlineSignal(reset: AbortSignal, caller: AbortSignal | undefined, ms: number): RequestDeadline {
-  const ctl = new AbortController();
-  const abort = (reason: unknown) => ctl.abort(reason);
-  const onReset = () => abort(reset.reason);
-  const onCaller = () => abort(caller?.reason);
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let remaining = ms, started = 0, paused = 0;
-  let finished = false;
-  const stopClock = () => {
-    if (timer === undefined) return;
-    clearTimeout(timer);
-    timer = undefined;
-    remaining = Math.max(0, remaining - (performance.now() - started));
-  };
-  const arm = () => {
-    if (finished || paused || ctl.signal.aborted) return;
-    started = performance.now();
-    timer = setTimeout(() => { timer = undefined; abort(new DOMException(`no answer in ${ms} ms`, "TimeoutError")); }, remaining);
-  };
-  if (reset.aborted) onReset();
-  else reset.addEventListener("abort", onReset, { once: true });
-  if (caller?.aborted) onCaller();
-  else caller?.addEventListener("abort", onCaller, { once: true });
-  arm();
-  return {
-    signal: ctl.signal,
-    pause() {
-      if (finished) return () => {};
-      stopClock(); paused++;
-      let resumed = false;
-      return () => { if (!resumed) { resumed = true; paused--; arm(); } };
-    },
-    stopClock() { stopClock(); finished = true; },
-    done() {
-      stopClock(); finished = true;
-      reset.removeEventListener("abort", onReset);
-      caller?.removeEventListener("abort", onCaller);
-    },
-  };
-}
 
 interface IncomingResource {
   metadata: GmailMessage;
@@ -537,86 +465,6 @@ interface IncomingResource {
   release(): void;
 }
 
-class IncomingCaptureRefusal extends ProviderError {
-  constructor(readonly reason: import("@terno/core").CaptureReason) { super(L("errors.mail.processingComplex"), false); }
-  override get expected(): boolean { return true; }
-}
-
-class IncomingResourceError extends ProviderError {
-  constructor(readonly code: string, message: ReturnType<typeof L>) { super(message, false); }
-  override get expected(): boolean { return true; }
-}
-
-/**
- * Plan 265: what one message's own content decides (its siblings read fine): on the paths that bring new mail, held for
- * the pass's end rather than failing its siblings. Worker faults, network, quota and sign-in are the pass's.
- */
-// (plan 267: every parser limit is a repair now, IncomingCaptureRefusal; what's left has no repair reason)
-const MESSAGE_FAILURES = new Set(["input-limit", "worker-timeout", "envelope-unavailable"]);
-
-/**
- * Plan 265: failures held for a pass's end (the first is thrown): each message stays unstored, so the step that held
- * it saves no progress past it. `count` tells a step its own holds from an earlier step's (a repair retried first).
- */
-interface Held { error?: unknown; count: number }
-
-function processingError(error: IncomingProcessingError | ResponseBodyLimitError): ProviderError {
-  // plan 267: a message's own structure past the parser's limits (parts, depth, headers, addresses) is a repair
-  const reason = error instanceof IncomingProcessingError ? captureReasonOf(error) : undefined;
-  if (reason) return new IncomingCaptureRefusal(reason);
-  if (error instanceof ResponseBodyLimitError || error.code === "input-limit" || error.code === "result-limit") return new IncomingResourceError("input-limit", L("errors.mail.processingLimit"));
-  if (error.code.startsWith("malformed-")) return invalidResponse();
-  if (error.code === "worker-timeout") return new IncomingResourceError(error.code, L("errors.mail.processingTimedOut"));
-  if (error.code.startsWith("mime-limit-") || error.code === "envelope-unavailable") return new IncomingResourceError(error.code, L("errors.mail.processingComplex"));
-  return new IncomingResourceError(error.code, L("errors.mail.processingUnavailable"));
-}
-
-function afterMimeField(bytes: Uint8Array, start: number, field: string): number {
-  let end = start;
-  while (end - start < field.length && (bytes[end]! | 32) === field.charCodeAt(end - start)) end++;
-  if (end - start !== field.length) return -1;
-  while (bytes[end] === 32 || bytes[end] === 9 || bytes[end] === 10 || bytes[end] === 13) end++;
-  return bytes[end] === 58 ? end + 1 : -1;
-}
-
-function literalMimeTypeEnd(bytes: Uint8Array, start: number, type: string): number {
-  for (let offset = 0; offset < type.length; offset++) if ((bytes[start + offset]! | 32) !== type.charCodeAt(offset)) return -1;
-  return start + type.length;
-}
-
-function inlineCandidate(bytes: Uint8Array): boolean {
-  let lines = 0, line = 0, parts = 0, tags = 0, entities = 0, nesting = 0, declarations = 0;
-  for (let index = 0; index < bytes.length; index++) {
-    const value = bytes[index]!;
-    if ((value | 32) === 99) {
-      if (afterMimeField(bytes, index, "content-transfer-encoding") >= 0) return false;
-      let start = afterMimeField(bytes, index, "content-type");
-      if (start >= 0) {
-        while (bytes[start] === 32 || bytes[start] === 9 || bytes[start] === 10 || bytes[start] === 13) start++;
-        const plain = literalMimeTypeEnd(bytes, start, "text/plain");
-        let end = plain >= 0 ? plain : literalMimeTypeEnd(bytes, start, "text/html");
-        if (end < 0) return false;
-        while (bytes[end] === 32 || bytes[end] === 9) end++;
-        if (end !== bytes.length && bytes[end] !== 59 && bytes[end] !== 10 && bytes[end] !== 13) return false;
-      }
-    }
-    if (value === 10) {
-      if (++lines > 128) return false;
-      line = 0;
-      if (bytes[index + 1] === 45 && bytes[index + 2] === 45 && ++parts > 16) return false;
-    } else if (++line > 4096) return false;
-    if (value === 60 && ++tags > 32) return false;
-    if (value === 38 && ++entities > 256) return false;
-    if ((value === 40 || value === 123 || value === 91) && ++nesting > 32) return false;
-    if ((value === 58 || value === 59) && ++declarations > 64) return false;
-    if ((value | 32) === 109 && (bytes[index + 1]! | 32) === 101 && (bytes[index + 2]! | 32) === 115 && (bytes[index + 3]! | 32) === 115 && (bytes[index + 4]! | 32) === 97 && (bytes[index + 5]! | 32) === 103 && (bytes[index + 6]! | 32) === 101) {
-      let end = index + 7;
-      while (bytes[end] === 32 || bytes[end] === 9 || bytes[end] === 10 || bytes[end] === 13) end++;
-      if (bytes[end] === 47) return false;
-    }
-  }
-  return true;
-}
 
 /** The Gmail REST client (sync, history, labels, send) over any token source: no Node APIs. */
 /** A search box query from validated values: a quote in a value can't end its phrase. */
@@ -832,7 +680,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       } catch (e) {
         if (path.startsWith("/history?") && e instanceof ResponseBodyLimitError) throw new HistoryOverflow();
         if (!sending && responseMode === "json" && e instanceof ResponseBodyLimitError && path.startsWith("/messages")) throw new ProviderError(L("errors.gmail.invalidResponse"), false);
-        if ((responseMode === "incoming" || responseMode === "original") && (e instanceof IncomingProcessingError || e instanceof ResponseBodyLimitError)) throw processingError(e);
+        if ((responseMode === "incoming" || responseMode === "original") && (e instanceof IncomingProcessingError || e instanceof ResponseBodyLimitError)) throw processingError(e, invalidResponse);
         // The request was accepted; a send whose answer can't be read has an unknown outcome (no resend).
         if (sending) throw invalidResponse(true);
         if (!deadline.signal.aborted && !isFetchNetworkFailure(e)) throw invalidResponse();
