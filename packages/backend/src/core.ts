@@ -11,7 +11,7 @@ import { isOAuthKind, signInMethod, accessAllows, aiFeaturesAvailable, AGENT_MET
 import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/diag";
 import { RpcError, RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type ResultOf, type Transport } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
-import { AWAITING_AUTH, FlagObservationError, isFolderOp, operationFlagFields, type FlagObservation, type ClassifierInput, type IncomingMessage, type MailStore, type OpRow, type Platform, type ProviderStore } from "@terno/store";
+import { AWAITING_AUTH, FlagObservationError, isFolderOp, oneFolderPerMessage, operationFlagFields, type FlagObservation, type ClassifierInput, type IncomingMessage, type MailStore, type OpRow, type Platform, type ProviderStore } from "@terno/store";
 import type { ImapAccountConfig } from "@terno/mail";
 import { IncomingPipeline, throttled, ProviderIdentityError, ProviderCooldownError, ProviderAuthError, ProviderError, RequestNotDispatchedError, type IncomingProcessor, type MailProvider, type ProviderRegistry, type RequestDescriptor, type MailAdmission, type SendPayload, type SyncSink } from "@terno/mail/portable";
 import { Autocomplete, DESKTOP_AUTOCOMPLETE_PEAK, DESKTOP_CONTACT_CAPS, DESKTOP_PHRASE_CAPS, WEB_AUTOCOMPLETE_PEAK, WEB_CONTACT_CAPS, WEB_PHRASE_CAPS, type OwnAddress } from "@terno/store/autocomplete";
@@ -3305,8 +3305,11 @@ export class BackendCore {
 
   private announceOp(op: OpRow, reconciliations: Set<number>): void {
     if (operationFlagFields(op.kind).length && ["succeeded", "failed", "unknown"].includes(op.state)) reconciliations.add(op.account_id);
-    // plan 259 (exact undo, code review #7): a filing that didn't land asked where its messages really are: read it now
-    else if (isFolderOp(op.kind) && (op.state === "failed" || op.state === "unknown")) reconciliations.add(op.account_id);
+    // plan 259 (exact undo, code review #7 and round 2 #6): an Outlook filing that didn't land asked where its messages
+    // really are: read it now (IMAP's and Gmail's ask nothing)
+    else if (op.kind === "moveToFolder" && (op.state === "failed" || op.state === "unknown")) {
+      void this.store.accounts.get(op.account_id).then((a) => { if (oneFolderPerMessage(a?.kind)) this.reconcileFlags([op.account_id]); }, () => {});
+    }
     this.server.emit("op", this.opInfo(op));
     // plan 116: a forward's send settled
     if (op.kind === "send") this.forwards.opSettled(op.id);

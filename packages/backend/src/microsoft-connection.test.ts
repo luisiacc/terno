@@ -279,16 +279,22 @@ describe("an Outlook account signs in again (plan 259)", () => {
     await client.call("threads.undo", { undoId: out.undoId! });
     await backend.runWorker();
     expect(ms.messages.get(a)!.folder).toBe(projects);
-    // again, with the folder gone on the server before the undo lands: the failure wakes a read of where it is
-    const again = await client.call("threads.act", { threadIds: [thread], action: "moveToInbox" });
+    // trashed, and a sync reads it there; then its undo fails (the folder gone on the server meanwhile): the failure wakes
+    // a read, and that read finds it in Deleted Items again (nothing else would ask: the trash's own read is done)
+    const trashed = await client.call("threads.act", { threadIds: [thread], action: "trash" });
     await backend.runWorker();
+    await backend.syncAccount(account.id);
+    expect(ms.messages.get(a)!.folder).toBe("trash-id");
     ms.deleteFolder(projects);
-    await client.call("threads.undo", { undoId: again.undoId! });
+    await client.call("threads.undo", { undoId: trashed.undoId! });
+    expect(db.get<{ is_trash: number }>("SELECT is_trash FROM messages WHERE provider_msg_id = ?", a)!.is_trash).toBe(0);
     // the undo's own command may ask too; what counts is the op's failure asking
     const reads = vi.spyOn(backend, "reconcileFlags");
     await backend.runWorker();
-    expect(ms.messages.get(a)!.folder).toBe("inbox-id");
-    expect(reads).toHaveBeenCalledWith([account.id]);
+    await vi.waitFor(() => expect(reads).toHaveBeenCalledWith([account.id]));
+    expect(ms.messages.get(a)!.folder).toBe("trash-id");
+    await backend.syncAccount(account.id);
+    expect(db.get<{ is_trash: number }>("SELECT is_trash FROM messages WHERE provider_msg_id = ?", a)!.is_trash).toBe(1);
   });
 
   it("stage 2b: a throttled request inside a batch pauses the mailbox as a 429 does: the action waits, and the next sync asks Graph nothing", async () => {
