@@ -438,7 +438,6 @@ The storage-and-membership half, as revised after the critique. Move semantics a
   - It found one more defect. Fixtures that run today's ingest against an older mailbox (the opening and legacy-body tests) failed with "no such table". SQLite membership now reads `message_folders` only while it has rows, and a schema before v82 counts as having none, as `folderOpsPending` does for a missing index.
   - Everything else that failed also fails on the base: unit, `db-wasm` (`tabs.test`), 17 e2e, 10 smoke, and the five perf files already failing there.
   - The `idb.perf` gates missed by a few milliseconds on the loaded first pass, and all 25 pass run alone.
-||||||| parent of 1d29622d0 (docs(plans): plan 259, stage 1 as built: Microsoft sign-in, the Outlook account and owner, the shared OAuth pieces, the deviations (no cold renewal; Outlook's ledger services wait for stage 2), what stage 2 plugs into, and both Codex review rounds)
 
 
 ## Stage 1 as built
