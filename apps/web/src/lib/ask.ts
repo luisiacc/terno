@@ -1,4 +1,4 @@
-import { ASK_TURNS_MAX, type AiAskResult, type AiErrorKind, type AskConversationSummary, type AskOlderOffer, type AskSourceRef, type AskSourceView, type AskTurn } from "@terno/core";
+import { ASK_QUESTION_MAX, ASK_TURNS_MAX, type AiAskResult, type AiErrorKind, type AskConversationSummary, type AskOlderOffer, type AskSourceRef, type AskSourceView, type AskTurn } from "@terno/core";
 import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";
@@ -56,12 +56,14 @@ export interface AskState {
   returnTo: { threadId: number; messageId: number; conversationId: number | null } | null;
   /** just finished: for screen readers */
   ready: number;
+  /** plan 270: ups with each new question, so the page under it starts clean (its follow-up box, its scroll) */
+  started: number;
   usedAt: number;
 }
 
-const EMPTY: Omit<AskState, "usedAt" | "ready" | "gone"> = { conversationId: null, turns: [], sources: {}, running: null, error: null, notice: null, noProvider: false, older: { kind: "none" }, incomplete: false, olderFound: null, olderPartial: false, armedSource: null, returnTo: null };
+const EMPTY: Omit<AskState, "usedAt" | "ready" | "gone" | "started"> = { conversationId: null, turns: [], sources: {}, running: null, error: null, notice: null, noProvider: false, older: { kind: "none" }, incomplete: false, olderFound: null, olderPartial: false, armedSource: null, returnTo: null };
 
-export const useAsk = create<AskState>(() => ({ ...EMPTY, ready: 0, usedAt: 0, gone: 0 }));
+export const useAsk = create<AskState>(() => ({ ...EMPTY, ready: 0, usedAt: 0, gone: 0, started: 0 }));
 
 /** Plan 165: how many conversations keep their visited sources (session only). */
 const VISITED_KEEP = 20;
@@ -105,6 +107,8 @@ export interface AskPlace {
   /** cmdk's value for the chosen source row */
   chosen: string | null;
   followUp: string;
+  /** plan 270: words typed over the header's question, not sent */
+  title: string | null;
 }
 const places = new Map<number, AskPlace>();
 
@@ -112,7 +116,7 @@ export const askPlace = (conversationId: number | null): AskPlace | undefined =>
 
 export function keepAskPlace(conversationId: number | null, patch: Partial<AskPlace>): void {
   if (conversationId === null) return;
-  const was = places.get(conversationId) ?? { turns: 0, top: 0, sourcesTop: 0, chosen: null, followUp: "" };
+  const was = places.get(conversationId) ?? { turns: 0, top: 0, sourcesTop: 0, chosen: null, followUp: "", title: null };
   // the newest last: a Map keeps insertion order, so the first key is the oldest
   places.delete(conversationId);
   places.set(conversationId, { ...was, ...patch });
@@ -222,7 +226,14 @@ export function stopAsking(): boolean {
 export function newQuestion(): void {
   const { running } = useAsk.getState();
   if (running) stopAsking();
-  useAsk.setState({ ...EMPTY, usedAt: Date.now() });
+  useAsk.setState((s) => ({ ...EMPTY, started: s.started + 1, usedAt: Date.now() }));
+}
+
+/** Plan 270: the header's question changed and sent: a new conversation with it, as New question and asking would be. */
+export function startOver(question: string): void {
+  if (!question.trim() || question.trim().length > ASK_QUESTION_MAX) return;
+  newQuestion();
+  askQuestion(question);
 }
 
 /** What ⌘⇧K comes back to: the last conversation for 30 minutes, as it is now, then nothing (it's in the history). */

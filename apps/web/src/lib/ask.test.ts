@@ -23,7 +23,7 @@ vi.mock("~/rpc/connection", () => ({
 const opened = vi.hoisted(() => ({ threads: [] as number[] }));
 vi.mock("~/lib/page", () => ({ openThread: (id: number) => opened.threads.push(id), readerShown: () => true, listLayout: () => false }));
 
-const { askConfigChanged, askQuestion, installAsk, openConversation, openSource, returning, useAsk } = await import("./ask");
+const { askConfigChanged, askQuestion, installAsk, newQuestion, openConversation, openSource, returning, startOver, useAsk } = await import("./ask");
 const { askReady } = await import("./ai");
 installAsk();
 
@@ -128,5 +128,43 @@ describe("where a question can go", () => {
     useAsk.setState({ running: null, conversationId: null, turns: [] });
     askQuestion("q");
     expect(rpc.calls.find((c) => c.method === "ai.ask")!.params).not.toHaveProperty("acknowledge");
+  });
+});
+
+describe("a new question from the header (plan 270)", () => {
+  it("starts the page again: New question ups `started`, so what was typed under the last one goes with it", () => {
+    showing();
+    const was = useAsk.getState().started;
+    newQuestion();
+    expect(useAsk.getState().started).toBe(was + 1);
+    expect(useAsk.getState().conversationId).toBeNull();
+  });
+
+  it("stops the answer still coming, asks the new one on no conversation, and the old one's late answer changes nothing", async () => {
+    let finish!: (r: unknown) => void;
+    rpc.answer.set("ai.ask", new Promise((r) => (finish = r)));
+    showing();
+    askQuestion("old");
+    const old = useAsk.getState().running!.requestId;
+    rpc.answer.set("ai.ask", new Promise(() => {}));
+    startOver("  new  ");
+    expect(rpc.calls.find((c) => c.method === "ai.cancel")!.params).toEqual({ requestId: old });
+    const asks = rpc.calls.filter((c) => c.method === "ai.ask").map((c) => c.params as { question: string; conversationId?: number });
+    expect(asks.at(-1)).toEqual(expect.objectContaining({ question: "new" }));
+    expect(asks.at(-1)).not.toHaveProperty("conversationId");
+    finish({ status: "done", turn: { ...turn, question: "old" }, older: { kind: "none" }, incomplete: false });
+    rpc.events.get("aiAsk")!({ requestId: old, text: "late" });
+    await flush();
+    expect(useAsk.getState().running?.question).toBe("new");
+    expect(useAsk.getState().running?.text).toBe("");
+    expect(useAsk.getState().turns).toEqual([]);
+  });
+
+  it("asks nothing, and keeps what shows, for empty words or more than a question may hold", () => {
+    showing();
+    startOver("   ");
+    startOver("x".repeat(1001));
+    expect(rpc.calls.filter((c) => c.method === "ai.ask")).toEqual([]);
+    expect(useAsk.getState().conversationId).toBe(7);
   });
 });

@@ -113,7 +113,7 @@ test.describe("back to the answer, and the answer pinned (plan 165)", () => {
 
     await scenario("pinned: the card holds the answer and its sources; a source opens in the reader and the card stays, with focus", async () => {
       await page.setViewportSize({ width: 1100, height: 700 });
-      const question = (await page.getByTestId("ask-title").textContent())!;
+      const question = await page.getByTestId("ask-title").inputValue();
       await page.getByTestId("ask-pin").click();
       await expect(page.getByRole("dialog")).toHaveCount(0);
       await expect(card(page)).toBeVisible();
@@ -201,7 +201,7 @@ test.describe("back to the answer, and the answer pinned (plan 165)", () => {
       await page.getByTestId("pinned-ask-unpin").click();
       await expect(card(page)).toHaveCount(0);
       await expect(page.getByRole("dialog", { name: "Ask your mail" })).toBeVisible();
-      await expect(page.getByTestId("ask-title")).toHaveText(question);
+      await expect(page.getByTestId("ask-title")).toHaveValue(question);
       // scrolled to its end, then another answer pinned in its place: that one starts at its top
       await page.getByTestId("ask-pin").click();
       await page.getByTestId("pinned-ask-body").evaluate((el) => (el.scrollTop = el.scrollHeight));

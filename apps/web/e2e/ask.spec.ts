@@ -254,13 +254,13 @@ test.describe("ask your mail (plan 141)", () => {
       await page.mouse.move(0, 0);
       // Answer again says what it does; Copy and it are buttons, not grey words
       await expect(page.getByTestId("ask-again")).toHaveText("Regenerate");
-      // New question and the history: on the keys' line under the sources (pass 3), and smaller than them
-      await expect(page.getByTestId("ask-hints").getByTestId("ask-session").getByTestId("ask-new")).toBeVisible();
+      // the history: on the keys' line under the sources (pass 3), and smaller than them (plan 270: New question is in the header)
+      await expect(page.getByTestId("ask-hints").getByTestId("ask-session").getByTestId("ask-history-row")).toBeVisible();
       const source = (await page.getByTestId("ask-source").last().boundingBox())!;
-      const session = (await page.getByTestId("ask-new").boundingBox())!;
+      const session = (await page.getByTestId("ask-session").getByTestId("ask-history-row").boundingBox())!;
       expect(session.y).toBeGreaterThanOrEqual(source.y + source.height - 1);
-      const size = (testId: string) => page.getByTestId(testId).first().evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
-      expect(await size("ask-new")).toBeLessThan(await size("ask-source"));
+      const size = (el: ReturnType<Page["getByTestId"]>) => el.first().evaluate((e) => parseFloat(getComputedStyle(e).fontSize));
+      expect(await size(page.getByTestId("ask-session").getByTestId("ask-history-row"))).toBeLessThan(await size(page.getByTestId("ask-source")));
       expect(session.height).toBeLessThan(source.height);
     });
 
@@ -360,7 +360,7 @@ test.describe("ask your mail (plan 141)", () => {
       expect(await asked.evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(await page.getByTestId("ask-answer").first().evaluate((el) => parseFloat(getComputedStyle(el).fontSize)));
       const first = page.getByTestId("ask-turn").first();
       // plan 162 (after ai162-r01): the header is the question being answered now; the first one heads its own turn
-      await expect(page.getByTestId("ask-title")).toHaveText(`and ${word} again?`);
+      await expect(page.getByTestId("ask-title")).toHaveValue(`and ${word} again?`);
       await expect(first.getByTestId("ask-question")).toBeVisible();
       await expect(first.getByTestId("ask-question")).not.toHaveText(`and ${word} again?`);
       // plan 162 (after ai162-r03): folded to their count, so they never stand alone at the top
@@ -438,6 +438,72 @@ test.describe("ask your mail (plan 141)", () => {
       await server.backend.server.invoke("ai.summaries.clear", {}, dev);
       await expect(page.getByTestId("ask-history-undo")).toHaveCount(0);
       await expect(item).toHaveCount(0);
+    });
+
+    await scenario("plan 270: the header's question is where a new one is typed, and + beside it starts one", async () => {
+      await page.getByTestId("palette-back").click();
+      await question(page, `what about ${word}?`);
+      await expect(lastTurn(page)).toHaveAttribute("data-status", "answered");
+      const title = page.getByTestId("ask-title");
+      const selected = () => title.evaluate((el: HTMLInputElement) => el.selectionEnd! - el.selectionStart!);
+      await expect(title).toHaveValue(`what about ${word}?`);
+      await expect(title).toHaveAccessibleName("Question");
+      await expect(title).toHaveAccessibleDescription("Change it and press Return to ask a new question.");
+      // + in the header, named; the keys' line keeps only the history
+      await expect(page.getByTestId("ask-header").getByTestId("ask-new")).toHaveAccessibleName("New question");
+      await expect(page.getByTestId("ask-hints").getByTestId("ask-new")).toHaveCount(0);
+      await followUp(page).fill("half a follow-up");
+      // a source chosen with ↓ isn't what Return in the title opens
+      await followUp(page).press("ArrowDown");
+      // the first click takes it whole, the second places the caret
+      await title.click();
+      await expect(title).toBeFocused();
+      expect(await selected()).toBe(`what about ${word}?`.length);
+      await expect(page.getByTestId("ask-title-hint")).toHaveText("Type a new question");
+      await title.click();
+      expect(await selected()).toBe(0);
+      await page.keyboard.press("Enter");
+      await expect(page.getByTestId("ask-peek")).toHaveCount(0);
+      await expect(page.getByTestId("ask-turn")).toHaveCount(1);
+      // typed over: the keys' line says what Return and Esc do, and the answer's own question heads it
+      await title.fill(`and ${word} too?`);
+      await expect(page.getByTestId("ask-hints")).toContainText("New question");
+      await expect(page.getByTestId("ask-hints")).toContainText("Cancel");
+      await expect(page.getByTestId("ask-question").first()).not.toHaveClass(/sr-only/);
+      // Esc puts the question back; the dialog stays
+      await page.keyboard.press("Escape");
+      await expect(title).toHaveValue(`what about ${word}?`);
+      await expect(followUp(page)).toBeFocused();
+      await expect(page.getByRole("dialog")).toBeVisible();
+      await expect(page.getByTestId("ask-question").first()).toHaveClass(/sr-only/);
+      // words left there are kept, through a close and ⌘⇧K
+      await title.click();
+      await page.keyboard.type(`and ${word} too?`);
+      await followUp(page).click();
+      await expect(title).toHaveValue(`and ${word} too?`);
+      await expect(page.getByTestId("ask-title-hint")).toContainText("New question");
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await open(page);
+      await expect(title).toHaveValue(`and ${word} too?`);
+      await expect(followUp(page)).toHaveValue("half a follow-up");
+      // Return asks them as a new question: one turn, the follow-up box empty and with the keys
+      await title.click();
+      await page.keyboard.press("Enter");
+      await expect(page.getByTestId("ask-turn")).toHaveCount(1);
+      await expect(lastTurn(page)).toHaveAttribute("data-status", /answered|not_found/);
+      await expect(title).toHaveValue(`and ${word} too?`);
+      await expect(followUp(page)).toHaveValue("");
+      await expect(followUp(page)).toBeFocused();
+      // both are in the history, and the first kept its own question and its half-written follow-up
+      await page.getByTestId("ask-history-row").click();
+      await expect(page.getByTestId("ask-history-item")).toHaveCount(2);
+      await page.getByTestId("ask-history-item").filter({ hasText: `what about ${word}?` }).click();
+      await expect(title).toHaveValue(`what about ${word}?`);
+      await expect(followUp(page)).toHaveValue("half a follow-up");
+      // + starts one, in the empty field
+      await page.getByTestId("ask-new").click();
+      await expect(ask(page)).toBeFocused();
     });
   });
 
@@ -699,7 +765,16 @@ test.describe("ask your mail (plan 141)", () => {
     await expect(page.locator("html")).toHaveClass(/\bdark\b/);
     expect((await axe()).violations).toEqual([]);
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-dark.png` });
+    // plan 270: the header's question typed over, its wash and the keys' line saying so, in both modes
+    await page.getByTestId("ask-title").fill(`${word} again?`);
+    await expect(page.getByTestId("ask-title")).toHaveAttribute("data-changed");
+    expect((await axe()).violations).toEqual([]);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-title-dark.png` });
     await page.emulateMedia({ colorScheme: "light" });
+    expect((await axe()).violations).toEqual([]);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-title-light.png` });
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("ask-title")).toHaveValue(`${word}?`);
     // pass 3: in every design, the citation's own box is 24 × 24, and the answer's lines keep the paragraph's height
     const cite = (await page.getByTestId("ask-citation").first().boundingBox())!;
     expect(cite.width).toBeGreaterThanOrEqual(24);

@@ -1,28 +1,30 @@
-import { answerSentences, answerWithoutCitations, cleanAnswer, sameNamePeople, type AiErrorKind, type AskConversationSummary, type AskPlanQuery, type AskSourceRef, type AskSourceView, type AskTurn } from "@terno/core";
+import { ASK_QUESTION_MAX, answerSentences, answerWithoutCitations, cleanAnswer, sameNamePeople, type AiErrorKind, type AskConversationSummary, type AskPlanQuery, type AskSourceRef, type AskSourceView, type AskTurn } from "@terno/core";
 import type { AiSettings } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@terno/ui/components/collapsible";
 import { CloseButton } from "@terno/ui/components/close-button";
+import { IconButton } from "@terno/ui/components/icon-button";
+import { Kbd } from "@terno/ui/components/kbd";
 import { CommandDescription, CommandEmpty, CommandGroup, CommandHints, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
 import { Spinner } from "@terno/ui/components/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { Check, ChevronLeft, Clock, ExternalLink, Mail, Pin, Plus, RefreshCw, Search, Sparkles, Undo2 } from "@terno/ui/icons";
 import { useCommandState } from "cmdk";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { askReady, routeOf } from "~/lib/ai";
 import { closePeek, showSource, usePeek, type Peek } from "~/lib/ask-peek";
 import { Marked } from "~/components/match-mark";
 import { answerBlocks, boldParts, citationRuns } from "~/lib/ask-citations";
 import { cn } from "@terno/ui/lib/utils";
-import { askConfigChanged, askPlace, askQuestion, atTurnLimit, deleteConversation, loadAskHistory, newQuestion, openConversation, openSource, keepAskPlace, restoreConversation, returning, searchOlder, stopAsking, useAsk, useVisited } from "~/lib/ask";
+import { askConfigChanged, askPlace, askQuestion, atTurnLimit, deleteConversation, loadAskHistory, newQuestion, openConversation, openSource, keepAskPlace, restoreConversation, returning, searchOlder, startOver, stopAsking, useAsk, useVisited } from "~/lib/ask";
 import { pinAnswer, unpinAnswer } from "~/lib/pinned-ask";
 import { usePinnedAsk } from "~/lib/pinned-ask-state";
 import { listDate } from "~/lib/format";
 import { getLocale } from "@terno/i18n";
 import { boundaryDay } from "~/lib/when";
 import { askFrom, paletteBack, paletteKeys, setPalettePage, usePalettePage } from "~/lib/palette-open";
-import { chordLabel } from "@terno/ui/components/shortcut";
+import { chordLabel, keyLabel } from "@terno/ui/components/shortcut";
 import { useApp } from "~/state/app";
 import { openSettings } from "~/lib/settings-place";
 import { AiCopyButton, AiProvenance } from "~/components/ai-provenance";
@@ -354,11 +356,11 @@ function OlderLimit() {
   return partial ? <p className="text-xs text-muted-foreground" data-testid="ask-older-partial">{t("ask.older.partial")}</p> : null;
 }
 
-function Running({ ref }: { ref?: React.Ref<HTMLElement> }) {
+function Running({ ref, titled = true }: { ref?: React.Ref<HTMLElement>; /** plan 270: the header says this question (not words typed over it) */ titled?: boolean }) {
   const running = useAsk((s) => s.running);
   // plan 162 (after ai162-r05): a follow-up's question heads its answer from the start, as it will once done (the header
   // holds only the first's place alone)
-  const alone = useAsk((s) => s.turns.length === 0);
+  const alone = useAsk((s) => s.turns.length === 0) && titled;
   if (!running) return null;
   const { older, searchingOlder, text, chunks, question } = running;
   const looking = searchingOlder && !text ? (older ? t("ask.older.progress", { done: older.done, total: older.total }) : t("ask.older.looking")) : t("ask.looking");
@@ -491,12 +493,12 @@ function TurnSources({ sources, queries }: { sources: readonly AskSourceRef[]; q
  * whose × read as close.
  */
 /** Plan 162: the way back is All commands only when Ask was opened from them; from ⌘⇧K there's nothing behind it but the mail. */
-function AskNav({ onBack, onClose, pin }: { onBack: () => void; onClose: () => void; /** plan 165: an answer that can be pinned */ pin?: ReactNode }) {
+function AskNav({ onBack, onClose, actions }: { onBack: () => void; onClose: () => void; /** New question (plan 270) and Pin (plan 165), on an answer */ actions?: ReactNode }) {
   // where one step back goes from here: All commands, Ask (from its history), or nowhere but the mail (the ×)
   const to = usePalettePage((s) => paletteBack(s.page, s.entry));
   return (
     <span className="flex shrink-0 items-center gap-1.5" data-testid="ask-nav">
-      {pin}
+      {actions}
       {to !== null && (
         <Button variant="ghost" size="xs" className="font-medium text-muted-foreground" data-testid="palette-back" onKeyDown={stopKeys} onClick={onBack}>
           <ChevronLeft /> {to === "root" ? t("ask.allCommands") : t("palette.ask.page")}
@@ -531,8 +533,108 @@ function PinAnswer({ turn }: { turn: AskTurn }) {
   );
 }
 
+/** Plan 270: beside the question it replaces (it was at the end of the keys' line, where the owner didn't find it). */
+function NewQuestion() {
+  return (
+    <IconButton label={t("ask.new")} size="icon-xs" data-testid="ask-new" onKeyDown={stopKeys} onClick={() => newQuestion()} className="[&_svg]:size-3.5">
+      <Plus />
+    </IconButton>
+  );
+}
+
+/** Plan 270: Esc puts the header's question back while it holds changed words and has the keys (the palette's Esc runs first). */
+const titleKeys: { escape: (() => boolean) | null } = { escape: null };
+
+/** cmdk's keys on the list (↑↓, Home, End, Enter, Ctrl+N/P/J/K): in the header's field they're the field's own */
+const listKey = (e: KeyboardEvent) => ["ArrowDown", "ArrowUp", "Home", "End", "PageUp", "PageDown", "Enter"].includes(e.key) || (e.ctrlKey && ["n", "p", "j", "k"].includes(e.key.toLowerCase()));
+
+/** Plan 270: words typed over the question count once they're something else to ask */
+const titleChanged = (draft: string | null, title: string): draft is string => draft !== null && draft.trim() !== "" && draft.trim() !== title;
+
+/**
+ * Plan 270: the question in the header is where a new one is typed, as Spotlight's top line is. A click selects it whole
+ * (a second places the caret, as an address bar does), Return asks changed words as a new question, Esc puts the question
+ * back. The words are the conversation's (`draft`, kept with its place), so a source read or the dialog closed loses none.
+ * While a source is shown it's the question as text: the shown source has the keys.
+ */
+function AskTitle({ title, draft, setDraft, onFocusChange, focused, peek, readOnly, followUp }: {
+  title: string;
+  draft: string | null;
+  setDraft: (text: string | null) => void;
+  focused: boolean;
+  onFocusChange: (focused: boolean) => void;
+  peek: boolean;
+  readOnly: boolean;
+  followUp: RefObject<HTMLInputElement | null>;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  const described = useId();
+  const changed = titleChanged(draft, title);
+  useEffect(() => {
+    titleKeys.escape = () => {
+      if (draft === null || document.activeElement !== ref.current) return false;
+      setDraft(null);
+      // at the turn limit the follow-up box is off: the question stays with the keys
+      if (followUp.current && !followUp.current.disabled) followUp.current.focus({ preventScroll: true });
+      return true;
+    };
+    return () => {
+      titleKeys.escape = null;
+    };
+  }, [draft]);
+  if (peek) return <span className="min-w-0 flex-1 truncate" data-testid="ask-title-text">{title}</span>;
+  return (
+    <>
+      <input
+        ref={ref}
+        data-testid="ask-title"
+        data-changed={changed || undefined}
+        aria-label={t("ask.title.label")}
+        aria-describedby={readOnly ? undefined : described}
+        readOnly={readOnly}
+        maxLength={ASK_QUESTION_MAX}
+        value={draft ?? title}
+        onChange={(e) => setDraft(e.target.value)}
+        onMouseDown={(e) => {
+          // the first click takes the whole question, so typing replaces it; changed words take the caret where clicked
+          if (readOnly || changed || document.activeElement === e.currentTarget) return;
+          e.preventDefault();
+          e.currentTarget.focus();
+          e.currentTarget.select();
+        }}
+        onFocus={() => onFocusChange(true)}
+        onBlur={() => {
+          onFocusChange(false);
+          // nothing new in it: it's the question again
+          if (!changed) setDraft(null);
+        }}
+        onKeyDown={(e) => {
+          if (!listKey(e)) return;
+          e.stopPropagation();
+          if (e.key !== "Enter" || e.nativeEvent.isComposing || e.keyCode === 229) return;
+          e.preventDefault();
+          if (!changed) return;
+          // sent: the words are no longer this conversation's. The page starts again under it (`started`), its follow-up
+          // box with the keys, empty
+          setDraft(null);
+          startOver(draft);
+        }}
+        className="h-7 min-w-0 flex-1 truncate rounded-md -ms-1 ps-1 pe-1.5 text-sm outline-none read-only:cursor-default not-read-only:hover:bg-muted not-read-only:focus:bg-muted data-changed:bg-muted"
+      />
+      {!readOnly && <span id={described} className="sr-only">{t("ask.title.description")}</span>}
+      {/* what the field is for, once it has the keys; changed words left there say they're still to be asked (the keys'
+          line says Return while it has the keys) */}
+      {!readOnly && (focused ? !changed : changed) && (
+        <span aria-hidden className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground" data-testid="ask-title-hint">
+          {changed ? <><Kbd>{keyLabel("enter")}</Kbd>{t("ask.new")}</> : t("ask.title.hint")}
+        </span>
+      )}
+    </>
+  );
+}
+
 /** Plan 161, pass 3: what the keys do where you are, never a promise they don't keep. */
-type Where = "empty" | "asking" | "walking" | "peek";
+type Where = "empty" | "asking" | "walking" | "peek" | "title" | "titleChanged";
 function AskHints({ where, sources, end }: { where: Where; /** how many the answer has: ↓ says it (plan 162, after ai162-r04) */ sources: number; end?: ReactNode }) {
   const running = useAsk((s) => s.running !== null);
   const back = usePalettePage((s) => s.entry !== "ask");
@@ -540,7 +642,12 @@ function AskHints({ where, sources, end }: { where: Where; /** how many the answ
   // from ⌘⇧K, Esc closes and says so; while it answers, Esc stops
   const esc = running ? [{ keys: ["escape"], label: t("ask.stop") }] : back ? [] : [{ keys: ["escape"], label: t("common.close") }];
   const hints =
-    where === "peek"
+    // plan 270: the header's question has the keys: Return asks changed words, Esc puts the question back
+    where === "titleChanged"
+      ? [{ keys: ["enter"], label: t("ask.new") }, { keys: ["escape"], label: t("common.cancel") }]
+      : where === "title"
+        ? esc
+        : where === "peek"
       ? [{ keys: ["enter"], label: t("ask.peek.open") }, { keys: ["escape"], label: t("ask.peek.back") }]
       : where === "walking"
         ? [{ keys: ["arrowup", "arrowdown"], label: t("ask.keys.sources") }, { keys: ["enter"], label: t("ask.keys.show") }, ...esc]
@@ -704,6 +811,15 @@ function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => 
   const conversationId = useAsk((s) => s.conversationId);
   const area = useRef<HTMLDivElement>(null);
   const followUp = useRef<HTMLInputElement>(null);
+  // plan 270: words typed over the header's question and not sent, kept with the conversation's place
+  const [draft, setTyped] = useState<string | null>(() => askPlace(conversationId)?.title ?? null);
+  const setDraft = (text: string | null) => {
+    setTyped(text);
+    keepAskPlace(conversationId, { title: text });
+  };
+  const [titleFocused, setTitleFocused] = useState(false);
+  // the header holds other words: the answer's own question heads it, so it's never read as theirs
+  const retitled = titleChanged(draft, title);
   // plan 162 (after ai162-r03): a turn starts at its top. When a question is asked (or Ask opens on an answer), its
   // question goes to the top of the one scroll region and stays there while the answer streams under it: a long answer
   // starts at its beginning, and an earlier turn's sources are never what's left on top
@@ -755,13 +871,11 @@ function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => 
   }, [peek]);
   const sourceCount = running ? 0 : (last?.sources.length ?? 0);
   const sources = sourceCount > 0;
-  // plan 161, pass 3: starting over and the history are quiet controls at the end of the keys' line, not rows of their own
+  // plan 161, pass 3: the history is a quiet control at the end of the keys' line, not a row of its own (plan 270: New
+  // question went up beside the question)
   const session = !peek && (
-    // plan 162: starting over and the history are places, not keys: apart from them, after a divider
+    // plan 162: a place, not a key: apart from them, after a divider
     <span className="flex items-center gap-0.5 border-s border-border/60 ps-1.5" data-testid="ask-session">
-      <Button variant="ghost" size="xs" className="font-normal text-muted-foreground" data-testid="ask-new" onKeyDown={stopKeys} onClick={() => newQuestion()}>
-        <Plus /> {t("ask.new")}
-      </Button>
       <Button variant="ghost" size="xs" className="font-normal text-muted-foreground" data-testid="ask-history-row" onKeyDown={stopKeys} onClick={() => setPalettePage("askHistory")}>
         <Clock /> {t("palette.askHistory")}
       </Button>
@@ -771,8 +885,19 @@ function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => 
     <>
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border/60 ps-3 pe-2.5 text-sm" data-testid="ask-header">
         <Sparkles className="size-[1.15em] shrink-0 text-muted-foreground" />
-        <span className="min-w-0 flex-1 truncate" data-testid="ask-title">{title}</span>
-        <AskNav onBack={onBack} onClose={onClose} pin={!peek && !running && conversationId !== null && last?.kind !== "command" && last?.answer ? <PinAnswer turn={last} /> : null} />
+        <AskTitle title={title} draft={draft} setDraft={setDraft} focused={titleFocused} onFocusChange={setTitleFocused} peek={peek !== null} readOnly={!enabled} followUp={followUp} />
+        <AskNav
+          onBack={onBack}
+          onClose={onClose}
+          actions={
+            !peek && (
+              <>
+                <NewQuestion />
+                {!running && conversationId !== null && last?.kind !== "command" && last?.answer ? <PinAnswer turn={last} /> : null}
+              </>
+            )
+          }
+        />
       </div>
       {peek && <PeekView peek={peek} />}
       {/* under a shown source, out of sight, reach and the accessibility tree, but kept: not unmounted */}
@@ -785,9 +910,9 @@ function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => 
           <div ref={area} tabIndex={0} data-testid="ask-area" onWheel={unpin} onPointerDown={unpin} onKeyDown={unpin} onScroll={(e) => keep({ top: e.currentTarget.scrollTop })} className="max-h-[30rem] min-h-0 flex-1 overflow-y-auto outline-none">
             <div className="space-y-4 px-[18px] py-3">
               {turns.map((turn) => (
-                turn.kind === "command" ? <CommandTurn key={turn.id} turn={turn} last={turn === last} /> : <Turn key={turn.id} turn={turn} last={turn === last} repeated={turns.length === 1 && !running && turn.question === title} />
+                turn.kind === "command" ? <CommandTurn key={turn.id} turn={turn} last={turn === last} /> : <Turn key={turn.id} turn={turn} last={turn === last} repeated={turns.length === 1 && !running && turn.question === title && !retitled} />
               ))}
-              <Running ref={runningRef} />
+              <Running ref={runningRef} titled={!retitled} />
               <Failure />
               <CommandNotice />
               <Older />
@@ -808,7 +933,7 @@ function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => 
           )}
           <FollowUp disabled={atLimit || !enabled} onWalk={setWalking} inputRef={followUp} />
       </div>
-      <AskHints where={peek ? "peek" : walking && chosen !== null ? "walking" : "asking"} sources={sourceCount} end={session} />
+      <AskHints where={peek ? "peek" : titleFocused ? (retitled ? "titleChanged" : "title") : walking && chosen !== null ? "walking" : "asking"} sources={sourceCount} end={session} />
     </>
   );
 }
@@ -882,6 +1007,8 @@ function AskQuestionPage({ value, setValue, onBack, onClose }: { value: string; 
   const aiSettings = useApp((s) => s.settings?.ai);
   useEffect(() => askConfigChanged(), [aiSettings]);
   const hasConversation = useAsk((s) => s.conversationId !== null || s.turns.length > 0);
+  // plan 270: a new question asked from the header keeps this page: it starts again under it, its follow-up box empty
+  const started = useAsk((s) => s.started);
   const running = useAsk((s) => s.running);
   const announced = useAsk((s) => s.ready);
   const failed = useAsk((s) => s.error !== null);
@@ -898,7 +1025,8 @@ function AskQuestionPage({ value, setValue, onBack, onClose }: { value: string; 
   }, []);
   useEffect(() => {
     // plan 161, pass 3: Esc leaves a shown source first, back to its answer; then a running answer stops; then back
-    paletteKeys.escape = () => closePeek() || stopAsking();
+    // plan 270: changed words in the header's question go back to the question before anything else
+    paletteKeys.escape = () => titleKeys.escape?.() || closePeek() || stopAsking();
     // plan 162 (after ai162-r03): ⌘⇧K on a shown source goes back to its answer, as Esc does (it closed Ask)
     paletteKeys.toggle = () => closePeek();
     return () => {
@@ -907,7 +1035,7 @@ function AskQuestionPage({ value, setValue, onBack, onClose }: { value: string; 
       closePeek();
     };
   }, []);
-  const content: ReactNode = !ready || noProvider ? <NoProvider /> : hasConversation || running ? <Conversation onBack={onBack} onClose={onClose} /> : <Empty value={value} setValue={setValue} onBack={onBack} onClose={onClose} />;
+  const content: ReactNode = !ready || noProvider ? <NoProvider /> : hasConversation || running ? <Conversation key={started} onBack={onBack} onClose={onClose} /> : <Empty value={value} setValue={setValue} onBack={onBack} onClose={onClose} />;
   return (
     <>
       {content}
