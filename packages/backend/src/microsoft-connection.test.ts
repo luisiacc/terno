@@ -172,6 +172,31 @@ describe("an Outlook account signs in again (plan 259)", () => {
     await expect(client.call("identity.changeOwner", { accountId: second.id })).resolves.toMatchObject({ userId: owner!.userId, email: "bea@contoso.com", provider: "outlook", verifiedBy: "microsoft_oauth", accountId: second.id });
   });
 
+  it("stage 2a: an Outlook account syncs through the backend's request policy: its mailbox proven by /me, its mail and folders stored, a move another app made followed", async () => {
+    const { ms, backend, client } = await setup();
+    const clients = ms.folder("Clients");
+    const first = ms.deliver("inbox-id", { subject: "Welcome to Contoso" });
+    const filed = ms.deliver(clients, { subject: "The contract" });
+    const account = await client.call("accounts.connectMicrosoft", {});
+    // the sign-in's own reads (/me, the mailbox probe) carry no message ids
+    const signIn = ms.missingPrefer.length, calls = ms.graphRequests.length;
+    await backend.syncAccount(account.id);
+    const rows = () => sqlDb(backend.store).all<{ provider_msg_id: string; subject: string; in_inbox: number }>("SELECT provider_msg_id, subject, in_inbox FROM messages WHERE account_id = ? ORDER BY provider_msg_id", account.id);
+    const folderOf = (id: string) => sqlDb(backend.store).get<{ folder: string }>("SELECT f.folder FROM message_folders f JOIN messages m ON m.id = f.message_id WHERE m.provider_msg_id = ?", id)?.folder ?? null;
+    expect(rows()).toEqual([{ provider_msg_id: first, subject: "Welcome to Contoso", in_inbox: 1 }, { provider_msg_id: filed, subject: "The contract", in_inbox: 0 }]);
+    expect(folderOf(filed)).toBe(clients);
+    expect((await backend.store.folders.list()).filter((f) => f.accountId === account.id).map((f) => [f.key, f.path])).toEqual([[clients, ["Clients"]]]);
+    // every Graph call went out with immutable ids, after /me proved whose mailbox the token opens
+    expect(ms.missingPrefer.slice(signIn)).toEqual([]);
+    const synced = ms.graphRequests.slice(calls);
+    expect(synced.indexOf("/v1.0/me")).toBeGreaterThanOrEqual(0);
+    expect(synced.indexOf("/v1.0/me")).toBeLessThan(synced.findIndex((p) => p.includes("/messages")));
+    ms.move(first, clients);
+    await backend.syncAccount(account.id);
+    expect(rows().find((r) => r.provider_msg_id === first)).toMatchObject({ in_inbox: 0 });
+    expect(folderOf(first)).toBe(clients);
+  });
+
   it("removing it deletes its refresh token here; there is no grant at Microsoft to revoke", async () => {
     const { ms, backend, client } = await setup();
     const account = await client.call("accounts.connectMicrosoft", {});
