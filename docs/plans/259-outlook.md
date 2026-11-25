@@ -117,7 +117,7 @@ Every existing Gmail test passes unchanged except for renamed imports. That prov
 5. **Build.**
    - `release-env.mjs` gains `buildMicrosoftClient(env)` from `TERNO_MICROSOFT_CLIENT_ID` (and `TERNO_MICROSOFT_DEV_CLIENT_ID`). It is public, with no secret.
    - A release without it fails unless it is set to `""`, as Google's does.
-   - `build.mjs` defines it, `backend-entry.ts` passes it into `oauthClients.microsoft`, and CI passes it as a variable.
+   - `build.mjs` defines it, `backend-entry.ts` passes it into `oauthClients.microsoft`, and CI passes it as the `release` environment secret `TERNO_MICROSOFT_CLIENT_ID`.
 
 ### Stage 2: the Graph provider (`packages/mail/src/graph-api.ts`)
 
@@ -1120,3 +1120,66 @@ Two rounds. Each fix came with a test that fails without it (checked by undoing 
 
 - IMAP's undo of Move to Inbox out of a folder goes to Archive (above).
 - Your own Outlook message that was in Archive comes back to Sent Items (no stored role).
+
+## Review round 3: the whole branch (Fable and GPT Astra)
+
+The owner asked for one more round over everything (`git diff main...HEAD`), by two reviewers who never saw each other's findings: Fable (9 findings) and GPT Astra (11). Each finding was checked against the code. Every fix has a test that fails without it.
+
+### Fixed
+
+**The store and its engines**
+
+- **The undo of a read or star puts back that flag alone** (Astra #1). The snapshot keeps the whole state, so undoing a star after another app moved the message to Deleted Items brought it back to the Inbox. It did the same for every provider, and the plan's earlier "not taken" #4 had kept that.
+  - A read or star action's snapshot now says `only: "read" | "star"` (`flagScope`).
+  - The restore puts back that flag over the message as it is now (`undoTarget`, both engines).
+  - Conformance: star, then another app trashes it and it's read, then undo. One `unstar`, still in Deleted Items, still read.
+- **Your own message in the Inbox goes with its filed conversation** (Fable #2). A note to yourself, or a copy you were sent, has `is_sent` and stayed in the Inbox, so the conversation showed in the Inbox and in the folder. `planOneFolderMove` now keeps your own mail in Sent only when it isn't in the Inbox.
+- **The owner's provider and verification are checked as written** (Fable #9). v81 took their CHECK lists away; `checkOwnerClaim` runs in both engines' claim and change (plan 267's rule).
+- **v81's key check covers only the rebuilt tables** (Fable #4).
+  - It checked the whole file: 0.9 to 1.5 s cold at 57k conversations, and an old orphan anywhere would stop every launch.
+  - `rebuildsReferenced` now names the tables (`accounts`, `owner`); each gets `PRAGMA foreign_key_check(table)`. What references them keeps its parents: every row is copied with its id.
+  - `runMigration` is the step as an upgrade runs it, and `migrations.perf` times that function.
+- **IndexedDB's attachment backlog stops at its page** (Astra #10). It looked up two repair keys for every pending message before taking 50.
+
+**The Graph provider**
+
+- **A batch refusing one message no longer abandons the next batches** (Astra #4). A chunk's failure to try again still stops the op (the retry repeats it all). A refusal is thrown once every chunk has gone, for both PATCH and moves.
+- **A 401 inside a batch drops the token** (Astra #5), as one on the batch itself does.
+- **A throttled draft send leaves no second draft** (Astra #3).
+  - Under the real request policy, the 429 pauses the service before the handler sees it, so its DELETE was refused and the draft forgotten.
+  - The draft is now kept out of the sync and deleted before the next send's draft. This also applies to a send that never connected.
+- **An attachment clearly over the write limit isn't base64-encoded to measure it** (Astra #11).
+- **A draft another app edits or sends is read again whole** (Astra #2).
+  - Learn's immutable-id page says the Sent copy keeps the draft's id, so a delta saw only flags change and kept the old text.
+  - A delta round after the first (never a first round or a listing) re-reads a stored draft: the row goes and the message is downloaded quietly.
+  - `observe` does the same for a draft now in Sent. `messageByProviderId` says `isDraft` in both engines.
+- **A repair whose message is where Terno doesn't sync is retired** (Astra #6) instead of being read again every pass.
+- **A folder list read for a folder change isn't fresh** (Astra #7). The next pass reads the list and hands it to the host, so a failed host write can't hide a folder for 15 minutes.
+- **A search by dates alone asks Graph** (Astra #8). $search documents no range for `received`, so it's a `$filter` on `receivedDateTime`, newest first.
+- **A quiet pass saves its cursor once** (Astra #9). An empty round's new link is kept in memory and saved once after the folder sweep, not once a folder. A pass cut short reads the older link again.
+- **Folders inside Deleted Items or Junk Email are neither listed nor synced** (Fable #1). Their mail was live mail with no Trash or Spam flag (plan "spam triggers nothing").
+  - A folder Outlook deletes into Deleted Items goes from the sidebar, and its mail from Terno.
+  - Terno's Delete folder counts a folder that's no longer listed as gone, whether Graph keeps it in Deleted Items or not. Learn's page doesn't say which it does.
+- **A folder that stops being synced is read again by its own messages** (Fable #3), not the whole account.
+  - New `ProviderStore.folderMessagePage(folder, after)` reads `message_folders`' `(account_id, folder, message_id)` index; IndexedDB uses `account_folder`.
+  - The cursor's `left` keeps the folders and the place.
+  - A role folder going, an expired link and a widened window still read everything.
+- **One folder Graph refuses no longer stops the pass** (Fable #5). A 4xx that isn't the mailbox's or a throttle is that folder's. The rest sync, and the pass then throws it.
+
+**The backend**
+
+- **A Microsoft sign-in goes through the request ledger** (Fable #8), as Google's does.
+  - `initialOAuthRequests(kind)` generalizes `initialGoogleRequests` over `OAUTH_SERVICES`.
+  - A throttled code exchange pauses `microsoft-token`, and the next sign-in waits without opening the browser.
+  - New copy: `errors.microsoft.capacity` (en, es).
+
+### Not changed, and why
+
+- **Fable #6: an Outlook account whose primary address changes can't sign in again.**
+  - The account's address is its identity everywhere: the mailbox binding's digest (plan 264's ledger), the owner, the own-address test, and the sender.
+  - Following a rename means changing the address of a live account. That's a design of its own, not a fix, and needs the owner's call.
+  - Today the person removes and adds the account.
+- **Fable #7: `userPrincipalName` taken as the address when `/me` has no `mail`.**
+  - Microsoft documents no other source for a personal account's mailbox address. Guessing from mail in Sent would build on undocumented behaviour.
+  - A mailbox Graph doesn't open is still refused (`errors.microsoft.noMailbox`).
+- **Plan note: CI's client id is a secret, not a variable.** The text now says so (stage 1's setup note already did).
