@@ -859,7 +859,12 @@ export class SqlMailStore implements MailStore {
     recent: async (limit) => listRecentOps(this.db, limit).map((op) => this.copyOp(op)!),
     enqueueAccount: async ({ accountId, kind, payload, now }) => {
       if (!ACCOUNT_OPS.has(kind)) throw new Error(`Not an account op: ${kind}`);
-      return enqueueOp(this.db, { accountId, kind, target: { messageIds: [] }, payload }, now)!;
+      return this.db.tx(() => {
+        // the newest for a sender wins: an older one still queued (in backoff) is dropped, never run after it (code review #3)
+        const address = (payload as { address?: unknown } | null)?.address;
+        if (typeof address === "string") this.db.run(`DELETE FROM ops WHERE account_id = ? AND state = 'queued' AND kind IN (${[...ACCOUNT_OPS].map(() => "?").join(", ")}) AND json_extract(payload_json, '$.address') = ?`, accountId, ...ACCOUNT_OPS, address);
+        return enqueueOp(this.db, { accountId, kind, target: { messageIds: [] }, payload }, now)!;
+      });
     },
     resolveUnknown: async (id, resolution, now) =>
       this.preparedFlagOutcome(id, () => this.db.tx(() => {

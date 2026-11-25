@@ -68,6 +68,11 @@ export interface IncomingMessage {
    * Gmail's labels; absent: Gmail's from `gmailLabels`, or none
    */
   category?: import("@terno/core").MessageCategory;
+  /**
+   * Plan 275 (code review #6): a new row's category when the provider didn't say one (Outlook: Focused). Never written
+   * over a stored message's (a read again for its attachments keeps what it had).
+   */
+  defaultCategory?: import("@terno/core").MessageCategory;
   size: number;
   attachments?: IncomingAttachment[];
   captureUnavailable?: "size";

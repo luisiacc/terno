@@ -810,6 +810,13 @@ describe("Graph provider: flag snapshots, bodies, search", () => {
     const downloads = t.ms.graphUrls.filter((u) => u.endsWith("/$value")).length;
     await t.provider.fetchHits!(result.hits, t.sink);
     expect(t.ms.graphUrls.filter((u) => u.endsWith("/$value"))).toHaveLength(downloads);
+    // plan 275's code review #9: the next search knows that id stands for a message already here, so it takes no hit's place
+    const later = await t.provider.search!({ queries: [{ terms: ["quarterly"] }], before: now - 30 * 86_400_000, limit: 50, signal: new AbortController().signal });
+    expect(later.hits).toEqual([]);
+  });
+
+  it("plan 275's code review #10: a recipient is searched as Graph's recipients (To, Cc and Bcc), not To alone", () => {
+    expect(graphSearch({ terms: [], to: "bo@example.com" })).toBe("recipients:bo@example.com");
   });
 
   it("builds KQL from a query's words only", () => {
@@ -1020,22 +1027,32 @@ describe("Graph provider: Focused Inbox (plan 275)", () => {
     expect(category(focused)).toBe(6);
   });
 
-  it("links saved before the classification was asked for start every folder's round again, once: what's stored takes its classification, nothing is downloaded again", async () => {
+  it("links saved before the classification was asked for are read to their end, then every folder's round starts again, once: what's stored takes its classification, what went meanwhile goes, nothing is downloaded again", async () => {
     const t = await setup();
-    const id = t.ms.deliver("inbox-id");
+    const clients = t.ms.folder("Clients");
+    const id = t.ms.deliver("inbox-id"), filed = t.ms.deliver(clients), gone = t.ms.deliver(clients);
     await t.sync();
-    const saved = structuredClone(t.cursor) as { projection?: number };
+    // the cursor as an older version saved it
+    const saved = structuredClone(t.cursor) as unknown as { projection?: number };
     delete saved.projection;
-    t.ctx.loadCursor = async <T,>() => structuredClone(saved) as T;
-    t.ctx.saveCursor = async () => {};
+    let cursor: unknown = saved;
+    t.ctx.loadCursor = async <T,>() => structuredClone(cursor) as T;
+    t.ctx.saveCursor = async (value: unknown) => { cursor = structuredClone(value); };
     t.ms.messages.get(id)!.inference = "other";
+    t.ms.messages.get(filed)!.inference = "other";
+    // deleted since the last round: the old link says so (code review #1)
+    t.ms.destroy(gone);
     const downloads = t.ms.graphUrls.filter((u) => u.endsWith("/$value")).length;
     // a quick check waits for that pass
     const again = t.again;
     await t.sync({ quick: true });
     expect(t.again).toBe(again + 1);
     await t.sync();
+    expect(t.removed).toEqual([gone]);
+    expect((cursor as { projection?: number }).projection).toBe(1);
+    await t.sync();
     expect(t.row(id)?.category).toBe(6);
+    expect(t.row(filed)?.category).toBe(6);
     expect(t.ms.graphUrls.filter((u) => u.endsWith("/$value"))).toHaveLength(downloads);
   });
 });

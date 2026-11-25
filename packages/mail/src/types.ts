@@ -318,6 +318,8 @@ export interface MailProvider {
    * read permits only while it reads: the bytes it returns are the caller's.
    */
   readOriginal?(target: { id: number; providerMsgId: string }, signal: AbortSignal): Promise<Uint8Array | null>;
+  /** Plan 275: Focused Inbox's rule for one sender now (Outlook), read before an action changes it; null: none */
+  senderOverride?(address: string, signal: AbortSignal): Promise<"focused" | "other" | null>;
   /**
    * Plan 68: after a pass that worked, the account's own folders when the provider keeps them apart from its
    * mail (Gmail's /labels: read when unknown, stale or met in the pass; otherwise nothing). IMAP lists them in sync.

@@ -103,3 +103,54 @@ Twelve points; each changes the design as follows (this section wins where it di
 12. **The UI follows each account's tabs.** The menu offers a destination only when every selected conversation's account has it. `staysInView`, the optimistic row update and the undo snack (`SNACK_ALWAYS`) take `toOther`. Both sidebar variants read `tabUnread` per `tabsOf`. Settings search finds "Separate Other" for Outlook.
 
 **The sender override is built too** (the owner asked for everything on the checklist): in Other, "Always keep mail from {sender} in the Inbox", and in an Outlook Inbox, "Always send mail from {sender} to Other". Each moves the conversation now (`toPrimary` / `toOther`) and asks Graph for the override (`POST /me/inferenceClassification/overrides`, classifyAs and the sender's SMTP address; one already there is updated). The snack's Undo deletes the override it made and puts the conversation back. A new op kind, `classifySender { address, as }`, queued with the move, so it's retried and its outcome is the op's.
+
+## As built
+
+- **The model** (`@terno/core/tabs.ts`):
+  - category 6 Other and tab 3, and `tabsOf(kind)` (Gmail's two, Outlook's Other);
+  - `categoriesOf(kind)` (Gmail's six, Outlook's Focused and Other), `hasTab`, and `separatesTabs` for both kinds.
+- **The stores:**
+  - a category action reaches only messages whose kind has that category;
+  - Move to Inbox untabs Other;
+  - a category snapshot is `only: "category"`, so its undo and the saved-intent reaffirm touch that field alone;
+  - `IncomingMessage.category` and `FlagUpdate.category` arrive under the flag protocol (`toOther` in its value map: an account with a flag clock found it missing);
+  - one hiding rule per account (lists, both SQLite count branches, IndexedDB's buckets, arrivals);
+  - the tab refresh covers Outlook.
+- **The provider:**
+  - `inferenceClassification` is selected;
+  - the `PROJECTION` in the cursor reads old links to their end, then starts every folder's round again once;
+  - `toPrimary` and `toOther` PATCH the classification, and Gmail's label map leaves Other out.
+- **The sender override:**
+  - `threads.classifySender` moves the conversations now and queues `classifySender` (`ops.enqueueAccount`, an account op naming no messages);
+  - Undo queues `unclassifySender`.
+- **The UI:**
+  - the Other row under the account, with its count;
+  - Go to Other in the palette;
+  - Move to Other, and "Always keep this sender in the Inbox" / "Always send this sender to Other";
+  - Settings → Accounts' Separate Other.
+- **Found on the way: select all in a tab acted on the account's whole Inbox.** It was plan 86's bug too, fixed here.
+
+### What the Codex code review changed
+
+Twelve findings, all fixed, each with a test that fails without it:
+
+1. **The projection upgrade replaced links unread.** Mail deleted or moved out in the gap stayed. Now every folder's old link is read to its end in one pass, user folders included (`budget.drain`). Only then do the rounds start again.
+2. **Undo deleted a sender rule the person had.** The action reads the sender's rule first, on the click, in the reader lane (`senderOverride`). Undo puts it back; with none before, it deletes only a rule still the action's (`as`, `prior`).
+3. **An older retry could take back an Undo.**
+   - Category ops are one supersedable group (`category`), in both engines.
+   - `enqueueAccount` drops a queued older op for the same sender.
+4. **Half-done steps.**
+   - A rule that can't be queued hands back the move's Undo in its error.
+   - Undo queues the rule's undo inside the step that puts the journal back on failure.
+5. **A rule for the wrong sender.** The backend refuses unless every conversation's mail (not yours, not in Trash or Spam) is from that sender: `errors.senderOverride.mixed`.
+6. **A read again without a classification (attachment recovery) made Other Focused.** The provider sends `defaultCategory` for a new row only; a stored row keeps its category.
+7. **"Always send this sender to Other" never showed.** An Inbox row's summary has no `tab`, which is the Inbox's.
+8. **A pinned conversation in a tab stayed on the Inbox's top** (Gmail's too). The pinned rows leave out a tab their account keeps apart. `list-pins.test` failed for want of a DOM; it now runs under jsdom.
+9. **The B44 case could spend a search's hits on stored mail.** The provider remembers which id stands for which (bounded) and skips stored mail by either.
+10. **B36's recipient search used `to:`.** It's `recipients:` (To, Cc, Bcc), as Terno's own search reads a recipient.
+11. **An Outlook row with no category yet ignored Move to Other.** It counts as Focused, in the action and its undo snapshot.
+12. **Coverage:**
+    - a 50k gate for Other, dense and sparse (Inbox pages, counts, Other's pages, select all), within the budgets;
+    - conformance for SQLite's hidden-category count branch;
+    - a read begun before Move to Inbox landed and committed after.
+    - The upgrade's replay is the first round's own path, which `graph-sync.perf` already times.

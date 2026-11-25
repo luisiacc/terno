@@ -442,26 +442,37 @@ export function createGraphWrites(deps: GraphWriteDeps) {
       await api("/me/inferenceClassification/overrides", { method: "POST", body: JSON.stringify({ classifyAs: p.as, senderEmailAddress: { address } }), run: op.requestRun, limit: 65_536 });
       return;
     }
-    // the mailbox's list, page by page (at most 1,000 overrides a mailbox: manage-focused-inbox)
-    const found: string[] = [];
+    // the rule there before the action comes back; with none before, the action's goes, and only while it's still the
+    // action's (code review #2: an older rule of the person's was deleted)
+    if (p.prior === "focused" || p.prior === "other") {
+      await api("/me/inferenceClassification/overrides", { method: "POST", body: JSON.stringify({ classifyAs: p.prior, senderEmailAddress: { address } }), run: op.requestRun, limit: 65_536 });
+      return;
+    }
+    for (const rule of await overridesFor(address, op.requestRun)) {
+      if (rule.classifyAs !== p.as) continue;
+      try { await api(`/me/inferenceClassification/overrides/${enc(rule.id)}`, { method: "DELETE", empty: true, run: op.requestRun }); }
+      catch (error) { if (deps.refusal(error)?.status !== 404) throw error; }
+    }
+  }
+
+  /** The mailbox's overrides for one sender, its list read page by page (at most 1,000 a mailbox: manage-focused-inbox). */
+  async function overridesFor(address: string, run?: RequestRun, signal?: AbortSignal): Promise<{ id: string; classifyAs: string }[]> {
+    const found: { id: string; classifyAs: string }[] = [];
     let next: string | undefined = "/me/inferenceClassification/overrides";
     for (let pages = 0; next !== undefined; pages++) {
       if (pages >= 20) throw invalid();
-      const listed = await api(next, { run: op.requestRun, limit: 4 * 1024 * 1024 });
+      const listed = await api(next, { run, signal, limit: 4 * 1024 * 1024, ...(signal && { admission: "reader" as const }) });
       if (!isRecord(listed) || !Array.isArray(listed.value)) throw invalid();
       for (const item of listed.value) {
         if (!isRecord(item) || !nonempty(item.id) || item.id.length > ID_MAX) throw invalid();
         const sender = isRecord(item.senderEmailAddress) && typeof item.senderEmailAddress.address === "string" ? item.senderEmailAddress.address.toLowerCase() : "";
-        if (sender === address) found.push(item.id);
+        if (sender === address) found.push({ id: item.id, classifyAs: typeof item.classifyAs === "string" ? item.classifyAs : "" });
       }
       const link = listed["@odata.nextLink"];
       if (link !== undefined && !nonempty(link)) throw invalid();
       next = link as string | undefined;
     }
-    for (const id of found) {
-      try { await api(`/me/inferenceClassification/overrides/${enc(id)}`, { method: "DELETE", empty: true, run: op.requestRun }); }
-      catch (error) { if (deps.refusal(error)?.status !== 404) throw error; }
-    }
+    return found;
   }
 
   // ───────────────────────────── folders (plan 107) ─────────────────────────────
@@ -513,6 +524,11 @@ export function createGraphWrites(deps: GraphWriteDeps) {
   }
 
   return {
+    /** plan 275 (code review #2): the sender's rule now, before an action changes it (its undo puts it back) */
+    async senderOverride(address: string, signal: AbortSignal): Promise<"focused" | "other" | null> {
+      const rule = (await overridesFor(address.toLowerCase(), undefined, signal))[0];
+      return rule?.classifyAs === "focused" || rule?.classifyAs === "other" ? rule.classifyAs : null;
+    },
     async execute(op: ProviderOp) {
       if (op.kind === "send") return send(op);
       if (op.kind === CLASSIFY_SENDER || op.kind === UNCLASSIFY_SENDER) return classifySender(op);

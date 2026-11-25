@@ -316,6 +316,45 @@ export function defineTabsConformance(fresh: () => Promise<MailStore>, reopen: (
       void gmail;
     });
 
+    it("counts with a category hidden from the Inbox (SQLite's other count branch) leave Other out the same way", async () => {
+      const { store, outlook } = await setup();
+      const hidden = (await store.categories.create("Hidden", "slate")).id;
+      await store.categories.update(hidden, { showInInbox: false });
+      const counts = await store.threads.counts(NOW);
+      expect(counts.tabUnread?.[`${outlook}:other`]).toBe(1);
+      expect(counts.inboxUnreadByAccount[outlook]).toBe(2);
+      await store.accounts.update(outlook, { separateTabs: false });
+      expect((await store.threads.counts(NOW)).inboxUnreadByAccount[outlook]).toBe(3);
+    });
+
+    it("a read begun before Move to Inbox landed and committed after it never takes it back; one begun after is taken", async () => {
+      const { store, outlook, news } = await setup();
+      const before = await store.sync.beginObservation?.(outlook, { authoritativeFlags: true });
+      if (!before) return;
+      await store.threads.act({ threadIds: [news], action: "toPrimary", signal: null, now: NOW });
+      for (const op of await store.ops.claimReady(NOW + 1, 10)) await store.ops.complete(op.id, undefined, NOW + 2);
+      const id = await messageOf(store, news);
+      await store.sync.updateFlags(outlook, [{ messageId: id, expectedProviderMsgId: "news", flags: {}, category: OTHER }], before);
+      expect(await ids(store, { view: "inbox", accountId: outlook, tab: "other", limit: 10 })).toEqual([]);
+      const after = (await store.sync.beginObservation?.(outlook, { authoritativeFlags: true }))!;
+      await store.sync.updateFlags(outlook, [{ messageId: id, expectedProviderMsgId: "news", flags: {}, category: OTHER }], after);
+      expect(await ids(store, { view: "inbox", accountId: outlook, tab: "other", limit: 10 })).toEqual([news]);
+    });
+
+    it("code review #3, #6: a newer category move takes the older one's place while it waits, the newest rule for a sender the older's; a read again without a classification keeps the stored one", async () => {
+      const { store, outlook, person, news } = await setup();
+      await store.threads.act({ threadIds: [person], action: "toOther", signal: null, now: NOW });
+      await store.threads.act({ threadIds: [person], action: "toPrimary", signal: null, now: NOW + 1 });
+      expect((await store.ops.claimReady(NOW + 2, 10)).map((o) => o.kind)).toEqual(["toPrimary"]);
+      await store.ops.enqueueAccount({ accountId: outlook, kind: "classifySender", payload: { address: "news@shop.com", as: "other" }, now: NOW });
+      await store.ops.enqueueAccount({ accountId: outlook, kind: "unclassifySender", payload: { address: "news@shop.com", as: "other", prior: null }, now: NOW + 1 });
+      await store.ops.enqueueAccount({ accountId: outlook, kind: "classifySender", payload: { address: "ana@friends.com", as: "focused" }, now: NOW + 2 });
+      expect((await store.ops.claimReady(NOW + 3, 10)).map((o) => o.kind)).toEqual(["unclassifySender", "classifySender"]);
+      // the message read whole again (its attachments), Graph saying nothing of its classification: still Other
+      await ingest(store, [msg({ accountId: outlook, providerMsgId: "news", from: addr("news@shop.com"), defaultCategory: FOCUSED, date: NOW - 5 * DAY, folder: null })]);
+      expect(await ids(store, { view: "inbox", accountId: outlook, tab: "other", limit: 10 })).toEqual([news]);
+    });
+
     it("the sender override is an op of the account's, naming no messages; no other kind is queued that way", async () => {
       const { store, outlook } = await setup();
       const id = await store.ops.enqueueAccount({ accountId: outlook, kind: "classifySender", payload: { address: "news@shop.com", as: "other" }, now: NOW });

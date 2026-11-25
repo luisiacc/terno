@@ -369,7 +369,7 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
         b(msg.bulk ?? false),
         JSON.stringify(msg.replyTo ?? []),
         capture ? (msg.attachments!.every((p) => p.assetId) ? 1 : 2) : 0,
-        msg.category ?? categoryOf(msg.gmailLabels),
+        msg.category ?? categoryOf(msg.gmailLabels) ?? msg.defaultCategory ?? null,
         unsubscribeJson(msg.unsubscribe),
         incomingCode(msg),
       ).lastInsertRowid;

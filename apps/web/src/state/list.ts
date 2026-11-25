@@ -1,4 +1,4 @@
-import { inAllInbox, type ThreadSummary } from "@terno/core";
+import { inAllInbox, separatesTabs, type ThreadSummary } from "@terno/core";
 import { RpcError, type ThreadScope } from "@terno/core/rpc";
 import { keepInPage } from "@terno/store/list";
 import { followupsOffered } from "~/lib/ai";
@@ -215,7 +215,11 @@ async function withTop<P extends Paged>(page: Promise<P>, first: boolean): Promi
   // Reminders and Follow-ups still have them); read at the answer, so a switch flipped meanwhile counts
   const outOfInbox = accountId === undefined ? new Set(getApp().accounts.filter((a) => !inAllInbox(a)).map((a) => a.id)) : null;
   const shown = (rows: ThreadSummary[]) => (outOfInbox?.size ? rows.filter((t) => !outOfInbox.has(t.accountId)) : rows);
-  const [pinRows, dueRows, followRows] = [shown(pinRowsAll), shown(dueRowsAll), shown(followRowsAll)];
+  // a pinned conversation in a tab its account keeps apart (Gmail's Promotions and Social, Outlook's Other) isn't the Inbox's,
+  // as the page and the counts read it (plan 275's code review #8)
+  const accounts = getApp().accounts;
+  const tabbed = (t: ThreadSummary) => !!t.tab && accounts.some((a) => a.id === t.accountId && separatesTabs(a));
+  const [pinRows, dueRows, followRows] = [shown(pinRowsAll).filter((t) => !tabbed(t)), shown(dueRowsAll), shown(followRowsAll)];
   // a pinned one is in Pinned only, whatever else it has
   const pinnedIds = new Set(pinRows.map((t) => t.id));
   const reminding = [...dueRows, ...followRows.filter((t) => !dueRows.some((d) => d.id === t.id))].filter((t) => !pinnedIds.has(t.id));

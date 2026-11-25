@@ -868,7 +868,7 @@ export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: n
         has_attachments: b(msg.hasAttachments),
         gmail_labels: msg.gmailLabels ? JSON.stringify(msg.gmailLabels) : null,
         // plan 86
-        category: msg.category ?? categoryOf(msg.gmailLabels),
+        category: msg.category ?? categoryOf(msg.gmailLabels) ?? msg.defaultCategory ?? null,
         size: msg.size,
         created_at: now,
         is_bulk: b(msg.bulk ?? false),
@@ -1077,8 +1077,10 @@ function plan(action: ThreadAction, msgs: R[], explicit: boolean, kindOf: (accou
     // plan 86: messages someone else wrote (yours never decide a tab), of an account whose kind has this category
     // (plan 275, Codex critique #5: Gmail's labels, Outlook's focused and other; never another kind's)
     const target = CATEGORY_ACTIONS[action];
-    const chosen = msgs.filter((m) => categoryOfRow(m) !== null && !m.is_sent && !m.is_draft && !!categoriesOf(kindOf(m.account_id))?.has(target));
-    return { ids: ids(chosen.filter((m) => categoryOfRow(m) !== target)), set: { category: target }, scope: ids(chosen) };
+    // an Outlook row whose classification isn't known yet (stored before plan 275) is Focused (code review #11)
+    const category = (m: R) => categoryOfRow(m) ?? (kindOf(m.account_id) === "outlook" ? 1 : null);
+    const chosen = msgs.filter((m) => category(m) !== null && !m.is_sent && !m.is_draft && !!categoriesOf(kindOf(m.account_id))?.has(target));
+    return { ids: ids(chosen.filter((m) => category(m) !== target)), set: { category: target }, scope: ids(chosen) };
   }
   switch (action) {
     case "archive":
@@ -1146,6 +1148,8 @@ function applyToMessages(c: Ctx, msgs: R[], action: ThreadAction, explicit: bool
     const m = messages.get(id)!;
     // plan 86: only a category move's undo puts a category back (an archive's never touches one Gmail changed since)
     const state = stateOf(m, isCategoryAction(action));
+    // an Outlook row with no category yet was Focused (code review #11): its undo puts that back
+    if (isCategoryAction(action) && state.category === null && T(c, "accounts").get(m.account_id)?.kind === "outlook") state.category = 1;
     const only = flagScope(action);
     before.push(folders?.has(id) ? { ...state, folder: folders.get(id)! } : only ? { ...state, only } : state);
     // plan 259 (Codex code review #1): Graph keeps a message in one place, so one trashed is out of Junk and one marked
@@ -1763,9 +1767,10 @@ export function findRuleMatches(c: Ctx, rule: FilterRule, now: number, messageId
 
 // ───────────────────────────── ops ─────────────────────────────
 
-const SUPERSEDABLE = new Set(["read", "star"]);
+// plan 275 (code review #3): a category move too, so a retry in backoff never takes back the undo that came after it
+const SUPERSEDABLE = new Set(["read", "star", "category"]);
 // plan 259: returnTo, an Outlook undo back to Archive, Sent or Drafts, is ordered after the action it takes back
-const GROUP: Record<string, string> = { markRead: "read", markUnread: "read", star: "star", unstar: "star", archive: "location", trash: "location", spam: "location", notSpam: "location", moveToInbox: "location", moveToFolder: "location", leaveFolder: "location", returnTo: "location" };
+const GROUP: Record<string, string> = { markRead: "read", markUnread: "read", star: "star", unstar: "star", archive: "location", trash: "location", spam: "location", notSpam: "location", moveToInbox: "location", moveToFolder: "location", leaveFolder: "location", returnTo: "location", toNoCategory: "category", toPrimary: "category", toPromotions: "category", toSocial: "category", toUpdates: "category", toForums: "category", toOther: "category" };
 export const MAX_OP_ATTEMPTS = 8;
 
 const targetOf = (op: R) => JSON.parse(op.target_json) as { messageIds?: number[] } & Record<string, unknown>;

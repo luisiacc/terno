@@ -122,6 +122,15 @@ test("plan 259: add an Outlook account, use its mail over Graph, sign in again a
     await expect.poll(() => [...ms.overrides.values()].map((o) => [o.address, o.classifyAs])).toEqual([["news@shop.test", "focused"]]);
     await page.getByTestId(`nav-folder-${id}-inbox`).click();
     await expect(threadRow("Weekly deals")).toBeVisible();
+    // and the other way, from the Inbox (code review #7: a row of the Inbox says no tab, which is the Inbox's)
+    await threadRow("Weekly deals").click({ button: "right" });
+    await menuPath(page, "menu-move");
+    await page.getByTestId("menu-always-other").click();
+    await expect(threadRow("Weekly deals")).toHaveCount(0);
+    await expect.poll(() => [...ms.overrides.values()].map((o) => [o.address, o.classifyAs])).toEqual([["news@shop.test", "other"]]);
+    await page.keyboard.press("z");
+    await expect(threadRow("Weekly deals")).toBeVisible();
+    await expect.poll(() => [...ms.overrides.values()].map((o) => [o.address, o.classifyAs])).toEqual([["news@shop.test", "focused"]]);
   });
 
   await scenario("stage 2b: a message dropped on the folder moves there on Graph, and z takes it back to the Inbox", async () => {

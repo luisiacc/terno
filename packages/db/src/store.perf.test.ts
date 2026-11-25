@@ -248,6 +248,34 @@ describe("Gmail's tabs out of the Inbox (plan 86)", () => {
   });
 });
 
+describe("Outlook's Other out of the Inbox (plan 275)", () => {
+  it("60% of an Outlook account's Inbox in Other, and a sparse Other: Inbox pages, counts and Other's pages within the navigation budgets", async () => {
+    const [dense, sparse] = store.db.all<{ id: number; kind: string }>("SELECT id, kind FROM accounts WHERE kind != 'gmail' ORDER BY id LIMIT 2");
+    const kinds = [dense!, sparse ?? dense!];
+    const inbox = (accountId: number) => store.db.all<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1 AND account_id = ? ORDER BY id", accountId).map((r) => r.id);
+    store.db.tx(() => {
+      for (const a of kinds) store.db.run("UPDATE accounts SET kind = 'outlook' WHERE id = ?", a.id);
+      for (const id of inbox(dense!.id).filter((_, i) => i % 5 < 3)) store.db.run("UPDATE threads SET tab = 3 WHERE id = ?", id);
+      if (sparse) for (const id of inbox(sparse.id).filter((_, i) => i % 100 === 3)) store.db.run("UPDATE threads SET tab = 3 WHERE id = ?", id);
+    });
+    try {
+      const page = await store.threads.list({ view: "inbox", limit: 100 });
+      expect(page.items.every((t) => !t.tab)).toBe(true);
+      await gate("Other 60%: list inbox, first page (100)", 5, () => store.threads.list({ view: "inbox", limit: 100 }));
+      await gate("Other 60%: the account's inbox, first page", 5, () => store.threads.list({ view: "inbox", accountId: dense!.id, limit: 100 }));
+      await gate("Other 60%: sidebar counts", 5, () => store.threads.counts(NOW));
+      await gate("Other 60%: Other, first page (100)", 5, () => store.threads.list({ view: "inbox", accountId: dense!.id, tab: "other", limit: 100 }));
+      if (sparse) await gate("Other sparse: Other, first page", 5, () => store.threads.list({ view: "inbox", accountId: sparse.id, tab: "other", limit: 100 }));
+      await gate("Other 60%: select all in Other (count)", 10, () => store.threads.scopeCount({ view: "inbox", accountId: dense!.id, tab: "other", limit: 100_000 }));
+    } finally {
+      store.db.tx(() => {
+        store.db.run("UPDATE threads SET tab = 0 WHERE tab = 3");
+        for (const a of kinds) store.db.run("UPDATE accounts SET kind = ? WHERE id = ?", a.kind, a.id);
+      });
+    }
+  });
+});
+
 describe("a category hidden from the Inbox (plan 83)", () => {
   it("hiding the seed's largest category: Inbox pages, the unread filter and counts within the navigation budgets", async () => {
     const largest = store.db.get<{ category_id: number }>("SELECT category_id FROM thread_categories GROUP BY 1 ORDER BY count(*) DESC LIMIT 1")!.category_id;

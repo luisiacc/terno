@@ -355,7 +355,9 @@ export function graphSearch(query: ProviderQuery): string {
     const any = group.flatMap((term) => { const w = words(term); return w.length ? [w.join(" ")] : []; });
     if (any.length) parts.push(any.length === 1 ? any[0]! : `(${any.map((a) => a.includes(" ") ? `(${a})` : a).join(" OR ")})`);
   }
-  for (const [property, value] of [["from", query.from], ["to", query.to], ["subject", query.subject]] as const) if (value) parts.push(...words(value).map((w) => `${property}:${w}`));
+  // a recipient is To, Cc or Bcc (`recipients:`, learn.microsoft.com/graph/search-query-parameter), as Terno's own search
+  // reads one (code review #10: `to:` missed copied mail)
+  for (const [property, value] of [["from", query.from], ["recipients", query.to], ["subject", query.subject]] as const) if (value) parts.push(...words(value).map((w) => `${property}:${w}`));
   if (query.hasAttachment) parts.push("hasAttachments:true");
   return parts.join(" ");
 }
@@ -741,6 +743,16 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
   /** messages read once and found outside the window (or where Terno doesn't sync), for this window: not read again */
   const outside = new Set<string>();
   let outsideFloor = Number.NaN;
+  /**
+   * The B44 case's ids search named its hits by, each with the immutable id a read answered with (plan 275's code review
+   * #9: a stored message named the other way took a hit's place); bounded, oldest out first
+   */
+  const aliases = new Map<string, string>();
+  const learnAlias = (from: string, to: string) => {
+    aliases.delete(from);
+    aliases.set(from, to);
+    if (aliases.size > 5000) aliases.delete(aliases.keys().next().value!);
+  };
   /** the pass's own placer, made once */
   const placeIn = (sink: Pass) => (sink.place ??= placer(sink));
 
@@ -803,8 +815,9 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       size: resource.bytes,
       attachments: parsed.captureUnavailable ? undefined : parsed.attachments,
       folder: folder.role ? null : folder.id,
-      // plan 275: Graph's classification, wherever the message is (only the Inbox's decides a tab); none said is Focused
-      category: categoryOfInference(envelope.inference ?? "focused"),
+      // plan 275: Graph's classification, wherever the message is (only the Inbox's decides a tab); none said: a new row is
+      // Focused, a stored one keeps its own (code review #6)
+      ...(envelope.inference ? { category: categoryOfInference(envelope.inference) } : { defaultCategory: CAT_PERSONAL }),
     };
   }
 
@@ -1134,7 +1147,8 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
    * `unsaved`: the full pass's folder sweep saves an empty round's new link once, after the sweep, not once a folder (the
    * cursor holds every folder's state); a pass cut short reads the older link again, which repeats nothing harmful
    */
-  interface Budget { started: number; more: boolean; out: boolean; unsaved?: boolean }
+  /** `drain` (plan 275): every folder's link is read this pass, whatever its interval (an older projection's, to its end) */
+  interface Budget { started: number; more: boolean; out: boolean; unsaved?: boolean; drain?: boolean }
   const outOfTime = (budget: Budget) => Date.now() - budget.started > FIRST_SYNC_CHUNK_MS;
 
   /**
@@ -1233,7 +1247,7 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
    */
   async function syncFolder(folder: SyncedFolder, cursor: Cursor, sink: Pass, budget: Budget): Promise<void> {
     let state = cursor.folders[folder.id];
-    if (state?.delta && !state.initial && !state.list && !folder.role && Date.now() - (lastDelta.get(folder.id) ?? -Infinity) < (options.userFoldersEveryMs ?? USER_FOLDERS_EVERY_MS)) return;
+    if (!budget.drain && state?.delta && !state.initial && !state.list && !folder.role && Date.now() - (lastDelta.get(folder.id) ?? -Infinity) < (options.userFoldersEveryMs ?? USER_FOLDERS_EVERY_MS)) return;
     if (!state) {
       state = cursor.folders[folder.id] = fresh(sink.windowStart);
       await save(sink, cursor);
@@ -1350,6 +1364,7 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
           // a search hit named by another id than the one this read (asking for immutable ids) answers with: the
           // answer's is the message's (the reliability checklist's B44); anything else naming another message is broken
           if (!hits || target.local !== undefined) throw invalid();
+          learnAlias(target.providerMsgId, envelope.id);
           if (await store.messageByProviderId(envelope.id)) return;
         }
         const folder = await place(envelope.parent);
@@ -1571,16 +1586,13 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       await reconcileFlags(sink);
       const cursor = readCursor(await ctx.loadCursor<unknown>());
       sink.check();
-      // plan 275 (Codex critique #2, #4): links made with an older SELECT keep it, so each folder's round starts again
-      // from its window, mail since its last finished round still new (as an expired link's): the listing gives what's
-      // stored its classification as a flag update, and downloads nothing again
-      if ((cursor.projection ?? 0) < PROJECTION) {
-        for (const [id, state] of Object.entries(cursor.folders)) {
-          cursor.folders[id] = { ...fresh(state.after), startedAt: Math.min(Date.now(), (state.at ?? state.startedAt) - LIVE_MARGIN_MS) };
-        }
-        cursor.projection = PROJECTION;
-        await save(sink, cursor);
-      }
+      // plan 275 (Codex critique #2, #4): links made with an older SELECT keep it. A cursor with no folder yet takes the
+      // new one at once (its first rounds are made with it); one with folders reads each old link to its end first, every
+      // folder this pass (code review #1: replaced unread, a message deleted or moved out in the gap stayed)
+      const upgrading = (cursor.projection ?? 0) < PROJECTION;
+      if (upgrading && !Object.keys(cursor.folders).length) cursor.projection = PROJECTION;
+      if (upgrading && cursor.projection !== PROJECTION) budget.drain = true;
+      const sweep = Date.now();
       // a folder no longer synced keeps no place, and what Terno stored of it is read again by id (Codex code review #4)
       const dropped = Object.keys(cursor.folders).filter((id) => !current.synced.has(id));
       if (dropped.length) {
@@ -1601,6 +1613,17 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
         }
       }
       if (budget.unsaved) { budget.unsaved = false; await save(sink, cursor); }
+      // every old link read to its end this pass: each folder's round starts again from its window, mail since its last
+      // finished round still new (as an expired link's); the listing gives what's stored its classification as a flag
+      // update, and downloads nothing again
+      if (budget.drain && !budget.out && Object.keys(cursor.folders).every((id) => refused.has(id) || (lastDelta.get(id) ?? -Infinity) >= sweep)) {
+        for (const [id, state] of Object.entries(cursor.folders)) {
+          cursor.folders[id] = { ...fresh(state.after), startedAt: Math.min(Date.now(), (state.at ?? state.startedAt) - LIVE_MARGIN_MS) };
+        }
+        cursor.projection = PROJECTION;
+        await save(sink, cursor);
+        budget.more = true;
+      }
       sink.check();
       await refreshLeft(cursor, sink, budget);
       await refreshStored(cursor, sink, budget);
@@ -1657,7 +1680,8 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
             seen++;
             if (envelope.removed || envelope.received === undefined || envelope.received >= before || (query.before !== undefined && envelope.received >= query.before) || (query.after !== undefined && envelope.received < query.after)) continue;
             if ((from && envelope.from !== from) || (to && !envelope.recipients?.includes(to))) continue;
-            if (hits.has(envelope.id) || await lookupStored(envelope.id)) continue;
+            const known = aliases.get(envelope.id);
+            if (hits.has(envelope.id) || await lookupStored(envelope.id) || (known && await lookupStored(known))) continue;
             hits.set(envelope.id, envelope.received);
             if (hits.size >= limit) break;
           }
@@ -1728,6 +1752,12 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
     async execute(op: ProviderOp) {
       ctx.requests?.check(MAIL, op.kind === "send" ? "send" : "background");
       await writes.execute(op);
+    },
+
+    // plan 275: Focused Inbox's rule for a sender, read on the person's click before an action changes it
+    async senderOverride(address, signal) {
+      ctx.requests?.check(MAIL, "reader");
+      return writes.senderOverride(address, signal);
     },
 
     // plan 107, stage 2b: the host holds the account's sync and ops meanwhile

@@ -800,7 +800,7 @@ function MenuItems() {
   const overrideTo = !overrideAccount || !hasTab(overrideAccount.kind, "other") || !separatesTabs(overrideAccount) || searching
     ? null
     : gmailTab === "other" || rows.every((r) => r.tab === TAB_CODE.other) ? ("focused" as const)
-    : view === "inbox" && gmailTab === null && rows.every((r) => r.tab === 0 && r.inInbox !== false && !r.onlyYours) ? ("other" as const) : null;
+    : view === "inbox" && gmailTab === null && rows.every((r) => (r.tab ?? 0) === 0 && r.inInbox !== false && !r.onlyYours) ? ("other" as const) : null;
   const filedIn = sender ? categories.filter((c) => rows.some((r) => r.categoryIds.includes(c.id))) : [];
   const reply = (mode: "reply" | "replyAll" | "forward") => {
     if (!single) return;

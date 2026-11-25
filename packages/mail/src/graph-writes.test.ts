@@ -204,10 +204,28 @@ describe("Graph writes: flags", () => {
     await op("classifySender", { address: "news@shop.example", as: "focused" });
     await op("classifySender", { address: "ana@friends.example", as: "other" });
     expect([...t.ms.overrides.values()].map((o) => [o.address.toLowerCase(), o.classifyAs])).toEqual([["news@shop.example", "focused"], ["ana@friends.example", "other"]]);
-    await op("unclassifySender", { address: "news@shop.example" });
+    await op("unclassifySender", { address: "news@shop.example", as: "focused", prior: null });
     expect([...t.ms.overrides.values()].map((o) => o.address)).toEqual(["ana@friends.example"]);
-    await op("unclassifySender", { address: "news@shop.example" });
+    await op("unclassifySender", { address: "news@shop.example", as: "focused", prior: null });
     await expect(op("classifySender", { address: "nobody", as: "other" })).rejects.toMatchObject({ retryable: false });
+  });
+
+  it("plan 275's code review #2: a sender's undo puts back the rule there before; with none before, it deletes only a rule still the action's", async () => {
+    const t = await setup();
+    const op = (kind: string, payload: unknown) => t.provider.execute({ id: kind, kind, target: { messageIds: [] }, payload });
+    const rules = () => [...t.ms.overrides.values()].map((o) => [o.address, o.classifyAs]);
+    // the person's own rule, Other; the action makes it Focused; its undo puts Other back
+    await op("classifySender", { address: "news@shop.example", as: "other" });
+    expect(await t.provider.senderOverride!("News@Shop.example", new AbortController().signal)).toBe("other");
+    await op("classifySender", { address: "news@shop.example", as: "focused" });
+    await op("unclassifySender", { address: "news@shop.example", as: "focused", prior: "other" });
+    expect(rules()).toEqual([["news@shop.example", "other"]]);
+    // none before: the action's goes, unless the person changed it since
+    await op("classifySender", { address: "ana@friends.example", as: "other" });
+    await op("classifySender", { address: "ana@friends.example", as: "focused" });
+    await op("unclassifySender", { address: "ana@friends.example", as: "other", prior: null });
+    expect(rules()).toEqual([["news@shop.example", "other"], ["ana@friends.example", "focused"]]);
+    expect(await t.provider.senderOverride!("nobody@else.example", new AbortController().signal)).toBeNull();
   });
 
   it("skips a message that never reached the server (a local row) and an op with none", async () => {

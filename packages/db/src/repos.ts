@@ -360,7 +360,8 @@ export function claimFilterApplications(db: Db, filterId: number, messageIds: re
  * archive doesn't clear SPAM), so they are never superseded: instead they run
  * strictly in order per message (see claimReadyOps).
  */
-const SUPERSEDABLE = new Set(["read", "star"]);
+// plan 275 (code review #3): a category move too, so a retry in backoff never takes back the undo that came after it
+const SUPERSEDABLE = new Set(["read", "star", "category"]);
 const GROUP: Record<string, string> = {
   markRead: "read",
   markUnread: "read",
@@ -376,6 +377,14 @@ const GROUP: Record<string, string> = {
   leaveFolder: "location",
   // plan 259: an Outlook undo back to Archive, Sent or Drafts, after the action it takes back
   returnTo: "location",
+  // plan 86, 275: a message's category (Gmail's tabs, Outlook's Focused Inbox), whichever way it goes
+  toNoCategory: "category",
+  toPrimary: "category",
+  toPromotions: "category",
+  toSocial: "category",
+  toUpdates: "category",
+  toForums: "category",
+  toOther: "category",
 };
 export const MAX_OP_ATTEMPTS = 8;
 

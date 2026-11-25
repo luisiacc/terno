@@ -2644,6 +2644,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "errors.tab.alone": "Promociones y Social no se pueden combinar con una carpeta o una categoría",
   "errors.tab.inboxView": "Promociones y Social son parte de Entrada, así que su vista es Entrada",
   "errors.tab.notThisAccount": "Esta cuenta no tiene esa pestaña",
+  "errors.senderOverride.mixed": "Estas conversaciones tienen correo de más de un remitente",
   "errors.theme.noColors": "El tema no cambia ningún color",
   "errors.theme.baseMode": "El tema base debe ser del mismo modo",
   "errors.theme.max": "Máximo {max} temas",

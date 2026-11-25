@@ -305,6 +305,30 @@ describe("an Outlook account signs in again (plan 259)", () => {
     expect([...ms.overrides.values()]).toEqual([]);
     // an account without Focused Inbox never gets one
     await expect(client.call("threads.classifySender", { threadIds: [999_999], address: "news@shop.example", as: "other" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    // code review #2: the person's own rule from before comes back with the Undo, never deleted
+    ms.overrides.set("own", { id: "own", address: "news@shop.example", classifyAs: "other" });
+    const again = await client.call("threads.classifySender", { threadIds: [thread], address: "news@shop.example", as: "focused" });
+    await backend.runWorker();
+    expect([...ms.overrides.values()].map((o) => o.classifyAs)).toEqual(["focused"]);
+    await client.call("threads.undo", { undoId: again.undoId });
+    await backend.runWorker();
+    expect([...ms.overrides.values()].map((o) => [o.address, o.classifyAs])).toEqual([["news@shop.example", "other"]]);
+  });
+
+  it("plan 275's code review #4, #5: a conversation with mail from more than one sender gets no rule; a rule that can't be queued hands back the move's Undo", async () => {
+    const { ms, backend, client } = await setup();
+    const a = ms.deliver("inbox-id", { subject: "Deals", from: "news@shop.example", inference: "other" });
+    const account = await client.call("accounts.connectMicrosoft", {});
+    await backend.syncAccount(account.id);
+    const thread = sqlDb(backend.store).get<{ thread_id: number; id: number }>("SELECT thread_id, id FROM messages WHERE provider_msg_id = ?", a)!;
+    await expect(client.call("threads.classifySender", { threadIds: [thread.thread_id], address: "bo@else.example", as: "focused" })).rejects.toMatchObject({ code: "BAD_REQUEST", i18n: { key: "errors.senderOverride.mixed" } });
+    const enqueue = backend.store.ops.enqueueAccount;
+    backend.store.ops.enqueueAccount = async () => { throw new Error("disk full"); };
+    const failed = await client.call("threads.classifySender", { threadIds: [thread.thread_id], address: "news@shop.example", as: "focused" }).catch((e: unknown) => e);
+    backend.store.ops.enqueueAccount = enqueue;
+    expect(failed).toMatchObject({ code: "INTERNAL", details: { undoId: expect.any(Number) } });
+    await client.call("threads.undo", { undoId: (failed as { details: { undoId: number } }).details.undoId });
+    expect(sqlDb(backend.store).get<{ category: number }>("SELECT category FROM messages WHERE id = ?", thread.id)!.category).toBe(6);
   });
 
   it("stage 2b: through the backend's ops: a folder made, a thread filed into it and back (undo), archived, read; the move's answer written at once", async () => {

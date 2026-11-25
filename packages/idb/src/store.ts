@@ -1518,6 +1518,14 @@ export class IdbMailStore implements MailStore {
     recent: (limit) => this.early(() => listRecentOps(this.c, limit).map((op) => this.copyOp(op)!)),
     enqueueAccount: ({ accountId, kind, payload, now }) => this.command(() => {
       if (!ACCOUNT_OPS.has(kind)) throw new Error(`Not an account op: ${kind}`);
+      // the newest for a sender wins: an older one still queued (in backoff) is dropped, never run after it (code review #3)
+      const address = (payload as { address?: unknown } | null)?.address;
+      const ops = T(this.c, "ops");
+      if (typeof address === "string") {
+        for (const old of ops.by("fk_account_id", accountId)) {
+          if (old.state === "queued" && ACCOUNT_OPS.has(old.kind as string) && (JSON.parse(old.payload_json as string) as { address?: unknown }).address === address) ops.delete(old.id);
+        }
+      }
       return enqueueOp(this.c, { accountId, kind, target: { messageIds: [] }, payload }, now)!;
     }),
     resolveUnknown: (id, resolution, now) =>

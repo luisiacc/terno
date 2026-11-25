@@ -2671,6 +2671,7 @@ It contains none of your mail, contacts, settings or keys.
   "errors.tab.alone": "Promotions and Social can’t be combined with a folder or a category",
   "errors.tab.inboxView": "Promotions and Social are part of the Inbox, so their view is the Inbox",
   "errors.tab.notThisAccount": "This account doesn't have that tab",
+  "errors.senderOverride.mixed": "These conversations have mail from more than one sender",
   "errors.theme.noColors": "The theme doesn’t change any color",
   "errors.theme.baseMode": "The base theme must be the same mode",
   "errors.theme.max": "Up to {max} themes",

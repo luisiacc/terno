@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import type { ThreadSummary } from "@terno/core";
 import { beforeEach, expect, it, vi } from "vitest";
 
@@ -15,6 +16,7 @@ vi.mock("~/rpc/connection", () => ({
   },
 }));
 
+vi.stubGlobal("matchMedia", (media: string) => ({ media, matches: false, addEventListener() {}, removeEventListener() {} }));
 const { setApp, getApp } = await import("~/state/app");
 const { useList, inboxTop, reloadList } = await import("~/state/list");
 const { usePins } = await import("~/state/pins");
@@ -160,4 +162,18 @@ it("plan 238: the all-accounts Inbox's top leaves out an account out of it; its 
   expect({ ids: inboxTop.ids, pinned: inboxTop.pinned }).toEqual({ ids: [7, 5, 9], pinned: 2 });
   setApp({ accountId: null, accounts: [] });
   await vi.waitFor(() => expect(useList.getState().itemsKey).toContain(",null,"));
+});
+
+it("plan 275's code review #8: a pinned conversation its account keeps in a tab (Outlook's Other, Gmail's Promotions) isn't on the Inbox's top", async () => {
+  const tabbed = { ...row(7), accountId: 4, tab: 3 } as ThreadSummary;
+  mailbox({ "pins.threads": () => Promise.resolve({ items: [tabbed, row(5)] }) });
+  setApp({ accounts: [{ id: 4, kind: "outlook", email: "o@x.test", displayName: "O" }] as never, view: "inbox", accountId: null, query: "", selectedId: null });
+  await reloadList({ keepSelection: true });
+  expect(inboxTop.pinned).toBe(1);
+  expect(inboxTop.ids[0]).toBe(5);
+  // the account's Other shown in the Inbox: it's on top again
+  setApp({ accounts: [{ id: 4, kind: "outlook", email: "o@x.test", displayName: "O", separateTabs: false }] as never });
+  await reloadList({ keepSelection: true });
+  expect(inboxTop.pinned).toBe(2);
+  setApp({ accounts: [] });
 });

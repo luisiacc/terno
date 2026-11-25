@@ -1,4 +1,4 @@
-import { categoriesOf, categoryAction, categoryOfJson, CATEGORY_ACTIONS, isCategoryAction, type MessageCategory, type ThreadAction } from "@terno/core";
+import { CAT_PERSONAL, categoriesOf, categoryAction, categoryOfJson, CATEGORY_ACTIONS, isCategoryAction, type MessageCategory, type ThreadAction } from "@terno/core";
 import { actionTargets, flagScope, isLocationAction, undoTarget, oneFolderFlags, reaffirmFlagIntent, restoreLocationOps, restoreDestination, restoreOneFolderOps, sameLocation, samePlace, MOVE_TO_FOLDER, RETURN_TO, type MessageState, type MoveToFolderPayload, type ReturnToPayload } from "@terno/store";
 import { sqlFlags } from "./flag-intents";
 import { oneFolderFolders } from "./folders";
@@ -60,8 +60,11 @@ function plan(action: ThreadAction, msgs: Msg[], explicit = false, kindOf: (acco
     // plan 86: messages someone else wrote (yours never decide a tab), of an account whose kind has this category
     // (plan 275, Codex critique #5: Gmail's labels, Outlook's focused and other; never another kind's)
     const target = CATEGORY_ACTIONS[action];
-    const chosen = msgs.filter((m) => m.category !== null && !m.is_sent && !m.is_draft && !!categoriesOf(kindOf(m.account_id))?.has(target));
-    return { ids: ids(chosen.filter((m) => m.category !== target)), set: `category = ${target}`, scope: ids(chosen) };
+    // an Outlook row whose classification isn't known yet (stored before plan 275) is Focused, as Outlook shows it
+    // (code review #11: Move to Other passed it by)
+    const category = (m: Msg) => m.category ?? (kindOf(m.account_id) === "outlook" ? CAT_PERSONAL : null);
+    const chosen = msgs.filter((m) => category(m) !== null && !m.is_sent && !m.is_draft && !!categoriesOf(kindOf(m.account_id))?.has(target));
+    return { ids: ids(chosen.filter((m) => category(m) !== target)), set: `category = ${target}`, scope: ids(chosen) };
   }
   switch (action) {
     case "archive":
@@ -159,7 +162,8 @@ export function applyMessageAction(db: Db, messageIds: readonly number[], action
 }
 
 function applyToMessages(db: Db, msgs: Msg[], action: ThreadAction, explicit: boolean): ActionResult {
-  const { ids, set, scope } = plan(action, msgs, explicit, isCategoryAction(action) ? accountKinds(db) : undefined);
+  const kinds = isCategoryAction(action) ? accountKinds(db) : undefined;
+  const { ids, set, scope } = plan(action, msgs, explicit, kinds);
   const changed = new Set(ids);
   reaffirmFlagIntent(sqlFlags(db), (scope ?? msgs.map((m) => m.id)).filter((id) => !changed.has(id)), action);
   const byId = new Map(msgs.map((m) => [m.id, m]));
@@ -184,7 +188,10 @@ function applyToMessages(db: Db, msgs: Msg[], action: ThreadAction, explicit: bo
     targets: actionTargets(msgs, action, changed, scope, whole),
     // plan 86: only a category move's undo puts a category back (an archive's never touches one Gmail changed since)
     before: ids.map((id) => {
-      const state = stateOf(byId.get(id)!, isCategoryAction(action));
+      const m = byId.get(id)!;
+      const state = stateOf(m, isCategoryAction(action));
+      // an Outlook row with no category yet was Focused (code review #11): its undo puts that back
+      if (state.category === null && kinds?.(m.account_id) === "outlook") state.category = CAT_PERSONAL;
       const only = flagScope(action);
       return folders?.has(id) ? { ...state, folder: folders.get(id)! } : only ? { ...state, only } : state;
     }),
