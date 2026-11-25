@@ -434,3 +434,7 @@ The storage-and-membership half, as revised after the critique. Move semantics a
       - #1, a rebuild for Outlook keys: no Outlook path asks for one (see the deviation above).
       - #2: SQLite's id cursor misses an older message that moves in behind it mid-count. This is the same race as #1, and as rare.
       - #4: a lost IndexedDB walk replays by position. This predates the series and needs a walk evicted mid-count.
+- **`pnpm test:all`.**
+  - It found one more defect. Fixtures that run today's ingest against an older mailbox (the opening and legacy-body tests) failed with "no such table". SQLite membership now reads `message_folders` only while it has rows, and a schema before v82 counts as having none, as `folderOpsPending` does for a missing index.
+  - Everything else that failed also fails on the base: unit, `db-wasm` (`tabs.test`), 17 e2e, 10 smoke, and the five perf files already failing there.
+  - The `idb.perf` gates missed by a few milliseconds on the loaded first pass, and all 25 pass run alone.
