@@ -165,6 +165,12 @@ export class SyntheticMicrosoft {
     return this;
   }
 
+  /** every refresh and access token refused from now on (the person withdrew the grant, or an administrator did) */
+  revoke(): void {
+    this.refreshTokens.clear();
+    this.access.clear();
+  }
+
   /** a live access token, as a refresh would give one */
   accessToken(): string {
     const access = `access-${++this.seq}`;

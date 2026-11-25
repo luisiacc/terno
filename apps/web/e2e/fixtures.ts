@@ -163,9 +163,9 @@ async function networkRegistry(net: TestNetwork): Promise<import("@terno/mail").
 }
 
 /**
- * Plan 259: a synthetic Microsoft (sign-in, token, Graph's /me) beside the test's providers. The browser page it opens
- * answers as `behaviour` says; an Outlook account syncs the demo's mail while its saved refresh token is one Microsoft
- * still honours (clear `ms.refreshTokens` to revoke them all), and is refused as Microsoft refuses it otherwise.
+ * Plan 259: a synthetic Microsoft (sign-in, token and Graph) beside the test's providers. The browser page it opens
+ * answers as `behaviour` says; an Outlook account gets the real Graph provider against it (stage 2b): its mail, folders,
+ * moves and sends are the synthetic mailbox's, and `ms.revoke()` makes Microsoft refuse its sign-in.
  */
 export interface TestMicrosoft {
   ms: SyntheticMicrosoft;
@@ -173,33 +173,12 @@ export interface TestMicrosoft {
 }
 
 async function microsoftRegistry(base: import("@terno/mail").ProviderRegistry, microsoft: TestMicrosoft): Promise<import("@terno/mail").ProviderRegistry> {
-  const { createDemoProvider, createRegistry, ProviderAuthError } = await import("@terno/mail");
-  const { L } = await import("@terno/i18n");
-  const real = createRegistry({ microsoft: { endpoints: microsoft.ms.endpoints() } });
-  const honoured = async (ctx: import("@terno/mail").ProviderContext) => microsoft.ms.refreshTokens.has((await ctx.getSecret("refreshToken")) ?? "");
+  const { createRegistry } = await import("@terno/mail");
+  const real = createRegistry({ microsoft: { endpoints: microsoft.ms.endpoints(), requestsPerSecond: Infinity } });
   return {
     ...base,
     connectMicrosoft: real.connectMicrosoft,
-    create(ctx) {
-      if (ctx.account.kind !== "outlook") return base.create(ctx);
-      const demo = createDemoProvider(ctx, 5);
-      const refused = () => new ProviderAuthError(L("errors.microsoft.revoked"));
-      return {
-        ...demo,
-        async sync(sink) {
-          if (!(await honoured(ctx))) throw refused();
-          return demo.sync(sink);
-        },
-        async execute(op) {
-          if (!(await honoured(ctx))) throw refused();
-          return demo.execute(op);
-        },
-        async verify() {
-          if (!(await honoured(ctx))) throw refused();
-          return demo.verify();
-        },
-      };
-    },
+    create: (ctx) => ctx.account.kind === "outlook" ? real.create(ctx) : base.create(ctx),
   };
 }
 
