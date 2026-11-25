@@ -77,35 +77,36 @@ export function restoreLocationOps(from: LocationState, to: LocationState): Thre
   return out;
 }
 
-/** Out of the Inbox, Trash and Junk: where a one-folder (Outlook) message's folder says where it is. */
+/** Out of the Inbox, Trash and Junk: Archive's flags, and a folder of the person's own's. */
 const outOfRoles = (s: LocationState) => !s.inInbox && !s.isTrash && !s.isSpam;
+const OUT_OF_ROLES: LocationState = { inInbox: false, isTrash: false, isSpam: false };
 
 /**
- * Plan 259 (exact undo): a one-folder message's place for an undo's snapshot: its user folder (with what's on its way
- * replayed) while its flags are out of the Inbox, Trash and Junk; else null, a role folder its flags name.
+ * Plan 259 (exact undo): a one-folder (Outlook) message's place: its flags, and its user folder with every location op
+ * on its way replayed (null: a role folder). The folder wins: a message in a folder of its own is in no role folder, and
+ * the replayed folder is what Graph will have once the queue lands, where a flag may be a read from before a filing on
+ * its way (stage 2b's deviation: a filing owns no flags).
  */
-export const oneFolderPlace = (s: LocationState, folder: string | null): string | null => outOfRoles(s) ? folder : null;
-
-/** A one-folder message's place: its flags, and its user folder (`oneFolderPlace`). */
 export type OneFolderPlace = LocationState & { folder: string | null };
+
+const placeKey = (s: OneFolderPlace) => s.folder !== null ? `folder:${s.folder}` : placeOf(s);
 
 /** One provider op of a one-folder message's undo. */
 export type OneFolderRestore = { kind: ThreadAction } | { kind: typeof MOVE_TO_FOLDER; folder: string } | { kind: typeof RETURN_TO; role: ReturnToRole };
 
-/** Is a one-folder message where it was: its flags, and its user folder while they say it's in one? */
-export const samePlace = (now: OneFolderPlace, was: OneFolderPlace): boolean => sameLocation(now, was) && oneFolderPlace(now, now.folder) === oneFolderPlace(was, was.folder);
+/** Is a one-folder message where it was (its user folder, else the role its flags name)? */
+export const samePlace = (now: OneFolderPlace, was: OneFolderPlace): boolean => placeKey(now) === placeKey(was);
 
 /**
  * Plan 259 (exact undo): the ops that put a one-folder (Outlook) message back exactly where an action found it. A
  * folder's flags are Archive's, so restoreLocationOps alone would leave it in Archive: a user folder is a filing back
  * to it (moveToFolder); Archive, Sent and Drafts are `returnTo` (a draft is Drafts', your own message Sent's, as a
  * filing's journal reads it); the Inbox, Trash and Junk are restoreLocationOps', each exact on Graph and carrying its
- * flag effects. A user folder or a role is one move, from wherever the message is.
+ * flag effects (from a user folder as from Archive). A user folder or a role is one move, from wherever the message is.
  */
 export function restoreOneFolderOps(now: OneFolderPlace, was: OneFolderPlace, own: { isSent: boolean; isDraft: boolean }): OneFolderRestore[] {
   if (samePlace(now, was)) return [];
-  const back = oneFolderPlace(was, was.folder);
-  if (back !== null) return [{ kind: MOVE_TO_FOLDER, folder: back }];
+  if (was.folder !== null) return [{ kind: MOVE_TO_FOLDER, folder: was.folder }];
   if (outOfRoles(was)) return [{ kind: RETURN_TO, role: own.isDraft ? "drafts" : own.isSent ? "sent" : "archive" }];
-  return restoreLocationOps(now, was).map((kind) => ({ kind }));
+  return restoreLocationOps(now.folder !== null ? OUT_OF_ROLES : now, was).map((kind) => ({ kind }));
 }

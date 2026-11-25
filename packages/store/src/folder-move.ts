@@ -48,6 +48,22 @@ export interface ReturnToPayload {
   role: ReturnToRole;
 }
 
+/**
+ * Plan 259: an Outlook filing's Inbox part, taken here: no op follows (the move takes the message out of the Inbox), and
+ * its undo is the filing's journal, so its snapshot keeps flags only (the replayed folder would be the filing's own).
+ */
+export function filedArchive<T extends { before: import("./types").MessageState[]; targets: unknown[] }>(r: T): T {
+  return {
+    ...r,
+    targets: [],
+    before: r.before.map((s) => {
+      const state = { ...s };
+      delete state.folder;
+      return state;
+    }),
+  };
+}
+
 /** Plan 259 (exact undo): where an undo's op takes its messages, so one op goes to one destination. */
 export const restoreDestination = (p?: MoveToFolderPayload | ReturnToPayload): string => !p ? "" : "folder" in p ? `folder:${p.folder}` : `role:${p.role}`;
 
@@ -155,10 +171,12 @@ export function applyFolderOpOne(folder: string | null, kind: string, payload: M
  * (graph-writes.ts `ruleOf`): trash, spam, back to the Inbox and `returnTo` leave it in no user folder (your own mail
  * is never in Junk, and Sent's and Drafts' are in no folder anyway); archive and not spam move only the Inbox's and
  * Junk's, which are in none either. So Move to Inbox then Archive, still queued, leaves a message in no folder, whatever
- * the stored one says.
+ * the stored one says. A filing's undo moves only what's still in its folder (Graph's rule): one another app moved
+ * elsewhere stays there (Codex code review #4).
  */
 export function applyLocationOpOne(folder: string | null, kind: string, payload: unknown): string | null {
-  if (kind === MOVE_TO_FOLDER || kind === LEAVE_FOLDER) return applyFolderOpOne(folder, kind, payload as MoveToFolderPayload | LeaveFolderPayload);
+  if (kind === MOVE_TO_FOLDER) return (payload as MoveToFolderPayload).folder;
+  if (kind === LEAVE_FOLDER) return folder === (payload as LeaveFolderPayload).folder ? applyFolderOpOne(folder, kind, payload as LeaveFolderPayload) : folder;
   return kind === "trash" || kind === "spam" || kind === "moveToInbox" || kind === RETURN_TO ? null : folder;
 }
 

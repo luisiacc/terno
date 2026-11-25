@@ -1,5 +1,5 @@
 import { categoryAction, categoryOfJson, CATEGORY_ACTIONS, isCategoryAction, type MessageCategory, type ThreadAction } from "@terno/core";
-import { actionTargets, isLocationAction, oneFolderPlace, reaffirmFlagIntent, restoreLocationOps, restoreDestination, restoreOneFolderOps, sameLocation, samePlace, MOVE_TO_FOLDER, RETURN_TO, type MessageState, type MoveToFolderPayload, type ReturnToPayload } from "@terno/store";
+import { actionTargets, isLocationAction, reaffirmFlagIntent, restoreLocationOps, restoreDestination, restoreOneFolderOps, sameLocation, samePlace, MOVE_TO_FOLDER, RETURN_TO, type MessageState, type MoveToFolderPayload, type ReturnToPayload } from "@terno/store";
 import { sqlFlags } from "./flag-intents";
 import { oneFolderFolders } from "./folders";
 import { oneFolderAccounts } from "./message-folders";
@@ -156,24 +156,28 @@ function applyToMessages(db: Db, msgs: Msg[], action: ThreadAction, explicit: bo
   reaffirmFlagIntent(sqlFlags(db), (scope ?? msgs.map((m) => m.id)).filter((id) => !changed.has(id)), action);
   const byId = new Map(msgs.map((m) => [m.id, m]));
   const touched = new Set<number>();
+  // plan 259: a location action's undo puts an Outlook message back in its own folder, where it is once what's on its way lands
+  const folders = isLocationAction(action) ? oneFolderPlaces(db, ids.map((id) => byId.get(id)!)) : undefined;
   for (let i = 0; i < ids.length; i += 500) {
     const chunk = ids.slice(i, i + 500);
     db.run(`UPDATE messages SET ${set} WHERE id IN (${placeholders(chunk.length)})`, ...chunk);
+    // plan 259 (Codex code review #1): Graph keeps a message in one place, so one trashed is out of Junk and one marked
+    // spam out of Deleted Items, and its undo knows which it came from
+    const one = action === "trash" || action === "spam" ? chunk.filter((id) => folders?.has(id)) : [];
+    if (one.length) db.run(`UPDATE messages SET ${action === "trash" ? "is_spam" : "is_trash"} = 0 WHERE id IN (${placeholders(one.length)})`, ...one);
   }
   for (const id of ids) touched.add(byId.get(id)!.thread_id);
   // plan 229: Gmail hears a conversation's action for every message it governs, not only those this copy saw differ
   const whole = new Set<number>();
   if (!explicit) for (const accountId of new Set(msgs.map((m) => m.account_id))) if (db.get<{ kind: string }>("SELECT kind FROM accounts WHERE id = ?", accountId)?.kind === "gmail") whole.add(accountId);
   recomputeThreads(db, touched);
-  // plan 259: a location action's undo puts an Outlook message back in its own folder, where it is once what's on its way lands
-  const folders = isLocationAction(action) ? oneFolderPlaces(db, ids.map((id) => byId.get(id)!)) : undefined;
   return {
     threadIds: [...touched],
     targets: actionTargets(msgs, action, changed, scope, whole),
     // plan 86: only a category move's undo puts a category back (an archive's never touches one Gmail changed since)
     before: ids.map((id) => {
       const state = stateOf(byId.get(id)!, isCategoryAction(action));
-      return folders?.has(id) ? { ...state, folder: oneFolderPlace(state, folders.get(id)!) } : state;
+      return folders?.has(id) ? { ...state, folder: folders.get(id)! } : state;
     }),
   };
 }
@@ -238,7 +242,7 @@ export function restoreMessages(db: Db, states: readonly MessageState[]): Restor
       const placed = was.folder !== undefined && folders.has(m.id) ? { now: { ...now, folder: folders.get(m.id)! }, was: { ...was, folder: was.folder } } : undefined;
       // plan 86: a snapshot from before it, or of a message without a category, leaves the category as it is
       const category = was.category == null || m.category === null ? m.category : was.category;
-      if (now.isRead === was.isRead && now.isStarred === was.isStarred && (placed ? samePlace(placed.now, placed.was) : sameLocation(now, was)) && category === m.category) continue;
+      if (now.isRead === was.isRead && now.isStarred === was.isStarred && sameLocation(now, was) && (!placed || samePlace(placed.now, placed.was)) && category === m.category) continue;
       db.run(
         "UPDATE messages SET is_read = ?, is_starred = ?, in_inbox = ?, is_trash = ?, is_spam = ?, category = ? WHERE id = ?",
         +was.isRead,
@@ -260,7 +264,7 @@ export function restoreMessages(db: Db, states: readonly MessageState[]): Restor
             // a filing back, as the filing itself: what it takes out of the Inbox here comes back if it never lands
             const queued = steps[step]!.get(`${m.account_id}:${MOVE_TO_FOLDER}:folder:${op.folder}`)?.payload as MoveToFolderPayload | undefined;
             const payload: MoveToFolderPayload = queued ?? { folder: op.folder, from: null, keepInbox: false };
-            if (now.inInbox) payload.fromInbox = [...(payload.fromInbox ?? []), m.id];
+            if (now.inInbox) (payload.fromInbox ??= []).push(m.id);
             add(step, m.account_id, MOVE_TO_FOLDER, m.id, payload);
           } else if (op.kind === RETURN_TO) add(step, m.account_id, RETURN_TO, m.id, { role: op.role });
           else add(step, m.account_id, op.kind, m.id);

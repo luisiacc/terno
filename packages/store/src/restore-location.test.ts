@@ -23,13 +23,14 @@ for (const [from, now] of Object.entries(places)) {
   });
 }
 
-it("one-folder undo: your own message goes back to Sent Items and a draft to Drafts; a folder's flags elsewhere don't count", () => {
+it("one-folder undo: your own message goes back to Sent Items and a draft to Drafts; the replayed folder wins over a flag", () => {
   expect(restoreOneFolderOps(places.trash, places.archive, { isSent: true, isDraft: false })).toEqual([{ kind: RETURN_TO, role: "sent" }]);
   expect(restoreOneFolderOps(places.inbox, places.archive, { isSent: true, isDraft: true })).toEqual([{ kind: RETURN_TO, role: "drafts" }]);
-  // a stored folder under Inbox flags (a move on its way) is the Inbox: nothing to do
-  expect(restoreOneFolderOps({ ...places.inbox, folder: "F" }, places.inbox, received)).toEqual([]);
-  // a snapshot's folder with Trash flags is Trash
-  expect(restoreOneFolderOps(places.inbox, { ...places.trash, folder: "F" }, received)).toEqual([{ kind: "trash" }]);
+  // Codex code review #2: a filing on its way under a stale Inbox read is the folder (a filing owns no flags)
+  expect(restoreOneFolderOps(places.trash, { ...places.inbox, folder: "F" }, received)).toEqual([{ kind: MOVE_TO_FOLDER, folder: "F" }]);
+  expect(restoreOneFolderOps({ ...places.inbox, folder: "F" }, places.folder, received)).toEqual([]);
+  // out of a folder to a role: the role's own op, as from Archive
+  expect(restoreOneFolderOps({ ...places.inbox, folder: "F" }, places.inbox, received)).toEqual([{ kind: "moveToInbox" }]);
 });
 
 it("returnTo owns the three location flags; a location op on its way replays as Graph moves it", () => {
@@ -38,6 +39,9 @@ it("returnTo owns the three location flags; a location op on its way replays as 
   for (const kind of ["archive", "notSpam", "markRead"]) expect(applyLocationOpOne("F", kind, {})).toBe("F");
   expect(applyLocationOpOne(null, MOVE_TO_FOLDER, { folder: "G", from: null, keepInbox: false })).toBe("G");
   expect(applyLocationOpOne("G", LEAVE_FOLDER, { folder: "G", back: null, toInbox: true, stays: false })).toBeNull();
+  // Codex code review #4: a filing's undo moves only what's still in its folder; one another app moved stays put
+  expect(applyLocationOpOne("F", LEAVE_FOLDER, { folder: "F", back: "G", toInbox: false, stays: false })).toBe("G");
+  expect(applyLocationOpOne("H", LEAVE_FOLDER, { folder: "F", back: "G", toInbox: false, stays: false })).toBe("H");
 });
 
 const destinations = [

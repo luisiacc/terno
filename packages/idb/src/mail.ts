@@ -5,7 +5,7 @@ import { saveFilterForward } from "./forwards";
 import { folderPage, folderScopeIds, folderUnreadCounts, oneFolderFolders, refreshFolders } from "./folders";
 import { placeMessage } from "./message-folders";
 import { requireGmailRefresh, opAdmitter, ThreadMerges, type OpAdmission } from "@terno/store";
-import { actionTargets, assetError, isLocationAction, linkAssets, oneFolderPerMessage, oneFolderPlace, reaffirmFlagIntent, restoreDestination, restoreLocationOps, restoreOneFolderOps, sameLocation, samePlace, validateAssets, MOVE_TO_FOLDER, RETURN_TO, type MoveToFolderPayload, type ReturnToPayload } from "@terno/store";
+import { actionTargets, assetError, isLocationAction, linkAssets, oneFolderPerMessage, reaffirmFlagIntent, restoreDestination, restoreLocationOps, restoreOneFolderOps, sameLocation, samePlace, validateAssets, MOVE_TO_FOLDER, RETURN_TO, type MoveToFolderPayload, type ReturnToPayload } from "@terno/store";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import { idbAssets, replaceAttachments } from "./attachments";
@@ -1141,8 +1141,11 @@ function applyToMessages(c: Ctx, msgs: R[], action: ThreadAction, explicit: bool
     const m = messages.get(id)!;
     // plan 86: only a category move's undo puts a category back (an archive's never touches one Gmail changed since)
     const state = stateOf(m, isCategoryAction(action));
-    before.push(folders?.has(id) ? { ...state, folder: oneFolderPlace(state, folders.get(id)!) } : state);
-    messages.update(m, set);
+    before.push(folders?.has(id) ? { ...state, folder: folders.get(id)! } : state);
+    // plan 259 (Codex code review #1): Graph keeps a message in one place, so one trashed is out of Junk and one marked
+    // spam out of Deleted Items, and its undo knows which it came from
+    const one = folders?.has(id) && (action === "trash" || action === "spam");
+    messages.update(m, one ? { ...set, ...(action === "trash" ? { is_spam: 0 } : { is_trash: 0 }) } : set);
     touched.add(m.thread_id);
   }
   // plan 229: Gmail hears a conversation's action for every message it governs, not only those this copy saw differ
@@ -1193,7 +1196,7 @@ export function restoreMessages(c: Ctx, states: readonly MessageState[]): { thre
       // plan 86: a snapshot from before it, or of a message without a category, leaves the category as it is
       const current = now.category ?? null;
       const category = was.category == null || current === null ? current : was.category;
-      if (now.isRead === was.isRead && now.isStarred === was.isStarred && (placed ? samePlace(placed.now, placed.was) : sameLocation(now, was)) && category === current) continue;
+      if (now.isRead === was.isRead && now.isStarred === was.isStarred && sameLocation(now, was) && (!placed || samePlace(placed.now, placed.was)) && category === current) continue;
       messages.update(m, { is_read: +was.isRead, is_starred: +was.isStarred, in_inbox: +was.inInbox, is_trash: +was.isTrash, is_spam: +was.isSpam, category });
       touched.add(m.thread_id);
       if (now.isRead !== was.isRead) add(0, m.account_id, was.isRead ? "markRead" : "markUnread", m.id);
@@ -1206,7 +1209,7 @@ export function restoreMessages(c: Ctx, states: readonly MessageState[]): { thre
             // a filing back, as the filing itself: what it takes out of the Inbox here comes back if it never lands
             const queued = steps[step]!.get(`${m.account_id}:${MOVE_TO_FOLDER}:folder:${op.folder}`)?.payload as MoveToFolderPayload | undefined;
             const payload: MoveToFolderPayload = queued ?? { folder: op.folder, from: null, keepInbox: false };
-            if (now.inInbox) payload.fromInbox = [...(payload.fromInbox ?? []), m.id];
+            if (now.inInbox) (payload.fromInbox ??= []).push(m.id);
             add(step, m.account_id, MOVE_TO_FOLDER, m.id, payload);
           } else if (op.kind === RETURN_TO) add(step, m.account_id, RETURN_TO, m.id, { role: op.role });
           else add(step, m.account_id, op.kind, m.id);

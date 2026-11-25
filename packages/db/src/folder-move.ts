@@ -1,4 +1,4 @@
-import { applyFolderOp, folderReachable, keptInInbox, labelsLeft, labelsMoved, LEAVE_FOLDER, leaveFolderOps, MOVE_TO_FOLDER, oneFolderPerMessage, planOneFolderMove, requestFlagSnapshots, type FolderFilterMove, type FolderMoved, type LeaveFolderPayload, type MoveToFolderPayload } from "@terno/store";
+import { applyFolderOp, filedArchive, folderReachable, keptInInbox, labelsLeft, labelsMoved, LEAVE_FOLDER, leaveFolderOps, MOVE_TO_FOLDER, oneFolderPerMessage, planOneFolderMove, requestFlagSnapshots, type FolderFilterMove, type FolderMoved, type LeaveFolderPayload, type MoveToFolderPayload } from "@terno/store";
 import { applyMessageAction, applyThreadAction, type ActionResult } from "./actions";
 import { listFolders, oneFolderFolders, pendingFolderOps } from "./folders";
 import { recomputeThreads } from "./ingest";
@@ -149,8 +149,7 @@ export function moveThreadsToFolder(db: Db, c: { threadIds: readonly number[]; a
  */
 function archiveFiled(db: Db, accountId: number, moved: FolderMoved, otherwise: () => ActionResult): ActionResult {
   if (!isOneFolder(db, accountId)) return otherwise();
-  const local = applyMessageAction(db, moved.fromInbox, "archive");
-  return { ...local, targets: [] };
+  return filedArchive(applyMessageAction(db, moved.fromInbox, "archive"));
 }
 
 /** Plan 127: see MailStore.threads.leaveFolder. Runs inside the caller's transaction. */
@@ -187,21 +186,22 @@ export function settleFolderOp(db: Db, op: { kind: string; account_id: number; t
       if (next) db.run("UPDATE messages SET gmail_labels = ? WHERE id = ?", JSON.stringify(next), m.id);
     }
   }
-  // plan 259: an Outlook filing (an undo's too) settled. Landed, what the server confirmed in the folder is out of the
-  // Inbox, Trash and Junk, as a folder of the person's own is none of them (a stale read on its way can't leave it there:
-  // round 2 #6, and the exact undo's revision #5). Never landed, what it took out of the Inbox here comes back, unless the
-  // server has it in a folder or a newer location op is on its way for it (round 2 #7), and where each one really is
-  // is read again (an undo out of Trash has nothing else asking).
+  // plan 259: an Outlook filing (an undo's too) settled. What the server confirmed in the folder, however the op ended
+  // (a partial success's answers are stored), is out of the Inbox, Trash and Junk, as a folder of the person's own is
+  // none of them: a stale read on its way can't leave it there (round 2 #6; exact undo revision #5, code review #6).
+  // Never landed, what it took out of the Inbox here comes back, unless the server has it in a folder or a newer
+  // location op is on its way for it (round 2 #7), and where each one really is is read again (an undo out of Trash has
+  // nothing else asking).
   const p = op.kind === MOVE_TO_FOLDER ? JSON.parse(op.payload_json) as MoveToFolderPayload : undefined;
   if (p && isOneFolder(db, op.account_id)) {
     const untouched = "NOT EXISTS (SELECT 1 FROM op_targets t INDEXED BY op_targets_msg JOIN ops o ON o.id = t.op_id WHERE t.message_id = messages.id AND t.grp = 'location' AND o.state IN ('queued', 'running'))";
-    for (const chunk of byChunks(succeeded ? ids : p.fromInbox ?? [], (c) => [c])) {
-      if (succeeded) db.run(`UPDATE messages SET in_inbox = 0, is_trash = 0, is_spam = 0 WHERE id IN (${placeholders(chunk.length)}) AND account_id = ? AND (in_inbox = 1 OR is_trash = 1 OR is_spam = 1)
-        AND EXISTS (SELECT 1 FROM message_folders f WHERE f.message_id = messages.id AND f.folder = ?) AND ${untouched}`, ...chunk, op.account_id, p.folder);
-      else db.run(`UPDATE messages SET in_inbox = 1 WHERE id IN (${placeholders(chunk.length)}) AND account_id = ? AND in_inbox = 0 AND is_trash = 0 AND is_spam = 0
+    for (const chunk of byChunks(ids, (c) => [c])) db.run(`UPDATE messages SET in_inbox = 0, is_trash = 0, is_spam = 0 WHERE id IN (${placeholders(chunk.length)}) AND account_id = ? AND (in_inbox = 1 OR is_trash = 1 OR is_spam = 1)
+      AND EXISTS (SELECT 1 FROM message_folders f WHERE f.message_id = messages.id AND f.folder = ?) AND ${untouched}`, ...chunk, op.account_id, p.folder);
+    if (!succeeded) {
+      for (const chunk of byChunks(p.fromInbox ?? [], (c) => [c])) db.run(`UPDATE messages SET in_inbox = 1 WHERE id IN (${placeholders(chunk.length)}) AND account_id = ? AND in_inbox = 0 AND is_trash = 0 AND is_spam = 0
         AND NOT EXISTS (SELECT 1 FROM message_folders f WHERE f.message_id = messages.id) AND ${untouched}`, ...chunk, op.account_id);
+      requestFlagSnapshots(sqlFlags(db), op.account_id, ids, ["inInbox", "isTrash", "isSpam"]);
     }
-    if (!succeeded) requestFlagSnapshots(sqlFlags(db), op.account_id, ids, ["inInbox", "isTrash", "isSpam"]);
   }
   const threads = [...new Set(rows.map((m) => m.thread_id))];
   recomputeThreads(db, threads);

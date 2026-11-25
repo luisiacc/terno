@@ -48,12 +48,14 @@ export function placeReadFolder(db: Db, messageId: number, accountId: number, fo
 }
 
 /**
- * These threads' messages' folders (outside trash and spam): by the thread index then one probe of the primary key a
- * message (CROSS JOIN keeps that order: never a walk of every Outlook message). `ids`: a JSON array parameter.
+ * These threads' messages' folders (outside the Inbox, trash and spam: one in a folder of its own is in none of them, so
+ * Move to Inbox out of a folder leaves it at once, before Graph answers: plan 259 exact undo, code review #8): by the
+ * thread index then one probe of the primary key a message (CROSS JOIN keeps that order: never a walk of every Outlook
+ * message). `ids`: a JSON array parameter.
  */
 const messageFoldersOf = (columns: string, ids: string) => /* sql */ `
   SELECT ${columns} FROM messages m INDEXED BY messages_thread CROSS JOIN message_folders f ON f.message_id = m.id
-   WHERE m.thread_id IN (SELECT value FROM json_each(${ids})) AND m.is_trash = 0 AND m.is_spam = 0`;
+   WHERE m.thread_id IN (SELECT value FROM json_each(${ids})) AND m.is_trash = 0 AND m.is_spam = 0 AND m.in_inbox = 0`;
 /** as (tid, folder): a thread's memberships */
 export const IN_MESSAGE_FOLDERS = (ids: string) => messageFoldersOf("m.thread_id AS tid, f.folder AS folder", ids);
 /** as (id, folder): each message's, for a pending move replayed over it */

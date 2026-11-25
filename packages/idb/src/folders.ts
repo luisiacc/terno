@@ -41,13 +41,19 @@ export function pendingFolderOps(c: Ctx, messageId: number): R[] {
  */
 export function oneFolderFolders(c: Ctx, ids: readonly number[]): Map<number, string | null> {
   const folders = T(c, "message_folders"), ops = T(c, "ops"), targets = T(c, "op_targets");
+  // each op's payload read once, however many of these messages it names (Codex code review #9)
+  const payloads = new Map<string, unknown>();
+  const payload = (op: R) => {
+    if (!payloads.has(op.id as string)) payloads.set(op.id as string, JSON.parse(op.payload_json as string) as unknown);
+    return payloads.get(op.id as string);
+  };
   return new Map(ids.map((id) => {
     let at = (folders.get(id)?.folder as string | undefined) ?? null;
     const pending = targets.by("message", id).flatMap((t) => {
       const op = t.grp === "location" ? ops.get(t.op_id) : undefined;
       return op && (op.state === "queued" || op.state === "running") ? [op] : [];
     }).sort((x, y) => x.seq - y.seq);
-    for (const op of pending) at = applyLocationOpOne(at, op.kind as string, JSON.parse(op.payload_json as string) as unknown);
+    for (const op of pending) at = applyLocationOpOne(at, op.kind as string, payload(op));
     return [id, at] as const;
   }));
 }
@@ -63,6 +69,8 @@ export function refreshFolders(c: Ctx, threadIds: Iterable<number>): void {
   // plan 259: an Outlook message's folder, read only while any message has one
   const placed = T(c, "message_folders");
   const anyPlaced = placed.size > 0;
+  // each op's payload read once, however many messages it names (an Outlook filing's carries its journal)
+  const payloads = new Map<string, MoveToFolderPayload | LeaveFolderPayload>();
   for (const id of threadIds) {
     const t = threads.get(id);
     const keys = new Set<string>();
@@ -81,12 +89,14 @@ export function refreshFolders(c: Ctx, threadIds: Iterable<number>): void {
           if (ownGeneration(folders.get(t.account_id, l.mailbox), l.uidvalidity as number)) own.add(l.mailbox as string);
           if (aliased) for (const f of aliased) if (aliasOf(f, l)) own.add(f.key as string);
         }
-        const folder = anyPlaced ? ((placed.get(m.id)?.folder as string | undefined) ?? null) : null;
+        // one in the Inbox is in no folder of its own (Move to Inbox out of one leaves it at once: exact undo, code review #8)
+        const folder = anyPlaced && !m.in_inbox ? ((placed.get(m.id)?.folder as string | undefined) ?? null) : null;
         if (folder !== null) own.add(folder);
         if (moving) {
           let at = folder;
           for (const op of pendingFolderOps(c, m.id as number)) {
-            const payload = JSON.parse(op.payload_json as string) as MoveToFolderPayload | LeaveFolderPayload;
+            if (!payloads.has(op.id as string)) payloads.set(op.id as string, JSON.parse(op.payload_json as string) as MoveToFolderPayload | LeaveFolderPayload);
+            const payload = payloads.get(op.id as string)!;
             if (one) at = applyFolderOpOne(at, op.kind as string, payload);
             else applyFolderOp(own, op.kind as string, payload);
           }
