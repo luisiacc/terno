@@ -780,7 +780,10 @@ test.describe("ask your mail (plan 141)", () => {
     await expect(page.locator("html")).toHaveClass(/\bdark\b/);
     expect((await axe()).violations).toEqual([]);
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-dark.png` });
-    // plan 270: the header's question typed over, its wash and the keys' line saying so, in both modes
+    // plan 270: the header's question with the keys (its hint), then typed over (its wash and the keys' line), in both modes
+    await page.getByTestId("ask-title").click();
+    await expect(page.getByTestId("ask-title-hint")).toBeVisible();
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-title-focus-dark.png` });
     await page.getByTestId("ask-title").fill(`${word} again?`);
     await expect(page.getByTestId("ask-title")).toHaveAttribute("data-changed");
     expect((await axe()).violations).toEqual([]);
