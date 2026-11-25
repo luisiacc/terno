@@ -8,7 +8,7 @@
  */
 import { afterAll, expect, it } from "vitest";
 import { openDatabase } from "./index";
-import { MIGRATIONS, SCHEMA_VERSION } from "./migrations";
+import { MIGRATIONS, runMigration, SCHEMA_VERSION } from "./migrations";
 import { nodeSqliteDriver } from "./node-driver";
 import { Db } from "./sqlite";
 import { BUDGET_MULTIPLIER as MULT, report, type Stat } from "./test/perf";
@@ -50,12 +50,9 @@ it(`each migration since v${FIRST} runs in ≤ ${STEP_MS} ms at 57,000 conversat
     expect(steps.at(-1)!.version).toBe(SCHEMA_VERSION);
     for (const m of steps) {
       const before = tablesOf(db);
-      // the step as migrate() runs it: its SQL and the version, in one transaction
+      // the step as migrate() runs it (review round 3: a rebuild's key check included)
       const t = performance.now();
-      db.tx(() => {
-        db.exec(m.sql);
-        db.exec(`PRAGMA user_version = ${m.version}`);
-      });
+      runMigration(db, m);
       const ms = performance.now() - t;
       stats.push({ name: `v${m.version} (${m.name}): ${ms.toFixed(0)} ms`, budgetMs: STEP_MS, p50: ms, p95: ms, max: ms, iterations: 1 });
       if (ms > STEP_MS * MULT) slow.push(`v${m.version} ${m.name}: ${ms.toFixed(0)} ms`);

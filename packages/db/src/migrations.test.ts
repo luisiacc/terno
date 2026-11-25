@@ -896,6 +896,22 @@ describe("migration v81: accounts and the owner take any provider (plan 259)", (
     expect(db.get<{ n: number }>("SELECT count(*) AS n FROM messages")!.n).toBe(0);
     expect(db.get<{ n: number }>("SELECT count(*) AS n FROM threads")!.n).toBe(0);
   });
+
+  it("review round 3: checks only the rebuilt tables' references: an old orphan elsewhere never stops it, an owner left without its account does", () => {
+    const { db } = legacyMail(80, { threads: 2, seed: 31 });
+    // an orphan in a table the step doesn't touch (written with the keys off, as an old bug might have)
+    db.exec("PRAGMA foreign_keys = OFF");
+    db.run("INSERT INTO message_refs (account_id, ref, message_id) VALUES (1, 'lost@x', 987654)");
+    expect(db.all("PRAGMA foreign_key_check(message_refs)")).not.toEqual([]);
+    db.exec("PRAGMA foreign_keys = ON");
+    expect(migrate(db)).toEqual({ from: 80, to: SCHEMA_VERSION });
+    const { db: other } = legacyMail(80, { threads: 2, seed: 37 });
+    other.exec("PRAGMA foreign_keys = OFF");
+    other.run("INSERT OR REPLACE INTO owner (id, user_id, email, display_name, provider, verified_by, evidence_json, verified_at, account_id, created_at, updated_at) VALUES (1, 'u', 'g@x.mx', 'G', 'gmail', 'google_oauth', '{}', 1, 42, 1, 1)");
+    other.exec("PRAGMA foreign_keys = ON");
+    expect(() => migrate(other)).toThrow(/v?81|owner/);
+    expect(other.get<{ user_version: number }>("PRAGMA user_version")!.user_version).toBe(80);
+  });
 });
 
 describe("migration v80: message repairs take any reason, and say which message (plan 267)", () => {

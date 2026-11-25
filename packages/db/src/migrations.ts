@@ -1,7 +1,7 @@
 import type { Db } from "./sqlite";
 import { MigrationError, SchemaNewerError } from "./open-errors";
 
-interface Migration {
+export interface Migration {
   version: number;
   name: string;
   sql: string;
@@ -12,10 +12,11 @@ interface Migration {
   rewrites?: string;
   /**
    * Plan 259: the step rebuilds a table other tables reference (SQLite's documented 12-step procedure), so foreign keys
-   * are off while it runs: dropping the old table would otherwise run every ON DELETE CASCADE beneath it. They're
-   * checked (PRAGMA foreign_key_check) before the step commits, and on again after it, whatever happened.
+   * are off while it runs: dropping the old table would otherwise run every ON DELETE CASCADE beneath it. The tables it
+   * rebuilds are named; their references are checked (PRAGMA foreign_key_check) before the step commits, and the keys are
+   * on again after it, whatever happened.
    */
-  rebuildsReferenced?: true;
+  rebuildsReferenced?: readonly string[];
 }
 
 /** Plan 255: steps from here on follow the rule above (the ones before were written while a backup came first). */
@@ -1847,7 +1848,7 @@ END;
 ` },
   // plan 259: Outlook is a third kind. The kind and the owner's provider are descriptive values the app checks (plan
   // 267's rule), so their CHECK lists go rather than grow: a later provider is a code change, never a migration
-  { version: 81, name: "Accounts and the owner take any provider (plan 259)", rebuildsReferenced: true, rewrites: "the DROP TABLE of accounts and owner after every row is copied unchanged into their rebuilt tables (a CHECK list can't be dropped in place): a handful of rows. Foreign keys are off for the step, so nothing referencing an account is touched, and are checked before it commits", sql: `
+  { version: 81, name: "Accounts and the owner take any provider (plan 259)", rebuildsReferenced: ["accounts", "owner"], rewrites: "the DROP TABLE of accounts and owner after every row is copied unchanged into their rebuilt tables (a CHECK list can't be dropped in place): a handful of rows. Foreign keys are off for the step, so nothing referencing an account is touched, and are checked before it commits", sql: `
 CREATE TABLE accounts_v81 (
   id INTEGER PRIMARY KEY,
   kind TEXT NOT NULL,
@@ -1909,30 +1910,34 @@ export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;
  */
 export const SEARCH_SCHEMA_VERSION = 7;
 
+/** One step as an upgrade runs it (the perf gate times this very path). */
+export function runMigration(db: Db, m: Migration): void {
+  // plan 259: a pragma inside a transaction is ignored, so this is set before it, and proven before anything is dropped
+  const keysWere = m.rebuildsReferenced && Number(db.get<{ foreign_keys: number }>("PRAGMA foreign_keys")!.foreign_keys);
+  try {
+    if (m.rebuildsReferenced) {
+      db.exec("PRAGMA foreign_keys = OFF");
+      if (Number(db.get<{ foreign_keys: number }>("PRAGMA foreign_keys")!.foreign_keys) !== 0) throw new Error("foreign keys stayed on: the rebuild would cascade");
+    }
+    db.tx(() => {
+      db.exec(m.sql);
+      // the rebuilt tables' own references (review round 3: never the whole file's, a scan of every row at 50k);
+      // what references them keeps its rows' parents, each copied with its id
+      for (const table of m.rebuildsReferenced ?? []) if (db.all(`PRAGMA foreign_key_check("${table}")`).length) throw new Error(`the rebuild of ${table} left references without their rows`);
+      db.exec(`PRAGMA user_version = ${m.version}`);
+    });
+  } catch (error) {
+    // plan 95: the step rolled back (the file is at the step before); the window says which, and why
+    throw new MigrationError(m.version, m.name, error);
+  } finally {
+    if (keysWere) db.exec("PRAGMA foreign_keys = ON");
+  }
+}
+
 export function migrate(db: Db): { from: number; to: number } {
   const from = Number((db.get<{ user_version: number }>("PRAGMA user_version"))!.user_version);
   if (from > SCHEMA_VERSION) throw new SchemaNewerError(from, SCHEMA_VERSION);
-  for (const m of MIGRATIONS) {
-    if (m.version <= from) continue;
-    // plan 259: a pragma inside a transaction is ignored, so this is set before it, and proven before anything is dropped
-    const keysWere = m.rebuildsReferenced && Number(db.get<{ foreign_keys: number }>("PRAGMA foreign_keys")!.foreign_keys);
-    try {
-      if (m.rebuildsReferenced) {
-        db.exec("PRAGMA foreign_keys = OFF");
-        if (Number(db.get<{ foreign_keys: number }>("PRAGMA foreign_keys")!.foreign_keys) !== 0) throw new Error("foreign keys stayed on: the rebuild would cascade");
-      }
-      db.tx(() => {
-        db.exec(m.sql);
-        if (m.rebuildsReferenced && db.all("PRAGMA foreign_key_check").length) throw new Error("the rebuild left references without their rows");
-        db.exec(`PRAGMA user_version = ${m.version}`);
-      });
-    } catch (error) {
-      // plan 95: the step rolled back (the file is at the step before); the window says which, and why
-      throw new MigrationError(m.version, m.name, error);
-    } finally {
-      if (keysWere) db.exec("PRAGMA foreign_keys = ON");
-    }
-  }
+  for (const m of MIGRATIONS) if (m.version > from) runMigration(db, m);
   if (from !== SCHEMA_VERSION) {
     // plan 267: nothing prepared against the old shape is used against the new one
     db.resetStatements();
