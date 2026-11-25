@@ -24,7 +24,7 @@ Read as Gmail's **Show original**: a summary of the message's metadata (Message 
 - **Gmail**: `GET /messages/{id}?format=raw&fields=id,raw` on the reader lane, read bounded as incoming mail is (`readIncomingBody`, the permits); decoded (JSON, base64url) inline when small and by the incoming worker otherwise (a new job, `{ kind: "raw" }`, returning the bytes, transferred). 404 on that path → `null`.
 - **IMAP**: the message's places (`locations.of([id])`), each tried in turn on the account's connection (`withConnection`): lock the mailbox, skip a place whose UIDVALIDITY changed, `FETCH uid (BODY.PEEK[])` with `maxLength` one over the cap. No place answers → `null`.
 - **Demo**: a small fixed original built from the stored subject and sender (`messageByProviderId`), with demo `Received`, `Authentication-Results` and an HTML part, so the dev build and e2e show the feature.
-- **Outlook** (plan 259, not on main): `GET /me/messages/{id}/$value` when it lands; noted in its plan.
+- **Outlook** (plan 259): `GET /me/messages/{id}/$value` (built with plan 259's landing: see its section "Show original for Outlook").
 
 ### 2. What the original says (`packages/mail/src/original.ts`, pure)
 
@@ -67,7 +67,7 @@ Nothing runs until the user asks. One server read per opening; parsing over 64 K
 
 ## Out of scope
 
-Outlook's read (with plan 259), syntax highlighting, a palette command or shortcut, a conversation-wide original, showing the original of a draft or of a message only on this computer.
+Syntax highlighting, a palette command or shortcut, a conversation-wide original, showing the original of a draft or of a message only on this computer.
 
 ## Revisions after the Codex review
 

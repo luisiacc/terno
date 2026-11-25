@@ -75,6 +75,11 @@ export interface Call {
   /** 202 or 204: the answer has no body */
   empty?: true;
   /**
+   * Plan 272: the answer is a message's source (`$value`), kept as its bytes: read bounded as incoming mail is, with the
+   * large-read permit past the first 256 KB, never parsed
+   */
+  original?: true;
+  /**
    * A JSON batch of this many requests: its throttled ones reach the ledger as a top-level 429 does (onBatch); each counts
    * against Outlook's pace, and it holds as many of the four slots as Graph runs of it at once ("up to four individual
    * requests from the batch at a time": learn.microsoft.com/graph/throttling-limits)

@@ -235,6 +235,21 @@ describe("an Outlook account signs in again (plan 259)", () => {
     expect(folderOf(first)).toBe(clients);
   });
 
+  it("plan 272: Show original reads an Outlook message's source from Graph, whole, and a message Graph no longer has says it's gone", async () => {
+    const { ms, backend, client } = await setup();
+    const id = ms.deliver("inbox-id", { subject: "The original", body: "Read from Graph" });
+    const account = await client.call("accounts.connectMicrosoft", {});
+    await backend.syncAccount(account.id);
+    const row = sqlDb(backend.store).get<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE provider_msg_id = ?", id)!;
+    const opened = await client.call("reader.original", { threadId: row.thread_id, messageId: row.id, requestId: "r1" });
+    const source = ms.mimeOf(ms.messages.get(id)!);
+    expect(opened).toMatchObject({ size: Buffer.byteLength(source), summary: expect.objectContaining({ subject: "The original" }) });
+    expect((opened as { source: string }).source).toContain("Read from Graph");
+    await client.call("reader.originalClose", { requestId: "r1" });
+    ms.destroy(id);
+    expect(await client.call("reader.original", { threadId: row.thread_id, messageId: row.id, requestId: "r2" })).toEqual({ unavailable: "gone" });
+  });
+
   it("stage 2a (Codex code review #12): Graph's 503 with a Retry-After waits on the ledger's pause, never a connectivity retry", async () => {
     const { ms, backend, client } = await setup();
     ms.deliver("inbox-id");

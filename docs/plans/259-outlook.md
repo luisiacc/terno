@@ -1253,3 +1253,18 @@ The owner asked for a round on failures only: mail not received or sent, misdeli
 - `perf.perf`'s quick-filters gate failed in both loaded runs and passed alone (33 of 33); nothing in this round touches it.
 - Everything else that failed is the base's list: unit's 36 files, db-wasm's `tabs.test`, e2e's 16, smoke's 10, and perf's other four files.
 
+
+## Show original for Outlook (plan 272)
+
+Plan 272's Show original landed on main while this plan was on its branch, with Outlook left for when it came. The owner asked for it once both were on main.
+
+- **The read:** `readOriginal` in `graph-api.ts` is `GET /me/messages/{id}/$value` (learn.microsoft.com/graph/outlook-get-mime-message). That's the request a sync downloads a message with, here in the reader's lane, on the click.
+- **How it's read:** a new call mode, `original`, keeps the answer as its bytes:
+  - bounded as incoming mail is (`MAX_INCOMING_MIME_BYTES`; one over is "too large", never a malformed answer);
+  - the large-read permit past the first 256 KB;
+  - nothing parsed. The backend's `Originals` describes it as it does Gmail's and IMAP's.
+- **Permits and results:** the read permit is held only while it reads. A 404 on that path is `null`, which Show original calls gone. Nothing is stored.
+- **Nothing else changed:** the menu, the view, the backend and the unavailable reasons (signed out, only on this computer, gone) are plan 272's own. The menu already offers Show original for every account.
+- **Tests:**
+  - `graph-api.test`: the bytes are the source Graph holds, from `$value`; the reader lane's permit is taken and given back; a message gone is `null`; nothing is stored.
+  - `microsoft-connection.test`: through the backend's `reader.original`, an Outlook message's summary and source come from Graph; a message deleted on Graph answers `gone`.

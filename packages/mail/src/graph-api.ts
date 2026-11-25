@@ -394,10 +394,38 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
     } catch (error) { body?.release(); throw error; }
   }
 
+  /**
+   * Plan 272: a message's source for Show original, as its bytes: bounded as incoming mail is (one over the cap is a
+   * message too large, never a malformed answer), the large-read permit past the first 256 KB, nothing parsed.
+   */
+  async function originalResponse(response: Response, deadline: RequestDeadline, call: Call, free: () => void): Promise<Uint8Array> {
+    const body = await readIncomingBody(truncated(response, MAX_INCOMING_MIME_BYTES + 1), {
+      signal: deadline.signal, limit: MAX_INCOMING_MIME_BYTES + 1,
+      async promote(signal) {
+        const resume = deadline.pause();
+        try {
+          if (!ctx.incoming?.promote) return () => {};
+          return await ctx.incoming.promote(accountId, signal, undefined, call.admission);
+        } finally { resume(); }
+      },
+    });
+    try {
+      free();
+      deadline.stopClock();
+      call.preparation?.throwIfAborted();
+      if (body.bytes > MAX_INCOMING_MIME_BYTES) throw new ProviderError(L("errors.mail.processingLimit"), false);
+      const bytes = new Uint8Array(body.bytes);
+      let at = 0;
+      for (const chunk of body.chunks) { bytes.set(chunk, at); at += chunk.byteLength; }
+      return bytes;
+    } finally { body.release(); }
+  }
+
   const RETRY = Symbol("retry");
 
   /** One Graph request; a 401 is tried once more with a fresh token. */
   async function api(target: string, call: Call & { mime: true }): Promise<IncomingResource>;
+  async function api(target: string, call: Call & { original: true }): Promise<Uint8Array>;
   async function api(target: string, call?: Call): Promise<unknown>;
   async function api(target: string, call: Call & { mime?: true } = {}): Promise<unknown> {
     for (let retried = false; ; retried = true) {
@@ -479,6 +507,14 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
         if (call.delta && (response.status === 410 || (response.status >= 400 && response.status < 500 && codes.some((c) => c.toLowerCase() === "syncstatenotfound")))) throw new DeltaExpired();
         // a send Graph failed with a server error may still have gone: unknown, never sent again (plan 65)
         throw new GraphApiError(target, response.status, codes, response.status === 429 || response.status >= 500, evidence, sending && response.status >= 500);
+      }
+      if (call.original) {
+        try { return await originalResponse(response, deadline, call, free); }
+        catch (error) {
+          if (error instanceof ResponseBodyLimitError) throw new ProviderError(L("errors.mail.processingLimit"), false);
+          if (error instanceof ProviderError || error instanceof RequestNotDispatchedError) throw error;
+          throw failed(error);
+        }
       }
       if (call.mime) {
         try { return await incomingResponse(response, deadline, call, free); }
@@ -1590,6 +1626,22 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
         if (notFound(error, path)) return null;
         throw error;
       }
+    },
+
+    /**
+     * Plan 272 (Show original): the message's source as Graph holds it (`GET /me/messages/{id}/$value`,
+     * learn.microsoft.com/graph/outlook-get-mime-message), read on the click in the reader's lane and stored nowhere.
+     * The read permit is held only while it reads; a 404 on that path is a message no longer on the server.
+     */
+    async readOriginal(target, signal) {
+      ctx.requests?.check(MAIL, "reader");
+      const path = `/me/messages/${enc(target.providerMsgId)}/$value`;
+      const release = await ctx.incoming?.acquire(accountId, signal, reads.signal, "reader");
+      try { return await api(path, { original: true, signal, preparation: signal, admission: "reader" }); }
+      catch (error) {
+        if (notFound(error, path)) return null;
+        throw error;
+      } finally { release?.(); }
     },
 
     // stage 2b (graph-writes.ts): flags, moves, archive, trash, spam, a filing and its undo, and send

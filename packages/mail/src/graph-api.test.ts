@@ -687,6 +687,22 @@ describe("Graph provider: flag snapshots, bodies, search", () => {
     expect(await t.provider.readBody!({ id: 2, providerMsgId: "AAMkGone=" }, new AbortController().signal)).toBeNull();
   });
 
+  it("plan 272: Show original reads the message's source ($value) as its bytes, in the reader's lane, holding its permits only while it reads; a message gone answers null", async () => {
+    const held: string[] = [];
+    const t = await setup();
+    (t.ctx as { incoming: unknown }).incoming = {
+      acquire: async (_account: number, _signal: AbortSignal, _reset: AbortSignal, lane: string) => { held.push(`take ${lane}`); return () => held.push("give"); },
+    };
+    const id = t.ms.deliver("inbox-id", { subject: "Original", body: "The source itself" });
+    const bytes = await t.provider.readOriginal!({ id: 1, providerMsgId: id }, new AbortController().signal);
+    expect(new TextDecoder().decode(bytes!)).toBe(t.ms.mimeOf(t.ms.messages.get(id)!));
+    expect(held).toEqual(["take reader", "give"]);
+    expect(t.ms.graphUrls.at(-1)).toBe(`/v1.0/me/messages/${encodeURIComponent(id)}/$value`);
+    expect(await t.provider.readOriginal!({ id: 2, providerMsgId: "AAMkGone=" }, new AbortController().signal)).toBeNull();
+    // nothing of it is stored
+    expect(t.row(id)).toBeUndefined();
+  });
+
   it("searches Graph's $search, honours before and the limit, skips what's stored, and fetches hits as old mail", async () => {
     const t = await setup();
     const clients = t.ms.folder("Clients");
