@@ -24,6 +24,7 @@ import { listDate } from "~/lib/format";
 import { getLocale } from "@terno/i18n";
 import { boundaryDay } from "~/lib/when";
 import { askFrom, paletteBack, paletteKeys, setPalettePage, usePalettePage } from "~/lib/palette-open";
+import { isMac } from "~/lib/select";
 import { chordLabel, keyLabel } from "@terno/ui/components/shortcut";
 import { useApp } from "~/state/app";
 import { openSettings } from "~/lib/settings-place";
@@ -545,8 +546,11 @@ function NewQuestion() {
 /** Plan 270: Esc puts the header's question back while it holds changed words and has the keys (the palette's Esc runs first). */
 const titleKeys: { escape: (() => boolean) | null } = { escape: null };
 
-/** cmdk's keys on the list (↑↓, Home, End, Enter, Ctrl+N/P/J/K): in the header's field they're the field's own */
-const listKey = (e: KeyboardEvent) => ["ArrowDown", "ArrowUp", "Home", "End", "PageUp", "PageDown", "Enter"].includes(e.key) || (e.ctrlKey && ["n", "p", "j", "k"].includes(e.key.toLowerCase()));
+/**
+ * cmdk's keys on the list (↑↓, Home, End, Enter, and on the Mac Ctrl+N/P/J/K): in the header's field they're the field's
+ * own. Elsewhere Ctrl+K is the palette's own chord, so it goes on to it (Codex review)
+ */
+const listKey = (e: KeyboardEvent) => ["ArrowDown", "ArrowUp", "Home", "End", "PageUp", "PageDown", "Enter"].includes(e.key) || (isMac && e.ctrlKey && !e.shiftKey && ["n", "p", "j", "k"].includes(e.key.toLowerCase()));
 
 /** Plan 270: words typed over the question count once they're something else to ask */
 const titleChanged = (draft: string | null, title: string): draft is string => draft !== null && draft.trim() !== "" && draft.trim() !== title;
@@ -572,7 +576,8 @@ function AskTitle({ title, draft, setDraft, onFocusChange, focused, peek, readOn
   const changed = titleChanged(draft, title);
   useEffect(() => {
     titleKeys.escape = () => {
-      if (draft === null || document.activeElement !== ref.current) return false;
+      // words put back as they were (or emptied) aren't a change: Esc is the page's, as the keys' line says (Codex review)
+      if (!titleChanged(draft, title) || document.activeElement !== ref.current) return false;
       setDraft(null);
       // at the turn limit the follow-up box is off: the question stays with the keys
       if (followUp.current && !followUp.current.disabled) followUp.current.focus({ preventScroll: true });
@@ -581,7 +586,11 @@ function AskTitle({ title, draft, setDraft, onFocusChange, focused, peek, readOn
     return () => {
       titleKeys.escape = null;
     };
-  }, [draft]);
+  }, [draft, title, setDraft]);
+  // a source shown takes the field away without a blur: the keys' line is the source's, then the follow-up box's
+  useEffect(() => {
+    if (peek) onFocusChange(false);
+  }, [peek]);
   if (peek) return <span className="min-w-0 flex-1 truncate" data-testid="ask-title-text">{title}</span>;
   return (
     <>
@@ -613,19 +622,20 @@ function AskTitle({ title, draft, setDraft, onFocusChange, focused, peek, readOn
           e.stopPropagation();
           if (e.key !== "Enter" || e.nativeEvent.isComposing || e.keyCode === 229) return;
           e.preventDefault();
-          if (!changed) return;
+          // Ask turned off while it had the keys: nothing is cleared or sent (Codex review)
+          if (!changed || readOnly) return;
           // sent: the words are no longer this conversation's. The page starts again under it (`started`), its follow-up
           // box with the keys, empty
           setDraft(null);
           startOver(draft);
         }}
-        className="h-7 min-w-0 flex-1 truncate rounded-md -ms-1 ps-1 pe-1.5 text-sm outline-none read-only:cursor-default not-read-only:hover:bg-muted not-read-only:focus:bg-muted data-changed:bg-muted"
+        className="h-7 min-w-24 flex-1 truncate rounded-md -ms-1 ps-1 pe-1.5 text-sm outline-none read-only:cursor-default not-read-only:hover:bg-muted not-read-only:focus:bg-muted data-changed:bg-muted"
       />
       {!readOnly && <span id={described} className="sr-only">{t("ask.title.description")}</span>}
       {/* what the field is for, once it has the keys; changed words left there say they're still to be asked (the keys'
           line says Return while it has the keys) */}
       {!readOnly && (focused ? !changed : changed) && (
-        <span aria-hidden className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground" data-testid="ask-title-hint">
+        <span aria-hidden className="flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground" data-testid="ask-title-hint">
           {changed ? <><Kbd>{keyLabel("enter")}</Kbd>{t("ask.new")}</> : t("ask.title.hint")}
         </span>
       )}
@@ -812,11 +822,18 @@ function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => 
   const area = useRef<HTMLDivElement>(null);
   const followUp = useRef<HTMLInputElement>(null);
   // plan 270: words typed over the header's question and not sent, kept with the conversation's place
-  const [draft, setTyped] = useState<string | null>(() => askPlace(conversationId)?.title ?? null);
+  const [draft, setTyped] = useState<string | null>(() => {
+    const kept = askPlace(conversationId)?.title ?? null;
+    return titleChanged(kept, title) ? kept : null;
+  });
   const setDraft = (text: string | null) => {
     setTyped(text);
     keepAskPlace(conversationId, { title: text });
   };
+  // typed while the first answer came (no conversation yet): kept once there is one, as the follow-up box's (Codex review)
+  useEffect(() => {
+    if (conversationId !== null && draft !== null) keepAskPlace(conversationId, { title: draft });
+  }, [conversationId]);
   const [titleFocused, setTitleFocused] = useState(false);
   // the header holds other words: the answer's own question heads it, so it's never read as theirs
   const retitled = titleChanged(draft, title);
@@ -933,7 +950,7 @@ function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => 
           )}
           <FollowUp disabled={atLimit || !enabled} onWalk={setWalking} inputRef={followUp} />
       </div>
-      <AskHints where={peek ? "peek" : titleFocused ? (retitled ? "titleChanged" : "title") : walking && chosen !== null ? "walking" : "asking"} sources={sourceCount} end={session} />
+      <AskHints where={peek ? "peek" : titleFocused ? (retitled && enabled ? "titleChanged" : "title") : walking && chosen !== null ? "walking" : "asking"} sources={sourceCount} end={session} />
     </>
   );
 }
@@ -1070,8 +1087,12 @@ function AskHistoryPage({ value, setValue, onBack, onClose }: { value: string; s
   const query = value.trim().toLowerCase();
   const shown = useMemo(() => (list ?? []).filter((c) => !query || c.title.toLowerCase().includes(query)), [list, query]);
   const open = async (id: number) => {
-    if (await openConversation(id)) setPalettePage("ask");
-    else refresh();
+    // a step back before it was read: Ask shows what it held, not this late one (Codex review, plan 270)
+    if (await openConversation(id, () => usePalettePage.getState().page === "askHistory")) {
+      // the filter typed here isn't a question for the page it opens (+ would start one with it)
+      setValue("");
+      setPalettePage("ask");
+    } else if (usePalettePage.getState().page === "askHistory") refresh();
   };
   return (
     <div

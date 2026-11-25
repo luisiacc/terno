@@ -141,3 +141,32 @@ Codex's critique of this plan (12 points) changed it as follows:
     stops or clears anything (unit test). Words are compared trimmed.
 12. **Capture scripts:** `ask-new` stays the + button's test id, so `scripts/ui-rating/capture.mjs`, `apps/site/shots`
     and the demo script keep working. A click on it lands in the empty field, focused, as before.
+
+## Codex code review
+
+One round, 12 findings. Changes:
+
+1. **A late history read** could replace the conversation the user had stepped back to, while its fields kept the other
+   one's words. Opening from the history now reads only while the history is still showing, and `openConversation` ups
+   `started` (another conversation is another page, so its fields mount fresh). Unit test.
+2. **Ask turned off under changed words:** Return checks `readOnly` before clearing or sending, and the keys' line doesn't
+   say Return. No test: the window hears its settings only through its own Settings, which closes the palette (the
+   spec's "this window hasn't heard yet"), so the state can't be reached in e2e.
+3. **Words typed before the first answer's id** are now kept once the id arrives, as the follow-up box's are. The Esc
+   callback depends on `setDraft` too, so it writes to the current id.
+4. **Ctrl+K and Ctrl+Shift+K off the Mac** go on to the app: the title stops Ctrl+N/P/J/K only on the Mac (cmdk's
+   `vimBindings={isMac}`), and never with Shift.
+5. **A source shown while the title had the keys** clears its focus state, so the keys' line doesn't stay in title mode.
+6. **Narrow windows:** the field keeps at least 6 rem (`min-w-24`), and the hint truncates rather than taking it.
+7. **Tab:** Chromium selects a text field's whole value when Tab or Shift+Tab reaches it. e2e checks Shift+Tab from +. No
+   ring: like the follow-up box and the palette's field, the caret and the wash show focus.
+8. **Esc on words that are no change** (the question again, or with a trailing space) is the page's, as the keys' line
+   says. Such words also aren't restored on mount. e2e.
+9. **The history's filter** went into the empty field that + opened. Opening a conversation from the history clears it.
+   e2e.
+10. **BoardUI's Input:** not used, on purpose. The title is an inline field in the palette's own idiom, like the
+    follow-up box beside it and cmdk's input: no box, no label. The catalog's Input is a boxed form field.
+11. **The unchanged-Return test** now checks a source row is chosen first, and that no source opened, after the later
+    steps too.
+12. **Spanish:** the axe test asks a question in Spanish and checks the field's name, description and hint, and the +
+    button's name.

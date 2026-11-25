@@ -455,6 +455,7 @@ test.describe("ask your mail (plan 141)", () => {
       await followUp(page).fill("half a follow-up");
       // a source chosen with ↓ isn't what Return in the title opens
       await followUp(page).press("ArrowDown");
+      await expect(page.getByTestId("ask-source").first()).toHaveAttribute("data-selected", "true");
       // the first click takes it whole, the second places the caret
       await title.click();
       await expect(title).toBeFocused();
@@ -476,8 +477,20 @@ test.describe("ask your mail (plan 141)", () => {
       await expect(followUp(page)).toBeFocused();
       await expect(page.getByRole("dialog")).toBeVisible();
       await expect(page.getByTestId("ask-question").first()).toHaveClass(/sr-only/);
-      // words left there are kept, through a close and ⌘⇧K
-      await title.click();
+      // Return there never opened the source chosen under it
+      await expect(page.getByTestId("ask-peek")).toHaveCount(0);
+      // the question with a space after it is no change: Esc is the page's (Codex review), and it comes back as the question
+      await title.fill(`what about ${word}? `);
+      await expect(page.getByTestId("ask-hints")).toHaveAttribute("data-where", "title");
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await open(page);
+      await expect(title).toHaveValue(`what about ${word}?`);
+      // Shift+Tab from + reaches it with the question selected whole; words left there are kept, through a close and ⌘⇧K
+      await page.getByTestId("ask-new").focus();
+      await page.keyboard.press("Shift+Tab");
+      await expect(title).toBeFocused();
+      expect(await selected()).toBe(`what about ${word}?`.length);
       await page.keyboard.type(`and ${word} too?`);
       await followUp(page).click();
       await expect(title).toHaveValue(`and ${word} too?`);
@@ -498,12 +511,14 @@ test.describe("ask your mail (plan 141)", () => {
       // both are in the history, and the first kept its own question and its half-written follow-up
       await page.getByTestId("ask-history-row").click();
       await expect(page.getByTestId("ask-history-item")).toHaveCount(2);
+      await ask(page).fill("what about");
       await page.getByTestId("ask-history-item").filter({ hasText: `what about ${word}?` }).click();
       await expect(title).toHaveValue(`what about ${word}?`);
       await expect(followUp(page)).toHaveValue("half a follow-up");
-      // + starts one, in the empty field
+      // + starts one, in the empty field: the history's filter isn't a question (Codex review)
       await page.getByTestId("ask-new").click();
       await expect(ask(page)).toBeFocused();
+      await expect(ask(page)).toHaveValue("");
     });
   });
 
@@ -798,6 +813,14 @@ test.describe("ask your mail (plan 141)", () => {
     await settingUp(page, server, { language: "es" });
     await open(page);
     await expect(followUp(page).or(ask(page)).first()).toBeVisible();
+    expect(await englishLeaks(page)).toEqual([]);
+    // plan 270 in Spanish: the header's field and + (Codex review: the empty page has neither)
+    if (await ask(page).isVisible()) await question(page, `${word}?`);
+    await expect(page.getByTestId("ask-title")).toHaveAccessibleName("Pregunta");
+    await expect(page.getByTestId("ask-title")).toHaveAccessibleDescription("Cámbiala y pulsa Intro para hacer una pregunta nueva.");
+    await expect(page.getByTestId("ask-new")).toHaveAccessibleName("Pregunta nueva");
+    await page.getByTestId("ask-title").click();
+    await expect(page.getByTestId("ask-title-hint")).toHaveText("Escribe una pregunta nueva");
     expect(await englishLeaks(page)).toEqual([]);
   });
 });

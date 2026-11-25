@@ -298,7 +298,8 @@ export async function openConversation(conversationId: number, current: () => bo
   // it was read before something went: this copy may be what's gone (plan 165: or what asked for it moved on)
   if (!saved || useAsk.getState().gone !== gone || !current()) return false;
   stopAsking();
-  useAsk.setState({ ...EMPTY, conversationId, turns: saved.turns, sources: saved.sources, older: saved.older, usedAt: Date.now() });
+  // plan 270: another conversation is another page: what was typed in the last one's fields stays with it
+  useAsk.setState((s) => ({ ...EMPTY, conversationId, turns: saved.turns, sources: saved.sources, older: saved.older, started: s.started + 1, usedAt: Date.now() }));
   return true;
 }
 

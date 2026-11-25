@@ -160,6 +160,14 @@ describe("a new question from the header (plan 270)", () => {
     expect(useAsk.getState().turns).toEqual([]);
   });
 
+  it("opening another conversation is another page: `started` ups, so the last one's typed words stay with it (Codex review)", async () => {
+    showing();
+    const was = useAsk.getState().started;
+    rpc.answer.set("ai.askConversation", { turns: [turn], sources: {}, older: { kind: "none" } });
+    expect(await openConversation(7)).toBe(true);
+    expect(useAsk.getState().started).toBe(was + 1);
+  });
+
   it("asks nothing, and keeps what shows, for empty words or more than a question may hold", () => {
     showing();
     startOver("   ");
