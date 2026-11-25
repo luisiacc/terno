@@ -64,6 +64,8 @@ export const SETTINGS_INDEX = [
   { id: "general.remoteImages", tab: "general", label: "settings.general.remoteImages", hint: "settings.general.remoteImages.hint", words: "settings.find.words.remoteImages" },
   { id: "general.language", tab: "general", label: "language.label", hint: "language.hint", words: "settings.find.words.language" },
   { id: "general.syncWindow", tab: "general", group: "settings.general.sync", label: "settings.general.syncWindow", hint: "settings.general.syncWindow.hint", words: "settings.find.words.syncWindow" },
+  // plan 278
+  { id: "general.people", tab: "general", group: "settings.general.people", label: "settings.general.peopleRules", hint: "settings.general.people.hint", words: "settings.find.words.people" },
   { id: "general.notify", tab: "general", group: "settings.general.notifications", label: "settings.general.notify", words: "settings.find.words.notify", when: (c) => c.notifications },
   { id: "general.notifyPreview", tab: "general", group: "settings.general.notifications", label: "settings.general.notifyPreview", hint: "settings.general.notifyPreview.hint", when: (c) => c.notifications },
   { id: "general.badge", tab: "general", group: "settings.general.notifications", label: "settings.general.badge", hint: "settings.general.badge.hint", words: "settings.find.words.badge", when: (c) => c.badge && c.desktop },

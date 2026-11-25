@@ -1,6 +1,6 @@
 import { formatAddressList, type ThreadDetail } from "@terno/core";
 import { t } from "@terno/i18n";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
 import { Copy, Reply, Search, SquarePen } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
@@ -9,7 +9,7 @@ import type { ThreadPerson } from "~/lib/thread-overview";
 import { setApp, useApp } from "~/state/app";
 import { copyAddress, SenderItems, type MenuParts } from "./sender-menu-items";
 
-const PARTS: PersonParts = { Item: DropdownMenuItem, Separator: DropdownMenuSeparator, Sub: DropdownMenuSub, SubTrigger: DropdownMenuSubTrigger, SubContent: DropdownMenuSubContent };
+const PARTS: PersonParts = { Item: DropdownMenuItem, Separator: DropdownMenuSeparator, Sub: DropdownMenuSub, SubTrigger: DropdownMenuSubTrigger, SubContent: DropdownMenuSubContent, RadioGroup: DropdownMenuRadioGroup, RadioItem: DropdownMenuRadioItem };
 
 /** A menu's parts, a dropdown's or a right-click's */
 export type PersonParts = MenuParts & { Separator: ComponentType };

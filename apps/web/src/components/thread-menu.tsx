@@ -10,6 +10,8 @@ import {
   ContextMenuGroup,
   ContextMenuItem,
   ContextMenuLabel,
+  ContextMenuRadioGroup,
+  ContextMenuRadioItem,
   ContextMenuSeparator,
   ContextMenuShortcut,
   ContextMenuSub,
@@ -985,7 +987,7 @@ function MenuItems() {
   );
 }
 
-const CONTEXT_PARTS: MenuParts = { Item: ContextMenuItem, Sub: ContextMenuSub, SubTrigger: ContextMenuSubTrigger, SubContent: ContextMenuSubContent };
+const CONTEXT_PARTS: MenuParts = { Item: ContextMenuItem, Sub: ContextMenuSub, SubTrigger: ContextMenuSubTrigger, SubContent: ContextMenuSubContent, RadioGroup: ContextMenuRadioGroup, RadioItem: ContextMenuRadioItem };
 
 /** "More ▸": what a row is rarely right-clicked for; a row with several answers opens them beside it. */
 function MoreItems({ spam, single, code, view, ids, scope, sender, senderAccount, categories, filedIn }: { spam: MenuEntry | undefined; single: ThreadSummary | undefined; code: string | null; view: View; ids: number[]; scope: boolean; sender: { email: string; name: string } | null; senderAccount: number | null; categories: readonly Category[]; filedIn: readonly Category[] }) {

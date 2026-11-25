@@ -3,6 +3,7 @@ import { installAsk } from "~/lib/ask";
 import { installReplies } from "~/lib/replies";
 import { installToday } from "~/state/today";
 import { installShownSenders } from "~/state/shown-senders";
+import { installPersonRules } from "~/state/person-rules";
 import { installSendWarnings } from "./send-warning";
 import { reconcileAccounts, rememberFocus, restoredFocus } from "~/lib/account-folders";
 import { setSyncProgress } from "~/state/sync-progress";
@@ -149,6 +150,7 @@ export async function boot(): Promise<void> {
     client.on("followups", applyFollowups);
     installToday();
     installShownSenders();
+    installPersonRules();
     installReplies();
     installAsk();
     installActionPreview();

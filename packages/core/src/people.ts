@@ -347,4 +347,4 @@ export interface PersonRule {
 }
 
 /** At most this many senders have a rule (a change to one that has one is always taken). */
-export const PERSON_RULES_MAX = 2000;
+export const PERSON_RULES_MAX = 500;

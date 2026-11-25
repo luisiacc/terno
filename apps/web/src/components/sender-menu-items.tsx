@@ -1,13 +1,15 @@
 import type { Category, CategoryColor } from "@terno/core";
 import { t } from "@terno/i18n";
 import { CategoryDot } from "@terno/ui/components/category-dot";
-import { Eye, EyeOff, Filter, Tag } from "@terno/ui/icons";
+import { Eye, EyeOff, Filter, Tag, UserRound } from "@terno/ui/icons";
 import type { ComponentType, ReactNode } from "react";
 import { whatMattersFor } from "~/lib/ai";
 import { removeSenderFromCategory } from "~/lib/categorize";
+import { choosePerson, type PersonChoice } from "~/lib/person-rules";
 import { showSender, stopShowing } from "~/lib/shown-senders";
 import { snack } from "~/lib/snack";
 import { setApp, useApp } from "~/state/app";
+import { usePersonRule } from "~/state/person-rules";
 import { useIsShown } from "~/state/shown-senders";
 import { applyScope } from "./category-snackbar";
 
@@ -17,6 +19,8 @@ export interface MenuParts {
   Sub: ComponentType<{ children: ReactNode }>;
   SubTrigger: ComponentType<{ "data-testid"?: string; children: ReactNode }>;
   SubContent: ComponentType<{ className?: string; "data-testid"?: string; children: ReactNode }>;
+  RadioGroup: ComponentType<{ value: string; onValueChange: (value: string) => void; children: ReactNode }>;
+  RadioItem: ComponentType<{ value: string; closeOnClick?: boolean; disabled?: boolean; "data-testid"?: string; children: ReactNode }>;
 }
 
 /**
@@ -31,6 +35,7 @@ export function SenderItems({ sender, accountId, categories, filedIn, parts }: {
   return (
     <>
       {whatMatters && <ShowInWhatMatters sender={sender} Item={Item} />}
+      <CountsAsPerson sender={sender} parts={parts} />
       {categories.length > 0 && (
         <Sub>
           <SubTrigger data-testid="menu-sender-file">
@@ -78,6 +83,35 @@ function ShowInWhatMatters({ sender, Item }: { sender: { email: string; name: st
       <Eye />
       <span className="min-w-0 flex-1 truncate">{t("shown.menu.show")}</span>
     </Item>
+  );
+}
+
+const PERSON_CHOICES = { auto: "personRules.auto", always: "personRules.always", never: "personRules.never" } as const satisfies Record<PersonChoice, string>;
+
+/**
+ * Plan 278: "Counts as a person ▸ Automatically / Always / Never", checked by your rule alone: the menu never guesses what
+ * the facts judged (the row's sender isn't always the message they read: Codex review #6). Disabled until the rules are read.
+ */
+function CountsAsPerson({ sender, parts }: { sender: { email: string; name: string }; parts: MenuParts }) {
+  const { Sub, SubTrigger, SubContent, RadioGroup, RadioItem } = parts;
+  const rule = usePersonRule(sender.email);
+  const value = rule === undefined ? "" : rule === null ? "auto" : rule.person ? "always" : "never";
+  return (
+    <Sub>
+      <SubTrigger data-testid="menu-sender-person">
+        <UserRound />
+        <span className="min-w-0 flex-1 truncate">{t("personRules.menu")}</span>
+      </SubTrigger>
+      <SubContent className="min-w-44" data-testid="menu-sender-person-list">
+        <RadioGroup value={value} onValueChange={(v) => v !== value && void choosePerson(sender, v as PersonChoice)}>
+          {(Object.keys(PERSON_CHOICES) as PersonChoice[]).map((c) => (
+            <RadioItem key={c} value={c} closeOnClick disabled={rule === undefined} data-testid={`menu-sender-person-${c}`}>
+              {t(PERSON_CHOICES[c])}
+            </RadioItem>
+          ))}
+        </RadioGroup>
+      </SubContent>
+    </Sub>
   );
 }
 
