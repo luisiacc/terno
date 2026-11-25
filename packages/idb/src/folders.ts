@@ -155,6 +155,10 @@ export function countFolderMessages(c: Ctx, accountId: number, keys: readonly Fo
   };
   const locations = T(c, "message_locations");
   const memberships = T(c, "thread_folders");
+  // plan 259: an Outlook account's folders are its messages' own, one each: its places are `message_folders`, a message
+  // is counted where it is without asking where else, and there are no labels or threads to read (nor merges to restart for)
+  const one = oneFolderPerMessage(T(c, "accounts").get(accountId)?.kind as string | undefined);
+  const placedIn = T(c, "message_folders");
   /** where a message is first placed among the folders (Infinity: none) */
   const firstPlace = (id: number) => {
     let first = Infinity;
@@ -165,14 +169,14 @@ export function countFolderMessages(c: Ctx, accountId: number, keys: readonly Fo
   // its place walks let go (Codex code review round 19 #2: thread 2 merged into thread 1 after the walk passed 1)
   const merges = threadMerges(c);
   const into = after?.merges !== undefined ? merges.into(after.merges) : [];
-  const restarted = !!after && mergedBehind(after, into, places, (t) => memberships.by("fk_thread_id", t).map((r) => r.folder as string));
+  const restarted = !one && !!after && mergedBehind(after, into, places, (t) => memberships.by("fk_thread_id", t).map((r) => r.folder as string));
   if (restarted && after.walk !== undefined) {
     // (a Map's keys may be deleted while they're iterated)
     const walks = countWalks.get(c);
     for (const token of walks?.keys() ?? []) if (token.startsWith(`${after.walk}\u0000`)) walks!.delete(token);
   }
   // one ahead of the count may be a member its kept runs don't have: they're read again
-  if (!restarted && after && !after.places && (into === null || into.length) && places[after.key]) forgetStretch(c, { accountId, folder: places[after.key]!.mailbox });
+  if (!one && !restarted && after && !after.places && (into === null || into.length) && places[after.key]) forgetStretch(c, { accountId, folder: places[after.key]!.mailbox });
   const answer = (next: FolderCountCursor | null) => ({ messages, next: next && { ...next, merges: merges.current }, ...(restarted && { restarted: true as const }) });
   let messages = 0;
   let budget = Math.max(1, limit);
@@ -190,7 +194,7 @@ export function countFolderMessages(c: Ctx, accountId: number, keys: readonly Fo
     if (budget <= 0) return answer(at);
     const place = places[at.key]!;
     const key = place.mailbox;
-    if (firsts.get(JSON.stringify(place)) !== at.key) { at = { key: at.key + 1, places: true, after: [] }; continue; }
+    if (firsts.get(JSON.stringify(place)) !== at.key || (one && place.uidvalidity !== undefined)) { at = { key: at.key + 1, places: true, after: [] }; continue; }
     if (at.places) {
       // the folder's places by a live walk of its index kept between slices (as carryFolder's), each slice its next
       // `budget` (Codex code review round 5 #4: each slice walked and sorted the whole mailbox). Each count has a walk of
@@ -206,7 +210,7 @@ export function countFolderMessages(c: Ctx, accountId: number, keys: readonly Fo
       if (!walks) countWalks.set(c, (walks = new Map()));
       let walk = walks.get(token);
       walks.delete(token);
-      if (!walk) walk = { keys: locations.keysBy("mailbox", accountId, key), visited: new Set(), looked: 0 };
+      if (!walk) walk = { keys: one ? placedIn.keysBy("account_folder", accountId, key) : locations.keysBy("mailbox", accountId, key), visited: new Set(), looked: 0 };
       const asked = budget;
       let n = 0;
       let ended = false;
@@ -216,13 +220,14 @@ export function countFolderMessages(c: Ctx, accountId: number, keys: readonly Fo
         n++;
         // passed again after the walk was lost: counted before
         const again = walk.looked++ < seen;
-        const l = locations.rows.get(k.value);
-        if (!l || walk.visited.has(l.message_id as number)) continue;
+        const l = one ? placedIn.rows.get(k.value) : locations.rows.get(k.value);
+        if (!l || walk.visited.has(l.message_id as number) || (one && l.folder !== key)) continue;
         walk.visited.add(l.message_id as number);
-        if (!again && firstPlace(l.message_id as number) === at.key) messages++;
+        if (!again && (one || firstPlace(l.message_id as number) === at.key)) messages++;
       }
       budget -= Math.max(1, n);
-      if (ended) at = { key: at.key, places: false, after: [] };
+      // (an Outlook folder has no rows of threads to read after its places)
+      if (ended) at = one ? { key: at.key + 1, places: true, after: [] } : { key: at.key, places: false, after: [] };
       else {
         // a few kept, the least recently used let go (counts left unfinished let theirs go)
         if (walks.size >= 16) walks.delete(walks.keys().next().value!);
@@ -232,7 +237,7 @@ export function countFolderMessages(c: Ctx, accountId: number, keys: readonly Fo
       continue;
     }
     // a renamed folder's old path under one UIDVALIDITY: its places only (its threads are the new key's rows)
-    if (place.uidvalidity !== undefined) { at = { key: at.key + 1, places: true, after: [] }; continue; }
+    if (place.uidvalidity !== undefined || one) { at = { key: at.key + 1, places: true, after: [] }; continue; }
     // inside a thread: the rest of it
     const [thread = 0, message] = at.after;
     if (message !== undefined) {

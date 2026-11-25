@@ -1,4 +1,4 @@
-import { oneFolderPerMessage, type IncomingMessage } from "@terno/store";
+import { oneFolderPerMessage, type FolderCountCursor, type FolderExportCursor, type FolderPlace, type IncomingMessage } from "@terno/store";
 import type { Db } from "./sqlite";
 
 /**
@@ -49,3 +49,51 @@ export const MESSAGE_FOLDERS = (ids: string) => messageFoldersOf("m.id AS id, f.
 
 /** Is any message in a folder of its own (an Outlook account's)? One probe: none, and membership reads nothing more. */
 export const anyMessageFolders = (db: Db): boolean => db.get("SELECT 1 FROM message_folders LIMIT 1") !== undefined;
+
+/** a count's or export's key as an Outlook folder: a key, or a key with IMAP's exclusions (none here); a renamed IMAP generation is none */
+const keyOf = (k: FolderPlace): string | null => (typeof k === "string" ? k : "uidvalidity" in k ? null : k.mailbox);
+
+/**
+ * Plan 107's folder count for an Outlook account (the IndexedDB adapter's countFolderMessages branch): each folder's
+ * messages by its own index past the last message counted (`after: [id]`), `limit` rows a slice. A message is in one
+ * folder, so each is counted once without asking where else it is, and a key named twice counts once. It counts what
+ * the server holds there (as IMAP's locations do): a move on its way has moved nothing yet, and mail trashed here
+ * meanwhile is still there. No thread is read, so a thread merge never restarts it.
+ */
+export function countMessageFolders(db: Db, accountId: number, keys: readonly FolderPlace[], after: FolderCountCursor | null, limit: number): { messages: number; next: FolderCountCursor | null } {
+  let messages = 0;
+  let budget = Math.max(1, limit);
+  let at: FolderCountCursor = after ?? { key: 0, places: true, after: [] };
+  while (at.key < keys.length) {
+    if (budget <= 0) return { messages, next: at };
+    const key = keyOf(keys[at.key]!);
+    if (key === null || keys.slice(0, at.key).some((k) => keyOf(k) === key)) { at = { key: at.key + 1, places: true, after: [] }; continue; }
+    const asked = budget;
+    const r = db.get<{ n: number; last: number | null }>(
+      "SELECT count(*) AS n, max(message_id) AS last FROM (SELECT message_id FROM message_folders INDEXED BY message_folders_folder WHERE account_id = ? AND folder = ? AND message_id > ? ORDER BY message_id LIMIT ?)",
+      accountId, key, at.after[0] ?? 0, asked,
+    )!;
+    messages += r.n;
+    budget -= Math.max(1, r.n);
+    at = r.n >= asked ? { key: at.key, places: true, after: [r.last!] } : { key: at.key + 1, places: true, after: [] };
+  }
+  return { messages, next: null };
+}
+
+/**
+ * Plan 107's export of an Outlook folder: its messages by its own index past `after.folderMessage`, `limit` a call, the
+ * ones here (not drafts, trash or spam: the export's test for every folder). One walk of one state, the messages the
+ * server holds there, where a folder of threads would pick its threads from the memberships (a pending move counted)
+ * and test each message against its confirmed place: during A → B, A's thread and B's message disagreed. No thread
+ * is read, so a merge never rewinds it.
+ */
+export function exportMessageFolder(db: Db, target: { accountId: number; folder: string }, after: FolderExportCursor | null, limit: number): { messages: { id: number; date: number }[]; next: FolderExportCursor | null } {
+  const n = Math.max(1, limit);
+  const rows = db.all<{ id: number; date: number; ok: number }>(
+    `SELECT m.id, m.date, (m.is_draft = 0 AND m.is_trash = 0 AND m.is_spam = 0) AS ok
+     FROM message_folders f INDEXED BY message_folders_folder CROSS JOIN messages m ON m.id = f.message_id
+     WHERE f.account_id = ? AND f.folder = ? AND f.message_id > ? ORDER BY f.message_id LIMIT ?`,
+    target.accountId, target.folder, after?.folderMessage ?? 0, n,
+  );
+  return { messages: rows.filter((r) => r.ok).map((r) => ({ id: r.id, date: r.date })), next: rows.length >= n ? { thread: 0, folderMessage: rows.at(-1)!.id } : null };
+}

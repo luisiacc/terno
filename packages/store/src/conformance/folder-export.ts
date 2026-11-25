@@ -2,7 +2,7 @@ import { ATTACHMENT_CHUNK } from "@terno/core";
 import { afterEach, describe, expect, it } from "vitest";
 import type { MailStore } from "../mail-store";
 import type { FolderExportCursor, FolderExportTarget } from "../types";
-import { ingest, msg, withAccounts } from "./fixtures";
+import { ingest, msg, outlookAccount, threadOf, withAccounts } from "./fixtures";
 import type { StoreHarness } from "./store";
 
 const loc = (mailbox: string, uid: number) => ({ mailbox, uidvalidity: 1, uid, flags: [] as string[] });
@@ -72,6 +72,45 @@ export function defineFolderExportConformance(name: string, harness: StoreHarnes
       ]);
       expect((await walk(store, { accountId: imap!, folder: "Work" })).ids).toEqual(await idsOf(store, ["i1", "i2"]));
       expect((await walk(store, { accountId: imap!, folder: "Nope" })).ids).toEqual([]);
+    });
+
+    it("Outlook (plan 259): a folder is the messages in it, by message, however sliced; a mixed thread gives only its own; during a move on its way, and after, each message is where the server has it, once", async () => {
+      const store = await fresh();
+      const [g] = await withAccounts(store, 1);
+      const o = await outlookAccount(store);
+      const other = await outlookAccount(store, "other@outlook.example");
+      await store.folders.replace(o, ["F1", "F2"].map((key) => ({ key, path: [key], selectable: true })));
+      await ingest(store, [
+        // one conversation across F1, F2 and the Inbox
+        msg({ accountId: o, providerMsgId: "a", rfcMessageId: "a@t", providerThreadId: "c", inInbox: false, folder: "F1" }),
+        msg({ accountId: o, providerMsgId: "b", rfcMessageId: "b@t", providerThreadId: "c", inReplyTo: "a@t", references: ["a@t"], inInbox: false, folder: "F2" }),
+        msg({ accountId: o, providerMsgId: "c", rfcMessageId: "c@t", providerThreadId: "c", inReplyTo: "b@t", references: ["a@t", "b@t"], folder: null }),
+        msg({ accountId: o, providerMsgId: "d", inInbox: false, folder: "F1" }),
+        // never: a draft, mail in Junk, another account's folder of the same key, another provider's
+        msg({ accountId: o, providerMsgId: "e", inInbox: false, isDraft: true, folder: "F1" }),
+        msg({ accountId: o, providerMsgId: "f", inInbox: false, isSpam: true, folder: "F1" }),
+        msg({ accountId: other, providerMsgId: "x", inInbox: false, folder: "F1" }),
+        msg({ accountId: g!, providerMsgId: "y", gmailLabels: ["F1"], folder: "F1" }),
+      ]);
+      const f1 = await idsOf(store, ["a", "d"]);
+      for (const limit of [1, 2, 50]) expect((await walk(store, { accountId: o, folder: "F1" }, limit)).ids).toEqual(f1);
+      expect((await walk(store, { accountId: o, folder: "F2" })).ids).toEqual(await idsOf(store, ["b"]));
+      expect((await walk(store, { accountId: o, folder: "Nope" })).ids).toEqual([]);
+      // F2 → F1 on its way: the thread is in F1 only now, and its message is still exported once, from F2
+      await store.threads.moveToFolder({ threadIds: [await threadOf(store, "b")], accountId: o, folder: "F1", from: "F2", now: 0 });
+      expect((await store.threads.list({ view: "all", accountId: o, folder: "F2", limit: 50 })).items).toEqual([]);
+      expect((await walk(store, { accountId: o, folder: "F1" })).ids).toEqual(f1);
+      expect((await walk(store, { accountId: o, folder: "F2" })).ids).toEqual(await idsOf(store, ["b"]));
+      // done (the delta read saw it): in F1, once
+      await ingest(store, [msg({ accountId: o, providerMsgId: "b", rfcMessageId: "b@t", providerThreadId: "c", inReplyTo: "a@t", references: ["a@t"], inInbox: false, folder: "F1" })]);
+      expect((await walk(store, { accountId: o, folder: "F1" }, 1)).ids).toEqual(await idsOf(store, ["a", "b", "d"]));
+      expect((await walk(store, { accountId: o, folder: "F2" })).ids).toEqual([]);
+      // one gone between stretches is skipped
+      const [d] = await idsOf(store, ["d"]);
+      const cut = await walk(store, { accountId: o, folder: "F1" }, 1, async (stretch) => {
+        if (stretch === 1) await store.sync.remove([d!]);
+      });
+      expect(cut.ids).toEqual(await idsOf(store, ["a", "b"]));
     });
 
     it("an IMAP folder renamed here before a pass has its mail still under the old path: the alias names it (Codex code review round 5 #2)", async () => {

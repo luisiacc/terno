@@ -1,5 +1,5 @@
 import { storedAddresses, type FolderView } from "@terno/core";
-import type { ExportMessage, FolderExportCursor, FolderExportTarget } from "@terno/store";
+import { oneFolderPerMessage, type ExportMessage, type FolderExportCursor, type FolderExportTarget } from "@terno/store";
 import { seekAfter, T, threadMerges, type Ctx, type R } from "./mail";
 import type { Key } from "./mem";
 
@@ -227,6 +227,8 @@ function threadOrdersOf(c: Ctx): Map<number, ThreadIds> {
 }
 
 export function exportIds(c: Ctx, target: FolderExportTarget, after: FolderExportCursor | null, limit: number): { messages: { id: number; date: number }[]; next: FolderExportCursor | null; rewound?: true } {
+  // plan 259: an Outlook folder is its messages' own (one each), walked by message: no threads, no merges
+  if (target.folder !== undefined && oneFolderPerMessage(T(c, "accounts").get(target.accountId)?.kind as string | undefined)) return exportMessageFolder(c, { accountId: target.accountId, folder: target.folder }, after, limit);
   // a merge since the last stretch that moved a thread not read yet into one passed: read again from there, its
   // threads read afresh (the merge may have made one a member) (Codex code review round 17 #1: thread 2 merged into
   // thread 1 after the walk passed 1 left thread 2's messages out)
@@ -283,6 +285,34 @@ export function exportIds(c: Ctx, target: FolderExportTarget, after: FolderExpor
   if (through !== null) return answer(out, { thread: through });
   // each thread took at least one of the budget: a full stretch returned above, so this one was the last
   return answer(out, null);
+}
+
+/**
+ * Plan 259: an Outlook folder's export (the SQL adapter's exportMessageFolder): its messages by id past
+ * `after.folderMessage`, from its index read a run a call and sorted, kept between calls as a folder's members are
+ * (null from the walk: still being read, the next call asks again), each still there checked as it's handed on. One
+ * walk of one state, what the server holds there: a folder of threads picks them from the memberships (a pending move
+ * counted) and tests each message against its confirmed place, so during A → B they disagreed.
+ */
+function exportMessageFolder(c: Ctx, target: { accountId: number; folder: string }, after: FolderExportCursor | null, limit: number): { messages: { id: number; date: number }[]; next: FolderExportCursor | null } {
+  const walk = after?.walk ?? ++exportWalkIds.last;
+  const from = after?.folderMessage ?? 0;
+  const placed = T(c, "message_folders");
+  const messages = T(c, "messages");
+  const here = (id: number) => placed.get(id)?.folder === target.folder;
+  const top = runStretch(c, `o\u0000${walk}`, () => placed.keysBy("account_folder", target.accountId, target.folder), (k) => k as number, from, Math.max(1, limit), here);
+  if (top === null) return { messages: [], next: { thread: 0, folderMessage: pendingAfter(from), walk } };
+  const out: { id: number; date: number }[] = [];
+  for (const id of top.ids) {
+    const m = messages.get(id);
+    if (m && !m.is_draft && !m.is_trash && !m.is_spam) out.push({ id, date: m.date as number });
+  }
+  const last = top.through ?? top.ids.at(-1);
+  if (top.through === null && top.ids.length < Math.max(1, limit)) {
+    memberRuns.get(c)?.delete(`o\u0000${walk}`);
+    return { messages: out, next: null };
+  }
+  return { messages: out, next: { thread: 0, folderMessage: last!, walk } };
 }
 
 /** these messages, their bodies read ahead by the caller (which parts there are) */

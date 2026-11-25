@@ -662,6 +662,37 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       expect(await count(store, g!, ["Work"])).toBe(0);
     });
 
+    it("Outlook (plan 259): a folder subtree's messages are counted once each where the server has them, however sliced; a key named twice counts once; another account's isn't this one's", async () => {
+      const store = await fresh();
+      const o = await outlookAccount(store);
+      const other = await outlookAccount(store, "other@outlook.example");
+      await store.folders.replace(o, [{ key: "F1", path: ["A"], selectable: true }, { key: "F2", path: ["A", "B"], selectable: true }]);
+      await ingest(store, [
+        msg({ accountId: o, providerMsgId: "a1", rfcMessageId: "a1@t", providerThreadId: "c", inInbox: false, folder: "F1" }),
+        // the same conversation, in the subfolder and the Inbox
+        msg({ accountId: o, providerMsgId: "a2", rfcMessageId: "a2@t", providerThreadId: "c", inReplyTo: "a1@t", references: ["a1@t"], inInbox: false, folder: "F2" }),
+        msg({ accountId: o, providerMsgId: "a3", rfcMessageId: "a3@t", providerThreadId: "c", inReplyTo: "a1@t", references: ["a1@t"], folder: null }),
+        msg({ accountId: o, providerMsgId: "a4", inInbox: false, folder: "F1" }),
+        msg({ accountId: other, providerMsgId: "b1", inInbox: false, folder: "F1" }),
+      ]);
+      expect(await count(store, o, ["F1", "F2"])).toBe(3);
+      expect(await count(store, o, ["F1"])).toBe(2);
+      expect(await count(store, o, ["F1", "F2", "F1"])).toBe(3);
+      expect(await count(store, o, ["F2"])).toBe(1);
+      expect(await count(store, other, ["F1"])).toBe(1);
+      expect(await count(store, o, [])).toBe(0);
+      // a move on its way has moved nothing yet; mail trashed here is still there until the server says
+      await store.threads.moveToFolder({ threadIds: [await threadOf(store, "a4")], accountId: o, folder: "F2", from: "F1", now: NOW });
+      await store.threads.act({ threadIds: [await threadOf(store, "a1")], action: "trash", signal: null, now: NOW });
+      expect(await count(store, o, ["F1"])).toBe(2);
+      expect(await count(store, o, ["F2"])).toBe(1);
+      // the server's answer (a delta read) moves the count
+      await ingest(store, [msg({ accountId: o, providerMsgId: "a4", inInbox: false, folder: "F2" })]);
+      expect(await count(store, o, ["F1"])).toBe(1);
+      expect(await count(store, o, ["F2"])).toBe(2);
+      expect(await count(store, o, ["F1", "F2"])).toBe(3);
+    });
+
     it("plan 107: a path made again after a rename here: each UIDVALIDITY counts in its own folder, however sliced (Codex code review round 6 #2)", async () => {
       const store = await fresh();
       const [, m] = await withAccounts(store);

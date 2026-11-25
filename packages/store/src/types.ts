@@ -424,6 +424,8 @@ export interface FolderExportCursor {
   merges?: number;
   /** the export's own walk of the place, where the store keeps one between calls (Codex code review round 18 #2) */
   walk?: number;
+  /** plan 259: an Outlook folder's walk goes by message (its own folder index), past this one; `thread` is 0 */
+  folderMessage?: number;
 }
 
 /**

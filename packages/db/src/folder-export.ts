@@ -1,6 +1,7 @@
 import { storedAddresses, type FolderView } from "@terno/core";
-import type { ExportMessage, FolderExportCursor, FolderExportTarget } from "@terno/store";
+import { oneFolderPerMessage, type ExportMessage, type FolderExportCursor, type FolderExportTarget } from "@terno/store";
 import { threadMerges } from "./ingest";
+import { exportMessageFolder } from "./message-folders";
 import type { Db } from "./sqlite";
 
 /**
@@ -30,6 +31,8 @@ const IN_FOLDER = `m.is_trash = 0 AND m.is_spam = 0 AND (
 const FIRST = { id: 0, date: Number.MIN_SAFE_INTEGER };
 
 export function exportIds(db: Db, target: FolderExportTarget, after: FolderExportCursor | null, limit: number): { messages: { id: number; date: number }[]; next: FolderExportCursor | null; rewound?: true } {
+  // plan 259: an Outlook folder is its messages' own (one each), walked by message: no threads, no merges
+  if (target.folder !== undefined && oneFolderPerMessage(db.get<{ kind: string }>("SELECT kind FROM accounts WHERE id = ?", target.accountId)?.kind)) return exportMessageFolder(db, target, after, limit);
   // a merge since the last stretch that moved a thread not read yet into one passed: read again from there (Codex
   // code review round 17 #1: thread 2 merged into thread 1 after the walk passed 1 left thread 2's messages out)
   const merges = threadMerges(db);

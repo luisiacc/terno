@@ -1,7 +1,7 @@
 import type { Folder } from "@terno/core";
 import { applyFolderOp, applyFolderOpOne, mergedBehind, oneFolderPerMessage, type FolderCountCursor, type FolderPlace, type LeaveFolderPayload, type MoveToFolderPayload, type ProviderFolder } from "@terno/store";
 import { threadMerges } from "./ingest";
-import { anyMessageFolders, IN_MESSAGE_FOLDERS, MESSAGE_FOLDERS } from "./message-folders";
+import { anyMessageFolders, countMessageFolders, IN_MESSAGE_FOLDERS, MESSAGE_FOLDERS } from "./message-folders";
 import { unreadSlot } from "./migrations";
 import { placeholders, type Db } from "./sqlite";
 
@@ -219,6 +219,8 @@ const placesJson = (places: readonly Place[]) => JSON.stringify(places.map((p) =
  * many match (Codex code review round 4 #3: every sublabel read the same long conversation again, in one call).
  */
 export function countFolderMessages(db: Db, accountId: number, keys: readonly FolderPlace[], after: FolderCountCursor | null, limit: number): { messages: number; next: FolderCountCursor | null; restarted?: true } {
+  // plan 259: an Outlook account's folders are its messages' own, one each (no locations, labels or threads to read)
+  if (oneFolderPerMessage(accountKind(db, accountId))) return countMessageFolders(db, accountId, keys, after, limit);
   const places = keys.map(toPlace);
   const all = placesJson(places);
   // the folders' keys, for labels and rows (a renamed folder's old path under one UIDVALIDITY has neither)
@@ -307,6 +309,8 @@ export function countFolderMessages(db: Db, accountId: number, keys: readonly Fo
     return rows.length > taken.length ? { date: taken.at(-1)!.date, id: taken.at(-1)!.id } : null;
   }
 }
+
+const accountKind = (db: Db, accountId: number) => db.get<{ kind: string }>("SELECT kind FROM accounts WHERE id = ?", accountId)?.kind;
 
 /** Whether a mailbox is one of the account's listed folders (a role mailbox's locations decide no membership). */
 export function isFolder(db: Db, accountId: number, key: string): boolean {
