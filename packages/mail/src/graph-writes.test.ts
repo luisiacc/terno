@@ -33,6 +33,7 @@ async function setup(o: { requests?: AccountRequests; writeMaxBytes?: number; qu
   const placements: MessagePlacement[][] = [];
   let cursor: unknown = null;
   const token = ms.accessToken();
+  const invalidated: string[] = [];
   const ctx = {
     incoming, incomingProcessor: processor,
     account: { id: 1, kind: "outlook", email: "ana@contoso.com" }, config: {},
@@ -80,13 +81,13 @@ async function setup(o: { requests?: AccountRequests; writeMaxBytes?: number; qu
     async setFolders() {},
   };
   const provider = createGraphApiProvider(ctx, {
-    endpoints: ms.endpoints(), tokens: { get: async () => token, invalidate() {} }, requestsPerSecond: Infinity, userFoldersEveryMs: 0,
+    endpoints: ms.endpoints(), tokens: { get: async () => token, invalidate(t) { invalidated.push(t); } }, requestsPerSecond: Infinity, userFoldersEveryMs: 0,
     buildRaw: (payload) => buildRaw(payload, { keepBcc: true }),
     writeMaxBytes: o.writeMaxBytes, uploadPieceBytes: o.uploadPieceBytes, sendTimeoutMs: o.sendTimeoutMs, ...(o.quota && { quota: o.quota }),
   });
   let ops = 0;
   const t = {
-    ms, rows, byId, placements, provider, store,
+    ms, rows, byId, placements, provider, store, token, invalidated,
     row: (graphId: string) => rows.get(graphId)!,
     op: (kind: string, graphIds: string[], payload: unknown = null, extra: Partial<ProviderOp> = {}): ProviderOp => ({ id: `op-${++ops}`, kind, target: { messageIds: graphIds.map((g) => rows.get(g)!.id) }, payload, ...extra }),
     run: (kind: string, graphIds: string[], payload: unknown = null) => t.provider.execute(t.op(kind, graphIds, payload)),
@@ -128,6 +129,40 @@ describe("Graph writes: flags", () => {
     expect(t.ms.messages.get(ids[1]!)!.flag).toBe("notFlagged");
     expect(t.ms.batchMissingPrefer).toEqual([]);
     expect(t.ms.missingPrefer).toEqual([]);
+  });
+
+  it("review round 3 #4: Graph refusing one message never abandons the next batches; the refusal is thrown once they're done", async () => {
+    const t = await setup();
+    const ids = Array.from({ length: 40 }, () => t.ms.deliver("inbox-id"));
+    for (const id of ids) t.store(id);
+    t.ms.batchThrottle = { status: 403, match: new RegExp(`^PATCH /me/messages/${encodeURIComponent(ids[2]!)}$`), times: 1 };
+    await expect(t.run("markRead", ids)).rejects.toMatchObject({ retryable: false });
+    expect(t.ms.batches).toHaveLength(2);
+    expect(ids.filter((id) => id !== ids[2]).every((id) => t.ms.messages.get(id)!.isRead)).toBe(true);
+    // a move the same: the second batch's messages still go
+    const archive = Array.from({ length: 22 }, () => t.ms.deliver("inbox-id"));
+    for (const id of archive) t.store(id);
+    t.ms.batchThrottle = { status: 403, match: new RegExp(`^POST /me/messages/${encodeURIComponent(archive[0]!)}/move$`), times: 1 };
+    await expect(t.run("archive", archive)).rejects.toMatchObject({ retryable: false });
+    expect(archive.slice(1).every((id) => t.ms.messages.get(id)!.folder === "archive-id")).toBe(true);
+    // one to try again (a throttle) stops the op at once: the retry repeats it all
+    const more = Array.from({ length: 22 }, () => t.ms.deliver("inbox-id"));
+    for (const id of more) t.store(id);
+    t.ms.batches = [];
+    t.ms.batchThrottle = { status: 503, retryAfter: "1", match: new RegExp(`^PATCH /me/messages/${encodeURIComponent(more[0]!)}$`), times: 1 };
+    await expect(t.run("star", more)).rejects.toMatchObject({ retryable: true });
+    expect(t.ms.batches).toHaveLength(1);
+  });
+
+  it("review round 3 #5: a request inside a batch refusing the token (401) drops it, so the retry asks for a new one", async () => {
+    const t = await setup();
+    const id = t.ms.deliver("inbox-id");
+    t.store(id);
+    t.ms.batchThrottle = { status: 401, match: /^PATCH /, times: 1 };
+    await expect(t.run("markRead", [id])).rejects.toMatchObject({ retryable: true });
+    expect(t.invalidated).toEqual([t.token]);
+    await t.run("markRead", [id]);
+    expect(t.invalidated).toEqual([t.token]);
   });
 
   it("skips a message that never reached the server (a local row) and an op with none", async () => {
@@ -541,6 +576,34 @@ describe("Graph writes: send", () => {
     await expect(t.provider.execute({ id: "s4", kind: "send", target: {}, payload: payload({ messageId: "m4@x", attachments: [file("big.bin", 9000)] }), beforeSubmission: async () => { throw new ProviderError("cancelled", false); } })).rejects.toThrow("cancelled");
     expect(t.ms.sent).toHaveLength(3);
     expect(t.ms.inFolder("drafts")).toHaveLength(drafts);
+  });
+
+  it("review round 3 #3: a throttled draft send under the real request policy leaves no second draft: the DELETE the pause refused goes before the retry's draft", async () => {
+    // the production order: the 429 pauses the service before the send handler sees it, so its DELETE is refused too
+    let cooling = false;
+    const policy = {
+      check() { if (cooling) throw new ProviderError("cooling down", true); }, accessAvailable() {}, tokenUnavailable() {}, close() {},
+      reserve: (d: { request: import("./types").HttpRequestContext }) => ({ request: d.request, dispatch: (transport: () => Promise<Response>) => transport(), headers429: async () => { cooling = true; return "committed" as const; }, headers() {}, release() {} }),
+    };
+    const requests: AccountRequests = {
+      generation: () => 1, check() {}, tokenUnavailable() {}, accessAvailable() {}, async prove() {},
+      request: (descriptor, input, init) => requestHttp(policy, descriptor, () => fetch(input, init), Date.now),
+    };
+    const t = await setup({ requests, writeMaxBytes: 12_000, uploadPieceBytes: 3000 });
+    t.ms.writeMax = 12_000;
+    t.ms.uploadMin = 9000;
+    t.ms.throttle = { status: 429, retryAfter: "1", match: /\/send$/, times: 1 };
+    const send = () => t.provider.execute({ id: "s1", kind: "send", target: {}, payload: payload({ attachments: [file("big.bin", 9000)] }) });
+    await expect(send()).rejects.toMatchObject({ retryable: true, ambiguous: false });
+    expect(t.ms.inFolder("drafts")).toHaveLength(1);
+    cooling = false;
+    // a sync before the retry stores none of it: it's still the send's
+    const leftover = t.ms.inFolder("drafts")[0]!.id;
+    await t.sync();
+    expect(t.rows.has(leftover)).toBe(false);
+    await send();
+    expect(t.ms.sent).toHaveLength(1);
+    expect(t.ms.inFolder("drafts")).toEqual([]);
   });
 
   it("round 2: a file's own request is measured, not estimated (#8), and Graph's answer repeating its bytes is never read (#1)", async () => {

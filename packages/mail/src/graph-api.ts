@@ -495,6 +495,9 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
       }
       return value;
     } finally {
+      // a request inside the batch refused its token (revoked before its expiry): the retry asks for a new one, as a 401
+      // on the batch itself would
+      if (call.batch && isRecord(value) && Array.isArray(value.responses) && value.responses.some((r) => isRecord(r) && r.status === 401)) tokens.invalidate(token);
       if (settleBatch) await settleBatch().catch(() => {});
       deadline.done();
       free();

@@ -112,6 +112,7 @@ export function createGraphWrites(deps: GraphWriteDeps) {
 
   /** PATCH each message, 20 a batch: idempotent, so a retry sends them all again. One that's gone is done. */
   async function patch(targets: readonly Target[], body: Record<string, unknown>, run?: RequestRun): Promise<void> {
+    let refused: ProviderError | undefined;
     for (let i = 0; i < targets.length; i += BATCH_MAX) {
       const chunk = targets.slice(i, i + BATCH_MAX);
       const answers = await batch(chunk.map((t) => ({ method: "PATCH", url: `/me/messages/${enc(t.graphId)}`, body })), run);
@@ -120,8 +121,18 @@ export function createGraphWrites(deps: GraphWriteDeps) {
         if (!a) first ??= unanswered();
         else if (!ok(a) && !gone(a)) first ??= failure(a);
       }
-      if (first) throw first;
+      refused = settleChunk(first, refused);
     }
+    if (refused) throw refused;
+  }
+
+  /**
+   * A chunk's failure: one to try again stops the op now (the retry repeats it all); Graph's refusal of a message is
+   * that message's, never the next chunks' (they still go), and is thrown once the rest is done.
+   */
+  function settleChunk(failure: ProviderError | undefined, refused: ProviderError | undefined): ProviderError | undefined {
+    if (failure?.retryable) throw failure;
+    return refused ?? failure;
   }
 
   /** a message's place from Graph's parentFolderId */
@@ -161,6 +172,7 @@ export function createGraphWrites(deps: GraphWriteDeps) {
     const destination = (Object.keys(ROLES) as Role[]).find((r) => ROLES[r] === rule.to);
     // a role this mailbox doesn't have (an Archive folder: some mailboxes have none)
     if (destination && !roles[destination]) throw new ProviderError(destination === "archive" ? L("errors.outlook.noArchive") : L("errors.folder.notFound"), false);
+    let refused: ProviderError | undefined;
     for (let i = 0; i < targets.length; i += BATCH_MAX) {
       const chunk = targets.slice(i, i + BATCH_MAX);
       let first: ProviderError | undefined;
@@ -198,8 +210,9 @@ export function createGraphWrites(deps: GraphWriteDeps) {
         });
       }
       if (placements.length) await store.placeMessages(placements);
-      if (first) throw first;
+      refused = settleChunk(first, refused);
     }
+    if (refused) throw refused;
   }
 
   /** Where each location op sends a message, and which it moves (as IMAP's moves do, one folder a message). */
@@ -304,18 +317,20 @@ export function createGraphWrites(deps: GraphWriteDeps) {
     const checked = await checkedAttachments(payload);
     const raw = await deps.buildRaw({ ...payload, attachments: [] });
     if (encoded(raw.byteLength) > limit) throw new ProviderError(L("attachments.tooLarge"), false);
+    await clearLeftovers();
     const created = await api("/me/messages", { method: "POST", body: await graphMimeBody(raw), contentType: "text/plain", admission: "send", run: op.requestRun, limit: DRAFT_BYTES });
     if (!isRecord(created) || !nonempty(created.id) || created.id.length > ID_MAX) throw invalid();
     const draft = created.id;
     deps.staging.add(draft);
-    const discard = () => api(`/me/messages/${enc(draft)}`, { method: "DELETE", empty: true, admission: "send" }).catch(() => {});
+    // one whose DELETE can't go now (a throttle pauses every request, a DELETE too) goes before the next send's draft
+    const discard = async () => { if (!(await removeDraft(draft))) leftovers.add(draft); };
     try {
       try {
         // a file whose request (the JSON with its base64, as sent) fits goes whole; a larger one through a session
-        // (round 2 #8: measured, never estimated)
+        // (round 2 #8: measured, never estimated; one whose base64 alone is over the limit is never encoded to see)
         for (const file of checked) {
-          const body = attachmentBody(file);
-          if (new TextEncoder().encode(body).byteLength <= limit) await attachFile(draft, body, op.requestRun);
+          const body = encoded(file.size) <= limit ? attachmentBody(file) : undefined;
+          if (body !== undefined && new TextEncoder().encode(body).byteLength <= limit) await attachFile(draft, body, op.requestRun);
           else await uploadFile(draft, file, op.requestRun);
         }
         await op.beforeSubmission?.();
@@ -326,11 +341,31 @@ export function createGraphWrites(deps: GraphWriteDeps) {
       }
       try { await submit(`/me/messages/${enc(draft)}/send`); }
       catch (error) {
-        // Graph refused it (a throttle, a 4xx): not sent, so its draft goes too and the retry starts clean
-        if (error instanceof ProviderError && !error.ambiguous && !error.network) await discard();
+        // Graph refused it (a throttle, a 4xx), or it never connected: not sent, so its draft goes too and the retry
+        // starts clean
+        if (error instanceof ProviderError && !error.ambiguous) await discard();
         throw error;
       }
     } finally {
+      if (!leftovers.has(draft)) deps.staging.delete(draft);
+    }
+  }
+
+  /** drafts of failed sends whose DELETE didn't go: kept out of the sync (`staging`) until one does */
+  const leftovers = new Set<string>();
+
+  /** A send's draft deleted: true once it's gone (a 404 says it already is), false when the DELETE didn't go. */
+  async function removeDraft(draft: string): Promise<boolean> {
+    try { await api(`/me/messages/${enc(draft)}`, { method: "DELETE", empty: true, admission: "send" }); }
+    catch (error) { if (deps.refusal(error)?.status !== 404) return false; }
+    return true;
+  }
+
+  /** what earlier sends left, deleted before a new draft is made: a retry never leaves two */
+  async function clearLeftovers(): Promise<void> {
+    for (const draft of leftovers) {
+      if (!(await removeDraft(draft))) continue;
+      leftovers.delete(draft);
       deps.staging.delete(draft);
     }
   }

@@ -103,8 +103,8 @@ export class SyntheticMicrosoft {
   sent: SentFixture[] = [];
   /** each JSON batch's requests (method and url), in order */
   batches: { method: string; url: string }[][] = [];
-  /** the next requests inside batches that match are throttled (429, or 503 with a Retry-After) */
-  batchThrottle: { status: 429 | 503; retryAfter?: string; match?: RegExp; times: number } | null = null;
+  /** the next requests inside batches that match fail with this status (a throttle: 429, or 503 with a Retry-After; a refusal: 401, 403) */
+  batchThrottle: { status: 429 | 503 | 401 | 403; retryAfter?: string; match?: RegExp; times: number } | null = null;
   /** requests inside batches that came without `Prefer: IdType="ImmutableId"` */
   batchMissingPrefer: string[] = [];
   /** upload PUTs that carried an Authorization header (the page says never) */
@@ -506,7 +506,7 @@ export class SyntheticMicrosoft {
       const throttle = this.batchThrottle;
       if (throttle && throttle.times > 0 && (!throttle.match || throttle.match.test(`${r.method} ${String(r.url)}`))) {
         throttle.times--;
-        responses.push({ id: String(r.id), status: throttle.status, headers: throttle.retryAfter !== undefined ? { "Retry-After": throttle.retryAfter } : {}, body: { error: { code: throttle.status === 429 ? "TooManyRequests" : "ServiceUnavailable" } } });
+        responses.push({ id: String(r.id), status: throttle.status, headers: throttle.retryAfter !== undefined ? { "Retry-After": throttle.retryAfter } : {}, body: { error: { code: ({ 429: "TooManyRequests", 503: "ServiceUnavailable", 401: "InvalidAuthenticationToken", 403: "ErrorAccessDenied" } as const)[throttle.status] } } });
         continue;
       }
       this.onRequest?.(`${path}${new URL(String(r.url), "http://x").search}`);
