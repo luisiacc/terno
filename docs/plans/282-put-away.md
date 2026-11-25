@@ -1,0 +1,186 @@
+# Plan 282: Put away: every automatic move says why, and one place shows what left the Inbox
+
+- **Status:** plan.
+- **Owner decisions (2026-11-25):** box B (a hairline box, no fill) around the reason in the reader; a help icon with a tooltip on the view's title; Put away is the last row under More, after Trash. The rest of the recommendations stand as decided: the engine keeps filing into categories hidden from the Inbox (Put away and Needs a look cover it), Needs a look means "from someone you've written to", "Keep {sender} in the Inbox" is a lasting per-sender rule, and the box shows wherever the conversation is opened, for the same 7 days it's in Put away.
+
+## The request (verbatim)
+
+The research, as the owner passed it on:
+
+> Context: research on what people want from AI in email found that people don't trust tools that hide mail. One user ran both Superhuman and Shortwave because neither categorized the way they wanted, and their main fear was missing something important. The suggestion: explain every automatic decision ("Similar to 12 messages you previously moved to Notifications"), with ways to fix it (show future similar messages, edit the rule, undo), and a place to review what was hidden, perhaps as a daily digest.
+
+> Your job in this thread: discuss with me and come up with solutions. […] Map every place Terno puts mail out of sight […] and for each say whether the user can see why today and fix it. Then propose solutions: how a reason is shown and phrased in plain English, the one-step fixes, whether there should be a single place to review what was put away (today, this week) and what it looks like, and how it stays calm (no new dashboard nobody opens).
+
+After the mockups:
+
+> i like it, we need a help icon with a tooltp on the 'put away' title so they know what this view is for, and it should be that last view under 'More', not avove 'archived'
+>
+> also this [the reason line in the reader] i imagine it only shows while its opened on this list, i think it needs a little box, show me how that looks
+
+> lets do box B. commit the plan, then start building this on a worktree
+
+## What exists
+
+Where Terno takes mail out of the Inbox today, and what the user can see:
+
+| Mechanism | Out of the Inbox? | Why, today | One-step fix, today |
+|---|---|---|---|
+| The local engine files a conversation (`cls_decisions` kind `auto`, `thread_categories.added_by = 'auto'`, `packages/db/src/categorize.ts` `decideThreads`) | Yes when the category is hidden from the Inbox (plan 83). A category made by hand is hidden (`backend/src/actions.ts:694`), and the engine's `policyContext` reads only `auto_apply`, not `show_in_inbox` | The "auto" mark's tooltip on the reader's chip (`reader.tsx` `Reasons`, `reader.auto.title` "Terno added it to {category}"); the toast "Terno added # conversations to {category}" says no reason | "Not {category}" on the chip (`removeFromCategory`, a negative example, the decision `reverted`) |
+| The AI files (`ai-assist.ts`, `aiFilingBar`) | No: a hidden category gets a suggestion instead (plan 134) | The same tooltip | The same |
+| A rule (Settings → Rules, learned rules, plan 217's "Archive similar" rules) archives, deletes, moves to a folder, or files into a hidden category (`sql-store.ts` `applyFiltersTo` → `runFilterActions`) | Yes | Nowhere. `filter_applications(filter_id, message_id, applied_at)` records it; only forwarding reads it | None from the mail: find it, move it back, then find the rule. "Stop filing" exists only for Terno-made `addCategory` rules, in the remove snack |
+| Gmail's Promotions/Social, Outlook's Other (plans 86, 275) | Yes | Only the account's setting hint | Move to Inbox (Outlook also has a per-sender override) |
+| Spam | Yes | No | Not spam |
+| Kept out of "What matters" (plans 210, 243, 249, 273) | No: the Inbox keeps it | No reason is stored | Per sender only |
+
+Data the design reads, all already in both stores (SQLite `packages/db`, IndexedDB `packages/idb`): `cls_decisions` (`explain_json` holds the reasons, `at` the decision's time), `thread_categories.added_by`, `categories.show_in_inbox`, `filter_applications` (+ `filters`: `name`, `auto`, `created_at`, `rule_json`), `correspondents.written` ("you have sent mail to it"), the threads' `in_inbox`/`in_trash`/`in_spam`.
+
+## Design
+
+### 1. A placement: who moved a conversation out of the Inbox, and why
+
+A conversation is **put away** when, in the last 7 days, something other than the user took it out of the Inbox and it is still out:
+
+- **The engine** filed it into a category hidden from the Inbox: an `auto` decision with no outcome yet (`outcome IS NULL`: not reverted; maturing takes 30 days), its `thread_categories` row still `added_by = 'auto'`, the category's `show_in_inbox = 0`.
+- **A rule** acted on one of its messages, and the rule's actions take mail out of the Inbox: `archive`, `trash`, `moveToFolder`, or `addCategory` into a category hidden from the Inbox. `markRead`, `star` and `forward` don't hide anything; `spam` is never listed (the owner's rule: Spam triggers nothing, no count, no offer).
+- **Still out:** the thread isn't in Spam, and it's out of the Inbox view: `in_inbox = 0`, or it's in a category hidden from the Inbox.
+- **Not taken back since:** the user hasn't brought it back to the Inbox after the move (below, `placement_returns`).
+
+When several apply, the newest wins. One pure function in core (`packages/core/src/placement.ts`) turns a stored placement into what the UI shows; the stores only read rows.
+
+```ts
+// packages/core/src/types.ts
+export type Placement =
+  | { by: "terno"; at: number; categoryId: CategoryId; reasons: Reason[] }
+  | { by: "rule"; at: number; filterId: number; name: string; auto: boolean; createdAt: number;
+      action: "archive" | "trash" | "moveToFolder" | "addCategory"; categoryId?: CategoryId; folder?: string };
+export interface PutAway { placement: Placement; needsLook: boolean }
+```
+
+`needsLook`: the newest message from someone else in the conversation is from an address you've written to (`correspondents.written = 1`, not one of yours). Plain data, no AI (the owner: checks never use AI unless reliable without).
+
+### 2. The store
+
+`MailStore.putAway` (new, `packages/store`), implemented by SQLite and IndexedDB, in the conformance suite:
+
+- `of(threadId): PutAway | null`: the reader's.
+- `page({ before?: { at, threadId }, limit, since }): { items: { thread: ThreadSummary; putAway: PutAway }[]; next }`: newest first by placement time, then thread id. Needs a look isn't a separate query: the app groups the page (the first page holds the newest; a Needs a look row further down is shown in its day, marked).
+- `needsLook({ since, after }): { count, first: { threadId, name } | null }`: for the Inbox's notice, counting placements newer than `after`.
+
+**SQLite.** One query: the engine's decisions in the window through `cls_decisions_maturing` (`kind = 'auto' AND outcome IS NULL`, on `at`), unioned with `filter_applications` in the window through a new index on `applied_at` (only the hiding filters' ids, worked out in JS from `listFilters`, a small table), grouped by thread for the newest, then the thread's flags and the hidden-category check, then the return marks. Migration v{next} adds, shape only:
+
+```sql
+CREATE INDEX filter_applications_at ON filter_applications(applied_at);
+CREATE INDEX filter_applications_message ON filter_applications(message_id);
+CREATE TABLE placement_returns (thread_id INTEGER PRIMARY KEY REFERENCES threads(id) ON DELETE CASCADE, at INTEGER NOT NULL) WITHOUT ROWID;
+CREATE TABLE cls_kept_senders (category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE, sender TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (category_id, sender)) WITHOUT ROWID;
+```
+
+**IndexedDB.** The same through its tables: `cls_decisions` and `filter_applications` gain an index on their time, and two new stores mirror the tables. A schema version step adds them (no data rewritten).
+
+**`placement_returns`** is written when the user brings a conversation back: `threads.act` with `moveToInbox` or `notSpam`, and `removeFromCategory` of a hidden category. A placement at or before it no longer counts. Without it, a conversation a rule archived, that you moved back and later archived yourself, would come back as "archived by your rule". Undo of that return deletes the mark (the store journals it with the action).
+
+### 3. The reader: the reason in a box (box B)
+
+Under the subject's chips, when `ThreadDetail.putAway` is set (the store's `of`, sent with `threads.get`), a box with a hairline (`border`, the card radius, no fill), 13 px text: the sentence in the muted ink with its key words in the ink, and its fixes as link buttons (`Button variant="link"`) on the line below. It replaces the chip's "auto" mark only for put-away filings; a filing that stays in the Inbox keeps today's mark and tooltip.
+
+The sentences (en; es with them), who first, then what, then why, from the user's own past actions:
+
+- Engine: "Terno filed this in **{category}**, out of the Inbox: {reason}." The reason is the strongest of the stored ones, said as a sentence: "you keep # conversations from {sender} there" (`sameSender`), "you keep # conversations from this list there" (`sameList`), "you keep # conversations from @{domain} there" (`sameDomain`), else the first intent ("it looks like an invoice or a receipt"), else "it's like the mail you keep there". When there's more than one reason, a second sentence lists the rest: "Also: {rest}."
+  - Fixes: **Not {category}** (today's `removeFromCategory`: back to the Inbox, Terno learns) · **Keep {sender} in the Inbox** (below).
+- Your rule: "Your rule **“{name}”** {archived | deleted | moved to {folder} | filed in {category}} this."
+  - Fixes: **Back to Inbox** · **Edit rule** (opens Settings → Rules on that rule).
+- Terno's rule (`auto`): "Archived by a rule Terno made on {date}, when you archived similar mail." (deleted / moved / filed, by the action; "when you sorted similar mail" for a learned rule)
+  - Fixes: **Back to Inbox** · **Stop this rule** (turns it off, with Undo; today's "Stop filing" generalized to any of Terno's rules).
+- Needs a look adds a second sentence: "{name} isn't a list: you've written to them." (they/them: a name doesn't say pronouns.)
+
+**Back to Inbox** is `moveToInbox` for archived, deleted and moved mail, and removing the category for a rule's filing; every fix is one step, with the snack's Undo (exact, as today's actions).
+
+**Keep {sender} in the Inbox**: `cls_kept_senders(category, sender)`. The engine's policy gets `Vetoes.kept`: an `auto` decision becomes a suggestion (`decide`, gate `veto:kept`), and `aiFilingBar` suggests too. This conversation leaves the category without counting as a wrong filing (no negative example; its decision's outcome is `kept`, so the valve doesn't pause the category). Undo removes the row and files it again. Settings → Categories lists a category's kept senders with Remove (small list, under the category's row).
+
+### 4. Put away, the view
+
+- **Where:** the last row under More, after Trash, no count (`nav-putaway`, icon `FolderInput`). The palette has "Go to Put away". A route flag like Follow-ups' (`putAway: true`, view `all` underneath).
+- **The title:** "Put away" with an info icon after it (`Info`, 16 px, muted, keyboard-reachable, its name "About Put away") and a tooltip: "What Terno and your rules moved out of the Inbox in the last 7 days, and why each one went."
+- **The rows:** the list's own rows (virtualized, `ThreadRow`); the third line (snippet) is the short reason, in the muted ink: "● {category} · like # from {sender} there", "Archived by your rule “{name}”", "Archived by a rule Terno made {date}", "Deleted by your rule “{name}”". The category's dot leads a filing's line.
+- **Sections:** **Needs a look** first (the page's rows that need a look), then by the day they were put away (**Today**, **Yesterday**, then the weekday), with the list's section headings (plans 87, 179: `TopHeading`, generalized from the Inbox top's three kinds to a heading with a name and a count).
+- **The footer:** when an account keeps Gmail's or Outlook's sorting apart, one line under the rows: "Gmail and Outlook also keep some mail out of the Inbox. It's under each account." No count, no Spam.
+- **Empty:** "Nothing was put away this week" / "When Terno or one of your rules moves mail out of the Inbox, it shows here for 7 days."
+- **Actions:** the list's usual ones; **Back to Inbox** in the reader's box. A row leaves the view when it's back in the Inbox.
+- **Seen:** opening Put away marks everything in it seen (`settings.putAway.seenAt`).
+
+### 5. The Inbox's one line
+
+Only when Needs a look has something newer than `seenAt`: one line above the rows, as the learned rule's offer (plan 158) sits: "Terno put away mail from {name}, who you write to." / "Terno put away mail from # people you write to." · **Review** (opens Put away) · × (marks it seen). One lead at a time: it goes before the rule offer. Nothing else: no count on the sidebar row, no notification, no toast.
+
+### 6. What stays
+
+- The auto-filing toast ("Terno added # conversations to {category}") stays; a filing into a hidden category gets **View** → Put away.
+- What matters' reasons (kept out of the view) are a later plan: that mail is still in the Inbox.
+
+## Tests
+
+- **Core unit** (`placement.test.ts`): each placement's sentence and row line, the strongest reason picked, the action words, Needs a look's sentence; the `kept` veto in `policy.test.ts`.
+- **Conformance** (`packages/store/src/conformance/put-away.ts`, both stores): an engine filing into a hidden category is put away, into a shown one isn't; a rule's archive, trash, folder move and hidden filing are, `markRead`/`star`/`spam` aren't; the window's edge; the newest of two placements; a return mark hides it, Undo of the return brings it back; Spam never; `needsLook` from `correspondents.written`; paging by `(at, threadId)`; `cls_kept_senders` turning auto into a suggestion.
+- **Migration** test: the new step adds shape only (`migration-rule.test.ts`), and its time at 50k (`migrations.perf.test.ts`).
+- **Perf gate:** `putAway.page` and `of` at 50k threads with a week of rule applications, both stores (`packages/db` and `packages/idb` perf suites), under the list's budget.
+- **e2e** (`put-away.spec.ts`, one `scenario()`): a rule archives new mail → Put away lists it under its day with its line → the box says why → Back to Inbox → it leaves the view, Undo brings it back; an engine filing into a hidden category → Not {category}; Keep {sender} in the Inbox; Needs a look's Inbox line → Review → seen; the help tooltip; the row under More is last; axe in light and dark. Screenshots in light and dark, looked at.
+
+## Performance
+
+- Reads only: the window is 7 days, through time indexes, grouped once; nothing runs until the view or a put-away conversation is opened, except the Inbox line's count, which reads the Needs a look rows newer than `seenAt` (small, indexed) when the Inbox loads and when mail arrives.
+- Ingest pays one more indexed insert per rule application (the new indexes) and nothing else.
+- The migration adds two indexes and two empty tables (≤ 1 s at 50k).
+
+## Out of scope
+
+- "What matters" near misses (why a message isn't in that view, and Show it there): a later plan.
+- Counting Gmail's and Outlook's tabs in the footer.
+- A per-sender "always Inbox" for Gmail's tabs (Gmail offers none to apps).
+- A daily digest message: Put away and its one Inbox line are the review.
+
+## Revisions after the Codex review
+
+The critique's twelve points, and what changed. Where a revision contradicts the design above, the revision wins.
+
+1. **Placements are recorded when they happen, not reconstructed** (points 1, 2, 3, 6, 10). A rule's claim (`filter_applications`) is written before its actions run, an action can change nothing, a folder move can fail, and an edited or deleted rule rewrites or loses its claims; an auto decision plus a category hidden today doesn't say when the conversation left the Inbox. So a new table holds one row per put-away conversation, written in the same command as the move, only when the conversation was in the Inbox view before and is out of it after:
+
+   ```sql
+   CREATE TABLE placements (
+     thread_id INTEGER PRIMARY KEY REFERENCES threads(id) ON DELETE CASCADE,
+     at INTEGER NOT NULL,
+     by TEXT NOT NULL,             -- 'terno' or 'rule' (descriptive: no CHECK, plan 267; an unknown value reads as unknown)
+     needs_look INTEGER NOT NULL DEFAULT 0 CHECK (needs_look IN (0, 1)),
+     detail_json TEXT NOT NULL     -- the snapshot the sentence needs (validated by the app)
+   ) WITHOUT ROWID;
+   CREATE INDEX placements_order ON placements(needs_look DESC, at DESC, thread_id DESC);
+   CREATE INDEX placements_at ON placements(at);
+   ```
+
+   - **Rules** (`applyFiltersTo`, ingest and body arrival only; "apply to existing mail" is the user's own explicit run and records nothing): the threads the slice's filters touched, read for visibility before the first filter and after the last (and after `flushFolderMoves`, for a move that held). Out now and in before: a row naming the last filter whose action changed it. The snapshot: the filter's id, name, `auto`, `source`, `created_at`, the action (`archive`, `trash`, `moveToFolder` with its folder, `addCategory` with its category) and a hash of its `rule_json`. `spam` actions record nothing (Spam triggers nothing).
+   - **The engine** (`decideThreads`): an `auto` add into a category hidden from the Inbox, to a thread that was in the Inbox view: a row with the category, the decision's reasons as stored (`explain_json`, parsed by the existing `parseReasons`) and the sender's label as the decision saw it (the root's `fromName` or address, and the classifier's normalized sender key). Toggling a category's visibility later records nothing.
+   - **Needs a look** is decided then: the newest inbound message's sender has `correspondents.written = 1` and isn't one of the user's addresses.
+   - A later placement of the same conversation replaces the row (upsert). Rows older than 7 days are deleted as new ones are written (a range delete on `placements_at`): no timer, and IndexedDB's table stays a week's worth, so scanning it is bounded.
+
+   The read (`putAway.of`, `putAway.page`, `putAway.needsLook`) joins the row to the thread and keeps it while the thread is out of the Inbox view (`in_inbox = 0`, or in a category hidden from the Inbox) and not in Spam. `filter_applications` and the reconstruction query go; so do the two `filter_applications` indexes and `placement_returns`.
+
+2. **The user's own move ends a placement; Back to Inbox doesn't** (point 4). When the user (or their agent) takes a put-away conversation somewhere themselves (`threads.act` archive, trash, spam, a folder move, filing it by hand into a hidden category), its row is deleted in that command: it's theirs now. Back to Inbox and Not spam don't delete it: the conversation is in the Inbox, so the read leaves it out; Undo takes it back out, and it's listed again. No return marks, nothing to journal.
+
+3. **Back to Inbox is one backend command** (point 4): `putAway.back({ threadIds })` takes away whatever keeps each conversation out (`moveToInbox` for archived, deleted or moved mail; out of every hidden category it's in), and returns one undo id that puts back both halves exactly (the messages' states and the memberships with their `added_by`). Removing a rule's hidden filing this way records no negative example (the engine didn't file it); the engine's own filing is answered by **Not {category}**, which still teaches.
+
+4. **The rule can have changed** (point 2). Edit rule and Stop this rule show only while the filter exists and its `rule_json` still hashes to the snapshot's; otherwise the box offers Back to Inbox alone and the sentence says "a rule that has since changed". Stop re-checks the hash in the backend before it turns the rule off. Learned rules (`source = 'learned'`, accepted by the user from the offer) read as "your rule"; `auto` ones as "a rule Terno made when you archived similar mail" (or deleted, moved, filed, by the action).
+
+5. **"Keep {sender} in the Inbox" says what it does** (point 5): **Don't file {sender} automatically**, with the box's sentence after it: "Terno won't file {sender}'s mail in {category} by itself; it may still suggest it." Keyed by the classifier's normalized sender (from the snapshot). The policy turns an `auto` into a suggestion (`Vetoes.kept`, gate `veto:kept`), and the AI's filing is re-checked against `cls_kept_senders` where it commits (both stores; `aiFilingBar` takes the sender). This conversation leaves the category with no negative example, and its decision is withdrawn (deleted) rather than marked `kept`, so the safety valve counts neither way. Undo puts back the row's absence, the membership and the decision.
+
+6. **Put away has its own route, list key and scope** (point 7): `putAway: true` in the app state (not `view: "all"` underneath), its own `listKey`, `fetchPage` branch and RPC (`putAway.page`). `currentScope()` returns null for it, as for Review: no "select all N" over a scope the backend can't resolve; checked rows still take the list's actions.
+
+7. **One order, in the store** (point 8): `needs_look DESC, at DESC, thread_id DESC`, the cursor carries all three. Needs a look is a global first section, so pages only ever append. Sections come from the rows in that order: Needs a look, then each day.
+
+8. **The Inbox's line counts conversations and acknowledges what it showed** (point 9): "Terno put away mail from {name}, who you've written to." for one conversation, "Terno put away # conversations from people you've written to." for more (never "isn't a list"). `putAway.needsLook({ after })` returns the count and a watermark (the newest `at` it counted); × and Review mark seen up to that watermark, not up to now. The renderer asks again when the counts change (new mail) and when a placement ends. The reader hides a box whose placement is past 7 days at render (a cached detail can't keep it).
+
+9. **Sentences from structured data, in the catalog** (point 10): core's `placementWords(p)` returns a key and values, never English; `en` and `es` hold every template, with plurals and dates through the existing formatters. A reason without a sender label (an older row, a word match) falls back to "it's like the mail you keep there"; counter-evidence reasons are never shown as reasons.
+
+10. **Layouts and accessibility** (point 11): in Put away a row always shows its reason, in the snippet's place: the third line in the two-line and three-line layouts, after the subject on a wide one-line row, and as its own line even where previews are off (it's the point of the view). The row's accessible description carries the reason; the day headings stay `aria-hidden` as the Inbox's are, and each row's description starts with its section ("Needs a look", "Today"). The Inbox's line reuses the learned offer's measured `Announcement` lead (one lead at a time, this one first) with BoardUI's close button; Put away is a slot of `MoreFolders` (shown while active, focus recovery as Reminders and Follow-ups); when × or Back to Inbox removes the focused control, focus goes to the list (the line) or the reader's toolbar (the box).
+
+11. **Release gates** (point 12): SQLite v83 (or the next free version when this lands; plan 278's branch holds v83) and IndexedDB v42, with both IndexedDB paths (a fresh open and an upgrade) tested, existing rule claims and decisions untouched; the conformance suite registered in `conformance/store.ts`; `pnpm test:all` (a schema and store-contract change); `pnpm ui:rate` then `pnpm ui:gate` for the reader and the new view.
+
+12. **Performance** (point 6): `of` is a primary-key read; `page` walks `placements_order` from its cursor, each row joined to its thread by key; `needsLook` reads the `needs_look = 1` prefix of the same index above the watermark. Ingest pays the visibility reads of the threads its filters touched (already in hand) and one upsert per placement. Perf gates: a mailbox with a dense week (5k placements) at 50k threads, both stores: `page` deep, `of`, `needsLook`, and ingest with rules on.
