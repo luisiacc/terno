@@ -750,6 +750,8 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
         let release: (() => void) | undefined;
         let resource: IncomingResource | undefined;
         const locator = { kind: "outlook" as const, providerId: id };
+        // a send's draft on its way, however it was met (a search hit, a read by id: round 2 #3), is never stored
+        if (staging.has(id) && item.folder.role !== "sent") return;
         const repair = await store.repairs?.get(accountId, locator);
         if (repair?.state === "blocked") return;
         const target = `/me/messages/${enc(id)}/$value`;
@@ -862,8 +864,9 @@ export function createGraphApiProvider(ctx: ProviderContext, options: GraphApiOp
     const lookup = lookups(sink);
     const updates: FlagUpdate[] = [], fresh: Wanted[] = [], removed: string[] = [], undated: string[] = [];
     for (const envelope of items) {
-      // a send's draft on its way (its files still going up): the Sent copy comes whole after it (Codex code review #1)
-      if (staging.has(envelope.id)) continue;
+      // a send's draft on its way (its files still going up): the Sent copy comes whole after it (Codex code review #1);
+      // the copy in Sent keeps the draft's id, and is stored whenever it's seen (round 2 #2)
+      if (staging.has(envelope.id) && folder.role !== "sent") continue;
       if (envelope.removed) {
         const where = sink.seen.get(envelope.id);
         if (where === undefined || where === folder.id) removed.push(envelope.id);

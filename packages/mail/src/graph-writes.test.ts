@@ -242,6 +242,22 @@ describe("Graph writes: moves", () => {
     expect(t.row(left).folder).toBeNull();
   });
 
+  it("round 2 #5: one malformed read is that message's failure; a sibling found already moved is still written", async () => {
+    let bad = "";
+    const t = await setup({ rewrite: (url, body) => {
+      if (!url.endsWith("/$batch") || !bad) return body;
+      const value = body as { responses: { body?: { id?: string; parentFolderId?: unknown } }[] };
+      for (const r of value.responses) if (r.body?.id === bad) r.body.parentFolderId = 42;
+      return value;
+    } });
+    const project = t.ms.folder("Project");
+    const there = t.ms.deliver(project), odd = t.ms.deliver("inbox-id");
+    t.store(there); t.store(odd);
+    bad = odd;
+    await expect(t.run(MOVE_TO_FOLDER, [odd, there], { folder: project, from: null, keepInbox: false })).rejects.toMatchObject({ i18n: { key: "errors.outlook.invalidResponse" } });
+    expect(t.row(there).folder).toBe(project);
+  });
+
   it("a batch counts each request against Outlook's pace and takes as many slots as Graph runs of it (Codex code review #10)", async () => {
     const spent: number[] = [];
     const t = await setup({ quota: { async spend(units) { spent.push(units); }, charge() {} } });
@@ -508,6 +524,37 @@ describe("Graph writes: send", () => {
     await expect(t.provider.execute({ id: "s4", kind: "send", target: {}, payload: payload({ messageId: "m4@x", attachments: [file("big.bin", 9000)] }), beforeSubmission: async () => { throw new ProviderError("cancelled", false); } })).rejects.toThrow("cancelled");
     expect(t.ms.sent).toHaveLength(3);
     expect(t.ms.inFolder("drafts")).toHaveLength(drafts);
+  });
+
+  it("round 2: a file's own request is measured, not estimated (#8), and Graph's answer repeating its bytes is never read (#1)", async () => {
+    const t = await setup({ writeMaxBytes: 12_000, uploadPieceBytes: 3000 });
+    t.ms.writeMax = 12_000;
+    t.ms.uploadMin = 9000;
+    // 8,700 bytes: its request fits, though base64 and a 4 KiB allowance wouldn't
+    await t.provider.execute({ id: "s1", kind: "send", target: {}, payload: payload({ attachments: [file("near.bin", 8700)] }) });
+    expect(t.ms.sent[0]!.files.map((f) => [f.name, f.size])).toEqual([["near.bin", 8700]]);
+    expect(t.ms.uploads).toEqual([]);
+    const u = await setup({ writeMaxBytes: 200_000 });
+    u.ms.writeMax = 200_000;
+    await u.provider.execute({ id: "s2", kind: "send", target: {}, payload: payload({ attachments: [file("a.bin", 100_000), file("b.bin", 100_000)] }) });
+    expect(u.ms.sent.map((s) => s.files.map((f) => f.name))).toEqual([["a.bin", "b.bin"]]);
+  });
+
+  it("round 2 #2: the Sent copy seen while the draft's send is still answering is stored (it keeps the draft's id)", async () => {
+    const t = await setup({ writeMaxBytes: 12_000, uploadPieceBytes: 3000 });
+    t.ms.writeMax = 12_000;
+    t.ms.uploadMin = 9000;
+    await t.sync();
+    let open!: () => void;
+    t.ms.sentGate = new Promise((resolve) => { open = resolve; });
+    const sending = t.provider.execute({ id: "s1", kind: "send", target: {}, payload: payload({ attachments: [file("big.bin", 9000)] }) });
+    await expect.poll(() => t.ms.sent.length).toBe(1);
+    const id = t.ms.inFolder("sentitems")[0]!.id;
+    await t.sync();
+    open();
+    await sending;
+    await t.sync();
+    expect(t.rows.has(id)).toBe(true);
   });
 
   it("refuses an upload URL anywhere but outlook.office.com or Graph's own root", async () => {

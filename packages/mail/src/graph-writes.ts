@@ -172,7 +172,9 @@ export function createGraphWrites(deps: GraphWriteDeps) {
         if (!a) return void (first ??= unanswered());
         if (gone(a)) return;
         if (!ok(a)) return void (first ??= failure(a));
-        const parent = parentOf(a.body);
+        let parent: string | undefined;
+        // one malformed answer is that message's failure, never its siblings' (round 2 #5)
+        try { parent = parentOf(a.body); } catch (error) { return void (first ??= error as ProviderError); }
         if (parent === undefined) return void (first ??= invalid());
         const place = placeOf(parent, roles);
         // already there (a move whose answer was lost, or one never needed): its folder is known
@@ -258,10 +260,12 @@ export function createGraphWrites(deps: GraphWriteDeps) {
    * A small file into the draft: `POST /me/messages/{id}/attachments` with its bytes in `contentBytes` (for "a file
    * that's smaller than 3 MB": learn.microsoft.com/graph/outlook-large-attachments).
    */
-  async function attachFile(draft: string, file: NonNullable<SendPayload["attachments"]>[number] & { dataBase64: string }, run?: RequestRun): Promise<void> {
-    const body = JSON.stringify({ "@odata.type": "#microsoft.graph.fileAttachment", name: file.filename, contentType: file.mime, contentBytes: file.dataBase64, ...(file.contentId && { isInline: true, contentId: file.contentId }) });
-    const answer = await api(`/me/messages/${enc(draft)}/attachments`, { method: "POST", body, admission: "send", run, limit: 65_536 });
-    if (!isRecord(answer)) throw invalid();
+  const attachmentBody = (file: NonNullable<SendPayload["attachments"]>[number] & { dataBase64: string }) =>
+    JSON.stringify({ "@odata.type": "#microsoft.graph.fileAttachment", name: file.filename, contentType: file.mime, contentBytes: file.dataBase64, ...(file.contentId && { isInline: true, contentId: file.contentId }) });
+
+  /** 201 Created is the answer: its body repeats the file's bytes (`contentBytes`), so it isn't read (round 2 #1) */
+  async function attachFile(draft: string, body: string, run?: RequestRun): Promise<void> {
+    await api(`/me/messages/${enc(draft)}/attachments`, { method: "POST", body, admission: "send", run, empty: true });
   }
 
   /**
@@ -302,9 +306,11 @@ export function createGraphWrites(deps: GraphWriteDeps) {
     const discard = () => api(`/me/messages/${enc(draft)}`, { method: "DELETE", empty: true, admission: "send" }).catch(() => {});
     try {
       try {
-        // a file whose request (its base64 and the JSON around it) fits goes whole; a larger one through a session
+        // a file whose request (the JSON with its base64, as sent) fits goes whole; a larger one through a session
+        // (round 2 #8: measured, never estimated)
         for (const file of checked) {
-          if (encoded(file.size) + 4096 <= limit) await attachFile(draft, file, op.requestRun);
+          const body = attachmentBody(file);
+          if (new TextEncoder().encode(body).byteLength <= limit) await attachFile(draft, body, op.requestRun);
           else await uploadFile(draft, file, op.requestRun);
         }
         await op.beforeSubmission?.();

@@ -118,6 +118,8 @@ export class SyntheticMicrosoft {
   lose: ((request: string) => "after" | "before" | undefined) | null = null;
   /** sendMail and a draft's send wait for this, when set */
   sendGate: Promise<void> | null = null;
+  /** a draft's send, made, holds its answer until this settles */
+  sentGate: Promise<void> | null = null;
   /** a first round's messages, kept for its pages */
   private rounds = new Map<number, string[]>();
   private roundSeq = 0;
@@ -612,7 +614,8 @@ export class SyntheticMicrosoft {
         if (read["@odata.type"] !== "#microsoft.graph.fileAttachment" || typeof read.name !== "string" || typeof read.contentBytes !== "string") return json(400, { error: { code: "ErrorInvalidRequest" } });
         const bytes = Buffer.from(read.contentBytes, "base64");
         (this.files.get(m.id) ?? this.files.set(m.id, []).get(m.id)!).push({ name: read.name, size: bytes.length, isInline: read.isInline === true, ...(typeof read.contentId === "string" && { contentId: read.contentId }), bytes });
-        return json(201, { "@odata.type": "#microsoft.graph.fileAttachment", id: `att-${bytes.length}`, name: read.name, size: bytes.length });
+        // the documented answer repeats the file's bytes
+        return json(201, { "@odata.type": "#microsoft.graph.fileAttachment", id: `att-${bytes.length}`, name: read.name, size: bytes.length, contentBytes: read.contentBytes });
       }
       if (parts[2] === "attachments" && parts[3] === "createUploadSession" && parts.length === 4 && method === "POST") {
         const item = read.AttachmentItem as Record<string, unknown> | undefined;
@@ -630,6 +633,8 @@ export class SyntheticMicrosoft {
         m.isDraft = false;
         // "This method saves the message in the Sent Items folder"
         this.move(m.id, this.folderOf("sentitems")!.id);
+        // sent, and its answer still on its way
+        if (this.sentGate) await this.sentGate;
         return json(202, undefined);
       }
       return json(400, { error: { code: "badRequest" } });
