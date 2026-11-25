@@ -68,7 +68,7 @@ export const FIELD_TYPES = {
   codeCache: enumOf("accepted", "rejected", "none"),
   outcome: enumOf("closed", "sending", "forced", "timeout", "other", "unsaved", "rolled-back", "completed"),
   op: enumOf("encrypt", "decrypt", "legacy", "sync", "send", "move", "import", "export", "persist", "rebuild", "restore", "generate", "test", "classify", "other"),
-  opKind: enumOf(...THREAD_ACTIONS, "send", "move", "moveToFolder", "leaveFolder", "other"),
+  opKind: enumOf(...THREAD_ACTIONS, "send", "move", "moveToFolder", "leaveFolder", "returnTo", "other"),
   packaged: bool,
   reason: enumOf("clean-exit", "abnormal-exit", "killed", "crashed", "oom", "launch-failed", "integrity-failure", "memory-eviction", "policy", "rate", "size", "schema", "error", "sending", "host", "local-mode", "other"),
   retryable: bool,

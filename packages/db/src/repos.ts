@@ -374,6 +374,8 @@ const GROUP: Record<string, string> = {
   // plan 127: in order with the archive and moveToInbox on the same messages
   moveToFolder: "location",
   leaveFolder: "location",
+  // plan 259: an Outlook undo back to Archive, Sent or Drafts, after the action it takes back
+  returnTo: "location",
 };
 export const MAX_OP_ATTEMPTS = 8;
 

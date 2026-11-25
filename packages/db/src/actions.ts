@@ -1,6 +1,8 @@
 import { categoryAction, categoryOfJson, CATEGORY_ACTIONS, isCategoryAction, type MessageCategory, type ThreadAction } from "@terno/core";
-import { actionTargets, reaffirmFlagIntent, restoreLocationOps, sameLocation, type MessageState } from "@terno/store";
+import { actionTargets, isLocationAction, oneFolderPlace, reaffirmFlagIntent, restoreLocationOps, restoreDestination, restoreOneFolderOps, sameLocation, samePlace, MOVE_TO_FOLDER, RETURN_TO, type MessageState, type MoveToFolderPayload, type ReturnToPayload } from "@terno/store";
 import { sqlFlags } from "./flag-intents";
+import { oneFolderFolders } from "./folders";
+import { oneFolderAccounts } from "./message-folders";
 import { recomputeThreads } from "./ingest";
 import { placeholders, type Db } from "./sqlite";
 
@@ -163,12 +165,24 @@ function applyToMessages(db: Db, msgs: Msg[], action: ThreadAction, explicit: bo
   const whole = new Set<number>();
   if (!explicit) for (const accountId of new Set(msgs.map((m) => m.account_id))) if (db.get<{ kind: string }>("SELECT kind FROM accounts WHERE id = ?", accountId)?.kind === "gmail") whole.add(accountId);
   recomputeThreads(db, touched);
+  // plan 259: a location action's undo puts an Outlook message back in its own folder, where it is once what's on its way lands
+  const folders = isLocationAction(action) ? oneFolderPlaces(db, ids.map((id) => byId.get(id)!)) : undefined;
   return {
     threadIds: [...touched],
     targets: actionTargets(msgs, action, changed, scope, whole),
     // plan 86: only a category move's undo puts a category back (an archive's never touches one Gmail changed since)
-    before: ids.map((id) => stateOf(byId.get(id)!, isCategoryAction(action))),
+    before: ids.map((id) => {
+      const state = stateOf(byId.get(id)!, isCategoryAction(action));
+      return folders?.has(id) ? { ...state, folder: oneFolderPlace(state, folders.get(id)!) } : state;
+    }),
   };
+}
+
+/** Plan 259: these messages' user folders (with what's on its way replayed), for those of a one-folder (Outlook) account only. */
+function oneFolderPlaces(db: Db, msgs: readonly Pick<Msg, "id" | "account_id">[]): Map<number, string | null> {
+  const oneFolder = oneFolderAccounts(db);
+  const ids = msgs.filter((m) => oneFolder(m.account_id)).map((m) => m.id);
+  return ids.length ? oneFolderFolders(db, ids) : new Map();
 }
 
 const stateOf = (m: Pick<Msg, "id" | "is_read" | "is_starred" | "in_inbox" | "is_trash" | "is_spam" | "category">, category = true): MessageState => ({
@@ -183,8 +197,15 @@ const stateOf = (m: Pick<Msg, "id" | "is_read" | "is_starred" | "in_inbox" | "is
 
 export interface RestoreResult {
   threadIds: number[];
-  /** ops to queue, in this order (a message's location steps stay in sequence) */
-  ops: { accountId: number; kind: ThreadAction; messageIds: number[] }[];
+  /** ops to queue, in this order (a message's location steps stay in sequence); an Outlook one may carry a payload (plan 259) */
+  ops: RestoreOp[];
+}
+
+export interface RestoreOp {
+  accountId: number;
+  kind: string;
+  messageIds: number[];
+  payload?: MoveToFolderPayload | ReturnToPayload;
 }
 
 /** Puts messages back exactly as they were (an undo) and says which provider ops take them there. */
@@ -200,20 +221,24 @@ export function restoreMessages(db: Db, states: readonly MessageState[]): Restor
       );
     }
     // step 0: read/star and the first location step; step 1: the second location step
-    const steps = [new Map<string, { accountId: number; kind: ThreadAction; messageIds: number[] }>(), new Map<string, { accountId: number; kind: ThreadAction; messageIds: number[] }>()];
-    const add = (step: number, accountId: number, kind: ThreadAction, id: number) => {
-      const key = `${accountId}:${kind}`;
-      const op = steps[step]!.get(key) ?? { accountId, kind, messageIds: [] };
+    const steps = [new Map<string, RestoreOp>(), new Map<string, RestoreOp>()];
+    const add = (step: number, accountId: number, kind: string, id: number, payload?: MoveToFolderPayload | ReturnToPayload) => {
+      // plan 259: one op a destination (a folder, a role)
+      const key = `${accountId}:${kind}:${restoreDestination(payload)}`;
+      const op = steps[step]!.get(key) ?? { accountId, kind, messageIds: [], ...(payload && { payload }) };
       op.messageIds.push(id);
       steps[step]!.set(key, op);
     };
+    // plan 259: an Outlook snapshot of a location action says its folder: where each is now is read the same way
+    const folders = oneFolderPlaces(db, msgs.filter((m) => wanted.get(m.id)!.folder !== undefined));
     const touched = new Set<number>();
     for (const m of msgs) {
       const was = wanted.get(m.id)!;
       const now = stateOf(m);
+      const placed = was.folder !== undefined && folders.has(m.id) ? { now: { ...now, folder: folders.get(m.id)! }, was: { ...was, folder: was.folder } } : undefined;
       // plan 86: a snapshot from before it, or of a message without a category, leaves the category as it is
       const category = was.category == null || m.category === null ? m.category : was.category;
-      if (now.isRead === was.isRead && now.isStarred === was.isStarred && sameLocation(now, was) && category === m.category) continue;
+      if (now.isRead === was.isRead && now.isStarred === was.isStarred && (placed ? samePlace(placed.now, placed.was) : sameLocation(now, was)) && category === m.category) continue;
       db.run(
         "UPDATE messages SET is_read = ?, is_starred = ?, in_inbox = ?, is_trash = ?, is_spam = ?, category = ? WHERE id = ?",
         +was.isRead,
@@ -228,7 +253,19 @@ export function restoreMessages(db: Db, states: readonly MessageState[]): Restor
       if (now.isRead !== was.isRead) add(0, m.account_id, was.isRead ? "markRead" : "markUnread", m.id);
       if (now.isStarred !== was.isStarred) add(0, m.account_id, was.isStarred ? "star" : "unstar", m.id);
       if (category !== m.category) add(0, m.account_id, categoryAction(category as MessageCategory), m.id);
-      restoreLocationOps(now, was).forEach((kind, step) => add(step, m.account_id, kind, m.id));
+      if (!placed) restoreLocationOps(now, was).forEach((kind, step) => add(step, m.account_id, kind, m.id));
+      else {
+        restoreOneFolderOps(placed.now, placed.was, { isSent: !!m.is_sent, isDraft: !!m.is_draft }).forEach((op, step) => {
+          if (op.kind === MOVE_TO_FOLDER) {
+            // a filing back, as the filing itself: what it takes out of the Inbox here comes back if it never lands
+            const queued = steps[step]!.get(`${m.account_id}:${MOVE_TO_FOLDER}:folder:${op.folder}`)?.payload as MoveToFolderPayload | undefined;
+            const payload: MoveToFolderPayload = queued ?? { folder: op.folder, from: null, keepInbox: false };
+            if (now.inInbox) payload.fromInbox = [...(payload.fromInbox ?? []), m.id];
+            add(step, m.account_id, MOVE_TO_FOLDER, m.id, payload);
+          } else if (op.kind === RETURN_TO) add(step, m.account_id, RETURN_TO, m.id, { role: op.role });
+          else add(step, m.account_id, op.kind, m.id);
+        });
+      }
     }
     recomputeThreads(db, touched);
     return { threadIds: [...touched], ops: steps.flatMap((s) => [...s.values()]) };

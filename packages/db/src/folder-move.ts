@@ -1,7 +1,8 @@
-import { applyFolderOp, applyFolderOpOne, folderReachable, keptInInbox, labelsLeft, labelsMoved, LEAVE_FOLDER, leaveFolderOps, MOVE_TO_FOLDER, oneFolderPerMessage, planOneFolderMove, type FolderFilterMove, type FolderMoved, type LeaveFolderPayload, type MoveToFolderPayload } from "@terno/store";
+import { applyFolderOp, folderReachable, keptInInbox, labelsLeft, labelsMoved, LEAVE_FOLDER, leaveFolderOps, MOVE_TO_FOLDER, oneFolderPerMessage, planOneFolderMove, requestFlagSnapshots, type FolderFilterMove, type FolderMoved, type LeaveFolderPayload, type MoveToFolderPayload } from "@terno/store";
 import { applyMessageAction, applyThreadAction, type ActionResult } from "./actions";
-import { folderOpsPending, listFolders } from "./folders";
+import { listFolders, oneFolderFolders, pendingFolderOps } from "./folders";
 import { recomputeThreads } from "./ingest";
+import { sqlFlags } from "./flag-intents";
 import { enqueueOp } from "./repos";
 import { placeholders, type Db } from "./sqlite";
 
@@ -47,6 +48,15 @@ function keptThreads(db: Db, threads: readonly { id: number; in_inbox: number }[
 /** The provider ops that put these messages in the folder, and what each one changes (an undo's journal). */
 function queueFolderMoves(db: Db, to: { accountId: number; folder: string; from: string | null; now: number }, messages: readonly MoveRow[], kept: ReadonlySet<number>): { moved: FolderMoved; opIds: string[] } {
   const { accountId, folder, from, now } = to;
+  if (isOneFolder(db, accountId)) {
+    // plan 259 stage 2b: one move a message, from where it is once what's on its way lands, each one's way back journalled
+    const at = oneFolderFolders(db, messages.map((m) => m.id));
+    const rows = messages.map((m) => ({ id: m.id, thread_id: m.thread_id, is_sent: !!m.is_sent, in_inbox: !!m.in_inbox, folder: at.get(m.id) ?? null }));
+    const plan = planOneFolderMove({ accountId, folder, from }, rows);
+    const payload: MoveToFolderPayload = { folder, from, keepInbox: false, ...(plan.moved.fromInbox.length && { fromInbox: plan.moved.fromInbox }) };
+    const id = plan.messageIds.length ? enqueueOp(db, { accountId, kind: MOVE_TO_FOLDER, target: { messageIds: plan.messageIds }, payload }, now) : null;
+    return { moved: plan.moved, opIds: id ? [id] : [] };
+  }
   const gmail = isGmail(db, accountId);
   const places = new Map<number, Set<string>>();
   if (!gmail) {
@@ -59,29 +69,12 @@ function queueFolderMoves(db: Db, to: { accountId: number; folder: string; from:
   const moved: FolderMoved = { accountId, folder, from, fromInbox: [], fromFolder: [], added: [], leftOnly: [] };
   const targets = { kept: [] as number[], rest: [] as number[] };
   // where each is once what's on its way lands: A → B then B → A is a move out of B
-  const pending = folderOpsPending(db)
-    ? byChunks(messages.map((m) => m.id), (chunk) => db.all<{ message_id: number; kind: string; payload_json: string }>(`SELECT ot.message_id, o.kind, o.payload_json FROM op_targets ot JOIN ops o ON o.id = ot.op_id WHERE ot.grp = 'location' AND ot.message_id IN (${placeholders(chunk.length)}) AND o.kind IN ('moveToFolder', 'leaveFolder') AND o.state IN ('queued', 'running') ORDER BY o.seq`, ...chunk))
-    : [];
-  const pendingOf = new Map<number, typeof pending>();
-  for (const p of pending) pendingOf.set(p.message_id, [...(pendingOf.get(p.message_id) ?? []), p]);
-  if (isOneFolder(db, accountId)) {
-    // plan 259 stage 2b: one move a message, from where it is once what's on its way lands, each one's way back journalled
-    const stored = new Map(byChunks(messages.map((m) => m.id), (chunk) => db.all<{ message_id: number; folder: string }>(`SELECT message_id, folder FROM message_folders WHERE message_id IN (${placeholders(chunk.length)})`, ...chunk)).map((r) => [r.message_id, r.folder]));
-    const rows = messages.map((m) => {
-      let at = stored.get(m.id) ?? null;
-      for (const p of pendingOf.get(m.id) ?? []) at = applyFolderOpOne(at, p.kind, JSON.parse(p.payload_json) as MoveToFolderPayload | LeaveFolderPayload);
-      return { id: m.id, thread_id: m.thread_id, is_sent: !!m.is_sent, in_inbox: !!m.in_inbox, folder: at };
-    });
-    const plan = planOneFolderMove({ accountId, folder, from }, rows);
-    const payload: MoveToFolderPayload = { folder, from, keepInbox: false, ...(plan.moved.fromInbox.length && { fromInbox: plan.moved.fromInbox }) };
-    const id = plan.messageIds.length ? enqueueOp(db, { accountId, kind: MOVE_TO_FOLDER, target: { messageIds: plan.messageIds }, payload }, now) : null;
-    return { moved: plan.moved, opIds: id ? [id] : [] };
-  }
+  const pendingOf = pendingFolderOps(db, messages.map((m) => m.id));
   // IMAP: your own mail stays in Sent, unless it's all there is or it's in the folder this leaves. Gmail's labels go on the whole conversation
   const received = new Set(messages.filter((m) => !m.is_sent).map((m) => m.thread_id));
   for (const m of messages) {
     const has = gmail ? new Set(labelsOf(m.gmail_labels)) : new Set(places.get(m.id));
-    for (const p of pendingOf.get(m.id) ?? []) applyFolderOp(has, p.kind, JSON.parse(p.payload_json) as MoveToFolderPayload | LeaveFolderPayload);
+    for (const p of pendingOf.get(m.id) ?? []) applyFolderOp(has, p.kind, p.payload);
     const inFolder = has.has(folder);
     const inFrom = from !== null && has.has(from);
     if (!gmail && m.is_sent && received.has(m.thread_id) && !inFrom) continue;
@@ -194,18 +187,21 @@ export function settleFolderOp(db: Db, op: { kind: string; account_id: number; t
       if (next) db.run("UPDATE messages SET gmail_labels = ? WHERE id = ?", JSON.stringify(next), m.id);
     }
   }
-  // plan 259: an Outlook filing's Inbox part, settled with it. Landed, what the server confirmed in the folder is out of
-  // the Inbox (a stale read on its way can't leave it in both: round 2 #6). Never landed, what it took out of the Inbox
-  // here comes back, unless the server has it in a folder or something newer is on its way for it (round 2 #7).
+  // plan 259: an Outlook filing (an undo's too) settled. Landed, what the server confirmed in the folder is out of the
+  // Inbox, Trash and Junk, as a folder of the person's own is none of them (a stale read on its way can't leave it there:
+  // round 2 #6, and the exact undo's revision #5). Never landed, what it took out of the Inbox here comes back, unless the
+  // server has it in a folder or a newer location op is on its way for it (round 2 #7), and where each one really is
+  // is read again (an undo out of Trash has nothing else asking).
   const p = op.kind === MOVE_TO_FOLDER ? JSON.parse(op.payload_json) as MoveToFolderPayload : undefined;
-  if (p?.fromInbox?.length && isOneFolder(db, op.account_id)) {
-    const untouched = "NOT EXISTS (SELECT 1 FROM op_targets t INDEXED BY op_targets_msg JOIN ops o ON o.id = t.op_id WHERE t.message_id = messages.id AND o.state IN ('queued', 'running'))";
-    for (const chunk of byChunks(p.fromInbox, (c) => [c])) {
-      if (succeeded) db.run(`UPDATE messages SET in_inbox = 0 WHERE id IN (${placeholders(chunk.length)}) AND account_id = ? AND in_inbox = 1
+  if (p && isOneFolder(db, op.account_id)) {
+    const untouched = "NOT EXISTS (SELECT 1 FROM op_targets t INDEXED BY op_targets_msg JOIN ops o ON o.id = t.op_id WHERE t.message_id = messages.id AND t.grp = 'location' AND o.state IN ('queued', 'running'))";
+    for (const chunk of byChunks(succeeded ? ids : p.fromInbox ?? [], (c) => [c])) {
+      if (succeeded) db.run(`UPDATE messages SET in_inbox = 0, is_trash = 0, is_spam = 0 WHERE id IN (${placeholders(chunk.length)}) AND account_id = ? AND (in_inbox = 1 OR is_trash = 1 OR is_spam = 1)
         AND EXISTS (SELECT 1 FROM message_folders f WHERE f.message_id = messages.id AND f.folder = ?) AND ${untouched}`, ...chunk, op.account_id, p.folder);
       else db.run(`UPDATE messages SET in_inbox = 1 WHERE id IN (${placeholders(chunk.length)}) AND account_id = ? AND in_inbox = 0 AND is_trash = 0 AND is_spam = 0
         AND NOT EXISTS (SELECT 1 FROM message_folders f WHERE f.message_id = messages.id) AND ${untouched}`, ...chunk, op.account_id);
     }
+    if (!succeeded) requestFlagSnapshots(sqlFlags(db), op.account_id, ids, ["inInbox", "isTrash", "isSpam"]);
   }
   const threads = [...new Set(rows.map((m) => m.thread_id))];
   recomputeThreads(db, threads);

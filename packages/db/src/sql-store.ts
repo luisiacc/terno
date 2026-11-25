@@ -507,9 +507,11 @@ export class SqlMailStore implements MailStore {
         reaffirmSavedFlagIntent(sqlFlags(this.db), messages, versions);
         for (const op of r.ops) {
           if (!versions.has(op.accountId) && sqlFlags(this.db).clock(op.accountId)) versions.set(op.accountId, flagTick(sqlFlags(this.db), op.accountId));
-          const id = enqueueOp(this.db, { accountId: op.accountId, kind: op.kind, target: { messageIds: op.messageIds } }, now, versions.get(op.accountId));
+          const id = enqueueOp(this.db, { accountId: op.accountId, kind: op.kind, target: { messageIds: op.messageIds }, ...(op.payload && { payload: op.payload }) }, now, versions.get(op.accountId));
           if (id) opIds.push(id);
         }
+        // plan 259: membership reads a folder op on its way: an Outlook message back in its folder shows there now
+        if (r.ops.some((op) => isFolderOp(op.kind))) recomputeThreads(this.db, r.threadIds);
         return { threadIds: r.threadIds, opIds, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
       }),
     moveToFolder: async (c) =>

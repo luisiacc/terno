@@ -586,4 +586,170 @@ export function defineFolderMoveConformance(name: string, harness: StoreHarness)
       expect(r.opIds.length).toBe(1);
     });
   });
+
+  /**
+   * Plan 259 (exact undo): an Outlook message moved by an ordinary location action and undone goes back exactly where
+   * it was: its own folder (one filing back), Archive, Sent or Drafts (`returnTo`), or the Inbox, Junk or Deleted Items
+   * (their own ops). The provider is played here: each op lands with the folder Graph would answer.
+   */
+  describe(`exact undo of a location action (plan 259): ${name}`, () => {
+    const outlookStore = async () => {
+      const { store, imap } = await fresh();
+      const outlook = await outlookAccount(store);
+      await store.folders.replace(outlook, ["F1", "F2"].map((key) => ({ key, path: [key], selectable: true })));
+      return { store, outlook, imap };
+    };
+    /** one message, in a thread of its own; its id and thread */
+    const one = async (store: MailStore, fields: Partial<IncomingMessage> & { accountId: number; providerMsgId: string }) => {
+      const { inserted } = await ingest(store, [msg({ rfcMessageId: `${fields.providerMsgId}@t`, ...fields })]);
+      return { id: inserted[0]!, thread: await threadOf(store, fields.providerMsgId) };
+    };
+    const queued = async (store: MailStore) => (await store.ops.recent(50)).filter((o) => o.state === "queued").reverse().map((o) => ({ kind: o.kind, payload: JSON.parse(o.payload_json) as unknown, messageIds: (JSON.parse(o.target_json) as { messageIds: number[] }).messageIds }));
+    /** every queued op lands, each message where Graph would put it (`fail`: these never do, and the op fails) */
+    const land = async (store: MailStore, outlook: number, providerIds: ReadonlyMap<number, string>, fail: readonly number[] = []) => {
+      const kinds: string[] = [];
+      for (;;) {
+        const [op] = await store.ops.claimReady(NOW + 1_000_000, 1);
+        if (!op) return kinds;
+        kinds.push(op.kind);
+        const payload = JSON.parse(op.payload_json) as { folder?: string };
+        const ids = (JSON.parse(op.target_json) as { messageIds: number[] }).messageIds;
+        const folder = op.kind === "moveToFolder" ? payload.folder! : ["archive", "notSpam"].includes(op.kind) ? undefined : null;
+        if (folder !== undefined) await store.providerStore(outlook).placeMessages(ids.filter((id) => !fail.includes(id)).map((id) => ({ messageId: id, providerMsgId: providerIds.get(id)!, folder })));
+        if (ids.some((id) => fail.includes(id))) await store.ops.fail(op.id, "refused", false, NOW);
+        else await store.ops.complete(op.id, {}, NOW);
+      }
+    };
+    const flagsOf = async (store: MailStore, id: number) => {
+      const m = (await store.debug.snapshot()).messages.find((x) => x.id === id)!;
+      return { inInbox: m.inInbox, isTrash: m.isTrash, isSpam: m.isSpam };
+    };
+
+    it("Move to Inbox, Trash and Spam out of a folder, each undone: one filing back to it, shown there at once, the Inbox part journalled; landed, a stale read can't leave it in Trash", async () => {
+      const { store, outlook } = await outlookStore();
+      for (const action of ["moveToInbox", "trash", "spam"] as const) {
+        const m = await one(store, { accountId: outlook, providerMsgId: `in-f1-${action}`, inInbox: false, folder: "F1" });
+        const acted = await store.threads.act({ threadIds: [m.thread], action, signal: null, now: NOW });
+        expect(acted.before).toEqual([expect.objectContaining({ id: m.id, folder: "F1" })]);
+        await land(store, outlook, new Map([[m.id, `in-f1-${action}`]]));
+        expect(await list(store, outlook, "F1")).toEqual([]);
+        await store.threads.restore({ messages: acted.before, now: NOW });
+        // shown in the folder at once, out of the Inbox, Trash and Junk
+        expect(await list(store, outlook, "F1")).toEqual([m.thread]);
+        expect(await inbox(store)).toEqual([]);
+        expect(await queued(store)).toEqual([{ kind: "moveToFolder", payload: { folder: "F1", from: null, keepInbox: false, ...(action === "moveToInbox" && { fromInbox: [m.id] }) }, messageIds: [m.id] }]);
+        // a flag read from before the undo landed puts it back in Trash or the Inbox; the landing ends that
+        if (action !== "spam") await store.sync.updateFlags(outlook, [{ messageId: m.id, expectedProviderMsgId: `in-f1-${action}`, flags: action === "trash" ? { isTrash: true, inInbox: false } : { inInbox: true } }]);
+        await land(store, outlook, new Map([[m.id, `in-f1-${action}`]]));
+        expect(await flagsOf(store, m.id)).toEqual({ inInbox: false, isTrash: false, isSpam: false });
+        expect(await list(store, outlook, "F1")).toEqual([m.thread]);
+        await store.threads.moveToFolder({ threadIds: [m.thread], accountId: outlook, folder: "F2", from: "F1", now: NOW });
+        await land(store, outlook, new Map([[m.id, `in-f1-${action}`]]));
+      }
+    });
+
+    it("from each role: the Inbox, Junk and Deleted Items take their own ops; Archive, Sent Items and Drafts one returnTo; a read or a star never moves", async () => {
+      const { store, outlook } = await outlookStore();
+      const cases = [
+        { name: "inbox-archived", fields: { inInbox: true }, action: "archive", undo: { kind: "moveToInbox", payload: {} } },
+        { name: "inbox-trashed", fields: { inInbox: true }, action: "trash", undo: { kind: "moveToInbox", payload: {} } },
+        { name: "archive-back", fields: { inInbox: false }, action: "moveToInbox", undo: { kind: "returnTo", payload: { role: "archive" } } },
+        { name: "archive-trashed", fields: { inInbox: false }, action: "trash", undo: { kind: "returnTo", payload: { role: "archive" } } },
+        { name: "sent-trashed", fields: { inInbox: false, isSent: true }, action: "trash", undo: { kind: "returnTo", payload: { role: "sent" } } },
+        { name: "draft-trashed", fields: { inInbox: false, isDraft: true }, action: "trash", undo: { kind: "returnTo", payload: { role: "drafts" } } },
+        { name: "junk-back", fields: { inInbox: false, isSpam: true }, action: "notSpam", undo: { kind: "spam", payload: {} } },
+        { name: "trash-back", fields: { inInbox: false, isTrash: true }, action: "moveToInbox", undo: { kind: "trash", payload: {} } },
+      ] as const;
+      for (const c of cases) {
+        const m = await one(store, { accountId: outlook, providerMsgId: c.name, folder: null, ...c.fields });
+        const was = await flagsOf(store, m.id);
+        const acted = await store.threads.act({ threadIds: [m.thread], action: c.action, signal: null, now: NOW });
+        expect(acted.before.map((s) => s.folder)).toEqual([null]);
+        await land(store, outlook, new Map([[m.id, c.name]]));
+        await store.threads.restore({ messages: acted.before, now: NOW });
+        expect(await flagsOf(store, m.id), c.name).toEqual(was);
+        expect(await queued(store), c.name).toEqual([{ ...c.undo, messageIds: [m.id] }]);
+        await land(store, outlook, new Map([[m.id, c.name]]));
+      }
+      // a read's undo puts the read back, nothing else, even after the message moved
+      const m = await one(store, { accountId: outlook, providerMsgId: "read", inInbox: false, folder: "F1" });
+      const read = await store.threads.act({ threadIds: [m.thread], action: "markRead", signal: null, now: NOW });
+      expect(read.before[0]!.folder).toBeUndefined();
+      await land(store, outlook, new Map([[m.id, "read"]]));
+      await store.threads.restore({ messages: read.before, now: NOW });
+      expect((await queued(store)).map((o) => o.kind)).toEqual(["markUnread"]);
+    });
+
+    it("undone before the action's op ran: the filing back follows it in order; several folders are one op each; IMAP's undo is unchanged", async () => {
+      const { store, outlook, imap } = await outlookStore();
+      const a = await one(store, { accountId: outlook, providerMsgId: "a", inInbox: false, folder: "F1" });
+      const b = await one(store, { accountId: outlook, providerMsgId: "b", inInbox: false, folder: "F2" });
+      const acted = await store.threads.act({ threadIds: [a.thread, b.thread], action: "moveToInbox", signal: null, now: NOW });
+      expect(new Set(await inbox(store))).toEqual(new Set([a.thread, b.thread]));
+      await store.threads.restore({ messages: acted.before, now: NOW });
+      expect(await inbox(store)).toEqual([]);
+      expect(await list(store, outlook, "F1")).toEqual([a.thread]);
+      expect(await list(store, outlook, "F2")).toEqual([b.thread]);
+      const ops = await queued(store);
+      expect(ops[0]!.kind).toBe("moveToInbox");
+      expect(ops.slice(1)).toEqual(expect.arrayContaining([
+        { kind: "moveToFolder", payload: { folder: "F1", from: null, keepInbox: false, fromInbox: [a.id] }, messageIds: [a.id] },
+        { kind: "moveToFolder", payload: { folder: "F2", from: null, keepInbox: false, fromInbox: [b.id] }, messageIds: [b.id] },
+      ]));
+      expect(ops).toHaveLength(3);
+      // the queue runs the action first, then each filing back; both land where they were
+      expect(await land(store, outlook, new Map([[a.id, "a"], [b.id, "b"]]))).toEqual(["moveToInbox", "moveToFolder", "moveToFolder"]);
+      expect(await list(store, outlook, "F1")).toEqual([a.thread]);
+      expect(await inbox(store)).toEqual([]);
+      // IMAP keeps its own undo: no folder in the snapshot, no returnTo
+      const i = await one(store, { accountId: imap, providerMsgId: "imap", inInbox: false, locations: [loc("A", 1)] });
+      const back = await store.threads.act({ threadIds: [i.thread], action: "moveToInbox", signal: null, now: NOW });
+      expect(back.before[0]!.folder).toBeUndefined();
+      await store.threads.restore({ messages: back.before, now: NOW });
+      expect((await queued(store)).map((o) => o.kind)).toEqual(["moveToInbox", "archive"]);
+    });
+
+    it("what's on its way counts: F, then Move to Inbox and Archive queued, then Trash is undone to Archive; a message another app moved meanwhile still goes back", async () => {
+      const { store, outlook } = await outlookStore();
+      const m = await one(store, { accountId: outlook, providerMsgId: "q", inInbox: false, folder: "F1" });
+      await store.threads.act({ threadIds: [m.thread], action: "moveToInbox", signal: null, now: NOW });
+      await store.threads.act({ threadIds: [m.thread], action: "archive", signal: null, now: NOW });
+      const trashed = await store.threads.act({ threadIds: [m.thread], action: "trash", signal: null, now: NOW });
+      expect(trashed.before[0]!.folder).toBeNull();
+      await store.threads.restore({ messages: trashed.before, now: NOW });
+      expect((await queued(store)).at(-1)).toEqual({ kind: "returnTo", payload: { role: "archive" }, messageIds: [m.id] });
+      await land(store, outlook, new Map([[m.id, "q"]]));
+      // filed to F1 by hand, trashed here, then moved to F2 by another app: the undo takes it back to F1
+      const n = await one(store, { accountId: outlook, providerMsgId: "n", inInbox: false, folder: "F1" });
+      const gone = await store.threads.act({ threadIds: [n.thread], action: "trash", signal: null, now: NOW });
+      await land(store, outlook, new Map([[n.id, "n"]]));
+      await store.sync.updateFlags(outlook, [{ messageId: n.id, expectedProviderMsgId: "n", flags: { isTrash: false, inInbox: false }, folder: "F2" }]);
+      expect(await list(store, outlook, "F2")).toEqual([n.thread]);
+      await store.threads.restore({ messages: gone.before, now: NOW });
+      expect(await list(store, outlook, "F1")).toEqual([n.thread]);
+      expect(await list(store, outlook, "F2")).toEqual([]);
+      expect(await queued(store)).toEqual([{ kind: "moveToFolder", payload: { folder: "F1", from: null, keepInbox: false }, messageIds: [n.id] }]);
+    });
+
+    it("an undo landing for part only: what landed stays in the folder, the rest comes back to the Inbox, and where each is is read again", async () => {
+      const { store, outlook } = await outlookStore();
+      const observe = (await store.sync.beginObservation?.(outlook, { authoritativeFlags: true })) ?? null;
+      const a = await one(store, { accountId: outlook, providerMsgId: "pa", inInbox: false, folder: "F1" });
+      const b = await one(store, { accountId: outlook, providerMsgId: "pb", inInbox: false, folder: "F1" });
+      const ids = new Map([[a.id, "pa"], [b.id, "pb"]]);
+      const acted = await store.threads.act({ threadIds: [a.thread, b.thread], action: "moveToInbox", signal: null, now: NOW });
+      await land(store, outlook, ids);
+      const snapshots = async () => (await store.providerStore(outlook).pendingFlagSnapshots({ limit: 50 })).items.map((i) => i.id).sort();
+      if (observe) {
+        // the action's own snapshots, read: nothing else asks
+        await store.sync.updateFlags(outlook, [a, b].map((m) => ({ messageId: m.id, expectedProviderMsgId: ids.get(m.id)!, flags: { inInbox: true, isTrash: false, isSpam: false }, folder: null })), (await store.sync.beginObservation!(outlook, { authoritativeFlags: true }))!);
+        expect(await snapshots()).toEqual([]);
+      }
+      await store.threads.restore({ messages: acted.before, now: NOW });
+      await land(store, outlook, ids, [b.id]);
+      expect(await list(store, outlook, "F1")).toEqual([a.thread]);
+      expect(await inbox(store)).toEqual([b.thread]);
+      if (observe) expect(await snapshots()).toEqual([a.id, b.id].sort());
+    });
+  });
 }

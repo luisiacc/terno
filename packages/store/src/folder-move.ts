@@ -34,6 +34,23 @@ export interface LeaveFolderPayload {
 /** Plan 259: the role folders a one-folder message's filing can be taken back to, besides the Inbox */
 export type ReturnRole = "archive" | "sent";
 
+/**
+ * Plan 259 (exact undo): a one-folder (Outlook) message back to Archive, Sent or Drafts, from wherever it is: an undo
+ * of a location action that found it out of the Inbox, Trash and Junk and in no folder of the person's own. Its flags
+ * end out of all three, as its flag effects say.
+ */
+export const RETURN_TO = "returnTo";
+
+/** where a `returnTo` takes a message: a draft to Drafts, your own to Sent, anything else to Archive */
+export type ReturnToRole = ReturnRole | "drafts";
+
+export interface ReturnToPayload {
+  role: ReturnToRole;
+}
+
+/** Plan 259 (exact undo): where an undo's op takes its messages, so one op goes to one destination. */
+export const restoreDestination = (p?: MoveToFolderPayload | ReturnToPayload): string => !p ? "" : "folder" in p ? `folder:${p.folder}` : `role:${p.role}`;
+
 /** Plan 259: messages a one-folder (Outlook) filing took from somewhere the other groups don't say. */
 export interface FolderReturn {
   /** another of the account's folders (null: the role folder) */
@@ -131,6 +148,18 @@ export function applyFolderOpOne(folder: string | null, kind: string, payload: M
   const p = payload as LeaveFolderPayload;
   if (p.back !== null) return p.back;
   return !p.stays && folder === p.folder ? null : folder;
+}
+
+/**
+ * Plan 259 (exact undo): applyFolderOpOne for any location op on its way, as Graph's rules move a message
+ * (graph-writes.ts `ruleOf`): trash, spam, back to the Inbox and `returnTo` leave it in no user folder (your own mail
+ * is never in Junk, and Sent's and Drafts' are in no folder anyway); archive and not spam move only the Inbox's and
+ * Junk's, which are in none either. So Move to Inbox then Archive, still queued, leaves a message in no folder, whatever
+ * the stored one says.
+ */
+export function applyLocationOpOne(folder: string | null, kind: string, payload: unknown): string | null {
+  if (kind === MOVE_TO_FOLDER || kind === LEAVE_FOLDER) return applyFolderOpOne(folder, kind, payload as MoveToFolderPayload | LeaveFolderPayload);
+  return kind === "trash" || kind === "spam" || kind === "moveToInbox" || kind === RETURN_TO ? null : folder;
 }
 
 /** The op groups of what a move changed, ready to queue. Empty groups stay out. */

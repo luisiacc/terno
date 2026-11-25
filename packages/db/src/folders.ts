@@ -1,5 +1,5 @@
 import type { Folder } from "@terno/core";
-import { applyFolderOp, applyFolderOpOne, mergedBehind, oneFolderPerMessage, type FolderCountCursor, type FolderPlace, type LeaveFolderPayload, type MoveToFolderPayload, type ProviderFolder } from "@terno/store";
+import { applyFolderOp, applyFolderOpOne, applyLocationOpOne, mergedBehind, oneFolderPerMessage, type FolderCountCursor, type FolderPlace, type LeaveFolderPayload, type MoveToFolderPayload, type ProviderFolder } from "@terno/store";
 import { threadMerges } from "./ingest";
 import { anyMessageFolders, countMessageFolders, IN_MESSAGE_FOLDERS, MESSAGE_FOLDERS } from "./message-folders";
 import { unreadSlot } from "./migrations";
@@ -66,6 +66,44 @@ export function folderOpsPending(db: Db): boolean {
     return db.get(FOLDER_OPS_PENDING.replace(" INDEXED BY ops_folder_moves", "")) !== undefined;
   }
 }
+
+export type PendingFolderOp = { kind: string; payload: MoveToFolderPayload | LeaveFolderPayload };
+
+/** Plan 127: the folder ops on their way for these messages, oldest first, by message. */
+export function pendingFolderOps(db: Db, ids: readonly number[]): Map<number, PendingFolderOp[]> {
+  const out = new Map<number, PendingFolderOp[]>();
+  if (!ids.length || !folderOpsPending(db)) return out;
+  for (let i = 0; i < ids.length; i += 500) {
+    const chunk = ids.slice(i, i + 500);
+    for (const p of db.all<{ message_id: number; kind: string; payload_json: string }>(`SELECT ot.message_id, o.kind, o.payload_json FROM op_targets ot JOIN ops o ON o.id = ot.op_id WHERE ot.grp = 'location' AND ot.message_id IN (${placeholders(chunk.length)}) AND o.kind IN ('moveToFolder', 'leaveFolder') AND o.state IN ('queued', 'running') ORDER BY o.seq`, ...chunk)) {
+      const list = out.get(p.message_id) ?? [];
+      list.push({ kind: p.kind, payload: JSON.parse(p.payload_json) as MoveToFolderPayload | LeaveFolderPayload });
+      out.set(p.message_id, list);
+    }
+  }
+  return out;
+}
+
+/**
+ * Plan 259: where these one-folder (Outlook) messages are once what's on their way lands: the stored folder, then every
+ * location op on its way replayed in order (`applyLocationOpOne`: A → B then B → C is in C; F, then Move to Inbox and
+ * Archive still queued, is in no folder). Null: a role folder. A filing, an action's undo snapshot and the undo read it.
+ */
+export function oneFolderFolders(db: Db, ids: readonly number[]): Map<number, string | null> {
+  const out = new Map<number, string | null>(ids.map((id) => [id, null]));
+  for (let i = 0; i < ids.length; i += 500) {
+    const chunk = ids.slice(i, i + 500);
+    for (const r of db.all<{ message_id: number; folder: string }>(`SELECT message_id, folder FROM message_folders WHERE message_id IN (${placeholders(chunk.length)})`, ...chunk)) out.set(r.message_id, r.folder);
+    // by the message's index (op_targets_msg), one probe a message
+    for (const p of db.all<{ message_id: number; kind: string; payload_json: string }>(
+      `SELECT ot.message_id, o.kind, o.payload_json FROM op_targets ot INDEXED BY op_targets_msg JOIN ops o ON o.id = ot.op_id
+       WHERE ot.message_id IN (${placeholders(chunk.length)}) AND ot.grp = 'location' AND o.state IN ('queued', 'running') ORDER BY o.seq`,
+      ...chunk,
+    )) out.set(p.message_id, applyLocationOpOne(out.get(p.message_id) ?? null, p.kind, JSON.parse(p.payload_json) as unknown));
+  }
+  return out;
+}
+
 function overlayFolderOps(db: Db, json: string): void {
   if (!folderOpsPending(db)) return;
   const pending = db.all<{ thread_id: number; message_id: number; kind: string; payload_json: string }>(

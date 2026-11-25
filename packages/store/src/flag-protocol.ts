@@ -1,4 +1,5 @@
 import { FlagObservationError, operationFlagFields, type LocalFlagField } from "./flag-intents";
+import { RETURN_TO } from "./folder-move";
 import type { FlagObservation, FlagReconciliation, FlagSnapshotRequest, MessageState } from "./types";
 
 export interface FlagClock { account_id: number; protocol_id: string; epoch: number; phase: number; upper_seq: number; after_seq: number; after_op: string; after_message: number }
@@ -14,6 +15,8 @@ const VALUES: Record<string, Partial<Record<LocalFlagField, number>>> = {
   notSpam: { isSpam: 0, inInbox: 1 }, moveToInbox: { inInbox: 1, isTrash: 0, isSpam: 0 },
   // plan 86: a Gmail message's category (MessageCategory)
   toNoCategory: { category: 0 }, toPrimary: { category: 1 }, toPromotions: { category: 2 }, toSocial: { category: 3 }, toUpdates: { category: 4 }, toForums: { category: 5 },
+  // plan 259 (exact undo): a one-folder message back to Archive or Sent
+  [RETURN_TO]: { inInbox: 0, isTrash: 0, isSpam: 0 },
 };
 
 /** Synchronous point/range operations, always used inside an adapter-owned transaction. */
@@ -156,6 +159,24 @@ export function reaffirmSavedFlagIntent(repo: FlagRepository, saved: readonly Me
   }
 }
 
+/**
+ * Plan 259 (exact undo): where these messages are is unknown here (a move that failed or ended unknown, with no flag
+ * effects of its own): their next flag snapshot is asked for, behind a new barrier, so a read from before can't answer
+ * it. A message without an intent gets one, as an op's would.
+ */
+export function requestFlagSnapshots(repo: FlagRepository, accountId: number, messageIds: readonly number[], fields: readonly LocalFlagField[]): void {
+  if (!messageIds.length || !repo.clock(accountId)) return;
+  const epoch = flagTick(repo, accountId);
+  for (const id of messageIds) {
+    const message = repo.message(id);
+    if (!stable(message) || message.account_id !== accountId) continue;
+    for (const field of fields) {
+      const row = ensureIntent(repo, message, field);
+      putFlagIntent(repo, { ...row, barrier_epoch: Math.max(row.barrier_epoch, epoch), needs_snapshot: 1 });
+    }
+  }
+}
+
 export function settleFlagEffects(repo: FlagRepository, op: FlagOp, outcome: "success" | "unknown" | "removed", messageIds?: readonly number[]): void {
   if (!repo.clock(op.account_id)) return;
   const effects = repo.effects(op.id, messageIds);
@@ -205,7 +226,7 @@ export function rearmFlagEffects(repo: FlagRepository, op: FlagOp): number[] | n
     if (!row || row.intent_version !== (effect.intent_version ?? 0) || row.desired !== effect.value) superseded.add(effect.message_id);
     else eligible.add(effect.message_id);
   }
-  if (superseded.size && ["archive", "trash", "spam", "notSpam", "moveToInbox"].includes(op.kind)) return null;
+  if (superseded.size && ["archive", "trash", "spam", "notSpam", "moveToInbox", RETURN_TO].includes(op.kind)) return null;
   for (const id of superseded) eligible.delete(id);
   if (!eligible.size) return null;
   const version = flagTick(repo, op.account_id);

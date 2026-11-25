@@ -84,6 +84,11 @@ export interface MessageState {
   isSpam: boolean;
   /** plan 86: the Gmail category (MessageCategory); null or absent: not Gmail, or a snapshot from before plan 86 */
   category?: number | null;
+  /**
+   * Plan 259 (exact undo): a one-folder (Outlook) message's user folder as a location action found it (`oneFolderPlace`):
+   * null, a role folder its flags name. Absent: another provider, or an action that doesn't move mail.
+   */
+  folder?: string | null;
 }
 
 export interface FlagUpdate {

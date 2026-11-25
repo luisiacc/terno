@@ -2,10 +2,10 @@ import { categoryReferenceCeiling, nextCategoryId, reserveCategoryIds } from "./
 import type { ClosedOrder } from "./closed-order";
 import { bodyCode, codeSubject, incomingCode, readRuleState, storedReply } from "@terno/store";
 import { saveFilterForward } from "./forwards";
-import { folderPage, folderScopeIds, folderUnreadCounts, refreshFolders } from "./folders";
+import { folderPage, folderScopeIds, folderUnreadCounts, oneFolderFolders, refreshFolders } from "./folders";
 import { placeMessage } from "./message-folders";
 import { requireGmailRefresh, opAdmitter, ThreadMerges, type OpAdmission } from "@terno/store";
-import { actionTargets, assetError, linkAssets, reaffirmFlagIntent, restoreLocationOps, sameLocation, validateAssets } from "@terno/store";
+import { actionTargets, assetError, isLocationAction, linkAssets, oneFolderPerMessage, oneFolderPlace, reaffirmFlagIntent, restoreDestination, restoreLocationOps, restoreOneFolderOps, sameLocation, samePlace, validateAssets, MOVE_TO_FOLDER, RETURN_TO, type MoveToFolderPayload, type ReturnToPayload } from "@terno/store";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import { idbAssets, replaceAttachments } from "./attachments";
@@ -1135,10 +1135,13 @@ function applyToMessages(c: Ctx, msgs: R[], action: ThreadAction, explicit: bool
   const messages = T(c, "messages");
   const touched = new Set<number>();
   const before: MessageState[] = [];
+  // plan 259: a location action's undo puts an Outlook message back in its own folder, where it is once what's on its way lands
+  const folders = isLocationAction(action) ? oneFolderPlaces(c, ids.map((id) => messages.get(id)!)) : undefined;
   for (const id of ids) {
     const m = messages.get(id)!;
     // plan 86: only a category move's undo puts a category back (an archive's never touches one Gmail changed since)
-    before.push(stateOf(m, isCategoryAction(action)));
+    const state = stateOf(m, isCategoryAction(action));
+    before.push(folders?.has(id) ? { ...state, folder: oneFolderPlace(state, folders.get(id)!) } : state);
     messages.update(m, set);
     touched.add(m.thread_id);
   }
@@ -1152,32 +1155,63 @@ function applyToMessages(c: Ctx, msgs: R[], action: ThreadAction, explicit: bool
 /** plan 86: a row stored before it has no category yet: its labels say */
 const categoryOfRow = (m: R): number | null => (m.category === undefined ? categoryOfJson(m.gmail_labels) : m.category);
 const stateOf = (m: R, category = true): MessageState => ({ id: m.id, isRead: !!m.is_read, isStarred: !!m.is_starred, inInbox: !!m.in_inbox, isTrash: !!m.is_trash, isSpam: !!m.is_spam, ...(category ? { category: categoryOfRow(m) } : {}) });
+/** Plan 259: these messages' user folders (with what's on its way replayed), for those of a one-folder (Outlook) account only. */
+function oneFolderPlaces(c: Ctx, msgs: readonly R[]): Map<number, string | null> {
+  const accounts = T(c, "accounts");
+  const ids = msgs.filter((m) => oneFolderPerMessage(accounts.get(m.account_id)?.kind as string | undefined)).map((m) => m.id as number);
+  return ids.length ? oneFolderFolders(c, ids) : new Map();
+}
+
+export interface RestoreOp {
+  accountId: number;
+  kind: string;
+  messageIds: number[];
+  payload?: MoveToFolderPayload | ReturnToPayload;
+}
+
 /** An undo: messages back exactly as they were, and the provider ops that take them there (in order). */
-export function restoreMessages(c: Ctx, states: readonly MessageState[]): { threadIds: number[]; ops: { accountId: number; kind: ThreadAction; messageIds: number[] }[] } {
+export function restoreMessages(c: Ctx, states: readonly MessageState[]): { threadIds: number[]; ops: RestoreOp[] } {
   return c.db.tx(() => {
     const messages = T(c, "messages");
-    const steps = [new Map<string, { accountId: number; kind: ThreadAction; messageIds: number[] }>(), new Map<string, { accountId: number; kind: ThreadAction; messageIds: number[] }>()];
-    const add = (step: number, accountId: number, kind: ThreadAction, id: number) => {
-      const key = `${accountId}:${kind}`;
-      const op = steps[step]!.get(key) ?? { accountId, kind, messageIds: [] };
+    const steps = [new Map<string, RestoreOp>(), new Map<string, RestoreOp>()];
+    const add = (step: number, accountId: number, kind: string, id: number, payload?: MoveToFolderPayload | ReturnToPayload) => {
+      // plan 259: one op a destination (a folder, a role)
+      const key = `${accountId}:${kind}:${restoreDestination(payload)}`;
+      const op = steps[step]!.get(key) ?? { accountId, kind, messageIds: [], ...(payload && { payload }) };
       op.messageIds.push(id);
       steps[step]!.set(key, op);
     };
+    const sorted = [...states].sort((x, y) => x.id - y.id);
+    // plan 259: an Outlook snapshot of a location action says its folder: where each is now is read the same way
+    const folders = oneFolderPlaces(c, sorted.flatMap((s) => (s.folder !== undefined ? messages.get(s.id) ?? [] : [])));
     const touched = new Set<number>();
-    for (const was of [...states].sort((x, y) => x.id - y.id)) {
+    for (const was of sorted) {
       const m = messages.get(was.id);
       if (!m) continue;
       const now = stateOf(m);
+      const placed = was.folder !== undefined && folders.has(m.id) ? { now: { ...now, folder: folders.get(m.id)! }, was: { ...was, folder: was.folder } } : undefined;
       // plan 86: a snapshot from before it, or of a message without a category, leaves the category as it is
       const current = now.category ?? null;
       const category = was.category == null || current === null ? current : was.category;
-      if (now.isRead === was.isRead && now.isStarred === was.isStarred && sameLocation(now, was) && category === current) continue;
+      if (now.isRead === was.isRead && now.isStarred === was.isStarred && (placed ? samePlace(placed.now, placed.was) : sameLocation(now, was)) && category === current) continue;
       messages.update(m, { is_read: +was.isRead, is_starred: +was.isStarred, in_inbox: +was.inInbox, is_trash: +was.isTrash, is_spam: +was.isSpam, category });
       touched.add(m.thread_id);
       if (now.isRead !== was.isRead) add(0, m.account_id, was.isRead ? "markRead" : "markUnread", m.id);
       if (now.isStarred !== was.isStarred) add(0, m.account_id, was.isStarred ? "star" : "unstar", m.id);
       if (category !== current) add(0, m.account_id, categoryAction(category as MessageCategory), m.id);
-      restoreLocationOps(now, was).forEach((kind, step) => add(step, m.account_id, kind, m.id));
+      if (!placed) restoreLocationOps(now, was).forEach((kind, step) => add(step, m.account_id, kind, m.id));
+      else {
+        restoreOneFolderOps(placed.now, placed.was, { isSent: !!m.is_sent, isDraft: !!m.is_draft }).forEach((op, step) => {
+          if (op.kind === MOVE_TO_FOLDER) {
+            // a filing back, as the filing itself: what it takes out of the Inbox here comes back if it never lands
+            const queued = steps[step]!.get(`${m.account_id}:${MOVE_TO_FOLDER}:folder:${op.folder}`)?.payload as MoveToFolderPayload | undefined;
+            const payload: MoveToFolderPayload = queued ?? { folder: op.folder, from: null, keepInbox: false };
+            if (now.inInbox) payload.fromInbox = [...(payload.fromInbox ?? []), m.id];
+            add(step, m.account_id, MOVE_TO_FOLDER, m.id, payload);
+          } else if (op.kind === RETURN_TO) add(step, m.account_id, RETURN_TO, m.id, { role: op.role });
+          else add(step, m.account_id, op.kind, m.id);
+        });
+      }
     }
     recomputeThreads(c, touched);
     return { threadIds: [...touched], ops: steps.flatMap((s) => [...s.values()]) };
@@ -1718,7 +1752,8 @@ export function findRuleMatches(c: Ctx, rule: FilterRule, now: number, messageId
 // ───────────────────────────── ops ─────────────────────────────
 
 const SUPERSEDABLE = new Set(["read", "star"]);
-const GROUP: Record<string, string> = { markRead: "read", markUnread: "read", star: "star", unstar: "star", archive: "location", trash: "location", spam: "location", notSpam: "location", moveToInbox: "location", moveToFolder: "location", leaveFolder: "location" };
+// plan 259: returnTo, an Outlook undo back to Archive, Sent or Drafts, is ordered after the action it takes back
+const GROUP: Record<string, string> = { markRead: "read", markUnread: "read", star: "star", unstar: "star", archive: "location", trash: "location", spam: "location", notSpam: "location", moveToInbox: "location", moveToFolder: "location", leaveFolder: "location", returnTo: "location" };
 export const MAX_OP_ATTEMPTS = 8;
 
 const targetOf = (op: R) => JSON.parse(op.target_json) as { messageIds?: number[] } & Record<string, unknown>;

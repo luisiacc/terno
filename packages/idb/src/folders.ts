@@ -1,6 +1,6 @@
 import { folderRef, listFilterOf, waitingCutoff, type Folder, type ThreadSummary } from "@terno/core";
 import type { FolderCountCursor, FolderPlace, LeaveFolderPayload, ListParams, MoveToFolderPayload, Page, ProviderFolder, ScopeParams } from "@terno/store";
-import { applyFolderOp, applyFolderOpOne, isFolderOp, keepInPage, mergedBehind, oneFolderPerMessage } from "@terno/store";
+import { applyFolderOp, applyFolderOpOne, applyLocationOpOne, isFolderOp, keepInPage, mergedBehind, oneFolderPerMessage } from "@terno/store";
 import { forgetStretch, pendingAfter, stretch, threadStretch } from "./folder-export";
 import { FILTER_TEST, seekAfter, T, threadMerges, toSummary, VIEW_TEST, type Ctx, type R } from "./mail";
 import type { Key } from "./mem";
@@ -32,6 +32,24 @@ export function pendingFolderOps(c: Ctx, messageId: number): R[] {
       return op && isFolderOp(op.kind as string) && (op.state === "queued" || op.state === "running") ? [op] : [];
     })
     .sort((x, y) => x.seq - y.seq);
+}
+
+/**
+ * Plan 259: where these one-folder (Outlook) messages are once what's on their way lands (the SQL adapter's
+ * oneFolderFolders): the stored folder, then every location op on its way replayed in order (`applyLocationOpOne`).
+ * Null: a role folder.
+ */
+export function oneFolderFolders(c: Ctx, ids: readonly number[]): Map<number, string | null> {
+  const folders = T(c, "message_folders"), ops = T(c, "ops"), targets = T(c, "op_targets");
+  return new Map(ids.map((id) => {
+    let at = (folders.get(id)?.folder as string | undefined) ?? null;
+    const pending = targets.by("message", id).flatMap((t) => {
+      const op = t.grp === "location" ? ops.get(t.op_id) : undefined;
+      return op && (op.state === "queued" || op.state === "running") ? [op] : [];
+    }).sort((x, y) => x.seq - y.seq);
+    for (const op of pending) at = applyLocationOpOne(at, op.kind as string, JSON.parse(op.payload_json as string) as unknown);
+    return [id, at] as const;
+  }));
 }
 
 /** Rewrites these threads' memberships from their messages; rows that didn't change aren't written. */

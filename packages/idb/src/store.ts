@@ -1145,9 +1145,11 @@ export class IdbMailStore implements MailStore {
         reaffirmSavedFlagIntent(idbFlags(this.c), messages, versions);
         for (const op of r.ops) {
           if (!versions.has(op.accountId) && idbFlags(this.c).clock(op.accountId)) versions.set(op.accountId, flagTick(idbFlags(this.c), op.accountId));
-          const id = enqueueOp(this.c, { accountId: op.accountId, kind: op.kind, target: { messageIds: op.messageIds } }, now, versions.get(op.accountId));
+          const id = enqueueOp(this.c, { accountId: op.accountId, kind: op.kind, target: { messageIds: op.messageIds }, ...(op.payload && { payload: op.payload }) }, now, versions.get(op.accountId));
           if (id) opIds.push(id);
         }
+        // plan 259: membership reads a folder op on its way: an Outlook message back in its folder shows there now
+        if (r.ops.some((op) => isFolderOp(op.kind))) recomputeThreads(this.c, r.threadIds);
         return { threadIds: r.threadIds, opIds, ...flagReconciliation(idbFlags(this.c), flagBefore) };
       }),
     moveToFolder: (o) =>

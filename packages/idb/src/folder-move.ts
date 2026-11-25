@@ -1,5 +1,6 @@
-import { applyFolderOp, applyFolderOpOne, folderReachable, keptInInbox, labelsLeft, labelsMoved, LEAVE_FOLDER, leaveFolderOps, MOVE_TO_FOLDER, oneFolderPerMessage, planOneFolderMove, type FolderFilterMove, type FolderMoved, type LeaveFolderPayload, type MoveToFolderPayload } from "@terno/store";
-import { listFolders, pendingFolderOps } from "./folders";
+import { applyFolderOp, folderReachable, keptInInbox, labelsLeft, labelsMoved, LEAVE_FOLDER, leaveFolderOps, MOVE_TO_FOLDER, oneFolderPerMessage, planOneFolderMove, requestFlagSnapshots, type FolderFilterMove, type FolderMoved, type LeaveFolderPayload, type MoveToFolderPayload } from "@terno/store";
+import { idbFlags } from "./flag-intents";
+import { listFolders, oneFolderFolders, pendingFolderOps } from "./folders";
 import { applyMessageAction, applyThreadAction, enqueueOp, recomputeThreads, T, type ActionResult, type Ctx, type R } from "./mail";
 
 const labelsOf = (m: R): string[] => {
@@ -27,13 +28,8 @@ function queueFolderMoves(c: Ctx, to: { accountId: number; folder: string; from:
   const { accountId, folder, from, now } = to;
   if (isOneFolder(c, accountId)) {
     // plan 259 stage 2b: one move a message, from where it is once what's on its way lands, each one's way back journalled
-    const folders = T(c, "message_folders");
-    const pending = T(c, "ops").count("folder_moves", accountId) > 0;
-    const plan = planOneFolderMove({ accountId, folder, from }, rows.map((m) => {
-      let at = (folders.get(m.id)?.folder as string | undefined) ?? null;
-      if (pending) for (const op of pendingFolderOps(c, m.id)) at = applyFolderOpOne(at, op.kind as string, JSON.parse(op.payload_json as string) as MoveToFolderPayload | LeaveFolderPayload);
-      return { id: m.id as number, thread_id: m.thread_id as number, is_sent: !!m.is_sent, in_inbox: !!m.in_inbox, folder: at };
-    }));
+    const at = oneFolderFolders(c, rows.map((m) => m.id as number));
+    const plan = planOneFolderMove({ accountId, folder, from }, rows.map((m) => ({ id: m.id as number, thread_id: m.thread_id as number, is_sent: !!m.is_sent, in_inbox: !!m.in_inbox, folder: at.get(m.id as number) ?? null })));
     const payload: MoveToFolderPayload = { folder, from, keepInbox: false, ...(plan.moved.fromInbox.length && { fromInbox: plan.moved.fromInbox }) };
     const id = plan.messageIds.length ? enqueueOp(c, { accountId, kind: MOVE_TO_FOLDER, target: { messageIds: plan.messageIds }, payload }, now) : null;
     return { moved: plan.moved, opIds: id ? [id] : [] };
@@ -158,21 +154,24 @@ export function settleFolderOp(c: Ctx, op: { kind: string; account_id: number; t
       if (next) messages.update(m, { gmail_labels: JSON.stringify(next) });
     }
   }
-  // plan 259: an Outlook filing's Inbox part, settled with it (the SQL adapter's settleFolderOp): landed, what the server
-  // confirmed in the folder is out of the Inbox (round 2 #6); never landed, what it took out comes back unless the
-  // server has it in a folder or something newer is on its way for it (round 2 #7)
+  // plan 259: an Outlook filing (an undo's too) settled (the SQL adapter's settleFolderOp): landed, what the server
+  // confirmed in the folder is out of the Inbox, Trash and Junk (round 2 #6, exact undo #5); never landed, what it took
+  // out of the Inbox comes back unless the server has it in a folder or a newer location op is on its way for it
+  // (round 2 #7), and where each one really is is read again
   const p = op.kind === MOVE_TO_FOLDER ? JSON.parse(op.payload_json) as MoveToFolderPayload : undefined;
-  if (p?.fromInbox?.length && isOneFolder(c, op.account_id)) {
+  if (p && isOneFolder(c, op.account_id)) {
     const folders = T(c, "message_folders"), ops = T(c, "ops");
-    const untouched = (id: number) => !T(c, "op_targets").by("message", id).some((t) => { const o = ops.get(t.op_id); return !!o && (o.state === "queued" || o.state === "running"); });
-    for (const id of p.fromInbox) {
+    const untouched = (id: number) => !T(c, "op_targets").by("message", id).some((t) => { const o = t.grp === "location" ? ops.get(t.op_id) : undefined; return !!o && (o.state === "queued" || o.state === "running"); });
+    const ids = (JSON.parse(op.target_json) as { messageIds?: number[] }).messageIds ?? [];
+    for (const id of succeeded ? ids : p.fromInbox ?? []) {
       const m = messages.get(id);
       if (!m || m.account_id !== op.account_id || !untouched(id)) continue;
       const at = folders.get(id)?.folder as string | undefined;
-      if (succeeded ? !(m.in_inbox && at === p.folder) : (m.in_inbox || m.is_trash || m.is_spam || at !== undefined)) continue;
-      messages.update(m, { in_inbox: succeeded ? 0 : 1 });
+      if (succeeded ? !((m.in_inbox || m.is_trash || m.is_spam) && at === p.folder) : (m.in_inbox || m.is_trash || m.is_spam || at !== undefined)) continue;
+      messages.update(m, succeeded ? { in_inbox: 0, is_trash: 0, is_spam: 0 } : { in_inbox: 1 });
       if (!rows.includes(m)) rows.push(m);
     }
+    if (!succeeded) requestFlagSnapshots(idbFlags(c), op.account_id, ids, ["inInbox", "isTrash", "isSpam"]);
   }
   const threads = [...new Set(rows.map((m) => m.thread_id as number))];
   recomputeThreads(c, threads);
