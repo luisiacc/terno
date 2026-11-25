@@ -47,8 +47,18 @@ export const IN_MESSAGE_FOLDERS = (ids: string) => messageFoldersOf("m.thread_id
 /** as (id, folder): each message's, for a pending move replayed over it */
 export const MESSAGE_FOLDERS = (ids: string) => messageFoldersOf("m.id AS id, f.folder AS folder", ids);
 
-/** Is any message in a folder of its own (an Outlook account's)? One probe: none, and membership reads nothing more. */
-export const anyMessageFolders = (db: Db): boolean => db.get("SELECT 1 FROM message_folders LIMIT 1") !== undefined;
+/**
+ * Is any message in a folder of its own (an Outlook account's)? One probe: none, and membership reads nothing more. A
+ * schema before v82 has no table and so none (a write against one, as `folderOpsPending`'s, never fails for it).
+ */
+export function anyMessageFolders(db: Db): boolean {
+  try {
+    return db.get("SELECT 1 FROM message_folders LIMIT 1") !== undefined;
+  } catch (error) {
+    if (!(error instanceof Error && error.message.includes("no such table"))) throw error;
+    return false;
+  }
+}
 
 /** a count's or export's key as an Outlook folder: a key, or a key with IMAP's exclusions (none here); a renamed IMAP generation is none */
 const keyOf = (k: FolderPlace): string | null => (typeof k === "string" ? k : "uidvalidity" in k ? null : k.mailbox);

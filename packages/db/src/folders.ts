@@ -44,9 +44,11 @@ SELECT t.id, t.account_id, k.folder, t.last_date, t.unread_count > 0 FROM (
    WHERE m.thread_id IN (SELECT value FROM json_each(?)) AND m.is_trash = 0 AND m.is_spam = 0 AND ${OWN("l", "f")}
   UNION
   ${ALIASED("?")}
-  UNION
-  ${IN_MESSAGE_FOLDERS("?")}
 ) k JOIN threads t ON t.id = k.tid`;
+/** plan 259: an Outlook message's folder, read only while any message has one */
+const MESSAGE_FOLDER_MEMBERSHIP = /* sql */ `
+INSERT OR IGNORE INTO thread_folders (thread_id, account_id, folder, last_date, unread)
+SELECT t.id, t.account_id, k.folder, t.last_date, t.unread_count > 0 FROM (${IN_MESSAGE_FOLDERS("?")}) k JOIN threads t ON t.id = k.tid`;
 
 /**
  * Plan 127: a folder move or its undo on its way decides these threads' membership, replayed per message over what
@@ -91,7 +93,7 @@ function overlayFolderOps(db: Db, json: string): void {
     threads,
     threads,
   )) byMessage.get(r.id)?.folders.add(r.folder);
-  for (const r of db.all<{ id: number; folder: string }>(MESSAGE_FOLDERS("?"), threads)) byMessage.get(r.id)?.folders.add(r.folder);
+  if (anyMessageFolders(db)) for (const r of db.all<{ id: number; folder: string }>(MESSAGE_FOLDERS("?"), threads)) byMessage.get(r.id)?.folders.add(r.folder);
   for (const p of pending) {
     const m = byMessage.get(p.message_id);
     if (!m) continue;
@@ -123,7 +125,8 @@ export function refreshFolders(db: Db, threadIds: Iterable<number>): void {
   if (!ids.length) return;
   const json = JSON.stringify(ids);
   db.run("DELETE FROM thread_folders WHERE thread_id IN (SELECT value FROM json_each(?))", json);
-  db.run(MEMBERSHIP, json, json, json, json);
+  db.run(MEMBERSHIP, json, json, json);
+  if (anyMessageFolders(db)) db.run(MESSAGE_FOLDER_MEMBERSHIP, json);
   overlayFolderOps(db, json);
 }
 
