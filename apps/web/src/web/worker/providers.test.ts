@@ -28,4 +28,12 @@ describe("webRegistry: what a browser can't connect says so in the catalog", () 
       .catch((e: unknown) => e);
     expect(toErrorPayload(error)).toMatchObject({ i18n: { key: "web.provider.gmailInPage" } });
   });
+
+  it("plan 259: Microsoft's sign-in says it needs the desktop app", async () => {
+    const error = await webRegistry()
+      .connectMicrosoft!({} as never)
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ProviderError);
+    expect(toErrorPayload(error)).toMatchObject({ i18n: { key: "errors.microsoft.needsDesktop" } });
+  });
 });

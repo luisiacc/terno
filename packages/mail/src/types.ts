@@ -43,6 +43,10 @@ export type HttpRequestContext =
   | { readonly endpoint: "gmail-api"; readonly purpose: "mail" | "identity-proof" }
   | { readonly endpoint: "oauth-token"; readonly purpose: "refresh" | "authorization-code" }
   | { readonly endpoint: "google-userinfo"; readonly purpose: "identity-proof" }
+  // plan 259: Outlook's Graph API, Microsoft's token endpoint and its identity read (/me)
+  | { readonly endpoint: "graph-api"; readonly purpose: "mail" | "identity-proof" }
+  | { readonly endpoint: "microsoft-token"; readonly purpose: "refresh" | "authorization-code" }
+  | { readonly endpoint: "microsoft-identity"; readonly purpose: "identity-proof" }
   | { readonly endpoint: "unknown"; readonly purpose: "unknown" };
 
 export type BoundedHttpHeader =
@@ -401,6 +405,42 @@ export interface GmailConnectResult {
   grantedScopes?: string[];
 }
 
+/** Plan 259: an Outlook account over Microsoft Graph. */
+export interface OutlookAccountConfig {
+  senderName: string;
+  /** `<tid>:<oid>` from the id_token: Microsoft's stable id for the person in their tenant (owner evidence, admission) */
+  microsoftSubject: string;
+  /** the app registration that issued the refresh token (it works with no other) */
+  microsoftClientId: string;
+  /** a personal Microsoft account (the consumer tenant) or a work or school one */
+  tenant: MicrosoftTenant;
+}
+
+export type MicrosoftTenant = "consumers" | "organizations";
+
+export interface MicrosoftConnectResult {
+  /** the mailbox: Graph's `mail`, else the user principal name (personal accounts often have no `mail`) */
+  email: string;
+  name: string;
+  /** with offline_access Microsoft always issues one, and it rotates on every refresh */
+  refreshToken: string;
+  /** `<tid>:<oid>` */
+  subject: string;
+  tenant: MicrosoftTenant;
+  /** effective grant; an omitted token-response scope means the requested scopes */
+  grantedScopes: string[];
+}
+
+export interface MicrosoftConnectOptions {
+  clientId: string;
+  openExternal: (url: string) => Promise<void>;
+  signal?: AbortSignal;
+  /** the backend's network-policy fetch (purpose "mail") */
+  fetch: typeof fetch;
+  /** pre-fills the account on Microsoft's sign-in page (signing an account in again) */
+  loginHint?: string;
+}
+
 /** The web's Gmail sign-in: short-lived access tokens from Google's token model, kept in memory. */
 export interface GmailTokenBroker {
   /** whose mailbox the token opens (Gmail profile + OpenID userinfo) */
@@ -441,6 +481,11 @@ export interface ProviderRegistry {
   /** plan 125: withdraw a removed account's Google grant (desktop only: the endpoint has no CORS; absent in test and
    * demo registries, which never try) */
   revokeGoogle?(token: string, netFetch: typeof fetch, signal: AbortSignal): Promise<"revoked" | "failed">;
+  /**
+   * Plan 259: Microsoft's installed-app sign-in (desktop only: the loopback; absent in test and demo registries, and
+   * the web's refuses it). Microsoft has no endpoint that withdraws one app's grant, so there is no revoke beside it.
+   */
+  connectMicrosoft?(options: MicrosoftConnectOptions): Promise<MicrosoftConnectResult>;
 }
 
 export interface RequestRun { markDispatched(): void; markSubmissionDispatched?(): void }

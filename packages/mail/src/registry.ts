@@ -4,6 +4,7 @@ import { beginGmailRenewal } from "./gmail-renewal";
 import { createGmailProvider, connectGmail } from "./gmail";
 import { revokeGoogleToken } from "./google-revoke";
 import { createImapProvider, type ImapProviderOptions } from "./imap";
+import { connectMicrosoft, type MicrosoftEndpoints } from "./microsoft";
 import { sendViaSmtp, verifySmtp } from "./smtp";
 import { unhandled } from "@terno/core";
 import { ProviderError, type ImapAccountConfig, type MailProvider, type ProviderRegistry, type SendPayload } from "./types";
@@ -15,6 +16,8 @@ export interface RegistryOptions {
   demoSmtpPort?: number;
   /** unitsPerSecond: Gmail quota units a second (default Google's per-user limit; synthetic servers lift it) */
   gmail?: { endpoints?: Partial<import("./gmail").GmailEndpoints>; unitsPerSecond?: number };
+  /** plan 259: a synthetic Microsoft (sign-in, token and Graph moved) */
+  microsoft?: { endpoints?: Partial<MicrosoftEndpoints> };
 }
 
 /** The demo provider, except that a send is built and sent over SMTP to a local test server (the packaged smoke). */
@@ -78,6 +81,7 @@ export function createRegistry(options: RegistryOptions = {}): ProviderRegistry 
       }
     },
     connectGmail: (o) => connectGmail({ ...o, endpoints: options.gmail?.endpoints }),
+    connectMicrosoft: (o) => connectMicrosoft({ ...o, endpoints: options.microsoft?.endpoints }),
     beginGmailRenewal: (o) => beginGmailRenewal({ ...o, endpoints: options.gmail?.endpoints }),
     // plan 125: a synthetic Google (endpoints moved) has no grant to withdraw, and must never reach the real one
     ...(!options.gmail?.endpoints && { revokeGoogle: revokeGoogleToken }),

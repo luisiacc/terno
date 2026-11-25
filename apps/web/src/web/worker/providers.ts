@@ -41,5 +41,9 @@ export function webRegistry(): ProviderRegistry {
     async connectGmail() {
       throw providerError(L("web.provider.gmailInPage"));
     },
+    // plan 259: Microsoft's sign-in is the desktop's loopback; the web's own flow is a later plan (stage 4)
+    async connectMicrosoft() {
+      throw providerError(L("errors.microsoft.needsDesktop"));
+    },
   };
 }
