@@ -109,7 +109,6 @@ async function severalPerThread(store: MailStore, accountId: number, now: number
   const who = (i: number) => ({ name: `Board ${i}`, email: `board${i}@several.test` });
   // yours first, so the requests in what came after aren't answered by it
   const sent = Array.from({ length: SEVERAL }, (_, i) => msg({ accountId, from: me, to: [who(i)], isSent: true, isRead: true, inInbox: false, listId: null, providerMsgId: `several-${i}-out`, providerThreadId: `several-${i}`, subject: `Board ${i}`, date: now - 7_200_000 - i, bodyText: "I'll send the budget." }));
-  // (plan 218: in the Inbox: out of it, with their mail, the conversation is archived, and its promises show nowhere)
   const came = Array.from({ length: SEVERAL }, (_, i) => msg({ accountId, from: who(i), to: [me], inInbox: true, listId: null, providerMsgId: `several-${i}-in`, providerThreadId: `several-${i}`, subject: `Re: Board ${i}`, date: now - 3_600_000 - i, bodyText: "The board meets Thursday at 9:00; the dues are due Friday." }));
   const outs = (await store.sync.ingest(sent, { applyFilters: false, now, classifier: null, liveSent: { wanted: true } })).inserted;
   const ins = (await store.sync.ingest(came, { applyFilters: false, now, classifier: null, datedMail: { since: null } })).inserted;

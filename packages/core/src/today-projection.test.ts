@@ -744,19 +744,19 @@ describe("words and clocks", () => {
   });
 });
 
-describe("plan 218: a promise whose conversation is put away (archived, Trash, Spam)", () => {
+describe("plans 218, 277: a promise whose conversation is in Trash or Spam", () => {
   it("is no row, member nor count; the request it answers stays answered; a merged item shows through its dated member, its id kept", () => {
     const mine = promise(at(2026, 11, 19, 9), { threadId: 7 });
     const other = promise(at(2026, 11, 19, 9), { threadId: 8 });
     expect(placeItems([], [mine, other], NOW).map((p) => p.item.id)).toEqual([`promise:${mine.id}`, `promise:${other.id}`]);
     expect(placeItems([], [mine, other], NOW, { away: new Set([7]) }).map((p) => p.item.id)).toEqual([`promise:${other.id}`]);
     expect(placeItems([], [mine], NOW, { count: true, away: new Set([7]) })).toEqual([]);
-    // the request it answers was put away with it: neither shows, and both come back with the conversation
+    // the request it answers went with it: neither shows, and both come back with the conversation
     const slip = dated("respond", "2026-11-20", { threadId: 9 });
     const answers = withNeeds([promise(at(2026, 11, 17, 9), { threadId: 9, answers: slip.id })], new Map([[slip.id, slip]]));
     expect(placeItems([slip], answers, NOW, { away: new Set([9]) })).toEqual([]);
     expect(placeItems([slip], answers, NOW)).toHaveLength(1);
-    // a bill read as your promise too, the promise's conversation put away: the bill's row, under its own id, without it
+    // a bill read as your promise too, the promise's conversation deleted: the bill's row, under its own id, without it
     const bus = dated("ask", "2026-11-20", { threadId: 2 });
     const merged = promise(at(2026, 11, 20, 9), { threadId: 3, sameAs: `dated:${bus.id}` });
     const [item] = placeItems([bus], [merged], NOW, { away: new Set([3]) });

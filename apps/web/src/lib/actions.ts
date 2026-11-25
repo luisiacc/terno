@@ -20,8 +20,8 @@ import { readSetByHand } from "~/lib/read-by-hand";
 
 /** Does a thread still belong in the current list after an action? */
 function staysInView(s: Pick<AppState, "view" | "gmailTab" | "categoryId" | "reviewCategoryId" | "folder" | "query" | "followups">, action: ThreadAction): boolean {
-  // plan 218: an archived, deleted or spam conversation's follow-ups go: it leaves the Follow-ups list
-  if (s.followups && (action === "archive" || action === "trash" || action === "spam")) return false;
+  // plans 218, 277: a deleted or spam conversation's follow-ups go: it leaves the Follow-ups list (archived, they stay)
+  if (s.followups && (action === "trash" || action === "spam")) return false;
   // plan 86: a Gmail tab holds its own category only; the Inbox none of the tabs (Move to Inbox takes a thread out of them)
   if (isCategoryAction(action)) return s.gmailTab ? action === TAB_ACTION[s.gmailTab] : !(inPlainInbox(s) && (action === "toPromotions" || action === "toSocial" || action === "toOther"));
   if (action === "moveToInbox" && s.gmailTab) return false;

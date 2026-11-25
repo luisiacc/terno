@@ -17,8 +17,6 @@ export const FOLLOWUPS_ACTIVE_MAX = 1000;
 export const FOLLOWUP_CLOSED_KEEP_MS = 90 * 86_400_000;
 /** the item a wait is, beside promises 0, 1, 2: one wait a source message */
 export const AWAITING_ITEM = 100;
-/** Plan 218: archived in Terno with no mail from anyone else in it, so nothing else could take it out of sight */
-export const ARCHIVED_CLOSED = "archived";
 
 export interface SentMark {
   messageId: number;
@@ -162,16 +160,10 @@ export interface FollowupStore {
   /** the threads' `onTop` rows are `seen` now; what to put back for Undo */
   endTop(threadIds: readonly number[]): Promise<FollowupSnapshot[]>;
   /**
-   * Plan 218: of these conversations, those put away: in Trash or Spam, or archived (a message from someone else, not
-   * yours by your addresses, not a draft, Spam or Trash; and none of it in the Inbox). One of only your own mail was never
-   * in the Inbox, so it isn't archived. Read live, never written: back in the Inbox, its follow-ups are back.
+   * Of these conversations, those in Trash or Spam, whose follow-ups show nowhere (plan 218; an archived one keeps them,
+   * plan 277). Read live, never written: out of Trash or Spam, its follow-ups are back.
    */
-  putAway(threadIds: readonly number[]): Promise<Set<number>>;
-  /**
-   * Plan 218: an archive in Terno closes the open rows of those of these conversations with no mail from anyone else
-   * (`putAway` can't see that archive): `dismissed`, `ARCHIVED_CLOSED`, off the Inbox's top; what to put back for Undo
-   */
-  closeArchived(threadIds: readonly number[], now: number): Promise<FollowupSnapshot[]>;
+  inTrashOrSpam(threadIds: readonly number[]): Promise<Set<number>>;
   /** a change by the user, conditional on the revision they saw */
   update(id: number, revision: number, patch: Partial<Pick<FollowupRow, "state" | "dueAt" | "deferredUntil" | "inboxState" | "closedReason" | "closedAt">>): Promise<FollowupSnapshot | null>;
   /** Undo: each row only if nothing else changed it since */

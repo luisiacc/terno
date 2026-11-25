@@ -341,8 +341,8 @@ export function placeItems(dated: readonly DatedRow[], promises: readonly Needin
   // (iteration 4, the Codex review's revision 4) a promise that only holds a request is never a row: the request is
   if (promises.some((p) => p.holds != null)) promises = promises.filter((p) => p.holds == null);
   dated = withoutAnswered(dated, promises);
-  // plan 218: a promise whose conversation is put away (archived, Trash, Spam) is no row nor member of one, nor counted; the
-  // request it answers stays answered by it (the conversation was put away whole), and both come back with it
+  // plans 218, 277: a promise whose conversation is in Trash or Spam (`away`; archived, it stays) is no row nor member of
+  // one, nor counted; the request it answers stays answered by it (the conversation went whole), and both come back with it
   const away = o.away;
   if (away?.size && promises.some((p) => away.has(p.threadId))) promises = promises.filter((p) => !away.has(p.threadId));
   // (iteration 4) a reply's promises are grouped where they're placed, then the count leaves Coming up out

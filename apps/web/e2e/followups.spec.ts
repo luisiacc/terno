@@ -99,10 +99,17 @@ test.describe("follow-ups (plan 142)", () => {
       await expect(page.getByTestId("thread-dated-item")).toBeVisible();
     });
 
-    await scenario("plan 218: archived from Follow-ups, it leaves the list and its count; Undo brings both back", async () => {
+    await scenario("plan 277: archived from Follow-ups, it stays in the list and its count; deleted, both go and Undo brings them back", async () => {
       const count = page.getByTestId("nav-followups").locator("[data-slot=nav-count]");
       await expect(count).toHaveText("1");
+      const threadId = (await server.backend.store.followups.active())[0]!.threadId;
       await page.getByTestId("action-archive").click();
+      // the archive landed: the conversation is out of the Inbox, its follow-up still tracked
+      await expect.poll(async () => (await server.backend.store.threads.get(threadId))!.thread.inInbox).toBe(false);
+      await expect.poll(async () => (await server.backend.store.followups.active()).map((r) => r.threadId)).toEqual([threadId]);
+      await expect(rows(page)).toHaveCount(1);
+      await expect(count).toHaveText("1");
+      await page.getByTestId("action-trash").click();
       await expect(rows(page)).toHaveCount(0);
       await expect(count).toHaveCount(0);
       await page.locator("[data-testid=snack]").getByRole("button", { name: /undo/i }).click();

@@ -49,19 +49,13 @@ export async function measureFollowups(o: WorkloadMailbox): Promise<void> {
   const scanSmall = await timed(5, () => store.followups.scanCandidates(since, SCAN_MESSAGES_MAX, small.id));
   expect(await store.followups.scanCandidates(since, SCAN_MESSAGES_MAX, small.id)).toHaveLength(SMALL);
   await store.accounts.remove(small.id);
-  // plan 218, after the check's candidates (this grows their mailbox): which conversations are put away, over every active
-  // row's, all out of the Inbox and of only your mail, so every message of each is read (the worst case, Codex code
-  // review), each 50 long: 50,000 messages. The worker reads it in budgeted slices: a slice of 100 is the gate, all logged
-  for (let round = 1; round < 50; round++) {
-    const more = ids.map(({ thread }, i) => msg({ accountId, from: me, to: [tom], isSent: true, inInbox: false, providerMsgId: `fu-long-${round}-${i}`, inReplyTo: `fu-${Math.floor(i / 100)}-${i % 100}@perf`, references: [`fu-${Math.floor(i / 100)}-${i % 100}@perf`], subject: `Re: ${thread}`, date: o.now - 500 - round, bodyText: "x" }));
-    const r = await store.sync.ingest(more, { applyFilters: false, now: o.now, classifier: null });
-    if (round === 1) expect((await store.followups.source(r.inserted[123]!))!.threadId).toBe(ids[123]!.thread);
-  }
+  // plans 218, 277: which conversations are in Trash or Spam, over every active row's: the worker reads it in budgeted
+  // slices, so a slice of 100 is the gate, all logged
   const threads = [...new Set(active.map((r) => r.threadId))];
-  expect((await store.followups.putAway(threads)).size).toBe(0);
-  const away = await timed(10, (i) => store.followups.putAway(threads.slice((i % 10) * 100, (i % 10) * 100 + 100)));
-  const awayAll = await timed(3, () => store.followups.putAway(threads));
-  o.log(`Follow-ups: the active list ${list.toFixed(2)} ms, the timer's probe ${probe.toFixed(2)} ms, a thread's ${thread.toFixed(2)} ms, 50 replies' check ${chunk.toFixed(2)} ms, an empty ingest ${off.toFixed(2)} ms, what's put away ${away.toFixed(2)} ms a slice of 100 (${awayAll.toFixed(2)} ms all 1,000), the check's candidates ${scan.toFixed(2)} ms (a small account's ${scanSmall.toFixed(2)} ms)`);
+  expect((await store.followups.inTrashOrSpam(threads)).size).toBe(0);
+  const away = await timed(10, (i) => store.followups.inTrashOrSpam(threads.slice((i % 10) * 100, (i % 10) * 100 + 100)));
+  const awayAll = await timed(3, () => store.followups.inTrashOrSpam(threads));
+  o.log(`Follow-ups: the active list ${list.toFixed(2)} ms, the timer's probe ${probe.toFixed(2)} ms, a thread's ${thread.toFixed(2)} ms, 50 replies' check ${chunk.toFixed(2)} ms, an empty ingest ${off.toFixed(2)} ms, what's in Trash or Spam ${away.toFixed(2)} ms a slice of 100 (${awayAll.toFixed(2)} ms all 1,000), the check's candidates ${scan.toFixed(2)} ms (a small account's ${scanSmall.toFixed(2)} ms)`);
   expect(scan).toBeLessThanOrEqual(SCAN_MS * o.budget);
   expect(scanSmall).toBeLessThanOrEqual(SCAN_MS * o.budget);
   expect(list).toBeLessThanOrEqual(5 * o.budget * 3);

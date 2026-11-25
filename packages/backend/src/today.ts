@@ -653,7 +653,7 @@ export class TodayService {
       [dated, promises] = await read();
     }
     // plan 211: a promise of an account with AI or What matters off isn't shown nor counted (the dated rows' cache did theirs)
-    // plan 218: a promise whose conversation is put away shows nowhere (the follow-ups' last look says which)
+    // plans 218, 277: a promise whose conversation is in Trash or Spam shows nowhere (the follow-ups' last look says which)
     const away = promises.length ? await this.b.followups.awayAmong(promises.map((p) => p.threadId)) : new Set<number>();
     // plan 249: what the user's words brought joins after the links are reconciled (it's never linked, answered or merged)
     const placing = settings.dated?.enabled ? await this.withWanted(dated) : dated;
@@ -1310,7 +1310,7 @@ export class TodayService {
   private async changedItems(settings: AppSettings): Promise<{ dated: DatedRow[]; promises: FollowupRow[] }> {
     const dated = settings.dated?.enabled ? (await this.datedRows()).filter((r) => r.changedAt != null) : [];
     const changed = settings.followups?.enabled ? (await this.b.store.followups.active()).filter((r) => r.kind === "promise" && r.changedAt != null) : [];
-    // plan 218: not one whose conversation is put away
+    // plans 218, 277: not one whose conversation is in Trash or Spam
     const away = changed.length ? await this.b.followups.awayAmong(changed.map((r) => r.threadId)) : new Set<number>();
     const promises = away.size ? changed.filter((r) => !away.has(r.threadId)) : changed;
     return { dated, promises };

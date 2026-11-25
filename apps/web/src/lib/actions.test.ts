@@ -365,7 +365,7 @@ describe("a search's selection spanning places (plan 64)", () => {
   });
 });
 
-describe("plan 218: the Follow-ups list", () => {
+describe("plans 218, 277: the Follow-ups list", () => {
   beforeEach(() => {
     fake.handlers["threads.act"] = async () => ({ undoId: 1 });
     navigate({ followups: true });
@@ -374,15 +374,14 @@ describe("plan 218: the Follow-ups list", () => {
   });
   afterEach(() => navigate({ view: "inbox" }));
 
-  it("Archive, Delete and Spam take a row out at once (its follow-up goes with it); a star keeps it", async () => {
+  it("Delete and Spam take a row out at once (its follow-up goes with it); Archive and a star keep it (plan 277)", async () => {
     expect(getApp()).toMatchObject({ followups: true, view: "all" });
     await act("star", [1]);
-    expect(useList.getState().items.map((t) => t.id)).toEqual([1, 2, 3]);
     await act("archive", [1]);
-    expect(useList.getState().items.map((t) => t.id)).toEqual([2, 3]);
+    expect(useList.getState().items.map((t) => t.id)).toEqual([1, 2, 3]);
     await act("trash", [2]);
     await act("spam", [3]);
-    expect(useList.getState().items).toEqual([]);
+    expect(useList.getState().items.map((t) => t.id)).toEqual([1]);
   });
 });
 

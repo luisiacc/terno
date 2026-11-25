@@ -440,7 +440,7 @@ export class FollowupWorker {
   private touchTimer: ReturnType<typeof setTimeout> | null = null;
   private armedAt: number | null = null;
   private ids = new Set<number>();
-  /** plan 218: the conversations put away at the last look, whose rows show nowhere; `looked` once there's been one */
+  /** plans 218, 277: the conversations in Trash or Spam at the last look, whose rows show nowhere; `looked` once there's been one */
   private away: ReadonlySet<number> = new Set();
   private looked = false;
   /** Codex code review (plan 218): the look running and the one queued after it: one at a time, in order */
@@ -869,7 +869,8 @@ export class FollowupWorker {
 
   /**
    * Plan 218: what may show, anywhere (the list, its count, the Inbox's top, the notice, What matters): the rows of
-   * conversations not put away (`FollowupStore.putAway`), which this keeps for What matters until the next look.
+   * conversations not in Trash or Spam (`FollowupStore.inTrashOrSpam`; archived ones show, plan 277), which this keeps for
+   * What matters until the next look.
    */
   private async shown(rows: FollowupRow[]): Promise<FollowupRow[]> {
     this.away = await this.readAway(rows.map((r) => r.threadId));
@@ -877,12 +878,12 @@ export class FollowupWorker {
     return this.away.size ? rows.filter((r) => !this.away.has(r.threadId)) : rows;
   }
 
-  /** Plan 218: which are put away, read in budgeted slices (a long conversation of your own mail has every sender read). */
+  /** Plans 218, 277: which are in Trash or Spam, read in budgeted slices. */
   private async readAway(threadIds: readonly number[]): Promise<Set<number>> {
     const away = new Set<number>();
     const ids = [...new Set(threadIds)];
     if (ids.length) await this.host.runBudgeted(ids, async (chunk) => {
-      for (const id of await this.host.store.followups.putAway(chunk)) away.add(id);
+      for (const id of await this.host.store.followups.inTrashOrSpam(chunk)) away.add(id);
     });
     return away;
   }
@@ -905,7 +906,7 @@ export class FollowupWorker {
     const threads = new Map((await this.host.summaries(promised.map((r) => r.threadId))).map((t) => [t.id, t]));
     // plan 211: a promise of an account with AI or What matters off isn't shown, so it isn't said either (nor claimed: back
     // on, a promise still due is said then)
-    // plan 218 (Codex code review): read again just before it's said: put away since this look read it, it isn't
+    // plan 218 (Codex code review): read again just before it's said: deleted since this look read it, it isn't
     const away = await this.readAway(promised.map((r) => r.threadId));
     const fresh = promised.filter((r) => {
       const t = threads.get(r.threadId);
@@ -982,18 +983,6 @@ export class FollowupWorker {
     return ended;
   }
 
-  /**
-   * Plan 218: these conversations were archived in Terno: their follow-ups go. One with mail from someone else is out of the
-   * Inbox now, which hides them (`putAway`); one of only your own mail has nothing that could, so its rows close
-   * (`closeArchived`): what an Undo puts back. Looks again at once, so the list, its count and What matters follow.
-   */
-  async archived(threadIds: readonly number[]): Promise<FollowupSnapshot[]> {
-    // (asked of the store, not the last look's threads: off, a look reads none, and its rows still close; Codex code review)
-    const closed = await this.host.store.followups.closeArchived(threadIds, this.host.now());
-    if (closed.length || threadIds.some((id) => this.ids.has(id))) await this.look();
-    return closed;
-  }
-
   async putBack(snapshots: readonly FollowupSnapshot[]): Promise<void> {
     if (!snapshots.length) return;
     await this.host.store.followups.restore(snapshots.map((s) => ({ snapshot: s, expectRevision: s.revision + 1 })));
@@ -1005,7 +994,7 @@ export class FollowupWorker {
     const rows = (await this.host.store.followups.active()).filter((r) => !onTop || r.inboxState === "onTop");
     // the row's own order (`byUrgency`, as its line picks), so a thread is placed by the promise it shows
     const order = [...new Set(rows.sort(byUrgency).map((r) => r.threadId))];
-    // plan 218: put away (Trash, Spam, archived), it shows nowhere, and comes back with its conversation; read now, not the last look's
+    // plans 218, 277: in Trash or Spam it shows nowhere, and comes back with its conversation (archived, it shows); read now, not the last look's
     const away = await this.readAway(order);
     const threads = new Map((await this.host.summaries(order.filter((id) => !away.has(id)))).map((t) => [t.id, t]));
     return order.flatMap((id) => {

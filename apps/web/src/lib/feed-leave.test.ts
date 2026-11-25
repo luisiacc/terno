@@ -46,10 +46,11 @@ it("Archive takes out only a person waiting on your answer; Trash and Spam every
   expect(feedRowsLeaving("markRead", [2])).toEqual([]);
 });
 
-it("plan 218: Archive takes out a row of your promises only (its follow-up ends); one merged with a bill or request stays", () => {
+it("plan 277: Archive keeps a promise of yours (its follow-up stays); Delete takes it out", () => {
   const promise = (id: number, members: { source: string; id: number }[]) => ({ id: `promise:${id}`, threadId: id, entry: { why: { kind: "promise", members } }, task: {} });
-  useToday.setState({ rows: [task(1), promise(5, [{ source: "promise", id: 5 }]), promise(6, [{ source: "promise", id: 6 }, { source: "dated", id: 9 }]), promise(7, [])] as never });
-  expect(feedRowsLeaving("archive", [1, 5, 6, 7])).toEqual(["promise:5", "promise:7"]);
+  useToday.setState({ rows: [task(1), promise(5, [{ source: "promise", id: 5 }]), promise(6, [{ source: "promise", id: 6 }, { source: "dated", id: 9 }])] as never });
+  expect(feedRowsLeaving("archive", [1, 5, 6])).toEqual([]);
+  expect(feedRowsLeaving("trash", [5])).toEqual(["promise:5"]);
 });
 
 it("with nothing open the keys' row is the target, and when it leaves the keys and the place go on to the next", () => {

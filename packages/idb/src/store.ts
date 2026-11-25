@@ -7,7 +7,7 @@ import { clearReplies, finishReply, getReply, transitionReply } from "./replies"
 import { addShown, listShown, removeShown, trustedSenders } from "./shown-senders";
 import { activeWanted, actWanted, addWantedMark, clearLookMarks, clearVerdicts, clearWanted, countWantedMarks, finishWanted, getDraft, getPreferences, getVerdicts, getWanted, pruneVerdicts, pruneWantedMarks, putDraft, putVerdicts, reconcileWanted, restoreWanted, savePreferences, threadWanted, wantedLookCandidates, wantedMarkPage } from "./what-matters";
 import { activeDated, addDatedMute, datedMutes, removeDatedMute, closedDatedPage, claimDatedLook, clearDated, datedMarkCount, datedMarksAmong, datedPendingOn, datedMarkPage, datedMarksRaw, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, datedWritten, updateDated } from "./dated";
-import { activeFollowups, closedFollowupPage, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, closeArchivedFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupsPutAway, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
+import { activeFollowups, closedFollowupPage, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupsInTrashOrSpam, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
 import { findLinked, newestLinked } from "./links";
 import { addAskTurn, askAccountsOf, askCandidates, askHeaders, askNewest, askTurnCount, askTurns, clearAsk, listAskConversations, removeAskConversation, removeAskForAccount, restoreAskConversation } from "./ask";
 import { ACCOUNT_OPS, bodyCode, codeSubject, storedReply, projectBodyTokens, messageBodiesReleased } from "@terno/store";
@@ -2119,9 +2119,8 @@ export class IdbMailStore implements MailStore {
     claimNotice: (ids, now) => this.command(() => claimFollowupNotice(this.c, ids, now)),
     closeAnswered: (ids, now) => this.command(() => closeAnsweredFollowups(this.c, ids, now)),
     endTop: (ids) => this.command(() => endFollowupTop(this.c, ids)),
-    // (plan 218: a message read: after the late tables)
-    putAway: (ids) => this.read(() => followupsPutAway(this.c, ids)),
-    closeArchived: (ids, now) => this.command(() => closeArchivedFollowups(this.c, ids, now)),
+    // (plan 277: the thread records only, an early read)
+    inTrashOrSpam: (ids) => this.early(() => followupsInTrashOrSpam(this.c, ids)),
     update: (id, revision, patch) => this.command(() => updateFollowup(this.c, id, revision, patch)),
     restore: (rows) => this.command(() => restoreFollowups(this.c, rows)),
     prune: (now) => this.command(() => pruneFollowups(this.c, now)),

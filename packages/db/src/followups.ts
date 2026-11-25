@@ -1,5 +1,5 @@
 import { addressKey, ANSWERED_KINDS, parseHandedTo, readPartOfDay, refKey, replyAnswers, replyClosedReason, replyRecipients, type FollowupRow } from "@terno/core";
-import { ARCHIVED_CLOSED, FOLLOWUP_CLOSED_KEEP_MS, FOLLOWUPS_ACTIVE_MAX, recipientList, SCAN_MARK_MS, SENT_MARK_MS, type ClosedAt, type FollowupFinish, type FollowupFinishOutcome, type FollowupSnapshot, type FollowupSource, type SentMark } from "@terno/store";
+import { FOLLOWUP_CLOSED_KEEP_MS, FOLLOWUPS_ACTIVE_MAX, recipientList, SCAN_MARK_MS, SENT_MARK_MS, type ClosedAt, type FollowupFinish, type FollowupFinishOutcome, type FollowupSnapshot, type FollowupSource, type SentMark } from "@terno/store";
 import { ownAddresses } from "./facts";
 import { scheduleFields } from "./schedule";
 import type { Db } from "./sqlite";
@@ -360,42 +360,10 @@ export function endFollowupTop(db: Db, threadIds: readonly number[]): FollowupSn
   });
 }
 
-/** Plan 218: of these conversations, those with mail from someone else (by your addresses; no draft, Spam or Trash). */
-function fromOthers(db: Db, threadIds: readonly number[]): Set<number> {
-  const out = new Set<number>();
-  if (!threadIds.length) return out;
-  const own = ownAddresses(db);
-  // each sender once a conversation: a long one costs its people, not its messages
-  for (const r of db.all<{ thread_id: number; from_email: string }>("SELECT DISTINCT thread_id, from_email FROM messages INDEXED BY messages_thread WHERE thread_id IN (SELECT value FROM json_each(?)) AND is_draft = 0 AND is_spam = 0 AND is_trash = 0", JSON.stringify(threadIds))) {
-    if (!own.has(addressKey(r.from_email))) out.add(r.thread_id);
-  }
-  return out;
-}
-
-/** Plan 218: see `FollowupStore.putAway`. Messages are read only for conversations out of the Inbox, Trash and Spam. */
-export function followupsPutAway(db: Db, threadIds: readonly number[]): Set<number> {
-  const away = new Set<number>();
-  if (!threadIds.length) return away;
-  const out: number[] = [];
-  for (const t of db.all<{ id: number; in_inbox: number; in_trash: number; in_spam: number }>("SELECT id, in_inbox, in_trash, in_spam FROM threads WHERE id IN (SELECT value FROM json_each(?))", JSON.stringify([...new Set(threadIds)]))) {
-    if (t.in_trash || t.in_spam) away.add(t.id);
-    else if (!t.in_inbox) out.push(t.id);
-  }
-  for (const id of fromOthers(db, out)) away.add(id);
-  return away;
-}
-
-/** Plan 218: see `FollowupStore.closeArchived`. */
-export function closeArchivedFollowups(db: Db, threadIds: readonly number[], now: number): FollowupSnapshot[] {
-  if (!threadIds.length) return [];
-  return db.tx(() => {
-    const rows = db.all<Raw>("SELECT * FROM followups INDEXED BY followups_thread WHERE thread_id IN (SELECT value FROM json_each(?)) AND state IN ('open','due')", JSON.stringify([...new Set(threadIds)]));
-    if (!rows.length) return [];
-    const others = fromOthers(db, [...new Set(rows.map((r) => r.thread_id))]);
-    const closed = rows.filter((r) => !others.has(r.thread_id));
-    for (const r of closed) db.run("UPDATE followups SET state = 'dismissed', inbox_state = 'none', closed_reason = ?, closed_at = ?, revision = revision + 1 WHERE id = ?", ARCHIVED_CLOSED, now, r.id);
-    return closed.map(snapshot);
-  });
+/** See `FollowupStore.inTrashOrSpam` (plans 218, 277): the threads' flags, no message read. */
+export function followupsInTrashOrSpam(db: Db, threadIds: readonly number[]): Set<number> {
+  if (!threadIds.length) return new Set();
+  return new Set(db.all<{ id: number }>("SELECT id FROM threads WHERE id IN (SELECT value FROM json_each(?)) AND (in_trash = 1 OR in_spam = 1)", JSON.stringify([...new Set(threadIds)])).map((t) => t.id));
 }
 
 export function updateFollowup(db: Db, id: number, revision: number, patch: Partial<Pick<FollowupRow, "state" | "dueAt" | "deferredUntil" | "inboxState" | "closedReason" | "closedAt">>): FollowupSnapshot | null {
