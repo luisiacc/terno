@@ -423,8 +423,8 @@ function ListSearch() {
         aria-describedby={coverage ? "search-coverage" : undefined}
         clearLabel={t("list.search.clear")}
         hint={<Shortcut keys="/" />}
-        // the list's compact field, on the tint; its ring in the app's weight, not louder than the results it's for
-        fieldClassName="h-[30px] bg-tint text-sm dark:bg-tint focus-visible:ring-2"
+        // the list's compact field, on the tint
+        fieldClassName="h-[30px] bg-tint text-sm dark:bg-tint"
         onValueChange={(q) => {
           setHelp(false);
           typeQuery(q);

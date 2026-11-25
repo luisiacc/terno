@@ -295,7 +295,7 @@ function ForwardTo({ to, onChange, paused }: { to: readonly Address[]; onChange:
   const invalid = parseAddressList(value).find((a) => !isValidEmail(a.email));
   return (
     <div className="space-y-1.5" data-testid="filter-forward">
-      <div className="flex min-w-0 items-start gap-2 rounded-lg border border-input px-2.5 transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring dark:bg-input/30">
+      <div className="flex min-w-0 items-start gap-2 rounded-lg border border-input px-2.5 transition-colors focus-within:border-ring focus-within:ring-1 focus-within:ring-ring dark:bg-input/30">
       <label htmlFor={id} className="sr-only">{t("filters.action.forward")}</label>
       <RecipientInput
         id={id}

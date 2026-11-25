@@ -9,7 +9,7 @@ import { useApp } from "~/state/app";
 import { RecipientInput } from "./recipient-input";
 
 /** a text field's frame (the Input's own) around the recipient field, its ring while you type in it */
-const FIELD = "flex min-w-0 items-start gap-2 rounded-lg border border-input px-2.5 transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring dark:bg-input/30";
+const FIELD = "flex min-w-0 items-start gap-2 rounded-lg border border-input px-2.5 transition-colors focus-within:border-ring focus-within:ring-1 focus-within:ring-ring dark:bg-input/30";
 const INPUT = "h-7 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground";
 
 /**
