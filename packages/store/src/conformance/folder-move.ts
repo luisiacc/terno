@@ -755,6 +755,10 @@ export function defineFolderMoveConformance(name: string, harness: StoreHarness)
       await land(store, outlook, new Map([[f.id, "f"]]));
       await store.threads.restore({ messages: trashed.before, now: NOW });
       expect(await queued(store)).toEqual([{ kind: "moveToFolder", payload: { folder: "F2", from: null, keepInbox: false }, messageIds: [f.id] }]);
+      // round 2 #4: back in its folder at once, and only there: the stale Inbox flag it was saved with isn't restored
+      expect(await flagsOf(store, f.id)).toEqual({ inInbox: false, isTrash: false, isSpam: false });
+      expect(await inbox(store)).toEqual([]);
+      expect(await list(store, outlook, "F2")).toEqual([f.thread]);
       await land(store, outlook, new Map([[f.id, "f"]]));
       expect(await list(store, outlook, "F2")).toEqual([f.thread]);
       // #6: two trashed out of F1 and undone; a stale read puts the first back in Trash; it lands, the second is refused

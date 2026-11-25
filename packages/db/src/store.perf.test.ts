@@ -488,6 +488,16 @@ describe("Outlook's one folder a message (plan 259)", () => {
     }, 20);
     if (calls % 2) await store.threads.restore({ messages: undo, now: NOW });
     expect(store.db.get<{ n: number }>(`SELECT count(*) AS n FROM thread_folders WHERE folder = 'Big' AND thread_id IN (${slice.join()})`)!.n).toBe(50);
+    // ten times the targets (one undo's filing carries 2,500 messages' journal), the queue growing the same way (round 2 #7)
+    const many = threads.slice(2000, 2500);
+    calls = 0;
+    await gate("Outlook: Move to Inbox 500 conversations of a folder, then undo it, the queue growing (+ ops)", 300, async () => {
+      const i = calls++;
+      if (i % 2 === 0) undo = (await store.threads.act({ threadIds: many, action: "moveToInbox", signal: null, now: NOW })).before;
+      else await store.threads.restore({ messages: undo, now: NOW });
+    }, 6);
+    if (calls % 2) await store.threads.restore({ messages: undo, now: NOW });
+    expect(store.db.get<{ n: number }>(`SELECT count(*) AS n FROM thread_folders WHERE folder = 'Big' AND thread_id IN (${many.join()})`)!.n).toBe(500);
 
     // a delta read that saw 200 move out of Big: one slice, as ingest's (≥ 1k msgs/s)
     const moved = store.db.all<{ provider_msg_id: string }>("SELECT provider_msg_id FROM messages INDEXED BY messages_thread WHERE thread_id > ? AND thread_id <= ? ORDER BY thread_id LIMIT 200", base + 200, base + THREADS / 2);

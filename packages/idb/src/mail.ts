@@ -5,7 +5,7 @@ import { saveFilterForward } from "./forwards";
 import { folderPage, folderScopeIds, folderUnreadCounts, oneFolderFolders, refreshFolders } from "./folders";
 import { placeMessage } from "./message-folders";
 import { requireGmailRefresh, opAdmitter, ThreadMerges, type OpAdmission } from "@terno/store";
-import { actionTargets, assetError, isLocationAction, linkAssets, oneFolderPerMessage, reaffirmFlagIntent, restoreDestination, restoreLocationOps, restoreOneFolderOps, sameLocation, samePlace, validateAssets, MOVE_TO_FOLDER, RETURN_TO, type MoveToFolderPayload, type ReturnToPayload } from "@terno/store";
+import { actionTargets, assetError, isLocationAction, linkAssets, oneFolderFlags, oneFolderPerMessage, reaffirmFlagIntent, restoreDestination, restoreLocationOps, restoreOneFolderOps, sameLocation, samePlace, validateAssets, MOVE_TO_FOLDER, RETURN_TO, type MoveToFolderPayload, type ReturnToPayload } from "@terno/store";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import { idbAssets, replaceAttachments } from "./attachments";
@@ -1188,11 +1188,12 @@ export function restoreMessages(c: Ctx, states: readonly MessageState[]): { thre
     // plan 259: an Outlook snapshot of a location action says its folder: where each is now is read the same way
     const folders = oneFolderPlaces(c, sorted.flatMap((s) => (s.folder !== undefined ? messages.get(s.id) ?? [] : [])));
     const touched = new Set<number>();
-    for (const was of sorted) {
-      const m = messages.get(was.id);
+    for (const saved of sorted) {
+      const m = messages.get(saved.id);
       if (!m) continue;
       const now = stateOf(m);
-      const placed = was.folder !== undefined && folders.has(m.id) ? { now: { ...now, folder: folders.get(m.id)! }, was: { ...was, folder: was.folder } } : undefined;
+      const placed = saved.folder !== undefined && folders.has(m.id) ? { now: { ...now, folder: folders.get(m.id)! }, was: oneFolderFlags({ ...saved, folder: saved.folder }) } : undefined;
+      const was: MessageState = placed?.was ?? saved;
       // plan 86: a snapshot from before it, or of a message without a category, leaves the category as it is
       const current = now.category ?? null;
       const category = was.category == null || current === null ? current : was.category;

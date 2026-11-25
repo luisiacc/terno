@@ -1,5 +1,5 @@
 import { categoryAction, categoryOfJson, CATEGORY_ACTIONS, isCategoryAction, type MessageCategory, type ThreadAction } from "@terno/core";
-import { actionTargets, isLocationAction, reaffirmFlagIntent, restoreLocationOps, restoreDestination, restoreOneFolderOps, sameLocation, samePlace, MOVE_TO_FOLDER, RETURN_TO, type MessageState, type MoveToFolderPayload, type ReturnToPayload } from "@terno/store";
+import { actionTargets, isLocationAction, oneFolderFlags, reaffirmFlagIntent, restoreLocationOps, restoreDestination, restoreOneFolderOps, sameLocation, samePlace, MOVE_TO_FOLDER, RETURN_TO, type MessageState, type MoveToFolderPayload, type ReturnToPayload } from "@terno/store";
 import { sqlFlags } from "./flag-intents";
 import { oneFolderFolders } from "./folders";
 import { oneFolderAccounts } from "./message-folders";
@@ -237,9 +237,10 @@ export function restoreMessages(db: Db, states: readonly MessageState[]): Restor
     const folders = oneFolderPlaces(db, msgs.filter((m) => wanted.get(m.id)!.folder !== undefined));
     const touched = new Set<number>();
     for (const m of msgs) {
-      const was = wanted.get(m.id)!;
+      const saved = wanted.get(m.id)!;
       const now = stateOf(m);
-      const placed = was.folder !== undefined && folders.has(m.id) ? { now: { ...now, folder: folders.get(m.id)! }, was: { ...was, folder: was.folder } } : undefined;
+      const placed = saved.folder !== undefined && folders.has(m.id) ? { now: { ...now, folder: folders.get(m.id)! }, was: oneFolderFlags({ ...saved, folder: saved.folder }) } : undefined;
+      const was: MessageState = placed?.was ?? saved;
       // plan 86: a snapshot from before it, or of a message without a category, leaves the category as it is
       const category = was.category == null || m.category === null ? m.category : was.category;
       if (now.isRead === was.isRead && now.isStarred === was.isStarred && sameLocation(now, was) && (!placed || samePlace(placed.now, placed.was)) && category === m.category) continue;

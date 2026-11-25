@@ -1,5 +1,5 @@
 import type { Folder } from "@terno/core";
-import { applyFolderOp, applyFolderOpOne, applyLocationOpOne, mergedBehind, oneFolderPerMessage, type FolderCountCursor, type FolderPlace, type LeaveFolderPayload, type MoveToFolderPayload, type ProviderFolder } from "@terno/store";
+import { applyFolderOp, applyFolderOpOne, applyLocationOpOne, isFolderOp, mergedBehind, oneFolderPerMessage, type FolderCountCursor, type FolderPlace, type LeaveFolderPayload, type MoveToFolderPayload, type ProviderFolder } from "@terno/store";
 import { threadMerges } from "./ingest";
 import { anyMessageFolders, countMessageFolders, IN_MESSAGE_FOLDERS, MESSAGE_FOLDERS } from "./message-folders";
 import { unreadSlot } from "./migrations";
@@ -91,35 +91,44 @@ export function pendingFolderOps(db: Db, ids: readonly number[]): Map<number, Pe
  */
 export function oneFolderFolders(db: Db, ids: readonly number[]): Map<number, string | null> {
   const out = new Map<number, string | null>(ids.map((id) => [id, null]));
-  // each op's payload read once, however many of these messages it names (a filing's carries its journal: Codex code review #9)
-  const payloads = new Map<string, unknown>();
+  const payloads = opPayloads(db);
   for (let i = 0; i < ids.length; i += 500) {
     const chunk = ids.slice(i, i + 500);
     for (const r of db.all<{ message_id: number; folder: string }>(`SELECT message_id, folder FROM message_folders WHERE message_id IN (${placeholders(chunk.length)})`, ...chunk)) out.set(r.message_id, r.folder);
     // by the message's index (op_targets_msg), one probe a message
-    for (const p of db.all<{ message_id: number; id: string; kind: string; payload_json: string }>(
-      `SELECT ot.message_id, o.id, o.kind, o.payload_json FROM op_targets ot INDEXED BY op_targets_msg JOIN ops o ON o.id = ot.op_id
+    for (const p of db.all<{ message_id: number; id: string; kind: string }>(
+      `SELECT ot.message_id, o.id, o.kind FROM op_targets ot INDEXED BY op_targets_msg JOIN ops o ON o.id = ot.op_id
        WHERE ot.message_id IN (${placeholders(chunk.length)}) AND ot.grp = 'location' AND o.state IN ('queued', 'running') ORDER BY o.seq`,
       ...chunk,
-    )) {
-      if (!payloads.has(p.id)) payloads.set(p.id, JSON.parse(p.payload_json) as unknown);
-      out.set(p.message_id, applyLocationOpOne(out.get(p.message_id) ?? null, p.kind, payloads.get(p.id)));
-    }
+    )) out.set(p.message_id, applyLocationOpOne(out.get(p.message_id) ?? null, p.kind, isFolderOp(p.kind) ? payloads(p.id) : undefined));
   }
   return out;
 }
 
+/**
+ * Each op's payload, read and parsed once however many messages it names: an Outlook filing's carries its journal, so
+ * one read a target would be quadratic (Codex code review #9, round 2 #7).
+ */
+function opPayloads(db: Db): (id: string) => MoveToFolderPayload | LeaveFolderPayload {
+  const read = new Map<string, MoveToFolderPayload | LeaveFolderPayload>();
+  return (id) => {
+    let payload = read.get(id);
+    if (!payload) read.set(id, (payload = JSON.parse(db.get<{ payload_json: string }>("SELECT payload_json FROM ops WHERE id = ?", id)!.payload_json) as MoveToFolderPayload | LeaveFolderPayload));
+    return payload;
+  };
+}
+
 function overlayFolderOps(db: Db, json: string): void {
   if (!folderOpsPending(db)) return;
-  const pending = db.all<{ thread_id: number; message_id: number; id: string; kind: string; payload_json: string }>(
-    `SELECT m.thread_id, m.id AS message_id, o.id, o.kind, o.payload_json
+  const pending = db.all<{ thread_id: number; message_id: number; id: string; kind: string }>(
+    `SELECT m.thread_id, m.id AS message_id, o.id, o.kind
      FROM messages m JOIN op_targets ot ON ot.message_id = m.id AND ot.grp = 'location' JOIN ops o ON o.id = ot.op_id
      WHERE m.thread_id IN (SELECT value FROM json_each(?)) AND m.is_trash = 0 AND m.is_spam = 0 AND o.kind IN ('moveToFolder', 'leaveFolder') AND o.state IN ('queued', 'running')
      ORDER BY o.seq`,
     json,
   );
   if (!pending.length) return;
-  const payloads = new Map<string, MoveToFolderPayload | LeaveFolderPayload>();
+  const payloads = opPayloads(db);
   const threads = JSON.stringify([...new Set(pending.map((p) => p.thread_id))]);
   // plan 259: an Outlook message's ops replace its one folder (`one`), never add a second
   const byMessage = new Map<number, { thread: number; folders: Set<string>; one: boolean }>();
@@ -141,9 +150,7 @@ function overlayFolderOps(db: Db, json: string): void {
   for (const p of pending) {
     const m = byMessage.get(p.message_id);
     if (!m) continue;
-    // each op's payload read once, however many messages it names (an Outlook filing's carries its journal)
-    if (!payloads.has(p.id)) payloads.set(p.id, JSON.parse(p.payload_json) as MoveToFolderPayload | LeaveFolderPayload);
-    const payload = payloads.get(p.id)!;
+    const payload = payloads(p.id);
     if (!m.one) applyFolderOp(m.folders, p.kind, payload);
     else {
       const now = applyFolderOpOne(m.folders.values().next().value ?? null, p.kind, payload);

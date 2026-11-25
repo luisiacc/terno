@@ -91,6 +91,9 @@ export type OneFolderPlace = LocationState & { folder: string | null };
 
 const placeKey = (s: OneFolderPlace) => s.folder !== null ? `folder:${s.folder}` : placeOf(s);
 
+/** A one-folder message's flags once it's back: in a user folder, out of the Inbox, Trash and Junk, whatever a stale read had (round 2 #4). */
+export const oneFolderFlags = <T extends OneFolderPlace>(p: T): T => p.folder !== null ? { ...p, ...OUT_OF_ROLES } : p;
+
 /** One provider op of a one-folder message's undo. */
 export type OneFolderRestore = { kind: ThreadAction } | { kind: typeof MOVE_TO_FOLDER; folder: string } | { kind: typeof RETURN_TO; role: ReturnToRole };
 
