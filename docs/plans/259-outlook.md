@@ -1183,3 +1183,16 @@ The owner asked for one more round over everything (`git diff main...HEAD`), by 
   - Microsoft documents no other source for a personal account's mailbox address. Guessing from mail in Sent would build on undocumented behaviour.
   - A mailbox Graph doesn't open is still refused (`errors.microsoft.noMailbox`).
 - **Plan note: CI's client id is a secret, not a variable.** The text now says so (stage 1's setup note already did).
+
+### `pnpm test:all`
+
+- Lint, build, typecheck, web and startup passed.
+- `architecture.test` caught the sign-in's `net.fetch(...)` as Electron's: the variable is `reach` now.
+- Everything else that failed is the base's list, run again alone:
+  - unit: its 36 files;
+  - db-wasm: `tabs.test`;
+  - e2e: its 16;
+  - smoke: its 10;
+  - perf: three of its files.
+- `migrations.perf` times v81 through `runMigration`: 7 ms.
+- ui-perf: `autocomplete-perf`'s 200 chips dropped 1 or 2 frames. It drops the same on the commit before this round (`512f84cb0`), run twice; nothing here touches the composer.
