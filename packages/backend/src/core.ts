@@ -3,11 +3,11 @@ import { observeRefusals } from "./refusals";
 import { captureLocator } from "@terno/store";
 import { ProviderCooldown } from "./provider-cooldown";
 import { savedAccountRequests, type SavedAccountRequests } from "./account-requests";
-import { copyOpAdmission, OAUTH_SERVICES, rejectedRecipients, type CooldownStamp, type OpAdmission, type OpPark } from "@terno/store";
+import { copyOpAdmission, OAUTH_SERVICES, rejectedRecipients, type CooldownStamp, type KindAdmission, type OAuthServices, type OpAdmission, type OpPark } from "@terno/store";
 import { prepareCopyWire, readCopyWire } from "./sent-copy";
 import type { PendingGmailRenewal } from "./identity";
 import type { AiTasks } from "@terno/ai";
-import { isOAuthKind, signInMethod, accessAllows, aiFeaturesAvailable, AGENT_METHODS, ruleAwaitsBody, agentRefusal, agentsMaySend, asciiEmail, canonicalAuthored, decodeText, encodeText, messageOf, aiCanRun, textRef, type Account, type AccountKind, type AccountPrefs, type DevAiKeys, type FavoriteFolder, type FavoriteFoldersSnapshot, type AccountSyncState, type SyncProgress, type OpState, type ThreadAction } from "@terno/core";
+import { isOAuthKind, signInMethod, accessAllows, aiFeaturesAvailable, AGENT_METHODS, ruleAwaitsBody, agentRefusal, agentsMaySend, asciiEmail, canonicalAuthored, decodeText, encodeText, messageOf, aiCanRun, textRef, type Account, type AccountKind, type OAuthKind, type AccountPrefs, type DevAiKeys, type FavoriteFolder, type FavoriteFoldersSnapshot, type AccountSyncState, type SyncProgress, type OpState, type ThreadAction } from "@terno/core";
 import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/diag";
 import { RpcError, RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type ResultOf, type Transport } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
@@ -793,10 +793,14 @@ export class BackendCore {
     return this.admissionSnapshot = (async () => {
       const snapshot = await this.cooldown!.admission((id) => this.cooldownAccounts.get(id));
       const blocked = [...snapshot.blockedAccountIds, ...[...this.requests].filter(([id, requests]) => requests.paused && !this.statuses.get(id)?.signInRequired).map(([id]) => id)];
-      const gmail = snapshot.kinds.gmail;
-      const all = !!gmail?.all || this.cooldown!.state("installation", "gmail-api").kind !== "ready";
-      return copyOpAdmission({ ...snapshot, blockedAccountIds: blocked,
-        kinds: { ...snapshot.kinds, gmail: { unverified: !!gmail?.unverified, all: all || version !== this.cooldownVersion, sends: !this.net.providerAvailable("send"), background: !this.net.providerAvailable("background") } },
+      // plan 259: each OAuth provider's lanes: its own mail service at the installation, the shared request capacity
+      const kinds: Partial<Record<OAuthKind, KindAdmission>> = { ...snapshot.kinds };
+      for (const [kind, services] of Object.entries(OAUTH_SERVICES) as [OAuthKind, OAuthServices][]) {
+        const lanes = snapshot.kinds[kind];
+        const all = !!lanes?.all || this.cooldown!.state("installation", services.mail).kind !== "ready";
+        kinds[kind] = { unverified: !!lanes?.unverified, all: all || version !== this.cooldownVersion, sends: !this.net.providerAvailable("send"), background: !this.net.providerAvailable("background") };
+      }
+      return copyOpAdmission({ ...snapshot, blockedAccountIds: blocked, kinds,
         // plan 107: an account changing its folders is passed by until it's done (the worker is kicked then)
         pausedAccountIds: [...this.folderChanges.keys()] });
     })();

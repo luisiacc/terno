@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { toProviderError } from "./imap";
 import { ProviderAuthError } from "./types";
-import { failedBeforeRequest, isFetchNetworkFailure, isNetworkError } from "./net-errors";
+import { failedBeforeRequest, isFetchNetworkFailure, isNetworkError, ProviderCooldownError } from "./net-errors";
 import { classifySmtpError } from "./smtp";
 
 const err = (props: Record<string, unknown>, message = "boom") => Object.assign(new Error(message), props);
@@ -114,5 +114,14 @@ describe("a server that says 'later' is never 'sign in again' or 'failed' (2026-
     expect(classifySmtpError(err({ responseCode: 421, message: "4.7.0 Try again later" }))).toMatchObject({ retryable: true, deferred: true });
     expect(classifySmtpError(err({ code: "EAUTH", responseCode: 454 }))).toMatchObject({ retryable: true, deferred: true });
     expect(classifySmtpError(err({ responseCode: 550 }))).toMatchObject({ retryable: false });
+  });
+});
+
+describe("plan 259 stage 2a: a pause names its provider", () => {
+  it("Microsoft's services say Outlook, Google's say Gmail", () => {
+    expect(new ProviderCooldownError("graph-api", "0", "timed").i18n?.key).toBe("errors.outlook.paused");
+    expect(new ProviderCooldownError("microsoft-token", "0", "binding").i18n?.key).toBe("errors.outlook.bindingPaused");
+    expect(new ProviderCooldownError("gmail-api", "0", "timed").i18n?.key).toBe("errors.gmail.paused");
+    expect(new ProviderCooldownError("oauth-token", "0", "binding").i18n?.key).toBe("errors.gmail.bindingPaused");
   });
 });

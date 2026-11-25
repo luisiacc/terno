@@ -2544,6 +2544,13 @@ It contains none of your mail, contacts, settings or keys.
   "errors.microsoft.permissionRequired": "Microsoft’s sign-in for this account doesn’t allow mail. Sign in again and allow access to your mail.",
   "errors.microsoft.clientUnread": "Couldn’t read this Outlook account’s saved settings. Terno tries again shortly.",
   "errors.microsoft.refreshFailed": "Couldn’t renew Outlook access ({status}).",
+  // plan 259 stage 2a: the Graph provider (Outlook's mail over Microsoft Graph)
+  "errors.outlook.paused": "Outlook is paused. Try again later.",
+  "errors.outlook.bindingPaused": "Outlook verification paused. Reconnect Outlook.",
+  "errors.outlook.invalidResponse": "Outlook returned an incomplete response.",
+  "errors.outlook.requestFailed": "Outlook couldn’t complete the request ({status}). Try again or check this account’s access.",
+  "errors.outlook.requestOffline": "Couldn’t reach Outlook. Check your connection and try again.",
+  "errors.outlook.actionNotYet": "Terno can’t change Outlook mail yet, so this change wasn’t made in Outlook.",
   "errors.passwordRequired": "Enter the account’s password.",
   "errors.passwordToVerify": "Enter the account’s password to verify it.",
   "errors.couldNotConnect": "Couldn’t connect: {detail}",

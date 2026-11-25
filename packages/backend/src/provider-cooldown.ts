@@ -1,7 +1,7 @@
 import { ProviderCooldownError, RequestNotDispatchedError, type ProviderRequests, type RequestDescriptor, type RequestTicket, type Observation429 } from "@terno/mail/portable";
-import { COOLDOWN_CANDIDATE_BYTES, COOLDOWN_TICKETS, COOLDOWN_LEDGER_BYTES, COOLDOWN_SERVICES, PROVIDER_COOLDOWN_KEY, compactCooldown, decodeCooldown, encodeCooldown, mergeCooldownRows, mailboxKeyValid, mailboxDigest, nextCooldownRevision, copyOpAdmission, type CooldownLedger, type CooldownRow, type CooldownService, type CooldownStamp, type OAuthServices, type ProviderCooldownStore, type OpAdmission, OAUTH_SERVICES } from "@terno/store";
+import { COOLDOWN_CANDIDATE_BYTES, COOLDOWN_TICKETS, COOLDOWN_LEDGER_BYTES, COOLDOWN_SERVICES, PROVIDER_COOLDOWN_KEY, compactCooldown, decodeCooldown, encodeCooldown, mergeCooldownRows, mailboxKeyValid, mailboxDigest, nextCooldownRevision, copyOpAdmission, type CooldownLedger, type CooldownRow, type CooldownService, type CooldownStamp, type OAuthServices, type ProviderCooldownStore, type OpAdmission, type KindAdmission, OAUTH_SERVICES } from "@terno/store";
 import { RETRY_DELAYS_MS, retryJitter } from "./connectivity";
-import { isOAuthKind } from "@terno/core";
+import { isOAuthKind, type OAuthKind } from "@terno/core";
 export { ProviderCooldownError, PROVIDER_COOLDOWN_KEY };
 export type CooldownPersistence = Pick<ProviderCooldownStore, "read" | "update">;
 export interface CooldownClock { wallNow(): number; elapsedNow(): number; random(): number }
@@ -677,10 +677,15 @@ export class ProviderCooldown {
     }
     try {
       const preproofDependency = [...this.dependencies.values()].some((d) => d.owner === "installation" && d.id === null);
-      // plan 259: Google's ledger is the only one so far; its faults hold Gmail's ops, never another provider's
-      return copyOpAdmission({ blockedAccountIds: blocked, verifiedAccountIds: verified, kinds: { gmail: { unverified: this.state("installation", "gmail-api").kind !== "ready" || (preproofDependency && this.state("installation", "oauth-token").kind !== "ready"), all: this.storageFault || this.ledger.overflow || this.closing || this.reservations.size + this.maintenance.size >= COOLDOWN_TICKETS } } });
+      // plan 259: each provider's lanes from its own services; the ledger's own faults hold every OAuth provider's ops
+      const all = this.storageFault || this.ledger.overflow || this.closing || this.reservations.size + this.maintenance.size >= COOLDOWN_TICKETS;
+      const kinds: Partial<Record<OAuthKind, KindAdmission>> = {};
+      for (const [kind, services] of Object.entries(OAUTH_SERVICES) as [OAuthKind, OAuthServices][]) {
+        kinds[kind] = { unverified: this.state("installation", services.mail).kind !== "ready" || (preproofDependency && this.state("installation", services.token).kind !== "ready"), all };
+      }
+      return copyOpAdmission({ blockedAccountIds: blocked, verifiedAccountIds: verified, kinds });
     } catch {
-      return copyOpAdmission({ blockedAccountIds: [], verifiedAccountIds: [], kinds: { gmail: { all: true, unverified: false } } });
+      return copyOpAdmission({ blockedAccountIds: [], verifiedAccountIds: [], kinds: Object.fromEntries(Object.keys(OAUTH_SERVICES).map((kind) => [kind, { all: true, unverified: false }])) });
     }
   }
   resources(): Readonly<{ tickets: number; pendingScopes: number; reservedBytes: number; writer: boolean }> {

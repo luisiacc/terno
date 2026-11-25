@@ -1,5 +1,5 @@
 import type { AccountStatus } from "./account-status";
-import { ProviderCooldownError, type AccountRequests, type HttpRequestContext, type MailAdmission, type ProviderRequests } from "@terno/mail/portable";
+import { ProviderCooldownError, throttled, type AccountRequests, type HttpRequestContext, type MailAdmission, type ProviderRequests } from "@terno/mail/portable";
 import { COOLDOWN_SERVICES, mailboxDigest, type CooldownService, type CooldownStamp, type OAuthServices, type ProviderCooldownStore } from "@terno/store";
 import type { ProviderCooldown } from "./provider-cooldown";
 import type { NetworkPolicy } from "./net-policy";
@@ -125,7 +125,7 @@ export async function savedAccountRequests(input: {
         await settle(current ? kind : "none");
         if (current && kind === "quota") void constraint(epoch, active);
       }) : undefined })(resource, init).then((response) => {
-        if (response.status === 429 && active()) void constraint(epoch, active);
+        if (throttled(descriptor.request, response.status, response.headers.has("retry-after")) && active()) void constraint(epoch, active);
         return response;
       });
     },

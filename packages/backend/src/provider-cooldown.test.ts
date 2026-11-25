@@ -203,8 +203,24 @@ describe("latent cooldown delta", () => {
     const gmail = await g.admission((id) => id === 1 ? { ...stamp, kind: "gmail" } : undefined);
     expect(gmail.blockedAccountIds).toEqual([1]);
     const outlook = await g.admission((id) => id === 1 ? { ...stamp, kind: "outlook" } : undefined);
+    // plan 259 stage 2a: Outlook has its own services now; bound, it's verified, and Gmail's pause isn't its own
     expect(outlook.blockedAccountIds).toEqual([]);
-    expect(outlook.verifiedAccountIds).toEqual([]);
+    expect(outlook.verifiedAccountIds).toEqual([1]);
+  });
+
+  it("plan 259 stage 2a: a Graph pause holds the Outlook account bound to it, never a Gmail one; an installation's holds only Outlook's lane", async () => {
+    const key = "580852f44dc8a5bc68cbd0130926bedcbfb143d6ca60f3f40fdf6ff7b4dd820f";
+    const stamp = { id: 1, email: "synthetic1@example.test", createdAt: 1 };
+    const ledger = JSON.parse(seeded({ owner: key, service: "graph-api" }));
+    ledger.bindings = [{ id: 1, createdAt: 1, emailDigest: key, mailboxKey: key }];
+    const g = await fixture(JSON.stringify(ledger)).open();
+    expect(g.state(key, "graph-api").kind).not.toBe("ready");
+    expect((await g.admission((id) => id === 1 ? { ...stamp, kind: "outlook" } : undefined)).blockedAccountIds).toEqual([1]);
+    expect((await g.admission((id) => id === 1 ? { ...stamp, kind: "gmail" } : undefined)).blockedAccountIds).toEqual([]);
+    const installation = await fixture(seeded({ owner: "installation", service: "graph-api" })).open();
+    const lanes = (await installation.admission(() => undefined)).kinds;
+    expect(lanes.outlook).toMatchObject({ unverified: true, all: false });
+    expect(lanes.gmail).toMatchObject({ unverified: false, all: false });
   });
 
   it("36 dependency changes wake admission", async () => {

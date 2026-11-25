@@ -3,17 +3,23 @@ export const PROVIDER_COOLDOWN_KEY = "provider-cooldown:v1";
 export const COOLDOWN_LEDGER_BYTES = 65_536;
 export const COOLDOWN_CANDIDATE_BYTES = 131_072;
 export const COOLDOWN_TICKETS = 64;
-export const COOLDOWN_SERVICES = ["gmail-api", "oauth-token", "google-userinfo"] as const;
+/** plan 259: Gmail's three, then Outlook's (Microsoft Graph, Microsoft's token endpoint and its identity read) */
+export const COOLDOWN_SERVICES = ["gmail-api", "oauth-token", "google-userinfo", "graph-api", "microsoft-token", "microsoft-identity"] as const;
 /** plan 258: plan 22's People API, never asked since; a row a ledger kept for it still reads, and is dropped */
 const RETIRED_SERVICES: readonly string[] = ["google-people"];
 export type CooldownService = typeof COOLDOWN_SERVICES[number];
 /** Plan 259: an OAuth provider's services in the ledger: its mail API, its token endpoint and its identity read. */
-export type OAuthServices = { mail: "gmail-api"; token: "oauth-token"; identity: "google-userinfo" } & Record<"mail" | "token" | "identity", CooldownService>;
+export type OAuthServices =
+  | { mail: "gmail-api"; token: "oauth-token"; identity: "google-userinfo" }
+  | { mail: "graph-api"; token: "microsoft-token"; identity: "microsoft-identity" };
 /**
- * The providers whose requests the ledger governs. Outlook's join with its Graph provider (plan 259 stage 2), so the
- * ledger never carries rows for services nothing asks yet; an account of a kind not here gets no request policy.
+ * The providers whose requests the ledger governs (plan 259 stage 2a: Outlook's with its Graph provider). An account of
+ * a kind not here gets no request policy.
  */
-export const OAUTH_SERVICES: Readonly<Partial<Record<OAuthKind, OAuthServices>>> = { gmail: { mail: "gmail-api", token: "oauth-token", identity: "google-userinfo" } };
+export const OAUTH_SERVICES: Readonly<Partial<Record<OAuthKind, OAuthServices>>> = {
+  gmail: { mail: "gmail-api", token: "oauth-token", identity: "google-userinfo" },
+  outlook: { mail: "graph-api", token: "microsoft-token", identity: "microsoft-identity" },
+};
 export type CooldownHold = "clock" | "clock-evidence" | "range" | "calendar" | "leap-second";
 export interface CooldownRow {
   owner: string;
@@ -150,14 +156,14 @@ export const cooldownRetired = (row: CooldownRow, wall: number): boolean =>
   row.hold === null && row.position === 0 && row.replay === "0" && row.minimum !== null && BigInt(row.minimum) <= BigInt(wall);
 
 const WORST_ROW: CooldownRow = { owner: "f".repeat(64), service: "google-userinfo", revision: "9".repeat(20), phaseRevision: "9".repeat(20), minimum: "-8640000000000000", wall: "-8640000000000000", replay: "17280000000360000", sample: 360000, position: 6, hold: "clock-evidence", repair: "9".repeat(20) };
-/** plan 264: what a start waits, for every Google service, once it clears an overflow (a refusal it lost may be in it) */
+/** plan 264: what a start waits, for every service, once it clears an overflow (a refusal it lost may be in it) */
 export const OVERFLOW_QUARANTINE_MS = 3_600_000;
 
 /**
  * Plan 264: a start's compaction, inside the adapter's transaction. Drops bindings of accounts that no longer exist and
  * retired rows (identical to no row); any other row stays, bound or not. An overflow lost a refusal it couldn't write:
  * it is cleared only when what is left, plus a worst-case row for every service each remaining owner lacks, fits with
- * the overflow envelope's room, and then every Google service waits OVERFLOW_QUARANTINE_MS from this start, at the
+ * the overflow envelope's room, and then every service waits OVERFLOW_QUARANTINE_MS from this start, at the
  * installation (every account), in place of what was lost.
  */
 export function compactCooldown(encoded: string | null, live: (id: number, createdAt: number) => boolean, wall: number): string {

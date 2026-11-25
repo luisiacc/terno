@@ -164,3 +164,24 @@ for (const mode of ["complete", "stalled"] as const) {
     });
   });
 }
+
+describe("plan 259 stage 2a: what pauses a service", () => {
+  const observed = async (request: RequestDescriptor["request"], status: number, headers: Record<string, string> = {}) => {
+    const seen: string[] = [];
+    const policy = {
+      check() {}, accessAvailable() {}, tokenUnavailable() {}, close() {},
+      reserve: (d: RequestDescriptor) => ({ request: d.request, dispatch: (transport: () => Promise<Response>) => transport(), headers429: async () => { seen.push("pause"); return "committed" as const; }, headers: (s: number) => { seen.push(`headers ${s}`); }, release() {} }),
+    };
+    await requestHttp(policy, { request }, async () => new Response(null, { status, headers }), Date.now);
+    return seen;
+  };
+  const graph = { endpoint: "graph-api", purpose: "mail" } as const;
+  it("Graph's 503 with a Retry-After pauses like a 429; without one, or from Gmail, it's an ordinary failure", async () => {
+    expect(await observed(graph, 429)).toEqual(["pause"]);
+    expect(await observed(graph, 503, { "retry-after": "7" })).toEqual(["pause"]);
+    expect(await observed({ endpoint: "microsoft-token", purpose: "refresh" }, 503, { "retry-after": "7" })).toEqual(["pause"]);
+    expect(await observed(graph, 503)).toEqual(["headers 503"]);
+    expect(await observed(gmail.request, 503, { "retry-after": "7" })).toEqual(["headers 503"]);
+    expect(await observed(graph, 500, { "retry-after": "7" })).toEqual(["headers 500"]);
+  });
+});

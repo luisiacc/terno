@@ -1,7 +1,17 @@
-import type { ProviderRequests, RequestDescriptor } from "./types";
+import type { HttpRequestContext, ProviderRequests, RequestDescriptor } from "./types";
 import { captureHttpResponseEvidence } from "./http-response-evidence";
 import { resolveRetryMinimum } from "./retry-after-deadline";
 export type { ProviderRequests, RequestDescriptor, RequestRun, RequestTicket, Observation429 } from "./types";
+
+/**
+ * Plan 259: an answer that says "too many requests, wait": a 429 from anyone, and Microsoft's 503 with a Retry-After
+ * ("overloaded … repeat the request after a delay, the length of which can be specified in a Retry-After header",
+ * learn.microsoft.com/graph/errors). Both pause the service in the cooldown ledger.
+ */
+export function throttled(request: HttpRequestContext, status: number, retryAfter: boolean): boolean {
+  if (status === 429) return true;
+  return status === 503 && retryAfter && (request.endpoint === "graph-api" || request.endpoint === "microsoft-token" || request.endpoint === "microsoft-identity");
+}
 
 /** The ticket owns the final synchronous check and pre-body observation. */
 export async function requestHttp(
@@ -18,7 +28,7 @@ export async function requestHttp(
     const response = await ticket.dispatch(transport);
     const evidence = !response.ok ? captureHttpResponseEvidence(response, ticket.request, wallNow()) : undefined;
     onHeaders?.(response.status, evidence);
-    if (response.status === 429) {
+    if (throttled(ticket.request, response.status, evidence?.retryAfter.kind === "value")) {
       if (!evidence) throw new Error("Missing HTTP response evidence");
       const durable = ticket.headers429({ received: evidence.received, minimum: resolveRetryMinimum(evidence) });
       await durable;

@@ -77,7 +77,9 @@ export function failedBeforeRequest(error: unknown): boolean {
 export class ProviderCooldownError extends RequestNotDispatchedError {
   declare readonly cooldown: Readonly<{ service: HttpRequestContext["endpoint"]; revision: string; kind: string }>;
   constructor(service: HttpRequestContext["endpoint"], revision: string, kind: string) {
-    super(L(kind === "binding" ? "errors.gmail.bindingPaused" : "errors.gmail.paused"));
+    // plan 259: the provider the paused service is Outlook's or Google's
+    const outlook = service === "graph-api" || service === "microsoft-token" || service === "microsoft-identity";
+    super(L(kind === "binding" ? (outlook ? "errors.outlook.bindingPaused" : "errors.gmail.bindingPaused") : outlook ? "errors.outlook.paused" : "errors.gmail.paused"));
     this.name = "ProviderCooldownError";
     Object.defineProperty(this, "cooldown", { value: Object.freeze({ service, revision, kind }) });
   }
