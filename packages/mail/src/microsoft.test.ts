@@ -103,6 +103,10 @@ describe("connectMicrosoft (plan 259)", () => {
     expect(key(await connect(ms, { error: "access_denied", description: "AADSTS90094: The grant requires admin permission." }).catch((e: unknown) => e))).toBe("errors.microsoft.adminConsent");
     expect(key(await connect(ms, { error: "server_error" }).catch((e: unknown) => e))).toBe("errors.microsoft.invalidResponse");
     expect(microsoftRefusal("access_denied", "AADSTS90095: Admin consent is required for the permissions requested by this application.").page).toBe("errors.microsoft.adminConsent");
+    // Codex code review round 2 #1: user consent turned off, and risk policy asking for an administrator
+    expect(microsoftRefusal("access_denied", "AADSTS90093: This application requires admin consent.").page).toBe("errors.microsoft.adminConsent");
+    expect(microsoftRefusal("access_denied", "AADSTS900941: Administrator consent is required. App is considered risky.").page).toBe("errors.microsoft.adminConsent");
+    expect(microsoftRefusal("access_denied", "AADSTS9009410: not a code we know").page).toBe("backend.oauth.microsoftDenied");
     expect(microsoftRefusal("access_denied", "the administrator can't be reached").page).toBe("backend.oauth.microsoftDenied");
     expect(microsoftRefusal("access_denied", null).page).toBe("backend.oauth.microsoftDenied");
     expect(microsoftRefusal("invalid_request", null).page).toBe("backend.oauth.microsoftInvalid");
@@ -131,6 +135,17 @@ describe("connectMicrosoft (plan 259)", () => {
     expect(elsewhere.tokenRequests).toEqual([]);
   });
 
+  it("Codex code review round 2 #3: a Graph identity read or mailbox probe that redirects is refused, never followed", async () => {
+    const ms = await microsoft();
+    const elsewhere = await microsoft();
+    for (const path of ["/v1.0/me", "/v1.0/me/mailFolders/inbox"]) {
+      ms.graphRedirect = (asked) => asked === path ? `${elsewhere.url}${path}` : null;
+      await expect(connect(ms)).rejects.toBeInstanceOf(ProviderError);
+    }
+    expect(ms.graphRequests).toEqual(["/v1.0/me", "/v1.0/me", "/v1.0/me/mailFolders/inbox"]);
+    expect(elsewhere.graphRequests).toEqual([]);
+  });
+
   it("names Outlook's mail scopes in either of Microsoft's spellings", () => {
     expect(microsoftMailGranted(["Mail.ReadWrite", "Mail.Send"])).toBe(true);
     expect(microsoftMailGranted(["https://graph.microsoft.com/mail.readwrite", "https://graph.microsoft.com/MAIL.SEND"])).toBe(true);
@@ -145,16 +160,18 @@ describe("Microsoft's refresh session (plan 259)", () => {
     const signedIn = await connect(ms);
     const { ctx, stored } = context(ms, signedIn.refreshToken);
     // Codex code review #10: the write is slow; no access token comes back before it has committed
-    let release!: () => void;
+    let release!: () => void, writing!: () => void;
     const written = new Promise<void>((resolve) => { release = resolve; });
+    const started = new Promise<void>((resolve) => { writing = resolve; });
     const replace = ctx.replaceSecret.bind(ctx);
-    ctx.replaceSecret = async (name, expected, next) => { await written; return replace(name, expected, next); };
+    ctx.replaceSecret = async (name, expected, next) => { writing(); await written; return replace(name, expected, next); };
     const session = createMicrosoftSession(ctx, { endpoints: ms.endpoints() });
     try {
       let settled = false;
       const pending = session.get().then((token) => { settled = true; return token; });
-      while (ms.refreshCalls === 0) await new Promise((r) => setTimeout(r, 5));
-      await new Promise((r) => setTimeout(r, 20));
+      // the exchange answered and the write began: nothing is published while it is held
+      await started;
+      await new Promise((r) => setTimeout(r, 10));
       expect(settled).toBe(false);
       expect(stored.refreshToken).toBe(signedIn.refreshToken);
       release();

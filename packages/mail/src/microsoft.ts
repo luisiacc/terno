@@ -36,13 +36,14 @@ const MICROSOFT_SIGN_IN: SignInWords = {
 const invalid = () => new ProviderError(L("errors.microsoft.invalidResponse"), false);
 
 /**
- * A refusal about consent, named only in the error_description's AADSTS code. Only AADSTS90094 (the grant requires
- * admin permission) and AADSTS90095 (an admin consent request) say an administrator must approve; AADSTS65001 and
+ * A refusal about consent, named only in the error_description's AADSTS code. Only AADSTS90093 (user consent is
+ * off), AADSTS90094 (the grant requires admin permission), AADSTS90095 (an admin consent request) and AADSTS900941
+ * (risk policy wants an administrator) say an administrator must approve; AADSTS65001 and
  * consent_required say consent wasn't given, which the person may still give (Codex code review #8).
  */
 function consentRefusal(error: unknown, description: unknown): "errors.microsoft.adminConsent" | "errors.microsoft.consentRequired" | null {
   const text = typeof description === "string" ? description : "";
-  if (/\bAADSTS9009[45]\b/.test(text)) return "errors.microsoft.adminConsent";
+  if (/\bAADSTS(?:9009[345]|900941)\b/.test(text)) return "errors.microsoft.adminConsent";
   if (error === "consent_required" || /\bAADSTS65001\b/.test(text)) return "errors.microsoft.consentRequired";
   return null;
 }

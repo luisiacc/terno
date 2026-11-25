@@ -28,6 +28,10 @@ export class SyntheticMicrosoft {
   tokenFailure: { status: number; body: unknown } | null = null;
   /** the token endpoint answers with a 307 to this URL instead */
   tokenRedirect: string | null = null;
+  /** a Graph path answered with a 307 to the URL this returns (none: answered) */
+  graphRedirect: ((path: string) => string | null) | null = null;
+  /** the Graph paths asked, in order */
+  graphRequests: string[] = [];
   /** id_token claims replaced (another audience, issuer, expiry) */
   claims: Record<string, unknown> = {};
   refreshTokens = new Set<string>();
@@ -137,6 +141,11 @@ export class SyntheticMicrosoft {
         return json(200, this.grant(clientId));
       }
       return json(400, { error: "unsupported_grant_type" });
+    }
+    if (url.pathname.startsWith("/v1.0/")) {
+      this.graphRequests.push(url.pathname);
+      const redirect = this.graphRedirect?.(url.pathname);
+      if (redirect) return void res.writeHead(307, { location: redirect }).end();
     }
     const authorized = this.access.has((req.headers.authorization ?? "").replace(/^Bearer /, ""));
     if (url.pathname === "/v1.0/me") {
