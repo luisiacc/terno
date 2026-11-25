@@ -103,10 +103,10 @@ function withTail(c: Conversation, kind: keyof typeof TAILS): Conversation {
 function newFrom(c: Conversation, tail: boolean): number | null {
   const n = c.messages.length;
   if (n < 2) return null;
-  if (tail) return n - 1;
   const lastOwn = c.messages.map((m) => m.own).lastIndexOf(true);
-  if (lastOwn === n - 1) return null;
-  return lastOwn >= 0 ? lastOwn + 1 : n - 1;
+  const from = tail ? n - 1 : lastOwn === n - 1 ? null : lastOwn >= 0 ? lastOwn + 1 : n - 1;
+  // as production: something of someone else's comes before it (Fable review, round 2)
+  return from !== null && c.messages.slice(0, from).some((m) => !m.own) ? from : null;
 }
 
 /** The app's language, as a reader of this mail would have it. */
