@@ -11,7 +11,7 @@ export const es: SiteCopy = {
   nav: { features: "Funciones", pro: "Pro", privacy: "Privacidad", source: "Código", download: "Descargar", language: "English", languageHref: "/", languageMenu: "Idioma", sourceOnGithub: "Código fuente en GitHub", home: "Inicio de Terno" },
   hero: {
     title: "El último cliente de correo que probarás.",
-    subtitle: "Bandeja unificada. Búsqueda instantánea. Archiva un correo y todos los parecidos se van con él. Totalmente local, sin registrarte. Activa la IA para tener resúmenes, respuestas redactadas y recordatorios cuando alguien no responde.",
+    subtitle: "Bandeja unificada. Búsqueda instantánea. Archiva un correo y todos los parecidos se van con él. Totalmente local, sin registrarte. Activa la IA, y Terno lleva la cuenta de lo que te necesita: quién espera tu respuesta, qué prometiste y quién no te ha respondido.",
     news: { tag: "Nuevo", text: "«Lo importante»: solo el correo que te necesita" },
     note: "Gratis · macOS en Apple silicon y Linux",
   },
@@ -123,17 +123,17 @@ export const es: SiteCopy = {
   pro: {
     eyebrow: "Terno Pro",
     status: "IA disponible hoy · Plan próximamente",
-    title: "Menos tiempo en el correo.",
-    body: "Pro te muestra lo importante, redacta tus respuestas y resume los hilos largos. Tú decides: ningún correo sale hasta que lo envías.",
+    title: "Que nada se te escape.",
+    body: "Pro lleva la cuenta por ti: quién espera tu respuesta, qué prometiste y quién no te ha respondido. Tu respuesta llega redactada con tu forma de escribir, y ningún correo sale hasta que lo envías.",
     price: "Previsto: US$15 al mes.",
     reply: {
-      title: "Respuestas ya redactadas.",
+      title: "Respuestas que suenan como tú.",
       body: "Cuando alguien espera tu respuesta, la tienes lista bajo su mensaje, con tu forma de escribir. Completa lo que falta y envía.",
       points: ["Aprende del correo que has enviado", "Marca lo que solo tú puedes decidir", "Convierte unas notas en un correo con ⌘J"],
     },
     ask: {
       title: "Pregunta a tu correo.",
-      body: "Deja de buscar ese correo. Pregunta con tus palabras y obtén una respuesta, con enlaces a los mensajes de donde sale.",
+      body: "El código de la puerta, la fecha de renovación, quién dijo que sí. Pregunta con tus palabras y la respuesta llega con enlaces a los correos de donde sale. Tu correo ya está aquí, así que no hay nada que pegar en un chatbot.",
       points: ["Haz otra pregunta sobre lo mismo", "O pídele que archive correo antiguo, y revisa la vista previa antes"],
     },
     followups: {

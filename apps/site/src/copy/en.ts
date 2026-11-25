@@ -13,7 +13,7 @@ export const en = {
   hero: {
     title: "The last email client you’ll try.",
     /** its last sentence is the AI, which works today on the user's own key or a local model (Pro's plan isn't sold yet) */
-    subtitle: "Unified inbox. Instant search. Archive one email, and every one like it goes too. Fully local, no sign-up. Turn on AI for summaries, drafted replies, and reminders when someone doesn’t reply.",
+    subtitle: "Unified inbox. Instant search. Archive one email, and every one like it goes too. Fully local, no sign-up. Turn on AI, and Terno keeps track of what needs you: who’s waiting on your answer, what you promised, and who hasn’t replied.",
     /** the link above the title, down to “What matters” in Pro (the owner, 2026-11-23: it belongs in the first lines) */
     news: { tag: "New", text: "“What matters”: only the email that needs you" },
     note: "Free · macOS on Apple silicon and Linux",
@@ -134,17 +134,17 @@ export const en = {
     eyebrow: "Terno Pro",
     /** the AI works today, on the user's own key or a model on their Mac; the plan isn't sold yet (Codex review: not "Use it today", which read as Pro on your own key) */
     status: "AI available today · Plan coming soon",
-    title: "Less time on email.",
-    body: "Pro shows you what matters, drafts your replies and sums up long threads. You stay in charge: no email goes out until you send it.",
+    title: "Nothing slips.",
+    body: "Pro keeps track for you: who’s waiting on your answer, what you promised, and who hasn’t replied. Your reply is drafted in your voice, and no email goes out until you send it.",
     price: "Planned: US$15 a month.",
     reply: {
-      title: "Replies, already drafted.",
+      title: "Replies that sound like you.",
       body: "When someone is waiting on you, a reply is ready under their message, in your voice. Fill the gaps, then send.",
       points: ["Learned from the mail you’ve sent", "Marks what only you can decide", "Turn rough notes into an email with ⌘J"],
     },
     ask: {
       title: "Ask your mail.",
-      body: "Stop digging for that one email. Ask in plain words and get an answer, with links to the messages it came from.",
+      body: "The door code, the renewal date, who said yes. Ask in plain words, and the answer comes with links to the emails it came from. Your mail is already here, so there’s nothing to paste into a chatbot.",
       points: ["Ask a follow-up", "Or ask it to archive old mail, and check the preview first"],
     },
     followups: {

@@ -220,7 +220,7 @@ describe("Terno Pro (plan 97)", () => {
 
   it("is in Spanish on /es/, and the honesty fixes are in both languages", () => {
     const es = doc("/es/");
-    expect(es.querySelector("#pro h2")?.textContent).toBe("Menos tiempo en el correo.");
+    expect(es.querySelector("#pro h2")?.textContent).toBe("Que nada se te escape.");
     expect(es.querySelector("#pro")!.textContent).not.toContain(COPY.en.pro.body);
     expect(COPY.en.stats[1]!.label).toBe("Terno servers storing your mail");
     expect(COPY.en.features.local.body).toContain("syncs between your computer and your mail servers");
@@ -276,7 +276,7 @@ describe("“What matters” (plan 224)", () => {
       const copy = COPY[route.lang];
       const page = new JSDOM(render(route).body).window.document;
       expect([...page.querySelectorAll("p")].some((p) => p.textContent === copy.hero.subtitle), route.path).toBe(true);
-      expect(copy.hero.subtitle, route.path).toMatch(route.lang === "en" ? /Turn on AI for .+\.$/ : /Activa la IA para .+\.$/);
+      expect(copy.hero.subtitle, route.path).toMatch(route.lang === "en" ? /Turn on AI, .+\.$/ : /Activa la IA, .+\.$/);
     }
     for (const lang of ["en", "es"] as const) expect(JSON.stringify(COPY[lang].hero)).not.toMatch(/Pro|\$|US\$/);
   });
