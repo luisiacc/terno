@@ -10,7 +10,8 @@ vi.mock("~/rpc/connection", () => ({ client: { call: vi.fn(), on: () => () => {}
 const { heldBodyId, heldWent, holdSend, copyShown, heldById, resetHeldSends, settleOverdue, setHeldThreadOpener, undoHeld, useHeldCard, useHeldSends } = await import("./held-sends");
 const { resetSnacks, runUndo, snack, useSnack } = await import("./snack");
 const { frameHeight, rememberHeight } = await import("./frame-heights");
-const { getApp, setApp } = await import("~/state/app");
+const { getApp, setApp, useApp } = await import("~/state/app");
+const { useDrafts } = await import("./drafts");
 
 const HOLD = 5000;
 const flushFrames = () => vi.advanceTimersByTime(40);
@@ -120,25 +121,64 @@ describe("the window", () => {
 });
 
 describe("Undo", () => {
-  it("won: gone at once, before the draft is reopened (Codex critique #7); the card, z and the dock run one token", async () => {
+  it("won: the card stays, busy, until its draft shows, and gives way in that same change; nothing can take it back again (plan 271; plan 182's critique #7)", async () => {
     let reopened!: () => void;
-    let settledFirst = false;
     const unmount = card(11);
     const cancel = hold(11, 10, async (cancelled) => {
       cancelled();
-      settledFirst = heldById(11) === undefined;
       await new Promise<void>((r) => (reopened = r));
       return true;
     });
     undoHeld(11);
-    expect(heldById(11)?.phase ?? "gone").not.toBe("holding");
     await vi.waitFor(() => expect(reopened).toBeTypeOf("function"));
-    expect(settledFirst).toBe(true);
+    // taken back: still shown (no frame of neither), busy
+    expect(heldById(11)?.phase).toBe("undoing");
     // a second press, or z, runs nothing more
     undoHeld(11);
-    reopened();
     expect(cancel).toHaveBeenCalledTimes(1);
+    // its send's own deadlines are retired: a reconnect's catch-up doesn't take the card mid-reopen
+    settleOverdue();
+    expect(heldById(11)).toBeDefined();
+    // another draft shown: not its own
+    useDrafts.setState({ drafts: { k11: { id: 11 }, other: { id: 99 } } as never });
+    setApp({ draftShown: { threadId: 10, key: "other" } });
+    expect(heldById(11)).toBeDefined();
+    // its draft shown in its conversation's slot: the card goes in the same store change
+    const seen: (boolean | undefined)[] = [];
+    const off = useApp.subscribe((s) => seen.push(s.draftShown?.key === "k11" ? heldById(11) === undefined : undefined));
+    setApp({ draftShown: { threadId: 10, key: "k11" } });
+    off();
+    expect(heldById(11)).toBeUndefined();
+    expect(seen.filter((x) => x !== undefined)).toEqual([true]);
+    reopened();
     unmount();
+    setApp({ draftShown: null });
+  });
+
+  it("won, its draft never shown (kept in Drafts, the reopen failed): the Undo's end settles it (plan 271)", async () => {
+    const unmount = card(14);
+    hold(14, 10, async (cancelled) => (cancelled(), true));
+    await runUndo(heldById(14)!.undo);
+    expect(heldById(14)).toBeUndefined();
+    unmount();
+  });
+
+  it("won, a new message: the composer opened on its draft takes the card's place in the same change (plan 271)", async () => {
+    let reopened!: () => void;
+    hold(15, null, async (cancelled) => {
+      cancelled();
+      await new Promise<void>((r) => (reopened = r));
+      return true;
+    });
+    setApp({ heldView: 15 });
+    undoHeld(15);
+    await vi.waitFor(() => expect(reopened).toBeTypeOf("function"));
+    expect(heldById(15)).toBeDefined();
+    useDrafts.setState({ drafts: { k15: { id: 15 } } as never });
+    setApp({ compose: { key: "k15", seq: 1 } });
+    expect(heldById(15)).toBeUndefined();
+    reopened();
+    setApp({ compose: null, heldView: null });
   });
 
   it("too late: the card goes on to Sending… and its copy", async () => {
@@ -194,7 +234,7 @@ describe("its copy", () => {
 
   it("a copy in another conversation (a forward, a changed subject) settles here, and is offered there", () => {
     const open = vi.fn();
-    setHeldThreadOpener(open);
+    setHeldThreadOpener({ open });
     const unmount = card(23);
     hold(23, 10);
     heldWent({ draftId: 23, threadId: 77, messageId: 502 });
@@ -206,18 +246,83 @@ describe("its copy", () => {
     unmount();
   });
 
-  it("a new message still in its pane opens the conversation it started; moved on, it doesn't", () => {
+  it("a new message still in its pane opens the conversation it started; moved on, it doesn't", async () => {
     const open = vi.fn();
-    setHeldThreadOpener(open);
+    setHeldThreadOpener({ open });
     hold(24, null);
     setApp({ heldView: 24 });
     heldWent({ draftId: 24, threadId: 88, messageId: 503 });
-    expect(open).toHaveBeenCalledWith(88);
+    await vi.waitFor(() => expect(open).toHaveBeenCalledWith(88));
     expect(getApp().heldView).toBeNull();
     open.mockClear();
     hold(25, null);
     heldWent({ draftId: 25, threadId: 89, messageId: 504 });
     expect(open).not.toHaveBeenCalled();
+  });
+
+  it("plan 271: a new message's pane waits for its conversation to hold the copy, then opens it as one morphing change", async () => {
+    const open = vi.fn();
+    let ready!: (ok: boolean) => void;
+    const changes: { update: () => void; pairs: readonly { name: string; find: () => HTMLElement | null }[] }[] = [];
+    setHeldThreadOpener({ open, ready: () => new Promise<boolean>((r) => (ready = r)), morph: (update, pairs) => void changes.push({ update, pairs }) });
+    // (its pane shows it: the held view is its card)
+    const unmount = card(31);
+    hold(31, null);
+    setApp({ heldView: 31 });
+    heldWent({ draftId: 31, threadId: 91, messageId: 601 });
+    // not yet: the held view stays (never an empty pane)
+    await vi.waitFor(() => expect(ready).toBeTypeOf("function"));
+    expect(open).not.toHaveBeenCalled();
+    expect(getApp().heldView).toBe(31);
+    ready(true);
+    await vi.waitFor(() => expect(changes).toHaveLength(1));
+    expect(changes[0]!.pairs.map((p) => p.name)).toEqual(["sent-message"]);
+    // the change opens it and settles the hold, together
+    changes[0]!.update();
+    expect(open).toHaveBeenCalledWith(91);
+    expect(heldById(31)).toBeUndefined();
+    expect(getApp().heldView).toBeNull();
+    unmount();
+  });
+
+  it("plan 271: not ready (the read failed, or it's slow), it opens as before; moved on meanwhile, or by the change's frame, it only settles", async () => {
+    vi.useFakeTimers();
+    try {
+      const open = vi.fn();
+      const changes: (() => void)[] = [];
+      setHeldThreadOpener({ open, ready: () => new Promise<boolean>(() => {}), morph: (update) => void changes.push(update) });
+      const cards = [card(32), card(33), card(34)];
+      hold(32, null);
+      setApp({ heldView: 32 });
+      heldWent({ draftId: 32, threadId: 92, messageId: 602 });
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(open).toHaveBeenCalledWith(92);
+      expect(changes).toHaveLength(0);
+      // moved on while it waited
+      open.mockClear();
+      setHeldThreadOpener({ open, ready: async () => true, morph: (update) => void changes.push(update) });
+      hold(33, null);
+      setApp({ heldView: 33 });
+      heldWent({ draftId: 33, threadId: 93, messageId: 603 });
+      setApp({ heldView: null });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(open).not.toHaveBeenCalled();
+      expect(heldById(33)).toBeUndefined();
+      // moved on by the change's own frame
+      hold(34, null);
+      setApp({ heldView: 34 });
+      heldWent({ draftId: 34, threadId: 94, messageId: 604 });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(changes).toHaveLength(1);
+      setApp({ heldView: null });
+      changes[0]!();
+      expect(open).not.toHaveBeenCalled();
+      expect(heldById(34)).toBeUndefined();
+      for (const unmount of cards) unmount();
+    } finally {
+      vi.useRealTimers();
+      setHeldThreadOpener({ open: () => {} });
+    }
   });
 
   it("an event before the hold is recorded (a late answer to compose.hold) still applies (Codex critique #1)", () => {

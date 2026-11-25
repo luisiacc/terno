@@ -370,6 +370,24 @@
 ::view-transition-group(.morph-crop) {
   overflow: clip;
 }
+/* plan 271: one thing on both sides of the change (a sent message and its copy) glides with its new picture at once: two
+   pictures of it blended would double its words */
+::view-transition-old(.morph-swap) {
+  animation: none;
+  opacity: 0;
+}
+::view-transition-new(.morph-swap) {
+  animation: none;
+}
+/* and when it can't be paired (drawn otherwise on the other side), the change is still: the new state at once */
+:root[data-morph-still]::view-transition-group(*),
+:root[data-morph-still]::view-transition-old(*),
+:root[data-morph-still]::view-transition-new(*) {
+  animation: none;
+}
+:root[data-morph-still]::view-transition-old(*) {
+  opacity: 0;
+}
 ::view-transition-old(.morph-crop),
 ::view-transition-new(.morph-crop) {
   width: auto;
@@ -447,8 +465,9 @@
 [data-composing] [data-thread-id][data-cursor] {
   color: var(--foreground);
 }
-/* a removal's window: the remaining rows slide up into place */
-[data-reflow] [data-thread-id] {
+/* a removal's window: the remaining rows slide up into place (plan 271: What matters' slots, placed by the same transform) */
+[data-reflow] [data-thread-id],
+[data-feed-rows][data-reflow] > [data-index] {
   transition: transform var(--motion-slow) var(--motion-ease);
 }
 @keyframes drop-flash {

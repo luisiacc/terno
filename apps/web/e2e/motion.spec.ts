@@ -7,7 +7,8 @@
  */
 import type { Page } from "@playwright/test";
 import type { DevServer } from "../../backend-dev/src/server";
-import { expect, focusList, fresh, ingestConversation, rows, scenario, test } from "./fixtures";
+import { addRecipients, expect, focusList, fresh, ingestConversation, rows, scenario, test } from "./fixtures";
+import { item } from "./helpers/today";
 import { E2E_NOW } from "./constants";
 import { sqlDb } from "../../backend-dev/src/server";
 
@@ -86,6 +87,60 @@ function hold(server: DevServer, method: string) {
 
 /** What a change started is running by the frame after it, and the sampler reads every frame. */
 const frames = (page: Page) => page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
+
+/** What a frame shows, each painted frame (`probe` runs in the page, a function's source), until `framesSeen` */
+async function recordFrames(page: Page, probe: string) {
+  await page.evaluate((probe) => {
+    const w = window as unknown as { __frames: unknown[]; __framesOn: boolean };
+    const read = new Function(`return (${probe})()`) as () => unknown;
+    w.__frames = [];
+    w.__framesOn = true;
+    const tick = () => {
+      w.__frames.push(read());
+      if (w.__framesOn) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }, probe);
+}
+const framesSeen = <T,>(page: Page): Promise<T[]> =>
+  page.evaluate(() => {
+    const w = window as unknown as { __frames: unknown[]; __framesOn: boolean };
+    w.__framesOn = false;
+    return w.__frames;
+  }) as Promise<T[]>;
+/** plan 271: whether some frame put a row between where it was and where it went (a slide, not a jump) */
+const slid = (tops: number[]) => {
+  const [from, to] = [tops[0]!, tops.at(-1)!];
+  return from !== to && tops.some((t) => t > Math.min(from, to) + 0.5 && t < Math.max(from, to) - 0.5);
+};
+
+/**
+ * Plan 271: a new message sent with Undo send on, its window ended at once: what each painted frame showed through its
+ * handoff to the conversation (the message there, the held one or its copy; the view transition's parts running)
+ */
+async function sentHandoff(page: Page, server: DevServer): Promise<{ shown: boolean; vt: string[] }[]> {
+  await server.backend.server.invoke("settings.update", { undoSend: true }, ctx);
+  await page.reload();
+  await page.locator("[data-ready]").waitFor();
+  await focusList(page);
+  await page.keyboard.press("c");
+  await addRecipients(page, "compose-to", "ana@example.com");
+  await page.getByTestId("compose-subject").fill("Quarterly plan");
+  await page.getByTestId("compose-body").click();
+  await page.keyboard.type("Here is the plan.");
+  await page.keyboard.press("ControlOrMeta+Enter");
+  const view = page.getByTestId("held-view");
+  await expect(view.getByTestId("held-message")).toBeVisible();
+  await startSampler(page);
+  await recordFrames(page, `() => ({ shown: !!document.querySelector("[data-reader-scroller] article"), vt: document.getAnimations().map((a) => a.effect?.pseudoElement ?? "").filter((p) => p.includes("view-transition")) })`);
+  const { draftId } = (await server.backend.store.scheduled.list())[0]!;
+  await server.backend.server.invoke("scheduled.reschedule", { draftId, sendAt: E2E_NOW - 1 }, ctx);
+  await expect(view).toHaveCount(0, { timeout: 8000 });
+  await expect(page.getByTestId("reader-subject")).toHaveText("Quarterly plan");
+  await frames(page);
+  await frames(page);
+  return framesSeen(page);
+}
 
 /**
  * Opens and closes a dialog, a select popup and a menu-like popover, expands a
@@ -464,6 +519,73 @@ test.describe("motion", () => {
     });
   });
 
+  test("plan 271: an Inbox Undo brings its row back as it left: it arrives, the row below slides down", async ({ app: page }) => {
+    await focusList(page);
+    const target = (await rows(page).nth(1).getAttribute("data-thread-id"))!;
+    const below = (await rows(page).nth(2).getAttribute("data-thread-id"))!;
+    await rows(page).nth(1).dispatchEvent("mousedown");
+    await focusList(page);
+    await page.keyboard.press("e");
+    await expect(page.locator(`[data-testid=thread-row][data-thread-id="${target}"]`)).toHaveCount(0);
+    await expect(page.locator("[data-testid=snack]").first()).toBeVisible();
+    await page.waitForTimeout(300);
+    await recordArrivals(page);
+    await recordFrames(page, `() => document.querySelector('[data-testid=thread-row][data-thread-id="${below}"]')?.getBoundingClientRect().top ?? null`);
+    await page.keyboard.press("z");
+    await expect(page.locator(`[data-testid=thread-row][data-thread-id="${target}"]`)).toBeVisible();
+    await frames(page);
+    await frames(page);
+    const tops = (await framesSeen<number | null>(page)).filter((t): t is number => t !== null);
+    expect(await arrivals(page)).toContainEqual(expect.objectContaining({ thread: target, fades: true }));
+    expect(tops.at(-1)!).toBeGreaterThan(tops[0]!);
+    expect(slid(tops), tops.join(",")).toBe(true);
+  });
+
+  test("plan 271: a new message becomes its conversation with no empty frame, its message gliding as the conversation fades in", async ({ app: page, server }) => {
+    const seen = await sentHandoff(page, server);
+    expect(seen.every((f) => f.shown), "a frame without the message").toBe(true);
+    expect(seen.flatMap((f) => f.vt)).toContain("::view-transition-group(sent-message)");
+    const r = await sampled(page);
+    expect(r.max, r.names.join(",")).toBeLessThanOrEqual(100);
+  });
+
+  test("plan 271: Undo send gives the draft back with no frame of neither the card nor the composer", async ({ app: page, server }) => {
+    await server.backend.server.invoke("settings.update", { undoSend: true }, ctx);
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await scenario("a reply: the card stays until the composer opens in its place", async () => {
+      await rows(page).first().dispatchEvent("mousedown");
+      await focusList(page);
+      await page.keyboard.press("r");
+      await expect(page.getByTestId("compose-body")).toBeFocused();
+      await page.keyboard.type("Undo me");
+      await page.keyboard.press("ControlOrMeta+Enter");
+      await expect(page.getByTestId("held-message")).toBeVisible();
+      await recordFrames(page, `() => !!document.querySelector("[data-testid=held-message]") || !!document.querySelector("[data-testid=draft-slot][data-state=open]")`);
+      await page.getByTestId("held-undo").click();
+      await expect(page.getByTestId("held-message")).toHaveCount(0);
+      await expect(page.getByTestId("compose-body")).toBeVisible();
+      await frames(page);
+      expect((await framesSeen<boolean>(page)).every(Boolean), "a frame of neither").toBe(true);
+      await page.keyboard.press("Escape");
+    });
+    await scenario("a new message: the composer takes the sent view's place", async () => {
+      await focusList(page);
+      await page.keyboard.press("c");
+      await addRecipients(page, "compose-to", "ana@example.com");
+      await page.getByTestId("compose-subject").fill("Taken back");
+      await page.getByTestId("compose-body").click();
+      await page.keyboard.type("Not yet.");
+      await page.keyboard.press("ControlOrMeta+Enter");
+      await expect(page.getByTestId("held-view")).toBeVisible();
+      await recordFrames(page, `() => !!document.querySelector("[data-testid=held-view]") || !!document.querySelector("[data-testid=compose-subject]")`);
+      await page.getByTestId("held-undo").click();
+      await expect(page.getByTestId("compose-subject")).toHaveValue("Taken back");
+      await frames(page);
+      expect((await framesSeen<boolean>(page)).every(Boolean), "a frame of neither").toBe(true);
+    });
+  });
+
   test("holding j never animates", async ({ app: page }) => {
     await focusList(page);
     const first = await rows(page).first().getAttribute("data-thread-id");
@@ -473,6 +595,65 @@ test.describe("motion", () => {
     const r = await sampled(page);
     // no transition or enter/exit animation; loading loops (the reader's skeleton) may run with motion on, as §6 says
     expect(r.finite, r.names.join(",")).toBe(0);
+  });
+});
+
+test.describe("plan 271: What matters' rows move as the Inbox's do", () => {
+  test.use({ reducedMotion: "no-preference", backendOptions: { network: true }, today: true });
+
+  test("Done: the row leaves (its fading copy where it was) while the rows below slide up; Undo brings it back as it left", async ({ app: page, server }) => {
+    await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true } }, ctx);
+    for (const [i, text] of ["Pay rent", "Pay water", "Pay power"].entries()) await item(server, `m271-${i}`, text, null);
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await page.getByTestId("nav-today").click();
+    const feed = page.getByTestId("wm-feed");
+    const open = feed.locator('[data-testid=wm-item]:not([data-history])').filter({ hasText: /Pay (rent|water|power)/ });
+    await expect(open).toHaveCount(3, { timeout: 15_000 });
+    // the first of them leaves; the one under it is watched
+    const order = await open.evaluateAll((els) => els.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top).map((e) => e.getAttribute("data-row-id")!));
+    const [leaving, below] = [order[0]!, order[1]!];
+    const probe = `() => ({ top: document.querySelector('[data-feed-rows] [data-row-id="${below}"]')?.getBoundingClientRect().top ?? null, copies: document.querySelectorAll("[data-feed-rows] > [aria-hidden=true]").length })`;
+    await scenario("Done", async () => {
+      await recordFrames(page, probe);
+      const row = feed.locator(`[data-row-id="${leaving}"]`);
+      await row.hover();
+      await row.getByTestId("wm-done").click();
+      await expect(feed.locator(`[data-testid=wm-item]:not([data-history])[data-row-id="${leaving}"]`)).toHaveCount(0);
+      await frames(page);
+      await frames(page);
+      const seen = await framesSeen<{ top: number | null; copies: number }>(page);
+      const tops = seen.map((f) => f.top).filter((t): t is number => t !== null);
+      expect(tops.at(-1)!).toBeLessThan(tops[0]!);
+      expect(slid(tops), tops.join(",")).toBe(true);
+      expect(seen.some((f) => f.copies > 0)).toBe(true);
+      // and gone once faded
+      await expect(feed.locator("[data-feed-rows] > [aria-hidden=true]")).toHaveCount(0);
+    });
+    await scenario("Undo: it arrives where it was, the row below sliding down", async () => {
+      await page.mouse.move(0, 0);
+      await page.waitForTimeout(300);
+      await recordArrivals(page);
+      await recordFrames(page, probe);
+      await page.keyboard.press("z");
+      await expect(feed.locator(`[data-testid=wm-item]:not([data-history])[data-row-id="${leaving}"]`)).toBeVisible();
+      await frames(page);
+      await frames(page);
+      const tops = (await framesSeen<{ top: number | null }>(page)).map((f) => f.top).filter((t): t is number => t !== null);
+      expect(tops.at(-1)!).toBeGreaterThan(tops[0]!);
+      expect(slid(tops), tops.join(",")).toBe(true);
+      expect((await arrivals(page)).some((a) => a.fades)).toBe(true);
+    });
+  });
+});
+
+test.describe("plan 271 in Lumen, whose one-message header is a card above the message", () => {
+  test.use({ reducedMotion: "no-preference", design: "lumen" });
+
+  test("a new message becomes its conversation still: the message can't glide as one thing, and two pictures of it would double its words", async ({ app: page, server }) => {
+    const seen = await sentHandoff(page, server);
+    expect(seen.every((f) => f.shown), "a frame without the message").toBe(true);
+    expect(seen.flatMap((f) => f.vt)).toEqual([]);
   });
 });
 

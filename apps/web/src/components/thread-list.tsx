@@ -49,7 +49,7 @@ import { useAppearance } from "~/lib/appearance";
 import { previewLinesFor, rowHeight } from "@terno/ui/designs/rows";
 import { fitStrip } from "~/lib/fit-strip";
 import { listAnchor, listArrival } from "~/state/list";
-import { armReflow, arrive, arriveRows, motionNow } from "~/lib/flash";
+import { armReflow, arrive, arriveRows, motionNow, stopReflow } from "~/lib/flash";
 import { takeReviewArrival } from "~/lib/review";
 import { EmptyState } from "./empty-state";
 import { SelectionBar } from "./selection-bar";
@@ -1106,9 +1106,11 @@ export function ThreadList() {
         const sel = id === null ? undefined : useList.getState().index.get(id);
         const selVisible = sel !== undefined && rowStart(sel, oldH, was) < el.scrollTop + el.clientHeight && rowStart(sel, oldH, was) + oldH > el.scrollTop;
         const anchorId = rows[anchor.index]!.id;
+        // (whether it scrolled: plan 271's slide stops then, the rows on screen not having moved)
         return () => {
           const i = useList.getState().index.get(anchorId);
-          if (i === undefined) return;
+          if (i === undefined) return false;
+          const at = el.scrollTop;
           const h = measuredHeight.current;
           const now = spacing();
           el.scrollTop = anchoredOffset({ index: i, into: anchor.into }, oldH, h, now);
@@ -1122,6 +1124,7 @@ export function ThreadList() {
             if (top + h <= el.scrollTop) el.scrollTop = top;
             else if (top >= bottom) el.scrollTop = top + h - (el.clientHeight - listInset());
           }
+          return el.scrollTop !== at;
         };
     };
     // the same capture keeps the first row through a refresh that waited behind a page, and a switch to or from one-line rows (plan 24)
@@ -1150,13 +1153,13 @@ export function ThreadList() {
       virtualizer.scrollToOffset(at && i !== undefined ? leadRef.current + (i + at.into) * measuredHeight.current : 0);
     };
     // plan 195: new mail at the top arrives here (the store asks; this list draws the rows)
-    const arrival = { on: () => motionNow() > 0, arm: armReflow, play: arriveRows };
+    const arrival = { on: () => motionNow() > 0, arm: () => armReflow(), play: arriveRows, stop: () => stopReflow() };
     Object.assign(listArrival, arrival);
     const off = registerDesignAnchor(capture);
     return () => {
       off();
       if (listAnchor.capture === capture) listAnchor.capture = listAnchor.firstVisible = listAnchor.scrolled = listAnchor.scrollAt = listAnchor.scrollTo = undefined;
-      if (listArrival.on === arrival.on) listArrival.on = listArrival.arm = listArrival.play = undefined;
+      if (listArrival.on === arrival.on) listArrival.on = listArrival.arm = listArrival.play = listArrival.stop = undefined;
     };
   }, [virtualizer]);
 

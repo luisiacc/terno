@@ -20,7 +20,7 @@ vi.mock("~/rpc/connection", () => ({
 }));
 
 const { setApp } = await import("~/state/app");
-const { invalidateThreads, loadThread, staleMarksForTests, threadCached, useThreads } = await import("~/state/threads");
+const { invalidateThreads, keepOpening, loadThread, staleMarksForTests, threadCached, useThreads } = await import("~/state/threads");
 
 const detail = (id: number, rev: number) => ({ thread: { id }, messages: [], rev }) as unknown as ThreadDetail;
 const shown = (id: number) => useThreads.getState().details.get(id) as (ThreadDetail & { rev: number }) | undefined;
@@ -74,6 +74,23 @@ it("other threads that change drop out, so their next view refetches", async () 
   // only the open one changed: nothing to re-render
   invalidateThreads([1]);
   expect(useThreads.getState().version).toBe(version + 1);
+});
+
+it("plan 271: the one a pane is about to open is kept through a change as the open one is, until it's let go", async () => {
+  await cached(5, 1);
+  keepOpening(5);
+  const before = shown(5);
+  invalidateThreads([5]);
+  expect(shown(5)).toBe(before);
+  // marked: its next load asks again
+  calls.length = 0;
+  const p = loadThread(5);
+  expect(calls).toEqual([5]);
+  await answer(5, 2);
+  await p;
+  keepOpening(null);
+  invalidateThreads([5]);
+  expect(shown(5)).toBeUndefined();
 });
 
 it("a fetch that left before the change can't pass for current", async () => {

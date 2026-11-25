@@ -6,6 +6,8 @@ import { create } from "zustand";
 import { dismissSnack, newsWaiting, registerUndo, snack, undoNow, useSnack, withdrawSnack, type Undo } from "~/lib/snack";
 import { revealSent } from "~/lib/sent-reveal";
 import { standIn } from "~/lib/frame-heights";
+import { useDrafts } from "~/lib/drafts";
+import { usePinned } from "~/lib/pinned-draft-state";
 import { getApp, setApp, useApp } from "~/state/app";
 
 /**
@@ -75,12 +77,39 @@ function later(draftId: number, ms: number, run: () => void): void {
   timers.set(draftId, [...(timers.get(draftId) ?? []), handle]);
 }
 
+function clearTimers(draftId: number): void {
+  for (const handle of timers.get(draftId) ?? []) clearTimeout(handle);
+  timers.delete(draftId);
+}
+
+/** Plan 271: holds taken back whose cards wait for their drafts to show, and how each stops watching. */
+const takingBack = new Map<number, () => void>();
+
+/**
+ * Plan 271: Undo won (nothing can take it back again now: plan 182's critique #7). The recording showed a beat of neither:
+ * the card gone at once, then the bare reply bar for ~4 frames (or an empty pane, for a new message) while the draft
+ * reopened. So the card stays, busy, its send's own deadlines retired, until a change shows its draft (the composer, its
+ * conversation's slot, or the pinned card), and gives way in that same change: one frame has the card, the next the draft.
+ */
+function takenBack(draftId: number): void {
+  if (!heldById(draftId) || takingBack.has(draftId)) return;
+  clearTimers(draftId);
+  const mine = (key: string | null | undefined) => key != null && useDrafts.getState().drafts[key]?.id === draftId;
+  const check = () => {
+    const app = getApp();
+    if (mine(app.compose?.key) || mine(app.draftShown?.key) || mine(usePinned.getState().key)) settleHeld(draftId);
+  };
+  const stops = [useApp.subscribe(check), usePinned.subscribe(check)];
+  takingBack.set(draftId, () => stops.forEach((stop) => stop()));
+}
+
 /** It's over (Undo won, its copy is here, or it can't be shown any more): its timers, snack and view go with it. */
 export function settleHeld(draftId: number, keepView = false): void {
   const held = heldById(draftId);
   if (!held) return;
-  for (const handle of timers.get(draftId) ?? []) clearTimeout(handle);
-  timers.delete(draftId);
+  clearTimers(draftId);
+  takingBack.get(draftId)?.();
+  takingBack.delete(draftId);
   revealed.delete(draftId);
   keepFocus(draftId, held.copy?.messageId ?? null);
   cards.delete(draftId);
@@ -186,7 +215,7 @@ export function holdSend(input: HoldInput): void {
     if (heldById(draftId)) patch(draftId, { phase: "undoing" });
     let won: boolean;
     try {
-      won = await cancel(() => settleHeld(draftId));
+      won = await cancel(() => takenBack(draftId));
     } catch (error) {
       // still held for all anyone knows: it can be tried again (the snack's Retry, or the card's Undo)
       const now = heldById(draftId);
@@ -201,6 +230,8 @@ export function holdSend(input: HoldInput): void {
       parkFocus(draftId);
       patch(draftId, { phase: "sending" });
     }
+    // plan 271: whatever the reopen did (kept in Drafts, failed), the card never outlives its Undo
+    if (won) settleHeld(draftId);
   });
   const held: HeldSend = { ...shown, phase: "holding", undo, copy: null };
   useHeldSends.setState((s) => ({ holds: [...s.holds, held] }));
@@ -269,10 +300,7 @@ export function heldWent(sent: ScheduledSent): void {
   if (useSnack.getState().undo === held.undo && held.undo.state === "ready") useSnack.setState({ undo: null });
   undoLeavesDock(sent.draftId);
   if (held.threadId === null) {
-    if (getApp().heldView === sent.draftId) {
-      revealSent(sent.messageId);
-      openSentThread(sent.threadId);
-    }
+    if (getApp().heldView === sent.draftId) return void openSentView(sent);
     settleHeld(sent.draftId);
     return;
   }
@@ -294,16 +322,56 @@ export function copyShown(draftId: number): void {
 
 /** A connection again (a restart of the backend, a takeover): what may have been missed meanwhile is over here. */
 export function settleOverdue(): void {
-  for (const h of useHeldSends.getState().holds) if (Date.now() >= h.goesAt) settleHeld(h.draftId);
+  // (one taken back waits for its draft, or its Undo's end: plan 271)
+  for (const h of useHeldSends.getState().holds) if (Date.now() >= h.goesAt && !takingBack.has(h.draftId)) settleHeld(h.draftId);
 }
 
-/** how the pane opens a conversation, set by the page module (kept out of the send path's imports) */
-const pane = { open: null as ((threadId: number) => void) | null };
-export function setHeldThreadOpener(open: (threadId: number) => void): void {
-  pane.open = open;
+/**
+ * How the pane opens a conversation, has one ready to draw (true once it holds this message), and morphs a change (plan
+ * 271: `lib/morph`'s), set by the page module (kept out of the send path's imports).
+ */
+interface HeldPane {
+  open: (threadId: number) => void;
+  ready?: (threadId: number, messageId: number) => Promise<boolean>;
+  /** what `ready` keeps for the opening, let go (it's open now, or won't be) */
+  letGo?: () => void;
+  morph?: (update: () => void, pairs: readonly { name: string; find: () => HTMLElement | null }[]) => void;
+}
+let pane: HeldPane | null = null;
+export function setHeldThreadOpener(opener: HeldPane): void {
+  pane = opener;
 }
 function openSentThread(threadId: number): void {
-  pane.open?.(threadId);
+  pane?.open(threadId);
+}
+
+/** Plan 271: how long the sent view waits for its conversation before opening it anyway (as it did before: loading). */
+const READY_WAIT_MS = 1500;
+
+/**
+ * Plan 271: a new message's pane becomes the conversation it started. The recording showed an empty pane for a frame (the
+ * conversation not loaded yet) and then everything at once, the message 22 px lower: now the held view stays ("Sending…")
+ * until the conversation can draw its copy, a moment at most, and the change morphs: the message glides to its place in
+ * the conversation (the same size: never resized) while the conversation's own lines fade in around it. The pane is
+ * checked again as the change runs (it runs a frame later): moved on meanwhile, the hold only settles.
+ */
+function openSentView(sent: ScheduledSent): void {
+  const { draftId, threadId, messageId } = sent;
+  const still = () => getApp().heldView === draftId && heldById(draftId) !== undefined;
+  const open = () => {
+    if (still()) {
+      revealSent(messageId);
+      openSentThread(threadId);
+    }
+    settleHeld(draftId);
+    pane?.letGo?.();
+  };
+  const pair = { name: "sent-message", find: () => document.querySelector<HTMLElement>(`[data-held-send="${draftId}"]`) ?? document.querySelector<HTMLElement>(`[data-reader-scroller] article[data-message-id="${messageId}"]`) };
+  const timeout = new Promise<boolean>((r) => setTimeout(() => r(false), READY_WAIT_MS));
+  void Promise.race([pane?.ready?.(threadId, messageId).catch(() => false) ?? Promise.resolve(false), timeout]).then((ready) => {
+    if (!still() || !ready || !pane?.morph) return open();
+    pane.morph(open, [pair]);
+  });
 }
 
 /** for tests */

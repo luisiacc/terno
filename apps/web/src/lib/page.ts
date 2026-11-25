@@ -18,6 +18,8 @@ import { closePreviewRow } from "~/state/action-preview";
 import { backToDigest } from "~/state/today";
 import { closeFeedConversation } from "~/lib/feed-pane";
 import { setHeldThreadOpener } from "~/lib/held-sends";
+import { keepOpening, loadThread, useThreads } from "~/state/threads";
+import { morph } from "~/lib/morph";
 
 export type { Page };
 
@@ -59,8 +61,17 @@ export function openThread(id: number): void {
   setApp({ selectedId: id, readerOpen: true, anchorId: id, heldView: null, ...(s.checked.size || s.scope ? { checked: EMPTY, scope: null } : {}) });
 }
 
-// plan 182: a new message's pane opens the conversation it started, once it went
-setHeldThreadOpener(openThread);
+// plan 182: a new message's pane opens the conversation it started, once it went; plan 271: once it can draw the copy
+setHeldThreadOpener({
+  open: openThread,
+  // read, and kept until it's open (or let go): it draws at once, with its copy
+  ready: (threadId, messageId) => {
+    keepOpening(threadId);
+    return loadThread(threadId).then(() => useThreads.getState().details.get(threadId)?.messages.some((m) => m.id === messageId) === true);
+  },
+  letGo: () => keepOpening(null),
+  morph,
+});
 
 /** focus goes back to the list once it shows again (Esc, Back, an action that took the thread away; not a sidebar click) */
 let restoreFocus = false;

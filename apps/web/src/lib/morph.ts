@@ -21,7 +21,7 @@ let running: Transition | null = null;
  * right after (an action's Undo) must not use this. Motion off, no API, or a transition already running: it runs now.
  * An update that runs late is the caller's to check (what it was for may have gone meanwhile).
  */
-export function morph(update: () => void): void {
+export function morph(update: () => void, pairs: readonly MorphPair[] = []): void {
   const doc = document as WithTransitions;
   if (motionMs() === 0 || typeof doc.startViewTransition !== "function") return update();
   if (running) {
@@ -29,12 +29,14 @@ export function morph(update: () => void): void {
     return update();
   }
   let named = nameShown();
+  const before = namePairs(pairs, named);
   let transition: Transition;
   try {
     transition = doc.startViewTransition(() => {
       clear(named);
       flushSync(update);
       named = nameShown();
+      if (!matchPairs(pairs, before, named)) document.documentElement.dataset.morphStill = "";
     });
   } catch (error) {
     clear(named);
@@ -45,8 +47,60 @@ export function morph(update: () => void): void {
     .catch(() => {})
     .finally(() => {
       clear(named);
+      delete document.documentElement.dataset.morphStill;
       if (running === transition) running = null;
     });
+}
+
+/**
+ * Plan 271: one element that is the same thing on both sides of this one change (a sent message and its copy), found
+ * afresh before and after it. It glides, never resizes: named before only if wholly in view of its scroller, and after
+ * only if it's there, wholly in view and the same size; it shows its new picture at once (`morph-swap`). Unmatched (a
+ * design that draws it otherwise: Lumen's sender card), the change is still (`data-morph-still`): a cross-fade would
+ * show two pictures of the one message, its words doubled.
+ */
+export interface MorphPair {
+  name: string;
+  find: () => HTMLElement | null;
+}
+
+function inView(el: HTMLElement): DOMRect | null {
+  const r = el.getBoundingClientRect();
+  const scroller = el.closest<HTMLElement>("[data-reader-scroller]")?.getBoundingClientRect();
+  if (r.height === 0 || (scroller && (r.top < scroller.top - 0.5 || r.bottom > scroller.bottom + 0.5))) return null;
+  return r;
+}
+
+function namePairs(pairs: readonly MorphPair[], named: HTMLElement[]): Map<string, DOMRect> {
+  const sizes = new Map<string, DOMRect>();
+  for (const p of pairs) {
+    const el = p.find();
+    const r = el && inView(el);
+    if (!el || !r) continue;
+    el.style.setProperty("view-transition-name", p.name);
+    named.push(el);
+    sizes.set(p.name, r);
+  }
+  return sizes;
+}
+
+/** Names each pair's element after the change; false if one named before has no match (the change is then still). */
+function matchPairs(pairs: readonly MorphPair[], before: ReadonlyMap<string, DOMRect>, named: HTMLElement[]): boolean {
+  let all = true;
+  for (const p of pairs) {
+    const was = before.get(p.name);
+    if (!was) continue;
+    const el = p.find();
+    const r = el && inView(el);
+    if (!el || !r || Math.abs(r.width - was.width) > 1 || Math.abs(r.height - was.height) > 1) {
+      all = false;
+      continue;
+    }
+    el.style.setProperty("view-transition-name", p.name);
+    el.style.setProperty("view-transition-class", "morph-swap");
+    named.push(el);
+  }
+  return all;
 }
 
 function shown(el: HTMLElement): boolean {

@@ -5,7 +5,7 @@ import { Collapsible, CollapsibleTrigger } from "@terno/ui/components/collapsibl
 import { Skeleton } from "@terno/ui/components/skeleton";
 import { Newspaper, Sun } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
-import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef } from "react";
+import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef } from "react";
 import type { TodayTask } from "~/lib/dated";
 import { useDesign } from "~/lib/design";
 import { listDate } from "~/lib/format";
@@ -13,7 +13,8 @@ import { dayHeading, weekHeading } from "~/lib/when";
 import { LIST_TITLE } from "~/lib/list-title";
 import { installScrollHairline } from "~/lib/scroll-hairline";
 import { pressRow, releaseRow } from "~/lib/select";
-import { arrive } from "~/lib/flash";
+import { arrive, leaveCopy, reflowing } from "~/lib/flash";
+import { installFeedMoves, slotComes, slotGoes } from "~/lib/feed-moves";
 import { historySentence, historyWhen, todaySentence, todayWhen, type TodayTone } from "~/lib/today-sentence";
 import { feedScroller, placeFeedKeys } from "~/lib/feed-focus";
 import { measureControls } from "~/lib/feed-controls";
@@ -158,6 +159,9 @@ const menuId = (id: number): number | undefined => (id === DIGEST_ROW_ID ? undef
  */
 export const COLUMN = "mx-auto w-full max-w-[44rem] px-5";
 
+/** Plan 222: nothing missed, due today or waiting on you, by an answer (never the empty state before the first one). */
+const clearOf = (s: Pick<ReturnType<typeof useToday.getState>, "answered" | "counts">): boolean => s.answered && todayBadge(s.counts) === 0;
+
 export function WhatMattersFeed() {
   const items = useList((s) => s.items);
   const index = useList((s) => s.index);
@@ -166,7 +170,7 @@ export function WhatMattersFeed() {
   const comingUp = useToday((s) => s.comingUp);
   // plan 222: nothing missed, due today or waiting on you, by an answer (never the empty state before the first one)
   const answered = useToday((s) => s.answered);
-  const clear = useToday((s) => s.answered && todayBadge(s.counts) === 0);
+  const clear = useToday(clearOf);
   const rows = useMemo(() => drawn(feed, comingUp, clear), [feed, comingUp, clear]);
   /** each row's place among what's drawn, by its id */
   const placeOf = useMemo(() => new Map(rows.flatMap((r, i) => (r.type === "item" || r.type === "digest" ? [[r.key, i] as const] : []))), [rows]);
@@ -261,6 +265,9 @@ export function WhatMattersFeed() {
     [],
   );
 
+  // plan 271: a change that moves the feed arms its slots before it's drawn, by the keys of what it draws
+  useEffect(() => installFeedMoves((s) => drawn(s.rows, s.comingUp, clearOf(s)).map((d) => d.key)), []);
+
   // the header's hairline once the feed is scrolled, as the list's
   useEffect(() => {
     const [root, sentinel, header] = [scrollRef.current, sentinelRef.current, headerRef.current];
@@ -326,16 +333,16 @@ export function WhatMattersFeed() {
               {comingUp > 0 && <ComingUpHeading empty />}
             </EmptyState>
           ) : (
-            <div aria-label={t("whatMatters.feed.label")} role="group" className="relative" style={{ height: virtualizer.getTotalSize() }}>
+            <div aria-label={t("whatMatters.feed.label")} role="group" data-feed-rows className="relative" style={{ height: virtualizer.getTotalSize() }}>
               {virtualItems.map((v) => {
                 const row = rows[v.index]!;
                 return (
-                  <div key={v.key} data-index={v.index} ref={virtualizer.measureElement} className="absolute inset-x-0 top-0" style={{ transform: `translateY(${v.start}px)` }}>
+                  <FeedSlot key={v.key} slot={String(v.key)} index={v.index} start={v.start} measure={virtualizer.measureElement}>
                     {/* (a query container: a row lays its when column out by the feed's own width, plan 210, iteration 4) */}
                     <div className={cn(COLUMN, "@container py-px")}>
                       {row.type === "clear" ? <div className="pt-6 pb-4"><ClearSky /></div> : row.type === "heading" ? <Heading kind={row.kind} count={row.count} part={row.part} /> : row.type === "comingUp" ? <ComingUpHeading /> : row.type === "item" ? <FeedItem row={row.row} thread={items[index.get(row.row.threadId) ?? -1]} /> : <DigestItem />}
                     </div>
-                  </div>
+                  </FeedSlot>
                 );
               })}
             </div>
@@ -372,6 +379,36 @@ function Heading({ kind, count, part }: { kind: FeedGroupKind; count: number; pa
 
 /** A heading's words (plan 214): the caption size, semibold, spaced capitals, the quiet ink (AA on the pane). */
 const LABEL = "text-xs font-semibold tracking-wide text-muted-foreground uppercase";
+
+/**
+ * Plan 271: one drawn row's place in the feed. Within a change that moves the feed (`lib/feed-moves`: Done, an Undo,
+ * Coming up), the slots that stay slide to their new places (globals.css), the one whose row came arrives, and the one
+ * whose row went leaves a fading copy where it was: its layout cleanup runs before React takes it off the page. Mounted
+ * or unmounted by anything else (a scroll), it's simply there or gone.
+ */
+function FeedSlot({ slot, index, start, measure, children }: { slot: string; index: number; start: number; measure: (el: Element | null) => void; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  // one ref for its life, as the virtualizer's own was: a new one each render would measure it again each render
+  const attach = useCallback(
+    (el: HTMLDivElement | null) => {
+      ref.current = el;
+      measure(el);
+    },
+    [measure],
+  );
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el && reflowing(el.parentElement) && slotComes(slot)) arrive(el);
+    return () => {
+      if (el && reflowing(el.parentElement) && slotGoes(slot)) leaveCopy(el);
+    };
+  }, []);
+  return (
+    <div ref={attach} data-index={index} className="absolute inset-x-0 top-0" style={{ transform: `translateY(${start}px)` }}>
+      {children}
+    </div>
+  );
+}
 
 /**
  * Plan 210 (iteration 4, the Codex review's revision 9; the owner: "Coming up as the feed's last heading, closed, with its

@@ -161,22 +161,34 @@ export function loadThread(id: number, force = false): Promise<ThreadDetail | nu
 }
 
 /**
+ * Plan 271: the conversation a pane is about to open (a new message's, as its sent view hands over), read so it draws at
+ * once: kept through a change as the open one is, until it's open or let go (null). The backend's news of the new
+ * conversation comes just after it's read, and would drop it (Codex critique #7).
+ */
+let opening: number | null = null;
+export function keepOpening(id: number | null): void {
+  opening = id;
+}
+
+/**
  * Threads that changed. The open one stays on screen as it is (blanking it
  * would remount the reader and lose focus, caret and scroll) and the next
  * load replaces it; the rest drop so their next view refetches them.
  */
 export function invalidateThreads(ids: readonly number[]): void {
-  const open = getApp().selectedId;
+  const selected = getApp().selectedId;
+  // (plan 271: and the one a pane is about to open, read for it to draw at once)
+  const open = (id: number) => id === selected || id === opening;
   const details = useThreads.getState().details;
   const at = ++seq;
   // a fetch already on its way may have read the thread before this change; a dropped one needs no mark
   for (const id of ids) {
-    if (inflight.has(id) || (id === open && details.has(id))) staleSince.set(id, at);
+    if (inflight.has(id) || (open(id) && details.has(id))) staleSince.set(id, at);
     else staleSince.delete(id);
   }
-  if (!ids.some((id) => id !== open && details.has(id))) return;
+  if (!ids.some((id) => !open(id) && details.has(id))) return;
   const next = new Map(details);
-  for (const id of ids) if (id !== open) next.delete(id);
+  for (const id of ids) if (!open(id)) next.delete(id);
   useThreads.setState((s) => ({ details: next, version: s.version + 1 }));
 }
 

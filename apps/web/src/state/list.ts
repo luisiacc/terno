@@ -44,7 +44,7 @@ const WINDOW_PAGE = 500;
  * The list's first visible row, kept across a change of its rows (ThreadList
  * sets it): `capture` measures, the function it returns puts the row back.
  */
-export const listAnchor: { capture?: () => (() => void) | void; firstVisible?: () => number | null; scrolled?: () => boolean; scrollAt?: () => ListScroll | null; scrollTo?: (at: ListScroll | null) => void } = {};
+export const listAnchor: { capture?: () => (() => boolean | void) | void; firstVisible?: () => number | null; scrolled?: () => boolean; scrollAt?: () => ListScroll | null; scrollTo?: (at: ListScroll | null) => void } = {};
 /** Where the list was scrolled: a row and how far into it, in rows (heights differ between lists); null: at the very top. */
 export interface ListScroll {
   id: number;
@@ -340,7 +340,43 @@ export function currentScope(): ThreadScope | null {
  * Plan 195: how new mail arrives on screen (the rest slide down, the new rows rise into place), given by the list that
  * draws the rows while it's mounted: this module stays free of the DOM
  */
-export const listArrival: { on?: () => boolean; arm?: () => void; play?: (ids: readonly number[]) => void } = {};
+export const listArrival: { on?: () => boolean; arm?: () => void; play?: (ids: readonly number[]) => void; /** plan 271: the window armed for nothing (the slide stops before it shows) */ stop?: () => void } = {};
+
+/**
+ * Plan 271: the next answer that changes this list's rows, within a moment, moves them as an act's rows move: an Undo's
+ * (its rows come back as they left: owed to the answer bringing back one of `ids`), Coming up opened or closed (any
+ * change). Owed to an answer, not to one read: the backend's own news of the change can refresh the list before the
+ * act's read does. The Inbox pays it in its commit (`reloadList`); What matters' feed as its rows are published (a feed
+ * row isn't a listed conversation: a Done leaves its conversation listed).
+ */
+let owedMoves: { key: string; until: number; ids: ReadonlySet<number> | null } | null = null;
+const MOVES_WITHIN_MS = 2000;
+export function moveNextRows(ids: readonly number[] | null = null): void {
+  owedMoves = { key: listKey(), until: performance.now() + MOVES_WITHIN_MS, ids: ids && new Set(ids) };
+}
+/** What an answer changes in a list's rows: the conversations (or the feed's rows' conversations) it brings, how many go. */
+export interface RowsChange {
+  came: readonly number[];
+  went: number;
+}
+/** Motion is owed to this list (and, given a change, to that change); the caller that moves the rows pays it (`movesPaid`). */
+export function movesOwed(key: string, change?: RowsChange): boolean {
+  const owed = owedMoves;
+  if (!owed || owed.key !== key || performance.now() >= owed.until) return false;
+  if (!change) return true;
+  return owed.ids ? change.came.some((id) => owed.ids!.has(id)) : change.came.length + change.went > 0;
+}
+export function movesPaid(): void {
+  owedMoves = null;
+}
+/** Plan 271: at most this many rows move at once; more just appear (a large Undo isn't a moment to watch). */
+export const MOVES_MAX = 50;
+
+/** Plan 271: the conversations an answer brings into the list, and how many leave it. */
+export function rowsChange(before: ReadonlyMap<number, number>, beforeItems: readonly ThreadSummary[], items: readonly ThreadSummary[]): RowsChange {
+  const after = new Set(items.map((t) => t.id));
+  return { came: items.filter((t) => !before.has(t.id)).map((t) => t.id), went: beforeItems.reduce((n, t) => n + (after.has(t.id) ? 0 : 1), 0) };
+}
 
 /** Plan 195: rows the user's own edits took out of the list, by when (an undo or a recovery bringing one back isn't new mail). Bounded. */
 const left = new Map<number, number>();
@@ -481,7 +517,14 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
     const shown = current.itemsKey === key && !current.loading && current.items.length > 0;
     const arrived = options.arrived?.length && sameView && shown && !restore && scope?.kind === "view" && !listAnchor.scrolled?.() && useDrag.getState().phase === "idle" && listArrival.on?.() ? arrivedOnTop(current.index, page.items, onTop, new Set(options.arrived)) : [];
     if (arrived.length) listArrival.arm?.();
-    const commit = (fn: () => void) => (restore || arrives || arrived.length ? flushSync(fn) : fn());
+    // plan 271: an answer owed motion (an Undo's): the rows it brings arrive and the rest slide, as they left (What matters'
+    // feed moves its own rows as they're published). A change bigger than a moment just appears
+    const change = !arrived.length && !getApp().today && sameView && shown && useDrag.getState().phase === "idle" && listArrival.on?.() && movesOwed(key) ? rowsChange(current.index, current.items, page.items) : null;
+    const owed = change !== null && movesOwed(key, change);
+    if (owed) movesPaid();
+    const moving = owed && change.came.length + change.went <= MOVES_MAX ? change.came : null;
+    if (moving) listArrival.arm?.();
+    const commit = (fn: () => void) => (restore || arrives || arrived.length || moving ? flushSync(fn) : fn());
     commit(() => {
       // Today's maps and the history's lines with the rows they describe, never before (Codex code review of plan 210)
       today(page).publish?.();
@@ -512,8 +555,12 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
         ...(replaced ? { loadingMore: false } : {}),
       });
     });
-    restore?.();
+    // (held by its scroll anchor, the list may have scrolled to keep its place: then nothing moved on screen, and a slide
+    // would show a movement that never happened)
+    const corrected = restore?.() === true;
     if (arrived.length) listArrival.play?.(arrived);
+    if (moving && corrected) listArrival.stop?.();
+    else if (moving?.length) listArrival.play?.(moving);
     if (arrives) listAnchor.scrollTo?.(place?.scroll ?? null);
     if (counting)
       void counting.then((r) => {

@@ -252,7 +252,7 @@ describe("the send sound (plan 170)", () => {
       setApp({ compose: null, heldView: null });
       const { heldWent, setHeldThreadOpener } = await import("./held-sends");
       const open = vi.fn();
-      setHeldThreadOpener(open);
+      setHeldThreadOpener({ open });
       const late = createDraft({ ...newFields(1), toText: "ana@example.com", bodyText: "Hola" });
       setApp({ compose: { key: late, seq: 4 } });
       const r = sendDraft(late);

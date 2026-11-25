@@ -4,10 +4,10 @@
  * the history and Undo moves it back; a new item arrives while the feed is on screen; virtualized; axe in light and dark.
  */
 import type { Page } from "@playwright/test";
-import type { IncomingMessage } from "@terno/store";
 import { sqlDb } from "../../backend-dev/src/server";
 import { E2E_NOW } from "./constants";
 import { axeBothModes, expect, fresh, scenario, test, type DevServerFixture } from "./fixtures";
+import { item, message } from "./helpers/today";
 
 test.use({ backendOptions: { network: true }, today: true });
 
@@ -15,30 +15,6 @@ const dev = { clientId: "setup", origin: "dev" as const };
 const HOUR = 3_600_000;
 /** more than the first page (40) holds, so the history pages */
 const CLOSED = 60;
-
-function message(server: DevServerFixture, key: string, from: { name: string; email: string }, subject: string, text: string, date = E2E_NOW, over: Partial<IncomingMessage> = {}): IncomingMessage {
-  const db = sqlDb(server.backend.store);
-  const acct = db.get<{ id: number; email: string }>("SELECT id, email FROM accounts ORDER BY id LIMIT 1")!;
-  return { accountId: acct.id, providerMsgId: key, providerThreadId: key, rfcMessageId: `<${key}@e2e.test>`, inReplyTo: null, references: [], from, to: [{ name: "", email: acct.email }], cc: [], bcc: [], subject, date, snippet: text, bodyText: text, bodyHtml: null, bodyState: "full", listId: null, isRead: true, isStarred: false, inInbox: false, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: 1200, ...over } as unknown as IncomingMessage;
-}
-
-/** a dated item on its own conversation, written as the reader writes one; closed at `closedAt`, or left open (due today 1 PM) */
-async function item(server: DevServerFixture, key: string, text: string, closedAt: number | null, inbox = false) {
-  const store = server.backend.store;
-  const db = sqlDb(store);
-  await store.sync.ingest([message(server, key, { name: "Billing", email: `${key}@bills.test` }, `${text} (${key})`, `${text}. Due today.`, closedAt === null ? E2E_NOW : closedAt - HOUR, closedAt === null ? { isRead: false, inInbox: true } : { inInbox: inbox })], { applyFilters: false, now: E2E_NOW, classifier: null });
-  const m = db.get<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE provider_msg_id = ?", key)!;
-  await store.dated.marks.queueScan([m.id], E2E_NOW);
-  const due = new Date(E2E_NOW);
-  due.setHours(13, 0, 0, 0);
-  const day = `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, "0")}-${String(due.getDate()).padStart(2, "0")}`;
-  await store.dated.finish({ messageId: m.id, threadId: m.thread_id, fromScan: true, rows: [{ kind: "pay", item: 0, text, quote: "Due today.", dueDay: day, dueAt: due.getTime(), timed: true, dated: true, actAt: E2E_NOW - 86_400_000 }], settled: [], now: E2E_NOW, model: "demo", provider: "fake", promptVersion: 1, clearGeneration: store.dated.clearGeneration() });
-  if (closedAt !== null) {
-    const [row] = await store.dated.ofThread(m.thread_id);
-    await store.dated.update(row!.id, row!.revision, { state: "done", closedReason: "user", closedAt });
-  }
-  return m.thread_id;
-}
 
 /** plan 210 (iteration 1): one conversation with several of the reader's items today: a kind, its words, its hour (or none) */
 async function items(server: DevServerFixture, key: string, rows: { kind: "pay" | "event" | "delivery"; text: string; hour: number | null }[]) {

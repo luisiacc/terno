@@ -55,3 +55,50 @@ describe("locateMessage", () => {
     expect(ringed(7)).toBe(false);
   });
 });
+
+describe("plan 271: rows that move", () => {
+  beforeEach(() => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] }));
+  afterEach(() => {
+    vi.runAllTimers();
+    vi.useRealTimers();
+    document.body.innerHTML = "";
+  });
+
+  it("the feed's rows reflow for a window, and a window armed for nothing stops at once", async () => {
+    const { armReflow, reflowing, stopReflow } = await import("./flash");
+    // (jsdom runs no animations)
+    HTMLElement.prototype.getAnimations = () => [];
+    document.body.innerHTML = `<div data-feed-rows></div><div role="listbox"></div>`;
+    const feed = document.querySelector("[data-feed-rows]")!;
+    armReflow("feed");
+    expect(reflowing(feed)).toBe(true);
+    expect(document.querySelector("[role=listbox]")!.hasAttribute("data-reflow")).toBe(false);
+    vi.advanceTimersByTime(200);
+    expect(reflowing(feed)).toBe(false);
+    armReflow("feed");
+    stopReflow("feed");
+    expect(reflowing(feed)).toBe(false);
+  });
+
+  it("a leaving row's copy fades where it's painted, found by nothing (no ids, keys or names), inert, and goes when its fade ends", async () => {
+    const { leaveCopy } = await import("./flash");
+    document.body.innerHTML = `<div data-feed-rows><div data-index="3" style="transform: translateY(40px)"><div data-row-id="r1" data-thread-id="9" data-testid="wm-item"><button id="b">Done</button></div></div></div>`;
+    const animations: { finish: () => void }[] = [];
+    HTMLElement.prototype.animate = function () {
+      const a = { onfinish: null as null | (() => void), oncancel: null, finish: () => a.onfinish?.() };
+      animations.push(a);
+      return a as unknown as Animation;
+    };
+    const row = document.querySelector<HTMLElement>("[data-index]")!;
+    leaveCopy(row);
+    const copy = row.parentElement!.lastElementChild as HTMLElement;
+    expect(copy).not.toBe(row);
+    expect(copy.getAttribute("aria-hidden")).toBe("true");
+    expect(copy.inert).toBe(true);
+    expect(copy.style.transform).toBe("translateY(40px)");
+    expect(copy.querySelectorAll("[data-row-id], [data-thread-id], [data-testid], [data-index], [id]")).toHaveLength(0);
+    expect(copy.hasAttribute("data-index")).toBe(false);
+    animations[0]!.finish();
+    expect(copy.isConnected).toBe(false);
+  });
+});

@@ -8,7 +8,7 @@ import { dismissSnack, registerUndo, snack, snackPublication, withdrawSnack, typ
 import { activeFilter } from "~/lib/unread-filter";
 import type { ListFilter } from "@terno/core";
 import { getApp, getSelectionWriteRevision, inPlainInbox, inSeparateTab, openedByApp, setApp, setAppOpened, type AppState, type ScopeSelection } from "~/state/app";
-import { listKey, onlyOnTop, patchRows, reloadList, useList } from "~/state/list";
+import { listKey, moveNextRows, onlyOnTop, patchRows, reloadList, useList } from "~/state/list";
 import { invalidateThreads, useThreads } from "~/state/threads";
 import { closePage, currentPage, listLayout, readerShown } from "~/lib/page";
 import { placeActions } from "~/lib/places";
@@ -191,7 +191,8 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
   const connection = client.connectionVersion;
   const undoIds = deferred<number[]>();
   // (what's been said is read when Undo is asked for, before the action's own answer is awaited)
-  const undo = options.quiet ? null : registerUndo(() => { const published = snackPublication(), focus = focusAtUndo(); return undoIds.promise.then((ids) => (ids.length ? undoActions(ids, targets.length, () => restoreSelection(before, focus), RESTORES.has(action), published) : undefined)); });
+  // (plan 271: the rows it brings back come back as they left: they arrive, the rest slide down)
+  const undo = options.quiet ? null : registerUndo(() => { const published = snackPublication(), focus = focusAtUndo(); moveNextRows(targets); return undoIds.promise.then((ids) => (ids.length ? undoActions(ids, targets.length, () => restoreSelection(before, focus), RESTORES.has(action), published) : undefined)); });
   try {
     // the contract takes ≤ 5,000 ids a call (the backend slices each); each call can be undone exactly
     const ids: number[] = [];
@@ -413,6 +414,8 @@ export function leaveRows(targets: readonly number[]): LeftRows {
   return {
     async undo(run) {
       const focus = focusAtUndo();
+      // plan 271: the rows come back as they left (they arrive, the rest slide down)
+      moveNextRows(targets);
       await run();
       await back(focus);
     },

@@ -8,7 +8,7 @@ import { changeOfItem, changeOfTask, openChange } from "~/lib/change";
 import { handTo, othersOfTask, seenOfReaderItem, seenOfTask } from "~/lib/hand-to";
 import type { ReaderItem } from "~/lib/reader-items";
 import { getApp, setApp } from "~/state/app";
-import { listKey, reloadList } from "~/state/list";
+import { listKey, moveNextRows, reloadList } from "~/state/list";
 import { feedRow, feedRowsOfItem, readerHeld, rowOfThread, useFeedRow, useReaderChoice, useToday, type FeedRow } from "~/state/today";
 
 type TaskAction = "done" | "dismiss" | "later";
@@ -21,6 +21,7 @@ function leaveFeedRows(ids: readonly FeedRowId[]): LeftRows | undefined {
   // how it was open too (the user's own choice, or the app's; a Done that went on from the user's), so an Undo restores the
   // reader as the user had it and a Done after it goes on as it would have (Codex's code review of iteration 4)
   const before = feedBefore();
+  const threads = useToday.getState().rows.filter((r) => ids.includes(r.id)).map((r) => r.threadId);
   if (!dropFeedRows(ids)) return undefined;
   const moved = useFeedRow.getState().moves;
   const where = { key: listKey(), selectedId: getApp().selectedId };
@@ -33,6 +34,8 @@ function leaveFeedRows(ids: readonly FeedRowId[]): LeftRows | undefined {
   };
   return {
     async undo(run) {
+      // plan 271: the rows come back as they left (they arrive, the rest slide down)
+      moveNextRows(threads);
       await run();
       await back();
     },

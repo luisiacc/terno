@@ -85,16 +85,56 @@ export function locateMessage(messageId: number): void {
   locateFrame = requestAnimationFrame(() => (locateFrame = requestAnimationFrame(on)));
 }
 
-let reflowTimer: ReturnType<typeof setTimeout> | null = null;
+/** Where rows reflow: the mail list's listbox, or What matters' feed (plan 271), whichever is drawn. */
+export type RowsAt = "list" | "feed";
+const ROWS: Record<RowsAt, string> = { list: "[role=listbox]", feed: "[data-feed-rows]" };
+const reflowTimers = new Map<RowsAt, ReturnType<typeof setTimeout>>();
 
-/** The listbox's rows slide to their places for this window (a removal's, plan 195: an arrival's too). */
-export function armReflow(): void {
+/** The rows slide to their places for this window (a removal's, plan 195: an arrival's too; plan 271: the feed's). */
+export function armReflow(at: RowsAt = "list"): void {
   const ms = motionNow();
-  const list = document.querySelector<HTMLElement>("[role=listbox]");
+  const list = document.querySelector<HTMLElement>(ROWS[at]);
   if (!list || ms === 0) return;
   list.dataset.reflow = "";
-  if (reflowTimer) clearTimeout(reflowTimer);
-  reflowTimer = setTimeout(() => delete list.dataset.reflow, Math.min(ms * 1.33, 100) + 60);
+  clearTimeout(reflowTimers.get(at));
+  reflowTimers.set(at, setTimeout(() => delete list.dataset.reflow, Math.min(ms * 1.33, 100) + 60));
+}
+
+/** Plan 271: a window armed for nothing ends before it shows (the slide, and any arrival in it). */
+export function stopReflow(at: RowsAt = "list"): void {
+  const list = document.querySelector<HTMLElement>(ROWS[at]);
+  clearTimeout(reflowTimers.get(at));
+  reflowTimers.delete(at);
+  if (!list) return;
+  delete list.dataset.reflow;
+  for (const a of list.getAnimations({ subtree: true })) if (a.id === "arrive") a.cancel();
+}
+
+/** Plan 271: inside rows' reflow window (an act's moment): what comes and goes there moves; a scroll's mounts never do. */
+export const reflowing = (rows: Element | null): boolean => rows?.hasAttribute("data-reflow") === true && motionNow() > 0;
+
+/**
+ * A row (or anything drawn among rows) that's leaving fades out where it was, as a copy laid beside it: nothing of the app's
+ * reaches it (no ids, keys, names, pointer or focus), so nothing finds it as the row while it fades.
+ */
+export function leaveCopy(row: HTMLElement): void {
+  const ms = motionNow();
+  if (ms === 0 || !row.parentElement) return;
+  // where it's painted now, not where its style says it's going: a row still sliding from the last act (Codex critique #6)
+  const painted = getComputedStyle(row);
+  const copy = row.cloneNode(true) as HTMLElement;
+  for (const el of [copy, ...copy.querySelectorAll<HTMLElement>("[data-thread-id], [data-row-id], [data-index], [data-testid], [id]")]) {
+    for (const name of ["data-thread-id", "data-row-id", "data-index", "data-testid", "id"]) el.removeAttribute(name);
+  }
+  copy.setAttribute("aria-hidden", "true");
+  copy.inert = true;
+  copy.style.pointerEvents = "none";
+  copy.style.transition = "none";
+  copy.style.transform = painted.transform;
+  copy.style.translate = painted.translate;
+  row.parentElement.appendChild(copy);
+  const fade = copy.animate([{ opacity: Number.isNaN(parseFloat(painted.opacity)) ? 1 : parseFloat(painted.opacity) }, { opacity: 0 }], { duration: Math.round(ms * 0.66), easing: "ease-out", fill: "forwards" });
+  fade.onfinish = fade.oncancel = () => copy.remove();
 }
 
 /**
@@ -107,16 +147,7 @@ export function reflowRemoval(ids: readonly number[]): void {
   const list = document.querySelector<HTMLElement>("[role=listbox]");
   // nothing leaving (the filter kept the only target, the open thread): no rule to build, nothing to slide
   if (!list || ms === 0 || ids.length === 0) return;
-  for (const row of list.querySelectorAll<HTMLElement>(rowSelector(ids))) {
-    const ghost = row.cloneNode(true) as HTMLElement;
-    ghost.removeAttribute("data-thread-id");
-    ghost.removeAttribute("data-testid");
-    ghost.setAttribute("aria-hidden", "true");
-    ghost.style.pointerEvents = "none";
-    row.parentElement?.appendChild(ghost);
-    const fade = ghost.animate([{ opacity: 1 }, { opacity: 0 }], { duration: Math.round(ms * 0.66), easing: "ease-out", fill: "forwards" });
-    fade.onfinish = fade.oncancel = () => ghost.remove();
-  }
+  for (const row of list.querySelectorAll<HTMLElement>(rowSelector(ids))) leaveCopy(row);
   armReflow();
 }
 

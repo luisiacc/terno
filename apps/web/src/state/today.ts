@@ -10,7 +10,7 @@ import type { Undo } from "~/lib/snack";
 import { useAppearance } from "~/lib/appearance";
 import { morph } from "~/lib/morph";
 import { getApp, navigate, setApp, useApp } from "./app";
-import { reloadList } from "./list";
+import { moveNextRows, reloadList } from "./list";
 
 /**
  * Plan 145: Today's shape on the list: which rows begin a section, and the digest. Rows themselves are the ordinary
@@ -286,7 +286,10 @@ export function setComingUpOpen(open: boolean): void {
   }
   if (!open) leaveComingUp();
   useToday.setState({ comingUpOpen: open });
-  if (getApp().today) void reloadList({ keepSelection: true });
+  if (!getApp().today) return;
+  // plan 271: its rows arrive (or leave) while the rest slide, in the answer that brings (or takes) them
+  moveNextRows();
+  void reloadList({ keepSelection: true });
 }
 
 /** Closing Coming up: the feed's place on one of its rows moves to the row above it, its conversation put away. */

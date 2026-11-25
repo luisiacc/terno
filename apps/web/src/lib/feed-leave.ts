@@ -1,5 +1,6 @@
 import { DIGEST_ROW_ID, type FeedRowId, type ThreadAction, type TodayWhy } from "@terno/core";
 import { focusedFeedItem, focusFeedItem } from "~/lib/feed-focus";
+import { movingFeed } from "~/lib/feed-moves";
 import { closePage, currentPage, listLayout } from "~/lib/page";
 import { getApp, getSelectionWriteRevision, openedByApp, setApp, setAppOpened, useApp } from "~/state/app";
 import { listKey, noteEdit } from "~/state/list";
@@ -40,7 +41,8 @@ export function dropFeedRows(ids: readonly FeedRowId[]): boolean {
   const keysLeave = focused !== null && gone.has(focused);
   // a read that started before this act may bring the row back: the list asks again (as `patchRows` does)
   noteEdit();
-  useToday.setState({ rows: rows.filter((r) => !gone.has(r.id)) });
+  // plan 271: as Archive's rows leave the Inbox: the rows below slide up while what left fades where it was
+  movingFeed(() => useToday.setState({ rows: rows.filter((r) => !gone.has(r.id)) }));
   // (plan 210, iteration 4: never the automated section's page, which sits between the open part and Coming up)
   const stays = (r: FeedRow) => !gone.has(r.id) && r.threadId !== DIGEST_ROW_ID;
   const after = (at: number) => rows.slice(at + 1).find(stays) ?? rows.slice(0, at).reverse().find(stays);
