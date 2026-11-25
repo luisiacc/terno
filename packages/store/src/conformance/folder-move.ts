@@ -159,6 +159,130 @@ export function defineFolderMoveConformance(name: string, harness: StoreHarness)
       expect(await where()).toEqual({ F1: 1, F2: 0, F3: 0 });
     });
 
+    it("Outlook (stage 2b): one move a message, never a copy: it leaves the Inbox whatever its category says; each one's way back is journalled; your own mail stays in Sent", async () => {
+      const { store } = await fresh();
+      const outlook = await outlookAccount(store);
+      await store.folders.replace(outlook, ["F1", "F2"].map((key) => ({ key, path: [key], selectable: true })));
+      const shown = (await store.categories.create("Shown", "cyan", { showInInbox: true })).id;
+      const { inserted } = await ingest(store, [
+        msg({ accountId: outlook, providerMsgId: "in", rfcMessageId: "in@t", inInbox: true, folder: null }),
+        msg({ accountId: outlook, providerMsgId: "reply", rfcMessageId: "reply@t", inReplyTo: "in@t", references: ["in@t"], isSent: true, inInbox: false, folder: null }),
+        msg({ accountId: outlook, providerMsgId: "archived", rfcMessageId: "archived@t", inInbox: false, folder: null }),
+        msg({ accountId: outlook, providerMsgId: "other", rfcMessageId: "other@t", inInbox: false, folder: "F2" }),
+        msg({ accountId: outlook, providerMsgId: "solo", rfcMessageId: "solo@t", isSent: true, inInbox: false, folder: null }),
+      ]);
+      const [inId, , archivedId, otherId, soloId] = inserted;
+      const threads = await Promise.all(["in", "archived", "other", "solo"].map((id) => threadOf(store, id)));
+      await store.categories.add({ categoryId: shown, threadIds: [threads[0]!], addedBy: "user", now: NOW });
+      const r = await store.threads.moveToFolder({ threadIds: threads, accountId: outlook, folder: "F1", from: null, now: NOW });
+      // the owner's decision: Graph keeps a message in one place, so a shown category keeps nothing in the Inbox
+      expect(r.kept).toEqual([]);
+      expect(r.leftInbox).toEqual([threads[0]]);
+      expect(await inbox(store)).toEqual([]);
+      expect(r.moved.fromInbox).toEqual([inId]);
+      expect(r.moved.fromFolder).toEqual([]);
+      expect(r.moved.added).toEqual([]);
+      expect(r.moved.elsewhere).toEqual(expect.arrayContaining([
+        { back: null, role: "archive", messageIds: [archivedId] },
+        { back: "F2", messageIds: [otherId] },
+        { back: null, role: "sent", messageIds: [soloId] },
+      ]));
+      expect(r.moved.elsewhere).toHaveLength(3);
+      expect(new Set(await list(store, outlook, "F1"))).toEqual(new Set(threads));
+      expect(await list(store, outlook, "F2")).toEqual([]);
+      // one move op with every message but the reply, which stays in Sent; no copy kept in the Inbox, and the
+      // archive after it finds nothing left there on the server
+      const ops = (await store.ops.recent(10)).filter((o) => o.kind === "moveToFolder");
+      expect(ops).toHaveLength(1);
+      expect(JSON.parse(ops[0]!.payload_json)).toEqual({ folder: "F1", from: null, keepInbox: false });
+      expect((JSON.parse(ops[0]!.target_json) as { messageIds: number[] }).messageIds.sort()).toEqual([inId, archivedId, otherId, soloId].sort());
+      // the undo: each back where it was, the Inbox's with its own flag back
+      await settleAll(store);
+      const left = await store.threads.leaveFolder({ moved: r.moved, now: NOW });
+      expect(left.opIds).toHaveLength(4);
+      const payloads = (await store.ops.recent(20)).filter((o) => o.kind === "leaveFolder").map((o) => JSON.parse(o.payload_json) as Record<string, unknown>);
+      expect(payloads).toEqual(expect.arrayContaining([
+        { folder: "F1", back: null, toInbox: true, stays: false },
+        { folder: "F1", back: null, toInbox: false, stays: false, role: "archive" },
+        { folder: "F1", back: "F2", toInbox: false, stays: false },
+        { folder: "F1", back: null, toInbox: false, stays: false, role: "sent" },
+      ]));
+      // shown at once where each goes back to
+      expect(await list(store, outlook, "F1")).toEqual([]);
+      expect(await list(store, outlook, "F2")).toEqual([threads[2]]);
+    });
+
+    it("Outlook (stage 2b): the provider's answers are written as they come; a partial success keeps what was done, and an unknown outcome shows only what's confirmed", async () => {
+      const { store } = await fresh();
+      const outlook = await outlookAccount(store);
+      await store.folders.replace(outlook, ["F1", "F2"].map((key) => ({ key, path: [key], selectable: true })));
+      const { inserted } = await ingest(store, [
+        msg({ accountId: outlook, providerMsgId: "a", rfcMessageId: "a@t", inInbox: false, folder: "F2" }),
+        msg({ accountId: outlook, providerMsgId: "b", rfcMessageId: "b@t", inInbox: false, folder: "F2" }),
+      ]);
+      const [a, b] = inserted as [number, number];
+      const ta = await threadOf(store, "a"), tb = await threadOf(store, "b");
+      const r = await store.threads.moveToFolder({ threadIds: [ta, tb], accountId: outlook, folder: "F1", from: "F2", now: NOW });
+      expect(r.moved.fromFolder.sort()).toEqual([a, b].sort());
+      const [op] = await store.ops.claimReady(NOW + 1, 1);
+      expect(op!.kind).toBe("moveToFolder");
+      // the first answer came back: written at once (a row whose provider id changed meanwhile isn't)
+      const provider = store.providerStore(outlook);
+      expect(await provider.placeMessages([{ messageId: a, providerMsgId: "a", folder: "F1" }, { messageId: b, providerMsgId: "not-b", folder: "F1" }])).toEqual([ta]);
+      // the second never did: the op ends unknown, and the folder shows what's confirmed only
+      await store.ops.markUnknown(op!.id, "lost", NOW);
+      expect(await list(store, outlook, "F1")).toEqual([ta]);
+      expect(await list(store, outlook, "F2")).toEqual([tb]);
+      // the same for a permanent failure part-way
+      const again = await store.threads.moveToFolder({ threadIds: [tb], accountId: outlook, folder: "F1", from: "F2", now: NOW });
+      expect(await list(store, outlook, "F1")).toEqual(expect.arrayContaining([ta, tb]));
+      const [next] = await store.ops.claimReady(NOW + 1, 1);
+      expect(next!.id).toBe(again.opIds[0]);
+      await store.ops.fail(next!.id, "refused", false, NOW);
+      expect(await list(store, outlook, "F2")).toEqual([tb]);
+      // a role folder's answer takes the message out of its user folder (its flags say where)
+      expect(await provider.placeMessages([{ messageId: b, providerMsgId: "b", folder: null }])).toEqual([tb]);
+      expect(await list(store, outlook, "F2")).toEqual([]);
+      // the same answer again changes nothing
+      expect(await provider.placeMessages([{ messageId: b, providerMsgId: "b", folder: null }])).toEqual([]);
+    });
+
+    it("Outlook (stage 2b): a delta read racing a settlement shows the move while it's on its way, and the next read decides", async () => {
+      const { store } = await fresh();
+      const outlook = await outlookAccount(store);
+      await store.folders.replace(outlook, ["F1", "F2"].map((key) => ({ key, path: [key], selectable: true })));
+      const { inserted } = await ingest(store, [msg({ accountId: outlook, providerMsgId: "o", rfcMessageId: "o@t", inInbox: false, folder: "F2" })]);
+      const id = inserted[0]!;
+      const thread = await threadOf(store, "o");
+      await store.threads.moveToFolder({ threadIds: [thread], accountId: outlook, folder: "F1", from: "F2", now: NOW });
+      const [op] = await store.ops.claimReady(NOW + 1, 1);
+      // the provider's answer, then a delta page read before the move lands writing the old folder
+      await store.providerStore(outlook).placeMessages([{ messageId: id, providerMsgId: "o", folder: "F1" }]);
+      await store.sync.updateFlags(outlook, [{ messageId: id, expectedProviderMsgId: "o", flags: { isRead: true }, folder: "F2" }]);
+      // while the op is on its way it shows where it's going
+      expect(await list(store, outlook, "F1")).toEqual([thread]);
+      expect(await list(store, outlook, "F2")).toEqual([]);
+      await store.ops.complete(op!.id, {}, NOW);
+      // settled: the stale read shows until the next delta (its @removed and the destination's entry) says where it is
+      await store.sync.updateFlags(outlook, [{ messageId: id, expectedProviderMsgId: "o", flags: {}, folder: "F1" }]);
+      expect(await list(store, outlook, "F1")).toEqual([thread]);
+      expect(await list(store, outlook, "F2")).toEqual([]);
+    });
+
+    it("Outlook (stage 2b): a filing replays what's on its way first: A → B then B → C moves from B, and its undo goes back to B", async () => {
+      const { store } = await fresh();
+      const outlook = await outlookAccount(store);
+      await store.folders.replace(outlook, ["A", "B", "C"].map((key) => ({ key, path: [key], selectable: true })));
+      const { inserted } = await ingest(store, [msg({ accountId: outlook, providerMsgId: "o", rfcMessageId: "o@t", inInbox: false, folder: "A" })]);
+      const thread = await threadOf(store, "o");
+      await store.threads.moveToFolder({ threadIds: [thread], accountId: outlook, folder: "B", from: "A", now: NOW });
+      const second = await store.threads.moveToFolder({ threadIds: [thread], accountId: outlook, folder: "C", from: null, now: NOW });
+      expect(second.moved.elsewhere).toEqual([{ back: "B", messageIds: [inserted[0]] }]);
+      // filing it to where it's already going does nothing
+      const same = await store.threads.moveToFolder({ threadIds: [thread], accountId: outlook, folder: "C", from: null, now: NOW });
+      expect(same.opIds).toEqual([]);
+    });
+
     it("a failed move shows what's true: gone from the folder, no label left behind", async () => {
       const { store, gmail } = await fresh();
       const a = await gmailThread(store, gmail, "g1");

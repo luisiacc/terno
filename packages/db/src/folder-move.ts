@@ -1,4 +1,4 @@
-import { applyFolderOp, folderReachable, keptInInbox, labelsLeft, labelsMoved, LEAVE_FOLDER, leaveFolderOps, MOVE_TO_FOLDER, type FolderFilterMove, type FolderMoved, type LeaveFolderPayload, type MoveToFolderPayload } from "@terno/store";
+import { applyFolderOp, applyFolderOpOne, folderReachable, keptInInbox, labelsLeft, labelsMoved, LEAVE_FOLDER, leaveFolderOps, MOVE_TO_FOLDER, oneFolderPerMessage, planOneFolderMove, type FolderFilterMove, type FolderMoved, type LeaveFolderPayload, type MoveToFolderPayload } from "@terno/store";
 import { applyMessageAction, applyThreadAction, type ActionResult } from "./actions";
 import { folderOpsPending, listFolders } from "./folders";
 import { recomputeThreads } from "./ingest";
@@ -20,7 +20,10 @@ function byChunks<T>(ids: readonly number[], read: (chunk: number[]) => T[]): T[
   return out;
 }
 
-const isGmail = (db: Db, accountId: number) => db.get<{ kind: string }>("SELECT kind FROM accounts WHERE id = ?", accountId)?.kind === "gmail";
+const kindOf = (db: Db, accountId: number) => db.get<{ kind: string }>("SELECT kind FROM accounts WHERE id = ?", accountId)?.kind;
+const isGmail = (db: Db, accountId: number) => kindOf(db, accountId) === "gmail";
+/** plan 259: Outlook keeps a message in one folder: a filing is a move, and no thread stays in the Inbox by a copy */
+const isOneFolder = (db: Db, accountId: number) => oneFolderPerMessage(kindOf(db, accountId));
 
 interface MoveRow {
   id: number;
@@ -61,6 +64,19 @@ function queueFolderMoves(db: Db, to: { accountId: number; folder: string; from:
     : [];
   const pendingOf = new Map<number, typeof pending>();
   for (const p of pending) pendingOf.set(p.message_id, [...(pendingOf.get(p.message_id) ?? []), p]);
+  if (isOneFolder(db, accountId)) {
+    // plan 259 stage 2b: one move a message, from where it is once what's on its way lands, each one's way back journalled
+    const stored = new Map(byChunks(messages.map((m) => m.id), (chunk) => db.all<{ message_id: number; folder: string }>(`SELECT message_id, folder FROM message_folders WHERE message_id IN (${placeholders(chunk.length)})`, ...chunk)).map((r) => [r.message_id, r.folder]));
+    const rows = messages.map((m) => {
+      let at = stored.get(m.id) ?? null;
+      for (const p of pendingOf.get(m.id) ?? []) at = applyFolderOpOne(at, p.kind, JSON.parse(p.payload_json) as MoveToFolderPayload | LeaveFolderPayload);
+      return { id: m.id, thread_id: m.thread_id, is_sent: !!m.is_sent, in_inbox: !!m.in_inbox, folder: at };
+    });
+    const plan = planOneFolderMove({ accountId, folder, from }, rows);
+    const payload: MoveToFolderPayload = { folder, from, keepInbox: false };
+    const id = plan.messageIds.length ? enqueueOp(db, { accountId, kind: MOVE_TO_FOLDER, target: { messageIds: plan.messageIds }, payload }, now) : null;
+    return { moved: plan.moved, opIds: id ? [id] : [] };
+  }
   // IMAP: your own mail stays in Sent, unless it's all there is or it's in the folder this leaves. Gmail's labels go on the whole conversation
   const received = new Set(messages.filter((m) => !m.is_sent).map((m) => m.thread_id));
   for (const m of messages) {
@@ -99,7 +115,8 @@ export function moveMessagesToFolder(db: Db, c: FolderFilterMove & { now: number
   const messages = byChunks(c.messageIds, (chunk) => db.all<MoveRow>(`SELECT id, thread_id, is_sent, in_inbox, gmail_labels FROM messages WHERE id IN (${placeholders(chunk.length)}) AND account_id = ? AND is_draft = 0 AND is_sent = 0 AND is_trash = 0 AND is_spam = 0`, ...chunk, accountId));
   const threadIds = [...new Set(messages.map((m) => m.thread_id))];
   if (!threadIds.length) return { threadIds, opIds: [] };
-  const kept = keptThreads(db, byChunks(threadIds, (chunk) => db.all<{ id: number; in_inbox: number }>(`SELECT id, in_inbox FROM threads WHERE id IN (${placeholders(chunk.length)})`, ...chunk)));
+  // plan 259: an Outlook filing moves the message out of the Inbox on the server, whatever its categories say
+  const kept = isOneFolder(db, accountId) ? new Set<number>() : keptThreads(db, byChunks(threadIds, (chunk) => db.all<{ id: number; in_inbox: number }>(`SELECT id, in_inbox FROM threads WHERE id IN (${placeholders(chunk.length)})`, ...chunk)));
   const { opIds } = queueFolderMoves(db, { accountId, folder, from: null, now }, messages, kept);
   const archived = applyMessageAction(db, messages.filter((m) => !kept.has(m.thread_id)).map((m) => m.id), "archive");
   for (const target of archived.targets) {
@@ -117,7 +134,8 @@ export function moveThreadsToFolder(db: Db, c: { threadIds: readonly number[]; a
   const { accountId, folder, from, now } = c;
   const threads = byChunks([...new Set(c.threadIds)], (chunk) => db.all<{ id: number; in_inbox: number }>(`SELECT id, in_inbox FROM threads WHERE id IN (${placeholders(chunk.length)}) AND account_id = ? AND in_trash = 0 AND in_spam = 0`, ...chunk, accountId));
   const ids = threads.map((t) => t.id);
-  const kept = keptThreads(db, threads);
+  // plan 259 (owner decision): an Outlook filing is a plain move, so no thread stays in the Inbox by its category
+  const kept = isOneFolder(db, accountId) ? new Set<number>() : keptThreads(db, threads);
   const messages = byChunks(ids, (chunk) => db.all<MoveRow>(`SELECT id, thread_id, is_sent, in_inbox, gmail_labels FROM messages WHERE thread_id IN (${placeholders(chunk.length)}) AND is_draft = 0 AND is_trash = 0 AND is_spam = 0`, ...chunk));
   const { moved, opIds } = queueFolderMoves(db, { accountId, folder, from, now }, messages, kept);
   // after the move's ops: IMAP's archive then finds no copy left in the Inbox, Gmail's takes its label away

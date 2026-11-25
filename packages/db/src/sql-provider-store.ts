@@ -1,6 +1,8 @@
 import { sqlCaptureRepairs } from "./capture-repair";
 import { folderExcept } from "./folders";
-import type { ImapLocation, ImapLocationStore, ProviderStore } from "@terno/store";
+import type { ImapLocation, ImapLocationStore, MessagePlacement, ProviderStore } from "@terno/store";
+import { recomputeThreads } from "./ingest";
+import { oneFolderAccounts, placeReadFolder } from "./message-folders";
 import { ImapIdentityError, AWAITING_IDENTITY, sameImapLocations } from "@terno/store";
 import { getSetting } from "./repos";
 import { sqlFlags } from "./flag-intents";
@@ -78,6 +80,19 @@ export class SqlProviderStore implements ProviderStore {
 
   async setting<T>(key: string): Promise<T | null> {
     return getSetting<T | null>(this.db, key, null);
+  }
+
+  async placeMessages(placements: readonly MessagePlacement[]) {
+    return this.db.tx(() => {
+      const oneFolder = oneFolderAccounts(this.db);
+      const threads = new Set<number>();
+      for (const p of placements) {
+        const row = this.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ? AND account_id = ? AND provider_msg_id = ?", p.messageId, this.accountId, p.providerMsgId);
+        if (row && placeReadFolder(this.db, p.messageId, this.accountId, p.folder, oneFolder)) threads.add(row.thread_id);
+      }
+      recomputeThreads(this.db, threads);
+      return [...threads];
+    });
   }
 }
 

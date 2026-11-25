@@ -1,8 +1,9 @@
 import { idbCaptureRepairs, retireLocationCapture } from "./capture-repair";
 import { captureKey } from "@terno/store";
 import { ImapIdentityError, AWAITING_IDENTITY, sameImapLocations } from "@terno/store";
-import type { FlagSnapshotRequest, FlagSnapshotPage, ImapLocation, ImapLocationStore, ProviderStore } from "@terno/store";
-import { getSetting, T, type Ctx, type R } from "./mail";
+import type { FlagSnapshotRequest, FlagSnapshotPage, ImapLocation, ImapLocationStore, MessagePlacement, ProviderStore } from "@terno/store";
+import { getSetting, recomputeThreads, T, type Ctx, type R } from "./mail";
+import { placeMessage } from "./message-folders";
 import { folderExcept } from "./folders";
 
 const identityVersions = new WeakMap<object, { value: number }>();
@@ -110,7 +111,7 @@ export class IdbProviderStore implements ProviderStore {
     private readonly c: Ctx,
     private readonly accountId: number,
     repairPage: import("@terno/store").CaptureRepairs["list"],
-    command: Command,
+    private readonly command: Command,
     private readonly read: Command,
     private readonly cachedPage: (after?: string) => ReturnType<ProviderStore["syncedMessagePage"]>,
     private readonly flagSnapshots: (request: FlagSnapshotRequest) => Promise<FlagSnapshotPage>,
@@ -196,6 +197,20 @@ export class IdbProviderStore implements ProviderStore {
 
   setting<V>(key: string): Promise<V | null> {
     return this.read(() => getSetting<V | null>(this.c, key, null));
+  }
+
+  placeMessages(placements: readonly MessagePlacement[]) {
+    return this.command(() => {
+      const messages = T(this.c, "messages");
+      const threads = new Set<number>();
+      for (const p of placements) {
+        const m = messages.get(p.messageId);
+        if (!m || m.account_id !== this.accountId || m.provider_msg_id !== p.providerMsgId) continue;
+        if (placeMessage(this.c, p.messageId, { accountId: this.accountId, folder: p.folder })) threads.add(m.thread_id as number);
+      }
+      recomputeThreads(this.c, threads);
+      return [...threads];
+    });
   }
 }
 

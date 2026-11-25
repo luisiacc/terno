@@ -114,7 +114,8 @@ export async function idbFlagSnapshots(idb: IDBDatabase, repo: IdbFlagRepository
 export function bindIdbPromotedFlags(c: { db: MemDb; uuid(): string }, id: number): void {
   const repo = idbFlags(c), message = repo.message(id);
   if (!message?.provider_msg_id || message.provider_msg_id.startsWith("local:") || !repo.clock(message.account_id)
-    || c.db.table("accounts").get(message.account_id)?.kind !== "gmail") return;
+    // plan 259 revision 8: Outlook's flag snapshots are authoritative too
+    || !["gmail", "outlook"].includes(c.db.table("accounts").get(message.account_id)?.kind as string)) return;
   for (const target of c.db.table("op_targets").by("message", id)) {
     const op = repo.op(target.op_id as string);
     if (op && ["queued", "running", "unknown"].includes(op.state)) bindFlagTarget(repo, op, id, null);

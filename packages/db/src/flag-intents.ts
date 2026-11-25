@@ -49,7 +49,8 @@ export class SqlFlagRepository implements FlagRepository {
 export function bindSqlPromotedFlags(db: Db, id: number): void {
   const repo = sqlFlags(db), message = repo.message(id);
   if (!message?.provider_msg_id || message.provider_msg_id.startsWith("local:") || !repo.clock(message.account_id)
-    || !db.get("SELECT 1 FROM accounts WHERE id=? AND kind='gmail'", message.account_id)) return;
+    // plan 259 revision 8: Outlook's flag snapshots are authoritative too
+    || !db.get("SELECT 1 FROM accounts WHERE id=? AND kind IN ('gmail','outlook')", message.account_id)) return;
   const ops = db.all<FlagOp>("SELECT o.id,o.account_id,o.seq,o.kind,o.state FROM op_targets t JOIN ops o ON o.id=t.op_id WHERE t.message_id=? AND o.account_id=? AND o.state IN ('queued','running','unknown')", id, message.account_id);
   for (const op of ops) bindFlagTarget(repo, op, id, null);
 }

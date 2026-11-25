@@ -22,6 +22,19 @@ export interface LeaveFolderPayload {
   toInbox: boolean;
   /** it was in `folder` before the move: it stays, and only comes back to `back` */
   stays: boolean;
+  /** Plan 259: a one-folder (Outlook) message that came from Archive or Sent goes back there (`back` is null) */
+  role?: ReturnRole;
+}
+
+/** Plan 259: the role folders a one-folder message's filing can be taken back to, besides the Inbox */
+export type ReturnRole = "archive" | "sent";
+
+/** Plan 259: messages a one-folder (Outlook) filing took from somewhere the other groups don't say. */
+export interface FolderReturn {
+  /** another of the account's folders (null: the role folder) */
+  back: string | null;
+  role?: ReturnRole;
+  messageIds: number[];
 }
 
 /** Which messages a move changed, in the groups an undo treats differently. */
@@ -37,9 +50,14 @@ export interface FolderMoved {
   added: number[];
   /** already in the folder, and out of `from` */
   leftOnly: number[];
+  /**
+   * Plan 259: a one-folder (Outlook) account's messages that came from another of its folders, or from Archive or Sent:
+   * its server keeps a message in one place, so an undo moves each back to exactly where it was
+   */
+  elsewhere?: FolderReturn[];
 }
 
-export const movedNothing = (m: FolderMoved): boolean => !m.fromInbox.length && !m.fromFolder.length && !m.added.length && !m.leftOnly.length;
+export const movedNothing = (m: FolderMoved): boolean => !m.fromInbox.length && !m.fromFolder.length && !m.added.length && !m.leftOnly.length && !m.elsewhere?.some((r) => r.messageIds.length);
 
 export interface MoveToFolderResult {
   threadIds: number[];
@@ -118,7 +136,50 @@ export function leaveFolderOps(m: FolderMoved): { payload: LeaveFolderPayload; m
     op(m.fromFolder, { back: m.from, toInbox: false, stays: false }),
     op(m.added, { back: null, toInbox: false, stays: false }),
     op(m.leftOnly, { back: m.from, toInbox: false, stays: true }),
+    ...(m.elsewhere ?? []).map((r) => op(r.messageIds, { back: r.back, toInbox: false, stays: false, ...(r.back === null && r.role && { role: r.role }) })),
   ].filter((o) => o.messageIds.length > 0);
+}
+
+/** What a one-folder (Outlook) filing reads of a message: its user folder (null: a role folder) with what's queued replayed. */
+export interface OneFolderRow {
+  id: number;
+  thread_id: number;
+  is_sent: boolean;
+  in_inbox: boolean;
+  folder: string | null;
+}
+
+/**
+ * Plan 259 stage 2b: a one-folder (Outlook) filing. Graph keeps a message in one folder, so filing is one move per
+ * message (never a copy: `keepInbox` is false, and a thread whose category shows in the Inbox leaves it on the server
+ * too), and each message's way back is journalled: `from`, the Inbox, another folder, or Archive or Sent (a received
+ * message in no folder and out of the Inbox is in Archive; your own in Sent). Your own mail stays in Sent, as IMAP's
+ * does, unless it's all there is or it's in the folder this leaves. The messages to move, and the undo's journal.
+ */
+export function planOneFolderMove(to: { accountId: number; folder: string; from: string | null }, rows: readonly OneFolderRow[]): { moved: FolderMoved; messageIds: number[] } {
+  const { accountId, folder, from } = to;
+  const moved: FolderMoved = { accountId, folder, from, fromInbox: [], fromFolder: [], added: [], leftOnly: [] };
+  const received = new Set(rows.filter((m) => !m.is_sent).map((m) => m.thread_id));
+  const elsewhere = new Map<string, FolderReturn>();
+  const back = (key: string, r: Omit<FolderReturn, "messageIds">, id: number) => {
+    const group = elsewhere.get(key) ?? { ...r, messageIds: [] };
+    group.messageIds.push(id);
+    elsewhere.set(key, group);
+  };
+  const messageIds: number[] = [];
+  for (const m of rows) {
+    if (m.folder === folder) continue;
+    const inFrom = from !== null && m.folder === from;
+    if (m.is_sent && received.has(m.thread_id) && !inFrom) continue;
+    messageIds.push(m.id);
+    if (inFrom) moved.fromFolder.push(m.id);
+    else if (m.folder !== null) back(`folder:${m.folder}`, { back: m.folder }, m.id);
+    else if (m.in_inbox) moved.fromInbox.push(m.id);
+    else if (m.is_sent) back("role:sent", { back: null, role: "sent" }, m.id);
+    else back("role:archive", { back: null, role: "archive" }, m.id);
+  }
+  if (elsewhere.size) moved.elsewhere = [...elsewhere.values()];
+  return { moved, messageIds };
 }
 
 /** A Gmail message's labels after a move (null: unchanged), and after its undo. */

@@ -222,6 +222,20 @@ export interface ProviderStore {
   providerIds(messageIds: readonly number[]): Promise<Map<number, string | null>>;
   setting<T>(key: string): Promise<T | null>;
   locations: ImapLocationStore;
+  /**
+   * Plan 259 stage 2b: where a one-folder provider's server put these messages, as its answers confirmed it (Outlook: a
+   * move's answer names the folder; null: a role folder, its flags saying which). Written as each answer arrives, so a
+   * retry starts from it and a partial success is kept; a row whose provider id changed meanwhile is left. Only an
+   * Outlook account's are written. The threads whose membership changed.
+   */
+  placeMessages(placements: readonly MessagePlacement[]): Promise<number[]>;
+}
+
+/** Plan 259 stage 2b: a message's folder as its provider confirmed it (`folder` as IncomingMessage.folder). */
+export interface MessagePlacement {
+  messageId: number;
+  providerMsgId: string;
+  folder: string | null;
 }
 
 export interface ImapLocation {

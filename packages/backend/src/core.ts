@@ -2024,6 +2024,12 @@ export class BackendCore {
       countPendingBodies: () => read(() => store.countPendingBodies()),
       providerIds: (ids) => read(() => store.providerIds(ids)),
       setting: <T,>(key: string) => read(() => store.setting<T>(key)),
+      // plan 259 stage 2b: an Outlook move's answer, written as it comes: the lists it changed read again now
+      placeMessages: (placements) => write(async () => {
+        const touched = await store.placeMessages(placements);
+        if (touched.length) this.notifyChanged(touched);
+        return touched;
+      }),
       locations: {
         fence: (...args) => write(() => locations.fence(...args)),
         unresolved: (...args) => read(() => locations.unresolved(...args)),

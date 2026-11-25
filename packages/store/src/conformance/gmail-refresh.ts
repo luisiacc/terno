@@ -105,6 +105,24 @@ export function defineGmailRefreshConformance(name: string, harness: StoreHarnes
       await store.sync.updateFlags(accountId, [{ messageId: row.id, expectedProviderMsgId: "promoted", flags: { isRead: false, isStarred: true, inInbox: true, isTrash: false, isSpam: false } }], fresh);
       expect(await pending(store, accountId)).toEqual([]);
     });
+    it("Outlook (plan 259 revision 8): a flag action queued before its Sent copy takes the local row's place by Message-ID is bound too", async () => {
+      const store = await harness.open(); stores.push(store);
+      const { account } = await store.accounts.create({ kind: "outlook", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", now: 1 });
+      const accountId = account.id;
+      await store.sync.beginObservation(accountId, { authoritativeFlags: true });
+      const local = msg({ accountId, providerMsgId: "local:promotion", rfcMessageId: "promotion@example.test", isStarred: false, attachments: [] });
+      await ingest(store, [local]);
+      const row = (await store.debug.snapshot()).messages[0]!;
+      const action = await store.threads.act({ threadIds: [row.threadId], action: "star", signal: null, now: 3 });
+      await ingest(store, [{ ...local, providerMsgId: "AAMkPromoted=" }]);
+      const captured = (await store.sync.beginObservation(accountId, { authoritativeFlags: true }))!;
+      const op = (await store.ops.claimReady(4, 10))[0];
+      expect(op?.id).toBe(action.opIds[0]);
+      await store.ops.complete(op!.id, undefined, 100_002);
+      await store.sync.updateFlags(accountId, [{ messageId: row.id, expectedProviderMsgId: "AAMkPromoted=", flags: { isRead: false, isStarred: false, inInbox: true, isTrash: false, isSpam: false } }], captured);
+      expect((await store.debug.snapshot()).messages[0]).toMatchObject({ id: row.id, providerMsgId: "AAMkPromoted=", isStarred: true });
+      expect((await pending(store, accountId)).map((item) => item.id)).toEqual([row.id]);
+    });
     it("retains current local flag intent until its operation settles", async () => {
       const { store, accountId } = await setup();
       const original = msg({ accountId, providerMsgId: "intent", attachments: [], isRead: false });

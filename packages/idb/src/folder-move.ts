@@ -1,4 +1,4 @@
-import { applyFolderOp, folderReachable, keptInInbox, labelsLeft, labelsMoved, LEAVE_FOLDER, leaveFolderOps, MOVE_TO_FOLDER, type FolderFilterMove, type FolderMoved, type LeaveFolderPayload, type MoveToFolderPayload } from "@terno/store";
+import { applyFolderOp, applyFolderOpOne, folderReachable, keptInInbox, labelsLeft, labelsMoved, LEAVE_FOLDER, leaveFolderOps, MOVE_TO_FOLDER, oneFolderPerMessage, planOneFolderMove, type FolderFilterMove, type FolderMoved, type LeaveFolderPayload, type MoveToFolderPayload } from "@terno/store";
 import { listFolders, pendingFolderOps } from "./folders";
 import { applyMessageAction, applyThreadAction, enqueueOp, recomputeThreads, T, type ActionResult, type Ctx, type R } from "./mail";
 
@@ -12,6 +12,8 @@ const labelsOf = (m: R): string[] => {
 };
 
 const isGmail = (c: Ctx, accountId: number) => T(c, "accounts").get(accountId)?.kind === "gmail";
+/** plan 259: Outlook keeps a message in one folder: a filing is a move, and no thread stays in the Inbox by a copy */
+const isOneFolder = (c: Ctx, accountId: number) => oneFolderPerMessage(T(c, "accounts").get(accountId)?.kind as string | undefined);
 
 /** Which of these threads stay in the Inbox: in it, in a category shown there, in none hidden. */
 function keptThreads(c: Ctx, threads: readonly R[]): Set<number> {
@@ -23,6 +25,19 @@ function keptThreads(c: Ctx, threads: readonly R[]): Set<number> {
 /** The provider ops that put these messages in the folder, and what each one changes (an undo's journal). */
 function queueFolderMoves(c: Ctx, to: { accountId: number; folder: string; from: string | null; now: number }, rows: readonly R[], kept: ReadonlySet<number>): { moved: FolderMoved; opIds: string[] } {
   const { accountId, folder, from, now } = to;
+  if (isOneFolder(c, accountId)) {
+    // plan 259 stage 2b: one move a message, from where it is once what's on its way lands, each one's way back journalled
+    const folders = T(c, "message_folders");
+    const pending = T(c, "ops").count("folder_moves", accountId) > 0;
+    const plan = planOneFolderMove({ accountId, folder, from }, rows.map((m) => {
+      let at = (folders.get(m.id)?.folder as string | undefined) ?? null;
+      if (pending) for (const op of pendingFolderOps(c, m.id)) at = applyFolderOpOne(at, op.kind as string, JSON.parse(op.payload_json as string) as MoveToFolderPayload | LeaveFolderPayload);
+      return { id: m.id as number, thread_id: m.thread_id as number, is_sent: !!m.is_sent, in_inbox: !!m.in_inbox, folder: at };
+    }));
+    const payload: MoveToFolderPayload = { folder, from, keepInbox: false };
+    const id = plan.messageIds.length ? enqueueOp(c, { accountId, kind: MOVE_TO_FOLDER, target: { messageIds: plan.messageIds }, payload }, now) : null;
+    return { moved: plan.moved, opIds: id ? [id] : [] };
+  }
   const gmail = isGmail(c, accountId);
   const locations = T(c, "message_locations");
   // IMAP: your own mail stays in Sent, unless it's all there is or it's in the folder this leaves. Gmail's labels go on the whole conversation
@@ -64,7 +79,8 @@ export function moveMessagesToFolder(c: Ctx, o: FolderFilterMove & { now: number
   const threadIds = [...new Set(rows.map((m) => m.thread_id as number))];
   if (!threadIds.length) return { threadIds, opIds: [] };
   const threads = T(c, "threads");
-  const kept = keptThreads(c, threadIds.flatMap((id) => threads.get(id) ?? []));
+  // plan 259: an Outlook filing moves the message out of the Inbox on the server, whatever its categories say
+  const kept = isOneFolder(c, accountId) ? new Set<number>() : keptThreads(c, threadIds.flatMap((id) => threads.get(id) ?? []));
   const { opIds } = queueFolderMoves(c, { accountId, folder, from: null, now }, rows, kept);
   const archived = applyMessageAction(c, rows.filter((m) => !kept.has(m.thread_id as number)).map((m) => m.id as number), "archive");
   for (const target of archived.targets) {
@@ -86,7 +102,8 @@ export function moveThreadsToFolder(c: Ctx, o: { threadIds: readonly number[]; a
     return t && t.account_id === accountId && !t.in_trash && !t.in_spam ? [t] : [];
   });
   const ids = threads.map((t) => t.id as number);
-  const kept = keptThreads(c, threads);
+  // plan 259 (owner decision): an Outlook filing is a plain move, so no thread stays in the Inbox by its category
+  const kept = isOneFolder(c, accountId) ? new Set<number>() : keptThreads(c, threads);
   const messages = T(c, "messages");
   const rows = ids.flatMap((id) => messages.by("fk_thread_id", id)).filter((m) => !m.is_draft && !m.is_trash && !m.is_spam).sort((x, y) => x.id - y.id);
   const { moved, opIds } = queueFolderMoves(c, { accountId, folder, from, now }, rows, kept);
