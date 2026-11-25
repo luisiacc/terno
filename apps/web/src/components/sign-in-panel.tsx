@@ -131,6 +131,7 @@ function Action({ account, attempt, google, onAsk }: { account: Account; attempt
   const common = { "data-sign-in-action": true, "data-account-id": account.id } as const;
   const run = useRun();
   const method = signInMethod(account.kind);
+  let label: string;
   switch (method) {
   case "password":
     return (
@@ -139,42 +140,46 @@ function Action({ account, attempt, google, onAsk }: { account: Account; attempt
       </Button>
     );
   case "google":
+    label = t("signIn.google");
     break;
-  // plan 259: no Outlook account exists before its sign-in is built (stage 1)
+  // plan 259: Microsoft's page in the browser, as Google's on the desktop (the web has no Outlook accounts)
   case "microsoft":
-    return null;
-  default: unhandled(method);
+    label = t("signIn.microsoft");
+    break;
+  default: return unhandled(method);
   }
-  // the desktop's Google page is open in the browser: say where the user is expected, and offer it again
+  // the desktop's sign-in page is open in the browser: say where the user is expected, and offer it again
   if (attempt?.busy && !WEB) {
     return (
       <div className="flex items-center gap-2">
         <p aria-live="polite" className="flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="sign-in-waiting">
           <Spinner className="size-3.5 text-current" aria-hidden />
-          {t("signIn.google.waiting")}
+          {t("signIn.browser.waiting")}
         </p>
-        <Button size="sm" variant="ghost" onClick={() => void run(account)} data-testid="sign-in-google-again" {...common}>
-          {t("signIn.google.again")}
+        <Button size="sm" variant="ghost" onClick={() => void run(account)} data-testid={`sign-in-${method}-again`} {...common}>
+          {t("signIn.browser.again")}
         </Button>
       </div>
     );
   }
+  // the web's Google popup waits for its script; nothing else does (canStart)
   const ready = canStart(account, google);
-  const failed = google === "failed";
+  const loading = !ready && google === "loading";
+  const failed = !ready && google === "failed";
   const busy = Boolean(attempt?.busy);
   return (
     <Button
       size="sm"
       aria-disabled={(!ready && !failed) || busy || undefined}
       onClick={() => {
-        if (!ready && failed) prepareGoogle();
+        if (failed) prepareGoogle();
         else if (ready && !busy) void run(account);
       }}
-      data-testid="sign-in-google"
+      data-testid={`sign-in-${method}`}
       {...common}
     >
-      {(busy || google === "loading") && <Spinner aria-hidden />}
-      {ready || google !== "loading" ? t("signIn.google") : t("signIn.google.loading")}
+      {(busy || loading) && <Spinner aria-hidden />}
+      {loading ? t("signIn.google.loading") : label}
     </Button>
   );
 }

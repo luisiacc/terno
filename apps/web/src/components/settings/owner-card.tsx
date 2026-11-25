@@ -1,4 +1,4 @@
-import type { Account } from "@terno/core";
+import { signInMethod, unhandled, type Account } from "@terno/core";
 import type { OwnerIdentity } from "@terno/core/rpc";
 import { Button } from "@terno/ui/components/button";
 import { Input } from "@terno/ui/components/input";
@@ -16,10 +16,25 @@ const verifiedDate = (ms: number) => new Intl.DateTimeFormat(localeTag(), { day:
 
 function verifiedLine(owner: OwnerIdentity): string {
   if (owner.migrated) return t("account.owner.migrated");
-  const google = owner.verifiedBy === "google_oauth";
-  if (!owner.verifiedAt) return google ? t("account.owner.verifiedGoogle") : t("account.owner.verifiedImap");
-  const date = verifiedDate(owner.verifiedAt);
-  return google ? t("account.owner.verifiedGoogleOn", { date }) : t("account.owner.verifiedImapOn", { date });
+  const date = owner.verifiedAt ? verifiedDate(owner.verifiedAt) : null;
+  switch (owner.verifiedBy) {
+  case "google_oauth": return date ? t("account.owner.verifiedGoogleOn", { date }) : t("account.owner.verifiedGoogle");
+  case "microsoft_oauth": return date ? t("account.owner.verifiedMicrosoftOn", { date }) : t("account.owner.verifiedMicrosoft");
+  case "imap_login": return date ? t("account.owner.verifiedImapOn", { date }) : t("account.owner.verifiedImap");
+  default: return unhandled(owner.verifiedBy);
+  }
+}
+
+/** what verifying the chosen mailbox takes: its provider's sign-in, or its password typed here */
+function verifyLabel(target: Account | undefined): string {
+  if (!target) return t("account.owner.verifyChange");
+  const method = signInMethod(target.kind);
+  switch (method) {
+  case "google": return t("account.owner.verifyGoogle");
+  case "microsoft": return t("account.owner.verifyMicrosoft");
+  case "password": return t("account.owner.verifyChange");
+  default: return unhandled(method);
+  }
 }
 
 /** Re-verifies another connected mailbox right now and makes it the Terno account. */
@@ -86,7 +101,7 @@ function ChangeOwner({ owner, accounts, onDone }: { owner: OwnerIdentity; accoun
           {t("common.cancel")}
         </Button>
         <Button type="submit" size="sm" disabled={!target || (target.kind === "imap" && !password)} loading={busy} data-testid="change-owner-submit">
-          {target?.kind === "gmail" ? t("account.owner.verifyGoogle") : t("account.owner.verifyChange")}
+          {verifyLabel(target)}
         </Button>
       </div>
     </form>

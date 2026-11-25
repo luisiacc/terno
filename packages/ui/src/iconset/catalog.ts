@@ -64,6 +64,8 @@ export const ICONS = {
   Forward: "Redo01Icon",
   // terno.app (plan 97): the source link
   Github: "GithubIcon",
+  // plan 259: Add account's way in with Google, beside Microsoft's
+  Google: "GoogleIcon",
   HardDrive: "HardDriveIcon",
   ImageOff: "ImageNotFound01Icon",
   ImagePlus: "ImageAdd01Icon",
@@ -97,6 +99,8 @@ export const ICONS = {
   Maximize: "ArrowExpandDiagonal01Icon",
   MessageSquareReply: "MessageSquareReplyIcon",
   MessageSquareText: "Message01Icon",
+  // plan 259: Add account's way in with Microsoft (Outlook)
+  Microsoft: "MicrosoftIcon",
   // plan 125: a checkbox's indeterminate dash
   Minus: "MinusSignIcon",
   Moon: "MoonIcon",

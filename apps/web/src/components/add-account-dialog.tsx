@@ -4,9 +4,10 @@ import { Input } from "@terno/ui/components/input";
 import { Label } from "@terno/ui/components/label";
 import { NumberField } from "@terno/ui/components/number-field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
-import { Mail } from "@terno/ui/icons";
+import { Google, Microsoft } from "@terno/ui/icons";
+import { unhandled, type SignInMethod } from "@terno/core";
 import { t } from "@terno/i18n";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
@@ -20,17 +21,39 @@ const WEB = import.meta.env.VITE_TARGET === "web";
 /** a port: five digits beside the host, no steppers (nobody steps to a port); the arrow keys still do */
 const PORT = { className: "w-16 shrink-0", inputClassName: "px-1.5 text-center", steppers: false, min: 1, max: 65535, format: { useGrouping: false } } as const;
 
-/** Known IMAP/SMTP settings so most people only type email + password. */
+/**
+ * Known IMAP/SMTP settings so most people only type email + password. Outlook.com's addresses have none (plan 259):
+ * its IMAP no longer takes a password, so the form points them to Continue with Microsoft instead.
+ */
 const PRESETS: Record<string, { imap: string; smtp: string; smtpPort: number }> = {
   "icloud.com": { imap: "imap.mail.me.com", smtp: "smtp.mail.me.com", smtpPort: 587 },
   "me.com": { imap: "imap.mail.me.com", smtp: "smtp.mail.me.com", smtpPort: 587 },
   "fastmail.com": { imap: "imap.fastmail.com", smtp: "smtp.fastmail.com", smtpPort: 465 },
-  "outlook.com": { imap: "outlook.office365.com", smtp: "smtp.office365.com", smtpPort: 587 },
-  "hotmail.com": { imap: "outlook.office365.com", smtp: "smtp.office365.com", smtpPort: 587 },
   "yahoo.com": { imap: "imap.mail.yahoo.com", smtp: "smtp.mail.yahoo.com", smtpPort: 465 },
   "gmail.com": { imap: "imap.gmail.com", smtp: "smtp.gmail.com", smtpPort: 465 },
   "proton.me": { imap: "127.0.0.1", smtp: "127.0.0.1", smtpPort: 1025 },
 };
+
+/** Outlook.com's own domains, and their country versions (hotmail.co.uk, outlook.es, live.com.mx) */
+const MICROSOFT_DOMAIN = /^(?:(?:outlook|hotmail|live)\.(?:com|[a-z]{2}|co\.[a-z]{2}|com\.[a-z]{2})|msn\.com)$/;
+
+/** plan 259: an address that connects with Microsoft, not IMAP: its domain, else null */
+export function microsoftDomain(email: string): string | null {
+  const domain = email.trim().split("@")[1]?.toLowerCase() ?? "";
+  return MICROSOFT_DOMAIN.test(domain) ? domain : null;
+}
+
+/** the ways in that sign in in the browser: Google, and on the desktop Microsoft (plan 259: the web's waits for its stage 4) */
+type BrowserMethod = Exclude<SignInMethod, "password">;
+const BROWSER_METHODS: readonly BrowserMethod[] = WEB ? ["google"] : ["google", "microsoft"];
+
+function browserButton(method: BrowserMethod) {
+  switch (method) {
+  case "google": return { icon: <Google />, label: t("account.continueGoogle"), testId: "connect-gmail" };
+  case "microsoft": return { icon: <Microsoft />, label: t("account.continueMicrosoft"), testId: "connect-microsoft" };
+  default: return unhandled(method);
+  }
+}
 
 /** What the add-account form holds: kept by its host, so the first-run setup keeps it across Back (memory only, never stored). */
 export interface AccountDraft {
@@ -66,17 +89,19 @@ interface FormProps {
   onBusy?: (busy: boolean) => void;
 }
 
-/** The sync window, Google, then IMAP: the add-account dialog's body, and the first-run setup's last step (plan 98). */
+/** The sync window, Google and Microsoft, then IMAP: the add-account dialog's body, and the first-run setup's last step (plan 98). */
 export function AddAccountForm({ draft, onDraft, onDone, onBusy }: FormProps) {
   const imapHere = useApp((s) => s.host?.capabilities.imap ?? true);
   const generalWindow = useApp((s) => s.settings?.syncWindowDays ?? 180);
   const syncWindowDays = draft.picked ?? generalWindow;
   const form = draft.form;
-  const [busy, setBusyState] = useState<"gmail" | "imap" | null>(null);
-  const [error, setError] = useState<{ kind: "gmail" | "imap"; text: NonNullable<Attempt["error"]> } | null>(null);
+  // one connection at a time, whichever way; its failure shows under the way it was tried
+  const [busy, setBusyState] = useState<SignInMethod | null>(null);
+  const [error, setError] = useState<{ method: SignInMethod; text: NonNullable<Attempt["error"]> } | null>(null);
+  const hintId = useId();
   const set = (patch: Partial<AccountDraft["form"]>) => onDraft((d) => ({ ...d, form: { ...d.form, ...patch } }));
   const setPicked = (picked: number) => onDraft((d) => ({ ...d, picked }));
-  const setBusy = (b: "gmail" | "imap" | null) => {
+  const setBusy = (b: SignInMethod | null) => {
     setBusyState(b);
     onBusy?.(b !== null);
   };
@@ -92,22 +117,33 @@ export function AddAccountForm({ draft, onDraft, onDone, onBusy }: FormProps) {
     if (WEB) void import("~/web/google").then((g) => g.preloadGoogle()).catch(() => {});
   }, []);
 
-  const connectGmail = async () => {
-    setBusy("gmail");
+  const connect = async (method: BrowserMethod) => {
+    switch (method) {
+    case "google": return WEB ? (await import("~/web/google")).connectGmailWeb(undefined, undefined, { syncWindowDays }) : client.call("accounts.connectGmail", { syncWindowDays });
+    case "microsoft": return client.call("accounts.connectMicrosoft", { syncWindowDays });
+    default: return unhandled(method);
+    }
+  };
+
+  const connectWith = async (method: BrowserMethod) => {
+    setBusy(method);
     setError(null);
     try {
-      const a = WEB ? await (await import("~/web/google")).connectGmailWeb(undefined, undefined, { syncWindowDays }) : await client.call("accounts.connectGmail", { syncWindowDays });
+      const a = await connect(method);
       snack.success(t("account.connected", { email: a.email }));
       onDone();
     } catch (error) {
-      setError({ kind: "gmail", text: attemptError(error)! });
+      setError({ method, text: attemptError(error)! });
     } finally {
       setBusy(null);
     }
   };
 
+  // plan 259: an Outlook.com address typed here connects with Microsoft (where this build has it)
+  const outlook = BROWSER_METHODS.includes("microsoft") ? microsoftDomain(form.email) : null;
+
   const addImap = async () => {
-    setBusy("imap");
+    setBusy("password");
     setError(null);
     try {
       const a = await client.call("accounts.addImap", {
@@ -121,7 +157,7 @@ export function AddAccountForm({ draft, onDraft, onDone, onBusy }: FormProps) {
       snack.success(t("account.connectedSyncing", { email: a.email }));
       onDone();
     } catch (error) {
-      setError({ kind: "imap", text: attemptError(error)! });
+      setError({ method: "password", text: attemptError(error)! });
     } finally {
       setBusy(null);
     }
@@ -152,10 +188,18 @@ export function AddAccountForm({ draft, onDraft, onDone, onBusy }: FormProps) {
           </SelectContent>
         </Select>
       </div>
-      <Button variant="outline" className="h-10 justify-center gap-2" onClick={connectGmail} focusableWhenDisabled disabled={busy !== null} loading={busy === "gmail"} data-testid="connect-gmail">
-        <Mail /> {t("account.continueGoogle")}
-      </Button>
-      {error?.kind === "gmail" && failure}
+      {/* stacked: side by side, "Continue with Microsoft" overflows the first-run's column and longer translations */}
+      <div className="flex flex-col gap-2">
+        {BROWSER_METHODS.map((method) => {
+          const b = browserButton(method);
+          return (
+            <Button key={method} variant="outline" className="h-10 justify-center gap-2" onClick={() => void connectWith(method)} focusableWhenDisabled disabled={busy !== null} loading={busy === method} data-testid={b.testId}>
+              {b.icon} {b.label}
+            </Button>
+          );
+        })}
+      </div>
+      {error && error.method !== "password" && failure}
       {!imapHere && DesktopOnly ? (
         <DesktopOnly feature="imap" />
       ) : (
@@ -173,7 +217,15 @@ export function AddAccountForm({ draft, onDraft, onDone, onBusy }: FormProps) {
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2 space-y-1">
               <Label htmlFor="acc-email">{t("account.email")}</Label>
-              <Input id="acc-email" data-testid="imap-email" type="email" required value={form.email} onChange={(e) => onEmail(e.target.value)} placeholder={t("account.email.placeholder")} />
+              <Input id="acc-email" data-testid="imap-email" type="email" required value={form.email} onChange={(e) => onEmail(e.target.value)} placeholder={t("account.email.placeholder")} aria-describedby={outlook ? hintId : undefined} />
+              {outlook && (
+                <p id={hintId} className="text-xs leading-relaxed text-muted-foreground" data-testid="imap-microsoft-hint">
+                  {t("account.imapMicrosoft", { domain: outlook })}{" "}
+                  <Button variant="link" className="text-xs" focusableWhenDisabled disabled={busy !== null} onClick={() => void connectWith("microsoft")} data-testid="imap-microsoft-connect">
+                    {t("account.continueMicrosoft")}
+                  </Button>
+                </p>
+              )}
             </div>
             <div className="space-y-1">
               <Label htmlFor="acc-name">{t("account.yourName")}</Label>
@@ -198,10 +250,10 @@ export function AddAccountForm({ draft, onDraft, onDone, onBusy }: FormProps) {
               </div>
             </div>
           </div>
-          <Button type="submit" className="w-full" focusableWhenDisabled disabled={busy !== null} loading={busy === "imap"} data-testid="imap-submit">
+          <Button type="submit" className="w-full" focusableWhenDisabled disabled={busy !== null} loading={busy === "password"} data-testid="imap-submit">
             {t("account.connectAccount")}
           </Button>
-          {error?.kind === "imap" && failure}
+          {error?.method === "password" && failure}
         </form>
         </>
       )}

@@ -5,7 +5,7 @@
  * - the incident, per account, while it needs a sign-in: the notice put off ("Later") and the
  *   send notice given. Both end when the account works again (`accountsChanged`), so the next
  *   refusal is news again. Memory only: a restart (or a reload) asks again.
- * - the attempt, per account: busy (the desktop's Google page open in the browser) and the error of
+ * - the attempt, per account: busy (the desktop's Google or Microsoft page open in the browser) and the error of
  *   the latest attempt. A newer attempt makes an older one's result say nothing (an abandoned
  *   Google page timing out five minutes later), whether or not the account needed a sign-in
  *   (Settings changes a healthy account's password through the same path).
@@ -138,7 +138,8 @@ export function attemptError(error: unknown): Attempt["error"] {
 
 /**
  * Signs the account in again: Gmail with Google (the desktop's browser page, or the web's popup,
- * which must be ready), IMAP with the password. True when it worked (the snack says so); the
+ * which must be ready), Outlook with Microsoft (the desktop's browser page, plan 259), IMAP with
+ * the password. True when it worked (the snack says so); the
  * account's row and notice go when the backend says it works.
  */
 export async function signInAgain(account: Account, password?: string): Promise<boolean> {

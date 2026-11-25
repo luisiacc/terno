@@ -117,7 +117,7 @@ export function FirstRun() {
   const titles: Record<Step, [string, string]> = {
     layout: [t("firstRun.layout.title"), t("firstRun.layout.description")],
     look: [t("firstRun.look.title"), t("firstRun.look.description")],
-    account: [t("firstRun.account.title"), t("firstRun.account.description")],
+    account: [t("firstRun.account.title"), import.meta.env.VITE_TARGET === "web" ? t("firstRun.account.descriptionWeb") : t("firstRun.account.description")],
   };
 
   const body = {

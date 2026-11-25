@@ -1,5 +1,6 @@
-import type { Account } from "@terno/core";
+import { unhandled, type Account } from "@terno/core";
 import { t } from "@terno/i18n";
+import { Button } from "@terno/ui/components/button";
 import { openLink } from "~/lib/open-link";
 import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
@@ -8,12 +9,38 @@ import { ConfirmDialog } from "./settings/parts";
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const GOOGLE_PERMISSIONS = "https://myaccount.google.com/permissions";
+/**
+ * plan 259: where a person withdraws an app's access to their Microsoft account (Microsoft has no endpoint for the app
+ * to do it): a personal account's consent page (microsoft.com/consent's own address), a work or school account's My
+ * Apps (Microsoft's "Edit or revoke application permissions in the My Apps portal").
+ */
+export const MICROSOFT_APPS = { personal: "https://account.live.com/consent/Manage", work: "https://myapplications.microsoft.com/" } as const;
 
-/** plan 125: a Gmail account's grant is withdrawn on desktop; the web can't, so it says where to do it */
-function description(account: Account, isOwner: boolean): string {
-  if (account.kind !== "gmail") return isOwner ? t("account.remove.descriptionOwner") : t("account.remove.description");
-  const text = window.ternoDesktop ? t("account.remove.descriptionGoogle") : t("account.remove.descriptionGoogleWeb");
-  return isOwner ? `${text} ${t("account.remove.stays")}` : text;
+/**
+ * plan 125: a Gmail account's grant is withdrawn on desktop; the web can't, so it says where to do it. Plan 259:
+ * Microsoft can't be asked at all, so an Outlook account's says where, for either kind of Microsoft account.
+ */
+function description(account: Account, isOwner: boolean): React.ReactNode {
+  const stays = (text: string) => (isOwner ? `${text} ${t("account.remove.stays")}` : text);
+  switch (account.kind) {
+  case "imap": return isOwner ? t("account.remove.descriptionOwner") : t("account.remove.description");
+  case "gmail": return stays(window.ternoDesktop ? t("account.remove.descriptionGoogle") : t("account.remove.descriptionGoogleWeb"));
+  case "outlook":
+    return (
+      <>
+        {stays(t("account.remove.descriptionMicrosoft"))}
+        <span className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+          <Button variant="link" onClick={() => openLink(MICROSOFT_APPS.personal)} data-testid="account-remove-microsoft-personal">
+            {t("account.remove.microsoftPersonal")}
+          </Button>
+          <Button variant="link" onClick={() => openLink(MICROSOFT_APPS.work)} data-testid="account-remove-microsoft-work">
+            {t("account.remove.microsoftWork")}
+          </Button>
+        </span>
+      </>
+    );
+  default: return unhandled(account.kind);
+  }
 }
 
 /**

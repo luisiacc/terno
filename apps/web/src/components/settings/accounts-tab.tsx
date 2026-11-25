@@ -1,7 +1,7 @@
 import { SentCopies } from "./sent-copies";
 import { RecipientReceipts } from "./recipient-receipts";
 import { localized } from "~/lib/i18n";
-import { allInboxOffered, inAllInbox, separatesTabs, signInMethod, unhandled, type Account, type SignInMethod } from "@terno/core";
+import { allInboxOffered, inAllInbox, separatesTabs, signInMethod, unhandled, type Account, type AccountKind, type SignInMethod } from "@terno/core";
 import type { AppSettings } from "@terno/core/rpc";
 import { Accordion, AccordionItem, AccordionPanel, AccordionTrigger } from "@terno/ui/components/accordion";
 import { Button, GHOST_DANGER_PRESS } from "@terno/ui/components/button";
@@ -61,9 +61,20 @@ function changeLabel(method: SignInMethod): string {
   }
 }
 
+/** The account's service on its row, by name (brands, not translated). */
+export function serviceLabel(kind: AccountKind): string {
+  switch (kind) {
+  case "gmail": return "Gmail";
+  case "outlook": return "Outlook";
+  case "imap": return "IMAP/SMTP";
+  default: return unhandled(kind);
+  }
+}
+
 /**
- * Gmail signs in again with Google (in the browser, Google's own window); IMAP with the password, checked by a live
- * login. The same attempt as the sidebar's sign-in panel (plan 25): its error shows here, under the button.
+ * Gmail signs in again with Google and Outlook with Microsoft (in the browser, their own window); IMAP with the
+ * password, checked by a live login. The same attempt as the sidebar's sign-in panel (plan 25): its error shows here,
+ * under the button.
  */
 function Reconnect({ account }: { account: Account }) {
   const [asking, setAsking] = useState(false);
@@ -307,7 +318,7 @@ function AccountItem({ account, generalWindow, isOwner }: { account: Account; ge
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium">{account.displayName}</span>
           <span className={cn("block truncate text-xs", attention ? "text-destructive-ink" : "text-muted-foreground")}>
-            {account.email} · {account.kind === "gmail" ? "Gmail" : "IMAP/SMTP"} · {status(account)}
+            {account.email} · {serviceLabel(account.kind)} · {status(account)}
           </span>
         </span>
       </AccordionTrigger>

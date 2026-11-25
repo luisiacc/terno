@@ -9,7 +9,7 @@ import { Textarea } from "@terno/ui/components/textarea";
 import { ShieldCheck } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { t } from "@terno/i18n";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { COLOR_LABEL } from "~/lib/color-labels";
 import { setApp, type SettingsTab } from "~/state/app";
 import type { SettingId } from "./search-index";
@@ -314,15 +314,17 @@ export function ConfirmDialog({
   /** where focus goes as it closes (opened from a menu, there's no trigger to go back to) */
   finalFocus?: () => HTMLElement | boolean | null;
 }) {
+  // Cancel, even when the description holds a link ahead of it (Base UI would focus the first tabbable)
+  const cancel = useRef<HTMLButtonElement>(null);
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent data-testid={testId} finalFocus={finalFocus}>
+      <AlertDialogContent data-testid={testId} finalFocus={finalFocus} initialFocus={cancel}>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+          <AlertDialogCancel ref={cancel}>{t("common.cancel")}</AlertDialogCancel>
           <Button
             variant="destructive"
             data-testid={testId ? `${testId}-confirm` : undefined}
