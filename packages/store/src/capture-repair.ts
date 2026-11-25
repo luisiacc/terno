@@ -34,17 +34,17 @@ export interface CaptureRepairs {
   retire(account: number, locator: CaptureLocator, check?: () => void): Promise<void>;
 }
 export function captureKey(locator: CaptureLocator): string {
-  if (locator.kind === "gmail") {
+  if (locator.kind === "gmail" || locator.kind === "outlook") {
     if (typeof locator.providerId !== "string" || !locator.providerId.trim() || locator.providerId.length > CAPTURE_REPAIR_BYTES || new TextDecoder().decode(new TextEncoder().encode(locator.providerId)) !== locator.providerId || locator.providerId.startsWith("local:")) throw new Error("Invalid capture identity");
   } else if (locator.kind === "imap") {
     if (typeof locator.mailbox !== "string" || !locator.mailbox || locator.mailbox.length > CAPTURE_REPAIR_BYTES || new TextDecoder().decode(new TextEncoder().encode(locator.mailbox)) !== locator.mailbox || ![locator.messageId, locator.uidvalidity, locator.uid].every((n) => Number.isSafeInteger(n) && n > 0)) throw new Error("Invalid capture identity");
   } else throw new Error("Invalid capture identity");
-  return JSON.stringify(locator.kind === "gmail" ? ["gmail", locator.providerId] : ["imap", locator.messageId, locator.mailbox, locator.uidvalidity, locator.uid]);
+  return JSON.stringify(locator.kind === "imap" ? ["imap", locator.messageId, locator.mailbox, locator.uidvalidity, locator.uid] : [locator.kind, locator.providerId]);
 }
 export function captureLocator(key: string): CaptureLocator {
   const values: unknown = JSON.parse(key);
   if (!Array.isArray(values)) throw new Error("Invalid capture identity");
-  const locator: CaptureLocator = values[0] === "gmail" ? { kind: "gmail", providerId: values[1] } : { kind: "imap", messageId: values[1], mailbox: values[2], uidvalidity: values[3], uid: values[4] };
+  const locator: CaptureLocator = values[0] === "gmail" || values[0] === "outlook" ? { kind: values[0], providerId: values[1] } : { kind: "imap", messageId: values[1], mailbox: values[2], uidvalidity: values[3], uid: values[4] };
   if (captureKey(locator) !== key) throw new Error("Invalid capture identity");
   return locator;
 }

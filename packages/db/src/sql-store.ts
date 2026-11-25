@@ -111,6 +111,7 @@ import { COMPACT_KEY, compactPages, footprint, incrementalVacuum, removeStorage,
 import { autoReasons, categoryStats, countScope, pendingSuggestions, predictThread, quickActions, resolveScope } from "./categorize-bulk";
 import { startCheckpointWorker, type CheckpointWorker } from "./checkpoint";
 import { adoptProviderThread, deleteMessages, findIngestMessage, ingestMessages, recomputeThreads, setMessageBody } from "./ingest";
+import { oneFolderAccounts, placeReadFolder } from "./message-folders";
 import { tabsIdle, tabsSlice } from "./tabs";
 import { answeredThreads, arrivalRows, backfillSlice, factsIdle, ownMailChanged, referencesOfOwn, resetFacts, startRescan } from "./facts";
 import { changeOwner, claimOwner, getOwner } from "./owner";
@@ -716,6 +717,7 @@ export class SqlMailStore implements MailStore {
         const pending = pendingFlagFields(this.db, accountId, updates.map((u) => u.messageId));
         const threads = new Set<number>();
         const reconciliation: { flagReconcileAccounts?: number[] } = {};
+        const oneFolder = oneFolderAccounts(this.db);
         for (const u of updates) {
           if (this.db.get("SELECT 1 FROM imap_identity_holds WHERE message_id=?", u.messageId)) continue;
           if (observation && (!flagObservationValid(sqlFlags(this.db), accountId, observation) || !u.expectedProviderMsgId)) continue;
@@ -732,6 +734,11 @@ export class SqlMailStore implements MailStore {
             // plan 86: the category, unless a move of the user's owns it until Gmail confirms it
             const category = categoryOf(u.gmailLabels)!;
             if (!owned?.has("category") && acceptFlagObservation(sqlFlags(this.db), u.messageId, "category", observation, category, () => { reconciliation.flagReconcileAccounts ??= [accountId]; })) sets.push(["category", category]);
+          }
+          // plan 259 stage 2a: an Outlook message's folder as the server has it now (a pending move is replayed over it)
+          if (u.folder !== undefined && placeReadFolder(this.db, u.messageId, accountId, u.folder, oneFolder) && !sets.length) {
+            const moved = this.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", u.messageId);
+            if (moved) threads.add(moved.thread_id);
           }
           if (!sets.length) continue;
           // plan 17 (Codex R4): a message becoming sent, or a draft, or spam (plan 154), is your mail appearing or going

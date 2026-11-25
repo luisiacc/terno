@@ -48,7 +48,7 @@ export class SqlProviderStore implements ProviderStore {
   }
 
   async pendingAttachmentBodies(limit: number) {
-    return this.db.all<{ id: number; providerMsgId: string }>("SELECT id, provider_msg_id AS providerMsgId FROM messages WHERE account_id = ? AND attachments_captured = 0 AND provider_msg_id IS NOT NULL AND provider_msg_id NOT LIKE 'local:%' AND NOT EXISTS(SELECT 1 FROM capture_repairs r WHERE r.account_id=messages.account_id AND r.key=json_array('gmail',messages.provider_msg_id) AND r.state='blocked') ORDER BY id LIMIT ?", this.accountId, Math.max(0, Math.min(50, limit)));
+    return this.db.all<{ id: number; providerMsgId: string }>("SELECT id, provider_msg_id AS providerMsgId FROM messages WHERE account_id = ? AND attachments_captured = 0 AND provider_msg_id IS NOT NULL AND provider_msg_id NOT LIKE 'local:%' AND NOT EXISTS(SELECT 1 FROM capture_repairs r WHERE r.account_id=messages.account_id AND r.key IN (json_array('gmail',messages.provider_msg_id), json_array('outlook',messages.provider_msg_id)) AND r.state='blocked') ORDER BY id LIMIT ?", this.accountId, Math.max(0, Math.min(50, limit)));
   }
 
   async pendingBodies(limit: number) {

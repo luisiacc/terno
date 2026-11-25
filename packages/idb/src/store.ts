@@ -31,6 +31,7 @@ import { detachedReply } from "@terno/store";
 import { idbSendCopies } from "./send-copies";
 import { reserveSendCopy, startCopyWire, appendCopyWire, sealCopyWire, acceptCopySubmission, recordCopy, forgetCopySlice, pruneSavedCopySlice, resetCopyWireSlice, copyWarningText, clearRecipientWarning, sendWarningFlags, submissionAccepted } from "@terno/store";
 import { addMessageLabels, carryFolder, clearFolder, confirmRebuilt, countFolderMessages, listFolders, rebuildFolders, replaceFolders } from "./folders";
+import { placeMessage } from "./message-folders";
 import { COOLDOWN_TICKETS, bindCooldown, decodeCooldown, encodeCooldown, mailboxDigest, mailboxKeyValid, PROVIDER_COOLDOWN_KEY, copyOpAdmission } from "@terno/store";
 import { keptThreads, resolveSimilarPage, similarOffers, similarScopesOf } from "./similar";
 import { removeStorage, storageThreads } from "./storage";
@@ -1374,6 +1375,8 @@ export class IdbMailStore implements MailStore {
               const category = categoryOf(u.gmailLabels)!;
               if (!pending.has("category") && acceptFlagObservation(idbFlags(this.c), u.messageId, "category", observation, category, () => { reconciliation.flagReconcileAccounts ??= [accountId]; })) sets.push(["category", category]);
             }
+            // plan 259 stage 2a: an Outlook message's folder as the server has it now (a pending move is replayed over it)
+            if (u.folder !== undefined && placeMessage(this.c, u.messageId, { accountId, folder: u.folder }) && !sets.length) threads.add(identity.thread_id as number);
             if (!sets.length) continue;
             const m = messages.get(u.messageId);
             if (!m || m.account_id !== accountId) continue;

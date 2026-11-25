@@ -25,7 +25,7 @@ export function oneFolderAccounts(db: Db): (accountId: number) => boolean {
  * delta read saw). Absent keeps what's stored; null takes it out of any user folder. Another provider's is ignored.
  * The caller recomputes the thread in the same transaction, which rewrites membership.
  */
-export function placeMessage(db: Db, messageId: number, msg: IncomingMessage, oneFolder: (accountId: number) => boolean): void {
+export function placeMessage(db: Db, messageId: number, msg: Pick<IncomingMessage, "accountId" | "folder">, oneFolder: (accountId: number) => boolean): void {
   if (msg.folder === undefined || !oneFolder(msg.accountId)) return;
   if (msg.folder === null) db.run("DELETE FROM message_folders WHERE message_id = ?", messageId);
   else db.run(
@@ -33,6 +33,18 @@ export function placeMessage(db: Db, messageId: number, msg: IncomingMessage, on
      ON CONFLICT (message_id) DO UPDATE SET account_id = excluded.account_id, folder = excluded.folder WHERE account_id != excluded.account_id OR folder != excluded.folder`,
     messageId, msg.accountId, msg.folder,
   );
+}
+
+/**
+ * Plan 259 stage 2a: a flag update's folder (FlagUpdate.folder), written by ingest's rule; whether it changed (the
+ * caller then recomputes the thread, which rewrites membership).
+ */
+export function placeReadFolder(db: Db, messageId: number, accountId: number, folder: string | null, oneFolder: (accountId: number) => boolean): boolean {
+  if (!oneFolder(accountId)) return false;
+  const was = db.get<{ folder: string }>("SELECT folder FROM message_folders WHERE message_id = ?", messageId)?.folder ?? null;
+  if (was === folder) return false;
+  placeMessage(db, messageId, { accountId, folder }, oneFolder);
+  return true;
 }
 
 /**

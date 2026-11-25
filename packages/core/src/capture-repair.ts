@@ -1,5 +1,7 @@
 export type CaptureLocator =
   | { kind: "gmail"; providerId: string }
+  /** plan 259 stage 2a: an Outlook message by its immutable Graph id (never stored when its capture was refused) */
+  | { kind: "outlook"; providerId: string }
   | { kind: "imap"; messageId: number; mailbox: string; uidvalidity: number; uid: number };
 /**
  * Why a message's own content can't be read safely (plan 267). The database stores the reason as text with no list of

@@ -94,6 +94,11 @@ export interface FlagUpdate {
   flags: Partial<{ isRead: boolean; isStarred: boolean; inInbox: boolean; isTrash: boolean; isSpam: boolean; isSent: boolean; isDraft: boolean }>;
   /** Gmail: the message's labels now (its category decides who it's from, plan 17); absent: unchanged */
   gmailLabels?: string[];
+  /**
+   * Plan 259 stage 2a: an Outlook message's user folder now, as a targeted read or a delta page saw it (another app moved
+   * it): IncomingMessage.folder's rule (null: a role folder; absent: unchanged). Another provider's is ignored.
+   */
+  folder?: string | null;
 }
 
 export interface FlagObservation {

@@ -142,7 +142,8 @@ export class IdbProviderStore implements ProviderStore {
   pendingAttachmentBodies(limit: number) {
     return this.read(() => T(this.c, "messages").by("attachment_pending", this.accountId, 1)
       .filter((m) => m.provider_msg_id != null && !String(m.provider_msg_id).startsWith("local:"))
-      .filter((m) => T(this.c,"capture_repairs").get(this.accountId,captureKey({kind:"gmail",providerId:String(m.provider_msg_id)}))?.state !== "blocked")
+      // a blocked repair of a provider-id message (Gmail's, Outlook's: plan 259 stage 2a) isn't downloaded again
+      .filter((m) => (["gmail", "outlook"] as const).every((kind) => T(this.c,"capture_repairs").get(this.accountId,captureKey({kind,providerId:String(m.provider_msg_id)}))?.state !== "blocked"))
       .slice(0, Math.max(0, Math.min(50, limit))).map((m) => ({ id: m.id as number, providerMsgId: m.provider_msg_id as string })));
   }
 

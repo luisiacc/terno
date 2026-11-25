@@ -1485,7 +1485,7 @@ export class BackendCore {
   }
 
   /**
-   * Plan 267: a page of the repairs list, the user having opened it. A Gmail repair's message was never stored, so what
+   * Plan 267: a page of the repairs list, the user having opened it. A Gmail or Outlook repair's message was never stored, so what
    * it is (subject, sender, date) is read from Gmail's own parse of its headers now, once per message (kept on the row),
    * one at a time and within REPAIR_DETAIL_MS from the start (a provider being made counts): the page shows what's kept
    * by then, the rest the next time it's opened. One account reads for one opening at a time (another window's just lists).
@@ -1494,7 +1494,7 @@ export class BackendCore {
    */
   async listCaptureRepairs(accountId: number, after?: string): Promise<import("@terno/core").CaptureRepairPage> {
     const page = await this.store.captureRepairs.list(accountId, after);
-    const missing = page.items.filter((r) => !r.detail && r.locator.kind === "gmail");
+    const missing = page.items.filter((r) => !r.detail && r.locator.kind !== "imap");
     if (!missing.length || this.stopped || this.describing.has(accountId)) return page;
     const life = this.lifetime(accountId), credentials = this.credentialsOf(accountId);
     const valid = () => this.current(life) && credentials === this.credentialsOf(accountId);
@@ -1504,7 +1504,7 @@ export class BackendCore {
       const provider = await this.provider(accountId).catch(() => null);
       if (!provider?.describe) return;
       for (const r of missing) {
-        if (signal.aborted || !valid() || r.locator.kind !== "gmail") return;
+        if (signal.aborted || !valid() || r.locator.kind === "imap") return;
         const detail = await provider.describe(r.locator.providerId, signal).catch(() => undefined);
         // late (past the deadline), under other credentials or for an account that's gone: dropped
         if (!detail || signal.aborted || !valid()) continue;
@@ -2422,7 +2422,7 @@ export class BackendCore {
         blockCapture: async (locator, reason, revision) => {
           checkCurrent();
           const write = () => this.accountWrite(life, () => this.store.captureRepairs.block(accountId, locator, reason, revision, checkCurrent));
-          if (locator.kind === "gmail") await this.evictions.capture(accountId, pass, locator.providerId, write);
+          if (locator.kind !== "imap") await this.evictions.capture(accountId, pass, locator.providerId, write);
           else await write();
         },
         retireCapture: async (locator) => {

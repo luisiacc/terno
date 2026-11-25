@@ -362,6 +362,36 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       expect(await ids(store, o, "AAMkF2")).toEqual([await threadOf(store, "o3")]);
     });
 
+    it("Outlook (plan 259 stage 2a): a flag update's folder moves the message as ingest's would, with or without flags; absent keeps it, null ends it; another provider's is ignored", async () => {
+      const store = await fresh();
+      const [g] = await withAccounts(store);
+      const o = await outlookAccount(store);
+      await store.folders.replace(o, [{ key: "F1", path: ["One"], selectable: true }, { key: "F2", path: ["Two"], selectable: true }]);
+      await store.folders.replace(g!, [{ key: "F1", path: ["One"], selectable: true }]);
+      const { inserted: [m1, m2] } = await ingest(store, [
+        msg({ accountId: o, providerMsgId: "o1", inInbox: false, folder: "F1" }),
+        msg({ accountId: g!, providerMsgId: "g1" }),
+      ]);
+      const t1 = await threadOf(store, "o1");
+      expect(await ids(store, o, "F1")).toEqual([t1]);
+      // a move another app made, read with no flag change: the folder alone
+      expect((await store.sync.updateFlags(o, [{ messageId: m1!, expectedProviderMsgId: "o1", flags: {}, folder: "F2" }])).touched).toEqual([t1]);
+      expect(await ids(store, o, "F1")).toEqual([]);
+      expect(await ids(store, o, "F2")).toEqual([t1]);
+      // flags without a folder keep it; the same folder again touches nothing
+      await store.sync.updateFlags(o, [{ messageId: m1!, expectedProviderMsgId: "o1", flags: { isRead: true } }]);
+      expect(await ids(store, o, "F2")).toEqual([t1]);
+      expect((await store.sync.updateFlags(o, [{ messageId: m1!, expectedProviderMsgId: "o1", flags: {}, folder: "F2" }])).touched).toEqual([]);
+      // to the Inbox (a role folder), with its flag
+      await store.sync.updateFlags(o, [{ messageId: m1!, expectedProviderMsgId: "o1", flags: { inInbox: true }, folder: null }]);
+      expect(await ids(store, o, "F2")).toEqual([]);
+      // a stale identity moves nothing; another provider's message takes no folder
+      await store.sync.updateFlags(o, [{ messageId: m1!, expectedProviderMsgId: "other", flags: {}, folder: "F1" }]);
+      expect(await ids(store, o, "F1")).toEqual([]);
+      await store.sync.updateFlags(g!, [{ messageId: m2!, expectedProviderMsgId: "g1", flags: {}, folder: "F1" }]);
+      expect(await ids(store, g!, "F1")).toEqual([]);
+    });
+
     it("Outlook (plan 259): a thread is in each folder one of its messages is in; unlisting hides it, relisting shows it again with nothing rebuilt", async () => {
       const store = await fresh();
       const o = await outlookAccount(store);

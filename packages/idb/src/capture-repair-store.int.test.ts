@@ -84,6 +84,25 @@ describe.each(["SQL","IDB","WASM"] as const)("%s capture obligation",kind=>{
     expect((await t.store.captureRepairs.list(other.account.id)).items).toHaveLength(1);
     await t.reopen();expect(await t.store.providerStore(a).pendingAttachmentBodies(50)).toEqual([{id:good!.id,providerMsgId:"cached51"}]);
   });
+  it("plan 259 stage 2a: an Outlook repair by its Graph id: keyed apart from Gmail's, only on an Outlook account, and its blocked message isn't downloaded again",async()=>{
+    const t=await fixture(kind);
+    const {account}=await t.store.accounts.create({kind:"outlook",email:"me@outlook.example",displayName:"Outlook",color:"brown",now:1});
+    const o=account.id, outlook=(id:string)=>({kind:"outlook" as const,providerId:id});
+    const message=(id:string)=>({accountId:o,providerMsgId:id,providerThreadId:null,rfcMessageId:`${id}@example.test`,inReplyTo:null,references:[],from:{name:"",email:"sender@example.test"},to:[],cc:[],bcc:[],subject:id,date:1,snippet:"",bodyText:"Text",bodyHtml:null,bodyState:"full" as const,listId:null,isRead:true,isStarred:false,inInbox:true,isSent:false,isDraft:false,isTrash:false,isSpam:false,hasAttachments:true,size:5});
+    await t.store.sync.ingest([message("AAMk1"),message("AAMk2")],{applyFilters:false,now:1,classifier:null});
+    await t.store.captureRepairs.block(o,outlook("AAMk1"),"mime-parts",0);
+    expect(await t.store.captureRepairs.get(o,outlook("AAMk1"))).toMatchObject({key:JSON.stringify(["outlook","AAMk1"]),locator:outlook("AAMk1"),state:"blocked"});
+    // the same id under Gmail's kind is another repair, and a Gmail account takes no Outlook locator (nor the reverse)
+    expect(await t.store.captureRepairs.get(o,locator("AAMk1"))).toBeNull();
+    await expect(t.store.captureRepairs.block(t.account.id,outlook("x"),"mime-parts",0)).rejects.toMatchObject({code:"STALE"});
+    await expect(t.store.captureRepairs.block(o,locator("x"),"mime-parts",0)).rejects.toMatchObject({code:"STALE"});
+    const provider=t.store.providerStore(o), second=(await provider.messageByProviderId("AAMk2"))!;
+    expect(await provider.pendingAttachmentBodies(50)).toEqual([{id:second.id,providerMsgId:"AAMk2"}]);
+    await t.reopen();
+    expect((await t.store.captureRepairs.list(o)).items.map((r)=>r.locator)).toEqual([outlook("AAMk1")]);
+    expect(await t.store.providerStore(o).pendingAttachmentBodies(50)).toEqual([{id:second.id,providerMsgId:"AAMk2"}]);
+  });
+
   it("retires an obsolete IMAP locator and refuses its late repair completion without touching the new generation",async()=>{
     const t=await fixture(kind);
     const {account}=await t.store.accounts.create({kind:"imap",email:"imap@example.test",displayName:"IMAP",color:"blue",now:1});

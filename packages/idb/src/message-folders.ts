@@ -10,14 +10,18 @@ import { T, type Ctx } from "./mail";
 /**
  * Ingest's side: a message's folder as the provider reports it, on a new row and on an existing one (a move the delta
  * read saw). Absent keeps what's stored; null takes it out of any user folder. Another provider's is ignored. The
- * caller recomputes the thread in the same unit, which rewrites membership.
+ * caller recomputes the thread in the same unit, which rewrites membership. Plan 259 stage 2a: a flag update's folder
+ * (FlagUpdate.folder) is written the same way; whether it changed.
  */
-export function placeMessage(c: Ctx, messageId: number, msg: IncomingMessage): void {
-  if (msg.folder === undefined || !oneFolderPerMessage(T(c, "accounts").get(msg.accountId)?.kind as string | undefined)) return;
+export function placeMessage(c: Ctx, messageId: number, msg: Pick<IncomingMessage, "accountId" | "folder">): boolean {
+  if (msg.folder === undefined || !oneFolderPerMessage(T(c, "accounts").get(msg.accountId)?.kind as string | undefined)) return false;
   const folders = T(c, "message_folders");
   const was = folders.get(messageId);
   if (msg.folder === null) {
-    if (was) folders.deleteRow(was);
+    if (!was) return false;
+    folders.deleteRow(was);
   } else if (!was) folders.insert({ message_id: messageId, account_id: msg.accountId, folder: msg.folder });
   else if (was.folder !== msg.folder || was.account_id !== msg.accountId) folders.update(was, { account_id: msg.accountId, folder: msg.folder });
+  else return false;
+  return true;
 }

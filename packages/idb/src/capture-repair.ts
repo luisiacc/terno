@@ -22,7 +22,8 @@ export function idbCaptureStorage(c: Ctx): CaptureRepairStorage {
     envelope:(a,id)=>{const m=T(c,"messages").get(id);return m && m.account_id===a ? {subject:m.subject,from:m.from_name || m.from_email || undefined,date:m.date} : undefined;},
     messageId:(a,l)=>l.kind === "imap" ? l.messageId : T(c,"messages").by("provider",a,l.providerId)[0]?.id ?? null,
     valid:(a,l)=> {
-      if(l.kind === "gmail") return T(c,"accounts").get(a)?.kind === "gmail";
+      // a provider-id locator belongs to its own kind's account (plan 259 stage 2a: Outlook's)
+      if(l.kind !== "imap") return T(c,"accounts").get(a)?.kind === l.kind;
       const location=T(c,"message_locations").get(l.messageId,l.mailbox);
       return T(c,"messages").get(l.messageId)?.account_id===a && !T(c,"imap_identity_holds").has(l.messageId) && location?.uid===l.uid && location.uidvalidity===l.uidvalidity;
     },
