@@ -190,11 +190,12 @@ export function defineFolderMoveConformance(name: string, harness: StoreHarness)
       expect(r.moved.elsewhere).toHaveLength(3);
       expect(new Set(await list(store, outlook, "F1"))).toEqual(new Set(threads));
       expect(await list(store, outlook, "F2")).toEqual([]);
-      // one move op with every message but the reply, which stays in Sent; no copy kept in the Inbox, and the
-      // archive after it finds nothing left there on the server
-      const ops = (await store.ops.recent(10)).filter((o) => o.kind === "moveToFolder");
-      expect(ops).toHaveLength(1);
-      expect(JSON.parse(ops[0]!.payload_json)).toEqual({ folder: "F1", from: null, keepInbox: false });
+      // one move op with every message but the reply, which stays in Sent; no copy kept in the Inbox, and no archive
+      // after it (Codex code review #3): the op list is that move and nothing else
+      const ops = await store.ops.recent(10);
+      expect(ops.map((o) => o.kind)).toEqual(["moveToFolder"]);
+      expect(r.opIds).toEqual([ops[0]!.id]);
+      expect(JSON.parse(ops[0]!.payload_json)).toEqual({ folder: "F1", from: null, keepInbox: false, fromInbox: [inId] });
       expect((JSON.parse(ops[0]!.target_json) as { messageIds: number[] }).messageIds.sort()).toEqual([inId, archivedId, otherId, soloId].sort());
       // the undo: each back where it was, the Inbox's with its own flag back
       await settleAll(store);
@@ -245,6 +246,30 @@ export function defineFolderMoveConformance(name: string, harness: StoreHarness)
       expect(await list(store, outlook, "F2")).toEqual([]);
       // the same answer again changes nothing
       expect(await provider.placeMessages([{ messageId: b, providerMsgId: "b", folder: null }])).toEqual([]);
+    });
+
+    it("Outlook (Codex code review #3): a filing that never lands archives nothing: what it took out of the Inbox comes back, what the server confirmed stays filed", async () => {
+      const { store } = await fresh();
+      const outlook = await outlookAccount(store);
+      await store.folders.replace(outlook, [{ key: "F1", path: ["F1"], selectable: true }]);
+      const { inserted } = await ingest(store, [
+        msg({ accountId: outlook, providerMsgId: "a", rfcMessageId: "a@t", inInbox: true, folder: null }),
+        msg({ accountId: outlook, providerMsgId: "b", rfcMessageId: "b@t", inInbox: true, folder: null }),
+      ]);
+      const [a, b] = inserted as [number, number];
+      const ta = await threadOf(store, "a"), tb = await threadOf(store, "b");
+      const r = await store.threads.moveToFolder({ threadIds: [ta, tb], accountId: outlook, folder: "F1", from: null, now: NOW });
+      expect(r.leftInbox.sort()).toEqual([ta, tb].sort());
+      expect(await inbox(store)).toEqual([]);
+      const [op] = await store.ops.claimReady(NOW + 1, 1);
+      // the first message's move landed; the second's was refused for good
+      await store.providerStore(outlook).placeMessages([{ messageId: a, providerMsgId: "a", folder: "F1" }]);
+      await store.ops.fail(op!.id, "refused", false, NOW);
+      expect(await inbox(store)).toEqual([tb]);
+      expect(await list(store, outlook, "F1")).toEqual([ta]);
+      // nothing else is queued: no archive takes it there behind the failure
+      expect(await store.ops.claimReady(NOW + 1, 10)).toEqual([]);
+      void b;
     });
 
     it("Outlook (stage 2b): a delta read racing a settlement shows the move while it's on its way, and the next read decides", async () => {

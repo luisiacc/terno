@@ -73,7 +73,7 @@ function queueFolderMoves(db: Db, to: { accountId: number; folder: string; from:
       return { id: m.id, thread_id: m.thread_id, is_sent: !!m.is_sent, in_inbox: !!m.in_inbox, folder: at };
     });
     const plan = planOneFolderMove({ accountId, folder, from }, rows);
-    const payload: MoveToFolderPayload = { folder, from, keepInbox: false };
+    const payload: MoveToFolderPayload = { folder, from, keepInbox: false, ...(plan.moved.fromInbox.length && { fromInbox: plan.moved.fromInbox }) };
     const id = plan.messageIds.length ? enqueueOp(db, { accountId, kind: MOVE_TO_FOLDER, target: { messageIds: plan.messageIds }, payload }, now) : null;
     return { moved: plan.moved, opIds: id ? [id] : [] };
   }
@@ -117,8 +117,8 @@ export function moveMessagesToFolder(db: Db, c: FolderFilterMove & { now: number
   if (!threadIds.length) return { threadIds, opIds: [] };
   // plan 259: an Outlook filing moves the message out of the Inbox on the server, whatever its categories say
   const kept = isOneFolder(db, accountId) ? new Set<number>() : keptThreads(db, byChunks(threadIds, (chunk) => db.all<{ id: number; in_inbox: number }>(`SELECT id, in_inbox FROM threads WHERE id IN (${placeholders(chunk.length)})`, ...chunk)));
-  const { opIds } = queueFolderMoves(db, { accountId, folder, from: null, now }, messages, kept);
-  const archived = applyMessageAction(db, messages.filter((m) => !kept.has(m.thread_id)).map((m) => m.id), "archive");
+  const { opIds, moved } = queueFolderMoves(db, { accountId, folder, from: null, now }, messages, kept);
+  const archived = archiveFiled(db, accountId, moved, () => applyMessageAction(db, messages.filter((m) => !kept.has(m.thread_id)).map((m) => m.id), "archive"));
   for (const target of archived.targets) {
     const id = enqueueOp(db, { accountId: target.accountId, kind: "archive", target: { messageIds: target.messageIds } }, now);
     if (id) opIds.push(id);
@@ -139,7 +139,7 @@ export function moveThreadsToFolder(db: Db, c: { threadIds: readonly number[]; a
   const messages = byChunks(ids, (chunk) => db.all<MoveRow>(`SELECT id, thread_id, is_sent, in_inbox, gmail_labels FROM messages WHERE thread_id IN (${placeholders(chunk.length)}) AND is_draft = 0 AND is_trash = 0 AND is_spam = 0`, ...chunk));
   const { moved, opIds } = queueFolderMoves(db, { accountId, folder, from, now }, messages, kept);
   // after the move's ops: IMAP's archive then finds no copy left in the Inbox, Gmail's takes its label away
-  const archived = applyThreadAction(db, ids.filter((t) => !kept.has(t)), "archive");
+  const archived = archiveFiled(db, accountId, moved, () => applyThreadAction(db, ids.filter((t) => !kept.has(t)), "archive"));
   for (const target of archived.targets) {
     const id = enqueueOp(db, { accountId: target.accountId, kind: "archive", target: { messageIds: target.messageIds } }, now);
     if (id) opIds.push(id);
@@ -147,6 +147,17 @@ export function moveThreadsToFolder(db: Db, c: { threadIds: readonly number[]; a
   // membership reads the queued ops, and the archive recomputed before they were all in
   recomputeThreads(db, ids);
   return { threadIds: ids, opIds, moved, kept: [...kept], archived };
+}
+
+/**
+ * A filing's archive part. IMAP and Gmail queue it as its own op after the move. Outlook's move takes the message out of
+ * the Inbox itself, so only those it moves leave the Inbox here and no op follows (Codex code review #3: a filing that
+ * failed must never archive); `settleFolderOp` puts them back if the move never lands.
+ */
+function archiveFiled(db: Db, accountId: number, moved: FolderMoved, otherwise: () => ActionResult): ActionResult {
+  if (!isOneFolder(db, accountId)) return otherwise();
+  const local = applyMessageAction(db, moved.fromInbox, "archive");
+  return { ...local, targets: [] };
 }
 
 /** Plan 127: see MailStore.threads.leaveFolder. Runs inside the caller's transaction. */
@@ -181,6 +192,15 @@ export function settleFolderOp(db: Db, op: { kind: string; account_id: number; t
         next = labelsLeft(labels, p.folder, p.back, p.stays);
       }
       if (next) db.run("UPDATE messages SET gmail_labels = ? WHERE id = ?", JSON.stringify(next), m.id);
+    }
+  }
+  // plan 259: an Outlook filing that never landed puts back in the Inbox what it took out of it here (what the server
+  // confirmed in the folder stays filed)
+  const p = op.kind === MOVE_TO_FOLDER ? JSON.parse(op.payload_json) as MoveToFolderPayload : undefined;
+  if (!succeeded && p?.fromInbox?.length && isOneFolder(db, op.account_id)) {
+    for (const chunk of byChunks(p.fromInbox, (c) => [c])) {
+      db.run(`UPDATE messages SET in_inbox = 1 WHERE id IN (${placeholders(chunk.length)}) AND account_id = ? AND in_inbox = 0 AND is_trash = 0 AND is_spam = 0
+        AND NOT EXISTS (SELECT 1 FROM message_folders f WHERE f.message_id = messages.id AND f.folder = ?)`, ...chunk, op.account_id, p.folder);
     }
   }
   const threads = [...new Set(rows.map((m) => m.thread_id))];

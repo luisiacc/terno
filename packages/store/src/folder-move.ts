@@ -12,6 +12,11 @@ export interface MoveToFolderPayload {
   folder: string;
   from: string | null;
   keepInbox: boolean;
+  /**
+   * Plan 259: a one-folder (Outlook) filing's messages it took out of the Inbox here. The move is the only op (no
+   * archive after it: Codex code review #3), so one that never lands puts these back in the Inbox.
+   */
+  fromInbox?: number[];
 }
 
 export interface LeaveFolderPayload {

@@ -34,7 +34,7 @@ function queueFolderMoves(c: Ctx, to: { accountId: number; folder: string; from:
       if (pending) for (const op of pendingFolderOps(c, m.id)) at = applyFolderOpOne(at, op.kind as string, JSON.parse(op.payload_json as string) as MoveToFolderPayload | LeaveFolderPayload);
       return { id: m.id as number, thread_id: m.thread_id as number, is_sent: !!m.is_sent, in_inbox: !!m.in_inbox, folder: at };
     }));
-    const payload: MoveToFolderPayload = { folder, from, keepInbox: false };
+    const payload: MoveToFolderPayload = { folder, from, keepInbox: false, ...(plan.moved.fromInbox.length && { fromInbox: plan.moved.fromInbox }) };
     const id = plan.messageIds.length ? enqueueOp(c, { accountId, kind: MOVE_TO_FOLDER, target: { messageIds: plan.messageIds }, payload }, now) : null;
     return { moved: plan.moved, opIds: id ? [id] : [] };
   }
@@ -81,8 +81,8 @@ export function moveMessagesToFolder(c: Ctx, o: FolderFilterMove & { now: number
   const threads = T(c, "threads");
   // plan 259: an Outlook filing moves the message out of the Inbox on the server, whatever its categories say
   const kept = isOneFolder(c, accountId) ? new Set<number>() : keptThreads(c, threadIds.flatMap((id) => threads.get(id) ?? []));
-  const { opIds } = queueFolderMoves(c, { accountId, folder, from: null, now }, rows, kept);
-  const archived = applyMessageAction(c, rows.filter((m) => !kept.has(m.thread_id as number)).map((m) => m.id as number), "archive");
+  const { opIds, moved } = queueFolderMoves(c, { accountId, folder, from: null, now }, rows, kept);
+  const archived = isOneFolder(c, accountId) ? { ...applyMessageAction(c, moved.fromInbox, "archive"), targets: [] } : applyMessageAction(c, rows.filter((m) => !kept.has(m.thread_id as number)).map((m) => m.id as number), "archive");
   for (const target of archived.targets) {
     const id = enqueueOp(c, { accountId: target.accountId, kind: "archive", target: { messageIds: target.messageIds } }, now);
     if (id) opIds.push(id);
@@ -107,8 +107,10 @@ export function moveThreadsToFolder(c: Ctx, o: { threadIds: readonly number[]; a
   const messages = T(c, "messages");
   const rows = ids.flatMap((id) => messages.by("fk_thread_id", id)).filter((m) => !m.is_draft && !m.is_trash && !m.is_spam).sort((x, y) => x.id - y.id);
   const { moved, opIds } = queueFolderMoves(c, { accountId, folder, from, now }, rows, kept);
-  // after the move's ops: IMAP's archive then finds no copy left in the Inbox, Gmail's takes its label away
-  const archived = applyThreadAction(c, ids.filter((t) => !kept.has(t)), "archive");
+  // after the move's ops: IMAP's archive then finds no copy left in the Inbox, Gmail's takes its label away. Outlook's
+  // move takes the message out of the Inbox itself: only those it moves leave it here, and no op follows (Codex code
+  // review #3: a filing that failed must never archive); settleFolderOp puts them back if the move never lands
+  const archived = isOneFolder(c, accountId) ? { ...applyMessageAction(c, moved.fromInbox, "archive"), targets: [] } : applyThreadAction(c, ids.filter((t) => !kept.has(t)), "archive");
   for (const target of archived.targets) {
     const id = enqueueOp(c, { accountId: target.accountId, kind: "archive", target: { messageIds: target.messageIds } }, now);
     if (id) opIds.push(id);
@@ -154,6 +156,18 @@ export function settleFolderOp(c: Ctx, op: { kind: string; account_id: number; t
         next = labelsLeft(labels, p.folder, p.back, p.stays);
       }
       if (next) messages.update(m, { gmail_labels: JSON.stringify(next) });
+    }
+  }
+  // plan 259: an Outlook filing that never landed puts back in the Inbox what it took out of it here (what the server
+  // confirmed in the folder stays filed)
+  const p = op.kind === MOVE_TO_FOLDER ? JSON.parse(op.payload_json) as MoveToFolderPayload : undefined;
+  if (!succeeded && p?.fromInbox?.length && isOneFolder(c, op.account_id)) {
+    const folders = T(c, "message_folders");
+    for (const id of p.fromInbox) {
+      const m = messages.get(id);
+      if (!m || m.account_id !== op.account_id || m.in_inbox || m.is_trash || m.is_spam || folders.get(id)?.folder === p.folder) continue;
+      messages.update(m, { in_inbox: 1 });
+      if (!rows.includes(m)) rows.push(m);
     }
   }
   const threads = [...new Set(rows.map((m) => m.thread_id as number))];
