@@ -8,7 +8,8 @@
  * op (store.compose.queueSend → Provider.execute with a SendPayload). A new
  * provider (Outlook) forwards as soon as its `execute` sends a `send` op,
  * attachments included. To prove it, add its harness to DELIVERIES below:
- * a local stand-in for its server that records what it was asked to deliver.
+ * a local stand-in for its server that records what it was asked to deliver
+ * (Outlook's is the synthetic Microsoft's Graph, plan 259 stage 2b).
  */
 import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
@@ -21,6 +22,7 @@ import type { IncomingMessage } from "@terno/store";
 import imapkit from "imapkit";
 import { SMTPServer } from "smtp-server";
 import { afterEach, describe, expect, it } from "vitest";
+import { SyntheticMicrosoft } from "../../mail/src/test/microsoft.fixture";
 import { Backend, plaintextCipher } from "./backend";
 
 // plan 123: only Terno's own Google clients exist; tests carry a synthetic one
@@ -48,9 +50,9 @@ interface Harness {
   delivered: Delivered[];
 }
 
-function backendOn(providers: ProviderRegistry, clock: { now: number }) {
+function backendOn(providers: ProviderRegistry, clock: { now: number }, microsoftClients?: { preferred: string; clients: { clientId: string; clientSecret: string }[] }) {
   const dir = mkdtempSync(join(tmpdir(), "terno-forward-delivery-"));
-  const backend = new Backend({ googleClients: TEST_GOOGLE, dbPath: join(dir, "mail.db"), providers, version: "test", cipher: plaintextCipher, autoSync: false, instantSearch: false, iconTransport: null, now: () => clock.now });
+  const backend = new Backend({ googleClients: TEST_GOOGLE, ...(microsoftClients && { microsoftClients }), dbPath: join(dir, "mail.db"), providers, version: "test", cipher: plaintextCipher, autoSync: false, instantSearch: false, iconTransport: null, now: () => clock.now });
   const [a, b] = createMemoryTransportPair();
   backend.connect(b, { clientId: "renderer", origin: "renderer" });
   const client = new RpcClient(a);
@@ -114,8 +116,25 @@ async function gmailHarness(): Promise<Harness> {
   return { backend: t.backend, client: t.client, accountId: account.id, clock, delivered };
 }
 
-/** Every provider Terno sends through. A new one (Outlook) adds its harness here. */
-const DELIVERIES = { "IMAP + SMTP": smtpHarness, Gmail: gmailHarness } satisfies Record<string, () => Promise<Harness>>;
+/** Plan 259 stage 2b: Outlook over Microsoft Graph (sendMail with the MIME), the synthetic Microsoft standing in for it. */
+async function outlookHarness(): Promise<Harness> {
+  const ms = await new SyntheticMicrosoft().start();
+  const clock = { now: NOW };
+  const t = backendOn(createRegistry({ microsoft: { endpoints: ms.endpoints(), requestsPerSecond: Infinity } }), clock, { preferred: ms.clientId, clients: [{ clientId: ms.clientId, clientSecret: "" }] });
+  cleanup.push(async () => { await t.close(); await ms.stop(); });
+  const { account } = await t.backend.store.accounts.create({ kind: "outlook", email: ms.mail!, displayName: "Ana", color: "brown", providerConfig: { senderName: "Ana", microsoftSubject: `${ms.tid}:${ms.oid}`, microsoftClientId: ms.clientId, tenant: "organizations" }, now: 1 });
+  const refresh = ms.accessToken().replace("access-", "refresh-");
+  ms.refreshTokens.add(refresh);
+  await t.backend.setSecret(`account:${account.id}:refreshToken`, refresh);
+  await (await t.backend.provider(account.id))!.verify();
+  // Graph takes the recipients from the message's own headers, Bcc included
+  const recipients = (mime: string) => [...mime.split(/\r?\n\r?\n/)[0]!.replace(/\r?\n[ \t]+/g, " ").matchAll(/^(?:To|Cc|Bcc): (.*)$/gim)]
+    .flatMap((m) => [...m[1]!.matchAll(/<([^<>\s]+@[^<>\s]+)>|([^\s,<>"]+@[^\s,<>"]+)/g)].map((e) => e[1] ?? e[2]!));
+  return { backend: t.backend, client: t.client, accountId: account.id, clock, get delivered() { return ms.sent.map((s) => ({ raw: Buffer.from(s.mime), recipients: recipients(s.mime) })); } };
+}
+
+/** Every provider Terno sends through. A new one adds its harness here. */
+const DELIVERIES = { "IMAP + SMTP": smtpHarness, Gmail: gmailHarness, Outlook: outlookHarness } satisfies Record<string, () => Promise<Harness>>;
 
 const turn = () => new Promise((r) => setImmediate(r));
 async function settle() {
