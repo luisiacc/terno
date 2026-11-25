@@ -880,3 +880,122 @@ Two rounds. Each fix came with a test that fails without it.
 - Delete for good: Terno has no such action for any provider.
 - An exact undo of an ordinary location action out of a folder (Move to Inbox, then Undo, goes to Archive: round 1 #4, as IMAP's).
 - The web build (stage 4).
+
+## Exact undo of location actions (design)
+
+### Request (verbatim)
+
+> can we do the 'undo after move to inbox'?
+
+Stage 2b's round 1 #4, skipped then: for an Outlook account, a message in one of the person's folders moved by an ordinary location action (Move to Inbox, and also Trash, Spam, Not spam) is not put back in that folder by Undo. AGENTS.md: "undo is exact".
+
+### What exists
+
+- **The journal.** `actOn` (backend `handlers.ts`) keeps each changed message's `MessageState` (`isRead`, `isStarred`, `inInbox`, `isTrash`, `isSpam`, Gmail's `category`) in the backend's in-memory `UndoJournal`, under the undo id. Undo (`undoActs`) hands it to `threads.restore`. The renderer never sees it, so a new field in it is no RPC change.
+- **The restore.** `restoreMessages` (SQLite `db/actions.ts`, IndexedDB `idb/mail.ts`) writes the snapshot's flags and queues ThreadAction ops from `restoreLocationOps(now, was)`: `moveToInbox`, `archive`, `trash`, `spam`, at most two steps.
+- **Graph's rules** (`graph-writes.ts` `ruleOf`): `archive` moves only the Inbox's messages to Archive; `moveToInbox` all but Sent's and Drafts'; `trash` all; `spam` all but Sent's; `moveToFolder` all, to its folder; `leaveFolder` what's still in the folder, back.
+- **So, on Outlook, an undo lands:**
+  - exactly, when the message was in the Inbox, Deleted Items or Junk (one or two ops, each exact on Graph);
+  - exactly, for a received message that was in Archive (`archive` from the Inbox; from Deleted Items or Junk through the Inbox, two moves);
+  - **in Archive, when it was in a user folder** (the flags of a message in a folder and of one in Archive are the same: out of the Inbox, Trash and Junk);
+  - **in Archive, when it was your own message in Sent Items and was trashed**: `moveToInbox` takes it from Deleted Items to the Inbox, then `archive` to Archive. Trashing a conversation trashes your replies, so this one is common.
+- **The filing's undo** is already exact (`fromInbox`, `fromFolder`, `elsewhere`, `LeaveFolderPayload.role`: "Stage 2b as built" → "The store").
+
+### Design
+
+1. **The snapshot knows the folder (`MessageState.folder?: string | null`).**
+   - Written only by a location action (archive, trash, spam, not spam, back to the Inbox) on a one-folder (Outlook) account's message, as `category` is written only by a category action.
+   - It's the message's user folder once its pending folder ops are replayed (`applyFolderOpOne`, as a filing reads it), when its flags say it's out of the Inbox, Trash and Junk. Otherwise it's null: a role folder, which its flags name.
+   - Absent: another provider, or an action that doesn't move mail. Its undo behaves as today.
+   - An undo of a flag action (read, star) never touches a folder.
+2. **One rule for where a one-folder message goes back: `restoreOneFolderOps(now, was, isSent)` in `@terno/store`.** Both engines call it in place of `restoreLocationOps` when the snapshot has `folder`. `now` is the message as it is, its folder replayed the same way.
+   - Where it is is where it was (flags, and the folder): nothing.
+   - It was in a user folder: one `moveToFolder` `{ folder, from: null, keepInbox: false, fromInbox }`, with `fromInbox` being those this undo takes out of the Inbox here. That's the filing's own op, so these all come from the filing:
+     - the overlay shows it in the folder at once;
+     - Graph moves it from wherever it is (`moves: () => true`);
+     - the answer's folder is written as it comes (`placeMessages`);
+     - a failure brings back the Inbox part (round 2 #7).
+   - It was out of the Inbox, Trash and Junk, in no folder: one new `returnTo` op, `{ role: "archive" | "sent" }`. Sent is for your own message, as the filing's journal reads it (the stage 2b deviation stands: your own message that another app put in Archive comes back to Sent Items).
+   - Otherwise (the Inbox, Deleted Items, Junk, or the mixed Trash-and-Spam): `restoreLocationOps` as today. Each of its ops is exact on Graph for these.
+3. **`returnTo`, a new op kind for one-folder accounts.**
+   - Payload `ReturnToPayload { role: ReturnRole }`.
+   - Group `location`, so it's ordered with the action's own op and never overtakes it.
+   - Flag effects `{ inInbox: 0, isTrash: 0, isSpam: 0 }` in `flag-protocol` (and `operationFlagFields`), so a read on its way can't undo it. It joins `rearmFlagEffects`' location kinds.
+   - Graph: `{ to: ROLES[role], moves: () => true }`. What's already there is only placed (`relocate`'s read first).
+   - Backend: `OP_KINDS`, the diag `opKind` enum, and `OP_SUMMARY` → `backend.op.move` (no new copy).
+   - IMAP, Gmail and the demo provider never get one; they refuse an unknown kind already.
+   - `ops.kind` has no CHECK list, and the folder-move index (`ops_folder_moves`) isn't needed: a role has no folder row to overlay. **No migration.**
+4. **A landed one-folder filing agrees with its folder.** Round 2 #6 takes out of the Inbox what the server confirmed in the folder, among the filing's `fromInbox`. This generalizes it to every message of the op the server confirmed there, with nothing newer on its way: out of the Inbox, Trash and Junk.
+   - A message in a user folder is in none of them: Graph's sync gives a folder without a role no such flag (`graph-api.ts`).
+   - So an undo out of Deleted Items or Junk can't be left in Trash by a flag snapshot read while it was on its way.
+   - A failed one changes as today: `fromInbox` comes back. A trash or spam flag comes back with the action's own flag snapshot (its intent still asks for one).
+5. **The engines.**
+   - SQLite `db/actions.ts` and IndexedDB `idb/mail.ts`: `stateOf` gains the folder for a location action on a one-folder account.
+   - `restoreMessages` reads `is_sent`, the account's kind and the replayed folder (one-folder accounts only), calls the rule, and returns ops that may carry a payload.
+   - `restore` enqueues with the payload, and recomputes the threads after a folder op is queued, because membership reads the queued op.
+   - The replay ("stored folder, then pending folder ops in order") moves out of `queueFolderMoves`' Outlook branch into one helper per engine, used by the filing, the snapshot and the restore.
+6. **IMAP stays as it is.**
+   - An IMAP message's place is a set of locations (mailbox, uidvalidity, uid), one of them possibly a copy kept in a folder. The Inbox may hold a copy beside the folder's. A move changes the UID, which identity holds, `dispatch` and `mappedMove` follow.
+   - An exact IMAP undo would have to plan copies and moves back from a snapshot of locations, through that machinery. That's IMAP's own change, with its own risks, not this seam. One folder string can't say where an IMAP message was.
+   - Gmail's labels are untouched by Move to Inbox (it adds INBOX), so Gmail's undo is already exact.
+
+### Tests
+
+- `@terno/store` unit (`restore-location.test.ts`): `restoreOneFolderOps` for each `was` (a user folder; the Inbox; Archive; Sent; Junk; Deleted Items) against each `now`, own and received. Nothing when nothing moved.
+- Store conformance (`folder-move.ts`), in SQLite, SQLite-WASM and IndexedDB, on an Outlook account:
+  - Move to Inbox, Trash, Spam and Not spam out of a user folder, each undone: one `moveToFolder` back with its `fromInbox`, and the thread in the folder at once.
+  - From each role: the Inbox (archive, trash, spam undone), Archive (Move to Inbox and trash undone: `returnTo` archive), Sent (your own, trashed and undone: `returnTo` sent), Junk (Not spam undone), Deleted Items (Move to Inbox undone).
+  - A read or star undo never queues a move.
+  - The undo landing for part only: placed, the rest failing, and `fromInbox` back for what didn't land.
+  - A message moved elsewhere meanwhile (a delta read put it in another folder) still goes back to the journalled folder.
+  - A landed restore filing clears a Trash flag a stale read put back.
+- `graph-writes.test.ts`: `returnTo` to Archive and to Sent Items from Deleted Items and the Inbox, already there, a partial success; the restore's `moveToFolder` from Deleted Items.
+- e2e `outlook-connect.spec.ts`, in the existing scenario: a message in the folder moved back to the Inbox, then `z`, lands in the folder on Graph and shows there.
+
+### Perf
+
+- The act reads folders only for a location action's changed messages on an Outlook account (one probe for the account's kind). IMAP and Gmail pay an account-kind lookup per action slice, which they already pay in `applyToMessages` (plan 229).
+- The restore reads the same, sliced as today (`runBudgeted`, at most 500 ids a query).
+- The gates touched: `filter-folder.perf` (the filing's replay moved into a helper) and the store's actions perf.
+
+### Out of scope
+
+- IMAP's exact undo (above).
+- A one-move undo into Junk or Deleted Items from the other: `restoreLocationOps` goes through the Inbox (two moves, exact in the end), as today.
+
+### Revisions after the Codex review
+
+The critique made 12 points.
+
+**Taken:**
+
+- **#1, in part: Drafts.** A synced Outlook draft has Archive's flags and no folder, so an undone trash would have taken it to Archive (today it goes through the Inbox to Archive). `returnTo`'s role is now `"archive" | "sent" | "drafts"`: a draft goes back to Drafts, your own message to Sent Items, anything else to Archive.
+  - Storing Graph's actual role per message is not taken. The store keeps no role (stage 0b), and that would be a schema change. The stage 2b deviation stands: your own message that another app put in Archive comes back to Sent Items.
+- **#3: replay every location op on its way, not only folder ops.** Take a message in F with Move to Inbox and Archive still queued. Its flags say Archive, but its stored folder still says F. A trash then would journal F.
+  - The replay (`applyLocationOpOne`) follows Graph's rules: `trash`, `spam`, `moveToInbox` and `returnTo` leave no user folder; `archive` and `notSpam` move nothing that's in a user folder; the folder ops as before.
+  - The filing reads the same replay. A message with Move to Inbox on its way, then filed, is journalled as from the Inbox.
+  - It reads `op_targets` by message (`op_targets_msg`), only for an Outlook account's messages.
+- **#5 and #6: settling a restore's (or any Outlook) filing.**
+  - Landed: what the server confirmed in the folder, among all its targets, is out of the Inbox, Trash and Junk.
+  - Failed or unknown: `fromInbox` as before. Every target also gets a flag snapshot asked for, behind a new barrier, so the next pass reads where it really is. The action's own snapshot may already have been read, leaving nothing to correct a Trash flag this undo cleared.
+  - The guard against newer work now counts only location ops: a queued read or star no longer blocks the repair. It still counts a queued location op of any kind.
+- **#8: `LocalFlagField` leaves out `folder`.** It derived from `keyof MessageState`.
+- **#9, #10: wiring.** `returnTo` is in both engines' `GROUP` tables (`location`), `OP_KINDS`, the diag `opKind` enum and `OP_SUMMARY`. A test shows that IMAP and Gmail restores never queue one. The demo provider accepts any kind, but only an Outlook snapshot can produce one.
+- **#11: batching and the early exit.**
+  - Ops are grouped by destination: account, kind and folder or role.
+  - A message whose flags match but whose place differs is restored.
+  - Membership is recomputed after the ops are queued, in the same transaction, in both engines.
+- **#12: tests.**
+  - Undo before the action's op runs, and while it's running.
+  - Another app's move, to a role and to a user folder.
+  - Partial success, then a terminal failure.
+  - `returnTo` queued before the account's flag clock exists.
+  - Not spam out of a user folder isn't reachable (a message in a user folder isn't spam), so it's tested from Junk only.
+  - A 50k Outlook restore with a populated queue joins `store.perf`.
+
+**Not taken:**
+
+- **#2: an exact op for the Inbox, Junk and Deleted Items too.** Their ThreadAction ops carry the flag effects that protect the undo while it's on its way, and each is exact on Graph unless another app moves the message into Sent Items or Drafts between the action and its undo. Trash and Spam together (a trash of a message in Junk) goes back through the Inbox, exact in the end.
+- **#4: a flag-only undo restoring location flags.** That's today's behaviour for every provider: a snapshot without `folder` takes the old path. The filing's undo is unchanged: its restore's snapshot is the Inbox, which `moveToInbox` serves as before.
+- **#8, retry: a parked `returnTo` retried over a later filing.** Every parked location op (an unknown archive or trash) has this with a later effect-free filing. It needs an explicit retry of an unknown op in the outbox. It isn't new here.
+- **#7** agreed that the settle change stays Outlook-only (it does), and that keeping IMAP out is justified.
