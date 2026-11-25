@@ -73,8 +73,8 @@ export interface AiSummary {
   summary: string;
   items: AiSummaryItem[];
   /**
-   * Plan 279: what changed from `from` on (the first message new to the reader when it was made), when something did.
-   * It stays until newer mail replaces the summary.
+   * Plan 279: what changed from `from` on (the first message new to the reader when it was made); `text` is empty when
+   * nothing did, and `from` still puts its rows first. It stays until newer mail replaces the summary.
    */
   since?: { from: number; text: string };
   /** who wrote it, for its tooltip */

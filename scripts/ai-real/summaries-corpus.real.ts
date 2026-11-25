@@ -159,10 +159,12 @@ describe.skipIf(!RUN)("summaries over the corpus", () => {
           // the same labels thread() gives: what was sent of each message, newest last
           const sent = thread(conv);
           const offset = conv.messages.length - sent.length;
-          const input = from === null ? sent : sent.map((t, i) => (i + offset >= from ? { ...t, isNew: true } : t));
+          // as production does (Codex code review 12): a since only when its first message and one before it are sent
+          const asked = from !== null && from > offset;
+          const input = !asked ? sent : sent.map((t, i) => (i + offset >= from ? { ...t, isNew: true } : t));
           const started = Date.now();
           try {
-            const request = { subject: conv.subject, thread: input, reader: conv.reader, language: readerLanguage(conv), today: conv.today, outputTokens: summaryBudget(null, from !== null).outputTokens };
+            const request = { subject: conv.subject, thread: input, reader: conv.reader, language: readerLanguage(conv), today: conv.today, outputTokens: summaryBudget(null, asked).outputTokens };
             let r = await ai.summarize(request);
             if (process.env.TERNO_AI_SUMMARY_VERIFY === "1") {
               const task = summarizeTask(request);
@@ -173,7 +175,7 @@ describe.skipIf(!RUN)("summaries over the corpus", () => {
               }, { output: "json_schema", signal: new AbortController().signal });
             }
             const newLabels = input.filter((t) => t.isNew).map((t) => t.label);
-            appendFileSync(path, `${JSON.stringify({ id: c.id, set: c.set, language: readerLanguage(c), ms: Date.now() - started, summary: r.summary, items: r.items, ...(from !== null ? { newLabels, since: r.since ?? "" } : {}), ...(tailKind ? { tail: conv.messages.at(-1)!.text } : {}) })}\n`);
+            appendFileSync(path, `${JSON.stringify({ id: c.id, set: c.set, language: readerLanguage(c), ms: Date.now() - started, summary: r.summary, items: r.items, ...(asked ? { newLabels, since: r.since ?? "" } : {}), ...(tailKind ? { tail: conv.messages.at(-1)!.text } : {}) })}\n`);
           } catch (e) {
             failed++;
             appendFileSync(path, `${JSON.stringify({ id: c.id, set: c.set, language: readerLanguage(c), ms: Date.now() - started, error: e instanceof Error ? `${e.name}: ${e.message}`.slice(0, 200) : "unknown" })}\n`);

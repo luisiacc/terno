@@ -64,17 +64,24 @@ function put(threadId: number, ui: SummaryUi): void {
 }
 
 /**
- * Plan 279: the earliest message someone else wrote that each conversation's latest showing drew unread. What's shown is
- * read after 450 ms (plan 225), before anyone clicks Summarize or a body that was downloading arrives, so a request by
- * hand sends this. Every drawn copy until the showing ends counts (a cached copy drawn read can come back unread inside
- * the dwell: Codex review 2); the earliest wins. Kept past the showing, so Try again from elsewhere still has it.
+ * Plan 279: where the last run of unread mail began in each conversation's latest showing. What's shown is read after
+ * 450 ms (plan 225), before anyone clicks Summarize or a body that was downloading arrives, so a request by hand sends
+ * this. The backend's rule: the run after the last message that's yours or read, over what isn't trash or spam, so a
+ * reminder left unread further up doesn't take in what was read after it (Codex code review 2, 6). Every drawn copy until
+ * the showing ends counts (a cached copy drawn read can come back unread inside the dwell: Codex review 2); the earliest
+ * wins. Kept past the showing, so Try again from elsewhere still has it.
  */
 const shownUnread = new Map<number, number>();
 
-export function noteShown(threadId: number, messages: readonly Pick<MessageDetail, "id" | "isRead" | "isSent">[], fresh: boolean): void {
+type Shown = Pick<MessageDetail, "id" | "isRead" | "isSent" | "isTrash" | "isSpam">;
+
+export function noteShown(threadId: number, all: readonly Shown[], fresh: boolean): void {
   if (fresh) shownUnread.delete(threadId);
-  const unread = messages.findIndex((m) => !m.isRead && !m.isSent);
-  if (unread < 0) return;
+  const messages = all.filter((m) => !m.isTrash && !m.isSpam);
+  let anchor = messages.length - 1;
+  while (anchor >= 0 && !messages[anchor]!.isRead && !messages[anchor]!.isSent) anchor--;
+  const unread = anchor + 1;
+  if (unread >= messages.length) return;
   const was = shownUnread.get(threadId);
   const at = was === undefined ? -1 : messages.findIndex((m) => m.id === was);
   if (at < 0 || unread < at) shownUnread.set(threadId, messages[unread]!.id);

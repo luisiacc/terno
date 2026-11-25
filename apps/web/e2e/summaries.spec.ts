@@ -206,7 +206,8 @@ test.describe("summaries (plan 132)", () => {
     await page.locator("[data-ready]").waitFor();
     await openSubject(page, "The signing");
     // the dwell reads what's shown (plan 225) before anyone asks: the request still starts at what was drawn unread
-    await expect(page.getByTestId("message-unread-dot")).toHaveCount(0);
+    // (the backend's word, not a dot: an unread message drawn open shows none: Codex code review 10)
+    await expect.poll(async () => (await server.backend.store.debug.snapshot()).messages.find((m) => m.providerMsgId === "since-2")?.isRead).toBe(true);
     await page.getByTestId("action-summarize").click();
     const block = page.getByTestId("summary-block");
     await expect(block).toHaveAttribute("data-state", "ready");

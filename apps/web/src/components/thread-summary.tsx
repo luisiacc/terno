@@ -117,13 +117,16 @@ type View = "since" | "whole";
 function Ready({ summary, messages, said }: { summary: AiSummary; messages: readonly MessageDetail[]; said: readonly string[] }) {
   const open = useSummaries((s) => s.open);
   const mine = useApp((s) => s.accounts).map((a) => a.email);
-  // plan 279: what's new opens first, every time (the choice isn't kept); a since whose message isn't drawn has no label
-  const start = summary.since ? messages.find((m) => m.id === summary.since!.from) : undefined;
-  const [view, setView] = useState<View>("since");
-  const since = start && summary.since ? summary.since : null;
-  const shown: View = since ? view : "whole";
-  const text = shown === "since" && since ? since.text : summary.summary;
-  const all = newFirst(summary.items, messages, since?.from ?? null);
+  // plan 279: where the new mail starts, while that message is here (trashed since, it isn't: Codex code review 7)
+  const start = summary.since ? messages.find((m) => m.id === summary.since!.from && !m.isTrash && !m.isSpam) : undefined;
+  // what's new opens first, every time (the choice isn't kept), and again when a newer summary replaces this one: held
+  // with the summary it was made for, so nothing remounts under the keyboard (Codex code review 9)
+  const [view, setView] = useState<{ at: number; view: View }>({ at: summary.generatedAt, view: "since" });
+  // an empty text still puts the new mail's rows first (Codex code review 5); only a text gets its view
+  const since = start && summary.since?.text ? summary.since : null;
+  const chosen: View = since ? (view.at === summary.generatedAt ? view.view : "since") : "whole";
+  const text = chosen === "since" && since ? since.text : summary.summary;
+  const all = newFirst(summary.items, messages, start ? start.id : null);
   // in this view only: the summary itself (and Copy) keeps every item
   const items = all.filter((i) => !ASKED.has(i.kind) || !repeatsItem(i.text, said));
   return (
@@ -148,7 +151,7 @@ function Ready({ summary, messages, said }: { summary: AiSummary; messages: read
           {/* plan 279 (Codex and Fable reviews): the panel's first line, on the paragraph's edge, not the header (two labels
               don't fit beside the title, Copy and who wrote it); it closes with the card. Swapped in place: the rows stay */}
           {since && start && (
-            <ToggleGroup aria-label={t("summary.view")} variant="segmented" size="sm" value={[shown]} onValueChange={(v: string[]) => v[0] && setView(v[0] as View)} className="mb-2 max-w-full" data-testid="summary-view">
+            <ToggleGroup aria-label={t("summary.view")} variant="segmented" size="sm" value={[chosen]} onValueChange={(v: string[]) => v[0] && setView({ at: summary.generatedAt, view: v[0] as View })} className="mb-2 max-w-full" data-testid="summary-view">
               <ToggleGroupItem value="since" data-testid="summary-view-since" className="min-w-0 px-2.5 text-xs">
                 {sinceLabel(start.date)}
               </ToggleGroupItem>
@@ -158,7 +161,7 @@ function Ready({ summary, messages, said }: { summary: AiSummary; messages: read
             </ToggleGroup>
           )}
           {/* plain text, never HTML: a model's markup has no way in. Plan 162: the card's width (the measure left a dead column) */}
-          <p data-testid="summary-text" data-view={shown} className="max-w-(--read-max) text-sm leading-relaxed wrap-anywhere whitespace-pre-line text-pretty">
+          <p data-testid="summary-text" data-view={chosen} className="max-w-(--read-max) text-sm leading-relaxed wrap-anywhere whitespace-pre-line text-pretty">
             {text}
           </p>
           {items.length > 0 && <ul className="mt-2 max-w-(--read-max)" data-testid="summary-items">{items.map((item) => <Item key={`${item.messageId}:${item.kind}:${item.text}`} item={item} mine={mine} from={messages.find((m) => m.id === item.messageId)} source={messageSource(messages, item.messageId, mine)} short={messageSourceShort(messages, item.messageId)} />)}</ul>}
@@ -198,7 +201,8 @@ export default function ThreadSummary({ detail, said = [] }: { detail: ThreadDet
   const ui = useSummaries((s) => s.byThread.get(threadId));
   const ai = useApp((s) => s.settings?.ai);
   // any change of the messages or their bodies may change what the backend can show
-  const sources = detail.messages.map((m) => `${m.id}:${m.bodyState}`).join(",");
+  // (plan 279: and whether each is in the trash: a trashed message changes what's shown, a since's start among them)
+  const sources = detail.messages.map((m) => `${m.id}:${m.bodyState}:${m.isTrash ? 1 : 0}`).join(",");
   useEffect(() => {
     void loadSummary(threadId);
     bodyArrivedForSummary(threadId);
@@ -233,8 +237,7 @@ export default function ThreadSummary({ detail, said = [] }: { detail: ThreadDet
   const content = (() => {
     switch (ui?.kind) {
       case "ready":
-        // plan 279: a new summary opens on its own since
-        return <Ready key={ui.summary.generatedAt} summary={ui.summary} messages={detail.messages} said={said} />;
+        return <Ready summary={ui.summary} messages={detail.messages} said={said} />;
       case "running":
         return (
           <Line

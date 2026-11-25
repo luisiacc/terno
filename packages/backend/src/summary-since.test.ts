@@ -26,7 +26,7 @@ const m = (over: Partial<SummarySourceMessage> = {}): SummarySourceMessage => ({
   markedAt: null,
   ...over,
 });
-const at = (o: { snapshot?: number | null; stored?: number | null } = {}) => ({ floor: FLOOR, snapshot: o.snapshot ?? null, stored: o.stored ?? null });
+const at = (o: { snapshot?: number | null; stored?: { from: number; through: number } | null } = {}) => ({ floor: FLOOR, snapshot: o.snapshot ?? null, stored: o.stored ?? null });
 
 describe("plan 279: where what's new starts", () => {
   it("the last run of unread mail after what was read, its first message included", () => {
@@ -77,17 +77,24 @@ describe("plan 279: where what's new starts", () => {
 
   it("nothing newer: a since already stored stays, unless the reader wrote after it or it's gone", () => {
     const list = [m(), m(), m()];
-    expect(sinceBoundary(list, at({ stored: list[1]!.id }))).toBe(list[1]!.id);
-    expect(sinceBoundary(list, at({ stored: list[0]!.id }))).toBeNull();
-    expect(sinceBoundary([...list, m({ own: true })], at({ stored: list[1]!.id }))).toBeNull();
-    expect(sinceBoundary(list, at({ stored: 999_999 }))).toBeNull();
+    const kept = { from: list[1]!.id, through: list[2]!.id };
+    expect(sinceBoundary(list, at({ stored: kept }))).toBe(list[1]!.id);
+    expect(sinceBoundary(list, at({ stored: { from: list[0]!.id, through: list[2]!.id } }))).toBeNull();
+    expect(sinceBoundary([...list, m({ own: true })], at({ stored: kept }))).toBeNull();
+    expect(sinceBoundary(list, at({ stored: { from: 999_999, through: 999_999 } }))).toBeNull();
     // newer mail replaces it
     const newer = [...list, m({ read: false })];
-    expect(sinceBoundary(newer, at({ stored: list[1]!.id }))).toBe(newer[3]!.id);
+    expect(sinceBoundary(newer, at({ stored: kept }))).toBe(newer[3]!.id);
+  });
+
+  it("mail after what it read, read elsewhere and unmarked, isn't folded into an old since (Codex code review 1)", () => {
+    const list = [m(), m(), m()];
+    expect(sinceBoundary([...list, m()], at({ stored: { from: list[1]!.id, through: list[2]!.id } }))).toBeNull();
   });
 
   it("reads a stored result's since, and nothing from one without", () => {
-    expect(storedSince(JSON.stringify({ summary: "s", items: [], since: { from: 7, text: "t" } }))).toBe(7);
+    expect(storedSince(JSON.stringify({ summary: "s", items: [], since: { from: 7, through: 9, text: "" } }))).toEqual({ from: 7, through: 9 });
+    expect(storedSince(JSON.stringify({ summary: "s", items: [], since: { from: 7, text: "t" } }))).toBeNull();
     expect(storedSince(JSON.stringify({ summary: "s", items: [] }))).toBeNull();
     expect(storedSince("{")).toBeNull();
     expect(storedSince(null)).toBeNull();

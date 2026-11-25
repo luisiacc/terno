@@ -1,5 +1,11 @@
 import type { SummarySourceMessage } from "@terno/store";
 
+/** Plan 279: a stored result's since: where it starts, and the newest message it read (Codex code review 1). */
+export interface StoredSince {
+  from: number;
+  through: number;
+}
+
 /**
  * Plan 279: where what's new to the reader starts, as a message id (null: no since for this summary).
  *
@@ -9,13 +15,14 @@ import type { SummarySourceMessage } from "@terno/store";
  * reader's own, or read and not new: one stray old unread message, or Mark as unread used as a reminder, doesn't make
  * the whole conversation new, and a reply of theirs means they were there. A since needs something before it.
  *
- * Nothing new, but a since already stored (`stored`): a summary made again with no newer mail (a body arriving late,
- * Summarize again) keeps it, while that message is there and nothing of the reader's comes after it: a since stays
- * until newer mail replaces it (the owner, plan 279).
+ * Nothing new, but a since already stored (`stored`): a summary made again with nothing newer than what it read (a body
+ * arriving late, Summarize again) keeps it, while that message is there and nothing of the reader's comes after it: a
+ * since stays until newer mail replaces it (the owner, plan 279). Mail that came after it, read elsewhere and unmarked,
+ * isn't folded into it (Codex code review 1).
  */
-export function sinceBoundary(messages: readonly SummarySourceMessage[], o: { floor: number; snapshot: number | null; stored: number | null }): number | null {
+export function sinceBoundary(messages: readonly SummarySourceMessage[], o: { floor: number; snapshot: number | null; stored: StoredSince | null }): number | null {
   const list = messages.filter((m) => !m.trash && !m.spam);
-  const at = (id: number | null) => (id === null ? -1 : list.findIndex((m) => m.id === id));
+  const at = (id: number | null | undefined) => (id == null ? -1 : list.findIndex((m) => m.id === id));
   const seen = at(o.snapshot);
   // the same test the worker's eligibility uses: an expired or left-behind mark says nothing
   const fresh = (m: SummarySourceMessage) => m.markedAt !== null && m.markedAt >= o.floor && !m.code;
@@ -24,16 +31,17 @@ export function sinceBoundary(messages: readonly SummarySourceMessage[], o: { fl
   while (anchor >= 0 && isNew(list[anchor]!, anchor)) anchor--;
   if (anchor < 0) return null;
   if (anchor < list.length - 1) return list[anchor + 1]!.id;
-  const kept = at(o.stored);
-  return kept > 0 && !list.slice(kept).some((m) => m.own) ? list[kept]!.id : null;
+  const kept = at(o.stored?.from);
+  if (kept <= 0 || list.slice(kept).some((m) => m.own || m.id > o.stored!.through)) return null;
+  return list[kept]!.id;
 }
 
-/** The since a stored result carries, if any: which message it starts at. */
-export function storedSince(bodyJson: string | null): number | null {
+/** The since a stored result carries, if any (its text may be empty: where it starts still orders the rows). */
+export function storedSince(bodyJson: string | null): StoredSince | null {
   if (!bodyJson) return null;
   try {
-    const from = (JSON.parse(bodyJson) as { since?: { from?: unknown } }).since?.from;
-    return typeof from === "number" ? from : null;
+    const since = (JSON.parse(bodyJson) as { since?: { from?: unknown; through?: unknown } }).since;
+    return typeof since?.from === "number" && typeof since.through === "number" ? { from: since.from, through: since.through } : null;
   } catch {
     return null;
   }

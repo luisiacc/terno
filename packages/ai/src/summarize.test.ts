@@ -195,12 +195,11 @@ describe("the prompt", () => {
       await expect(ask([answer("Ana now proposes the 19th.")]).run).resolves.toMatchObject({ since: "" });
     });
 
-    it("is held to the summary's checks: one repair, then it goes and the card stands", async () => {
-      const once = ask([answer("Ana moved it to tomorrow."), answer("Ana moved it from the 12th to the 19th.")]);
-      await expect(once.run).resolves.toMatchObject({ since: "Ana moved it from the 12th to the 19th." });
-      expect(once.t.requests).toHaveLength(2);
-      const still = ask([answer("Ana moved it to tomorrow."), answer("Ana moved it to tomorrow, $500 more.")]);
-      await expect(still.run).resolves.toMatchObject({ summary: "Ana now proposes the 19th.", since: "" });
+    it.each(["Ana moved it to tomorrow.", "Ana wants $500 more.", "Ana moved it to Monday."])("is held to the summary's checks, never repaired: %s goes, and the card and its rows stand", async (since) => {
+      const rows = [{ kind: "action", text: "Bring the deposit", message: "m2" }];
+      const { run, t } = ask([{ ...answer(since), items: rows }]);
+      await expect(run).resolves.toMatchObject({ summary: "Ana now proposes the 19th.", items: rows, since: "" });
+      expect(t.requests).toHaveLength(1);
     });
 
     it("the fake answers one from the first new message", async () => {

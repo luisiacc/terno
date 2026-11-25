@@ -125,4 +125,15 @@ describe("plan 279: a summary by hand starts at what the showing drew unread", (
     await summarize(T);
     expect(asked("ai.summarize").at(-1)!.params).not.toHaveProperty("since");
   });
+
+  it("a reminder left unread further up doesn't take in what was read after it, and trash or spam is never it (Codex code review 2, 6)", async () => {
+    useSummaries.setState({ byThread: new Map() });
+    noteShown(T, [m(1, true), m(2, false), m(3, true), m(4, false)], true);
+    await summarize(T);
+    expect(asked("ai.summarize").at(-1)!.params.since).toBe(4);
+    useSummaries.setState({ byThread: new Map() });
+    noteShown(T, [m(1, true), { ...m(2, false), isTrash: true }, m(3, false), { ...m(5, false), isSpam: true }], true);
+    await summarize(T);
+    expect(asked("ai.summarize").at(-1)!.params.since).toBe(3);
+  });
 });

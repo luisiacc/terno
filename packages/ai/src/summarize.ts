@@ -304,17 +304,18 @@ export function summarizeTask(input: SummarizeInput): StructuredTask<Wire, Threa
       // plan 279: held to the summary's checks; one still wrong after the repair goes, and the card stands
       const written = since ? clean(w.since ?? "", SINCE_MAX_CHARS) : "";
       // one the summary already says adds nothing: the card shows the whole summary then (Fable review 2)
-      const changed = written && !repeats(said, written) ? written : "";
+      // held to the summary's checks, but never sent back: a repair rewrites the whole card, and could lose a row the
+      // first answer had right (Codex code review 4). One that fails goes, and the card stands
+      const changed = written && !repeats(said, written) && !unsupported(written, source, amounts) && !FLOATING.test(written) ? written : "";
       // only what will show: a row that's going anyway is nothing to send back
-      const shown = [summary, ...(changed ? [changed] : []), ...items.map((i) => i.text)];
+      const shown = [summary, ...items.map((i) => i.text)];
       const floating = shown.map((t) => FLOATING.exec(t)?.[0]).find(Boolean);
       const problem = shown.map((t) => unsupported(t, source, amounts)).find(Boolean) ?? (floating ? `"${floating}" has no date beside it: write the day and the month, or how the mail puts it if it doesn't say` : null);
       if (problem && !told && !attempt?.last) {
         told = true;
         return { ok: false, error: problem };
       }
-      const kept = changed && !unsupported(changed, source, amounts) ? changed : "";
-      return { ok: true, value: { summary, items: items.filter((i) => !unsupported(i.text, source, amounts)), ...(since ? { since: kept } : {}) } };
+      return { ok: true, value: { summary, items: items.filter((i) => !unsupported(i.text, source, amounts)), ...(since ? { since: changed } : {}) } };
     },
   };
 }

@@ -397,8 +397,12 @@ describe("what's sent", () => {
     });
     await client.call("settings.update", { summaries: { enabled: true } });
     const snippet = "s".repeat(180);
+    // every one of the 50 (Codex code review 11: `||=` stopped at the first)
     let first = 0;
-    for (let i = 0; i < 50; i++) first ||= (await arrive({ providerThreadId: "long", date: START - 90_000 + i, snippet, bodyText: `body ${i} ${"z".repeat(2000)}`, from: { name: "A rather long display name for a person", email: `someone-with-a-long-address-${i}@books.test` } }, false)).thread;
+    for (let i = 0; i < 50; i++) {
+      const { thread } = await arrive({ providerThreadId: "long", date: START - 90_000 + i, snippet, bodyText: `body ${i} ${"z".repeat(2000)}`, from: { name: "A rather long display name for a person", email: `someone-with-a-long-address-${i}@books.test` } }, false);
+      first = thread;
+    }
     await backend.store.threads.act({ threadIds: [first], action: "markRead", signal: null, now: START });
     const last = await arrive({ providerThreadId: "long", subject: "q".repeat(900), bodyText: `${WORDS}${"y".repeat(40_000)}` });
     await until(async () => expect((await row(last.thread))?.state).toBe("ready"));
@@ -1201,7 +1205,7 @@ describe("plan 279: what's new since you read", () => {
     expect(promptOf(s.model.requests[0]!)).toMatch(/<message id="m2"[^\n]* new="yes">/);
   });
 
-  it("a conversation with nothing read before asks for no since, and an empty since stores none", async () => {
+  it("a conversation with nothing read before asks for no since; an empty since keeps where the new mail starts, for its rows (Codex code review 5)", async () => {
     const s = await setup();
     s.model.answer = () => replying(SINCE);
     const only = await s.arrive();
@@ -1215,7 +1219,8 @@ describe("plan 279: what's new since you read", () => {
     const thanks = await s.arrive({ providerThreadId: "since" });
     await until(async () => expect((await s.row(thanks.thread))?.state).toBe("ready"));
     expect(promptText(s.model.requests[1]!.system)).toContain('- "since":');
-    expect(JSON.parse((await s.row(thanks.thread))!.bodyJson!)).not.toHaveProperty("since");
+    expect(JSON.parse((await s.row(thanks.thread))!.bodyJson!).since).toMatchObject({ from: thanks.id, text: "" });
+    await expect(s.read(thanks.thread)).resolves.toMatchObject({ summary: { since: { from: thanks.id, text: "" } } });
   });
 
   it("by hand, what the reader saw unread in this showing; the same again reuses it, with or without the snapshot", async () => {

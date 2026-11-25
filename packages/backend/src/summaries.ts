@@ -148,7 +148,8 @@ function viewOf(row: AiSummaryRow, sources: SummarySources): AiSummary | null {
   try {
     const body = JSON.parse(row.bodyJson) as Pick<AiSummary, "summary" | "items"> & { since?: { from?: unknown; text?: unknown } };
     const from = body.since?.from, text = body.since?.text;
-    const there = typeof from === "number" && typeof text === "string" && !!text && sources.messages.some((m) => m.id === from && !m.trash && !m.spam);
+    // an empty text still says where the new mail starts: its rows go first (Codex code review 5)
+    const there = typeof from === "number" && typeof text === "string" && sources.messages.some((m) => m.id === from && !m.trash && !m.spam);
     return { threadId: row.threadId, summary: body.summary, items: body.items, ...(there ? { since: { from: from as number, text: text as string } } : {}), provider: row.provider as AiProviderId, model: row.model, generatedAt: row.generatedAt };
   } catch {
     return null;
@@ -349,7 +350,8 @@ export class SummaryWorker {
     }, 0);
     // plan 279 (Fable review 5): a short reply from a person in a conversation that had a summary is what changed
     // ("Let's do Thursday instead"): it's summarized, and a courtesy reply gets an empty since
-    if (words < MIN_WORDS && !(row.bodyJson !== null && marks.some((m) => m.person === true))) {
+    // (a fresh mark only: an expired one left behind by a failure waives nothing: Codex code review 8)
+    if (words < MIN_WORDS && !(row.bodyJson !== null && marks.some((m) => m.person === true && m.markedAt! >= floor))) {
       await store.aiSummaries.drop(row.threadId, row.throughMessageId);
       return "next";
     }
@@ -477,8 +479,9 @@ export class SummaryWorker {
       const messageId = labels.get(item.message);
       return messageId === undefined ? [] : [{ kind: item.kind, text: item.text, messageId }];
     });
-    // plan 279: kept only when asked and something changed; empty, the card shows the whole summary alone
-    const changed = since !== null && result.since ? { from: since, text: result.since } : null;
+    // plan 279: kept whenever asked: where it starts orders the rows even when nothing changed (an empty text: the card
+    // shows the whole summary alone), and what it read lets a later run tell newer mail from it
+    const changed = since !== null ? { from: since, through: Math.max(...labels.values()), text: result.since ?? "" } : null;
     const bodyJson = JSON.stringify({ summary: result.summary, items, ...(changed ? { since: changed } : {}) });
     const outcome = await store.aiSummaries.finish({ ...base, now: this.host.now(), contentHash, promptVersion: SUMMARY_PROMPT_VERSION, language, model: ai.model, provider: ai.providerId, endpoint: ai.endpoint, bodyJson });
     if (outcome !== "written") {
@@ -487,7 +490,7 @@ export class SummaryWorker {
       return { outcome };
     }
     this.host.ready(sources.threadId);
-    return { outcome, summary: { threadId: sources.threadId, summary: result.summary, items, ...(changed ? { since: changed } : {}), provider: ai.providerId, model: ai.model, generatedAt: base.now } };
+    return { outcome, summary: { threadId: sources.threadId, summary: result.summary, items, ...(changed ? { since: { from: changed.from, text: changed.text } } : {}), provider: ai.providerId, model: ai.model, generatedAt: base.now } };
   }
 
   /** What an open reader shows. Reading is never gated; spam and trash show nothing, and bring it back with Not spam. */
