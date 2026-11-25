@@ -155,6 +155,8 @@ export interface AiTasks {
   fill(input: ComposeInput, options: FillOptions): Promise<FillResult>;
   /** plan 142: what a message you sent promises, who it waits on, what it keeps */
   readSentMail(input: SentMailInput, signal?: AbortSignal): Promise<SentMailResult>;
+  /** plan 280: what a person's message promises you, and which of their open promises to you it keeps, moves or withdraws */
+  readTheirMail(input: import("./their-promises").TheirMailInput, signal?: AbortSignal): Promise<import("./their-promises").TheirMailResult>;
   /** plan 204: what a message you got has with a date that matters to you, and which of your open items it settles */
   readDates(input: DatedInput, signal?: AbortSignal): Promise<DatedResult>;
   /** plan 249: the What matters box's words into checked rules (sees no mail) */

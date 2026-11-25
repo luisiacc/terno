@@ -10,6 +10,7 @@ export { ACTION_PROMPT_VERSION, CHECK_GROUPS_MAX, CHECK_NAME_CHARS, CHECK_SUBJEC
 export { FOLLOWUP_PROMPT_VERSION, fitSentMail, followupBudget, FOLLOWUP_ANSWERING_CHARS, FOLLOWUP_FILES_MAX, FOLLOWUP_OPEN_MAX, FOLLOWUP_OWN_CHARS, FOLLOWUP_RECIPIENTS_MAX, FOLLOWUP_REQUESTS_MAX, REQUEST_VERDICTS, sentMailPrompt, type RequestVerdict, type SentMailInput, type SentMailResult } from "./followups";
 export { DATED_AGAIN_CHARS, DATED_AGAIN_SENTENCES, DATED_FROM_CHARS, DATED_MAX_TOKENS, DATED_PROMPT_VERSION, DATED_SUBJECT_CHARS, DATED_TEXT_CHARS, datedBudget, datedPrompt, fitDates, type DatedInput, type DatedResult } from "./dated";
 export { ASK_ANSWER_MAX_TOKENS, ASK_ANSWER_RULES, ASK_MESSAGE_OVERHEAD_CHARS, ASK_PROMPT_VERSION, answerFilter, answerPrompt, askBudget, cleanAnswer, fitAskPrompt, fitPlanEarlier, planAskPrompt, planAskTask, type AnswerFromMailInput, type AnswerFromMailOptions, type AnswerFromMailResult, type AskMaterial, type AskPlanResult, type AskStatusWord, type PlanAskInput } from "./ask";
+export { fitTheirMail, readTheirMailTask, theirMailPrompt, theirsBudget, THEIRS_ANSWERING_CHARS, THEIRS_OWED_MAX, THEIRS_PROMPT_VERSION, THEIRS_TEXT_CHARS, type TheirMailInput, type TheirMailResult } from "./their-promises";
 export * from "./json";
 export * from "./ladder";
 export * from "./tasks";

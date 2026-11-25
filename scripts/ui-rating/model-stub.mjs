@@ -348,7 +348,7 @@ export function sentMail(prompt) {
   const asks = sentences.some((s) => s.endsWith("?")) || /let me know|quedo atent|quedo a la espera/i.test(own);
   void es;
   // plan 210 (iteration 3): no verdict on a request (a reply leaves it as it is)
-  return { promises, expectsReply: asks, awaiting: asks ? people.map((p) => p.label) : [], kept: [], answers: [] };
+  return { promises, expectsReply: asks, awaiting: asks ? people.map((p) => p.label) : [], kept: [], answers: [], theirs: [], owedKept: [] };
 }
 
 /** Plan 144: mail that asks something wants an answer; thanks, notices and receipts don't. */
@@ -577,6 +577,8 @@ const SYSTEM_STARTS = [
   ["ask_plan", "You turn a question about someone's own email into searches"],
   ["action_plan", "You turn one sentence about someone's email into a rule"],
   ["action_check", "Someone asked for something to be done to their email"],
+  // plan 280 (before sent_mail, whose first words it shares)
+  ["their_mail", "You read one email a person sent to the reader"],
   ["sent_mail", "You read one email a person sent"],
   ["needs_reply", "Someone received this email and hasn't answered"],
   ["newsletter_digest", "Each <mail> block below is one automated email"],
@@ -611,6 +613,8 @@ export function answerFor(body) {
     case "action_plan": return json(actionPlan(prompt, system));
     case "action_check": return json(actionCheck(prompt));
     case "sent_mail": return json(sentMail(`${system}\n${prompt}`));
+    // plan 280: the rated screens show no promise of theirs
+    case "their_mail": return json({ promises: [], kept: [], moved: [], withdrawn: [] });
     case "needs_reply": return json(needsReply(prompt));
     case "newsletter_digest": return json(digest(system, prompt));
     case "filter": return json(filter(prompt, system));

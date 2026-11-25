@@ -9,6 +9,7 @@ import { describeProvider, isLocalProvider, resolveBaseURL } from "./providers";
 import { planAskTask, runAnswerFromMail } from "./ask";
 import { checkCandidatesTask, countedTransport, planActionTask } from "./actions";
 import { readSentMailTask } from "./followups";
+import { readTheirMailTask } from "./their-promises";
 import { readDatesTask } from "./dated";
 import { compilePreferencesTask, matchPreferencesTask, readWantedTask } from "./preferences";
 import { digestTask } from "./digest";
@@ -151,6 +152,10 @@ export function createAi(config: ProviderConfig, options: AiOptions = {}): AiTas
 
     readSentMail(input, signal) {
       return run(readSentMailTask(input), signal);
+    },
+
+    readTheirMail(input, signal) {
+      return run(readTheirMailTask(input), signal);
     },
 
     readDates(input, signal) {

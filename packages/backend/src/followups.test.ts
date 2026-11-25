@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AiError, createAi, type AiOptions, type Completion, type CompletionRequest, type ProviderConfig } from "@terno/ai";
-import type { FollowupRow } from "@terno/core";
+import { THEIRS_ITEM, type FollowupRow } from "@terno/core";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { demoRegistry } from "@terno/mail";
 import { msg } from "@terno/store/conformance";
@@ -25,7 +25,7 @@ afterEach(async () => {
 });
 
 // (plan 210, iteration 5: a promise names no part of its day unless it says so)
-const reply = (o: { promises?: unknown[]; expectsReply?: boolean; awaiting?: string[]; kept?: unknown[]; answers?: unknown[] } = {}): Completion => ({ text: JSON.stringify({ promises: (o.promises ?? []).map((p) => ({ partOfDay: null, ...(p as object) })), expectsReply: o.expectsReply ?? false, awaiting: o.awaiting ?? [], kept: o.kept ?? [], answers: o.answers ?? [] }), stop: "end" });
+const reply = (o: { promises?: unknown[]; expectsReply?: boolean; awaiting?: string[]; kept?: unknown[]; answers?: unknown[] } = {}): Completion => ({ text: JSON.stringify({ promises: (o.promises ?? []).map((p) => ({ partOfDay: null, ...(p as object) })), expectsReply: o.expectsReply ?? false, awaiting: o.awaiting ?? [], kept: o.kept ?? [], answers: o.answers ?? [], theirs: [], owedKept: [] }), stop: "end" });
 const says = { promises: [{ text: "send the contract", quote: "I'll send the contract", to: "r1", due: null }] };
 
 async function setup(o: { enabled?: boolean } = {}) {
@@ -77,6 +77,19 @@ describe("the local checks (plan 142 §3)", () => {
   const recipients = [{ label: "r1", name: "Tom", email: "tom@acme.test" }, { label: "r2", name: "Bot", email: "noreply@acme.test" }];
   const base = { ownText: "I'll send the contract by Friday.", recipients, open: new Map<string, FollowupRow>(), sentAt: NOW, nudgeAfterDays: 5 };
   const row = { id: 9, revision: 2 } as FollowupRow;
+
+  it("plan 280: a promise of theirs your words record is a person's, in your words; no wait beside it; what your words say arrived closes theirs", () => {
+    const own = "Thanks Tom, as agreed you'll send the contract Thursday. Got the deck, thanks!";
+    const theirs = (over = {}) => ({ text: "send you the contract", quote: "as agreed you'll send the contract Thursday", who: "r1", due: "2026-11-12", partOfDay: null, firm: true, ...over });
+    const r = checkSentMail({ promises: [], expectsReply: true, awaiting: ["r1"], kept: [], theirs: [theirs(), theirs({ quote: "words nobody wrote" }), theirs({ who: "r2" })] }, { ...base, ownText: own });
+    expect(r.rows).toEqual([expect.objectContaining({ kind: "theirs", item: THEIRS_ITEM, personEmail: "tom@acme.test", dueDay: "2026-11-12", dated: true, firm: true })]);
+    // the promise is the wait: none beside it for Tom
+    expect(r.rows.some((x) => x.kind === "awaiting")).toBe(false);
+    const owed = new Map([["t1", { id: 4, revision: 1 } as FollowupRow]]);
+    expect(checkSentMail({ promises: [], expectsReply: false, awaiting: [], kept: [], owedKept: [{ label: "t1", evidence: "Got the deck, thanks!" }] }, { ...base, ownText: own, owed }).owedKept).toEqual([{ id: 4, revision: 1 }]);
+    expect(checkSentMail({ promises: [], expectsReply: false, awaiting: [], kept: [], owedKept: [{ label: "t1", evidence: "still waiting on the deck" }] }, { ...base, ownText: "Hi, still waiting on the deck.", owed }).owedKept).toEqual([]);
+    expect(checkSentMail({ promises: [], expectsReply: false, awaiting: [], kept: [], owedKept: [{ label: "t9", evidence: "Got the deck, thanks!" }] }, { ...base, ownText: own, owed }).owedKept).toEqual([]);
+  });
 
   it("a quote not in your words is dropped: the model can't invent one", () => {
     expect(checkSentMail({ promises: [{ text: "x", quote: "words nobody wrote", to: "r1", due: null }], expectsReply: false, awaiting: [], kept: [] }, base).rows).toEqual([]);

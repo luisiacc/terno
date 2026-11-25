@@ -70,7 +70,7 @@ async function setup(row: Partial<DatedWrite> = {}) {
       transport: {
         complete: async (req) =>
           req.schema?.name === "sent_mail"
-            ? { text: JSON.stringify({ promises: [], expectsReply: false, awaiting: [], kept: [], answers: [] }), stop: "end" as const }
+            ? { text: JSON.stringify({ promises: [], expectsReply: false, awaiting: [], kept: [], answers: [], theirs: [], owedKept: [] }), stop: "end" as const }
             : { text: JSON.stringify({ items: [], settled: [], moved: [], replaced: [] }), stop: "end" as const },
       },
     });

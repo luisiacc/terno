@@ -3,6 +3,7 @@ import { keyRef } from "@terno/i18n";
 import { fakeAnswer, fakeAskPlan, isAnswerRequest } from "./ask";
 import { fakeActionPlan, fakeCheck } from "./actions";
 import { fakeSentMail } from "./followups";
+import { fakeTheirMail } from "./their-promises";
 import { fakeDates } from "./dated";
 import { fakeCompile, fakeMatch, fakeWanted } from "./preferences";
 import { fakeDigest } from "./digest";
@@ -117,6 +118,7 @@ export function fakeTransport(options: { failFirstAttempt?: boolean } = {}): Mod
       if (schema?.name === "action_plan") return { text: JSON.stringify(fakeActionPlan(prompt, promptText(system))), stop: "end" };
       if (schema?.name === "action_check") return { text: JSON.stringify(fakeCheck(prompt)), stop: "end" };
       if (schema?.name === "sent_mail") return { text: JSON.stringify(fakeSentMail(prompt)), stop: "end" };
+      if (schema?.name === "their_mail") return { text: JSON.stringify(fakeTheirMail(prompt)), stop: "end" };
       if (schema?.name === "dated_mail") return { text: JSON.stringify(fakeDates(prompt)), stop: "end" };
       if (schema?.name === "what_matters_preferences") return { text: JSON.stringify(fakeCompile(prompt)), stop: "end" };
       if (schema?.name === "preference_matches") return { text: JSON.stringify(fakeMatch(prompt)), stop: "end" };

@@ -133,6 +133,10 @@ export function jevTasks(config: ProviderConfig, options: AiOptions = {}): AiTas
       // i18n-ignore: a caller's bug: JEV only picks among choices
       throw new AiError("JEV writes no text", "unsupported");
     },
+    readTheirMail() {
+      // i18n-ignore: a caller's bug: JEV only picks among choices
+      throw new AiError("JEV writes no text", "unsupported");
+    },
     readDates() {
       // i18n-ignore: a caller's bug: JEV only picks among choices
       throw new AiError("JEV writes no text", "unsupported");

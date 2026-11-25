@@ -1,5 +1,5 @@
 import { AiError, FOLLOWUP_ANSWERING_CHARS, FOLLOWUP_OPEN_MAX, FOLLOWUP_OWN_CHARS, FOLLOWUP_PROMPT_VERSION, FOLLOWUP_REQUESTS_MAX, fitSentMail, followupBudget, type AiTasks, type SentMailResult } from "@terno/ai";
-import { addressKey, addressOnly, automatedLevel, dayKeyOf, dueCutoff, byUrgency, followupDue, NUDGE_DEFAULT, followupWakeAt, normalizeText, promiseOver, readCorpus, refKey, replyAnswers, replyRecipients, SCAN_DAYS, SCAN_MESSAGES_MAX, SCAN_PROMISE_OVERDUE_MS, SCAN_WAIT_STALE_MS, validFollowupDate, withNeeds, withoutQuotes, followupNotice, type AiErrorKind, type DatedRow, type FollowupRow, type FollowupsSnapshot, type MailNotice, type ThreadSummary } from "@terno/core";
+import { addressKey, addressOnly, automatedLevel, dayKeyOf, dueCutoff, byUrgency, followupDue, theirDue, THEIRS_ITEM, NUDGE_DEFAULT, followupWakeAt, normalizeText, promiseOver, readCorpus, refKey, replyAnswers, replyRecipients, SCAN_DAYS, SCAN_MESSAGES_MAX, SCAN_PROMISE_OVERDUE_MS, SCAN_WAIT_STALE_MS, validFollowupDate, withNeeds, withoutQuotes, followupNotice, type AiErrorKind, type DatedRow, type FollowupRow, type FollowupsSnapshot, type MailNotice, type ThreadSummary } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import { RpcError, type AppSettings } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
@@ -9,6 +9,7 @@ import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import { UI_LOCALE_KEY } from "./forwarding";
 import { contextOf, directsReader, namingWords, norm as plain, paidSaid, plainEvidence, saidClauses, sameObject, sentencesOf, sentencesWith } from "./dated-evidence";
 import { promiseMoment } from "./promise-time";
+import { saysNotYet } from "./their-promises";
 
 const MAX_DELAY = 2 ** 31 - 1;
 const PAGE = 50;
@@ -291,7 +292,7 @@ function namesBoth(promise: string, request: string): boolean {
   return [...namingWords(promise, { names: false })].some((w) => asked.has(w) && !HOLDS_WORDS.has(w));
 }
 
-export function checkSentMail(result: SentMailResult, input: { ownText: string; recipients: readonly { label: string; name: string; email: string }[]; open: ReadonlyMap<string, FollowupRow>; requests?: ReadonlyMap<string, Pick<DatedRow, "id" | "revision"> & Partial<Pick<DatedRow, "senderKey" | "text" | "kind">>>; sentAt: number; nudgeAfterDays: number }): { rows: FollowupWrite[]; kept: { id: number; revision: number }[]; verdicts: Verdict[] } {
+export function checkSentMail(result: SentMailResult, input: { ownText: string; recipients: readonly { label: string; name: string; email: string }[]; open: ReadonlyMap<string, FollowupRow>; requests?: ReadonlyMap<string, Pick<DatedRow, "id" | "revision"> & Partial<Pick<DatedRow, "senderKey" | "text" | "kind">>>; owed?: ReadonlyMap<string, FollowupRow>; sentAt: number; nudgeAfterDays: number }): { rows: FollowupWrite[]; kept: { id: number; revision: number }[]; verdicts: Verdict[]; owedKept: { id: number; revision: number }[] } {
   const own = norm(input.ownText);
   const byLabel = new Map(input.recipients.map((r) => [r.label, r]));
   // plan 161, real models: Haiku names who it means ("Arjun Ramírez") where the prompt asks for a label ("r1"). A name
@@ -376,6 +377,21 @@ export function checkSentMail(result: SentMailResult, input: { ownText: string; 
     verdicts[i] = { request: v.request, verdict: "holding", item: held.item };
     holding.splice(holding.indexOf(held), 1);
   }
+  // plan 280 (§3): a promise of theirs your words record ("as agreed, you'll send it Thursday"), in your words, owed by a
+  // person you wrote to; the store takes it only from a send that's yours for certain (revision 7)
+  const owes = new Set<string>();
+  (result.theirs ?? []).forEach((p, i) => {
+    const who = p.who ? person.get(p.who) : undefined;
+    if (!who || !isPerson(who.email) || !own.includes(norm(p.quote))) return;
+    const when = theirDue({ madeAt: input.sentAt, due: validFollowupDate(p.due, input.sentAt), nudgeAfterDays: input.nudgeAfterDays });
+    rows.push({ kind: "theirs", item: THEIRS_ITEM + i, text: p.text, quote: p.quote, personName: who.name || null, personEmail: who.email, dueAt: when.dueAt, dated: when.dated, dueDay: when.dueDay, firm: p.firm, ...(p.partOfDay ? { partOfDay: p.partOfDay } : {}) });
+    owes.add(addressKey(who.email));
+  });
+  // plan 280 (§3): an open promise of theirs your words say arrived ("got the contract, thanks"), never "still waiting on it"
+  const owedKept = (result.owedKept ?? []).flatMap((k) => {
+    const row = input.owed?.get(k.label);
+    return row && ownPieces(k.evidence, input.ownText) && !saysNotYet(k.evidence) ? [{ id: row.id, revision: row.revision }] : [];
+  });
   if (result.expectsReply) {
     // round 19 (María's "let me check with Chris … and I'll get back to you", read as waiting on Jessica): a reply that holds
     // a person's request and asks them nothing waits on no reply of theirs: the next word is the reader's (the prompt's own
@@ -386,7 +402,8 @@ export function checkSentMail(result: SentMailResult, input: { ownText: string; 
         const from = v.verdict === "holding" ? asked.get(v.request.id)?.senderKey : null;
         return from === undefined || (!!from && from === addressKey(email));
       });
-    const who = result.awaiting.flatMap((label) => person.get(label) ?? []).filter((r) => isPerson(r.email) && !(quiet && heldFrom(r.email)));
+    // plan 280 (revision 7): who owes a promise your message records is waited on by it, never a wait beside it
+    const who = result.awaiting.flatMap((label) => person.get(label) ?? []).filter((r) => isPerson(r.email) && !(quiet && heldFrom(r.email)) && !owes.has(addressKey(r.email)));
     const first = who[0];
     if (first) {
       const { dueAt, dated } = followupDue({ kind: "awaiting", sentAt: input.sentAt, due: null, nudgeAfterDays: input.nudgeAfterDays });
@@ -402,7 +419,7 @@ export function checkSentMail(result: SentMailResult, input: { ownText: string; 
     const renews = renewedPromise(r, input.open.values(), { kept: keptIds, sentAt: input.sentAt });
     if (renews) r.renews = renews;
   }
-  return { rows, kept, verdicts };
+  return { rows, kept, verdicts, owedKept };
 }
 
 /** A check's own rules: past these it's over, and nothing old jumps. */
