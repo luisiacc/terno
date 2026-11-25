@@ -1,6 +1,12 @@
+// @vitest-environment jsdom
+// (jsdom: the list's store reaches lib/appearance through What matters' state since plan 251, and it reads the document)
 import type { ThreadSummary } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { expect, it, vi } from "vitest";
+
+vi.hoisted(() => {
+  (globalThis as Record<string, unknown>).matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
+});
 
 type Params = { cursor?: unknown; limit?: number; unreadOnly?: boolean; keepIds?: number[]; query?: string; scope?: unknown };
 const calls: { method: string; params: Params }[] = [];

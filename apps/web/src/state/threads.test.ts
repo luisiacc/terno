@@ -1,5 +1,11 @@
+// @vitest-environment jsdom
+// (jsdom: the list's store reaches lib/appearance through What matters' state since plan 251, and it reads the document)
 import type { ThreadDetail } from "@terno/core";
 import { beforeEach, expect, it, vi } from "vitest";
+
+vi.hoisted(() => {
+  (globalThis as Record<string, unknown>).matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
+});
 
 const calls: number[] = [];
 type Pending = { id: number; resolve: (d: ThreadDetail) => void; reject: (e: Error) => void };
