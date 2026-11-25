@@ -149,7 +149,7 @@ export const en = {
     },
     followups: {
       title: "No answer? It comes back.",
-      body: "Ask someone a question and hear nothing for a few days, and Terno brings it back to you, with a follow-up one click away.",
+      body: "Ask someone a question, archive it, and hear nothing for a few days: Terno brings it back to you, with a follow-up one click away.",
       points: [],
     },
     digest: {

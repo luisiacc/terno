@@ -138,7 +138,7 @@ export const es: SiteCopy = {
     },
     followups: {
       title: "¿Sin respuesta? Vuelve.",
-      body: "Si haces una pregunta y en unos días nadie contesta, Terno te la recuerda, con un seguimiento a un clic.",
+      body: "Haz una pregunta, archívala, y si en unos días nadie contesta, Terno te la recuerda, con un seguimiento a un clic.",
       points: [],
     },
     digest: {
