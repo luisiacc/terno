@@ -39,7 +39,8 @@ of questions. The owner chose:
 The header's question becomes a text field (`AskTitle`, `ask-title`), with the same words, size and place as now.
 
 - **At rest** it reads as the title it was: no box, no ring, the text in the ink, truncated with an ellipsis. Hover shows
-  a quiet wash (`bg-muted`) and the text cursor. The wash reaches 4 px before the text and 6 px after it, so the words stay
+  only the text cursor (the owner, 2026-11-24: no wash on hover). Focused or changed, it has a quiet wash (`bg-muted`),
+  which reaches 4 px before the text and 6 px after it, so the words stay
   where they are now (`-ms-1 ps-1 pe-1.5`; 6 px crowded the Sparkles glyph in the screenshots).
 - **Focused** (a click or Tab), it keeps the wash, and the whole question is selected, so typing replaces it. Like a
   browser's address bar, a second click places the caret. At the end of the header, before the buttons, a quiet hint says
