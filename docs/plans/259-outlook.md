@@ -209,6 +209,8 @@ A PKCE popup against the SPA redirect, with tokens that live 24 h as Microsoft g
 
 Mail and tokens go only to `login.microsoftonline.com` and `graph.microsoft.com`, the user's own mail provider (plan 97). Nothing else is contacted. Identity uses `/me` and the id_token, with no photo or contacts scopes (plan 258's lesson).
 
+Stage 2b: a send with a file of 3 MiB or more uploads it through a Graph upload session, whose URL Graph hands back "in the `https://outlook.office.com` domain" ([outlook-large-attachments](https://learn.microsoft.com/graph/outlook-large-attachments)). That host is also the user's own mail provider (Exchange Online). The provider sends the file's bytes there and nowhere else: an upload URL on any other host is refused before a byte leaves, and it carries no access token (the page says to send no Authorization header).
+
 ## Out of scope
 
 - On-premises Exchange (EWS) and IMAP with XOAUTH2.
@@ -739,3 +741,142 @@ The renderer's Outlook account, on the desktop. Nothing in the provider, the sto
   5. Tests added for the owner change to an Outlook mailbox.
   6. Tests added for the dialog's administrator note.
 - **Still open from stage 1.** Reconnect's `login_hint` is the mailbox address, not the id_token's `preferred_username`. Keeping the latter needs the backend and the stored config, outside this UI stage.
+
+## Stage 2b as built
+
+The write side of the Graph provider, the store's Outlook move semantics, and stage 1's open note. Outlook mail can be read, flagged, moved, filed and sent from the desktop app.
+
+### What Microsoft's docs say, and what each choice rests on (checked 2026-11-24)
+
+- **Flags** ([message-update](https://learn.microsoft.com/graph/api/message-update)): `isRead` and `flag` are updatable; "returns a `200 OK` response code and updated message object". Read and unread are `{ isRead }`; star and unstar are `{ flag: { flagStatus: "flagged" | "notFlagged" } }`.
+- **Moves** ([message-move](https://learn.microsoft.com/graph/api/message-move)): `destinationId` is "The destination folder ID, or a well-known folder name"; success is "`201 Created` … and a message resource". Its id survives the move ([outlook-immutable-id](https://learn.microsoft.com/graph/outlook-immutable-id)). What a move into the folder a message is already in does isn't stated, so it's never sent: every location op reads where each message is first.
+- **Batches** ([json-batching](https://learn.microsoft.com/graph/json-batching)): "up to 20 requests"; a "relative resource URL"; answers "might appear in a different order than the requests"; "A `200` status code on the batch … doesn't indicate that the individual requests inside the batch succeeded"; a request over the limits "fails with a status of `429`". A Retry-After inside a sub-response isn't promised, so one is read when present and the ledger's own pause applies otherwise. Headers are per request, so each carries `Prefer: IdType="ImmutableId"`.
+- **Send** ([user-sendmail](https://learn.microsoft.com/graph/api/user-sendmail)): MIME "encoded in **base64** format in the request body", `Content-Type: text/plain`; "returns `202 Accepted` … doesn't return anything in the response body"; "saves the message in the **Sent Items** folder".
+- **The write limit** ([use-the-api](https://learn.microsoft.com/graph/use-the-api)): "Write requests in the Microsoft Graph API have a size limit of 4 MB", "fail with the status code HTTP 413". This corrects the plan's "no per-request size for `sendMail` is documented": it's Graph's general limit, found by the Codex code review (#2). Terno takes the smaller reading, 4,000,000 bytes.
+- **Pace and concurrency with batches** ([throttling-limits](https://learn.microsoft.com/graph/throttling-limits), "Outlook service limits for JSON batching"): per app and mailbox "10,000 API requests in a 10-minute period", "Four concurrent requests" and "150 megabytes (MB) upload (PATCH, POST, PUT) in a 5-minute period"; for a batch, "Microsoft Graph sends the Outlook service up to four individual requests from the batch at a time".
+- **Draft from MIME** ([user-post-messages](https://learn.microsoft.com/graph/api/user-post-messages)): base64 MIME in a `text/plain` body (the headers it lists include BCC); "`201 Created` … and message object"; saved in Drafts.
+- **Upload sessions** ([attachment-createuploadsession](https://learn.microsoft.com/graph/api/attachment-createuploadsession), [outlook-large-attachments](https://learn.microsoft.com/graph/outlook-large-attachments)): for a file "between 3 MB and 150 MB"; `AttachmentItem` with `attachmentType` `file`, a name and a size (`isInline` and `contentId` for an inline one); the URL is "in the `https://outlook.office.com` domain"; "Do not specify an `Authorization` request header"; each PUT carries `Content-Range: bytes {start}-{end}/{total}` and `application/octet-stream`, "in order", "each byte range less than 4 MB"; intermediate answers are 200, the last "`HTTP 201 Created`".
+- **A draft's send** ([message-send](https://learn.microsoft.com/graph/api/message-send)): "`202 Accepted`", saved in Sent Items.
+- **Folders** ([mailfolder-post-childfolders](https://learn.microsoft.com/graph/api/mailfolder-post-childfolders), [user-post-mailfolders](https://learn.microsoft.com/graph/api/user-post-mailfolders), [mailfolder-update](https://learn.microsoft.com/graph/api/mailfolder-update), [mailfolder-delete](https://learn.microsoft.com/graph/api/mailfolder-delete)): `displayName` is writable; create answers 201 with the folder, a rename 200, a delete "`204 No Content`". What a duplicate name returns, and where a deleted folder's mail goes, aren't stated: a name is checked against the list first, and what a delete took is read from the list after it.
+- **Permanent delete** ([message-delete](https://learn.microsoft.com/graph/api/message-delete), [message-permanentdelete](https://learn.microsoft.com/graph/api/message-permanentdelete)): Terno has no op for it (no provider is asked to delete for good), so neither is used for mail. A draft the draft path leaves unsent is removed with `DELETE /me/messages/{id}` (204).
+- **The sign-in name** ([id-token-claims-reference](https://learn.microsoft.com/entra/identity-platform/id-token-claims-reference), [v2-oauth2-auth-code-flow](https://learn.microsoft.com/entra/identity-platform/v2-oauth2-auth-code-flow)): `preferred_username` is "The primary username that represents the user", "mutable … can be used for username hints"; `login_hint` is to "pre-fill the username and email address field of the sign-in page".
+
+### The provider (`packages/mail/src/graph-writes.ts`, over `graph-api.ts`'s transport)
+
+- **The transport.** `attempt` takes a method, a body and the op's run (dispatch marked, so a pause met first gives the attempt back), and three modes:
+  - `submission` (sendMail, a draft's send): a send's deadline, never cut by `reset()`, its run marking the submission. Once it may have left, a dropped connection, a timeout or a 5xx is `ambiguous` (plan 65: never sent again); a refusal before connecting waits for the network; a 429 is retryable.
+  - `empty` (202, 204): the status is the answer.
+  - `batch`: `RequestDescriptor.onBatch`. `requestHttp` hands the ticket to the reader instead of settling it on the 200. The reader settles it with the longest throttled sub-response's observation (`batchThrottle`), recorded as a top-level 429 is, and `account-requests.ts` constrains the mailbox for it as for a 429. Each request in it counts against the pace, and it takes as many of the four slots as Graph runs of it at once (`min(4, n)`, taken together so two never deadlock). This deviates from stage 2a's "a batch is one slot": Graph runs four of a batch at once, which beside a sync's own requests would pass Outlook's four (Codex code review #10).
+  - `graph-shared.ts` holds what reads and writes share: the roles, the catalog (now with its raw tree), the request's shape and Graph's codes.
+- **Flags**: PATCHes, 20 a batch. They're idempotent, so a retry sends them all again. A 404 with Graph's own code is done.
+- **Location ops**: each message's `parentFolderId` is read first (a batch of GETs), then the op's rule says what moves:
+  - archive: what's in the Inbox, to `archive` (a mailbox without one says so: `errors.outlook.noArchive`)
+  - trash: all, to `deleteditems`
+  - spam: all but Sent's, to `junkemail`
+  - not spam: Junk's, to `inbox`
+  - back to the Inbox: all but Sent's and Drafts', to `inbox`
+  - a filing: all, to its folder
+  - its undo (`leaveFolder`): what's still in the folder, back to the Inbox, the folder it came from, or Archive or Sent (`role`)
+
+  What's already where it's going isn't moved, but its folder is written before the moves go. Each move's answer names the folder, written at once through `ProviderStore.placeMessages` (null for a role folder), before any sibling's failure is thrown. So a partial success keeps what was done, and a retry after a lost answer finds the move made and moves nothing. A move's 404 is the destination's (the message was read a moment before), never a message to forget.
+- **Folders** (plan 107): create (at the top `POST /me/mailFolders`, under a folder `…/childFolders`), rename (`PATCH displayName`; keys kept, its subfolders' too, all in `renamed`) and delete (`DELETE`; `deleted` is what the list no longer has: the folder and everything under it). The name is checked against Graph's tree and Terno's list first. A failure that isn't Graph's refusal reads the list again, and a change found made is the answer (lost-response recovery). Graph's 4xx is `errors.folder.refused` with Graph's code. A delete whose list can't be read after it still reports what went, from the list before it (Codex code review #9).
+- **Send**: `POST /me/sendMail` with nodemailer's MIME (Bcc kept, as Gmail's) in base64 (`graphMimeBody`), while that base64 fits the 4 MB write limit. A message clearly over it (its files alone) isn't built whole. Over it:
+  1. a draft from the MIME without its files
+  2. each file: one whose request fits (its base64 and 4 KiB of JSON) with its bytes (`POST /attachments`, a `fileAttachment`); a larger one through an upload session, in 3 MiB pieces, the URL only on `https://outlook.office.com` or Graph's own root (refused anywhere else before a byte leaves)
+  3. `beforeSubmission`, then `POST /me/messages/{id}/send`
+
+  A failure before the send (`beforeSubmission`'s included), or a send Graph refused outright (a throttle, a 4xx), deletes the draft and is retryable (Codex code review #5). The send is the boundary: an unknown outcome leaves the draft alone. While a draft is being built its id is in `staging`, and a sync stores none of it: the local row waits for the Sent copy whole (Codex code review #1). Nothing comes back with an id: the Sent Items delta brings the copy, and both stores' Message-ID promotion of a non-IMAP `local:` row adopts it.
+  - A file of 2,996,926 bytes to 3 MB goes through an upload session, a few kilobytes under the page's "between 3 MB and 150 MB"; its own `POST` would be over the write limit. Whether sessions refuse that is the live test's to show.
+- **The registry** gives the provider nodemailer's `buildRaw` (`registry.ts`), so the Graph modules stay free of Node APIs.
+
+### The store
+
+- `queueFolderMoves` has an Outlook branch in both engines, from `planOneFolderMove` (`@terno/store`):
+  - A message's folder is its `message_folders` row with the pending folder ops replayed (`applyFolderOpOne`).
+  - One op with every message that moves, `keepInbox: false`, and nothing after it: no archive op (Codex code review #3: a filing that failed archived the mail). Your own mail stays in Sent unless it's all there is or it's in the folder this leaves.
+  - The owner's decision holds: no thread is kept in the Inbox by a shown category (`kept` is empty). What the move takes out of the Inbox leaves it here at once (`fromInbox`, kept in the op's payload), and a move that fails or ends unknown puts back in the Inbox those the server didn't confirm in the folder (`settleFolderOp`).
+  - The journal: `fromInbox`, `fromFolder` (`from`), and `elsewhere` (another folder; Archive; or Sent for your own mail that's out of the Inbox and in no folder), each undone to exactly there (`LeaveFolderPayload.role` for Archive and Sent).
+- `placeMessages` writes a confirmed folder only for an Outlook account, and only while the row's provider id is the one the answer was for. It recomputes the threads, and the backend tells the windows. `settleFolderOp` needs nothing more: the answers are already stored, so succeeding, failing or ending unknown drops the overlay and shows what's confirmed.
+- A delta read racing a settlement: while the op is on its way the overlay shows the move. Once it settled, a stale read shows until the next delta (its `@removed` and the destination's entry) says where the message is.
+- Outlook joins the promotion's flag binding in both engines (revision 8).
+
+### Deviations
+
+- **The Inbox flag of a filing on its way has no flag-protocol op.** IMAP and Gmail carry it with the archive op after the move, which protects it from a stale read. Outlook's filing is one op (as the plan says) with no flag fields, so a delta page that read a filed message's change in the Inbox just before the move landed can show it in the Inbox again while the move is on its way. When the move lands, what the server confirmed in the folder leaves the Inbox again (Codex round 2 #6).
+- **The undo journal reads a role from flags.** An Outlook message in no folder and out of the Inbox is taken for Archive, or Sent when it's your own. Graph's Sent flag is sticky (stage 2a), so your own message moved to Archive by another app goes back to Sent Items on an undo. The store keeps no role folder for a message (stage 0b).
+- **A draft left over.** A lost answer to the draft's creation leaves one draft in Drafts (it syncs as a draft the person can delete); the retry makes another.
+
+### Stage 1's open note
+
+The id_token's `preferred_username` is kept as `OutlookAccountConfig.microsoftUsername` and is reconnect's `login_hint` (else the address). It's a hint only, never identity.
+
+### Tests
+
+- `graph-writes.test.ts`:
+  - flags, 20 a batch with the header on each request; a gone message; a local row
+  - archive reading first; trash, spam, not spam and back to the Inbox; a filing and each undo group
+  - a partial failure, then a retry moving only what's left; a lost batch answer; a deleted destination; no Archive; a move and a delta in both orders
+  - a throttled sub-response reaching the ledger with its wait, the ticket held until read; `batchThrottle`
+  - folder create, rename and delete, each with a lost answer, and Graph's refusal
+  - sendMail (MIME, Bcc, `beforeSubmission` first, Sent Items); a lost, a timed-out and a 5xx send unknown, a 429 retryable
+  - the draft path (pieces in order, no Authorization, the large file not in the MIME); interruption before (an upload: draft deleted, nothing sent) and after (the draft's send: unknown) the boundary; an upload URL off Microsoft refused
+- Conformance in SQLite, SQLite-WASM and IndexedDB (`folder-move.ts`, `gmail-refresh.ts`): the filing and its journal with a shown category; `placeMessages` with partial success, unknown and failed outcomes, a role answer and a changed provider id; a delta racing a settlement; a replayed source; the promotion binding.
+- `microsoft-connection.test.ts`: a folder made, a thread filed and undone, archived and read through the backend's ops; a throttled sub-response pausing the mailbox; the sign-in name as `login_hint`. `microsoft.test.ts`: `preferred_username` kept, a malformed one dropped. `registry.test.ts`: the registry's provider sends, Bcc kept.
+- `forwarding-delivery.int.test.ts`: Outlook joins `DELIVERIES`.
+- `e2e/outlook-connect.spec.ts`, over the real Graph provider: mail synced into the Inbox with its folder under it, a message dropped on the folder and back with `z`, read when opened, a reply through sendMail promoted from Sent Items, archived; then signing in again (`SyntheticMicrosoft.revoke`) and removal.
+- The fixture (`test/microsoft.fixture.ts`) gained the writes: PATCH and DELETE of a message, its move, folders, `$batch` (answered out of order, with a throttled request, and a record of each request's header), sendMail, a draft from MIME, `POST /attachments`, upload sessions (Authorization counted, ranges checked in order), a draft's send, Graph's write limit (413), lost answers before or after the change, and gates on a send.
+
+### What the Codex code review changed
+
+Two rounds. Each fix came with a test that fails without it.
+
+**Round 1 (12 findings):**
+
+- Fixed:
+  - #1: a Drafts sync stored a send's draft while its files were uploading, and the local row took its incomplete copy. A draft on its way (`staging`) is never stored.
+  - #2: Graph documents a 4 MB limit for every write request (`use-the-api`), which a file under 3 MiB could pass once the MIME was base64. The send now measures its base64 and goes through a draft over it, each file with its bytes or through a session.
+  - #3: a filing that failed was followed by its archive op, which archived the mail. Outlook's filing is one op; what it takes out of the Inbox is journalled in it and comes back if it never lands.
+  - #5: a send Graph refused outright left its draft, and the retry made another. The draft goes on a definite refusal.
+  - #8: a read's "already there" was lost when the move batch failed. It's written before the moves.
+  - #9: a delete whose list couldn't be read after it reported nothing, so filters kept the folder. It reports what went.
+  - #10: a batch took one slot and one unit of the pace while Graph runs four of it. It takes `min(4, n)` slots, together, and `n` units.
+  - #11: signing in again never learned a changed sign-in name. It's stored, while the account's sync is stopped.
+  - #12: a subtree walk was quadratic at the 10,000-folder cap. It uses a children index.
+- Skipped:
+  - #4: undoing an ordinary location action (Move to Inbox out of a folder) restores flags, so Graph's undo goes to Archive, not the folder. IMAP's undo has the same behaviour; an exact folder in the undo journal is a change to the shared undo for both providers.
+  - #6: a move's answer delayed past another client's move and a delta read, then written over it. It needs a race across two apps and a delta in a few hundred milliseconds; the message's next change corrects it.
+  - #7: an undo racing another client's move between Terno's read and its move. The documented folder-scoped move doesn't say it refuses a message not in that folder, so it can't be built on.
+
+**Round 2 (9 findings, on the fixes):**
+
+- Fixed:
+  - #1: Graph's 201 to an attachment repeats its bytes, over the answer's bound. The status is the answer.
+  - #2: the Sent copy keeps the draft's immutable id, and `staging` skipped it when Sent's delta saw it while the send was still answering. Only a draft outside Sent is skipped.
+  - #3: a search hit or a read by id could still store a draft on its way. The check is in the download itself.
+  - #5: one malformed read dropped its siblings' confirmations. It fails only its message.
+  - #6: a stale Inbox read while the filing was on its way left the message in the Inbox and the folder after it landed. A landed filing takes out of the Inbox what the server confirmed in the folder.
+  - #7: a failed filing brought a message back to the Inbox over a newer move on its way, or over a folder the server had confirmed. It brings back only what has neither.
+  - #8: a file's request was estimated with a 4 KiB allowance, which sent files just under 3 MB to an upload session. The request is measured.
+- Skipped:
+  - #4: a throttled draft send's cleanup meets the pause the throttle just set, so the draft stays. Reusing it would need the draft's id kept with the op; the leftover is an ordinary draft the person can delete.
+  - #9: a delete whose list fails after it reports, from the list before, a subfolder another client moved out meanwhile. This takes another app moving that subfolder in the same seconds.
+
+### `pnpm test:all`
+
+- Ran once, after round 1's fixes (round 2's landed while it ran; their files ran again after, below). Lint, typecheck, build, web, `ui-perf` and `startup` passed.
+- Everything else that failed also fails on the base:
+  - `unit`: the base's files (`store.conformance`'s failures are its Dated items tests, plan 204/210). `w02-canonical-actions.int.test` failed on the loaded first pass only and passes alone.
+  - `db-wasm`: `tabs.test`.
+  - e2e: the base's 17, run again alone (account-errors, provider-errors, first-sync, print-quality, scrollbars, settings-pass, today, what-matters-feed). `hand-to`, `ask-pin` and `settings` failed on the first pass only.
+  - smoke: the base's 10.
+  - perf: the base's five files.
+- Run per change, after round 2: `graph-writes`, `graph-api`, `registry`, `microsoft`, `provider-http`, the conformance's Outlook and folder cases in SQLite, SQLite-WASM and IndexedDB, `gmail-refresh` in both engines, `microsoft-connection`, `forwarding-delivery`, `folder-actions`, `filter-folder.perf`, `graph-sync.perf`, and `outlook-connect.spec.ts` (repeated, two and three at once).
+
+### What an Outlook user still can't do (desktop)
+
+- Push: Graph's change notifications need a public webhook; mail comes by the poll and quick checks (plan 176).
+- Outlook's categories, Focused Inbox as tabs, and flag due dates (out of scope for v1).
+- Shared mailboxes and delegate access.
+- Delete for good: Terno has no such action for any provider.
+- An exact undo of an ordinary location action out of a folder (Move to Inbox, then Undo, goes to Archive: round 1 #4, as IMAP's).
+- The web build (stage 4).
