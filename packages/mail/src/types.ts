@@ -414,6 +414,11 @@ export interface OutlookAccountConfig {
   microsoftClientId: string;
   /** a personal Microsoft account (the consumer tenant) or a work or school one */
   tenant: MicrosoftTenant;
+  /**
+   * Plan 259 stage 2b: the id_token's `preferred_username`, the name the person signs in with (a work account's can
+   * differ from its mailbox address): pre-filled when signing in again. Mutable, so a hint only, never identity.
+   */
+  microsoftUsername?: string;
 }
 
 export type MicrosoftTenant = "consumers" | "organizations";
@@ -429,6 +434,8 @@ export interface MicrosoftConnectResult {
   tenant: MicrosoftTenant;
   /** effective grant; an omitted token-response scope means the requested scopes */
   grantedScopes: string[];
+  /** the id_token's `preferred_username` (a sign-in hint: OutlookAccountConfig.microsoftUsername) */
+  username?: string;
 }
 
 export interface MicrosoftConnectOptions {

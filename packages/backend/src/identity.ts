@@ -66,7 +66,8 @@ export function validateMicrosoftConnection(result: unknown): asserts result is 
     typeof value.subject !== "string" || !MICROSOFT_SUBJECT.test(value.subject) ||
     (value.tenant !== "consumers" && value.tenant !== "organizations") ||
     typeof value.refreshToken !== "string" || value.refreshToken.length > 4096 || !/^[\x21-\x7e]+$/.test(value.refreshToken) ||
-    !Array.isArray(value.grantedScopes) || !value.grantedScopes.every((scope) => typeof scope === "string")) throw new RpcError("BAD_REQUEST", L("errors.microsoft.invalidResponse"));
+    !Array.isArray(value.grantedScopes) || !value.grantedScopes.every((scope) => typeof scope === "string") ||
+    (value.username !== undefined && (typeof value.username !== "string" || !value.username || value.username.length > 254 || /[\s\p{Cc}]/u.test(value.username)))) throw new RpcError("BAD_REQUEST", L("errors.microsoft.invalidResponse"));
   if (!microsoftMailGranted(value.grantedScopes as string[])) throw new RpcError("BAD_REQUEST", L("errors.microsoft.mailScopeRequired"));
 }
 
@@ -260,10 +261,13 @@ export async function connectExistingMicrosoft(b: Backend, account: Account, flo
   if (!connect || !b.options.openExternal) throw new RpcError("UNAVAILABLE", L("errors.microsoft.needsDesktop"));
   const remembered = await rememberedClient(b, account.id, "microsoft");
   const oauth = await oauthClientFor(b, "microsoft", remembered);
+  // plan 259 stage 2b: the name the person signs in with, as Microsoft last said it (a work account's can differ from
+  // its mailbox address), else the address
+  const username = (await b.store.accounts.config<Partial<OutlookAccountConfig>>(account.id))?.config.microsoftUsername;
   b.assertSignIn(account.id, flow);
   if (!oauth) throw new RpcError("BAD_REQUEST", L(remembered ? "errors.microsoft.clientGone" : "errors.microsoft.noClient"));
   let result: MicrosoftConnectResult;
-  try { result = await connect({ clientId: oauth.clientId, openExternal: b.options.openExternal, signal: AbortSignal.any([b.abort.signal, flow.signal]), fetch: b.net.fetchFor("mail"), loginHint: account.email }); }
+  try { result = await connect({ clientId: oauth.clientId, openExternal: b.options.openExternal, signal: AbortSignal.any([b.abort.signal, flow.signal]), fetch: b.net.fetchFor("mail"), loginHint: typeof username === "string" && username ? username : account.email }); }
   catch (error) { b.assertSignIn(account.id, flow); throw error; }
   b.assertSignIn(account.id, flow);
   validateMicrosoftConnection(result);

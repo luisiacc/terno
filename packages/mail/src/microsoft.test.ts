@@ -50,7 +50,7 @@ describe("connectMicrosoft (plan 259)", () => {
     expect(exchange.get("redirect_uri")).toBe(asked.get("redirect_uri"));
     expect(exchange.get("scope")).toBe(MICROSOFT_SCOPES.join(" "));
     expect(result).toEqual({
-      email: "ana@contoso.com", name: "Ana Ruiz", refreshToken: expect.stringMatching(/^refresh-/), tenant: "organizations",
+      email: "ana@contoso.com", name: "Ana Ruiz", refreshToken: expect.stringMatching(/^refresh-/), tenant: "organizations", username: "ana@contoso.com",
       subject: `${ms.tid}:${ms.oid}`, grantedScopes: expect.arrayContaining(["https://graph.microsoft.com/Mail.ReadWrite", "https://graph.microsoft.com/Mail.Send"]),
     });
   });
@@ -92,6 +92,16 @@ describe("connectMicrosoft (plan 259)", () => {
     expect(await connect(ms)).toMatchObject({ subject: `${ms.tid}:${ms.oid}` });
     expect(idTokenSubject(undefined, ms.clientId)).toBeNull();
     expect(idTokenSubject("not.a.jwt", ms.clientId)).toBeNull();
+  });
+
+  it("stage 2b: keeps the id_token's preferred_username, the sign-in name a work account's address can differ from; never a malformed one", async () => {
+    const ms = await microsoft();
+    ms.userPrincipalName = "ana.ruiz@contoso.onmicrosoft.com";
+    expect(await connect(ms)).toMatchObject({ email: "ana@contoso.com", username: "ana.ruiz@contoso.onmicrosoft.com" });
+    for (const preferred of ["two words", "", 42, "x".repeat(300)]) {
+      ms.claims = { preferred_username: preferred };
+      expect((await connect(ms)).username).toBeUndefined();
+    }
   });
 
   it("maps Microsoft's refusals: denied, consent not given, an administrator's approval needed, anything else invalid", async () => {

@@ -95,7 +95,7 @@ const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * Core §3.1.3.7 accepts in place of its signature; its issuer (the tenant's v2.0 issuer), audience (this client) and
  * expiry are still checked (Codex code review #6). `now` allows five minutes of clock skew.
  */
-export function idTokenSubject(idToken: unknown, clientId: string, now = Date.now()): { tid: string; oid: string } | null {
+export function idTokenSubject(idToken: unknown, clientId: string, now = Date.now()): { tid: string; oid: string; username?: string } | null {
   if (typeof idToken !== "string" || idToken.length > 16_384) return null;
   const parts = idToken.split(".");
   if (parts.length !== 3 || !/^[A-Za-z0-9_-]+$/.test(parts[1]!)) return null;
@@ -106,11 +106,13 @@ export function idTokenSubject(idToken: unknown, clientId: string, now = Date.no
     claims = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(binary, (c) => c.charCodeAt(0))));
   } catch { return null; }
   if (!claims || typeof claims !== "object" || Array.isArray(claims)) return null;
-  const { aud, tid, oid, iss, exp } = claims as Record<string, unknown>;
+  const { aud, tid, oid, iss, exp, preferred_username: preferred } = claims as Record<string, unknown>;
   if (aud !== clientId || typeof tid !== "string" || !GUID.test(tid) || typeof oid !== "string" || !GUID.test(oid)) return null;
   if (typeof iss !== "string" || iss.toLowerCase() !== `https://login.microsoftonline.com/${tid.toLowerCase()}/v2.0`) return null;
   if (typeof exp !== "number" || !Number.isFinite(exp) || exp * 1000 <= now - 300_000) return null;
-  return { tid: tid.toLowerCase(), oid: oid.toLowerCase() };
+  // plan 259 stage 2b: the sign-in name, "mutable … used for username hints" (id-token-claims-reference): a hint, never identity
+  const username = typeof preferred === "string" && preferred.length <= 254 && preferred.trim() && !/[\s\p{Cc}]/u.test(preferred) ? preferred : undefined;
+  return { tid: tid.toLowerCase(), oid: oid.toLowerCase(), ...(username && { username }) };
 }
 
 /** Who signed in: the mailbox from Graph's /me, the stable subject from the id_token of the same answer. */
@@ -127,7 +129,7 @@ export async function readMicrosoftIdentity(flow: SignInFlow, netFetch: typeof f
   const inbox = await microsoftJson(flow, netFetch, `${ep.graph}/me/mailFolders/inbox?$select=id`, { headers: { authorization: `Bearer ${tokens.accessToken}` } }, { endpoint: "graph-api", purpose: "identity-proof" }, () => new ProviderError(L("errors.microsoft.noMailbox"), false));
   if (typeof inbox.id !== "string" || !inbox.id) throw invalid();
   const tenant: MicrosoftTenant = ids.tid === CONSUMER_TENANT ? "consumers" : "organizations";
-  return { email, name: typeof me.displayName === "string" ? me.displayName.slice(0, 256) : "", subject: `${ids.tid}:${ids.oid}`, tenant };
+  return { email, name: typeof me.displayName === "string" ? me.displayName.slice(0, 256) : "", subject: `${ids.tid}:${ids.oid}`, tenant, ...(ids.username && { username: ids.username }) };
 }
 
 /**

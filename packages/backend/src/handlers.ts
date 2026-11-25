@@ -1353,7 +1353,7 @@ export function createHandlers(b: Backend): Handlers {
       validateMicrosoftConnection(result);
       const existing = (await store.accounts.list()).find((a) => a.email === result.email.toLowerCase());
       if (existing) throw new RpcError("BAD_REQUEST", L("errors.alreadyConnected", { email: result.email }));
-      const config: OutlookAccountConfig & AccountPrefs = { senderName: result.name || result.email, microsoftSubject: result.subject, microsoftClientId: oauth.clientId, tenant: result.tenant, ...(syncWindowDays !== undefined && { syncWindowDays }) };
+      const config: OutlookAccountConfig & AccountPrefs = { senderName: result.name || result.email, microsoftSubject: result.subject, microsoftClientId: oauth.clientId, tenant: result.tenant, ...(result.username && { microsoftUsername: result.username }), ...(syncWindowDays !== undefined && { syncWindowDays }) };
       const blob = await b.options.cipher.encrypt(result.refreshToken);
       const accounts = await store.accounts.list();
       const color = newAccountColor(accounts);

@@ -40,7 +40,7 @@ describe("accounts.connectMicrosoft (plan 259)", () => {
     const { ms, backend, client, config } = await setup();
     const account = await client.call("accounts.connectMicrosoft", { syncWindowDays: 365 });
     expect(account).toMatchObject({ kind: "outlook", email: "ana@contoso.com", syncWindowDays: 365 });
-    expect(await config(account.id)).toEqual({ senderName: "Ana Ruiz", microsoftSubject: `${ms.tid}:${ms.oid}`, microsoftClientId: ms.clientId, tenant: "organizations", syncWindowDays: 365 });
+    expect(await config(account.id)).toEqual({ senderName: "Ana Ruiz", microsoftSubject: `${ms.tid}:${ms.oid}`, microsoftClientId: ms.clientId, tenant: "organizations", microsoftUsername: "ana@contoso.com", syncWindowDays: 365 });
     expect(await backend.getSecret(`account:${account.id}:refreshToken`)).toBe([...ms.refreshTokens][0]);
     expect(ms.authorizations[0]!.has("login_hint")).toBe(false);
     expect(await client.call("identity.get", {})).toMatchObject({ email: "ana@contoso.com", displayName: "Ana Ruiz", provider: "outlook", verifiedBy: "microsoft_oauth", accountId: account.id });
@@ -110,6 +110,16 @@ describe("an Outlook account signs in again (plan 259)", () => {
     const second = await backend.getSecret(`account:${account.id}:refreshToken`);
     expect(second).not.toBe(first);
     expect(ms.refreshTokens.has(second!)).toBe(true);
+  });
+
+  it("stage 2b (stage 1's open note): a work account whose sign-in name isn't its address is pre-filled with the name Microsoft gave", async () => {
+    const { ms, client, config } = await setup({ quiet: true });
+    ms.userPrincipalName = "ana.ruiz@contoso.onmicrosoft.com";
+    const account = await client.call("accounts.connectMicrosoft", {});
+    expect(account.email).toBe("ana@contoso.com");
+    expect(await config(account.id)).toMatchObject({ microsoftUsername: "ana.ruiz@contoso.onmicrosoft.com" });
+    await client.call("accounts.reconnect", { id: account.id });
+    expect(ms.authorizations.at(-1)!.get("login_hint")).toBe("ana.ruiz@contoso.onmicrosoft.com");
   });
 
   it("Codex code review #9: reconnect uses the registration that connected the account, not the build's preferred one", async () => {
