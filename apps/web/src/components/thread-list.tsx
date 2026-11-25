@@ -114,6 +114,9 @@ const FILTER_NAME = {
   starred: "list.filter.starred",
 } as const satisfies Record<QuickFilter, string>;
 
+/** What a filter keeps, for those whose name doesn't say it all: the chip's tooltip. */
+const FILTER_HELP: Partial<Record<QuickFilter, "list.filter.peopleHelp">> = { people: "list.filter.peopleHelp" };
+
 /** A filter's name, at render time (the active language). */
 function filterName(f: QuickFilter): string {
   return t(FILTER_NAME[f]);
@@ -260,11 +263,21 @@ function QuickChips({ filter }: { filter: QuickFilter | undefined }) {
         spacing={1.5}
         className="flex w-auto"
       >
-        {visible.map((f) => (
-          <ToggleGroupItem key={f} value={f} data-testid={`quick-filter-${f}`} className={cn(chip, f !== "all" && "data-pressed:bg-accent data-pressed:text-accent-foreground")}>
-            {label(f)}
-          </ToggleGroupItem>
-        ))}
+        {visible.map((f) => {
+          const item = (
+            <ToggleGroupItem key={f} value={f} data-testid={`quick-filter-${f}`} className={cn(chip, f !== "all" && "data-pressed:bg-accent data-pressed:text-accent-foreground")}>
+              {label(f)}
+            </ToggleGroupItem>
+          );
+          const help = f === "all" ? undefined : FILTER_HELP[f];
+          if (!help) return item;
+          return (
+            <Tooltip key={f}>
+              <TooltipTrigger render={item} />
+              <TooltipContent data-testid={`quick-filter-${f}-tip`}>{t(help)}</TooltipContent>
+            </Tooltip>
+          );
+        })}
       </ToggleGroup>
       {overflow.length > 0 && (
         <DropdownMenu>

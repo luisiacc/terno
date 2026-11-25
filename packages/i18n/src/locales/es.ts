@@ -1180,6 +1180,7 @@ const es = {
   "list.filter.attachments": "Con adjuntos",
   "list.filter.starred": "Destacados",
   "list.filter.people": "Personas",
+  "list.filter.peopleHelp": "Solo correo de personas: sin boletines, notificaciones ni correo automático",
   "list.filter.waiting": "Por responder",
   "list.filterEmpty.attachmentsTitle": "No hay conversaciones con adjuntos",
   "list.filterEmpty.attachmentsBody": "Aquí aparecen los archivos que te envían.",

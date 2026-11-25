@@ -1196,6 +1196,7 @@ const en = {
   "list.filter.attachments": "With attachments",
   "list.filter.starred": "Starred",
   "list.filter.people": "People",
+  "list.filter.peopleHelp": "Only mail from people: no newsletters, notifications or automated mail",
   "list.filter.waiting": "To reply to",
   "list.filterEmpty.attachmentsTitle": "No conversations with attachments",
   "list.filterEmpty.attachmentsBody": "Files people send you show up here.",

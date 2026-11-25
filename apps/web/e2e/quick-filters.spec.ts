@@ -112,6 +112,10 @@ test.describe("Lumen: chips", () => {
       await expect(chips).toBeVisible();
       await expect(page.getByTestId("filter-menu")).toHaveCount(0);
       await expect(page.getByTestId("quick-filter-all")).toHaveAttribute("aria-pressed", "true");
+      // People isn't obvious: its chip says what it keeps on hover
+      await page.getByTestId("quick-filter-people").hover();
+      await expect(page.getByTestId("quick-filter-people-tip")).toHaveText("Only mail from people: no newsletters, notifications or automated mail");
+      await page.mouse.move(0, 0);
       await page.getByTestId("quick-filter-unread").click();
       await showing(page, "unread");
       await expect(page.getByTestId("quick-filter-unread")).toHaveAttribute("aria-pressed", "true");
