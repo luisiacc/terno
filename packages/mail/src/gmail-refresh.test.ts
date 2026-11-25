@@ -162,10 +162,10 @@ describe("durable Gmail refresh", () => {
   it.each([
     ["missing access", { ...valid, access_token: undefined }], ["numeric access", { ...valid, access_token: 7 }],
     ["empty access", { ...valid, access_token: "" }], ["blank access", { ...valid, access_token: " " }],
-    ["control access", { ...valid, access_token: "secret\nvalue" }], ["oversized access", { ...valid, access_token: "x".repeat(4097) }],
+    ["control access", { ...valid, access_token: "secret\nvalue" }], ["oversized access", { ...valid, access_token: "x".repeat(16_385) }],
     ["unicode access", { ...valid, access_token: "sécret" }], ["null refresh", { ...valid, refresh_token: null }],
     ["empty refresh", { ...valid, refresh_token: "" }], ["numeric refresh", { ...valid, refresh_token: 3 }],
-    ["oversized refresh", { ...valid, refresh_token: "x".repeat(4097) }], ["control refresh", { ...valid, refresh_token: "refresh\r" }],
+    ["oversized refresh", { ...valid, refresh_token: "x".repeat(16_385) }], ["control refresh", { ...valid, refresh_token: "refresh\r" }],
     ["missing type", { ...valid, token_type: undefined }], ["wrong type", { ...valid, token_type: "Basic" }],
     ["missing expiry", { ...valid, expires_in: undefined }], ["string expiry", { ...valid, expires_in: "3600" }],
     ["zero expiry", { ...valid, expires_in: 0 }], ["negative expiry", { ...valid, expires_in: -1 }],
