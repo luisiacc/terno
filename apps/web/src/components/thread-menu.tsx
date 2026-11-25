@@ -846,7 +846,7 @@ function MenuItems() {
     ...(intoTab("social") ? [{ icon: <Users />, label: t("actions.toSocial"), testId: "menu-to-social", onClick: () => runTab("toSocial") }] : []),
     ...(intoTab("other") ? [{ icon: <Mails />, label: t("actions.toOther"), testId: "menu-to-other", onClick: () => runTab("toOther") }] : []),
     // plan 275: Focused Inbox's sender override, for one sender's conversations in one Outlook account
-    ...(overrideTo ? [{ icon: overrideTo === "other" ? <Mails /> : <Inbox />, label: t(overrideTo === "other" ? "senderOverride.toOther" : "senderOverride.toInbox", { sender: sender!.name || sender!.email }), testId: `menu-always-${overrideTo}`, onClick: () => void classifySender(ids, sender!, overrideTo) }] : []),
+    ...(overrideTo ? [{ icon: overrideTo === "other" ? <Mails /> : <Inbox />, label: t(overrideTo === "other" ? "senderOverride.toOther" : "senderOverride.toInbox"), testId: `menu-always-${overrideTo}`, onClick: () => void classifySender(ids, sender!, overrideTo) }] : []),
   ];
   // a "select all N" goes to no folder: only out of a Gmail tab, or into one. Whether the account has a folder is
   // a short scan; the folders themselves are built once the submenu opens

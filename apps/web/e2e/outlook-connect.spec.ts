@@ -38,6 +38,8 @@ test("plan 259: add an Outlook account, use its mail over Graph, sign in again a
   const projects = ms.folder("Projects");
   const report = ms.deliver("inbox-id", { subject: "Quarterly report", from: "bo@fabrikam.test", body: "The numbers are in." });
   const lunch = ms.deliver("inbox-id", { subject: "Lunch on Friday", from: "cy@fabrikam.test" });
+  // plan 275: one Focused Inbox put in Other
+  const deals = ms.deliver("inbox-id", { subject: "Weekly deals", from: "news@shop.test", inference: "other" });
   const dialog = page.getByTestId("add-account-dialog");
   const row = page.getByTestId("settings-account").filter({ hasText: "ana@outlook.com" });
   const accountId = async () => (await server.backend.store.accounts.list()).find((a) => a.email === "ana@outlook.com")!.id;
@@ -92,6 +94,34 @@ test("plan 259: add an Outlook account, use its mail over Graph, sign in again a
     await expect(threadRow("Quarterly report")).toBeVisible();
     await expect(threadRow("Lunch on Friday")).toBeVisible();
     await expect(page.getByTestId(`nav-own-${id}-${projects}`)).toBeVisible();
+  });
+
+  await scenario("plan 275: Focused Inbox's Other lives under the account; Move to Inbox teaches Outlook and z takes it back; the sender override", async () => {
+    const id = await accountId();
+    const other = page.getByTestId(`nav-tab-${id}-other`);
+    await expect(threadRow("Weekly deals")).toHaveCount(0);
+    await expect(other).toBeVisible();
+    await expect(other.locator("[data-slot=nav-count]")).toHaveText("1");
+    await other.click();
+    await expect(other).toHaveAttribute("aria-current", "page");
+    await expect(threadRow("Weekly deals")).toBeVisible();
+    await threadRow("Weekly deals").click({ button: "right" });
+    await menuPath(page, "menu-move");
+    await page.getByTestId("menu-inbox").click();
+    await expect(threadRow("Weekly deals")).toHaveCount(0);
+    await expect.poll(() => ms.messages.get(deals)!.inference).toBe("focused");
+    await page.keyboard.press("z");
+    await expect(threadRow("Weekly deals")).toBeVisible();
+    await expect.poll(() => ms.messages.get(deals)!.inference).toBe("other");
+    // always in the Inbox: the conversation moves now, and Outlook sorts the sender's next mail the same way
+    await threadRow("Weekly deals").click({ button: "right" });
+    await menuPath(page, "menu-move");
+    await page.getByTestId("menu-always-focused").click();
+    await expect(page.getByTestId("snack-message")).toContainText("stays in the Inbox from now on");
+    await expect(threadRow("Weekly deals")).toHaveCount(0);
+    await expect.poll(() => [...ms.overrides.values()].map((o) => [o.address, o.classifyAs])).toEqual([["news@shop.test", "focused"]]);
+    await page.getByTestId(`nav-folder-${id}-inbox`).click();
+    await expect(threadRow("Weekly deals")).toBeVisible();
   });
 
   await scenario("stage 2b: a message dropped on the folder moves there on Graph, and z takes it back to the Inbox", async () => {
