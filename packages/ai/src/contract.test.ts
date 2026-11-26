@@ -242,6 +242,10 @@ function describeProviderContract(c: Contract) {
       expect(stub.requests[0]!.body.reasoning_effort).toBe(c.name === "openai" ? "low" : undefined);
       await transportFor(config()).complete(base);
       expect(stub.requests[1]!.body.reasoning_effort).toBeUndefined();
+      // plan 279: verbosity goes exactly where reasoning_effort does
+      await transportFor(config()).complete({ ...base, verbosity: "low" });
+      expect(stub.requests[2]!.body.verbosity).toBe(c.name === "openai" ? "low" : undefined);
+      expect(stub.requests[1]!.body.verbosity).toBeUndefined();
     });
 
     it("gives a summary's failures the kinds the worker acts on", async () => {
