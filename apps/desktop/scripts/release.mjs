@@ -11,11 +11,13 @@
 // only by .github/workflows/nightly.yml and publishes itself as a prerelease that is never "Latest".
 // Never run by tests.
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertNightlyVersion, deleteFailedDraft, dispatch, isMainTip, KEEP_NIGHTLIES, publishNightly, pruneNightlies, tagExists } from "./release-ci.mjs";
-import { channelOf, PLATFORMS, releaseAssets } from "./release-assets.mjs";
+import { assertFuses } from "./fuses.mjs";
+import { assertNightlyVersion, deleteFailedDraft, dispatch, isMainTip, KEEP_NIGHTLIES, publishNightly, pruneNightlies, STEP_ENV, tagExists } from "./release-ci.mjs";
+import { channelOf, LINUX_ARCHES, linuxPackages, PLATFORMS, releaseAssets } from "./release-assets.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -40,12 +42,31 @@ if (prerelease && !ci) fail(`${version}: nightlies are numbered for you: run \`p
 const phase = process.argv[2] && !process.argv[2].startsWith("--") ? process.argv[2] : null;
 const sha = ci ? process.env.GITHUB_SHA : execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).trim();
 
-/** a build step with TERNO_RELEASE=1: a release carries Terno's DSN (scripts/release-env.mjs) unless TERNO_SENTRY_DSN overrides it */
+/** a build step, in a release's environment (STEP_ENV) */
 const step = (cmd, args, cwd) => {
-  const r = spawnSync(cmd, args, { cwd, stdio: "inherit", env: { ...process.env, TERNO_RELEASE: "1" } });
+  const r = spawnSync(cmd, args, { cwd, stdio: "inherit", env: { ...process.env, ...STEP_ENV } });
   if (r.status !== 0) fail(`${cmd} ${args.join(" ")} failed`);
 };
 const out = join(root, "release");
+
+/** Plan 283: what users get can't be started with a debugger. Read back from the final binary; the release stops otherwise. */
+function assertShipped(path, platform) {
+  try {
+    assertFuses(path, { platform, shipped: true });
+  } catch (error) {
+    fail(error.message);
+  }
+}
+
+/** Plan 283: `fn` with a scratch directory that's gone afterwards. */
+function inScratch(fn) {
+  const dir = mkdtempSync(join(tmpdir(), "terno-release-check-"));
+  try {
+    return fn(dir);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 /** The signed app and its update files, checked; never touches GitHub. */
 function buildMac() {
@@ -62,6 +83,19 @@ function buildMac() {
   // a release from GitHub is always notarized: Gatekeeper must open it without a warning
   if (ci && !/source=Notarized Developer ID/.test(run("spctl", ["-a", "-vv", "-t", "exec", app]).stderr)) fail("the app isn't notarized: check the APPLE_API_* secrets (RELEASING.md)");
   if (!existsSync(join(app, "Contents/Resources/app-update.yml"))) fail("app-update.yml missing from the app");
+  // plan 283: the app, the hardened runtime that keeps a native debugger out, and the update zip users download
+  // (package.mjs checks the DMG's copy): fused for users, the zip's copy still sealed by its signature
+  assertShipped(app, "darwin");
+  if (/Authority=Developer ID Application/.test(signature)) {
+    if (!/flags=0x[0-9a-f]*\(runtime\)/.test(signature)) fail("the app isn't signed with the hardened runtime");
+    if (run("codesign", ["-d", "--entitlements", "-", "--xml", app]).stdout.includes("get-task-allow")) fail("the app may be debugged (get-task-allow)");
+  }
+  inScratch((dir) => {
+    const zip = join(out, releaseAssets(version, ["mac"]).find((f) => f.endsWith("-mac.zip")));
+    if (run("ditto", ["-x", "-k", zip, dir]).status !== 0) fail(`couldn't unpack ${zip}`);
+    if (run("codesign", ["--verify", "--deep", "--strict", join(dir, "Terno.app")]).status !== 0) fail(`the app in ${zip} doesn't verify`);
+    assertShipped(join(dir, "Terno.app"), "darwin");
+  });
   checkFiles([out], ["mac"]);
 }
 
@@ -70,6 +104,17 @@ function buildLinux() {
   if (process.platform !== "linux") fail("build-linux runs on Linux");
   step("pnpm", ["build"], repo);
   step("node", [join(here, "package-linux.mjs")], root);
+  // plan 283: the executable inside each package users download (CI checks the installed copy too, release.yml)
+  for (const [deb, rpm] of LINUX_ARCHES.map((a) => linuxPackages(version, a.arch).map((f) => join(out, f)))) {
+    inScratch((dir) => {
+      if (run("dpkg-deb", ["-x", deb, dir]).status !== 0) fail(`couldn't unpack ${deb}`);
+      assertShipped(join(dir, "opt/Terno/terno"), "linux");
+    });
+    inScratch((dir) => {
+      if (run("sh", ["-c", 'rpm2cpio "$1" | cpio -idm --quiet', "sh", rpm], { cwd: dir }).status !== 0) fail(`couldn't unpack ${rpm}`);
+      assertShipped(join(dir, "opt/Terno/terno"), "linux");
+    });
+  }
   checkFiles([out], ["linux"]);
 }
 

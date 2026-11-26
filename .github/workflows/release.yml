@@ -106,6 +106,18 @@ jobs:
           [ -f /usr/share/applications/terno.desktop ] || { echo "✗ no desktop entry"; exit 1; }
           if [ "$(stat -c %a /opt/Terno/chrome-sandbox)" != 4755 ]; then sudo test -f /etc/apparmor.d/terno || { echo "✗ neither a setuid sandbox nor the AppArmor profile"; exit 1; }; fi
 
+      # plan 283: the installed copy is the shipped one (fuses read back), and nothing starts it with a debugger, while
+      # it launches, opens its mailbox and answers the agents' connector without Playwright attached
+      - name: Nothing debugs the installed app
+        run: |
+          node apps/desktop/scripts/fuses.mjs check /opt/Terno/terno shipped
+          dbus-run-session -- sh -c 'eval "$(printf smoke | gnome-keyring-daemon --unlock --components=secrets)"; export GNOME_KEYRING_CONTROL; xvfb-run -a -s "-screen 0 1440x900x24" pnpm --filter @terno/desktop test:smoke:shipped'
+
+      # Playwright attaches through Node's inspector, which a shipped build has fused off: turned back on in this
+      # runner's installed test copy only (the packages kept below were checked and are never changed)
+      - name: Let Playwright attach to the installed test copy
+        run: sudo node apps/desktop/scripts/fuses.mjs inspectable /opt/Terno/terno
+
       - name: Smoke-test the installed app
         run: |
           dbus-run-session -- sh -c 'eval "$(printf smoke | gnome-keyring-daemon --unlock --components=secrets)"; export GNOME_KEYRING_CONTROL; xvfb-run -a -s "-screen 0 1440x900x24" pnpm --filter @terno/desktop test:smoke:linux'
@@ -231,6 +243,11 @@ jobs:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: node apps/desktop/scripts/release.mjs build-mac
+
+      # plan 283: what ships can't be started with a debugger (fuses, DevTools protocol, NODE_OPTIONS). It doesn't
+      # launch the app itself: a runner's login keychain isn't one Terno could use (the Mac's smoke suite and Linux's do)
+      - name: Nothing debugs the app
+        run: pnpm --filter @terno/desktop exec playwright test -c playwright.shipped.config.ts --grep-invert @launches
 
       - name: Keep the app for the draft
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -11,7 +11,8 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { Arch, build, Platform } from "electron-builder";
-import { commonConfig, commonResources, productName, publisher, release, root, stageApp, testBuild, uploadReleaseMaps, version } from "./package-stage.mjs";
+import { assertFuses } from "./fuses.mjs";
+import { commonConfig, commonResources, productName, publisher, release, root, shipped, stageApp, testBuild, uploadReleaseMaps, version } from "./package-stage.mjs";
 import { LINUX_ARCHES, linuxPackages, packageVersion } from "./release-assets.mjs";
 
 if (process.platform !== "linux") throw new Error("Linux packages are built on Linux: see docs/DEVELOPMENT.md → Linux for Docker");
@@ -32,7 +33,7 @@ await build({
   projectDir: stage,
   publish: "never",
   config: {
-    ...commonConfig(),
+    ...commonConfig("linux"),
     directories: { output: release, buildResources: join(root, "resources") },
     // the window's icon (X11 draws it in the title bar and the switcher; the desktop entry's comes from linux.icon)
     extraResources: [...commonResources, { from: join(root, "resources/icon.png"), to: "icon.png" }],
@@ -68,6 +69,8 @@ for (const a of arches) {
   }
   const elf = read("file", ["-b", join(dir, executableName)]);
   if (!elf.includes("ELF 64-bit") || !elf.includes(a.elf)) fail(`${a.unpacked}/${executableName} isn't ${a.elf}: ${elf}`);
+  // plan 283: the deb and rpm are made from this directory
+  assertFuses(join(dir, executableName), { platform: "linux", shipped });
 
   const [deb, rpm] = linuxPackages(version, a.arch).map((f) => join(release, f));
   if (!existsSync(deb) || !existsSync(rpm)) fail(`missing ${!existsSync(deb) ? deb : rpm}`);

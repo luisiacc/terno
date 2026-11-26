@@ -5,6 +5,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } fr
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { fuseTable } from "./fuses.mjs";
 import { publishConfig } from "./release-assets.mjs";
 
 export const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -19,6 +20,9 @@ export const electronVersion = JSON.parse(readFileSync(require.resolve("electron
 /** the host's own Electron: macOS packages it as is; Linux never does (each architecture downloads its own, plan 189) */
 export const electronDist = join(dirname(require.resolve("electron/package.json")), "dist");
 export const testBuild = process.env.TERNO_TEST_BUILD ? JSON.parse(process.env.TERNO_TEST_BUILD) : undefined;
+/** plan 283: what release.mjs packages, with Node's inspector fused off; anything else stays inspectable for the smoke suite */
+export const shipped = process.env.TERNO_SHIPPED === "1";
+if (shipped && testBuild) throw new Error("a test build is never shipped: unset TERNO_SHIPPED");
 export const version = process.env.TERNO_VERSION || pkg.version;
 export const release = process.env.TERNO_PACKAGE_OUT || join(root, "release");
 // a test build stages beside its own output, never in the checkout
@@ -54,8 +58,8 @@ export const commonResources = [
   { from: join(root, "../../LICENSE"), to: "LICENSE" },
 ];
 
-/** electron-builder's options every platform shares. */
-export function commonConfig() {
+/** electron-builder's options every platform shares (`platform`: the fuses differ, plan 283). */
+export function commonConfig(platform) {
   return {
     appId,
     productName,
@@ -69,6 +73,8 @@ export function commonConfig() {
     nodeGypRebuild: false,
     buildDependenciesFromSource: false,
     electronLanguages: ["en", "es"],
+    // plan 283: flipped before signing, so the signature and notarization cover them
+    electronFuses: fuseTable({ platform, shipped }),
     publish,
   };
 }

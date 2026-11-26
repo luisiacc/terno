@@ -35,6 +35,12 @@ export const REQUIRED_SECRETS = [...new Set(Object.values(PHASE_SECRETS).flat())
 /** Optional: a dev Google client (accounts made with it keep refreshing, plan 99; none since dev builds use the release's) and Sentry source maps. */
 export const OPTIONAL_SECRETS = ["TERNO_GOOGLE_DESKTOP_DEV_ID", "TERNO_GOOGLE_DESKTOP_DEV_SECRET", "TERNO_MICROSOFT_DEV_CLIENT_ID", "SENTRY_AUTH_TOKEN"];
 
+/**
+ * release.mjs's build steps run with these. TERNO_RELEASE=1: a release carries Terno's DSN (scripts/release-env.mjs)
+ * unless TERNO_SENTRY_DSN overrides it. TERNO_SHIPPED=1: the packages are fused for users, Node's inspector off (plan 283).
+ */
+export const STEP_ENV = { TERNO_RELEASE: "1", TERNO_SHIPPED: "1" };
+
 const SHA = /^[0-9a-f]{40}$/;
 /** What release.mjs releases: stable x.y.z or nightly x.y.z-nightly.n. */
 export const VERSION = /^\d+\.\d+\.\d+(?:-nightly\.\d+)?$/;

@@ -22,6 +22,7 @@ pnpm dev:web             # the web build with a demo mailbox seeded into OPFS on
 pnpm build:web           # → apps/web/dist-web, a static site (any static host)
 ```
 
+- **Shipped and inspectable packages (plan 283):** `pnpm dist:mac` and `dist:linux` package an *inspectable* app: Electron's fuses as a release has them (no NODE_OPTIONS, only the integrity-checked asar) except Node's inspector, which Playwright needs to attach. Only `release.mjs` packages a *shipped* one (`TERNO_SHIPPED=1`): inspector fused off, DevTools protocol refused, checked when packaged and again before a release keeps it. Never hand an inspectable copy to anyone. `node apps/desktop/scripts/fuses.mjs check <Terno.app> shipped` reads a build's fuses.
 - **Demo mode:** launch the packaged app with a demo mailbox: `TERNO_DEMO=1 open apps/desktop/release/mac-arm64/Terno.app`. The data is a deterministic set of ~3,000 Spanish/English conversations across 4 accounts.
 - **Gmail:** create a Google Cloud OAuth client of type *Desktop app* with the Gmail API enabled. Paste its client ID in Settings → Accounts, then use "Continue with Google". On the web, use a client of type *Web application* with the site's origin as an authorized JavaScript origin.
 
@@ -35,6 +36,8 @@ pnpm test:e2e           # Playwright flows + visual regression (apps/web, agains
 pnpm test:ui-perf       # renderer perf in Chromium (j-key, keystroke → results, scroll, theme, drag)
 pnpm test:smoke         # Playwright against the PACKAGED arm64 app (run dist:mac first)
 pnpm --filter @terno/desktop test:smoke:linux   # the INSTALLED Linux package, /opt/Terno/terno (see Linux below)
+pnpm --filter @terno/desktop test:smoke:shipped # plan 283: no debugger reaches a SHIPPED build (package one first:
+                        # TERNO_SHIPPED=1 pnpm dist:mac; Playwright can't attach to it, so test:smoke can't run on it)
 pnpm test:web           # the web build in Chromium: worker on OPFS, takeover, open errors, offline, gating,
                         # Gmail via Google's flow (stubbed), and the store/engine conformance suites inside a worker
 pnpm test:web-perf      # web budgets at 10k and 50k messages on OPFS (WEB_PERF_STORAGE=idb for IndexedDB,

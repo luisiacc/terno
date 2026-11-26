@@ -80,6 +80,19 @@ export async function closePackaged(app: ElectronApplication | undefined): Promi
   } finally { await joinOwned(child, owned); }
 }
 
+/**
+ * Plan 283: a Terno started without Playwright (a shipped build can't be attached to), stopped as a quit: SIGTERM to
+ * main (Electron quits on it), then anything of its own it left behind.
+ */
+export async function stopSpawned(child: ChildProcess): Promise<void> {
+  if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;
+  const owned = descendants(child.pid);
+  const exit = once(child, "exit");
+  child.kill("SIGTERM");
+  await within(exit, QUIT_MS, "Electron quit").catch(() => {});
+  await joinOwned(child, owned);
+}
+
 /** All resource joins run even when an earlier cleanup fails. */
 export async function cleanupOwned(steps: (() => Promise<unknown> | void)[]): Promise<void> {
   const failures: unknown[] = [];

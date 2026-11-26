@@ -23,9 +23,10 @@ import { join } from "node:path";
 import { build, Platform, Arch } from "electron-builder";
 import { dmgConfig } from "../src/dmg-layout.ts";
 import { dmgProblems, hasCustomIconFlag, withMounted, withRetries } from "../src/dmg-mount.ts";
+import { assertFuses } from "./fuses.mjs";
 import { channelOf } from "./release-assets.mjs";
 import { builderIdentity } from "./sign-identity.mjs";
-import { appId, commonConfig, commonResources, electronDist, productName, release, root, stageApp, stampMinimumVersion, testBuild, uploadReleaseMaps, version } from "./package-stage.mjs";
+import { appId, commonConfig, commonResources, electronDist, productName, release, root, shipped, stageApp, stampMinimumVersion, testBuild, uploadReleaseMaps, version } from "./package-stage.mjs";
 
 /** The identity to sign with: explicit, else the best one in the keychain, else ad-hoc ("-"). */
 function pickIdentity() {
@@ -103,7 +104,7 @@ await build({
   projectDir: stage,
   publish: "never",
   config: {
-    ...commonConfig(),
+    ...commonConfig("darwin"),
     electronDist,
     directories: { output: release, buildResources: join(root, "resources") },
     extraResources: [
@@ -143,6 +144,8 @@ const arch = execFileSync("lipo", ["-archs", join(app, "Contents/MacOS", product
 if (arch !== "arm64") throw new Error(`unexpected architecture: ${arch}`);
 if (!existsSync(join(app, "Contents/Resources/app-update.yml"))) throw new Error("app-update.yml missing: electron-updater can't run without it");
 assertIcon(app);
+// plan 283: what electron-builder flipped, read back from the signed binary
+assertFuses(app, { platform: "darwin", shipped });
 
 // plan 257: exactly the version's channel (a nightly once wrote latest-mac.yml, which no Nightly copy reads)
 const channelFile = `${channelOf(version)}-mac.yml`;
@@ -164,7 +167,7 @@ if (process.env.TERNO_PACKAGE_DMG === "1" || (!testBuild && process.env.TERNO_PA
         projectDir: stage,
         prepackaged: app,
         publish: "never",
-        config: { ...commonConfig(), electronDist, directories: { output: release, buildResources: join(root, "resources") }, dmg: dmgConfig(join(root, "resources")) },
+        config: { ...commonConfig("darwin"), electronDist, directories: { output: release, buildResources: join(root, "resources") }, dmg: dmgConfig(join(root, "resources")) },
       }),
     { tries: 3, waitMs: 5_000, label: "the DMG", cleanup: () => rmSync(dmg, { force: true }) },
   );
@@ -173,6 +176,8 @@ if (process.env.TERNO_PACKAGE_DMG === "1" || (!testBuild && process.env.TERNO_PA
   withMounted(dmg, true, (volume) => {
     const problems = dmgProblems(volume, productName, mountedVolume);
     if (problems.length) throw new Error(`the DMG isn't a drag-to-install window: ${problems.join("; ")}`);
+    // plan 283: the copy people download, fused as the app is
+    assertFuses(join(volume, `${productName}.app`), { platform: "darwin", shipped });
   });
   console.log(`\n✓ ${dmg}`);
 }

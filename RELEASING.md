@@ -104,6 +104,7 @@ The run's log says which step failed and why:
 - **"holds no Developer ID Application identity"**: the `.p12` has the wrong certificate, or the certificate without its private key. Export it again from My Certificates (the row with a disclosure triangle).
 - **"isn't notarized"**: check the three `APPLE_API_*` secrets, and that the key wasn't revoked.
 - **The Linux smoke test failed**: the run's log has Playwright's report. `docs/DEVELOPMENT.md` → Linux runs the same test in Docker.
+- **"isn't fused as a shipped build" or "Nothing debugs the app" failed** (plan 283): what was built could be started with a debugger, so it isn't kept. The message names each Electron fuse that's wrong; `apps/desktop/scripts/fuses.mjs` holds the table.
 - **"a nightly of this commit is …"** or **"doesn't sort above the published …"**: a stable release went into review, or a newer nightly came out, while this nightly was building. Nothing was published; the next night numbers it right.
 - **"couldn't publish v…-nightly…"**: the nightly's draft was removed, and the next night builds again.
 - **"v… already exists"**: a release with that version is already on the Releases page. If it's a draft you don't want, delete it there (or `gh release delete v1.4.0`); otherwise bump the version.

@@ -216,6 +216,14 @@ describe("plan 126: the release workflow", () => {
     expect(step("Smoke-test the installed app", "linux")).toContain("test:smoke:linux");
     expect(at("- name: Build and package for Linux")).toBeLessThan(at("- name: Install the x64 package"));
     expect(at("- name: Install the x64 package")).toBeLessThan(at("- name: Smoke-test the installed app"));
+    // plan 283: the installed copy is checked as shipped and probed first; only then is the inspect fuse turned back on
+    // in that copy, for Playwright
+    expect(step("Nothing debugs the installed app", "linux")).toMatch(/fuses\.mjs check \/opt\/Terno\/terno shipped\n[\s\S]*test:smoke:shipped/);
+    expect(step("Let Playwright attach to the installed test copy", "linux")).toContain("sudo node apps/desktop/scripts/fuses.mjs inspectable /opt/Terno/terno");
+    expect(at("- name: Install the x64 package")).toBeLessThan(at("- name: Nothing debugs the installed app"));
+    expect(at("- name: Nothing debugs the installed app")).toBeLessThan(at("- name: Let Playwright attach to the installed test copy"));
+    expect(at("- name: Let Playwright attach to the installed test copy")).toBeLessThan(at("- name: Smoke-test the installed app"));
+    expect(linux.match(/fuses\.mjs inspectable/g)).toHaveLength(1);
     expect(at("- name: Smoke-test the installed app")).toBeLessThan(at("- name: Keep the packages for the draft"));
     expect(linux).not.toMatch(/MAC_CERT|APPLE_API/);
   });
@@ -224,6 +232,14 @@ describe("plan 126: the release workflow", () => {
     const names = [...workflow.matchAll(/\n\s+name: (release-\S+|source-maps-\S+)/g)].map((m) => m[1]);
     expect(names).toEqual(["release-linux", "source-maps-linux-${{", "release-mac", "source-maps-mac-${{", "release-mac", "release-linux"]);
     expect(new Set(names.slice(0, 4)).size).toBe(4);
+  });
+
+  it("plan 283: the Mac's build is probed for debugging entry points before it's kept, without launching the app", () => {
+    const mac = job("mac");
+    const probe = step("Nothing debugs the app");
+    expect(probe).toContain("playwright test -c playwright.shipped.config.ts --grep-invert @launches");
+    expect(mac.indexOf("- name: Build, sign and notarize")).toBeLessThan(mac.indexOf("- name: Nothing debugs the app"));
+    expect(mac.indexOf("- name: Nothing debugs the app")).toBeLessThan(mac.indexOf("- name: Keep the app for the draft"));
   });
 
   it("pins every action to a commit and keeps the checkout's token off the disk (the job holds the signing key)", () => {

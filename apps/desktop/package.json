@@ -17,6 +17,7 @@
     "release:nightly": "node scripts/release-ci.mjs nightly",
     "test:smoke": "playwright test -c playwright.smoke.config.ts",
     "test:smoke:linux": "playwright test -c playwright.linux.config.ts",
+    "test:smoke:shipped": "playwright test -c playwright.shipped.config.ts",
     "test:startup": "playwright test -c playwright.startup.config.ts",
     "typecheck": "tsc -p tsconfig.json",
     "dev:demo": "node scripts/dev.mjs --demo",
