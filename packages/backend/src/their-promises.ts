@@ -170,7 +170,17 @@ export function checkTheirPromises(
     out.kept.push(r);
     done.add(r.id);
   }
-  if (input.relay) return out;
+  if (input.relay) {
+    // the second QA round: a notice naming the debtor's address and the thing, in a sentence that says it was delivered,
+    // hints by itself when the model said nothing of it (only ever a question on the card, never a close)
+    for (const r of input.owed.values()) {
+      if (!r.personEmail || out.hints.some((h) => h.id === r.id)) continue;
+      const thing = namingWords(r.text, { names: false });
+      const said = input.relay.block.split(/(?<=[.!?])\s+|\n+/u).some((x) => names(x, r.personEmail!) && RELAYED.test(x) && deliveredIn(x, input.relay!.block) && [...namingWords(x.replace(r.personEmail!, " ").toLowerCase(), { names: false })].some((w) => thing.has(w)));
+      if (said) out.hints.push({ id: r.id, revision: r.revision });
+    }
+    return out;
+  }
   // a file alone that names one open promise of theirs closes it, said or not by the model (all of theirs, shown or not)
   const fileKept = fileDelivers(input.text, input.attachments, [...new Map([...input.owed.values(), ...(input.debts ?? [])].map((d) => [d.id, d])).values()]);
   if (fileKept && !done.has(fileKept.id)) {
@@ -200,6 +210,8 @@ export function checkTheirPromises(
  */
 const RELAY_CHARS = 1200;
 /** The Astra review: a whole address, never part of another ("alex@x.test" isn't in "malex@x.test") */
+/** A service's words for a thing delivered: signed, shared, sent, uploaded, completed (en, es) */
+const RELAYED = /\b(?:signed|countersigned|shared|sent|uploaded|completed|delivered|firm[oó]|ha firmado|comparti[oó]|ha compartido|envi[oó]|ha enviado|subi[oó]|complet[oó])\b/iu;
 const names = (text: string, email: string) => new RegExp(`(?<![\\w.+-])${email.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}(?![\\w-]|\\.\\w)`, "iu").test(text);
 export function relayOf(text: string, owed: readonly FollowupRow[]): { rows: FollowupRow[]; block: string } | null {
   const rows = owed.filter((r) => r.personEmail && names(text, r.personEmail));

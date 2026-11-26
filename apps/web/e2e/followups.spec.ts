@@ -383,7 +383,7 @@ test.describe("follow-ups (plan 142)", () => {
 
     await scenario("a firm one, late, is on the Inbox's top saying what's owed; a tentative one isn't", async () => {
       await expect(page.getByTestId("inbox-reminders-label")).toBeVisible();
-      await expect(page.getByTestId("thread-row").filter({ hasText: "promised to send you the contract" }).first()).toBeVisible();
+      await expect(page.getByTestId("thread-row").filter({ hasText: "Promised to send you the contract" }).first()).toBeVisible();
       // the two firm ones are the top's; the tentative one stays in its place in the Inbox
       await expect(page.getByTestId("inbox-reminders-label")).toHaveText(/\(2\)/);
     });
@@ -428,7 +428,7 @@ test.describe("follow-ups (plan 142)", () => {
 
     await scenario("the tentative one is in Follow-ups, saying what they hope, quietly, under the name of who owes it", async () => {
       await page.getByTestId("palette-go-followups").or(page.getByTestId("nav-followups")).first().click();
-      const row = page.getByTestId("thread-row").filter({ hasText: "Tom Reed hopes to send you the contract" });
+      const row = page.getByTestId("thread-row").filter({ hasText: "Hopes to send you the contract" });
       await expect(row).toHaveCount(1);
       await expect(row.getByTestId("row-from")).toHaveText("Tom Reed");
       await expect(row.getByTestId("row-snippet")).not.toHaveClass(/text-draft-foreground/);

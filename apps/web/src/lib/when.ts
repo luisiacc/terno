@@ -65,6 +65,9 @@ export function reminderShort(ms: number, now = Date.now()): string {
   return `${dayOf(ms, now)} ${time}`;
 }
 
+/** Plan 280 (the second QA round): a day as its date, always ("Nov 16"): a weekday read as last week's or next */
+export const dayDate = (ms: number, now = Date.now()): string => dayOf(ms, now);
+
 /** Plan 280 (the QA panel): a day alone, as a row's date says one: "Today", "Tomorrow", "Yesterday", a weekday within a week, else "Nov 16". */
 export function dayShort(ms: number, now = Date.now()): string {
   const days = daysAway(ms, now);

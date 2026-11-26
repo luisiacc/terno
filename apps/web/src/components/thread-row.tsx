@@ -23,8 +23,8 @@ import { Marked } from "./match-mark";
 import { ReviewControls } from "./review-actions";
 import { useThreadCode } from "~/lib/codes";
 import { reminderShort, useReminders } from "~/lib/reminders";
-import { dayShort } from "~/lib/when";
-import { rowLine } from "~/lib/followups";
+import { dayDate } from "~/lib/when";
+import { followupWhen, owedLate, rowLine } from "~/lib/followups";
 import { useFollowups } from "~/state/followups";
 import { rowLine as placedLine, sectionOf } from "~/lib/put-away";
 import { onlyOnTop } from "~/state/list";
@@ -192,12 +192,13 @@ function useOwed(thread: Pick<ThreadSummary, "id">, reminderTop?: boolean) {
   // plan 280 (the code review): on the top, the row that put it there speaks for it, never a quiet one beside it
   const speaking = shows ? lineRows(owed, !followupsList) : undefined;
   const lead = speaking ? mostUrgent(speaking) : undefined;
-  // plan 280 (the QA panel): a promise of theirs says the day it was promised for, never the moment it's late ("Mon", not
-  // "Tue 9:00 AM"), and one with no day says none (as What matters' undated promise, never the mail's date beside it);
-  // its line takes the owed ink only once it's late and firm (red on every row read as all of them overdue)
+  // plan 280 (the QA panel): a promise of theirs says the day it was promised for, never the moment it's late, as a date
+  // ("Nov 16": the second round read "Mon" beside "Nov 9" as last Monday), what it is on hover ("Was due Monday"); one
+  // with no day, or a hedged one, says none (as What matters' undated promise, never the mail's date beside it). Its line
+  // takes the owed ink only once it's late for certain (`owedLate`)
   const theirs = lead?.kind === "theirs";
-  const day = theirs && lead.dueDay ? localDay(lead.dueDay) : null;
-  return { line: speaking ? rowLine(speaking) : null, dueAt: theirs ? (day ? day.getTime() : null) : (lead?.dueAt ?? null), dayOnly: theirs, noDay: theirs && !day, quietLine: theirs && (lead.firm === false || lead.state !== "due") };
+  const day = theirs && lead.dueDay && lead.firm !== false ? localDay(lead.dueDay) : null;
+  return { line: speaking ? rowLine(speaking) : null, dueAt: theirs ? (day ? day.getTime() : null) : (lead?.dueAt ?? null), dayOnly: theirs, noDay: theirs && !day, quietLine: theirs && !owedLate(lead), said: theirs && day ? followupWhen(lead) : null };
 }
 
 /**
@@ -328,8 +329,8 @@ const SENDER_COLUMN = "flex w-[clamp(5rem,24cqw,11rem)] min-w-0 shrink items-cen
 
 /** On the Inbox's top and in its own list, the date a row shows is when it's owed. */
 function RowDate({ thread, reminderTop, fallback, className, title }: { thread: ThreadSummary; reminderTop?: boolean; fallback: string; className: string; title?: string }) {
-  const { dueAt, dayOnly, noDay } = useOwed(thread, reminderTop);
-  return <span data-testid="row-date" data-due-at={dueAt ?? undefined} title={title} className={className}>{dueAt !== null ? (dayOnly ? dayShort(dueAt) : reminderShort(dueAt)) : noDay ? "" : fallback}</span>;
+  const { dueAt, dayOnly, noDay, said } = useOwed(thread, reminderTop);
+  return <span data-testid="row-date" data-due-at={dueAt ?? undefined} title={said ?? title} className={className}>{dueAt !== null ? (dayOnly ? dayDate(dueAt) : reminderShort(dueAt)) : noDay ? "" : fallback}</span>;
 }
 
 export function ThreadRowView({ thread, top, height, compact, wide, icons, layout, review, pinnedTop = false, reminderTop, selected, checked, included, pending, inSelection, account, categories, inCategory = null, kept = false, hasDraft, code, reminder, remindersList, interactive, match, excerpt, lines: previewLines = 1, pick = false, position, placedView: placed }: ViewProps) {

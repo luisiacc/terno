@@ -11,7 +11,7 @@ import { followupsOffered, modelName } from "~/lib/ai";
 import { whenDate } from "~/lib/when";
 import { useCanDraft } from "~/lib/ai-draft-state";
 import { laterPresets } from "~/lib/dated";
-import { actOnFollowup, followupLine, followupWhen, mayHaveArrived } from "~/lib/followups";
+import { actOnFollowup, followupLine, followupWhen, mayHaveArrived, owedLate } from "~/lib/followups";
 import { useDrafts } from "~/lib/drafts";
 import { presetLabel, presetWhen } from "~/lib/reminders";
 import { revealSummaryMessage } from "~/lib/summaries";
@@ -71,7 +71,8 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
       </p>
       {/* plan 280: a promise of theirs says what it is ("Alex promised to send you the contract") under the question */}
       {arrived !== null && <p data-testid="followup-promised" className="text-sm text-muted-foreground">{followupLine(row)}</p>}
-      {when && <p data-testid="followup-due" className="text-sm text-muted-foreground tabular">{when}</p>}
+      {/* the second QA round: late for certain, the day in the list's owed ink (it went grey where you act) */}
+      {when && <p data-testid="followup-due" className={cn("text-sm tabular", owedLate(row) && arrived === null ? "text-draft-foreground" : "text-muted-foreground")}>{when}</p>}
       <div className={cn(AI_ACTIONS, "mt-3")} data-testid="followup-actions">
         {/* plan 280: Done first for a promise of theirs (the QA panel: "Received" was wrong for a call or an answer) */}
         {theirs && (
@@ -130,9 +131,9 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
           {t(theirs ? "followup.notAPromise" : "followup.dismiss")}
         </Button>
         {/* where it came from, named ("Your message, Oct 22"), its words (the quote) on hover; nothing when it's the one
-            message on screen. The QA panel: it and who found it are one line of their own under the buttons (source on the
-            card's text line, provenance at its end), never one beside the buttons on one card and wrapped below on another */}
-        <span data-testid="followup-meta" className={cn("flex min-w-max flex-1 items-center gap-2", source !== null && "basis-full")}>
+            message on screen. The QA panel: it and who found it are one line of their own under the buttons, on every card
+            (source on the card's text line, provenance at its end), never beside the buttons on one card and below on another */}
+        <span data-testid="followup-meta" className="flex min-w-max basis-full items-center gap-2">
           {source !== null && (
             <Tooltip>
               <TooltipTrigger render={<Button variant="ghost" size="sm" data-testid="followup-go" className="-ms-2.5 text-muted-foreground hover:text-foreground" onClick={() => revealSummaryMessage(target)} />}>

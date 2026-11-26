@@ -96,17 +96,34 @@ describe("a promise of theirs (plan 280)", () => {
     expect(followupLine(owed({ text: "enviarte el contrato" }), NOW)).toBe("Alex Reed prometió enviarte el contrato");
   });
 
-  it("its day is the day promised, never the moment it's late; undated, none", () => {
-    expect(followupWhen(owed(), NOW)).toBe("Due Tuesday");
-    expect(followupWhen(owed({ dueDay: "2026-10-21", state: "due" }), NOW)).toBe("Was due yesterday");
-    expect(followupWhen(owed({ dated: false, dueDay: null }), NOW)).toBeNull();
+  it("the second QA round: in a list, under the debtor's name, the thing alone", () => {
+    expect(followupLine(owed(), NOW, { bare: true })).toBe("Promised to send you the contract");
+    expect(followupLine(owed({ firm: false }), NOW, { bare: true })).toBe("Hopes to send you the contract");
+    setLocale("es", es as never);
+    expect(followupLine(owed({ text: "enviarte el contrato", firm: false }), NOW, { bare: true })).toBe("Espera enviarte el contrato");
   });
 
-  it("a tentative one is never due: maybe by its day, and once past, hoped for (the QA panel)", () => {
-    expect(followupWhen(owed({ firm: false }), NOW)).toBe("Maybe by Tuesday");
-    expect(followupWhen(owed({ firm: false, dueDay: "2026-10-21", state: "due" }), NOW)).toBe("Hoped for yesterday");
+  it("its day is the day promised, never the moment it's late; undated, when it was promised (the second QA round: a late one says why)", () => {
+    expect(followupWhen(owed(), NOW)).toBe("Due Tuesday");
+    expect(followupWhen(owed({ dueDay: "2026-10-21", state: "due" }), NOW)).toBe("Was due yesterday");
+    expect(followupWhen(owed({ dated: false, dueDay: null, sentAt: NOW - 9 * DAY }), NOW)).toMatch(/^Promised \w{3} \d{1,2}, no day given$/);
     setLocale("es", es as never);
-    expect(followupWhen(owed({ firm: false }), NOW)).toBe("Quizá para el martes");
+    expect(followupWhen(owed({ dated: false, dueDay: null, sentAt: NOW - 9 * DAY }), NOW)).toMatch(/^Prometido el \d{1,2} \w+, sin fecha$/);
+  });
+
+  it("a tentative one says no day: its soft words read as a weekday no one said (the second QA round)", () => {
+    expect(followupWhen(owed({ firm: false }), NOW)).toBeNull();
+    expect(followupWhen(owed({ firm: false, dueDay: "2026-10-21" }), NOW)).toBeNull();
+  });
+
+  it("late for certain, what's red and counted: dated, firm, due, and no notice saying it may have come", async () => {
+    const { owedLate } = await import("./followups");
+    expect(owedLate(owed({ state: "due" }))).toBe(true);
+    expect(owedLate(owed({ state: "open" }))).toBe(false);
+    expect(owedLate(owed({ state: "due", firm: false }))).toBe(false);
+    expect(owedLate(owed({ state: "due", dated: false, dueDay: null }))).toBe(false);
+    expect(owedLate(owed({ state: "due", arrivedHint: 9 }))).toBe(false);
+    expect(owedLate(row({ state: "due" }))).toBe(false);
   });
 
   it("may have arrived: the debtor wrote since, or a notice named them; never their own promise's message", async () => {
@@ -114,11 +131,14 @@ describe("a promise of theirs (plan 280)", () => {
     const m = (id: number, email: string, date: number) => ({ id, date, from: { name: "", email } });
     expect(mayHaveArrived(owed(), [m(3, "alex@acme.test", NOW - DAY)])).toBeNull();
     expect(mayHaveArrived(owed(), [m(3, "alex@acme.test", NOW - DAY), m(4, "bea@acme.test", NOW)])).toBeNull();
-    expect(mayHaveArrived(owed(), [m(4, "Alex+work@ACME.test", NOW)])).toBe("wrote");
+    expect(mayHaveArrived(owed({ dueDay: "2026-10-20" }), [m(4, "Alex+work@ACME.test", NOW)])).toBe("wrote");
+    // the second QA round: for one with a day, only mail from that day counts (Marcus's "I'll keep you posted" before it)
+    expect(mayHaveArrived(owed(), [m(4, "alex@acme.test", NOW)])).toBeNull();
+    expect(mayHaveArrived(owed({ dated: false, dueDay: null }), [m(4, "alex@acme.test", NOW)])).toBe("wrote");
     expect(mayHaveArrived(owed({ arrivedHint: 99 }), [])).toBe("notice");
     expect(mayHaveArrived(row(), [m(4, "arjun@x.test", NOW)])).toBeNull();
     // the Fable review: the mail that moved its day isn't news about it; one after it is
-    expect(mayHaveArrived(owed({ movedAt: NOW }), [m(4, "alex@acme.test", NOW)])).toBeNull();
-    expect(mayHaveArrived(owed({ movedAt: NOW }), [m(4, "alex@acme.test", NOW), m(5, "alex@acme.test", NOW + 1)])).toBe("wrote");
+    expect(mayHaveArrived(owed({ dueDay: "2026-10-20", movedAt: NOW }), [m(4, "alex@acme.test", NOW)])).toBeNull();
+    expect(mayHaveArrived(owed({ dueDay: "2026-10-20", movedAt: NOW }), [m(4, "alex@acme.test", NOW), m(5, "alex@acme.test", NOW + 1)])).toBe("wrote");
   });
 });

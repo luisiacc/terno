@@ -424,3 +424,15 @@ Seven personas, each with a fictional mailbox written for them (outside the repo
 - "Decirle a Lucía si falta algo" and "Answer Jun about lunch" are the dated reader's items (What matters).
 
 **For the owner:** relay notices closing rather than hinting; what the sidebar's count counts; "Received" for calls and answers; whether a hedged or "I'll get back to you" promise ever turns late; promises addressed to a group; a grace period before suggesting a follow-up to family; and Fable's forged-From close.
+
+### The owner's answers (2026-11-26: "lets do your recommended fixes")
+
+1. **Relay notices:** they keep asking "Is it done?" and never close a promise.
+2. **The count:** Follow-ups counts the late promises, which are its red rows. It says so on hover and to a screen reader ("4 late").
+3. **Done:** every promise of theirs is closed with Done ("Received" was wrong for a call or an answer). The card asks "Is it done?".
+4. **Hedged promises:** one never comes due (`comesDue`, in both stores, and the timer never wakes for it). It stays open quietly, says "Hoped for Monday" once its day is past, and retires 30 days after that.
+5. **Group promises:** a promise to a group the reader is in counts as theirs, in mail addressed to them (To, never Cc or a list): prompt v6.
+6. **No grace period for family:** nothing tells family apart reliably, and Later covers it.
+7. **A forged From still closes silently:** making it a hint would ask for Done on most deliveries.
+
+**The panel again:** 60 of 84 promises came out as each persona's key has them (56 before), with no false rows. Sam's group promise is now found, and the hedged promises stay open. The ledger totals $5.58 for every panel run.

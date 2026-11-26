@@ -10,7 +10,7 @@ import { TipMenu, TipMenuItem, TipPicture } from "./tip-picture";
  */
 export default function FollowupsTip({ kind, name }: { kind: FollowupKind; name: string | null }) {
   // plan 280: what's owed to you is taught as a wait is: the line, and Done
-  if (kind === "theirs") return <OwedTip name={name} />;
+  if (kind === "theirs") return <OwedTip />;
   const awaiting = kind === "awaiting";
   return (
     <Tip
@@ -41,8 +41,11 @@ export default function FollowupsTip({ kind, name }: { kind: FollowupKind; name:
   );
 }
 
-/** Plan 280: the first promise of theirs on an open conversation: what it says, and Done. */
-function OwedTip({ name }: { name: string | null }) {
+/**
+ * Plan 280: the first promise of theirs on an open conversation: what it says, and Done. Its picture's person is the
+ * example's (the second QA round: the real name beside the example's words read as a promise they never made).
+ */
+function OwedTip() {
   return (
     <Tip
       id="followups-first"
@@ -54,7 +57,7 @@ function OwedTip({ name }: { name: string | null }) {
       picture={
         <TipPicture className="h-[92px]">
           <TipMenu className="w-60">
-            <TipMenuItem icon={<Clock className="size-3.5" />} label={t("followup.theirs", { name: name ?? "Alex", text: t("followups.tip.owedExample") })} />
+            <TipMenuItem icon={<Clock className="size-3.5" />} label={t("followup.theirs", { name: "Alex", text: t("followups.tip.owedExample") })} />
             <TipMenuItem icon={<Check className="size-3.5" />} label={t("followup.done")} pointer />
           </TipMenu>
         </TipPicture>

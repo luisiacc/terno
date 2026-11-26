@@ -57,6 +57,15 @@ describe("their promises' checks (plan 280)", () => {
     expect(r).toEqual({ rows: [], kept: [], moved: [], withdrawn: [], hints: [{ id: 7, revision: 3 }] });
   });
 
+  it("the second QA round: a notice naming the debtor and the thing as delivered hints when the model says nothing; never another person's, another thing, or 'not yet'", () => {
+    const owed = new Map([["t1", row(7, "countersign the data processing addendum and send it via SignNest")]]);
+    const hint = (block: string) => check({}, { owed, relay: { block }, text: block }).hints;
+    expect(hint('alex@acme.test signed "Data Processing Addendum".')).toEqual([{ id: 7, revision: 3 }]);
+    expect(hint('bea@acme.test signed "Data Processing Addendum". alex@acme.test viewed it.')).toEqual([]);
+    expect(hint('alex@acme.test signed "Lease renewal".')).toEqual([]);
+    expect(hint('alex@acme.test has not signed "Data Processing Addendum" yet.')).toEqual([]);
+  });
+
   it("a move is a new day in their words, never past; kept wins over a move or a withdrawal", () => {
     const owed = new Map([["t1", row(7, "send you the deck")]]);
     const text = "I need until Monday for the deck. Sorry, we won't be able to send the slides.";

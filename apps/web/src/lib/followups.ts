@@ -10,7 +10,7 @@ import { client } from "~/rpc/connection";
 import { getApp, inPlainInbox, navigate, useApp } from "~/state/app";
 import { useFollowups } from "~/state/followups";
 import { inboxTop, reloadList, useList } from "~/state/list";
-import { datedDay, reminderDated } from "~/lib/when";
+import { dayDate, reminderDated } from "~/lib/when";
 
 /**
  * Plan 142: what the windows know of follow-ups (the backend's snapshot, at startup and on its `followups` event), and
@@ -22,7 +22,8 @@ export function applyFollowups(snapshot: FollowupsSnapshot): void {
   for (const r of snapshot.rows) byThread.set(r.threadId, [...(byThread.get(r.threadId) ?? []), r]);
   const onTop = new Set(snapshot.rows.filter((r) => r.inboxState === "onTop").map((r) => r.threadId)).size;
   // plan 280: a tentative promise of theirs is kept quietly: in the list, never in the count that calls for attention
-  const due = new Set(snapshot.rows.filter((r) => r.state === "due" && !(r.kind === "theirs" && r.firm === false)).map((r) => r.threadId)).size;
+  // (the second QA round: and one with no day, or one a notice may have brought: the count is the red rows, "late")
+  const due = new Set(snapshot.rows.filter((r) => r.state === "due" && (r.kind !== "theirs" || owedLate(r))).map((r) => r.threadId)).size;
   useFollowups.setState({ rows: snapshot.rows, byThread, due, onTop, loaded: true });
   const s = getApp();
   if (!before.loaded && useList.getState().itemsKey === "") return;
@@ -41,6 +42,12 @@ const on = () => followupsOffered(getApp());
 
 export const anyFollowupOnTop = (): boolean => on() && useFollowups.getState().onTop > 0;
 
+/**
+ * Plan 280 (the second QA round): a promise of theirs that's late for certain, what's red and counted: past the day they
+ * named, firm, and nothing saying it may have come. One with no day, or one a notice may have brought, stays quiet.
+ */
+export const owedLate = (r: FollowupRow): boolean => r.kind === "theirs" && r.state === "due" && r.firm !== false && r.dated && r.arrivedHint == null;
+
 const personOf = (row: FollowupRow): string | null => row.personName || row.personEmail?.split("@")[0] || null;
 
 /**
@@ -49,8 +56,10 @@ const personOf = (row: FollowupRow): string | null => row.personName || row.pers
  * "You told Jess you'd send the script"); where the words can't lose the name ("email Jess"), they keep it and the line
  * doesn't add it ("You said you'd email Jess"). `short`: the person by their first name, as the reader's line says them.
  */
-export function followupLine(row: FollowupRow, now = Date.now(), { short = false }: { short?: boolean } = {}): string {
+export function followupLine(row: FollowupRow, now = Date.now(), { short = false, bare = false }: { short?: boolean; bare?: boolean } = {}): string {
   const name = personOf(row);
+  // the second QA round: where the row's sender already is the debtor, the line is the thing alone ("Promised to send you…")
+  if (row.kind === "theirs" && bare) return t(row.firm === false ? "followup.theirsHopedBare" : "followup.theirsBare", { text: row.text });
   // plan 280: "Alex promised to send you the contract"; a tentative one, "Alex hopes to…" (no pronoun guessed; the QA
   // panel: "hoped to" read as given up)
   if (row.kind === "theirs") {
@@ -104,11 +113,12 @@ export function followupWhen(row: FollowupRow, now = Date.now()): string | null 
   if (row.kind === "promise") return row.dated ? promiseWhen(row, now >= dueCutoff(dayKeyOf(row.dueAt), row.partOfDay), now) : null;
   // plan 280: the day they promised ("Due Thursday", "Was due Thursday"), never the moment it's late; undated, none
   if (row.kind === "theirs") {
+    // the second QA round: a hedged one says no day (a soft "early next week" read as a weekday no one said)
+    if (row.firm === false) return null;
     const day = row.dueDay ? localDay(row.dueDay) : null;
-    if (!day) return null;
+    // one with no day says when it was promised, so a late one says why
+    if (!day) return t("followup.theirsNoDay", { date: dayDate(row.sentAt, now) });
     day.setHours(9, 0, 0, 0);
-    // the QA panel: a hedged one isn't "due", and never "was due": "Maybe by Monday", "Hoped for Monday"
-    if (row.firm === false) return hopedWhen(day.getTime(), now >= dueCutoff(row.dueDay!, row.partOfDay), now);
     return promiseWhen({ dueAt: day.getTime(), dated: true, partOfDay: row.partOfDay ?? null }, now >= dueCutoff(row.dueDay!, row.partOfDay), now);
   }
   const date = reminderDated(row.dueAt, now);
@@ -116,16 +126,11 @@ export function followupWhen(row: FollowupRow, now = Date.now()): string | null 
   return t("followup.dueOnAwaiting", { date });
 }
 
-function hopedWhen(day: number, past: boolean, now: number): string {
-  const d = datedDay(day, now);
-  if (past) return d.near === "yesterday" ? t("followup.hopedYesterday") : d.near === "today" ? t("followup.hopedToday") : t("followup.hopedWasOn", { day: d.text });
-  return d.near === "today" ? t("followup.hopedToday") : d.near === "tomorrow" ? t("followup.hopedTomorrow") : t("followup.hopedOn", { day: d.text });
-}
-
 /** What a row says: its most urgent, and how many more. */
 export function rowLine(rows: readonly FollowupRow[] | undefined, now = Date.now()): string | null {
   if (!rows?.length || !on()) return null;
-  const line = followupLine(mostUrgent(rows)!, now);
+  // (the second QA round: the row shows who owes a promise of theirs, so its line doesn't name them again)
+  const line = followupLine(mostUrgent(rows)!, now, { bare: true });
   return rows.length > 1 ? `${line} +${rows.length - 1}` : line;
 }
 
@@ -176,8 +181,10 @@ export const leftTop = (threadId: number): boolean => inboxTop.ids.includes(thre
 export function mayHaveArrived(row: FollowupRow, messages: readonly Pick<MessageDetail, "id" | "date" | "from">[]): "wrote" | "notice" | null {
   if (row.kind !== "theirs") return null;
   const debtor = row.personKey ?? (row.personEmail ? addressKey(row.personEmail) : null);
-  // (the Fable review: since the promise, or since the mail that last moved it, which isn't news about it)
-  const since = Math.max(row.sentAt, row.movedAt ?? 0);
+  // (the Fable review: since the promise, or since the mail that last moved it, which isn't news about it; the second QA
+  // round: and for one with a day, from that day: a note before it was about something else, or the model read it)
+  const day = row.dated && row.dueDay ? localDay(row.dueDay)?.getTime() ?? 0 : 0;
+  const since = Math.max(row.sentAt, row.movedAt ?? 0, day);
   if (debtor && messages.some((m) => m.id !== row.messageId && m.date > since && addressKey(m.from.email) === debtor)) return "wrote";
   return row.arrivedHint != null ? "notice" : null;
 }
