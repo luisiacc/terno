@@ -305,6 +305,17 @@ describe("one person", () => {
     expect(card.lastFromMe).toBe(true);
   });
 
+  it("each address's Last email is its page's: its newest conversation, never one in Trash", async () => {
+    const { client, raw, from } = await setup();
+    const older = await from("Ana", "ana@people.test", { waiting: false });
+    const binned = await from("Ana", "ana@people.test", { waiting: false });
+    raw.run("UPDATE threads SET in_trash = 1, in_inbox = 0 WHERE id = ?", binned);
+    const page = (await client.call("people.person", { email: "ana@people.test" }))!;
+    expect(page.conversations[0]!.id).toBe(older);
+    const { last } = await client.call("people.lastEmails", { emails: ["ana@people.test", "nobody@people.test"] });
+    expect(last).toEqual({ "ana@people.test": page.conversations[0]!.lastDate, "nobody@people.test": 0 });
+  });
+
   it("their open items and recent conversations, never Spam or Trash, with whether there are more", async () => {
     const { client, raw, from } = await setup();
     const open = await from("Ana", "ana@people.test");

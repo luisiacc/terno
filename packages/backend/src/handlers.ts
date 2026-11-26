@@ -1797,6 +1797,7 @@ export function createHandlers(b: Backend): Handlers {
       if (b.peopleSeq.get(ctx.clientId) !== seq) throw new RpcError("CANCELLED", "Superseded by a newer search");
       return b.people.search(query);
     },
+    "people.lastEmails": ({ emails }) => b.people.lastEmails(emails),
     "people.person": ({ email, conversations, except }) => b.people.person(email, conversations, except),
     "followups.list": () => b.followups.look(),
     "followups.threads": async ({ onTop, accountId }) => ({ items: await b.followups.threads(onTop, accountId) }),

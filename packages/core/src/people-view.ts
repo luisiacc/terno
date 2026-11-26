@@ -94,6 +94,8 @@ export interface PersonPage {
 export const PEOPLE_EVERYONE_MAX = 5000;
 /** A page's recent conversations. */
 export const PERSON_CONVERSATIONS_MAX = 20;
+/** The last conversations asked for at once (the rows drawn). */
+export const PEOPLE_LAST_MAX = 60;
 /** A search's hits. */
 export const PEOPLE_SEARCH_MAX = 50;
 

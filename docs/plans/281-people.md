@@ -254,3 +254,5 @@ After round 6: the card's last section is the last time you wrote each other (th
 | r07 (Lumen, Graphite) | 69962c622 | 6.5–7 | 7.5 | 154 of 4 reports |
 
 Round 7, a small one: level. "Before this one" was wrong once the card's conversation could be newer than the open one: it says "Last between you". Still raised: Open's repeated "Waiting on you" (the owner's date order kept), the dark selection near hover (decision 12), "Last email" in the list (the index's last date) and on the page (the newest conversation) disagreeing, the card's actions under the item while the page's sit at its right.
+
+After round 7 (owner): "Last email" is one date everywhere, a person's last conversation as their page heads with it (its newest, never in Spam or Trash): Everyone's and a search's rows ask it for the rows drawn (`people.lastEmails`, one indexed search each, at most 60 at once, again when mail changes), never the recipient index's last date.

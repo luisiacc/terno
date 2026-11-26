@@ -294,6 +294,10 @@ test("People: the row below the Inbox, Open and the search, a person's page, Don
     await page.keyboard.type("marco");
     await page.keyboard.press("Enter");
     await expect(page.getByTestId("person-name")).toHaveText("Marco Bell");
+    // his row's Last email is his page's: one date, his last conversation
+    const when = row(page, "Marco Bell").getByTestId("person-row-when");
+    await expect(when).toHaveText(/^Last email /);
+    await expect(page.getByTestId("person-page").getByText(/Last email/)).toContainText((await when.textContent())!);
     await expect(page.locator("[data-testid=person-row]:focus")).toHaveAttribute("data-key", "marco@greenway.studio");
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("people-search")).toHaveValue("");

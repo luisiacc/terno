@@ -1,4 +1,4 @@
-import { personItemId, personKey, type PeopleList, type PersonItem, type PersonPage } from "@terno/core";
+import { PEOPLE_LAST_MAX, personItemId, personKey, type PeopleList, type PersonItem, type PersonPage } from "@terno/core";
 import { t } from "@terno/i18n";
 import type { LeftRows } from "~/lib/actions";
 import { aiFeaturesOffered } from "~/lib/ai";
@@ -621,6 +621,31 @@ export async function cardWithin(email: string, threadId: number): Promise<Perso
   }
 }
 
+/** the keys asked for since mail last changed (each row asked once per change) */
+const lastAsked = new Set<string>();
+
+/**
+ * The rows drawn with nothing open: their last conversation's date, as their page says it (one date, one rule), asked for
+ * those not asked since mail last changed, at most `PEOPLE_LAST_MAX` at once. Nothing while People isn't shown.
+ */
+export function askLastEmails(rows: readonly { key: string; email: string }[]): void {
+  if (!getApp().people) return;
+  const want = rows.filter((r) => !lastAsked.has(r.key)).slice(0, PEOPLE_LAST_MAX);
+  if (!want.length) return;
+  for (const r of want) lastAsked.add(r.key);
+  client.call("people.lastEmails", { emails: want.map((r) => r.email) }).then(
+    ({ last }) =>
+      usePeople.setState((s) => {
+        const next = new Map(s.lastEmails);
+        for (const r of want) next.set(r.key, last[r.email] ?? 0);
+        return { lastEmails: next };
+      }),
+    () => {
+      for (const r of want) lastAsked.delete(r.key);
+    },
+  );
+}
+
 let rereading = false;
 let again = false;
 
@@ -635,6 +660,9 @@ function reread(): void {
   }
   again = false;
   rereading = true;
+  // the rows' last emails are asked again as they're drawn (what's shown stays until each answers)
+  lastAsked.clear();
+  usePeople.setState((s) => ({ lastRev: s.lastRev + 1 }));
   const { query } = usePeople.getState();
   if (query.trim()) searchPeople(query);
   void Promise.all([loadPeople(), (async () => {

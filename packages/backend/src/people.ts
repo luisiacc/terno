@@ -129,6 +129,21 @@ export class PeopleService {
     return shown.filter((t) => ids.has(t.id)).map((t) => t.id);
   }
 
+  /**
+   * Each address's last conversation, by its date (0: none): the page's own read (its newest conversation, never in Spam or
+   * Trash), so a row's "Last email" and the page's are one date. One indexed search each, only the rows drawn.
+   */
+  async lastEmails(emails: readonly string[]): Promise<{ last: Record<string, number> }> {
+    if (!(await this.b.today.offered())) return { last: {} };
+    const now = this.b.now();
+    const last: Record<string, number> = {};
+    for (const email of new Set(emails)) {
+      const page = await this.b.store.threads.searchText({ query: email, place: "all", limit: 1, now });
+      last[email] = page.items[0]?.lastDate ?? 0;
+    }
+    return { last };
+  }
+
   /** Plan 278's rules changed: who is a person may have (the grouping and the lists read them again). */
   rulesChanged(): void {
     this.rulesAt++;

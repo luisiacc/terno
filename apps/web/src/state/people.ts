@@ -24,11 +24,17 @@ export interface PeopleState {
    * open with them (their last item done: nothing open) never moves the row from under the user. Let go on another person.
    */
   held: { key: string; index: number } | null;
+  /**
+   * The rows' "Last email" (nothing open with them): each one's last conversation's date by key, as their page's head says it
+   * (0: none), read for the rows drawn (`askLastEmails`); `lastRev` moves when mail changes, and the drawn rows ask again.
+   */
+  lastEmails: ReadonlyMap<string, number>;
+  lastRev: number;
   /** Later's "Pick a date…": the item it's for, from a person's page or the card (`PersonLaterDialog`) */
   laterPick: { item: PersonItem; via: "page" | "card" } | null;
 }
 
-export const usePeople = create<PeopleState>(() => ({ list: null, query: "", hits: null, page: null, reading: null, failed: false, pageFailed: null, held: null, laterPick: null }));
+export const usePeople = create<PeopleState>(() => ({ list: null, query: "", hits: null, page: null, reading: null, failed: false, pageFailed: null, held: null, lastEmails: new Map(), lastRev: 0, laterPick: null }));
 
 /** One row of People's list: a heading, or a person (with what's open, or what the index knows of them). */
 export type PeopleRow =

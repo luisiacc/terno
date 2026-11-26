@@ -9,7 +9,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { LIST_TITLE } from "~/lib/list-title";
 import { listDate } from "~/lib/format";
-import { enterPerson, enterSearch, inputCount, loadPeople, morphName, peopleList, reloadPage, searchPeople, selectPerson } from "~/lib/people";
+import { askLastEmails, enterPerson, enterSearch, inputCount, loadPeople, morphName, peopleList, reloadPage, searchPeople, selectPerson } from "~/lib/people";
 import { renderProbe } from "~/lib/render-probe";
 import { installScrollHairline } from "~/lib/scroll-hairline";
 import { useAppearance } from "~/lib/appearance";
@@ -145,6 +145,15 @@ function PeopleList({ wide }: { wide: boolean }) {
   }, []);
 
   const failed = usePeople((s) => s.failed);
+  // the drawn rows with nothing open: their last email, as their pages say it (asked once per mail change)
+  const lastEmails = usePeople((s) => s.lastEmails);
+  const lastRev = usePeople((s) => s.lastRev);
+  const plain = drawn.flatMap((v) => {
+    const r = rows[v.index];
+    return r?.kind === "person" && r.open === null ? [r] : [];
+  });
+  const plainKeys = plain.map((r) => r.key).join("\n");
+  useEffect(() => askLastEmails(plain), [plainKeys, lastRev]);
   const openCount = openNow(state);
   const index = indexOf(state);
   const searching = query.trim() !== "";
@@ -232,7 +241,7 @@ function PeopleList({ wide }: { wide: boolean }) {
             const row = rows[v.index]!;
             return (
               <li key={v.key} ref={virtualizer.measureElement} data-index={v.index} aria-setsize={rows.length} aria-posinset={v.index + 1} className="absolute inset-x-0 top-0" style={{ transform: `translateY(${v.start}px)` }}>
-                {row.kind === "heading" ? <Heading row={row} /> : <PersonRow row={row} selected={row.key === selected} tabbable={row.key === tabKey} query={searching ? query : ""} />}
+                {row.kind === "heading" ? <Heading row={row} /> : <PersonRow row={row} selected={row.key === selected} tabbable={row.key === tabKey} query={searching ? query : ""} lastEmail={row.open === null ? lastEmails.get(row.key) : undefined} />}
               </li>
             );
           })}
@@ -278,7 +287,7 @@ function Heading({ row }: { row: Extract<PeopleRow, { kind: "heading" }> }) {
  * A person: their face and name, when, and under it what's most pressing between you (and how many more), or their
  * address. `data-morph` names the row for an act's morph: it moves (from Open to Everyone) in the same change as the page.
  */
-const PersonRow = memo(function PersonRow({ row, selected, tabbable, query }: { row: Extract<PeopleRow, { kind: "person" }>; selected: boolean; /** the rows' one Tab stop */ tabbable: boolean; /** a search's words: what they matched is marked */ query: string }) {
+const PersonRow = memo(function PersonRow({ row, selected, tabbable, query, lastEmail }: { row: Extract<PeopleRow, { kind: "person" }>; selected: boolean; /** the rows' one Tab stop */ tabbable: boolean; /** a search's words: what they matched is marked */ query: string; /** nothing open: their last conversation's date, as their page says it (once read) */ lastEmail: number | undefined }) {
   renderProbe("PeopleRow");
   // what's open now leads; something put off with Later only when that's all there is
   // a search hit found by its address (a domain, say) shows that address, marked: it's why the row is here
@@ -291,7 +300,7 @@ const PersonRow = memo(function PersonRow({ row, selected, tabbable, query }: { 
   const when = first ? itemWhen(first) : { text: null, late: false, later: false };
   const age = first && !when.later ? waited(personItemSince(first)) : null;
   // nothing open: when you last wrote each other (Everyone's order is how much and how recently: r05)
-  const lastAt = !first && row.open === null && row.last > 0 ? row.last : null;
+  const lastAt = !first && lastEmail ? lastEmail : null;
   // what else is open now (what's put off waits on their page, under Put off)
   const items = row.open?.items ?? [];
   const now = items.filter((i) => !itemWhen(i).later).length;
