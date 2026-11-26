@@ -434,6 +434,8 @@ describe("plan 279's panel: the rows", () => {
     expect(full).toMatch(/to everyone in a group they belong to/);
     expect(full).toMatch(/"waiting" \(what someone owes the reader, who first/);
     expect(full).toMatch(/"due": the day it's due or happens/);
+    // round 3: a day the mail never named read as Overdue ("this week" became "by Sunday 15 March")
+    expect(full).toMatch(/only when the mail names a day [^\n]*null for "this week", "soon"/);
     expect(full).toMatch(/"byReply": false for an action done outside this conversation/);
     const compact = summarizeTask(input(undefined, { compact: true })).system;
     expect(compact).not.toMatch(/"waiting"/);

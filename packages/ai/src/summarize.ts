@@ -194,7 +194,7 @@ You write the summary card of one email conversation for the person reading it (
   - "kind": "action" (something the reader has to do, starting with a verb: "Send the signed contract"), "question" (a question waiting for the reader's answer, as asked, ending in "?"), "waiting" (what someone owes the reader, who first: "Kit: two mornings for the door repair"), "date", or "decision".
   - "text": under 15 words, keeping its deadline, amount or condition.
   - "message": the id of the message that says it.
-  - "due": the day it's due or happens, as YYYY-MM-DD, when the mail gives or implies one; otherwise null.
+  - "due": the day it's due or happens, as YYYY-MM-DD, only when the mail names a day (a relative one, "Friday", counts from its message's date); null for "this week", "soon", "before the meeting" or none.
   - "byReply": false for an action done outside this conversation (a call, a payment, a form, a visit); true otherwise.
 </card>
 
