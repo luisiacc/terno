@@ -822,7 +822,8 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
           </div>
           {/* gives way as the list scrolls (at once: moving through a list never animates), unless it says what a search found */}
           {!review && <div
-            data-keep={query ? true : undefined}
+            // plan 282: Put away's window stays said (the UI rating: it hid on a short window and on scroll)
+            data-keep={query || putAway ? true : undefined}
             // on a short window it gives its room to the rows (the counts are the sidebar's too), unless it says what a search found
             className="-mt-1.5 pb-2 pl-3 group-data-scrolled/list:not-data-keep:hidden [@media(max-height:760px)]:not-data-keep:hidden"
           >

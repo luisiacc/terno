@@ -1308,7 +1308,7 @@ export const contract = {
   /** the line was dismissed or Put away opened: what was counted up to `through` is seen */
   "putAway.seen": m<{ ok: true }>()(z.object({ through: z.number().int().min(0) })),
   /** Back to Inbox: whatever keeps each conversation out (archived, deleted, moved, a rule's hidden filing); one exact Undo (threads.undo) */
-  "putAway.back": m<{ undoId: number | null; affected: number }>()(z.object({ items: z.array(z.object({ threadId: id, at: z.number().int() })).min(1).max(500) })),
+  "putAway.back": m<{ undoId: number | null; affected: number; /** the conversations it brought back */ threadIds: number[] }>()(z.object({ items: z.array(z.object({ threadId: id, at: z.number().int() })).min(1).max(500) })),
   /** "Don't file {sender} automatically", from Terno's filing of this conversation as the window showed it (`at`); Undo: putAway.keepUndo */
   "putAway.keep": m<{ undoId: string; inInbox: boolean }>()(z.object({ threadId: id, at: z.number().int() })),
   /** "Not {category}" on Terno's filing, as the window showed it: a correction, journaled whole; Undo: categorize.undo */

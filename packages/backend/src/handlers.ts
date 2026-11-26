@@ -1706,16 +1706,19 @@ export function createHandlers(b: Backend): Handlers {
       const ids: number[] = [];
       for (const { threadId, at } of items) if ((await store.putAway.of(threadId, b.now()))?.at === at) ids.push(threadId);
       if (ids.length === 0) throw new RpcError("BAD_REQUEST", L("errors.putAway.changed"));
-      // archived, deleted or moved: back in the Inbox first (Gmail's tabs too), journaled as any action
-      const away = (await store.threads.summaries(ids)).filter((t) => t.inInbox === false || t.inTrash === true).map((t) => t.id);
-      const moved = away.length ? await actOn(away, "moveToInbox", null) : { threads: [] as number[], undoId: null };
-      // then out of every hidden category it's in (no example: Back to Inbox isn't a correction), the rows whole
-      let released: PutAwayMembership[];
+      // out of every hidden category it's in first (no example: Back to Inbox isn't a correction), the rows whole
+      const released = await store.putAway.release(ids);
+      // then whatever still keeps it out of the Inbox view (archived, deleted, moved, or in a tab its account keeps apart:
+      // Gmail's Promotions, Outlook's Other): the Inbox action, journaled as any (Codex review 3 #1)
+      const visible = new Set(await store.putAway.inInbox(ids));
+      const away = ids.filter((id) => !visible.has(id));
+      let moved: { threads: number[]; undoId: number | null };
       try {
-        released = await store.putAway.release(ids);
+        moved = away.length ? await actOn(away, "moveToInbox", null) : { threads: [], undoId: null };
       } catch (error) {
-        // the move stays done and undoable: its Undo goes with the error
-        throw new RpcError("INTERNAL", error instanceof Error ? error.message : String(error), { undoId: moved.undoId }, { expected: false, cause: error });
+        // nothing half done: the filings go back as they were
+        await store.putAway.refile(released);
+        throw error;
       }
       let undoId = moved.undoId;
       if (released.length) {
@@ -1724,7 +1727,8 @@ export function createHandlers(b: Backend): Handlers {
         for (const key of refilings.keys()) if (refilings.size > 16) refilings.delete(key);
         b.notifyChanged([...new Set(released.map((r) => r.threadId))]);
       }
-      return { undoId, affected: new Set([...moved.threads, ...released.map((r) => r.threadId)]).size };
+      const threadIds = [...new Set([...moved.threads, ...released.map((r) => r.threadId)])];
+      return { undoId, affected: threadIds.length, threadIds };
     },
     "putAway.keep": async ({ threadId, at }) => {
       const placed = await placedAt(threadId, at);

@@ -115,12 +115,14 @@ export async function backToInbox(items: readonly { threadId: number; at: number
   const ids = items.map((i) => i.threadId);
   if (getApp().putAway) leaveList("moveToInbox", ids, { quiet: true });
   const undoIds: number[] = [];
+  const brought: number[] = [];
   let affected = 0;
   let failed: unknown = null;
   try {
     for (let i = 0; i < items.length; i += BACK_MAX) {
       const r = await client.call("putAway.back", { items: items.slice(i, i + BACK_MAX) });
       affected += r.affected;
+      brought.push(...r.threadIds);
       if (r.undoId !== null) undoIds.push(r.undoId);
     }
   } catch (error) {
@@ -136,16 +138,44 @@ export async function backToInbox(items: readonly { threadId: number; at: number
     : null;
   if (failed) return void snack.error(t("putAway.back.failed", { error: errorText(failed) }));
   if (affected === 0) return;
-  if (getApp().putAway) markReturned(ids, t("putAway.row.back"));
+  // only what it brought back (one moved meanwhile by another window isn't)
+  if (getApp().putAway) markReturned(brought, t("putAway.row.back"));
   snack.success(t("putAway.back.done", { count: affected }), { action: undo ? undoAction(undo, t("putAway.back.undo", { count: affected })) : undefined });
 }
 
 /** The placements behind these conversations, as the window shows them (Back to Inbox acts on those) */
 export function placedItems(threadIds: readonly number[]): { threadId: number; at: number }[] {
-  const byThread = usePutAway.getState().byThread;
+  const { byThread, returned } = usePutAway.getState();
   return threadIds.flatMap((id) => {
-    const p = byThread.get(id);
+    // a row brought back keeps its old placement only to stay under its section: nothing to act on
+    const p = returned.has(id) ? undefined : byThread.get(id);
     return p ? [{ threadId: id, at: p.at }] : [];
+  });
+}
+
+/**
+ * Where focus goes when a fix takes away the control it was on: `within`'s first button, else the list (never the toolbar,
+ * whose first control archives: Enter would undo the fix), else the reader (List's page, where the list is under it). The
+ * reader reads the conversation again after the fix answers, so the control may go a few frames later: watched for a
+ * second, and left alone once the user puts focus anywhere else.
+ */
+export function keepFocusThrough(run: () => Promise<void>, within: () => HTMLElement | null = () => null): void {
+  const from = document.activeElement;
+  void run().then(() => {
+    const until = performance.now() + 1000;
+    const check = () => {
+      const now = document.activeElement;
+      const lost = !now || now === document.body || !now.isConnected;
+      if (!lost) {
+        if (now === from && performance.now() < until) requestAnimationFrame(check);
+        return;
+      }
+      const box = within();
+      const list = document.querySelector<HTMLElement>("[role=listbox]");
+      const next = (box?.isConnected ? box.querySelector<HTMLElement>("button") : null) ?? (list && !list.closest("[inert]") ? list : null) ?? document.querySelector<HTMLElement>("[data-testid=reader]");
+      next?.focus({ preventScroll: true });
+    };
+    check();
   });
 }
 
@@ -181,7 +211,7 @@ export async function keepSenderOut(threadId: number, at: number, sender: string
       await client.call("putAway.keepUndo", { undoId });
       refresh([threadId]);
     });
-    snack.success(t(inInbox ? "putAway.keep.done" : "putAway.keep.doneOut", { sender }), { action: undoAction(undo, t("putAway.keep.undo", { sender })) });
+    snack.success(t(inInbox ? "putAway.keep.done" : "putAway.keep.doneOut", { sender, category }), { action: undoAction(undo, t("putAway.keep.undo", { sender })) });
   } catch (error) {
     snack.error(t("putAway.keep.failed", { error: errorText(error) }));
     refresh([threadId]);

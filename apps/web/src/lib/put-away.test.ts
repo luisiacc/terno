@@ -28,8 +28,9 @@ vi.mock("~/rpc/connection", () => ({
   },
 }));
 
-const { backToInbox, notCategory, senderOf, dayLabel, putAwaySections, refreshNotice, rowLine, sectionOf, seeNotice } = await import("./put-away");
+const { backToInbox, notCategory, placedItems, senderOf, dayLabel, putAwaySections, refreshNotice, rowLine, sectionOf, seeNotice } = await import("./put-away");
 const { usePutAway } = await import("~/state/put-away");
+const { useApp } = await import("~/state/app");
 const { runUndo, useSnack } = await import("~/lib/snack");
 
 const NOW = new Date(2026, 10, 25, 12).getTime();
@@ -113,7 +114,7 @@ describe("Put away's words (plan 282)", () => {
   it("Back to Inbox of more than one call holds goes in turns, under one Undo (Codex review #8)", async () => {
     fake.calls.length = 0;
     let next = 50;
-    fake.handlers["putAway.back"] = async (p) => ({ undoId: next++, affected: (p as { items: unknown[] }).items.length });
+    fake.handlers["putAway.back"] = async (p) => { const items = (p as { items: { threadId: number }[] }).items; return { undoId: next++, affected: items.length, threadIds: items.map((i) => i.threadId) }; };
     fake.handlers["threads.undo"] = async () => ({ restored: 1 });
     await backToInbox(Array.from({ length: 501 }, (_, i) => ({ threadId: 1000 + i, at: NOW })));
     expect(fake.calls.filter((c) => c.method === "putAway.back").map((c) => (c.params as { items: unknown[] }).items.length)).toEqual([500, 1]);
@@ -122,15 +123,27 @@ describe("Put away's words (plan 282)", () => {
     expect(fake.calls.filter((c) => c.method === "threads.undo").map((c) => c.params)).toEqual([{ undoId: 51 }, { undoId: 50 }]);
   });
 
+  it("a row brought back is said as brought back only when it was, and offers nothing more to act on (Codex review 3 #3, #5)", async () => {
+    usePutAway.setState({ byThread: new Map([[21, { threadId: 21, at: NOW } as never], [22, { threadId: 22, at: NOW } as never]]), returned: new Map() });
+    useApp.setState({ putAway: true } as never);
+    // 22 was moved meanwhile by another window: the backend brought back 21 alone
+    fake.handlers["putAway.back"] = async () => ({ undoId: 60, affected: 1, threadIds: [21] });
+    await backToInbox([{ threadId: 21, at: NOW }, { threadId: 22, at: NOW }]);
+    expect([...usePutAway.getState().returned.keys()]).toEqual([21]);
+    expect(placedItems([21, 22])).toEqual([{ threadId: 22, at: NOW }]);
+    useApp.setState({ putAway: false } as never);
+    usePutAway.setState({ byThread: new Map(), returned: new Map() });
+  });
+
   it("Back to Inbox that moved nothing says nothing", async () => {
-    fake.handlers["putAway.back"] = async () => ({ undoId: null, affected: 0 });
+    fake.handlers["putAway.back"] = async () => ({ undoId: null, affected: 0, threadIds: [] });
     useSnack.setState({ current: null } as never);
     await backToInbox([{ threadId: 3, at: NOW }]);
     expect(useSnack.getState().current).toBeNull();
   });
 
   it("Back to Inbox takes the conversation back with one Undo that asks the backend for exactly that undo", async () => {
-    fake.handlers["putAway.back"] = async () => ({ undoId: 41, affected: 1 });
+    fake.handlers["putAway.back"] = async () => ({ undoId: 41, affected: 1, threadIds: [9] });
     fake.handlers["threads.undo"] = async () => ({ restored: 1 });
     await backToInbox([{ threadId: 9, at: NOW }]);
     expect(fake.calls.find((c) => c.method === "putAway.back")?.params).toEqual({ items: [{ threadId: 9, at: NOW }] });

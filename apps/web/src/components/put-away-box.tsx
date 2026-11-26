@@ -4,7 +4,7 @@ import { Button } from "@terno/ui/components/button";
 import { useRef, type ReactNode } from "react";
 import { dayDate } from "~/lib/format";
 import { richT } from "~/lib/i18n";
-import { backToInbox, bringBackRule, categoryName, editRule, folderName, keepSenderOut, notCategory, senderOf, stillPutAway, stopRule, whyOf, type PlacementNames } from "~/lib/put-away";
+import { backToInbox, bringBackRule, categoryName, keepFocusThrough, editRule, folderName, keepSenderOut, notCategory, senderOf, stillPutAway, stopRule, whyOf, type PlacementNames } from "~/lib/put-away";
 import { useApp } from "~/state/app";
 
 const strong = (s: ReactNode) => <strong className="font-medium text-foreground">{s}</strong>;
@@ -27,30 +27,8 @@ export function PutAwayBox({ threadId, placed }: { threadId: number; placed: Put
   if (!placed || !stillPutAway(placed.at)) return null;
   const d = placed.detail;
   const at = placed.at;
-  /**
-   * Where focus goes when a fix takes away the control it was on: the box's first fix, else the list (never the
-   * toolbar, whose first control archives: Enter would undo the fix, the UI rating). The
-   * reader reads the conversation again after the fix answers, so the control may go a few frames later: watched for a
-   * second, and left alone once the user puts focus anywhere else.
-   */
-  const keepFocus = (run: () => Promise<void>) => () => {
-    const from = document.activeElement;
-    if (!box.current?.contains(from)) return void run();
-    void run().then(() => {
-      const until = performance.now() + 1000;
-      const check = () => {
-        const now = document.activeElement;
-        const lost = !now || now === document.body || !now.isConnected;
-        if (!lost) {
-          if (now === from && performance.now() < until) requestAnimationFrame(check);
-          return;
-        }
-        const next = box.current?.isConnected ? box.current.querySelector<HTMLElement>("button") : null;
-        (next ?? document.querySelector<HTMLElement>("[role=listbox]"))?.focus({ preventScroll: true });
-      };
-      check();
-    });
-  };
+  /** a fix that takes away the control it was on leaves focus somewhere safe (keepFocusThrough) */
+  const keepFocus = (run: () => Promise<void>) => () => (box.current?.contains(document.activeElement) ? keepFocusThrough(run, () => box.current) : void run());
   let sentence: ReactNode;
   const notes: string[] = [];
   const actions: { label: string; testId: string; run: () => Promise<void> }[] = [{ label: t("putAway.action.back"), testId: "put-away-back", run: () => backToInbox([{ threadId, at }]) }];
@@ -88,7 +66,8 @@ export function PutAwayBox({ threadId, placed }: { threadId: number; placed: Put
       {/* real buttons (the UI rating: links read as prose, and were as tall as their text): Back to Inbox leads, the rest after */}
       <div className="mt-1.5 flex flex-wrap items-center gap-2">
         {actions.map((a, i) => (
-          <Button key={a.testId} variant={i === 0 ? "secondary" : "outline"} size="sm" data-testid={a.testId} onClick={keepFocus(a.run)}>
+          // a long name wraps inside its button rather than past the reader's edge
+          <Button key={a.testId} variant={i === 0 ? "secondary" : "outline"} size="sm" data-testid={a.testId} className="h-auto min-h-7 max-w-full py-1 text-left whitespace-normal" onClick={keepFocus(a.run)}>
             {a.label}
           </Button>
         ))}

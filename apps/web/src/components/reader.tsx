@@ -45,7 +45,7 @@ import { pinThreads, unpinThreads } from "~/lib/pins";
 import { usePins } from "~/state/pins";
 import { acceptSuggestion, answerReview, rejectSuggestion, removeFromCategory } from "~/lib/categorize";
 import { PutAwayBox } from "./put-away-box";
-import { backToInbox, stillPutAway } from "~/lib/put-away";
+import { backToInbox, keepFocusThrough, stillPutAway } from "~/lib/put-away";
 import { t } from "@terno/i18n";
 import { fullDate, listDate, messageDate, messageTime } from "~/lib/format";
 import { SenderAvatar } from "./sender-avatar";
@@ -1244,7 +1244,7 @@ function ReaderContent() {
   const myEmails = accounts.map((a) => a.email);
   const replyAll = detail ? reachesSeveral(detail, myEmails) : false;
   // plan 209: Reply's chevron comes and goes with Reply all
-  const toolbarSet = `${page}|${design.id}|${replyAll}|${t("actions.archive")}|${detail?.thread.inTrash || detail?.thread.inSpam}|${!!detail && inSeparateTab(detail.thread, accounts)}|${summarizeOffered && summarizable(detail?.thread)}|${listTitle}`;
+  const toolbarSet = `${page}|${design.id}|${replyAll}|${t("actions.archive")}|${detail?.thread.inTrash || detail?.thread.inSpam}|${!!detail && inSeparateTab(detail.thread, accounts)}|${summarizeOffered && summarizable(detail?.thread)}|${listTitle}|${!!detail?.putAway && stillPutAway(detail.putAway.at)}`;
   useLayoutEffect(() => {
     const row = toolbarRowRef.current;
     if (!row) return;
@@ -1292,7 +1292,7 @@ function ReaderContent() {
         <div className="flex items-center gap-0.5" role="group" aria-label={t("reader.group.organize")}>
         {/* plan 282 (the UI rating): what's put away goes back from the toolbar's first place too, the keyboard's way to it */}
         {thread && detail?.putAway && stillPutAway(detail.putAway.at) ? (
-          <IconButton className={tool} label={t("putAway.action.back")} onClick={() => void backToInbox([{ threadId: thread.id, at: detail.putAway!.at }])} data-testid="action-put-back">
+          <IconButton className={tool} label={t("putAway.action.back")} onClick={() => keepFocusThrough(() => backToInbox([{ threadId: thread.id, at: detail.putAway!.at }]))} data-testid="action-put-back">
             <Inbox />
           </IconButton>
         ) : null}
@@ -1303,7 +1303,7 @@ function ReaderContent() {
         ) : (
           <>
             {/* plan 86: in Promotions or Social, out of the tab into the Inbox (Gmail learns from it) */}
-            {tabbed && (
+            {tabbed && !(detail?.putAway && stillPutAway(detail.putAway.at)) && (
               <IconButton className={tool} label={t("actions.moveToInbox")} onClick={() => act("moveToInbox")} data-testid="action-inbox">
                 <Inbox />
               </IconButton>

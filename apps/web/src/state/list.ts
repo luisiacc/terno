@@ -325,7 +325,8 @@ function heldOnly(items: ThreadSummary[], top: readonly number[] = inboxTop.ids)
  */
 function holdOpen(items: ThreadSummary[], before: readonly ThreadSummary[]): ThreadSummary[] {
   const open = getApp().selectedId;
-  if (open === null || items.some((t) => t.id === open)) return items;
+  // only what a fix here brought back: one another window moved simply leaves
+  if (open === null || !usePutAway.getState().returned.has(open) || items.some((t) => t.id === open)) return items;
   const at = before.findIndex((t) => t.id === open);
   if (at < 0) return items;
   return [...items.slice(0, at), before[at]!, ...items.slice(at)];
@@ -505,7 +506,9 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
     if (windowed) {
       const want = current.items.length + (options.grow ? PAGE : 0);
       // the first row on screen and the cursor must be in it: mail that arrived above them pushed them further down
-      const keep = [listAnchor.firstVisible?.() ?? null, getApp().selectedId].filter((id): id is number => id !== null && current.index.has(id));
+      // (plan 282: a row Put away holds after a fix is in no page: never looked for)
+      const held = getApp().putAway ? usePutAway.getState().returned : null;
+      const keep = [listAnchor.firstVisible?.() ?? null, getApp().selectedId].filter((id): id is number => id !== null && current.index.has(id) && !held?.has(id));
       const missing = () => keep.some((id) => !page.items.some((t) => t.id === id));
       while ((page.items.length < want || missing()) && page.nextCursor && page.items.length < want + REACH) {
         const more = await fetchPage(page.nextCursor, page.items.length < want ? Math.min(WINDOW_PAGE, want - page.items.length) : WINDOW_PAGE);
