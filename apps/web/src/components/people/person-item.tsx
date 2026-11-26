@@ -108,7 +108,7 @@ export function PersonItemLine({ item, morphName }: { item: PersonItem; morphNam
       {actable && (
         <div className="flex shrink-0 items-center gap-1">
           <Tooltip>
-            <TooltipTrigger render={<Button variant="ghost" size="sm" data-testid="person-item-done" aria-describedby={textId} aria-keyshortcuts={DONE_KEY} className={QUIET} onClick={() => void actOnPersonItem(item, "done")} />}>
+            <TooltipTrigger render={<Button variant="ghost" size="sm" data-testid="person-item-done" aria-describedby={textId} aria-keyshortcuts={DONE_KEY} className={QUIET} onClick={(e) => void actOnPersonItem(item, "done", undefined, e.detail > 0 ? "pointer" : "keyboard")} />}>
               {t("dated.done")}
             </TooltipTrigger>
             <TooltipContent>

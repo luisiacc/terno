@@ -79,24 +79,26 @@ function waitForIndex(): void {
 let searchSeq = 0;
 /** the query the hits shown answer, and one whose first match Enter asked for before its answer came */
 let hitsFor = "";
-let enterWhenIn: string | null = null;
+let enterWhenIn: { query: string; inputs: number } | null = null;
 
 /** What's typed in the list's field: names and addresses only, answered as it's typed (a late answer is dropped; a failed one keeps the last). */
 export function searchPeople(query: string): void {
   const mine = ++searchSeq;
-  if (enterWhenIn !== query) enterWhenIn = null;
+  if (enterWhenIn?.query !== query) enterWhenIn = null;
   usePeople.setState({ query, ...(query.trim() ? {} : { hits: null }) });
-  if (!query.trim()) return;
+  if (!query.trim()) return void (hitsFor = "");
   client.call("people.search", { query }).then(
     (hits) => {
       if (mine !== searchSeq) return;
-      hitsFor = query;
+      // (an answer while the contacts warm up isn't one: Enter waits for the one after)
+      hitsFor = hits.index === "warming" ? "" : query;
       usePeople.setState({ hits });
-      if (hits.index === "warming") waitForIndex();
-      if (enterWhenIn === query) {
-        enterWhenIn = null;
-        openFirst();
-      }
+      if (hits.index === "warming") return waitForIndex();
+      // Enter pressed before this answer: only while nothing else was typed or pressed meanwhile, still in People
+      const asked = enterWhenIn;
+      if (asked?.query !== query) return;
+      enterWhenIn = null;
+      if (asked.inputs === inputs && getApp().people) openFirst();
     },
     () => {},
   );
@@ -105,7 +107,7 @@ export function searchPeople(query: string): void {
 /** Enter in the list's field: the first person of what's typed (waiting for its answer), or of the list. */
 export function enterSearch(): void {
   const { query } = usePeople.getState();
-  if (query.trim() && hitsFor !== query) return void (enterWhenIn = query);
+  if (query.trim() && hitsFor !== query) return void (enterWhenIn = { query, inputs });
   openFirst();
 }
 
@@ -125,7 +127,9 @@ export function clearPeopleSearch(): boolean {
   if (!on && !document.activeElement?.closest("[data-testid=people]")) return false;
   searchPeople("");
   const key = on ?? getApp().person;
-  if (key) afterDraw(() => peopleList.toKey?.(key, true));
+  afterDraw(() => {
+    if (!key || !peopleList.toKey?.(key, true)) peopleList.focusSearch?.();
+  });
   return true;
 }
 
@@ -151,14 +155,14 @@ export function selectPerson(key: string, email: string): void {
 }
 
 /** Back from a person's page in List (its "‹ People" and Esc): the list again, where it was, the keyboard on their row. */
-export function leavePerson(): void {
+export function leavePerson(to: "row" | "search" = "row"): void {
   const key = getApp().person;
   if (key === null) return;
   pageSeq++;
   opening++;
   setApp({ person: null, selectedId: null, anchorId: null });
   usePeople.setState({ page: null, reading: null, pageFailed: null, held: null });
-  afterDraw(() => peopleList.toKey?.(key, true));
+  afterDraw(() => (to === "search" ? peopleList.focusSearch?.() : peopleList.toKey?.(key, true)));
 }
 
 async function loadPage(key: string, email: string): Promise<void> {
@@ -273,11 +277,13 @@ export function closePersonConversation(): boolean {
  * you through follow-ups'. Done and Remove take the item off the page and off the person's row at once, in one morph (their
  * last: the row falls into its place in Everyone); Later keeps it (it's still open, further on): the answer moves it.
  */
-export async function actOnPersonItem(item: PersonItem, action: "done" | "dismiss" | "later", at?: number): Promise<void> {
+export async function actOnPersonItem(item: PersonItem, action: "done" | "dismiss" | "later", at?: number, via: "pointer" | "keyboard" = "keyboard"): Promise<void> {
   const id = personItemId(item);
   const gone = action !== "later";
   settling++;
   holdPerson();
+  // (a click may have focused the button first: the guard goes by how it was pressed)
+  if (gone && via === "pointer") shieldPointer();
   if (gone) {
     // the keyboard goes to the next item (else the one before, else the page's New message), never to nowhere
     const items = usePeople.getState().page?.items ?? [];
@@ -285,7 +291,6 @@ export async function actOnPersonItem(item: PersonItem, action: "done" | "dismis
     const next = items[i + 1] ?? items[i - 1];
     const hadFocus = document.activeElement?.closest("[data-testid=person-item]") !== null;
     takeOff(id);
-    if (!hadFocus) shieldPointer();
     if (hadFocus) {
       requestAnimationFrame(() =>
         next
@@ -295,7 +300,7 @@ export async function actOnPersonItem(item: PersonItem, action: "done" | "dismis
             : (() => {
                 // nothing left on their page: the keyboard back on their row, never on a button that starts something
                 const key = getApp().person;
-                if (key) peopleList.toKey?.(key, true);
+                if (!key || !peopleList.toKey?.(key, true)) peopleList.focusSearch?.();
               })(),
       );
     }
@@ -304,10 +309,10 @@ export async function actOnPersonItem(item: PersonItem, action: "done" | "dismis
     // Undo's answer lands as the act's did: the list and the page together, in one morph
     async undo(run) {
       settling++;
-      const lost = keyboardOnPage();
+      const back = keepKeyboard();
       await run();
       await settle([]);
-      if (lost()) focusItem(id);
+      back(id);
     },
     // (a failure reads the truth again: another act may have landed meanwhile)
     failed: () => {},
@@ -318,23 +323,26 @@ export async function actOnPersonItem(item: PersonItem, action: "done" | "dismis
     // (a waiting conversation's snack names what was done, its subject: on a person's page, who it's with goes without saying)
     if (task) await actOnTask(task.kind === "waiting" ? { ...task, name: item.item.thread.subject?.trim() || task.name } : task, action, at, left);
   }
-  const lost = gone ? null : keyboardOnPage();
+  const back = gone ? null : keepKeyboard();
   await settle(gone ? [id] : []);
-  // Later keeps the item (further on, under Put off): the keyboard stays on it
-  if (lost?.()) focusItem(id);
+  // Later keeps the item (further on, under Later): the keyboard stays on it
+  back?.(id);
 }
 
 /**
- * Whether the keyboard was on a person's page (or nowhere) as an act began: asked after it, true when it has dropped to
- * nowhere meanwhile (the item it was on redrawn, a menu closed), so it can be put back.
+ * Asked as an act (or its Undo) begins, with the keyboard on a person's page (or in the menu the act came from, or
+ * nowhere): once its answer is drawn, the keyboard on its item again, unless the user has typed or pressed since or gone
+ * to someone else.
  */
-function keyboardOnPage(): () => boolean {
+function keepKeyboard(): (id: string) => Promise<void> {
   const was = document.activeElement;
   const on = !was || was === document.body || was.closest("[data-testid=person-page]") !== null || was.closest("[role=menu]") !== null;
-  // (still on the page or in the menu the act came from, or dropped: never taken from somewhere the user went meanwhile)
-  return () => {
-    const now = document.activeElement;
-    return on && (!now || now === document.body || !now.isConnected || now.closest("[data-testid=person-page]") !== null || now.closest("[role=menu]") !== null);
+  const asked = inputs;
+  const person = getApp().person;
+  return async (id) => {
+    // (the settled read lands in a morph: its item is the one drawn after it)
+    await morphSettled();
+    if (on && asked === inputs && getApp().person === person) focusItem(id);
   };
 }
 
@@ -438,7 +446,8 @@ export function morphName(kind: "p" | "i", key: string): string {
 }
 
 /** What the list component registers: its rows as drawn, bringing a person's row into view (and the keyboard to it), its search field. */
-export const peopleList: { rows?: () => readonly PeopleRow[]; toKey?: (key: string, focus: boolean) => void; focusSearch?: () => void } = {};
+/** `toKey`: false when the key has no row in the list (a search's hit beyond Everyone's bound) */
+export const peopleList: { rows?: () => readonly PeopleRow[]; toKey?: (key: string, focus: boolean) => boolean; focusSearch?: () => void } = {};
 
 /**
  * Every key and press the user makes, counted: focus put somewhere a frame or two after it was asked for (once a row is
@@ -485,8 +494,8 @@ export function focusPeopleSearch(): void {
   // at once where the field is on screen (a frame's wait loses what's typed next); after the page gives way in List
   if (!listLayout() || (currentPage() === "list" && getApp().person === null)) return void peopleList.focusSearch?.();
   if (currentPage() !== "list") closePage();
-  leavePerson();
-  requestAnimationFrame(() => peopleList.focusSearch?.());
+  if (getApp().person !== null) leavePerson("search");
+  else requestAnimationFrame(() => peopleList.focusSearch?.());
 }
 
 /**

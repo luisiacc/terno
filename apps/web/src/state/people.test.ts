@@ -11,7 +11,8 @@ vi.mock("~/rpc/connection", () => ({ client: { call: (...a: unknown[]) => call(.
 
 const { matchedParts, peopleRows, usePeople } = await import("~/state/people");
 const { getApp, navigate, ownList, setApp } = await import("~/state/app");
-const { withoutItem, withoutListItem, actOnPersonItem, movePerson, selectPerson } = await import("~/lib/people");
+const { withoutItem, withoutListItem, actOnPersonItem, movePerson, selectPerson, searchPeople, enterSearch, installPeople } = await import("~/lib/people");
+installPeople();
 const { closePage } = await import("~/lib/page");
 const { useAppearance } = await import("~/lib/appearance");
 const { itemParts } = await import("~/components/people/person-item");
@@ -209,5 +210,80 @@ describe("j and k", () => {
     expect(call).toHaveBeenLastCalledWith("people.person", { email: "b@x.test" });
     selectPerson("b@x.test", "b@x.test");
     expect(getApp().person).toBe("b@x.test");
+  });
+});
+
+describe("Enter in the search (Codex review of the QA fixes)", () => {
+  const ana = { name: "Ana Ruiz", email: "ana@x.test", key: "ana@x.test", last: 1, written: true, open: 0 };
+  const list: PeopleList = { open: [], everyone: [ana], everyoneVersion: 1, index: "ready" };
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+  const answers = () => {
+    const pending: ((v: unknown) => void)[] = [];
+    call.mockImplementation((method: string) => (method === "people.search" ? new Promise((r) => pending.push(r)) : Promise.resolve(null)));
+    return pending;
+  };
+
+  it("opens what's typed once its answer is in, also when the same words were searched and cleared before", async () => {
+    navigate({ people: true });
+    setApp({ person: null });
+    usePeople.setState({ list });
+    const pending = answers();
+    searchPeople("ana");
+    pending.shift()!({ hits: [ana], index: "ready" });
+    await tick();
+    searchPeople("");
+    searchPeople("ana");
+    enterSearch();
+    // (the cleared search's answer is no answer to this one: it waits)
+    expect(getApp().person).toBe(null);
+    pending.shift()!({ hits: [ana], index: "ready" });
+    await tick();
+    expect(getApp().person).toBe("ana@x.test");
+  });
+
+  it("waits through an answer while the contacts warm up, then opens the ready one's first", async () => {
+    navigate({ people: true });
+    setApp({ person: null });
+    usePeople.setState({ list });
+    const pending = answers();
+    searchPeople("an");
+    enterSearch();
+    pending.shift()!({ hits: [], index: "warming" });
+    await tick();
+    expect(getApp().person).toBe(null);
+    // (the index ready: the same words asked again)
+    searchPeople("an");
+    pending.at(-1)!({ hits: [ana], index: "ready" });
+    await tick();
+    expect(getApp().person).toBe("ana@x.test");
+  });
+
+  it("a press elsewhere before the answer: nothing opens", async () => {
+    navigate({ people: true });
+    setApp({ person: null });
+    usePeople.setState({ list });
+    const pending = answers();
+    searchPeople("ana r");
+    enterSearch();
+    window.dispatchEvent(new Event("pointerdown"));
+    pending.shift()!({ hits: [ana], index: "ready" });
+    await tick();
+    expect(getApp().person).toBe(null);
+  });
+});
+
+describe("Done by a click (Codex review of the QA fixes)", () => {
+  it("guards the items against the double click's second, though the click focused the button first", async () => {
+    navigate({ people: true });
+    setApp({ person: "ana@x.test" });
+    const page: PersonPage = { key: "ana@x.test", email: "ana@x.test", name: "Ana Ruiz", items: [waiting(1, "Phase 2"), waiting(3, "Budget")], conversations: [], more: false };
+    usePeople.setState({ page, list: { open: [open("ana@x.test", "Ana Ruiz", page.items)], everyone: [], everyoneVersion: 1, index: "ready" } });
+    document.body.innerHTML = `<section data-testid="person-page"><ul><li data-testid="person-item" data-item="waiting:1"><button id="done">Done</button></li></ul></section>`;
+    document.getElementById("done")!.focus();
+    call.mockImplementation(() => Promise.resolve(null));
+    const acting = actOnPersonItem(page.items[0]!, "done", undefined, "pointer");
+    expect(document.querySelector<HTMLElement>("[data-testid=person-page]")!.dataset.shield).toBe("");
+    await acting;
+    document.body.innerHTML = "";
   });
 });

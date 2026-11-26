@@ -93,12 +93,13 @@ function PeopleList({ wide }: { wide: boolean }) {
     peopleList.rows = () => rows;
     peopleList.toKey = (key, focus) => {
       const i = placeOf.get(key);
-      if (i === undefined) return;
+      if (i === undefined) return false;
       virtualizer.scrollToIndex(i, { align: "auto" });
       // the keyboard was on a row: it goes to the selected one, once it's drawn
       // (unless the user has typed or pressed somewhere since)
       const asked = inputCount();
       if (focus) requestAnimationFrame(() => asked === inputCount() && scrollRef.current?.querySelector<HTMLElement>(`[data-testid=person-row][data-key="${CSS.escape(key)}"]`)?.focus({ preventScroll: true }));
+      return true;
     };
     // (what was typed selected: typing replaces it)
     peopleList.focusSearch = () => {
@@ -171,13 +172,13 @@ function PeopleList({ wide }: { wide: boolean }) {
           ) : (
             <>
               {openCount > 0 && (
-                <Button variant="link-secondary" size="xs" data-testid="people-jump-open" className="h-auto px-0 text-[length:inherit] font-normal" onClick={() => jump("open")}>
+                <Button variant="link-secondary" size="xs" data-testid="people-jump-open" className="no-drag h-auto px-0 text-[length:inherit] font-normal" onClick={() => jump("open")}>
                   {t("people.openLine", { count: openCount })}
                 </Button>
               )}
               {openCount > 0 && everyoneCount > 0 && <span aria-hidden>·</span>}
               {everyoneCount > 0 && (
-                <Button variant="link-secondary" size="xs" data-testid="people-jump-everyone" className="h-auto px-0 text-[length:inherit] font-normal" onClick={() => jump("everyone")}>
+                <Button variant="link-secondary" size="xs" data-testid="people-jump-everyone" className="no-drag h-auto px-0 text-[length:inherit] font-normal" onClick={() => jump("everyone")}>
                   {t("people.everyoneLine", { count: everyoneCount })}
                 </Button>
               )}
@@ -287,7 +288,9 @@ const PersonRow = memo(function PersonRow({ row, selected, tabbable, query }: { 
   // what else is open now (what's put off waits on their page, under Put off)
   const items = row.open?.items ?? [];
   const now = items.filter((i) => !itemWhen(i).later).length;
-  const more = (now || items.length) - 1;
+  const more = now - 1;
+  // what's open now with a hit shown by its address (all of it put off: none)
+  const openNow = row.open ? now : row.openCount;
   // held in place with nothing open any more (their last item just done)
   const cleared = row.open !== null && row.open.items.length === 0;
   return (
@@ -340,9 +343,9 @@ const PersonRow = memo(function PersonRow({ row, selected, tabbable, query }: { 
               <Marked text={row.email} needles={undefined} parts={query ? matchedParts(row.email, query) : null} testId="people-match" />
             </span>
           )}
-          {!first && row.openCount > 0 && (
+          {!first && openNow > 0 && (
             <Badge variant="neutral" className="tabular">
-              {t("people.openCount", { count: row.openCount })}
+              {t("people.openCount", { count: openNow })}
             </Badge>
           )}
         </span>

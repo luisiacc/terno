@@ -180,3 +180,16 @@ Marta (keyboard consultant), Diego (impatient founder), Priya (accessibility), T
 - **Keys:** G P (in ? and the palette); Enter in the search opens what's typed, waiting for its answer; / selects the old query; Esc on a hit clears the search; C on a person's page writes to them.
 - **Words and screen readers:** the list's region is named People; the search's count is said; +N in words and on hover; "Undo this date" on a waiting conversation's Undo is "Undo"; List's Back names the person; a search for mail words says People finds names and addresses; the first 50 hits say so; a hit found by its address shows it.
 - **By design, kept:** the Undo pill's border steps once a second under reduced motion (plan 182); chips only on conversations of two or more messages (plan 177); one Undo at a time (plan 161).
+
+## What the Codex review of the QA fixes changed
+
+Astra (gpt-6.2-astra) on 75ca11760..021c8457a, ten findings; nine fixed, the tenth (the rating bar) waits on the owner's decisions:
+
+- A click on Done guards the items against a double click's second by how it was pressed, not by whether the button had focus (Electron focuses it first). Test: Done by a click.
+- `/` from a person's page in List leaves for the search alone (the row no longer takes the keyboard back a frame later).
+- Later and Undo put the keyboard back on their item after the settled read is drawn, only if nothing was typed or pressed meanwhile and it's still the same person.
+- Enter pressed before a search's answer opens nothing if the user typed or pressed elsewhere meanwhile, or left People; a cleared search's answer is no answer to the same words typed again; an answer while the contacts warm up isn't one (Enter waits for the ready one). Tests: Enter in the search (three).
+- The header's jumps opt out of the window's drag region.
+- Esc on a hit beyond Everyone's bound, or Done on the last item of someone not in the list, leaves the keyboard in the search.
+- A busy person's Later section is drawn 30 at a time too.
+- The rows' badges count what's open now; one with only put-off items shows none.

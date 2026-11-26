@@ -50,7 +50,7 @@ export function PersonPage({ inList = false }: { inList?: boolean }) {
     <section data-testid="person-page" aria-label={page?.name || page?.email} className="@container flex h-full min-h-0 flex-col bg-background data-shield:[&_[data-testid=person-item]]:pointer-events-none">
       {inList && (
         <div className={cn(READING_COLUMN, "flex h-(--pane-bar) shrink-0 items-center")}>
-          <Button variant="ghost" size="sm" data-testid="person-back" aria-label={t("people.back")} aria-keyshortcuts="Escape" onClick={leavePerson} className="-ms-2.5 text-muted-foreground hover:text-foreground">
+          <Button variant="ghost" size="sm" data-testid="person-back" aria-label={t("people.back")} aria-keyshortcuts="Escape" onClick={() => leavePerson()} className="-ms-2.5 text-muted-foreground hover:text-foreground">
             <ChevronLeft data-icon="inline-start" />
             {t("people.title")}
           </Button>
@@ -107,6 +107,7 @@ const ITEMS_STEP = 30;
 function Body({ page }: { page: Page }) {
   const name = page.name || page.email;
   const [shown, setShown] = useState(ITEMS_STEP);
+  const [laterShown, setLaterShown] = useState(ITEMS_STEP);
   // what's put off with Later, apart: it's still open, further on
   const stamp = Date.now();
   const now = page.items.filter((i) => !itemWhen(i, stamp).later);
@@ -169,10 +170,15 @@ function Body({ page }: { page: Page }) {
                   <span className="tabular">{formatNumber(later.length)}</span>
                 </h3>
                 <ul data-testid="person-later-items" className="-mx-3">
-                  {later.map((item) => (
+                  {later.slice(0, laterShown).map((item) => (
                     <PersonItemLine key={personItemId(item)} item={item} morphName={morphName("i", personItemId(item))} />
                   ))}
                 </ul>
+                {later.length > laterShown && (
+                  <Button variant="link-secondary" size="xs" data-testid="person-more-later" className="mt-2 px-0 font-normal" onClick={() => setLaterShown((n) => n + ITEMS_STEP)}>
+                    {t("people.showMore", { count: Math.min(ITEMS_STEP, later.length - laterShown) })}
+                  </Button>
+                )}
               </>
             )}
           </>
