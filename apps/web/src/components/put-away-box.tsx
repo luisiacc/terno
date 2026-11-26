@@ -59,7 +59,7 @@ export function PutAwayBox({ threadId, placed }: { threadId: number; placed: Put
   }
   return (
     // box B (the owner): a hairline, no fill, the card's radius; text on the page's own pairs
-    <section data-testid="put-away-box" aria-label={t("putAway.box.label")} className="mt-3 mb-1 flex flex-col gap-1 rounded-[calc(var(--card-radius)+4px)] border border-border px-3.5 py-2.5 text-[13px] leading-[1.5] text-muted-foreground">
+    <section data-testid="put-away-box" aria-label={t("putAway.box.label")} className="mt-3 mb-1 flex flex-col gap-1 rounded-[calc(var(--card-radius)+4px)] border border-border px-3.5 py-2.5 text-sm text-muted-foreground">
       <p data-testid="put-away-why">
         {sentence}
         {also && <> {t("putAway.box.also", { reasons: also })}</>}

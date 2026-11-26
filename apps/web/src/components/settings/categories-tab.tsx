@@ -324,7 +324,7 @@ export function CategoriesTab({ settings, update }: { settings: AppSettings; upd
 function KeptSenders({ categories }: { categories: Category[] }) {
   const [kept, setKept] = useState<{ categoryId: number; sender: string; at: number }[]>([]);
   useEffect(() => {
-    void client.call("putAway.kept", {}).then((r) => setKept(r.senders)).catch(() => {});
+    void client.call("putAway.kept", {}).then((r) => setKept(r?.senders ?? [])).catch(() => {});
   }, [categories]);
   if (kept.length === 0) return null;
   return (
@@ -332,7 +332,7 @@ function KeptSenders({ categories }: { categories: Category[] }) {
       {kept.map((k) => {
         const category = categories.find((c) => c.id === k.categoryId);
         return (
-          <SettingsRow key={`${k.categoryId}:${k.sender}`} testId="kept-sender" label={<span className="inline-flex min-w-0 items-center gap-2">{category && <CategoryDot color={category.color as CategoryColor} />}<span className="truncate">{k.sender}</span><span className="text-muted-foreground">· {category?.name ?? ""}</span></span>}>
+          <SettingsRow key={`${k.categoryId}:${k.sender}`} find={false} testId="kept-sender" label={<span className="inline-flex min-w-0 items-center gap-2">{category && <CategoryDot color={category.color as CategoryColor} />}<span className="truncate">{k.sender}</span><span className="text-muted-foreground">· {category?.name ?? ""}</span></span>}>
             {() => (
               <Button
                 variant="ghost"

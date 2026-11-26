@@ -32,8 +32,8 @@ const moreClosed = async (page: Page) => {
 test.describe("Part A: More", () => {
   const more = (page: Page) => page.getByTestId("nav-more");
   const slot = (page: Page, view: string) => page.locator(`[data-more-slot="${view}"]`);
-  /** the rows behind More: Reminders (plan 87) and the four folders (Sent is pinned, plan 173) */
-  const MORE_ROWS = 5;
+  /** the rows behind More: Reminders (plan 87), the four folders (Sent is pinned, plan 173) and Put away, last (plan 282) */
+  const MORE_ROWS = 6;
 
   test("More: closed, open, remembered, a compositor layer of its own, the same frame under reduced motion", async ({ app: page }) => {
     await scenario("closed by default: Inbox, Starred and Sent shown, the five hidden and out of the Tab order, More a disclosure", async () => {
@@ -144,13 +144,14 @@ test.describe("Part A: More", () => {
         firstCategoryTop: cats[0]!.getBoundingClientRect().top,
         // a category's box includes its review row (macOS draws it under the row)
         lastCategoryBottom: cats.at(-1)!.parentElement!.getBoundingClientRect().bottom,
-        trashBottom: document.querySelector('[data-more-slot="trash"]')!.getBoundingClientRect().bottom,
+        // the group's last row: Put away (plan 282), under Trash
+        lastSlotBottom: document.querySelector('[data-more-slot="putAway"]')!.getBoundingClientRect().bottom,
         // the end of the sidebar's content (the nav's scrollHeight only grows once it overflows)
         contentBottom: sidebar.querySelector("[data-more-below]")!.getBoundingClientRect().bottom,
       };
     });
 
-  test("closed, the group takes no space: Categories sit under More at the gap between sections; open, under Trash, five rows lower (plan 40, 87, 173)", { tag: "@design" }, async ({ app: page }) => {
+  test("closed, the group takes no space: Categories sit under More at the gap between sections; open, under Put away, six rows lower (plan 40, 87, 173, 282)", { tag: "@design" }, async ({ app: page }) => {
     const closed = await layout(page);
     // the design's gap between sections: the same as between the last category and Accounts
     const gap = closed.accountsTop - closed.lastCategoryBottom;
@@ -159,7 +160,7 @@ test.describe("Part A: More", () => {
     await more(page).click();
     await expect(page.getByTestId("nav-trash")).toBeVisible();
     const open = await layout(page);
-    expect(open.categoriesTop - open.trashBottom).toBeCloseTo(gap, 0);
+    expect(open.categoriesTop - open.lastSlotBottom).toBeCloseTo(gap, 0);
     expect(open.firstCategoryTop - closed.firstCategoryTop).toBeCloseTo(MORE_ROWS * closed.rowH, 0);
     expect(open.contentBottom - closed.contentBottom).toBeCloseTo(MORE_ROWS * closed.rowH, 0);
     expect(open.moreBottom).toBe(closed.moreBottom);
