@@ -149,7 +149,8 @@ describe("the prompt", () => {
       expect(task.prompt).toMatch(/<message id="m2"[^\n]* new="yes">\n/);
       expect(task.prompt).not.toMatch(/<message id="m1"[^\n]* new="yes">/);
       expect(task.system).toContain('- "since":');
-      expect(task.system.indexOf('- "since":')).toBeGreaterThan(task.system.indexOf('- "items":'));
+      // the last step, after the card and its check: the card is made as with nothing new (the eval: rows went otherwise)
+      expect(task.system.indexOf('- "since":')).toBeGreaterThan(task.system.indexOf("Before you answer, check each action"));
       // the summary and rows stay what they'd be with nothing new (Fable and Astra, round 2: the news was split between them)
       expect(task.system).toMatch(/exactly as you would with nothing marked new/);
       expect(task.system).toMatch(/never both, so "since" stands on its own/);

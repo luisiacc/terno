@@ -172,3 +172,52 @@ Codex (read-only, against `e3d3b7875`) raised 12 points. Eleven are fixed in `0d
 10. **The e2e passed without the dwell having read anything:** an unread message drawn open shows no dot. It now waits for the backend's read.
 11. **The window test ingested 1 of its 50 messages** (`||=`). All 50 now, and it still holds at 2,000, 4,096, 8,192 and 32,000 tokens.
 12. **The corpus runner marked a run whose start had been cut,** which production wouldn't ask about. It now asks only as production does, and the scoring leaves such rows out of the runs made before the fix.
+
+## The second review round: Fable 5.2 and Astra
+
+> when you're done, do a round of code review with fable 5.2 and astra subagents looking for weird edge cases but valid, possible bugs, possible things that could cause a bad summary, summaries must be concise and to the point, no fluff.
+
+Fable 5.2 and Codex on `gpt-6.2-astra` each read the branch at `0db93c2d8` and the eval's real outputs, without seeing each other's findings, and raised 12 points each. Fixed in `48b9141e7` and `341b89ca2`.
+
+**The prompt (both reviews, and the eval).** "Never repeat the summary" made the model split the news. The summary shrank where a since came back (222 characters against arm A's 302), a cancellation stayed in the summary with the since empty, and a moved deadline left the since while its action row went. The two paragraphs are never on screen together, so:
+- The summary and items are written as with nothing marked new. A moved date is the new date there too, and an open action stays a row.
+- The since stands on its own: one short sentence of 25 words at most, on the biggest change first (a decision, an approval, a cancellation, a date or amount that moved from what to what), and who changed it. With several new messages it says where things ended up.
+- No filler: never "a new reply", "the latest message", or when it arrived.
+- Only what the new messages say. Never what they leave out. Never "added" or "replaced" without the earlier state, since an earlier message may be cut. Never "done" or "received" unless a new message says so.
+- Never a secret; it says one was sent.
+- Never what the reader has to do, answer or has promised, nor a question or offer put to them. A promise still open stays a row when the since tells what led to it.
+- Empty for thanks, "got it", a receipt, "will do", a promise to explain later, an opinion or an aside.
+
+**In code:**
+- **No since after only your own mail.** "You wrote, a reply came" and "your post to a list, every answer new" make the whole summary the news. In the first run, 67 of 259 asked cards had this shape.
+- **A since over 400 characters ends at its last whole sentence.** It no longer stops mid-claim.
+- **A since is dropped only when it's the summary again** (contained in it, and 80% of its length). A sentence of the summary is a fine since now.
+- **"Monday to Friday" and "de lunes a viernes" are schedules, not floating days.**
+- **The reader's snapshot:**
+  - It skips drafts (`MessageDetail.isDraft`, both stores).
+  - It survives leaving the conversation and coming back with nothing unread, while no mail has arrived.
+  - Mail that arrives while the conversation stays open starts it afresh.
+- **A send-as alias you've sent from is yours** in the summary's sources. That's plan 17's learned addresses, the rule new-mail eligibility already used. It also corrects "the reader" in the prompt for such mail, and drafting's context.
+- **A since never makes a window compact:** a window that fits the full prompt without the since's words gets the whole summary, full prompt.
+
+**Not taken:**
+- *Mark excerpts as excerpts* (Astra 3). The prompt words cover it, and an attribute on every cut message would change the whole summary's input.
+- *Rows citing new mail marked by the model.* The owner chose order only.
+- *Fresh marks during a provider outage make mail read in Terno new* (Fable 11). The label's date keeps it true, and it takes days of failure.
+
+### The eval
+
+GPT Luna, at the task's settings. 371 conversations of two or more messages: the 164 fictional ones and the real sets (Enron, Apache, the Spanish lists). Spend: about $1.30 settled on its own ledger (`/tmp/terno-ai/spend-p279.jsonl`).
+
+| | First v9 words (`p279-b`) | After the review (`p279-b2`) |
+|---|---:|---:|
+| Cards asked a since | 259 | 192 (only your own mail before: none) |
+| Since came back | 79% | 85% |
+| Summary length where it did (arm A: 300 to 305) | 222 | 263 |
+| Summaries under 60% of both A runs | 42 | 6 |
+| Since over 25 words | 77 | 17 |
+| Courtesy tail, since empty | 93% | 96% |
+
+Noise is arm A run twice with the same words: on the cards asked a since, ask counts differed in 14 to 17 of them and every ask went from 5 or 6. Against arm A, the first words had every ask gone from 6 and the reviewed words from 8. The 8 include the reader's own promise turned into since prose (`priya-024`), which the last rule addresses (see "The last run").
+
+The courtesy misses left are "Will do." / "De acuerdo, lo hago." read as a commitment ("Bea agreed to send the draft"), which is a real change of state, and one "acknowledged receiving".
