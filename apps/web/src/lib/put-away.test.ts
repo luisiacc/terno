@@ -48,12 +48,12 @@ describe("Put away's words (plan 282)", () => {
     const names = { categories: [{ id: 7, name: "Facturas" }], folders: [{ key: "INBOX/News", path: ["News"] }] };
     expect(rowLine(rule(), names)).toBe("Archived · your rule “Xataka”");
     expect(rowLine(rule({}, { action: "moveToFolder", folder: "INBOX/News" }), names)).toBe("In News · your rule “Xataka”");
-    expect(rowLine(rule({}, { auto: true, action: "trash" }), names)).toBe("In the Trash · Terno’s rule, Nov 12");
+    expect(rowLine(rule({}, { auto: true, action: "trash" }), names)).toBe("In the Trash · Terno’s rule");
     expect(rowLine(rule({}, { action: "addCategory", categoryId: 7 }), names)).toBe("Facturas · your rule “Xataka”");
     expect(rowLine(terno([{ k: "reason.mentions", p: { count: 1, a: "factura", b: "", c: "" } }, { k: "reason.sameSender", p: { count: 12, category: "Facturas" } }]), names)).toBe("Facturas · filed by Terno");
     expect(rowLine(terno([{ k: "reason.intent.invoice" }]), names)).toBe("Facturas · filed by Terno");
     expect(rowLine(terno([{ k: "reason.newSender" }]), names)).toBe("Facturas · filed by Terno");
-    expect(rowLine(rule({ needsLook: true }), names)).toBe("You’ve written to them · Archived · your rule “Xataka”");
+    expect(rowLine(rule({ needsLook: true }), names)).toBe("Archived · your rule “Xataka”");
     // the sender the decision read names "Don't file … automatically", not the newest mail's (a reply from someone else)
     expect(senderOf({ by: "terno", categoryId: 7, reasons: [], sender: "a@x.test", senderName: "Alice", fromName: "Bob" })).toBe("Alice");
     setLocale("es", es);

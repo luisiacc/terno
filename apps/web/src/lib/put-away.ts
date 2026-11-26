@@ -58,8 +58,8 @@ export function rowLine(p: Placement, names: PlacementNames): string {
     const values = { name: d.name, category: categoryName(names, d.categoryId), folder: folderName(names, d.folder), date: dayDate(d.createdAt) };
     line = d.auto ? t(`putAway.row.auto.${d.action}`, values) : t(`putAway.row.rule.${d.action}`, values);
   }
-  // why it needs a look leads: it's what a cut row must keep
-  return p.needsLook ? `${t("putAway.row.wrote")} · ${line}` : line;
+  // who did it, whole: Needs a look's heading says why it needs one (the UI rating: leading with it cut off the cause)
+  return line;
 }
 
 /** Still in the window at `now`: a reader's cached detail can't keep a box past it */

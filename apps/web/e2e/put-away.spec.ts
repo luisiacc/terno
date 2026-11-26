@@ -58,7 +58,7 @@ test.describe("Put away (plan 282)", () => {
       await expect(page.getByTestId("put-away-look-label")).toHaveText("Needs a lookfrom people you’ve written to");
       await expect(page.getByTestId("put-away-day-label")).toContainText("Today");
       await expect(rows(page)).toHaveCount(2);
-      await expect(rows(page).nth(0).getByTestId("row-put-away")).toContainText("You’ve written to them · Archived · Terno’s rule, Oct 12");
+      await expect(rows(page).nth(0).getByTestId("row-put-away")).toHaveText("Needs a look: Archived · Terno’s rule");
       await expect(rows(page).nth(1).getByTestId("row-put-away")).toContainText("Archived · your rule “Xataka”");
       // the demo's Gmail keeps its tabs apart: said once, under the last row
       await expect(page.getByTestId("put-away-footer")).toContainText("Spam isn’t listed here.");

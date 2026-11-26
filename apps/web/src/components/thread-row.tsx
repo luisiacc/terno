@@ -261,9 +261,10 @@ function useReason(thread: Pick<ThreadSummary, "id">): string | undefined {
  * then who put it away and why. A screen reader hears its section first (the headings are drawn, not read).
  */
 function PlacedLine({ placed }: { placed: PlacedView }) {
-  // the category's dot is the row's marks' already; the whole line on hover where the row cuts it
+  // the category's dot is the row's marks' already; the whole line on hover where the row cuts it; in a firmer ink than a
+  // preview's, since it's what the view is for (the UI rating)
   return (
-    <span data-testid="row-put-away" data-returned={placed.returned || undefined} title={placed.line} className={cn(placed.returned && "text-foreground")}>
+    <span data-testid="row-put-away" data-returned={placed.returned || undefined} title={placed.line} className={cn(placed.returned ? "text-foreground" : "text-foreground-soft")}>
       <span className="sr-only">{placed.section}: </span>
       {placed.line}
     </span>

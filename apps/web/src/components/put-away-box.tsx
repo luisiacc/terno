@@ -63,11 +63,11 @@ export function PutAwayBox({ threadId, placed }: { threadId: number; placed: Put
           <span key={n}> {n}</span>
         ))}
       </p>
-      {/* real buttons (the UI rating: links read as prose, and were as tall as their text): Back to Inbox leads, the rest after */}
+      {/* real buttons (the UI rating: links read as prose, and were as tall as their text): Back to Inbox leads as the primary, the rest after */}
       <div className="mt-1.5 flex flex-wrap items-center gap-2">
         {actions.map((a, i) => (
           // a long name wraps inside its button rather than past the reader's edge
-          <Button key={a.testId} variant={i === 0 ? "secondary" : "outline"} size="sm" data-testid={a.testId} className="h-auto min-h-7 max-w-full py-1 text-left whitespace-normal" onClick={keepFocus(a.run)}>
+          <Button key={a.testId} variant={i === 0 ? "default" : "outline"} size="sm" data-testid={a.testId} className="h-auto min-h-7 max-w-full py-1 text-left whitespace-normal" onClick={keepFocus(a.run)}>
             {a.label}
           </Button>
         ))}
