@@ -8,7 +8,7 @@ import type { TopSections } from "~/lib/row-offsets";
 import { client } from "~/rpc/connection";
 import { getApp, setApp } from "~/state/app";
 import { reloadList } from "~/state/list";
-import { usePutAway } from "~/state/put-away";
+import { markReturned, usePutAway } from "~/state/put-away";
 import { invalidateThreads, loadThread } from "~/state/threads";
 
 /**
@@ -58,7 +58,8 @@ export function rowLine(p: Placement, names: PlacementNames): string {
     const values = { name: d.name, category: categoryName(names, d.categoryId), folder: folderName(names, d.folder), date: dayDate(d.createdAt) };
     line = d.auto ? t(`putAway.row.auto.${d.action}`, values) : t(`putAway.row.rule.${d.action}`, values);
   }
-  return p.needsLook ? `${line} · ${t("putAway.row.wrote")}` : line;
+  // why it needs a look leads: it's what a cut row must keep
+  return p.needsLook ? `${t("putAway.row.wrote")} · ${line}` : line;
 }
 
 /** Still in the window at `now`: a reader's cached detail can't keep a box past it */
@@ -84,14 +85,14 @@ export function sectionOf(p: Placement, now = Date.now()): string {
  * where Needs a look starts and at each new day after it. No count: what's loaded isn't the whole of a busy day.
  */
 export function putAwaySections(rows: readonly Pick<ThreadSummary, "id">[], byThread: ReadonlyMap<number, Placement>, now = Date.now()): TopSections {
-  const headings: { kind: "needsLook" | "day"; at: number; label: string; count: null }[] = [];
+  const headings: { kind: "needsLook" | "day"; at: number; label: string; hint?: string; count: null }[] = [];
   let last: string | null = null;
   rows.forEach((row, i) => {
     const p = byThread.get(row.id);
     if (!p) return;
     const label = sectionOf(p, now);
     if (label === last) return;
-    headings.push({ kind: p.needsLook ? "needsLook" : "day", at: i, label, count: null });
+    headings.push(p.needsLook ? { kind: "needsLook", at: i, label, hint: t("putAway.section.needsLookHint"), count: null } : { kind: "day", at: i, label, count: null });
     last = label;
   });
   return { top: 0, pinned: 0, headings };
@@ -135,6 +136,7 @@ export async function backToInbox(items: readonly { threadId: number; at: number
     : null;
   if (failed) return void snack.error(t("putAway.back.failed", { error: errorText(failed) }));
   if (affected === 0) return;
+  if (getApp().putAway) markReturned(ids, t("putAway.row.back"));
   snack.success(t("putAway.back.done", { count: affected }), { action: undo ? undoAction(undo, t("putAway.back.undo", { count: affected })) : undefined });
 }
 
@@ -155,6 +157,7 @@ export async function notCategory(threadId: number, at: number, category: string
   if (getApp().putAway) leaveList("moveToInbox", [threadId], { quiet: true });
   try {
     const { batchId, inInbox } = await client.call("putAway.not", { threadId, at });
+    if (getApp().putAway) markReturned([threadId], inInbox ? t("putAway.row.back") : t("putAway.row.out", { category }));
     refresh([threadId]);
     const undo = batchId === null ? null : registerUndo(async () => {
       await client.call("categorize.undo", { batchId });
@@ -172,12 +175,13 @@ export async function notCategory(threadId: number, at: number, category: string
 export async function keepSenderOut(threadId: number, at: number, sender: string, category: string): Promise<void> {
   try {
     const { undoId, inInbox } = await client.call("putAway.keep", { threadId, at });
+    if (getApp().putAway) markReturned([threadId], inInbox ? t("putAway.row.back") : t("putAway.row.out", { category }));
     refresh([threadId]);
     const undo = registerUndo(async () => {
       await client.call("putAway.keepUndo", { undoId });
       refresh([threadId]);
     });
-    snack.success(t(inInbox ? "putAway.keep.done" : "putAway.keep.doneOut", { sender, category }), { action: undoAction(undo, t("putAway.keep.undo", { sender })) });
+    snack.success(t(inInbox ? "putAway.keep.done" : "putAway.keep.doneOut", { sender }), { action: undoAction(undo, t("putAway.keep.undo", { sender })) });
   } catch (error) {
     snack.error(t("putAway.keep.failed", { error: errorText(error) }));
     refresh([threadId]);

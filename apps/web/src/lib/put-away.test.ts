@@ -52,7 +52,7 @@ describe("Put away's words (plan 282)", () => {
     expect(rowLine(terno([{ k: "reason.mentions", p: { count: 1, a: "factura", b: "", c: "" } }, { k: "reason.sameSender", p: { count: 12, category: "Facturas" } }]), names)).toBe("Facturas · filed by Terno");
     expect(rowLine(terno([{ k: "reason.intent.invoice" }]), names)).toBe("Facturas · filed by Terno");
     expect(rowLine(terno([{ k: "reason.newSender" }]), names)).toBe("Facturas · filed by Terno");
-    expect(rowLine(rule({ needsLook: true }), names)).toBe("Archived · your rule “Xataka” · you’ve written to them");
+    expect(rowLine(rule({ needsLook: true }), names)).toBe("You’ve written to them · Archived · your rule “Xataka”");
     // the sender the decision read names "Don't file … automatically", not the newest mail's (a reply from someone else)
     expect(senderOf({ by: "terno", categoryId: 7, reasons: [], sender: "a@x.test", senderName: "Alice", fromName: "Bob" })).toBe("Alice");
     setLocale("es", es);
@@ -70,7 +70,7 @@ describe("Put away's words (plan 282)", () => {
     const s = putAwaySections([1, 2, 3, 4, 5].map((id) => ({ id })), byThread, NOW);
     // no counts: what's loaded isn't the whole of a busy day
     expect(s.headings).toEqual([
-      { kind: "needsLook", at: 0, label: "Needs a look", count: null },
+      { kind: "needsLook", at: 0, label: "Needs a look", hint: "from people you’ve written to", count: null },
       { kind: "day", at: 1, label: "Today", count: null },
       { kind: "day", at: 3, label: "Yesterday", count: null },
       { kind: "day", at: 4, label: dayLabel(NOW - 3 * DAY, NOW), count: null },

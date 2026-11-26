@@ -28,7 +28,8 @@ export function PutAwayBox({ threadId, placed }: { threadId: number; placed: Put
   const d = placed.detail;
   const at = placed.at;
   /**
-   * Where focus goes when a fix takes away the control it was on: the box's first fix, else the reader's toolbar. The
+   * Where focus goes when a fix takes away the control it was on: the box's first fix, else the list (never the
+   * toolbar, whose first control archives: Enter would undo the fix, the UI rating). The
    * reader reads the conversation again after the fix answers, so the control may go a few frames later: watched for a
    * second, and left alone once the user puts focus anywhere else.
    */
@@ -45,7 +46,7 @@ export function PutAwayBox({ threadId, placed }: { threadId: number; placed: Put
           return;
         }
         const next = box.current?.isConnected ? box.current.querySelector<HTMLElement>("button") : null;
-        (next ?? document.querySelector<HTMLElement>("[data-reader-toolbar] button"))?.focus({ preventScroll: true });
+        (next ?? document.querySelector<HTMLElement>("[role=listbox]"))?.focus({ preventScroll: true });
       };
       check();
     });
@@ -84,9 +85,10 @@ export function PutAwayBox({ threadId, placed }: { threadId: number; placed: Put
           <span key={n}> {n}</span>
         ))}
       </p>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-        {actions.map((a) => (
-          <Button key={a.testId} variant="link" data-testid={a.testId} className="h-auto p-0 text-[length:inherit] leading-[inherit] font-medium" onClick={keepFocus(a.run)}>
+      {/* real buttons (the UI rating: links read as prose, and were as tall as their text): Back to Inbox leads, the rest after */}
+      <div className="mt-1.5 flex flex-wrap items-center gap-2">
+        {actions.map((a, i) => (
+          <Button key={a.testId} variant={i === 0 ? "secondary" : "outline"} size="sm" data-testid={a.testId} onClick={keepFocus(a.run)}>
             {a.label}
           </Button>
         ))}

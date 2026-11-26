@@ -55,10 +55,10 @@ test.describe("Put away (plan 282)", () => {
       await page.getByTestId("put-away-help").click();
       await expect(page.locator("[data-slot=tooltip-content]")).toBeVisible();
       await page.keyboard.press("Escape");
-      await expect(page.getByTestId("put-away-look-label")).toContainText("Needs a look");
+      await expect(page.getByTestId("put-away-look-label")).toHaveText("Needs a lookfrom people you’ve written to");
       await expect(page.getByTestId("put-away-day-label")).toContainText("Today");
       await expect(rows(page)).toHaveCount(2);
-      await expect(rows(page).nth(0).getByTestId("row-put-away")).toContainText("Archived · Terno’s rule, Oct 12 · you’ve written to them");
+      await expect(rows(page).nth(0).getByTestId("row-put-away")).toContainText("You’ve written to them · Archived · Terno’s rule, Oct 12");
       await expect(rows(page).nth(1).getByTestId("row-put-away")).toContainText("Archived · your rule “Xataka”");
       // the demo's Gmail keeps its tabs apart: said once, under the last row
       await expect(page.getByTestId("put-away-footer")).toContainText("Spam isn’t listed here.");
@@ -80,13 +80,20 @@ test.describe("Put away (plan 282)", () => {
       await expect(box.getByTestId("put-away-why")).toHaveText("Your rule “Xataka” archived this.");
       await expect(box.getByTestId("put-away-edit")).toBeVisible();
       await axeBothModes(page, "[data-testid=put-away-box]");
-      await box.getByTestId("put-away-back").click();
+      // the toolbar's first place is Back to Inbox too (the keyboard's way to it)
+      await expect(page.getByTestId("action-put-back")).toHaveAccessibleName(/Back to Inbox/);
+      // from the keyboard: focus goes to the list afterwards, never the toolbar's Archive (the UI rating)
+      await box.getByTestId("put-away-back").focus();
+      await page.keyboard.press("Enter");
       await expect(page.getByTestId("snack-message")).toHaveText("Back in the Inbox");
-      // the owner: it stays open and in its place (nothing opens and reads the next one); the box goes
+      await expect(page.locator("[role=listbox]")).toBeFocused();
+      // the owner: it stays open and in its place (nothing opens and reads the next one); the box goes, and its row says so
       await expect(box).toHaveCount(0);
       await expect(page.getByTestId("reader-subject")).toHaveText("291 gadgets para tu escritorio");
       await expect(rows(page)).toHaveCount(2);
       await expect(rows(page).nth(1)).toHaveAttribute("data-cursor", "true");
+      await expect(rows(page).nth(1).getByTestId("row-put-away")).toHaveText("Today: Back in the Inbox");
+      await expect(page.getByTestId("put-away-day-label")).toContainText("Today");
       // it leaves once the selection moves off it (Codex review #6)
       await rows(page).nth(0).click();
       await expect(rows(page)).toHaveCount(1);

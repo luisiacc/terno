@@ -259,3 +259,18 @@ Plan 158's sets don't show Put away, so it has its own, `--screens putaway`, lik
 
 - Everyday set at `ce60174dd` (`/tmp/terno-scratch/rating/p282-r01`): overall 6.5 to 8 by style and rater, below the bar as before this plan (plan 158's first climb stalled near 7.5); one rater named "Put away" among the coined terms, nothing else of this plan's.
 - Put away set at `8094aab82` (`/tmp/terno-scratch/rating/pa-r01`): overall 6 to 7 (Claude 6 to 6.5, Codex 7). Their shared points: a row brought back lingers with no state, then leaves and the list jumps; focus falls on the toolbar's Archive after a fix (Enter archives again); the box's fixes read as text, not controls, with text-high targets and no keyboard path; Needs a look's reason ("you've written to them") is what truncates, and its heading looks like a day's; "Don't file … automatically" promises more than its snack says, and the snack truncates at 1100x700; Review in the Inbox line is easy to miss.
+
+## After the first rating (the owner: "start the improvements")
+
+What the raters agreed on, changed:
+
+1. **Focus after a fix goes to the list**, never the toolbar, whose first control archives (Enter undid the fix).
+2. **A row brought back says so and keeps its place**: "Back in the Inbox" (or "Out of {category}" when another hidden category still keeps it out) in the row's ink, under its own day, until the selection moves (`returned` in the Put away state; its placement kept for the sections).
+3. **The box's fixes are buttons**: BoardUI's small secondary for Back to Inbox, outline for the rest, at the control height rather than the text's.
+4. **A keyboard path**: Back to Inbox leads the reader's toolbar for a put-away conversation, before Archive.
+5. **Needs a look says who it's about** ("from people you've written to" after its name, the name in the ink), and its rows lead with "You've written to them", so a cut row keeps it.
+6. **The window is said under the title**: "The last 7 days" (display headers).
+7. **The sender fix and its snack say the same, briefly**: "Ask before filing {sender}"; "Back in the Inbox. Terno asks first for {sender}'s new mail" fits at 1100x700.
+8. **The help opens on a click even after hover opened it** (it toggled closed; Base UI's own close on the trigger's press is ignored there).
+
+Kept: the Inbox line's Review stays the learned offer's link (the two share the line's place and look).

@@ -80,10 +80,12 @@ const TOP_HEADING_ID = { pinned: "inbox-pinned-label", reminders: "inbox-reminde
  * under its own name (the account's, in one account's Inbox). Words only, at the rows' size in the softer ink (the owner), and how many in
  * the quiet ink (the owner). Each row says what it is to a screen reader itself.
  */
-function TopHeading({ kind, top, name, count }: { kind: TopSectionKind; top: number; name: string; count: string | null }) {
+function TopHeading({ kind, top, name, hint, count }: { kind: TopSectionKind; top: number; name: string; hint?: string; count: string | null }) {
   return (
     <div aria-hidden data-testid={TOP_HEADING_ID[kind]} className="absolute inset-x-0 flex items-end gap-1 px-5 pb-1 text-sm font-medium text-foreground-soft" style={{ top, height: INBOX_LABEL }}>
-      <span className="min-w-0 truncate">{name}</span>
+      {/* plan 282: Needs a look says who it's about, so it doesn't read as one more day */}
+      <span className={cn("shrink-0", hint && "text-foreground")}>{name}</span>
+      {hint && <span className="min-w-0 truncate font-normal text-muted-foreground">{hint}</span>}
       {count !== null && <span data-testid="inbox-section-count" className="shrink-0 font-normal text-muted-foreground tabular-nums">({count})</span>}
     </div>
   );
@@ -585,6 +587,9 @@ function Subtitle({ filter, greeting }: { filter: QuickFilter | undefined; greet
   );
   const counted = useWaitingCount();
   const waiting = greeting && counted ? counted : 0;
+  const putAway = useApp((s) => s.putAway && !s.query.trim());
+  // plan 282 (the UI rating): how far back Put away looks, said where it shows rather than only in its help
+  if (putAway) return <p data-testid="list-subtitle" className="type-list-subtitle text-muted-foreground">{t("putAway.subtitle")}</p>;
   if (unread === null) return null;
   return (
     <p data-testid="list-subtitle" className="type-list-subtitle flex min-w-0 items-center gap-1 text-muted-foreground tabular">
@@ -633,13 +638,15 @@ function Subtitle({ filter, greeting }: { filter: QuickFilter | undefined; greet
 
 /** Plan 282: what Put away is for, beside its title: an info glyph, named for screen readers, its words on hover and focus. */
 function PutAwayHelp() {
-  // a click (or Enter) shows it too: it's a help button, and people click those
+  // a click (or Enter) shows it too: it's a help button, and people click those; a click always shows it (a toggle hid
+  // what hover had just opened). Leaving, Escape or a click elsewhere closes it
   const [open, setOpen] = useState(false);
   return (
-    <Tooltip open={open} onOpenChange={setOpen}>
+    // Base UI closes a tooltip on its trigger's press: here the press is what shows it
+    <Tooltip open={open} onOpenChange={(next, details) => (next || details.reason !== "trigger-press") && setOpen(next)}>
       <TooltipTrigger
         render={
-          <Button data-testid="put-away-help" variant="ghost" size="icon-sm" aria-label={t("putAway.help.label")} aria-describedby="put-away-help-text" className="no-drag -ml-1 shrink-0 rounded-full text-muted-foreground hover:text-foreground" onClick={() => setOpen((o) => !o)}>
+          <Button data-testid="put-away-help" variant="ghost" size="icon-sm" aria-label={t("putAway.help.label")} aria-describedby="put-away-help-text" className="no-drag -ml-1 shrink-0 rounded-full text-muted-foreground hover:text-foreground" onClick={() => setOpen(true)}>
             <Info />
           </Button>
         }
@@ -1090,6 +1097,7 @@ export function ThreadList() {
   // (the top and its count are published with the rows they came with: read beside them)
   // plan 282: Put away's sections, Needs a look and each day, from the placements the rows came with
   const placed = usePutAway((s) => s.byThread);
+  const returned = usePutAway((s) => s.returned);
   // plan 282: under Put away's last row, that Gmail and Outlook keep their own sorting out of the Inbox too (an account
   // that keeps it apart), once every row is in
   const hasMore = useList((s) => s.nextCursor !== null);
@@ -1401,6 +1409,7 @@ export function ThreadList() {
                 key={`${h.kind}-${h.at}`}
                 kind={h.kind}
                 top={(virtualizer.measurementsCache[h.at]?.start ?? lead + INBOX_LABEL) - INBOX_LABEL}
+                hint={h.hint}
                 name={h.label ?? (h.kind === "pinned" ? t("list.pinned") : h.kind === "reminders" ? t("view.reminders") : (inboxName ?? t("view.inbox")))}
                 count={h.count !== undefined ? (h.count === null ? null : formatNumber(h.count)) : h.kind === "pinned" ? formatNumber(pinnedTop) : h.kind === "reminders" ? formatNumber(top - pinnedTop) : sections.total ? `${formatNumber(sections.total.n)}${sections.total.capped ? "+" : ""}` : null}
               />
@@ -1411,7 +1420,7 @@ export function ThreadList() {
               </p>
             )}
             {virtualItems.map((v) => (
-              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} showAccount={showAccount} icons={icons} layout={layout} review={review} pinnedTop={v.index < pinnedTop} reminderTop={v.index >= pinnedTop && v.index < top} match={match} lines={lines} pick={list} position={v.index + 1} placed={putAway ? placed.get(items[v.index]!.id) : undefined} />
+              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} showAccount={showAccount} icons={icons} layout={layout} review={review} pinnedTop={v.index < pinnedTop} reminderTop={v.index >= pinnedTop && v.index < top} match={match} lines={lines} pick={list} position={v.index + 1} placed={putAway ? placed.get(items[v.index]!.id) : undefined} returned={putAway ? returned.get(items[v.index]!.id) : undefined} />
             ))}
           </div>
         )}

@@ -58,12 +58,16 @@ export interface ThreadRowProps {
   position?: number;
   /** plan 282: in Put away, what put it there (the list passes it; no other list's rows read Put away) */
   placed?: Placement;
+  /** plan 282: a fix took it out of Put away while it's open: what the row says now, in its section */
+  returned?: string;
 }
 
 /** Plan 282: a Put away row's why, as its preview shows it: the line, the filing's dot, and its section for a screen reader */
 interface PlacedView {
   line: string;
   section: string;
+  /** what a fix did, in the row's ink rather than the preview's */
+  returned?: boolean;
 }
 const NO_FOLDERS: AppState["folders"] = [];
 
@@ -74,7 +78,7 @@ const NO_FOLDERS: AppState["folders"] = [];
  * checking one re-renders one. The design picks the layout inside it (classic,
  * avatar, large avatar); the shell, roles, ids and handlers are the same in all.
  */
-export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, wide = false, showAccount, icons, layout, review = null, pinnedTop = false, reminderTop = false, match = null, lines = 1, pick = false, position, placed }: ThreadRowProps) {
+export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, wide = false, showAccount, icons, layout, review = null, pinnedTop = false, reminderTop = false, match = null, lines = 1, pick = false, position, placed, returned }: ThreadRowProps) {
   renderProbe("ThreadRow");
   /** the open thread (the cursor; the listbox's active descendant) */
   const selected = useApp((s) => s.selectedId === thread.id);
@@ -89,7 +93,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
   const categories = useApp((s) => s.categories);
   // plan 282: a folder's name for a rule's move (read only where a row says it)
   const folders = useApp((s) => (placed ? s.folders : NO_FOLDERS));
-  const placedView: PlacedView | undefined = placed && { line: placedLine(placed, { categories, folders }), section: sectionOf(placed) };
+  const placedView: PlacedView | undefined = placed && { line: returned ?? placedLine(placed, { categories, folders }), section: sectionOf(placed), returned: returned !== undefined };
   /** kept in a filtered list only because it's open: it says so, or it reads as the filter's mistake (only the open row looks) */
   const kept = useApp((s) => {
     if (s.selectedId !== thread.id) return false;
@@ -259,7 +263,7 @@ function useReason(thread: Pick<ThreadSummary, "id">): string | undefined {
 function PlacedLine({ placed }: { placed: PlacedView }) {
   // the category's dot is the row's marks' already; the whole line on hover where the row cuts it
   return (
-    <span data-testid="row-put-away" title={placed.line}>
+    <span data-testid="row-put-away" data-returned={placed.returned || undefined} title={placed.line} className={cn(placed.returned && "text-foreground")}>
       <span className="sr-only">{placed.section}: </span>
       {placed.line}
     </span>

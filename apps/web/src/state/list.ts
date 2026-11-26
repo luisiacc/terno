@@ -10,7 +10,7 @@ import { create } from "zustand";
 import { client } from "~/rpc/connection";
 import { getApp, getSelectionWriteRevision, inboxShape, inPlainInbox, setApp, setListAutoSelection, useApp, ownList } from "./app";
 import { noteRows, useActionRows } from "./action-preview";
-import { publishPlacements, usePutAway } from "./put-away";
+import { forgetReturned, publishPlacements, usePutAway } from "./put-away";
 import { cursorKey, heldRows, historyCursor, historyThrough, publishHistory, todayAnswer, todayRowsLeft } from "./today";
 import type { HistoryKey, TodayHistoryItem } from "@terno/core";
 /** plan 210: the most history lines one page asks for (the backend's bound) */
@@ -819,10 +819,13 @@ useApp.subscribe((s, prev) => {
   if (s.today && prev.settings && s.settings && s.settings.today?.finished !== prev.settings.today?.finished) void reloadList({ keepSelection: true });
 });
 
-// plan 282: the conversation Put away held under the reader after a fix (no placement now) goes once the selection moves off it
+// plan 282: the conversation Put away held under the reader after a fix goes once the selection moves off it, and every
+// such row once the view does
 useApp.subscribe((s, prev) => {
+  if (!s.putAway && prev.putAway) return forgetReturned();
   if (!s.putAway || !prev.putAway || s.selectedId === prev.selectedId || prev.selectedId === null) return;
-  if (usePutAway.getState().byThread.has(prev.selectedId) || !useList.getState().index.has(prev.selectedId)) return;
+  if (!usePutAway.getState().returned.has(prev.selectedId) || !useList.getState().index.has(prev.selectedId)) return;
+  forgetReturned([prev.selectedId]);
   void reloadList({ keepSelection: true });
 });
 

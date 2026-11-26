@@ -45,7 +45,7 @@ import { pinThreads, unpinThreads } from "~/lib/pins";
 import { usePins } from "~/state/pins";
 import { acceptSuggestion, answerReview, rejectSuggestion, removeFromCategory } from "~/lib/categorize";
 import { PutAwayBox } from "./put-away-box";
-import { stillPutAway } from "~/lib/put-away";
+import { backToInbox, stillPutAway } from "~/lib/put-away";
 import { t } from "@terno/i18n";
 import { fullDate, listDate, messageDate, messageTime } from "~/lib/format";
 import { SenderAvatar } from "./sender-avatar";
@@ -1290,7 +1290,13 @@ function ReaderContent() {
         )}
         {page && <ToolbarDivider />}
         <div className="flex items-center gap-0.5" role="group" aria-label={t("reader.group.organize")}>
-        {thread?.inTrash || thread?.inSpam ? (
+        {/* plan 282 (the UI rating): what's put away goes back from the toolbar's first place too, the keyboard's way to it */}
+        {thread && detail?.putAway && stillPutAway(detail.putAway.at) ? (
+          <IconButton className={tool} label={t("putAway.action.back")} onClick={() => void backToInbox([{ threadId: thread.id, at: detail.putAway!.at }])} data-testid="action-put-back">
+            <Inbox />
+          </IconButton>
+        ) : null}
+        {thread && detail?.putAway && stillPutAway(detail.putAway.at) && (thread.inTrash || thread.inSpam) ? null : thread?.inTrash || thread?.inSpam ? (
           <IconButton className={tool} label={t("actions.moveToInbox")} onClick={() => act(thread.inSpam ? "notSpam" : "moveToInbox")} data-testid="action-inbox">
             <Inbox />
           </IconButton>
