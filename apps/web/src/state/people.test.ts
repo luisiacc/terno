@@ -40,10 +40,17 @@ describe("the list's rows", () => {
     expect(peopleRows({ ...list, open: [] }, "", null).map((r) => r.id)).toEqual(["everyone", "marco@x.test"]);
   });
 
-  it("while something's typed, the hits alone (their address and how many open), none until they answer", () => {
+  it("while something's typed, the hits alone, each read as its row in the list (what's open with them), none until they answer", () => {
     expect(peopleRows(list, "an", null)).toEqual([]);
-    const rows = peopleRows(list, "an", { hits: [{ name: "Ana Ruiz", email: "ana@x.test", key: "ana@x.test", last: 1, written: true, open: 2 }], index: "ready" });
-    expect(rows).toEqual([{ kind: "person", id: "ana@x.test", key: "ana@x.test", email: "ana@x.test", name: "Ana Ruiz", last: 1, open: null, openCount: 2 }]);
+    const hits = [
+      { name: "Ana Ruiz", email: "ana@x.test", key: "ana@x.test", last: 1, written: true, open: 2 },
+      { name: "Marco Bell", email: "Marco@x.test", key: "marco@x.test", last: 5, written: true, open: 0 },
+    ];
+    const rows = peopleRows(list, "a", { hits, index: "ready" });
+    expect(rows).toEqual([
+      { kind: "person", id: "ana@x.test", key: "ana@x.test", email: "ana@x.test", name: "Ana Ruiz", last: 1, open: list.open[0], openCount: 2 },
+      { kind: "person", id: "marco@x.test", key: "marco@x.test", email: "Marco@x.test", name: "Marco Bell", last: 5, open: null, openCount: 0 },
+    ]);
   });
 });
 
@@ -95,11 +102,12 @@ describe("People among the own lists", () => {
     expect(ownList(getApp())).toBe(true);
     setApp({ person: "ana@x.test" });
     setApp({ query: "invoice" });
-    expect(getApp()).toMatchObject({ people: false, person: null });
+    // the person chosen is kept for when People is back
+    expect(getApp()).toMatchObject({ people: false, person: "ana@x.test" });
     navigate({ people: true });
-    setApp({ person: "ana@x.test" });
+    expect(getApp()).toMatchObject({ people: true, person: "ana@x.test" });
     navigate({ view: "inbox" });
-    expect(getApp()).toMatchObject({ people: false, person: null, view: "inbox" });
+    expect(getApp()).toMatchObject({ people: false, view: "inbox" });
   });
 });
 

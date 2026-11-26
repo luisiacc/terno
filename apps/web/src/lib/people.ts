@@ -112,7 +112,7 @@ export function leavePerson(): void {
   opening++;
   setApp({ person: null, selectedId: null, anchorId: null });
   usePeople.setState({ page: null, reading: null, pageFailed: null, held: null });
-  requestAnimationFrame(() => peopleList.toKey?.(key, true));
+  requestAnimationFrame(() => requestAnimationFrame(() => peopleList.toKey?.(key, true)));
 }
 
 async function loadPage(key: string, email: string): Promise<void> {
@@ -236,6 +236,7 @@ export async function actOnPersonItem(item: PersonItem, action: "done" | "dismis
     const next = items[i + 1] ?? items[i - 1];
     const hadFocus = document.activeElement?.closest("[data-testid=person-item]") !== null;
     takeOff(id);
+    if (!hadFocus) shieldPointer();
     if (hadFocus) {
       requestAnimationFrame(() =>
         (next ? document.querySelector<HTMLElement>(`[data-testid=person-item][data-item="${CSS.escape(personItemId(next))}"] [data-testid=person-item-open]`) : document.querySelector<HTMLElement>("[data-testid=person-write]"))?.focus({ preventScroll: true }),
@@ -259,6 +260,19 @@ export async function actOnPersonItem(item: PersonItem, action: "done" | "dismis
     if (task) await actOnTask(task.kind === "waiting" ? { ...task, name: item.item.thread.subject?.trim() || task.name } : task, action, at, left);
   }
   await settle(gone ? [id] : []);
+}
+
+/** How long the page's items take no clicks after one is done by a click: the next item slides under the pointer. */
+const SHIELD_MS = 350;
+let shield: ReturnType<typeof setTimeout> | undefined;
+
+/** A second click of a double click lands on the item that took the done one's place: the items wait it out. */
+function shieldPointer(): void {
+  const page = document.querySelector<HTMLElement>("[data-testid=person-page]");
+  if (!page) return;
+  page.dataset.shield = "";
+  clearTimeout(shield);
+  shield = setTimeout(() => delete page.dataset.shield, SHIELD_MS);
 }
 
 /** The selected person's row is kept where it is in Open while they stay selected (an act may change their place). */

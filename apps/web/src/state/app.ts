@@ -293,12 +293,13 @@ function keepTodayValid(state: AppState, next: AppState | Partial<AppState>): Ap
   return other ? { ...next, today: false } : next;
 }
 
-/** Plan 281: likewise for People; leaving it, its selected person goes too (another list has its own selection). */
+/** Plan 281: likewise for People (its chosen person kept, for when it's back). */
 function keepPeopleValid(state: AppState, next: AppState | Partial<AppState>): AppState | Partial<AppState> {
   if (!state.people || Object.hasOwn(next, "people")) return next;
   const m = { ...state, ...next };
   const other = m.view !== "all" || m.accountId !== null || m.categoryId !== null || m.reviewCategoryId !== null || m.folder !== null || m.reminders || m.followups || m.putAway || m.today || m.actionPreview !== null || m.query.trim() !== "";
-  return other ? { ...next, people: false, person: null } : next;
+  // (the person chosen stays chosen: coming back to People finds them)
+  return other ? { ...next, people: false } : next;
 }
 
 /** Plan 143: any other list ends a preview too (and the backend lets go of it). */
@@ -360,7 +361,6 @@ export function navigate(to: { view?: View; accountId?: number | null; categoryI
     if (here) return { readerOpen: false };
     return {
       ...place,
-      person: null,
       actionPreview: null,
       query: "",
       selectedId: null,

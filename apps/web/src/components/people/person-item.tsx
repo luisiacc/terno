@@ -5,6 +5,13 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuShortc
 import { CalendarClock, ChevronDown, Clock, ListChecks, MessageSquareReply } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { useId, type ComponentType } from "react";
+import { shortcutFor } from "@terno/core";
+import { Shortcut } from "@terno/ui/components/shortcut";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
+
+/** What matters' own keys for Done and Later, on the item the keyboard is on (plan 281) */
+const DONE_KEY = shortcutFor("today.done") ?? "d";
+const LATER_KEY = shortcutFor("today.later") ?? "b";
 import { laterChoices, laterPresets, taskOf } from "~/lib/dated";
 import { listDate } from "~/lib/format";
 import { actOnPersonItem, openFromPerson } from "~/lib/people";
@@ -36,12 +43,6 @@ export function itemParts(item: PersonItem): { label: string; text: string } {
 
 /** An item as one line (a screen reader's): its kind and what. */
 export const itemLine = (item: PersonItem): string => t("people.itemLine", itemParts(item));
-
-/**
- * Whether an item's kind goes without saying where space is short (a row, the card): a conversation waiting on your reply
- * is most of what's open, so only the other kinds say theirs (its glyph and the screen reader's line say it still).
- */
-export const kindSaid = (item: PersonItem): boolean => !(item.kind === "today" && item.item.why.kind === "waiting");
 
 /** When an item put off with Later comes back, while it's ahead (it's still open, further on). */
 function backAt(item: PersonItem, now: number): number | null {
@@ -84,7 +85,7 @@ export function PersonItemLine({ item, morphName }: { item: PersonItem; morphNam
         <Glyph aria-hidden className="mt-[calc((1lh-1.15em)/2)] size-[1.15em] shrink-0 text-muted-foreground" />
         <span className="min-w-0 flex-1">
           {/* its words keep Done and Later's room at the line's end, so they show over nothing and move nothing */}
-          <span id={textId} className={cn("block text-base text-pretty", when.later ? "text-foreground-soft" : "text-foreground", actable && "pe-36")}>
+          <span id={textId} className={cn("block text-base text-pretty", when.later ? "text-foreground-soft" : "text-foreground", actable && "pe-40")}>
             {text}
           </span>
           <span className="mt-0.5 flex min-w-0 items-baseline gap-3 text-sm">
@@ -99,15 +100,27 @@ export function PersonItemLine({ item, morphName }: { item: PersonItem; morphNam
       <span aria-hidden className="hairline-b pointer-events-none absolute start-3 end-3 -bottom-px group-hover/item:invisible" />
       {actable && (
         <div className="pointer-events-none absolute end-2 top-2 flex items-center gap-1 opacity-0 transition-opacity duration-fast group-hover/item:pointer-events-auto group-hover/item:opacity-100 group-has-focus-reveal/item:pointer-events-auto group-has-focus-reveal/item:opacity-100 has-[[aria-expanded=true]]:pointer-events-auto has-[[aria-expanded=true]]:opacity-100">
-          <Button variant="outline" size="xs" data-testid="person-item-done" aria-describedby={textId} className="focus-reveal:opacity-100" onClick={() => void actOnPersonItem(item, "done")}>
-            {t("dated.done")}
-          </Button>
+          <Tooltip>
+            <TooltipTrigger render={<Button variant="outline" size="sm" data-testid="person-item-done" aria-describedby={textId} aria-keyshortcuts={DONE_KEY} onClick={() => void actOnPersonItem(item, "done")} />}>
+              {t("dated.done")}
+            </TooltipTrigger>
+            <TooltipContent>
+              {t("dated.done")} <Shortcut keys={DONE_KEY} />
+            </TooltipContent>
+          </Tooltip>
           {presets.length > 0 && (
             <DropdownMenu>
-              <DropdownMenuTrigger render={<Button variant="ghost" size="xs" data-testid="person-item-later" aria-describedby={textId} className="text-muted-foreground hover:text-foreground aria-expanded:text-foreground" />}>
-                {t("dated.later")}
-                <ChevronDown data-icon="inline-end" />
-              </DropdownMenuTrigger>
+              <Tooltip>
+                <TooltipTrigger
+                  render={<DropdownMenuTrigger render={<Button variant="ghost" size="sm" data-testid="person-item-later" aria-describedby={textId} aria-keyshortcuts={LATER_KEY} className="text-muted-foreground hover:text-foreground aria-expanded:text-foreground" />} />}
+                >
+                  {t("dated.later")}
+                  <ChevronDown data-icon="inline-end" />
+                </TooltipTrigger>
+                <TooltipContent>
+                  {t("dated.later")} <Shortcut keys={LATER_KEY} />
+                </TooltipContent>
+              </Tooltip>
               <DropdownMenuContent align="end" sideOffset={4} className="w-max min-w-60" data-testid="person-item-later-menu">
                 {presets.map((p) => (
                   <DropdownMenuItem key={p.id} onClick={() => void actOnPersonItem(item, "later", p.at)}>

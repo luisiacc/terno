@@ -85,7 +85,9 @@ test("People: the row below the Inbox, Open and the search, a person's page, Don
     await field.fill("greenway");
     await expect(row(page, "Ana Ruiz")).toHaveCount(1);
     await expect(row(page, "Marco Bell")).toHaveCount(1);
-    await expect(row(page, "Ana Ruiz").getByTestId("people-match").first()).toHaveText("greenway");
+    // a hit reads as its row in the list: Ana's says what's open with her; Marco, with nothing open, the address it matched
+    await expect(row(page, "Ana Ruiz").first()).toContainText("Phase 2 scope");
+    await expect(row(page, "Marco Bell").getByTestId("people-match").first()).toHaveText("greenway");
     await field.fill("ana r");
     await expect(row(page, "Ana Ruiz")).toHaveCount(1);
     await field.press("Escape");
@@ -109,14 +111,15 @@ test("People: the row below the Inbox, Open and the search, a person's page, Don
     await waiting.hover();
     await waiting.getByTestId("person-item-done").click();
     await expect(items(page)).toHaveCount(1);
-    // her row follows: one thing open now (found by the search: the list moved her down among the rest)
+    // her row follows: the next thing open leads it (found by the search: the list moved her down among the rest)
     await page.getByTestId("people-search").fill("Ana Ruiz");
-    await expect(row(page, "Ana Ruiz").first()).toContainText("1 open", { timeout: 8000 });
+    await expect(row(page, "Ana Ruiz").first()).toContainText("The signed contract", { timeout: 8000 });
+    await expect(row(page, "Ana Ruiz").first()).not.toContainText("Phase 2 scope");
     const snack = page.getByTestId("snack").last();
     await expect(snack).toBeVisible();
     await snack.getByRole("button", { name: "Undo" }).click();
     await expect(items(page)).toHaveCount(2, { timeout: 8000 });
-    await expect(row(page, "Ana Ruiz").first()).toContainText("2 open");
+    await expect(row(page, "Ana Ruiz").first()).toContainText("Phase 2 scope");
     await page.getByTestId("people-search").fill("");
   });
 

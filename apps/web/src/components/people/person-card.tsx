@@ -1,13 +1,13 @@
 import { personItemId, personItemThread, type PersonPage } from "@terno/core";
 import { t } from "@terno/i18n";
-import { DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuShortcut } from "@terno/ui/components/dropdown-menu";
+import { DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } from "@terno/ui/components/dropdown-menu";
 import { listDate } from "~/lib/format";
 import { openThread } from "~/lib/page";
 import { noteOpen } from "~/lib/reminders";
 import { formatNumber } from "@terno/i18n";
 import { Badge } from "@terno/ui/components/badge";
 import { personKey } from "@terno/core";
-import { itemGlyph, itemParts, itemWhen, kindSaid } from "./person-item";
+import { itemGlyph, itemParts, itemWhen } from "./person-item";
 
 /** the card's open items, at most (their page has the rest) */
 const SHOWN = 4;
@@ -44,14 +44,21 @@ export function PersonCardHead({ page, threadId }: { page: PersonPage; threadId:
               const when = itemWhen(item);
               const parts = itemParts(item);
               return (
-                <DropdownMenuItem key={personItemId(item)} data-testid="person-card-item" onClick={() => go(personItemThread(item).id)}>
-                  <Glyph />
-                  {/* what it is first, as the list and the page say it; its kind only when it isn't the usual one */}
-                  <span className="min-w-0 flex-1 truncate">
-                    {kindSaid(item) ? <span className="text-muted-foreground">{parts.label} · </span> : <span className="sr-only">{parts.label}: </span>}
-                    {parts.text}
+                <DropdownMenuItem key={personItemId(item)} data-testid="person-card-item" onClick={() => go(personItemThread(item).id)} className="h-auto items-start py-1.5">
+                  <Glyph className="mt-0.5" />
+                  {/* what it is, on two lines at most, then its kind and its when, as the page says them */}
+                  <span className="min-w-0 flex-1">
+                    <span className="line-clamp-2 whitespace-normal">{parts.text}</span>
+                    <span className="mt-0.5 block truncate text-xs text-muted-foreground" data-testid="person-card-item-status">
+                      {parts.label}
+                      {when.text && (
+                        <>
+                          {" · "}
+                          <span className={when.late ? "text-destructive-ink tabular-nums" : "tabular-nums"}>{when.text}</span>
+                        </>
+                      )}
+                    </span>
                   </span>
-                  {when.text && <DropdownMenuShortcut className={when.late ? "tracking-normal text-destructive-ink tabular-nums" : "tracking-normal tabular-nums"}>{when.text}</DropdownMenuShortcut>}
                 </DropdownMenuItem>
               );
             })}
@@ -62,8 +69,8 @@ export function PersonCardHead({ page, threadId }: { page: PersonPage; threadId:
         <>
           <DropdownMenuSeparator />
           <DropdownMenuGroup data-testid="person-card-last">
-            <DropdownMenuLabel>{t("people.lastEmailFrom", { name: personKey(last.fromEmail) === page.key ? last.fromName || page.name || page.email : t("people.fromYou") })}</DropdownMenuLabel>
-            <DropdownMenuItem data-testid="person-card-last-item" onClick={() => go(last.id)} className="items-start">
+            <DropdownMenuLabel>{personKey(last.fromEmail) === page.key ? t("people.theyWroteLast", { name: last.fromName || page.name || page.email }) : t("people.youWroteLast")}</DropdownMenuLabel>
+            <DropdownMenuItem data-testid="person-card-last-item" onClick={() => go(last.id)} className="h-auto items-start py-1.5">
               <span className="min-w-0 flex-1">
                 <span className="flex min-w-0 items-baseline gap-3">
                   <span className="min-w-0 flex-1 truncate font-medium">{last.subject || t("common.noSubject")}</span>

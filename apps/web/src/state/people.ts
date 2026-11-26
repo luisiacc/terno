@@ -42,8 +42,12 @@ export function peopleRows(list: PeopleList | null, query: string, hits: PeopleS
   const rows: PeopleRow[] = [];
   if (query.trim()) {
     if (!hits) return rows;
-    // a hit says the address it matched on, and how many things are open (its page says which)
-    for (const h of hits.hits) rows.push({ kind: "person", id: h.key, key: h.key, email: h.email, name: h.name || h.email, last: h.last, open: null, openCount: h.open });
+    // a hit reads as its row does in the list: what's open with them, else the address it matched on
+    const open = new Map((list?.open ?? []).map((p) => [p.key, p]));
+    for (const h of hits.hits) {
+      const o = open.get(h.key) ?? null;
+      rows.push({ kind: "person", id: h.key, key: h.key, email: h.email, name: h.name || h.email, last: h.last, open: o, openCount: o?.items.length ?? h.open });
+    }
     return rows;
   }
   if (!list) return rows;

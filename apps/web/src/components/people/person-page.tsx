@@ -14,7 +14,7 @@ import { usePeople } from "~/state/people";
 import { useLayoutEffect, useRef, useState } from "react";
 import { SenderAvatar } from "../sender-avatar";
 import { copyAddress } from "../sender-menu-items";
-import { PersonItemLine } from "./person-item";
+import { itemWhen, PersonItemLine } from "./person-item";
 
 /**
  * Plan 281: a person's page: who they are and when you last wrote each other, a new message to them, what's open between
@@ -47,10 +47,10 @@ export function PersonPage({ inList = false }: { inList?: boolean }) {
       </div>
     );
   return (
-    <section data-testid="person-page" aria-label={page?.name || page?.email} className="@container flex h-full min-h-0 flex-col bg-background">
+    <section data-testid="person-page" aria-label={page?.name || page?.email} className="@container flex h-full min-h-0 flex-col bg-background data-shield:[&_[data-testid=person-item]]:pointer-events-none">
       {inList && (
-        <div className="flex h-(--pane-bar) shrink-0 items-center px-2">
-          <Button variant="ghost" size="sm" data-testid="person-back" aria-label={t("people.back")} aria-keyshortcuts="Escape" onClick={leavePerson} className="text-muted-foreground hover:text-foreground">
+        <div className={cn(READING_COLUMN, "flex h-(--pane-bar) shrink-0 items-center")}>
+          <Button variant="ghost" size="sm" data-testid="person-back" aria-label={t("people.back")} aria-keyshortcuts="Escape" onClick={leavePerson} className="-ms-2.5 text-muted-foreground hover:text-foreground">
             <ChevronLeft data-icon="inline-start" />
             {t("people.title")}
           </Button>
@@ -107,6 +107,10 @@ const ITEMS_STEP = 30;
 function Body({ page }: { page: Page }) {
   const name = page.name || page.email;
   const [shown, setShown] = useState(ITEMS_STEP);
+  // what's put off with Later, apart: it's still open, further on
+  const stamp = Date.now();
+  const now = page.items.filter((i) => !itemWhen(i, stamp).later);
+  const later = page.items.filter((i) => itemWhen(i, stamp).later);
   const newest = page.conversations[0];
   const write = () => void composeLanding("new", null, 0, () => ({ toText: formatAddressList([{ name: page.name, email: page.email }]) }), newest?.accountId);
   return (
@@ -114,7 +118,8 @@ function Body({ page }: { page: Page }) {
       {/* who, and what to do with them, on one band: the page's first screen is what's open, not its header */}
       <header className="flex flex-wrap items-center gap-x-4 gap-y-3 pb-5">
         <SenderAvatar name={name} email={page.email} person className="size-11 text-sm" />
-        <div className="min-w-0 flex-1">
+        {/* (the identity keeps 18rem: in a narrow pane the actions go under it rather than cutting the name or address) */}
+        <div className="min-w-0 flex-1 basis-[18rem]">
           <h1 className={cn(PANE_TITLE, "truncate")} data-testid="person-name">
             {name}
           </h1>
@@ -138,24 +143,37 @@ function Body({ page }: { page: Page }) {
       <section aria-labelledby="person-between" className="border-t border-hairline pt-5">
         <h2 id="person-between" className="flex items-center gap-2 pb-1.5 text-base font-semibold">
           {t("people.between")}
-          {page.items.length > 0 && (
+          {now.length > 0 && (
             <Badge variant="neutral" className="tabular">
-              {formatNumber(page.items.length)}
+              {formatNumber(now.length)}
             </Badge>
           )}
         </h2>
         {page.items.length ? (
           <>
             <ul data-testid="person-items" className="-mx-3">
-              {page.items.slice(0, shown).map((item) => (
+              {now.slice(0, shown).map((item) => (
                 <PersonItemLine key={personItemId(item)} item={item} morphName={morphName("i", personItemId(item))} />
               ))}
             </ul>
             {/* one person can hold much of what's open: drawn a step at a time */}
-            {page.items.length > shown && (
+            {now.length > shown && (
               <Button variant="link-secondary" size="xs" data-testid="person-more-items" className="mt-2 px-0 font-normal" onClick={() => setShown((n) => n + ITEMS_STEP)}>
-                {t("people.showMore", { count: Math.min(ITEMS_STEP, page.items.length - shown) })}
+                {t("people.showMore", { count: Math.min(ITEMS_STEP, now.length - shown) })}
               </Button>
+            )}
+            {later.length > 0 && (
+              <>
+                <h3 className="flex items-center gap-2 pt-4 pb-1 text-sm font-medium text-muted-foreground" data-testid="person-later-heading">
+                  {t("people.laterGroup")}
+                  <span className="tabular">{formatNumber(later.length)}</span>
+                </h3>
+                <ul data-testid="person-later-items" className="-mx-3">
+                  {later.map((item) => (
+                    <PersonItemLine key={personItemId(item)} item={item} morphName={morphName("i", personItemId(item))} />
+                  ))}
+                </ul>
+              </>
             )}
           </>
         ) : (

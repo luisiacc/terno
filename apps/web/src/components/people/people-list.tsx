@@ -6,7 +6,6 @@ import { Shortcut } from "@terno/ui/components/shortcut";
 import { cn } from "@terno/ui/lib/utils";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef } from "react";
-import { listDate } from "~/lib/format";
 import { LIST_TITLE } from "~/lib/list-title";
 import { enterPerson, loadPeople, morphName, peopleList, reloadPage, searchPeople, selectPerson } from "~/lib/people";
 import { renderProbe } from "~/lib/render-probe";
@@ -16,7 +15,7 @@ import { useApp } from "~/state/app";
 import { indexOf, matchedParts, peopleRows, usePeople, type PeopleRow } from "~/state/people";
 import { Marked } from "../match-mark";
 import { SenderAvatar } from "../sender-avatar";
-import { itemGlyph, itemLine, itemParts, itemWhen, kindSaid } from "./person-item";
+import { itemGlyph, itemLine, itemParts, itemWhen } from "./person-item";
 import { PersonPage } from "./person-page";
 
 /** where the list was left: coming back to People finds it there */
@@ -101,12 +100,14 @@ function PeopleList({ wide }: { wide: boolean }) {
   }, [virtualizer, placeOf, rows]);
 
   // the selected person's row comes into view when the selection changes (Open in People, j/k), never on a reload
-  const selectedRef = useRef(selected);
+  const selectedRef = useRef<string | null>(null);
   useEffect(() => {
     if (selected === null || selectedRef.current === selected) return;
-    selectedRef.current = selected;
     const i = placeOf.get(selected);
-    if (i !== undefined) virtualizer.scrollToIndex(i, { align: "auto" });
+    // (once their row is drawn: coming to People with someone chosen, Open in People, j/k)
+    if (i === undefined) return;
+    selectedRef.current = selected;
+    virtualizer.scrollToIndex(i, { align: "auto" });
   }, [selected, placeOf, virtualizer]);
 
   // one Tab stop for the rows: the selected person's, else the first (the arrows, j and k move within)
@@ -129,7 +130,12 @@ function PeopleList({ wide }: { wide: boolean }) {
   const index = indexOf(state);
   const searching = query.trim() !== "";
   const empty = state !== null && rows.length === 0;
-  const line = searching ? (hits ? t("people.found", { count: hits.hits.length }) : null) : openCount > 0 ? t("people.openLine", { count: openCount }) : null;
+  const everyoneCount = (rows.find((r) => r.kind === "heading" && r.id === "everyone") as Extract<PeopleRow, { kind: "heading" }> | undefined)?.count ?? 0;
+  /** a section's heading to the top of the list (the header's jump) */
+  const jump = (id: "open" | "everyone") => {
+    const i = rows.findIndex((r) => r.kind === "heading" && r.id === id);
+    if (i >= 0) virtualizer.scrollToIndex(i, { align: "start" });
+  };
   return (
     <section className="relative flex h-full min-h-0 flex-col bg-pane" data-testid="people">
       <header ref={headerRef} className={cn("drag-region scroll-hairline shrink-0 pr-4 pb-2 pl-2", wide && WIDE)}>
@@ -138,8 +144,25 @@ function PeopleList({ wide }: { wide: boolean }) {
             {t("people.title")}
           </h1>
         </div>
-        <p data-testid="people-line" className="type-list-subtitle -mt-1.5 min-h-[1lh] pb-2 pl-3 text-muted-foreground tabular">
-          {line}
+        {/* what's here: a search's count, or each section's, each a jump to it (Everyone is under the whole of Open) */}
+        <p data-testid="people-line" className="type-list-subtitle -mt-1.5 flex min-h-[1lh] items-center gap-1 pb-2 pl-3 text-muted-foreground tabular">
+          {searching ? (
+            hits && t("people.found", { count: hits.hits.length })
+          ) : (
+            <>
+              {openCount > 0 && (
+                <Button variant="link-secondary" size="xs" data-testid="people-jump-open" className="h-auto px-0 text-[length:inherit] font-normal" onClick={() => jump("open")}>
+                  {t("people.openLine", { count: openCount })}
+                </Button>
+              )}
+              {openCount > 0 && everyoneCount > 0 && <span aria-hidden>·</span>}
+              {everyoneCount > 0 && (
+                <Button variant="link-secondary" size="xs" data-testid="people-jump-everyone" className="h-auto px-0 text-[length:inherit] font-normal" onClick={() => jump("everyone")}>
+                  {t("people.everyoneLine", { count: everyoneCount })}
+                </Button>
+              )}
+            </>
+          )}
         </p>
         <SearchField
           className="no-drag"
@@ -230,7 +253,8 @@ const PersonRow = memo(function PersonRow({ row, selected, tabbable, query }: { 
   const first = row.open?.items[0];
   const parts = first ? itemParts(first) : null;
   const Glyph = first ? itemGlyph(first) : null;
-  const when = first ? itemWhen(first) : { text: row.last ? listDate(row.last) : null, late: false, later: false };
+  // the right column is what's open's when: with nothing open, none (the page says when you last wrote each other)
+  const when = first ? itemWhen(first) : { text: null, late: false, later: false };
   const more = (row.open?.items.length ?? 0) - 1;
   // held in place with nothing open any more (their last item just done)
   const cleared = row.open !== null && row.open.items.length === 0;
@@ -268,10 +292,9 @@ const PersonRow = memo(function PersonRow({ row, selected, tabbable, query }: { 
           {first && Glyph ? (
             <>
               <Glyph aria-hidden className="size-[1.15em] shrink-0 opacity-80" />
-              {/* what it is first; its kind only when it isn't the usual one (a reply waiting on you) */}
+              {/* what's open, in words: its kind, then what */}
               <span className="min-w-0 flex-1 truncate">
-                {kindSaid(first) && <span className="font-medium">{parts!.label} · </span>}
-                {parts!.text}
+                <span className="font-medium">{parts!.label}</span> · {parts!.text}
               </span>
               {more > 0 && (
                 <Badge variant="neutral" className="ms-auto tabular">
