@@ -164,6 +164,8 @@ describe("the prompt", () => {
       expect(task.system).toMatch(/Never copy a password/);
       // the panel: the figures themselves, disagreements left open, a scam named first
       expect(task.system).toMatch(/Give the figures, dates and names themselves/);
+      // round 2: a real change always gets one (Luna left a moved meeting empty)
+      expect(task.system).toMatch(/cancels, approves or decides something, "since" is never empty/);
       expect(task.system).toMatch(/say so rather than settle it/);
       expect(task.system).toMatch(/looks like a scam .* comes first/);
       // an example a small model would copy says nothing

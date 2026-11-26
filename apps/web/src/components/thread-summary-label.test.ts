@@ -2,7 +2,19 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
-const { itemLabel, newFirst, offersReply, overdue } = await import("./thread-summary");
+const { dueWords, itemLabel, newFirst, offersReply, overdue } = await import("./thread-summary");
+
+describe("plan 279's panel, round 2: a row shows its day", () => {
+  const now = new Date(2026, 10, 25, 9).getTime();
+  it("by its day for a to-do or a question, the day alone when overdue or a date, nothing when its words say it", () => {
+    expect(dueWords({ kind: "action", due: "2026-11-27", text: "Send the appendix" }, now)).toMatch(/^by Nov 27$/);
+    expect(dueWords({ kind: "action", due: "2026-11-25", text: "Send the appendix" }, now)).toBe("by today");
+    expect(dueWords({ kind: "action", due: "2026-11-13", text: "Send the final P&L" }, now)).toMatch(/^Nov 13$/);
+    expect(dueWords({ kind: "date", due: "2026-12-01", text: "Hearing" }, now)).toMatch(/^Dec 1$/);
+    expect(dueWords({ kind: "action", due: "2026-11-27", text: "Send it by Friday 27 November" }, now)).toBeNull();
+    expect(dueWords({ kind: "action", text: "Send it" }, now)).toBeNull();
+  });
+});
 
 describe("plan 279's panel: a row says when it's late, who you wait on, and offers Reply only where replying does it", () => {
   const now = new Date(2026, 10, 25, 9).getTime();

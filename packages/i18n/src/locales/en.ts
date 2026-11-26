@@ -1477,6 +1477,9 @@ const en = {
   // plan 279's panel
   "summary.kind.waiting": "Waiting on",
   "summary.kind.overdue": "Overdue",
+  "summary.row.by": "by {date}",
+  "summary.row.today": "today",
+  "summary.row.yesterday": "yesterday",
   "summary.failed": "Couldn’t summarize the new mail in this conversation.",
   "aiDraft.label": "AI",
   // plan 163: write in the draft

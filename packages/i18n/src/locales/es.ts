@@ -1458,6 +1458,9 @@ const es = {
   "summary.view.whole": "Toda la conversación",
   "summary.kind.waiting": "Esperando a",
   "summary.kind.overdue": "Vencido",
+  "summary.row.by": "para el {date}",
+  "summary.row.today": "hoy",
+  "summary.row.yesterday": "ayer",
   "summary.failed": "No se pudo resumir el correo nuevo de esta conversación.",
   "aiDraft.label": "IA",
   // plan 163: escribir en el borrador

@@ -30,6 +30,19 @@ export function overdue(due: string | undefined, now = Date.now()): boolean {
   return due < today;
 }
 
+/**
+ * Plan 279's panel, round 2: a row's day in words ("by Nov 24", "Nov 13" for a date or something overdue), or nothing
+ * when the row's own words already name that day of the month.
+ */
+export function dueWords(item: Pick<AiSummaryItem, "kind" | "due" | "text">, now = Date.now()): string | null {
+  if (!item.due) return null;
+  const at = new Date(`${item.due}T12:00:00`);
+  if (Number.isNaN(at.getTime()) || new RegExp(`(?<!\\d)${at.getDate()}(?!\\d)`).test(item.text)) return null;
+  const day = calendarDay(at.getTime(), now);
+  const words = "date" in day ? day.date : t(day.day === "today" ? "summary.row.today" : "summary.row.yesterday");
+  return (item.kind === "action" && !overdue(item.due, now)) || item.kind === "question" ? t("summary.row.by", { date: words }) : words;
+}
+
 /** Plan 279's panel: Reply on a question, and on a to-do done by replying ("Call the surgery" offers none). */
 export const offersReply = (item: Pick<AiSummaryItem, "kind" | "byReply">): boolean => ANSWERED.has(item.kind) && !(item.kind === "action" && item.byReply === false);
 
@@ -72,6 +85,8 @@ function Item({ item, from, source, short, mine }: { item: AiSummaryItem; from: 
         <span className="text-muted-foreground" data-testid="summary-item-kind">{label}</span>
         <span aria-hidden className="mx-1.5 text-muted-foreground">·</span>
         <span className="font-medium text-foreground">{item.text}</span>
+        {/* plan 279's panel, round 2 (all seven): the row's day, unless its words already give it */}
+        {dueWords(item) && <span className="text-muted-foreground" data-testid="summary-item-due">{` · ${dueWords(item)}`}</span>}
       </p>
       {(answered || go) && (
         <div className="flex flex-wrap items-center gap-1" data-testid="summary-item-controls">
