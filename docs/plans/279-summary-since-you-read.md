@@ -221,3 +221,29 @@ GPT Luna, at the task's settings. 371 conversations of two or more messages: the
 Noise is arm A run twice with the same words: on the cards asked a since, ask counts differed in 14 to 17 of them and every ask went from 5 or 6. Against arm A, the first words had every ask gone from 6 and the reviewed words from 8. The 8 include the reader's own promise turned into since prose (`priya-024`), which the last rule addresses (see "The last run").
 
 The courtesy misses left are "Will do." / "De acuerdo, lo hago." read as a commitment ("Bea agreed to send the draft"), which is a real change of state, and one "acknowledged receiving".
+
+### The last run
+
+The reviewed words still lost asks above noise once the reader's own promise was in play. `priya-024`: "Priya welcomed your offer…" became the since and "Bring the table" went. Three more versions on the same 192 cards, against arm A and A's own rerun:
+
+| On the 192 cards asked a since | Asks (A had 73; A's rerun 70) | Every ask gone (rerun: 5) | Asks where A had none |
+|---|---:|---:|---:|
+| `b3`: the since inside "Return:", a promise rule added | 66 | 8 | 1 |
+| `b4`: the since as the last step, after the card and its check; "the reader's own promises included" | 82 | 2 | 5 |
+| **`b5`, shipped:** the last step, without that clause | 70 | 5 | 0 |
+
+`b4` padded the card the way plan 241's variant B did: "Keep your promise not to send flowers", "Keep the lamp until Oakfield confirms". `b5` is at noise on every count. What shipped (`b7c0897fa`):
+- **The since is the prompt's last paragraph,** after the card and its check: "Last, once the card above is done, write "since". Write the summary and items exactly as you would with nothing marked new, and change nothing in them for "since"…"
+- **Its own check comes last:** the biggest change first, only what the new messages say, nothing the reader has to do, answer or has promised, and every item they'd give with nothing marked new still there.
+
+On `b5`: summary length 273 where a since came back (A 302, A2 306), 5 under 60% of both A runs, and a since of median 19 words (14 over 25). One card still loses its ask where A's rerun didn't (`priya-006`, the reader's own "I'll ask Mr Bianchi").
+
+**The tails on the final words** (164 fictional conversations each):
+- **Courtesy:** 96% empty. The misses read "Perfect, thanks for the update" as an acceptance, "Will do." as a commitment (both a change of state), and once "Thanks, got it." as "she got the dish".
+- **Material:** 91% have a since. Every one without a since has the change in its summary, which the card then shows alone: a short conversation's summary is the change ("Hugh cancelled the proposed lunch…"), and a since saying it again is dropped.
+
+**Spend:** $2.17 settled across every run of this plan, on `/tmp/terno-ai/spend-p279.jsonl`.
+
+**Known and left:** `priya-006`'s promise; a courtesy "got it" read as receipt about once in 160; the outage case (Fable 11); a request waiting on the worker losing its boundary (Codex 3). The blind Claude-and-Codex fact audit of revision 16 wasn't run. The review round read the real outputs instead, and the script measures above stand in for it.
+
+**Tests:** unit and backend (532), both stores' conformance (one SQLite Dated-items failure in `followups.ts`'s numbered parameters, which this branch doesn't touch, so it's on `main`), and `summaries.spec.ts` with `reader-mark-read.spec.ts` in all six designs (36). `packages/i18n`'s scan for hard-coded strings fails on `main` too (`apps/site` copy, `packages/ui/src/brand`), none of it from this branch.
