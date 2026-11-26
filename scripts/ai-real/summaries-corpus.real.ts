@@ -163,6 +163,12 @@ const rowsFirstWire = (since: boolean) => {
   return since ? z.object({ items: z.array(row), summary: z.string(), since: z.string() }) : z.object({ items: z.array(row), summary: z.string() });
 };
 
+/** The app's caps on a card's rows, in order: six asks, six dates or decisions, two waiting. */
+function capped<T extends { kind: string }>(rows: readonly T[]): T[] {
+  const left: Record<string, number> = { ask: 6, date: 6, waiting: 2 };
+  return rows.filter((r) => left[group(r.kind)]!-- > 0);
+}
+
 /** Plan 279 (Fable 5, Astra 2): the rows alone, from the raw thread, in a call of their own. */
 const rowWire = z.object({ items: z.array(z.preprocess((v: unknown) => (v && typeof v === "object" ? { due: null, byReply: true, ...(v as object) } : v), z.object({ kind: z.enum(["decision", "date", "action", "question", "waiting"]), text: z.string(), message: z.string(), due: z.string().nullable(), byReply: z.boolean() }))) });
 async function rowsOnly(transport: ModelTransport, request: Parameters<typeof summarizeTask>[0]) {
@@ -175,7 +181,7 @@ async function rowsOnly(transport: ModelTransport, request: Parameters<typeof su
     example: { items: [] },
     maxTokens: task.maxTokens,
     effort: task.effort,
-    validate: (w) => ({ ok: true, value: w.items.filter((i) => labels.has(i.message)).map((i) => ({ kind: i.kind, text: i.text.trim(), message: i.message, ...(i.due && /^\d{4}-\d{2}-\d{2}$/.test(i.due) ? { due: i.due } : {}), ...(i.kind === "action" && i.byReply === false ? { byReply: false } : {}) })) }),
+    validate: (w) => ({ ok: true, value: capped(w.items.filter((i) => labels.has(i.message))).map((i) => ({ kind: i.kind, text: i.text.trim(), message: i.message, ...(i.due && /^\d{4}-\d{2}-\d{2}$/.test(i.due) ? { due: i.due } : {}), ...(i.kind === "action" && i.byReply === false ? { byReply: false } : {}) })) }),
   }, { output: "json_schema", signal: new AbortController().signal });
   return rows;
 }
@@ -201,7 +207,11 @@ const wordSet = (t: string) => new Set(t.toLowerCase().match(/[\p{L}\p{N}']+/gu)
 const alikeWords = (a: string, b: string) => {
   const x = wordSet(a), y = wordSet(b);
   const shared = [...x].filter((w) => y.has(w)).length;
-  return shared / Math.max(1, new Set([...x, ...y]).size) >= 0.6;
+  // "Send the contract to Ana" and "… to Kit" are two: a name or a figure that differs keeps them apart
+  const marked = (t: string) => new Set(t.match(/\p{Lu}[\p{L}']*|\d[\d.,:]*/gu) ?? []);
+  const mx = marked(a), my = marked(b);
+  const sameMarks = [...mx].every((w) => my.has(w) || x.has(w.toLowerCase()) && !/\d/.test(w)) && [...my].every((w) => mx.has(w) || y.has(w.toLowerCase()) && !/\d/.test(w));
+  return sameMarks && shared / Math.max(1, new Set([...x, ...y]).size) >= 0.6;
 };
 const group = (k: string) => (k === "action" || k === "question" ? "ask" : k === "waiting" ? "waiting" : "date");
 async function rowsLedger(transport: ModelTransport, request: Parameters<typeof summarizeTask>[0]) {
@@ -223,7 +233,7 @@ async function rowsLedger(transport: ModelTransport, request: Parameters<typeof 
           if (f.owner !== "reader" || f.status !== "open" || !f.row) continue;
           const g = group(f.row.kind);
           // the same obligation named again in a later message: the later one stands
-          const twin = rows.findIndex((r) => group(r.kind) === g && alikeWords(r.text, f.row!.text));
+          const twin = rows.findIndex((r) => group(r.kind) === g && (r.due ?? null) === (f.row!.due ?? null) && alikeWords(r.text, f.row!.text));
           if (twin >= 0) rows.splice(twin, 1);
           else if (used[g] >= CAPS[g]) continue;
           else used[g]++;
@@ -261,8 +271,9 @@ describe.skipIf(!RUN)("summaries over the corpus", () => {
           const asksSince = system.includes('- "since":') || system.includes("<since>");
           const today = /Today is (\d{4}-\d{2}-\d{2})/.exec(system)?.[1] ?? "";
           const language = /Write in (\w+)\./.exec(system)?.[1] ?? "English";
-          // a section a pass appends to the app's prompt (<audit>, <this_answer>) stays after the variant
-          const appended = /\n\n(<(?:audit|this_answer)>[\s\S]*)$/.exec(system)?.[1];
+          // what a pass appends to the app's prompt (an audit, a verify, a rows call), which ends at </style>, stays after the variant
+          const styleEnd = system.lastIndexOf("</style>");
+          const appended = styleEnd < 0 ? "" : system.slice(styleEnd + "</style>".length).trim();
           system = whole.replace(/<<since>>([\s\S]*?)<<\/since>>/g, (_, kept: string) => (asksSince ? kept : "")).replaceAll("{{language}}", language).replaceAll("{{today}}", today).trim();
           if (appended) system = `${system}\n\n${appended}`;
         }
@@ -278,7 +289,8 @@ describe.skipIf(!RUN)("summaries over the corpus", () => {
           const text = promptText(m.content);
           const at = text.lastIndexOf("\n\nWrite the card for the reader above.");
           if (at < 0) throw new Error("the user turn's last instruction isn't where it was");
-          return { ...m, content: `${text.slice(0, at)}\n\n${last}` };
+          const end = text.indexOf("\n", at + 2);
+          return { ...m, content: `${text.slice(0, at)}\n\n${last}${end < 0 ? "" : text.slice(end)}` };
         });
         const withTail = tail ? lastSwapped.map((m, i) => (i === 0 ? { ...m, content: `${promptText(m.content)}\n\n${tail}` } : m)) : lastSwapped;
         const notes = notesFor.get(promptText(req.messages[0]!.content));
@@ -292,7 +304,8 @@ describe.skipIf(!RUN)("summaries over the corpus", () => {
         const verbosity = process.env.TERNO_AI_SUMMARY_VERBOSITY as CompletionRequest["verbosity"] | undefined;
         // plan 279 (Fable, round 2): the rows before the summary in the schema sent; the answer is parsed as before
         const rowsFirst = process.env.TERNO_AI_SUMMARY_ROWS_FIRST === "1" && req.schema?.name === "thread_summary";
-        const schema = rowsFirst ? { name: "thread_summary", zod: rowsFirstWire(system.includes("<since>") || system.includes('- "since":')) } : req.schema;
+        const hasSince = rowsFirst && "since" in ((z.toJSONSchema(req.schema!.zod, { io: "input" }) as { properties?: object }).properties ?? {});
+        const schema = rowsFirst ? { name: "thread_summary", zod: rowsFirstWire(hasSince) } : req.schema;
         return (budgeted.complete as (...a: unknown[]) => ReturnType<typeof budgeted.complete>)({ ...req, system, messages, effort, reasoningEffort, ...(schema ? { schema } : {}), ...(verbosity ? { verbosity } : {}) }, ...rest);
       },
     };

@@ -474,3 +474,19 @@ It's about 275 tokens longer, so a 4,096-token window now gets the compact promp
 - the parallel rows call, whose gain the rows-first schema gives in one call.
 
 **Open:** the invoice whose lines don't add up (neither model catches it; a check in code is possible), and sending the predictable hard conversations to a stronger model (Fable's idea; no simple rule found them by length or senders).
+
+**Codex code review of version 11** (`gpt-6.2-astra`, 10 points, all fixed):
+1. The approval with a step, and a scam's check, are the reader's only when put to them. Kit's step stays Kit's.
+2. An accepted offer is due by the deadline someone set, and only otherwise on the event's day.
+3. A since may carry a new ask in its one sentence. The scam example's since now ends with "asks you to bring your ID".
+4. Every worked card and the fallback's example write the rows first, as the schema does.
+5. The UI-rating stub knows the full prompt by its first words on a fallback with no schema name. Before, it knew only the compact one.
+
+6 to 10 are in the eval harness:
+- the last line is replaced alone, so a draft after it stays;
+- whatever a pass appends after `</style>` survives a variant prompt;
+- rows-first reads the since from the schema asked for;
+- the ledger keeps rows with a different name, figure or day apart;
+- the rows call keeps the app's caps.
+
+Each product point has a test that fails without it (`summarize.test.ts`, `model-stub.test.ts`).
