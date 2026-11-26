@@ -39,7 +39,6 @@
     "react-aria-components": "^1.22.1",
     "react-day-picker": "^10.0.2",
     "react-dom": "catalog:",
-    "shadcn": "^4.22.1",
     "tw-animate-css": "^1.4.0"
   },
   "devDependencies": {
@@ -47,6 +46,7 @@
     "@terno/richtext": "workspace:*",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
+    "shadcn": "^4.22.1",
     "tailwindcss": "catalog:",
     "tsx": "catalog:"
   }
