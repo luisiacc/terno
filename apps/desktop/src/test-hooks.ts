@@ -53,3 +53,11 @@ export function netRecorder(path: string, write: (path: string, line: string) =>
 export function demoCodeWanted(msg: { demo: boolean; dev: boolean; testNow?: number }): boolean {
   return msg.demo && msg.dev && msg.testNow === undefined;
 }
+
+/**
+ * Plan 279: `dev:demo-ai`'s conversations with something new since you read (a dev demo on the fixed clock; the rating
+ * isn't a dev build, so its mailbox stays what its screenshots were rated on).
+ */
+export function demoSinceWanted(msg: { demo: boolean; dev: boolean; testNow?: number }): boolean {
+  return msg.demo && msg.dev && msg.testNow !== undefined;
+}

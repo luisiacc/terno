@@ -247,3 +247,25 @@ On `b5`: summary length 273 where a since came back (A 302, A2 306), 5 under 60%
 **Known and left:** `priya-006`'s promise; a courtesy "got it" read as receipt about once in 160; the outage case (Fable 11); a request waiting on the worker losing its boundary (Codex 3). The blind Claude-and-Codex fact audit of revision 16 wasn't run. The review round read the real outputs instead, and the script measures above stand in for it.
 
 **Tests:** unit and backend (532), both stores' conformance (one SQLite Dated-items failure in `followups.ts`'s numbered parameters, which this branch doesn't touch, so it's on `main`), and `summaries.spec.ts` with `reader-mark-read.spec.ts` in all six designs (36). `packages/i18n`'s scan for hard-coded strings fails on `main` too (`apps/site` copy, `packages/ui/src/brand`), none of it from this branch.
+
+## In `pnpm dev:demo-ai`
+
+> show me examples of the new summaries and since wordings, also lets make sure the demoai command we run has examples like this one with the since summaries too
+
+The demo mailbox is generated from sentence banks, so none of its conversations has something coherent to change. A demo AI launch now adds four hand-written conversations once per profile (`seedDemoSince`, `packages/backend/src/demo-since.ts`; `demoSinceWanted`, which is a dev demo on the fixed clock, so the rating's mailbox stays as rated):
+- **Venue for the team offsite:** the loft you chose cancels, and Casa Lamm is held until Monday 27 October.
+- **Cena de cumpleaños de papá:** dinner becomes Sunday lunch at El Cardenal, no wine needed, and Diego asks who picks up the abuela.
+- **Contrato con Lumbre Café:** two new messages. Legal approves with 45 days and 5%, and Andrés accepts and proposes signing Tuesday 28 October.
+- **Factura de septiembre:** "¡Gracias, recibida!", nothing changed.
+
+Each has mail already read from someone else, then unread mail. They're dated 14:43 to 14:55 UTC on 22 October, under the Inbox's top six (14:58 and newer), so the conversations the guide names keep their places.
+
+A new preparation step, `since`, after `conversations`, opens each one as a person would and asks for its summary with the toolbar's button. The reader keeps what it drew unread, so the card opens on what's new. It logs each since, or "whole summary only". A profile prepared before this runs only the new step.
+
+**On GPT Luna, two runs of each** (through the corpus runner, the read flags giving the boundary as production does):
+- **Offsite:** "Priya says the Roma Norte loft canceled; Casa Lamm is available for 21,000 MXN and held until Monday 27 October." (both runs)
+- **Cena:** "Mariana cambió la comida de cumpleaños al domingo 26 de octubre a las 2 en El Cardenal de San Ángel." The question "¿Alguien puede pasar por la abuela?" is a row.
+- **Contrato:** "Legal aprobó el pago a 45 días y la penalización de 5%; Andrés aceptó ambos cambios." The signing date is a row.
+- **Factura:** empty in one run, "Laura confirmó que recibió la factura de septiembre." in the other. The courtesy rule holds 96% of the time on the corpus, and this receipt is one of the cases it doesn't.
+
+Tests: `demo-since.test.ts` (seeded once, each conversation's boundary where its unread run starts, dated under the top six), `demo-ai.test.ts` (the step's subjects are the seed's, and an old profile runs only `since`), and `test-hooks.test.ts` (only a dev demo on the fixed clock seeds them). `pnpm dev:demo-ai` itself wasn't launched: it opens a window and would use the demo profile.

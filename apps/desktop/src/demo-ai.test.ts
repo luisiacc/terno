@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { askFinished, conversationDone, replyOutcome, replyStillComing, DEMO_AI_NOW, DEMO_AI_STEPS, demoAiArgs, demoAiClock, demoAiEnv, demoAiProfileProblem, MAX_ATTEMPTS, partialVerdict, devKeysIn, keyFiles, MARKER_VERSION, missingKeysMessage, readMarker, resolveKeys, stepsToRun } from "./demo-ai";
+import { DEMO_SINCE } from "@terno/backend";
+import { askFinished, conversationDone, replyOutcome, replyStillComing, DEMO_AI_NOW, DEMO_AI_STEPS, DEMO_SINCE_SUBJECTS, demoAiArgs, demoAiClock, demoAiEnv, demoAiProfileProblem, MAX_ATTEMPTS, partialVerdict, devKeysIn, keyFiles, MARKER_VERSION, missingKeysMessage, readMarker, resolveKeys, stepsToRun } from "./demo-ai";
 
 describe("plan 167: pnpm dev:demo-ai", () => {
   it("takes --fresh (and dev.mjs's --cleandb), and refuses anything else so a typo isn't a silent no-op", () => {
@@ -52,6 +53,14 @@ describe("plan 167: pnpm dev:demo-ai", () => {
     expect(demoAiEnv({ base: { TERNO_TEST_BACKGROUND: "1" }, profile: "/p", keys: {}, devUrl: "http://x/", background: false }).TERNO_TEST_BACKGROUND).toBe("1");
     // after the preparation the clock starts where it ended
     expect(demoAiEnv({ base, profile: "/p", keys: {}, devUrl: "http://x/", background: false, now: DEMO_AI_NOW + 90_000 }).TERNO_TEST_NOW).toBe(String(DEMO_AI_NOW + 90_000));
+  });
+
+  it("plan 279: the since step opens the conversations the backend seeds, after the others' summaries", () => {
+    expect([...DEMO_SINCE_SUBJECTS]).toEqual(DEMO_SINCE.map((c) => c.subject));
+    expect(DEMO_AI_STEPS.indexOf("since")).toBe(DEMO_AI_STEPS.indexOf("conversations") + 1);
+    // a profile prepared before the step was there runs only it
+    const done = Object.fromEntries(DEMO_AI_STEPS.filter((s) => s !== "since").map((s) => [s, "2026-11-09T00:00:00Z"]));
+    expect(stepsToRun({ version: MARKER_VERSION, done }, { fresh: false })).toEqual(["since"]);
   });
 
   it("which steps a launch runs: all the first time and with --fresh, the missing ones after a failure, none once done", () => {

@@ -4,7 +4,7 @@
  * mail data never hops through the main process.
  */
 import { dirname } from "node:path";
-import { Backend, openNodeMailbox, nodeStore, parseGoogleClients, parseOAuthClients, seedDemo, seedDemoCode, type LegacySecretReader, type SecretCipher } from "@terno/backend";
+import { Backend, openNodeMailbox, nodeStore, parseGoogleClients, parseOAuthClients, seedDemo, seedDemoCode, seedDemoSince, type LegacySecretReader, type SecretCipher } from "@terno/backend";
 import { devAiKeys } from "@terno/core";
 import { GATE_OPEN } from "@terno/core/mailbox";
 import { classifyOpenError, diskFree, mailboxBytes, mailboxSchema, migrateHeadroom, nodePlatform, removeOldBackups, SCHEMA_VERSION, SqlMailStore } from "@terno/db";
@@ -13,7 +13,7 @@ import { isRpcMessage, type RpcMessage, type Transport } from "@terno/core/rpc";
 import { createRegistry } from "@terno/mail/registry";
 import { loopbackInsecure } from "./imap-seam";
 import type { BackendToMain, MainToBackend } from "./ipc";
-import { demoCodeWanted, netRecorder, offsetClock } from "./test-hooks";
+import { demoCodeWanted, demoSinceWanted, netRecorder, offsetClock } from "./test-hooks";
 
 type PortMain = {
   on(event: "message", l: (e: { data: unknown }) => void): void;
@@ -215,6 +215,8 @@ async function initialize(msg: Extract<MainToBackend, { type: "init" }>, signal:
     if (signal.aborted) return;
     // `pnpm dev:demo`: a fresh verification code every launch, to try the list's code chip (plan 72); not in smokes
     if (demoCodeWanted(msg)) await seedDemoCode(backend.store, Date.now());
+    if (signal.aborted) return;
+    if (demoSinceWanted(msg)) await seedDemoSince(backend.store);
     if (signal.aborted) return;
     await backend.publishPolicy();
     if (signal.aborted) return;

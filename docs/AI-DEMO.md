@@ -21,7 +21,7 @@ Measured on four runs: **about 80 model requests, US$0.12 to 0.16**, counted by 
 | Feature | Requests | Model (Pro's routing) |
 | --- | --- | --- |
 | Follow-ups: the last 30 days of sent mail (195 messages, the app says about $0.03) | 35 to 50 | GPT Luna |
-| Summaries of 7 or 8 conversations | 7 to 8 | GPT Luna |
+| Summaries of 7 or 8 conversations, and the 4 with new mail since you read | 11 to 12 | GPT Luna |
 | Reply ready on 4 or 5 conversations (the model decides whether a reply is needed, then writes one) | 9 to 11 | GPT Luna (whether a reply is needed) and Claude Sonnet |
 | Ask: 4 questions and a follow-up (a plan and an answer each) | 10 | Claude Haiku and Sonnet |
 | The newsletter digest | 1 | GPT Luna |
@@ -42,6 +42,7 @@ Every surface below is filled when the window opens. Lumen is the style; any oth
 | Feature | Where | What you'll see |
 | --- | --- | --- |
 | **Summary** | Inbox → the top conversation, **¿Vamos al concierto?** (Isabella Álvarez). Also the next five in the Inbox and the first ones in Today. | A Summary card above the message: what it says, a To do with Reply, *Written with AI ▾* (which model). The ✦ button in the toolbar updates or asks for one on any other conversation. |
+| **What's new since you read** (plan 279) | Inbox, just under the top six: **Venue for the team offsite** (Priya Shah), **Cena de cumpleaños de papá** (Mariana and Diego), **Contrato con Lumbre Café** (Sofía and Andrés). Each has mail you'd read, then new mail that changes something. | The Summary card opens on **Since today** · **Whole conversation**: one sentence on what changed ("Priya says the Roma Norte loft canceled; Casa Lamm is held until Monday 27 October"), the whole summary a click away, the new mail's to-dos first. **Factura de septiembre** gets a "¡Gracias, recibida!": nothing changed, so its card is usually the whole summary alone. |
 | **Reply ready** | The same top conversation, and **Blockers for sistema de diseño**, **Boletos para el partido ⚽**, **旅行の写真**. | *Reply drafted* under the message, with *1 gap to fill* where only you can decide, **Use as draft** (R) and Dismiss. A conversation that doesn't wait for your reply has none (the model decided so: **Design review — portal de clientes** is one). |
 | **Today** | Sidebar → **Today** (the top item). | *The newest 12 of 44 that need you*: promises you made ("You said: call to go over the details"), people who haven't replied ("No reply from Jack Chen in 13 days"), and mail waiting for your reply. |
 | **Newsletter digest** | Today → the first row, **16 newsletters · today's digest**. | Today's digest: one line per newsletter, each ticked to archive, **Archive 16**, Untick all; open one and Back returns to the digest. |

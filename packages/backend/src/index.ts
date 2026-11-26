@@ -7,6 +7,7 @@ export * from "./transports";
 export * from "./agent-socket";
 export * from "./agent-connector";
 export * from "./demo";
+export * from "./demo-since";
 export * from "./net-policy";
 export * from "./identity";
 export { parseGoogleClients, parseOAuthClients, type GoogleClients, type OAuthClientSet } from "./oauth-clients";

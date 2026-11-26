@@ -46,7 +46,8 @@ interface Conversation {
   subject: string;
   today: string;
   reader: SummaryReader;
-  messages: { from: string; date: string; own: boolean; to?: string[]; cc?: string[]; list?: boolean; text: string }[];
+  /** `read` (plan 279): when given, what's new starts as production's rule has it: the run after the last message that's yours or read */
+  messages: { from: string; date: string; own: boolean; to?: string[]; cc?: string[]; list?: boolean; text: string; read?: boolean }[];
 }
 
 const parsed = (who: string) => {
@@ -103,6 +104,11 @@ function withTail(c: Conversation, kind: keyof typeof TAILS): Conversation {
 function newFrom(c: Conversation, tail: boolean): number | null {
   const n = c.messages.length;
   if (n < 2) return null;
+  if (!tail && c.messages.some((m) => m.read !== undefined)) {
+    let anchor = n - 1;
+    while (anchor >= 0 && !c.messages[anchor]!.own && c.messages[anchor]!.read === false) anchor--;
+    return anchor >= 0 && anchor < n - 1 && c.messages.slice(0, anchor + 1).some((m) => !m.own) ? anchor + 1 : null;
+  }
   const lastOwn = c.messages.map((m) => m.own).lastIndexOf(true);
   const from = tail ? n - 1 : lastOwn === n - 1 ? null : lastOwn >= 0 ? lastOwn + 1 : n - 1;
   // as production: something of someone else's comes before it (Fable review, round 2)

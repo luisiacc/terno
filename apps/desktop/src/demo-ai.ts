@@ -15,7 +15,12 @@ export const DEMO_AI_KEYS = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "JEV_API_KEY
 export const REQUIRED_KEYS = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"] as const;
 
 /** In the order they run: each needs what came before it (AI on first, the digest before Today's rows are read). */
-export const DEMO_AI_STEPS = ["ai-on", "digest", "conversations", "followups", "ask", "rule", "style"] as const;
+export const DEMO_AI_STEPS = ["ai-on", "digest", "conversations", "since", "followups", "ask", "rule", "style"] as const;
+/**
+ * Plan 279: the conversations with new mail since you read (`DEMO_SINCE` in @terno/backend, seeded on a demo AI launch),
+ * opened and summarized by hand. The last changes nothing, so its card shows the whole summary alone.
+ */
+export const DEMO_SINCE_SUBJECTS = ["Venue for the team offsite", "Cena de cumpleaños de papá", "Contrato con Lumbre Café", "Factura de septiembre"] as const;
 export type DemoAiStep = (typeof DEMO_AI_STEPS)[number];
 export const MARKER_FILE = "demo-ai.json";
 /** A marker from another version of the steps starts the preparation over. */

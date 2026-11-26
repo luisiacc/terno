@@ -7,7 +7,7 @@ import { createRequire } from "node:module";
 import { DatabaseSync } from "node:sqlite";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { askFinished, conversationDone, replyOutcome, replyStillComing, DEMO_AI_STEPS, demoAiClock, MARKER_FILE, MARKER_VERSION, partialVerdict, readMarker } from "../src/demo-ai.ts";
+import { askFinished, conversationDone, replyOutcome, replyStillComing, DEMO_AI_STEPS, DEMO_SINCE_SUBJECTS, demoAiClock, MARKER_FILE, MARKER_VERSION, partialVerdict, readMarker } from "../src/demo-ai.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const { _electron: electron } = createRequire(join(root, "package.json"))("@playwright/test");
@@ -259,6 +259,33 @@ const STEPS = {
       await visit(todayRows.nth(i), `Today #${i + 1}`, "today");
     }
     return settleConversations(d, progress, started);
+  },
+
+  /**
+   * Plan 279: the conversations with new mail since you read, each opened as a person would (the reader keeps what it
+   * drew unread, the dwell then reads it) and summarized with the toolbar's button, so the card opens on what's new. The
+   * last changes nothing ("¡Gracias, recibida!"): its card is the whole summary alone. Returns what didn't finish.
+   */
+  async since(d, progress) {
+    const { page } = d;
+    const missing = [];
+    for (const subject of DEMO_SINCE_SUBJECTS) {
+      if (progress.has(subject)) { d.log(`  ${subject}: done earlier`); continue; }
+      await d.go("inbox");
+      const row = d.rows.filter({ hasText: subject }).first();
+      if (!(await shows(row, 15_000))) { missing.push(`${subject} isn't in the Inbox`); continue; }
+      await row.click();
+      await page.getByTestId("reader-subject").waitFor();
+      await page.getByTestId("message").first().waitFor();
+      await page.getByTestId("action-summarize").click();
+      const block = page.locator("[data-testid=summary-block][data-state=ready]");
+      if (!(await shows(block, MODEL_MS))) { missing.push(`${subject}: no summary`); continue; }
+      const view = await d.isVisible("[data-testid=summary-view]");
+      const text = (await page.getByTestId("summary-text").innerText()).replace(/\s+/g, " ").trim();
+      d.log(`  ${subject}: ${view ? `since: "${text}"` : `whole summary only: "${text}"`}`);
+      progress.add(subject);
+    }
+    return missing;
   },
 
   /**

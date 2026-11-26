@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { demoCodeWanted, NET_LOG_MAX, netRecorder, offsetClock, testClock, testDevAi, testNetLog } from "./test-hooks";
+import { demoCodeWanted, demoSinceWanted, NET_LOG_MAX, netRecorder, offsetClock, testClock, testDevAi, testNetLog } from "./test-hooks";
 import { clockArgs, clockShiftOf, shiftClock } from "./window-clock";
 
 describe("plan 161: the rating's test hooks, in the demo mailbox only", () => {
@@ -92,5 +92,11 @@ describe("plan 167: the demo's fixed clock in the window", () => {
     expect(demoCodeWanted({ demo: true, dev: true, testNow: 1_792_683_000_000 })).toBe(false);
     expect(demoCodeWanted({ demo: true, dev: false })).toBe(false);
     expect(demoCodeWanted({ demo: false, dev: true })).toBe(false);
+  });
+
+  it("plan 279: the conversations with new mail since you read go only into dev:demo-ai's mailbox (the rating isn't a dev build)", () => {
+    expect(demoSinceWanted({ demo: true, dev: true, testNow: 1_792_683_000_000 })).toBe(true);
+    expect(demoSinceWanted({ demo: true, dev: true })).toBe(false);
+    expect(demoSinceWanted({ demo: true, dev: false, testNow: 1_792_683_000_000 })).toBe(false);
   });
 });
