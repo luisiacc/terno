@@ -5,6 +5,7 @@ import { createAi, deliveryOf, summarizeTask, summaryBudget, summaryPrompt, type
 import { runStructured } from "../../packages/ai/src/ladder";
 import type { CompletionRequest, ModelTransport } from "../../packages/ai/src/types";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import { promptText } from "../../packages/ai/src/types";
 import { withoutQuotes } from "../../packages/core/src/text";
 import { realKeys, realTransport, spendReport } from "./harness";
@@ -28,6 +29,17 @@ import { realKeys, realTransport, spendReport } from "./harness";
  * - TERNO_AI_SUMMARY_VERBOSITY (plan 279): OpenAI's verbosity, low, medium or high
  * - TERNO_AI_SUMMARY_NOTES (plan 279): a file holding a first pass's system prompt: the model reads the mail once to take
  *   notes, and the card is asked with those notes after the mail
+ * - TERNO_AI_SUMMARY_ANNOTATE=1 (plan 279): each date with its weekday, and the lines put to the reader by name and the
+ *   reader's own "I'll …" sentences listed after the mail
+ * - TERNO_AI_SUMMARY_SAMPLES=<k> (plan 279): k answers in parallel; the first is the card, all are kept ("samples") for
+ *   combining afterwards
+ * - TERNO_AI_SUMMARY_ROWS_CALL=1 (plan 279): a parallel call writes only the rows, from the raw thread; its rows are the
+ *   card's (the first call's are kept as "itemsA"); =ledger: that call goes through every message first, quoting each
+ *   request with its owner and status, and code keeps the reader's open ones
+ * - TERNO_AI_SUMMARY_ROWS_FIRST=1 (plan 279): the schema sent asks for the rows before the summary
+ * - TERNO_AI_SUMMARY_LAST (plan 279): a file whose text replaces the user turn's last instruction
+ * - TERNO_AI_SUMMARY_AUDIT (plan 279): a file holding the instruction for a second pass that gets the first answer in
+ *   <draft> and returns the card again (the first is kept as "draft")
  * - TERNO_AI_SUMMARY_SINCE=1 (plan 279): each conversation of two or more messages is read up to its last run of
  *   mail from others after the reader's last reply (the last message alone when the reader never wrote and everything
  *   is theirs), and that run is marked new="yes". Unset, the same conversations go with no marks: version 8's words
@@ -120,6 +132,109 @@ function newFrom(c: Conversation, tail: boolean): number | null {
   return from !== null && c.messages.slice(0, from).some((m) => !m.own) ? from : null;
 }
 
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/**
+ * Plan 279 (Fable 6): what's put to the reader by name, and their own promises, listed after the mail with the message
+ * each is in, so a line buried in a long message isn't lost. Labels as sent.
+ */
+function aboutYou(c: Conversation, sent: readonly ThreadText[]): string {
+  const first = c.reader.name.split(/\s+/)[0] ?? "";
+  const offset = c.messages.length - sent.length;
+  const named = new RegExp(`^\\s*${first.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b\\s*[,:—-]`, "i");
+  const promise = /\b(I'll|I will|I can|I shall|I'm going to|I am going to|Yo (?:te |le |les )?(?:mando|llevo|envío|paso)|Te (?:mando|paso|envío))\b/i;
+  const out: string[] = [];
+  c.messages.forEach((m, i) => {
+    if (i < offset) return;
+    const label = sent[i - offset]!.label;
+    for (const raw of withoutQuotes(m.text).split(/\n+/)) {
+      const line = raw.trim();
+      if (!line) continue;
+      if (!m.own && first && named.test(line)) out.push(`- ${label}, put to you: "${line.slice(0, 240)}"`);
+      if (m.own) for (const sentence of line.split(/(?<=[.!?])\s+/)) if (promise.test(sentence)) out.push(`- ${label}, your own words: "${sentence.slice(0, 240)}"`);
+    }
+  });
+  return out.length ? `<about_you>\nLines put to you by name, and your own promises, as found in the mail (the mail decides):\n${out.join("\n")}\n</about_you>` : "";
+}
+
+/** Plan 279 (Fable, round 2): the card's schema with the rows first. */
+const rowsFirstWire = (since: boolean) => {
+  const row = z.object({ kind: z.enum(["decision", "date", "action", "question", "waiting"]), text: z.string(), message: z.string(), due: z.string().nullable(), byReply: z.boolean() });
+  return since ? z.object({ items: z.array(row), summary: z.string(), since: z.string() }) : z.object({ items: z.array(row), summary: z.string() });
+};
+
+/** Plan 279 (Fable 5, Astra 2): the rows alone, from the raw thread, in a call of their own. */
+const rowWire = z.object({ items: z.array(z.preprocess((v: unknown) => (v && typeof v === "object" ? { due: null, byReply: true, ...(v as object) } : v), z.object({ kind: z.enum(["decision", "date", "action", "question", "waiting"]), text: z.string(), message: z.string(), due: z.string().nullable(), byReply: z.boolean() }))) });
+async function rowsOnly(transport: ModelTransport, request: Parameters<typeof summarizeTask>[0]) {
+  const task = summarizeTask(request);
+  const labels = new Set(request.thread.map((t) => t.label));
+  const rows = await runStructured(transport, {
+    system: `${promptText(task.system)}\n\n<this_answer>\nThis answer returns only "items": the reader's complete checklist. Go through the messages in order and include every to-do and question put to the reader, every promise of theirs still open, what is owed to them, and every deadline, payment, appointment or meeting they have to keep, applying the rules above. Leave out what's done, withdrawn or overtaken.\n</this_answer>`,
+    prompt: task.prompt,
+    schema: { name: "thread_rows", zod: rowWire },
+    example: { items: [] },
+    maxTokens: task.maxTokens,
+    effort: task.effort,
+    validate: (w) => ({ ok: true, value: w.items.filter((i) => labels.has(i.message)).map((i) => ({ kind: i.kind, text: i.text.trim(), message: i.message, ...(i.due && /^\d{4}-\d{2}-\d{2}$/.test(i.due) ? { due: i.due } : {}), ...(i.kind === "action" && i.byReply === false ? { byReply: false } : {}) })) }),
+  }, { output: "json_schema", signal: new AbortController().signal });
+  return rows;
+}
+
+/**
+ * Plan 279 (Astra, round 2, idea 2): the rows from a disposition of every message: each request, choice, promise or
+ * thing owed in it, quoted, with its owner and status, before any row is written; code keeps the reader's open ones.
+ */
+const ROW = z.object({ kind: z.enum(["decision", "date", "action", "question", "waiting"]), text: z.string(), due: z.string().nullable(), byReply: z.boolean() });
+const ledgerWire = z.object({
+  messages: z.array(z.object({
+    id: z.string(),
+    found: z.array(z.object({
+      quote: z.string(),
+      owner: z.enum(["reader", "someone else", "unclear"]),
+      status: z.enum(["open", "done", "withdrawn", "overtaken"]),
+      row: ROW.nullable(),
+    })),
+  })),
+});
+const CAPS = { ask: 6, date: 6, waiting: 2 } as const;
+const wordSet = (t: string) => new Set(t.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? []);
+const alikeWords = (a: string, b: string) => {
+  const x = wordSet(a), y = wordSet(b);
+  const shared = [...x].filter((w) => y.has(w)).length;
+  return shared / Math.max(1, new Set([...x, ...y]).size) >= 0.6;
+};
+const group = (k: string) => (k === "action" || k === "question" ? "ask" : k === "waiting" ? "waiting" : "date");
+async function rowsLedger(transport: ModelTransport, request: Parameters<typeof summarizeTask>[0]) {
+  const task = summarizeTask(request);
+  const labels = new Set(request.thread.map((t) => t.label));
+  return runStructured(transport, {
+    system: `${promptText(task.system)}\n\n<this_answer>\nThis answer is a ledger, not the card. Go through every message in order. In "messages", give each message's id and in "found" everything in it that asks, offers, promises, sets a date, a payment or an appointment, or is owed: quote the operative words; say whose it is (the reader's by the rules above, someone else's, or unclear); and its status after the last message (open, done, withdrawn or overtaken by a later message). "found" is [] when a message has none. For the reader's open ones, "row" is the card's row for it (kind, text, due, byReply, as the card's rules say); otherwise null.\n</this_answer>`,
+    prompt: task.prompt,
+    schema: { name: "thread_ledger", zod: ledgerWire },
+    example: { messages: [] },
+    maxTokens: task.maxTokens,
+    effort: task.effort,
+    validate: (w) => {
+      const used = { ask: 0, date: 0, waiting: 0 };
+      const rows = [];
+      for (const m of w.messages) {
+        if (!labels.has(m.id)) continue;
+        for (const f of m.found) {
+          if (f.owner !== "reader" || f.status !== "open" || !f.row) continue;
+          const g = group(f.row.kind);
+          // the same obligation named again in a later message: the later one stands
+          const twin = rows.findIndex((r) => group(r.kind) === g && alikeWords(r.text, f.row!.text));
+          if (twin >= 0) rows.splice(twin, 1);
+          else if (used[g] >= CAPS[g]) continue;
+          else used[g]++;
+          rows.push({ kind: f.row.kind, text: f.row.text.trim(), message: m.id, ...(f.row.due && /^\d{4}-\d{2}-\d{2}$/.test(f.row.due) ? { due: f.row.due } : {}), ...(f.row.kind === "action" && f.row.byReply === false ? { byReply: false } : {}) });
+        }
+      }
+      return { ok: true, value: rows };
+    },
+  }, { output: "json_schema", signal: new AbortController().signal });
+}
+
 /** The app's language, as a reader of this mail would have it. */
 const readerLanguage = (c: Conversation) => (c.language === "es" || c.language === "mixed" ? "es" : "en");
 
@@ -135,6 +250,8 @@ describe.skipIf(!RUN)("summaries over the corpus", () => {
     // plan 279's two passes: each card's first-pass notes, by the exact prompt they belong to
     const notesSystem = process.env.TERNO_AI_SUMMARY_NOTES ? readFileSync(process.env.TERNO_AI_SUMMARY_NOTES, "utf8").trim() : null;
     const notesFor = new Map<string, string>();
+    /** plan 279's annotation: what's appended after the mail, by the exact prompt it belongs to */
+    const extraFor = new Map<string, string>();
     const transport = {
       ...budgeted,
       complete: (req: Parameters<typeof budgeted.complete>[0], ...rest: unknown[]) => {
@@ -144,22 +261,39 @@ describe.skipIf(!RUN)("summaries over the corpus", () => {
           const asksSince = system.includes('- "since":') || system.includes("<since>");
           const today = /Today is (\d{4}-\d{2}-\d{2})/.exec(system)?.[1] ?? "";
           const language = /Write in (\w+)\./.exec(system)?.[1] ?? "English";
+          // a section a pass appends to the app's prompt (<audit>, <this_answer>) stays after the variant
+          const appended = /\n\n(<(?:audit|this_answer)>[\s\S]*)$/.exec(system)?.[1];
           system = whole.replace(/<<since>>([\s\S]*?)<<\/since>>/g, (_, kept: string) => (asksSince ? kept : "")).replaceAll("{{language}}", language).replaceAll("{{today}}", today).trim();
+          if (appended) system = `${system}\n\n${appended}`;
         }
         for (const [find, replace] of swaps) {
           if (!system.includes(find)) throw new Error(`the variant's text isn't in the prompt: ${find.slice(0, 60)}`);
           system = system.replace(find, replace);
           swapped = true;
         }
-        const withTail = tail ? req.messages.map((m, i) => (i === 0 ? { ...m, content: `${promptText(m.content)}\n\n${tail}` } : m)) : req.messages;
+        // plan 279 (Astra, round 2): the user turn's last instruction in place of the app's
+        const last = process.env.TERNO_AI_SUMMARY_LAST ? readFileSync(process.env.TERNO_AI_SUMMARY_LAST, "utf8").trim() : null;
+        const lastSwapped = !last ? req.messages : req.messages.map((m, i) => {
+          if (i !== 0) return m;
+          const text = promptText(m.content);
+          const at = text.lastIndexOf("\n\nWrite the card for the reader above.");
+          if (at < 0) throw new Error("the user turn's last instruction isn't where it was");
+          return { ...m, content: `${text.slice(0, at)}\n\n${last}` };
+        });
+        const withTail = tail ? lastSwapped.map((m, i) => (i === 0 ? { ...m, content: `${promptText(m.content)}\n\n${tail}` } : m)) : lastSwapped;
         const notes = notesFor.get(promptText(req.messages[0]!.content));
-        const messages = notes ? withTail.map((m, i) => (i === 0 ? { ...m, content: `${promptText(m.content)}\n\n<notes>\nNotes from a first read of this mail (check them against the mail; the mail decides):\n${notes}\n</notes>` } : m)) : withTail;
+        const extra = extraFor.get(promptText(req.messages[0]!.content));
+        const withNotes = notes ? withTail.map((m, i) => (i === 0 ? { ...m, content: `${promptText(m.content)}\n\n<notes>\nNotes from a first read of this mail (check them against the mail; the mail decides):\n${notes}\n</notes>` } : m)) : withTail;
+        const messages = extra ? withNotes.map((m, i) => (i === 0 ? { ...m, content: `${promptText(m.content)}\n\n${extra}` } : m)) : withNotes;
         const asked = process.env.TERNO_AI_SUMMARY_EFFORT as typeof req.effort | "default" | undefined;
         // "default": what a model does with none asked, as OpenAI's did before plan 202
         const effort = asked === "default" ? undefined : (asked ?? req.effort);
         const reasoningEffort = asked === "default" ? undefined : (asked ?? req.reasoningEffort);
         const verbosity = process.env.TERNO_AI_SUMMARY_VERBOSITY as CompletionRequest["verbosity"] | undefined;
-        return (budgeted.complete as (...a: unknown[]) => ReturnType<typeof budgeted.complete>)({ ...req, system, messages, effort, reasoningEffort, ...(verbosity ? { verbosity } : {}) }, ...rest);
+        // plan 279 (Fable, round 2): the rows before the summary in the schema sent; the answer is parsed as before
+        const rowsFirst = process.env.TERNO_AI_SUMMARY_ROWS_FIRST === "1" && req.schema?.name === "thread_summary";
+        const schema = rowsFirst ? { name: "thread_summary", zod: rowsFirstWire(system.includes("<since>") || system.includes('- "since":')) } : req.schema;
+        return (budgeted.complete as (...a: unknown[]) => ReturnType<typeof budgeted.complete>)({ ...req, system, messages, effort, reasoningEffort, ...(schema ? { schema } : {}), ...(verbosity ? { verbosity } : {}) }, ...rest);
       },
     };
     const ai = createAi({ id: provider, model: MODEL, apiKey: realKeys()[provider], fetch: globalThis.fetch, timeoutMs: 120_000, maxRetries: 0 }, { transport });
@@ -185,7 +319,9 @@ describe.skipIf(!RUN)("summaries over the corpus", () => {
           const offset = conv.messages.length - sent.length;
           // as production does (Codex code review 12): a since only when its first message and one before it are sent
           const asked = from !== null && from > offset;
-          const input = !asked ? sent : sent.map((t, i) => (i + offset >= from ? { ...t, isNew: true } : t));
+          const marked = !asked ? sent : sent.map((t, i) => (i + offset >= from ? { ...t, isNew: true } : t));
+          const annotate = process.env.TERNO_AI_SUMMARY_ANNOTATE === "1";
+          const input = annotate ? marked.map((t) => ({ ...t, date: `${t.date} ${WEEKDAYS[new Date(`${t.date}T12:00:00Z`).getUTCDay()]}` })) : marked;
           const started = Date.now();
           try {
             const request = { subject: conv.subject, thread: input, reader: conv.reader, language: readerLanguage(conv), today: conv.today, outputTokens: summaryBudget(null, asked).outputTokens };
@@ -194,7 +330,20 @@ describe.skipIf(!RUN)("summaries over the corpus", () => {
               const first = await budgeted.complete({ system: notesSystem.replaceAll("{{today}}", request.today), messages: [{ role: "user", content: prompt }], output: "text", maxTokens: 4000, signal: new AbortController().signal });
               notesFor.set(prompt, promptText(first.text).trim());
             }
-            let r = await ai.summarize(request);
+            if (annotate) {
+              const lines = aboutYou(conv, marked);
+              if (lines) extraFor.set(summaryPrompt({ subject: request.subject, thread: request.thread, reader: request.reader }), lines);
+            }
+            const k = Number(process.env.TERNO_AI_SUMMARY_SAMPLES ?? "1");
+            const rowsCall = process.env.TERNO_AI_SUMMARY_ROWS_CALL === "1" ? rowsOnly(transport as ModelTransport, request) : process.env.TERNO_AI_SUMMARY_ROWS_CALL === "ledger" ? rowsLedger(transport as ModelTransport, request) : null;
+            const answers = await Promise.all(Array.from({ length: k }, () => ai.summarize(request)));
+            let r = answers[0]!;
+            const samples = k > 1 ? answers.map((a) => ({ summary: a.summary, items: a.items, since: a.since ?? "" })) : undefined;
+            let itemsA: typeof r.items | undefined;
+            if (rowsCall) {
+              itemsA = r.items;
+              r = { ...r, items: await rowsCall };
+            }
             if (process.env.TERNO_AI_SUMMARY_VERIFY === "1") {
               const task = summarizeTask(request);
               r = await runStructured(transport as ModelTransport, {
@@ -203,8 +352,19 @@ describe.skipIf(!RUN)("summaries over the corpus", () => {
                 prompt: `${task.prompt}\n\n<draft>${JSON.stringify(r)}</draft>`,
               }, { output: "json_schema", signal: new AbortController().signal });
             }
+            let draft: typeof r | undefined;
+            if (process.env.TERNO_AI_SUMMARY_AUDIT) {
+              const task = summarizeTask(request);
+              draft = r;
+              const shown = { summary: r.summary, items: r.items, ...(asked ? { since: r.since ?? "" } : {}) };
+              r = await runStructured(transport as ModelTransport, {
+                ...task,
+                system: `${promptText(task.system)}\n\n${readFileSync(process.env.TERNO_AI_SUMMARY_AUDIT, "utf8").trim()}`,
+                prompt: `${task.prompt}\n\n<draft>${JSON.stringify(shown)}</draft>`,
+              }, { output: "json_schema", signal: new AbortController().signal });
+            }
             const newLabels = input.filter((t) => t.isNew).map((t) => t.label);
-            appendFileSync(path, `${JSON.stringify({ id: c.id, set: c.set, language: readerLanguage(c), ms: Date.now() - started, summary: r.summary, items: r.items, ...(asked ? { newLabels, since: r.since ?? "" } : {}), ...(tailKind ? { tail: conv.messages.at(-1)!.text } : {}) })}\n`);
+            appendFileSync(path, `${JSON.stringify({ id: c.id, set: c.set, language: readerLanguage(c), ms: Date.now() - started, summary: r.summary, items: r.items, ...(itemsA ? { itemsA } : {}), ...(draft ? { draft: { summary: draft.summary, items: draft.items, since: draft.since ?? "" } } : {}), ...(samples ? { samples } : {}), ...(asked ? { newLabels, since: r.since ?? "" } : {}), ...(tailKind ? { tail: conv.messages.at(-1)!.text } : {}) })}\n`);
           } catch (e) {
             failed++;
             appendFileSync(path, `${JSON.stringify({ id: c.id, set: c.set, language: readerLanguage(c), ms: Date.now() - started, error: e instanceof Error ? `${e.name}: ${e.message}`.slice(0, 200) : "unknown" })}\n`);
