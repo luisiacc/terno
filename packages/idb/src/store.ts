@@ -1,4 +1,5 @@
-import { endPlacements, hiddenCategorySet, keepSender, listKeptSenders, placementOf, placementPage, placementsNeedingLook, PlacementWatch, refileRuleFilings, releaseRuleFilings, removeKeptSender, ruleNote, unkeepSender } from "./put-away";
+import { endPlacements, keepSender, listKeptSenders, placedVisible, placementOf, placementPage, placementsNeedingLook, PlacementWatch, refileHiddenFilings, releaseHiddenFilings, removeKeptSender, unkeepSender } from "./put-away";
+import { ruleNote } from "@terno/store";
 import { ASK_MATCH_MESSAGES, ASK_MATCH_PARTS, CORPUS_TEXTS_MAX, finishBodyClose, rankSentRefs, readPassages, readThreadContext, type SentRef } from "@terno/store";
 import { ClosedOrder } from "./closed-order";
 import { actOnItems, fromOf, itemMembers, linkItems, liveAmong, restoreItems, needsCount, needsWalk, type NeedsWalk, messagesHere, senders, allDigests, beginDigest, clearDigests, digestFacts, digestLive, digestRead, getDigest, latestDigest, pendingDigestDays, pruneDigests, waitingAmong, waitingPage, writeDigest } from "./today";
@@ -1133,10 +1134,12 @@ export class IdbMailStore implements MailStore {
       this.command(() => {
         const flagBefore = flagEpochs(idbFlags(this.c));
         const ids = [...new Set(threadIds)];
+        // plan 282: put-away conversations this may take out of the Inbox view
+        const visible = ENDS_PLACEMENT.has(action) ? placedVisible(this.c, ids) : null;
         const r = applyThreadAction(this.c, ids, action);
         if (signal && r.threadIds.length) recordUserActions(this.c, r.threadIds, signal, now);
-        // plan 282: the user's own move out of the Inbox
-        if (ENDS_PLACEMENT.has(action)) endPlacements(this.c, ids);
+        // the user's own move out of the Inbox ends a placement; a move between places it was already out of keeps it
+        if (visible?.size) endPlacements(this.c, r.threadIds.filter((t) => visible.has(t)));
         const opIds = this.queueActionOps(r, action, now);
         if (action !== "moveToInbox") return { threadIds: r.threadIds, opIds, before: r.before, ...flagReconciliation(idbFlags(this.c), flagBefore) };
         // plan 86: into the Inbox means out of Gmail's tabs too, in the same command and the same undo
@@ -1162,8 +1165,9 @@ export class IdbMailStore implements MailStore {
     moveToFolder: (o) =>
       this.command(() => {
         const flagBefore = flagEpochs(idbFlags(this.c));
+        const visible = placedVisible(this.c, o.threadIds);
         const r = moveThreadsToFolder(this.c, o);
-        endPlacements(this.c, r.threadIds);
+        if (visible.size) endPlacements(this.c, r.threadIds.filter((t) => visible.has(t)));
         return { threadIds: r.threadIds, opIds: r.opIds, before: r.archived.before, moved: r.moved, kept: r.kept, leftInbox: r.archived.threadIds, ...flagReconciliation(idbFlags(this.c), flagBefore) };
       }),
     leaveFolder: (o) => this.command(() => leaveFolder(this.c, o)),
@@ -1178,6 +1182,13 @@ export class IdbMailStore implements MailStore {
     return ids;
   }
 
+  /** Plan 282: a command's placement watch, only when it can place anything (an enabled rule on new mail, the engine filing on its own). */
+  private placementWatch(applyFilters: boolean, classifier: ClassifierInput | null, threads: () => number[]): PlacementWatch | null {
+    const rules = applyFilters && [...T(this.c, "filters").all()].some((f) => f.enabled === 1);
+    if (!rules && classifier?.mode !== "auto") return null;
+    return new PlacementWatch(this.c, threads());
+  }
+
   private applyFiltersTo(messageIds: readonly number[], onlyBodyFilters: boolean, now: number, opIds: string[], folderMoves: FolderFilterMove[], watch: PlacementWatch | null = null): Set<number> {
     const touched = new Set<number>();
     if (messageIds.length === 0) return touched;
@@ -1185,13 +1196,12 @@ export class IdbMailStore implements MailStore {
     // plan 128: what reached the Inbox, read before any filter acts: an archive (or another folder's) doesn't change who else moves
     const messages = T(this.c, "messages");
     const inbox = filters.some((f) => movesToFolder(f.rule)) ? new Set(messageIds.filter((id) => messages.get(id)?.in_inbox === 1)) : null;
-    const hidden = watch ? hiddenCategorySet(this.c) : null;
     for (const filter of filters) {
       const matches = findRuleMatches(this.c, filter.rule, now, messageIds);
       if (matches.messageIds.length === 0) continue;
       try {
         const moves: FolderFilterMove[] = [];
-        const changed = this.db.tx(() => this.runFilterActions(filter.rule.actions, claimFilterApplications(this.c, filter.id, matches.messageIds, now), now, opIds, moves, inbox, watch && hidden ? { watch, filter, hidden } : null));
+        const changed = this.db.tx(() => this.runFilterActions(filter.rule.actions, claimFilterApplications(this.c, filter.id, matches.messageIds, now), now, opIds, moves, inbox, watch ? { watch, filter } : null));
         // only once its savepoint held: a later action failing leaves no move behind
         folderMoves.push(...moves);
         for (const id of changed) touched.add(id);
@@ -1202,7 +1212,7 @@ export class IdbMailStore implements MailStore {
     return touched;
   }
 
-  private runFilterActions(actions: FilterAction[], messageIds: number[], now: number, opIds: string[], folderMoves: FolderFilterMove[], inbox: ReadonlySet<number> | null, placing: { watch: PlacementWatch; filter: Filter; hidden: ReadonlySet<number> } | null = null): Set<number> {
+  private runFilterActions(actions: FilterAction[], messageIds: number[], now: number, opIds: string[], folderMoves: FolderFilterMove[], inbox: ReadonlySet<number> | null, placing: { watch: PlacementWatch; filter: Filter } | null = null): Set<number> {
     const touched = new Set<number>();
     if (messageIds.length === 0) return touched;
     const messages = T(this.c, "messages");
@@ -1220,12 +1230,12 @@ export class IdbMailStore implements MailStore {
         const threads = [...new Set(messageIds.map((id) => messages.get(id)?.thread_id as number).filter((t) => t !== undefined))];
         const added = addToCategory(this.c, { categoryId: action.categoryId, threadIds: threads, addedBy: "filter", now }).added;
         // plan 282: only the conversations it actually filed
-        placing?.watch.note(added, ruleNote(placing.filter, action, placing.hidden));
+        if (placing) placing.watch.note(added, ruleNote(placing.filter, action, placing.watch.hidden()));
         for (const t of threads) touched.add(t);
       } else {
         const result = applyMessageAction(this.c, messageIds, action.type);
         opIds.push(...this.queueActionOps(result, action.type, now));
-        placing?.watch.note(result.threadIds, ruleNote(placing.filter, action, placing.hidden));
+        if (placing) placing.watch.note(result.threadIds, ruleNote(placing.filter, action, placing.watch.hidden()));
         for (const t of result.threadIds) touched.add(t);
       }
     }
@@ -1243,7 +1253,7 @@ export class IdbMailStore implements MailStore {
         }
         opIds.push(...r.opIds);
         // plan 282: a move that held
-        if (watch && filter) watch.note(r.threadIds, ruleNote(filter, { type: "moveToFolder", accountId: move.accountId, folder: move.folder }, new Set()));
+        if (watch && filter) watch.note(r.threadIds, ruleNote(filter, { type: "moveToFolder", accountId: move.accountId, folder: move.folder }, watch.hidden()));
         for (const t of r.threadIds) touched.add(t);
       } catch (error) {
         this.log("warn", `filter move failed on account ${move.accountId}`, error instanceof Error ? error.message : error);
@@ -1317,17 +1327,17 @@ export class IdbMailStore implements MailStore {
           const folderMoves: FolderFilterMove[] = [];
           // plan 282: what new mail's rules and the engine take out of the Inbox
           const messages = T(this.c, "messages");
-          const watch = new PlacementWatch(this.c, [...result.inserted, ...result.bodyCompleted].flatMap((id) => { const m = messages.get(id); return m ? [m.thread_id as number] : []; }));
+          const watch = this.placementWatch(applyFilters, classifier, () => [...result.inserted, ...result.bodyCompleted].flatMap((id) => { const m = messages.get(id); return m ? [m.thread_id as number] : []; }));
           if (applyFilters) {
             for (const t of this.applyFiltersTo(result.inserted, false, now, opIds, folderMoves, watch)) touched.add(t);
             for (const t of this.applyFiltersTo(result.bodyCompleted, true, now, opIds, folderMoves, watch)) touched.add(t);
           }
           const c = this.classify(classifier, result.inserted, result.bodyCompleted, now);
           for (const t of c.touched) touched.add(t);
-          watch.noteTerno(c.auto, hiddenCategorySet(this.c));
+          watch?.noteTerno(c.auto);
           this.flushFolderMoves(folderMoves, now, opIds, touched, watch);
-          watch.commit(now);
-          return { inserted: result.inserted, touched: [...touched], deltas: [...result.deltas, ...c.deltas], auto: c.auto, backfill: c.backfill, opIds, ...flagReconciliation(idbFlags(this.c), flagBefore) };
+          const placed = watch?.commit(now) ?? [];
+          return { inserted: result.inserted, touched: [...touched], deltas: [...result.deltas, ...c.deltas], auto: c.auto, backfill: c.backfill, opIds, placed, ...flagReconciliation(idbFlags(this.c), flagBefore) };
         }),
         { durability: "relaxed", check, bodyTicket: this.preparedTickets.get(prepared) },
       );
@@ -1361,15 +1371,15 @@ export class IdbMailStore implements MailStore {
           if (captureUnavailable) return { touched: owner ? [owner.thread_id] : [], deltas: [], auto: new Map(), opIds: [] };
           const opIds: string[] = [];
           const folderMoves: FolderFilterMove[] = [];
-          const watch = new PlacementWatch(this.c, owner ? [owner.thread_id as number] : []);
+          const watch = this.placementWatch(true, classifier, () => (owner ? [owner.thread_id as number] : []));
           const touched = this.applyFiltersTo([messageId], true, now, opIds, folderMoves, watch);
           const c = this.classify(classifier, [], [messageId], now);
           for (const t of c.touched) touched.add(t);
-          watch.noteTerno(c.auto, hiddenCategorySet(this.c));
+          watch?.noteTerno(c.auto);
           this.flushFolderMoves(folderMoves, now, opIds, touched, watch);
-          watch.commit(now);
+          const placed = watch?.commit(now) ?? [];
           if (owner) touched.add(owner.thread_id);
-          return { touched: [...touched], deltas: c.deltas, auto: c.auto, opIds, ...flagReconciliation(idbFlags(this.c), flagBefore) };
+          return { touched: [...touched], deltas: c.deltas, auto: c.auto, opIds, placed, ...flagReconciliation(idbFlags(this.c), flagBefore) };
         }),
         { durability: "relaxed", check, bodyTicket: this.preparedTickets.get(prepared) },
       );
@@ -1413,6 +1423,9 @@ export class IdbMailStore implements MailStore {
             if (after.is_sent !== m.is_sent || after.is_draft !== m.is_draft || after.is_spam !== m.is_spam) for (const t of ownMailChanged(this.db, m.id)) threads.add(t);
           }
           recomputeThreads(this.c, threads);
+          // plan 282: back in the Inbox by the server's word (another device, the webmail): what put it away is over
+          const back = placedVisible(this.c, [...threads]);
+          if (back.size) endPlacements(this.c, [...back]);
           return { touched: [...threads], ...reconciliation };
         },
         { durability: "relaxed" },
@@ -2772,8 +2785,8 @@ export class IdbMailStore implements MailStore {
     of: (threadId, now) => this.read(() => placementOf(this.c, threadId, now)),
     page: (p) => this.read(() => placementPage(this.c, p)),
     needsLook: (p) => this.read(() => placementsNeedingLook(this.c, p)),
-    release: (threadIds) => this.command(() => releaseRuleFilings(this.c, threadIds)),
-    refile: (rows, now) => this.command(() => refileRuleFilings(this.c, rows, now)),
+    release: (threadIds) => this.command(() => releaseHiddenFilings(this.c, threadIds)),
+    refile: (rows) => this.command(() => refileHiddenFilings(this.c, rows)),
     keep: (p) => this.command(() => keepSender(this.c, p)),
     unkeep: (p) => this.command(() => unkeepSender(this.c, p)),
     kept: () => this.read(() => listKeptSenders(this.c)),

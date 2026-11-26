@@ -2,7 +2,7 @@ import type { Account, Folder, Tab, View } from "@terno/core";
 import { t } from "@terno/i18n";
 import { useLayoutEffect, useState } from "react";
 import { create } from "zustand";
-import { getApp, navigate, setApp, useApp, type AppState } from "~/state/app";
+import { getApp, navigate, setApp, useApp, type AppState, ownList } from "~/state/app";
 
 /**
  * Plan 67: what's at the top of the sidebar is all your mail; what's under an account is that account's.
@@ -103,7 +103,7 @@ function remember(id: number | null): void {
 /** Focus on an account: its Inbox, unless you're already in one of its places (then you stay). */
 export function focusAccount(id: number): void {
   const s = getApp();
-  if (s.accountId === id && s.reviewCategoryId === null && !s.reminders && !s.followups && !s.putAway && !s.today) {
+  if (s.accountId === id && s.reviewCategoryId === null && !ownList(s)) {
     // a search there narrows to the account: what was checked or under the cursor may be another's (Codex code
     // review round 2 #1), so the selection starts again, as on any other list
     setApp(s.query.trim() ? { soloAccountId: id, selectedId: null, checked: new Set(), anchorId: null, scope: null } : { soloAccountId: id });

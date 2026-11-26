@@ -7,7 +7,7 @@ import { currentTargets, scopeRows } from "~/lib/select";
 import { dismissSnack, registerUndo, snack, snackPublication, withdrawSnack, type Undo } from "~/lib/snack";
 import { activeFilter } from "~/lib/unread-filter";
 import type { ListFilter } from "@terno/core";
-import { getApp, getSelectionWriteRevision, inPlainInbox, inSeparateTab, openedByApp, setApp, setAppOpened, type AppState, type ScopeSelection } from "~/state/app";
+import { getApp, getSelectionWriteRevision, inPlainInbox, inSeparateTab, openedByApp, setApp, setAppOpened, type AppState, type ScopeSelection, ownList } from "~/state/app";
 import { listKey, moveNextRows, onlyOnTop, patchRows, reloadList, useList } from "~/state/list";
 import { invalidateThreads, useThreads } from "~/state/threads";
 import { closePage, currentPage, listLayout, readerShown } from "~/lib/page";
@@ -22,8 +22,9 @@ import { readSetByHand } from "~/lib/read-by-hand";
 function staysInView(s: Pick<AppState, "view" | "gmailTab" | "categoryId" | "reviewCategoryId" | "folder" | "query" | "followups" | "putAway">, action: ThreadAction): boolean {
   // plans 218, 277: a deleted or spam conversation's follow-ups go: it leaves the Follow-ups list (archived, they stay)
   if (s.followups && (action === "trash" || action === "spam")) return false;
-  // plan 282: moved by the user (back to the Inbox, or anywhere else) it's theirs now: it leaves Put away
-  if (s.putAway) return !(action === "archive" || action === "trash" || action === "spam" || action === "moveToInbox" || action === "notSpam" || isCategoryAction(action));
+  // plan 282: back in the Inbox, or somewhere its placement no longer holds (Trash, Spam), it leaves Put away; archived
+  // again it's where it was (nothing changed, it stays)
+  if (s.putAway) return !(action === "trash" || action === "spam" || action === "moveToInbox" || action === "notSpam" || isCategoryAction(action));
   // plan 86: a Gmail tab holds its own category only; the Inbox none of the tabs (Move to Inbox takes a thread out of them)
   if (isCategoryAction(action)) return s.gmailTab ? action === TAB_ACTION[s.gmailTab] : !(inPlainInbox(s) && (action === "toPromotions" || action === "toSocial" || action === "toOther"));
   if (action === "moveToInbox" && s.gmailTab) return false;
@@ -503,7 +504,7 @@ export async function markAccountRead(accountId: number, count: number): Promise
   const connection = client.connectionVersion;
   const s = getApp();
   // the rows shown are the Inbox's, not a previous view's still showing while it loads (Codex code review round 2 #3)
-  const listed = inPlainInbox(s) && !s.reminders && !s.followups && !s.putAway && !s.today && (s.accountId === null || s.accountId === accountId) && useList.getState().itemsKey === listKey();
+  const listed = inPlainInbox(s) && !ownList(s) && (s.accountId === null || s.accountId === accountId) && useList.getState().itemsKey === listKey();
   // a row there only for its reminder, or in a Gmail tab the account keeps apart, isn't in its Inbox (Codex code review #4)
   const loaded = listed ? useList.getState().items.filter((t) => t.accountId === accountId && t.unread && !onlyOnTop(t) && !inSeparateTab(t, s.accounts)).map((t) => t.id) : [];
   // under the list's Unread filter they go; the open and the checked ones are read in place, as the filter keeps

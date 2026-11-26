@@ -11,7 +11,7 @@ import { badgeCount, noticeText, type MailNotice } from "@terno/core";
 import { client } from "~/rpc/connection";
 import { reconcileSettings } from "~/lib/appearance";
 import { closePage, listCovered, openThread } from "~/lib/page";
-import { getApp, navigate, setApp, useApp } from "~/state/app";
+import { getApp, navigate, setApp, useApp, ownList } from "~/state/app";
 import { reloadList } from "~/state/list";
 import { openMailLink, supersedeMailLink } from "~/lib/mail-links";
 
@@ -49,7 +49,7 @@ export function openFromNotice(threadId: number | null, accountId?: number): voi
   const account = accountId === undefined ? undefined : s.accounts.find((a) => a.id === accountId);
   const inbox = account && !inAllInbox(account) ? account.id : null;
   // a Gmail tab, a folder or a list of its own is not the Inbox either (Codex code review of plan 238, round 2)
-  if (s.view !== "inbox" || s.accountId !== inbox || s.categoryId !== null || s.reviewCategoryId !== null || s.query !== "" || s.gmailTab !== null || s.folder !== null || s.reminders || s.followups || s.putAway || s.today) navigate({ view: "inbox", accountId: inbox, categoryId: null, reviewCategoryId: null });
+  if (s.view !== "inbox" || s.accountId !== inbox || s.categoryId !== null || s.reviewCategoryId !== null || s.query !== "" || s.gmailTab !== null || s.folder !== null || ownList(s)) navigate({ view: "inbox", accountId: inbox, categoryId: null, reviewCategoryId: null });
   // a selection (Split shows its bar in the reader) ends: the conversation is what was asked for (Codex code review #7)
   else if (s.checked.size || s.scope) setApp({ checked: new Set(), scope: null });
   if (threadId === null) {

@@ -21,7 +21,7 @@ import { create } from "zustand";
 import { formatNumber, t } from "@terno/i18n";
 import { viewLabel } from "~/lib/format";
 import { useActionPreview } from "~/state/action-preview";
-import { getApp, inboxShape, navigate, publishCounts, setApp, useApp } from "~/state/app";
+import { getApp, inboxShape, navigate, publishCounts, setApp, useApp, ownList } from "~/state/app";
 import { installDragController } from "~/lib/drag-install";
 import { currentScope, inboxTop, listKey, loadMore, searchOfKey, useList } from "~/state/list";
 import { wantExcerpts } from "~/state/excerpts";
@@ -338,7 +338,7 @@ useApp.subscribe((s, prev) => {
  */
 const searchFrom: { review: number | null } = { review: null };
 useApp.subscribe((s, prev) => {
-  if (searchFrom.review !== null && (!s.query.trim() || s.view !== prev.view || s.categoryId !== prev.categoryId || s.accountId !== prev.accountId || s.folder !== prev.folder || s.reminders || s.followups || s.putAway || s.today)) searchFrom.review = null;
+  if (searchFrom.review !== null && (!s.query.trim() || s.view !== prev.view || s.categoryId !== prev.categoryId || s.accountId !== prev.accountId || s.folder !== prev.folder || ownList(s))) searchFrom.review = null;
 });
 
 /** What the field types into the app: from a Review, a search of everything. */
@@ -1393,7 +1393,7 @@ export function ThreadList() {
                 kind={h.kind}
                 top={(virtualizer.measurementsCache[h.at]?.start ?? lead + INBOX_LABEL) - INBOX_LABEL}
                 name={h.label ?? (h.kind === "pinned" ? t("list.pinned") : h.kind === "reminders" ? t("view.reminders") : (inboxName ?? t("view.inbox")))}
-                count={h.count !== undefined ? formatNumber(h.count) : h.kind === "pinned" ? formatNumber(pinnedTop) : h.kind === "reminders" ? formatNumber(top - pinnedTop) : sections.total ? `${formatNumber(sections.total.n)}${sections.total.capped ? "+" : ""}` : null}
+                count={h.count !== undefined ? (h.count === null ? null : formatNumber(h.count)) : h.kind === "pinned" ? formatNumber(pinnedTop) : h.kind === "reminders" ? formatNumber(top - pinnedTop) : sections.total ? `${formatNumber(sections.total.n)}${sections.total.capped ? "+" : ""}` : null}
               />
             ))}
             {footer > 0 && (
@@ -1402,7 +1402,7 @@ export function ThreadList() {
               </p>
             )}
             {virtualItems.map((v) => (
-              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} showAccount={showAccount} icons={icons} layout={layout} review={review} pinnedTop={v.index < pinnedTop} reminderTop={v.index >= pinnedTop && v.index < top} match={match} lines={lines} pick={list} position={v.index + 1} />
+              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} showAccount={showAccount} icons={icons} layout={layout} review={review} pinnedTop={v.index < pinnedTop} reminderTop={v.index >= pinnedTop && v.index < top} match={match} lines={lines} pick={list} position={v.index + 1} placed={putAway ? placed.get(items[v.index]!.id) : undefined} />
             ))}
           </div>
         )}

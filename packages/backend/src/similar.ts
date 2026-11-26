@@ -179,13 +179,14 @@ export class SimilarFilters {
   }
 
   /** Plan 90: filters on or off at once ("Stop filing…", "Turn all off"), each only if unchanged since it was read; one Undo. */
-  setEnabled(ids: readonly number[], enabled: boolean): Promise<{ changed: number; filterUndo: number | null }> {
+  setEnabled(ids: readonly number[], enabled: boolean, still?: (f: Filter) => boolean): Promise<{ changed: number; filterUndo: number | null }> {
     return this.serial(async () => {
       let changed = 0;
       const { filterUndo } = await this.journaled(async (record, skip) => {
         for (const id of new Set(ids)) {
           const f = await this.store.filters.get(id);
-          if (!f || f.enabled === enabled) continue;
+          // plan 282: only the rule as the caller saw it (`still`), read where it's written
+          if (!f || f.enabled === enabled || (still && !still(f))) continue;
           const change = await skip(async () => (await this.write(f, { enabled })).change);
           if (change) {
             record(change);

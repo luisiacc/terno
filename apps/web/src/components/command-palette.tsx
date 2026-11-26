@@ -27,7 +27,7 @@ import { useCanDraft } from "~/lib/ai-draft-state";
 import { openAiDraft } from "~/lib/ai-draft";
 import { checkForUpdates, installUpdate, useHasUpdates, useUpdates } from "~/lib/updates";
 import { englishWords as english } from "~/lib/palette-words";
-import { getApp, navigate, setApp, useApp } from "~/state/app";
+import { getApp, navigate, setApp, useApp, ownList } from "~/state/app";
 import { openSettings } from "~/lib/settings-place";
 import { openRemind, presetLabel, presetWhen, setReminder, clearReminder, useReminders } from "~/lib/reminders";
 import { useReaderHeld, useToday, useTodayTask, type FeedRow } from "~/state/today";
@@ -270,7 +270,7 @@ export function CommandPalette() {
   const itemWords = useToday((s) => (readerItem ? readerWords(readerItem) : todayTask ? rowWords(s.rows.find((r) => r.id === todayTask.rowId)) : null));
   // the unread filter applies to a mailbox (not "Review")
   // the unread toggle's state: Unread on or not (another filter on: it switches to Unread)
-  const filter = useApp((s) => (open && s.reviewCategoryId === null && !s.reminders && !s.followups && !s.putAway && !s.today ? (isUnreadOnly(s) ? "on" : "off") : null));
+  const filter = useApp((s) => (open && s.reviewCategoryId === null && !ownList(s) ? (isUnreadOnly(s) ? "on" : "off") : null));
   const active = useApp((s) => (open ? activeFilter(s) : undefined));
   const supported = useApp((s) => s.supportedFilters);
   const design = useApp((s) => (open ? (s.settings?.design ?? null) : null));

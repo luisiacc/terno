@@ -72,10 +72,12 @@ export function definePutAwayConformance(fresh: () => Promise<MailStore>, reopen
       expect(await store.putAway.of(filed, NOW)).toMatchObject({ detail: { action: "addCategory", categoryId: hidden.id } });
       // Back to Inbox's other half: out of the rule's hidden category, no example; Undo files it back
       const released = await store.putAway.release([filed]);
-      expect(released).toEqual([{ threadId: filed, categoryId: hidden.id }]);
+      expect(released).toEqual([{ threadId: filed, categoryId: hidden.id, addedBy: "filter", addedAt: NOW, batchId: null }]);
       expect(await store.putAway.of(filed, NOW)).toBeNull();
-      await store.putAway.refile(released, NOW);
+      await store.putAway.refile(released);
       expect(await store.putAway.of(filed, NOW)).not.toBeNull();
+      expect(await store.putAway.release([filed])).toEqual(released);
+      await store.putAway.refile(released);
       // the category shown again: the filing no longer keeps it out
       await store.categories.update(hidden.id, { showInInbox: true });
       expect(await store.putAway.of(filed, NOW)).toBeNull();
@@ -134,6 +136,78 @@ export function definePutAwayConformance(fresh: () => Promise<MailStore>, reopen
       expect(ids).toEqual([look, b, a]);
     });
 
+    it("of two rules on the same mail, what explains it now: a later rule's delete over an earlier archive", async () => {
+      const { store, arrive, rule } = await setup();
+      const hidden = await store.categories.create("Lecturas", "violet", { showInInbox: false });
+      await rule(news.email, [{ type: "archive" }], "Archive it");
+      await rule(news.email, [{ type: "trash" }], "Delete it");
+      const t = await arrive();
+      expect(await store.putAway.of(t, NOW)).toMatchObject({ detail: { name: "Delete it", action: "trash" } });
+      // a filing and an archive: the archive explains it, and still does once the filing is taken off
+      await rule("digest@x.test", [{ type: "addCategory", categoryId: hidden.id }], "File it");
+      await rule("digest@x.test", [{ type: "archive" }], "Archive digests");
+      const u = await arrive({ from: { name: "Digest", email: "digest@x.test" } });
+      expect(await store.putAway.of(u, NOW)).toMatchObject({ detail: { name: "Archive digests", action: "archive" } });
+      await store.categories.remove({ categoryId: hidden.id, threadIds: [u], reason: "user", now: NOW + 1 });
+      expect(await store.putAway.of(u, NOW + 1)).toMatchObject({ detail: { action: "archive" } });
+    });
+
+    it("the user's own move out of the Inbox ends it; a move between places it was already out of keeps it, so Undo finds it again", async () => {
+      const { store, arrive, rule, listed } = await setup();
+      await rule(news.email, [{ type: "archive" }]);
+      const t = await arrive();
+      // archived already: archiving again changes nothing and keeps it
+      await store.threads.act({ threadIds: [t], action: "archive", signal: "archive", now: NOW + 1 });
+      expect(await listed(NOW + 1)).toEqual([t]);
+      // deleted by the user: out of Put away while in Trash, and back with its Undo
+      const deleted = await store.threads.act({ threadIds: [t], action: "trash", signal: "trash", now: NOW + 2 });
+      expect(await listed(NOW + 2)).toEqual([]);
+      await store.threads.restore({ messages: deleted.before, now: NOW + 3 });
+      expect(await store.putAway.of(t, NOW + 3)).toMatchObject({ detail: { action: "archive" } });
+    });
+
+    it("back in the Inbox by the server's word (another device) ends it: archived again later, it isn't the rule's", async () => {
+      const { store, accountId, arrive, rule, listed } = await setup();
+      await rule(news.email, [{ type: "archive" }]);
+      const t = await arrive();
+      const m = (await store.threads.get(t))!.messages[0]!;
+      // the rule's archive reached the server
+      for (const op of await store.ops.claimReady(NOW, 50)) await store.ops.complete(op.id, undefined, NOW);
+      await store.sync.updateFlags(accountId, [{ messageId: m.id, flags: { inInbox: true } }]);
+      await store.sync.updateFlags(accountId, [{ messageId: m.id, flags: { inInbox: false } }]);
+      expect(await listed()).toEqual([]);
+    });
+
+    it("mail in a Gmail tab its account keeps apart was never in the Inbox: a rule archiving it puts nothing away", async () => {
+      const { arrive, rule, listed } = await setup();
+      await rule(news.email, [{ type: "archive" }]);
+      await arrive({ gmailLabels: ["INBOX", "CATEGORY_PROMOTIONS"] });
+      const inbox = await arrive({ gmailLabels: ["INBOX"] });
+      expect(await listed()).toEqual([inbox]);
+    });
+
+    it("a name too long for the snapshot is cut, and still reads back", async () => {
+      const { store, arrive, rule } = await setup();
+      await rule(news.email, [{ type: "archive" }], "R".repeat(600));
+      const t = await arrive({ from: { name: "N".repeat(900), email: news.email } });
+      const p = await store.putAway.of(t, NOW);
+      expect(p?.detail.by === "rule" && p.detail.name).toHaveLength(400);
+      expect(p?.detail.fromName).toHaveLength(400);
+    });
+
+    it("Back to Inbox takes it out of every hidden category, the user's own filing too, and Undo puts each row back as it was", async () => {
+      const { store, arrive, rule } = await setup();
+      const hidden = await store.categories.create("Lecturas", "violet", { showInInbox: false });
+      await rule(news.email, [{ type: "archive" }]);
+      const t = await arrive();
+      await store.categories.add({ categoryId: hidden.id, threadIds: [t], addedBy: "user", now: NOW + 5 });
+      expect(await store.putAway.of(t, NOW + 5)).toMatchObject({ detail: { action: "archive" } });
+      const released = await store.putAway.release([t]);
+      expect(released).toEqual([{ threadId: t, categoryId: hidden.id, addedBy: "user", addedAt: NOW + 5, batchId: null }]);
+      await store.putAway.refile(released);
+      expect(await store.putAway.release([t])).toEqual(released);
+    });
+
     it("survives a reopen", async () => {
       const { store, arrive, rule } = await setup();
       await rule(news.email, [{ type: "archive" }]);
@@ -169,7 +243,7 @@ export function definePutAwayConformance(fresh: () => Promise<MailStore>, reopen
         };
         const t = await ingest("filed", NOW);
         const p = await store.putAway.of(t, NOW);
-        expect(p).toMatchObject({ detail: { by: "terno", categoryId: category.id, sender, fromName: "Shop" } });
+        expect(p).toMatchObject({ detail: { by: "terno", categoryId: category.id, sender, senderName: "Shop", fromName: "Shop" } });
         expect(p!.ruleLive).toBeUndefined();
         expect(await listed()).toContain(t);
         const kept = await store.putAway.keep({ categoryId: category.id, sender, threadId: t, now: NOW + 1 });
@@ -183,6 +257,13 @@ export function definePutAwayConformance(fresh: () => Promise<MailStore>, reopen
         expect((await store.threads.get(next))!.categorization.suggestions.map((s) => s.categoryId)).toContain(category.id);
         await store.putAway.unkeep({ categoryId: category.id, sender, ...kept });
         expect(await store.putAway.kept()).toEqual([]);
+        // an Undo takes back only what it did: a kept row made again by another hand stays
+        const again = await store.putAway.keep({ categoryId: category.id, sender, threadId: null, now: NOW + 4 });
+        await store.putAway.removeKept(category.id, sender);
+        await store.putAway.keep({ categoryId: category.id, sender, threadId: null, now: NOW + 5 });
+        await store.putAway.unkeep({ categoryId: category.id, sender, ...again });
+        expect(await store.putAway.kept()).toEqual([{ categoryId: category.id, sender, at: NOW + 5 }]);
+        await store.putAway.removeKept(category.id, sender);
         expect(await store.putAway.of(t, NOW + 3)).toMatchObject({ detail: { by: "terno" } });
         expect((await store.threads.get(t))!.categorization.auto.map((a) => a.categoryId)).toEqual([category.id]);
       });

@@ -8,7 +8,7 @@ import { DIGEST_ROW_ID, matchesFilter } from "@terno/core";
 import { flushSync } from "react-dom";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";
-import { getApp, getSelectionWriteRevision, inboxShape, inPlainInbox, setApp, setListAutoSelection, useApp } from "./app";
+import { getApp, getSelectionWriteRevision, inboxShape, inPlainInbox, setApp, setListAutoSelection, useApp, ownList } from "./app";
 import { noteRows, useActionRows } from "./action-preview";
 import { publishPlacements } from "./put-away";
 import { cursorKey, heldRows, historyCursor, historyThrough, publishHistory, todayAnswer, todayRowsLeft } from "./today";
@@ -336,7 +336,7 @@ function keepSearchRows<P extends { items: ThreadSummary[]; nextCursor: { lastDa
 export function currentScope(): ThreadScope | null {
   const s = getApp();
   // Revisar, Reminders: lists of their own, no "select all N"
-  if (s.reviewCategoryId !== null || s.reminders || s.followups || s.putAway || s.today || s.actionPreview) return null;
+  if (s.reviewCategoryId !== null || ownList(s) || s.actionPreview) return null;
   const filter = activeFilter(s);
   const q = s.query.trim();
   // plan 64: a search looks everywhere (every account, category and place, Spam and Trash too); in:, account:, category: narrow it
@@ -480,7 +480,11 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
       const have = more.history ? new Set(page.items.map((t) => t.id)) : null;
       const rows = (onTop.size ? more.items.filter((t) => !onTop.has(t.id)) : more.items).filter((t) => !have?.has(t.id));
       const lines = more.history;
-      return { ...page, items: [...page.items, ...rows], nextCursor: more.nextCursor, ...(lines ? { history: [...(today(page).history ?? []), ...lines] } : {}) };
+      // plan 282: each joined page's own publishing (Put away's placements) runs after the ones before it, never instead
+      const first = today(page).publish;
+      const then = today(more).publish;
+      const publish = first && then ? () => (first(), then()) : (first ?? then);
+      return { ...page, items: [...page.items, ...rows], nextCursor: more.nextCursor, ...(lines ? { history: [...(today(page).history ?? []), ...lines] } : {}), ...(publish ? { publish } : {}) };
     };
     // plan 24, R4: the whole loaded window, however deep, in pieces (a refresh that waited behind a page must not shrink the list
     // under the cursor). In List every refresh of the same list does it (an undo, a bulk result, new mail); Split keeps its cap,

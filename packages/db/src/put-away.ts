@@ -1,5 +1,6 @@
-import { classifierSender, parsePlacementDetail, parseReasons, PUT_AWAY_MS, ruleHash, type Filter, type FilterAction, type Placement, type PlacementDetail, type PlacementEffect, type PutAwayDetail } from "@terno/core";
-import type { KeptSender, PutAwayCursor, PutAwayPage, PutAwayWithdrawn } from "@terno/store";
+import { classifierSender, parsePlacementDetail, parseReasons, PUT_AWAY_MS, ruleHash, type Placement, type PlacementDetail, type PutAwayDetail } from "@terno/core";
+import { clipText, explainingNote, type KeptSender, type PlacementNote, type PutAwayCursor, type PutAwayMembership, type PutAwayPage, type PutAwayWithdrawn } from "@terno/store";
+import { hidingSql, inboxHiding } from "./inbox-hiding";
 import { getSummaries } from "./queries";
 import type { Db } from "./sqlite";
 
@@ -8,30 +9,24 @@ import type { Db } from "./sqlite";
  * action on new mail, the engine's filing into a hidden category), only when the conversation was in it before and is
  * out of it after; one row per conversation, the newest wins, a week's worth. A read keeps it while its effect still
  * holds (still archived, still deleted, still in that hidden category as the rule or the engine put it) and the
- * conversation isn't in Spam; the user's own move ends it (`endPlacements`).
+ * conversation isn't in Spam; the user's own move out of the Inbox ends it (`endPlacements`).
  */
 
-/** What one source did to some conversations, waiting for the command's end to see whether it took them out */
-export interface PlacementNote {
-  by: "rule" | "terno";
-  effect: PlacementEffect;
-  categoryId: number | null;
-  /** the snapshot, without who the mail is from (read at the end, per conversation) */
-  detail: DistributiveOmit<PlacementDetail, "fromName">;
-}
-type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
-
-/** The conversations of these that are in the Inbox view: in the Inbox, not in Spam or Trash, in no hidden category. */
+/**
+ * The conversations of these that are in the Inbox view as the Inbox shows it: in the Inbox, not in Spam or Trash, in no
+ * hidden category, not in a Gmail or Outlook tab its account keeps apart.
+ */
 export function inboxVisible(db: Db, threadIds: Iterable<number>): Set<number> {
   const ids = [...new Set(threadIds)];
   if (ids.length === 0) return new Set();
+  const hiding = hidingSql("t", inboxHiding(db));
   return new Set(
     db
       .all<{ id: number }>(
         `SELECT t.id FROM json_each(?) j JOIN threads t ON t.id = j.value
-         WHERE t.in_inbox = 1 AND t.in_spam = 0 AND t.in_trash = 0
-           AND NOT EXISTS (SELECT 1 FROM thread_categories h JOIN categories c ON c.id = h.category_id WHERE h.thread_id = t.id AND c.show_in_inbox = 0)`,
+         WHERE t.in_inbox = 1 AND t.in_spam = 0 AND t.in_trash = 0${hiding.where.map((w) => ` AND ${w}`).join("")}`,
         JSON.stringify(ids),
+        ...hiding.params,
       )
       .map((r) => r.id),
   );
@@ -42,40 +37,32 @@ export function hiddenCategorySet(db: Db): Set<number> {
   return new Set(db.all<{ id: number }>("SELECT id FROM categories WHERE show_in_inbox = 0").map((r) => r.id));
 }
 
-/** A rule's action as a placement, or null when it doesn't take mail out of the Inbox (or it's Spam: Spam triggers nothing). */
-export function ruleNote(filter: Filter, action: FilterAction, hidden: ReadonlySet<number>): PlacementNote | null {
-  const base = { by: "rule" as const, filterId: filter.id, name: filter.name, auto: filter.auto, source: filter.source, createdAt: filter.createdAt, ruleHash: ruleHash(filter.rule) };
-  switch (action.type) {
-    case "archive":
-    case "trash":
-      return { by: "rule", effect: action.type, categoryId: null, detail: { ...base, action: action.type } };
-    case "moveToFolder":
-      return { by: "rule", effect: "folder", categoryId: null, detail: { ...base, action: "moveToFolder", folder: action.folder } };
-    case "addCategory":
-      return hidden.has(action.categoryId) ? { by: "rule", effect: "category", categoryId: action.categoryId, detail: { ...base, action: "addCategory", categoryId: action.categoryId } } : null;
-    default:
-      return null;
-  }
-}
-
 /**
  * One command's placements: what was in the Inbox view when it started, what each source did, and at its end the
- * conversations that left, each with the source that did it (a rule over the engine: the rule is the user's own word).
+ * conversations that left, each with what explains it now (`explainingNote`). Made only by a command that can place
+ * anything (an enabled rule, the engine filing on its own): nothing is read otherwise.
  */
 export class PlacementWatch {
   private readonly before: Set<number>;
-  private readonly notes = new Map<number, PlacementNote>();
+  private readonly notes = new Map<number, PlacementNote[]>();
+  private hiddenSet: Set<number> | null = null;
 
   constructor(private readonly db: Db, threadIds: Iterable<number>) {
     this.before = inboxVisible(db, threadIds);
+  }
+
+  /** The hidden categories, read once a command */
+  hidden(): ReadonlySet<number> {
+    return (this.hiddenSet ??= hiddenCategorySet(this.db));
   }
 
   note(threadIds: Iterable<number>, note: PlacementNote | null): void {
     if (!note) return;
     for (const t of threadIds) {
       if (!this.before.has(t)) continue;
-      const prev = this.notes.get(t);
-      if (!prev || (prev.by === "terno" && note.by === "rule")) this.notes.set(t, note);
+      const list = this.notes.get(t);
+      if (list) list.push(note);
+      else this.notes.set(t, [note]);
     }
   }
 
@@ -83,7 +70,9 @@ export class PlacementWatch {
    * The engine's filings this command made (`auto`: category → conversations), into categories hidden from the Inbox: each
    * with its decision's reasons and the sender the decision read (the conversation's first message from someone else).
    */
-  noteTerno(auto: ReadonlyMap<number, readonly number[]>, hidden: ReadonlySet<number>): void {
+  noteTerno(auto: ReadonlyMap<number, readonly number[]>): void {
+    if (auto.size === 0) return;
+    const hidden = this.hidden();
     for (const [categoryId, threadIds] of auto) {
       if (!hidden.has(categoryId)) continue;
       for (const threadId of threadIds) {
@@ -98,7 +87,7 @@ export class PlacementWatch {
           by: "terno",
           effect: "category",
           categoryId,
-          detail: { by: "terno", categoryId, reasons: parseReasons(decision?.explain_json), sender: classifierSender(root?.from_email ?? "") },
+          detail: { by: "terno", categoryId, reasons: parseReasons(decision?.explain_json), sender: classifierSender(root?.from_email ?? ""), senderName: clipText(root?.from_name || root?.from_email || "") },
         });
       }
     }
@@ -111,14 +100,30 @@ export class PlacementWatch {
     const gone = [...this.notes.keys()].filter((t) => !after.has(t));
     if (gone.length === 0) return [];
     const from = newestFrom(this.db, gone);
+    const placed: number[] = [];
     for (const t of gone) {
-      const n = this.notes.get(t)!;
+      const n = explainingNote(this.notes.get(t)!, holdsNow(this.db, t));
+      if (!n) continue;
       const f = from.get(t);
       writePlacement(this.db, t, now, n, f?.name ?? "", f?.written ?? false);
+      placed.push(t);
     }
     prunePlacements(this.db, now);
-    return gone;
+    return placed;
   }
+}
+
+/** Whether a note's effect holds on this conversation now (the same test a read makes) */
+function holdsNow(db: Db, threadId: number): (n: PlacementNote) => boolean {
+  const t = db.get<{ in_inbox: number; in_trash: number; in_spam: number }>("SELECT in_inbox, in_trash, in_spam FROM threads WHERE id = ?", threadId);
+  if (!t || t.in_spam) return () => false;
+  const filed = new Set(
+    db
+      .all<{ category_id: number; added_by: string }>("SELECT tc.category_id, tc.added_by FROM thread_categories tc JOIN categories c ON c.id = tc.category_id WHERE tc.thread_id = ? AND c.show_in_inbox = 0", threadId)
+      .map((m) => `${m.category_id}:${m.added_by}`),
+  );
+  return (n) =>
+    n.effect === "trash" ? t.in_trash === 1 : n.effect === "category" ? filed.has(`${n.categoryId}:${n.by === "terno" ? "auto" : "filter"}`) : t.in_inbox === 0 && t.in_trash === 0;
 }
 
 /** Each conversation's newest message from someone else: their name (or address), and whether you've written to them. */
@@ -136,7 +141,7 @@ function newestFrom(db: Db, threadIds: readonly number[]): Map<number, { name: s
         JSON.stringify(threadIds),
         JSON.stringify(own),
       )
-      .map((r) => [r.thread_id, { name: r.from_name || r.from_email, written: r.written === 1 && r.own !== 1 }]),
+      .map((r) => [r.thread_id, { name: clipText(r.from_name || r.from_email), written: r.written === 1 && r.own !== 1 }]),
   );
 }
 
@@ -154,12 +159,12 @@ function writePlacement(db: Db, threadId: number, at: number, n: PlacementNote, 
   );
 }
 
-/** A week's worth: older rows go as new ones come (no timer). */
+/** A week's worth: older rows go as new ones come (no timer; a range of the time index). */
 export function prunePlacements(db: Db, now: number): void {
   db.run("DELETE FROM placements WHERE at <= ?", now - PUT_AWAY_MS);
 }
 
-/** The user's own move (archive, delete, spam, a folder): the conversation is theirs now. */
+/** The user's own move out of the Inbox view (archive, delete, spam, a folder): the conversation is theirs now. */
 export function endPlacements(db: Db, threadIds: readonly number[]): void {
   if (threadIds.length === 0) return;
   db.run("DELETE FROM placements WHERE thread_id IN (SELECT value FROM json_each(?))", JSON.stringify(threadIds));
@@ -196,8 +201,9 @@ export function placementOf(db: Db, threadId: number, now: number): PutAwayDetai
   const p = row ? toPlacement(row) : null;
   if (!p) return null;
   if (p.detail.by !== "rule") return p;
-  const filter = db.get<{ rule_json: string }>("SELECT rule_json FROM filters WHERE id = ?", p.detail.filterId);
-  return { ...p, ruleLive: !!filter && ruleHash(JSON.parse(filter.rule_json)) === p.detail.ruleHash };
+  const filter = db.get<{ rule_json: string; enabled: number }>("SELECT rule_json, enabled FROM filters WHERE id = ?", p.detail.filterId);
+  const live = !!filter && ruleHash(JSON.parse(filter.rule_json)) === p.detail.ruleHash;
+  return { ...p, ruleLive: live, ruleEnabled: live && filter!.enabled === 1 };
 }
 
 /** Needs a look first, then the newest; the cursor carries all three keys, so pages only ever append. */
@@ -222,43 +228,47 @@ export function placementPage(db: Db, p: { now: number; after?: PutAwayCursor | 
   return { items, next: more && last ? { needsLook: last.needs_look === 1, at: last.at, threadId: last.thread_id } : null };
 }
 
-/** The Inbox's line: conversations that need a look, put away after `after` (and inside the window); the newest one's sender. */
+/** The Inbox's line: conversations that need a look, put away after `after` (and inside the window), as the page lists them. */
 export function placementsNeedingLook(db: Db, p: { now: number; after: number }): { count: number; first: { threadId: number; name: string } | null; through: number } {
   const since = Math.max(p.after, p.now - PUT_AWAY_MS);
-  const rows = db.all<PlacementRow>(
-    `SELECT p.thread_id, p.at, p.needs_look, p.detail_json FROM placements p INDEXED BY placements_order JOIN threads t ON t.id = p.thread_id
-     WHERE p.needs_look = 1 AND p.at > ? AND ${HOLDS}
-     ORDER BY p.needs_look DESC, p.at DESC, p.thread_id DESC`,
-    since,
-  );
-  const first = rows[0] ? toPlacement(rows[0]) : null;
-  return { count: rows.length, first: first ? { threadId: first.threadId, name: first.detail.fromName } : null, through: rows[0]?.at ?? p.after };
+  const rows = db
+    .all<PlacementRow>(
+      `SELECT p.thread_id, p.at, p.needs_look, p.detail_json FROM placements p INDEXED BY placements_order JOIN threads t ON t.id = p.thread_id
+       WHERE p.needs_look = 1 AND p.at > ? AND ${HOLDS}
+       ORDER BY p.needs_look DESC, p.at DESC, p.thread_id DESC`,
+      since,
+    )
+    .flatMap((r) => toPlacement(r) ?? []);
+  const first = rows[0];
+  return { count: rows.length, first: first ? { threadId: first.threadId, name: first.detail.fromName } : null, through: first?.at ?? p.after };
 }
 
 /**
- * Back to Inbox's half a thread action can't do: out of the hidden categories a rule filed these conversations in. No
- * example (the engine didn't file them); the memberships removed, for Undo.
+ * Back to Inbox's half a thread action can't do: out of every category hidden from the Inbox (whoever filed it: a rule,
+ * the engine, the user), with no example and no decision touched; the rows whole, for an exact Undo.
  */
-export function releaseRuleFilings(db: Db, threadIds: readonly number[]): { threadId: number; categoryId: number }[] {
+export function releaseHiddenFilings(db: Db, threadIds: readonly number[]): PutAwayMembership[] {
   if (threadIds.length === 0) return [];
   return db
-    .all<{ thread_id: number; category_id: number }>(
-      `DELETE FROM thread_categories WHERE added_by = 'filter' AND thread_id IN (SELECT value FROM json_each(?))
+    .all<{ thread_id: number; category_id: number; added_by: string; added_at: number; batch_id: number | null }>(
+      `DELETE FROM thread_categories WHERE thread_id IN (SELECT value FROM json_each(?))
          AND category_id IN (SELECT id FROM categories WHERE show_in_inbox = 0)
-       RETURNING thread_id, category_id`,
+       RETURNING thread_id, category_id, added_by, added_at, batch_id`,
       JSON.stringify(threadIds),
     )
-    .map((r) => ({ threadId: r.thread_id, categoryId: r.category_id }));
+    .map((r) => ({ threadId: r.thread_id, categoryId: r.category_id, addedBy: r.added_by, addedAt: r.added_at, batchId: r.batch_id }));
 }
 
-/** Undo of releaseRuleFilings: the memberships back as the rule made them (a category gone since stays gone). */
-export function refileRuleFilings(db: Db, rows: readonly { threadId: number; categoryId: number }[], now: number): void {
+/** Undo of releaseHiddenFilings: each row back as it was (a conversation, category or batch gone since stays gone). */
+export function refileHiddenFilings(db: Db, rows: readonly PutAwayMembership[]): void {
   for (const r of rows) {
     db.run(
-      `INSERT OR IGNORE INTO thread_categories (thread_id, category_id, added_by, added_at)
-       SELECT ?, id, 'filter', ? FROM categories WHERE id = ? AND EXISTS (SELECT 1 FROM threads WHERE id = ?)`,
+      `INSERT OR IGNORE INTO thread_categories (thread_id, category_id, added_by, added_at, batch_id)
+       SELECT ?, id, ?, ?, (SELECT b.id FROM cat_batches b WHERE b.id = ?) FROM categories WHERE id = ? AND EXISTS (SELECT 1 FROM threads WHERE id = ?)`,
       r.threadId,
-      now,
+      r.addedBy,
+      r.addedAt,
+      r.batchId,
       r.categoryId,
       r.threadId,
     );
@@ -284,28 +294,41 @@ export function listKeptSenders(db: Db): KeptSender[] {
  * Keeps a sender out of a category's automatic filing, and takes this conversation out of it as the engine put it: the
  * membership and its decision go, with no example and no outcome (the safety valve counts neither way).
  */
-export function keepSender(db: Db, p: { categoryId: number; sender: string; threadId: number | null; now: number }): { added: boolean; withdrawn: PutAwayWithdrawn | null } {
+export function keepSender(db: Db, p: { categoryId: number; sender: string; threadId: number | null; now: number }): { added: boolean; at: number; withdrawn: PutAwayWithdrawn | null } {
   const added = db.run("INSERT OR IGNORE INTO cls_kept_senders (category_id, sender, at) SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM categories WHERE id = ?)", p.categoryId, p.sender, p.now, p.categoryId).changes > 0;
-  if (p.threadId === null) return { added, withdrawn: null };
-  const membership = db.get<{ added_at: number }>("DELETE FROM thread_categories WHERE thread_id = ? AND category_id = ? AND added_by = 'auto' RETURNING added_at", p.threadId, p.categoryId);
-  if (!membership) return { added, withdrawn: null };
+  if (p.threadId === null) return { added, at: p.now, withdrawn: null };
+  const membership = db.get<{ added_at: number; batch_id: number | null }>("DELETE FROM thread_categories WHERE thread_id = ? AND category_id = ? AND added_by = 'auto' RETURNING added_at, batch_id", p.threadId, p.categoryId);
+  if (!membership) return { added, at: p.now, withdrawn: null };
   const decision = db.get<{ p: number; explain_json: string; at: number; outcome: string | null }>(
     "DELETE FROM cls_decisions WHERE thread_id = ? AND category_id = ? AND kind = 'auto' RETURNING p, explain_json, at, outcome",
     p.threadId,
     p.categoryId,
   );
-  return { added, withdrawn: { threadId: p.threadId, categoryId: p.categoryId, addedAt: membership.added_at, decision: decision ? { p: decision.p, explainJson: decision.explain_json, at: decision.at, outcome: decision.outcome } : null } };
+  return {
+    added,
+    at: p.now,
+    withdrawn: { threadId: p.threadId, categoryId: p.categoryId, addedAt: membership.added_at, batchId: membership.batch_id, decision: decision ? { p: decision.p, explainJson: decision.explain_json, at: decision.at, outcome: decision.outcome } : null },
+  };
 }
 
-/** Undo of keepSender: the sender back to automatic filing (if this added it), the conversation and its decision back. */
-export function unkeepSender(db: Db, p: { categoryId: number; sender: string; added: boolean; withdrawn: PutAwayWithdrawn | null }): void {
-  if (p.added) db.run("DELETE FROM cls_kept_senders WHERE category_id = ? AND sender = ?", p.categoryId, p.sender);
+/**
+ * Undo of keepSender: only what it did. The kept row goes if it's still the one it wrote (one removed and made again by
+ * another hand stays); the membership and decision come back unless the conversation has others by now.
+ */
+export function unkeepSender(db: Db, p: { categoryId: number; sender: string; added: boolean; at: number; withdrawn: PutAwayWithdrawn | null }): void {
+  if (p.added) db.run("DELETE FROM cls_kept_senders WHERE category_id = ? AND sender = ? AND at = ?", p.categoryId, p.sender, p.at);
   const w = p.withdrawn;
   if (!w || !db.get("SELECT 1 FROM threads WHERE id = ?", w.threadId) || !db.get("SELECT 1 FROM categories WHERE id = ?", w.categoryId)) return;
-  db.run("INSERT OR IGNORE INTO thread_categories (thread_id, category_id, added_by, added_at) VALUES (?, ?, 'auto', ?)", w.threadId, w.categoryId, w.addedAt);
+  db.run(
+    "INSERT OR IGNORE INTO thread_categories (thread_id, category_id, added_by, added_at, batch_id) VALUES (?, ?, 'auto', ?, (SELECT id FROM cat_batches WHERE id = ?))",
+    w.threadId,
+    w.categoryId,
+    w.addedAt,
+    w.batchId,
+  );
   if (w.decision) {
     db.run(
-      "INSERT OR REPLACE INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at, outcome) VALUES (?, ?, 'auto', ?, ?, ?, ?)",
+      "INSERT OR IGNORE INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at, outcome) VALUES (?, ?, 'auto', ?, ?, ?, ?)",
       w.threadId,
       w.categoryId,
       w.decision.p,

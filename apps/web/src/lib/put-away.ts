@@ -1,4 +1,4 @@
-import { orderReasons, placementCategory, PUT_AWAY_MS, type Placement, type PlacementDetail, type Reason, type ThreadSummary } from "@terno/core";
+import { orderReasons, placementCategory, placementLive, type Category, type Folder, type Placement, type PlacementDetail, type Reason, type ThreadSummary } from "@terno/core";
 import { t } from "@terno/i18n";
 import { dayDate, weekdayName } from "~/lib/format";
 import { reasonText } from "~/lib/reasons";
@@ -12,57 +12,61 @@ import { usePutAway } from "~/state/put-away";
 import { invalidateThreads, loadThread } from "~/state/threads";
 
 /**
- * Plan 282: Put away in the app. What a placement says (a row's short line, the reader box's sentence is in
- * put-away-box.tsx), the view's sections, and its one-step fixes.
+ * Plan 282: Put away in the app. What a placement says (a row's short line here, the reader box's sentence in
+ * put-away-box.tsx, both from `whyOf`), the view's sections, and its one-step fixes, each acting on the placement the
+ * window showed (its `at`): one put away again since, or moved, is left as it is now.
  */
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-/** The name of a placement's category as the app has it now ("" when it's gone) */
-export function categoryName(id: number | null): string {
-  return id === null ? "" : (getApp().categories.find((c) => c.id === id)?.name ?? "");
+/** The names a placement's words need, as the app has them now (the caller reads them reactively) */
+export interface PlacementNames {
+  categories: readonly Pick<Category, "id" | "name">[];
+  folders: readonly Pick<Folder, "key" | "path">[];
 }
+
+/** A category's name ("" when it's gone) */
+export const categoryName = (names: PlacementNames, id: number | null | undefined): string => (id == null ? "" : (names.categories.find((c) => c.id === id)?.name ?? ""));
 
 /** A folder's shown name (its last part), or its key when the app doesn't list it */
-export function folderName(key: string | undefined): string {
-  if (!key) return "";
-  return getApp().folders.find((f) => f.key === key)?.path.at(-1) ?? key;
-}
+export const folderName = (names: PlacementNames, key: string | undefined): string => (key ? (names.folders.find((f) => f.key === key)?.path.at(-1) ?? key) : "");
 
-/** Terno's reason in a few words, for a row ("you keep 12 from Rappi there") */
-export function shortWhy(reasons: readonly Reason[], fromName: string): string {
-  const { lead } = orderReasons(reasons);
-  if (lead && typeof lead !== "string") {
-    const count = Number(lead.p?.count ?? 0);
-    if (lead.k === "reason.sameSender") return t("putAway.short.sameSender", { count, sender: fromName });
-    if (lead.k === "reason.sameList") return t("putAway.short.sameList", { count });
-    if (lead.k === "reason.sameDomain") return t("putAway.short.sameDomain", { count, domain: String(lead.p?.domain ?? "") });
-    return reasonText(lead);
+/** Who Terno's filing was about: the sender the decision read (a placement from before the field: the newest mail's) */
+export const senderOf = (d: Extract<PlacementDetail, { by: "terno" }>): string => d.senderName || d.fromName || d.sender;
+
+/**
+ * Terno's reasons, the strongest first: who the user keeps there (by sender, list or domain, with how many), else the
+ * other reasons in words. The row says the lead short, the box says it whole and the rest after it.
+ */
+export function whyOf(reasons: readonly Reason[]): { identity: { k: "sameSender" | "sameList" | "sameDomain"; count: number; domain: string } | null; words: string[] } {
+  const { lead, rest } = orderReasons(reasons);
+  if (lead && typeof lead !== "string" && (lead.k === "reason.sameSender" || lead.k === "reason.sameList" || lead.k === "reason.sameDomain")) {
+    const k = lead.k.slice("reason.".length) as "sameSender" | "sameList" | "sameDomain";
+    return { identity: { k, count: Number(lead.p?.count ?? 0), domain: String(lead.p?.domain ?? "") }, words: rest.map(reasonText) };
   }
-  return lead ? reasonText(lead) : t("putAway.short.like");
+  return { identity: null, words: [lead, ...rest].filter((r) => r !== null).map(reasonText) };
 }
 
-/** What a row says in its preview's place: who put it away, and why (Needs a look adds who you've written to). */
-export function rowLine(p: Placement): string {
+/** What a row says in its preview's place: who put it away, and why (Needs a look adds that you've written to them). */
+export function rowLine(p: Placement, names: PlacementNames): string {
   const d = p.detail;
-  const line = d.by === "terno" ? t("putAway.row.terno", { category: categoryName(d.categoryId), why: shortWhy(d.reasons, d.fromName) }) : ruleLine(d);
+  let line: string;
+  if (d.by === "terno") {
+    const { identity, words } = whyOf(d.reasons);
+    const why = identity ? t(`putAway.short.${identity.k}`, { count: identity.count, sender: senderOf(d), domain: identity.domain }) : (words[0] ?? t("putAway.short.like"));
+    line = t("putAway.row.terno", { category: categoryName(names, d.categoryId), why });
+  } else {
+    const values = { name: d.name, category: categoryName(names, d.categoryId), folder: folderName(names, d.folder), date: dayDate(d.createdAt) };
+    line = d.auto ? t(`putAway.row.auto.${d.action}`, values) : t(`putAway.row.rule.${d.action}`, values);
+  }
   return p.needsLook ? `${line} · ${t("putAway.row.wrote")}` : line;
 }
 
-function ruleLine(d: Extract<PlacementDetail, { by: "rule" }>): string {
-  const values = { name: d.name, category: categoryName(d.categoryId ?? null), folder: folderName(d.folder), date: dayDate(d.createdAt) };
-  return d.auto ? t(`putAway.row.auto.${d.action}`, values) : t(`putAway.row.rule.${d.action}`, values);
-}
-
 /** The category whose dot leads a row's line (a filing's), or null */
-export function rowCategory(p: Placement): number | null {
-  return placementCategory(p.detail);
-}
+export const rowCategory = (p: Placement): number | null => placementCategory(p.detail);
 
-/** Inside the window at `now`: a reader's cached detail can't keep a box past it */
-export function stillPutAway(at: number, now = Date.now()): boolean {
-  return at > now - PUT_AWAY_MS;
-}
+/** Still in the window at `now`: a reader's cached detail can't keep a box past it */
+export const stillPutAway = (at: number, now = Date.now()): boolean => placementLive(at, now);
 
 /** The day a placement's section is under: Today, Yesterday, then the weekday (the window is a week). */
 export function dayLabel(at: number, now = Date.now()): string {
@@ -80,22 +84,19 @@ export function sectionOf(p: Placement, now = Date.now()): string {
 }
 
 /**
- * The view's sections over the rows on screen (they come Needs a look first, then newest: the store's order): one
- * heading where Needs a look starts and at each new day after it, each with its count.
+ * The view's sections over the rows on screen (they come Needs a look first, then newest: the store's order): one heading
+ * where Needs a look starts and at each new day after it. No count: what's loaded isn't the whole of a busy day.
  */
 export function putAwaySections(rows: readonly Pick<ThreadSummary, "id">[], byThread: ReadonlyMap<number, Placement>, now = Date.now()): TopSections {
-  const headings: { kind: "needsLook" | "day"; at: number; label: string; count: number }[] = [];
+  const headings: { kind: "needsLook" | "day"; at: number; label: string; count: null }[] = [];
   let last: string | null = null;
   rows.forEach((row, i) => {
     const p = byThread.get(row.id);
     if (!p) return;
     const label = sectionOf(p, now);
-    const kind = p.needsLook ? ("needsLook" as const) : ("day" as const);
-    if (label !== last || headings.length === 0) {
-      headings.push({ kind, at: i, label, count: 0 });
-      last = label;
-    }
-    headings[headings.length - 1]!.count++;
+    if (label === last) return;
+    headings.push({ kind: p.needsLook ? "needsLook" : "day", at: i, label, count: null });
+    last = label;
   });
   return { top: 0, pinned: 0, headings };
 }
@@ -108,71 +109,88 @@ function refresh(threadIds: readonly number[]): void {
   void reloadList({ keepSelection: true });
 }
 
-/** Back to Inbox: whatever keeps them out goes, with one exact Undo. */
-export async function backToInbox(threadIds: readonly number[]): Promise<void> {
-  if (getApp().putAway) leaveList("moveToInbox", threadIds, { quiet: true });
+/** Back to Inbox: whatever keeps them out goes (as the window showed them), with one exact Undo. */
+export async function backToInbox(items: readonly { threadId: number; at: number }[]): Promise<void> {
+  const ids = items.map((i) => i.threadId);
+  if (getApp().putAway) leaveList("moveToInbox", ids, { quiet: true });
   try {
-    const r = await client.call("putAway.back", { threadIds: [...threadIds] });
-    refresh(threadIds);
+    const r = await client.call("putAway.back", { items: [...items] });
+    refresh(ids);
+    if (r.affected === 0) return;
     const undo = registerUndo(async () => {
       if (r.undoId !== null) await client.call("threads.undo", { undoId: r.undoId });
-      refresh(threadIds);
+      refresh(ids);
     });
-    snack.success(t("putAway.back.done", { count: r.affected || threadIds.length }), { action: r.undoId !== null ? undoAction(undo, t("putAway.action.back")) : undefined });
+    snack.success(t("putAway.back.done", { count: r.affected }), { action: r.undoId !== null ? undoAction(undo, t("putAway.action.back")) : undefined });
   } catch (error) {
-    snack.error(t("putAway.failed", { error: errorText(error) }));
-    refresh(threadIds);
+    snack.error(t("putAway.back.failed", { error: errorText(error) }));
+    refresh(ids);
   }
 }
 
 /** "Don't file {sender} automatically": this conversation back in the Inbox, Terno asks about the sender's next ones. */
-export async function keepSenderOut(threadId: number, sender: string, categoryId: number): Promise<void> {
+export async function keepSenderOut(threadId: number, at: number, sender: string, category: string): Promise<void> {
   try {
-    const { undoId } = await client.call("putAway.keep", { threadId });
+    const { undoId } = await client.call("putAway.keep", { threadId, at });
     refresh([threadId]);
-    const category = categoryName(categoryId);
     const undo = registerUndo(async () => {
       await client.call("putAway.keepUndo", { undoId });
       refresh([threadId]);
     });
     snack.success(t("putAway.keep.done", { sender, category }), { action: undoAction(undo, t("putAway.keep.undo", { sender })) });
   } catch (error) {
-    snack.error(t("putAway.failed", { error: errorText(error) }));
+    snack.error(t("putAway.keep.failed", { error: errorText(error) }));
     refresh([threadId]);
   }
 }
 
 /** Stop this rule (only while it's as it was when it did this), with Undo. */
-export async function stopRule(threadId: number, name: string): Promise<void> {
+export async function stopRule(threadId: number, at: number, name: string): Promise<void> {
   try {
-    const { filterUndo } = await client.call("putAway.stopRule", { threadId });
+    const { filterUndo } = await client.call("putAway.stopRule", { threadId, at });
     refresh([threadId]);
     const undo = filterUndo === null ? null : registerUndo(() => client.call("similar.undo", { undoId: null, filterUndo }).then(() => refresh([threadId])));
     snack.success(t("putAway.stop.done", { name }), { action: undo ? undoAction(undo, t("putAway.stop.undo", { name })) : undefined });
   } catch (error) {
-    snack.error(t("putAway.failed", { error: errorText(error) }));
+    snack.error(t("filters.stop.failed", { error: errorText(error) }));
     refresh([threadId]);
   }
 }
 
-/** Edit rule: Settings → Rules, where every rule is */
-export function editRule(): void {
-  setApp({ dialog: "filters" });
+/** Edit rule: the rule that did this, open in the Rules builder (gone since: the Rules list) */
+export async function editRule(filterId: number): Promise<void> {
+  try {
+    const f = (await client.call("filters.list", {})).find((x) => x.id === filterId);
+    setApp(f ? { filterPrefill: { id: f.id, name: f.name, rule: f.rule, enabled: f.enabled, source: f.source, auto: f.auto }, dialog: "filters" } : { dialog: "filters" });
+  } catch {
+    setApp({ dialog: "filters" });
+  }
 }
 
-/** The Inbox's line: asked when the counts change (new mail) and when a placement ends. */
+/** The newest mark this window acknowledged: an answer counted before it is stale */
+let acknowledged = 0;
+let asked = 0;
+
+/** The Inbox's line: asked when the Inbox shows, when something is put away (or seen in another window), after a reconnect. */
 export async function refreshNotice(): Promise<void> {
+  const mine = ++asked;
   try {
-    usePutAway.setState({ notice: await client.call("putAway.needsLook", {}) });
+    const notice = await client.call("putAway.needsLook", {});
+    // a newer question answers instead, and an answer from before this window's acknowledgment shows nothing
+    if (mine !== asked) return;
+    usePutAway.setState({ notice: notice.through <= acknowledged ? { ...notice, count: 0, first: null } : notice });
   } catch {
     // the line waits for the next change
   }
 }
 
-/** The line was dismissed, or Put away opened: what it counted is seen */
+/** The line was dismissed, or Put away opened: what it counts now is seen (asked fresh, so nothing put away since is missed) */
 export async function seeNotice(): Promise<void> {
+  asked++;
+  usePutAway.setState((s) => ({ notice: s.notice ? { ...s.notice, count: 0, first: null } : null }));
   try {
-    const notice = usePutAway.getState().notice ?? (await client.call("putAway.needsLook", {}));
+    const notice = await client.call("putAway.needsLook", {});
+    acknowledged = Math.max(acknowledged, notice.through);
     usePutAway.setState({ notice: { ...notice, count: 0, first: null } });
     if (notice.count > 0) await client.call("putAway.seen", { through: notice.through });
   } catch {

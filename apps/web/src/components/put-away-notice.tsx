@@ -9,17 +9,24 @@ import { NOTICE_H, usePutAway } from "~/state/put-away";
 import { ListLead } from "./learned-banner";
 
 /**
- * Plan 282: asks for the Inbox's line when the Inbox shows and its counts change (new mail may have been put away), after
- * a reconnect; Put away opened marks what it counted as seen. Renders nothing.
+ * Plan 282: asks for the Inbox's line when the Inbox shows, when the backend says something was put away or seen in
+ * another window (a rule's archive moves no unread count), and after a reconnect; Put away opened marks what it counted
+ * as seen. Renders nothing.
  */
 export function PutAwaySource() {
   const inbox = useApp((s) => s.view === "inbox" && !s.query && !s.putAway);
   const putAway = useApp((s) => s.putAway);
-  const counts = useApp((s) => s.counts);
   useEffect(() => {
     if (inbox) void refreshNotice();
-  }, [inbox, counts]);
-  useEffect(() => client.onAttach(() => void refreshNotice()), []);
+  }, [inbox]);
+  useEffect(() => {
+    const offEvent = client.on("putAwayChanged", () => void refreshNotice());
+    const offAttach = client.onAttach(() => void refreshNotice());
+    return () => {
+      offEvent();
+      offAttach();
+    };
+  }, []);
   useEffect(() => {
     if (putAway) void seeNotice();
   }, [putAway]);

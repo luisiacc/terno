@@ -234,9 +234,9 @@ export function setApp(partial: AppState | Partial<AppState> | ((state: AppState
 function keepFolderValid(state: AppState, next: AppState | Partial<AppState>): AppState | Partial<AppState> {
   next = keepSoloValid(state, keepTodayValid(state, keepActionPreviewValid(state, keepPutAwayValid(state, keepFollowupsValid(state, keepRemindersValid(state, keepReviewValid(state, next)))))));
   const m = { ...state, ...next };
-  const out = m.folder !== null && (m.accountId === null || m.categoryId !== null || m.reviewCategoryId !== null || m.reminders || m.followups || m.putAway || m.today || m.view !== "all") ? { ...next, folder: null } : next;
+  const out = m.folder !== null && (m.accountId === null || m.categoryId !== null || m.reviewCategoryId !== null || ownList(m) || m.view !== "all") ? { ...next, folder: null } : next;
   // plan 86: a Gmail tab is its account's Inbox, alone, likewise
-  return m.gmailTab !== null && (m.accountId === null || m.categoryId !== null || m.reviewCategoryId !== null || m.reminders || m.followups || m.putAway || m.today || m.folder !== null || m.view !== "inbox") ? { ...out, gmailTab: null } : out;
+  return m.gmailTab !== null && (m.accountId === null || m.categoryId !== null || m.reviewCategoryId !== null || ownList(m) || m.folder !== null || m.view !== "inbox") ? { ...out, gmailTab: null } : out;
 }
 
 /**
@@ -248,13 +248,27 @@ function keepSoloValid(state: AppState, next: AppState | Partial<AppState>): App
   return m.soloAccountId !== null && m.accountId !== m.soloAccountId ? { ...next, soloAccountId: null } : next;
 }
 
-/** Plan 87: any other list (a tab, an account, a search: a search looks everywhere) leaves Reminders. */
-function keepRemindersValid(state: AppState, next: AppState | Partial<AppState>): AppState | Partial<AppState> {
-  if (!state.reminders || Object.hasOwn(next, "reminders")) return next;
-  const m = { ...state, ...next };
-  const other = m.view !== "all" || m.accountId !== null || m.categoryId !== null || m.reviewCategoryId !== null || m.folder !== null || m.followups || m.putAway || m.query.trim() !== "";
-  return other ? { ...next, reminders: false } : next;
+/** Reminders, Follow-ups, Put away and What matters: lists of their own (every account; no category, folder or filter) */
+export const ownList = (s: Pick<AppState, "reminders" | "followups" | "putAway" | "today">): boolean => s.reminders || s.followups || s.putAway || s.today;
+
+/** The lists of their own that only another place leaves (What matters, with its preview rule, is apart) */
+const OWN_LISTS = ["reminders", "followups", "putAway"] as const;
+
+/**
+ * Plans 87, 142, 282: Reminders, Follow-ups and Put away are lists of every account: any other list (a tab, an account,
+ * a category, a folder, another of them, a search: a search looks everywhere) leaves the one you're in.
+ */
+function keepOwnListValid(flag: (typeof OWN_LISTS)[number]) {
+  return (state: AppState, next: AppState | Partial<AppState>): AppState | Partial<AppState> => {
+    if (!state[flag] || Object.hasOwn(next, flag)) return next;
+    const m = { ...state, ...next };
+    const other = m.view !== "all" || m.accountId !== null || m.categoryId !== null || m.reviewCategoryId !== null || m.folder !== null || OWN_LISTS.some((l) => l !== flag && m[l]) || m.query.trim() !== "";
+    return other ? { ...next, [flag]: false } : next;
+  };
 }
+const keepRemindersValid = keepOwnListValid("reminders");
+const keepFollowupsValid = keepOwnListValid("followups");
+const keepPutAwayValid = keepOwnListValid("putAway");
 
 /**
  * Plan 158: a search typed in Review leaves it, as one from the palette does: Review's suggestions don't answer a
@@ -263,22 +277,6 @@ function keepRemindersValid(state: AppState, next: AppState | Partial<AppState>)
 function keepReviewValid(state: AppState, next: AppState | Partial<AppState>): AppState | Partial<AppState> {
   if (state.reviewCategoryId === null || Object.hasOwn(next, "reviewCategoryId") || !Object.hasOwn(next, "query")) return next;
   return (next.query ?? "").trim() !== "" ? { ...next, reviewCategoryId: null } : next;
-}
-
-/** Plan 142: likewise for Follow-ups. */
-function keepFollowupsValid(state: AppState, next: AppState | Partial<AppState>): AppState | Partial<AppState> {
-  if (!state.followups || Object.hasOwn(next, "followups")) return next;
-  const m = { ...state, ...next };
-  const other = m.view !== "all" || m.accountId !== null || m.categoryId !== null || m.reviewCategoryId !== null || m.folder !== null || m.reminders || m.putAway || m.query.trim() !== "";
-  return other ? { ...next, followups: false } : next;
-}
-
-/** Plan 282: likewise for Put away. */
-function keepPutAwayValid(state: AppState, next: AppState | Partial<AppState>): AppState | Partial<AppState> {
-  if (!state.putAway || Object.hasOwn(next, "putAway")) return next;
-  const m = { ...state, ...next };
-  const other = m.view !== "all" || m.accountId !== null || m.categoryId !== null || m.reviewCategoryId !== null || m.folder !== null || m.reminders || m.followups || m.query.trim() !== "";
-  return other ? { ...next, putAway: false } : next;
 }
 
 /** Plan 145: likewise for Today. */
@@ -294,7 +292,7 @@ function keepActionPreviewValid(state: AppState, next: AppState | Partial<AppSta
   if (!state.actionPreview || Object.hasOwn(next, "actionPreview")) return next;
   const m = { ...state, ...next };
   // (its view is the rule's scope, plan 161: Inbox or All Mail; another one is another place)
-  const other = m.view !== state.view || m.accountId !== null || m.categoryId !== null || m.reviewCategoryId !== null || m.folder !== null || m.gmailTab !== null || m.reminders || m.followups || m.putAway || m.today || m.query.trim() !== "";
+  const other = m.view !== state.view || m.accountId !== null || m.categoryId !== null || m.reviewCategoryId !== null || m.folder !== null || m.gmailTab !== null || ownList(m) || m.query.trim() !== "";
   return other ? { ...next, actionPreview: null } : next;
 }
 

@@ -3645,7 +3645,6 @@ It contains none of your mail, contacts, settings or keys.
   "putAway.row.auto.moveToFolder": "Moved to {folder} by a rule Terno made on {date}",
   "putAway.row.auto.addCategory": "{category} · by a rule Terno made on {date}",
   "putAway.row.wrote": "you’ve written to them",
-  "putAway.row.said": "{section}: {line}",
   "putAway.short.sameSender": { one: "you keep # from {sender} there", other: "you keep # from {sender} there" },
   "putAway.short.sameList": { one: "you keep # from this list there", other: "you keep # from this list there" },
   "putAway.short.sameDomain": { one: "you keep # from @{domain} there", other: "you keep # from @{domain} there" },
@@ -3677,14 +3676,16 @@ It contains none of your mail, contacts, settings or keys.
   "putAway.keep.undo": "Undo: file {sender} automatically again",
   "putAway.stop.done": "The rule “{name}” is off",
   "putAway.stop.undo": "Undo: turn “{name}” back on",
-  "putAway.failed": "Couldn’t do that: {error}",
-  "putAway.notice.one": "Terno put away mail from {name}, who you’ve written to.",
-  "putAway.notice.many": { one: "Terno put away # conversation from people you’ve written to.", other: "Terno put away # conversations from people you’ve written to." },
+  "putAway.back.failed": "Couldn’t put it back in the Inbox: {error}. Open it again and try once more.",
+  "putAway.keep.failed": "Couldn’t change how Terno files this sender: {error}. Open it again and try once more.",
+  "putAway.notice.one": "Mail from {name}, who you’ve written to, was put away.",
+  "putAway.notice.many": { one: "# conversation from people you’ve written to was put away.", other: "# conversations from people you’ve written to were put away." },
   "putAway.notice.review": "Review",
-  "putAway.notice.reviewName": "Review what Terno put away",
+  "putAway.notice.reviewName": "Review what was put away",
   "putAway.kept.title": "Asked before filing",
   "putAway.kept.hint": "Terno suggests mail from these senders here instead of filing it.",
   "putAway.kept.remove": "File {sender} automatically again",
+  "putAway.kept.removeFailed": "Couldn’t remove {sender}: {error}. Try again.",
 
   // ── web (storage, gate, onboarding)
   // @web

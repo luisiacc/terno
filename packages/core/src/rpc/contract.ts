@@ -1308,12 +1308,12 @@ export const contract = {
   /** the line was dismissed or Put away opened: what was counted up to `through` is seen */
   "putAway.seen": m<{ ok: true }>()(z.object({ through: z.number().int().min(0) })),
   /** Back to Inbox: whatever keeps each conversation out (archived, deleted, moved, a rule's hidden filing); one exact Undo (threads.undo) */
-  "putAway.back": m<{ undoId: number | null; affected: number }>()(z.object({ threadIds: z.array(id).min(1).max(500) })),
-  /** "Don't file {sender} automatically", from Terno's filing of this conversation; Undo: putAway.keepUndo */
-  "putAway.keep": m<{ undoId: string }>()(z.object({ threadId: id })),
+  "putAway.back": m<{ undoId: number | null; affected: number }>()(z.object({ items: z.array(z.object({ threadId: id, at: z.number().int() })).min(1).max(500) })),
+  /** "Don't file {sender} automatically", from Terno's filing of this conversation as the window showed it (`at`); Undo: putAway.keepUndo */
+  "putAway.keep": m<{ undoId: string }>()(z.object({ threadId: id, at: z.number().int() })),
   "putAway.keepUndo": m<{ ok: true }>()(z.object({ undoId: z.string().min(1).max(64) })),
   /** Stop the rule that put this conversation away (only while it's unchanged): filters.setEnabled's answer, its Undo there */
-  "putAway.stopRule": m<{ filterUndo: number | null }>()(z.object({ threadId: id })),
+  "putAway.stopRule": m<{ filterUndo: number | null }>()(z.object({ threadId: id, at: z.number().int() })),
   /** Settings → Categories: the senders kept out of a category's automatic filing, and taking one back */
   "putAway.kept": m<{ senders: { categoryId: number; sender: string; at: number }[] }>()(empty),
   "putAway.removeKept": m<{ removed: boolean }>()(z.object({ categoryId: id, sender: z.string().min(1).max(400) })),
@@ -1719,6 +1719,8 @@ export interface Events {
   personRules: { rules: PersonRule[] };
   /** plan 234: the learned-filter offers may have changed (an action of the user's kept, an offer answered, a learned filter deleted): never MCP */
   learningChanged: Record<string, never>;
+  /** plan 282: something was put away, or the Inbox's line was seen in a window: never MCP */
+  putAwayChanged: Record<string, never>;
   /** plan 204: the dated reader stopped, or it's going again */
   datedStatus: { blockedBy: { kind: AiErrorKind; message: string; i18n?: I18nRef; limit?: "daily" | "monthly" } | null };
   /** plan 249: What matters in the user's words: the record, the draft and the background work's status */

@@ -1,6 +1,6 @@
 import { CheckboxMark } from "@terno/ui/components/checkbox";
 import { toggleRow, useActionPreview, useActionRows } from "~/state/action-preview";
-import { listFilterOf, matchesFilter, matchFocus, mostUrgent, type CategoryColor, type RowMatch, type ThreadSummary } from "@terno/core";
+import { listFilterOf, matchesFilter, matchFocus, mostUrgent, type CategoryColor, type Placement, type RowMatch, type ThreadSummary } from "@terno/core";
 import { Badge } from "@terno/ui/components/badge";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import type { RowLines } from "@terno/ui/designs/rows";
@@ -26,7 +26,6 @@ import { reminderShort, useReminders } from "~/lib/reminders";
 import { rowLine } from "~/lib/followups";
 import { useFollowups } from "~/state/followups";
 import { rowCategory, rowLine as placedLine, sectionOf } from "~/lib/put-away";
-import { usePutAway } from "~/state/put-away";
 import { onlyOnTop } from "~/state/list";
 import { useExcerpts } from "~/state/excerpts";
 
@@ -56,7 +55,17 @@ export interface ThreadRowProps {
   pick?: boolean;
   /** plan 188: its place in the list, from 1 (aria-posinset; the list writes the size) */
   position?: number;
+  /** plan 282: in Put away, what put it there (the list passes it; no other list's rows read Put away) */
+  placed?: Placement;
 }
+
+/** Plan 282: a Put away row's why, as its preview shows it: the line, the filing's dot, and its section for a screen reader */
+interface PlacedView {
+  line: string;
+  color?: CategoryColor;
+  section: string;
+}
+const NO_FOLDERS: AppState["folders"] = [];
 
 /**
  * A list row. Cheap by design: no tooltips or Base UI primitives inside (the
@@ -65,7 +74,7 @@ export interface ThreadRowProps {
  * checking one re-renders one. The design picks the layout inside it (classic,
  * avatar, large avatar); the shell, roles, ids and handlers are the same in all.
  */
-export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, wide = false, showAccount, icons, layout, review = null, pinnedTop = false, reminderTop = false, match = null, lines = 1, pick = false, position }: ThreadRowProps) {
+export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, wide = false, showAccount, icons, layout, review = null, pinnedTop = false, reminderTop = false, match = null, lines = 1, pick = false, position, placed }: ThreadRowProps) {
   renderProbe("ThreadRow");
   /** the open thread (the cursor; the listbox's active descendant) */
   const selected = useApp((s) => s.selectedId === thread.id);
@@ -78,6 +87,9 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
   // one object per account, kept while it doesn't change (accountLabels): sync-state events re-render no row
   const account = useApp((s) => (showAccount ? accountLabels(s.accounts).get(thread.accountId) : undefined));
   const categories = useApp((s) => s.categories);
+  // plan 282: a folder's name for a rule's move (read only where a row says it)
+  const folders = useApp((s) => (placed ? s.folders : NO_FOLDERS));
+  const placedView: PlacedView | undefined = placed && { line: placedLine(placed, { categories, folders }), color: categories.find((c) => c.id === rowCategory(placed))?.color as CategoryColor | undefined, section: sectionOf(placed) };
   /** kept in a filtered list only because it's open: it says so, or it reads as the filter's mistake (only the open row looks) */
   const kept = useApp((s) => {
     if (s.selectedId !== thread.id) return false;
@@ -131,6 +143,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
       lines={lines}
       pick={pick}
       position={position}
+      placedView={placedView}
       interactive
     />
   );
@@ -151,6 +164,8 @@ type ViewProps = Omit<ThreadRowProps, "showAccount" | "wide" | "review" | "remin
   inSelection: boolean;
   account: AccountLabel | undefined;
   categories: AppState["categories"];
+  /** plan 282 */
+  placedView?: PlacedView;
   inCategory?: number | null;
   kept?: boolean;
   hasDraft: boolean;
@@ -213,19 +228,14 @@ function useReason(thread: Pick<ThreadSummary, "id">): string | undefined {
 
 /**
  * Plan 282: in Put away, why the row is there takes the preview's place, in the preview's ink: the filing's category dot,
- * then who put it away and why. A screen reader hears its section first (the headings are drawn, not read). One Map read.
+ * then who put it away and why. A screen reader hears its section first (the headings are drawn, not read).
  */
-function usePlaced(thread: Pick<ThreadSummary, "id">): React.ReactNode {
-  const on = useApp((s) => s.putAway);
-  const p = usePutAway((s) => (on ? s.byThread.get(thread.id) : undefined));
-  const categoryId = p ? rowCategory(p) : null;
-  const color = useApp((s) => (categoryId === null ? undefined : s.categories.find((c) => c.id === categoryId)?.color));
-  if (!p) return null;
+function PlacedLine({ placed }: { placed: PlacedView }) {
   return (
     <span data-testid="row-put-away">
-      <span className="sr-only">{sectionOf(p)}: </span>
-      {color && <CategoryDot color={color as CategoryColor} className="me-1.5 inline-block align-[0.05em]" />}
-      {placedLine(p)}
+      <span className="sr-only">{placed.section}: </span>
+      {placed.color && <CategoryDot color={placed.color} className="me-1.5 inline-block align-[0.05em]" />}
+      {placed.line}
     </span>
   );
 }
@@ -245,11 +255,10 @@ function withReason(reason: string | undefined, quiet: string, ink: string, word
   );
 }
 
-function RowSnippet({ thread, reminderTop, ink, quiet, match, excerpt, lead, two }: { thread: ThreadSummary; reminderTop?: boolean; ink: string; quiet: string; match?: RowMatch | null; excerpt?: string; lead: number; two: boolean }) {
+function RowSnippet({ thread, reminderTop, ink, quiet, match, excerpt, lead, two, placed }: { thread: ThreadSummary; reminderTop?: boolean; ink: string; quiet: string; match?: RowMatch | null; excerpt?: string; lead: number; two: boolean; placed?: PlacedView }) {
   const { line } = useOwed(thread, reminderTop);
   const reason = useReason(thread);
-  const placed = usePlaced(thread);
-  if (placed) return <span data-testid="row-snippet" className={cn("type-row-snippet min-w-[min(8rem,25%)]", two ? "line-clamp-2 wrap-anywhere" : "truncate", quiet)}>{placed}</span>;
+  if (placed) return <span data-testid="row-snippet" className={cn("type-row-snippet min-w-[min(8rem,25%)]", two ? "line-clamp-2 wrap-anywhere" : "truncate", quiet)}><PlacedLine placed={placed} /></span>;
   return (
     // plan 173: the marks share its line, so it keeps its first words (a search's match stands near them, LEAD); plan 187:
     // two lines wrap and clamp, a long word broken rather than overflowing
@@ -260,11 +269,10 @@ function RowSnippet({ thread, reminderTop, ink, quiet, match, excerpt, lead, two
 }
 
 /** A wide row's preview: right after the subject, a step smaller and in the preview's ink, and the first thing cut. */
-function WideSnippet({ thread, reminderTop, ink, quiet, match, excerpt }: { thread: ThreadSummary; reminderTop?: boolean; ink: string; quiet: string; match?: RowMatch | null; excerpt?: string }) {
+function WideSnippet({ thread, reminderTop, ink, quiet, match, excerpt, placed }: { thread: ThreadSummary; reminderTop?: boolean; ink: string; quiet: string; match?: RowMatch | null; excerpt?: string; placed?: PlacedView }) {
   const { line } = useOwed(thread, reminderTop);
   const reason = useReason(thread);
-  const placed = usePlaced(thread);
-  if (placed) return <span data-testid="row-snippet" className={cn("ml-1.5 min-w-0 flex-1 truncate text-xs", quiet)}>{placed}</span>;
+  if (placed) return <span data-testid="row-snippet" className={cn("ml-1.5 min-w-0 flex-1 truncate text-xs", quiet)}><PlacedLine placed={placed} /></span>;
   return (
     <span data-testid="row-snippet" data-followup={line ? true : undefined} data-excerpt={!line && excerpt ? true : undefined} className={cn("ml-1.5 min-w-0 flex-1 truncate text-xs", line ? ink : reason ? undefined : quiet)}>
       {line ?? withReason(reason, quiet, ink, matchLine(match, excerpt ?? thread.snippet, LEAD.wide))}
@@ -273,11 +281,10 @@ function WideSnippet({ thread, reminderTop, ink, quiet, match, excerpt }: { thre
 }
 
 /** A one-line row's words right after the subject: the same line, where it reads the same; apart from the subject by ink and space, no dash (subjects have their own). */
-function RowTail({ thread, reminderTop, ink, quiet, match, excerpt }: { thread: ThreadSummary; reminderTop?: boolean; ink: string; quiet: string; match?: RowMatch | null; excerpt?: string }) {
+function RowTail({ thread, reminderTop, ink, quiet, match, excerpt, placed }: { thread: ThreadSummary; reminderTop?: boolean; ink: string; quiet: string; match?: RowMatch | null; excerpt?: string; placed?: PlacedView }) {
   const { line } = useOwed(thread, reminderTop);
   const reason = useReason(thread);
-  const placed = usePlaced(thread);
-  if (placed) return <span data-testid="row-snippet" className={cn("type-row-snippet min-w-0 flex-1 truncate", quiet)}>{placed}</span>;
+  if (placed) return <span data-testid="row-snippet" className={cn("type-row-snippet min-w-0 flex-1 truncate", quiet)}><PlacedLine placed={placed} /></span>;
   return <span data-testid="row-snippet" data-followup={line ? true : undefined} className={cn("type-row-snippet min-w-0 flex-1 truncate", line ? ink : reason ? undefined : quiet)}>{line ?? withReason(reason, quiet, ink, matchLine(match, excerpt ?? thread.snippet, LEAD.wide))}</span>;
 }
 
@@ -299,7 +306,7 @@ function RowDate({ thread, reminderTop, fallback, className, title }: { thread: 
   return <span data-testid="row-date" data-due-at={dueAt ?? undefined} title={title} className={className}>{dueAt !== null ? reminderShort(dueAt) : fallback}</span>;
 }
 
-export function ThreadRowView({ thread, top, height, compact, wide, icons, layout, review, pinnedTop = false, reminderTop, selected, checked, included, pending, inSelection, account, categories, inCategory = null, kept = false, hasDraft, code, reminder, remindersList, interactive, match, excerpt, lines: previewLines = 1, pick = false, position }: ViewProps) {
+export function ThreadRowView({ thread, top, height, compact, wide, icons, layout, review, pinnedTop = false, reminderTop, selected, checked, included, pending, inSelection, account, categories, inCategory = null, kept = false, hasDraft, code, reminder, remindersList, interactive, match, excerpt, lines: previewLines = 1, pick = false, position, placedView: placed }: ViewProps) {
   const cats = thread.categoryIds.length ? categories.filter((c) => c.id !== inCategory && thread.categoryIds.includes(c.id)) : [];
   const classic = layout === "classic";
   const big = layout === "large-avatar";
@@ -440,7 +447,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
   );
   // plan 142: gated on the row's every state, as Draft's ink is (contrast.ts)
   const owedInk = "text-draft-foreground";
-  const snippet = <RowSnippet thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={quiet} match={match} excerpt={excerpt} lead={LEAD.own} two={previewLines === 2} />;
+  const snippet = <RowSnippet thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={quiet} match={match} excerpt={excerpt} lead={LEAD.own} two={previewLines === 2} placed={placed} />;
   const chip = code && <CodeChip threadId={thread.id} code={code} />;
   const reviewed = review !== null ? categories.find((c) => c.id === review) : undefined;
   const answer = reviewed && <ReviewControls threadId={thread.id} category={reviewed.name} />;
@@ -643,7 +650,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
             {placeTag}
             {reminder && !reminderTop && bell}
             {/* (Review's answers and the subject share what's short, so neither goes whole) */}
-            {answer ? <span className="ml-auto flex min-w-0 justify-end">{answer}</span> : <WideSnippet thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={PREVIEW_INK} match={match} excerpt={excerpt} />}
+            {answer ? <span className="ml-auto flex min-w-0 justify-end">{answer}</span> : <WideSnippet thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={PREVIEW_INK} match={match} excerpt={excerpt} placed={placed} />}
           </span>
           {accountTag}
           <span data-testid="row-marks" className="flex shrink-0 items-center justify-end gap-1.5">
@@ -666,7 +673,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
           <span className="flex min-w-16 flex-1 items-center gap-2">
             <span data-testid="row-subject" className={cn(FLOWING_SUBJECT, subjectInk)}>{subjectWords}</span>
             {draft}
-            <RowTail thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={PREVIEW_INK} match={match} excerpt={excerpt} />
+            <RowTail thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={PREVIEW_INK} match={match} excerpt={excerpt} placed={placed} />
           </span>
           {answer}
           {accountTag}

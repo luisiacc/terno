@@ -45,6 +45,7 @@ import { pinThreads, unpinThreads } from "~/lib/pins";
 import { usePins } from "~/state/pins";
 import { acceptSuggestion, answerReview, rejectSuggestion, removeFromCategory } from "~/lib/categorize";
 import { PutAwayBox } from "./put-away-box";
+import { stillPutAway } from "~/lib/put-away";
 import { t } from "@terno/i18n";
 import { fullDate, listDate, messageDate, messageTime } from "~/lib/format";
 import { SenderAvatar } from "./sender-avatar";
@@ -903,7 +904,7 @@ function ThreadChips({ detail, account, cats, fold, className }: { detail: Threa
       {detail.messages.length > 1 && <MessageCount count={detail.messages.length} fold={fold} />}
       {cats.map((c) => {
         // plan 282: a filing the box below explains has no mark of its own (the box says it, with its reasons)
-        const explained = detail.putAway?.detail.by === "terno" && detail.putAway.detail.categoryId === c.id;
+        const explained = !!detail.putAway && stillPutAway(detail.putAway.at) && detail.putAway.detail.by === "terno" && detail.putAway.detail.categoryId === c.id;
         const auto = explained ? undefined : detail.categorization?.auto.find((a) => a.categoryId === c.id);
         return (
           <Chip

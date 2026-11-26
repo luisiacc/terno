@@ -3590,7 +3590,6 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "putAway.row.auto.moveToFolder": "Movido a {folder} por una regla que Terno creó el {date}",
   "putAway.row.auto.addCategory": "{category} · por una regla que Terno creó el {date}",
   "putAway.row.wrote": "le has escrito",
-  "putAway.row.said": "{section}: {line}",
   "putAway.short.sameSender": { one: "guardas # de {sender} ahí", other: "guardas # de {sender} ahí" },
   "putAway.short.sameList": { one: "guardas # de esta lista ahí", other: "guardas # de esta lista ahí" },
   "putAway.short.sameDomain": { one: "guardas # de @{domain} ahí", other: "guardas # de @{domain} ahí" },
@@ -3622,14 +3621,16 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "putAway.keep.undo": "Deshacer: volver a poner {sender} automáticamente",
   "putAway.stop.done": "La regla “{name}” está desactivada",
   "putAway.stop.undo": "Deshacer: volver a activar “{name}”",
-  "putAway.failed": "No se pudo: {error}",
-  "putAway.notice.one": "Terno apartó correo de {name}, a quien le has escrito.",
-  "putAway.notice.many": { one: "Terno apartó # conversación de personas a las que les has escrito.", other: "Terno apartó # conversaciones de personas a las que les has escrito." },
+  "putAway.back.failed": "No se pudo devolver a la bandeja de entrada: {error}. Ábrelo de nuevo e inténtalo otra vez.",
+  "putAway.keep.failed": "No se pudo cambiar cómo Terno pone este remitente: {error}. Ábrelo de nuevo e inténtalo otra vez.",
+  "putAway.notice.one": "Se apartó correo de {name}, a quien le has escrito.",
+  "putAway.notice.many": { one: "Se apartó # conversación de personas a las que les has escrito.", other: "Se apartaron # conversaciones de personas a las que les has escrito." },
   "putAway.notice.review": "Revisar",
-  "putAway.notice.reviewName": "Revisar lo que Terno apartó",
+  "putAway.notice.reviewName": "Revisar lo que se apartó",
   "putAway.kept.title": "Pregunta antes de poner",
   "putAway.kept.hint": "Terno sugiere aquí el correo de estos remitentes en lugar de ponerlo él.",
   "putAway.kept.remove": "Volver a poner {sender} automáticamente",
+  "putAway.kept.removeFailed": "No se pudo quitar a {sender}: {error}. Inténtalo otra vez.",
 
   // ── web (storage, gate, onboarding)
   // @web

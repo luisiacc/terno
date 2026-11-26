@@ -25,7 +25,7 @@ export interface TopSections {
   top: number;
   pinned: number;
   /** `label` and `count`: a heading that says its own name and count (plan 282's); the Inbox's are worked out by kind */
-  headings: readonly { kind: TopSectionKind; at: number; label?: string; count?: number }[];
+  headings: readonly { kind: TopSectionKind; at: number; label?: string; count?: number | null }[];
 }
 
 export const NO_SECTIONS: TopSections = { top: 0, pinned: 0, headings: [] };

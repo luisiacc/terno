@@ -33,7 +33,7 @@ test.describe("Put away (plan 282)", () => {
 
     await scenario("the Inbox's line: who you've written to, Review opens Put away", async () => {
       const line = page.getByTestId("put-away-notice");
-      await expect(line).toContainText("Terno put away mail from Javier Ortiz, who you’ve written to.");
+      await expect(line).toContainText("Mail from Javier Ortiz, who you’ve written to, was put away.");
       await page.getByTestId("put-away-review").click();
       await expect(page.getByTestId("list-title")).toHaveText("Put away");
       // seen: back in the Inbox, the line is gone

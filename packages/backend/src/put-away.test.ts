@@ -34,7 +34,7 @@ async function setup() {
   const arrive = async (email: string, over: Partial<Parameters<typeof msg>[0]> = {}) => {
     const m = msg({ accountId: acct!, providerMsgId: `pa-${++n}`, from: { name: email.split("@")[0]!, email }, date: NOW - 1000 + n, ...over });
     await backend.store.sync.ingest([m], { applyFilters: true, now: NOW, classifier: null });
-    return threadOf(backend.store, m.providerMsgId);
+    return threadOf(backend.store, m.providerMsgId!);
   };
   const rule = (email: string, actions: FilterRule["actions"], name = "Rule") => backend.store.filters.save({ name, enabled: true, source: "manual", rule: from(email, actions) }, NOW - 1);
   return { backend, client: new RpcClient(c), acct: acct!, arrive, rule };
@@ -49,7 +49,10 @@ describe("Put away (plan 282)", () => {
     expect(page.items.map((i) => i.id)).toEqual([t]);
     expect(page.placements[0]).toMatchObject({ threadId: t, detail: { by: "rule", filterId: f.id, action: "archive" } });
     expect((await client.call("threads.get", { threadId: t })).putAway).toMatchObject({ ruleLive: true, detail: { name: "Xataka" } });
-    const back = await client.call("putAway.back", { threadIds: [t] });
+    const at = (await client.call("threads.get", { threadId: t })).putAway!.at;
+    // a window showing an older placement is refused, and nothing moves
+    await expect(client.call("putAway.back", { items: [{ threadId: t, at: at - 1 }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    const back = await client.call("putAway.back", { items: [{ threadId: t, at }] });
     expect(back.affected).toBe(1);
     expect((await client.call("threads.get", { threadId: t })).putAway).toBeNull();
     expect((await client.call("putAway.page", { limit: 10 })).items).toEqual([]);
@@ -62,7 +65,7 @@ describe("Put away (plan 282)", () => {
     const hidden = await backend.store.categories.create("Lecturas", "violet", { showInInbox: false });
     await rule("digest@x.test", [{ type: "addCategory", categoryId: hidden.id }]);
     const t = await arrive("digest@x.test");
-    const back = await client.call("putAway.back", { threadIds: [t] });
+    const back = await client.call("putAway.back", { items: [{ threadId: t, at: NOW }] });
     expect(back.undoId).not.toBeNull();
     expect((await backend.store.threads.summaries([t]))[0]!.categoryIds).toEqual([]);
     await client.call("threads.undo", { undoId: back.undoId! });
@@ -74,15 +77,17 @@ describe("Put away (plan 282)", () => {
     const { backend, client, arrive, rule } = await setup();
     const f = await rule("news@xataka.test", [{ type: "archive" }]);
     const t = await arrive("news@xataka.test");
-    await expect(client.call("putAway.keep", { threadId: t })).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    const stopped = await client.call("putAway.stopRule", { threadId: t });
+    await expect(client.call("putAway.keep", { threadId: t, at: NOW })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    const stopped = await client.call("putAway.stopRule", { threadId: t, at: NOW });
     expect((await backend.store.filters.list()).find((x) => x.id === f.id)!.enabled).toBe(false);
     expect(stopped.filterUndo).not.toBeNull();
     // edited since: Stop is refused
     const g = await rule("deals@shop.test", [{ type: "archive" }]);
     const u = await arrive("deals@shop.test");
     await backend.store.filters.save({ id: g.id, name: g.name, enabled: true, source: "manual", rule: from("deals@shop.test", [{ type: "trash" }]) }, NOW);
-    await expect(client.call("putAway.stopRule", { threadId: u })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(client.call("putAway.stopRule", { threadId: u, at: NOW })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    // stopped already: nothing left to stop
+    await expect(client.call("putAway.stopRule", { threadId: t, at: NOW })).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 
   it("the Inbox's line: who needs a look, until it's seen", async () => {
@@ -92,7 +97,11 @@ describe("Put away (plan 282)", () => {
     const t = await arrive("javier@acme.test", { from: { name: "Javier Ortiz", email: "javier@acme.test" } });
     const line = await client.call("putAway.needsLook", {});
     expect(line).toEqual({ count: 1, first: { threadId: t, name: "Javier Ortiz" }, through: NOW });
-    await client.call("putAway.seen", { through: line.through });
+    let told = 0;
+    client.on("putAwayChanged", () => told++);
+    // two windows acknowledge at once, one with an older mark: it never moves back, and the windows hear it once
+    await Promise.all([client.call("putAway.seen", { through: line.through }), client.call("putAway.seen", { through: line.through - 5 })]);
     expect((await client.call("putAway.needsLook", {})).count).toBe(0);
+    await expect.poll(() => told).toBe(1);
   });
 });

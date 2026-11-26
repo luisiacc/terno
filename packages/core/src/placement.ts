@@ -40,8 +40,10 @@ const ternoDetail = z.object({
   reasons: z.unknown(),
   /** the classifier's normalized sender ("Don't file … automatically" keys by it) */
   sender: z.string().max(400),
-  /** who the mail is from, as the decision saw them */
+  /** the newest mail's sender (Needs a look's) */
   fromName: z.string().max(400),
+  /** the sender the decision read, as their mail names them ("Don't file … automatically" is theirs) */
+  senderName: z.string().max(400).optional(),
 });
 
 export type RulePlacement = z.infer<typeof ruleDetail>;
@@ -60,6 +62,8 @@ export interface Placement {
 export interface PutAwayDetail extends Placement {
   /** the rule still exists and is unchanged: Edit and Stop act on what did this */
   ruleLive?: boolean;
+  /** and it's on (Stop has something to stop) */
+  ruleEnabled?: boolean;
 }
 
 /** A rule's identity for Put away: the rule as JSON, hashed (an edit changes it; renaming or pausing it doesn't). */
@@ -83,11 +87,6 @@ export function parsePlacementDetail(json: string): PlacementDetail | null {
   const terno = ternoDetail.safeParse(value);
   if (terno.success) return { ...terno.data, reasons: parseReasons(JSON.stringify(terno.data.reasons ?? [])) };
   return null;
-}
-
-/** The detail as stored */
-export function placementJson(detail: PlacementDetail): string {
-  return JSON.stringify(detail);
 }
 
 /** Inside the window at `now` */

@@ -1,13 +1,12 @@
 import { tokenize } from "../rules/evaluate";
 import { normalizeText } from "../text";
 
-/** Bump when the featurization changes: stored examples and snapshots are rebuilt. */
-
 /** The classifier's key for a sender (its features, its vetoes; plan 282's kept senders) */
 export function classifierSender(email: string): string {
   return normalizeText(email.trim());
 }
 
+/** Bump when the featurization changes: stored examples and snapshots are rebuilt. */
 export const FEATURES_V = 1;
 
 /** Shared consumer domains say nothing about who the sender is. */

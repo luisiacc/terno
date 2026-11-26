@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { orderReasons, parsePlacementDetail, placementCategory, placementJson, placementLive, PUT_AWAY_MS, ruleHash, type PlacementDetail } from "./placement";
+import { orderReasons, parsePlacementDetail, placementCategory, placementLive, PUT_AWAY_MS, ruleHash, type PlacementDetail } from "./placement";
 
 const rule: PlacementDetail = { by: "rule", filterId: 4, name: "Xataka", auto: false, source: "manual", createdAt: 1, action: "archive", ruleHash: ruleHash({ a: 1 }), fromName: "Xataka" };
 const terno: PlacementDetail = { by: "terno", categoryId: 2, reasons: [{ k: "reason.sameSender", p: { count: 12, category: "Facturas" } }], sender: "recibos@rappi.com", fromName: "Rappi" };
 
 describe("placements (plan 282)", () => {
   it("round-trips both kinds, and reads anything else as nothing", () => {
-    expect(parsePlacementDetail(placementJson(rule))).toEqual(rule);
-    expect(parsePlacementDetail(placementJson(terno))).toEqual(terno);
+    expect(parsePlacementDetail(JSON.stringify(rule))).toEqual(rule);
+    expect(parsePlacementDetail(JSON.stringify(terno))).toEqual(terno);
     expect(parsePlacementDetail("{")).toBeNull();
     expect(parsePlacementDetail(JSON.stringify({ by: "gmail" }))).toBeNull();
     expect(parsePlacementDetail(JSON.stringify({ ...rule, action: "spam" }))).toBeNull();

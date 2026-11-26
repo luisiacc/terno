@@ -1,60 +1,39 @@
-import { classifierSender, parsePlacementDetail, parseReasons, PUT_AWAY_MS, ruleHash, type Filter, type FilterAction, type Placement, type PlacementDetail, type PlacementEffect, type PutAwayDetail } from "@terno/core";
-import type { KeptSender, PutAwayCursor, PutAwayPage, PutAwayWithdrawn } from "@terno/store";
+import { classifierSender, parsePlacementDetail, parseReasons, PUT_AWAY_MS, ruleHash, type Placement, type PutAwayDetail } from "@terno/core";
+import { clipText, explainingNote, type KeptSender, type PlacementNote, type PutAwayCursor, type PutAwayMembership, type PutAwayPage, type PutAwayWithdrawn } from "@terno/store";
+import { hiddenCategories, tabHiddenTest } from "./inbox-hidden";
 import { summariesInOrder, T, type Ctx, type R } from "./mail";
 
 /**
  * Plan 282: Put away, as packages/db/src/put-away.ts keeps it (the conformance suite holds the two to the same answers).
- * The table is a week's worth, pruned as new rows come, so a read walks it whole.
+ * The table is a week's worth, pruned as new rows come (at most once an hour), so a read walks it whole.
  */
 
-export interface PlacementNote {
-  by: "rule" | "terno";
-  effect: PlacementEffect;
-  categoryId: number | null;
-  detail: DistributiveOmit<PlacementDetail, "fromName">;
-}
-type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
-
-const hiddenIds = (c: Ctx): Set<number> => new Set([...T(c, "categories").all()].filter((r) => r.show_in_inbox === 0).map((r) => r.id as number));
+const hiddenIds = (c: Ctx): Set<number> => hiddenCategories(c.db) ?? new Set();
 
 export function hiddenCategorySet(c: Ctx): Set<number> {
   return hiddenIds(c);
 }
 
-/** In the Inbox, not in Spam or Trash, in no hidden category. */
+/** As the Inbox shows it: in the Inbox, not in Spam or Trash, in no hidden category, not in a tab its account keeps apart. */
 export function inboxVisible(c: Ctx, threadIds: Iterable<number>): Set<number> {
   const threads = T(c, "threads");
   const memberships = T(c, "thread_categories");
   const hidden = hiddenIds(c);
+  const tabbed = tabHiddenTest(c.db);
   const out = new Set<number>();
   for (const id of new Set(threadIds)) {
     const t = threads.get(id);
-    if (!t || t.in_inbox !== 1 || t.in_spam === 1 || t.in_trash === 1) continue;
+    if (!t || t.in_inbox !== 1 || t.in_spam === 1 || t.in_trash === 1 || tabbed?.(t)) continue;
     if (hidden.size && memberships.by("fk_thread_id", id).some((m) => hidden.has(m.category_id as number))) continue;
     out.add(id);
   }
   return out;
 }
 
-export function ruleNote(filter: Filter, action: FilterAction, hidden: ReadonlySet<number>): PlacementNote | null {
-  const base = { by: "rule" as const, filterId: filter.id, name: filter.name, auto: filter.auto, source: filter.source, createdAt: filter.createdAt, ruleHash: ruleHash(filter.rule) };
-  switch (action.type) {
-    case "archive":
-    case "trash":
-      return { by: "rule", effect: action.type, categoryId: null, detail: { ...base, action: action.type } };
-    case "moveToFolder":
-      return { by: "rule", effect: "folder", categoryId: null, detail: { ...base, action: "moveToFolder", folder: action.folder } };
-    case "addCategory":
-      return hidden.has(action.categoryId) ? { by: "rule", effect: "category", categoryId: action.categoryId, detail: { ...base, action: "addCategory", categoryId: action.categoryId } } : null;
-    default:
-      return null;
-  }
-}
-
 const ownEmails = (c: Ctx): Set<string> => new Set([...T(c, "accounts").all()].map((a) => String(a.email).toLowerCase()));
 
 /** A conversation's messages from someone else, oldest first */
-function inbound(c: Ctx, threadId: number, own: ReadonlySet<number | string>): R[] {
+function inbound(c: Ctx, threadId: number, own: ReadonlySet<string>): R[] {
   return T(c, "messages")
     .by("fk_thread_id", threadId)
     .filter((m) => m.is_sent !== 1 && !own.has(String(m.from_email).toLowerCase()))
@@ -63,22 +42,30 @@ function inbound(c: Ctx, threadId: number, own: ReadonlySet<number | string>): R
 
 export class PlacementWatch {
   private readonly before: Set<number>;
-  private readonly notes = new Map<number, PlacementNote>();
+  private readonly notes = new Map<number, PlacementNote[]>();
+  private hiddenSet: Set<number> | null = null;
 
   constructor(private readonly c: Ctx, threadIds: Iterable<number>) {
     this.before = inboxVisible(c, threadIds);
+  }
+
+  hidden(): ReadonlySet<number> {
+    return (this.hiddenSet ??= hiddenIds(this.c));
   }
 
   note(threadIds: Iterable<number>, note: PlacementNote | null): void {
     if (!note) return;
     for (const t of threadIds) {
       if (!this.before.has(t)) continue;
-      const prev = this.notes.get(t);
-      if (!prev || (prev.by === "terno" && note.by === "rule")) this.notes.set(t, note);
+      const list = this.notes.get(t);
+      if (list) list.push(note);
+      else this.notes.set(t, [note]);
     }
   }
 
-  noteTerno(auto: ReadonlyMap<number, readonly number[]>, hidden: ReadonlySet<number>): void {
+  noteTerno(auto: ReadonlyMap<number, readonly number[]>): void {
+    if (auto.size === 0) return;
+    const hidden = this.hidden();
     const decisions = T(this.c, "cls_decisions");
     const own = ownEmails(this.c);
     for (const [categoryId, threadIds] of auto) {
@@ -91,7 +78,7 @@ export class PlacementWatch {
           by: "terno",
           effect: "category",
           categoryId,
-          detail: { by: "terno", categoryId, reasons: decision?.kind === "auto" ? parseReasons(decision.explain_json) : [], sender: classifierSender(String(root?.from_email ?? "")) },
+          detail: { by: "terno", categoryId, reasons: decision?.kind === "auto" ? parseReasons(decision.explain_json) : [], sender: classifierSender(String(root?.from_email ?? "")), senderName: clipText(String(root?.from_name || root?.from_email || "")) },
         });
       }
     }
@@ -105,20 +92,37 @@ export class PlacementWatch {
     const own = ownEmails(this.c);
     const correspondents = T(this.c, "correspondents");
     const placements = T(this.c, "placements");
+    const placed: number[] = [];
     for (const t of gone) {
-      const n = this.notes.get(t)!;
+      const n = explainingNote(this.notes.get(t)!, holdsNow(this.c, t));
+      if (!n) continue;
       const newest = inbound(this.c, t, own).at(-1);
       const email = String(newest?.from_email ?? "").toLowerCase();
       const who = email ? correspondents.get(email) : undefined;
-      const row = { thread_id: t, at: now, by: n.by, effect: n.effect, category_id: n.categoryId, needs_look: who?.written === 1 && who.own !== 1 ? 1 : 0, detail_json: JSON.stringify({ ...n.detail, fromName: newest ? String(newest.from_name || newest.from_email) : "" }) };
-      placements.put(row);
+      const fromName = newest ? clipText(String(newest.from_name || newest.from_email)) : "";
+      placements.put({ thread_id: t, at: now, by: n.by, effect: n.effect, category_id: n.categoryId, needs_look: who?.written === 1 && who.own !== 1 ? 1 : 0, detail_json: JSON.stringify({ ...n.detail, fromName }) });
+      placed.push(t);
     }
     prunePlacements(this.c, now);
-    return gone;
+    return placed;
   }
 }
 
+/** Whether a note's effect holds on this conversation now (the same test a read makes) */
+function holdsNow(c: Ctx, threadId: number): (n: PlacementNote) => boolean {
+  const t = T(c, "threads").get(threadId);
+  if (!t || t.in_spam === 1) return () => false;
+  const hidden = hiddenIds(c);
+  const filed = new Set(T(c, "thread_categories").by("fk_thread_id", threadId).filter((m) => hidden.has(m.category_id)).map((m) => `${m.category_id}:${m.added_by}`));
+  return (n) => (n.effect === "trash" ? t.in_trash === 1 : n.effect === "category" ? filed.has(`${n.categoryId}:${n.by === "terno" ? "auto" : "filter"}`) : t.in_inbox === 0 && t.in_trash !== 1);
+}
+
+/** When each store last pruned: the walk of the table runs at most once an hour (the read ignores old rows anyway) */
+const pruned = new WeakMap<Ctx, number>();
+
 export function prunePlacements(c: Ctx, now: number): void {
+  if ((pruned.get(c) ?? -Infinity) > now - 3_600_000) return;
+  pruned.set(c, now);
   const placements = T(c, "placements");
   const old: R[] = [];
   for (const r of placements.all()) if (r.at <= now - PUT_AWAY_MS) old.push(r);
@@ -128,6 +132,13 @@ export function prunePlacements(c: Ctx, now: number): void {
 export function endPlacements(c: Ctx, threadIds: readonly number[]): void {
   const placements = T(c, "placements");
   for (const id of threadIds) placements.delete(id);
+}
+
+/** Of these, the put-away conversations back in the Inbox view (a user's move out of it ends their placement) */
+export function placedVisible(c: Ctx, threadIds: readonly number[]): Set<number> {
+  const placements = T(c, "placements");
+  const placed = threadIds.filter((id) => placements.has(id));
+  return placed.length ? inboxVisible(c, placed) : new Set();
 }
 
 /** The placement's effect still holds, and the conversation isn't in Spam */
@@ -154,10 +165,6 @@ const before = (r: R, k: PutAwayCursor) => {
   return r.needs_look !== n ? r.needs_look < n : r.at !== k.at ? r.at < k.at : r.thread_id < k.threadId;
 };
 
-function live(c: Ctx, now: number): R[] {
-  return [...T(c, "placements").all()].filter((r) => r.at > now - PUT_AWAY_MS && holds(c, r));
-}
-
 export function placementOf(c: Ctx, threadId: number, now: number): PutAwayDetail | null {
   const row = T(c, "placements").get(threadId);
   if (!row || row.at <= now - PUT_AWAY_MS || !holds(c, row)) return null;
@@ -165,13 +172,14 @@ export function placementOf(c: Ctx, threadId: number, now: number): PutAwayDetai
   if (!p) return null;
   if (p.detail.by !== "rule") return p;
   const filter = T(c, "filters").get(p.detail.filterId);
-  return { ...p, ruleLive: !!filter && ruleHash(JSON.parse(filter.rule_json)) === p.detail.ruleHash };
+  const live = !!filter && ruleHash(JSON.parse(filter.rule_json)) === p.detail.ruleHash;
+  return { ...p, ruleLive: live, ruleEnabled: live && filter!.enabled === 1 };
 }
 
 export function placementPage(c: Ctx, p: { now: number; after?: PutAwayCursor | null; limit: number }): PutAwayPage {
   const after = p.after;
-  const rows = live(c, p.now)
-    .filter((r) => !after || before(r, after))
+  const rows = [...T(c, "placements").all()]
+    .filter((r) => r.at > p.now - PUT_AWAY_MS && (!after || before(r, after)) && holds(c, r))
     .sort(order)
     .slice(0, p.limit + 1);
   const more = rows.length > p.limit;
@@ -190,30 +198,32 @@ export function placementsNeedingLook(c: Ctx, p: { now: number; after: number })
   const since = Math.max(p.after, p.now - PUT_AWAY_MS);
   const rows = [...T(c, "placements").all()]
     .filter((r) => r.needs_look === 1 && r.at > since && holds(c, r))
-    .sort(order);
-  const first = rows[0] ? toPlacement(rows[0]) : null;
-  return { count: rows.length, first: first ? { threadId: first.threadId, name: first.detail.fromName } : null, through: rows[0]?.at ?? p.after };
+    .sort(order)
+    .flatMap((r) => toPlacement(r) ?? []);
+  const first = rows[0];
+  return { count: rows.length, first: first ? { threadId: first.threadId, name: first.detail.fromName } : null, through: first?.at ?? p.after };
 }
 
-export function releaseRuleFilings(c: Ctx, threadIds: readonly number[]): { threadId: number; categoryId: number }[] {
+export function releaseHiddenFilings(c: Ctx, threadIds: readonly number[]): PutAwayMembership[] {
   const hidden = hiddenIds(c);
   const memberships = T(c, "thread_categories");
-  const out: { threadId: number; categoryId: number }[] = [];
+  const out: PutAwayMembership[] = [];
   for (const threadId of new Set(threadIds)) {
     for (const m of memberships.by("fk_thread_id", threadId)) {
-      if (m.added_by !== "filter" || !hidden.has(m.category_id)) continue;
+      if (!hidden.has(m.category_id)) continue;
       memberships.deleteRow(m);
-      out.push({ threadId, categoryId: m.category_id });
+      out.push({ threadId, categoryId: m.category_id, addedBy: m.added_by, addedAt: m.added_at, batchId: m.batch_id ?? null });
     }
   }
   return out;
 }
 
-export function refileRuleFilings(c: Ctx, rows: readonly { threadId: number; categoryId: number }[], now: number): void {
+export function refileHiddenFilings(c: Ctx, rows: readonly PutAwayMembership[]): void {
   const memberships = T(c, "thread_categories");
+  const batches = T(c, "cat_batches");
   for (const r of rows) {
     if (!T(c, "threads").has(r.threadId) || !T(c, "categories").has(r.categoryId) || memberships.has(r.threadId, r.categoryId)) continue;
-    memberships.insert({ thread_id: r.threadId, category_id: r.categoryId, added_by: "filter", added_at: now, batch_id: null });
+    memberships.insert({ thread_id: r.threadId, category_id: r.categoryId, added_by: r.addedBy, added_at: r.addedAt, batch_id: r.batchId !== null && batches.has(r.batchId) ? r.batchId : null });
   }
 }
 
@@ -229,29 +239,31 @@ export function listKeptSenders(c: Ctx): KeptSender[] {
   return [...T(c, "cls_kept_senders").all()].sort((a, b) => b.at - a.at).map((r) => ({ categoryId: r.category_id, sender: r.sender, at: r.at }));
 }
 
-export function keepSender(c: Ctx, p: { categoryId: number; sender: string; threadId: number | null; now: number }): { added: boolean; withdrawn: PutAwayWithdrawn | null } {
+export function keepSender(c: Ctx, p: { categoryId: number; sender: string; threadId: number | null; now: number }): { added: boolean; at: number; withdrawn: PutAwayWithdrawn | null } {
   const kept = T(c, "cls_kept_senders");
   const added = !kept.has(p.categoryId, p.sender) && T(c, "categories").has(p.categoryId);
   if (added) kept.insert({ category_id: p.categoryId, sender: p.sender, at: p.now });
-  if (p.threadId === null) return { added, withdrawn: null };
+  if (p.threadId === null) return { added, at: p.now, withdrawn: null };
   const memberships = T(c, "thread_categories");
   const membership = memberships.get(p.threadId, p.categoryId);
-  if (!membership || membership.added_by !== "auto") return { added, withdrawn: null };
+  if (!membership || membership.added_by !== "auto") return { added, at: p.now, withdrawn: null };
   memberships.deleteRow(membership);
   const decisions = T(c, "cls_decisions");
   const decision = decisions.get(p.threadId, p.categoryId);
   const auto = decision && decision.kind === "auto" ? decision : null;
   if (auto) decisions.deleteRow(auto);
-  return { added, withdrawn: { threadId: p.threadId, categoryId: p.categoryId, addedAt: membership.added_at, decision: auto ? { p: auto.p, explainJson: auto.explain_json, at: auto.at, outcome: auto.outcome ?? null } : null } };
+  return { added, at: p.now, withdrawn: { threadId: p.threadId, categoryId: p.categoryId, addedAt: membership.added_at, batchId: membership.batch_id ?? null, decision: auto ? { p: auto.p, explainJson: auto.explain_json, at: auto.at, outcome: auto.outcome ?? null } : null } };
 }
 
-export function unkeepSender(c: Ctx, p: { categoryId: number; sender: string; added: boolean; withdrawn: PutAwayWithdrawn | null }): void {
-  if (p.added) T(c, "cls_kept_senders").delete(p.categoryId, p.sender);
+export function unkeepSender(c: Ctx, p: { categoryId: number; sender: string; added: boolean; at: number; withdrawn: PutAwayWithdrawn | null }): void {
+  const kept = T(c, "cls_kept_senders");
+  if (p.added && kept.get(p.categoryId, p.sender)?.at === p.at) kept.delete(p.categoryId, p.sender);
   const w = p.withdrawn;
   if (!w || !T(c, "threads").has(w.threadId) || !T(c, "categories").has(w.categoryId)) return;
   const memberships = T(c, "thread_categories");
-  if (!memberships.has(w.threadId, w.categoryId)) memberships.insert({ thread_id: w.threadId, category_id: w.categoryId, added_by: "auto", added_at: w.addedAt, batch_id: null });
-  if (w.decision) T(c, "cls_decisions").put({ thread_id: w.threadId, category_id: w.categoryId, kind: "auto", p: w.decision.p, explain_json: w.decision.explainJson, at: w.decision.at, outcome: w.decision.outcome });
+  if (!memberships.has(w.threadId, w.categoryId)) memberships.insert({ thread_id: w.threadId, category_id: w.categoryId, added_by: "auto", added_at: w.addedAt, batch_id: w.batchId !== null && T(c, "cat_batches").has(w.batchId) ? w.batchId : null });
+  const decisions = T(c, "cls_decisions");
+  if (w.decision && !decisions.has(w.threadId, w.categoryId)) decisions.insert({ thread_id: w.threadId, category_id: w.categoryId, kind: "auto", p: w.decision.p, explain_json: w.decision.explainJson, at: w.decision.at, outcome: w.decision.outcome });
 }
 
 export function removeKeptSender(c: Ctx, categoryId: number, sender: string): boolean {

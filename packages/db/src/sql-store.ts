@@ -101,7 +101,8 @@ import {
   categoryEvidence,
   type ClassifyResult,
 } from "./categorize";
-import { endPlacements, hiddenCategorySet, keepSender, listKeptSenders, placementOf, placementPage, placementsNeedingLook, PlacementWatch, refileRuleFilings, releaseRuleFilings, removeKeptSender, ruleNote, unkeepSender } from "./put-away";
+import { endPlacements, inboxVisible, keepSender, listKeptSenders, placementOf, placementPage, placementsNeedingLook, PlacementWatch, refileHiddenFilings, releaseHiddenFilings, removeKeptSender, unkeepSender } from "./put-away";
+import { ruleNote } from "@terno/store";
 import { keptThreads, resolveSimilarPage, similarOffers, similarScopesOf } from "./similar";
 import { clearJudgments, clearWriting, commitGeneration, commitProfiles, corpusHeaders, corpusUsable, editProfile, generationForDraft, generationForMessage, generationPairs, judgeProfile, listProfiles, readProfiles, resetProfile, restoreProfiles, sentTo as writingSentTo, threadRecipients, threadsWith as writingThreadsWith, transferGeneration } from "./writing";
 import { attemptSummary, clearNewMail, clearSummaries, consumeNewMail, dropPendingSummaries, dropSummary, failSummary, finishSummary, getSummary, lastSummaryFailure, markNewMail, newMailPage, pendingSummaries, pendingSummaryCount, pruneNewMail, pruneSummaries, summarySources } from "./ai-summaries";
@@ -492,11 +493,14 @@ export class SqlMailStore implements MailStore {
       this.db.tx(() => {
         const flagBefore = flagEpochs(sqlFlags(this.db));
         const ids = [...new Set(threadIds)];
+        // plan 282: put-away conversations this may take out of the Inbox view (one back in it the user moves out again)
+        const placedVisible = ENDS_PLACEMENT.has(action) ? this.placedVisible(ids) : null;
         const r = applyThreadAction(this.db, ids, action);
         // only actions that changed something feed learned filters (repeats must not manufacture support)
         if (signal && r.threadIds.length) recordUserActions(this.db, r.threadIds, signal, now);
-        // plan 282: the user's own move out of the Inbox: what put the conversation away before is theirs now
-        if (ENDS_PLACEMENT.has(action)) endPlacements(this.db, ids);
+        // the user's own move out of the Inbox: what put it away before is theirs now (a move between places it was
+        // already out of keeps it, so Undo of a Delete finds it in Put away again)
+        if (placedVisible?.size) endPlacements(this.db, r.threadIds.filter((t) => placedVisible.has(t)));
         const opIds = this.queueActionOps(r, action, now);
         if (action !== "moveToInbox") return { threadIds: r.threadIds, opIds, before: r.before, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
         // plan 86: into the Inbox means out of Gmail's tabs too, in the same command and the same undo
@@ -522,8 +526,9 @@ export class SqlMailStore implements MailStore {
     moveToFolder: async (c) =>
       this.db.tx(() => {
         const flagBefore = flagEpochs(sqlFlags(this.db));
+        const placedVisible = this.placedVisible(c.threadIds);
         const r = moveThreadsToFolder(this.db, c);
-        endPlacements(this.db, r.threadIds);
+        if (placedVisible.size) endPlacements(this.db, r.threadIds.filter((t) => placedVisible.has(t)));
         return { threadIds: r.threadIds, opIds: r.opIds, before: r.archived.before, moved: r.moved, kept: r.kept, leftInbox: r.archived.threadIds, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
       }),
     leaveFolder: async (c) => this.db.tx(() => leaveFolder(this.db, c)),
@@ -541,6 +546,22 @@ export class SqlMailStore implements MailStore {
 
   // ───────────────────────────── filters on incoming mail ─────────────────────────────
 
+  /**
+   * Plan 282: a command's placement watch, only when it can place anything: an enabled rule on new mail, or the engine
+   * filing on its own. A first sync or a body backfill with neither reads nothing for Put away.
+   */
+  private placementWatch(applyFilters: boolean, classifier: ClassifierInput | null, threads: () => number[]): PlacementWatch | null {
+    const rules = applyFilters && !!this.db.get("SELECT 1 FROM filters WHERE enabled = 1 LIMIT 1");
+    if (!rules && classifier?.mode !== "auto") return null;
+    return new PlacementWatch(this.db, threads());
+  }
+
+  /** Plan 282: of these, the put-away conversations back in the Inbox view (a user's move out of it ends their placement) */
+  private placedVisible(threadIds: readonly number[]): Set<number> {
+    const placed = this.db.all<{ thread_id: number }>("SELECT thread_id FROM placements WHERE thread_id IN (SELECT value FROM json_each(?))", JSON.stringify(threadIds)).map((r) => r.thread_id);
+    return placed.length ? inboxVisible(this.db, placed) : new Set();
+  }
+
   /** Enabled filters on new (or newly body-complete) messages. Automated: never a learning signal. Plan 282: `watch` notes what each one took out of the Inbox. */
   private applyFiltersTo(messageIds: readonly number[], onlyBodyFilters: boolean, now: number, opIds: string[], folderMoves: FolderFilterMove[], watch: PlacementWatch | null = null): Set<number> {
     const touched = new Set<number>();
@@ -548,14 +569,13 @@ export class SqlMailStore implements MailStore {
     const filters = listFilters(this.db).filter((f) => f.enabled && (!onlyBodyFilters || ruleAwaitsBody(f.rule)));
     // plan 128: what reached the Inbox, read before any filter acts: an archive (or another folder's) doesn't change who else moves
     const inbox = filters.some((f) => movesToFolder(f.rule)) ? new Set(this.db.all<{ id: number }>("SELECT id FROM messages WHERE in_inbox = 1 AND id IN (SELECT value FROM json_each(?))", JSON.stringify(messageIds)).map((m) => m.id)) : null;
-    const hidden = watch ? hiddenCategorySet(this.db) : null;
     for (const filter of filters) {
       const matches = findRuleMatches(this.db, filter.rule, now, messageIds);
       if (matches.messageIds.length === 0) continue;
       try {
         const moves: FolderFilterMove[] = [];
         // claims + actions + ops atomically (a savepoint inside the command)
-        const changed = this.db.tx(() => this.runFilterActions(filter.rule.actions, claimFilterApplications(this.db, filter.id, matches.messageIds, now), now, opIds, moves, inbox, watch && hidden ? { watch, filter, hidden } : null));
+        const changed = this.db.tx(() => this.runFilterActions(filter.rule.actions, claimFilterApplications(this.db, filter.id, matches.messageIds, now), now, opIds, moves, inbox, watch ? { watch, filter } : null));
         // only once its savepoint held: a later action failing leaves no move behind
         folderMoves.push(...moves);
         for (const id of changed) touched.add(id);
@@ -567,7 +587,7 @@ export class SqlMailStore implements MailStore {
     return touched;
   }
 
-  private runFilterActions(actions: FilterAction[], messageIds: number[], now: number, opIds: string[], folderMoves: FolderFilterMove[], inbox: ReadonlySet<number> | null, placing: { watch: PlacementWatch; filter: Filter; hidden: ReadonlySet<number> } | null = null): Set<number> {
+  private runFilterActions(actions: FilterAction[], messageIds: number[], now: number, opIds: string[], folderMoves: FolderFilterMove[], inbox: ReadonlySet<number> | null, placing: { watch: PlacementWatch; filter: Filter } | null = null): Set<number> {
     const touched = new Set<number>();
     if (messageIds.length === 0) return touched;
     for (const action of actions) {
@@ -585,12 +605,12 @@ export class SqlMailStore implements MailStore {
           .map((r) => r.thread_id);
         const added = addToCategory(this.db, { categoryId: action.categoryId, threadIds: threads, addedBy: "filter", now }).added;
         // plan 282: only the conversations it actually filed
-        placing?.watch.note(added, ruleNote(placing.filter, action, placing.hidden));
+        if (placing) placing.watch.note(added, ruleNote(placing.filter, action, placing.watch.hidden()));
         for (const t of threads) touched.add(t);
       } else {
         const result = applyMessageAction(this.db, messageIds, action.type);
         opIds.push(...this.queueActionOps(result, action.type, now));
-        placing?.watch.note(result.threadIds, ruleNote(placing.filter, action, placing.hidden));
+        if (placing) placing.watch.note(result.threadIds, ruleNote(placing.filter, action, placing.watch.hidden()));
         for (const t of result.threadIds) touched.add(t);
       }
     }
@@ -608,7 +628,7 @@ export class SqlMailStore implements MailStore {
         }
         opIds.push(...r.opIds);
         // plan 282: a move that held (the conversation's Inbox is read again at the command's end)
-        if (watch && filter) watch.note(r.threadIds, ruleNote(filter, { type: "moveToFolder", accountId: move.accountId, folder: move.folder }, new Set()));
+        if (watch && filter) watch.note(r.threadIds, ruleNote(filter, { type: "moveToFolder", accountId: move.accountId, folder: move.folder }, watch.hidden()));
         for (const t of r.threadIds) touched.add(t);
       } catch (error) {
         this.log("warn", `filter move failed on account ${move.accountId}`, error instanceof Error ? error.message : error);
@@ -674,7 +694,7 @@ export class SqlMailStore implements MailStore {
         const opIds: string[] = [];
         const folderMoves: FolderFilterMove[] = [];
         // plan 282: what new mail's rules and the engine take out of the Inbox, read before them and after
-        const watch = new PlacementWatch(this.db, threadsOfMessages(this.db, [...result.inserted, ...result.bodyCompleted]));
+        const watch = this.placementWatch(applyFilters, classifier, () => threadsOfMessages(this.db, [...result.inserted, ...result.bodyCompleted]));
         if (applyFilters) {
           for (const t of this.applyFiltersTo(result.inserted, false, now, opIds, folderMoves, watch)) touched.add(t);
           // bodies that arrived through an upsert may now satisfy body filters
@@ -682,10 +702,10 @@ export class SqlMailStore implements MailStore {
         }
         const c = this.classify(classifier, result.inserted, result.bodyCompleted, now);
         for (const t of c.touched) touched.add(t);
-        watch.noteTerno(c.auto, hiddenCategorySet(this.db));
+        watch?.noteTerno(c.auto);
         this.flushFolderMoves(folderMoves, now, opIds, touched, watch);
-        watch.commit(now);
-        return { inserted: result.inserted, touched: [...touched], deltas: [...result.deltas, ...c.deltas], auto: c.auto, backfill: c.backfill, opIds, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
+        const placed = watch?.commit(now) ?? [];
+        return { inserted: result.inserted, touched: [...touched], deltas: [...result.deltas, ...c.deltas], auto: c.auto, backfill: c.backfill, opIds, placed, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
       }));
       }, check); } finally {
         for (const m of staged) if (m.bodyCapture) await finishBodyStage(this.db, m.bodyCapture.id, this.yieldTo);
@@ -718,16 +738,16 @@ export class SqlMailStore implements MailStore {
         if (captureUnavailable) return { touched: owner ? [owner.thread_id] : [], deltas: [], auto: new Map(), opIds: [] };
         const opIds: string[] = [];
         const folderMoves: FolderFilterMove[] = [];
-        const watch = new PlacementWatch(this.db, owner ? [owner.thread_id] : []);
+        const watch = this.placementWatch(true, classifier, () => (owner ? [owner.thread_id] : []));
         const touched = this.applyFiltersTo([messageId], true, now, opIds, folderMoves, watch);
         // the body was the missing piece: reclassify once
         const c = this.classify(classifier, [], [messageId], now);
         for (const t of c.touched) touched.add(t);
-        watch.noteTerno(c.auto, hiddenCategorySet(this.db));
+        watch?.noteTerno(c.auto);
         this.flushFolderMoves(folderMoves, now, opIds, touched, watch);
-        watch.commit(now);
+        const placed = watch?.commit(now) ?? [];
         if (owner) touched.add(owner.thread_id);
-        return { touched: [...touched], deltas: c.deltas, auto: c.auto, opIds, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
+        return { touched: [...touched], deltas: c.deltas, auto: c.auto, opIds, placed, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
       }));
       }, check); } finally { if (body.bodyCapture) await finishBodyStage(this.db, body.bodyCapture.id, this.yieldTo); }
     }),
@@ -779,6 +799,9 @@ export class SqlMailStore implements MailStore {
           if (before && (before.is_sent !== r.is_sent || before.is_draft !== r.is_draft || before.is_spam !== r.is_spam)) for (const t of ownMailChanged(this.db, u.messageId)) threads.add(t);
         }
         recomputeThreads(this.db, threads);
+        // plan 282: back in the Inbox by the server's word (another device, the webmail): what put it away is over
+        const back = this.placedVisible([...threads]);
+        if (back.size) endPlacements(this.db, [...back]);
         return { touched: [...threads], ...reconciliation };
       }),
     remove: async (ids, check) => { check?.(); return { touched: [...deleteMessages(this.db, ids)] }; },
@@ -1794,8 +1817,8 @@ export class SqlMailStore implements MailStore {
     of: async (threadId, now) => placementOf(this.db, threadId, now),
     page: async (p) => placementPage(this.db, p),
     needsLook: async (p) => placementsNeedingLook(this.db, p),
-    release: async (threadIds) => this.db.tx(() => releaseRuleFilings(this.db, threadIds)),
-    refile: async (rows, now) => this.db.tx(() => refileRuleFilings(this.db, rows, now)),
+    release: async (threadIds) => this.db.tx(() => releaseHiddenFilings(this.db, threadIds)),
+    refile: async (rows) => this.db.tx(() => refileHiddenFilings(this.db, rows)),
     keep: async (p) => this.db.tx(() => keepSender(this.db, p)),
     unkeep: async (p) => this.db.tx(() => unkeepSender(this.db, p)),
     kept: async () => listKeptSenders(this.db),

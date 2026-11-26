@@ -183,7 +183,8 @@ export async function boot(): Promise<void> {
         background: true,
         // undoing the engine is a correction: it learns from it
         action: { label: t("common.undo"), name: t("category.autoUndo", { category: name }), onClick: () => void removeFromCategory(categoryId, threadIds, "user") },
-        secondary: { label: t("common.view"), name: t("category.view", { category: name }), onClick: () => navigate({ categoryId }) },
+        // plan 282: a filing into a category kept out of the Inbox is reviewed in Put away, with why each went
+        secondary: { label: t("common.view"), name: t("category.view", { category: name }), onClick: () => navigate(getApp().categories.find((c) => c.id === categoryId)?.showInInbox === false ? { putAway: true } : { categoryId }) },
       });
     });
     installSendWarnings();

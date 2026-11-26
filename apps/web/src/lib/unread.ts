@@ -7,12 +7,12 @@
 import { reflowRemoval } from "~/lib/flash";
 import { matchesFilter, type ListFilter } from "@terno/core";
 import { activeFilter, isUnreadOnly, mailboxKey, saveListFilters, withFilter } from "~/lib/unread-filter";
-import { getApp, setApp, useApp } from "~/state/app";
+import { getApp, setApp, useApp, ownList } from "~/state/app";
 import { patchRows, useList } from "~/state/list";
 
 /** The toggle applies: the app is up, nothing modal is open, and the list is a mailbox ("Revisar" and Reminders aren't). */
 export function canToggleUnread(s = getApp()): boolean {
-  return s.ready && s.dialog === null && !s.menuOpen && s.reviewCategoryId === null && !s.reminders && !s.followups && !s.putAway && !s.today && !document.getElementById("root")?.inert;
+  return s.ready && s.dialog === null && !s.menuOpen && s.reviewCategoryId === null && !ownList(s) && !document.getElementById("root")?.inert;
 }
 
 /** The current mailbox's quick filter (none: everything); remembered across launches. */

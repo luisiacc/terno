@@ -1470,6 +1470,11 @@ export class BackendCore {
    * Plan 234: the learned-filter offers may have changed with no count moving: an action or a reply of the user's kept,
    * an offer answered, a filter that holds one back made or gone. Windows and dev tools only, never MCP.
    */
+  /** Plan 282: placements changed (new ones, or one seen): the windows' Inbox line asks again. */
+  putAwayChanged(): void {
+    this.server.emit("putAwayChanged", {}, { origins: ["renderer", "dev"] });
+  }
+
   learningChanged(): void {
     this.server.emit("learningChanged", {}, { origins: ["renderer", "dev"] });
   }
@@ -1787,6 +1792,8 @@ export class BackendCore {
       this.categorizer.apply(r.deltas);
       this.categorizer.noteBackfill(r.backfill);
       this.announceAuto(r.auto);
+      // plan 282: something was put away: the windows ask for the Inbox's line again
+      if (r.placed?.length) this.putAwayChanged();
       this.opsQueued(r.opIds);
       this.reconcileFlags(r.flagReconcileAccounts);
       // plan 195: live mail is news the list may show arriving; a first sync's or a backfill's isn't
@@ -2341,6 +2348,8 @@ export class BackendCore {
       })));
       this.categorizer.apply(result.deltas);
       this.announceAuto(result.auto);
+      // plan 282: something was put away: the windows ask for the Inbox's line again
+      if (result.placed?.length) this.putAwayChanged();
       this.opsQueued(result.opIds);
       this.reconcileFlags(result.flagReconcileAccounts);
       this.notifyChanged(result.touched, false);
@@ -2506,6 +2515,8 @@ export class BackendCore {
           const r = await this.accountWrite(life, () => this.store.sync.setBody(messageId, text, html, { now: this.now(), classifier, attachments, bodyParts: capture?.bodyParts, preparedBodyTokens: capture?.preparedBodyTokens, captureUnavailable: capture?.captureUnavailable, repair: capture?.repair, check: checkBody }));
           this.categorizer.apply(r.deltas);
           this.announceAuto(r.auto);
+          // plan 282: something was put away: the windows ask for the Inbox's line again
+          if (r.placed?.length) this.putAwayChanged();
           this.opsQueued(r.opIds);
           this.reconcileFlags(r.flagReconcileAccounts);
           this.notifyChanged(r.touched, false);
@@ -2822,6 +2833,8 @@ export class BackendCore {
           const r = await this.accountWrite(life, () => this.store.sync.setBody(messageId, text, html, { now: this.now(), classifier, attachments, bodyParts: capture?.bodyParts, preparedBodyTokens: capture?.preparedBodyTokens, captureUnavailable: capture?.captureUnavailable, repair: capture?.repair, check: checkBody }));
           this.categorizer.apply(r.deltas);
           this.announceAuto(r.auto);
+          // plan 282: something was put away: the windows ask for the Inbox's line again
+          if (r.placed?.length) this.putAwayChanged();
           this.opsQueued(r.opIds);
           this.reconcileFlags(r.flagReconcileAccounts);
           this.notifyChanged(r.touched, false);

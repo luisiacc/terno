@@ -344,7 +344,7 @@ function KeptSenders({ categories }: { categories: Category[] }) {
                     await client.call("putAway.removeKept", { categoryId: k.categoryId, sender: k.sender });
                     setKept((list) => list.filter((x) => x !== k));
                   } catch (error) {
-                    snack.error(t("putAway.failed", { error: errorText(error) }));
+                    snack.error(t("putAway.kept.removeFailed", { sender: k.sender, error: errorText(error) }));
                   }
                 }}
               >

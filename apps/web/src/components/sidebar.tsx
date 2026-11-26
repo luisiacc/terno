@@ -11,7 +11,7 @@ import { openCompose } from "~/lib/actions";
 import { useDesign, variant } from "~/lib/design";
 import { formatNumber, t } from "@terno/i18n";
 import { viewLabel } from "~/lib/format";
-import { getApp, navigate, setApp, useApp, type AppState } from "~/state/app";
+import { getApp, navigate, setApp, useApp, type AppState, ownList } from "~/state/app";
 import { openSettings } from "~/lib/settings-place";
 import { useReminders } from "~/lib/reminders";
 import { followupsOffered, todayOffered } from "~/lib/ai";
@@ -437,7 +437,7 @@ function FavoriteRows() {
   const counts = useApp((s) => s.counts);
   // where you are, as primitives (an object would re-render this on every change of the store)
   // (plan 158: a search is nowhere in the sidebar: it looks everywhere)
-  const plain = useApp((s) => s.accountId !== null && s.reviewCategoryId === null && s.categoryId === null && s.gmailTab === null && !s.reminders && !s.followups && !s.putAway && !s.today && s.query.trim() === "");
+  const plain = useApp((s) => s.accountId !== null && s.reviewCategoryId === null && s.categoryId === null && s.gmailTab === null && !ownList(s) && s.query.trim() === "");
   const hereAccount = useApp((s) => s.accountId);
   const hereFolder = useApp((s) => s.folder);
   const hereView = useApp((s) => s.view);

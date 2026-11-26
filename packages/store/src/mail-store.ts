@@ -174,6 +174,8 @@ export interface IngestOutcome extends FlagReconciliation {
   backfill: number;
   /** provider ops the command queued (filter actions) */
   opIds: string[];
+  /** plan 282: conversations the command put away (a rule or the engine took them out of the Inbox view) */
+  placed?: number[];
 }
 
 export interface CategorizeOutcome {
@@ -475,7 +477,7 @@ export interface MailStore {
     /** `forwardEligible` (plan 116): live mail it inserts may be forwarded (forward_eligible), in the same commit */
     /** `newMail` (plan 131 revision 5): live mail it inserts is new mail the named features want (ai_new_mail), in the same commit */
     ingest(batch: readonly IncomingMessage[], o: { applyFilters: boolean; now: number; classifier: ClassifierInput | null; observation?: FlagObservation; check?: () => void; forwardEligible?: boolean; newMail?: import("./ai-summaries").NewMailWants; liveSent?: { wanted: boolean; since?: number | null }; /** plan 204: live received mail the dated reader wants (on: mail since `since`) */ datedMail?: { since: number | null } }): Promise<IngestOutcome>;
-    setBody(messageId: number, text: string | null, html: string | null, o: { bodyParts?: import("@terno/core").ExactBodyParts; preparedBodyTokens?: Uint16Array[]; now: number; classifier: ClassifierInput | null; attachments?: import("./types").IncomingAttachment[]; captureUnavailable?: "size"; repair?: import("@terno/core").CaptureTicket; check?: () => void; expected?: { accountId: number; threadId: number; providerMsgId: string } }): Promise<{ touched: number[]; deltas: ModelDelta[]; auto: ClassifyResult["auto"]; opIds: string[] } & FlagReconciliation>;
+    setBody(messageId: number, text: string | null, html: string | null, o: { bodyParts?: import("@terno/core").ExactBodyParts; preparedBodyTokens?: Uint16Array[]; now: number; classifier: ClassifierInput | null; attachments?: import("./types").IncomingAttachment[]; captureUnavailable?: "size"; repair?: import("@terno/core").CaptureTicket; check?: () => void; expected?: { accountId: number; threadId: number; providerMsgId: string } }): Promise<{ touched: number[]; deltas: ModelDelta[]; auto: ClassifyResult["auto"]; opIds: string[]; /** plan 282 */ placed?: number[] } & FlagReconciliation>;
     /** provider state for existing messages; preserves fields affected by queued/running ops inside the same unit */
     updateFlags(accountId: number, updates: readonly FlagUpdate[], observation?: FlagObservation, check?: () => void): Promise<{ touched: number[] } & FlagReconciliation>;
     remove(messageIds: readonly number[], check?: () => void): Promise<{ touched: number[] }>;
