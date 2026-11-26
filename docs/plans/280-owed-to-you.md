@@ -331,3 +331,48 @@ Left, with why:
   - `migrations.perf.test.ts`: v83 takes 166 ms with 50,000 closed follow-ups at 57,000 conversations.
 - **Not run:** `pnpm test:all`, which the migration and the store contract call for. The shared machine's load stayed between 4 and 18. The real-model eval and the panel wait for the owner's go-ahead.
 - **Visual:** the card in light and dark beside its neighbours (`FOLLOWUP_SHOTS`). It sits on the subject's column like the wait's card, and the top's heading counts only the firm promises.
+
+## The Astra and Fable reviews (the owner: "fix them all")
+
+Astra (`gpt-6.2-astra` on Codex, high effort) and Fable (Claude Fable 5.2) reviewed the branch read-only, each on its own: 14 findings each, some the same. The fixes have regression tests; those for the attachment, Spam, hold, trusted-send and repeated-promise findings were checked by taking the fix out.
+
+**Fixed (Astra):**
+
+1. Reading what you send carried promises of theirs from a conversation with Spam in it. It now goes through `owed.openFor`, the store's rule for what may be material; Fable raised it too.
+2. A kind the app doesn't know, overdue, woke the timer at once, forever. `nextDue` reads only known kinds, in both stores.
+3. An older "got it" of yours could close a promise after a newer move. It must postdate `moved_at` too, in both stores.
+4. SQLite set a relay's hint from mail older than the last move; IndexedDB didn't. They agree now.
+5. The transport didn't check that the quoted message of yours (`answering`) was still one it may quote. The last look compares its id.
+6. A delivery that is only a file was dropped for its empty body. A file alone, to someone who owes one, is read.
+7. A file could close a promise over "the final one isn't ready yet". A file is the delivery only when the mail says nothing else (`bare`).
+8. A file's uniqueness was checked against at most 50 rows, other people's included. It is now checked against all of the debtor's own open promises, read only when a file is claimed (`claimsFile`).
+9. A typographic apostrophe ("can’t") passed the negation check.
+10. A conversation held for a body didn't hold its later senders, so their delivery elsewhere could be read before their promise existed.
+11. A relay's address matched inside another address ("malex@" for "alex@"). It now needs the whole address.
+
+**Fixed (Fable):**
+
+1. A send that isn't yours for certain dropped the wait and then had its promise refused by the store, so nothing was kept. `FollowupSource.trusted` now reaches `checkSentMail`, and such a send records no promise of theirs and keeps its wait.
+2. "Wrote since" stuck once the debtor moved the day: the move's own mail counted. It counts from `moved_at`.
+3. The same promise became two rows (said again, or recorded first by your mail). A new one that names the same thing (`sameObject`) as an open promise of that person's is dropped (`saidAgain`).
+4. A message read again could add promises at other positions, or bring back one dismissed. A message with a promise of theirs already, closed ones included, adds none.
+5. A debtor's mail read again was marked as a check's, so its rows never reached the top. Such mail now has its own source, `requeue`, and lives 14 days.
+6. `requeue` walked every message the sender ever sent, by literal address. It now walks the account's last 14 days of conversations by the sender's key, which also catches plus tags and case (Astra's finding about this too).
+7. `look()` read the active rows three times. It now reads them twice: once for the waits and what's over, once after they change.
+8. Every automated message read all active rows. A service's notice is now checked against the last look's open promises (each finish looks again).
+9. `readable()` was a query per row. It is now one store read, `owed.readable(ids, accountId)`, in both stores.
+10. `consider` and `considerOwed` repeated the same gate. It is one helper now, `admits`.
+
+**Left, with why:**
+
+- **A partial What matters Undo at the bound** (Astra): it needs 1,000 open promises of your own, with nothing worth less to take the place of.
+- **A forged From closing a debt silently** (Fable, "your call"): delivery in a new conversation from the debtor's address is a normal case. Making it a hint would ask for Received on most deliveries, a product change that is the owner's to make.
+- **IndexedDB sorting the owed marks on each page** (both): at most 3 days of received mail (14 for a check), the same as the sent marks' paging.
+- **Tests for a tie between a sent mark and an owed mark at the same moment, and for the relay branch of the last look** (Fable): the order at a tie is the sent mark's, by the merge's `<=`.
+
+**Tests after the fixes:**
+
+- Typecheck and lint are clean.
+- Both stores' conformance (the owed suite now 21 a store), migrations, IndexedDB's upgrade, core, AI, backend (`followups`, `owed`, `their-promises`, `promise-answers`, `hand-to`, `today`) and web units: 2,016 pass. The same two older SQLite conformance tests fail as on `main`.
+- `followups.spec.ts`: 9 of 9.
+- The follow-ups perf gate on both stores. SQLite's active list once took 29 ms at a load of 19, then 7 ms on both reruns.
