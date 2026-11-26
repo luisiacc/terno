@@ -184,7 +184,7 @@ export class AiLimiter {
     }
     const release = o.local ? await this.takeLocal(o.foreground || o.ahead === true, req.signal) : () => {};
     try {
-      if (o.ahead || o.task === "digest" || o.task === "dated") await this.host.beforeAhead?.(o.task);
+      if (o.ahead || o.task === "digest" || o.task === "dated" || o.task === "followup") await this.host.beforeAhead?.(o.task);
       if (req.signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
       const book = await this.bookFor(o.foreground);
       if (!o.foreground) this.checkCeilings(book!, task, worst, await this.host.monthlyLimitUsd());

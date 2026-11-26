@@ -1,15 +1,16 @@
-import { AiError, FOLLOWUP_ANSWERING_CHARS, FOLLOWUP_OPEN_MAX, FOLLOWUP_OWN_CHARS, FOLLOWUP_PROMPT_VERSION, FOLLOWUP_REQUESTS_MAX, fitSentMail, followupBudget, type AiTasks, type SentMailResult } from "@terno/ai";
-import { addressKey, addressOnly, automatedLevel, dayKeyOf, dueCutoff, byUrgency, followupDue, theirDue, THEIRS_ITEM, NUDGE_DEFAULT, followupWakeAt, normalizeText, promiseOver, readCorpus, refKey, replyAnswers, replyRecipients, SCAN_DAYS, SCAN_MESSAGES_MAX, SCAN_PROMISE_OVERDUE_MS, SCAN_WAIT_STALE_MS, validFollowupDate, withNeeds, withoutQuotes, followupNotice, type AiErrorKind, type DatedRow, type FollowupRow, type FollowupsSnapshot, type MailNotice, type ThreadSummary } from "@terno/core";
+import { AiError, fitTheirMail, theirsBudget, THEIRS_ANSWERING_CHARS, THEIRS_OWED_MAX, THEIRS_PROMPT_VERSION, THEIRS_TEXT_CHARS, FOLLOWUP_ANSWERING_CHARS, FOLLOWUP_OPEN_MAX, FOLLOWUP_OWN_CHARS, FOLLOWUP_PROMPT_VERSION, FOLLOWUP_REQUESTS_MAX, fitSentMail, followupBudget, type AiTasks, type SentMailResult } from "@terno/ai";
+import { addressOnly, addressKey, automatedLevel, dayKeyOf, dueCutoff, byUrgency, followupDue, theirDue, THEIRS_ITEM, NUDGE_DEFAULT, followupWakeAt, normalizeText, promiseOver, readCorpus, refKey, replyAnswers, replyRecipients, SCAN_DAYS, SCAN_MESSAGES_MAX, SCAN_PROMISE_OVERDUE_MS, SCAN_WAIT_STALE_MS, validFollowupDate, withNeeds, withoutQuotes, followupNotice, type AiErrorKind, type DatedRow, type FollowupRow, type FollowupsSnapshot, type MailNotice, type ThreadSummary } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import { RpcError, type AppSettings } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
-import { AWAITING_ITEM, HELD_REQUEST_CLOSED, type FollowupFinish, type FollowupSnapshot, type FollowupSource, type FollowupWrite, type MailStore, type SentMark } from "@terno/store";
-import { AccountChecks, FOLLOWUPS_CHECKED_KEY } from "./account-checks";
+import { AWAITING_ITEM, HELD_REQUEST_CLOSED, OWED_RETIRE_MS, OWED_SCAN_DAYS, type FollowupFinish, type FollowupSnapshot, type FollowupSource, type FollowupWrite, type MailStore, type OwedMark, type OwedSource, type SentMark } from "@terno/store";
+import { AccountChecks, FOLLOWUPS_CHECKED_KEY, OWED_CHECKED_KEY } from "./account-checks";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import { UI_LOCALE_KEY } from "./forwarding";
 import { contextOf, directsReader, namingWords, norm as plain, paidSaid, plainEvidence, saidClauses, sameObject, sentencesOf, sentencesWith } from "./dated-evidence";
 import { promiseMoment } from "./promise-time";
-import { saysNotYet } from "./their-promises";
+import { untrustedSenders } from "./suspicious-sender";
+import { checkTheirPromises, owedWorth, relayOf, saysNotYet } from "./their-promises";
 
 const MAX_DELAY = 2 ** 31 - 1;
 const PAGE = 50;
@@ -19,6 +20,7 @@ const RETRY_WAIT_MS = 60_000;
 const NOTIFY_WINDOW_MS = 24 * 60 * 60 * 1000;
 const TOUCH_EVERY_MS = 1000;
 const UNDO_KEPT = 50;
+const REQUEUED_KEPT = 1000;
 /**
  * Plan 211: on by default there's no moment it went on: what was sent before the check's window is never read live (the
  * check of mail already here reads that window, per account). Turned on by hand, from that moment, as before.
@@ -424,7 +426,7 @@ export function checkSentMail(result: SentMailResult, input: { ownText: string; 
 
 /** A check's own rules: past these it's over, and nothing old jumps. */
 export function scanKeeps(row: Pick<FollowupWrite, "kind" | "dueAt">, sentAt: number, now: number): boolean {
-  return row.kind === "promise" ? now - row.dueAt <= SCAN_PROMISE_OVERDUE_MS : now - sentAt <= SCAN_WAIT_STALE_MS;
+  return row.kind === "awaiting" ? now - sentAt <= SCAN_WAIT_STALE_MS : now - row.dueAt <= SCAN_PROMISE_OVERDUE_MS;
 }
 
 /**
@@ -467,9 +469,15 @@ export class FollowupWorker {
   private readonly undo = new Map<string, { snapshot: FollowupSnapshot; expectRevision: number }[]>();
   private undoSeq = 0;
   private prunedDay: string | null = null;
+  /** plan 280: the received message whose reading is on its way to the provider, for the transport's last look */
+  private leaving: { messageId: number; threadId: number; accountId: number; senderKey: string; date: number; owed: { id: number; revision: number }[]; relay: boolean; stop: AbortController } | null = null;
+  /** plan 280 (revision 1): checked messages whose debtor's later mail was marked again, once each */
+  private readonly requeued = new Set<number>();
 
   /** plan 211: the check of what you sent, the backend's, one account at a time */
   private readonly checks: AccountChecks;
+  /** plan 280 (revision 3): the check of what you got, for promises owed to you: its own record */
+  private readonly owedChecks: AccountChecks;
 
   constructor(private readonly host: FollowupHost) {
     this.checks = new AccountChecks({
@@ -480,6 +488,16 @@ export class FollowupWorker {
       allowed: (accountId) => host.inFeed(accountId),
       wanted: (accountId) => host.accountWanted(accountId),
       check: (accountId, since) => this.checkAccount(accountId, since),
+      log: (level, message, extra) => host.log(level, message, extra),
+    });
+    this.owedChecks = new AccountChecks({
+      store: host.store,
+      key: OWED_CHECKED_KEY,
+      now: () => host.now(),
+      active: async () => this.isActive && (await host.allowed(await host.settings())),
+      allowed: (accountId) => host.inFeed(accountId),
+      wanted: (accountId) => host.accountWanted(accountId),
+      check: (accountId, since) => this.checkOwedAccount(accountId, since),
       log: (level, message, extra) => host.log(level, message, extra),
     });
   }
@@ -516,7 +534,10 @@ export class FollowupWorker {
     await this.look();
     if (this.active) this.wake();
     // plan 211: accounts synced and never checked (or owed a gap), in the background, while it's on
-    if (o.checks !== false) void this.checks.start();
+    if (o.checks !== false) {
+      void this.checks.start();
+      void this.owedChecks.start();
+    }
   }
 
   stop(): void {
@@ -540,21 +561,28 @@ export class FollowupWorker {
     this.wake();
     // plan 211: what it sends from now on is owed a check when it's back
     void this.checks.withdrawn(accountId);
+    void this.owedChecks.withdrawn(accountId);
+    if (this.leaving?.accountId === accountId) this.leaving.stop.abort();
   }
 
   /** Plan 211 (revision 9): an account's sync pass ended with it synced: checked once, a lookup after. */
-  synced(accountId: number): Promise<void> {
-    return this.isActive ? this.checks.synced(accountId) : Promise.resolve();
+  async synced(accountId: number): Promise<void> {
+    if (!this.isActive) return;
+    await this.checks.synced(accountId);
+    await this.owedChecks.synced(accountId);
   }
 
   /** Plan 211: an account's switches (or its own) came back on: what it's owed (never checked: the window; checked: since one went off). */
-  checkAccounts(accountIds: readonly number[]): Promise<void> {
-    return this.isActive ? this.checks.reconcile(accountIds) : Promise.resolve();
+  async checkAccounts(accountIds: readonly number[]): Promise<void> {
+    if (!this.isActive) return;
+    await this.checks.reconcile(accountIds);
+    await this.owedChecks.reconcile(accountIds);
   }
 
   /** Plan 211: an account removed is forgotten (its id may come back). */
-  accountRemoved(accountId: number): Promise<void> {
-    return this.checks.forget(accountId);
+  async accountRemoved(accountId: number): Promise<void> {
+    await this.checks.forget(accountId);
+    await this.owedChecks.forget(accountId);
   }
 
   /** New mail, a confirmed send, a body. A no-op when off, paused, or for a minute after a provider failed. */
@@ -589,13 +617,17 @@ export class FollowupWorker {
       this.generation.abort();
       this.generation = new AbortController();
       void this.host.store.followups.marks.clear().catch(() => {});
+      void this.host.store.followups.owed.marks.clear().catch(() => {});
       void this.look().catch(() => {});
       return;
     }
     void this.look().catch(() => {});
     this.wake();
     // plan 211: turned on, or AI available: accounts not checked yet are
-    if (on) void this.checks.reconcile();
+    if (on) {
+      void this.checks.reconcile();
+      void this.owedChecks.reconcile();
+    }
   }
 
   private async drain(): Promise<void> {
@@ -622,6 +654,7 @@ export class FollowupWorker {
     if (this.prunedDay === today) return;
     this.prunedDay = today;
     await this.host.store.followups.marks.prune(this.host.now());
+    await this.host.store.followups.owed.marks.prune(this.host.now());
     await this.host.store.followups.prune(this.host.now());
     await this.retire();
   }
@@ -650,20 +683,46 @@ export class FollowupWorker {
     return n;
   }
 
+  /**
+   * Plan 280 (revision 1): your sent mail and their received mail, in one pass, in the order they came: a debt is always
+   * written before the delivery that keeps it is judged. One waiting for a body holds what's after it in its conversation
+   * (and, received, from its sender: delivery often comes in a new conversation).
+   */
   private async pass(generation: AbortController): Promise<void> {
-    let after: { sentAt: number; messageId: number } | null = null;
+    const { store } = this.host;
+    let afterSent: { sentAt: number; messageId: number } | null = null;
+    let afterOwed: { arrivedAt: number; messageId: number } | null = null;
+    let sent: SentMark[] = [];
+    let owed: OwedMark[] = [];
+    let sentDone = false;
+    let owedDone = false;
     const held = new Set<number>();
+    const heldSenders = new Set<string>();
     for (;;) {
-      const page: SentMark[] = await this.host.store.followups.marks.page(after, PAGE);
-      if (!page.length) return;
-      for (const mark of page) {
-        if (generation !== this.generation || !this.isActive) return;
-        after = { sentAt: mark.sentAt, messageId: mark.messageId };
+      if (!sent.length && !sentDone) sentDone = !(sent = await store.followups.marks.page(afterSent, PAGE)).length;
+      if (!owed.length && !owedDone) owedDone = !(owed = await store.followups.owed.marks.page(afterOwed, PAGE)).length;
+      const s = sent[0];
+      const o = owed[0];
+      if (!s && !o) return;
+      if (generation !== this.generation || !this.isActive) return;
+      if (s && (!o || s.sentAt <= o.arrivedAt)) {
+        sent.shift();
+        afterSent = { sentAt: s.sentAt, messageId: s.messageId };
         // "Here's the contract" isn't read before the promise it keeps
-        if (held.has(mark.threadId)) continue;
-        const next = await this.consider(mark, generation);
+        if (held.has(s.threadId)) continue;
+        const next = await this.consider(s, generation);
         if (next === "stop") return;
-        if (next === "hold") held.add(mark.threadId);
+        if (next === "hold") held.add(s.threadId);
+        continue;
+      }
+      owed.shift();
+      afterOwed = { arrivedAt: o!.arrivedAt, messageId: o!.messageId };
+      if (held.has(o!.threadId) || heldSenders.has(o!.senderKey)) continue;
+      const next = await this.considerOwed(o!, generation);
+      if (next === "stop") return;
+      if (next === "hold") {
+        held.add(o!.threadId);
+        heldSenders.add(o!.senderKey);
       }
     }
   }
@@ -720,8 +779,11 @@ export class FollowupWorker {
       const requested = settings.dated?.enabled ? (await store.dated.ofThread(src.threadId)).filter((r) => replyAnswers(r, writesTo) && r.arrivedAt < src.date).sort((a, b) => b.arrivedAt - a.arrivedAt).slice(0, FOLLOWUP_REQUESTS_MAX) : [];
       const requestLabels = new Map(requested.map((r, i) => [`q${i + 1}`, r]));
       const recipients = [...src.to, ...src.cc].slice(0, 20).map((r, i) => ({ label: `r${i + 1}`, name: r.name || r.email.split("@")[0]!, email: r.email }));
+      // plan 280 (§3): this conversation's open promises of theirs, which your message may say arrived
+      const owed = (await store.followups.ofThread(src.threadId)).filter((r) => r.kind === "theirs" && r.sentAt < src.date).sort((a, b) => b.sentAt - a.sentAt).slice(0, FOLLOWUP_OPEN_MAX);
+      const owedLabels = new Map(owed.map((r, i) => [`t${i + 1}`, r]));
       const budget = followupBudget(ai.contextTokens);
-      const input = fitSentMail({ ownText: own, ...(answering ? { answering } : {}), subject: src.subject, recipients: recipients.map(({ label, name }) => ({ label, name })), attachments: src.attachments, openPromises: [...openLabels].map(([label, r]) => ({ label, text: r.text })), requests: [...requestLabels].map(([label, r]) => ({ label, text: r.text, due: r.dated ? r.dueDay : null })), sentAt: inWords(src.date, language), language, outputTokens: budget.outputTokens }, budget.promptChars);
+      const input = fitSentMail({ ownText: own, ...(answering ? { answering } : {}), subject: src.subject, recipients: recipients.map(({ label, name }) => ({ label, name })), attachments: src.attachments, openPromises: [...openLabels].map(([label, r]) => ({ label, text: r.text })), requests: [...requestLabels].map(([label, r]) => ({ label, text: r.text, due: r.dated ? r.dueDay : null })), owed: [...owedLabels].map(([label, r]) => ({ label, text: r.text, person: r.personName })), sentAt: inWords(src.date, language), language, outputTokens: budget.outputTokens }, budget.promptChars);
       // a change of provider or key, the account's switch, the setting: each stops it, at the provider too
       const signal = AbortSignal.any([generation.signal, asked.signal, mine.controller.signal]);
       // the last look before anything leaves
@@ -731,13 +793,14 @@ export class FollowupWorker {
       if (!(await this.host.accountWanted(src.accountId))) return await drop();
       // only what was really sent, after fitting to the window, may be named back
       const shown = new Set((input.requests ?? []).map((r) => r.label));
-      const checked = checkSentMail(result, { ownText: own, recipients, open: openLabels, requests: new Map([...requestLabels].filter(([l]) => shown.has(l))), sentAt: src.date, nudgeAfterDays: settings.followups.nudgeAfterDays });
+      const owedShown = new Set((input.owed ?? []).map((o) => o.label));
+      const checked = checkSentMail(result, { ownText: own, recipients, open: openLabels, requests: new Map([...requestLabels].filter(([l]) => shown.has(l))), owed: new Map([...owedLabels].filter(([l]) => owedShown.has(l))), sentAt: src.date, nudgeAfterDays: settings.followups.nudgeAfterDays });
       const fromScan = mark.source === "scan";
       const now = this.host.now();
       const rows = fromScan ? checked.rows.filter((r) => scanKeeps(r, src.date, now)) : checked.rows;
       // a promise a scan leaves out links nothing
       const verdicts = checked.verdicts.filter((v) => v.verdict === "fulfilled" || rows.some((r) => r.item === v.item));
-      await store.followups.finish({ messageId: src.id, threadId: src.threadId, fromScan, rows, kept: checked.kept, verdicts, now, model: ai.model, provider: ai.providerId, promptVersion: FOLLOWUP_PROMPT_VERSION, clearGeneration });
+      await store.followups.finish({ messageId: src.id, threadId: src.threadId, fromScan, rows, kept: checked.kept, verdicts, owedKept: checked.owedKept, now, model: ai.model, provider: ai.providerId, promptVersion: FOLLOWUP_PROMPT_VERSION, clearGeneration });
       // a request settled or answered: What matters reads again
       if (verdicts.length) this.host.requestsAnswered();
       this.attempts.delete(src.id);
@@ -746,11 +809,130 @@ export class FollowupWorker {
     } catch (error) {
       // the account's switch went off under it: it isn't read, nor asked about again
       if (!(await this.host.accountWanted(src.accountId).catch(() => true))) return await drop();
-      return this.failed(mark, error);
+      return this.failed(mark.messageId, error, () => store.followups.marks.consume(mark.messageId));
     } finally {
       asked.release();
       if (this.reading === mine) this.reading = null;
     }
+  }
+
+  /**
+   * Plan 280: one received message, for promises it makes you and what it does to the sender's open ones. The gates are
+   * Follow-ups' own (its setting, the account's switches), checked here, before the request (`holdingUp`) and in the commit.
+   */
+  private async considerOwed(mark: OwedMark, generation: AbortController): Promise<"next" | "hold" | "stop"> {
+    const { store } = this.host;
+    const clearGeneration = store.followups.clearGeneration();
+    const settings = await this.host.settings();
+    if (!settings.followups.enabled) return "stop";
+    const drop = async () => {
+      await store.followups.owed.marks.consume(mark.messageId);
+      return "next" as const;
+    };
+    const src = await store.followups.owed.source(mark.messageId);
+    // the owner's rule: mail in Spam reaches no AI, nor does any of a conversation with Spam in it
+    if (!src || src.draft || src.sent || src.own || src.spam || src.trash || src.threadSpam) return drop();
+    const mine = { accountId: src.accountId, controller: new AbortController() };
+    this.reading = mine;
+    const left = () => this.reading === mine && (this.reading = null);
+    try {
+      if (mark.source !== "scan" && src.date < liveSince(settings.followups.enabledAt, this.host.now())) return await drop();
+      if (!(await this.host.accountWanted(src.accountId))) return await drop();
+      const accounts = await store.accounts.list();
+      // a sender made to look like a security desk or the reader's own organization is read for nothing (as the dated reader)
+      if ((await untrustedSenders([src.fromEmail], (keys) => store.dated.trusted(keys), accounts.map((a) => a.email))).size) return await drop();
+      const open = await store.followups.owed.openFor({ threadId: src.threadId, accountId: src.accountId, senderKey: src.senderKey, before: src.date, limit: THEIRS_OWED_MAX });
+      const service = src.automated || !src.person;
+      const bulk = src.tab === "social" || src.tab === "promotions" || src.tab === "other";
+      // revision 5: a service's notice is read only to see whether it names someone who owes you (a hint); its body tells
+      const debts = service ? (await store.followups.active()).filter((r) => r.kind === "theirs" && r.sentAt < src.date && r.personEmail) : [];
+      if (service && !debts.length) return await drop();
+      const waiting = !service && !bulk && (await store.followups.ofThread(src.threadId)).some((r) => r.kind === "awaiting" && r.sentAt < src.date);
+      if (!service && bulk && !open.length) return await drop();
+      if (src.bodyState !== "full" && !src.bodyUnavailable) return "hold";
+      if (src.answering && src.answering.bodyState === "none" && !src.answering.bodyUnavailable) return "hold";
+      const { text, answering } = await this.owedTexts(src);
+      const relay = service ? relayOf(text, await this.sameAccount(debts, src.accountId)) : null;
+      if (service && !relay) return await drop();
+      if (!service && !owedWorth({ text, owed: open.length, waiting })) return await drop();
+      if (!text.trim()) return await drop();
+      const owedRows = relay ? relay.rows.slice(0, THEIRS_OWED_MAX) : open;
+      const labels = new Map(owedRows.map((r, i) => [`t${i + 1}`, r]));
+      const asked = this.host.begin(`owed:${mark.messageId}`, "followup-worker");
+      const stop = new AbortController();
+      this.leaving = { messageId: src.id, threadId: src.threadId, accountId: src.accountId, senderKey: src.senderKey, date: src.date, owed: owedRows.map((r) => ({ id: r.id, revision: r.revision })), relay: !!relay, stop };
+      try {
+        const ai = await this.host.forTask();
+        const language = await this.readerLanguage(settings);
+        const readerName = accounts.find((a) => a.id === src.accountId)?.displayName ?? "";
+        const budget = theirsBudget(ai.contextTokens);
+        const input = fitTheirMail({ text, ...(answering ? { answering } : {}), subject: src.subject, from: { name: src.fromName || src.fromEmail.split("@")[0]! }, reader: { name: readerName, addressed: src.readerIn }, attachments: src.attachments, owed: [...labels].map(([label, r]) => ({ label, text: r.text, due: r.dated ? (r.dueDay ?? null) : null })), relay: relay ? { service: src.fromName || src.fromEmail, block: relay.block } : null, receivedAt: inWords(src.date, language), language, outputTokens: budget.outputTokens }, budget.promptChars);
+        const signal = AbortSignal.any([generation.signal, asked.signal, mine.controller.signal, stop.signal]);
+        // the last look before anything leaves (the transport asks again, `holdingUp`)
+        if (signal.aborted || !(await this.host.accountWanted(src.accountId))) return await drop();
+        const result = await ai.readTheirMail(input, signal);
+        if (signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
+        if (!(await this.host.accountWanted(src.accountId))) return await drop();
+        // only what was really sent, after fitting to the window, may be named back
+        const shown = new Set(input.owed.map((o) => o.label));
+        const checked = checkTheirPromises(result, { text, attachments: src.attachments, owed: new Map([...labels].filter(([l]) => shown.has(l))), from: { name: src.fromName, email: src.fromEmail }, reader: { name: readerName, addressed: src.readerIn }, relay: relay ? { block: relay.block } : null, madeAt: src.date, nudgeAfterDays: settings.followups.nudgeAfterDays });
+        const fromScan = mark.source === "scan";
+        const now = this.host.now();
+        // a check's own rule (plan 142 §8): a promise long late is over, not a follow-up
+        const rows = fromScan ? checked.rows.filter((r) => now - r.dueAt <= SCAN_PROMISE_OVERDUE_MS) : checked.rows;
+        await store.followups.owed.finish({ messageId: src.id, threadId: src.threadId, fromScan, rows, kept: checked.kept, moved: checked.moved, withdrawn: checked.withdrawn, hints: checked.hints, now, model: ai.model, provider: ai.providerId, promptVersion: THEIRS_PROMPT_VERSION, clearGeneration });
+        // revision 1: a debt found after the debtor's later mail was read (a check): that mail is read again, once
+        if (rows.length && fromScan && !this.requeued.has(src.id)) {
+          this.requeued.add(src.id);
+          if (this.requeued.size > REQUEUED_KEPT) this.requeued.delete(this.requeued.values().next().value!);
+          await store.followups.owed.marks.requeue(src.fromEmail, src.accountId, src.date + 1, now);
+        }
+        this.attempts.delete(src.id);
+        await this.look();
+        return "next";
+      } catch (error) {
+        if (!(await this.host.accountWanted(src.accountId).catch(() => true))) return await drop();
+        return this.failed(mark.messageId, error, () => store.followups.owed.marks.consume(mark.messageId));
+      } finally {
+        asked.release();
+        if (this.leaving?.stop === stop) this.leaving = null;
+      }
+    } finally {
+      left();
+    }
+  }
+
+  /** Revision 4: what's sent of a debt is only the account's own. */
+  private async sameAccount(rows: readonly FollowupRow[], accountId: number): Promise<FollowupRow[]> {
+    if (!rows.length) return [];
+    const threads = new Map((await this.host.summaries([...new Set(rows.map((r) => r.threadId))])).map((t) => [t.id, t]));
+    return rows.filter((r) => {
+      const t = threads.get(r.threadId);
+      return t && t.accountId === accountId && !t.inSpam && !t.inTrash;
+    });
+  }
+
+  private async owedTexts(src: OwedSource): Promise<{ text: string; answering: string | null }> {
+    const texts = await this.host.store.aiSummaries.text([{ messageId: src.id, limit: THEIRS_TEXT_CHARS * 2 }, ...(src.answering ? [{ messageId: src.answering.id, limit: THEIRS_ANSWERING_CHARS * 4 }] : [])]);
+    const answering = src.answering ? withoutQuotes(texts.get(src.answering.id) ?? "") : null;
+    return { text: withoutQuotes(texts.get(src.id) ?? ""), answering: answering || null };
+  }
+
+  /**
+   * Plan 280 (revision 4): the transport's last look before a received message's reading leaves: its source still not in
+   * Spam or Trash and its account still read, and each open promise it carries still open in a conversation that isn't.
+   */
+  async holdingUp(): Promise<void> {
+    const leaving = this.leaving;
+    if (!leaving || leaving.stop.signal.aborted) return;
+    const { store } = this.host;
+    const src = await store.followups.owed.source(leaving.messageId);
+    if (!src || src.spam || src.trash || src.threadSpam || src.threadId !== leaving.threadId || !(await this.host.accountWanted(src.accountId))) return leaving.stop.abort();
+    if (!leaving.owed.length) return;
+    const still = leaving.relay
+      ? new Map((await this.sameAccount((await store.followups.active()).filter((r) => r.kind === "theirs"), leaving.accountId)).map((r) => [r.id, r.revision]))
+      : new Map((await store.followups.owed.openFor({ threadId: leaving.threadId, accountId: leaving.accountId, senderKey: leaving.senderKey, before: leaving.date, limit: THEIRS_OWED_MAX * 2 })).map((r) => [r.id, r.revision]));
+    if (leaving.owed.some((r) => !still.has(r.id))) leaving.stop.abort();
   }
 
   private async texts(src: FollowupSource): Promise<{ own: string; answering: string | null }> {
@@ -762,8 +944,8 @@ export class FollowupWorker {
     return { own: written?.text ?? "", answering: answering || null };
   }
 
-  private async failed(mark: SentMark, error: unknown): Promise<"next" | "stop"> {
-    const { store } = this.host;
+  /** `consume`: the mark's own (a sent message's or a received one's, plan 280 revision 2): every exit takes this mark alone */
+  private async failed(messageId: number, error: unknown, consume: () => Promise<void>): Promise<"next" | "stop"> {
     if (error instanceof DailyLimitError || error instanceof MonthlyLimitError) {
       this.limited = new Date(this.host.now()).toDateString();
       return "stop";
@@ -785,16 +967,16 @@ export class FollowupWorker {
       case "invalid_output":
       case "refused":
       case "unsupported":
-        await store.followups.marks.consume(mark.messageId);
+        await consume();
         return "next";
       case "rate_limited":
       case "unavailable":
       case "timeout": {
-        const tries = (this.attempts.get(mark.messageId) ?? 0) + 1;
+        const tries = (this.attempts.get(messageId) ?? 0) + 1;
         if (tries >= MAX_ATTEMPTS) {
-          this.attempts.delete(mark.messageId);
-          await store.followups.marks.consume(mark.messageId);
-        } else this.attempts.set(mark.messageId, tries);
+          this.attempts.delete(messageId);
+          await consume();
+        } else this.attempts.set(messageId, tries);
         this.heldUntil = this.host.now() + RETRY_WAIT_MS;
         // the one timer: a provider that said "slow down", with work still queued (the network coming back wakes the rest)
         if (kind === "rate_limited" && !this.retryTimer) {
@@ -866,6 +1048,7 @@ export class FollowupWorker {
     await this.host.runBudgeted(waits.map((r) => r.id), async (chunk) => {
       await store.followups.closeAnswered(chunk, now);
     });
+    await this.retireOwed(now);
     await store.followups.makeDue(now);
     const all = await store.followups.active();
     // (every row's conversation: one put away still looks again when it's back)
@@ -875,7 +1058,7 @@ export class FollowupWorker {
     await this.announce(rows.filter((r) => r.state === "due" && r.notifiedAt === null), now);
     const snapshot: FollowupsSnapshot = { rows };
     if (this.stopped) return snapshot;
-    await this.arm(now);
+    await this.arm(now, all);
     const text = JSON.stringify(rows.map((r) => [r.id, r.revision]));
     if (text !== this.sent) {
       this.sent = text;
@@ -941,11 +1124,25 @@ export class FollowupWorker {
     if (notice && !this.stopped) this.host.notify(notice);
   }
 
-  private async arm(now: number): Promise<void> {
+  /**
+   * Plan 280 §4 (revision 9): a promise of theirs late for `OWED_RETIRE_MS` is over: retired quietly (dismissed, expired),
+   * so the bound holds only what can still matter. Read from the active rows, on every look (the timer wakes for it).
+   */
+  private async retireOwed(now: number): Promise<void> {
+    const { store } = this.host;
+    for (const r of (await store.followups.active()).filter((x) => x.kind === "theirs" && x.state === "due" && now >= followupWakeAt(x) + OWED_RETIRE_MS)) {
+      await store.followups.update(r.id, r.revision, { state: "dismissed", inboxState: "none", closedReason: "expired", closedAt: now });
+    }
+  }
+
+  private async arm(now: number, active: readonly FollowupRow[] = []): Promise<void> {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     this.armedAt = null;
-    const next = await this.host.store.followups.nextDue();
+    // plan 280: and the soonest moment a late promise of theirs is over
+    const retire = active.filter((r) => r.kind === "theirs" && r.state === "due").map((r) => followupWakeAt(r) + OWED_RETIRE_MS);
+    const due = await this.host.store.followups.nextDue();
+    const next = [due, ...retire].reduce<number | null>((a, b) => (b === null ? a : a === null ? b : Math.min(a, b)), null);
     if (next === null || this.stopped) return;
     this.armedAt = next;
     this.timer = setTimeout(() => {
@@ -1035,6 +1232,21 @@ export class FollowupWorker {
     const ids = await this.host.store.followups.scanCandidates(from, SCAN_MESSAGES_MAX, accountId);
     if (!(await allowed())) return false;
     if (await this.host.store.followups.marks.queueScan(ids, now)) this.wake();
+    return true;
+  }
+
+  /**
+   * Plan 280 (revision 3): one account's received mail in the last `OWED_SCAN_DAYS`, at most `SCAN_MESSAGES_MAX`, read for
+   * promises owed to you; from `since` when it's a gap's. The filter is the reader's, as for live mail.
+   */
+  private async checkOwedAccount(accountId: number, since: number | null): Promise<boolean> {
+    const allowed = async () => this.isActive && (await this.host.accountWanted(accountId));
+    if (!(await allowed())) return false;
+    const now = this.host.now();
+    const from = Math.max(now - OWED_SCAN_DAYS * 86_400_000, since ?? -Infinity);
+    const ids = await this.host.store.followups.owed.scanCandidates(from, SCAN_MESSAGES_MAX, accountId);
+    if (!(await allowed())) return false;
+    if (await this.host.store.followups.owed.marks.queueScan(ids, now)) this.wake();
     return true;
   }
 

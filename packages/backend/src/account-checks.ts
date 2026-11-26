@@ -10,6 +10,8 @@ import { readOfferAnswers } from "./settings";
  */
 export const DATED_CHECKED_KEY = "dated:checked";
 export const FOLLOWUPS_CHECKED_KEY = "followups:checked";
+/** plan 280 (revision 3): the follow-ups reader's check of received mail for promises owed to you: its own record, so an account checked before it gets one */
+export const OWED_CHECKED_KEY = "followups:owedChecked";
 /** revision 10: once the offers' answers are carried over */
 const CHECKS_VERSION_KEY = "checks:version";
 const CHECKS_VERSION = 1;

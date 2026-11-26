@@ -17,6 +17,8 @@ export const OWED_SCAN_MARK_MS = 14 * 86_400_000;
 /** Revision 1: a debt found after its debtor's later mail was read: that mail is read again, within these */
 export const OWED_REQUEUE_MS = 14 * 86_400_000;
 export const OWED_REQUEUE_MAX = 20;
+/** Revision 3: how far back a check of received mail reads */
+export const OWED_SCAN_DAYS = 14;
 /** §4: an open promise of theirs retires quietly this long after it came due */
 export const OWED_RETIRE_MS = 30 * 86_400_000;
 

@@ -74,7 +74,7 @@ export function owedScanCandidates(c: Ctx, since: number, limit: number, account
   const out: R[] = [];
   for (const t of T(c, "threads").by("fk_account_id", accountId)) {
     if (t.in_trash || t.in_spam || t.last_date < since) continue;
-    for (const m of messages.by("fk_thread_id", t.id)) if (m.date >= since && received(m, own)) out.push(m);
+    for (const m of messages.by("fk_thread_id", t.id)) if (m.date >= since && received(m, own) && m.list_id == null && !m.is_bulk) out.push(m);
   }
   return out.sort((a, b) => b.date - a.date || b.id - a.id).slice(0, limit).map((m) => m.id);
 }

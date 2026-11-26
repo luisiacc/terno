@@ -53,11 +53,11 @@ export const consumeOwedMark = (db: Db, messageId: number): void => void db.run(
 export const clearOwedMarks = (db: Db): void => void db.run("DELETE FROM ai_owed_mail");
 export const pruneOwedMarks = (db: Db, now: number): number => Number(db.run("DELETE FROM ai_owed_mail WHERE (source = 'scan' AND queued_at < ?) OR (source <> 'scan' AND queued_at < ?)", now - OWED_SCAN_MARK_MS, now - OWED_MARK_MS).changes);
 
-/** Revision 3: one account's received mail in a span, newest first (as `datedScanCandidates`, whatever the dated reader made of it). */
+/** Revision 3: one account's received mail in a span, newest first, no list or bulk mail (a check finds what's promised; no debt yet for a service to deliver) */
 export function owedScanCandidates(db: Db, since: number, limit: number, accountId: number): number[] {
   return db.all<{ id: number }>(
     `SELECT m.id FROM threads t INDEXED BY threads_acct_all JOIN messages m INDEXED BY messages_thread ON m.thread_id = t.id AND m.date >= ?
-     WHERE t.account_id = ? AND t.in_trash = 0 AND t.in_spam = 0 AND t.last_date >= ? AND ${RECEIVED_SQL}
+     WHERE t.account_id = ? AND t.in_trash = 0 AND t.in_spam = 0 AND t.last_date >= ? AND ${RECEIVED_SQL} AND m.list_id IS NULL AND m.is_bulk = 0
      ORDER BY m.date DESC, m.id DESC LIMIT ?`,
     since,
     accountId,

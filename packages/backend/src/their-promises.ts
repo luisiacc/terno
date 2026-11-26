@@ -1,5 +1,5 @@
 import type { TheirMailResult } from "@terno/ai";
-import { normalizeText, theirDue, THEIRS_ITEM, validFollowupDate, type FollowupRow } from "@terno/core";
+import { hasCommitmentCue, normalizeText, theirDue, THEIRS_ITEM, validFollowupDate, type FollowupRow } from "@terno/core";
 import type { OwedRef, OwedWrite } from "@terno/store";
 import { namingWords, plainEvidence } from "./dated-evidence";
 
@@ -103,4 +103,31 @@ export function checkTheirPromises(
     done.add(r.id);
   }
   return out;
+}
+
+/**
+ * Revision 5: a service's mail that names the address of someone who owes the reader something: the rows it names, and
+ * its sentences that name them (at most `RELAY_CHARS`), as material. Never a close: only a hint.
+ */
+const RELAY_CHARS = 1200;
+export function relayOf(text: string, owed: readonly FollowupRow[]): { rows: FollowupRow[]; block: string } | null {
+  const lower = text.toLowerCase();
+  const rows = owed.filter((r) => r.personEmail && lower.includes(r.personEmail.toLowerCase()));
+  if (!rows.length) return null;
+  const sentences = text.split(/(?<=[.!?])\s+|\n+/u).map((s) => s.trim()).filter(Boolean);
+  const named = sentences.filter((s) => rows.some((r) => s.toLowerCase().includes(r.personEmail!.toLowerCase())));
+  let block = "";
+  for (const s of named) {
+    if (block.length + s.length + 1 > RELAY_CHARS) break;
+    block += (block ? " " : "") + s;
+  }
+  return block ? { rows, block } : null;
+}
+
+/**
+ * §2: whether a person's received message is worth asking about: a promise of theirs open on its conversation or from its
+ * sender, a wait of yours on its conversation, or a commitment cue in their words. A cost filter, not a judgment.
+ */
+export function owedWorth(o: { text: string; owed: number; waiting: boolean }): boolean {
+  return o.owed > 0 || o.waiting || hasCommitmentCue(o.text);
 }

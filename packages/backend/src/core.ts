@@ -1780,7 +1780,10 @@ export class BackendCore {
       const liveSent = live ? { wanted: reads && this.followups.isActive, since: this.followups.since } : undefined;
       // plan 204: live mail you got, for the dated reader (off: this one question)
       const datedMail = live && reads ? await this.dated.wanted() : undefined;
-      const ingest = async (batch: IncomingMessage[]) => (batch.length ? this.store.sync.ingest(batch, { applyFilters, now: this.now(), classifier, observation, check: checkCurrent, forwardEligible, newMail, liveSent, datedMail }) : null);
+      // plan 280 (revision 1): live mail you got, for promises owed to you, by Follow-ups' own gate (the account's switch is
+      // the worker's to read, as for what you send)
+      const owedMail = live && reads && this.followups.isActive ? { since: this.followups.since } : undefined;
+      const ingest = async (batch: IncomingMessage[]) => (batch.length ? this.store.sync.ingest(batch, { applyFilters, now: this.now(), classifier, observation, check: checkCurrent, forwardEligible, newMail, liveSent, datedMail, owedMail }) : null);
       // plan 69: a sync pass's slice never overlaps a storage removal unit, and leaves out what one removed
       const write = () => (pass ? this.evictions.ingest(pass.accountId, pass.pass, chunk, ingest) : ingest(chunk));
       const r = await (life ? this.accountWrite(life, write) : write());

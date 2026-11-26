@@ -102,7 +102,8 @@ export class AiService {
       now: () => b.now(),
       monthlyLimitUsd: async () => (await readSettings(b.store)).ai.monthlyLimitUsd,
       // plan 249: the words' worker sends on the dated task too, each with its own sources (the Codex review's revision 7)
-      beforeAhead: (task) => (task === "digest" ? b.today.holdingUp() : task === "dated" ? Promise.all([b.dated.holdingUp(), b.words.worker.holdingUp()]).then(() => {}) : b.replies.holdingUp()),
+      // plan 280 (revision 4): the follow-ups reader's received mail has its own last look
+      beforeAhead: (task) => (task === "digest" ? b.today.holdingUp() : task === "dated" ? Promise.all([b.dated.holdingUp(), b.words.worker.holdingUp()]).then(() => {}) : task === "followup" ? b.followups.holdingUp() : b.replies.holdingUp()),
     });
   }
 
