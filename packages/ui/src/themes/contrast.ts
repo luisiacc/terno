@@ -63,6 +63,8 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   ...text("sidebar-accent-foreground", ["sidebar-accent"]),
   // plan 15: "N unread" and unread counts as text; avatars and badges on rows hovered, selected and checked, on drafts and panes
   ...text("unread-ink", ["background", "pane", "sidebar", "sidebar-accent"]),
+  // plan 282: a text link in blue
+  ...text("link", ["background", "pane", "card", "popover"]),
   ...text("sidebar-primary-ink", ["sidebar", "sidebar-accent"]),
   // plan 94: a filled button under the pointer
   ...text("primary-foreground", ["primary-hover"]),

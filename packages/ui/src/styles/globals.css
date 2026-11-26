@@ -111,6 +111,7 @@
   --color-row-rail: var(--row-rail);
   --color-unread: var(--unread);
   --color-unread-ink: var(--unread-ink);
+  --color-link: var(--link);
   --color-sidebar-primary-ink: var(--sidebar-primary-ink);
   --color-star: var(--star);
   --color-success: var(--success);

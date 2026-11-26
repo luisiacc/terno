@@ -91,6 +91,8 @@ export const THEME_TOKENS = [
   // plan 15: "N unread" text and unread counts drawn as text; the sidebar's accent as text (the Local pill)
   "unread-ink",
   "sidebar-primary-ink",
+  // plan 282 (the owner): a link in blue text where the palette's primary isn't a colour (Lumen, Graphite, Relief, Atelier)
+  "link",
   // chrome
   "overlay",
   "shadow-color",

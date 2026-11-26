@@ -59,22 +59,24 @@ export function PutAwayNotice({ scroller }: { scroller: RefObject<HTMLElement | 
         inline
         wrap
         className="my-0 min-h-8 bg-transparent py-0 pr-1.5 pl-3 text-muted-foreground"
-        title={<span data-testid="put-away-notice-line">{line}</span>}
-        // the owner (after the UI rating): a small button at the line's end, so it reads as the line's action
-        actions={
-          <Button
-            variant="outline"
-            size="xs"
-            data-testid="put-away-review"
-            aria-label={t("putAway.notice.reviewName")}
-            onClick={() => {
-              navigate({ putAway: true });
-              // the list takes the keyboard, on the person's mail (Needs a look leads)
-              requestAnimationFrame(() => document.querySelector<HTMLElement>("[role=listbox]")?.focus({ preventScroll: true }));
-            }}
-          >
-            {t("putAway.notice.review")}
-          </Button>
+        title={
+          <>
+            <span data-testid="put-away-notice-line">{line}</span>{" "}
+            {/* the owner (after the UI rating): text right after the line, in the link's blue, so it reads as the line's action */}
+            <Button
+              variant="link"
+              data-testid="put-away-review"
+              className="align-baseline text-[length:inherit] leading-[inherit] font-normal whitespace-nowrap text-link press:text-link"
+              aria-label={t("putAway.notice.reviewName")}
+              onClick={() => {
+                navigate({ putAway: true });
+                // the list takes the keyboard, on the person's mail (Needs a look leads)
+                requestAnimationFrame(() => document.querySelector<HTMLElement>("[role=listbox]")?.focus({ preventScroll: true }));
+              }}
+            >
+              {t("putAway.notice.review")}
+            </Button>
+          </>
         }
         titleProps={{ className: "font-normal text-muted-foreground" }}
         closeLabel={t("common.dismiss")}

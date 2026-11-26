@@ -266,6 +266,9 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
   // plan 66: a hovered row's translucent fill, as painted over the sidebar
   const hovered = formatOklch(rgbToOklch(composite(oklchToRgb(o("sidebar-hover")), { ...oklchToRgb(o("sidebar")), alpha: 1 })));
   def("unread-ink", () => stepUntil(o("unread"), [...["background", "pane", "sidebar", "sidebar-accent"].map((k) => formatOklch(o(k as ThemeToken))), hovered], 4.5, bg, o("foreground"), light));
+  // plan 282 (the owner): a text link in blue on every palette: the primary where it's a colour (as the AI's accent), else
+  // a blue, held to 4.5:1 on the surfaces a link is drawn on
+  def("link", () => stepUntil(o("primary").c >= AI_MIN_CHROMA ? o("primary") : p(light ? "0.53 0.17 262" : "0.74 0.13 258"), ["background", "pane", "card", "popover"].map((k) => formatOklch(o(k as ThemeToken))), 4.5, bg, o("foreground"), light));
   def("sidebar-primary-ink", () => stepUntil(o("sidebar-primary"), [formatOklch(o("sidebar")), formatOklch(o("sidebar-accent"))], 4.5, bg, o("sidebar-foreground"), light));
   // plan 137: an unchecked box's edge and an off switch's track; `input` also tints fields, so a palette that holds these to 3:1 sets this instead
   def("control-edge", () => o("input"));
