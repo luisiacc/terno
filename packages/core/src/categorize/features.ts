@@ -2,6 +2,12 @@ import { tokenize } from "../rules/evaluate";
 import { normalizeText } from "../text";
 
 /** Bump when the featurization changes: stored examples and snapshots are rebuilt. */
+
+/** The classifier's key for a sender (its features, its vetoes; plan 282's kept senders) */
+export function classifierSender(email: string): string {
+  return normalizeText(email.trim());
+}
+
 export const FEATURES_V = 1;
 
 /** Shared consumer domains say nothing about who the sender is. */
@@ -189,7 +195,7 @@ function domainOf(email: string): string {
 
 /** Pure and deterministic: the same source always yields the same features. */
 export function extractFeatures(src: FeatureSource, ctx: FeatureContext): ThreadFeatures {
-  const sender = normalizeText(src.fromEmail.trim());
+  const sender = classifierSender(src.fromEmail);
   const rawDomain = domainOf(sender);
   const consumer = CONSUMER_DOMAINS.has(rawDomain);
   const domain = rawDomain && !consumer && !ctx.ownDomains.has(rawDomain) ? rawDomain : null;

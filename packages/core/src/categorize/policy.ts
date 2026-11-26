@@ -43,6 +43,8 @@ export interface Vetoes {
   senderRemovals: number;
   /** this sender's threads the user put in the category in the same window */
   senderPositives: number;
+  /** plan 282: the user said "Don't file {sender} automatically" here: a suggestion at most */
+  kept?: boolean;
 }
 
 export const NO_VETOES: Vetoes = { hard: false, senderRemovals: 0, senderPositives: 0 };
@@ -76,6 +78,7 @@ export type Gate =
   | "veto:hard"
   | "veto:sender"
   | "veto:look-alike"
+  | "veto:kept"
   | "paused"
   | "category-auto-off"
   | "not-eligible"
@@ -170,7 +173,9 @@ export function decide(input: PolicyInput): Decision[] {
       continue;
     }
     const gate = autoGate(s, input, policy);
-    out.push(gate === "auto:identity" || gate === "auto:content" ? d("auto", gate) : d("suggest", "suggest"));
+    // plan 282: a sender the user keeps out of this category's automatic filing is asked about, never filed
+    if ((gate === "auto:identity" || gate === "auto:content") && v.kept) out.push(d("suggest", "veto:kept"));
+    else out.push(gate === "auto:identity" || gate === "auto:content" ? d("auto", gate) : d("suggest", "suggest"));
   }
   // at most two suggestions per thread, the most likely ones
   const suggestions = out.filter((x) => x.decision === "suggest").sort((a, b) => b.p - a.p || a.categoryId - b.categoryId);

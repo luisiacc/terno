@@ -5,6 +5,7 @@ export * from "./flag-intents";
 export * from "./flag-protocol";
 export * from "./list";
 export * from "./mail-store";
+export * from "./put-away";
 export * from "./registry";
 export * from "./autocomplete-source";
 

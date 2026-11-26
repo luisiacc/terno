@@ -1,3 +1,4 @@
+import { isKeptSender, keptSenderKeys } from "./put-away";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import {
@@ -825,6 +826,7 @@ export function backfillCandidates(c: Ctx, now: number, limit = 5000): number[] 
 function decideThreads(c: Ctx, roots: Map<number, RootMessage>, req: { now: number; mode: AutoCategorize; model: CategorizerModel; autoEligible: boolean }, own: OwnAddresses, out: ClassifyResult): void {
   let policies: Map<number, CategoryPolicy & { name: string }> | null = null;
   let removals: Map<string, number> | null = null;
+  let kept: Set<string> | null = null;
   const memberships = T(c, "thread_categories");
   const decisionsT = T(c, "cls_decisions");
   for (const [threadId, root] of roots) {
@@ -839,10 +841,11 @@ function decideThreads(c: Ctx, roots: Map<number, RootMessage>, req: { now: numb
     }
     policies ??= policyContext(c);
     removals ??= recentRemovals(c, req.now);
+    kept ??= keptSenderKeys(c);
     const vetoes = new Map<number, Vetoes>();
     for (const categoryId of likely) {
       const rem = removals.get(`${categoryId}:${set.features.sender}`) ?? 0;
-      vetoes.set(categoryId, { hard: false, senderRemovals: rem, senderPositives: rem >= POLICY.senderVetoRemovals ? senderHistory(c, categoryId, set.features.sender, req.now - POLICY.senderVetoDays * DAY).pos : 0 });
+      vetoes.set(categoryId, { hard: false, senderRemovals: rem, senderPositives: rem >= POLICY.senderVetoRemovals ? senderHistory(c, categoryId, set.features.sender, req.now - POLICY.senderVetoDays * DAY).pos : 0, kept: kept.has(`${categoryId}:${set.features.sender}`) });
     }
     const decisions = decide({
       mode: req.mode,
@@ -1101,9 +1104,11 @@ export function categoryEvidence(c: Ctx, o: { perCategory: number; limit: number
 }
 
 /** Plan 134 revision 5: where an AI filing may land, read inside its command. */
-export function aiFilingBar(c: Ctx, categoryId: number): "file" | "suggest" | "gone" {
+export function aiFilingBar(c: Ctx, categoryId: number, sender: string | null = null): "file" | "suggest" | "gone" {
   const row = T(c, "categories").get(categoryId);
   if (!row) return "gone";
+  // plan 282: a kept sender is asked about
+  if (sender !== null && isKeptSender(c, categoryId, sender)) return "suggest";
   // forwarding and hiding aren't a model's call; a suggestion costs one keystroke
   if (row.auto_apply !== 1 || row.show_in_inbox === 0 || row.forward_json) return "suggest";
   let positives = 0;

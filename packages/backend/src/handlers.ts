@@ -84,6 +84,9 @@ function toDraft(r: DraftRow): Draft {
 /** Matching messages read per thread for its excerpt: with the 10 threads an ask holds, what plan 141's gate measures (30 messages). */
 const EXCERPT_MESSAGES = 3;
 
+/** plan 282: the newest placement the Inbox's line has shown (dismissed, or Put away opened) */
+const PUT_AWAY_SEEN = "putAway.seen";
+
 export function createHandlers(b: Backend): Handlers {
   const store = b.store;
   const storage = new StorageMaintenance(b);
@@ -297,11 +300,22 @@ export function createHandlers(b: Backend): Handlers {
   /** Takes back an action by its undo id: its messages, then the reminders it ended (plan 87). How many threads came back. */
   /** plan 275: the sender override each undo id asked Outlook for (its undo asks for it to go) */
   const senderOverrides = new Map<number, { accountId: number; address: string; as: "focused" | "other"; prior?: "focused" | "other" | null }>();
+  /** plan 282: Back to Inbox's rule filings it took a conversation out of, by its undo id (Undo files them back) */
+  const refilings = new Map<number, { threadId: number; categoryId: number }[]>();
+  /** plan 282: "Don't file … automatically", by its undo token */
+  const keptUndos = new Map<string, { categoryId: number; sender: string; added: boolean; withdrawn: import("@terno/store").PutAwayWithdrawn | null }>();
   const undoActs = async (undoId: number, jobId: string | undefined) => {
     const before = undoJournal.take(undoId);
     if (!before) throw new RpcError("NOT_FOUND", L("errors.undoGone"));
     const override = senderOverrides.get(undoId);
+    const refile = refilings.get(undoId);
     try {
+      // plan 282: Back to Inbox's other half, filed back as the rule had it
+      if (refile) {
+        await store.putAway.refile(refile, b.now());
+        refilings.delete(undoId);
+        b.notifyChanged([...new Set(refile.map((r) => r.threadId))]);
+      }
       // the rule first, then the messages; a failure puts the undo back whole, and a retry asks again (code review #4)
       if (override) {
         const { accountId, ...payload } = override;
@@ -559,6 +573,8 @@ export function createHandlers(b: Backend): Handlers {
       const { categorization, ...detail } = thread;
       return {
         ...detail,
+        // plan 282: why it's out of the Inbox, while that holds
+        putAway: await store.putAway.of(threadId, b.now()),
         categorization: { auto: categorization.auto, suggestions: categorization.suggestions.map((s) => ({ categoryId: s.categoryId, p: s.p, reasons: s.reasons })) },
       };
     },
@@ -1653,6 +1669,62 @@ export function createHandlers(b: Backend): Handlers {
       return { ok: true };
     },
     // plan 142: renderer only; none of these is in MCP_ALLOWED
+    // plan 282: Put away
+    "putAway.page": async ({ after, limit }) => {
+      const page = await store.putAway.page({ now: b.now(), after: after ?? null, limit });
+      return { items: page.items.map((i) => i.thread), placements: page.items.map((i) => i.placement), next: page.next };
+    },
+    "putAway.needsLook": async () => store.putAway.needsLook({ now: b.now(), after: await store.settings.get<number>(PUT_AWAY_SEEN, 0) }),
+    "putAway.seen": async ({ through }) => {
+      if (through > (await store.settings.get<number>(PUT_AWAY_SEEN, 0))) await store.settings.set(PUT_AWAY_SEEN, through);
+      return { ok: true as const };
+    },
+    "putAway.back": async ({ threadIds }) => {
+      const ids = [...new Set(threadIds)];
+      // out of the hidden categories a rule filed them in (no example: the engine didn't); Terno's own filing is Not {category}'s
+      const released = await store.putAway.release(ids);
+      if (released.length) b.notifyChanged([...new Set(released.map((r) => r.threadId))]);
+      // archived, deleted or moved: back in the Inbox (Gmail's tabs too), journaled as any action
+      const away = (await store.threads.summaries(ids)).filter((t) => t.inInbox === false || t.inTrash === true).map((t) => t.id);
+      const moved = away.length ? await actOn(away, "moveToInbox", null) : { threads: [] as number[], undoId: null };
+      let undoId = moved.undoId;
+      if (released.length) {
+        undoId ??= remember([]);
+        refilings.set(undoId, released);
+        for (const key of refilings.keys()) if (refilings.size > 16) refilings.delete(key);
+      }
+      return { undoId, affected: new Set([...moved.threads, ...released.map((r) => r.threadId)]).size };
+    },
+    "putAway.keep": async ({ threadId }) => {
+      const placed = await store.putAway.of(threadId, b.now());
+      if (placed?.detail.by !== "terno" || !placed.detail.sender) throw new RpcError("BAD_REQUEST", L("errors.putAway.changed"));
+      const { categoryId, sender } = placed.detail;
+      const r = await store.putAway.keep({ categoryId, sender, threadId, now: b.now() });
+      const undoId = crypto.randomUUID();
+      keptUndos.set(undoId, { categoryId, sender, ...r });
+      for (const key of keptUndos.keys()) if (keptUndos.size > 16) keptUndos.delete(key);
+      b.notifyChanged([threadId]);
+      return { undoId };
+    },
+    "putAway.keepUndo": async ({ undoId }) => {
+      const kept = keptUndos.get(undoId);
+      if (!kept) throw new RpcError("NOT_FOUND", L("errors.undoGone"));
+      await store.putAway.unkeep(kept);
+      keptUndos.delete(undoId);
+      if (kept.withdrawn) b.notifyChanged([kept.withdrawn.threadId]);
+      return { ok: true as const };
+    },
+    "putAway.stopRule": async ({ threadId }) => {
+      const placed = await store.putAway.of(threadId, b.now());
+      // the rule as it was when it did this, or nothing: an edit made since is the user's own word
+      if (placed?.detail.by !== "rule" || !placed.ruleLive) throw new RpcError("BAD_REQUEST", L("errors.putAway.changed"));
+      const r = await similarFilters.setEnabled([placed.detail.filterId], false);
+      await b.forwards.rules();
+      return { filterUndo: r.filterUndo };
+    },
+    "putAway.kept": async () => ({ senders: await store.putAway.kept() }),
+    "putAway.removeKept": async ({ categoryId, sender }) => ({ removed: await store.putAway.removeKept(categoryId, sender) }),
+
     "followups.list": () => b.followups.look(),
     "followups.threads": async ({ onTop, accountId }) => ({ items: await b.followups.threads(onTop, accountId) }),
     // plan 210 (iteration 2): a promise of yours is acted on with every item it's the same thing as (What matters' one act);

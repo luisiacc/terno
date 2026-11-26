@@ -32,6 +32,7 @@ import { defineHandoffConformance } from "./handoff";
 import { defineDatedMutesConformance } from "./dated-mutes";
 import { defineShownSendersConformance } from "./shown-senders";
 import { definePersonRulesConformance } from "./person-rules";
+import { definePutAwayConformance } from "./put-away";
 import { defineWhatMattersConformance } from "./what-matters";
 import { defineWritingConformance } from "./writing";
 import { defineUnsubscribeConformance } from "./unsubscribe";
@@ -189,6 +190,11 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
       return next;
     });
     definePersonRulesConformance(fresh, async (s) => {
+      const next = await harness.reopen(s);
+      open.push(next);
+      return next;
+    });
+    definePutAwayConformance(fresh, async (s) => {
       const next = await harness.reopen(s);
       open.push(next);
       return next;

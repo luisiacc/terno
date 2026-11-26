@@ -311,6 +311,8 @@ export interface AttachmentInfo {
 export interface ThreadDetail {
   thread: ThreadSummary & { inInbox: boolean; inTrash: boolean; inSpam: boolean };
   messages: MessageDetail[];
+  /** plan 282: put away (and why) while that still holds; absent when it isn't */
+  putAway?: import("./placement").PutAwayDetail | null;
   /** what the categorization engine did or suggests here, with its reasons */
   categorization?: {
     auto: { categoryId: CategoryId; reasons: Reason[] }[];

@@ -52,10 +52,12 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  * `detail` reads as none, so no version change.
  * SQL v81 (plan 259) drops the account kind and owner provider CHECKs: none here, so no version change.
  * Version 41 adds an Outlook message's folder (SQL v82, plan 259).
+ * Version 42 adds your word on who is a person (SQL v83, plan 278).
+ * Version 43 adds Put away's placements and the senders kept out of a category's automatic filing (SQL v84, plan 282).
  */
 export { IDB_VERSION };
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 83;
+export const LOGICAL_SCHEMA = 84;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 
@@ -151,6 +153,9 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   { name: "shown_senders", early: true, key: ["key"], indexes: {} },
   // plan 278: your word on who is a person (the facts read it, so it loads early)
   { name: "person_rules", early: true, key: ["key"], indexes: {} },
+  // plan 282: one row per put-away conversation (a week's worth); the kept senders by category
+  { name: "placements", early: true, key: ["thread_id"], indexes: { ...fk("thread_id") } },
+  { name: "cls_kept_senders", early: true, key: ["category_id", "sender"], indexes: { ...fk("category_id") } },
   // plan 249: the words' verdicts and what a show rule brought load early (the first screen places by them); the marks hang off
   // messages. `open` holds only open items (SQL's partial index); a memory index has no order, so the pages sort
   { name: "preference_verdicts", early: true, key: ["target"], indexes: {} },
@@ -204,6 +209,8 @@ export const FOREIGN_KEYS: readonly ForeignKey[] = [
   c("imap_identity_holds", "account_id", "accounts"),
   c("message_locations", "message_id", "messages"),
   c("message_folders", "message_id", "messages"),
+  c("placements", "thread_id", "threads"),
+  c("cls_kept_senders", "category_id", "categories"),
   c("attachment_assets", "account_id", "accounts"),
   c("attachment_chunks", "asset_id", "attachment_assets"),
   c("attachment_bytes", "chunk_id", "attachment_chunks"),
@@ -460,6 +467,8 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
           if (count > 0) track(tx.objectStore("settings").put({ key: "facts_rules", value_json: "1" }, "facts_rules"));
         });
       }
+      // plan 282 (likewise)
+      if (event.oldVersion >= 1 && event.oldVersion < 43) for (const name of ["placements", "cls_kept_senders"]) if (!db.objectStoreNames.contains(name)) db.createObjectStore(name);
       // plan 144 (likewise)
       if (event.oldVersion >= 1 && event.oldVersion < 31 && !db.objectStoreNames.contains("ai_prepared_replies")) db.createObjectStore("ai_prepared_replies");
       // plan 142 (likewise)

@@ -88,6 +88,13 @@ describe("categorization policy", () => {
     expect(one({ lookAlike: true })).toMatchObject({ decision: "none", gate: "veto:look-alike" });
   });
 
+  it("a sender kept out of the category's automatic filing is suggested, never filed (plan 282)", () => {
+    expect(one({ vetoes: veto({ kept: true }) })).toMatchObject({ decision: "suggest", gate: "veto:kept" });
+    // a suggestion stays what it was, and a hard veto still wins
+    expect(one({ vetoes: veto({ kept: true }), mode: "suggest" })).toMatchObject({ decision: "suggest", gate: "suggest" });
+    expect(one({ vetoes: veto({ kept: true, hard: true }) })).toMatchObject({ decision: "none", gate: "veto:hard" });
+  });
+
   it("respects the global mode, the per-category switch and the auto window", () => {
     expect(one({ mode: "off" })).toMatchObject({ decision: "none" });
     expect(one({ mode: "suggest" })).toMatchObject({ decision: "suggest" });

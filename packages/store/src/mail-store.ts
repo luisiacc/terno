@@ -1019,6 +1019,9 @@ export interface MailStore {
   /** Private fixed-key cooldown ledger; never included in ProviderStore or preferences. */
   providerCooldown: ProviderCooldownStore;
 
+  /** plan 282 */
+  putAway: import("./put-away").PutAwayStore;
+
   settings: {
     get<T>(key: string, fallback: T): Promise<T>;
     set(key: string, value: unknown): Promise<void>;

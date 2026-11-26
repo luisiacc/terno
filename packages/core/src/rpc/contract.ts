@@ -42,6 +42,7 @@ import type { AutoCategorize } from "../categorize/policy";
 import type { LearnedProposal } from "../learning/propose";
 import { SIMILAR_ACTIONS, type SimilarOffers } from "../similar";
 import { UNSUBSCRIBE_METHODS } from "../unsubscribe";
+import type { Placement } from "../placement";
 import { REMOVABLE_BUCKETS, STORAGE_AGES, type StorageReport } from "../storage";
 import { filterRuleSchema, type Filter, type FilterRule } from "../rules/schema";
 import { LIST_FILTERS, type ListFilter } from "../list-filter";
@@ -1296,6 +1297,26 @@ export const contract = {
   "ai.summaries.status": m<AiSummariesStatus>()(empty),
   /** Settings → Storage → Clear AI data. */
   "ai.summaries.clear": m<{ ok: true }>()(empty),
+
+  // plan 282: Put away. All renderer-only: none of these is in MCP_ALLOWED.
+  /** what Terno and the user's rules took out of the Inbox in the last 7 days, Needs a look first, then newest */
+  "putAway.page": m<{ items: ThreadSummary[]; placements: Placement[]; next: { needsLook: boolean; at: number; threadId: number } | null }>()(
+    z.object({ after: z.object({ needsLook: z.boolean(), at: z.number().int(), threadId: id }).optional(), limit: z.number().int().min(1).max(200).default(100) }),
+  ),
+  /** the Inbox's line: conversations that need a look, put away since the user last saw them; `through`, what `seen` takes */
+  "putAway.needsLook": m<{ count: number; first: { threadId: number; name: string } | null; through: number }>()(empty),
+  /** the line was dismissed or Put away opened: what was counted up to `through` is seen */
+  "putAway.seen": m<{ ok: true }>()(z.object({ through: z.number().int().min(0) })),
+  /** Back to Inbox: whatever keeps each conversation out (archived, deleted, moved, a rule's hidden filing); one exact Undo (threads.undo) */
+  "putAway.back": m<{ undoId: number | null; affected: number }>()(z.object({ threadIds: z.array(id).min(1).max(500) })),
+  /** "Don't file {sender} automatically", from Terno's filing of this conversation; Undo: putAway.keepUndo */
+  "putAway.keep": m<{ undoId: string }>()(z.object({ threadId: id })),
+  "putAway.keepUndo": m<{ ok: true }>()(z.object({ undoId: z.string().min(1).max(64) })),
+  /** Stop the rule that put this conversation away (only while it's unchanged): filters.setEnabled's answer, its Undo there */
+  "putAway.stopRule": m<{ filterUndo: number | null }>()(z.object({ threadId: id })),
+  /** Settings → Categories: the senders kept out of a category's automatic filing, and taking one back */
+  "putAway.kept": m<{ senders: { categoryId: number; sender: string; at: number }[] }>()(empty),
+  "putAway.removeKept": m<{ removed: boolean }>()(z.object({ categoryId: id, sender: z.string().min(1).max(400) })),
 
   // plan 142. All renderer-only: none of these is in MCP_ALLOWED.
   "followups.list": m<FollowupsSnapshot>()(empty),

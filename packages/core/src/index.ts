@@ -27,6 +27,7 @@ export * from "./preferences";
 export * from "./themes";
 export * from "./list-filter";
 export * from "./people";
+export * from "./placement";
 export { readingWords, wordsIn } from "./reading";
 export * from "./attention";
 export * from "./first-screen";

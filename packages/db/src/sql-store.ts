@@ -28,7 +28,7 @@ import { sqlSendCopies } from "./send-copies";
 import { reserveSendCopy, startCopyWire, appendCopyWire, sealCopyWire, acceptCopySubmission, recordCopy, forgetCopySlice, pruneSavedCopySlice, resetCopyWireSlice, copyWarningText, clearRecipientWarning, sendWarningFlags, submissionAccepted } from "@terno/store";
 import { isFolderOp, movesToFolder, type FolderFilterMove } from "@terno/store";
 import { leaveFolder, moveMessagesToFolder, moveThreadsToFolder, settleFolderOp } from "./folder-move";
-import { carryFolder, clearFolder, countFolderMessages, listFolders, rebuildFolders, replaceFolders } from "./folders";
+import { carryFolder, clearFolder, countFolderMessages, listFolders, rebuildFolders, replaceFolders, threadsOfMessages } from "./folders";
 import { exportBody, exportIds, exportMessages } from "./folder-export";
 import { COOLDOWN_TICKETS, bindCooldown, decodeCooldown, encodeCooldown, mailboxDigest, mailboxKeyValid, PROVIDER_COOLDOWN_KEY, copyOpAdmission } from "@terno/store";
 import { attachmentMessageBudgetAsync, parseHandoff } from "@terno/core";
@@ -37,7 +37,7 @@ import { mergeBefore, sameImapLocations, reaffirmSavedFlagIntent, acceptFlagObse
 import { bindSqlPromotedFlags, sqlFlags } from "./flag-intents";
 import { appendAsset, assetError, assetRef, assetRow, createAsset, ASSET_CLEANUP_STEPS, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
 import { sqlAssets, replaceAttachments } from "./attachments";
-import { categoryOf, ruleAwaitsBody, senderVetoed, type MessageTerm, type Address, type FilterAction, type FilterRule, type ThreadAction, type ThreadSummary } from "@terno/core";
+import { categoryOf, ruleAwaitsBody, senderVetoed, type MessageTerm, type Address, type Filter, type FilterAction, type FilterRule, type ThreadAction, type ThreadSummary } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { MockDataset } from "@terno/mock-data";
@@ -101,6 +101,7 @@ import {
   categoryEvidence,
   type ClassifyResult,
 } from "./categorize";
+import { endPlacements, hiddenCategorySet, keepSender, listKeptSenders, placementOf, placementPage, placementsNeedingLook, PlacementWatch, refileRuleFilings, releaseRuleFilings, removeKeptSender, ruleNote, unkeepSender } from "./put-away";
 import { keptThreads, resolveSimilarPage, similarOffers, similarScopesOf } from "./similar";
 import { clearJudgments, clearWriting, commitGeneration, commitProfiles, corpusHeaders, corpusUsable, editProfile, generationForDraft, generationForMessage, generationPairs, judgeProfile, listProfiles, readProfiles, resetProfile, restoreProfiles, sentTo as writingSentTo, threadRecipients, threadsWith as writingThreadsWith, transferGeneration } from "./writing";
 import { attemptSummary, clearNewMail, clearSummaries, consumeNewMail, dropPendingSummaries, dropSummary, failSummary, finishSummary, getSummary, lastSummaryFailure, markNewMail, newMailPage, pendingSummaries, pendingSummaryCount, pruneNewMail, pruneSummaries, summarySources } from "./ai-summaries";
@@ -119,7 +120,6 @@ import { changeOwner, claimOwner, getOwner } from "./owner";
 import { countScopeThreads, getCounts, getSummaries, getThread, warmThreadRead, listThreads, scopeThreadIds, SUMMARY_COLUMNS, toSummary, type SummaryRow } from "./queries";
 import {
   accountStamp,
-  addThreadsToCategory,
   awaitAuthOp,
   releaseOp,
   deferOp,
@@ -205,6 +205,8 @@ const FLAG_COLUMNS: Record<string, string> = {
   isDraft: "is_draft",
 };
 
+/** plan 282: the user's own moves out of the Inbox; what put a conversation away before is theirs now */
+const ENDS_PLACEMENT = new Set<ThreadAction>(["archive", "trash", "spam"]);
 const NO_CLASSIFICATION: ClassifyResult = { deltas: [], auto: new Map(), touched: new Set(), suggested: 0, backfill: 0 };
 
 export interface SqlMailStoreOptions {
@@ -493,6 +495,8 @@ export class SqlMailStore implements MailStore {
         const r = applyThreadAction(this.db, ids, action);
         // only actions that changed something feed learned filters (repeats must not manufacture support)
         if (signal && r.threadIds.length) recordUserActions(this.db, r.threadIds, signal, now);
+        // plan 282: the user's own move out of the Inbox: what put the conversation away before is theirs now
+        if (ENDS_PLACEMENT.has(action)) endPlacements(this.db, r.threadIds);
         const opIds = this.queueActionOps(r, action, now);
         if (action !== "moveToInbox") return { threadIds: r.threadIds, opIds, before: r.before, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
         // plan 86: into the Inbox means out of Gmail's tabs too, in the same command and the same undo
@@ -519,6 +523,7 @@ export class SqlMailStore implements MailStore {
       this.db.tx(() => {
         const flagBefore = flagEpochs(sqlFlags(this.db));
         const r = moveThreadsToFolder(this.db, c);
+        endPlacements(this.db, r.threadIds);
         return { threadIds: r.threadIds, opIds: r.opIds, before: r.archived.before, moved: r.moved, kept: r.kept, leftInbox: r.archived.threadIds, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
       }),
     leaveFolder: async (c) => this.db.tx(() => leaveFolder(this.db, c)),
@@ -536,20 +541,21 @@ export class SqlMailStore implements MailStore {
 
   // ───────────────────────────── filters on incoming mail ─────────────────────────────
 
-  /** Enabled filters on new (or newly body-complete) messages. Automated: never a learning signal. */
-  private applyFiltersTo(messageIds: readonly number[], onlyBodyFilters: boolean, now: number, opIds: string[], folderMoves: FolderFilterMove[]): Set<number> {
+  /** Enabled filters on new (or newly body-complete) messages. Automated: never a learning signal. Plan 282: `watch` notes what each one took out of the Inbox. */
+  private applyFiltersTo(messageIds: readonly number[], onlyBodyFilters: boolean, now: number, opIds: string[], folderMoves: FolderFilterMove[], watch: PlacementWatch | null = null): Set<number> {
     const touched = new Set<number>();
     if (messageIds.length === 0) return touched;
     const filters = listFilters(this.db).filter((f) => f.enabled && (!onlyBodyFilters || ruleAwaitsBody(f.rule)));
     // plan 128: what reached the Inbox, read before any filter acts: an archive (or another folder's) doesn't change who else moves
     const inbox = filters.some((f) => movesToFolder(f.rule)) ? new Set(this.db.all<{ id: number }>("SELECT id FROM messages WHERE in_inbox = 1 AND id IN (SELECT value FROM json_each(?))", JSON.stringify(messageIds)).map((m) => m.id)) : null;
+    const hidden = watch ? hiddenCategorySet(this.db) : null;
     for (const filter of filters) {
       const matches = findRuleMatches(this.db, filter.rule, now, messageIds);
       if (matches.messageIds.length === 0) continue;
       try {
         const moves: FolderFilterMove[] = [];
         // claims + actions + ops atomically (a savepoint inside the command)
-        const changed = this.db.tx(() => this.runFilterActions(filter.rule.actions, claimFilterApplications(this.db, filter.id, matches.messageIds, now), now, opIds, moves, inbox));
+        const changed = this.db.tx(() => this.runFilterActions(filter.rule.actions, claimFilterApplications(this.db, filter.id, matches.messageIds, now), now, opIds, moves, inbox, watch && hidden ? { watch, filter, hidden } : null));
         // only once its savepoint held: a later action failing leaves no move behind
         folderMoves.push(...moves);
         for (const id of changed) touched.add(id);
@@ -561,7 +567,7 @@ export class SqlMailStore implements MailStore {
     return touched;
   }
 
-  private runFilterActions(actions: FilterAction[], messageIds: number[], now: number, opIds: string[], folderMoves: FolderFilterMove[], inbox: ReadonlySet<number> | null): Set<number> {
+  private runFilterActions(actions: FilterAction[], messageIds: number[], now: number, opIds: string[], folderMoves: FolderFilterMove[], inbox: ReadonlySet<number> | null, placing: { watch: PlacementWatch; filter: Filter; hidden: ReadonlySet<number> } | null = null): Set<number> {
     const touched = new Set<number>();
     if (messageIds.length === 0) return touched;
     for (const action of actions) {
@@ -570,18 +576,21 @@ export class SqlMailStore implements MailStore {
       // plan 128: made last (flushFolderMoves), when the categories that keep a thread in the Inbox are all known
       if (action.type === "moveToFolder") {
         const ids = inbox ? messageIds.filter((id) => inbox.has(id)) : messageIds;
-        if (ids.length) folderMoves.push({ accountId: action.accountId, folder: action.folder, messageIds: ids });
+        if (ids.length) folderMoves.push({ accountId: action.accountId, folder: action.folder, messageIds: ids, ...(placing && { filter: placing.filter }) });
         continue;
       }
       if (action.type === "addCategory") {
         const threads = this.db
           .all<{ thread_id: number }>("SELECT DISTINCT thread_id FROM messages WHERE id IN (SELECT value FROM json_each(?))", JSON.stringify(messageIds))
           .map((r) => r.thread_id);
-        addThreadsToCategory(this.db, action.categoryId, threads, "filter", now);
+        const added = addToCategory(this.db, { categoryId: action.categoryId, threadIds: threads, addedBy: "filter", now }).added;
+        // plan 282: only the conversations it actually filed
+        placing?.watch.note(added, ruleNote(placing.filter, action, placing.hidden));
         for (const t of threads) touched.add(t);
       } else {
         const result = applyMessageAction(this.db, messageIds, action.type);
         opIds.push(...this.queueActionOps(result, action.type, now));
+        placing?.watch.note(result.threadIds, ruleNote(placing.filter, action, placing.hidden));
         for (const t of result.threadIds) touched.add(t);
       }
     }
@@ -589,8 +598,8 @@ export class SqlMailStore implements MailStore {
   }
 
   /** Plan 128: the collected moves. One failing, or a folder that isn't there, stops only that one: the mail stays where it is, and ingest goes on. */
-  private flushFolderMoves(moves: readonly FolderFilterMove[], now: number, opIds: string[], touched: Set<number>): void {
-    for (const move of moves) {
+  private flushFolderMoves(moves: readonly FolderFilterMove[], now: number, opIds: string[], touched: Set<number>, watch: PlacementWatch | null = null): void {
+    for (const { filter, ...move } of moves) {
       try {
         const r = this.db.tx(() => moveMessagesToFolder(this.db, { ...move, now }));
         if (!r) {
@@ -598,6 +607,8 @@ export class SqlMailStore implements MailStore {
           continue;
         }
         opIds.push(...r.opIds);
+        // plan 282: a move that held (the conversation's Inbox is read again at the command's end)
+        if (watch && filter) watch.note(r.threadIds, ruleNote(filter, { type: "moveToFolder", accountId: move.accountId, folder: move.folder }, new Set()));
         for (const t of r.threadIds) touched.add(t);
       } catch (error) {
         this.log("warn", `filter move failed on account ${move.accountId}`, error instanceof Error ? error.message : error);
@@ -662,14 +673,18 @@ export class SqlMailStore implements MailStore {
         const touched = new Set(result.touchedThreads);
         const opIds: string[] = [];
         const folderMoves: FolderFilterMove[] = [];
+        // plan 282: what new mail's rules and the engine take out of the Inbox, read before them and after
+        const watch = new PlacementWatch(this.db, threadsOfMessages(this.db, [...result.inserted, ...result.bodyCompleted]));
         if (applyFilters) {
-          for (const t of this.applyFiltersTo(result.inserted, false, now, opIds, folderMoves)) touched.add(t);
+          for (const t of this.applyFiltersTo(result.inserted, false, now, opIds, folderMoves, watch)) touched.add(t);
           // bodies that arrived through an upsert may now satisfy body filters
-          for (const t of this.applyFiltersTo(result.bodyCompleted, true, now, opIds, folderMoves)) touched.add(t);
+          for (const t of this.applyFiltersTo(result.bodyCompleted, true, now, opIds, folderMoves, watch)) touched.add(t);
         }
         const c = this.classify(classifier, result.inserted, result.bodyCompleted, now);
         for (const t of c.touched) touched.add(t);
-        this.flushFolderMoves(folderMoves, now, opIds, touched);
+        watch.noteTerno(c.auto, hiddenCategorySet(this.db));
+        this.flushFolderMoves(folderMoves, now, opIds, touched, watch);
+        watch.commit(now);
         return { inserted: result.inserted, touched: [...touched], deltas: [...result.deltas, ...c.deltas], auto: c.auto, backfill: c.backfill, opIds, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
       }));
       }, check); } finally {
@@ -703,11 +718,14 @@ export class SqlMailStore implements MailStore {
         if (captureUnavailable) return { touched: owner ? [owner.thread_id] : [], deltas: [], auto: new Map(), opIds: [] };
         const opIds: string[] = [];
         const folderMoves: FolderFilterMove[] = [];
-        const touched = this.applyFiltersTo([messageId], true, now, opIds, folderMoves);
+        const watch = new PlacementWatch(this.db, owner ? [owner.thread_id] : []);
+        const touched = this.applyFiltersTo([messageId], true, now, opIds, folderMoves, watch);
         // the body was the missing piece: reclassify once
         const c = this.classify(classifier, [], [messageId], now);
         for (const t of c.touched) touched.add(t);
-        this.flushFolderMoves(folderMoves, now, opIds, touched);
+        watch.noteTerno(c.auto, hiddenCategorySet(this.db));
+        this.flushFolderMoves(folderMoves, now, opIds, touched, watch);
+        watch.commit(now);
         if (owner) touched.add(owner.thread_id);
         return { touched: [...touched], deltas: c.deltas, auto: c.auto, opIds, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
       }));
@@ -1668,7 +1686,7 @@ export class SqlMailStore implements MailStore {
         if (!this.aiCandidate(f.threadId)) return none;
         const v = vetoesFor(this.db, f.threadId, f.sender, [f.categoryId], f.now).get(f.categoryId);
         if (v?.hard || (v && senderVetoed(v)) || f.model.lookAlike(f.encoded)) return none;
-        const bar = aiFilingBar(this.db, f.categoryId);
+        const bar = aiFilingBar(this.db, f.categoryId, f.sender);
         if (bar === "gone") return none;
         const decide = (kind: "auto" | "suggest", explain: typeof f.explain) =>
           this.db.run("INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, ?, ?, ?, ?)", f.threadId, f.categoryId, kind, f.p, JSON.stringify(explain), f.now);
@@ -1769,6 +1787,19 @@ export class SqlMailStore implements MailStore {
   readonly links: MailStore["links"] = {
     find: async (rfc) => findLinked(this.db, rfc),
     newest: async (threadIds) => newestLinked(this.db, threadIds),
+  };
+
+  // plan 282: Put away
+  readonly putAway: MailStore["putAway"] = {
+    of: async (threadId, now) => placementOf(this.db, threadId, now),
+    page: async (p) => placementPage(this.db, p),
+    needsLook: async (p) => placementsNeedingLook(this.db, p),
+    release: async (threadIds) => this.db.tx(() => releaseRuleFilings(this.db, threadIds)),
+    refile: async (rows, now) => this.db.tx(() => refileRuleFilings(this.db, rows, now)),
+    keep: async (p) => this.db.tx(() => keepSender(this.db, p)),
+    unkeep: async (p) => this.db.tx(() => unkeepSender(this.db, p)),
+    kept: async () => listKeptSenders(this.db),
+    removeKept: async (categoryId, sender) => removeKeptSender(this.db, categoryId, sender),
   };
 
   readonly providerCooldown: MailStore["providerCooldown"] = {

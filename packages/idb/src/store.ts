@@ -1,3 +1,4 @@
+import { endPlacements, hiddenCategorySet, keepSender, listKeptSenders, placementOf, placementPage, placementsNeedingLook, PlacementWatch, refileRuleFilings, releaseRuleFilings, removeKeptSender, ruleNote, unkeepSender } from "./put-away";
 import { ASK_MATCH_MESSAGES, ASK_MATCH_PARTS, CORPUS_TEXTS_MAX, finishBodyClose, rankSentRefs, readPassages, readThreadContext, type SentRef } from "@terno/store";
 import { ClosedOrder } from "./closed-order";
 import { actOnItems, fromOf, itemMembers, linkItems, liveAmong, restoreItems, needsCount, needsWalk, type NeedsWalk, messagesHere, senders, allDigests, beginDigest, clearDigests, digestFacts, digestLive, digestRead, getDigest, latestDigest, pendingDigestDays, pruneDigests, waitingAmong, waitingPage, writeDigest } from "./today";
@@ -44,7 +45,7 @@ import { mergeBefore, sameImapLocations, reaffirmSavedFlagIntent, acceptFlagObse
 import { bindIdbPromotedFlags, idbFlags, idbFlagSnapshots, prepareIdbFlagPage } from "./flag-intents";
 import { appendAsset, assetError, assetRef, assetRow, createAsset, ASSET_CLEANUP_STEPS, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
 import { idbAssets, replaceAttachments } from "./attachments";
-import { categoryOf, COUNT_CAP, filterState, LIST_FILTERS, sameFilterState, parseSearch, searchTerms, resolvable, resolveSearch, senderVetoed, type Address, type FilterAction, type ResolvedSearch, type FilterRule, type ListFilter, type SearchView, type ThreadAction, type ThreadFilter, type ThreadSummary } from "@terno/core";
+import { categoryOf, COUNT_CAP, filterState, LIST_FILTERS, sameFilterState, parseSearch, searchTerms, resolvable, resolveSearch, senderVetoed, type Address, type Filter, type FilterAction, type ResolvedSearch, type FilterRule, type ListFilter, type SearchView, type ThreadAction, type ThreadFilter, type ThreadSummary } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { MockDataset } from "@terno/mock-data";
@@ -248,6 +249,9 @@ export interface IdbMailStoreOptions {
  * for the command in flight. Search: the instant index at the store's
  * revision, otherwise an exact scan; never an incomplete page.
  */
+/** plan 282: the user's own moves out of the Inbox */
+const ENDS_PLACEMENT = new Set<ThreadAction>(["archive", "trash", "spam"]);
+
 export class IdbMailStore implements MailStore {
   private cooldownActions = 0;
   private cooldownAction<V>(fn: () => Promise<V>): Promise<V> {
@@ -1131,6 +1135,8 @@ export class IdbMailStore implements MailStore {
         const ids = [...new Set(threadIds)];
         const r = applyThreadAction(this.c, ids, action);
         if (signal && r.threadIds.length) recordUserActions(this.c, r.threadIds, signal, now);
+        // plan 282: the user's own move out of the Inbox
+        if (ENDS_PLACEMENT.has(action)) endPlacements(this.c, r.threadIds);
         const opIds = this.queueActionOps(r, action, now);
         if (action !== "moveToInbox") return { threadIds: r.threadIds, opIds, before: r.before, ...flagReconciliation(idbFlags(this.c), flagBefore) };
         // plan 86: into the Inbox means out of Gmail's tabs too, in the same command and the same undo
@@ -1157,6 +1163,7 @@ export class IdbMailStore implements MailStore {
       this.command(() => {
         const flagBefore = flagEpochs(idbFlags(this.c));
         const r = moveThreadsToFolder(this.c, o);
+        endPlacements(this.c, r.threadIds);
         return { threadIds: r.threadIds, opIds: r.opIds, before: r.archived.before, moved: r.moved, kept: r.kept, leftInbox: r.archived.threadIds, ...flagReconciliation(idbFlags(this.c), flagBefore) };
       }),
     leaveFolder: (o) => this.command(() => leaveFolder(this.c, o)),
@@ -1171,19 +1178,20 @@ export class IdbMailStore implements MailStore {
     return ids;
   }
 
-  private applyFiltersTo(messageIds: readonly number[], onlyBodyFilters: boolean, now: number, opIds: string[], folderMoves: FolderFilterMove[]): Set<number> {
+  private applyFiltersTo(messageIds: readonly number[], onlyBodyFilters: boolean, now: number, opIds: string[], folderMoves: FolderFilterMove[], watch: PlacementWatch | null = null): Set<number> {
     const touched = new Set<number>();
     if (messageIds.length === 0) return touched;
     const filters = listFilters(this.c).filter((f) => f.enabled && (!onlyBodyFilters || ruleAwaitsBody(f.rule)));
     // plan 128: what reached the Inbox, read before any filter acts: an archive (or another folder's) doesn't change who else moves
     const messages = T(this.c, "messages");
     const inbox = filters.some((f) => movesToFolder(f.rule)) ? new Set(messageIds.filter((id) => messages.get(id)?.in_inbox === 1)) : null;
+    const hidden = watch ? hiddenCategorySet(this.c) : null;
     for (const filter of filters) {
       const matches = findRuleMatches(this.c, filter.rule, now, messageIds);
       if (matches.messageIds.length === 0) continue;
       try {
         const moves: FolderFilterMove[] = [];
-        const changed = this.db.tx(() => this.runFilterActions(filter.rule.actions, claimFilterApplications(this.c, filter.id, matches.messageIds, now), now, opIds, moves, inbox));
+        const changed = this.db.tx(() => this.runFilterActions(filter.rule.actions, claimFilterApplications(this.c, filter.id, matches.messageIds, now), now, opIds, moves, inbox, watch && hidden ? { watch, filter, hidden } : null));
         // only once its savepoint held: a later action failing leaves no move behind
         folderMoves.push(...moves);
         for (const id of changed) touched.add(id);
@@ -1194,7 +1202,7 @@ export class IdbMailStore implements MailStore {
     return touched;
   }
 
-  private runFilterActions(actions: FilterAction[], messageIds: number[], now: number, opIds: string[], folderMoves: FolderFilterMove[], inbox: ReadonlySet<number> | null): Set<number> {
+  private runFilterActions(actions: FilterAction[], messageIds: number[], now: number, opIds: string[], folderMoves: FolderFilterMove[], inbox: ReadonlySet<number> | null, placing: { watch: PlacementWatch; filter: Filter; hidden: ReadonlySet<number> } | null = null): Set<number> {
     const touched = new Set<number>();
     if (messageIds.length === 0) return touched;
     const messages = T(this.c, "messages");
@@ -1204,17 +1212,20 @@ export class IdbMailStore implements MailStore {
       // plan 128: made last (flushFolderMoves), when the categories that keep a thread in the Inbox are all known
       if (action.type === "moveToFolder") {
         const ids = inbox ? messageIds.filter((id) => inbox.has(id)) : messageIds;
-        if (ids.length) folderMoves.push({ accountId: action.accountId, folder: action.folder, messageIds: ids });
+        if (ids.length) folderMoves.push({ accountId: action.accountId, folder: action.folder, messageIds: ids, ...(placing && { filter: placing.filter }) });
         continue;
       }
       if (action.type === "addCategory") {
         if (!T(this.c, "categories").has(action.categoryId)) throw new Error(`category ${action.categoryId} doesn't exist`);
         const threads = [...new Set(messageIds.map((id) => messages.get(id)?.thread_id as number).filter((t) => t !== undefined))];
-        addToCategory(this.c, { categoryId: action.categoryId, threadIds: threads, addedBy: "filter", now });
+        const added = addToCategory(this.c, { categoryId: action.categoryId, threadIds: threads, addedBy: "filter", now }).added;
+        // plan 282: only the conversations it actually filed
+        placing?.watch.note(added, ruleNote(placing.filter, action, placing.hidden));
         for (const t of threads) touched.add(t);
       } else {
         const result = applyMessageAction(this.c, messageIds, action.type);
         opIds.push(...this.queueActionOps(result, action.type, now));
+        placing?.watch.note(result.threadIds, ruleNote(placing.filter, action, placing.hidden));
         for (const t of result.threadIds) touched.add(t);
       }
     }
@@ -1222,8 +1233,8 @@ export class IdbMailStore implements MailStore {
   }
 
   /** Plan 128: the collected moves. One failing, or a folder that isn't there, stops only that one: the mail stays where it is, and ingest goes on. */
-  private flushFolderMoves(moves: readonly FolderFilterMove[], now: number, opIds: string[], touched: Set<number>): void {
-    for (const move of moves) {
+  private flushFolderMoves(moves: readonly FolderFilterMove[], now: number, opIds: string[], touched: Set<number>, watch: PlacementWatch | null = null): void {
+    for (const { filter, ...move } of moves) {
       try {
         const r = this.db.tx(() => moveMessagesToFolder(this.c, { ...move, now }));
         if (!r) {
@@ -1231,6 +1242,8 @@ export class IdbMailStore implements MailStore {
           continue;
         }
         opIds.push(...r.opIds);
+        // plan 282: a move that held
+        if (watch && filter) watch.note(r.threadIds, ruleNote(filter, { type: "moveToFolder", accountId: move.accountId, folder: move.folder }, new Set()));
         for (const t of r.threadIds) touched.add(t);
       } catch (error) {
         this.log("warn", `filter move failed on account ${move.accountId}`, error instanceof Error ? error.message : error);
@@ -1302,13 +1315,18 @@ export class IdbMailStore implements MailStore {
           const touched = new Set(result.touchedThreads);
           const opIds: string[] = [];
           const folderMoves: FolderFilterMove[] = [];
+          // plan 282: what new mail's rules and the engine take out of the Inbox
+          const messages = T(this.c, "messages");
+          const watch = new PlacementWatch(this.c, [...result.inserted, ...result.bodyCompleted].flatMap((id) => { const m = messages.get(id); return m ? [m.thread_id as number] : []; }));
           if (applyFilters) {
-            for (const t of this.applyFiltersTo(result.inserted, false, now, opIds, folderMoves)) touched.add(t);
-            for (const t of this.applyFiltersTo(result.bodyCompleted, true, now, opIds, folderMoves)) touched.add(t);
+            for (const t of this.applyFiltersTo(result.inserted, false, now, opIds, folderMoves, watch)) touched.add(t);
+            for (const t of this.applyFiltersTo(result.bodyCompleted, true, now, opIds, folderMoves, watch)) touched.add(t);
           }
           const c = this.classify(classifier, result.inserted, result.bodyCompleted, now);
           for (const t of c.touched) touched.add(t);
-          this.flushFolderMoves(folderMoves, now, opIds, touched);
+          watch.noteTerno(c.auto, hiddenCategorySet(this.c));
+          this.flushFolderMoves(folderMoves, now, opIds, touched, watch);
+          watch.commit(now);
           return { inserted: result.inserted, touched: [...touched], deltas: [...result.deltas, ...c.deltas], auto: c.auto, backfill: c.backfill, opIds, ...flagReconciliation(idbFlags(this.c), flagBefore) };
         }),
         { durability: "relaxed", check, bodyTicket: this.preparedTickets.get(prepared) },
@@ -1343,10 +1361,13 @@ export class IdbMailStore implements MailStore {
           if (captureUnavailable) return { touched: owner ? [owner.thread_id] : [], deltas: [], auto: new Map(), opIds: [] };
           const opIds: string[] = [];
           const folderMoves: FolderFilterMove[] = [];
-          const touched = this.applyFiltersTo([messageId], true, now, opIds, folderMoves);
+          const watch = new PlacementWatch(this.c, owner ? [owner.thread_id as number] : []);
+          const touched = this.applyFiltersTo([messageId], true, now, opIds, folderMoves, watch);
           const c = this.classify(classifier, [], [messageId], now);
           for (const t of c.touched) touched.add(t);
-          this.flushFolderMoves(folderMoves, now, opIds, touched);
+          watch.noteTerno(c.auto, hiddenCategorySet(this.c));
+          this.flushFolderMoves(folderMoves, now, opIds, touched, watch);
+          watch.commit(now);
           if (owner) touched.add(owner.thread_id);
           return { touched: [...touched], deltas: c.deltas, auto: c.auto, opIds, ...flagReconciliation(idbFlags(this.c), flagBefore) };
         }),
@@ -2592,7 +2613,7 @@ export class IdbMailStore implements MailStore {
         if (!aiCandidate(this.c, f.threadId)) return none;
         const v = vetoesFor(this.c, f.threadId, f.sender, [f.categoryId], f.now).get(f.categoryId);
         if (v?.hard || (v && senderVetoed(v)) || f.model.lookAlike(f.encoded)) return none;
-        const bar = aiFilingBar(this.c, f.categoryId);
+        const bar = aiFilingBar(this.c, f.categoryId, f.sender);
         if (bar === "gone") return none;
         const decide = (kind: "auto" | "suggest", explain: typeof f.explain) => T(this.c, "cls_decisions").insert({ thread_id: f.threadId, category_id: f.categoryId, kind, p: f.p, explain_json: JSON.stringify(explain), at: f.now, outcome: null });
         if (bar === "suggest") {
@@ -2744,6 +2765,19 @@ export class IdbMailStore implements MailStore {
   readonly links: MailStore["links"] = {
     find: (rfc) => this.read(() => findLinked(this.c, rfc)),
     newest: (threadIds) => this.read(() => newestLinked(this.c, threadIds)),
+  };
+
+  // plan 282: Put away
+  readonly putAway: MailStore["putAway"] = {
+    of: (threadId, now) => this.read(() => placementOf(this.c, threadId, now)),
+    page: (p) => this.read(() => placementPage(this.c, p)),
+    needsLook: (p) => this.read(() => placementsNeedingLook(this.c, p)),
+    release: (threadIds) => this.command(() => releaseRuleFilings(this.c, threadIds)),
+    refile: (rows, now) => this.command(() => refileRuleFilings(this.c, rows, now)),
+    keep: (p) => this.command(() => keepSender(this.c, p)),
+    unkeep: (p) => this.command(() => unkeepSender(this.c, p)),
+    kept: () => this.read(() => listKeptSenders(this.c)),
+    removeKept: (categoryId, sender) => this.command(() => removeKeptSender(this.c, categoryId, sender)),
   };
 
   readonly providerCooldown: MailStore["providerCooldown"] = {

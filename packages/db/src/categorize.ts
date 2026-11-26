@@ -1,3 +1,4 @@
+import { isKeptSender, keptSenderKeys } from "./put-away";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import {
@@ -1108,10 +1109,11 @@ export function categoryEvidence(db: Db, o: { perCategory: number; limit: number
   }));
 }
 
-/** Plan 134 revision 5: where an AI filing may land, read inside its transaction. */
-export function aiFilingBar(db: Db, categoryId: number): "file" | "suggest" | "gone" {
+/** Plan 134 revision 5: where an AI filing may land, read inside its transaction. Plan 282: a kept sender is asked about. */
+export function aiFilingBar(db: Db, categoryId: number, sender: string | null = null): "file" | "suggest" | "gone" {
   const c = db.get<{ auto_apply: number; show_in_inbox: number; forward_json: string | null }>("SELECT auto_apply, show_in_inbox, forward_json FROM categories WHERE id = ?", categoryId);
   if (!c) return "gone";
+  if (sender !== null && isKeptSender(db, categoryId, sender)) return "suggest";
   // forwarding and hiding aren't a model's call; a suggestion costs one keystroke
   if (c.auto_apply !== 1 || c.show_in_inbox !== 1 || c.forward_json !== null) return "suggest";
   const { n } = db.get<{ n: number }>("SELECT count(*) AS n FROM (SELECT 1 FROM cls_examples INDEXED BY cls_examples_cat WHERE category_id = ? AND label > 0 LIMIT ?)", categoryId, POLICY.autoMinPositives)!;
@@ -1133,6 +1135,7 @@ function decideThreads(
 ): void {
   let policies: Map<number, CategoryPolicy & { name: string }> | null = null;
   let removals: Map<string, number> | null = null;
+  let kept: Set<string> | null = null;
   for (const [threadId, root] of roots) {
     const features = extractFeatures(root.source, { ownDomains: own.domains });
     const set: ThreadFeatureSet = { root, features, encoded: encodeFeatures(features) };
@@ -1146,11 +1149,12 @@ function decideThreads(
     }
     policies ??= policyContext(db);
     removals ??= recentRemovals(db, req.now);
+    kept ??= keptSenderKeys(db);
     const vetoes = new Map<number, Vetoes>();
     for (const categoryId of likely) {
       // undecided threads have no examples or settled decisions: no hard veto is possible here
       const rem = removals.get(`${categoryId}:${set.features.sender}`) ?? 0;
-      vetoes.set(categoryId, { hard: false, senderRemovals: rem, senderPositives: rem >= POLICY.senderVetoRemovals ? senderPositives(db, categoryId, set.features.sender, req.now) : 0 });
+      vetoes.set(categoryId, { hard: false, senderRemovals: rem, senderPositives: rem >= POLICY.senderVetoRemovals ? senderPositives(db, categoryId, set.features.sender, req.now) : 0, kept: kept.has(`${categoryId}:${set.features.sender}`) });
     }
     const decisions = decide({
       mode: req.mode,

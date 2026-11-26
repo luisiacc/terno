@@ -119,6 +119,8 @@ export interface FolderFilterMove {
   accountId: number;
   folder: string;
   messageIds: number[];
+  /** plan 282: the rule that moves them (Put away says it did) */
+  filter?: import("@terno/core").Filter;
 }
 
 /** Can a filter still move mail there? An account with no list yet (a first sync) is trusted: a stale key fails as an op. */

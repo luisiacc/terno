@@ -1913,6 +1913,31 @@ CREATE TABLE person_rules (
 ) WITHOUT ROWID;
 INSERT INTO settings (key, value_json) SELECT 'facts_rules', '1' WHERE EXISTS (SELECT 1 FROM threads);
 ` },
+  // plan 282: Put away. A conversation something other than the user took out of the Inbox, recorded in the command that
+  // did it (one row per conversation, the newest wins; a week's worth, pruned as new ones come): who (`by`) and what it
+  // did (`effect`: archived, deleted, moved, filed in `category_id`), descriptive with no CHECK (plan 267), so a read can
+  // see the effect still holds; whether it needs a look; and the snapshot its sentence needs (validated by the app). The order
+  // index is the view's (Needs a look first, newest first). And the senders the user keeps out of a category's automatic
+  // filing ("Don't file … automatically"). Shape only.
+  { version: 84, name: "Put away: placements and kept senders (plan 282)", sql: `
+CREATE TABLE placements (
+  thread_id INTEGER PRIMARY KEY REFERENCES threads(id) ON DELETE CASCADE,
+  at INTEGER NOT NULL,
+  by TEXT NOT NULL,
+  effect TEXT NOT NULL,
+  category_id INTEGER,
+  needs_look INTEGER NOT NULL DEFAULT 0 CHECK (needs_look IN (0, 1)),
+  detail_json TEXT NOT NULL
+) WITHOUT ROWID;
+CREATE INDEX placements_order ON placements(needs_look DESC, at DESC, thread_id DESC);
+CREATE INDEX placements_at ON placements(at);
+CREATE TABLE cls_kept_senders (
+  category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+  sender TEXT NOT NULL,
+  at INTEGER NOT NULL,
+  PRIMARY KEY (category_id, sender)
+) WITHOUT ROWID;
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;
