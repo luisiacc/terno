@@ -34,8 +34,9 @@ describe("main: the menu bar", () => {
     (items[0]!.click as () => void)();
     expect(sent).toEqual(["list.toggleUnread"]);
     for (const c of sent) expect(MENU_COMMANDS).toContain(c);
-    expect(items.find((i) => i.role === "toggleDevTools")!.visible).toBe(false);
-    expect(sub(viewMenu(() => {}, true, () => {})).find((i) => i.role === "toggleDevTools")!.visible).toBe(true);
+    // plan 283: not a hidden item (macOS still fires a hidden item's shortcut): none at all outside development
+    expect(items.find((i) => i.role === "toggleDevTools")).toBeUndefined();
+    expect(sub(viewMenu(() => {}, true, () => {})).find((i) => i.role === "toggleDevTools")!.visible).not.toBe(false);
     // nothing in the menu claims ⌘L, or a draft's ⌘L would never reach the editor
     expect(items.filter((i) => i.accelerator === "CmdOrCtrl+L")).toHaveLength(0);
   });

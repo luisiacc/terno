@@ -113,7 +113,8 @@ export function viewMenu(send: (command: MenuCommand) => void, dev: boolean, rel
       { type: "separator" },
       { id: "native-reload", label: t("menu.reload"), accelerator: "CmdOrCtrl+R", click: (_item, window) => reload(false, window) },
       { id: "native-force-reload", label: t("menu.reload"), accelerator: "CmdOrCtrl+Shift+R", visible: false, acceleratorWorksWhenHidden: true, click: (_item, window) => reload(true, window) },
-      { role: "toggleDevTools", label: t("menu.devTools"), visible: dev },
+      // plan 283: only in development, not hidden: a hidden item's shortcut still fires on macOS
+      ...(dev ? [{ role: "toggleDevTools", label: t("menu.devTools") } satisfies MenuItemConstructorOptions] : []),
       { type: "separator" },
       { role: "resetZoom", label: t("menu.actualSize") },
       { role: "zoomIn", label: t("menu.zoomIn") },

@@ -315,7 +315,22 @@ test("native reload holds the exact saved ACK through changed focus and document
   }
 });
 
-test("the exact owned detached DevTools frontend reload admits its inspected page", async () => {
+// plan 283: DevTools exist only in an unpackaged run, so their reload is the source run's; a package proves they're gone
+if (!DEV) test("a packaged window opens no DevTools: no View item for them, and openDevTools() does nothing (plan 283)", async () => {
+  const state = await app.evaluate(async ({ BrowserWindow, Menu }) => {
+    const owner = BrowserWindow.getAllWindows().find((w) => w.webContents.getURL() === "app://terno/")!;
+    let opened = false;
+    owner.webContents.once("devtools-opened", () => (opened = true));
+    owner.webContents.openDevTools({ mode: "detach", activate: false });
+    await new Promise((r) => setTimeout(r, 1000));
+    const roles = (items: Electron.MenuItem[]): string[] => items.flatMap((i) => [String(i.role ?? ""), ...(i.submenu ? roles(i.submenu.items) : [])]);
+    return { opened, open: owner.webContents.isDevToolsOpened(), frontend: Boolean(owner.webContents.devToolsWebContents), roles: roles(Menu.getApplicationMenu()!.items).map((r) => r.toLowerCase()) };
+  });
+  expect(state).toMatchObject({ opened: false, open: false, frontend: false });
+  expect(state.roles).not.toContain("toggledevtools");
+});
+
+if (DEV) test("the exact owned detached DevTools frontend reload admits its inspected page", async () => {
   await page.getByTestId("compose-button").click(); const body = page.getByTestId("compose-body");
   await body.fill("DevTools retained"); await expect(page.getByTestId("draft-status")).toHaveAttribute("data-status", "saved");
   const old = (await store((s) => s.drafts.list()))[0]!; await store((s) => s.drafts.delete(old.id, old.generation));

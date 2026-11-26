@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { networkInterfaces } from "node:os";
-import { extname, join, normalize } from "node:path";
+import { extname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   app,
@@ -35,6 +35,8 @@ import { BUILD_ID, BUILD_VERSION } from "./diag/build-info";
 import { mainDiag } from "./diag/main";
 import { RestartPolicy } from "./diag/supervisor";
 import { backendEnv, devModeOf, takeDevAiEnv } from "./dev-mode";
+import { devToolsAllowed } from "./debugging";
+import { rendererFile } from "./renderer-path";
 import type { BackendToMain, MainToBackend } from "./ipc";
 import { readLegacySecrets } from "./keychain-helper";
 import { NetworkWatch } from "./network-watch";
@@ -70,7 +72,10 @@ try {
 }
 
 // main.ts named the app and set userData (profile.ts) before loading this
-const isDev = Boolean(process.env.TERNO_DEV_URL);
+/** the dev server's page, never in a packaged app: there TERNO_DEV_URL would put a foreign page behind the preload (plan 283) */
+const isDev = devModeOf({ devUrl: process.env.TERNO_DEV_URL, packaged: app.isPackaged });
+/** plan 283: DevTools exist only in an unpackaged run; every window takes this */
+const devTools = devToolsAllowed(app.isPackaged);
 const demo = process.env.TERNO_DEMO === "1" || process.argv.includes("--demo");
 // plan 146's keys, out of main's environment before anything is spawned: only the backend gets them, in Dev mode
 const devAiEnv = takeDevAiEnv(process.env);
@@ -131,9 +136,14 @@ function registerAppProtocol() {
   protocol.handle("app", async (request) => {
     const url = new URL(request.url);
     if (url.pathname === STORAGE_PAGE) return new Response("<!doctype html><title></title>", { headers: { "Content-Type": "text/html", "Content-Security-Policy": CSP } });
-    const rel = decodeURIComponent(url.pathname === "/" ? "/index.html" : url.pathname);
-    const file = normalize(join(RENDERER_DIR, rel));
-    if (!file.startsWith(RENDERER_DIR)) return new Response("forbidden", { status: 403 });
+    let path: string;
+    try {
+      path = decodeURIComponent(url.pathname === "/" ? "/index.html" : url.pathname);
+    } catch {
+      return new Response("bad request", { status: 400 });
+    }
+    const file = rendererFile(RENDERER_DIR, path);
+    if (!file) return new Response("forbidden", { status: 403 });
     const target = existsSync(file) ? file : join(RENDERER_DIR, "index.html");
     const res = await net.fetch(pathToFileURL(target).toString());
     const headers = new Headers(res.headers);
@@ -596,7 +606,7 @@ async function carryLegacyLocalStorage(): Promise<void> {
   const pending = join(app.getPath("userData"), LEGACY_STORAGE_PENDING);
   if (!existsSync(pending)) return;
   const done = () => rmSync(pending, { force: true });
-  const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } });
+  const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, devTools } });
   try {
     await win.loadURL(`${LEGACY_ORIGIN}${STORAGE_PAGE}`);
     const entries = JSON.parse(await win.webContents.executeJavaScript("JSON.stringify(Object.entries(localStorage))")) as [string, string][];
@@ -709,6 +719,7 @@ function createWindow() {
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
+      devTools,
       spellcheck: true,
       // render at full speed while hidden so first paint is ready when shown (t3code)
       backgroundThrottling: false,
