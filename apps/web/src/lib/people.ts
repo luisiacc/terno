@@ -6,6 +6,7 @@ import { actOnTask, taskOf } from "~/lib/dated";
 import { actOnFollowup } from "~/lib/followups";
 import { morph, morphSettled } from "~/lib/morph";
 import { closePage, currentPage, listLayout, openThread } from "~/lib/page";
+import { focusReader } from "~/lib/pane-focus";
 import { noteOpen } from "~/lib/reminders";
 import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
@@ -207,6 +208,9 @@ export function openFromPerson(threadId: number): void {
     if (!detail) return void snack.error(t("people.openFailed"));
     noteOpen(threadId);
     openThread(threadId);
+    requestAnimationFrame(() => {
+      if (document.activeElement === document.body || document.activeElement === null) focusReader();
+    });
   });
 }
 
@@ -247,8 +251,10 @@ export async function actOnPersonItem(item: PersonItem, action: "done" | "dismis
     // Undo's answer lands as the act's did: the list and the page together, in one morph
     async undo(run) {
       settling++;
+      const lost = keyboardOnPage();
       await run();
       await settle([]);
+      if (lost()) focusItem(id);
     },
     // (a failure reads the truth again: another act may have landed meanwhile)
     failed: () => {},
@@ -259,7 +265,24 @@ export async function actOnPersonItem(item: PersonItem, action: "done" | "dismis
     // (a waiting conversation's snack names what was done, its subject: on a person's page, who it's with goes without saying)
     if (task) await actOnTask(task.kind === "waiting" ? { ...task, name: item.item.thread.subject?.trim() || task.name } : task, action, at, left);
   }
+  const lost = gone ? null : keyboardOnPage();
   await settle(gone ? [id] : []);
+  // Later keeps the item (further on, under Put off): the keyboard stays on it
+  if (lost?.()) focusItem(id);
+}
+
+/**
+ * Whether the keyboard was on a person's page (or nowhere) as an act began: asked after it, true when it has dropped to
+ * nowhere meanwhile (the item it was on redrawn, a menu closed), so it can be put back.
+ */
+function keyboardOnPage(): () => boolean {
+  const was = document.activeElement;
+  const on = !was || was === document.body || was.closest("[data-testid=person-page]") !== null || was.closest("[role=menu]") !== null;
+  return () => on && (document.activeElement === document.body || document.activeElement === null || !document.activeElement.isConnected);
+}
+
+function focusItem(id: string): void {
+  document.querySelector<HTMLElement>(`[data-testid=person-item][data-item="${CSS.escape(id)}"] [data-testid=person-item-open]`)?.focus({ preventScroll: true });
 }
 
 /** How long the page's items take no clicks after one is done by a click: the next item slides under the pointer. */
@@ -366,18 +389,20 @@ export function movePerson(delta: number): void {
   // the rows as drawn (memoized by the list), headings stepped over
   const people = (peopleList.rows?.() ?? peopleRows(list, query, hits)).filter((r): r is Extract<PeopleRow, { kind: "person" }> => r.kind === "person");
   if (!people.length) return;
-  const at = people.findIndex((r) => r.id === getApp().person);
+  const onRow = document.activeElement?.getAttribute("data-testid") === "person-row" ? (document.activeElement as HTMLElement).dataset.key : undefined;
+  const at = people.findIndex((r) => r.id === (onRow ?? getApp().person));
   const row = people[at < 0 ? (delta > 0 ? 0 : people.length - 1) : Math.max(0, Math.min(people.length - 1, at + delta))]!;
-  // the keyboard on a row goes along with the selection
-  const focus = document.activeElement?.getAttribute("data-testid") === "person-row";
+  // List: the page covers the list, so j/k walk the rows (Enter opens one); Split: the page follows the selection
+  if (listLayout()) return void peopleList.toKey?.(row.key, true);
   selectPerson(row.key, row.email);
-  peopleList.toKey?.(row.key, focus);
+  // the keyboard on a row goes along with the selection
+  peopleList.toKey?.(row.key, onRow !== undefined);
 }
 
 /** Opens People on someone (the person menu's "Open in People"): the view, then their page. */
 export function openInPeople(email: string): void {
   if (!getApp().people) openPeople();
-  selectPerson(personKey(email), email);
+  enterPerson(personKey(email), email);
 }
 
 /**

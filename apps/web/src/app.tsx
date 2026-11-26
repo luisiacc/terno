@@ -202,7 +202,7 @@ export function App() {
         <Sidebar />
         {/* plan 188: the one polite voice for what changes where focus isn't */}
         <Announcer />
-        <section id="app-list" role={list || feedWide ? "main" : undefined} aria-label={list || feedWide ? undefined : t("list.label")} className={cn("pane-card relative min-h-0", feedWide && "col-span-2")}>
+        <section id="app-list" role={list || feedWide ? "main" : undefined} aria-label={list || feedWide ? undefined : t(people ? "people.title" : "list.label")} className={cn("pane-card relative min-h-0", feedWide && "col-span-2")}>
           {/* under a page the list stays laid out (scroll, measured rows, mounted rows) but isn't painted or reachable */}
           <div
             // test builds only: the perf gate's injected regression (a list remounted by every page change) must fail it

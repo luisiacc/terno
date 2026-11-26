@@ -1,6 +1,7 @@
 import { personItemId, personItemThread, type PersonPage } from "@terno/core";
 import { t } from "@terno/i18n";
 import { DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } from "@terno/ui/components/dropdown-menu";
+import { Mail } from "@terno/ui/icons";
 import { listDate } from "~/lib/format";
 import { openThread } from "~/lib/page";
 import { noteOpen } from "~/lib/reminders";
@@ -71,6 +72,8 @@ export function PersonCardHead({ page, threadId }: { page: PersonPage; threadId:
           <DropdownMenuGroup data-testid="person-card-last">
             <DropdownMenuLabel>{personKey(last.fromEmail) === page.key ? t("people.theyWroteLast", { name: last.fromName || page.name || page.email }) : t("people.youWroteLast")}</DropdownMenuLabel>
             <DropdownMenuItem data-testid="person-card-last-item" onClick={() => go(last.id)} className="h-auto items-start py-1.5">
+              {/* (on the items' line: a glyph of its own) */}
+              <Mail className="mt-0.5" />
               <span className="min-w-0 flex-1">
                 <span className="flex min-w-0 items-baseline gap-3">
                   <span className="min-w-0 flex-1 truncate font-medium">{last.subject || t("common.noSubject")}</span>

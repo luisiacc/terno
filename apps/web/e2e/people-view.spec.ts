@@ -74,10 +74,8 @@ test("People: the row below the Inbox, Open and the search, a person's page, Don
     await expect(page.getByTestId("list-title")).toHaveText("People");
     await expect(page.getByTestId("nav-people")).toHaveAttribute("aria-current", "page");
     await expect(page.getByTestId("people-heading").first()).toContainText("Open");
-    // Ana's newest thing open with you leads her row, under her name, not naming her again: what it is (its kind, the
-    // usual one, said to a screen reader)
-    await expect(row(page, "Ana Ruiz").first()).toContainText("Phase 2 scope");
-    await expect(row(page, "Ana Ruiz").first()).toHaveAttribute("aria-description", /Waiting on you/);
+    // Ana's newest thing open with you leads her row, under her name, not naming her again: its kind, then what
+    await expect(row(page, "Ana Ruiz").first()).toContainText("Waiting on you · Phase 2 scope");
   });
 
   await scenario("the search finds people by a name's start and by domain, marks what matched, and Esc clears it", async () => {
@@ -174,6 +172,33 @@ test("People: the row below the Inbox, Open and the search, a person's page, Don
     // Esc: back on her row
     await page.keyboard.press("Escape");
     await expect(page.locator("[data-testid=person-row]:focus")).toHaveAttribute("data-key", "ana.ruiz@greenway.studio");
+  });
+
+  await scenario("the keyboard never drops to nowhere: Esc in an empty search, Later, Undo, a conversation opened", async () => {
+    const onBody = () => page.evaluate(() => document.activeElement === document.body || document.activeElement === null);
+    const field = page.getByTestId("people-search");
+    await field.fill("");
+    await field.press("Escape");
+    await expect(page.locator("[data-testid=person-row]:focus")).toHaveCount(1);
+    await page.keyboard.press("Enter");
+    const onItem = page.locator("[data-testid=person-page] [data-testid=person-item-open]:focus");
+    await expect(onItem).toHaveCount(1);
+    const id = await onItem.evaluate((el) => el.closest<HTMLElement>("[data-testid=person-item]")!.dataset.item);
+    // Later: the item stays (further on), and so does the keyboard
+    await page.keyboard.press("b");
+    await expect(page.getByRole("menuitem").first()).toBeVisible();
+    await page.getByRole("menuitem").first().press("Enter");
+    await expect(page.locator(`[data-testid=person-item][data-item="${id}"] [data-testid=person-item-open]`)).toBeFocused({ timeout: 8000 });
+    await page.keyboard.press("z");
+    await expect(page.locator(`[data-testid=person-item][data-item="${id}"]`)).not.toHaveAttribute("data-later", { timeout: 8000 });
+    expect(await onBody()).toBe(false);
+    // a conversation opened from the page takes the keyboard
+    await page.locator(`[data-testid=person-item][data-item="${id}"] [data-testid=person-item-open]`).focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("reader-subject")).toBeVisible();
+    await expect.poll(onBody).toBe(false);
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("person-page")).toBeVisible();
   });
 });
 

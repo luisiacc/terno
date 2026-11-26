@@ -15,7 +15,7 @@ import { useApp } from "~/state/app";
 import { indexOf, matchedParts, peopleRows, usePeople, type PeopleRow } from "~/state/people";
 import { Marked } from "../match-mark";
 import { SenderAvatar } from "../sender-avatar";
-import { itemGlyph, itemLine, itemParts, itemWhen } from "./person-item";
+import { itemGlyph, itemParts, itemWhen } from "./person-item";
 import { PersonPage } from "./person-page";
 
 /** where the list was left: coming back to People finds it there */
@@ -55,6 +55,8 @@ export function People() {
 
 /** List layout's pane is the window's width: People's rows keep a reading width in it, centred, as What matters' feed does */
 const WIDE = "mx-auto w-full max-w-[44rem]";
+/** the header's: its own padding outside the reading width, as the rows' scroller has (title, field and rows on one line) */
+const WIDE_HEADER = "mx-auto w-full max-w-[45rem] pr-2";
 
 function PeopleList({ wide }: { wide: boolean }) {
   const state = usePeople((s) => s.list);
@@ -110,8 +112,13 @@ function PeopleList({ wide }: { wide: boolean }) {
     virtualizer.scrollToIndex(i, { align: "auto" });
   }, [selected, placeOf, virtualizer]);
 
-  // one Tab stop for the rows: the selected person's, else the first (the arrows, j and k move within)
-  const tabKey = selected !== null && placeOf.has(selected) ? selected : (rows.find((r) => r.kind === "person")?.id ?? null);
+  // one Tab stop for the rows: the selected person's, else the first (the arrows, j and k move within); when that row
+  // isn't drawn (scrolled far off), the first that is, so Tab always lands on a person
+  const drawn = virtualizer.getVirtualItems();
+  const preferred = selected !== null && placeOf.has(selected) ? selected : (rows.find((r) => r.kind === "person")?.id ?? null);
+  const preferredAt = preferred === null ? undefined : placeOf.get(preferred);
+  const firstDrawn = drawn.map((v) => rows[v.index]).find((r) => r?.kind === "person")?.id ?? null;
+  const tabKey = preferredAt !== undefined && drawn.some((v) => v.index === preferredAt) ? preferred : (firstDrawn ?? preferred);
 
   // coming back, where it was left; leaving, where that is
   useLayoutEffect(() => {
@@ -134,18 +141,22 @@ function PeopleList({ wide }: { wide: boolean }) {
   /** a section's heading to the top of the list (the header's jump) */
   const jump = (id: "open" | "everyone") => {
     const i = rows.findIndex((r) => r.kind === "heading" && r.id === id);
-    if (i >= 0) virtualizer.scrollToIndex(i, { align: "start" });
+    if (i < 0) return;
+    virtualizer.scrollToIndex(i, { align: "start" });
+    // and the keyboard to its first person (else it stays on the jump, and Tab has the rows to find)
+    const first = rows[i + 1];
+    if (first?.kind === "person") requestAnimationFrame(() => peopleList.toKey?.(first.key, true));
   };
   return (
     <section className="relative flex h-full min-h-0 flex-col bg-pane" data-testid="people">
-      <header ref={headerRef} className={cn("drag-region scroll-hairline shrink-0 pr-4 pb-2 pl-2", wide && WIDE)}>
+      <header ref={headerRef} className={cn("drag-region scroll-hairline shrink-0 pr-4 pb-2 pl-2", wide && WIDE_HEADER)}>
         <div className="flex h-(--pane-bar) items-center pr-1.5 pl-3">
           <h1 className={cn("min-w-0 flex-1 truncate", LIST_TITLE.title)} data-testid="list-title">
             {t("people.title")}
           </h1>
         </div>
         {/* what's here: a search's count, or each section's, each a jump to it (Everyone is under the whole of Open) */}
-        <p data-testid="people-line" className="type-list-subtitle -mt-1.5 flex min-h-[1lh] items-center gap-1 pb-2 pl-3 text-muted-foreground tabular">
+        <p data-testid="people-line" aria-live={searching ? "polite" : undefined} className="type-list-subtitle -mt-1.5 flex min-h-[1lh] items-center gap-1 pb-2 pl-3 text-muted-foreground tabular">
           {searching ? (
             hits && t("people.found", { count: hits.hits.length })
           ) : (
@@ -183,7 +194,7 @@ function PeopleList({ wide }: { wide: boolean }) {
               e.preventDefault();
               // the query first, then the field
               if (query) searchPeople("");
-              else e.currentTarget.blur();
+              else if (tabKey !== null) peopleList.toKey?.(tabKey, true);
               return;
             }
             // ↓ onto the first row; Enter opens it (the first match, while searching)
@@ -191,18 +202,20 @@ function PeopleList({ wide }: { wide: boolean }) {
             const first = rows.find((r) => r.kind === "person");
             if (!first || first.kind !== "person") return;
             e.preventDefault();
-            if (e.key === "Enter") selectPerson(first.key, first.email);
-            peopleList.toKey?.(e.key === "Enter" ? first.key : (tabKey ?? first.key), true);
+            const to = e.key === "Enter" ? first : (rows.find((r) => r.kind === "person" && r.key === tabKey) ?? first);
+            if (to.kind !== "person") return;
+            if (e.key === "Enter" || !wide) selectPerson(to.key, to.email);
+            peopleList.toKey?.(to.key, true);
           }}
         />
       </header>
-      <div ref={scrollRef} data-morph-clip data-testid="people-rows" className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 [scrollbar-gutter:stable]">
+      <div ref={scrollRef} tabIndex={-1} data-morph-clip data-testid="people-rows" className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 [scrollbar-gutter:stable]">
         <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
         <ul aria-label={t("people.list")} className={cn("relative", wide ? WIDE : "w-full")} style={{ height: virtualizer.getTotalSize() }}>
           {virtualizer.getVirtualItems().map((v) => {
             const row = rows[v.index]!;
             return (
-              <li key={v.key} ref={virtualizer.measureElement} data-index={v.index} className="absolute inset-x-0 top-0" style={{ transform: `translateY(${v.start}px)` }}>
+              <li key={v.key} ref={virtualizer.measureElement} data-index={v.index} aria-setsize={rows.length} aria-posinset={v.index + 1} className="absolute inset-x-0 top-0" style={{ transform: `translateY(${v.start}px)` }}>
                 {row.kind === "heading" ? <Heading row={row} /> : <PersonRow row={row} selected={row.key === selected} tabbable={row.key === tabKey} query={searching ? query : ""} />}
               </li>
             );
@@ -250,7 +263,8 @@ function Heading({ row }: { row: Extract<PeopleRow, { kind: "heading" }> }) {
  */
 const PersonRow = memo(function PersonRow({ row, selected, tabbable, query }: { row: Extract<PeopleRow, { kind: "person" }>; selected: boolean; /** the rows' one Tab stop */ tabbable: boolean; /** a search's words: what they matched is marked */ query: string }) {
   renderProbe("PeopleRow");
-  const first = row.open?.items[0];
+  // what's open now leads; something put off with Later only when that's all there is
+  const first = row.open?.items.find((i) => !itemWhen(i).later) ?? row.open?.items[0];
   const parts = first ? itemParts(first) : null;
   const Glyph = first ? itemGlyph(first) : null;
   // the right column is what's open's when: with nothing open, none (the page says when you last wrote each other)
@@ -266,8 +280,6 @@ const PersonRow = memo(function PersonRow({ row, selected, tabbable, query }: { 
       data-key={row.key}
       aria-current={selected || undefined}
       tabIndex={tabbable ? 0 : -1}
-      // (its open item, in words: the glyph and a kind left unsaid are said here)
-      aria-description={first ? itemLine(first) : undefined}
       onClick={() => selectPerson(row.key, row.email)}
       onKeyDown={(e) => {
         // into their page: Enter (the button's own click selects them too) and →
@@ -277,7 +289,7 @@ const PersonRow = memo(function PersonRow({ row, selected, tabbable, query }: { 
       }}
       className={cn(
         "group/row relative flex w-full min-w-0 items-center gap-3 rounded-lg px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        selected ? "bg-row-selected text-row-selected-foreground" : "hover:bg-row-hover",
+        selected ? "bg-row-selected text-row-selected-foreground" : "hover:bg-row-hover focus:bg-row-hover",
       )}
     >
       <SenderAvatar name={row.name} email={row.email} person className="size-8 text-xs" />
@@ -298,7 +310,8 @@ const PersonRow = memo(function PersonRow({ row, selected, tabbable, query }: { 
               </span>
               {more > 0 && (
                 <Badge variant="neutral" className="ms-auto tabular">
-                  {t("people.more", { count: more })}
+                  <span aria-hidden>{t("people.more", { count: more })}</span>
+                  <span className="sr-only">{t("people.moreSaid", { count: more })}</span>
                 </Badge>
               )}
             </>

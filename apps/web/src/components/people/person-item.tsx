@@ -41,9 +41,6 @@ export function itemParts(item: PersonItem): { label: string; text: string } {
   return { label: t(isPersonRequest(why.item?.kind) ? "people.kind.asked" : "people.kind.todo"), text: todaySentence(item.item) };
 }
 
-/** An item as one line (a screen reader's): its kind and what. */
-export const itemLine = (item: PersonItem): string => t("people.itemLine", itemParts(item));
-
 /** When an item put off with Later comes back, while it's ahead (it's still open, further on). */
 function backAt(item: PersonItem, now: number): number | null {
   const at = item.kind === "awaiting" ? item.row.deferredUntil : item.item.why.back;

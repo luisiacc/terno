@@ -334,7 +334,7 @@ async function actOnWaiting(task: Extract<TodayTask, { kind: "waiting" }>, actio
     const { undoId } = await client.call("today.waitingAct", { threadId: task.threadId, since: task.since, message: task.message, rev: task.rev, action: action === "dismiss" ? "remove" : action, ...(at !== undefined ? { until: at } : {}) });
     const run = () => client.call("today.waitingUndo", { undoId }).then(() => undefined);
     const undo = registerUndo(() => (left ? left.undo(run) : run()));
-    snack.success(waitingSaid(action, task.name, at), { action: { label: t("common.undo"), name: t("dated.undo"), undo } });
+    snack.success(waitingSaid(action, task.name, at), { action: { label: t("common.undo"), name: t("common.undo"), undo } });
   } catch (error) {
     left?.failed();
     snack.error((error as { message?: string }).message ?? t("dated.actFailed"));
