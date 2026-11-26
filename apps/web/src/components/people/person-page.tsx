@@ -106,6 +106,7 @@ function Loading() {
 const ITEMS_STEP = 30;
 
 function Body({ page }: { page: Page }) {
+  const accounts = useApp((s) => s.accounts);
   const name = page.name || page.email;
   const [shown, setShown] = useState(ITEMS_STEP);
   const [laterShown, setLaterShown] = useState(ITEMS_STEP);
@@ -116,7 +117,7 @@ function Body({ page }: { page: Page }) {
   const newest = page.conversations[0];
   // a group email they were only on says so (owner, after the QA panel): "between you" is what they wrote in too
   const wrote = page.wrote ? new Set(page.wrote) : null;
-  const short = firstName(page.name, page.email);
+  const mine = new Set(accounts.map((a) => a.email.toLowerCase()));
   const write = () => void composeLanding("new", null, 0, () => ({ toText: formatAddressList([{ name: page.name, email: page.email }]) }), newest?.accountId);
   return (
     <>
@@ -211,14 +212,12 @@ function Body({ page }: { page: Page }) {
                     <span className="shrink-0 text-sm text-row-preview tabular">{listDate(c.lastDate)}</span>
                   </span>
                   <span className="type-row-snippet mt-0.5 block truncate text-row-preview">
+                    {/* a group email they never wrote in: who did (r04: "Not from" said who didn't) */}
                     {wrote && !wrote.has(c.id) && (
-                      <>
-                        <span data-testid="person-conversation-not-from" className="font-medium" aria-hidden>
-                          {t("people.notFrom", { name: short })}
-                        </span>
-                        <span className="sr-only">{t("people.notFromSaid", { name: short })}: </span>
-                        <span aria-hidden> · </span>
-                      </>
+                      <span data-testid="person-conversation-by">
+                        {mine.has(c.fromEmail.toLowerCase()) ? t("people.youWroteLast") : t("people.theyWroteLast", { name: firstName(c.fromName, c.fromEmail) })}
+                        {" · "}
+                      </span>
                     )}
                     {c.snippet}
                   </span>

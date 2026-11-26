@@ -15,8 +15,8 @@ import { itemGlyph, itemParts, itemTone, itemWhen, LaterChoices, personLaterPres
 /** the card's open items, at most (their page has the rest) */
 const SHOWN = 4;
 
-/** a card item's Done and Later: icon-only rows of the menu beside it, quiet until hovered or highlighted */
-const ICON_ITEM = "w-7 shrink-0 justify-center px-0 text-muted-foreground data-highlighted:text-foreground";
+/** a card item's Done and Later: the page's words, small menu items under the item's text (r04: icons alone read as states) */
+const ACTION_ITEM = "h-6 w-auto gap-1 px-2 text-xs text-foreground-soft data-highlighted:text-foreground";
 
 /**
  * Plan 281 (proposal A): the person card, in the head of a chip's menu: what's open between you (each item opens its
@@ -53,8 +53,8 @@ export function PersonCardHead({ page, threadId }: { page: PersonPage; threadId:
               const parts = itemParts(item);
               const stamp = Date.now();
               return (
-                <div key={personItemId(item)} className="flex items-start gap-0.5" data-testid="person-card-row">
-                  <DropdownMenuItem data-testid="person-card-item" onClick={() => go(personItemThread(item).id)} className="h-auto min-w-0 flex-1 items-start py-1.5">
+                <div key={personItemId(item)} data-testid="person-card-row">
+                  <DropdownMenuItem data-testid="person-card-item" onClick={() => go(personItemThread(item).id)} className="h-auto min-w-0 items-start py-1.5">
                     <Glyph className={cn("mt-0.5", itemTone(item))} />
                     {/* what it is, on two lines at most, then its kind and its when, as the page says them */}
                     <span className="min-w-0 flex-1">
@@ -70,17 +70,22 @@ export function PersonCardHead({ page, threadId }: { page: PersonPage; threadId:
                       </span>
                     </span>
                   </DropdownMenuItem>
-                  <DropdownMenuItem data-testid="person-card-done" aria-label={t("people.card.done", { text: parts.text })} title={t("dated.done")} onClick={() => void actOnCardItem(item, "done")} className={ICON_ITEM}>
-                    <Check />
-                  </DropdownMenuItem>
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger data-testid="person-card-later" aria-label={t("people.card.later", { text: parts.text })} title={t("dated.later")} className={cn(ICON_ITEM, "w-auto gap-0.5 px-1.5")}>
-                      <Clock />
-                    </DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent className="w-max min-w-56" data-testid="person-card-later-menu">
-                      <LaterChoices item={item} presets={personLaterPresets(item, stamp)} now={stamp} via="card" testPrefix="person-card-later" />
-                    </DropdownMenuSubContent>
-                  </DropdownMenuSub>
+                  {/* (on the text's line: after the glyph's width) */}
+                  <div className="flex items-center gap-0.5 ps-[calc(1.15em+0.5rem)] pb-1">
+                    <DropdownMenuItem data-testid="person-card-done" aria-label={t("people.card.done", { text: parts.text })} onClick={() => void actOnCardItem(item, "done")} className={ACTION_ITEM}>
+                      <Check />
+                      {t("dated.done")}
+                    </DropdownMenuItem>
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger data-testid="person-card-later" aria-label={t("people.card.later", { text: parts.text })} className={ACTION_ITEM}>
+                        <Clock />
+                        {t("dated.later")}
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent className="w-max min-w-56" data-testid="person-card-later-menu">
+                        <LaterChoices item={item} presets={personLaterPresets(item, stamp)} now={stamp} via="card" testPrefix="person-card-later" />
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                  </div>
                 </div>
               );
             })}
@@ -91,7 +96,7 @@ export function PersonCardHead({ page, threadId }: { page: PersonPage; threadId:
         <>
           <DropdownMenuSeparator />
           <DropdownMenuGroup data-testid="person-card-last">
-            <DropdownMenuLabel>{page.lastFromMe ? t("people.youWroteLast") : t("people.theyWroteLast", { name: personKey(last.fromEmail) === page.key ? last.fromName || page.name || page.email : last.fromName || last.fromEmail })}</DropdownMenuLabel>
+            <DropdownMenuLabel>{t("people.lastConversation")}</DropdownMenuLabel>
             <DropdownMenuItem data-testid="person-card-last-item" onClick={() => go(last.id)} className="h-auto items-start py-1.5">
               {/* (on the items' line: a glyph of its own) */}
               <Mail className="mt-0.5" />
@@ -99,6 +104,10 @@ export function PersonCardHead({ page, threadId }: { page: PersonPage; threadId:
                 <span className="flex min-w-0 items-baseline gap-3">
                   <span className="min-w-0 flex-1 truncate font-medium">{last.subject || t("common.noSubject")}</span>
                   <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{listDate(last.lastDate)}</span>
+                </span>
+                {/* who wrote its last message: you, them, or whoever else is on it */}
+                <span className="mt-0.5 block truncate text-xs text-muted-foreground" data-testid="person-card-last-by">
+                  {page.lastFromMe ? t("people.youWroteLast") : t("people.theyWroteLast", { name: personKey(last.fromEmail) === page.key ? last.fromName || page.name || page.email : last.fromName || last.fromEmail })}
                 </span>
                 {summary && <span className="mt-0.5 line-clamp-2 text-xs whitespace-normal text-muted-foreground">{summary}</span>}
               </span>

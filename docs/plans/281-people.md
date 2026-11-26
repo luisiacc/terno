@@ -221,3 +221,18 @@ Astra (gpt-6.2-astra) on 114e090fa, nine findings, all taken (each test fails wi
 - Written to is plan 17's correspondents, by `addressKey` (the facts' and the Inbox filter's rule): `support+ticket@` written makes `support@` someone's, for the search, Everyone and Open alike. Test.
 - The search asks the index for four times what it shows (at most 200) before leaving out who isn't a person.
 - "How long" counts calendar days: yesterday at 4 PM is "1 day" at noon. Test.
+
+## UI rating round 4 (after the owner's decisions)
+
+| Round | Commit | Claude | Codex | Cells under 9 |
+|---|---|---|---|---|
+| r04 | 114e090fa | 6.5–7 | 7–7.5 | 389 |
+
+(A first try stopped once captured: this shell's Node had no `codex`; run again with the one under fnm's v24.21.0 on the PATH.)
+
+Clarity was the weakest facet everywhere (5.2–6.7). The raters' most common points, and what came of them:
+- **A waiting conversation's kind by its glyph alone** (decision 2) was read as hidden: nearly every rater asked for the words back on the row, the page and the card. Kept as the owner decided; put back to the owner.
+- **"Not from Wei"** said who didn't write: a group conversation they never wrote in now says who wrote its last message ("Yuki wrote last", "You wrote last"), in the snippet's weight.
+- **The card named a third person as its heading** ("Emilio wrote last"): the section is "Last conversation", who wrote last a quiet line under its subject.
+- **The card's ✓ and clock** read as states, without a visible name: Done and Later in words, small, under the item's text (aligned with it), as the page has them.
+- Not taken (the owner's or out of this series): dark selection vs hover in Graphite and Atelier (decision 12); a compact row; Everyone's second line; the age's words on the row ("4 weeks" reads unlabeled to some); the card closing after Done.

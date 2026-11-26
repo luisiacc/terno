@@ -210,7 +210,7 @@ test("People: the row below the Inbox, Open and the search, a person's page, Don
     await chip.click();
     await page.getByTestId("person-menu").getByTestId("person-open-people").click();
     await expect(page.getByTestId("person-name")).toHaveText("Marco Bell");
-    await expect(page.getByTestId("person-conversation").filter({ hasText: "Kickoff notes" }).getByTestId("person-conversation-not-from")).toHaveText("Not from Marco");
+    await expect(page.getByTestId("person-conversation").filter({ hasText: "Kickoff notes" }).getByTestId("person-conversation-by")).toHaveText("Yuki wrote last · ");
     await page.getByTestId("person-page").getByTestId("person-write").focus();
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("people")).toHaveCount(0);
