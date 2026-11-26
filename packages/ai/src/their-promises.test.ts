@@ -21,7 +21,7 @@ describe("reading their mail (plan 280)", () => {
   });
 
   it("is frozen at its version: a change to the words is a new version", () => {
-    expect(THEIRS_PROMPT_VERSION).toBe(3);
+    expect(THEIRS_PROMPT_VERSION).toBe(4);
     expect(readTheirMailTask(input()).system).toMatchSnapshot();
     expect(readTheirMailTask(input({ language: "es" })).system).toContain("Spanish");
   });

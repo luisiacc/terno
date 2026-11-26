@@ -65,6 +65,16 @@ export function reminderShort(ms: number, now = Date.now()): string {
   return `${dayOf(ms, now)} ${time}`;
 }
 
+/** Plan 280 (the QA panel): a day alone, as a row's date says one: "Today", "Tomorrow", "Yesterday", a weekday within a week, else "Nov 16". */
+export function dayShort(ms: number, now = Date.now()): string {
+  const days = daysAway(ms, now);
+  if (days === 0) return t("date.today");
+  if (days === 1) return t("date.tomorrow");
+  if (days === -1) return t("date.yesterday");
+  if (days > 1 && days < 7) return fmt().weekday.format(ms).replace(".", "");
+  return dayOf(ms, now);
+}
+
 /**
  * Plan 161, pass 2: a moment a line promises, never a bare weekday: "Today 5:00 PM", "Tomorrow 9:00 AM", and from the day
  * after, its date: "Wed, Oct 28, 9:00 AM" ("mié, 28 oct, 09:00").

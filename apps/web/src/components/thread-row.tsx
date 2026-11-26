@@ -1,6 +1,6 @@
 import { CheckboxMark } from "@terno/ui/components/checkbox";
 import { toggleRow, useActionPreview, useActionRows } from "~/state/action-preview";
-import { lineRows, listFilterOf, matchesFilter, matchFocus, mostUrgent, type CategoryColor, type Placement, type RowMatch, type ThreadSummary } from "@terno/core";
+import { lineRows, listFilterOf, localDay, matchesFilter, matchFocus, mostUrgent, type CategoryColor, type Placement, type RowMatch, type ThreadSummary } from "@terno/core";
 import { Badge } from "@terno/ui/components/badge";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import type { RowLines } from "@terno/ui/designs/rows";
@@ -23,6 +23,7 @@ import { Marked } from "./match-mark";
 import { ReviewControls } from "./review-actions";
 import { useThreadCode } from "~/lib/codes";
 import { reminderShort, useReminders } from "~/lib/reminders";
+import { dayShort } from "~/lib/when";
 import { rowLine } from "~/lib/followups";
 import { useFollowups } from "~/state/followups";
 import { rowLine as placedLine, sectionOf } from "~/lib/put-away";
@@ -190,7 +191,12 @@ function useOwed(thread: Pick<ThreadSummary, "id">, reminderTop?: boolean) {
   const shows = !!owed && (followupsList || (reminderTop && owed.some((r) => r.inboxState === "onTop")));
   // plan 280 (the code review): on the top, the row that put it there speaks for it, never a quiet one beside it
   const speaking = shows ? lineRows(owed, !followupsList) : undefined;
-  return { line: speaking ? rowLine(speaking) : null, dueAt: speaking ? (mostUrgent(speaking)?.dueAt ?? null) : null };
+  const lead = speaking ? mostUrgent(speaking) : undefined;
+  // plan 280 (the QA panel): a promise of theirs says the day it was promised for, never the moment it's late ("Mon", not
+  // "Tue 9:00 AM"), and a tentative one is said quietly
+  const theirs = lead?.kind === "theirs";
+  const day = theirs && lead.dueDay ? localDay(lead.dueDay) : null;
+  return { line: speaking ? rowLine(speaking) : null, dueAt: theirs ? (day ? day.getTime() : null) : (lead?.dueAt ?? null), dayOnly: theirs, quietLine: theirs && lead.firm === false };
 }
 
 /**
@@ -257,13 +263,13 @@ function withReason(reason: string | undefined, quiet: string, ink: string, word
 }
 
 function RowSnippet({ thread, reminderTop, ink, quiet, match, excerpt, lead, two, placed }: { thread: ThreadSummary; reminderTop?: boolean; ink: string; quiet: string; match?: RowMatch | null; excerpt?: string; lead: number; two: boolean; placed?: PlacedView }) {
-  const { line } = useOwed(thread, reminderTop);
+  const { line, quietLine } = useOwed(thread, reminderTop);
   const reason = useReason(thread);
   if (placed) return <span data-testid="row-snippet" className={cn("type-row-snippet min-w-[min(8rem,25%)]", two ? "line-clamp-2 wrap-anywhere" : "truncate", quiet)}><PlacedLine placed={placed} /></span>;
   return (
     // plan 173: the marks share its line, so it keeps its first words (a search's match stands near them, LEAD); plan 187:
     // two lines wrap and clamp, a long word broken rather than overflowing
-    <span data-testid="row-snippet" data-followup={line ? true : undefined} data-excerpt={!line && excerpt ? true : undefined} className={cn("type-row-snippet min-w-[min(8rem,25%)]", two ? "line-clamp-2 wrap-anywhere" : "truncate", line ? ink : reason ? undefined : quiet)}>
+    <span data-testid="row-snippet" data-followup={line ? true : undefined} data-excerpt={!line && excerpt ? true : undefined} className={cn("type-row-snippet min-w-[min(8rem,25%)]", two ? "line-clamp-2 wrap-anywhere" : "truncate", line ? (quietLine ? quiet : ink) : reason ? undefined : quiet)}>
       {line ?? withReason(reason, quiet, ink, matchLine(match, excerpt ?? thread.snippet, lead))}
     </span>
   );
@@ -271,11 +277,11 @@ function RowSnippet({ thread, reminderTop, ink, quiet, match, excerpt, lead, two
 
 /** A wide row's preview: right after the subject, a step smaller and in the preview's ink, and the first thing cut. */
 function WideSnippet({ thread, reminderTop, ink, quiet, match, excerpt, placed }: { thread: ThreadSummary; reminderTop?: boolean; ink: string; quiet: string; match?: RowMatch | null; excerpt?: string; placed?: PlacedView }) {
-  const { line } = useOwed(thread, reminderTop);
+  const { line, quietLine } = useOwed(thread, reminderTop);
   const reason = useReason(thread);
   if (placed) return <span data-testid="row-snippet" className={cn("ml-1.5 min-w-[45%] flex-1 truncate text-xs", quiet)}><PlacedLine placed={placed} /></span>;
   return (
-    <span data-testid="row-snippet" data-followup={line ? true : undefined} data-excerpt={!line && excerpt ? true : undefined} className={cn("ml-1.5 min-w-0 flex-1 truncate text-xs", line ? ink : reason ? undefined : quiet)}>
+    <span data-testid="row-snippet" data-followup={line ? true : undefined} data-excerpt={!line && excerpt ? true : undefined} className={cn("ml-1.5 min-w-0 flex-1 truncate text-xs", line ? (quietLine ? quiet : ink) : reason ? undefined : quiet)}>
       {line ?? withReason(reason, quiet, ink, matchLine(match, excerpt ?? thread.snippet, LEAD.wide))}
     </span>
   );
@@ -283,11 +289,11 @@ function WideSnippet({ thread, reminderTop, ink, quiet, match, excerpt, placed }
 
 /** A one-line row's words right after the subject: the same line, where it reads the same; apart from the subject by ink and space, no dash (subjects have their own). */
 function RowTail({ thread, reminderTop, ink, quiet, match, excerpt, placed }: { thread: ThreadSummary; reminderTop?: boolean; ink: string; quiet: string; match?: RowMatch | null; excerpt?: string; placed?: PlacedView }) {
-  const { line } = useOwed(thread, reminderTop);
+  const { line, quietLine } = useOwed(thread, reminderTop);
   const reason = useReason(thread);
   // a one-line row's why keeps room beside the subject (it's what this list is for)
   if (placed) return <span data-testid="row-snippet" className={cn("type-row-snippet min-w-[45%] flex-1 truncate", quiet)}><PlacedLine placed={placed} /></span>;
-  return <span data-testid="row-snippet" data-followup={line ? true : undefined} className={cn("type-row-snippet min-w-0 flex-1 truncate", line ? ink : reason ? undefined : quiet)}>{line ?? withReason(reason, quiet, ink, matchLine(match, excerpt ?? thread.snippet, LEAD.wide))}</span>;
+  return <span data-testid="row-snippet" data-followup={line ? true : undefined} className={cn("type-row-snippet min-w-0 flex-1 truncate", line ? (quietLine ? quiet : ink) : reason ? undefined : quiet)}>{line ?? withReason(reason, quiet, ink, matchLine(match, excerpt ?? thread.snippet, LEAD.wide))}</span>;
 }
 
 /**
@@ -304,8 +310,8 @@ const SENDER_COLUMN = "flex w-[clamp(5rem,24cqw,11rem)] min-w-0 shrink items-cen
 
 /** On the Inbox's top and in its own list, the date a row shows is when it's owed. */
 function RowDate({ thread, reminderTop, fallback, className, title }: { thread: ThreadSummary; reminderTop?: boolean; fallback: string; className: string; title?: string }) {
-  const { dueAt } = useOwed(thread, reminderTop);
-  return <span data-testid="row-date" data-due-at={dueAt ?? undefined} title={title} className={className}>{dueAt !== null ? reminderShort(dueAt) : fallback}</span>;
+  const { dueAt, dayOnly } = useOwed(thread, reminderTop);
+  return <span data-testid="row-date" data-due-at={dueAt ?? undefined} title={title} className={className}>{dueAt !== null ? (dayOnly ? dayShort(dueAt) : reminderShort(dueAt)) : fallback}</span>;
 }
 
 export function ThreadRowView({ thread, top, height, compact, wide, icons, layout, review, pinnedTop = false, reminderTop, selected, checked, included, pending, inSelection, account, categories, inCategory = null, kept = false, hasDraft, code, reminder, remindersList, interactive, match, excerpt, lines: previewLines = 1, pick = false, position, placedView: placed }: ViewProps) {

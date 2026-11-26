@@ -85,6 +85,17 @@ export function fileDelivers(text: string, attachments: readonly string[], debts
   return named.length === 1 ? named[0]! : null;
 }
 
+/**
+ * The QA panel: a promise's words are said to the reader about the sender, so the sender's "my" is their name's (prompt v4's
+ * rule, which a model still breaks: "send you my section of the draft"); Spanish "mi"/"mis" become "su"/"sus".
+ */
+export function theirWords(text: string, name: string): string {
+  const first = name.trim().split(/\s+/u)[0] ?? "";
+  return text
+    .replace(/(?<![\p{L}\p{N}'’])my(?=\s+\p{L})/giu, first ? `${first}'s` : "their")
+    .replace(/(?<![\p{L}\p{N}'’])(?<!\d\s)(mi|mis)(?=\s+\p{L})/giu, (w) => (w.toLowerCase() === "mis" ? "sus" : "su"));
+}
+
 export interface TheirChecks {
   rows: OwedWrite[];
   kept: OwedRef[];
@@ -123,7 +134,7 @@ export function checkTheirPromises(
       if (input.reader.addressed === "cc" && !(first.length >= 2 && new RegExp(`\\b${first.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}\\b`, "u").test(norm(p.quote)))) return;
       const due = validFollowupDate(p.due, input.madeAt);
       const when = theirDue({ madeAt: input.madeAt, due, nudgeAfterDays: input.nudgeAfterDays });
-      out.rows.push({ item: THEIRS_ITEM + i, text: p.text, quote: p.quote, personName: input.from.name || null, personEmail: input.from.email, dueAt: when.dueAt, dated: when.dated, dueDay: when.dueDay, firm: p.firm, ...(p.partOfDay ? { partOfDay: p.partOfDay } : {}) });
+      out.rows.push({ item: THEIRS_ITEM + i, text: theirWords(p.text, input.from.name), quote: p.quote, personName: input.from.name || null, personEmail: input.from.email, dueAt: when.dueAt, dated: when.dated, dueDay: when.dueDay, firm: p.firm, ...(p.partOfDay ? { partOfDay: p.partOfDay } : {}) });
     });
   }
   const ref = (label: string): OwedRef | null => {
@@ -149,7 +160,9 @@ export function checkTheirPromises(
     const debtor = row.personKey;
     const others = [...input.owed.values(), ...(input.debts ?? [])].filter((o) => o.id !== row.id && (!debtor || o.personKey === debtor));
     // (the QA panel: words around the file count too, unless any of them says it isn't ready: "plan + budget math")
-    const denies = input.text.split(/(?<=[.!?])\s+|\n+/u).some((x) => x.trim() && saysNotYet(x));
+    // (the QA panel: only a sentence about the thing itself: "Dime si falta algo" says nothing of the texts)
+    const thing = namingWords(row.text, { names: false });
+    const denies = input.text.split(/(?<=[.!?])\s+|\n+/u).some((x) => x.trim() && saysNotYet(x) && [...namingWords(x, { names: false })].some((w) => thing.has(w)));
     // the file names the thing, or (the QA panel: "Harbour_Pine_NDA_signed.pdf" for "enviarte el NDA firmado", words in two
     // languages) the model says it is, and the person owes nothing else the file could be
     const byFile = file !== undefined && (bare(input.text) || !denies) && (fileNames(file, row.text) ? !others.some((o) => fileNames(file, o.text)) : !others.length);

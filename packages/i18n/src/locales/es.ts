@@ -169,6 +169,8 @@ const es = {
   "shortcuts.todayHandTo": "Delegar algo de «Lo importante» en otra persona",
   "shortcuts.goReminders": "Ir a Recordatorios",
   "date.yesterday": "Ayer",
+  "date.today": "Hoy",
+  "date.tomorrow": "Mañana",
 
   // ── language (settings → general)
   "language.label": "Idioma",

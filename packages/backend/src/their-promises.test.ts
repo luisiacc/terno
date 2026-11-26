@@ -1,7 +1,7 @@
 import type { TheirMailResult } from "@terno/ai";
 import { THEIRS_ITEM, type FollowupRow } from "@terno/core";
 import { describe, expect, it } from "vitest";
-import { bare, checkTheirPromises, claimsFile, deliveredIn, fileDelivers, fileNames, owedWorth, plainOwed, quoteIn, relayOf, saysNotYet } from "./their-promises";
+import { bare, theirWords, checkTheirPromises, claimsFile, deliveredIn, fileDelivers, fileNames, owedWorth, plainOwed, quoteIn, relayOf, saysNotYet } from "./their-promises";
 
 const at = (y: number, m: number, d: number, h = 0) => new Date(y, m - 1, d, h).getTime();
 // Monday 2 March 2026
@@ -147,5 +147,18 @@ describe("their promises' checks (plan 280)", () => {
     expect(check({ kept: [{ label: "t1", evidence: "Harbour_Pine_NDA_signed.pdf" }] }, { owed: nda, attachments: ["Harbour_Pine_NDA_signed.pdf"], text: "" }).kept).toEqual([{ id: 8, revision: 3 }]);
     // with another debt of theirs it could be, a file that names neither is no delivery
     expect(check({ kept: [{ label: "t1", evidence: "Harbour_Pine_NDA_signed.pdf" }] }, { owed: nda, attachments: ["Harbour_Pine_NDA_signed.pdf"], text: "", debts: [row(9, "enviarte la factura")] }).kept).toEqual([]);
+  });
+
+  it("the QA panel: the sender's 'my' is their name's, in English and Spanish", () => {
+    expect(theirWords("send you my section of the draft", "Tomas Reyes")).toBe("send you Tomas's section of the draft");
+    expect(theirWords("enviarte mi parte y mis notas", "Inés Barrios")).toBe("enviarte su parte y sus notas");
+    expect(theirWords("send you the 5 mi route", "Ana")).toBe("send you the 5 mi route");
+  });
+
+  it("the QA panel: a file the model names keeps it unless a sentence about that thing says it isn't ready", () => {
+    const owed = new Map([["t1", row(7, "pasarte los textos de la web")]]);
+    const files = { attachments: ["Textos_web_Altozano.docx"] };
+    expect(check({ kept: [{ label: "t1", evidence: "Textos_web_Altozano.docx" }] }, { owed, ...files, text: "Aquí tienes los textos, adjuntos. Dime si falta algo." }).kept).toEqual([{ id: 7, revision: 3 }]);
+    expect(check({ kept: [{ label: "t1", evidence: "Textos_web_Altozano.docx" }] }, { owed, ...files, text: "Los textos todavía no están cerrados, va un borrador." }).kept).toEqual([]);
   });
 });

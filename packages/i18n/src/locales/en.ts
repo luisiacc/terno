@@ -176,6 +176,8 @@ const en = {
   "shortcuts.todayHandTo": "Hand a “What matters” item to someone",
   "shortcuts.goReminders": "Go to Reminders",
   "date.yesterday": "Yesterday",
+  "date.today": "Today",
+  "date.tomorrow": "Tomorrow",
 
   // ── language (settings → general)
   "language.label": "Language",
