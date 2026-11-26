@@ -93,11 +93,11 @@ describe("what a search matched", () => {
 });
 
 describe("an item in a few words", () => {
-  it("its kind and what, never naming the person again; a conversation waiting on you says its kind only to a screen reader", () => {
-    expect(itemParts(waiting(1, "Phase 2"))).toEqual({ label: "Waiting on you", text: "Phase 2", quiet: true });
-    expect(itemParts(owed(2, "the signed contract"))).toEqual({ label: "Owes you a reply", text: "The signed contract", quiet: false });
+  it("its kind and what, never naming the person again", () => {
+    expect(itemParts(waiting(1, "Phase 2"))).toEqual({ label: "Waiting on you", text: "Phase 2" });
+    expect(itemParts(owed(2, "the signed contract"))).toEqual({ label: "Owes you a reply", text: "The signed contract" });
     const promise: PersonItem = { kind: "today", item: { id: "promise:3", thread: thread(3, "SOW"), why: { kind: "promise", text: "send the revised SOW", personEmail: "ana@x.test" } } };
-    expect(itemParts(promise)).toEqual({ label: "You promised", text: "Send the revised SOW", quiet: false });
+    expect(itemParts(promise)).toEqual({ label: "You promised", text: "Send the revised SOW" });
   });
 
   it("how long it's waited: today, days, then weeks, then months", () => {

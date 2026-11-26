@@ -60,10 +60,10 @@ export function PersonCardHead({ page, threadId }: { page: PersonPage; threadId:
                     <span className="min-w-0 flex-1">
                       <span className="line-clamp-2 whitespace-normal">{parts.text}</span>
                       <span className="mt-0.5 block truncate text-xs text-muted-foreground" data-testid="person-card-item-status">
-                        {parts.quiet ? <span className="sr-only">{parts.label}</span> : parts.label}
+                        {parts.label}
                         {when.text && (
                           <>
-                            {parts.quiet ? null : " · "}
+                            {" · "}
                             <span className={when.late ? "text-destructive-ink tabular-nums" : "tabular-nums"}>{when.text}</span>
                           </>
                         )}

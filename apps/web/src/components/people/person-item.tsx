@@ -42,27 +42,17 @@ const capital = (s: string): string => s.charAt(0).toLocaleUpperCase() + s.slice
 
 /**
  * An item in a few words, under its person's name (never naming them again): what kind of thing it is ("You promised",
- * "Owes you a reply", "Asked you") and what: the promise's words, the conversation's subject, the reply you're owed, a
- * request as What matters says it. A conversation waiting on your answer is most of what's open: its kind is said by its
- * glyph alone (`quiet`: the words only for a screen reader), so the others stand out (owner, after the QA panel).
+ * "Waiting on you", "Owes you a reply", "Asked you") and what: the promise's words, the conversation's subject, the reply
+ * you're owed, a request as What matters says it. Every kind in words (the owner, after rating round 4: a glyph alone
+ * didn't say it); the glyph's tint sets the promise and the reply owed apart.
  */
-export function itemParts(item: PersonItem): { label: string; text: string; quiet: boolean } {
-  if (item.kind === "awaiting") return { label: t("people.kind.awaiting"), text: capital(item.row.text.trim() || item.thread.subject || t("common.noSubject")), quiet: false };
+export function itemParts(item: PersonItem): { label: string; text: string } {
+  if (item.kind === "awaiting") return { label: t("people.kind.awaiting"), text: capital(item.row.text.trim() || item.thread.subject || t("common.noSubject")) };
   const { why, thread } = item.item;
   const subject = thread.subject?.trim() || t("common.noSubject");
-  if (why.kind === "promise") return { label: t("people.kind.promise"), text: capital(why.text?.trim() || subject), quiet: false };
-  if (why.kind === "waiting") return { label: t("people.kind.waiting"), text: subject, quiet: true };
-  return { label: t(isPersonRequest(why.item?.kind) ? "people.kind.asked" : "people.kind.todo"), text: todaySentence(item.item), quiet: false };
-}
-
-/** An item's kind before its words: in the line ("You promised · …"), or only for a screen reader when it's `quiet`. */
-export function KindLabel({ parts, sep = " · " }: { parts: ReturnType<typeof itemParts>; sep?: string }) {
-  return parts.quiet ? <span className="sr-only">{parts.label}: </span> : (
-    <>
-      <span className="font-medium">{parts.label}</span>
-      {sep}
-    </>
-  );
+  if (why.kind === "promise") return { label: t("people.kind.promise"), text: capital(why.text?.trim() || subject) };
+  if (why.kind === "waiting") return { label: t("people.kind.waiting"), text: subject };
+  return { label: t(isPersonRequest(why.item?.kind) ? "people.kind.asked" : "people.kind.todo"), text: todaySentence(item.item) };
 }
 
 const DAY = 86_400_000;
@@ -123,13 +113,12 @@ export function PersonItemLine({ item, morphName }: { item: PersonItem; morphNam
           {/* (its when is never what a long subject cuts) */}
           <span className="mt-0.5 flex min-w-0 text-sm whitespace-pre text-row-preview">
             <span className="min-w-0 truncate">
-              {/* (a waiting conversation's subject is its text: the line says when alone) */}
-              {parts.quiet ? <span className="sr-only">{parts.label}</span> : <span className="font-medium">{parts.label}</span>}
+              <span className="font-medium">{parts.label}</span>
               {text !== subject && <> · {subject}</>}
             </span>
             {when.text && (
               <span className="shrink-0">
-                {parts.quiet && text === subject ? null : " · "}
+                {" · "}
                 <span className={cn("tabular", when.late && "font-medium text-destructive-ink")}>{when.text}</span>
               </span>
             )}

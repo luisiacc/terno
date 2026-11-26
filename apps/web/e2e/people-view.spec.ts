@@ -104,11 +104,11 @@ test("People: the row below the Inbox, Open and the search, a person's page, Don
     await openPerson(page, "Ana Ruiz");
     await page.getByTestId("people-search").fill("");
     await expect(items(page)).toHaveCount(2);
-    // longest waiting first; a conversation waiting on you says so by its glyph (its words for a screen reader only)
+    // longest waiting first, each saying its kind in words
     await expect(items(page).nth(0)).toContainText("Owes you a reply");
     await expect(items(page).nth(0)).toContainText("The signed contract");
     await expect(items(page).nth(1)).toContainText("Phase 2 scope");
-    await expect(items(page).nth(1).getByText("Waiting on you")).toHaveClass(/sr-only/);
+    await expect(items(page).nth(1)).toContainText("Waiting on you");
     await expect(page.getByTestId("person-conversation").filter({ hasText: "Phase 2 scope" })).toBeVisible();
     await axeBothModes(page, '[data-testid="people"]', '[data-testid="person-page"]');
   });

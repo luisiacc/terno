@@ -236,3 +236,5 @@ Clarity was the weakest facet everywhere (5.2–6.7). The raters' most common po
 - **The card named a third person as its heading** ("Emilio wrote last"): the section is "Last conversation", who wrote last a quiet line under its subject.
 - **The card's ✓ and clock** read as states, without a visible name: Done and Later in words, small, under the item's text (aligned with it), as the page has them.
 - Not taken (the owner's or out of this series): dark selection vs hover in Graphite and Atelier (decision 12); a compact row; Everyone's second line; the age's words on the row ("4 weeks" reads unlabeled to some); the card closing after Done.
+
+After round 4 the owner brought "Waiting on you" back in words (decision 2 reversed): every kind says itself on the row, the page and the card; the tinted glyphs stay.

@@ -18,7 +18,7 @@ import { indexOf, matchedParts, openNow, peopleRows, usePeople, type PeopleRow }
 import { Marked } from "../match-mark";
 import { SenderAvatar } from "../sender-avatar";
 import { personItemSince } from "@terno/core";
-import { itemGlyph, itemParts, itemTone, itemWhen, KindLabel, waited } from "./person-item";
+import { itemGlyph, itemParts, itemTone, itemWhen, waited } from "./person-item";
 import { PersonPage } from "./person-page";
 
 /** where the list was left: coming back to People finds it there */
@@ -340,10 +340,9 @@ const PersonRow = memo(function PersonRow({ row, selected, tabbable, query }: { 
           {first && Glyph ? (
             <>
               <Glyph aria-hidden className={cn("size-[1.15em] shrink-0", !selected && itemTone(first))} />
-              {/* what's open, in words: its kind (a waiting conversation's, its glyph alone), then what */}
+              {/* what's open, in words: its kind, then what */}
               <span className="min-w-0 flex-1 truncate">
-                <KindLabel parts={parts!} />
-                {parts!.text}
+                <span className="font-medium">{parts!.label}</span> · {parts!.text}
               </span>
               {more > 0 && (
                 <Badge variant="neutral" className="ms-auto tabular" title={t("people.moreSaid", { count: more })}>
