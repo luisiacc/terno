@@ -297,3 +297,51 @@ Re-measured on the corpus's 192 asked cards: asks 73 → 73 (A's rerun 72 → 70
 **Not the feature:** the screenshots' dates ("Since Oct 19" on a November thread) come from the harness, which moves each conversation to the test app's clock; and "Reply" in English on Diego's Spanish card comes from the test window's language.
 
 **For the owner:** rows (5.1, the weakest score), a since naming what's newly asked of you, overdue marks, Reply on every to-do, and wrong facts in the whole summary. Each is in the report that follows.
+
+### The owner's answers, and the second round
+
+> ok lets do your recommendations for all 6 fixes, then run the rating again and see the new scores
+
+Built (`2a835e61e`), with tests:
+1. **Rows.**
+   - Your open promises with a day or a concrete thing to deliver are actions; a vague or conditional one, or a "don't", isn't.
+   - A request or deadline put to everyone in a group you belong to (your school's parents, your course) is yours; a newsletter's isn't.
+   - What someone else owes you is a **Waiting on** row, who first ("Kit: two mornings for the door repair"): at most two, never in an ask's place, never counted in What matters' Needs you.
+   - All in the full prompt only: the compact prompt is at its window's floor and keeps its words.
+2. **The since may close on what's newly asked** in a few words ("and Helen wants section 2 by Friday"); the row stays.
+3. **Overdue.** Each row has `due` (YYYY-MM-DD). A to-do whose day has passed reads **Overdue**, and (round 2) every row shows its day ("by Nov 24") unless its words already name it.
+4. **Reply only where replying does it.** An action has `byReply`; one done elsewhere (a call, a payment, a form) offers no Reply, and nor does a Waiting on row.
+5. **A stronger model**, measured below. Nothing changed.
+6. **A failed summary says so.** New mail whose automatic summary failed shows "Couldn't summarize the new mail in this conversation." with Try again, while that mail is unread (`AiSummaryRead` `failed`).
+
+The answer's new fields are lenient: a server without `json_schema` that leaves `due` or `byReply` out reads as no day and yes, at no repair.
+
+**On the corpus** (371 conversations against arm A): asks 121 → 137, cards losing every ask 9 (A's own rerun: 12), rows 123 → 219, of them 78 Waiting on. Of the fictional cards that gained asks, six of nine match their answer key exactly; the noise is a reader's own "how to" ("Park on the street", "Keep the lamp until Oakfield confirms") and one done promise.
+
+**The second round.** Fresh reviewers, the same seven people, never told an earlier score:
+
+| Average, 0 to 10 | Round 1 | Round 2 |
+|---|---:|---:|
+| Since is accurate | 7.9 | 7.6 |
+| Since is concise | 9.0 | 8.6 |
+| Since tells me what I needed | 6.4 | 6.3 |
+| Rows are right | 5.1 | 5.3 |
+| The card's look and the switch | 7.4 | 7.8 |
+| Would rely on it daily | 5.6 | 5.7 |
+
+Flat within a reviewer's noise. Two of round 2's worst cases came from the cards file, not the card: for a card without a since it said "Nothing changed, says the model", where the app shows only the summary (which held the change). That label is fixed in the harness. What all seven repeated:
+- **Rows don't show their day.** Fixed: `dueWords`.
+- **A real change sometimes got no since** (a moved meeting, a moved appointment, a new quote). Fixed: a since is never empty when new mail moves a date or a time, changes an amount, cancels, approves or decides something. On the panel, sinces went from 31 to 34 of 41, and all three cases are right; courtesy tails still 95% empty, material tails 90% with a since.
+- **Other people's tasks in threads you manage while copied** (Jordan, Priya, Diego: "Kit owes Ava two mornings"). Waiting on covers only what's owed to you: for the owner.
+
+**A stronger model (Sonnet 5.5) against GPT Luna**, on the panel's 42, judged blind by Claude and Codex (X and Y at random per conversation):
+
+| | Codex: Luna | Codex: Sonnet | Claude: Luna | Claude: Sonnet |
+|---|---:|---:|---:|---:|
+| Better card | 8 | 23 | 4 | 16 |
+| Key facts missing (high) | 45 (17) | 26 (10) | 25 (2) | 8 (3) |
+| Wrong claims (high) | 14 (6) | 12 (4) | 11 (0) | 8 (1) |
+
+Sonnet leaves out far less, is wrong about as often (its one serious error: Margaret's December visit put in November), and gives a since on 38 of 42 against Luna's 30 to 34. It's faster (median 2.9 s against 8.6 s) and about 18 times dearer: $0.012 a summary against $0.0007, about $3.70 a month at 300 summaries against $0.20. Neither caught Theo's invoice whose lines don't add up. For the owner.
+
+**Known:** one long solicitor's thread (`margaret-1`) is cut off in 3 of 5 runs at 5,000 tokens; the card now says so with Try again.
