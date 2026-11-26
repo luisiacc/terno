@@ -7,7 +7,8 @@ import { expectMailbox, type WorkloadMailbox } from "./perf";
 
 /**
  * Plan 142 at 50k+ threads, the same workload on both stores, at the cap of 1,000 active rows: the list, the one timer's
- * probe, what opening a thread reads, and closing replies over all of them in chunks.
+ * probe, what opening a thread reads, and closing replies over all of them in chunks. Plan 280: a third of them promises
+ * of theirs, and what the reader of received mail asks of them (a sender's open ones, and a conversation's).
  */
 export async function measureFollowups(o: WorkloadMailbox): Promise<void> {
   const { store, accountId } = o;
@@ -17,11 +18,13 @@ export async function measureFollowups(o: WorkloadMailbox): Promise<void> {
   const tom = { name: "Tom", email: "tom@perf.test" };
   const ids: { id: number; thread: number }[] = [];
   for (let slice = 0; slice < 10; slice++) {
-    const batch = Array.from({ length: 100 }, (_, i) => msg({ accountId, from: me, to: [tom], isSent: true, inInbox: false, providerMsgId: `fu-${slice}-${i}`, rfcMessageId: `fu-${slice}-${i}@perf`, subject: `Fu ${slice}-${i}`, date: o.now - 1000 - i, bodyText: "x" }));
+    // (Gmail's SENT label: yours for certain, which a promise of theirs your mail records needs, plan 280)
+    const batch = Array.from({ length: 100 }, (_, i) => msg({ accountId, from: me, to: [tom], isSent: true, inInbox: false, gmailLabels: ["SENT"], providerMsgId: `fu-${slice}-${i}`, rfcMessageId: `fu-${slice}-${i}@perf`, subject: `Fu ${slice}-${i}`, date: o.now - 1000 - i, bodyText: "x" }));
     const r = await store.sync.ingest(batch, { applyFilters: false, now: o.now, classifier: null, liveSent: { wanted: true } });
     for (const id of r.inserted) ids.push({ id, thread: (await store.followups.source(id))!.threadId });
   }
-  const row = (i: number): FollowupWrite => (i % 2 ? { kind: "promise", item: 0, text: "send it", quote: "I'll send it", personName: "Tom", personEmail: tom.email, dueAt: o.now + 86_400_000 + i, dated: false } : { kind: "awaiting", item: AWAITING_ITEM, text: "", quote: null, personName: "Tom", personEmail: tom.email, dueAt: o.now + 86_400_000 + i, dated: false });
+  const theirs = (i: number): FollowupWrite => ({ kind: "theirs", item: 200, text: "send you it", quote: "x", personName: "Tom", personEmail: tom.email, dueAt: o.now + 86_400_000 + i, dated: true, dueDay: "2026-12-01", firm: i % 2 === 0 });
+  const row = (i: number): FollowupWrite => (i % 3 === 0 ? theirs(i) : i % 2 ? { kind: "promise", item: 0, text: "send it", quote: "I'll send it", personName: "Tom", personEmail: tom.email, dueAt: o.now + 86_400_000 + i, dated: false } : { kind: "awaiting", item: AWAITING_ITEM, text: "", quote: null, personName: "Tom", personEmail: tom.email, dueAt: o.now + 86_400_000 + i, dated: false });
   let n = 0;
   for (const { id, thread } of ids.slice(0, FOLLOWUPS_ACTIVE_MAX)) await store.followups.finish({ messageId: id, threadId: thread, fromScan: false, rows: [row(n++)], kept: [], now: o.now, model: "m", provider: "p", promptVersion: 1, clearGeneration: store.followups.clearGeneration() });
   o.log(`1,000 follow-ups written in ${(performance.now() - seed).toFixed(0)} ms`);
@@ -42,6 +45,10 @@ export async function measureFollowups(o: WorkloadMailbox): Promise<void> {
   const waits = active.filter((r) => r.kind === "awaiting").map((r) => r.id);
   const chunk = await timed(5, (i) => store.followups.closeAnswered(waits.slice(i * 50, i * 50 + 50), o.now));
   const off = await timed(5, () => store.sync.ingest([], { applyFilters: false, now: o.now, classifier: null }));
+  // plan 280: a sender's open promises to you (a third of the bound's, by `followups_owed`), and a conversation's
+  expect(active.filter((r) => r.kind === "theirs").length).toBeGreaterThan(300);
+  const owedSender = await timed(20, (i) => store.followups.owed.openFor({ threadId: ids[i]!.thread, accountId, senderKey: tom.email, before: o.now + 86_400_000, limit: 10 }));
+  const owedNone = await timed(20, (i) => store.followups.owed.openFor({ threadId: ids[i]!.thread, accountId, senderKey: "nobody@perf.test", before: o.now + 86_400_000, limit: 10 }));
   // plan 211 (revision 11): the 30-day check, one account's: the mailbox's (its thousand sent just now), and a small one's
   const since = o.now - SCAN_DAYS * 86_400_000;
   const small = await smallAccount(o, (i) => ({ from: { name: "Me", email: "small@perf.test" }, to: [tom], isSent: true, subject: `Small ${i}` }));
@@ -55,7 +62,9 @@ export async function measureFollowups(o: WorkloadMailbox): Promise<void> {
   expect((await store.followups.inTrashOrSpam(threads)).size).toBe(0);
   const away = await timed(10, (i) => store.followups.inTrashOrSpam(threads.slice((i % 10) * 100, (i % 10) * 100 + 100)));
   const awayAll = await timed(3, () => store.followups.inTrashOrSpam(threads));
-  o.log(`Follow-ups: the active list ${list.toFixed(2)} ms, the timer's probe ${probe.toFixed(2)} ms, a thread's ${thread.toFixed(2)} ms, 50 replies' check ${chunk.toFixed(2)} ms, an empty ingest ${off.toFixed(2)} ms, what's in Trash or Spam ${away.toFixed(2)} ms a slice of 100 (${awayAll.toFixed(2)} ms all 1,000), the check's candidates ${scan.toFixed(2)} ms (a small account's ${scanSmall.toFixed(2)} ms)`);
+  o.log(`Follow-ups: the active list ${list.toFixed(2)} ms, the timer's probe ${probe.toFixed(2)} ms, a thread's ${thread.toFixed(2)} ms, 50 replies' check ${chunk.toFixed(2)} ms, an empty ingest ${off.toFixed(2)} ms, what's in Trash or Spam ${away.toFixed(2)} ms a slice of 100 (${awayAll.toFixed(2)} ms all 1,000), the check's candidates ${scan.toFixed(2)} ms (a small account's ${scanSmall.toFixed(2)} ms), a sender's promises to you ${owedSender.toFixed(2)} ms (none: ${owedNone.toFixed(2)} ms)`);
+  expect(owedSender).toBeLessThanOrEqual(5 * o.budget);
+  expect(owedNone).toBeLessThanOrEqual(5 * o.budget);
   expect(scan).toBeLessThanOrEqual(SCAN_MS * o.budget);
   expect(scanSmall).toBeLessThanOrEqual(SCAN_MS * o.budget);
   expect(list).toBeLessThanOrEqual(5 * o.budget * 3);
