@@ -16,8 +16,12 @@ import { itemGlyph, itemParts, itemTone, itemWhen, LaterChoices, personLaterPres
 /** the card's open items, at most (their page has the rest: r05, a third pushed the menu's own commands out of a small window) */
 const SHOWN = 2;
 
-/** a card item's Done and Later: the page's words, small menu items under the item's text (r04: icons alone read as states) */
-const ACTION_ITEM = "h-6 w-auto gap-1 px-2 text-xs text-foreground-soft data-highlighted:text-foreground";
+/**
+ * A card item's Done and Later: the page's words and glyphs, at the item's side as the page has them (the owner, after
+ * round 7), shown while the item is hovered or has the keyboard (one of its rows highlighted), or Later's submenu is open.
+ */
+const ACTION_ITEM = "h-6 w-auto gap-1 px-1.5 text-xs text-foreground-soft data-highlighted:text-foreground";
+const ON_HOVER = "opacity-0 transition-opacity duration-fast ease-motion group-hover/card-row:opacity-100 group-has-[[data-highlighted]]/card-row:opacity-100 has-[[data-popup-open]]:opacity-100";
 
 /**
  * Plan 281 (proposal A): the person card, in the head of a chip's menu: what's open between you (each item opens its
@@ -64,8 +68,8 @@ export function PersonCardHead({ page, threadId }: { page: PersonPage; threadId:
               const parts = itemParts(item);
               const stamp = Date.now();
               return (
-                <div key={personItemId(item)} data-testid="person-card-row">
-                  <DropdownMenuItem data-testid="person-card-item" onClick={() => go(personItemThread(item).id)} className="h-auto min-w-0 items-start py-1.5">
+                <div key={personItemId(item)} data-testid="person-card-row" className="group/card-row flex items-start gap-0.5">
+                  <DropdownMenuItem data-testid="person-card-item" onClick={() => go(personItemThread(item).id)} className="h-auto min-w-0 flex-1 items-start py-1.5">
                     <Glyph className={cn("mt-0.5", itemTone(item))} />
                     {/* what it is, on two lines at most, then its kind and its when, as the page says them */}
                     <span className="min-w-0 flex-1">
@@ -81,8 +85,8 @@ export function PersonCardHead({ page, threadId }: { page: PersonPage; threadId:
                       </span>
                     </span>
                   </DropdownMenuItem>
-                  {/* (on the text's line: after the glyph's width) */}
-                  <div className="flex items-center gap-0.5 ps-[calc(1.15em+0.5rem)] pb-1">
+                  {/* (on the item's first line) */}
+                  <div data-testid="person-card-actions" className={cn("flex shrink-0 items-center gap-0.5 pt-1", ON_HOVER)}>
                     <DropdownMenuItem data-testid="person-card-done" aria-label={t("people.card.done", { text: parts.text })} closeOnClick={false} onClick={() => done(item)} className={ACTION_ITEM}>
                       <Check />
                       {t("dated.done")}

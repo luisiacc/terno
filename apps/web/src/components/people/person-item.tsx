@@ -14,8 +14,14 @@ import { actOnCardItem, actOnPersonItem, openFromPerson, pickPersonLater } from 
 import { presetLabel, presetWhen } from "~/lib/reminders";
 import { todaySentence, todayWhen } from "~/lib/today-sentence";
 
-/** Done and Later at rest: there, quiet; the line hovered or with the keyboard, or the control itself, brings them up */
-const QUIET = "text-muted-foreground hover:text-foreground aria-expanded:text-foreground group-hover/item:text-foreground group-focus-within/item:text-foreground";
+/** Done and Later: quiet, the control itself brought up under the pointer or open */
+const QUIET = "text-muted-foreground hover:text-foreground aria-expanded:text-foreground";
+
+/**
+ * Done and Later show on the line's hover only (the owner, after rating round 7), or while the keyboard is on the line or
+ * Later's menu is open: never a row of buttons down the page at rest.
+ */
+export const ON_HOVER = "opacity-0 transition-opacity duration-fast ease-motion group-hover/item:opacity-100 group-focus-within/item:opacity-100 has-[[aria-expanded=true]]:opacity-100";
 
 /** What matters' own keys for Done and Later, on the item the keyboard is on (plan 281) */
 const DONE_KEY = shortcutFor("today.done") ?? "d";
@@ -127,7 +133,7 @@ export function PersonItemLine({ item, morphName }: { item: PersonItem; morphNam
       </button>
       <span aria-hidden className="hairline-b pointer-events-none absolute start-3 end-3 -bottom-px group-hover/item:invisible" />
       {actable && (
-        <div className="flex shrink-0 items-center gap-1">
+        <div data-testid="person-item-actions" className={cn("flex shrink-0 items-center gap-1", ON_HOVER)}>
           <Tooltip>
             <TooltipTrigger render={<Button variant="ghost" size="sm" data-testid="person-item-done" aria-describedby={textId} aria-keyshortcuts={DONE_KEY} className={QUIET} onClick={(e) => void actOnPersonItem(item, "done", undefined, e.detail > 0 ? "pointer" : "keyboard")} />}>
               <Check data-icon="inline-start" />
