@@ -490,3 +490,14 @@ It's about 275 tokens longer, so a 4,096-token window now gets the compact promp
 - the rows call keeps the app's caps.
 
 Each product point has a test that fails without it (`summarize.test.ts`, `model-stub.test.ts`).
+
+**Version 11 after the review, measured** (GPT Sol as judge, twice):
+- rely 8.25 and 8.18, against version 10's 8.00 to 8.06 and Sonnet's 8.48;
+- serious misses 72 and 68, against version 10's 87 to 91 and Sonnet's 71;
+- serious wrong claims 8 and 14, against version 10's 6 to 10 and Sonnet's 17.
+
+On Sol's reading, Luna now misses no more than Sonnet and makes fewer serious errors, and about half the rely gap is closed. Claude's judge, which favours its own family, can't confirm it until Anthropic's API usage limit resets on 1 December.
+
+Spend for this round:
+- $108.48 on the two ledgers that hit their cap ($95.96 Sonnet judging, $8.01 Sol judging, $4.51 Luna cards);
+- plus $10.41 for the last runs (`spend-p279d`): $118.89 in all.
