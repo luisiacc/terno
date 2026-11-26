@@ -25,7 +25,7 @@ import { useThreadCode } from "~/lib/codes";
 import { reminderShort, useReminders } from "~/lib/reminders";
 import { rowLine } from "~/lib/followups";
 import { useFollowups } from "~/state/followups";
-import { rowCategory, rowLine as placedLine, sectionOf } from "~/lib/put-away";
+import { rowLine as placedLine, sectionOf } from "~/lib/put-away";
 import { onlyOnTop } from "~/state/list";
 import { useExcerpts } from "~/state/excerpts";
 
@@ -62,7 +62,6 @@ export interface ThreadRowProps {
 /** Plan 282: a Put away row's why, as its preview shows it: the line, the filing's dot, and its section for a screen reader */
 interface PlacedView {
   line: string;
-  color?: CategoryColor;
   section: string;
 }
 const NO_FOLDERS: AppState["folders"] = [];
@@ -89,7 +88,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
   const categories = useApp((s) => s.categories);
   // plan 282: a folder's name for a rule's move (read only where a row says it)
   const folders = useApp((s) => (placed ? s.folders : NO_FOLDERS));
-  const placedView: PlacedView | undefined = placed && { line: placedLine(placed, { categories, folders }), color: categories.find((c) => c.id === rowCategory(placed))?.color as CategoryColor | undefined, section: sectionOf(placed) };
+  const placedView: PlacedView | undefined = placed && { line: placedLine(placed, { categories, folders }), section: sectionOf(placed) };
   /** kept in a filtered list only because it's open: it says so, or it reads as the filter's mistake (only the open row looks) */
   const kept = useApp((s) => {
     if (s.selectedId !== thread.id) return false;
@@ -231,10 +230,10 @@ function useReason(thread: Pick<ThreadSummary, "id">): string | undefined {
  * then who put it away and why. A screen reader hears its section first (the headings are drawn, not read).
  */
 function PlacedLine({ placed }: { placed: PlacedView }) {
+  // the category's dot is the row's marks' already; the whole line on hover where the row cuts it
   return (
-    <span data-testid="row-put-away">
+    <span data-testid="row-put-away" title={placed.line}>
       <span className="sr-only">{placed.section}: </span>
-      {placed.color && <CategoryDot color={placed.color} className="me-1.5 inline-block align-[0.05em]" />}
       {placed.line}
     </span>
   );
@@ -272,7 +271,7 @@ function RowSnippet({ thread, reminderTop, ink, quiet, match, excerpt, lead, two
 function WideSnippet({ thread, reminderTop, ink, quiet, match, excerpt, placed }: { thread: ThreadSummary; reminderTop?: boolean; ink: string; quiet: string; match?: RowMatch | null; excerpt?: string; placed?: PlacedView }) {
   const { line } = useOwed(thread, reminderTop);
   const reason = useReason(thread);
-  if (placed) return <span data-testid="row-snippet" className={cn("ml-1.5 min-w-0 flex-1 truncate text-xs", quiet)}><PlacedLine placed={placed} /></span>;
+  if (placed) return <span data-testid="row-snippet" className={cn("ml-1.5 min-w-[45%] flex-1 truncate text-xs", quiet)}><PlacedLine placed={placed} /></span>;
   return (
     <span data-testid="row-snippet" data-followup={line ? true : undefined} data-excerpt={!line && excerpt ? true : undefined} className={cn("ml-1.5 min-w-0 flex-1 truncate text-xs", line ? ink : reason ? undefined : quiet)}>
       {line ?? withReason(reason, quiet, ink, matchLine(match, excerpt ?? thread.snippet, LEAD.wide))}
@@ -284,7 +283,8 @@ function WideSnippet({ thread, reminderTop, ink, quiet, match, excerpt, placed }
 function RowTail({ thread, reminderTop, ink, quiet, match, excerpt, placed }: { thread: ThreadSummary; reminderTop?: boolean; ink: string; quiet: string; match?: RowMatch | null; excerpt?: string; placed?: PlacedView }) {
   const { line } = useOwed(thread, reminderTop);
   const reason = useReason(thread);
-  if (placed) return <span data-testid="row-snippet" className={cn("type-row-snippet min-w-0 flex-1 truncate", quiet)}><PlacedLine placed={placed} /></span>;
+  // a one-line row's why keeps room beside the subject (it's what this list is for)
+  if (placed) return <span data-testid="row-snippet" className={cn("type-row-snippet min-w-[45%] flex-1 truncate", quiet)}><PlacedLine placed={placed} /></span>;
   return <span data-testid="row-snippet" data-followup={line ? true : undefined} className={cn("type-row-snippet min-w-0 flex-1 truncate", line ? ink : reason ? undefined : quiet)}>{line ?? withReason(reason, quiet, ink, matchLine(match, excerpt ?? thread.snippet, LEAD.wide))}</span>;
 }
 

@@ -170,7 +170,7 @@ export function placementOf(c: Ctx, threadId: number, now: number): PutAwayDetai
   if (!row || row.at <= now - PUT_AWAY_MS || !holds(c, row)) return null;
   const p = toPlacement(row);
   if (!p) return null;
-  if (p.detail.by !== "rule") return p;
+  if (p.detail.by !== "rule") return { ...p, senderKept: isKeptSender(c, p.detail.categoryId, p.detail.sender) };
   const filter = T(c, "filters").get(p.detail.filterId);
   const live = !!filter && ruleHash(JSON.parse(filter.rule_json)) === p.detail.ruleHash;
   return { ...p, ruleLive: live, ruleEnabled: live && filter!.enabled === 1 };

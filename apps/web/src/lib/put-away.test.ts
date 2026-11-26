@@ -28,7 +28,7 @@ vi.mock("~/rpc/connection", () => ({
   },
 }));
 
-const { backToInbox, dayLabel, putAwaySections, refreshNotice, rowLine, sectionOf, seeNotice } = await import("./put-away");
+const { backToInbox, notCategory, senderOf, dayLabel, putAwaySections, refreshNotice, rowLine, sectionOf, seeNotice } = await import("./put-away");
 const { usePutAway } = await import("~/state/put-away");
 const { runUndo, useSnack } = await import("~/lib/snack");
 
@@ -45,18 +45,18 @@ afterEach(() => {
 describe("Put away's words (plan 282)", () => {
   it("a row says who did it and why, in the user's terms", () => {
     const names = { categories: [{ id: 7, name: "Facturas" }], folders: [{ key: "INBOX/News", path: ["News"] }] };
-    expect(rowLine(rule(), names)).toBe("Archived by your rule “Xataka”");
-    expect(rowLine(rule({}, { action: "moveToFolder", folder: "INBOX/News" }), names)).toBe("Moved to News by your rule “Xataka”");
-    expect(rowLine(rule({}, { auto: true, action: "trash" }), names)).toBe("Deleted by a rule Terno made on Nov 12");
-    expect(rowLine(rule({}, { action: "addCategory", categoryId: 7 }), names)).toBe("Facturas · by your rule “Xataka”");
-    expect(rowLine(terno([{ k: "reason.mentions", p: { count: 1, a: "factura", b: "", c: "" } }, { k: "reason.sameSender", p: { count: 12, category: "Facturas" } }]), names)).toBe("Facturas · you keep 12 from Rappi there");
-    expect(rowLine(terno([{ k: "reason.intent.invoice" }]), names)).toBe("Facturas · looks like an invoice or a receipt");
-    expect(rowLine(terno([{ k: "reason.newSender" }]), names)).toBe("Facturas · like the mail you keep there");
-    // the sender the decision read, not the newest mail's (a reply from someone else)
-    expect(rowLine(terno([{ k: "reason.sameSender", p: { count: 3, category: "Facturas" } }], { detail: { by: "terno", categoryId: 7, reasons: [{ k: "reason.sameSender", p: { count: 3, category: "Facturas" } }], sender: "a@x.test", senderName: "Alice", fromName: "Bob" } as Placement["detail"] }), names)).toBe("Facturas · you keep 3 from Alice there");
-    expect(rowLine(rule({ needsLook: true }), names)).toBe("Archived by your rule “Xataka” · you’ve written to them");
+    expect(rowLine(rule(), names)).toBe("Archived · your rule “Xataka”");
+    expect(rowLine(rule({}, { action: "moveToFolder", folder: "INBOX/News" }), names)).toBe("In News · your rule “Xataka”");
+    expect(rowLine(rule({}, { auto: true, action: "trash" }), names)).toBe("In the Trash · Terno’s rule, Nov 12");
+    expect(rowLine(rule({}, { action: "addCategory", categoryId: 7 }), names)).toBe("Facturas · your rule “Xataka”");
+    expect(rowLine(terno([{ k: "reason.mentions", p: { count: 1, a: "factura", b: "", c: "" } }, { k: "reason.sameSender", p: { count: 12, category: "Facturas" } }]), names)).toBe("Facturas · filed by Terno");
+    expect(rowLine(terno([{ k: "reason.intent.invoice" }]), names)).toBe("Facturas · filed by Terno");
+    expect(rowLine(terno([{ k: "reason.newSender" }]), names)).toBe("Facturas · filed by Terno");
+    expect(rowLine(rule({ needsLook: true }), names)).toBe("Archived · your rule “Xataka” · you’ve written to them");
+    // the sender the decision read names "Don't file … automatically", not the newest mail's (a reply from someone else)
+    expect(senderOf({ by: "terno", categoryId: 7, reasons: [], sender: "a@x.test", senderName: "Alice", fromName: "Bob" })).toBe("Alice");
     setLocale("es", es);
-    expect(rowLine(rule(), names)).toBe("Archivado por tu regla “Xataka”");
+    expect(rowLine(rule(), names)).toBe("Archivado · tu regla “Xataka”");
   });
 
   it("sections: Needs a look first, then each day with its count", () => {
@@ -95,6 +95,15 @@ describe("Put away's words (plan 282)", () => {
     expect(usePutAway.getState().notice?.count).toBe(0);
   });
 
+  it("Not {category} says what it did, and its Undo files it back (the QA panel: it moved mail silently)", async () => {
+    fake.calls.length = 0;
+    await notCategory(8, 7, "Recibos");
+    expect(fake.calls.find((c) => c.method === "categories.removeThreads")?.params).toEqual({ categoryId: 7, threadIds: [8], reason: "user" });
+    expect(useSnack.getState().current?.message).toBe("Out of Recibos and back in the Inbox. Terno will learn from this");
+    await runUndo(useSnack.getState().undo!);
+    expect(fake.calls.find((c) => c.method === "categories.addThreads")?.params).toEqual({ categoryId: 7, threadIds: [8], source: "snackbar" });
+  });
+
   it("Back to Inbox that moved nothing says nothing", async () => {
     fake.handlers["putAway.back"] = async () => ({ undoId: null, affected: 0 });
     useSnack.setState({ current: null } as never);
@@ -108,6 +117,8 @@ describe("Put away's words (plan 282)", () => {
     await backToInbox([{ threadId: 9, at: NOW }]);
     expect(fake.calls.find((c) => c.method === "putAway.back")?.params).toEqual({ items: [{ threadId: 9, at: NOW }] });
     expect(useSnack.getState().current?.message).toBe("Back in the Inbox");
+    // the Undo is named for what it does, not for the move it takes back (the QA panel's screen reader heard "Back to Inbox")
+    expect(useSnack.getState().current?.action?.name).toBe("Undo: put it away again");
     await runUndo(useSnack.getState().undo!);
     expect(fake.calls.find((c) => c.method === "threads.undo")?.params).toEqual({ undoId: 41 });
   });

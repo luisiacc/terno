@@ -200,7 +200,7 @@ export function placementOf(db: Db, threadId: number, now: number): PutAwayDetai
   );
   const p = row ? toPlacement(row) : null;
   if (!p) return null;
-  if (p.detail.by !== "rule") return p;
+  if (p.detail.by !== "rule") return { ...p, senderKept: isKeptSender(db, p.detail.categoryId, p.detail.sender) };
   const filter = db.get<{ rule_json: string; enabled: number }>("SELECT rule_json, enabled FROM filters WHERE id = ?", p.detail.filterId);
   const live = !!filter && ruleHash(JSON.parse(filter.rule_json)) === p.detail.ruleHash;
   return { ...p, ruleLive: live, ruleEnabled: live && filter!.enabled === 1 };

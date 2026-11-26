@@ -1,4 +1,4 @@
-import { orderReasons, placementCategory, placementLive, type Category, type Folder, type Placement, type PlacementDetail, type Reason, type ThreadSummary } from "@terno/core";
+import { orderReasons, placementLive, type Category, type Folder, type Placement, type PlacementDetail, type Reason, type ThreadSummary } from "@terno/core";
 import { t } from "@terno/i18n";
 import { dayDate, weekdayName } from "~/lib/format";
 import { reasonText } from "~/lib/reasons";
@@ -52,18 +52,14 @@ export function rowLine(p: Placement, names: PlacementNames): string {
   const d = p.detail;
   let line: string;
   if (d.by === "terno") {
-    const { identity, words } = whyOf(d.reasons);
-    const why = identity ? t(`putAway.short.${identity.k}`, { count: identity.count, sender: senderOf(d), domain: identity.domain }) : (words[0] ?? t("putAway.short.like"));
-    line = t("putAway.row.terno", { category: categoryName(names, d.categoryId), why });
+    // who did it, in a few words: the why is the box's (a row hasn't the room for it)
+    line = t("putAway.row.terno", { category: categoryName(names, d.categoryId) });
   } else {
     const values = { name: d.name, category: categoryName(names, d.categoryId), folder: folderName(names, d.folder), date: dayDate(d.createdAt) };
     line = d.auto ? t(`putAway.row.auto.${d.action}`, values) : t(`putAway.row.rule.${d.action}`, values);
   }
   return p.needsLook ? `${line} · ${t("putAway.row.wrote")}` : line;
 }
-
-/** The category whose dot leads a row's line (a filing's), or null */
-export const rowCategory = (p: Placement): number | null => placementCategory(p.detail);
 
 /** Still in the window at `now`: a reader's cached detail can't keep a box past it */
 export const stillPutAway = (at: number, now = Date.now()): boolean => placementLive(at, now);
@@ -121,10 +117,39 @@ export async function backToInbox(items: readonly { threadId: number; at: number
       if (r.undoId !== null) await client.call("threads.undo", { undoId: r.undoId });
       refresh(ids);
     });
-    snack.success(t("putAway.back.done", { count: r.affected }), { action: r.undoId !== null ? undoAction(undo, t("putAway.action.back")) : undefined });
+    snack.success(t("putAway.back.done", { count: r.affected }), { action: r.undoId !== null ? undoAction(undo, t("putAway.back.undo", { count: r.affected })) : undefined });
   } catch (error) {
     snack.error(t("putAway.back.failed", { error: errorText(error) }));
     refresh(ids);
+  }
+}
+
+/** The placements behind these conversations, as the window shows them (Back to Inbox acts on those) */
+export function placedItems(threadIds: readonly number[]): { threadId: number; at: number }[] {
+  const byThread = usePutAway.getState().byThread;
+  return threadIds.flatMap((id) => {
+    const p = byThread.get(id);
+    return p ? [{ threadId: id, at: p.at }] : [];
+  });
+}
+
+/**
+ * "Not {category}" on Terno's own filing: out of the category, and Terno learns (as the chip's ×). Its Undo files it back
+ * the way the user files mail, so the conversation is where it was and Terno counts it as belonging there.
+ */
+export async function notCategory(threadId: number, categoryId: number, category: string): Promise<void> {
+  if (getApp().putAway) leaveList("moveToInbox", [threadId], { quiet: true });
+  try {
+    await client.call("categories.removeThreads", { categoryId, threadIds: [threadId], reason: "user" });
+    refresh([threadId]);
+    const undo = registerUndo(async () => {
+      await client.call("categories.addThreads", { categoryId, threadIds: [threadId], source: "snackbar" });
+      refresh([threadId]);
+    });
+    snack.success(t("putAway.not.done", { category }), { action: undoAction(undo, t("putAway.not.undo", { category })) });
+  } catch (error) {
+    snack.error(t("category.removeFailed", { error: errorText(error) }));
+    refresh([threadId]);
   }
 }
 
@@ -149,19 +174,23 @@ export async function stopRule(threadId: number, at: number, name: string): Prom
   try {
     const { filterUndo } = await client.call("putAway.stopRule", { threadId, at });
     refresh([threadId]);
-    const undo = filterUndo === null ? null : registerUndo(() => client.call("similar.undo", { undoId: null, filterUndo }).then(() => refresh([threadId])));
-    snack.success(t("putAway.stop.done", { name }), { action: undo ? undoAction(undo, t("putAway.stop.undo", { name })) : undefined });
+    // off already (another window did it): said as it is
+    if (filterUndo === null) return void snack(t("putAway.stop.already", { name }));
+    const undo = registerUndo(() => client.call("similar.undo", { undoId: null, filterUndo }).then(() => refresh([threadId])));
+    snack.success(t("putAway.stop.done", { name }), { action: undoAction(undo, t("putAway.stop.undo", { name })) });
   } catch (error) {
     snack.error(t("filters.stop.failed", { error: errorText(error) }));
     refresh([threadId]);
   }
 }
 
-/** Edit rule: the rule that did this, open in the Rules builder (gone since: the Rules list) */
-export async function editRule(filterId: number): Promise<void> {
+/** Edit rule: the rule that did this, open in the Rules builder; deleted since, it says so (and the box reads it again) */
+export async function editRule(threadId: number, filterId: number): Promise<void> {
   try {
     const f = (await client.call("filters.list", {})).find((x) => x.id === filterId);
-    setApp(f ? { filterPrefill: { id: f.id, name: f.name, rule: f.rule, enabled: f.enabled, source: f.source, auto: f.auto }, dialog: "filters" } : { dialog: "filters" });
+    if (f) return setApp({ filterPrefill: { id: f.id, name: f.name, rule: f.rule, enabled: f.enabled, source: f.source, auto: f.auto }, dialog: "filters" });
+    snack(t("putAway.rule.gone"));
+    refresh([threadId]);
   } catch {
     setApp({ dialog: "filters" });
   }

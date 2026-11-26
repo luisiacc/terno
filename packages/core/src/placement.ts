@@ -64,6 +64,8 @@ export interface PutAwayDetail extends Placement {
   ruleLive?: boolean;
   /** and it's on (Stop has something to stop) */
   ruleEnabled?: boolean;
+  /** Terno's filing: the user keeps this sender out of the category's automatic filing since ("Don't file … automatically") */
+  senderKept?: boolean;
 }
 
 /** A rule's identity for Put away: the rule as JSON, hashed (an edit changes it; renaming or pausing it doesn't). */

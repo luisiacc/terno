@@ -49,13 +49,19 @@ test.describe("Put away (plan 282)", () => {
       await expect(page.getByTestId("put-away-help")).toHaveAccessibleName("About Put away");
       await page.getByTestId("put-away-help").hover();
       await expect(page.locator("[data-slot=tooltip-content]")).toContainText("What Terno and your rules moved out of the Inbox in the last 7 days");
+      // a click shows it as well (the QA panel clicked it)
+      await page.mouse.move(0, 0);
+      await expect(page.locator("[data-slot=tooltip-content]")).toHaveCount(0);
+      await page.getByTestId("put-away-help").click();
+      await expect(page.locator("[data-slot=tooltip-content]")).toBeVisible();
+      await page.keyboard.press("Escape");
       await expect(page.getByTestId("put-away-look-label")).toContainText("Needs a look");
       await expect(page.getByTestId("put-away-day-label")).toContainText("Today");
       await expect(rows(page)).toHaveCount(2);
-      await expect(rows(page).nth(0).getByTestId("row-put-away")).toContainText("Archived by a rule Terno made on Oct 12 · you’ve written to them");
-      await expect(rows(page).nth(1).getByTestId("row-put-away")).toContainText("Archived by your rule “Xataka”");
+      await expect(rows(page).nth(0).getByTestId("row-put-away")).toContainText("Archived · Terno’s rule, Oct 12 · you’ve written to them");
+      await expect(rows(page).nth(1).getByTestId("row-put-away")).toContainText("Archived · your rule “Xataka”");
       // the demo's Gmail keeps its tabs apart: said once, under the last row
-      await expect(page.getByTestId("put-away-footer")).toHaveText("Gmail and Outlook also keep some mail out of the Inbox. It’s under each account.");
+      await expect(page.getByTestId("put-away-footer")).toContainText("Spam isn’t listed here.");
       if (SHOTS) {
         await rows(page).nth(1).click();
         await expect(page.getByTestId("put-away-box")).toBeVisible();
@@ -94,7 +100,32 @@ test.describe("Put away (plan 282)", () => {
       }
       await box.getByTestId("put-away-stop").click();
       await expect(page.getByTestId("snack-message")).toHaveText("The rule “Archive mail from Acme” is off");
+      await expect(box.getByTestId("put-away-why")).toContainText("That rule is off now.");
+      await expect(box.getByTestId("put-away-stop")).toHaveCount(0);
       await expect.poll(async () => (await store.filters.list()).find((f) => f.name === "Archive mail from Acme")?.enabled).toBe(false);
+    });
+
+    await scenario("search from Put away, and Esc comes back to it", async () => {
+      await page.keyboard.press("/");
+      await page.keyboard.type("gadgets");
+      await expect(page.getByTestId("list-title")).not.toHaveText("Put away");
+      await page.keyboard.press("Escape");
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("list-title")).toHaveText("Put away");
+    });
+
+    await scenario("several back at once from the selection, with one Undo; the row menu offers it too", async () => {
+      await expect(rows(page)).toHaveCount(2);
+      await rows(page).nth(0).click({ button: "right" });
+      await expect(page.getByTestId("menu-inbox")).toHaveText(/Back to Inbox/);
+      await page.keyboard.press("Escape");
+      await rows(page).nth(0).click({ modifiers: ["Meta"] });
+      await rows(page).nth(1).click({ modifiers: ["Meta"] });
+      await page.getByTestId("bar-inbox").click();
+      await expect(page.getByTestId("snack-message")).toHaveText("2 back in the Inbox");
+      await expect(rows(page)).toHaveCount(0);
+      await page.keyboard.press("z");
+      await expect(rows(page)).toHaveCount(2);
     });
   });
 });

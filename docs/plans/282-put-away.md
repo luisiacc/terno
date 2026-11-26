@@ -204,3 +204,21 @@ Two reviewers read the built branch: Codex `gpt-6.2-astra` (15 findings) and a C
 13. **Smaller pieces** (fable 10, 13, 14; astra 14, 15): names read reactively; the reasons said once (`whyOf`); the stores share `ruleNote` and the precedence; `ownList(s)` and one `keepOwnListValid` replace the hand-written checks; Edit rule opens that rule in the builder; the auto-filing toast's View opens Put away for a hidden category; failures say what didn't happen and what to do.
 
 Declined, with the measurement: an ordered index for IndexedDB's pages. The table is a week's worth; at 5,000 placements its first and 40th pages take under 1 ms.
+
+## QA panel (seven personas, at the owner's request)
+
+Seven simulated testers, each with their own copy of the demo mailbox, a week of mail that rules and Terno's filing put away, and their own settings: Marta (Spanish, macOS, light), Devon (keyboard only, Graphite list, dark), Priya (rules power user, Lumen), Joe (not technical, Relief, dark), Kenji (designer, Atelier), Amara (compact Luma, many at once) and Sam (macOS, dark). Each drove the web build with Playwright and reported what they did, what they found and six scores. The trust score ranged from 4 to 7 and "I'd keep it on" from 7 to 9; the lowest trust scores came from mail that a rule moved without a trail (Priya, Sam), not from anything Put away showed.
+
+Fixed from the panel:
+
+1. **Every fix speaks and undoes** (Marta 1, Kenji, Joe 1): the box's Not {category} says so in a snack with an exact Undo; the Undo after Back to Inbox is named "Undo: …" for screen readers, as the others are.
+2. **Back to Inbox everywhere in Put away** (Marta 6, 7, Amara): it leads every box, Terno's filings too, and is in the row menu and the selection bar (several at once, one Undo); typing "Inbox" in Move to… offers the Inbox instead of creating a category with that name.
+3. **The box says what's true now** (Marta 5, 11, Priya): after Don't file … automatically, the box says Terno asks first now instead of offering it again; a rule that's off says "That rule is off now."; Stop on a rule already off and Edit on a deleted rule say so instead of failing.
+4. **Plainer words** (Joe 3, 7, Marta 12): "moved this to the Trash", never "deleted"; the footer names Gmail's Promotions and Social and Outlook's Other, says where to find them, and that Spam isn't listed here; Settings calls kept senders "Senders Terno asks about" with "File automatically again".
+5. **Row lines that fit** (Marta 13, Amara): shorter reasons ("Archived · your rule “Xataka”", "Recibos · filed by Terno"), the whole sentence in the row's tooltip, no second category dot, room for the reason on compact one-line rows.
+6. **The Inbox's line** (Marta 9): the name in bold, the subject left out so it stays one line; Review moves focus to the list.
+7. **Position kept** (Marta 2, Devon): search from Put away returns to Put away on Escape; when a fix removes the focused control, focus goes to the box's first fix, else the reader's toolbar; the help (i) opens on click as well as hover.
+
+Not bugs: Priya's missing Inbox line (the setup check had opened her Put away, which marks it seen) and Sam's (he had already reviewed it).
+
+Left for the owner: whether "Save and apply to existing mail" records placements; whether Terno's learned rules may cover a whole domain or people you've written to; whether Stop this rule offers to bring back what it moved; whether Back to Inbox and Undo advance to the next conversation (and mark it read); the Spanish name ("Apartado"); whether Don't file … also brings the sender's other filed mail back; a count or a shortcut for Put away; a setting for the Inbox line.

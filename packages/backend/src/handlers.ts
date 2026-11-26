@@ -1740,8 +1740,9 @@ export function createHandlers(b: Backend): Handlers {
     },
     "putAway.stopRule": async ({ threadId, at }) => {
       const placed = await placedAt(threadId, at);
-      // the rule as it was when it did this, and on: an edit made since is the user's own word
-      if (placed.detail.by !== "rule" || !placed.ruleEnabled) throw new RpcError("BAD_REQUEST", L("errors.putAway.changed"));
+      // the rule as it was when it did this: an edit made since is the user's own word; already off (another window), nothing to do
+      if (placed.detail.by !== "rule" || !placed.ruleLive) throw new RpcError("BAD_REQUEST", L("errors.putAway.changed"));
+      if (!placed.ruleEnabled) return { filterUndo: null };
       const hash = placed.detail.ruleHash;
       // checked again where it's written (an edit between the two reads keeps the rule on)
       const r = await similarFilters.setEnabled([placed.detail.filterId], false, (f) => ruleHash(f.rule) === hash);

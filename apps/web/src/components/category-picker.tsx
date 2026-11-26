@@ -3,12 +3,14 @@ import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@terno/ui/components/command";
 import { Dialog, DialogContent, DialogTitle } from "@terno/ui/components/dialog";
 import { t } from "@terno/i18n";
-import { Check, Plus } from "@terno/ui/icons";
+import { Check, Inbox, Plus } from "@terno/ui/icons";
 import { useState } from "react";
 import { snack } from "~/lib/snack";
 import { offerTip } from "~/lib/tips";
 import { addScopeToCategory, addToCategory, isExclusivelyIn, moveToCategory, removeFromCategory } from "~/lib/categorize";
 import { currentTargets } from "~/lib/select";
+import { act } from "~/lib/actions";
+import { backToInbox, placedItems } from "~/lib/put-away";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp } from "~/state/app";
 import { useList } from "~/state/list";
@@ -61,6 +63,15 @@ export function CategoryPicker() {
   };
 
   const exact = categories.some((c) => normalizeText(c.name) === normalizeText(search.trim()));
+  // plan 282 (the QA panel): "Inbox" is a place, not a category to make: Move to… offers the Inbox itself (Back to Inbox in
+  // Put away), and no category takes its name
+  const inboxNamed = !!search.trim() && [t("view.inbox"), "Inbox"].some((n) => normalizeText(n) === normalizeText(search.trim()));
+  const toInbox = async () => {
+    close();
+    if ("scope" in target) return;
+    if (getApp().putAway) await backToInbox(placedItems(targets));
+    else await act("moveToInbox", targets);
+  };
   return (
     <Dialog open={open} onOpenChange={(o) => !o && close()}>
       <DialogContent className="top-[20%] translate-y-0 overflow-hidden rounded-palette p-0 sm:max-w-sm" showCloseButton={false} data-testid="category-picker" data-mode={mode}>
@@ -85,7 +96,12 @@ export function CategoryPicker() {
                   {current.has(c.id) && <span className="sr-only">{t(mode === "move" ? "category.picker.applied.sr" : "category.picker.remove.sr")}</span>}
                 </CommandItem>
               ))}
-              {search.trim() && !exact && (
+              {inboxNamed && mode === "move" && (
+                <CommandItem value={`__inbox ${search}`} onSelect={toInbox} data-testid="pick-inbox">
+                  <Inbox className="size-4" /> {getApp().putAway ? t("putAway.action.back") : t("actions.moveToInbox")}
+                </CommandItem>
+              )}
+              {search.trim() && !exact && !inboxNamed && (
                 <CommandItem value={`__create ${search}`} onSelect={create} data-testid="create-category">
                   <Plus className="size-4" /> {mode === "move" ? t("category.picker.createAndMove", { name: search.trim() }) : t("category.picker.create", { name: search.trim() })}
                 </CommandItem>

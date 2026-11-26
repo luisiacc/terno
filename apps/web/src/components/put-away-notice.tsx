@@ -2,6 +2,7 @@ import { t } from "@terno/i18n";
 import { Announcement } from "@terno/ui/components/announcement";
 import { Button } from "@terno/ui/components/button";
 import { useEffect, type RefObject } from "react";
+import { richT } from "~/lib/i18n";
 import { refreshNotice, seeNotice } from "~/lib/put-away";
 import { client } from "~/rpc/connection";
 import { navigate, useApp } from "~/state/app";
@@ -49,7 +50,8 @@ export function usePutAwayNotice(): { shown: boolean; height: number } {
 export function PutAwayNotice({ scroller }: { scroller: RefObject<HTMLElement | null> }) {
   const notice = usePutAway((s) => s.notice);
   if (!notice || notice.count === 0) return null;
-  const line = notice.count === 1 && notice.first ? t("putAway.notice.one", { name: notice.first.name }) : t("putAway.notice.many", { count: notice.count });
+  // the person's name stands out from the line's quiet words: it isn't a rule offer (which shares this place)
+  const line = notice.count === 1 && notice.first ? richT("putAway.notice.one", { name: notice.first.name, b: (s) => <strong className="font-medium text-foreground">{s}</strong> }) : t("putAway.notice.many", { count: notice.count });
   return (
     <ListLead scroller={scroller} onHeight={(h) => usePutAway.setState({ noticeHeight: Math.max(NOTICE_H, Math.ceil(h)) })}>
       <Announcement
@@ -65,7 +67,11 @@ export function PutAwayNotice({ scroller }: { scroller: RefObject<HTMLElement | 
               data-testid="put-away-review"
               className="align-baseline text-[length:inherit] leading-[inherit] font-normal whitespace-nowrap"
               aria-label={t("putAway.notice.reviewName")}
-              onClick={() => navigate({ putAway: true })}
+              onClick={() => {
+                navigate({ putAway: true });
+                // the list takes the keyboard, on the person's mail (Needs a look leads)
+                requestAnimationFrame(() => document.querySelector<HTMLElement>("[role=listbox]")?.focus({ preventScroll: true }));
+              }}
             >
               {t("putAway.notice.review")}
             </Button>

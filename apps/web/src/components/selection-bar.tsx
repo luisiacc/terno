@@ -1,4 +1,5 @@
 import { shortcutsFor, type Command, type ThreadAction } from "@terno/core";
+import { backToInbox, placedItems } from "~/lib/put-away";
 import { Button } from "@terno/ui/components/button";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
@@ -9,7 +10,7 @@ import { act, tabbedTest, targetRows } from "~/lib/actions";
 import { openRemind } from "~/lib/reminders";
 import { actionView, placeActions } from "~/lib/places";
 import { clearSelection, isMac, selectAll } from "~/lib/select";
-import { setApp, useApp } from "~/state/app";
+import { getApp, setApp, useApp } from "~/state/app";
 import { useList } from "~/state/list";
 import { PANE_TITLE, PANE_TITLE_TOP, READING_COLUMN } from "~/lib/pane-lines";
 import { LIST_TITLE } from "~/lib/list-title";
@@ -82,6 +83,7 @@ export function SelectionBar({ variant = "pane" }: { variant?: Variant }) {
   const places = searching && !scope ? placeActions(targetRows(), tabbedTest()) : null;
   // plan 86: Promotions or Social: Move to Inbox takes them out of the tab
   const gmailTab = useApp((s) => s.gmailTab);
+  const putAway = useApp((s) => s.putAway && !s.query.trim());
   // re-read whenever the selection changes (a same-size selection too); act() takes the rows each action fits when it runs
   useApp((s) => s.checked);
   const runOn = (a: ThreadAction, _fits: number[]) => () => void act(a);
@@ -117,7 +119,12 @@ export function SelectionBar({ variant = "pane" }: { variant?: Variant }) {
   );
   const actions = (
     <>
-      {placeButtons ? placeButtons : view === "trash" || view === "spam" || view === "archive" ? (
+      {placeButtons ? placeButtons : putAway && !scope ? (
+        // plan 282: what's put away goes back together, with one Undo
+        <BarButton bar={bar} tone="lead" label={t("putAway.action.back")} onClick={() => void backToInbox(placedItems([...getApp().checked]))} testId="bar-inbox" rank={1}>
+          <Inbox />
+        </BarButton>
+      ) : view === "trash" || view === "spam" || view === "archive" ? (
         <BarButton bar={bar} label={view === "spam" ? t("actions.notSpam") : t("actions.moveToInbox")} onClick={run(view === "spam" ? "notSpam" : "moveToInbox")} testId="bar-inbox">
           {view === "spam" ? <ShieldCheck /> : <Inbox />}
         </BarButton>

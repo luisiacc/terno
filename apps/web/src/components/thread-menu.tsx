@@ -1,4 +1,5 @@
 import { hasTab, remindPresets, separatesTabs, shortcutsFor, subjectTemplate, TAB_CODE, type Category, type CategoryColor, type ReminderKind, type Tab, type Command, type SimilarAction, type SimilarOffers, type SimilarScope, type ThreadAction, type ThreadSummary, type UnsubscribeOffer, type View } from "@terno/core";
+import { backToInbox, placedItems } from "~/lib/put-away";
 import { classifySender } from "~/lib/gmail-tabs";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Shortcut } from "@terno/ui/components/shortcut";
@@ -836,7 +837,13 @@ function MenuItems() {
   const task = useTodayTask(single?.id, "menu");
 
   // what the view offers, sorted by where it goes; the way back leads only where it replaces Archive
-  const placed: MenuEntry[] = searchPlaces ? searchPlaceItems(searchPlaces, (a) => run(a)) : placeItems(view, run);
+  // plan 282: in Put away the way back is Back to Inbox (whatever keeps each out), leading, as Archive's Move to Inbox does
+  const inPutAway = useApp((s) => s.putAway && !s.query.trim());
+  const placed: MenuEntry[] = searchPlaces
+    ? searchPlaceItems(searchPlaces, (a) => run(a))
+    : inPutAway && !scope
+      ? [{ icon: <Inbox />, label: t("putAway.action.back"), testId: "menu-inbox", onClick: () => void backToInbox(placedItems(ids)) }, ...placeItems("archive", run).filter((it) => it.testId !== "menu-inbox")]
+      : placeItems(view, run);
   const wayBack = placed.filter((it) => it.testId === "menu-inbox" || it.testId === "menu-not-spam");
   const spam = placed.find((it) => it.testId === "menu-spam");
   const triage = placed.filter((it) => it !== spam && !wayBack.includes(it));

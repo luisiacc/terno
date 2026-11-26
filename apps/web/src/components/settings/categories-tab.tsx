@@ -348,7 +348,7 @@ function KeptSenders({ categories }: { categories: Category[] }) {
                   }
                 }}
               >
-                {t("common.remove")}
+                {t("putAway.kept.removeShort")}
               </Button>
             )}
           </SettingsRow>

@@ -86,8 +86,8 @@ describe("Put away (plan 282)", () => {
     const u = await arrive("deals@shop.test");
     await backend.store.filters.save({ id: g.id, name: g.name, enabled: true, source: "manual", rule: from("deals@shop.test", [{ type: "trash" }]) }, NOW);
     await expect(client.call("putAway.stopRule", { threadId: u, at: NOW })).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    // stopped already: nothing left to stop
-    await expect(client.call("putAway.stopRule", { threadId: t, at: NOW })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    // stopped already (another window): nothing to do, and said so
+    expect(await client.call("putAway.stopRule", { threadId: t, at: NOW })).toEqual({ filterUndo: null });
   });
 
   it("the Inbox's line: who needs a look, until it's seen", async () => {

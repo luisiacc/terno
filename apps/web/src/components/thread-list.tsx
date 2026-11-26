@@ -336,19 +336,26 @@ useApp.subscribe((s, prev) => {
  * Plan 158: a search typed in a category's Review is a search, of everything (as the palette's and the row menu's are);
  * Esc out of it comes back to the Review it was typed in. Forgotten once the search ends or goes elsewhere.
  */
-const searchFrom: { review: number | null } = { review: null };
+const searchFrom: { review: number | null; putAway: boolean } = { review: null, putAway: false };
 useApp.subscribe((s, prev) => {
   if (searchFrom.review !== null && (!s.query.trim() || s.view !== prev.view || s.categoryId !== prev.categoryId || s.accountId !== prev.accountId || s.folder !== prev.folder || ownList(s))) searchFrom.review = null;
+  // plan 282: likewise Put away: a search typed there is everything's, and Esc out of it comes back to Put away
+  if (searchFrom.putAway && (!s.query.trim() || s.view !== prev.view || s.categoryId !== prev.categoryId || s.accountId !== prev.accountId || s.folder !== prev.folder || ownList(s))) searchFrom.putAway = false;
 });
 
-/** What the field types into the app: from a Review, a search of everything. */
+/** What the field types into the app: from a Review or Put away, a search of everything. */
 function typeQuery(q: string): void {
-  const review = getApp().reviewCategoryId;
+  const { reviewCategoryId: review, putAway } = getApp();
   const back = searchFrom.review;
+  const backToPutAway = searchFrom.putAway;
   if (review !== null && q.trim()) {
     setApp({ query: q, reviewCategoryId: null });
     searchFrom.review = review;
+  } else if (putAway && q.trim()) {
+    setApp({ query: q, putAway: false });
+    searchFrom.putAway = true;
   } else if (back !== null && !q.trim() && getApp().categories.some((c) => c.id === back)) setApp({ query: q, reviewCategoryId: back });
+  else if (backToPutAway && !q.trim()) setApp({ query: q, putAway: true });
   else setApp({ query: q });
 }
 
@@ -626,11 +633,13 @@ function Subtitle({ filter, greeting }: { filter: QuickFilter | undefined; greet
 
 /** Plan 282: what Put away is for, beside its title: an info glyph, named for screen readers, its words on hover and focus. */
 function PutAwayHelp() {
+  // a click (or Enter) shows it too: it's a help button, and people click those
+  const [open, setOpen] = useState(false);
   return (
-    <Tooltip>
+    <Tooltip open={open} onOpenChange={setOpen}>
       <TooltipTrigger
         render={
-          <Button data-testid="put-away-help" variant="ghost" size="icon-sm" aria-label={t("putAway.help.label")} aria-describedby="put-away-help-text" className="no-drag -ml-1 shrink-0 rounded-full text-muted-foreground hover:text-foreground">
+          <Button data-testid="put-away-help" variant="ghost" size="icon-sm" aria-label={t("putAway.help.label")} aria-describedby="put-away-help-text" className="no-drag -ml-1 shrink-0 rounded-full text-muted-foreground hover:text-foreground" onClick={() => setOpen((o) => !o)}>
             <Info />
           </Button>
         }
