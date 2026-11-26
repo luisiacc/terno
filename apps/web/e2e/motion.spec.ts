@@ -653,6 +653,52 @@ test.describe("plan 271: What matters' rows move as the Inbox's do", () => {
   });
 });
 
+test.describe("plan 281: People's Done morphs the page and the list together", () => {
+  test.use({ reducedMotion: "no-preference", backendOptions: { network: true } });
+
+  test("Done on a person's page: one view transition, the items gliding, nothing over 100 ms; motion off, none", async ({ app: page, server }) => {
+    await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" } }, ctx);
+    const db = sqlDb(server.backend.store);
+    const ana = { name: "Ana Ruiz", email: "ana.ruiz@greenway.studio" };
+    for (const subject of ["Phase 2 scope", "Homepage copy", "Invoice 1042"]) {
+      const id = await ingestConversation(server, { subject, count: 3, from: { 0: ana, 2: ana }, now: E2E_NOW });
+      db.run("UPDATE threads SET waiting_since = ?, has_sent = 1, person = 1 WHERE id = ?", E2E_NOW - 3_600_000, id);
+    }
+    server.backend.today.changed();
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await page.getByTestId("nav-people").click();
+    await page.getByTestId("people-search").fill("Ana Ruiz");
+    await page.getByTestId("person-row").filter({ hasText: "Ana Ruiz" }).click();
+    const items = page.getByTestId("person-page").getByTestId("person-item");
+    await expect(items).toHaveCount(3);
+    const vt = `() => ({ vt: document.getAnimations().map((a) => a.effect?.pseudoElement ?? "").filter((p) => p.includes("view-transition")) })`;
+    await scenario("Done: the page's items glide, in one transition of at most 100 ms", async () => {
+      await startSampler(page);
+      await recordFrames(page, vt);
+      await items.first().hover();
+      await items.first().getByTestId("person-item-done").click();
+      await expect(items).toHaveCount(2);
+      await frames(page);
+      await frames(page);
+      const seen = (await framesSeen<{ vt: string[] }>(page)).flatMap((f) => f.vt);
+      expect(seen.some((p) => p.includes("people-i")), seen.join(",")).toBe(true);
+      const r = await sampled(page);
+      expect(r.max, r.names.join(",")).toBeLessThanOrEqual(100);
+    });
+    await scenario("motion off (the OS's reduced motion): the item simply goes", async () => {
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await expect(page.locator("html")).toHaveAttribute("data-motion", "off");
+      await recordFrames(page, vt);
+      await items.first().hover();
+      await items.first().getByTestId("person-item-done").click();
+      await expect(items).toHaveCount(1);
+      await frames(page);
+      expect((await framesSeen<{ vt: string[] }>(page)).flatMap((f) => f.vt)).toEqual([]);
+    });
+  });
+});
+
 test.describe("plan 271 in Lumen, whose one-message header is a card above the message", () => {
   test.use({ reducedMotion: "no-preference", design: "lumen" });
 

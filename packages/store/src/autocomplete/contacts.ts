@@ -445,7 +445,7 @@ export class ContactIndex {
   private version = 0;
   private readonly shortCache = new Map<string, { version: number; ids: number[] }>();
   /** plan 281: the written-to contacts, best first, for one version of the scores */
-  private writtenCache: { version: number; ids: number[]; entries: PersonEntry[] } | null = null;
+  private writtenCache: { version: number; max: number; ids: number[]; entries: PersonEntry[] } | null = null;
   private frozen = false;
   readonly caps: ContactCaps;
   private readonly now: () => number;
@@ -906,15 +906,29 @@ export class ContactIndex {
    */
   written(max: number): readonly PersonEntry[] {
     let cache = this.writtenCache;
-    if (cache?.version !== this.version) {
-      const ids: number[] = [];
-      for (let id = 0; id < this.n; id++) if (this.sent[id]! > 0 && !(this.flags[id]! & (OWN | DEAD))) ids.push(id);
-      ids.sort((a, b) => this.key[b]! - this.key[a]! || this.last[b]! - this.last[a]! || a - b);
-      cache = this.writtenCache = { version: this.version, ids, entries: [] };
+    if (cache?.version !== this.version || cache.max < max) {
+      cache = this.writtenCache = { version: this.version, max, ids: this.topWritten(max), entries: [] };
     }
     // the entries are made once per version, as far as asked
     for (let i = cache.entries.length; i < Math.min(max, cache.ids.length); i++) cache.entries.push(this.entry(cache.ids[i]!));
     return max >= cache.entries.length ? cache.entries : cache.entries.slice(0, Math.max(0, max));
+  }
+
+  /**
+   * The best `k` of those you've written to, in order. Only the top is sorted by the full rule: the scores' cut is found by a
+   * typed-array sort (native, no comparator), so a big index sorts a few thousand, never every one written to.
+   */
+  private topWritten(k: number): number[] {
+    const ids: number[] = [];
+    for (let id = 0; id < this.n; id++) if (this.sent[id]! > 0 && !(this.flags[id]! & (OWN | DEAD))) ids.push(id);
+    const order = (a: number, b: number) => this.key[b]! - this.key[a]! || this.last[b]! - this.last[a]! || a - b;
+    if (ids.length <= k) return ids.sort(order);
+    const keys = new Float64Array(ids.length);
+    for (let i = 0; i < ids.length; i++) keys[i] = this.key[ids[i]!]!;
+    keys.sort();
+    const cut = keys[ids.length - k]!;
+    // above the cut, and at it (ties are ordered by the full rule before they're cut)
+    return ids.filter((id) => this.key[id]! >= cut).sort(order).slice(0, k);
   }
 
   /** Plan 281: what the index knows of one address (its name, last date, whether you've written to it), or null. */

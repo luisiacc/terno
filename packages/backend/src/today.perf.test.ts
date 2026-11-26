@@ -211,7 +211,46 @@ async function removedAtBound(store: MailStore, accountId: number, now: number) 
   }
 }
 
-async function run(kind: "SQLite" | "IndexedDB", budget: { spread: Gate; bound: Gate; needs: Gate; linked: Gate; busyMs: number }) {
+/**
+ * Plan 281: People on the combined bounds (the largest What matters there is here), the recipient index built from the whole
+ * mailbox: its list read afresh after a change (What matters' open part grouped by person, the replies owed to you, Everyone
+ * from the index), one person's page (the grouping kept, their conversations by address) and a one-letter search.
+ */
+async function people(kind: string, backend: Backend, budget: { listMs: number; personMs: number; searchMs: number; busyMs: number }) {
+  await backend.warmAutocomplete();
+  const turn = () => new Promise<void>((resolve) => setImmediate(resolve));
+  const lists: number[] = [];
+  const pages: number[] = [];
+  const searches: number[] = [];
+  const first = await backend.people.list();
+  expect(first.index).toBe("ready");
+  expect(first.everyone.length).toBeGreaterThan(0);
+  const someone = first.open[0]?.email ?? first.everyone[0]!.email;
+  const loop = watchLoop(budget.busyMs * MULT);
+  for (let i = 0; i < 12; i++) {
+    await turn();
+    backend.today.changed();
+    let t = performance.now();
+    await backend.people.list();
+    lists.push(performance.now() - t);
+    await turn();
+    t = performance.now();
+    await backend.people.person(someone);
+    pages.push(performance.now() - t);
+    await turn();
+    t = performance.now();
+    await backend.people.search("a");
+    searches.push(performance.now() - t);
+  }
+  const report = loop.stop();
+  process.stderr.write(`[${kind}] People: list p95 ${p95(lists).toFixed(1)} ms (${first.open.length} open, ${first.everyone.length} everyone), page p95 ${p95(pages).toFixed(1)} ms, search p95 ${p95(searches).toFixed(1)} ms, longest busy ${report.longest.busy.toFixed(1)} ms\n`);
+  expect(p95(lists)).toBeLessThanOrEqual(budget.listMs * MULT);
+  expect(p95(pages)).toBeLessThanOrEqual(budget.personMs * MULT);
+  expect(p95(searches)).toBeLessThanOrEqual(budget.searchMs * MULT);
+  expect(report.longest.busy).toBeLessThanOrEqual(budget.busyMs * MULT);
+}
+
+async function run(kind: "SQLite" | "IndexedDB", budget: { spread: Gate; bound: Gate; needs: Gate; linked: Gate; busyMs: number; people: { listMs: number; personMs: number; searchMs: number; busyMs: number } }) {
   const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) };
   let store: MailStore | undefined;
   let accountId: number;
@@ -340,6 +379,7 @@ async function run(kind: "SQLite" | "IndexedDB", budget: { spread: Gate; bound: 
     await backend.today.withCount(await backend.store.threads.counts(NOW + 2 * DAY));
     await measure("Combined bounds, 20 rules of the user's words", NOW + 2 * DAY, budget.linked);
     expect(backend.words.worker.status().applying).toBeNull();
+    await people(kind, backend, budget.people);
   } finally {
     await backend.stop();
   }
@@ -354,6 +394,6 @@ async function run(kind: "SQLite" | "IndexedDB", budget: { spread: Gate; bound: 
 describe("Today at 50k threads with 1,000 dated items (plan 204 revision 12)", () => {
   // the count is plan 145's walk and what this plan adds to it: at most 2 ms spread, 4 ms with a thousand threads to check
   // Needs you's own walk: about 7 ms (SQLite) and 5 ms (IndexedDB) as mailboxes have it, about 28 and 8 with all 2,000 on its slowest path
-  it("SQLite", async () => run("SQLite", { spread: { listMs: 20, addedMs: 2, needsMs: 12, countMs: 14 }, bound: { listMs: 30, addedMs: 4, needsMs: 12, countMs: 14 }, needs: { listMs: 45, addedMs: 5, needsMs: 40, countMs: 42 }, linked: { listMs: 85, addedMs: 12, needsMs: 60, countMs: 70, busyMs: 120 }, busyMs: 60 }), 600_000);
-  it("IndexedDB", async () => run("IndexedDB", { spread: { listMs: 20, addedMs: 2, needsMs: 10, countMs: 12 }, bound: { listMs: 30, addedMs: 4, needsMs: 10, countMs: 12 }, needs: { listMs: 15, addedMs: 3, needsMs: 12, countMs: 14 }, linked: { listMs: 20, addedMs: 4, needsMs: 12, countMs: 15 }, busyMs: 60 }), 900_000);
+  it("SQLite", async () => run("SQLite", { spread: { listMs: 20, addedMs: 2, needsMs: 12, countMs: 14 }, bound: { listMs: 30, addedMs: 4, needsMs: 12, countMs: 14 }, needs: { listMs: 45, addedMs: 5, needsMs: 40, countMs: 42 }, linked: { listMs: 85, addedMs: 12, needsMs: 60, countMs: 70, busyMs: 120 }, busyMs: 60, people: { listMs: 120, personMs: 40, searchMs: 10, busyMs: 120 } }), 600_000);
+  it("IndexedDB", async () => run("IndexedDB", { spread: { listMs: 20, addedMs: 2, needsMs: 10, countMs: 12 }, bound: { listMs: 30, addedMs: 4, needsMs: 10, countMs: 12 }, needs: { listMs: 15, addedMs: 3, needsMs: 12, countMs: 14 }, linked: { listMs: 20, addedMs: 4, needsMs: 12, countMs: 15 }, busyMs: 60, people: { listMs: 60, personMs: 40, searchMs: 10, busyMs: 60 } }), 900_000);
 });

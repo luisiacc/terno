@@ -149,6 +149,36 @@ describe(`the contact index at ${N.toLocaleString("en")} messages`, () => {
     expect(found).toBeGreaterThan(900);
   });
 
+  it("plan 281: People's Everyone (a cold sort and a cached one) and its search (one letter, 50 hits) within a frame", () => {
+    const cold: number[] = [];
+    for (let r = 0; r < 5; r++) {
+      // a score changed (new mail): the next ask sorts again
+      index.add(toContact(generateContactsDataset({ messages: 1, contacts: 1, now: NOW, seed: 100 + r, bodyChars: 0 }).messages[0]!, N + 100_000 + r));
+      const t0 = performance.now();
+      const everyone = index.written(5000);
+      cold.push(performance.now() - t0);
+      expect(everyone.length).toBe(5000);
+    }
+    const t1 = performance.now();
+    for (let r = 0; r < 100; r++) index.written(5000);
+    const cached = (performance.now() - t1) / 100;
+    const letters = "abcdefghijklmnopqrstuvwxyz".split("");
+    index.people("z", 50);
+    const searched: number[] = [];
+    for (const q of [...letters, ...queries.slice(0, 200)]) {
+      const t = performance.now();
+      index.people(q, 50);
+      searched.push(performance.now() - t);
+    }
+    searched.sort((x, y) => x - y);
+    const best = Math.min(...cold);
+    const p95 = searched[Math.floor(searched.length * 0.95)]!;
+    log(`People: Everyone sorted ${best.toFixed(2)} ms (of ${cold.map((c) => c.toFixed(1)).join(", ")}), cached ${(cached * 1000).toFixed(1)} µs; search p95 ${p95.toFixed(3)} ms, max ${searched.at(-1)!.toFixed(2)} ms`);
+    expect(best, "Everyone sorted (ms)").toBeLessThanOrEqual(FRAME * MULT);
+    expect(cached, "Everyone cached (ms)").toBeLessThanOrEqual(0.05 * MULT);
+    expect(p95, "People search p95 (ms)").toBeLessThanOrEqual(2 * MULT);
+  });
+
   it("injected regression: the same lookups by scanning every contact fail the gate", () => {
     setContactsScanForTests(true);
     try {

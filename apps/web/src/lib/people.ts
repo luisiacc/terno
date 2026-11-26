@@ -263,6 +263,9 @@ export function installPeople(): void {
     if (!getApp().people) return;
     void loadPeople();
     reloadPage();
+    // a search's counts of what's open are What matters' too
+    const { query } = usePeople.getState();
+    if (query.trim()) searchPeople(query);
   });
   client.on("changed", () => {
     if (getApp().people) reloadPage();
