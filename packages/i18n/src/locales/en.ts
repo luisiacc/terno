@@ -1474,6 +1474,10 @@ const en = {
   "summary.view.sinceToday": "Since today",
   "summary.view.sinceYesterday": "Since yesterday",
   "summary.view.whole": "Whole conversation",
+  // plan 279's panel
+  "summary.kind.waiting": "Waiting on",
+  "summary.kind.overdue": "Overdue",
+  "summary.failed": "Couldn’t summarize the new mail in this conversation.",
   "aiDraft.label": "AI",
   // plan 163: write in the draft
   "aiDraft.bodyHint.reply": "Write the reply, or what it should say, then press {keys}",

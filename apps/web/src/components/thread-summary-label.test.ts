@@ -2,7 +2,26 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
-const { itemLabel, newFirst } = await import("./thread-summary");
+const { itemLabel, newFirst, offersReply, overdue } = await import("./thread-summary");
+
+describe("plan 279's panel: a row says when it's late, who you wait on, and offers Reply only where replying does it", () => {
+  const now = new Date(2026, 10, 25, 9).getTime();
+  it("a to-do whose day has passed is Overdue; today's or a later one isn't, nor a question", () => {
+    expect(itemLabel({ kind: "action", due: "2026-11-13" }, undefined, [], now)).toBe("Overdue");
+    expect(itemLabel({ kind: "action", due: "2026-11-25" }, undefined, [], now)).toBe("To do");
+    expect(itemLabel({ kind: "action" }, undefined, [], now)).toBe("To do");
+    expect(overdue("2026-11-24", now)).toBe(true);
+    expect(itemLabel({ kind: "question", due: "2026-11-13" }, undefined, [], now)).toBe("Question");
+    expect(itemLabel({ kind: "waiting" }, undefined, [], now)).toBe("Waiting on");
+  });
+  it("Reply on questions and on to-dos done by replying; never on a call, a payment or what you wait on", () => {
+    expect(offersReply({ kind: "question" })).toBe(true);
+    expect(offersReply({ kind: "action" })).toBe(true);
+    expect(offersReply({ kind: "action", byReply: false })).toBe(false);
+    expect(offersReply({ kind: "waiting" })).toBe(false);
+    expect(offersReply({ kind: "date" })).toBe(false);
+  });
+});
 
 describe("plan 279: with a since, rows from where it starts come first", () => {
   it("each group keeps its order; no since, or one not drawn, keeps them as they were", () => {

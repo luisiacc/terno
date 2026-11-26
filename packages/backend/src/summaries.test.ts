@@ -1250,6 +1250,26 @@ describe("plan 279: what's new since you read", () => {
     expect(s.model.requests).toHaveLength(2);
   });
 
+  it("the panel: new mail whose summary failed says so while it's unread, and nothing once it's read", async () => {
+    const s = await setup();
+    s.model.answer = () => {
+      throw new AiError("no", "refused");
+    };
+    const failed = await s.arrive();
+    await until(async () => expect((await s.row(failed.thread))?.state).toBe("failed"));
+    await expect(s.read(failed.thread)).resolves.toEqual({ state: "failed" });
+    await s.backend.store.threads.act({ threadIds: [failed.thread], action: "markRead", signal: null, now: START });
+    await expect(s.read(failed.thread)).resolves.toEqual({ state: "none" });
+  });
+
+  it("the panel: a row keeps its day and whether replying does it", async () => {
+    const s = await setup();
+    s.model.answer = () => replying({ summary: "Ana needs a signature.", items: [{ kind: "action", text: "Sign at the notary", message: "m1", due: "2026-11-13", byReply: false }, { kind: "waiting", text: "Ana: the final draft", message: "m1", due: null, byReply: true }] });
+    const got = await s.arrive();
+    await until(async () => expect((await s.row(got.thread))?.state).toBe("ready"));
+    await expect(s.read(got.thread)).resolves.toMatchObject({ summary: { items: [{ kind: "action", text: "Sign at the notary", messageId: got.id, due: "2026-11-13", byReply: false }, { kind: "waiting", text: "Ana: the final draft", messageId: got.id }] } });
+  });
+
   it("a short reply from a person in a conversation that had a summary is summarized (the 60 words aren't asked)", async () => {
     const s = await setup();
     const [first] = await readConversation(s);

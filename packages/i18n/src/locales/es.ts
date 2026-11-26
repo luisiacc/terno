@@ -1456,6 +1456,9 @@ const es = {
   "summary.view.sinceToday": "Desde hoy",
   "summary.view.sinceYesterday": "Desde ayer",
   "summary.view.whole": "Toda la conversación",
+  "summary.kind.waiting": "Esperando a",
+  "summary.kind.overdue": "Vencido",
+  "summary.failed": "No se pudo resumir el correo nuevo de esta conversación.",
   "aiDraft.label": "IA",
   // plan 163: escribir en el borrador
   "aiDraft.bodyHint.reply": "Escribe la respuesta, o lo que debe decir, y pulsa {keys}",

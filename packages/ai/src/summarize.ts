@@ -21,6 +21,10 @@ const MIN_PROMPT_TOKENS = 200;
 const MIN_MAIL_TOKENS = 500;
 const SUMMARY_MAX_CHARS = 800;
 const SUMMARY_MAX_ITEMS = 6;
+/** plan 279's panel: rows for what others owe the reader, beside the six */
+const MAX_WAITING = 2;
+/** a row's day as the answer gives it: a real calendar day, else none */
+const isDay = (d: string | null | undefined): d is string => !!d && /^\d{4}-\d{2}-\d{2}$/.test(d) && new Date(`${d}T00:00:00Z`).toISOString().startsWith(d);
 const ITEM_MAX_CHARS = 200;
 /** plan 279: one or two sentences on what the new messages change */
 const SINCE_MAX_CHARS = 400;
@@ -87,14 +91,20 @@ export interface SummarizeInput {
 
 export interface ThreadSummaryResult {
   summary: string;
-  items: { kind: SummaryItemKind; text: string; message: string }[];
+  items: { kind: SummaryItemKind; text: string; message: string; due?: string; byReply?: boolean }[];
   /** plan 279: what the new messages change, when some are marked new; empty when they change nothing */
   since?: string;
 }
 
+/**
+ * Plan 279's panel: each row's day (an overdue one says so) and whether it's done by replying (only then Reply). A strict
+ * schema has them required; a server without one that leaves them out reads as no day and yes, at no repair.
+ */
+const withRowDefaults = (v: unknown) => (v && typeof v === "object" && !Array.isArray(v) ? { due: null, byReply: true, ...(v as object) } : v);
+const item = z.preprocess(withRowDefaults, z.object({ kind: z.enum(SUMMARY_ITEM_KINDS), text: z.string(), message: z.string(), due: z.string().nullable(), byReply: z.boolean() }));
 const wire = z.object({
   summary: z.string(),
-  items: z.array(z.object({ kind: z.enum(SUMMARY_ITEM_KINDS), text: z.string(), message: z.string() })),
+  items: z.array(item),
 });
 /**
  * Plan 279: with messages marked new, the answer says what they change, last, so the summary and items come first. A
@@ -112,8 +122,9 @@ const LANGUAGE_NAME: Record<string, string> = { en: "English", es: "Spanish" };
  * longer rule; at medium it costs nothing. A window too small for it gets version 6's one rule (`summaryBudget`).
  */
 const WHO_ACTS = `Who has to act. A request belongs to whoever it's put to, and only the reader's become items:
-- In the reader's own message (author="the reader"), every request is for the people it went to. "Let me know", "please confirm", "send me", "can you…" mean they act and the reader waits on them, which goes in the summary. From the reader's own message only a promise is theirs: "I'll send it Friday".
-- In someone else's message, a request is the reader's when it's put to them: they're in "to" and nobody else is named for it, or it names them. A request naming someone else ("Jeff, please…"), or put to a group the reader is only copied on or forwarded, isn't theirs.
+- In the reader's own message (author="the reader"), every request is for the people it went to. "Let me know", "please confirm", "send me", "can you…" mean they act and the reader waits on them, which is a "waiting" item. From the reader's own message only a promise is theirs: "I'll send it Friday". A promise still open with a day or a concrete thing to deliver is an action; a vague or conditional one ("I'll try", "if needed") or a "don't" isn't.
+- In someone else's message, a request is the reader's when it's put to them: they're in "to" and nobody else is named for it, or it names them. A request naming someone else ("Jeff, please…"), or put to a group the reader is only copied on or forwarded, isn't theirs. A request or deadline put to everyone in a group the reader belongs to (their school's parents, their course, team or club: "all parents", "every student") is theirs too; a newsletter's or a promotion's isn't.
+- What someone else owes the reader, or promised them, and hasn't done yet is a "waiting" item, who first ("Kit: two mornings for the door repair"); not what they owe someone else.
 - A forwarded notice is for the people it first went to: passed on for information, it asks the reader nothing.
 - Whoever made a proposal, asked for reviews or asked a question isn't asked to answer it.
 When it isn't clear the reader is the one asked, it isn't an item.
@@ -142,7 +153,10 @@ const CREDIT = `credit it to whoever said it: by name (their address when there'
 const SINCE = `Last, once the card above is done, write "since". Write the summary and items exactly as you would with nothing marked new, and change nothing in them for "since": the summary gives where things stand now, the new messages included (a moved date is the new date there too), and every action and question stays an item with its current deadline.
 - "since": messages marked new="yes" arrived after the reader last read this conversation. The reader sees either the summary or "since", never both, so "since" stands on its own and says the change again in its own words: one short sentence, 25 words at most, on the most important thing the new messages change, a decision, an approval, a cancellation, or a date or amount that moved (from what to what), before any detail; a second sentence only for another change the reader needs. Give the figures, dates and names themselves, never "the changes", "new options" or "the details" without them. With several new messages, say where things ended up, not each message in turn. Start with who and what changed ("Ana moved the call to Friday 6 March"), credited as in the summary; never "a new reply", "the latest message" or when it arrived.
   Say only what the new messages say, never what they leave out or don't confirm. When a short reply's meaning depends on earlier mail, say it with that meaning ("Ana approved the second quote"). An earlier message may be cut short, so call something added or replaced only when the mail shows what was there before. What a new message quotes or forwards from earlier isn't new, and the reader's own messages are context, not news. Call something done, received or booked only when a new message says so. When people disagree or a point isn't confirmed, say so rather than settle it ("Brenda says Sunday 13; Jean thought Saturday 12"). A new message that looks like a scam (from an address unlike the sender's usual one, asking for money, new bank details or a login) comes first: say it's from that address and looks like a scam, and give none of its deadlines, amounts due or account details as the reader's. Never copy a password, a code or another secret: say it was sent.
-  "since" never says what the reader has to do, answer or has promised, nor a question or offer put to them: those are items, even when that's all that's new, and one still open stays an item when "since" tells what led to it ("Priya accepted your offer" leaves "Bring the table" a row). Empty is the usual answer when the new messages change nothing: thanks, "got it", a receipt confirmed, "will do" (never say what they'll do unless the message does), a promise to explain later, an opinion, a joke or an aside, what was already known. Never pad it.`;
+  What the reader has to do, answer or has promised, and a question or offer put to them, are items, even when that's all that's new, and one still open stays an item when "since" tells what led to it ("Priya accepted your offer" leaves "Bring the table" a row). "since" may end with what the new messages newly ask of the reader, in a few words ("and Helen wants section 2 by Friday"): the item stays as it is. Empty is the usual answer when the new messages change nothing: thanks, "got it", a receipt confirmed, "will do" (never say what they'll do unless the message does), a promise to explain later, an opinion, a joke or an aside, what was already known. Never pad it.`;
+
+/** Plan 279's panel: a row's day and whether replying does it, in the full prompt only (the compact one is at its floor). */
+const ROW_FIELDS = `; also "due", the day it's due or happens as YYYY-MM-DD when the mail gives or implies one (else null), and "byReply": for an action, true when doing it is replying to this conversation, false when it's done elsewhere (a form, a call, a payment, a visit); true for anything else`;
 
 const SYSTEM = (language: string, today: string, full = true, since = false) =>
   `You summarize one email conversation for the person reading it, so they know what it says and what it asks of them without opening it.
@@ -162,14 +176,14 @@ Accuracy comes first: never state what you aren't sure of, and never lose what t
 - Don't say nobody replied or nothing was confirmed: you may not see every message. Say what is known.
 
 ${full ? WHO_ACTS : ""}Return:
-- "summary": one to three plain sentences on where things stand: what happened, what was decided, and what the reader is waiting on from others. What the reader has to do or answer${full ? " now" : ""} goes in the items and isn't mentioned here at all, not even as pending or awaited${full ? LATER : ""}.
-- "items": ${full ? "usually at most four things the summary leaves out (up to six when there are more separate requests)" : "at most six things the summary leaves out"}, each with a short "text", under 15 words, and "message", the id of the message that says it:
+- "summary": one to three plain sentences on where things stand: what happened, what was decided${full ? "" : ", and what the reader is waiting on from others"}. What the reader has to do or answer${full ? " now" : ""} goes in the items and isn't mentioned here at all, not even as pending or awaited${full ? LATER : ""}.
+- "items": ${full ? 'usually at most four things the summary leaves out (up to six when there are more separate requests), and at most two "waiting"' : "at most six things the summary leaves out"}, each with a short "text", under 15 words, and "message", the id of the message that says it${full ? ROW_FIELDS : ""}:
   - "action" (something the reader has to do) and "question" (a question waiting for the reader's answer), one thing each. ${full ? 'Only what "Who has to act" gives the reader.' : ONLY_ASKED} What a scam or a suspicious message demands isn't something the reader has to do: say in the summary that it asks for it, from which address, and that it looks like a scam, never with its deadline as the reader's.${full ? NEXT_STEP : ""}
   - Write a "question" as the question was asked, ending in "?" ("Can you make the 19th?"), never as an instruction ("Share your thoughts on…"); write an "action" as what to do, starting with the verb ("Send the signed contract").
-  - "date" (a date or deadline that matters) and "decision" (something settled), when the summary doesn't already say it.
+  - "date" (a date or deadline that matters) and "decision" (something settled), when the summary doesn't already say it.${full ? '\n  - "waiting" (what someone else owes the reader, as "Who has to act" says), who first.' : ""}
   Nothing that's already done, withdrawn or overtaken is an item, nor a question the reader has answered, a joke or an aside. Never restate the summary in an item, even in other words. When there's nothing to add, return no items: no item is better than a padded one.
 
-Write dates with the day and the month, as a person would: "Friday 6 March", never 2026-03-06. Never write "today", "tomorrow", "this weekend" or "next week": this is read on later days. A relative date in a message counts from that message's date. Plain text only: no markdown, no HTML.${full ? `\n\n${CHECK}${since ? `\n\n${SINCE}\nThen check "since": the biggest change first, only what the new messages say, nothing the reader has to do, answer or has promised; and check every item you'd give with nothing marked new is still there.` : ""}` : ""}`;
+Write dates with the day and the month, as a person would: "Friday 6 March", never 2026-03-06. Never write "today", "tomorrow", "this weekend" or "next week": this is read on later days. A relative date in a message counts from that message's date. Plain text only: no markdown, no HTML.${full ? `\n\n${CHECK}${since ? `\n\n${SINCE}\nThen check "since": the biggest change first, only what the new messages say, what's asked of the reader only as a few closing words; and check every item you'd give with nothing marked new is still there.` : ""}` : ""}`;
 
 /** After the mail, the last thing read: who has to act is what a summary gets wrong (plan 202). */
 const CLOSING = "Write the card for the reader above. Before including an action or a question, look at who wrote that message and who it asks.";
@@ -314,7 +328,7 @@ export function summarizeTask(input: SummarizeInput): StructuredTask<Wire, Threa
     prompt: summaryPrompt(input),
     // one name for both shapes: the fake and the stubs know the task by it
     schema: { name: "thread_summary", zod: since ? wireSince : wire },
-    example: { summary: "Ana can't make the 12th and proposes the 19th.", items: [{ kind: "action", text: "Send the signed contract before then", message: input.thread[0]!.label }], ...(since ? { since: "" } : {}) },
+    example: { summary: "Ana can't make the 12th and proposes the 19th.", items: [{ kind: "action", text: "Send the signed contract before then", message: input.thread[0]!.label, due: null, byReply: true }], ...(since ? { since: "" } : {}) },
     maxTokens: input.outputTokens ?? SUMMARY_MAX_TOKENS,
     effort: "low",
     validate: (w, attempt) => {
@@ -323,11 +337,12 @@ export function summarizeTask(input: SummarizeInput): StructuredTask<Wire, Threa
       const said = words(summary);
       // one citing a message that isn't there is dropped: never shown unlinked. One the summary already says adds nothing.
       // A question the reader put to someone else isn't waiting for their answer (an action there can be their promise)
-      const items = w.items
+      const kept = w.items
         .filter((i) => labels.has(i.message) && !repeats(said, i.text) && !(i.kind === "question" && askedOthers.has(i.message)))
-        .map((i) => ({ kind: i.kind, text: clean(i.text, ITEM_MAX_CHARS), message: i.message }))
-        .filter((i) => i.text)
-        .slice(0, SUMMARY_MAX_ITEMS);
+        .map((i) => ({ kind: i.kind, text: clean(i.text, ITEM_MAX_CHARS), message: i.message, ...(isDay(i.due) ? { due: i.due } : {}), ...(i.kind === "action" && i.byReply === false ? { byReply: false } : {}) }))
+        .filter((i) => i.text);
+      // plan 279's panel: what others owe the reader never takes an ask's place
+      const items = [...kept.filter((i) => i.kind !== "waiting").slice(0, SUMMARY_MAX_ITEMS), ...kept.filter((i) => i.kind === "waiting").slice(0, MAX_WAITING)];
       // plan 279: held to the summary's checks; one still wrong after the repair goes, and the card stands
       const written = since ? sentences(w.since ?? "", SINCE_MAX_CHARS) : "";
       // one the summary already says adds nothing: the card shows the whole summary then (Fable review 2)
@@ -368,9 +383,9 @@ export function fakeSummary(system: string, prompt: string): Wire {
   const action = pick(/\b(please|need|send|must|por favor|necesito|envía|enviar)\b/i);
   const date = pick(/\b(\d{1,2}\s+(of\s+)?(january|february|march|april|may|june|july|august|september|october|november|december|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)|tomorrow|mañana|friday|viernes)\b/i);
   const question = pick(/\?$/);
-  if (action) items.push({ kind: "action", text: action, message: last.label });
-  if (date && date !== action) items.push({ kind: "date", text: date, message: last.label });
-  if (question && question !== action && question !== date) items.push({ kind: "question", text: question, message: last.label });
+  if (action) items.push({ kind: "action", text: action, message: last.label, due: null, byReply: true });
+  if (date && date !== action) items.push({ kind: "date", text: date, message: last.label, due: null, byReply: true });
+  if (question && question !== action && question !== date) items.push({ kind: "question", text: question, message: last.label, due: null, byReply: true });
   // plan 279: asked what changed, the first new message's first sentence
   if (!system.includes('- "since":')) return { summary: first, items };
   const fresh = [...prompt.matchAll(/<message id="m\d+"[^\n]*new="yes"[^\n]*\n([\s\S]*?)\n<\/message>/g)][0]?.[1] ?? "";

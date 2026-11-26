@@ -12,6 +12,8 @@ export type SummaryUi =
   | { kind: "none" }
   /** there was one, but the conversation changed */
   | { kind: "stale" }
+  /** plan 279's panel: the new mail's summary couldn't be made (said, with Try again) */
+  | { kind: "failed" }
   | { kind: "ready"; summary: AiSummary }
   | ({ kind: "running"; requestId: string } & Asked)
   | ({ kind: "waitingBody" } & Asked)
@@ -108,12 +110,12 @@ export async function loadSummary(threadId: number): Promise<void> {
   reads.set(threadId, seq);
   const current = useSummaries.getState().byThread.get(threadId);
   // what the user is in the middle of stays until they or the request end it
-  if (current && current.kind !== "none" && current.kind !== "stale" && current.kind !== "ready") return;
+  if (current && current.kind !== "none" && current.kind !== "stale" && current.kind !== "ready" && current.kind !== "failed") return;
   // a read that fails shows nothing, and the next change of the thread asks again
   const read = await (async () => client.call("ai.summaries.get", { threadId }))().catch(() => null);
   if (!read || reads.get(threadId) !== seq) return;
   const now = useSummaries.getState().byThread.get(threadId);
-  if (now && now.kind !== "none" && now.kind !== "stale" && now.kind !== "ready") return;
+  if (now && now.kind !== "none" && now.kind !== "stale" && now.kind !== "ready" && now.kind !== "failed") return;
   put(threadId, read.state === "ready" ? { kind: "ready", summary: read.summary } : { kind: read.state });
 }
 
@@ -125,7 +127,7 @@ export function summaryReady({ threadId }: { threadId: number }): void {
 }
 
 const wasOf = (ui: SummaryUi | undefined): "none" | "stale" => {
-  if (!ui || ui.kind === "none") return "none";
+  if (!ui || ui.kind === "none" || ui.kind === "failed") return "none";
   if (ui.kind === "stale" || ui.kind === "ready") return ui.kind === "stale" ? "stale" : "none";
   return ui.was;
 };

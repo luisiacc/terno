@@ -481,7 +481,8 @@ export class SummaryWorker {
     if (signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
     const items = result.items.flatMap((item) => {
       const messageId = labels.get(item.message);
-      return messageId === undefined ? [] : [{ kind: item.kind, text: item.text, messageId }];
+      // plan 279's panel: its day and whether replying does it, as validated
+      return messageId === undefined ? [] : [{ kind: item.kind, text: item.text, messageId, ...(item.due ? { due: item.due } : {}), ...(item.byReply === false ? { byReply: false } : {}) }];
     });
     // plan 279: kept whenever asked: where it starts orders the rows even when nothing changed (an empty text: the card
     // shows the whole summary alone), and what it read lets a later run tell newer mail from it
@@ -500,10 +501,13 @@ export class SummaryWorker {
   /** What an open reader shows. Reading is never gated; spam and trash show nothing, and bring it back with Not spam. */
   async read(threadId: number): Promise<AiSummaryRead> {
     const row = await this.host.store.aiSummaries.get(threadId);
-    if (!row?.bodyJson) return { state: "none" };
+    if (!row) return { state: "none" };
     const sources = await this.host.store.aiSummaries.sources(threadId);
     // plan 211: an account with AI off shows none (kept until Clear AI data: turned back on, it's there again)
     if (!sources || summaryBlocked(sources) || !this.host.allowed(sources.accountId)) return { state: "none" };
+    // plan 279's panel: the new mail's summary couldn't be made: said, with Try again, while that mail is unread
+    if (row.state === "failed" && sources.messages.some((m) => !m.own && !m.read && !m.trash && !m.spam)) return { state: "failed" };
+    if (!row.bodyJson) return { state: "none" };
     if (row.state !== "ready" || row.sourceStamp !== sources.stamp) return { state: "stale" };
     const summary = viewOf(row, sources);
     return summary ? { state: "ready", summary } : { state: "none" };

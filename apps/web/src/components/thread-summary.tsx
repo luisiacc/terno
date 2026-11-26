@@ -22,6 +22,17 @@ import { AI_CARD, AI_GLYPH, AI_HEADER, AI_INSET, AI_PAD, AI_TITLE, AiCopyButton,
 /** Pass 3: what an item asks of the user, answered with the conversation's ordinary reply. */
 const ANSWERED = new Set<AiSummaryItem["kind"]>(["action", "question"]);
 
+/** Plan 279's panel: a day (YYYY-MM-DD) before today's, in the reader's own calendar. */
+export function overdue(due: string | undefined, now = Date.now()): boolean {
+  if (!due) return false;
+  const d = new Date(now);
+  const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return due < today;
+}
+
+/** Plan 279's panel: Reply on a question, and on a to-do done by replying ("Call the surgery" offers none). */
+export const offersReply = (item: Pick<AiSummaryItem, "kind" | "byReply">): boolean => ANSWERED.has(item.kind) && !(item.kind === "action" && item.byReply === false);
+
 /**
  * "To do · Tell Arjun what you think", and under the words, at their edge, what can be done with it. Plan 162 (after
  * ai162-r01): one left edge, the paragraph's: the kind is a muted word before the item, not a column of its own (the item
@@ -33,7 +44,9 @@ const ANSWERED = new Set<AiSummaryItem["kind"]>(["action", "question"]);
  * Plan 162 (after ai162-r03): what an item is, in words: a question is someone's ("Arjun asks"), from the message it cites;
  * a to-do is the reader's. "Question" read as an instruction beside "Share your thoughts on…".
  */
-export function itemLabel(item: Pick<AiSummaryItem, "kind">, from: Pick<MessageDetail, "from"> | undefined, mine: readonly string[]): string {
+export function itemLabel(item: Pick<AiSummaryItem, "kind" | "due">, from: Pick<MessageDetail, "from"> | undefined, mine: readonly string[], now = Date.now()): string {
+  // plan 279's panel: a to-do whose day has passed says so ("send the P&L Friday 13 November", read on the 25th)
+  if (item.kind === "action" && overdue(item.due, now)) return t("summary.kind.overdue");
   if (item.kind !== "question" || !from || mine.some((e) => e.toLowerCase() === from.from.email.toLowerCase())) return t(`summary.kind.${item.kind}`);
   const name = (from.from.name || from.from.email.split("@")[0] || "").split(/\s+/)[0];
   return name ? t("summary.kind.asks", { name }) : t("summary.kind.question");
@@ -42,14 +55,15 @@ export function itemLabel(item: Pick<AiSummaryItem, "kind">, from: Pick<MessageD
 function Item({ item, from, source, short, mine }: { item: AiSummaryItem; from: MessageDetail | undefined; source: string | null; /** the date alone, when the label names the person */ short: string | null; mine: readonly string[] }) {
   const label = itemLabel(item, from, mine);
   // plan 162 (after ai162-r05): "Arjun asks · …  Reply  Yesterday, 8:24 AM →": the label already says whose it is
-  const named = short !== null && label !== t(`summary.kind.${item.kind}`);
+  // (an Overdue to-do's label names nobody: its source stays whose message it is)
+  const named = short !== null && item.kind === "question" && label !== t(`summary.kind.${item.kind}`);
   const go = source !== null && (
     <Button variant="ghost" size="sm" data-testid="summary-item-open" aria-label={source} className="px-2 text-muted-foreground hover:text-foreground" onClick={() => revealSummaryMessage(item.messageId)}>
       {named ? short : source}
       <ArrowRight aria-hidden />
     </Button>
   );
-  const answered = ANSWERED.has(item.kind);
+  const answered = offersReply(item);
   return (
     // plan 162 (after ai162-r05): the controls end the item's own line when they fit, and wrap under its words, at their
     // edge, when they don't (a line of their own under every item took half the reader at 1100: three reports)
@@ -253,6 +267,20 @@ export default function ThreadSummary({ detail, said = [] }: { detail: ThreadDet
             }
           >
             {t("summary.running")}
+          </Line>
+        );
+      case "failed":
+        // plan 279's panel: new mail's summary couldn't be made (Margaret's house sale): said plainly, with Try again
+        return (
+          <Line
+            state="failed"
+            actions={
+              <Button size="sm" variant="outline" data-testid="summary-retry" onClick={() => { dismissSummary(threadId); void summarize(threadId); }}>
+                {t("summary.tryAgain")}
+              </Button>
+            }
+          >
+            {t("summary.failed")}
           </Line>
         );
       case "waitingBody":

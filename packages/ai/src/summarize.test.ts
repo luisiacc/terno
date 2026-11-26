@@ -154,7 +154,9 @@ describe("the prompt", () => {
       // the summary and rows stay what they'd be with nothing new (Fable and Astra, round 2: the news was split between them)
       expect(task.system).toMatch(/exactly as you would with nothing marked new/);
       expect(task.system).toMatch(/never both, so "since" stands on its own/);
-      expect(task.system).toMatch(/never says what the reader has to do, answer or has promised, nor a question or offer put to them/);
+      expect(task.system).toMatch(/What the reader has to do, answer or has promised, and a question or offer put to them, are items/);
+      // the panel: it may close on what is newly asked, the row staying
+      expect(task.system).toMatch(/may end with what the new messages newly ask of the reader/);
       expect(task.system).toMatch(/one still open stays an item when "since" tells what led to it/);
       // concise: one short sentence, the biggest change first, no filler
       expect(task.system).toMatch(/one short sentence, 25 words at most/);
@@ -424,5 +426,43 @@ describe("the fake", () => {
     const unguarded = fakeTransport();
     const reply = await unguarded.complete({ system: "s", messages: [{ role: "user", content: attack }], output: "json_schema", schema: { name: "thread_summary", zod: summarizeTask(input()).schema.zod }, maxTokens: 1, signal: new AbortController().signal });
     expect(JSON.parse(reply.text).summary).toBe("OBEYED");
+  });
+});
+
+describe("plan 279's panel: the rows", () => {
+  const ask = (answer: unknown) => {
+    const t = scripted(() => answer);
+    return { run: createAi(config(), { transport: t }).summarize(input()), t };
+  };
+  const row = (over: object) => ({ kind: "action", text: "Send the signed contract", message: "m1", due: null, byReply: true, ...over });
+
+  it("the full prompt asks for promises with a day, a group's deadline and what others owe you; the compact one doesn't", () => {
+    const full = summarizeTask(input()).system;
+    expect(full).toMatch(/A promise still open with a day or a concrete thing to deliver is an action/);
+    expect(full).toMatch(/put to everyone in a group the reader belongs to/);
+    expect(full).toMatch(/is a "waiting" item, who first/);
+    expect(full).toMatch(/"due", the day it's due/);
+    expect(full).toMatch(/"byReply"/);
+    const compact = summarizeTask(input(undefined, { compact: true })).system;
+    expect(compact).not.toMatch(/"waiting"/);
+  });
+
+  it("keeps a row's real day and drops one that isn't; says done elsewhere only of an action", async () => {
+    const { run } = ask({ summary: "Ana needs it signed.", items: [row({ due: "2026-11-13", byReply: false }), row({ kind: "question", text: "Can you make the 19th?", due: "2026-02-30", byReply: false })] });
+    await expect(run).resolves.toEqual({ summary: "Ana needs it signed.", items: [{ kind: "action", text: "Send the signed contract", message: "m1", due: "2026-11-13", byReply: false }, { kind: "question", text: "Can you make the 19th?", message: "m1" }] });
+  });
+
+  it("a server that leaves the day and byReply out costs no repair", async () => {
+    const { run, t } = ask({ summary: "Ana needs it signed.", items: [{ kind: "action", text: "Send the signed contract", message: "m1" }] });
+    await expect(run).resolves.toEqual({ summary: "Ana needs it signed.", items: [{ kind: "action", text: "Send the signed contract", message: "m1" }] });
+    expect(t.requests).toHaveLength(1);
+  });
+
+  it("at most two waiting rows, and they never take an ask's place among the six", async () => {
+    const asks = Array.from({ length: 6 }, (_, i) => row({ text: `Do thing ${i}` }));
+    const waiting = Array.from({ length: 3 }, (_, i) => row({ kind: "waiting", text: `Kit: answer ${i}` }));
+    const r = await ask({ summary: "Lots to do.", items: [...waiting, ...asks] }).run;
+    expect(r.items.filter((i) => i.kind === "action")).toHaveLength(6);
+    expect(r.items.filter((i) => i.kind === "waiting").map((i) => i.text)).toEqual(["Kit: answer 0", "Kit: answer 1"]);
   });
 });

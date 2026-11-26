@@ -56,8 +56,8 @@ export const OPENAI_DEFAULT_MODEL = "gpt-6-luna";
 /** Plan 168, the owner: with only an OpenAI key, drafting runs on Sol. Its price isn't known to Terno, so it's counted dear. */
 export const OPENAI_DRAFT_MODEL = "gpt-6-sol";
 
-/** Plan 132: what a summary can point out. */
-export const SUMMARY_ITEM_KINDS = ["decision", "date", "action", "question"] as const;
+/** Plan 132: what a summary can point out. Plan 279's panel: `waiting`, what someone else owes the reader (never counted as an ask). */
+export const SUMMARY_ITEM_KINDS = ["decision", "date", "action", "question", "waiting"] as const;
 export type SummaryItemKind = (typeof SUMMARY_ITEM_KINDS)[number];
 
 export interface AiSummaryItem {
@@ -65,6 +65,10 @@ export interface AiSummaryItem {
   text: string;
   /** the message it's in: never one the thread doesn't hold */
   messageId: number;
+  /** plan 279's panel: the day it's due (YYYY-MM-DD), so a passed one reads as overdue */
+  due?: string;
+  /** plan 279's panel: an action done by replying to this conversation (only then does it offer Reply); absent: yes */
+  byReply?: boolean;
 }
 
 /** A conversation's summary, as the reader shows it. Plain text, never HTML. */
@@ -83,8 +87,11 @@ export interface AiSummary {
   generatedAt: number;
 }
 
-/** `stale`: there was one, but the conversation has changed since. */
-export type AiSummaryRead = { state: "none" } | { state: "stale" } | { state: "ready"; summary: AiSummary };
+/**
+ * `stale`: there was one, but the conversation has changed since. `failed` (plan 279's panel): the automatic one for its
+ * new mail couldn't be made, while that mail is unread: the card says so, with Try again.
+ */
+export type AiSummaryRead = { state: "none" } | { state: "stale" } | { state: "failed" } | { state: "ready"; summary: AiSummary };
 
 /** `waitingBody`: the newest message's text isn't here yet. */
 export type AiSummarizeResult = { status: "ready"; summary: AiSummary } | { status: "waitingBody" };
