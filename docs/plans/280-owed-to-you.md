@@ -436,3 +436,37 @@ Seven personas, each with a fictional mailbox written for them (outside the repo
 7. **A forged From still closes silently:** making it a hint would ask for Done on most deliveries.
 
 **The panel again:** 60 of 84 promises came out as each persona's key has them (56 before), with no false rows. Sam's group promise is now found, and the hedged promises stay open. The ledger totals $5.58 for every panel run.
+
+### The second QA round
+
+The same seven personas reviewed the new screens; none was told the earlier scores or what had changed. Their averages, first round → second:
+
+| Score | First round | Second round |
+|---|---|---|
+| Trust | 7.0 | 7.3 |
+| Useful | 7.6 | 8.0 |
+| Clear | 6.3 | 6.7 |
+| Look | 6.7 | 7.6 |
+| Weekly | 7.4 | 7.9 |
+
+**What they agreed on, fixed in `a4dfa2369`:**
+
+- **Red and the count:** both now mean late for certain (`owedLate`): a day was named, the promise was firm, it is due, and no notice says it may have come. A promise with no day, or one a notice may have brought, stays quiet (Jordan, Theo, Margaret, Priya, Sam, María, Diego).
+- **No day given:** a promise with no day now says when it was promised: "Promised Nov 4, no day given".
+- **Hedged promises:** these say no day at all. A soft "early next week" had become a weekday nobody said (Theo, Priya, Jordan, Sam).
+- **The date column:** it shows the date ("Nov 16"), with its words on hover ("Was due Monday"). A weekday read as last week's or next week's.
+- **The list line:** it drops the name the row already shows ("Promised to send you…").
+- **"Wrote since":** it counts from the day promised. Marcus's "I'll keep you posted" before that day had hidden the reminder.
+- **The card's day:** a late card's day is in the owed ink; it was grey where you act.
+- **Layout:** the source and "Found with AI" are always on their own line.
+- **Delivery notices:** a notice that names the debtor's address and the thing as delivered hints on its own when the model says nothing. Priya's SignNest receipt is now caught.
+- **The tip:** its picture uses the example's person, never a real name beside example words.
+- **Sent-mail prompt v16:** what your mail records is said to you, never "enviarme".
+
+**The rerun:** 59 of 84 promises came out as the keys have them (60 last time; the difference is run-to-run variance), with no false rows. The ledger totals $6.50. In Theo's list, the two red rows are the sidebar's 2.
+
+**Left:**
+- "Done" for "Ya llegó" (María's suggestion; the owner chose Done).
+- Write a follow-up before a promise is late (María, Diego).
+- A grace period for family (Margaret; the owner declined).
+- "Answer Jun…" and similar cards, which belong to What matters.
