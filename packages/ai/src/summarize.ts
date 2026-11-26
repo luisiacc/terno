@@ -8,7 +8,8 @@ import type { StructuredTask } from "./ladder";
  * version it was made with, so any change to the words below bumps this.
  */
 export const SUMMARY_PROMPT_VERSION = 9;
-const SUMMARY_MAX_TOKENS = 3000;
+/** a ceiling, billed only as used: medium effort thinks inside it, and long threads were cut off at 3,000 (plan 279's panel) */
+const SUMMARY_MAX_TOKENS = 5000;
 const ANSWER_SHARE = 0.3;
 /** What a server with no json_schema gets on top of the system prompt: the instructions, the schema, the example. */
 const LADDER_OVERHEAD_CHARS = 1000;

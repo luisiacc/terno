@@ -382,7 +382,7 @@ describe("what's sent", () => {
     const prompt = promptText(req.messages[0]!.content);
     const LADDER = 1000;
     expect(promptText(req.system).length + LADDER + prompt.length + req.maxTokens * 4).toBeLessThanOrEqual(tokens * 4);
-    expect(req.maxTokens).toBe(Math.min(3000, Math.ceil(tokens * 0.3)));
+    expect(req.maxTokens).toBe(Math.min(5000, Math.ceil(tokens * 0.3)));
     expect(prompt).toContain("The contract needs");
     // what's cited still runs m1, m2…: dropping a message leaves no gap
     const labels = [...prompt.matchAll(/<message id="m(\d+)"/g)].map((m) => Number(m[1]));
