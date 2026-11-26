@@ -238,3 +238,7 @@ Clarity was the weakest facet everywhere (5.2–6.7). The raters' most common po
 - Not taken (the owner's or out of this series): dark selection vs hover in Graphite and Atelier (decision 12); a compact row; Everyone's second line; the age's words on the row ("4 weeks" reads unlabeled to some); the card closing after Done.
 
 After round 4 the owner brought "Waiting on you" back in words (decision 2 reversed): every kind says itself on the row, the page and the card; the tinted glyphs stay.
+
+| r05 | ab8ad3067 | 6.5–7 | 7–7.5 | 382 |
+
+Round 5 (the kinds in words again, the card's Done and Later in words, "X wrote last"): clarity up a little (5.7–7.3), hierarchy the new floor: with "Waiting on you" on ten of eleven rows, the raters now call the repeated words noise and ask for Open grouped by kind, or the default kind unsaid. Also: the card's "Last conversation" leaves out the open one without saying so; Done closes the card; a three-item card pushes the menu's commands down; Everyone's rows say only an address; List layout's rows stretch the window's width.
