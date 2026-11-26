@@ -77,20 +77,65 @@ function waitForIndex(): void {
 }
 
 let searchSeq = 0;
+/** the query the hits shown answer, and one whose first match Enter asked for before its answer came */
+let hitsFor = "";
+let enterWhenIn: string | null = null;
 
 /** What's typed in the list's field: names and addresses only, answered as it's typed (a late answer is dropped; a failed one keeps the last). */
 export function searchPeople(query: string): void {
   const mine = ++searchSeq;
+  if (enterWhenIn !== query) enterWhenIn = null;
   usePeople.setState({ query, ...(query.trim() ? {} : { hits: null }) });
   if (!query.trim()) return;
   client.call("people.search", { query }).then(
     (hits) => {
       if (mine !== searchSeq) return;
+      hitsFor = query;
       usePeople.setState({ hits });
       if (hits.index === "warming") waitForIndex();
+      if (enterWhenIn === query) {
+        enterWhenIn = null;
+        openFirst();
+      }
     },
     () => {},
   );
+}
+
+/** Enter in the list's field: the first person of what's typed (waiting for its answer), or of the list. */
+export function enterSearch(): void {
+  const { query } = usePeople.getState();
+  if (query.trim() && hitsFor !== query) return void (enterWhenIn = query);
+  openFirst();
+}
+
+function openFirst(): void {
+  const { list, query, hits, held } = usePeople.getState();
+  const first = peopleRows(list, query, hits, held).find((r) => r.kind === "person");
+  if (first?.kind !== "person") return;
+  selectPerson(first.key, first.email);
+  // (once the list has drawn this answer's rows: the hits may have just come)
+  requestAnimationFrame(() => requestAnimationFrame(() => peopleList.toKey?.(first.key, true)));
+}
+
+/** Esc on a row while the list is a search's: the whole list again, the keyboard staying on that person. */
+export function clearPeopleSearch(): boolean {
+  if (!getApp().people || !usePeople.getState().query) return false;
+  const on = document.activeElement?.closest<HTMLElement>("[data-testid=person-row]")?.dataset.key;
+  if (!on && !document.activeElement?.closest("[data-testid=people]")) return false;
+  searchPeople("");
+  const key = on ?? getApp().person;
+  if (key) requestAnimationFrame(() => peopleList.toKey?.(key, true));
+  return true;
+}
+
+/** C on a person's page: its New message (to them, from the account you last wrote them with). */
+export function personWrite(): boolean {
+  const s = getApp();
+  if (!s.people || s.person === null || s.selectedId !== null) return false;
+  const button = document.querySelector<HTMLElement>("[data-testid=person-page] [data-testid=person-write]");
+  button?.click();
+  return button !== null;
 }
 
 let pageSeq = 0;
@@ -243,7 +288,15 @@ export async function actOnPersonItem(item: PersonItem, action: "done" | "dismis
     if (!hadFocus) shieldPointer();
     if (hadFocus) {
       requestAnimationFrame(() =>
-        (next ? document.querySelector<HTMLElement>(`[data-testid=person-item][data-item="${CSS.escape(personItemId(next))}"] [data-testid=person-item-open]`) : document.querySelector<HTMLElement>("[data-testid=person-write]"))?.focus({ preventScroll: true }),
+        next
+          ? focusItem(personItemId(next))
+          : listLayout()
+            ? document.querySelector<HTMLElement>("[data-testid=person-back]")?.focus({ preventScroll: true })
+            : (() => {
+                // nothing left on their page: the keyboard back on their row, never on a button that starts something
+                const key = getApp().person;
+                if (key) peopleList.toKey?.(key, true);
+              })(),
       );
     }
   }

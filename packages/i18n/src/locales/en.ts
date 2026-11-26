@@ -175,6 +175,7 @@ const en = {
   "shortcuts.todayChange": "Change a “What matters” item's day and time",
   "shortcuts.todayHandTo": "Hand a “What matters” item to someone",
   "shortcuts.goReminders": "Go to Reminders",
+  "shortcuts.goPeople": "Go to People",
   "date.yesterday": "Yesterday",
   "date.today": "Today",
   "date.tomorrow": "Tomorrow",

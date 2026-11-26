@@ -6,7 +6,7 @@
 import type { Page } from "@playwright/test";
 import { sqlDb } from "../../backend-dev/src/server";
 import { E2E_NOW } from "./constants";
-import { axeBothModes, expect, fresh, ingestConversation, scenario, test, type DevServerFixture } from "./fixtures";
+import { axeBothModes, chipsOf, expect, fresh, ingestConversation, scenario, test, type DevServerFixture } from "./fixtures";
 import { message } from "./helpers/today";
 
 test.use({ backendOptions: { network: true } });
@@ -199,6 +199,33 @@ test("People: the row below the Inbox, Open and the search, a person's page, Don
     await expect.poll(onBody).toBe(false);
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("person-page")).toBeVisible();
+  });
+
+  await scenario("G P goes to People; Enter typed at once opens what's typed; Esc on a hit is the whole list again; C writes to the person", async () => {
+    await page.getByTestId("nav-inbox").click();
+    await page.keyboard.press("g");
+    await page.keyboard.press("p");
+    await expect(page.getByTestId("people")).toBeVisible();
+    // typed and Entered without a pause: the first match of what was typed, never the last query's
+    await page.keyboard.press("/");
+    await page.keyboard.type("marco");
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("person-name")).toHaveText("Marco Bell");
+    await expect(page.locator("[data-testid=person-row]:focus")).toHaveAttribute("data-key", "marco@greenway.studio");
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("people-search")).toHaveValue("");
+    await expect(page.locator("[data-testid=person-row]:focus")).toHaveAttribute("data-key", "marco@greenway.studio");
+    // / selects what was typed before: typing replaces it
+    await page.getByTestId("people-search").fill("mar");
+    await page.locator("[data-testid=person-row]").first().focus();
+    await page.keyboard.press("/");
+    await page.keyboard.type("ana r");
+    await expect(page.getByTestId("people-search")).toHaveValue("ana r");
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("person-name")).toHaveText("Ana Ruiz");
+    await expect(page.locator("[data-testid=person-row]:focus")).toHaveAttribute("data-key", "ana.ruiz@greenway.studio");
+    await page.keyboard.press("c");
+    await expect(chipsOf(page, "compose-to")).toHaveText(["Ana Ruiz"]);
   });
 });
 

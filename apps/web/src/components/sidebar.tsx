@@ -1495,7 +1495,7 @@ export function Sidebar() {
       {todayShown && counts.today ? <span id="today-count-help" hidden>{t("today.countHelp", { count: counts.today })}</span> : null}
       {folder(VIEWS[0]!)}
       {peopleShown && (
-        <NavItem testId="nav-people" active={inPeople && !searching} onClick={openPeople} icon={<Users className="size-(--icon-nav)" />} label={t("people.title")} />
+        <NavItem testId="nav-people" active={inPeople && !searching} onClick={openPeople} icon={<Users className="size-(--icon-nav)" />} label={t("people.title")} shortcut="g p" />
       )}
       {VIEWS.slice(1, PINNED).map(folder)}
       <FavoriteRows />

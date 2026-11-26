@@ -168,6 +168,7 @@ const es = {
   "shortcuts.todayChange": "Cambiar el día y la hora de algo en «Lo importante»",
   "shortcuts.todayHandTo": "Delegar algo de «Lo importante» en otra persona",
   "shortcuts.goReminders": "Ir a Recordatorios",
+  "shortcuts.goPeople": "Ir a Personas",
   "date.yesterday": "Ayer",
   "date.today": "Hoy",
   "date.tomorrow": "Mañana",

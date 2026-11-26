@@ -22,7 +22,8 @@ import { setListFilter, toggleUnreadFilter } from "~/lib/unread";
 import { activeFilter, isUnreadOnly } from "~/lib/unread-filter";
 import { DESIGNS } from "@terno/ui/designs/index";
 import { designName } from "~/lib/design";
-import { aiReady, askOffered, followupsOffered, summariesOffered, todayOffered } from "~/lib/ai";
+import { aiFeaturesOffered, aiReady, askOffered, followupsOffered, summariesOffered, todayOffered } from "~/lib/ai";
+import { openPeople } from "~/lib/people";
 import { useCanDraft } from "~/lib/ai-draft-state";
 import { openAiDraft } from "~/lib/ai-draft";
 import { checkForUpdates, installUpdate, useHasUpdates, useUpdates } from "~/lib/updates";
@@ -278,6 +279,7 @@ export function CommandPalette() {
   const hasDevMode = useApp((s) => s.devAi !== null);
   const followupsOn = useApp((s) => open && followupsOffered(s));
   const todayOn = useApp((s) => open && todayOffered(s));
+  const peopleOn = useApp((s) => open && aiFeaturesOffered(s));
   const canAsk = useApp((s) => open && askOffered(s));
   // plan 211: the open conversation's account's AI too
   const canSummarize = useApp((s) => open && summariesOffered(s, openThread?.thread.accountId));
@@ -427,6 +429,7 @@ export function CommandPalette() {
     if (todayOn) add({ id: "go.today", group: "goTo", label: t("palette.goToday"), icon: <Sun />, testId: "palette-go-today", keywords: [goTo("palette.goToday"), ...english("palette.goToday")], run: () => navigate({ today: true }) });
     if (followupsOn) add({ id: "go.followups", group: "goTo", label: t("palette.goFollowups"), icon: <ListChecks />, testId: "palette-go-followups", keywords: [goTo("palette.goFollowups"), ...english("palette.goFollowups")], run: () => navigate({ followups: true }) });
     add({ id: "go.putAway", group: "goTo", label: t("putAway.title"), icon: <FolderInput />, testId: "palette-go-put-away", keywords: [goTo("putAway.title"), ...english("putAway.title")], run: () => navigate({ putAway: true }) });
+    if (peopleOn) add({ id: "go.people", group: "goTo", label: t("people.title"), icon: <Users />, shortcut: keysOf("go.people"), testId: "palette-go-people", keywords: [`${t("palette.group.goTo")} ${t("people.title")}`, ...english("people.title")], run: openPeople });
     add({ id: "go.reminders", group: "goTo", label: t("palette.goReminders"), icon: <AlarmClock />, shortcut: keysOf("go.reminders"), testId: "palette-go-reminders", keywords: [goTo("palette.goReminders"), ...english("palette.goReminders")], run: () => navigate({ reminders: true }) });
     for (const c of categories) {
       add({ id: `category:${c.id}`, group: "goTo", label: c.name, search: `${t("palette.search.category")} ${c.name}`, icon: <CategoryDot color={c.color as CategoryColor} className="mx-1" />, keywords: english("palette.search.category"), run: () => navigate({ categoryId: c.id, accountId: null }) });

@@ -1,6 +1,7 @@
 import { replyReady, useReply } from "~/lib/replies";
 import { closePreviewRow, leavePreview } from "~/state/action-preview";
 import { goToFolder } from "~/lib/account-folders";
+import { aiFeaturesOffered } from "~/lib/ai";
 import { resolveKey, type Command } from "@terno/core";
 import { act, openCompose, toggleRead, toggleStar, undoLast } from "~/lib/actions";
 import { togglePin } from "~/lib/pins";
@@ -22,7 +23,7 @@ import { printCommand } from "~/lib/print-open";
 import { checkForUpdates } from "~/lib/updates";
 import { closeEmptySearch, focusRows, focusSearch, listScroller } from "~/components/thread-list";
 import { closeFeedConversation } from "~/lib/feed-pane";
-import { backToRow, closePersonConversation, focusPeopleSearch, leavePerson, movePerson, personKeyAct } from "~/lib/people";
+import { backToRow, clearPeopleSearch, closePersonConversation, focusPeopleSearch, leavePerson, movePerson, openPeople, personKeyAct, personWrite } from "~/lib/people";
 import { popupOpen } from "~/components/composer/controller";
 import { feedPlace, feedScroller, focusFeed, openFeedKeyRow } from "~/lib/feed-focus";
 import { snackbarControls } from "~/components/category-snackbar";
@@ -209,7 +210,7 @@ function escape() {
   if (!s.checked.size && !s.scope && closeFeedConversation()) return;
   // plan 281: a conversation opened from a person's page goes back to the page (Split); in List, the page over the list
   // closes as any page does, and from a person's page there, Esc goes back to the list
-  if (closePersonConversation() || backToRow()) return;
+  if (closePersonConversation() || backToRow() || clearPeopleSearch()) return;
   if (s.people && s.person !== null && listLayout() && currentPage() === "list") return leavePerson();
   if (listLayout() && currentPage() !== "list") { markSelectionIntent(); closePage({ focus: true }); }
   // plan 161, pass 2: a matched conversation open in the reader closes first, back to the rule; then the preview ends
@@ -288,7 +289,8 @@ const HANDLERS: Partial<Record<Command, () => void>> = {
   "action.undo": undoLast,
   "thread.print": () => printCommand("print"),
   "thread.exportPdf": () => printCommand("pdf"),
-  "compose.new": () => openCompose("new"),
+  // plan 281: on a person's page, a message to them (its New message)
+  "compose.new": () => void (personWrite() || openCompose("new")),
   "compose.reply": () => reply("reply"),
   "compose.replyAll": () => reply("replyAll"),
   "compose.forward": () => reply("forward"),
@@ -306,6 +308,7 @@ const HANDLERS: Partial<Record<Command, () => void>> = {
   "go.archive": () => goToFolder("archive"),
   "go.trash": () => goToFolder("trash"),
   "go.reminders": () => navigate({ reminders: true }),
+  "go.people": () => void (aiFeaturesOffered(getApp()) && openPeople()),
   "help.shortcuts": () => setApp({ dialog: "shortcuts" }),
   // plan 246: where Settings was left
   "settings.open": () => openSettings(),

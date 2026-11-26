@@ -62,6 +62,7 @@ export type Command =
   | "go.archive"
   | "go.trash"
   | "go.reminders"
+  | "go.people"
   | "help.shortcuts"
   | "settings.open"
   | "snackbar.action1"
@@ -202,6 +203,7 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { keys: "g a", command: "go.archive" },
   { keys: "g #", command: "go.trash" },
   { keys: "g r", command: "go.reminders" },
+  { keys: "g p", command: "go.people" },
   { keys: "?", command: "help.shortcuts" },
   // the platform's Settings shortcut: from anywhere, also while typing or writing a draft (a chord types nothing)
   { keys: "mod+,", command: "settings.open", inEditable: true, inDialog: true },

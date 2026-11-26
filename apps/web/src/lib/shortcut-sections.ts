@@ -32,6 +32,7 @@ export const SECTIONS: { title: Label; rows: [Command, Label][] }[] = [
       ["go.archive", "shortcuts.goArchive"],
       ["go.trash", "shortcuts.goTrash"],
       ["go.reminders", "shortcuts.goReminders"],
+      ["go.people", "shortcuts.goPeople"],
     ],
   },
   {

@@ -7,7 +7,7 @@ import { cn } from "@terno/ui/lib/utils";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { LIST_TITLE } from "~/lib/list-title";
-import { enterPerson, loadPeople, morphName, peopleList, reloadPage, searchPeople, selectPerson } from "~/lib/people";
+import { enterPerson, enterSearch, loadPeople, morphName, peopleList, reloadPage, searchPeople, selectPerson } from "~/lib/people";
 import { renderProbe } from "~/lib/render-probe";
 import { installScrollHairline } from "~/lib/scroll-hairline";
 import { useAppearance } from "~/lib/appearance";
@@ -95,7 +95,11 @@ function PeopleList({ wide }: { wide: boolean }) {
       // the keyboard was on a row: it goes to the selected one, once it's drawn
       if (focus) requestAnimationFrame(() => scrollRef.current?.querySelector<HTMLElement>(`[data-testid=person-row][data-key="${CSS.escape(key)}"]`)?.focus({ preventScroll: true }));
     };
-    peopleList.focusSearch = () => inputRef.current?.focus();
+    // (what was typed selected: typing replaces it)
+    peopleList.focusSearch = () => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    };
     return () => {
       peopleList.rows = peopleList.toKey = peopleList.focusSearch = undefined;
     };
@@ -197,14 +201,18 @@ function PeopleList({ wide }: { wide: boolean }) {
               else if (tabKey !== null) peopleList.toKey?.(tabKey, true);
               return;
             }
-            // ↓ onto the first row; Enter opens it (the first match, while searching)
-            if (e.key !== "ArrowDown" && e.key !== "Enter") return;
+            // Enter opens the first person (of what's typed, once its answer is in); ↓ goes onto the rows
+            if (e.key === "Enter") {
+              e.preventDefault();
+              return enterSearch();
+            }
+            if (e.key !== "ArrowDown") return;
             const first = rows.find((r) => r.kind === "person");
             if (!first || first.kind !== "person") return;
             e.preventDefault();
-            const to = e.key === "Enter" ? first : (rows.find((r) => r.kind === "person" && r.key === tabKey) ?? first);
+            const to = rows.find((r) => r.kind === "person" && r.key === tabKey) ?? first;
             if (to.kind !== "person") return;
-            if (e.key === "Enter" || !wide) selectPerson(to.key, to.email);
+            if (!wide) selectPerson(to.key, to.email);
             peopleList.toKey?.(to.key, true);
           }}
         />
@@ -269,7 +277,10 @@ const PersonRow = memo(function PersonRow({ row, selected, tabbable, query }: { 
   const Glyph = first ? itemGlyph(first) : null;
   // the right column is what's open's when: with nothing open, none (the page says when you last wrote each other)
   const when = first ? itemWhen(first) : { text: null, late: false, later: false };
-  const more = (row.open?.items.length ?? 0) - 1;
+  // what else is open now (what's put off waits on their page, under Put off)
+  const items = row.open?.items ?? [];
+  const now = items.filter((i) => !itemWhen(i).later).length;
+  const more = (now || items.length) - 1;
   // held in place with nothing open any more (their last item just done)
   const cleared = row.open !== null && row.open.items.length === 0;
   return (
