@@ -73,7 +73,7 @@ export function readSpend(profile) {
 
 // ─── driving the window ─────────────────────────────────────────────────────
 
-function driver(page, log) {
+export function driver(page, log) {
   const d = { page };
   d.isVisible = (sel) => page.locator(sel).first().isVisible().catch(() => false);
   d.blur = () => page.evaluate(() => document.activeElement?.blur());
@@ -153,7 +153,7 @@ async function summaryShown(d, c) {
   }, c.title, { timeout: MODEL_MS }).then((h) => h.jsonValue(), () => "timeout");
 }
 
-const STEPS = {
+export const STEPS = {
   /** Settings → Dev mode → Pro AI, then the four background switches in Settings → AI. */
   async "ai-on"(d) {
     const { page } = d;
@@ -415,6 +415,54 @@ const STEPS = {
     const learned = await shows(page.getByTestId("style-status").filter({ hasText: /Learned from|Aprendido/ }), 60_000);
     d.log(learned ? `  ${(await page.getByTestId("style-status").first().innerText()).replace(/\s+/g, " ").trim()}` : "  still learning: it finishes on its own (Settings → AI → Writing style)");
     await d.escapeAll();
+  },
+
+  /**
+   * Plan 281: People reads what the steps before made (What matters' items, the replies owed to you), so it only waits for
+   * Open to settle. One thing no step makes is something put off: one person's only item, waiting on your reply (the
+   * mailbox's, not a model's), goes to Later's furthest moment, so Open ends with someone put off, uncounted.
+   */
+  async people(d, progress) {
+    const { page } = d;
+    await d.escapeAll();
+    if (!(await d.isVisible("[data-testid=nav-people]"))) await page.getByTestId("nav-more").click();
+    await page.getByTestId("nav-people").click();
+    await page.getByTestId("people").waitFor();
+    // Open's rows: those drawn above Everyone's heading (all of them, while it's below the fold)
+    const openRows = () => page.getByTestId("person-row").evaluateAll((rows) => {
+      const everyone = document.querySelector("[data-testid=people-heading][data-kind=everyone]");
+      return rows.filter((r) => !everyone || r.compareDocumentPosition(everyone) & Node.DOCUMENT_POSITION_FOLLOWING).map((r) => ({ key: r.dataset.key, text: r.innerText, more: !!r.querySelector("[data-slot=badge]") }));
+    });
+    // settled: Open's count holds for 10 s (What matters' readers may still be at it), 3 minutes at most
+    let last = "";
+    let since = Date.now();
+    for (const end = Date.now() + 180_000; Date.now() < end; await page.waitForTimeout(1000)) {
+      const now = `${await page.getByTestId("people-line").textContent()}|${(await openRows()).length}`;
+      if (now !== last) [last, since] = [now, Date.now()];
+      else if (Date.now() - since > 10_000 && (await openRows()).length > 0) break;
+    }
+    const rows = await openRows();
+    if (!rows.length) return ["nobody in People's Open"];
+    d.log(`  People: ${(await page.getByTestId("people-line").textContent())?.trim()}`);
+    if (progress.has("later")) return d.log("  put off on an earlier launch");
+    for (const row of rows.filter((r) => !r.more && r.text.includes("Waiting on you")).reverse()) {
+      await page.locator(`[data-testid=person-row][data-key="${row.key}"]`).click();
+      const item = page.getByTestId("person-page").getByTestId("person-item").first();
+      await item.waitFor();
+      await item.hover();
+      await item.getByTestId("person-item-later").click();
+      const menu = page.getByTestId("person-item-later-menu");
+      await menu.waitFor();
+      const presets = menu.locator("[role=menuitem]:not([data-testid=person-item-later-pick])");
+      if (!(await presets.count())) { await page.keyboard.press("Escape"); continue; }
+      const choice = (await presets.last().innerText()).replace(/\s+/g, " ").trim();
+      await presets.last().click();
+      await page.getByTestId("person-page").locator("[data-testid=person-item][data-later]").first().waitFor({ timeout: 15_000 });
+      progress.add("later");
+      d.log(`  ${(await page.getByTestId("person-name").innerText()).trim()}: their only item put off (${choice}), at Open's end`);
+      return d.go("inbox");
+    }
+    return ["no one-item person waiting on your reply to put off with Later"];
   },
 };
 

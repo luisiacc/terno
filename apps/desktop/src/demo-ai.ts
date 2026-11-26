@@ -14,8 +14,11 @@ export const DEMO_AI_KEYS = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "JEV_API_KEY
 /** Pro drafts on one and summarizes on the other; JEV (smart categories) is off in the demo. */
 export const REQUIRED_KEYS = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"] as const;
 
-/** In the order they run: each needs what came before it (AI on first, the digest before Today's rows are read). */
-export const DEMO_AI_STEPS = ["ai-on", "digest", "conversations", "since", "followups", "ask", "rule", "style"] as const;
+/**
+ * In the order they run: each needs what came before it (AI on first, the digest before Today's rows are read, People
+ * last: it reads What matters' items and the follow-ups).
+ */
+export const DEMO_AI_STEPS = ["ai-on", "digest", "conversations", "since", "followups", "ask", "rule", "style", "people"] as const;
 /**
  * Plan 279: the conversations with new mail since you read (`DEMO_SINCE` in @terno/backend, seeded on a demo AI launch),
  * opened and summarized by hand. The last changes nothing, so its card shows the whole summary alone.

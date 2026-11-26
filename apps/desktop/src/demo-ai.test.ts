@@ -63,6 +63,12 @@ describe("plan 167: pnpm dev:demo-ai", () => {
     expect(stepsToRun({ version: MARKER_VERSION, done }, { fresh: false })).toEqual(["since"]);
   });
 
+  it("plan 281: People comes last (it reads what the others made), and a profile prepared before it runs only it", () => {
+    expect(DEMO_AI_STEPS.at(-1)).toBe("people");
+    const done = Object.fromEntries(DEMO_AI_STEPS.filter((s) => s !== "people").map((s) => [s, "2026-11-09T00:00:00Z"]));
+    expect(stepsToRun({ version: MARKER_VERSION, done }, { fresh: false })).toEqual(["people"]);
+  });
+
   it("which steps a launch runs: all the first time and with --fresh, the missing ones after a failure, none once done", () => {
     const all = [...DEMO_AI_STEPS];
     expect(stepsToRun(null, { fresh: false })).toEqual(all);
