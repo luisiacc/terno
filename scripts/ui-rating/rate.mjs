@@ -95,7 +95,7 @@ function freeze() {
   const pnpmDir = join(repo, "node_modules/.pnpm");
   const core = readdirSync(pnpmDir).find((d) => d.startsWith("playwright-core@"));
   cpSync(join(pnpmDir, core, "node_modules/playwright-core"), join(app, "node_modules/playwright-core"), { recursive: true, dereference: true });
-  for (const f of ["harness.mjs", "capture.mjs", "sets.mjs", "model-stub.mjs", "keys.mjs", "brief.md", "brief-ai.md", "brief-wm.md", "brief-pa.md"]) cpSync(join(here, f), join(runtime, f));
+  for (const f of ["harness.mjs", "capture.mjs", "sets.mjs", "model-stub.mjs", "keys.mjs", "brief.md", "brief-ai.md", "brief-wm.md", "brief-pa.md", "brief-people.md"]) cpSync(join(here, f), join(runtime, f));
   if (seed) cpSync(seed, join(runtime, "seed"), { recursive: true, filter: (f) => !/-(wal|shm)$/.test(f) });
   return runtime;
 }
@@ -148,6 +148,9 @@ const HANDS_ON = {
   putaway: (full) => full
     ? "Try at least: the Inbox's line about mail put away and its Review; Put away from the sidebar (under More) and its help; open each kind of item and read why it's there; Back to Inbox and its Undo (z); Not Recibos, Don't file … automatically and their Undo; a rule that's off (turn one off in Rules) and Bring back all it put away; several selected and back at once; the right-click menu; search from Put away and Esc back; and a smaller window (about 1100x700)."
     : "Try at least, Put away as this style draws it: the Inbox's line, the list with its sections and each row's reason, the reason box in the reader with its actions, in light and dark, plus any other flow you need to score the screen honestly. Judge contrast with particular care, in both modes.",
+  people: (full) => full
+    ? "Try at least, with `ai: \"stub\"`: open People from the sidebar; move through the people with j and k; type in its search (a name's start, a company's domain) and leave it with Esc; open a person, hover an item and use Done, then Undo; use Later; open an item's conversation and come back with Esc; scroll to Everyone; in a conversation with several people, hover a person's chip under the subject and open it (its card), then Open in People; switch Settings → Appearance → Layout to List and open a person there, then come back; and a smaller window (about 1100x700)."
+    : "Try at least, with `ai: \"stub\"`, People as this style draws it: the list and a person's page, an item hovered, the search, Everyone, a person's card in a conversation's chip, in light and dark, plus any other flow you need to score a cell honestly. Judge contrast with particular care, in both modes.",
 };
 
 function brief(design, runtime) {

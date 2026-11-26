@@ -24,6 +24,13 @@ const WM_SHOTS = ["w01-feed", "w02-feed-hover", "w03-feed-reader", "w04-feed-fur
  */
 const PA_SHOTS = ["p01-inbox-line", "p02-put-away", "p03-box-rule", "p04-box-terno", "p05-small"];
 
+/**
+ * Plan 281: People on its own: the list beside a person's page, an item hovered (Done and Later), the search, Everyone,
+ * a person's card in a conversation's people chip, the page in List layout, and a 1100x700 window. AI on the local
+ * stand-in: People's lines are What matters' own and the follow-ups' (the stand-in's), and nothing leaves the machine.
+ */
+const PEOPLE_SHOTS = ["p01-people", "p02-person-hover", "p03-people-search", "p04-people-everyone", "p05-person-card", "p06-people-list-layout", "p07-people-small"];
+
 export const SETS = {
   everyday: {
     brief: "brief.md",
@@ -45,10 +52,15 @@ export const SETS = {
     screens: ["put_away"],
     shots: PA_SHOTS,
   },
+  people: {
+    brief: "brief-people.md",
+    screens: ["people_list", "person_page", "person_card"],
+    shots: PEOPLE_SHOTS,
+  },
 };
 
 /** Whether a set's app runs AI (the AI set and What matters): its capture and its raters launch with `ai`. */
-export const usesAi = (set) => set === "ai" || set === "whatmatters";
+export const usesAi = (set) => set === "ai" || set === "whatmatters" || set === "people";
 
 /** Every file a set's capture writes for one style. */
 export const shotFiles = (set) => SETS[set].shots.flatMap((s) => [`${s}-light.png`, `${s}-dark.png`]);
@@ -77,7 +89,8 @@ const STUB_WORDS = "The AI here is a local stand-in model that gives the same an
  * the stand-in, and its raters launch with `ai: "stub"`, so a hands-on try never reaches a provider or spends.
  */
 export function briefFor(text, ai) {
-  if (ai !== "stub") return text;
+  // (plan 281: a brief written for the stand-in already says so)
+  if (ai !== "stub" || text.includes(STUB_WORDS)) return text;
   if (!text.includes(REAL_WORDS)) throw new Error("brief-ai.md's paragraph on the models changed: briefFor's words must follow it");
   return text.replace(REAL_WORDS, STUB_WORDS).replace("with AI on the same real models as the screenshots (`ai: true`):", "with AI on the local stand-in (`ai: true`; nothing leaves the machine):").replaceAll("ai: true", 'ai: "stub"');
 }

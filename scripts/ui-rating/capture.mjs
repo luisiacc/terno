@@ -3,7 +3,8 @@
 // keys.mjs), or on the local stand-in with `--ai stub`.
 // `--screens whatmatters` shoots What matters alone (plan 214), on the same real models; `--screens putaway`, Put away
 // (plan 282) on its seed.
-//   node scripts/ui-rating/capture.mjs <design> <outDir> [light|dark] [--screens everyday|ai|whatmatters|putaway] [--ai real|stub]
+// `--screens people` shoots People (plan 281), on the local stand-in unless `--ai real`.
+//   node scripts/ui-rating/capture.mjs <design> <outDir> [light|dark] [--screens everyday|ai|whatmatters|putaway|people] [--ai real|stub]
 import { existsSync, mkdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
@@ -538,6 +539,115 @@ async function paPass(design, mode, dir) {
   } finally { await close(); }
 }
 
+/**
+ * Plan 281: People, on the local stand-in. The list (Open, then Everyone) settles as the app reads the mail: shot once its
+ * line holds for 10 s. A person with two or more things open is chosen, so a page shows what it is for.
+ */
+async function peoplePass(design, mode, dir, ai) {
+  const { app, page, close } = await launch({ design, dark: mode === "dark", ai: ai === "real" ? true : "stub" });
+  const still = async () => {
+    await page.mouse.move(0, 0);
+    await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== "running" || !(Number(a.effect?.getComputedTiming().endTime) <= 1000)));
+    await page.waitForTimeout(300);
+  };
+  const rows = page.getByTestId("person-row");
+  const items = page.getByTestId("person-page").getByTestId("person-item");
+  // plan 207's question, whenever it comes: the Inbox stays the first screen (it isn't what's rated)
+  await page.addLocatorHandler(page.getByTestId("first-screen-question"), () => page.getByTestId("first-screen-keep-inbox").click());
+  try {
+    await page.getByTestId("nav-people").click();
+    await page.getByTestId("people").waitFor();
+    // settled: Open's count holds for 10 s (the readers on the stand-in take seconds), 3 minutes at most
+    let last = "";
+    let since = Date.now();
+    for (const end = Date.now() + 180_000; Date.now() < end; await page.waitForTimeout(1000)) {
+      const now = `${await page.getByTestId("people-line").textContent()}|${await rows.count()}`;
+      if (now !== last) [last, since] = [now, Date.now()];
+      else if (Date.now() - since > 10_000 && (await rows.count()) > 0) break;
+    }
+    // the first person with two or more things open (a "+N" on their row), else the first
+    const several = rows.filter({ has: page.locator("[data-slot=badge]") }).first();
+    await ((await several.count()) ? several : rows.first()).click();
+    await page.getByTestId("person-name").waitFor();
+    await items.first().waitFor();
+    await still();
+    await shot(page, `p01-people-${mode}`, dir);
+    await items.first().hover();
+    await items.first().getByTestId("person-item-done").waitFor();
+    await page.waitForTimeout(250);
+    await shot(page, `p02-person-hover-${mode}`, dir);
+    // the search: a name's start
+    await page.mouse.move(0, 0);
+    await page.keyboard.press("/");
+    await page.getByTestId("people-search").fill("an");
+    await page.getByTestId("people-match").first().waitFor();
+    await still();
+    await shot(page, `p03-people-search-${mode}`, dir);
+    await page.getByTestId("people-search").press("Escape");
+    await page.getByTestId("people-search").press("Escape");
+    // Everyone, from its heading
+    const heading = page.locator("[data-testid=people-heading][data-kind=everyone]");
+    for (let i = 0; i < 60 && !(await heading.count()); i++) {
+      await page.getByTestId("people-rows").evaluate((el) => (el.scrollTop += el.clientHeight * 0.7));
+      await page.waitForTimeout(120);
+    }
+    await heading.evaluate((el) => el.scrollIntoView({ block: "start" }));
+    await page.getByTestId("people-rows").evaluate((el) => (el.scrollTop -= 8));
+    await still();
+    await shot(page, `p04-people-everyone-${mode}`, dir);
+    await page.getByTestId("people-rows").evaluate((el) => (el.scrollTop = 0));
+    // a conversation with several people: a chip's card
+    await page.getByTestId("nav-inbox").click();
+    const threadRows = page.getByTestId("thread-row");
+    await threadRows.first().waitFor();
+    let found = false;
+    // down the Inbox by keyboard (the list draws only what's near), to the first conversation with people chips
+    await threadRows.first().click();
+    for (let i = 0; i < 200 && !found; i++) {
+      await page.getByTestId("reader-subject").waitFor();
+      await page.waitForTimeout(150);
+      found = (await page.getByTestId("thread-person").count()) > 0;
+      if (!found) {
+        await page.evaluate(() => document.activeElement?.blur());
+        await page.keyboard.press("j");
+      }
+    }
+    if (!found) throw new Error("no conversation with people chips in the Inbox's first 200");
+    const chip = page.getByTestId("thread-person").first();
+    await chip.hover();
+    await page.waitForTimeout(600);
+    await chip.click();
+    await page.getByTestId("person-menu").waitFor();
+    await page.waitForTimeout(300);
+    await shot(page, `p05-person-card-${mode}`, dir);
+    await page.keyboard.press("Escape");
+    // a 1100x700 window, a person open
+    await page.getByTestId("nav-people").click();
+    await rows.first().waitFor();
+    await resize(app, 1100, 700);
+    await page.waitForFunction(() => innerWidth === 1100);
+    await ((await several.count()) ? several : rows.first()).click();
+    await page.getByTestId("person-name").waitFor();
+    await still();
+    await shot(page, `p07-people-small-${mode}`, dir);
+    await resize(app, 1440, 900);
+    await page.waitForFunction(() => innerWidth === 1440);
+    // List layout: the person's page over the list
+    await setLayout(page, "list");
+    await page.waitForTimeout(500);
+    await page.getByTestId("nav-people").click();
+    await page.waitForTimeout(400);
+    // (the person chosen in Split is still chosen: their page is already over the list)
+    if (!(await page.getByTestId("person-back").isVisible())) await ((await several.count()) ? several : rows.first()).click();
+    await page.getByTestId("person-back").waitFor();
+    await still();
+    await shot(page, `p06-people-list-layout-${mode}`, dir);
+  } catch (error) {
+    await page.screenshot({ path: join(dir, `FAILED-${mode}.png`) }).catch(() => {});
+    throw error;
+  } finally { await close(); }
+}
+
 const args = process.argv.slice(2);
 const set = screensFlag(args);
 const ai = aiFlag(args);
@@ -545,7 +655,7 @@ const [design, dir, only] = args.filter((a, i) => !a.startsWith("--") && args[i 
 if (!design || !dir) throw new Error("usage: capture.mjs <design> <outDir> [light|dark] [--screens everyday|ai|whatmatters|putaway] [--ai real|stub]");
 try {
   mkdirSync(dir, { recursive: true });
-  for (const mode of only ? [only] : ["light", "dark"]) await (set === "ai" ? aiPass(design, mode, dir, ai) : set === "whatmatters" ? wmPass(design, mode, dir, ai) : set === "putaway" ? paPass(design, mode, dir) : pass(design, mode, dir));
+  for (const mode of only ? [only] : ["light", "dark"]) await (set === "ai" ? aiPass(design, mode, dir, ai) : set === "whatmatters" ? wmPass(design, mode, dir, ai) : set === "putaway" ? paPass(design, mode, dir) : set === "people" ? peoplePass(design, mode, dir, ai) : pass(design, mode, dir));
   // every file of the set, or the capture failed
   const missing = shotFiles(set).filter((f) => (!only || f.endsWith(`-${only}.png`)) && !existsSync(join(dir, f)));
   if (missing.length) throw new Error(`capture ${set} is missing ${missing.join(", ")}`);
