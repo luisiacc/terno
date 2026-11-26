@@ -3,7 +3,7 @@ import { addressOnly, addressKey, automatedLevel, dayKeyOf, dueCutoff, byUrgency
 import { captureError } from "@terno/core/diag";
 import { RpcError, type AppSettings } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
-import { AWAITING_ITEM, FOLLOWUPS_ACTIVE_MAX, HELD_REQUEST_CLOSED, OWED_RETIRE_MS, OWED_SCAN_DAYS, type FollowupFinish, type FollowupSnapshot, type FollowupSource, type FollowupWrite, type MailStore, type OwedMark, type OwedSource, type SentMark } from "@terno/store";
+import { AWAITING_ITEM, FOLLOWUPS_ACTIVE_MAX, HELD_REQUEST_CLOSED, OWED_RETIRE_MS, OWED_SCAN_DAYS, type FollowupFinish, type FollowupSnapshot, type FollowupSource, type FollowupWrite, type MailStore, type OwedMark, type OwedSource, type OwedWrite, type SentMark } from "@terno/store";
 import { AccountChecks, FOLLOWUPS_CHECKED_KEY, OWED_CHECKED_KEY } from "./account-checks";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import { UI_LOCALE_KEY } from "./forwarding";
@@ -294,7 +294,7 @@ function namesBoth(promise: string, request: string): boolean {
   return [...namingWords(promise, { names: false })].some((w) => asked.has(w) && !HOLDS_WORDS.has(w));
 }
 
-export function checkSentMail(result: SentMailResult, input: { ownText: string; recipients: readonly { label: string; name: string; email: string }[]; open: ReadonlyMap<string, FollowupRow>; requests?: ReadonlyMap<string, Pick<DatedRow, "id" | "revision"> & Partial<Pick<DatedRow, "senderKey" | "text" | "kind">>>; owed?: ReadonlyMap<string, FollowupRow>; sentAt: number; nudgeAfterDays: number }): { rows: FollowupWrite[]; kept: { id: number; revision: number }[]; verdicts: Verdict[]; owedKept: { id: number; revision: number }[] } {
+export function checkSentMail(result: SentMailResult, input: { ownText: string; recipients: readonly { label: string; name: string; email: string }[]; open: ReadonlyMap<string, FollowupRow>; requests?: ReadonlyMap<string, Pick<DatedRow, "id" | "revision"> & Partial<Pick<DatedRow, "senderKey" | "text" | "kind">>>; owed?: ReadonlyMap<string, FollowupRow>; trusted?: boolean; sentAt: number; nudgeAfterDays: number }): { rows: FollowupWrite[]; kept: { id: number; revision: number }[]; verdicts: Verdict[]; owedKept: { id: number; revision: number }[] } {
   const own = norm(input.ownText);
   const byLabel = new Map(input.recipients.map((r) => [r.label, r]));
   // plan 161, real models: Haiku names who it means ("Arjun Ramírez") where the prompt asks for a label ("r1"). A name
@@ -382,7 +382,8 @@ export function checkSentMail(result: SentMailResult, input: { ownText: string; 
   // plan 280 (§3): a promise of theirs your words record ("as agreed, you'll send it Thursday"), in your words, owed by a
   // person you wrote to; the store takes it only from a send that's yours for certain (revision 7)
   const owes = new Set<string>();
-  (result.theirs ?? []).forEach((p, i) => {
+  // (the Fable review: only from a send that's yours for certain, as the store takes it; otherwise the wait stays the wait)
+  (input.trusted === false ? [] : (result.theirs ?? [])).forEach((p, i) => {
     const who = p.who ? person.get(p.who) : undefined;
     if (!who || !isPerson(who.email) || !own.includes(norm(p.quote))) return;
     const when = theirDue({ madeAt: input.sentAt, due: validFollowupDate(p.due, input.sentAt), nudgeAfterDays: input.nudgeAfterDays });
@@ -390,7 +391,7 @@ export function checkSentMail(result: SentMailResult, input: { ownText: string; 
     owes.add(addressKey(who.email));
   });
   // plan 280 (§3): an open promise of theirs your words say arrived ("got the contract, thanks"), never "still waiting on it"
-  const owedKept = (result.owedKept ?? []).flatMap((k) => {
+  const owedKept = (input.trusted === false ? [] : (result.owedKept ?? [])).flatMap((k) => {
     const row = input.owed?.get(k.label);
     return row && ownPieces(k.evidence, input.ownText) && deliveredIn(k.evidence, input.ownText) ? [{ id: row.id, revision: row.revision }] : [];
   });
@@ -471,6 +472,8 @@ export class FollowupWorker {
   private prunedDay: string | null = null;
   /** plan 280: the received message whose reading is on its way to the provider, for the transport's last look */
   private leaving: { messageId: number; threadId: number; accountId: number; senderKey: string; date: number; owed: { id: number; revision: number }[]; relay: boolean; answering: number | null; stop: AbortController } | null = null;
+  /** plan 280 (the Fable review): the open promises of theirs at the last look, which a service's notice is read against */
+  private owedRows: FollowupRow[] = [];
   /** plan 280 (revision 1): checked messages whose debtor's later mail was marked again, once each */
   private readonly requeued = new Set<string>();
 
@@ -748,8 +751,7 @@ export class FollowupWorker {
     this.reading = mine;
     const left = () => this.reading === mine && (this.reading = null);
     // what was sent before it went on is the check's: its own marks are; on by default, its window (plan 211)
-    if (mark.source === "live" && src.date < liveSince(settings.followups.enabledAt, this.host.now())) return drop();
-    if (!(await this.host.accountWanted(src.accountId))) {
+    if (!(await this.admits(mark.source, src, settings))) {
       left();
       return drop();
     }
@@ -800,10 +802,13 @@ export class FollowupWorker {
       // only what was really sent, after fitting to the window, may be named back
       const shown = new Set((input.requests ?? []).map((r) => r.label));
       const owedShown = new Set((input.owed ?? []).map((o) => o.label));
-      const checked = checkSentMail(result, { ownText: own, recipients, open: openLabels, requests: new Map([...requestLabels].filter(([l]) => shown.has(l))), owed: new Map([...owedLabels].filter(([l]) => owedShown.has(l))), sentAt: src.date, nudgeAfterDays: settings.followups.nudgeAfterDays });
+      const checked = checkSentMail(result, { ownText: own, recipients, open: openLabels, requests: new Map([...requestLabels].filter(([l]) => shown.has(l))), owed: new Map([...owedLabels].filter(([l]) => owedShown.has(l))), trusted: src.trusted === true, sentAt: src.date, nudgeAfterDays: settings.followups.nudgeAfterDays });
       const fromScan = mark.source === "scan";
       const now = this.host.now();
-      const rows = fromScan ? checked.rows.filter((r) => scanKeeps(r, src.date, now)) : checked.rows;
+      // plan 280 (the Fable review): a promise of theirs your mail says again is the one already open, never a second row
+      const kept = fromScan ? checked.rows.filter((r) => scanKeeps(r, src.date, now)) : checked.rows;
+      const rows: FollowupWrite[] = [];
+      for (const r of kept) if (r.kind !== "theirs" || !(await this.saidAgain(r, src.accountId, src.date))) rows.push(r);
       // a promise a scan leaves out links nothing
       const verdicts = checked.verdicts.filter((v) => v.verdict === "fulfilled" || rows.some((r) => r.item === v.item));
       const finished = await store.followups.finish({ messageId: src.id, threadId: src.threadId, fromScan, rows, kept: checked.kept, verdicts, owedKept: checked.owedKept, now, model: ai.model, provider: ai.providerId, promptVersion: FOLLOWUP_PROMPT_VERSION, clearGeneration });
@@ -845,17 +850,17 @@ export class FollowupWorker {
     this.reading = mine;
     const left = () => this.reading === mine && (this.reading = null);
     try {
-      if (mark.source !== "scan" && src.date < liveSince(settings.followups.enabledAt, this.host.now())) return await drop();
-      if (!(await this.host.accountWanted(src.accountId))) return await drop();
+      if (!(await this.admits(mark.source, src, settings))) return await drop();
+      const service = src.automated || !src.person;
+      // revision 5: a service's notice is read only to see whether it names someone who owes you (a hint); its body tells.
+      // The Fable review: from the last look's rows (every finish looks again), never a read of them all per notice
+      const debts = service ? this.owedRows.filter((r) => r.sentAt < src.date && r.personEmail) : [];
+      if (service && !debts.length) return await drop();
       const accounts = await store.accounts.list();
       // a sender made to look like a security desk or the reader's own organization is read for nothing (as the dated reader)
       if ((await untrustedSenders([src.fromEmail], (keys) => store.dated.trusted(keys), accounts.map((a) => a.email))).size) return await drop();
       const open = await store.followups.owed.openFor({ threadId: src.threadId, accountId: src.accountId, senderKey: src.senderKey, before: src.date, limit: THEIRS_OWED_MAX });
-      const service = src.automated || !src.person;
       const bulk = src.tab === "social" || src.tab === "promotions" || src.tab === "other";
-      // revision 5: a service's notice is read only to see whether it names someone who owes you (a hint); its body tells
-      const debts = service ? (await store.followups.active()).filter((r) => r.kind === "theirs" && r.sentAt < src.date && r.personEmail) : [];
-      if (service && !debts.length) return await drop();
       const waiting = !service && !bulk && (await store.followups.ofThread(src.threadId)).some((r) => r.kind === "awaiting" && r.sentAt < src.date);
       if (!service && bulk && !open.length) return await drop();
       if (src.bodyState !== "full" && !src.bodyUnavailable) return "hold";
@@ -892,8 +897,10 @@ export class FollowupWorker {
         const checked = checkTheirPromises(result, { text, attachments: src.attachments, owed: new Map([...labels].filter(([l]) => shown.has(l))), debts, from: { name: src.fromName, email: src.fromEmail }, reader: { name: readerName, addressed: src.readerIn }, relay: relay ? { block: relay.block } : null, madeAt: src.date, nudgeAfterDays: settings.followups.nudgeAfterDays });
         const fromScan = mark.source === "scan";
         const now = this.host.now();
-        // a check's own rule (plan 142 §8): a promise long late is over, not a follow-up
-        const rows = fromScan ? checked.rows.filter((r) => now - r.dueAt <= SCAN_PROMISE_OVERDUE_MS) : checked.rows;
+        // a check's own rule (plan 142 §8): a promise long late is over, not a follow-up; the Fable review: one said again
+        // (restated, or your mail recorded it first) is the one already open
+        const rows: OwedWrite[] = [];
+        for (const r of fromScan ? checked.rows.filter((x) => now - x.dueAt <= SCAN_PROMISE_OVERDUE_MS) : checked.rows) if (!(await this.saidAgain(r, src.accountId, src.date))) rows.push(r);
         const outcome = await store.followups.owed.finish({ messageId: src.id, threadId: src.threadId, fromScan, rows, kept: checked.kept, moved: checked.moved, withdrawn: checked.withdrawn, hints: checked.hints, now, model: ai.model, provider: ai.providerId, promptVersion: THEIRS_PROMPT_VERSION, clearGeneration });
         // revision 1: a debt found after the debtor's later mail was read (a check): that mail is read again, once (the
         // code review: only for what was written, under this generation)
@@ -915,16 +922,27 @@ export class FollowupWorker {
 
   /**
    * Revision 4 (and the code review): what's sent of a debt is only the account's own, from a conversation not in Trash and
-   * with nothing in Spam (whatever the rest of it): the store's own rule for what may be material (`owed.openFor`).
+   * with nothing in Spam (whatever the rest of it): the store's own rule for what may be material, in one read.
    */
   private async readable(rows: readonly FollowupRow[], accountId: number): Promise<FollowupRow[]> {
-    const { store } = this.host;
-    const ok = new Set<number>();
-    for (const r of rows) {
-      if (!r.personKey) continue;
-      if ((await store.followups.owed.openFor({ threadId: r.threadId, accountId, senderKey: r.personKey, before: Number.MAX_SAFE_INTEGER, limit: THEIRS_OWED_MAX * 5 })).some((x) => x.id === r.id)) ok.add(r.id);
-    }
+    const ok = await this.host.store.followups.owed.readable(rows.map((r) => r.id), accountId);
     return rows.filter((r) => ok.has(r.id));
+  }
+
+  /**
+   * The gates both readings share (the Fable review): what came before Follow-ups went on is a check's to read, and the
+   * account's switches must let it read.
+   */
+  private async admits(source: "live" | "scan" | "requeue", src: { date: number; accountId: number }, settings: AppSettings): Promise<boolean> {
+    if (source === "live" && src.date < liveSince(settings.followups.enabledAt, this.host.now())) return false;
+    return this.host.accountWanted(src.accountId);
+  }
+
+  /** The Fable review: an open promise of this person's to you for the same thing (`sameObject`), made before this one. */
+  private async saidAgain(r: { personEmail: string | null; text: string }, accountId: number, before: number): Promise<boolean> {
+    if (!r.personEmail) return false;
+    const open = await this.host.store.followups.owed.openFor({ threadId: -1, accountId, senderKey: addressKey(r.personEmail), before: before + 1, limit: THEIRS_OWED_MAX * 5 });
+    return open.some((o) => sameObject(o.text, r.text));
   }
 
   /** Revision 1: a debtor's received mail since a debt's message, read again, once a message. */
@@ -957,7 +975,7 @@ export class FollowupWorker {
     if (!leaving.owed.length) return;
     const carried = new Set(leaving.owed.map((r) => r.id));
     const still = leaving.relay
-      ? new Map((await this.readable((await store.followups.active()).filter((r) => carried.has(r.id)), leaving.accountId)).map((r) => [r.id, r.revision]))
+      ? new Map((await this.readable((await store.followups.active()).filter((r) => carried.has(r.id)), leaving.accountId)).map((r) => [r.id, r.revision] as const))
       : new Map((await store.followups.owed.openFor({ threadId: leaving.threadId, accountId: leaving.accountId, senderKey: leaving.senderKey, before: leaving.date, limit: THEIRS_OWED_MAX * 2 })).map((r) => [r.id, r.revision]));
     // (the code review: at the revision it carries: a move since would send the old day)
     if (leaving.owed.some((r) => still.get(r.id) !== r.revision)) leaving.stop.abort();
@@ -1072,13 +1090,16 @@ export class FollowupWorker {
       return { rows: await this.shown(await store.followups.active()) };
     }
     const now = this.host.now();
-    const waits = (await store.followups.active()).filter((r) => r.kind === "awaiting");
+    // (the Fable review: one read for both the waits and what's over; read again once those have changed)
+    const before = await store.followups.active();
+    const waits = before.filter((r) => r.kind === "awaiting");
     await this.host.runBudgeted(waits.map((r) => r.id), async (chunk) => {
       await store.followups.closeAnswered(chunk, now);
     });
-    await this.retireOwed(now);
+    await this.retireOwed(before, now);
     await store.followups.makeDue(now);
     const all = await store.followups.active();
+    this.owedRows = all.filter((r) => r.kind === "theirs");
     // (every row's conversation: one put away still looks again when it's back)
     this.ids = new Set(all.map((r) => r.threadId));
     const rows = await this.shown(all);
@@ -1156,9 +1177,9 @@ export class FollowupWorker {
    * Plan 280 §4 (revision 9): a promise of theirs late for `OWED_RETIRE_MS` is over: retired quietly (dismissed, expired),
    * so the bound holds only what can still matter. Read from the active rows, on every look (the timer wakes for it).
    */
-  private async retireOwed(now: number): Promise<void> {
+  private async retireOwed(active: readonly FollowupRow[], now: number): Promise<void> {
     const { store } = this.host;
-    for (const r of (await store.followups.active()).filter((x) => x.kind === "theirs" && x.state === "due" && now >= followupWakeAt(x) + OWED_RETIRE_MS)) {
+    for (const r of active.filter((x) => x.kind === "theirs" && x.state === "due" && now >= followupWakeAt(x) + OWED_RETIRE_MS)) {
       await store.followups.update(r.id, r.revision, { state: "dismissed", inboxState: "none", closedReason: "expired", closedAt: now });
     }
   }

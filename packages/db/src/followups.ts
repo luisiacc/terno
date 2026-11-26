@@ -168,6 +168,8 @@ export function followupSource(db: Db, messageId: number): FollowupSource | null
     attachments: db.all<{ filename: string }>("SELECT filename FROM attachments WHERE message_id = ? ORDER BY id LIMIT 10", messageId).map((r) => r.filename),
     bodyState: m.body_state, bodyUnavailable: m.attachments_captured === 2 && m.body_state !== "full",
     answering: before ? { id: before.id, bodyState: before.body_state, bodyUnavailable: before.attachments_captured === 2 && before.body_state !== "full" } : null,
+    // plan 280 (the Fable review): Terno's own confirmed send, or Gmail's SENT label
+    trusted: !!db.get(`SELECT 1 FROM messages WHERE id = ? AND ${TRUSTED_SENT}`, messageId) || db.get<{ confirmed: number }>("SELECT confirmed FROM ai_sent_mail WHERE message_id = ?", messageId)?.confirmed === 1,
   };
 }
 

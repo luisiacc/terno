@@ -13,7 +13,7 @@ import { addShown, listShown, removeShown, trustedSenders } from "./shown-sender
 import { listRules, removeRule, restoreRule, setRule } from "./person-rules";
 import { actWanted, activeWanted, addWantedMark, clearWanted, countWantedMarks, finishWanted, getDraft, getPreferences, getVerdicts, getWanted, pruneVerdicts, pruneWantedMarks, putDraft, putVerdicts, reconcileWanted, restoreWanted, savePreferences, threadWanted, wantedLookCandidates, wantedMarkPage } from "./what-matters";
 import { activeDated, addDatedMute, datedMutes, removeDatedMute, closedDatedPage, claimDatedLook, clearDated, datedMarkCount, datedMarksAmong, datedPendingOn, datedMarkPage, datedMarksRaw, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, datedWritten, updateDated } from "./dated";
-import { clearOwedMarks, consumeOwedMark, finishOwed, markOwedMail, openOwedFor, owedMarkCount, owedMarkPage, owedScanCandidates, owedSource, pruneOwedMarks, queueOwedScan, requeueOwed } from "./owed";
+import { clearOwedMarks, consumeOwedMark, finishOwed, markOwedMail, openOwedFor, readableOwed, owedMarkCount, owedMarkPage, owedScanCandidates, owedSource, pruneOwedMarks, queueOwedScan, requeueOwed } from "./owed";
 import { activeFollowups, closedFollowupPage, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupsInTrashOrSpam, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
 import { addAskTurn, askAccountsOf, askHeaders, askMatching, askNewest, askText, askTurnCount, askTurns, clearAsk, listAskConversations, removeAskConversation, removeAskForAccount, restoreAskConversation } from "./ask";
 import { retainBody, observeBodyRetirement, bodyReadReference, sqlBodyParts, cleanupBodies, finishBodyStage, withBodySelection, hydrateBodyReference, stageBody, prepareBodyMatches, withBodyMatches } from "./body-parts";
@@ -1253,6 +1253,7 @@ export class SqlMailStore implements MailStore {
       scanCandidates: async (since, limit, accountId) => owedScanCandidates(this.db, since, limit, accountId),
       source: async (id) => owedSource(this.db, id),
       openFor: async (o) => openOwedFor(this.db, o),
+      readable: async (ids, accountId) => readableOwed(this.db, ids, accountId),
       finish: async (w) => (w.clearGeneration === this.followupClears ? finishOwed(this.db, w) : "gone"),
     },
     marks: {

@@ -110,5 +110,8 @@ describe("a promise of theirs (plan 280)", () => {
     expect(mayHaveArrived(owed(), [m(4, "Alex+work@ACME.test", NOW)])).toBe("wrote");
     expect(mayHaveArrived(owed({ arrivedHint: 99 }), [])).toBe("notice");
     expect(mayHaveArrived(row(), [m(4, "arjun@x.test", NOW)])).toBeNull();
+    // the Fable review: the mail that moved its day isn't news about it; one after it is
+    expect(mayHaveArrived(owed({ movedAt: NOW }), [m(4, "alex@acme.test", NOW)])).toBeNull();
+    expect(mayHaveArrived(owed({ movedAt: NOW }), [m(4, "alex@acme.test", NOW), m(5, "alex@acme.test", NOW + 1)])).toBe("wrote");
   });
 });

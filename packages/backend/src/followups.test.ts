@@ -91,6 +91,13 @@ describe("the local checks (plan 142 §3)", () => {
     expect(checkSentMail({ promises: [], expectsReply: false, awaiting: [], kept: [], owedKept: [{ label: "t9", evidence: "Got the deck, thanks!" }] }, { ...base, ownText: own, owed }).owedKept).toEqual([]);
   });
 
+  it("the Fable review: a send that isn't yours for certain records no promise of theirs and keeps its wait", () => {
+    const own = "As agreed, you'll send the contract Thursday. Can you confirm?";
+    const r = checkSentMail({ promises: [], expectsReply: true, awaiting: ["r1"], kept: [], theirs: [{ text: "send you the contract", quote: "As agreed, you'll send the contract Thursday", who: "r1", due: "2026-11-12", partOfDay: null, firm: true }], owedKept: [{ label: "t1", evidence: "As agreed" }] }, { ...base, ownText: own, trusted: false, owed: new Map([["t1", { id: 4, revision: 1 } as FollowupRow]]) });
+    expect(r.rows.map((x) => x.kind)).toEqual(["awaiting"]);
+    expect(r.owedKept).toEqual([]);
+  });
+
   it("a quote not in your words is dropped: the model can't invent one", () => {
     expect(checkSentMail({ promises: [{ text: "x", quote: "words nobody wrote", to: "r1", due: null }], expectsReply: false, awaiting: [], kept: [] }, base).rows).toEqual([]);
     expect(checkSentMail({ promises: [{ text: "x", quote: "I'LL  send the contract", to: "r1", due: null }], expectsReply: false, awaiting: [], kept: [] }, base).rows).toHaveLength(1);

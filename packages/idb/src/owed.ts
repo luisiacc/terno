@@ -1,5 +1,5 @@
 import { addressKey, type FollowupRow } from "@terno/core";
-import { followupWorth, OWED_MARK_MS, OWED_REQUEUE_MAX, OWED_SCAN_MARK_MS, type FollowupFinishOutcome, type OwedFinish, type OwedMark, type OwedSource } from "@terno/store";
+import { followupWorth, OWED_MARK_MS, owedSourceOf, type OwedSourceKind, OWED_REQUEUE_MAX, OWED_SCAN_MARK_MS, type FollowupFinishOutcome, type OwedFinish, type OwedMark, type OwedSource } from "@terno/store";
 import { received, receivedOwn } from "./ai-summaries";
 import { datedSource } from "./dated";
 import { admitFollowup, followupRow, trustedSend } from "./followups";
@@ -7,10 +7,10 @@ import { T, type Ctx, type R } from "./mail";
 
 /** Plan 280 on IndexedDB, like SQL's (packages/db/src/owed.ts). */
 
-const toMark = (r: R): OwedMark => ({ messageId: r.message_id, threadId: r.thread_id, senderKey: r.sender_key, arrivedAt: r.arrived_at, queuedAt: r.queued_at, source: r.source === "scan" ? "scan" : "live" });
+const toMark = (r: R): OwedMark => ({ messageId: r.message_id, threadId: r.thread_id, senderKey: r.sender_key, arrivedAt: r.arrived_at, queuedAt: r.queued_at, source: owedSourceOf(r.source) });
 const live = (r: R) => r.state === "open" || r.state === "due";
 
-function mark(c: Ctx, ids: readonly number[], now: number, since: number, source: "live" | "scan"): number {
+function mark(c: Ctx, ids: readonly number[], now: number, since: number, source: OwedSourceKind): number {
   const messages = T(c, "messages");
   const marks = T(c, "ai_owed_mail");
   const own = receivedOwn(c);
@@ -39,15 +39,18 @@ export function owedMarkPage(c: Ctx, after: { arrivedAt: number; messageId: numb
 export const owedMarkCount = (c: Ctx): number => [...T(c, "ai_owed_mail").all()].length;
 export const queueOwedScan = (c: Ctx, messageIds: readonly number[], now: number): number => mark(c, messageIds, now, -Infinity, "scan");
 
+/** As SQL's: the account's conversations active since then and their mail since then, by the sender's key. */
 export function requeueOwed(c: Ctx, personEmail: string, accountId: number, since: number, now: number): number {
   const key = addressKey(personEmail);
   const own = receivedOwn(c);
-  const ids = [...T(c, "messages").by("from", personEmail), ...(personEmail.toLowerCase() !== personEmail ? T(c, "messages").by("from", personEmail.toLowerCase()) : [])]
-    .filter((m) => m.account_id === accountId && m.date >= since && received(m, own) && addressKey(String(m.from_email)) === key)
-    .sort((a, b) => b.date - a.date || b.id - a.id)
-    .slice(0, OWED_REQUEUE_MAX)
-    .map((m) => m.id as number);
-  return mark(c, ids, now, since, "scan");
+  const messages = T(c, "messages");
+  const found: R[] = [];
+  for (const t of T(c, "threads").by("fk_account_id", accountId)) {
+    if (t.in_trash || t.in_spam || t.last_date < since) continue;
+    for (const m of messages.by("fk_thread_id", t.id)) if (m.date >= since && received(m, own) && addressKey(String(m.from_email ?? "")) === key) found.push(m);
+  }
+  const ids = found.sort((a, b) => b.date - a.date || b.id - a.id).slice(0, OWED_REQUEUE_MAX).map((m) => m.id as number);
+  return mark(c, ids, now, since, "requeue");
 }
 
 export function consumeOwedMark(c: Ctx, messageId: number): void {
@@ -63,7 +66,7 @@ export function clearOwedMarks(c: Ctx): void {
 
 export function pruneOwedMarks(c: Ctx, now: number): number {
   const marks = T(c, "ai_owed_mail");
-  const old = [...marks.all()].filter((r) => r.queued_at < now - (r.source === "scan" ? OWED_SCAN_MARK_MS : OWED_MARK_MS));
+  const old = [...marks.all()].filter((r) => r.queued_at < now - (r.source === "scan" || r.source === "requeue" ? OWED_SCAN_MARK_MS : OWED_MARK_MS));
   for (const r of old) marks.deleteRow(r);
   return old.length;
 }
@@ -92,6 +95,20 @@ export function owedSource(c: Ctx, messageId: number): OwedSource | null {
     attachments: T(c, "attachments").by("fk_message_id", messageId).sort((a, b) => a.id - b.id).slice(0, 10).map((a) => a.filename as string),
     answering: answering ? { id: answering.id, bodyState: answering.body_state, bodyUnavailable: answering.attachments_captured === 2 && answering.body_state !== "full" } : null,
   };
+}
+
+/** As SQL's `readableOwed`. */
+export function readableOwed(c: Ctx, ids: readonly number[], accountId: number): Set<number> {
+  const rows = T(c, "followups");
+  const threads = T(c, "threads");
+  const messages = T(c, "messages");
+  const out = new Set<number>();
+  for (const id of new Set(ids)) {
+    const r = rows.get(id);
+    const t = r && threads.get(r.thread_id);
+    if (r && t && r.kind === "theirs" && live(r) && t.account_id === accountId && !t.in_trash && !t.in_spam && !messages.by("fk_thread_id", r.thread_id).some((x) => !!x.is_spam)) out.add(id);
+  }
+  return out;
 }
 
 export function openOwedFor(c: Ctx, o: { threadId: number; accountId: number; senderKey: string; before: number; limit: number }): FollowupRow[] {
@@ -124,7 +141,9 @@ export function finishOwed(c: Ctx, w: OwedFinish): FollowupFinishOutcome {
   const rows = T(c, "followups");
   const threads = T(c, "threads");
   const rfc = T(c, "messages").get(w.messageId)?.rfc_message_id ?? null;
-  for (const r of w.rows) {
+  // as SQL's (the Fable review): read before, it adds no promise
+  const readBefore = rows.by("fk_thread_id", src.threadId).some((x) => x.message_id === w.messageId && x.kind === "theirs");
+  for (const r of readBefore ? [] : w.rows) {
     if (addressKey(r.personEmail) !== src.senderKey) continue;
     if (rows.by("identity", w.messageId, r.item).length) continue;
     if (!admitFollowup(c, followupWorth({ kind: "theirs", dated: r.dated, firm: r.firm }))) continue;

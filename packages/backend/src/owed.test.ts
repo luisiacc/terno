@@ -268,4 +268,21 @@ describe("reading their mail (plan 280)", () => {
     await drained();
     expect(await owed()).toEqual([]);
   });
+
+  it("the Fable review: a promise said again, by them or recorded by your mail, is the one already open", async () => {
+    const { model, got, send, drained, owed, clock } = await setup();
+    model.their = () => theirs({ promises: [promise] });
+    await got({ subject: "Contract" });
+    await drained();
+    clock.now += 3600_000;
+    // Alex says it again elsewhere
+    await got({ subject: "Re: Contract", bodyText: "Just confirming, I'll send you the contract by Thursday." });
+    await drained();
+    clock.now += 3600_000;
+    // and your mail records it
+    model.sent = () => ({ text: JSON.stringify({ promises: [], expectsReply: false, awaiting: [], kept: [], answers: [], theirs: [{ text: "send you the contract", quote: "you'll send the contract Thursday", who: "r1", due: "2026-11-05", partOfDay: null, firm: true }], owedKept: [] }), stop: "end" });
+    await send({ subject: "Contract", bodyText: "Great, so you'll send the contract Thursday." });
+    await drained();
+    expect(await owed()).toHaveLength(1);
+  });
 });

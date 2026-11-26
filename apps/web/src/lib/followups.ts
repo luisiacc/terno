@@ -167,6 +167,8 @@ export const leftTop = (threadId: number): boolean => inboxTop.ids.includes(thre
 export function mayHaveArrived(row: FollowupRow, messages: readonly Pick<MessageDetail, "id" | "date" | "from">[]): "wrote" | "notice" | null {
   if (row.kind !== "theirs") return null;
   const debtor = row.personKey ?? (row.personEmail ? addressKey(row.personEmail) : null);
-  if (debtor && messages.some((m) => m.id !== row.messageId && m.date > row.sentAt && addressKey(m.from.email) === debtor)) return "wrote";
+  // (the Fable review: since the promise, or since the mail that last moved it, which isn't news about it)
+  const since = Math.max(row.sentAt, row.movedAt ?? 0);
+  if (debtor && messages.some((m) => m.id !== row.messageId && m.date > since && addressKey(m.from.email) === debtor)) return "wrote";
   return row.arrivedHint != null ? "notice" : null;
 }

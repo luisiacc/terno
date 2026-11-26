@@ -168,6 +168,8 @@ export function followupSource(c: Ctx, messageId: number): FollowupSource | null
     attachments: T(c, "attachments").by("fk_message_id", messageId).sort((a, b) => a.id - b.id).slice(0, 10).map((a) => a.filename as string),
     bodyState: m.body_state, bodyUnavailable: m.attachments_captured === 2 && m.body_state !== "full",
     answering: before ? { id: before.id, bodyState: before.body_state, bodyUnavailable: before.attachments_captured === 2 && before.body_state !== "full" } : null,
+    // plan 280 (the Fable review): as SQL's
+    trusted: trustedSend(m) || T(c, "ai_sent_mail").get(messageId)?.confirmed === 1,
   };
 }
 

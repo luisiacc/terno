@@ -1,5 +1,5 @@
 import { addressKey, type FollowupRow } from "@terno/core";
-import { followupWorth, OWED_MARK_MS, OWED_REQUEUE_MAX, OWED_SCAN_MARK_MS, type FollowupFinishOutcome, type OwedFinish, type OwedMark, type OwedSource } from "@terno/store";
+import { followupWorth, OWED_MARK_MS, owedSourceOf, type OwedSourceKind, OWED_REQUEUE_MAX, OWED_SCAN_MARK_MS, type FollowupFinishOutcome, type OwedFinish, type OwedMark, type OwedSource } from "@terno/store";
 import { RECEIVED_SQL } from "./ai-summaries";
 import { datedSource } from "./dated";
 import { admitFollowup, followupRow, TRUSTED_SENT, type FollowupRaw } from "./followups";
@@ -7,9 +7,9 @@ import type { Db } from "./sqlite";
 
 /** Plan 280 on SQLite (v83): see packages/store/src/owed.ts. */
 
-const toMark = (r: { message_id: number; thread_id: number; sender_key: string; arrived_at: number; queued_at: number; source: string }): OwedMark => ({ messageId: r.message_id, threadId: r.thread_id, senderKey: r.sender_key, arrivedAt: r.arrived_at, queuedAt: r.queued_at, source: r.source === "scan" ? "scan" : "live" });
+const toMark = (r: { message_id: number; thread_id: number; sender_key: string; arrived_at: number; queued_at: number; source: string }): OwedMark => ({ messageId: r.message_id, threadId: r.thread_id, senderKey: r.sender_key, arrivedAt: r.arrived_at, queuedAt: r.queued_at, source: owedSourceOf(r.source) });
 
-function mark(db: Db, ids: readonly number[], now: number, since: number, source: "live" | "scan"): number {
+function mark(db: Db, ids: readonly number[], now: number, since: number, source: OwedSourceKind): number {
   if (!ids.length) return 0;
   let n = 0;
   const rows = db.all<{ id: number; thread_id: number; date: number; from_email: string }>(
@@ -36,22 +36,31 @@ export const owedMarkCount = (db: Db): number => db.get<{ n: number }>("SELECT C
 /** Revision 3: idempotent on the message; a live mark already there is never reset. */
 export const queueOwedScan = (db: Db, messageIds: readonly number[], now: number): number => db.tx(() => mark(db, messageIds, now, -Infinity, "scan"));
 
-/** Revision 1: a debtor's received mail in this account since `since`, marked again, newest first, at most `OWED_REQUEUE_MAX`. */
+/**
+ * Revision 1: a debtor's received mail in this account since `since`, marked again, newest first, at most
+ * `OWED_REQUEUE_MAX`. The Fable review: the account's conversations active since then (`threads_acct_all`) and their mail
+ * since then, by the sender's key (plus tags and case alike), never every message that person ever sent.
+ */
 export function requeueOwed(db: Db, personEmail: string, accountId: number, since: number, now: number): number {
   const key = addressKey(personEmail);
   return db.tx(() => {
     const ids = db
-      .all<{ id: number; from_email: string }>(`SELECT m.id, m.from_email FROM messages m INDEXED BY messages_from WHERE m.from_email IN (?, ?) AND m.account_id = ? AND m.date >= ? AND ${RECEIVED_SQL} ORDER BY m.date DESC, m.id DESC LIMIT 200`, personEmail, personEmail.toLowerCase(), accountId, since)
+      .all<{ id: number; from_email: string }>(
+        `SELECT m.id, m.from_email FROM threads t INDEXED BY threads_acct_all JOIN messages m INDEXED BY messages_thread ON m.thread_id = t.id AND m.date >= ?
+         WHERE t.account_id = ? AND t.in_trash = 0 AND t.in_spam = 0 AND t.last_date >= ? AND ${RECEIVED_SQL} ORDER BY m.date DESC, m.id DESC`,
+        since, accountId, since,
+      )
       .filter((m) => addressKey(m.from_email) === key)
       .slice(0, OWED_REQUEUE_MAX)
       .map((m) => m.id);
-    return mark(db, ids, now, since, "scan");
+    return mark(db, ids, now, since, "requeue");
   });
 }
 
 export const consumeOwedMark = (db: Db, messageId: number): void => void db.run("DELETE FROM ai_owed_mail WHERE message_id = ?", messageId);
 export const clearOwedMarks = (db: Db): void => void db.run("DELETE FROM ai_owed_mail");
-export const pruneOwedMarks = (db: Db, now: number): number => Number(db.run("DELETE FROM ai_owed_mail WHERE (source = 'scan' AND queued_at < ?) OR (source <> 'scan' AND queued_at < ?)", now - OWED_SCAN_MARK_MS, now - OWED_MARK_MS).changes);
+/** a check's and a requeue's live 14 days, a live one 3 */
+export const pruneOwedMarks = (db: Db, now: number): number => Number(db.run("DELETE FROM ai_owed_mail WHERE (source IN ('scan','requeue') AND queued_at < ?) OR (source NOT IN ('scan','requeue') AND queued_at < ?)", now - OWED_SCAN_MARK_MS, now - OWED_MARK_MS).changes);
 
 /** Revision 3: one account's received mail in a span, newest first, no list or bulk mail (a check finds what's promised; no debt yet for a service to deliver) */
 export function owedScanCandidates(db: Db, since: number, limit: number, accountId: number): number[] {
@@ -102,6 +111,21 @@ export function openOwedFor(db: Db, o: { threadId: number; accountId: number; se
 
 const OPEN_THEIRS = "kind = 'theirs' AND state IN ('open','due')";
 
+/** The Fable review: `openFor`'s rule for what may be material, over some rows at once. */
+export function readableOwed(db: Db, ids: readonly number[], accountId: number): Set<number> {
+  if (!ids.length) return new Set();
+  return new Set(
+    db
+      .all<{ id: number }>(
+        `SELECT f.id FROM followups f JOIN threads t ON t.id = f.thread_id
+         WHERE f.id IN (SELECT value FROM json_each(?)) AND ${OPEN_THEIRS.replace(/\b(kind|state)\b/gu, "f.$1")} AND t.account_id = ? AND t.in_trash = 0 AND t.in_spam = 0
+           AND NOT EXISTS (SELECT 1 FROM messages x INDEXED BY messages_thread WHERE x.thread_id = f.thread_id AND x.is_spam = 1)`,
+        JSON.stringify([...new Set(ids)]), accountId,
+      )
+      .map((r) => r.id),
+  );
+}
+
 export function finishOwed(db: Db, w: OwedFinish): FollowupFinishOutcome {
   return db.tx(() => {
     if (!db.get("SELECT 1 FROM ai_owed_mail WHERE message_id = ?", w.messageId)) return "gone";
@@ -111,7 +135,9 @@ export function finishOwed(db: Db, w: OwedFinish): FollowupFinishOutcome {
       return "gone";
     }
     const rfc = db.get<{ rfc_message_id: string | null }>("SELECT rfc_message_id FROM messages WHERE id = ?", w.messageId)!.rfc_message_id;
-    for (const r of w.rows) {
+    // the Fable review: read before, it adds no promise (a re-read's positions aren't the first's; one dismissed stays so)
+    const readBefore = !!db.get("SELECT 1 FROM followups WHERE message_id = ? AND kind = 'theirs' LIMIT 1", w.messageId);
+    for (const r of readBefore ? [] : w.rows) {
       // only the sender owes what their own mail promises
       if (addressKey(r.personEmail) !== src.senderKey) continue;
       if (db.get("SELECT 1 FROM followups WHERE message_id = ? AND item = ?", w.messageId, r.item)) continue;

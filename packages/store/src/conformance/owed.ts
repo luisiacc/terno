@@ -241,6 +241,24 @@ export function defineOwedConformance(fresh: () => Promise<MailStore>, reopen: (
         expect((await store.followups.get(p.row.id))!.state).toBe("open");
       });
 
+      it("the Fable review: a message read again adds no promise (a dismissed one stays so); a requeue's isn't a check's; readable is openFor's rule", async () => {
+        const { store, accountId, got, owed, finish, promised } = await setup();
+        const p = await promised();
+        await store.followups.update(p.row.id, p.row.revision, { state: "dismissed", closedReason: "user", closedAt: NOW });
+        expect(await store.followups.owed.marks.requeue(alex.email, accountId, NOW - DAY, NOW)).toBeGreaterThan(0);
+        const marks = await store.followups.owed.marks.page(null, 9);
+        expect(marks.map((m) => m.source)).toContain("requeue");
+        await finish(p.id, p.thread, { rows: [owed({ item: 200 }), owed({ item: 201, text: "send you the deck" })] });
+        expect((await store.followups.ofThread(p.thread)).filter((r) => r.kind === "theirs")).toEqual([]);
+        // a plus-tagged address is the same debtor's mail
+        const tagged = await got({ from: { name: "Alex", email: "Alex+work@ACME.test" }, date: NOW }, null);
+        expect(await store.followups.owed.marks.requeue(alex.email, accountId, NOW - DAY, NOW)).toBeGreaterThan(0);
+        expect((await store.followups.owed.marks.page(null, 9)).map((m) => m.messageId)).toContain(tagged.id);
+        const q = await promised({}, { subject: "Other" });
+        expect([...(await store.followups.owed.readable([q.row.id, p.row.id, 99999], accountId))]).toEqual([q.row.id]);
+        expect((await store.followups.owed.readable([q.row.id], accountId + 1)).size).toBe(0);
+      });
+
       it("what it could act on: its conversation's and its sender's in the account, never one in Spam or Trash, nor later than it", async () => {
         const { store, accountId, got, promised } = await setup();
         const here = await promised({}, { subject: "Here" });

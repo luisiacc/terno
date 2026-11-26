@@ -22,14 +22,20 @@ export const OWED_SCAN_DAYS = 14;
 /** §4: an open promise of theirs retires quietly this long after it came due */
 export const OWED_RETIRE_MS = 30 * 86_400_000;
 
+export type OwedSourceKind = "live" | "scan" | "requeue";
+export const owedSourceOf = (raw: unknown): OwedSourceKind => (raw === "scan" || raw === "requeue" ? raw : "live");
+
 export interface OwedMark {
   messageId: number;
   threadId: number;
   senderKey: string;
   arrivedAt: number;
   queuedAt: number;
-  /** "live" or "scan"; one the app doesn't know reads as "live" */
-  source: "live" | "scan";
+  /**
+   * "live", "scan" (a check's), or "requeue" (a debtor's mail read again once a debt was found late: the Fable review, never
+   * a check's, so what it finds can reach the Inbox's top); one the app doesn't know reads as "live"
+   */
+  source: OwedSourceKind;
 }
 
 /** What the reader reads of one received message, no body: the dated reader's facts, its attachments, and your message it answers. */
@@ -103,6 +109,15 @@ export interface OwedStore {
    * (`followups_owed`), from conversations not in Spam or Trash, made before it, newest first, at most `limit`
    */
   openFor(o: { threadId: number; accountId: number; senderKey: string; before: number; limit: number }): Promise<FollowupRow[]>;
-  /** Results, closures, moves and consuming the mark, in one commit (revision 8: each change only at the revision shown) */
+  /**
+   * The Fable review: of these open promises of theirs, those that may be material for a reading in this account (as
+   * `openFor` reads them: the account's, no conversation in Trash or with anything in Spam), in one read
+   */
+  readable(ids: readonly number[], accountId: number): Promise<Set<number>>;
+  /**
+   * Results, closures, moves and consuming the mark, in one commit (revision 8: each change only at the revision shown).
+   * The Fable review: a message read before (it has a promise of theirs, closed ones too) adds none: a re-read judges what
+   * it keeps and moves, never finds the same promises again under other positions
+   */
   finish(write: OwedFinish): Promise<FollowupFinishOutcome>;
 }

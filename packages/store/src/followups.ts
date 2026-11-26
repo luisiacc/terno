@@ -43,6 +43,8 @@ export interface FollowupSource {
   attachments: string[];
   bodyState: "none" | "partial" | "full";
   bodyUnavailable: boolean;
+  /** plan 280 (the Fable review): yours for certain (Terno's confirmed send, or Gmail's SENT label): only then may it record or close a promise of theirs */
+  trusted?: boolean;
   /** the newest message before it from someone else: what it answers */
   answering: { id: number; bodyState: "none" | "partial" | "full"; bodyUnavailable: boolean } | null;
 }
