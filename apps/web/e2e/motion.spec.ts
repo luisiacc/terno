@@ -689,6 +689,8 @@ test.describe("plan 281: People's Done morphs the page and the list together", (
     await scenario("motion off (the OS's reduced motion): the item simply goes", async () => {
       await page.emulateMedia({ reducedMotion: "reduce" });
       await expect(page.locator("html")).toHaveAttribute("data-motion", "off");
+      // (the first Done's own answers, owed motion for a moment after it, have come and gone)
+      await page.waitForTimeout(2200);
       await recordFrames(page, vt);
       await items.first().hover();
       await items.first().getByTestId("person-item-done").click();

@@ -35,7 +35,7 @@ export interface PersonOpen {
 /** The recipient index People's Everyone and search read: answering, still being made ready, or not coming this session. */
 export type PeopleIndexState = "ready" | "warming" | "off";
 
-/** The list: who has something open, then everyone you've written to (less those), best first. */
+/** The list: who has something open, then everyone you've written to, best first (the open ones too: the list leaves them out). */
 export interface PeopleList {
   open: PersonOpen[];
   everyone: readonly PersonEntry[];
@@ -58,8 +58,10 @@ export interface PersonPage {
   conversations: ThreadSummary[];
   /** there are more conversations than these */
   more: boolean;
-  /** the newest conversation's stored summary, its first sentence (never a new AI request) */
+  /** the card's "Last time": the newest conversation's other than the one open, its stored summary's first sentence (never a new AI request) */
   lastSummary?: string;
+  /** which conversation `lastSummary` is of */
+  lastSummaryOf?: number;
 }
 
 /** Everyone is capped (past it, search finds them). */

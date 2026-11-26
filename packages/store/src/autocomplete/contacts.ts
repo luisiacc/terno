@@ -446,6 +446,7 @@ export class ContactIndex {
   private readonly shortCache = new Map<string, { version: number; ids: number[] }>();
   /** plan 281: the written-to contacts, best first, for one version of the scores */
   private writtenCache: { version: number; max: number; ids: number[]; entries: PersonEntry[] } | null = null;
+  private ownCache: { version: number; emails: string[] } | null = null;
   private frozen = false;
   readonly caps: ContactCaps;
   private readonly now: () => number;
@@ -929,6 +930,16 @@ export class ContactIndex {
     const cut = keys[ids.length - k]!;
     // above the cut, and at it (ties are ordered by the full rule before they're cut)
     return ids.filter((id) => this.key[id]! >= cut).sort(order).slice(0, k);
+  }
+
+  /** Plan 281: every address you've sent from (the accounts' and their aliases), as the index has them; once per version. */
+  ownEmails(): readonly string[] {
+    if (this.ownCache?.version !== this.version) {
+      const emails: string[] = [];
+      for (let id = 0; id < this.n; id++) if (this.flags[id]! & OWN && !(this.flags[id]! & DEAD)) emails.push(this.emails[id]!);
+      this.ownCache = { version: this.version, emails };
+    }
+    return this.ownCache.emails;
   }
 
   /** Plan 281: what the index knows of one address (its name, last date, whether you've written to it), or null. */

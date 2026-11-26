@@ -7,10 +7,11 @@ import { ChevronLeft, Copy, SquarePen, Users } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { composeLanding } from "~/lib/compose";
 import { listDate } from "~/lib/format";
-import { leavePerson, morphName, openFromPerson } from "~/lib/people";
+import { leavePerson, morphName, notePagePlace, openFromPerson, pagePlaces, retryPage } from "~/lib/people";
 import { PANE_TITLE, PANE_TITLE_TOP, READING_COLUMN } from "~/lib/pane-lines";
 import { setApp, useApp } from "~/state/app";
 import { usePeople } from "~/state/people";
+import { useLayoutEffect, useRef, useState } from "react";
 import { SenderAvatar } from "../sender-avatar";
 import { copyAddress } from "../sender-menu-items";
 import { PersonItemLine } from "./person-item";
@@ -24,6 +25,16 @@ export function PersonPage({ inList = false }: { inList?: boolean }) {
   const person = useApp((s) => s.person);
   const page = usePeople((s) => (s.page?.key === person ? s.page : null));
   const reading = usePeople((s) => s.reading?.key === person);
+  const failed = usePeople((s) => s.pageFailed !== null && s.pageFailed.key === person);
+  const scroller = useRef<HTMLDivElement>(null);
+  // back from a conversation opened here: where the page was, the keyboard on the line it was opened from (once)
+  useLayoutEffect(() => {
+    const place = person === null || page === null ? undefined : pagePlaces.get(person);
+    if (!place || !scroller.current) return;
+    pagePlaces.delete(person!);
+    scroller.current.scrollTop = place.top;
+    if (place.from) scroller.current.querySelector<HTMLElement>(`[data-place="${CSS.escape(place.from)}"]`)?.focus({ preventScroll: true });
+  }, [person, page === null]);
   if (person === null)
     return (
       <div data-testid="person-none" className="flex h-full flex-col items-center justify-center gap-2 px-8 text-center text-sm text-muted-foreground">
@@ -41,8 +52,30 @@ export function PersonPage({ inList = false }: { inList?: boolean }) {
           </Button>
         </div>
       )}
-      <div data-morph-clip className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        <div className={cn(READING_COLUMN, inList ? "pt-2" : PANE_TITLE_TOP, "pb-16")}>{page ? <Body page={page} /> : reading ? <Loading /> : null}</div>
+      <div
+        ref={scroller}
+        data-morph-clip
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+        // a line that opens a conversation: where the page is, to come back to
+        onClickCapture={(e) => {
+          const from = (e.target as Element).closest<HTMLElement>("[data-place]")?.dataset.place ?? null;
+          if (from) notePagePlace(person, e.currentTarget.scrollTop, from);
+        }}
+      >
+        <div className={cn(READING_COLUMN, inList ? "pt-2" : PANE_TITLE_TOP, "pb-16")}>
+          {page ? (
+            <Body page={page} />
+          ) : reading ? (
+            <Loading />
+          ) : failed ? (
+            <p role="alert" data-testid="person-failed" className="flex items-center gap-2 text-sm text-muted-foreground">
+              {t("people.pageFailed")}
+              <Button variant="link-secondary" size="xs" data-testid="person-retry" className="px-0" onClick={retryPage}>
+                {t("common.retry")}
+              </Button>
+            </p>
+          ) : null}
+        </div>
       </div>
     </section>
   );
@@ -64,8 +97,12 @@ function Loading() {
   );
 }
 
+/** a page draws this many open items, then this many more each time it's asked */
+const ITEMS_STEP = 30;
+
 function Body({ page }: { page: Page }) {
   const name = page.name || page.email;
+  const [shown, setShown] = useState(ITEMS_STEP);
   const newest = page.conversations[0];
   const write = () => void composeLanding("new", null, 0, () => ({ toText: formatAddressList([{ name: page.name, email: page.email }]) }), newest?.accountId);
   return (
@@ -100,11 +137,19 @@ function Body({ page }: { page: Page }) {
           )}
         </h2>
         {page.items.length ? (
-          <ul data-testid="person-items" className="-mx-3">
-            {page.items.map((item) => (
-              <PersonItemLine key={personItemId(item)} item={item} morphName={morphName("i", personItemId(item))} />
-            ))}
-          </ul>
+          <>
+            <ul data-testid="person-items" className="-mx-3">
+              {page.items.slice(0, shown).map((item) => (
+                <PersonItemLine key={personItemId(item)} item={item} morphName={morphName("i", personItemId(item))} />
+              ))}
+            </ul>
+            {/* one person can hold much of what's open: drawn a step at a time */}
+            {page.items.length > shown && (
+              <Button variant="link-secondary" size="xs" data-testid="person-more-items" className="mt-2 px-0 font-normal" onClick={() => setShown((n) => n + ITEMS_STEP)}>
+                {t("people.showMore", { count: Math.min(ITEMS_STEP, page.items.length - shown) })}
+              </Button>
+            )}
+          </>
         ) : (
           <p data-testid="person-nothing" className="py-2 text-sm text-muted-foreground">
             {t("people.noOpen")}
@@ -119,7 +164,7 @@ function Body({ page }: { page: Page }) {
           <ul data-testid="person-conversations" className="-mx-3">
             {page.conversations.map((c) => (
               <li key={c.id} className="group/conv relative rounded-lg hover:bg-row-hover">
-                <button type="button" data-testid="person-conversation" onClick={() => openFromPerson(c.id)} className="block w-full min-w-0 rounded-lg px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <button type="button" data-testid="person-conversation" data-place={`conv:${c.id}`} onClick={() => openFromPerson(c.id)} className="block w-full min-w-0 rounded-lg px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   <span className="flex min-w-0 items-baseline gap-3">
                     <span className={cn("min-w-0 flex-1 truncate", c.unread ? "type-row-subject font-semibold" : "type-row-subject")}>
                       {c.unread && <span aria-hidden className="me-1.5 inline-block size-1.5 rounded-full bg-unread align-middle" />}

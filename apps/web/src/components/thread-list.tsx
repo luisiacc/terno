@@ -402,6 +402,8 @@ export function focusRows(): void {
 /** Plan 158, the skip link: the rows, or with none the list's own first control (its header, or a preview's), never a wait. */
 export function skipToList(): void {
   if (getApp().today && focusFeed()) return;
+  // plan 281: People's selected row, else its first, else its search field
+  if (getApp().people) return void document.querySelector<HTMLElement>("[data-testid=person-row][aria-current=true], [data-testid=person-row], [data-testid=people-search]")?.focus();
   if (useList.getState().items.length) return focusRows();
   document.querySelector<HTMLElement>("[data-testid=thread-list] :is(button, input):not([disabled])")?.focus();
 }

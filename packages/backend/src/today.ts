@@ -906,6 +906,8 @@ export class TodayService {
   /** The mailbox changed: a merge or a delete may have moved or removed an item's thread. */
   touched(): void {
     this.datedGeneration++;
+    // plan 281: what's built from the rows (People's grouping) is read again on its next ask
+    this.revision++;
   }
 
   /**
@@ -1345,7 +1347,7 @@ export class TodayService {
 
   // ─── plan 204: what changes by itself ────────────────────────────────────
 
-  /** Plan 281: bumped with every `todayChanged`, so what's built from the list (People's grouping) knows it's stale. */
+  /** Plan 281: bumped with every `todayChanged` and every mail change, so what's built from the rows (People's grouping) knows it's stale. */
   revision = 0;
 
   private emitChanged(): void {

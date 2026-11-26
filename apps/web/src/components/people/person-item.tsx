@@ -72,7 +72,7 @@ export function PersonItemLine({ item, morphName }: { item: PersonItem; morphNam
   const actable = item.kind === "awaiting" || taskOf(item.item.why, now, item.item.thread) !== null;
   return (
     <li data-morph={morphName} data-testid="person-item" data-item={personItemId(item)} className="group/item relative rounded-lg hover:bg-row-hover">
-      <button type="button" data-testid="person-item-open" onClick={() => openFromPerson(thread.id)} aria-describedby={textId} className="flex w-full min-w-0 items-start gap-3 rounded-lg px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      <button type="button" data-testid="person-item-open" data-place={`item:${personItemId(item)}`} onClick={() => openFromPerson(thread.id)} aria-describedby={textId} className="flex w-full min-w-0 items-start gap-3 rounded-lg px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
         <Glyph aria-hidden className="mt-[calc((1lh-1.15em)/2)] size-[1.15em] shrink-0 text-muted-foreground" />
         <span className="min-w-0 flex-1">
           <span id={textId} className="block text-base text-pretty text-foreground">

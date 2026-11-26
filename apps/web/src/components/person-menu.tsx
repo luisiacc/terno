@@ -92,6 +92,8 @@ export function PersonMenu({ person, detail, offerReplyOnly, className, children
   // shortcuts wait while a menu is open; a menu that goes while open (a new message takes the reader) never leaves them waiting
   const shown = useRef(false);
   useEffect(() => () => {
+    // (an open still waiting for its card opens nothing once the chip has gone)
+    asked.current++;
     if (shown.current) setApp({ menuOpen: false });
   }, []);
   const show = (next: boolean) => {
@@ -102,16 +104,20 @@ export function PersonMenu({ person, detail, offerReplyOnly, className, children
   };
   const change = (next: boolean) => {
     asked.current++;
-    if (!next || !peopleOn) return show(next);
-    const ready = cardOf(person.email);
+    if (!next || !peopleOn) {
+      if (next) setCard(null);
+      return show(next);
+    }
+    const threadId = detail.thread.id;
+    const ready = cardOf(person.email, threadId);
     if (ready) {
       setCard(ready);
       return show(true);
     }
-    // (asked on the click alone: a moment's wait for it, then the menu either way)
+    // (asked on the click alone: a moment's wait for it, then the menu either way, while the chip is still there)
     const mine = asked.current;
-    void cardWithin(person.email).then((page) => {
-      if (mine !== asked.current) return;
+    void cardWithin(person.email, threadId).then((page) => {
+      if (mine !== asked.current || !trigger.current?.isConnected) return;
       setCard(page);
       show(true);
     });
@@ -132,8 +138,8 @@ export function PersonMenu({ person, detail, offerReplyOnly, className, children
         data-testid="thread-person"
         data-context-menu
         title={fullName(person)}
-        onPointerEnter={() => peopleOn && void prefetchCard(person.email)}
-        onFocus={() => peopleOn && void prefetchCard(person.email)}
+        onPointerEnter={() => peopleOn && void prefetchCard(person.email, detail.thread.id)}
+        onFocus={() => peopleOn && void prefetchCard(person.email, detail.thread.id)}
         className={cn("group/person flex max-w-full min-w-0 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring", className)}
         onContextMenu={(e) => {
           // this menu, not the conversation's (MessageMenu's trigger is around the header) nor the system's
@@ -150,7 +156,7 @@ export function PersonMenu({ person, detail, offerReplyOnly, className, children
           <p className="truncate font-semibold">{person.name}</p>
           {person.name !== person.email && <p className="truncate text-muted-foreground">{person.email}</p>}
         </div>
-        {card && <PersonCardHead page={card} threadId={detail.thread.id} />}
+        {peopleOn && card && <PersonCardHead page={card} threadId={detail.thread.id} />}
         <DropdownMenuSeparator />
         <PersonItems person={person} detail={detail} offerReplyOnly={offerReplyOnly} compose={compose} parts={PARTS} />
       </DropdownMenuContent>

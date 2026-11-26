@@ -287,8 +287,9 @@ test.describe("folder actions", () => {
       await expect(fav).toContainText("Rediseño web");
       await expect(fav).toContainText("Acme Studio");
       // right below the places that are always shown (Inbox, Starred and, since plan 173, Sent)
-      const order = await page.locator("#app-sidebar nav button[data-testid^=nav-]").evaluateAll((els) => els.slice(0, 4).map((el) => el.getAttribute("data-testid")));
-      expect(order).toEqual(["nav-inbox", "nav-starred", "nav-sent", `nav-fav-${acme}-Label_22`]);
+      const order = await page.locator("#app-sidebar nav button[data-testid^=nav-]").evaluateAll((els) => els.slice(0, 5).map((el) => el.getAttribute("data-testid")));
+      // (plan 281: People below the Inbox, the demo offering AI features)
+      expect(order).toEqual(["nav-inbox", "nav-people", "nav-starred", "nav-sent", `nav-fav-${acme}-Label_22`]);
       // the account's Sent row, from its menu
       await page.getByTestId(`nav-folder-${acme}-sent`).click({ button: "right" });
       await page.getByTestId("folder-menu-favorite").click();

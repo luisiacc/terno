@@ -1,6 +1,7 @@
 import { personKey } from "@terno/core";
 import { formatNumber, t } from "@terno/i18n";
 import { Badge } from "@terno/ui/components/badge";
+import { Button } from "@terno/ui/components/button";
 import { SearchField } from "@terno/ui/components/search-field";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { cn } from "@terno/ui/lib/utils";
@@ -70,16 +71,19 @@ function PeopleList() {
 
   const placeOf = useMemo(() => new Map(rows.flatMap((r, i) => (r.kind === "person" ? [[r.key, i] as const] : []))), [rows]);
   useEffect(() => {
-    peopleList.toKey = (key) => {
+    peopleList.rows = () => rows;
+    peopleList.toKey = (key, focus) => {
       const i = placeOf.get(key);
-      if (i !== undefined) virtualizer.scrollToIndex(i, { align: "auto" });
+      if (i === undefined) return;
+      virtualizer.scrollToIndex(i, { align: "auto" });
+      // the keyboard was on a row: it goes to the selected one, once it's drawn
+      if (focus) requestAnimationFrame(() => scrollRef.current?.querySelector<HTMLElement>(`[data-testid=person-row][data-key="${CSS.escape(key)}"]`)?.focus({ preventScroll: true }));
     };
     peopleList.focusSearch = () => inputRef.current?.focus();
     return () => {
-      peopleList.toKey = undefined;
-      peopleList.focusSearch = undefined;
+      peopleList.rows = peopleList.toKey = peopleList.focusSearch = undefined;
     };
-  }, [virtualizer, placeOf]);
+  }, [virtualizer, placeOf, rows]);
 
   // coming back, where it was left; leaving, where that is
   useLayoutEffect(() => {
@@ -93,6 +97,7 @@ function PeopleList() {
     return root && sentinel && header ? installScrollHairline(root, sentinel, header) : undefined;
   }, []);
 
+  const failed = usePeople((s) => s.failed);
   const openCount = state?.open.length ?? 0;
   const index = indexOf(state);
   const searching = query.trim() !== "";
@@ -143,11 +148,20 @@ function PeopleList() {
             );
           })}
         </ul>
-        {/* what the list says when it holds nobody, or not yet */}
-        {(empty || (!searching && index !== "ready")) && (
-          <p data-testid="people-note" className="px-3 pt-3 text-sm text-muted-foreground">
-            {searching ? (hits ? t("people.noHits", { query: query.trim() }) : null) : index === "warming" ? t("people.warming") : index === "off" ? t("people.off") : t("people.empty")}
+        {/* what the list says when it holds nobody, or not yet, or its read failed */}
+        {failed && state === null ? (
+          <p data-testid="people-note" role="alert" className="flex items-center gap-2 px-3 pt-3 text-sm text-muted-foreground">
+            {t("people.listFailed")}
+            <Button variant="link-secondary" size="xs" data-testid="people-retry" className="px-0" onClick={() => void loadPeople()}>
+              {t("common.retry")}
+            </Button>
           </p>
+        ) : (
+          (empty || (!searching && index !== "ready") || (searching && hits?.index === "warming")) && (
+            <p data-testid="people-note" className="px-3 pt-3 text-sm text-muted-foreground">
+              {searching ? (hits?.index === "warming" ? t("people.warming") : hits ? t("people.noHits", { query: query.trim() }) : null) : index === "warming" ? t("people.warming") : index === "off" ? t("people.off") : t("people.empty")}
+            </p>
+          )
         )}
       </div>
     </section>

@@ -15,9 +15,13 @@ export interface PeopleState {
   page: PersonPage | null;
   /** the person whose page is being read (their key and an address as seen), until it answers */
   reading: { key: string; email: string } | null;
+  /** the list's last read failed (what was shown stays; it says so, with a way to try again) */
+  failed: boolean;
+  /** the page that didn't come, to try again */
+  pageFailed: { key: string; email: string } | null;
 }
 
-export const usePeople = create<PeopleState>(() => ({ list: null, query: "", hits: null, page: null, reading: null }));
+export const usePeople = create<PeopleState>(() => ({ list: null, query: "", hits: null, page: null, reading: null, failed: false, pageFailed: null }));
 
 /** One row of People's list: a heading, or a person (with what's open, or what the index knows of them). */
 export type PeopleRow =
@@ -41,9 +45,16 @@ export function peopleRows(list: PeopleList | null, query: string, hits: PeopleS
     rows.push({ kind: "heading", id: "open", count: list.open.length });
     for (const p of list.open) rows.push({ kind: "person", id: p.key, key: p.key, email: p.email, name: p.name, last: 0, open: p, openCount: p.items.length });
   }
-  if (list.everyone.length) {
-    rows.push({ kind: "heading", id: "everyone", count: list.everyone.length });
-    for (const p of list.everyone) rows.push(entryRow(p, keyOf(p.email)));
+  // Everyone holds the open people too, at their places (so one whose last item goes falls in there): left out here
+  const open = new Set(list.open.map((p) => p.key));
+  const everyone: PeopleRow[] = [];
+  for (const p of list.everyone) {
+    const key = keyOf(p.email);
+    if (!open.has(key)) everyone.push(entryRow(p, key));
+  }
+  if (everyone.length) {
+    rows.push({ kind: "heading", id: "everyone", count: everyone.length });
+    rows.push(...everyone);
   }
   return rows;
 }
@@ -65,7 +76,7 @@ export function matchedParts(text: string, query: string): { text: string; hit: 
   if (!words.length) return null;
   const chars = [...text];
   const folded = chars.map((c) => fold(c).charAt(0) || c);
-  const hit = new Array<boolean>(chars.length).fill(false);
+  const hit = Array.from({ length: chars.length }, () => false);
   for (let i = 0; i < chars.length; i++) {
     if (i > 0 && !/[\s@._+\-(),]/.test(chars[i - 1]!)) continue;
     for (const w of words) {

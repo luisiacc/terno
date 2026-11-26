@@ -9,7 +9,7 @@ import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { demoRegistry } from "@terno/mail";
 import type { IncomingMessage } from "@terno/store";
 import { msg, threadOf } from "@terno/store/conformance";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { personOf } from "./people";
 
@@ -103,6 +103,15 @@ describe("who has something open with you", () => {
     expect((await client.call("people.list", {})).open).toEqual([]);
   });
 
+  it("a conversation moved to Trash leaves at once (any mail change reads the grouping again)", async () => {
+    const { backend, client, raw, from } = await setup();
+    const t = await from("Ana", "ana@people.test");
+    expect((await client.call("people.list", {})).open).toHaveLength(1);
+    raw.run("UPDATE threads SET in_trash = 1, in_inbox = 0 WHERE id = ?", t);
+    backend.today.touched();
+    expect((await client.call("people.list", {})).open).toEqual([]);
+  });
+
   it("the grouping is read again after What matters changes, not before", async () => {
     const { backend, client, from } = await setup();
     await from("Ana", "ana@people.test");
@@ -116,26 +125,46 @@ describe("who has something open with you", () => {
 });
 
 describe("everyone and the search", () => {
-  it("everyone you've written to, less the open ones and yourself; the search finds anyone by name or domain", async () => {
-    const { client, from, to } = await setup();
+  it("everyone you've written to (the open ones too, at their places), never yourself; the search finds anyone by name or domain", async () => {
+    const { backend, client, from, to } = await setup();
     await to("Marco", "marco@greenway.studio");
     await to("Ana", "ana@people.test");
     await to("Me again", "me+notes@terno.test");
+    // an alias you send from (the index learns it from your sent mail): never a person here
+    await backend.store.sync.ingest([msg({ accountId: 1, date: NOW - 3 * DAY, from: { name: "Me", email: "alias@other.test" }, to: [{ name: "Marco", email: "marco@greenway.studio" }], subject: "From my alias", providerMsgId: "alias-1", isSent: true, isRead: true })], { applyFilters: false, now: NOW, classifier: null });
+    await backend.store.sync.ingest([msg({ accountId: 1, date: NOW - 3 * DAY, from: { name: "Ana", email: "ana@people.test" }, to: [{ name: "Me", email: "alias+x@other.test" }], subject: "To my alias", providerMsgId: "alias-2" })], { applyFilters: false, now: NOW, classifier: null });
     await from("Ana", "ana@people.test");
     await from("Priya", "priya@greenway.studio", { waiting: false });
     expect(await client.call("people.ready", {})).toEqual({ index: "ready" });
     const list = await client.call("people.list", {});
     expect(list.index).toBe("ready");
     expect(list.open.map((p) => p.key)).toEqual(["ana@people.test"]);
-    expect(list.everyone.map((p) => p.email)).toEqual(["marco@greenway.studio"]);
+    expect(list.everyone.map((p) => p.email).sort()).toEqual(["ana@people.test", "marco@greenway.studio"]);
     const found = await client.call("people.search", { query: "greenway" });
     expect(found.hits.map((h) => h.email).sort()).toEqual(["marco@greenway.studio", "priya@greenway.studio"]);
-    expect((await client.call("people.search", { query: "ana" })).hits[0]).toMatchObject({ key: "ana@people.test", open: 1 });
+    const anaHit = (await client.call("people.search", { query: "ana" })).hits[0]!;
+    expect(anaHit.key).toBe("ana@people.test");
+    expect(anaHit.open).toBeGreaterThan(0);
     expect((await client.call("people.search", { query: "me" })).hits.map((h) => h.email)).not.toContain("me+notes@terno.test");
+    expect((await client.call("people.search", { query: "alias" })).hits.map((h) => h.email)).toEqual([]);
   });
 });
 
 describe("one person", () => {
+  it("the card's Last time: the newest conversation other than the one open, its summary of that one; the page reads none", async () => {
+    const { backend, client, from } = await setup();
+    const older = await from("Ana", "ana@people.test", { waiting: false });
+    const newer = await from("Ana", "ana@people.test", { waiting: false });
+    const read = vi.spyOn(backend.today, "summaryLine").mockResolvedValue({ summary: "Agreed on two milestones." });
+    const card = (await client.call("people.person", { email: "ana@people.test", conversations: 2, except: newer }))!;
+    expect(card).toMatchObject({ lastSummary: "Agreed on two milestones.", lastSummaryOf: older });
+    expect(read).toHaveBeenCalledWith(older);
+    read.mockClear();
+    const page = (await client.call("people.person", { email: "ana@people.test" }))!;
+    expect(page.lastSummaryOf).toBeUndefined();
+    expect(read).not.toHaveBeenCalled();
+  });
+
   it("their open items and recent conversations, never Spam or Trash, with whether there are more", async () => {
     const { client, raw, from } = await setup();
     const open = await from("Ana", "ana@people.test");

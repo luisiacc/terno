@@ -11,7 +11,9 @@ vi.mock("~/rpc/connection", () => ({ client: { call: (...a: unknown[]) => call(.
 
 const { matchedParts, peopleRows, usePeople } = await import("~/state/people");
 const { getApp, navigate, ownList, setApp } = await import("~/state/app");
-const { withoutItem, actOnPersonItem, movePerson, selectPerson } = await import("~/lib/people");
+const { withoutItem, withoutListItem, actOnPersonItem, movePerson, selectPerson } = await import("~/lib/people");
+const { closePage } = await import("~/lib/page");
+const { useAppearance } = await import("~/lib/appearance");
 const { itemParts } = await import("~/components/people/person-item");
 
 const thread = (id: number, subject: string, fromName = "Ana Ruiz", fromEmail = "ana@x.test") => ({ id, accountId: 1, subject, fromName, fromEmail, lastDate: 0 }) as ThreadSummary;
@@ -21,7 +23,7 @@ const open = (key: string, name: string, items: PersonItem[]): PersonOpen => ({ 
 
 afterEach(() => {
   call.mockReset();
-  usePeople.setState({ list: null, query: "", hits: null, page: null, reading: null });
+  usePeople.setState({ list: null, query: "", hits: null, page: null, reading: null, failed: false, pageFailed: null });
 });
 
 describe("the list's rows", () => {
@@ -86,16 +88,55 @@ describe("People among the own lists", () => {
 describe("acting on a person's page", () => {
   const page: PersonPage = { key: "ana@x.test", email: "ana@x.test", name: "Ana Ruiz", items: [waiting(1, "Phase 2"), owed(2, "the contract")], conversations: [], more: false };
 
-  it("Done takes the item off the page at once; a failure puts the page back as it was", async () => {
+  it("Done takes the item off the page and the person's row at once; a failure reads both again (never an old copy back)", async () => {
     navigate({ people: true });
     setApp({ person: "ana@x.test" });
-    usePeople.setState({ page });
-    call.mockRejectedValueOnce(new Error("offline"));
-    await actOnPersonItem(page.items[0]!, "done");
+    const list: PeopleList = { open: [open("ana@x.test", "Ana Ruiz", page.items)], everyone: [], index: "ready" };
+    usePeople.setState({ page, list });
+    let fail!: (e: Error) => void;
+    call.mockImplementationOnce(() => new Promise((_, reject) => (fail = reject)));
+    const acting = actOnPersonItem(page.items[0]!, "done");
     expect(call).toHaveBeenCalledWith("today.waitingAct", expect.objectContaining({ threadId: 1, action: "done" }));
-    // (taken off, then back after the failure)
-    expect(usePeople.getState().page?.items).toHaveLength(2);
+    expect(usePeople.getState().page?.items).toHaveLength(1);
+    expect(usePeople.getState().list?.open[0]?.items).toHaveLength(1);
+    call.mockResolvedValue(null);
+    fail(new Error("offline"));
+    await acting;
+    // the truth again: the list and the page asked for, nothing restored from before
+    expect(call).toHaveBeenCalledWith("people.list", {});
+    expect(call).toHaveBeenCalledWith("people.person", { email: "ana@x.test" });
     expect(withoutItem(page, "waiting:1").items.map((i) => (i.kind === "awaiting" ? i.row.id : 0))).toEqual([2]);
+  });
+
+  it("their last item done: the row leaves Open and falls into its place in Everyone", () => {
+    const list: PeopleList = { open: [open("ana@x.test", "Ana Ruiz", [waiting(1, "Phase 2")])], everyone: [{ name: "Bea", email: "bea@x.test", last: 0, written: true }, { name: "Ana Ruiz", email: "ana@x.test", last: 0, written: true }], index: "ready" };
+    expect(peopleRows(list, "", null, personKey).map((r) => r.id)).toEqual(["open", "ana@x.test", "everyone", "bea@x.test"]);
+    expect(peopleRows(withoutListItem(list, "waiting:1"), "", null, personKey).map((r) => r.id)).toEqual(["everyone", "bea@x.test", "ana@x.test"]);
+  });
+
+  it("a page read for someone no longer selected never lands, even late in a morph", async () => {
+    navigate({ people: true });
+    let answerA!: (p: PersonPage) => void;
+    call.mockImplementationOnce(() => new Promise((r) => (answerA = r)));
+    selectPerson("a@x.test", "a@x.test");
+    call.mockResolvedValueOnce({ ...page, key: "b@x.test", email: "b@x.test", name: "B" });
+    selectPerson("b@x.test", "b@x.test");
+    await vi.waitFor(() => expect(usePeople.getState().page?.key).toBe("b@x.test"));
+    answerA({ ...page, key: "a@x.test", email: "a@x.test" });
+    await Promise.resolve();
+    expect(usePeople.getState().page?.key).toBe("b@x.test");
+  });
+
+  it("List: Back from a conversation opened on a person's page leaves none selected behind it", () => {
+    useAppearance.setState({ layout: "list" });
+    try {
+      navigate({ people: true });
+      setApp({ person: "ana@x.test", selectedId: 7, readerOpen: true });
+      closePage();
+      expect(getApp()).toMatchObject({ person: "ana@x.test", selectedId: null, readerOpen: false });
+    } finally {
+      useAppearance.setState({ layout: "split" });
+    }
   });
 
   it("Later keeps the item where it is (it's still open): the answer moves it", async () => {

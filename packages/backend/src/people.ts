@@ -24,15 +24,15 @@ export class PeopleService {
     const open = await this.open();
     const index = this.b.autocomplete.peopleIndex();
     if (!index) return { open, everyone: [], index: this.indexState() };
-    const shown = new Set(open.map((p) => p.key));
     const mine = await this.mine();
-    // the open people aren't said twice, nor one person under two spellings, nor you: Everyone is the rest of those you
-    // wrote to (deduplicated before its cap)
+    // one person under two spellings once, and never you; the open people are in it too, each at their place, so one
+    // whose last item goes falls into it there (the list leaves them out while they're open)
+    const seen = new Set<string>();
     const everyone = [];
     for (const p of index.written(PEOPLE_EVERYONE_MAX * 2)) {
       const key = personKey(p.email);
-      if (shown.has(key) || mine.has(key)) continue;
-      shown.add(key);
+      if (seen.has(key) || mine.has(key)) continue;
+      seen.add(key);
       everyone.push(p);
       if (everyone.length === PEOPLE_EVERYONE_MAX) break;
     }
@@ -64,8 +64,11 @@ export class PeopleService {
     return { hits, index: "ready" };
   }
 
-  /** One person: what's open, their recent conversations (newest first, never Spam or Trash), the newest one's summary. */
-  async person(email: string, conversations = PERSON_CONVERSATIONS_MAX): Promise<PersonPage | null> {
+  /**
+   * One person: what's open, their recent conversations (newest first, never Spam or Trash). For the card (`except`, the
+   * conversation open beside it): the newest other one's stored summary, its "Last time"; the page reads none.
+   */
+  async person(email: string, conversations = PERSON_CONVERSATIONS_MAX, except?: number): Promise<PersonPage | null> {
     if (!(await this.b.today.offered())) return null;
     const key = personKey(email);
     const found = (await this.open()).find((p) => p.key === key);
@@ -74,17 +77,20 @@ export class PeopleService {
     const page = want ? await this.b.store.threads.searchText({ query: email, place: "all", limit: want, now: this.b.now() }) : null;
     const shown = page?.items ?? [];
     const name = this.b.autocomplete.peopleIndex()?.person(email)?.name || found?.name || "";
-    const lastSummary = shown[0] ? (await this.b.today.summaryLine(shown[0].id)).summary : undefined;
-    return { key, email, name, items: found?.items ?? [], conversations: shown, more: page?.nextCursor != null, ...(lastSummary ? { lastSummary } : {}) };
+    const last = except === undefined ? undefined : shown.find((t) => t.id !== except);
+    const lastSummary = last ? (await this.b.today.summaryLine(last.id)).summary : undefined;
+    return { key, email, name, items: found?.items ?? [], conversations: shown, more: page?.nextCursor != null, ...(last && lastSummary ? { lastSummary, lastSummaryOf: last.id } : {}) };
   }
 
   private indexState(): PeopleList["index"] {
     return this.b.autocomplete.peopleIndex() ? "ready" : this.b.autocomplete.gaveUp ? "off" : "warming";
   }
 
-  /** Your own addresses as people keys: never anyone in People. */
+  /** Your own addresses as people keys (the accounts', and every one you've sent from, as the index knows them): never anyone in People. */
   private async mine(): Promise<ReadonlySet<string>> {
-    return new Set((await this.b.store.accounts.list()).map((a) => personKey(a.email)));
+    const keys = new Set((await this.b.store.accounts.list()).map((a) => personKey(a.email)));
+    for (const email of this.b.autocomplete.peopleIndex()?.ownEmails() ?? []) keys.add(personKey(email));
+    return keys;
   }
 
   /**

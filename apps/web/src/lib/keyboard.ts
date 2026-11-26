@@ -22,7 +22,7 @@ import { printCommand } from "~/lib/print-open";
 import { checkForUpdates } from "~/lib/updates";
 import { closeEmptySearch, focusRows, focusSearch, listScroller } from "~/components/thread-list";
 import { closeFeedConversation } from "~/lib/feed-pane";
-import { closePersonConversation, leavePerson, movePerson, peopleList } from "~/lib/people";
+import { closePersonConversation, focusPeopleSearch, leavePerson, movePerson } from "~/lib/people";
 import { popupOpen } from "~/components/composer/controller";
 import { feedPlace, feedScroller, focusFeed, openFeedKeyRow } from "~/lib/feed-focus";
 import { snackbarControls } from "~/components/category-snackbar";
@@ -173,7 +173,7 @@ function openCurrent() {
 /** / and the palette's Search mail: the field, wherever the list is. */
 export function focusSearchField(): void {
   // plan 281: People's field finds people
-  if (getApp().people && peopleList.focusSearch) return peopleList.focusSearch();
+  if (getApp().people) return focusPeopleSearch();
   uncoverList();
   focusSearch();
 }

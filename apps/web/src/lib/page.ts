@@ -98,6 +98,8 @@ export function closePage(options: { focus?: boolean } = {}): void {
   if (s.compose) leaveNewDraft();
   if (getApp().heldView !== null) setApp({ heldView: null });
   if (getApp().readerOpen) setApp({ readerOpen: false });
+  // plan 281: back on a person's page, no conversation stays selected behind it (its keys would act on one not shown)
+  if (getApp().people && getApp().person !== null && getApp().selectedId !== null) setApp({ selectedId: null, anchorId: null });
 }
 
 const listSection = () => document.querySelector<HTMLElement>("[data-list-section]");

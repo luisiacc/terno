@@ -1330,7 +1330,8 @@ export const contract = {
   "people.ready": m<{ index: PeopleIndexState }>()(empty, { timeoutMs: 300_000 }),
   /** names and addresses only, never content; latest wins per client */
   "people.search": m<PeopleSearch>()(z.object({ query: z.string().max(320) })),
-  "people.person": m<PersonPage | null>()(z.object({ email: z.string().min(3).max(320), conversations: z.number().int().min(0).max(PERSON_CONVERSATIONS_MAX).optional() })),
+  /** `except`: the card's, the conversation open beside it ("Last time" is another's) */
+  "people.person": m<PersonPage | null>()(z.object({ email: z.string().min(3).max(320), conversations: z.number().int().min(0).max(PERSON_CONVERSATIONS_MAX).optional(), except: z.number().int().positive().optional() })),
 
   // plan 142. All renderer-only: none of these is in MCP_ALLOWED.
   "followups.list": m<FollowupsSnapshot>()(empty),

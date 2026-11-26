@@ -17,8 +17,8 @@ const SHOWN = 4;
 export function PersonCardHead({ page, threadId }: { page: PersonPage; threadId: number }) {
   const items = page.items.slice(0, SHOWN);
   const last = page.conversations.find((c) => c.id !== threadId);
-  // the summary is the newest conversation's: said only when that's the one shown
-  const summary = last && last.id === page.conversations[0]?.id ? page.lastSummary : undefined;
+  // the summary the backend read is of the newest other conversation: said only for that one
+  const summary = last && last.id === page.lastSummaryOf ? page.lastSummary : undefined;
   if (!items.length && !last) return null;
   const go = (id: number) => {
     noteOpen(id);
