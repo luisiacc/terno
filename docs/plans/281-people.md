@@ -244,3 +244,7 @@ After round 4 the owner brought "Waiting on you" back in words (decision 2 rever
 Round 5 (the kinds in words again, the card's Done and Later in words, "X wrote last"): clarity up a little (5.7–7.3), hierarchy the new floor: with "Waiting on you" on ten of eleven rows, the raters now call the repeated words noise and ask for Open grouped by kind, or the default kind unsaid. Also: the card's "Last conversation" leaves out the open one without saying so; Done closes the card; a three-item card pushes the menu's commands down; Everyone's rows say only an address; List layout's rows stretch the window's width.
 
 The owner kept Open one list by date (no grouping by kind). After round 5: the card's last section is "Before this one" (it leaves out the conversation open beside it); Done keeps the card open, the item leaving in place and the keyboard on the next; the card shows two items and "N more in People"; Everyone's rows say when you last wrote each other; a row's +N sits after its line, not across the row.
+
+| r06 | de17e87a7 | 6.5–7 | 7–7.5 | 390 |
+
+Round 6: level with rounds 4 and 5. Still raised: the card's "Before this one" isn't the last time you and they wrote each other (a group thread someone else wrote last); the page's Done and Later are words alone where the card's have glyphs; the right column means "open for" in Open and "last email" in Everyone, unlabeled; most of Open reads "Waiting on you" (kept: the owner's date order).
