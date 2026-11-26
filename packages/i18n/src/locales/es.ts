@@ -1323,6 +1323,7 @@ const es = {
   "people.listFailed": "No se pudo cargar Personas.",
   "people.pageFailed": "No se pudo cargar la página de esta persona.",
   "people.showMore": { one: "Mostrar # más", other: "Mostrar # más" },
+  "people.itemLine": "{label}: {text}",
   "people.kind.promise": "Prometiste",
   "people.kind.waiting": "Espera tu respuesta",
   "people.kind.awaiting": "Te debe una respuesta",

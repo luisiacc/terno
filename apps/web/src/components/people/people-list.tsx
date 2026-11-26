@@ -1,4 +1,3 @@
-import { personKey } from "@terno/core";
 import { formatNumber, t } from "@terno/i18n";
 import { Badge } from "@terno/ui/components/badge";
 import { Button } from "@terno/ui/components/button";
@@ -9,7 +8,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { listDate } from "~/lib/format";
 import { LIST_TITLE } from "~/lib/list-title";
-import { loadPeople, morphName, peopleList, searchPeople, selectPerson } from "~/lib/people";
+import { loadPeople, morphName, peopleList, reloadPage, searchPeople, selectPerson } from "~/lib/people";
 import { renderProbe } from "~/lib/render-probe";
 import { installScrollHairline } from "~/lib/scroll-hairline";
 import { useAppearance } from "~/lib/appearance";
@@ -32,6 +31,14 @@ const kept = { top: 0 };
 export function People() {
   const list = useAppearance((s) => s.layout === "list");
   const onPage = useApp((s) => s.person !== null) && list;
+  const pane = useRef<HTMLDivElement>(null);
+  // List: the page covers the list it was opened from, which goes inert: the keyboard moves to the page (its way back),
+  // quietly, rather than dropping to nowhere
+  useEffect(() => {
+    if (!onPage) return;
+    const from = document.activeElement;
+    if (from === document.body || from === null || from.closest("[inert]")) pane.current?.querySelector<HTMLElement>("[data-testid=person-back]")?.focus({ preventScroll: true });
+  }, [onPage]);
   // List: the person's page is this pane's, over the list (kept laid out under it: its scroll and place stay)
   return (
     <div className="relative h-full min-h-0">
@@ -39,7 +46,7 @@ export function People() {
         <PeopleList />
       </div>
       {onPage && (
-        <div className="absolute inset-0 bg-background">
+        <div ref={pane} className="absolute inset-0 bg-background">
           <PersonPage inList />
         </div>
       )}
@@ -52,7 +59,7 @@ function PeopleList() {
   const query = usePeople((s) => s.query);
   const hits = usePeople((s) => s.hits);
   const selected = useApp((s) => s.person);
-  const rows = useMemo(() => peopleRows(state, query, hits, personKey), [state, query, hits]);
+  const rows = useMemo(() => peopleRows(state, query, hits), [state, query, hits]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -66,8 +73,12 @@ function PeopleList() {
     paddingEnd: 16,
   });
 
-  // read when it shows (a reload of the app lands here too); the events keep it current after
-  useEffect(() => void loadPeople(), []);
+  // read when it shows (a reload of the app, or coming back from Review or a preview, lands here too), and the selected
+  // person's page with it; the events keep both current after
+  useEffect(() => {
+    void loadPeople();
+    reloadPage();
+  }, []);
 
   const placeOf = useMemo(() => new Map(rows.flatMap((r, i) => (r.kind === "person" ? [[r.key, i] as const] : []))), [rows]);
   useEffect(() => {
@@ -187,6 +198,7 @@ function Heading({ row }: { row: Extract<PeopleRow, { kind: "heading" }> }) {
 const PersonRow = memo(function PersonRow({ row, selected, query }: { row: Extract<PeopleRow, { kind: "person" }>; selected: boolean; /** a search's words: what they matched is marked */ query: string }) {
   renderProbe("PeopleRow");
   const first = row.open?.items[0];
+  const parts = first ? itemParts(first) : null;
   const Glyph = first ? itemGlyph(first) : null;
   const when = first ? itemWhen(first) : { text: row.last ? listDate(row.last) : null, late: false };
   const more = (row.open?.items.length ?? 0) - 1;
@@ -216,7 +228,7 @@ const PersonRow = memo(function PersonRow({ row, selected, query }: { row: Extra
             <>
               <Glyph aria-hidden className="size-[1.15em] shrink-0 opacity-80" />
               <span className="min-w-0 truncate">
-                <span className="font-medium">{itemParts(first).label}</span> · {itemParts(first).text}
+                <span className="font-medium">{parts!.label}</span> · {parts!.text}
               </span>
               {more > 0 && (
                 <Badge variant="neutral" className="tabular">

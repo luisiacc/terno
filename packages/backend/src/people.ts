@@ -1,9 +1,7 @@
-import { PEOPLE_EVERYONE_MAX, PEOPLE_SEARCH_MAX, PERSON_CONVERSATIONS_MAX, personKey, type FollowupRow, type PeopleList, type PeopleSearch, type PersonItem, type PersonOpen, type PersonPage, type ThreadSummary, type TodayItem } from "@terno/core";
+import { isPersonRequest, PEOPLE_EVERYONE_MAX, PEOPLE_SEARCH_MAX, PERSON_CONVERSATIONS_MAX, personKey, type FollowupRow, type PeopleList, type PeopleSearch, type PersonItem, type PersonOpen, type PersonPage, type ThreadSummary, type TodayItem } from "@terno/core";
 import type { BackendCore as Backend } from "./core";
 import { readSettings } from "./settings";
 
-/** what a dated item is when it's a person's: their request of you (a bill, a renewal, an alert are What matters' alone) */
-const ASKED = new Set(["ask", "respond"]);
 
 /**
  * Plan 281: People. What's open between the user and each person, grouped from what What matters already decided (its
@@ -17,13 +15,18 @@ export class PeopleService {
 
   constructor(private readonly b: Backend) {}
 
-  /** Open and Everyone. Everyone needs the index: started here (as a recipient field starts it), never waited for. */
-  async list(): Promise<PeopleList> {
-    if (!(await this.b.today.offered())) return { open: [], everyone: [], index: "ready" };
+  /**
+   * Open and Everyone. Everyone needs the index: started here (as a recipient field starts it), never waited for; sent only
+   * when it isn't the version the renderer holds (`known`).
+   */
+  async list(known?: number): Promise<PeopleList> {
+    if (!(await this.b.today.offered())) return { open: [], everyone: [], everyoneVersion: -1, index: "ready" };
     void this.b.warmAutocomplete().catch(() => {});
     const open = await this.open();
     const index = this.b.autocomplete.peopleIndex();
-    if (!index) return { open, everyone: [], index: this.indexState() };
+    if (!index) return { open, everyone: [], everyoneVersion: -1, index: this.indexState() };
+    const version = index.scoreVersion;
+    if (known === version) return { open, everyoneVersion: version, index: "ready" };
     const mine = await this.mine();
     // one person under two spellings once, and never you; the open people are in it too, each at their place, so one
     // whose last item goes falls into it there (the list leaves them out while they're open)
@@ -33,10 +36,10 @@ export class PeopleService {
       const key = personKey(p.email);
       if (seen.has(key) || mine.has(key)) continue;
       seen.add(key);
-      everyone.push(p);
+      everyone.push({ ...p, key });
       if (everyone.length === PEOPLE_EVERYONE_MAX) break;
     }
-    return { open, everyone, index: "ready" };
+    return { open, everyone, everyoneVersion: version, index: "ready" };
   }
 
   /** Resolves when the index has answered (or given up): the list reads again then. One call, nothing polled. */
@@ -71,6 +74,8 @@ export class PeopleService {
   async person(email: string, conversations = PERSON_CONVERSATIONS_MAX, except?: number): Promise<PersonPage | null> {
     if (!(await this.b.today.offered())) return null;
     const key = personKey(email);
+    // you're never a person here
+    if ((await this.mine()).has(key)) return null;
     const found = (await this.open()).find((p) => p.key === key);
     const want = Math.max(0, Math.min(conversations, PERSON_CONVERSATIONS_MAX));
     // the address as it was seen (the search is exact on it), All Mail: Spam and Trash are left out by the store
@@ -171,7 +176,7 @@ export function personOf(item: TodayItem, writtenTo: (email: string) => boolean)
   if (why.kind === "dated") {
     const from = item.from ?? (thread.fromEmail ? { email: thread.fromEmail, name: thread.fromName } : null);
     if (!from) return null;
-    return (why.item && ASKED.has(why.item.kind)) || writtenTo(from.email) ? from : null;
+    return isPersonRequest(why.item?.kind) || writtenTo(from.email) ? from : null;
   }
   return null;
 }

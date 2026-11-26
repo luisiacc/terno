@@ -1325,7 +1325,8 @@ export const contract = {
   "putAway.removeKept": m<{ removed: boolean }>()(z.object({ categoryId: id, sender: z.string().min(1).max(400) })),
 
   // plan 281: People. Renderer-only (not in MCP_ALLOWED): what's open between you and each person is mail content.
-  "people.list": m<PeopleList>()(empty),
+  /** `known`: the Everyone the renderer holds (`everyoneVersion`): it isn't sent again unless it changed */
+  "people.list": m<PeopleList>()(z.object({ known: z.number().int().optional() })),
   /** resolves once the recipient index answers (or won't this session): the list reads again then, nothing polled */
   "people.ready": m<{ index: PeopleIndexState }>()(empty, { timeoutMs: 300_000 }),
   /** names and addresses only, never content; latest wins per client */

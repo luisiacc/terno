@@ -1339,6 +1339,7 @@ const en = {
   "people.listFailed": "Couldn’t load People.",
   "people.pageFailed": "Couldn’t load this person’s page.",
   "people.showMore": { one: "Show # more", other: "Show # more" },
+  "people.itemLine": "{label}: {text}",
   "people.kind.promise": "You promised",
   "people.kind.waiting": "Waiting on you",
   "people.kind.awaiting": "Owes you a reply",

@@ -55,6 +55,11 @@ export function morph(update: () => void, pairs: readonly MorphPair[] = []): voi
     });
 }
 
+/** Plan 281: resolves once the running morph (if any) has finished, so a change that follows doesn't cut it short. */
+export function morphSettled(): Promise<void> {
+  return running ? running.finished.catch(() => {}) : Promise.resolve();
+}
+
 /**
  * Plan 271: one element that is the same thing on both sides of this one change (a sent message and its copy), found
  * afresh before and after it. It glides, never resizes: named before only if wholly in view of its scroller, and after

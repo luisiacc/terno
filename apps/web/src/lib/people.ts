@@ -1,11 +1,10 @@
 import { personItemId, personKey, type PeopleList, type PersonItem, type PersonPage } from "@terno/core";
 import { t } from "@terno/i18n";
-import { RpcError } from "@terno/core/rpc";
 import type { LeftRows } from "~/lib/actions";
 import { aiFeaturesOffered } from "~/lib/ai";
 import { actOnTask, taskOf } from "~/lib/dated";
 import { actOnFollowup } from "~/lib/followups";
-import { morph } from "~/lib/morph";
+import { morph, morphSettled } from "~/lib/morph";
 import { closePage, currentPage, listLayout, openThread } from "~/lib/page";
 import { noteOpen } from "~/lib/reminders";
 import { snack } from "~/lib/snack";
@@ -16,47 +15,43 @@ import { loadThread } from "~/state/threads";
 
 /**
  * Plan 281: People's ways in and out, its reads and its acts. The list and the page are read when People opens and again
- * when What matters or mail changes (`todayChanged`, `changed`): nothing is polled. A change an act or its Undo made is
- * drawn as one morph (plan 251): the item leaves the page, the items under it glide up, and the person's row in the list
- * moves to its new place (from Open into Everyone when it was their last), together.
+ * when What matters or mail changes (`todayChanged`, `changed`; one read at a time, the next one owed after it): nothing is
+ * polled. An act's change is drawn as morphs (plan 251): the item leaves the page and its person's row at once, then, once
+ * the act has answered, the list and the page as they now are land together in one more (the row's place in Everyone when
+ * it was their last), after the first has finished. j/k, a mail change and a selection draw at once, never moving.
  */
 
-/** an act's change is owed motion until this moment: the next answers to arrive morph */
-let owedUntil = 0;
-const OWED_MS = 2000;
-const owe = () => (owedUntil = Date.now() + OWED_MS);
-const owed = () => Date.now() < owedUntil;
+/** item ids an act is taking out: kept out of whatever a read brings until the act has answered and settled */
+const leaving = new Set<string>();
+/** acts whose settled read is still to come: the event-driven reads wait for it (it reads everything) */
+let settling = 0;
 
-/**
- * A change drawn as one morph when an act owes it, else at once. `still` is asked again when the change is made: a morph
- * makes it a frame later, when a newer read or another person may have taken its place.
- */
-function draw(update: () => void, moving: boolean, still: () => boolean): void {
-  const guarded = () => {
-    if (still()) update();
-  };
-  if (moving) morph(guarded);
-  else guarded();
-}
+const withoutLeaving = (list: PeopleList): PeopleList => (leaving.size ? [...leaving].reduce(withoutListItem, list) : list);
+const pageWithoutLeaving = (page: PersonPage | null): PersonPage | null => (page && leaving.size ? [...leaving].reduce(withoutItem, page) : page);
 
-/** The sidebar's People: the view, its list read (the selected person's page with it). */
+/** The sidebar's People: the view (its list is read as it shows). */
 export function openPeople(): void {
   navigate({ people: true });
-  void loadPeople();
 }
 
 let listSeq = 0;
 let waitingForIndex = false;
 
+/** The list as the backend says it now, Everyone kept when it hasn't changed (`known`). */
+async function fetchList(): Promise<PeopleList> {
+  const held = usePeople.getState().list;
+  const list = await client.call("people.list", held ? { known: held.everyoneVersion } : {});
+  return list.everyone ? list : { ...list, everyone: held?.everyone ?? [] };
+}
+
 /** Reads the list (Open, Everyone); while the index is being made ready, one call waits for it, then the list (and a search) reads again. */
 export async function loadPeople(): Promise<void> {
   const mine = ++listSeq;
-  const moving = owed();
   const current = () => mine === listSeq && getApp().people;
   try {
-    const list = await client.call("people.list", {});
+    const list = await fetchList();
     if (!current()) return;
-    draw(() => usePeople.setState({ list, failed: false }), moving, current);
+    usePeople.setState({ list: withoutLeaving(list), failed: false });
     if (list.index === "warming") waitForIndex();
   } catch {
     // said where the list is, with a way to try again; what was shown stays
@@ -82,7 +77,7 @@ function waitForIndex(): void {
 
 let searchSeq = 0;
 
-/** What's typed in the list's field: names and addresses only, answered as it's typed (a late answer is dropped). */
+/** What's typed in the list's field: names and addresses only, answered as it's typed (a late answer is dropped; a failed one keeps the last). */
 export function searchPeople(query: string): void {
   const mine = ++searchSeq;
   usePeople.setState({ query, ...(query.trim() ? {} : { hits: null }) });
@@ -93,9 +88,7 @@ export function searchPeople(query: string): void {
       usePeople.setState({ hits });
       if (hits.index === "warming") waitForIndex();
     },
-    (error: unknown) => {
-      if (!(error instanceof RpcError && error.code === "CANCELLED") && mine === searchSeq) usePeople.setState({ hits: { hits: [], index: "ready" } });
-    },
+    () => {},
   );
 }
 
@@ -109,36 +102,70 @@ export function selectPerson(key: string, email: string): void {
   void loadPage(key, email);
 }
 
-/** Back from a person's page in List (its "‹ People" and Esc): the list again, where it was. */
+/** Back from a person's page in List (its "‹ People" and Esc): the list again, where it was, the keyboard on their row. */
 export function leavePerson(): void {
-  if (getApp().person === null) return;
+  const key = getApp().person;
+  if (key === null) return;
   pageSeq++;
   opening++;
   setApp({ person: null, selectedId: null, anchorId: null });
   usePeople.setState({ page: null, reading: null, pageFailed: null });
+  requestAnimationFrame(() => peopleList.toKey?.(key, true));
 }
 
 async function loadPage(key: string, email: string): Promise<void> {
   const mine = ++pageSeq;
-  const moving = owed();
   const current = () => mine === pageSeq && getApp().people && getApp().person === key;
   const shown = usePeople.getState().page;
   usePeople.setState({ reading: { key, email }, pageFailed: null, ...(shown?.key === key ? {} : { page: null }) });
   try {
     const page = await client.call("people.person", { email });
     if (!current()) return;
-    draw(() => usePeople.setState({ page, reading: null }), moving, current);
+    usePeople.setState({ page: pageWithoutLeaving(page), reading: null });
   } catch {
     if (mine === pageSeq) usePeople.setState({ reading: null, pageFailed: { key, email } });
   }
 }
 
-/** The selected person's page, read again (an act's answer, a change of mail): only an address of theirs is asked for. */
-function reloadPage(): void {
+/** Whose page is shown, and an address of theirs as seen (never the key's spelling, unless that's all there is). */
+function pageAddress(): { key: string; email: string } | null {
   const s = getApp();
+  if (!s.people || s.person === null) return null;
   const p = usePeople.getState();
-  const email = p.page?.key === s.person ? p.page.email : p.reading?.key === s.person ? p.reading.email : null;
-  if (s.people && s.person !== null && email) void loadPage(s.person, email);
+  const email = p.page?.key === s.person ? p.page.email : p.reading?.key === s.person ? p.reading.email : p.pageFailed?.key === s.person ? p.pageFailed.email : s.person;
+  return { key: s.person, email };
+}
+
+/** The selected person's page, read again (a change of mail, coming back to People). */
+export function reloadPage(): void {
+  const at = pageAddress();
+  if (at) void loadPage(at.key, at.email);
+}
+
+/**
+ * An act has answered (or its Undo has): the list and the page as they now are, read together and drawn in one morph once
+ * the item's own leave has finished; then its item is no longer kept out.
+ */
+async function settle(ids: readonly string[]): Promise<void> {
+  const page = pageAddress();
+  const lists = ++listSeq;
+  const pages = ++pageSeq;
+  try {
+    const [list, read] = await Promise.all([fetchList(), page ? client.call("people.person", { email: page.email }) : Promise.resolve(null)]);
+    for (const id of ids) leaving.delete(id);
+    await morphSettled();
+    morph(() => {
+      if (!getApp().people) return;
+      if (lists === listSeq) usePeople.setState({ list: withoutLeaving(list), failed: false });
+      if (page && pages === pageSeq && getApp().person === page.key) usePeople.setState({ page: pageWithoutLeaving(read), reading: null });
+    });
+  } catch {
+    for (const id of ids) leaving.delete(id);
+    reread();
+  } finally {
+    settling--;
+    if (again) reread();
+  }
 }
 
 /** Tries the page that didn't come again. */
@@ -196,33 +223,35 @@ export function closePersonConversation(): boolean {
  * last: the row falls into its place in Everyone); Later keeps it (it's still open, further on): the answer moves it.
  */
 export async function actOnPersonItem(item: PersonItem, action: "done" | "dismiss" | "later", at?: number): Promise<void> {
-  owe();
-  const left = action === "later" ? afterAnswer() : takeOff(item);
-  if (item.kind === "awaiting") return actOnFollowup(item.row, action, at, left);
-  const task = taskOf(item.item.why, Date.now(), item.item.thread);
-  if (task) await actOnTask(task, action, at, left);
-}
-
-/** Undo owes motion too: what comes back glides in. A failure reads the truth again (another act may have landed meanwhile). */
-function afterAnswer(): LeftRows {
-  return {
-    async undo(run) {
-      owe();
-      await run();
-    },
-    failed: () => {
-      void loadPeople();
-      reloadPage();
-    },
-  };
-}
-
-/** The item leaves the page and its person's row now, in one morph. */
-function takeOff(item: PersonItem): LeftRows {
   const id = personItemId(item);
-  const key = usePeople.getState().page?.key;
-  morph(() => usePeople.setState(({ page, list }) => ({ page: page && page.key === key ? withoutItem(page, id) : page, list: list && withoutListItem(list, id) })));
-  return afterAnswer();
+  const gone = action !== "later";
+  settling++;
+  if (gone) takeOff(id);
+  const left: LeftRows = {
+    // Undo's answer lands as the act's did: the list and the page together, in one morph
+    async undo(run) {
+      settling++;
+      await run();
+      await settle([]);
+    },
+    // (a failure reads the truth again: another act may have landed meanwhile)
+    failed: () => {},
+  };
+  if (item.kind === "awaiting") await actOnFollowup(item.row, action, at, left);
+  else {
+    const task = taskOf(item.item.why, Date.now(), item.item.thread);
+    if (task) await actOnTask(task, action, at, left);
+  }
+  await settle(gone ? [id] : []);
+}
+
+/** The item leaves the page and its person's row now, in one morph, and stays out of any read until its act has settled. */
+function takeOff(id: string): void {
+  leaving.add(id);
+  // a read already on its way doesn't bring it back
+  listSeq++;
+  pageSeq++;
+  morph(() => usePeople.setState(({ page, list }) => ({ page: page && withoutItem(page, id), list: list && withoutListItem(list, id), reading: null })));
 }
 
 export const withoutItem = (page: PersonPage, id: string): PersonPage => ({ ...page, items: page.items.filter((i) => personItemId(i) !== id) });
@@ -256,7 +285,7 @@ export const peopleList: { rows?: () => readonly PeopleRow[]; toKey?: (key: stri
 export function movePerson(delta: number): void {
   const { list, query, hits } = usePeople.getState();
   // the rows as drawn (memoized by the list), headings stepped over
-  const people = (peopleList.rows?.() ?? peopleRows(list, query, hits, personKey)).filter((r): r is Extract<PeopleRow, { kind: "person" }> => r.kind === "person");
+  const people = (peopleList.rows?.() ?? peopleRows(list, query, hits)).filter((r): r is Extract<PeopleRow, { kind: "person" }> => r.kind === "person");
   if (!people.length) return;
   const at = people.findIndex((r) => r.id === getApp().person);
   const row = people[at < 0 ? (delta > 0 ? 0 : people.length - 1) : Math.max(0, Math.min(people.length - 1, at + delta))]!;
@@ -291,6 +320,7 @@ export function focusPeopleSearch(): void {
  */
 const cards = new Map<string, { page: PersonPage | null; ready: Promise<PersonPage | null> }>();
 export const CARD_WAIT_MS = 250;
+const CARDS_MAX = 40;
 const cardKey = (email: string, threadId: number) => `${personKey(email)}\n${threadId}`;
 
 /** Starts reading someone's card beside a conversation (nothing while AI features aren't offered). */
@@ -308,6 +338,8 @@ export function prefetchCard(email: string, threadId: number): Promise<PersonPag
     },
   );
   cards.set(key, entry);
+  // (a few dozen people's cards at most: the oldest goes)
+  if (cards.size > CARDS_MAX) cards.delete(cards.keys().next().value!);
   return entry.ready;
 }
 
@@ -325,12 +357,29 @@ export async function cardWithin(email: string, threadId: number): Promise<Perso
   }
 }
 
-/** What People shows, read again: the list, the page, a search's counts. */
+let rereading = false;
+let again = false;
+
+/**
+ * What People shows, read again on a change (the list, the page, a search's counts): one at a time, the next owed after it
+ * (a sync's changes come many a second); none while an act is settling (its own read takes in everything).
+ */
 function reread(): void {
-  void loadPeople();
-  reloadPage();
+  if (settling > 0 || rereading) {
+    again = true;
+    return;
+  }
+  again = false;
+  rereading = true;
   const { query } = usePeople.getState();
   if (query.trim()) searchPeople(query);
+  void Promise.all([loadPeople(), (async () => {
+    const at = pageAddress();
+    if (at) await loadPage(at.key, at.email);
+  })()]).finally(() => {
+    rereading = false;
+    if (again && getApp().people) reread();
+  });
 }
 
 /** At boot: People reads again when What matters or mail changes, only while it shows; the cards are read again when asked. */

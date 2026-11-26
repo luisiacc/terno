@@ -30,9 +30,10 @@ export type PeopleRow =
 
 /**
  * The list's rows: the hits while something is typed (one section, no heading), else Open then Everyone, each under its
- * heading, a heading only over rows. `keyOf` is `personKey` (passed in: this stays pure).
+ * heading, a heading only over rows. An Everyone entry's row is made once (the same object while the entry is), so a
+ * reload that kept Everyone draws none of its rows again.
  */
-export function peopleRows(list: PeopleList | null, query: string, hits: PeopleSearch | null, keyOf: (email: string) => string): PeopleRow[] {
+export function peopleRows(list: PeopleList | null, query: string, hits: PeopleSearch | null): PeopleRow[] {
   const rows: PeopleRow[] = [];
   if (query.trim()) {
     if (!hits) return rows;
@@ -48,10 +49,7 @@ export function peopleRows(list: PeopleList | null, query: string, hits: PeopleS
   // Everyone holds the open people too, at their places (so one whose last item goes falls in there): left out here
   const open = new Set(list.open.map((p) => p.key));
   const everyone: PeopleRow[] = [];
-  for (const p of list.everyone) {
-    const key = keyOf(p.email);
-    if (!open.has(key)) everyone.push(entryRow(p, key));
-  }
+  for (const p of list.everyone ?? []) if (!open.has(p.key)) everyone.push(entryRow(p));
   if (everyone.length) {
     rows.push({ kind: "heading", id: "everyone", count: everyone.length });
     rows.push(...everyone);
@@ -59,7 +57,12 @@ export function peopleRows(list: PeopleList | null, query: string, hits: PeopleS
   return rows;
 }
 
-const entryRow = (p: PersonEntry, key: string): PeopleRow => ({ kind: "person", id: key, key, email: p.email, name: p.name || p.email, last: p.last, open: null, openCount: 0 });
+const entryRows = new WeakMap<PersonEntry, PeopleRow>();
+function entryRow(p: PersonEntry & { key: string }): PeopleRow {
+  let row = entryRows.get(p);
+  if (!row) entryRows.set(p, (row = { kind: "person", id: p.key, key: p.key, email: p.email, name: p.name || p.email, last: p.last, open: null, openCount: 0 }));
+  return row;
+}
 
 /** The index's state as the list shows it: Everyone's line while it isn't there. */
 export const indexOf = (list: PeopleList | null): PeopleIndexState => list?.index ?? "warming";

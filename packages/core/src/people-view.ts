@@ -35,12 +35,21 @@ export interface PersonOpen {
 /** The recipient index People's Everyone and search read: answering, still being made ready, or not coming this session. */
 export type PeopleIndexState = "ready" | "warming" | "off";
 
-/** The list: who has something open, then everyone you've written to, best first (the open ones too: the list leaves them out). */
+/**
+ * The list: who has something open, then everyone you've written to, best first (the open ones too: the list leaves them
+ * out), each with their key. Everyone is sent only when it changed since the version the renderer holds (`known`): absent,
+ * the renderer keeps its own.
+ */
 export interface PeopleList {
   open: PersonOpen[];
-  everyone: readonly PersonEntry[];
+  everyone?: readonly (PersonEntry & { key: string })[];
+  /** which Everyone this is (the index's version): asked back as `known` */
+  everyoneVersion: number;
   index: PeopleIndexState;
 }
+
+/** What makes a dated item a person's own: their request of you (a bill, a renewal, an alert are What matters' alone). */
+export const isPersonRequest = (kind: string | undefined): boolean => kind === "ask" || kind === "respond";
 
 /** A search's hits, best first, each with its key and how many things are open with them. */
 export interface PeopleSearch {

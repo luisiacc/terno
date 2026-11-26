@@ -1786,7 +1786,7 @@ export function createHandlers(b: Backend): Handlers {
     "putAway.removeKept": async ({ categoryId, sender }) => ({ removed: await store.putAway.removeKept(categoryId, sender) }),
 
     // plan 281
-    "people.list": () => b.people.list(),
+    "people.list": ({ known }) => b.people.list(known),
     "people.ready": () => b.people.ready(),
     "people.search": async ({ query }, ctx) => {
       // latest wins per client: a query superseded while queued is not run (as threads.search)

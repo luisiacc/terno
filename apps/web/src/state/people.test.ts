@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /** Plan 281: People's rows, the search's marks, an item's words, the view's place among the own lists, and an act's page. */
-import { personKey, type PeopleList, type PersonItem, type PersonOpen, type PersonPage, type ThreadSummary } from "@terno/core";
+import { type PeopleList, type PersonItem, type PersonOpen, type PersonPage, type ThreadSummary } from "@terno/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.hoisted(() => {
@@ -27,22 +27,22 @@ afterEach(() => {
 });
 
 describe("the list's rows", () => {
-  const list: PeopleList = { open: [open("ana@x.test", "Ana Ruiz", [waiting(1, "Phase 2"), owed(2, "the contract")])], everyone: [{ name: "Marco Bell", email: "Marco@x.test", last: 5, written: true }], index: "ready" };
+  const list: PeopleList = { open: [open("ana@x.test", "Ana Ruiz", [waiting(1, "Phase 2"), owed(2, "the contract")])], everyone: [{ name: "Marco Bell", email: "Marco@x.test", key: "marco@x.test", last: 5, written: true }], everyoneVersion: 1, index: "ready" };
 
   it("Open, then Everyone, each under its heading with its count", () => {
-    const rows = peopleRows(list, "", null, personKey);
+    const rows = peopleRows(list, "", null);
     expect(rows.map((r) => (r.kind === "heading" ? `#${r.id}:${r.count}` : r.key))).toEqual(["#open:1", "ana@x.test", "#everyone:1", "marco@x.test"]);
     expect(rows[1]).toMatchObject({ openCount: 2 });
   });
 
   it("a heading only over rows; nothing before the first answer", () => {
-    expect(peopleRows(null, "", null, personKey)).toEqual([]);
-    expect(peopleRows({ ...list, open: [] }, "", null, personKey).map((r) => r.id)).toEqual(["everyone", "marco@x.test"]);
+    expect(peopleRows(null, "", null)).toEqual([]);
+    expect(peopleRows({ ...list, open: [] }, "", null).map((r) => r.id)).toEqual(["everyone", "marco@x.test"]);
   });
 
   it("while something's typed, the hits alone (their address and how many open), none until they answer", () => {
-    expect(peopleRows(list, "an", null, personKey)).toEqual([]);
-    const rows = peopleRows(list, "an", { hits: [{ name: "Ana Ruiz", email: "ana@x.test", key: "ana@x.test", last: 1, written: true, open: 2 }], index: "ready" }, personKey);
+    expect(peopleRows(list, "an", null)).toEqual([]);
+    const rows = peopleRows(list, "an", { hits: [{ name: "Ana Ruiz", email: "ana@x.test", key: "ana@x.test", last: 1, written: true, open: 2 }], index: "ready" });
     expect(rows).toEqual([{ kind: "person", id: "ana@x.test", key: "ana@x.test", email: "ana@x.test", name: "Ana Ruiz", last: 1, open: null, openCount: 2 }]);
   });
 });
@@ -88,30 +88,35 @@ describe("People among the own lists", () => {
 describe("acting on a person's page", () => {
   const page: PersonPage = { key: "ana@x.test", email: "ana@x.test", name: "Ana Ruiz", items: [waiting(1, "Phase 2"), owed(2, "the contract")], conversations: [], more: false };
 
-  it("Done takes the item off the page and the person's row at once; a failure reads both again (never an old copy back)", async () => {
+  it("Done takes the item off the page and the person's row at once; then the list and the page as they now are, together", async () => {
     navigate({ people: true });
     setApp({ person: "ana@x.test" });
-    const list: PeopleList = { open: [open("ana@x.test", "Ana Ruiz", page.items)], everyone: [], index: "ready" };
+    const list: PeopleList = { open: [open("ana@x.test", "Ana Ruiz", page.items)], everyone: [], everyoneVersion: 1, index: "ready" };
     usePeople.setState({ page, list });
-    let fail!: (e: Error) => void;
-    call.mockImplementationOnce(() => new Promise((_, reject) => (fail = reject)));
+    let answer!: (r: unknown) => void;
+    call.mockImplementationOnce(() => new Promise((r) => (answer = r)));
     const acting = actOnPersonItem(page.items[0]!, "done");
     expect(call).toHaveBeenCalledWith("today.waitingAct", expect.objectContaining({ threadId: 1, action: "done" }));
     expect(usePeople.getState().page?.items).toHaveLength(1);
     expect(usePeople.getState().list?.open[0]?.items).toHaveLength(1);
-    call.mockResolvedValue(null);
-    fail(new Error("offline"));
+    // a read that was already on its way (the page with the item still in it) doesn't bring it back
+    usePeople.setState({ page: withoutItem(page, "nothing") });
+    expect(usePeople.getState().page?.items).toHaveLength(2);
+    const settled = { ...list, open: [open("ana@x.test", "Ana Ruiz", [page.items[1]!])] };
+    call.mockImplementation((method: string) => Promise.resolve(method === "people.list" ? settled : method === "people.person" ? { ...page, items: [page.items[1]!] } : null));
+    answer({ undoId: "u1" });
     await acting;
-    // the truth again: the list and the page asked for, nothing restored from before
-    expect(call).toHaveBeenCalledWith("people.list", {});
+    // the settled read: the list (Everyone not sent again) and the page, landing together
+    expect(call).toHaveBeenCalledWith("people.list", { known: 1 });
     expect(call).toHaveBeenCalledWith("people.person", { email: "ana@x.test" });
-    expect(withoutItem(page, "waiting:1").items.map((i) => (i.kind === "awaiting" ? i.row.id : 0))).toEqual([2]);
+    expect(usePeople.getState().page?.items.map((i) => (i.kind === "awaiting" ? i.row.id : 0))).toEqual([2]);
+    expect(usePeople.getState().list?.open[0]?.items).toHaveLength(1);
   });
 
   it("their last item done: the row leaves Open and falls into its place in Everyone", () => {
-    const list: PeopleList = { open: [open("ana@x.test", "Ana Ruiz", [waiting(1, "Phase 2")])], everyone: [{ name: "Bea", email: "bea@x.test", last: 0, written: true }, { name: "Ana Ruiz", email: "ana@x.test", last: 0, written: true }], index: "ready" };
-    expect(peopleRows(list, "", null, personKey).map((r) => r.id)).toEqual(["open", "ana@x.test", "everyone", "bea@x.test"]);
-    expect(peopleRows(withoutListItem(list, "waiting:1"), "", null, personKey).map((r) => r.id)).toEqual(["everyone", "bea@x.test", "ana@x.test"]);
+    const list: PeopleList = { open: [open("ana@x.test", "Ana Ruiz", [waiting(1, "Phase 2")])], everyone: [{ name: "Bea", email: "bea@x.test", key: "bea@x.test", last: 0, written: true }, { name: "Ana Ruiz", email: "ana@x.test", key: "ana@x.test", last: 0, written: true }], everyoneVersion: 1, index: "ready" };
+    expect(peopleRows(list, "", null).map((r) => r.id)).toEqual(["open", "ana@x.test", "everyone", "bea@x.test"]);
+    expect(peopleRows(withoutListItem(list, "waiting:1"), "", null).map((r) => r.id)).toEqual(["everyone", "bea@x.test", "ana@x.test"]);
   });
 
   it("a page read for someone no longer selected never lands, even late in a morph", async () => {
@@ -143,10 +148,22 @@ describe("acting on a person's page", () => {
     navigate({ people: true });
     setApp({ person: "ana@x.test" });
     usePeople.setState({ page });
-    call.mockResolvedValueOnce({ undoId: "u1" });
+    const moved = { ...page, items: [page.items[1]!, page.items[0]!] };
+    let acted = false;
+    call.mockImplementation((method: string) => {
+      if (method === "followups.act") {
+        // nothing taken out while the act is on its way
+        expect(usePeople.getState().page?.items).toHaveLength(2);
+        acted = true;
+        return Promise.resolve({ undoId: "u1" });
+      }
+      return Promise.resolve(method === "people.person" ? moved : { open: [], everyone: [], everyoneVersion: 1, index: "ready" });
+    });
     await actOnPersonItem(page.items[1]!, "later", Date.now() + 86_400_000);
+    expect(acted).toBe(true);
     expect(call).toHaveBeenCalledWith("followups.act", expect.objectContaining({ id: 2, action: "later" }));
-    expect(usePeople.getState().page?.items).toHaveLength(2);
+    // the answer moves it (its new place, as read)
+    expect(usePeople.getState().page?.items.map((i) => (i.kind === "awaiting" ? "owed" : "waiting"))).toEqual(["owed", "waiting"]);
   });
 });
 
@@ -154,7 +171,7 @@ describe("j and k", () => {
   it("walk the people (headings skipped), each one's page with them, from the selected one", () => {
     navigate({ people: true });
     call.mockResolvedValue(null);
-    usePeople.setState({ list: { open: [open("a@x.test", "A", [waiting(1, "One")])], everyone: [{ name: "B", email: "b@x.test", last: 0, written: true }, { name: "C", email: "c@x.test", last: 0, written: true }], index: "ready" } });
+    usePeople.setState({ list: { open: [open("a@x.test", "A", [waiting(1, "One")])], everyone: [{ name: "B", email: "b@x.test", key: "b@x.test", last: 0, written: true }, { name: "C", email: "c@x.test", key: "c@x.test", last: 0, written: true }], everyoneVersion: 1, index: "ready" } });
     movePerson(1);
     expect(getApp().person).toBe("a@x.test");
     movePerson(1);

@@ -72,6 +72,9 @@ export function PersonItems({ person, detail, offerReplyOnly, compose, parts }: 
   );
 }
 
+/** plan 281: how long a pointer rests on a chip before its card is read */
+const HOVER_INTENT_MS = 120;
+
 /** The person's full name and address as one line: what their chip stands for. */
 export const fullName = (p: ThreadPerson) => (p.name === p.email ? p.email : `${p.name} <${p.email}>`);
 
@@ -86,6 +89,8 @@ export function PersonMenu({ person, detail, offerReplyOnly, className, children
   const [card, setCard] = useState<ReturnType<typeof cardOf>>(null);
   const peopleOn = useApp(aiFeaturesOffered);
   const asked = useRef(0);
+  const intent = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(intent.current), []);
   const trigger = useRef<HTMLButtonElement>(null);
   // an item that opens a draft hands focus to it: the closing menu gives none back (message-menu's useRespond)
   const handedOff = useRef(false);
@@ -138,7 +143,13 @@ export function PersonMenu({ person, detail, offerReplyOnly, className, children
         data-testid="thread-person"
         data-context-menu
         title={fullName(person)}
-        onPointerEnter={() => peopleOn && void prefetchCard(person.email, detail.thread.id)}
+        // (a pointer that rests on the chip, not one crossing a row of them; focus asks at once)
+        onPointerEnter={() => {
+          if (!peopleOn) return;
+          clearTimeout(intent.current);
+          intent.current = setTimeout(() => void prefetchCard(person.email, detail.thread.id), HOVER_INTENT_MS);
+        }}
+        onPointerLeave={() => clearTimeout(intent.current)}
         onFocus={() => peopleOn && void prefetchCard(person.email, detail.thread.id)}
         className={cn("group/person flex max-w-full min-w-0 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring", className)}
         onContextMenu={(e) => {

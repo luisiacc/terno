@@ -1,4 +1,4 @@
-import { personItemId, personItemThread, type PersonItem } from "@terno/core";
+import { isPersonRequest, personItemId, personItemThread, type PersonItem } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuShortcut, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
@@ -18,7 +18,6 @@ export function itemGlyph(item: PersonItem): ComponentType<{ className?: string 
   return kind === "promise" ? ListChecks : kind === "waiting" ? MessageSquareReply : CalendarClock;
 }
 
-const ASKED = new Set(["ask", "respond"]);
 const capital = (s: string): string => s.charAt(0).toLocaleUpperCase() + s.slice(1);
 
 /**
@@ -32,27 +31,17 @@ export function itemParts(item: PersonItem): { label: string; text: string } {
   const subject = thread.subject?.trim() || t("common.noSubject");
   if (why.kind === "promise") return { label: t("people.kind.promise"), text: capital(why.text?.trim() || subject) };
   if (why.kind === "waiting") return { label: t("people.kind.waiting"), text: subject };
-  return { label: t(why.item && ASKED.has(why.item.kind) ? "people.kind.asked" : "people.kind.todo"), text: todaySentence(item.item) };
+  return { label: t(isPersonRequest(why.item?.kind) ? "people.kind.asked" : "people.kind.todo"), text: todaySentence(item.item) };
 }
 
 /** An item as one line (the card's, a screen reader's): its kind and what. */
-export const itemLine = (item: PersonItem): string => {
-  const { label, text } = itemParts(item);
-  return `${label}: ${text}`;
-};
+export const itemLine = (item: PersonItem): string => t("people.itemLine", itemParts(item));
 
 /** When, in the list's words: What matters' own column for its items (its tone, Missed's red); a reply owed, when you asked. */
 export function itemWhen(item: PersonItem, now = Date.now()): { text: string | null; late: boolean } {
   if (item.kind === "awaiting") return { text: listDate(item.row.sentAt, now), late: false };
   const when = todayWhen(item.item, now);
   return { text: when.text, late: when.tone === "missed" };
-}
-
-/** Later's presets for an item: What matters' for its items (in their window), a reminder's for a reply owed to you. */
-function presetsOf(item: PersonItem, now: number) {
-  if (item.kind === "awaiting") return laterPresets({ before: null, limit: null }, now);
-  const task = taskOf(item.item.why, now, item.item.thread);
-  return task ? laterChoices(task, now) : [];
 }
 
 /**
@@ -68,11 +57,12 @@ export function PersonItemLine({ item, morphName }: { item: PersonItem; morphNam
   const subject = thread.subject?.trim() || t("common.noSubject");
   const when = itemWhen(item);
   const now = Date.now();
-  const presets = presetsOf(item, now);
-  const actable = item.kind === "awaiting" || taskOf(item.item.why, now, item.item.thread) !== null;
+  const task = item.kind === "today" ? taskOf(item.item.why, now, item.item.thread) : null;
+  const presets = item.kind === "awaiting" ? laterPresets({ before: null, limit: null }, now) : task ? laterChoices(task, now) : [];
+  const actable = item.kind === "awaiting" || task !== null;
   return (
     <li data-morph={morphName} data-testid="person-item" data-item={personItemId(item)} className="group/item relative rounded-lg hover:bg-row-hover">
-      <button type="button" data-testid="person-item-open" data-place={`item:${personItemId(item)}`} onClick={() => openFromPerson(thread.id)} aria-describedby={textId} className="flex w-full min-w-0 items-start gap-3 rounded-lg px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      <button type="button" data-testid="person-item-open" data-place={`item:${personItemId(item)}`} onClick={() => openFromPerson(thread.id)} className="flex w-full min-w-0 items-start gap-3 rounded-lg px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
         <Glyph aria-hidden className="mt-[calc((1lh-1.15em)/2)] size-[1.15em] shrink-0 text-muted-foreground" />
         <span className="min-w-0 flex-1">
           <span id={textId} className="block text-base text-pretty text-foreground">

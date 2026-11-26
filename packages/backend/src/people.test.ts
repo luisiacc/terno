@@ -139,7 +139,13 @@ describe("everyone and the search", () => {
     const list = await client.call("people.list", {});
     expect(list.index).toBe("ready");
     expect(list.open.map((p) => p.key)).toEqual(["ana@people.test"]);
-    expect(list.everyone.map((p) => p.email).sort()).toEqual(["ana@people.test", "marco@greenway.studio"]);
+    expect(list.everyone!.map((p) => p.email).sort()).toEqual(["ana@people.test", "marco@greenway.studio"]);
+    // Everyone isn't sent again while it's the version the renderer holds
+    const again = await client.call("people.list", { known: list.everyoneVersion });
+    expect(again.everyone).toBeUndefined();
+    expect(again.open.map((p) => p.key)).toEqual(["ana@people.test"]);
+    // and you never get a page of your own
+    expect(await client.call("people.person", { email: "me+notes@terno.test" })).toBeNull();
     const found = await client.call("people.search", { query: "greenway" });
     expect(found.hits.map((h) => h.email).sort()).toEqual(["marco@greenway.studio", "priya@greenway.studio"]);
     const anaHit = (await client.call("people.search", { query: "ana" })).hits[0]!;
