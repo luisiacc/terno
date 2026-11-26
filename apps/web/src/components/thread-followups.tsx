@@ -11,7 +11,7 @@ import { followupsOffered, modelName } from "~/lib/ai";
 import { whenDate } from "~/lib/when";
 import { useCanDraft } from "~/lib/ai-draft-state";
 import { laterPresets } from "~/lib/dated";
-import { actOnFollowup, followupLine, followupWhen } from "~/lib/followups";
+import { actOnFollowup, followupLine, followupWhen, mayHaveArrived } from "~/lib/followups";
 import { useDrafts } from "~/lib/drafts";
 import { presetLabel, presetWhen } from "~/lib/reminders";
 import { revealSummaryMessage } from "~/lib/summaries";
@@ -31,7 +31,13 @@ import { WhenForm } from "./when-fields";
  * is on the reader's line (plan 210, iteration 3).
  */
 function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageDetail[] }) {
-  const line = followupLine(row);
+  // plan 280 (§6): a promise of theirs that may have been kept asks first, and offers no reminder
+  const theirs = row.kind === "theirs";
+  const arrived = mayHaveArrived(row, messages);
+  const name = row.personName?.split(/\s+/)[0] || row.personEmail?.split("@")[0] || t("followup.someone");
+  const line = arrived === "wrote" ? t("followup.theirsWroteSince", { name }) : arrived === "notice" ? t("followup.theirsMayHaveArrived") : followupLine(row);
+  // a reminder only for a firm one that's late and hasn't plainly arrived
+  const offersNudge = !theirs || (row.state === "due" && row.firm !== false && arrived === null);
   // when it comes back
   const when = followupWhen(row);
   // plan 147: a follow-up stays readable when its key goes; a nudge is a draft, and can't be written
@@ -42,29 +48,37 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
   const mine = useApp((s) => s.accounts).map((a) => a.email);
   const source = messageSource(messages, row.messageId, mine);
   // the nudge Write a follow-up made, still a draft: the line offers it rather than another
-  const drafted = useDrafts((s) => nudgeDraft(row.threadId, s.drafts) !== null);
+  const drafted = useDrafts((s) => nudgeDraft(row.id, s.drafts) !== null);
   // plan 162 (after ai162-r03): "Open your follow-up" only once it has words; while the composer asks or writes, the
   // card says so and takes you to that draft (it offered to open it over an empty body)
-  const nudging = useAiDraft((s) => (drafted ? nudgeState(s.sessions[nudgeDraft(row.threadId) ?? ""]?.phase) : null));
+  const nudging = useAiDraft((s) => (drafted ? nudgeState(s.sessions[nudgeDraft(row.id) ?? ""]?.phase) : null));
   const laterRef = useRef<HTMLButtonElement>(null);
   // its own moment starts where the reminder's own picker does (plan 87): the next sensible moment, never one already past
   const [picking, setPicking] = useState(false);
   return (
-    <div data-testid="followup-line" data-kind={row.kind} data-state={row.state} className={cn(AI_CARD, AI_PAD)}>
+    <div data-testid="followup-line" data-kind={row.kind} data-state={row.state} data-firm={theirs ? String(row.firm !== false) : undefined} data-arrived={arrived ?? undefined} className={cn(AI_CARD, AI_PAD)}>
       {/* the news first, at the text's size: it's what the card is */}
       <p data-testid="followup-header" className={AI_HEADER}>
         <Clock aria-hidden className={cn(AI_GLYPH, "text-sm")} />
         <span data-testid="followup-text" className={cn(AI_TITLE, "text-sm")}>{line}</span>
       </p>
+      {/* plan 280: a promise of theirs says what it is ("Alex promised to send you the contract") under the question */}
+      {arrived !== null && <p data-testid="followup-promised" className="text-sm text-muted-foreground">{followupLine(row)}</p>}
       {when && <p data-testid="followup-due" className="text-sm text-muted-foreground tabular">{when}</p>}
       <div className={cn(AI_ACTIONS, "mt-3")} data-testid="followup-actions">
-        {drafted && nudging === "writing" ? (
+        {/* plan 280: Received first for a promise of theirs: it's what's most often true */}
+        {theirs && (
+          <Button size="sm" variant={offersNudge ? "outline" : "default"} className={offersNudge ? "text-foreground" : undefined} data-testid="followup-received" onClick={() => void actOnFollowup(row, "done")}>
+            {t("followup.received")}
+          </Button>
+        )}
+        {!offersNudge ? null : drafted && nudging === "writing" ? (
           // plan 162 (after ai162-r05): its words without a spinner: the composer's "Writing…" is the one working mark
-          <Button size="sm" variant="outline" className="text-foreground" data-testid="followup-nudging" aria-disabled onClick={() => void openNudge(row.threadId)}>{t("followup.nudging")}</Button>
+          <Button size="sm" variant="outline" className="text-foreground" data-testid="followup-nudging" aria-disabled onClick={() => void openNudge(row.id)}>{t("followup.nudging")}</Button>
         ) : drafted && nudging === "waiting" ? (
-          <Button size="sm" data-testid="followup-nudge" onClick={() => void openNudge(row.threadId)}>{t("followup.nudge")}</Button>
+          <Button size="sm" data-testid="followup-nudge" onClick={() => void openNudge(row.id)}>{t("followup.nudge")}</Button>
         ) : drafted ? (
-          <Button size="sm" data-testid="followup-open-nudge" onClick={() => void openNudge(row.threadId)}>{t("followup.openNudge")}</Button>
+          <Button size="sm" data-testid="followup-open-nudge" onClick={() => void openNudge(row.id)}>{t("followup.openNudge")}</Button>
         ) : (
           canNudge && <Button size="sm" data-testid="followup-nudge" onClick={() => void nudge(row)}>{t("followup.nudge")}</Button>
         )}
@@ -104,9 +118,9 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
             />
           </PopoverContent>
         </Popover>
-        {/* a nudge's dismissal keeps its words and weight: it isn't a task */}
+        {/* a nudge's dismissal keeps its words and weight: it isn't a task; a promise of theirs read wrong is Not a promise */}
         <Button size="sm" variant="outline" className="text-foreground" data-testid="followup-dismiss" onClick={() => void actOnFollowup(row, "dismiss")}>
-          {t("followup.dismiss")}
+          {t(theirs ? "followup.notAPromise" : "followup.dismiss")}
         </Button>
         {/* where it came from, named ("Your message, Oct 22"), its words (the quote) on hover; nothing when it's the one
             message on screen */}
@@ -135,7 +149,7 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
 }
 
 /**
- * Plan 142 §7: a quiet card for each wait in this conversation, above its summary. Plan 210 (iteration 3, Codex revision
+ * Plan 142 §7: a quiet card for each wait in this conversation, above its summary; plan 280, for each promise of theirs. Plan 210 (iteration 3, Codex revision
  * 10): a promise of yours is one of the conversation's items, on the reader's line with its dated ones (`ThreadItems`); a
  * nudge (waiting on their reply) isn't a task, and keeps its card here.
  */
@@ -143,7 +157,8 @@ export default function ThreadFollowups({ detail }: { detail: ThreadDetail }) {
   const enabled = useApp((s) => followupsOffered(s, detail.thread.accountId));
   const rows = useFollowups((s) => s.byThread.get(detail.thread.id));
   const shown = enabled && !detail.thread.inTrash && !detail.thread.inSpam ? rows : undefined;
-  const waits = shown?.filter((r) => r.kind === "awaiting") ?? [];
+  // plan 280: and what's owed to you, each with its own card
+  const waits = shown?.filter((r) => r.kind === "awaiting" || r.kind === "theirs") ?? [];
   const tipFor = usePendingTip("followups-first");
   const fresh = shown?.some((r) => !r.fromScan);
   useEffect(() => {

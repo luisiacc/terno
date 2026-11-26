@@ -1,4 +1,4 @@
-import { dayKeyOf, dueCutoff, followupDaysSince, mostUrgent, type FollowupRow } from "@terno/core";
+import { addressKey, dayKeyOf, dueCutoff, followupDaysSince, localDay, mostUrgent, type FollowupRow, type MessageDetail } from "@terno/core";
 import type { FollowupsSnapshot } from "@terno/core";
 import { t } from "@terno/i18n";
 import { followupsOffered } from "~/lib/ai";
@@ -21,7 +21,8 @@ export function applyFollowups(snapshot: FollowupsSnapshot): void {
   const byThread = new Map<number, FollowupRow[]>();
   for (const r of snapshot.rows) byThread.set(r.threadId, [...(byThread.get(r.threadId) ?? []), r]);
   const onTop = new Set(snapshot.rows.filter((r) => r.inboxState === "onTop").map((r) => r.threadId)).size;
-  const due = new Set(snapshot.rows.filter((r) => r.state === "due").map((r) => r.threadId)).size;
+  // plan 280: a tentative promise of theirs is kept quietly: in the list, never in the count that calls for attention
+  const due = new Set(snapshot.rows.filter((r) => r.state === "due" && !(r.kind === "theirs" && r.firm === false)).map((r) => r.threadId)).size;
   useFollowups.setState({ rows: snapshot.rows, byThread, due, onTop, loaded: true });
   const s = getApp();
   if (!before.loaded && useList.getState().itemsKey === "") return;
@@ -50,6 +51,11 @@ const personOf = (row: FollowupRow): string | null => row.personName || row.pers
  */
 export function followupLine(row: FollowupRow, now = Date.now(), { short = false }: { short?: boolean } = {}): string {
   const name = personOf(row);
+  // plan 280: "Alex promised to send you the contract"; a tentative one, "Alex hoped to…" (no pronoun guessed)
+  if (row.kind === "theirs") {
+    const who = name ? (short ? name.split(/\s+/)[0] || name : name) : t("followup.someone");
+    return t(row.firm === false ? "followup.theirsHoped" : "followup.theirs", { name: who, text: row.text });
+  }
   if (row.kind === "awaiting") {
     const who = name ?? t("followup.someone");
     const days = followupDaysSince(row.sentAt, now);
@@ -95,6 +101,13 @@ export function withoutPerson(text: string, names: readonly string[]): string | 
 export function followupWhen(row: FollowupRow, now = Date.now()): string | null {
   // (plan 210, iteration 5: a part of its day is over at that part's end)
   if (row.kind === "promise") return row.dated ? promiseWhen(row, now >= dueCutoff(dayKeyOf(row.dueAt), row.partOfDay), now) : null;
+  // plan 280: the day they promised ("Due Thursday", "Was due Thursday"), never the moment it's late; undated, none
+  if (row.kind === "theirs") {
+    const day = row.dueDay ? localDay(row.dueDay) : null;
+    if (!day) return null;
+    day.setHours(9, 0, 0, 0);
+    return promiseWhen({ dueAt: day.getTime(), dated: true, partOfDay: row.partOfDay ?? null }, now >= dueCutoff(row.dueDay!, row.partOfDay), now);
+  }
   const date = reminderDated(row.dueAt, now);
   if (row.state === "due") return t("followup.dueNow", { date });
   return t("followup.dueOnAwaiting", { date });
@@ -118,7 +131,9 @@ export async function actOnFollowup(row: FollowupRow, action: "done" | "dismiss"
     // plan 210 (iteration 2): What matters' rows it took out come back with its Undo
     const run = () => client.call("followups.undo", { undoId: undoId! }).then(() => undefined);
     const undo = undoId === null ? null : registerUndo(() => (left ? left.undo(run) : run()));
-    const said = text !== null ? taskSaid(action, text) : action === "done" ? t("followup.snack.done") : action === "dismiss" ? t("followup.snack.dismissed") : t("followup.snack.later", { date: reminderDated(dueAt ?? row.dueAt) });
+    // plan 280: a promise of theirs is received, or wasn't one
+    const theirs = row.kind === "theirs";
+    const said = text !== null ? taskSaid(action, text) : action === "done" ? t(theirs ? "followup.snack.received" : "followup.snack.done") : action === "dismiss" ? t(theirs ? "followup.snack.notAPromise" : "followup.snack.dismissed") : t("followup.snack.later", { date: reminderDated(dueAt ?? row.dueAt) });
     snack.success(said, undo ? { action: { label: t("common.undo"), name: t("followup.undo"), undo } } : {});
   } catch (error) {
     left?.failed();
@@ -144,3 +159,14 @@ useApp.subscribe((s, prev) => {
 
 /** The selection left a thread the Inbox's top held only because it was open: it goes to its place. */
 export const leftTop = (threadId: number): boolean => inboxTop.ids.includes(threadId) && !useFollowups.getState().byThread.get(threadId)?.some((r) => r.inboxState === "onTop");
+
+/**
+ * Plan 280 (§6): a promise of theirs that may have been kept already, so no reminder is offered: the debtor wrote in this
+ * conversation since they promised it ("wrote"), or a service's notice named them ("notice"). Null: neither.
+ */
+export function mayHaveArrived(row: FollowupRow, messages: readonly Pick<MessageDetail, "id" | "date" | "from">[]): "wrote" | "notice" | null {
+  if (row.kind !== "theirs") return null;
+  const debtor = row.personKey ?? (row.personEmail ? addressKey(row.personEmail) : null);
+  if (debtor && messages.some((m) => m.id !== row.messageId && m.date > row.sentAt && addressKey(m.from.email) === debtor)) return "wrote";
+  return row.arrivedHint != null ? "notice" : null;
+}

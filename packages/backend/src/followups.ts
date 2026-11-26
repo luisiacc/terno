@@ -1169,7 +1169,9 @@ export class FollowupWorker {
    */
   async act(id: number, revision: number, action: "done" | "dismiss" | "later", dueAt?: number): Promise<{ undoId: string | null; row: FollowupRow | null }> {
     const now = this.host.now();
-    const promise = action === "later" && (await this.host.store.followups.get(id))?.kind === "promise";
+    // plan 280 (revision 8): a promise of theirs puts off its own moment too, its day kept
+    const kind = action === "later" ? (await this.host.store.followups.get(id))?.kind : undefined;
+    const promise = kind === "promise" || kind === "theirs";
     const patch: Parameters<MailStore["followups"]["update"]>[2] =
       action !== "later" ? { state: action === "done" ? "done" : "dismissed", inboxState: "none", closedReason: "user", closedAt: now }
       : promise ? { state: "open", inboxState: "none", deferredUntil: dueAt ?? now }

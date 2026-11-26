@@ -84,3 +84,31 @@ describe("a promise never names its person twice (plan 210, iteration 3)", () =>
     expect(followupLine(jess({ personName: "Valeria Ochoa", text: "enviar el guion a Valeria" }), NOW, { short: true })).toBe("Le dijiste a Valeria que ibas a enviar el guion");
   });
 });
+
+describe("a promise of theirs (plan 280)", () => {
+  const owed = (o: Partial<FollowupRow> = {}) => row({ kind: "theirs", text: "send you the contract", personName: "Alex Reed", personEmail: "alex@acme.test", personKey: "alex@acme.test", dated: true, dueDay: "2026-10-27", firm: true, sentAt: NOW - DAY, ...o });
+
+  it("says who promised what, with no pronoun guessed; a tentative one, what they hoped", () => {
+    expect(followupLine(owed(), NOW)).toBe("Alex Reed promised to send you the contract");
+    expect(followupLine(owed(), NOW, { short: true })).toBe("Alex promised to send you the contract");
+    expect(followupLine(owed({ firm: false }), NOW)).toBe("Alex Reed hoped to send you the contract");
+    setLocale("es", es as never);
+    expect(followupLine(owed({ text: "enviarte el contrato" }), NOW)).toBe("Alex Reed prometió enviarte el contrato");
+  });
+
+  it("its day is the day promised, never the moment it's late; undated, none", () => {
+    expect(followupWhen(owed(), NOW)).toBe("Due Tuesday");
+    expect(followupWhen(owed({ dueDay: "2026-10-21", state: "due" }), NOW)).toBe("Was due yesterday");
+    expect(followupWhen(owed({ dated: false, dueDay: null }), NOW)).toBeNull();
+  });
+
+  it("may have arrived: the debtor wrote since, or a notice named them; never their own promise's message", async () => {
+    const { mayHaveArrived } = await import("./followups");
+    const m = (id: number, email: string, date: number) => ({ id, date, from: { name: "", email } });
+    expect(mayHaveArrived(owed(), [m(3, "alex@acme.test", NOW - DAY)])).toBeNull();
+    expect(mayHaveArrived(owed(), [m(3, "alex@acme.test", NOW - DAY), m(4, "bea@acme.test", NOW)])).toBeNull();
+    expect(mayHaveArrived(owed(), [m(4, "Alex+work@ACME.test", NOW)])).toBe("wrote");
+    expect(mayHaveArrived(owed({ arrivedHint: 99 }), [])).toBe("notice");
+    expect(mayHaveArrived(row(), [m(4, "arjun@x.test", NOW)])).toBeNull();
+  });
+});
