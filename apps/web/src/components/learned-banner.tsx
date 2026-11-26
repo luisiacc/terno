@@ -133,37 +133,38 @@ export function LearnedBanner({ proposal, scroller }: { proposal: LearnedProposa
       // quieter than any row: small, muted, on no fill; 32 px for one line or two (the × is the line's height), more past that
       className="my-0 min-h-8 bg-transparent py-0 pr-1.5 pl-3 text-muted-foreground"
       title={
-        <>
-          <Tooltip>
-            {/* the rule whole, never cut: it wraps instead */}
-            <TooltipTrigger render={<span data-testid="learned-line" />}>{line}</TooltipTrigger>
-            <TooltipContent className="max-w-72">{learnedWhy(proposal)}</TooltipContent>
-          </Tooltip>{" "}
-          {/* a suggestion, not the screen's main action: BoardUI's secondary link, at the line's own size and weight, right after what it does */}
-          <Button
-            variant="link-secondary"
-            data-testid="learned-accept"
-            className="align-baseline text-[length:inherit] leading-[inherit] font-normal whitespace-nowrap"
-            aria-label={t("list.learned.acceptName", { line })}
-            onClick={async () => {
-              let id: number;
-              try {
-                ({ id } = await client.call("learning.accept", { key: proposal.key, name: capFilterName(t(LEARNED_FILTER_NAME[proposal.action], { value: proposal.value })) }));
-              } catch (error) {
-                snack.error(error instanceof Error ? error.message : String(error));
-                return;
-              }
-              hush(true);
-              const undo = registerUndo(async () => {
-                await client.call("filters.delete", { id });
-                unhush(proposal.key);
-              });
-              snack.success(t("list.learned.created"), { description: learnedCreated(proposal), action: { label: t("common.undo"), name: t("list.learned.undo", { who: proposal.value }), undo } });
-            }}
-          >
-            {t("list.learned.accept")}
-          </Button>
-        </>
+        <Tooltip>
+          {/* the rule whole, never cut: it wraps instead */}
+          <TooltipTrigger render={<span data-testid="learned-line" />}>{line}</TooltipTrigger>
+          <TooltipContent className="max-w-72">{learnedWhy(proposal)}</TooltipContent>
+        </Tooltip>
+      }
+      // a suggestion, not the screen's main action: a small outline button at the line's end (the owner, after plan 282's UI
+      // rating: Put away's line shares this place and look)
+      actions={
+        <Button
+          variant="outline"
+          size="xs"
+          data-testid="learned-accept"
+          aria-label={t("list.learned.acceptName", { line })}
+          onClick={async () => {
+            let id: number;
+            try {
+              ({ id } = await client.call("learning.accept", { key: proposal.key, name: capFilterName(t(LEARNED_FILTER_NAME[proposal.action], { value: proposal.value })) }));
+            } catch (error) {
+              snack.error(error instanceof Error ? error.message : String(error));
+              return;
+            }
+            hush(true);
+            const undo = registerUndo(async () => {
+              await client.call("filters.delete", { id });
+              unhush(proposal.key);
+            });
+            snack.success(t("list.learned.created"), { description: learnedCreated(proposal), action: { label: t("common.undo"), name: t("list.learned.undo", { who: proposal.value }), undo } });
+          }}
+        >
+          {t("list.learned.accept")}
+        </Button>
       }
       titleProps={{ className: "font-normal text-muted-foreground" }}
       closeLabel={t("list.learned.notNow")}

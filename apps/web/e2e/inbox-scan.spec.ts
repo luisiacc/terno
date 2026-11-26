@@ -241,10 +241,12 @@ test.describe("the filters and the suggestions", () => {
     const before = rules();
     await expect(accept).toHaveText("Create rule");
     await expect(accept).toHaveAccessibleName("Create rule: Always archive mail from the list daily.morningbrew.com?");
-    // plan 159: the rule whole, and its button at the text's own weight, right after it
+    // plan 159: the rule whole; plan 282 (the owner, after its UI rating): its button a small one at the line's end, before the ×
     await expect(page.getByTestId("learned-line")).toHaveText("Always archive mail from the list daily.morningbrew.com?");
-    expect(await weight(accept)).toBe(await weight(page.getByTestId("learned-line")));
-    expect(await weight(accept)).toBeLessThan(500);
+    const [text, button, close] = await Promise.all([box(page.getByTestId("learned-line")), box(accept), box(page.getByTestId("learned-dismiss"))]);
+    expect(button.x).toBeGreaterThanOrEqual(text.x + text.width);
+    expect(button.x + button.width).toBeLessThanOrEqual(close.x);
+    expect(button.height).toBeGreaterThanOrEqual(24);
     expect((await box(page.getByTestId("learned-dismiss"))).height).toBeGreaterThanOrEqual(24);
     await accept.click();
     await expect(banner).toHaveCount(0);

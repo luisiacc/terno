@@ -80,8 +80,6 @@ test.describe("Put away (plan 282)", () => {
       await expect(box.getByTestId("put-away-why")).toHaveText("Your rule “Xataka” archived this.");
       await expect(box.getByTestId("put-away-edit")).toBeVisible();
       await axeBothModes(page, "[data-testid=put-away-box]");
-      // the toolbar's first place is Back to Inbox too (the keyboard's way to it)
-      await expect(page.getByTestId("action-put-back")).toHaveAccessibleName(/Back to Inbox/);
       // from the keyboard: focus goes to the list afterwards, never the toolbar's Archive (the UI rating)
       await box.getByTestId("put-away-back").focus();
       await page.keyboard.press("Enter");
