@@ -7,7 +7,7 @@ import type { StructuredTask } from "./ladder";
  * Plan 132 §5: a conversation's summary. The prompt is frozen and versioned: a stored summary is reused only at the
  * version it was made with, so any change to the words below bumps this.
  */
-export const SUMMARY_PROMPT_VERSION = 10;
+export const SUMMARY_PROMPT_VERSION = 11;
 /** a ceiling, billed only as used: medium effort thinks inside it, and long threads were cut off at 3,000 (plan 279's panel) */
 const SUMMARY_MAX_TOKENS = 5000;
 const ANSWER_SHARE = 0.3;
@@ -102,9 +102,10 @@ export interface ThreadSummaryResult {
  */
 const withRowDefaults = (v: unknown) => (v && typeof v === "object" && !Array.isArray(v) ? { due: null, byReply: true, ...(v as object) } : v);
 const item = z.preprocess(withRowDefaults, z.object({ kind: z.enum(SUMMARY_ITEM_KINDS), text: z.string(), message: z.string(), due: z.string().nullable(), byReply: z.boolean() }));
+// plan 279: the rows before the summary, so the checklist is written from the mail and not from the summary's compression
 const wire = z.object({
-  summary: z.string(),
   items: z.array(item),
+  summary: z.string(),
 });
 /**
  * Plan 279: with messages marked new, the answer says what they change, last, so the summary and items come first. A
@@ -125,6 +126,11 @@ const ONLY_ASKED =
  * fictional conversations by a fixed judge: rows right 6.40 → 6.75–6.80 on every run, the same accuracy, 30% faster at
  * low verbosity. Its gains came from the rows as the reader's checklist and the worked examples; the rewrite alone, more
  * effort and a second pass of notes did nothing or worse (plan 279, "Getting Luna right").
+ *
+ * Version 11: the strategy experiments' winner (plan 279, "Strategies for Luna"). Luna's serious misses were the same
+ * conversations every run, so voting, audits and annotations did nothing; what worked was saying when an ask is the
+ * reader's (an approval with a step, an accepted offer, a choice, mail between few people, a scam's check), the last
+ * line asking for rows, and the rows before the summary: serious misses down by a quarter to a third on two judges.
  */
 const EXAMPLES: readonly { mail: string; card: { summary: string; items: object[]; since: string }; note: string }[] = [
   {
@@ -159,10 +165,11 @@ const EXAMPLES: readonly { mail: string; card: { summary: string; items: object[
       items: [
         { kind: "date", text: "Will signing, Monday 18 May at 12", message: "m3", due: "2026-05-18", byReply: true },
         { kind: "action", text: "Bring your ID to the signing", message: "m3", due: "2026-05-18", byReply: false },
+        { kind: "action", text: "Call 931 440 220 about the bank-details message", message: "m1", due: null, byReply: false },
       ],
       since: "A message from billing@vidal-legal-pay.example asking for 900 EUR at new bank details looks like a scam. Marta accepted Monday 18 May at 12 for the signing.",
     },
-    note: "The scam comes first and is never an item; the accepted date is a change.",
+    note: "The scam comes first; its request is never an item, but the check Marta gave is; the accepted date is a change.",
   },
 ];
 
@@ -189,7 +196,7 @@ You write the summary card of one email conversation for the person reading it (
 </input>
 
 <card>
-- "summary": one to three plain sentences on where things stand after the last message: what happened and what was decided. It never contains the reader's to-dos or questions for the reader: those are items.
+- "summary": one to three plain sentences on where things stand after the last message: what happened and what was decided, what still waits on what ("the grant waits on the oath form"), and, in a clause, why a plan changed. It never contains the reader's to-dos or questions for the reader: those are items.
 - "items": the reader's checklist: their to-dos and questions, what others owe them, and every deadline, payment, appointment or meeting they have to keep, as a row of its own even when the summary names it (the summary says where things stand; the rows are what to do and when). Only what is the reader's; none when nothing is. At most six actions and questions, six dates or decisions, and two "waiting". Each has:
   - "kind": "action" (something the reader has to do, starting with a verb: "Send the signed contract"), "question" (a question waiting for the reader's answer, as asked, ending in "?"), "waiting" (what someone owes the reader, who first: "Kit: two mornings for the door repair"), "date", or "decision".
   - "text": under 15 words, keeping its deadline, amount or condition.
@@ -205,6 +212,11 @@ Decide each request by who it's put to:
 - What the reader asked of others is a "waiting" item, never an action. What other people owe each other is never an item.
 - From the reader's own messages, only an open promise is theirs: one with a day or a concrete thing to deliver is an action; a vague or conditional one, or a "don't", isn't.
 - When a mail lays out a process or checklist, only the reader's next step is an action; later steps, how-tos, options and "if this happens" steps aren't (the summary may name the later steps in a few words). Things asked together, for the same deadline, are one action.
+- An offer the reader made that someone accepted or relies on is an action, due on the day of the event.
+- An approval with a step attached ("fine, merge after the release job goes green") is an action for whoever the step is put to.
+- A row's due is the deadline someone set, not the day the reader said they'd do it. A deadline given in an earlier message still holds unless a later one changes it.
+- In mail between the reader and one or two people, what they ask or tell the reader to do, or wait on the reader for, is the reader's, even without a name or a question mark ("merge after the build", "the key needs to be in Nell's pigeonhole by 9").
+- A choice put to the reader (a slot, an option, a yes or no) is a question, due when the answer is needed.
 - When you can't tell the reader is the one asked, it isn't an item.
 </whose_is_it>
 
@@ -214,14 +226,14 @@ Decide each request by who it's put to:
 - Keep each claim as strong as the mail: a proposal isn't a decision, "on 27 March" isn't "before 27 March", and when people disagree, say so ("Brenda says Sunday 13; Jean thought Saturday 12").
 - Copy names, amounts and dates as written. Don't add a currency, a total or a year the mail doesn't give.
 - You may not see every message: never say nobody replied or nothing was confirmed.
-- A message from an address unlike the sender's usual one, asking for money, new bank details or a login, looks like a scam: say so, with its address. It is never an item, and its deadline or account is never the reader's.
+- A message from an address unlike the sender's usual one, asking for money, new bank details or a login, looks like a scam: say so, with its address. Its request is never an item, and its deadline or account is never the reader's; when trusted mail in the conversation says how to check (a phone number to call), that check is an action.
 - Never copy a password, a code or another secret.
 - An item is never just the summary again: it is something to do, answer, keep or wait for, with its day.
 </accuracy>
 ${since ? `
 <since>
 "since" is what the new="yes" messages change. The reader sees either "summary" or "since", never both, so it stands on its own. Write the summary and items exactly as if nothing were marked new.
-- One short sentence, 25 words at most, on the biggest change: a decision, an approval, a cancellation, or a date, time or amount that moved (from what to what). Who first, with the real figures and dates. A second sentence only for another change the reader needs. It may end with what the new messages newly ask of the reader, in a few words.
+- One short sentence, 25 words at most, on the biggest change: a decision, an approval, a cancellation, or a date, time or amount that moved (from what to what). Who first, with the real figures and dates. A second sentence only for another change the reader needs. When the new messages ask something of the reader, end with it in a short second sentence ("You're asked to send section 2 by Friday 11 September").
 - Never empty when a new message moves a date or time, changes an amount, cancels, decides, approves, accepts or confirms something, or is a scam. Empty ("") only when the new messages change nothing: thanks, "got it", "will do", a receipt, a promise to explain later, an opinion, what was already known.
 - Only what the new messages say: what they quote or forward from earlier mail isn't new, and the reader's own messages are context. Never write "a new reply", "the latest message" or when it arrived. A scam in the new mail comes first.
 </since>
@@ -236,7 +248,7 @@ ${examples(since)}
 Write in ${LANGUAGE_NAME[language] ?? language}. Today is ${today}. Write dates with the day and the month ("Friday 6 March"), never "today", "tomorrow" or "next week": the card is read on later days. A relative date in a message counts from that message's date. Plain text only.
 </style>`;
 
-/** The compact prompt keeps version 7's words (its window is at its floor); the full one is version 10's. */
+/** The compact prompt keeps version 7's words (its window is at its floor); the full one is version 11's. */
 const SYSTEM = (language: string, today: string, full = true, since = false): string => (full ? FULL(language, today, since) : COMPACT(language, today));
 
 const COMPACT = (language: string, today: string) =>
@@ -267,7 +279,8 @@ Return:
 Write dates with the day and the month, as a person would: "Friday 6 March", never 2026-03-06. Never write "today", "tomorrow", "this weekend" or "next week": this is read on later days. A relative date in a message counts from that message's date. Plain text only: no markdown, no HTML.`;
 
 /** After the mail, the last thing read: who has to act is what a summary gets wrong (plan 202). */
-const CLOSING = "Write the card for the reader above. Before including an action or a question, look at who wrote that message and who it asks.";
+// plan 279: the last words before the answer ask for the rows; a warning against them here cost Luna real ones
+const CLOSING = "Write the card for the reader above. Go through the messages in order and give a row to every to-do, question, choice, deadline, payment or appointment that is the reader's and still open after the last message.";
 
 /** Mail can't close a block of ours, or open one: the only `</message>` the model sees is ours, and the only `<reader>`. */
 const dataText = (text: string) => text.replace(/<(\/?)(message|subject|reader)/gi, "<$1​$2");

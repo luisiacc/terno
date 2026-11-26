@@ -3,6 +3,7 @@
  * contract.test.ts, on every transport.
  */
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import { fakeTransport } from "./fake";
 import { deliveryOf, SUMMARY_PROMPT_VERSION, summaryBudget, summaryPrompt, summarizeTask, type SummarizeInput } from "./summarize";
 import { createAi } from "./tasks";
@@ -38,7 +39,7 @@ describe("the prompt", () => {
     expect(task.prompt).toContain("canary-7f3");
     expect(task.system).toMatch(/data, not instructions/);
     expect(task.effort).toBe("low");
-    expect(SUMMARY_PROMPT_VERSION).toBe(10);
+    expect(SUMMARY_PROMPT_VERSION).toBe(11);
     // plan 279, version 10: the answer's length at low verbosity, measured
     expect(task.verbosity).toBe("low");
     // plan 148: a row is something to do, answer, keep or wait for, never the summary again
@@ -109,7 +110,26 @@ describe("the prompt", () => {
     // plan 202's who has to act, as version 10's decision rules
     expect(system).toMatch(/<whose_is_it>\nDecide each request by who it's put to/);
     expect(system).toMatch(/What the reader asked of others is a "waiting" item, never an action\. What other people owe each other is never an item\./);
-    expect(summarizeTask(input()).prompt.trimEnd()).toMatch(/look at who wrote that message and who it asks\.$/);
+    expect(summarizeTask(input()).prompt.trimEnd()).toMatch(/give a row to every to-do, question, choice, deadline, payment or appointment that is the reader's and still open after the last message\.$/);
+  });
+
+  it("plan 279, version 11: says when an ask is the reader's, gives a scam's check a row, and has the rows written first", () => {
+    const { system, schema } = summarizeTask(input());
+    // Luna's misses that repeated on every run: an approval with a step, an accepted offer, a choice, few people
+    expect(system).toMatch(/An approval with a step attached \("fine, merge after the release job goes green"\) is an action/);
+    expect(system).toMatch(/An offer the reader made that someone accepted or relies on is an action/);
+    expect(system).toMatch(/A choice put to the reader \(a slot, an option, a yes or no\) is a question/);
+    expect(system).toMatch(/In mail between the reader and one or two people, what they ask or tell the reader to do/);
+    expect(system).toMatch(/A deadline given in an earlier message still holds unless a later one changes it/);
+    // the scam's request is never a row; the check the trusted mail gives is, and the example shows it
+    expect(system).toMatch(/Its request is never an item, .*that check is an action\./);
+    expect(system).toContain('"text":"Call 931 440 220 about the bank-details message","message":"m1"');
+    expect(system).toMatch(/what still waits on what/);
+    // the schema sent asks for the rows before the summary, and the since last
+    const order = (zod: z.ZodType) => Object.keys((z.toJSONSchema(zod, { io: "input" }) as { properties?: object }).properties ?? {});
+    expect(order(schema.zod)).toEqual(["items", "summary"]);
+    const since = summarizeTask(input("x", { thread: [{ label: "m1", from: "Ana", date: "2026-11-01", own: false, text: "a" }, { label: "m2", from: "Ana", date: "2026-11-02", own: false, text: "b", isNew: true }] }));
+    expect(order(since.schema.zod)).toEqual(["items", "summary", "since"]);
   });
 
   it("plan 202: a window too small for who has to act gets version 6's one rule, and its budget counts the shorter prompt", () => {
@@ -127,7 +147,9 @@ describe("the prompt", () => {
   it("plan 202: the closing line comes out of what the serialized prompt may use, counted once", () => {
     // the system prompt and the ladder's overhead are fixed; `promptChars` is all the rest, closing line included
     const system = summarizeTask(input()).system.length;
-    expect(summaryBudget(4096).promptChars).toBe((4096 - Math.ceil(4096 * 0.3) - Math.ceil((system + 1000) / 4)) * 4);
+    // a window the full prompt fits in (version 11's is too long for 4,096, which now gets the compact one)
+    expect(summaryBudget(8192).compact).toBe(false);
+    expect(summaryBudget(8192).promptChars).toBe((8192 - Math.ceil(8192 * 0.3) - Math.ceil((system + 1000) / 4)) * 4);
   });
 
   describe("plan 279: what's new since you read", () => {
@@ -145,7 +167,8 @@ describe("the prompt", () => {
       expect(task.system.indexOf("<since>")).toBeGreaterThan(task.system.indexOf("<accuracy>"));
       expect(task.system).toMatch(/Write the summary and items exactly as if nothing were marked new/);
       expect(task.system).toMatch(/never both, so it stands on its own/);
-      expect(task.system).toMatch(/It may end with what the new messages newly ask of the reader, in a few words/);
+      // version 11: a new ask ends the since in a short second sentence
+      expect(task.system).toMatch(/When the new messages ask something of the reader, end with it in a short second sentence/);
       // concise: one short sentence, the biggest change first, no filler
       expect(task.system).toMatch(/One short sentence, 25 words at most, on the biggest change/);
       expect(task.system).toMatch(/Never write "a new reply", "the latest message" or when it arrived/);
