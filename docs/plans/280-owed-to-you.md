@@ -1,6 +1,6 @@
 # Plan 280: Owed to you (their promises)
 
-- **Status:** plan, critiqued by Codex (12 points, all taken); "Revisions after the Codex review" overrides the sections before it. Not built.
+- **Status:** built on `feat/280-owed-to-you`, code-reviewed by Codex (one round). "Revisions after the Codex review" overrides the sections before it; "What building it changed" and "What the code review changed" override both. The real-model eval is written and not run, and the panel on a copy of a real mailbox hasn't happened: both wait for the owner's go-ahead.
 - **Builds on:** plan 142 (follow-ups), plan 204 (the dated reader of incoming mail, its marker, checks, settle and move), plan 210 (prompt versions and the panel), plan 211 (AI on by default, per account), plan 268 (CHECK lists go when their column needs a new value), plan 277 (follow-ups survive Archive).
 - **Reverses:** plan 142's "Not their promises to you" and plan 204's "never other people's promises to them" (the owner, 2026-11-25).
 
@@ -272,3 +272,62 @@ Codex (`codex exec -s read-only`, the critique in the session's scratchpad) rais
     - §4's relay close becomes revision 5's hint.
     - §8 gains `due_day`, `person_key` and `arrived_hint`, and its migration rebuilds from today's table.
     - The tests follow each revision. The conformance suite adds the admission rule, the trusted-send writes, the owed marker's exits and the rebuild's indexes.
+
+## What building it changed
+
+- **One gate for all of Follow-ups.** Received mail is marked, read and checked by the gate the sent side already uses: the AI gate, the account's AI and Show in What matters switches (`gate.reads`, plan 211), Follow-ups' own setting and `enabledAt`, and the account's Track follow-ups switch. Codex's critique (point 1) asked whether What matters' switch should govern a Follow-ups feature. Follow-ups' sent half already follows it, so the received half does the same; giving Follow-ups its own predicate would be a change for both halves, outside this plan.
+- **The task runs on the follow-ups route** (`forTask("followup")`): same provider, model and limiter task, so the monthly ceiling already counts it. Revision 4's own task key isn't needed. The transport's last look (`beforeAhead`) now runs for the `followup` task, and `FollowupWorker.holdingUp` returns at once unless a received message's reading is on its way.
+- **Item ids from 200** (`THEIRS_ITEM`). Revision 7 said 100, but that is the wait's item (`AWAITING_ITEM`).
+- **No `changed_at` or `changed_from` for a mail's move.** Those columns are the user's own schedule in What matters (Change…), and `scheduleFields` reads them into every row. A promise of theirs records the moving mail's date in `moved_at` (on v83, unshipped) instead.
+- **No `person_key` column read by name.** The debtor's key is written at insert and indexed (`followups_owed`). IndexedDB's `owed` index is in memory, filtered to open promises of theirs.
+- **The 14-day check doesn't commit a conversation at once** (revision 3). A check's rows are `from_scan`: never on the Inbox's top, never said. The check reads a conversation oldest first, in the same pass as everything else. A debt it finds marks its debtor's later received mail again (`requeue`, at most 20, once per message), so a delivery read before the debt existed is read again. Until then the row can show in the Follow-ups list, and Received closes it.
+- **A check's candidates leave out list and bulk mail.** At check time no debt exists yet for a service's notice to name.
+- **"Wrote since" is the renderer's**, read from the conversation on screen, which updates with new mail. The backend doesn't check it again when Write a follow-up starts, but nothing is ever sent by itself.
+- **The reminder's words are fixed.** They are not the promise's words, which were read from their mail: the draft reads the conversation as material.
+- **A tentative promise of theirs** stays out of the sidebar's due count as well as the Inbox's top.
+- **Settings' words:** "Keep track of promises, mine and theirs, and who owes me a reply"; the hint says mail people send you is read too. The feature's name stays Follow-ups.
+- **The worker test's model and the UI rating's stub** answer the new fields; v15's sent-mail prompt needs a 4,200-token window in its budget test (v14 needed about 3,600).
+
+## What the code review changed
+
+Codex (`codex exec -s read-only`, the review in the session's scratchpad) raised 15 findings in one round. Ten are fixed, each with a regression test that fails without the fix. The SQLite ones were checked by taking the fix out.
+
+1. **A promise from a conversation with anything in Spam was material** when only another of its messages was in Spam. `owed.openFor` leaves out any conversation with a message in Spam, in both stores. A relay's debts go through the same read (`readable`).
+2. **The last look checked ids, not revisions.** It now compares each carried promise's revision, so a move since stops the request.
+3. **Clipped evidence:** "send the contract" cut from "I can't send the contract until Friday" passed. Evidence is now judged with the whole of its sentences (`deliveredIn`), for their mail and for "got it" in yours. A file counts only when no other open promise of that person's, shown or not, could be it.
+4. **Re-queueing after a stale finish.** It happens only after a written finish.
+5. **A late-confirmed send of yours** that records their promise now reads the debtor's later mail again.
+6. **Older mail could undo a newer move.** `moved_at` (v83) stops it: mail older than the last move can't move or close the promise.
+7. **Undo at the bound** is admitted by worth, as a new row is: a promise of yours always fits, so What matters' Undo is never partial. One with no room says "There are too many follow-ups to bring this one back. Dismiss one first." and stays to try again.
+8. **A cue-free reply to your send** ("Friday.") was dropped when its wait had already closed. A reply to a trusted send of yours is now always read.
+9. **One rule (`lineRows`) for the row that speaks for a conversation:** on the Inbox's top, the row that put it there, never a tentative one beside it. The backend orders the top by the same rows.
+10. **The eval** fails on a move nobody made or a made-up deliverable (`words`).
+
+Left, with why:
+
+- **Turning off Show in What matters stops promises of theirs** (finding 4): the gate is Follow-ups' existing one (above). Marks written while the account's Track follow-ups switch is off are dropped by the worker unread, as sent mail's are.
+- **Clear AI data during a check** can let the check queue its candidates after the clear (finding 5's first half). The sent check has the same window, and what's queued is read as a new check would read it.
+- **A scan's conversation isn't committed at once** (finding 6): see "What building it changed".
+- **A relay read while its debtor's promise waits for a body** (finding 7's first half) needs both, in the same seconds.
+- **Two follow-ups' reminders in one conversation share its composer** (finding 9): the composer is one per conversation, and each follow-up keeps its own draft key. A backend preparation per follow-up is a refactor of plan 133's one-tap draft.
+- **At the bound, a rejected promise of theirs still suppresses that person's wait** (finding 11): only at 1,000 active rows.
+- **The check's candidates are capped before filtering and leave out list mail** (finding 13): the cap of 300 is the check's, as plan 211's; walking more is a follow-up if a check is seen to miss promises.
+
+## Tests run
+
+- **Typecheck:** clean.
+- **Lint:** `oxlint --deny-warnings` clean on what changed.
+- **Unit and conformance, both stores** (`store.conformance.test.ts`, `idb.conformance.test.ts`; the owed suite has 19 tests in each). These pass, apart from two older SQLite conformance tests ("a promise made one item with its request…", "the code review's second round…": `column index out of range` on a `?1` parameter in `apart`), which fail the same way on `main`.
+- **Migrations:** `migrations`, `migrations-shipped`, `migration-rule`, and IndexedDB's `owed-upgrade`.
+- **Core, AI and backend:** core `followups`; AI `followups` and `their-promises`; backend `their-promises`, `owed`, `followups`, `promise-answers`, `hand-to`, `promise-time`, `today`, `dated`, `ai-limiter`, `account-checks`. One `dated.test.ts` test ("a send between the offer and taking it…", expecting old quote marks) fails the same way on `main`.
+- **Web units:** `followups-copy`, `followup-nudge`. `packages/i18n`'s scan fails on `apps/site/src/copy/en.ts`, as on `main`.
+- **E2E** (`E2E_PORT=5791`):
+  - `followups.spec.ts`, all 9 tests, including plan 280's (axe in light and dark).
+  - `what-matters-feed`, `today`, `settings-search`, `ai-no-consent`, `hand-to`: 27 of 29 pass.
+  - `what-matters-feed.spec.ts:1194` fails on `main` too.
+  - `today.spec.ts:935` failed twice at a load of about 18 and passed four times at 4–9: flaky under load.
+- **Perf:**
+  - Follow-ups' workload gate on both stores, with a third of the 1,000 active rows promises of theirs. A sender's open promises to you take 0.34 ms on SQLite and 0.13 ms on IndexedDB, at a load of 18.
+  - `migrations.perf.test.ts`: v83 takes 166 ms with 50,000 closed follow-ups at 57,000 conversations.
+- **Not run:** `pnpm test:all`, which the migration and the store contract call for. The shared machine's load stayed between 4 and 18. The real-model eval and the panel wait for the owner's go-ahead.
+- **Visual:** the card in light and dark beside its neighbours (`FOLLOWUP_SHOTS`). It sits on the subject's column like the wait's card, and the top's heading counts only the firm promises.
