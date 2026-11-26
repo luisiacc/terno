@@ -7,7 +7,7 @@ import { ChevronLeft, Copy, SquarePen, Users } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { composeLanding } from "~/lib/compose";
 import { listDate } from "~/lib/format";
-import { leavePerson, morphName, notePagePlace, openFromPerson, pagePlaces, retryPage } from "~/lib/people";
+import { leavePerson, morphName, notePagePlace, openFromPerson, pagePlaces, retryPage, takePageFocus } from "~/lib/people";
 import { PANE_TITLE, PANE_TITLE_TOP, READING_COLUMN } from "~/lib/pane-lines";
 import { setApp, useApp } from "~/state/app";
 import { usePeople } from "~/state/people";
@@ -26,6 +26,10 @@ export function PersonPage({ inList = false }: { inList?: boolean }) {
   const page = usePeople((s) => (s.page?.key === person ? s.page : null));
   const reading = usePeople((s) => s.reading?.key === person);
   const failed = usePeople((s) => s.pageFailed !== null && s.pageFailed.key === person);
+  // Enter or → on the person's row: the keyboard comes in once the page is drawn
+  useLayoutEffect(() => {
+    if (page) takePageFocus();
+  }, [page]);
   const scroller = useRef<HTMLDivElement>(null);
   // back from a conversation opened here: where the page was, the keyboard on the line it was opened from (once)
   useLayoutEffect(() => {
@@ -107,26 +111,30 @@ function Body({ page }: { page: Page }) {
   const write = () => void composeLanding("new", null, 0, () => ({ toText: formatAddressList([{ name: page.name, email: page.email }]) }), newest?.accountId);
   return (
     <>
-      <header className="flex items-center gap-4 pb-4">
-        <SenderAvatar name={name} email={page.email} person className="size-12 text-base" />
+      {/* who, and what to do with them, on one band: the page's first screen is what's open, not its header */}
+      <header className="flex flex-wrap items-center gap-x-4 gap-y-3 pb-5">
+        <SenderAvatar name={name} email={page.email} person className="size-11 text-sm" />
         <div className="min-w-0 flex-1">
           <h1 className={cn(PANE_TITLE, "truncate")} data-testid="person-name">
             {name}
           </h1>
-          {page.name && <p className="truncate text-sm text-muted-foreground">{page.email}</p>}
-          {newest && <p className="text-sm text-muted-foreground tabular">{t("people.lastEmail", { when: listDate(newest.lastDate) })}</p>}
+          <p className="truncate text-sm text-muted-foreground tabular">
+            {page.name ? page.email : null}
+            {page.name && newest ? " · " : null}
+            {newest ? t("people.lastEmail", { when: listDate(newest.lastDate) }) : null}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <Button variant="outline" size="sm" data-testid="person-write" onClick={write}>
+            <SquarePen data-icon="inline-start" />
+            {t("people.write")}
+          </Button>
+          <Button variant="ghost" size="sm" data-testid="person-copy" onClick={() => copyAddress(page.email)} className="text-foreground-soft">
+            <Copy data-icon="inline-start" />
+            {t("threadMenu.copyAddress")}
+          </Button>
         </div>
       </header>
-      <div className="flex items-center gap-1.5 pb-4">
-        <Button variant="outline" size="sm" data-testid="person-write" onClick={write}>
-          <SquarePen data-icon="inline-start" />
-          {t("people.write")}
-        </Button>
-        <Button variant="ghost" size="sm" data-testid="person-copy" onClick={() => copyAddress(page.email)} className="text-foreground-soft">
-          <Copy data-icon="inline-start" />
-          {t("threadMenu.copyAddress")}
-        </Button>
-      </div>
       <section aria-labelledby="person-between" className="border-t border-hairline pt-5">
         <h2 id="person-between" className="flex items-center gap-2 pb-1.5 text-base font-semibold">
           {t("people.between")}
@@ -165,9 +173,11 @@ function Body({ page }: { page: Page }) {
             {page.conversations.map((c) => (
               <li key={c.id} className="group/conv relative rounded-lg hover:bg-row-hover">
                 <button type="button" data-testid="person-conversation" data-place={`conv:${c.id}`} onClick={() => openFromPerson(c.id)} className="block w-full min-w-0 rounded-lg px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                  <span className="flex min-w-0 items-baseline gap-3">
+                  <span className="relative flex min-w-0 items-baseline gap-3">
+                    {/* unread: a dot in the gutter, so every subject starts on the same line */}
+                    {c.unread && <span aria-hidden className="absolute top-[calc(0.5lh-3px)] -start-2.5 size-1.5 rounded-full bg-unread" />}
                     <span className={cn("min-w-0 flex-1 truncate", c.unread ? "type-row-subject font-semibold" : "type-row-subject")}>
-                      {c.unread && <span aria-hidden className="me-1.5 inline-block size-1.5 rounded-full bg-unread align-middle" />}
+                      {c.unread && <span className="sr-only">{t("people.unread")} </span>}
                       {c.subject || t("common.noSubject")}
                     </span>
                     <span className="shrink-0 text-sm text-row-preview tabular">{listDate(c.lastDate)}</span>

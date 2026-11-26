@@ -10,6 +10,7 @@ import { aiFeaturesOffered } from "~/lib/ai";
 import { cardOf, cardWithin, openInPeople, prefetchCard } from "~/lib/people";
 import { setApp, useApp } from "~/state/app";
 import { PersonCardHead } from "./people/person-card";
+import { SenderAvatar } from "./sender-avatar";
 import { copyAddress, SenderItems, type MenuParts } from "./sender-menu-items";
 
 const PARTS: PersonParts = { Item: DropdownMenuItem, Separator: DropdownMenuSeparator, Sub: DropdownMenuSub, SubTrigger: DropdownMenuSubTrigger, SubContent: DropdownMenuSubContent, RadioGroup: DropdownMenuRadioGroup, RadioItem: DropdownMenuRadioItem };
@@ -162,10 +163,15 @@ export function PersonMenu({ person, detail, offerReplyOnly, className, children
         {children}
       </DropdownMenuTrigger>
       {/* as wide as what it says, not as the chip (a first name is narrower than "Conversations with …") */}
-      <DropdownMenuContent className="w-auto max-w-80 min-w-56" data-testid="person-menu" aria-label={fullName(person)} finalFocus={() => !handedOff.current}>
-        <div className="px-2 pt-1 pb-1.5 text-xs" data-testid="person-menu-who">
-          <p className="truncate font-semibold">{person.name}</p>
-          {person.name !== person.email && <p className="truncate text-muted-foreground">{person.email}</p>}
+      {/* plan 281: with their card, as wide as its lines need (a subject is longer than an action's words) */}
+      <DropdownMenuContent className={cn("w-auto min-w-56", peopleOn && card ? "max-w-96" : "max-w-80")} data-testid="person-menu" aria-label={fullName(person)} finalFocus={() => !handedOff.current}>
+        {/* plan 281: who, as the person's page and People's rows show them: their face, then the name above the menu's words */}
+        <div className="flex items-center gap-2.5 px-2 pt-1.5 pb-2" data-testid="person-menu-who">
+          <SenderAvatar name={person.name} email={person.email} person className="size-8 text-xs" />
+          <div className="min-w-0">
+            <p className="truncate text-base font-semibold">{person.name}</p>
+            {person.name !== person.email && <p className="truncate text-xs text-muted-foreground">{person.email}</p>}
+          </div>
         </div>
         {peopleOn && card && <PersonCardHead page={card} threadId={detail.thread.id} />}
         <DropdownMenuSeparator />

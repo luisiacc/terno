@@ -97,6 +97,8 @@ let pageSeq = 0;
 /** Selects a person: their page shows (the reader in Split, the list's pane in List), read now (again, if it didn't come). */
 export function selectPerson(key: string, email: string): void {
   const s = getApp();
+  // another person: the one held in place goes back to where the list puts them
+  if (usePeople.getState().held?.key !== key) usePeople.setState({ held: null });
   if (s.person === key && s.selectedId === null && usePeople.getState().page?.key === key) return;
   setApp({ person: key, selectedId: null, anchorId: null, readerOpen: false });
   void loadPage(key, email);
@@ -109,7 +111,7 @@ export function leavePerson(): void {
   pageSeq++;
   opening++;
   setApp({ person: null, selectedId: null, anchorId: null });
-  usePeople.setState({ page: null, reading: null, pageFailed: null });
+  usePeople.setState({ page: null, reading: null, pageFailed: null, held: null });
   requestAnimationFrame(() => peopleList.toKey?.(key, true));
 }
 
@@ -226,7 +228,20 @@ export async function actOnPersonItem(item: PersonItem, action: "done" | "dismis
   const id = personItemId(item);
   const gone = action !== "later";
   settling++;
-  if (gone) takeOff(id);
+  holdPerson();
+  if (gone) {
+    // the keyboard goes to the next item (else the one before, else the page's New message), never to nowhere
+    const items = usePeople.getState().page?.items ?? [];
+    const i = items.findIndex((x) => personItemId(x) === id);
+    const next = items[i + 1] ?? items[i - 1];
+    const hadFocus = document.activeElement?.closest("[data-testid=person-item]") !== null;
+    takeOff(id);
+    if (hadFocus) {
+      requestAnimationFrame(() =>
+        (next ? document.querySelector<HTMLElement>(`[data-testid=person-item][data-item="${CSS.escape(personItemId(next))}"] [data-testid=person-item-open]`) : document.querySelector<HTMLElement>("[data-testid=person-write]"))?.focus({ preventScroll: true }),
+      );
+    }
+  }
   const left: LeftRows = {
     // Undo's answer lands as the act's did: the list and the page together, in one morph
     async undo(run) {
@@ -240,9 +255,59 @@ export async function actOnPersonItem(item: PersonItem, action: "done" | "dismis
   if (item.kind === "awaiting") await actOnFollowup(item.row, action, at, left);
   else {
     const task = taskOf(item.item.why, Date.now(), item.item.thread);
-    if (task) await actOnTask(task, action, at, left);
+    // (a waiting conversation's snack names what was done, its subject: on a person's page, who it's with goes without saying)
+    if (task) await actOnTask(task.kind === "waiting" ? { ...task, name: item.item.thread.subject?.trim() || task.name } : task, action, at, left);
   }
   await settle(gone ? [id] : []);
+}
+
+/** The selected person's row is kept where it is in Open while they stay selected (an act may change their place). */
+function holdPerson(): void {
+  const key = getApp().person;
+  const { list, held } = usePeople.getState();
+  if (key === null || held?.key === key || !list) return;
+  const index = list.open.findIndex((p) => p.key === key);
+  if (index >= 0) usePeople.setState({ held: { key, index } });
+}
+
+/**
+ * D, ⇧D and b on an item of a person's page with the keyboard on it: Done, Remove and its Later menu, as What matters'
+ * keys do on its rows. False when the keyboard isn't on one (the keys are What matters' then).
+ */
+export function personKeyAct(action: "done" | "dismiss" | "later"): boolean {
+  if (!getApp().people) return false;
+  const el = document.activeElement?.closest<HTMLElement>("[data-testid=person-item]");
+  const id = el?.dataset.item;
+  const item = id ? usePeople.getState().page?.items.find((x) => personItemId(x) === id) : undefined;
+  if (!el || !item) return false;
+  if (action === "later") el.querySelector<HTMLElement>("[data-testid=person-item-later]")?.click();
+  else void actOnPersonItem(item, action);
+  return true;
+}
+
+/** Enter and → on a person's row: their page, the keyboard on its first item (or New message) once it's drawn. */
+let focusPage = false;
+export function enterPerson(key: string, email: string): void {
+  focusPage = true;
+  selectPerson(key, email);
+  if (usePeople.getState().page?.key === key) takePageFocus();
+}
+
+/** The page drawn: the keyboard comes in when it was asked to (Enter or → on its row). */
+export function takePageFocus(): void {
+  if (!focusPage) return;
+  const target = document.querySelector<HTMLElement>("[data-testid=person-page] [data-testid=person-item-open]") ?? document.querySelector<HTMLElement>("[data-testid=person-page] [data-testid=person-write]");
+  if (!target) return;
+  focusPage = false;
+  target.focus({ preventScroll: true });
+}
+
+/** ← and Esc on a person's page (Split): the keyboard back on their row. */
+export function backToRow(): boolean {
+  const key = getApp().person;
+  if (!getApp().people || key === null || listLayout() || !document.activeElement?.closest("[data-testid=person-page]")) return false;
+  peopleList.toKey?.(key, true);
+  return true;
 }
 
 /** The item leaves the page and its person's row now, in one morph, and stays out of any read until its act has settled. */
@@ -306,10 +371,10 @@ export function openInPeople(email: string): void {
  * a person's page over it give way first (the field is the list's).
  */
 export function focusPeopleSearch(): void {
-  if (listLayout()) {
-    if (currentPage() !== "list") closePage();
-    leavePerson();
-  }
+  // at once where the field is on screen (a frame's wait loses what's typed next); after the page gives way in List
+  if (!listLayout() || (currentPage() === "list" && getApp().person === null)) return void peopleList.focusSearch?.();
+  if (currentPage() !== "list") closePage();
+  leavePerson();
   requestAnimationFrame(() => peopleList.focusSearch?.());
 }
 

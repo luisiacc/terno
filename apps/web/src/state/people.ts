@@ -19,9 +19,14 @@ export interface PeopleState {
   failed: boolean;
   /** the page that didn't come, to try again */
   pageFailed: { key: string; email: string } | null;
+  /**
+   * The person being worked on, kept where their row was in Open while they stay selected: an act that changes what's
+   * open with them (their last item done: nothing open) never moves the row from under the user. Let go on another person.
+   */
+  held: { key: string; index: number } | null;
 }
 
-export const usePeople = create<PeopleState>(() => ({ list: null, query: "", hits: null, page: null, reading: null, failed: false, pageFailed: null }));
+export const usePeople = create<PeopleState>(() => ({ list: null, query: "", hits: null, page: null, reading: null, failed: false, pageFailed: null, held: null }));
 
 /** One row of People's list: a heading, or a person (with what's open, or what the index knows of them). */
 export type PeopleRow =
@@ -33,7 +38,7 @@ export type PeopleRow =
  * heading, a heading only over rows. An Everyone entry's row is made once (the same object while the entry is), so a
  * reload that kept Everyone draws none of its rows again.
  */
-export function peopleRows(list: PeopleList | null, query: string, hits: PeopleSearch | null): PeopleRow[] {
+export function peopleRows(list: PeopleList | null, query: string, hits: PeopleSearch | null, held: PeopleState["held"] = null): PeopleRow[] {
   const rows: PeopleRow[] = [];
   if (query.trim()) {
     if (!hits) return rows;
@@ -42,12 +47,23 @@ export function peopleRows(list: PeopleList | null, query: string, hits: PeopleS
     return rows;
   }
   if (!list) return rows;
-  if (list.open.length) {
+  const openRows: PeopleRow[] = list.open.map((p) => ({ kind: "person", id: p.key, key: p.key, email: p.email, name: p.name, last: 0, open: p, openCount: p.items.length }));
+  const open = new Set(list.open.map((p) => p.key));
+  // the person being worked on stays where their row was (with nothing open now, it says so)
+  if (held) {
+    const at = openRows.findIndex((r) => r.id === held.key);
+    const entry = list.everyone?.find((p) => p.key === held.key);
+    const row = at >= 0 ? openRows.splice(at, 1)[0] : entry ? ({ kind: "person", id: entry.key, key: entry.key, email: entry.email, name: entry.name || entry.email, last: entry.last, open: { key: entry.key, email: entry.email, name: entry.name || entry.email, items: [] }, openCount: 0 } as PeopleRow) : null;
+    if (row) {
+      openRows.splice(Math.min(held.index, openRows.length), 0, row);
+      open.add(held.key);
+    }
+  }
+  if (openRows.length) {
     rows.push({ kind: "heading", id: "open", count: list.open.length });
-    for (const p of list.open) rows.push({ kind: "person", id: p.key, key: p.key, email: p.email, name: p.name, last: 0, open: p, openCount: p.items.length });
+    rows.push(...openRows);
   }
   // Everyone holds the open people too, at their places (so one whose last item goes falls in there): left out here
-  const open = new Set(list.open.map((p) => p.key));
   const everyone: PeopleRow[] = [];
   for (const p of list.everyone ?? []) if (!open.has(p.key)) everyone.push(entryRow(p));
   if (everyone.length) {

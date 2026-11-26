@@ -449,6 +449,14 @@ describe("People's lists (plan 281)", () => {
     expect(c.people("pri")[0]).toMatchObject({ written: false });
   });
 
+  it("people: a piece of an address finds whoever's address holds it (a domain with its dot, a common provider)", async () => {
+    const c = await built([sent([ana]), received(priya), received({ name: "Sofía Romero", email: "sofia.romero27@gmail.com" })]);
+    expect(c.people("acme.studio").map((p) => p.email)).toEqual([ana.email]);
+    expect(c.people("greenway.studio").map((p) => p.email)).toEqual([priya.email]);
+    expect(c.people("gmail").map((p) => p.email)).toEqual(["sofia.romero27@gmail.com"]);
+    expect(c.people("@gmail.com").map((p) => p.email)).toEqual(["sofia.romero27@gmail.com"]);
+  });
+
   it("person: what's known of one address, any case", async () => {
     const c = await built([sent([ana])]);
     expect(c.person("ANA.martinez@acme.studio")).toMatchObject({ name: "Ana Martínez", written: true });

@@ -22,7 +22,7 @@ import { printCommand } from "~/lib/print-open";
 import { checkForUpdates } from "~/lib/updates";
 import { closeEmptySearch, focusRows, focusSearch, listScroller } from "~/components/thread-list";
 import { closeFeedConversation } from "~/lib/feed-pane";
-import { closePersonConversation, focusPeopleSearch, leavePerson, movePerson } from "~/lib/people";
+import { backToRow, closePersonConversation, focusPeopleSearch, leavePerson, movePerson, personKeyAct } from "~/lib/people";
 import { popupOpen } from "~/components/composer/controller";
 import { feedPlace, feedScroller, focusFeed, openFeedKeyRow } from "~/lib/feed-focus";
 import { snackbarControls } from "~/components/category-snackbar";
@@ -209,7 +209,7 @@ function escape() {
   if (!s.checked.size && !s.scope && closeFeedConversation()) return;
   // plan 281: a conversation opened from a person's page goes back to the page (Split); in List, the page over the list
   // closes as any page does, and from a person's page there, Esc goes back to the list
-  if (closePersonConversation()) return;
+  if (closePersonConversation() || backToRow()) return;
   if (s.people && s.person !== null && listLayout() && currentPage() === "list") return leavePerson();
   if (listLayout() && currentPage() !== "list") { markSelectionIntent(); closePage({ focus: true }); }
   // plan 161, pass 2: a matched conversation open in the reader closes first, back to the rule; then the preview ends
@@ -327,10 +327,10 @@ const DECIDES: Partial<Record<Command, () => boolean>> = {
   "pane.next": () => getApp().dialog === null && !getApp().menuOpen && movePane(1),
   "pane.prev": () => getApp().dialog === null && !getApp().menuOpen && movePane(-1),
   // plan 204 (after the panel): Done on Today's selected row with a date or a promise; elsewhere the key is left alone
-  "today.done": () => !digestHasKeys() && doneOnSelected(),
+  "today.done": () => !digestHasKeys() && (personKeyAct("done") || doneOnSelected()),
   // plan 210 (iteration 1, the owner): Later (b) and Remove (⇧D) on that same item, by the same rule
-  "today.later": () => !digestHasKeys() && laterOnSelected(),
-  "today.remove": () => !digestHasKeys() && removeOnSelected(),
+  "today.later": () => !digestHasKeys() && (personKeyAct("later") || laterOnSelected()),
+  "today.remove": () => !digestHasKeys() && (personKeyAct("dismiss") || removeOnSelected()),
   // plan 210 (iteration 5): Change… (⇧B) and Hand to… (⇧F) on that same item
   "today.change": () => !digestHasKeys() && changeOnSelected(),
   "today.handTo": () => !digestHasKeys() && handOnSelected(),

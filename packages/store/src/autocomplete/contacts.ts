@@ -896,9 +896,19 @@ export class ContactIndex {
    * addresses, at most `limit` (50).
    */
   people(query: string, limit = 50): PersonEntry[] {
-    return this.matching(query, { exclude: this.own }, Math.max(1, Math.min(limit, 50)))
-      .filter((id) => !(this.flags[id]! & OWN))
-      .map((id) => this.entry(id));
+    const max = Math.max(1, Math.min(limit, 50));
+    const ids = this.matching(query, { exclude: this.own }, max).filter((id) => !(this.flags[id]! & OWN));
+    // a piece of an address ("acme.studio", "gmail", "@proton"): whoever's address holds it, best first, after the prefix
+    // matches (a common provider's name isn't a token, and a domain with its dot is two)
+    const piece = query.trim().toLowerCase();
+    if (ids.length < max && piece.length >= 3 && !/\s/.test(piece) && /[.@]|^[a-z0-9-]+$/.test(piece)) {
+      const seen = new Set(ids);
+      const more: number[] = [];
+      for (let id = 0; id < this.n; id++) if (!seen.has(id) && !(this.flags[id]! & (OWN | DEAD)) && this.emails[id]!.includes(piece)) more.push(id);
+      more.sort((a, b) => this.key[b]! - this.key[a]! || this.last[b]! - this.last[a]! || a - b);
+      ids.push(...more.slice(0, max - ids.length));
+    }
+    return ids.map((id) => this.entry(id));
   }
 
   /**

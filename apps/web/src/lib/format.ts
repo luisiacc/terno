@@ -90,7 +90,9 @@ export function fullDate(ms: number): string {
 }
 
 export function initials(name: string): string {
-  const parts = name.replace(/[<>"]/g, "").trim().split(/\s+/).filter(Boolean);
+  // (plan 281: "Ana Muñoz (Orbita Labs)" is Ana Muñoz: a company in parentheses isn't part of the name)
+  const bare = name.replace(/\s*\([^)]*\)\s*/g, " ").trim();
+  const parts = (bare || name).replace(/[<>"()]/g, "").trim().split(/\s+/).filter(Boolean);
   return ((parts[0]?.[0] ?? "?") + (parts.length > 1 ? parts[parts.length - 1]![0] : "")).toUpperCase();
 }
 

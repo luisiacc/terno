@@ -74,9 +74,10 @@ test("People: the row below the Inbox, Open and the search, a person's page, Don
     await expect(page.getByTestId("list-title")).toHaveText("People");
     await expect(page.getByTestId("nav-people")).toHaveAttribute("aria-current", "page");
     await expect(page.getByTestId("people-heading").first()).toContainText("Open");
-    // Ana's newest thing open with you leads her row, under her name, not naming her again
-    await expect(row(page, "Ana Ruiz").first()).toContainText("Waiting on you");
+    // Ana's newest thing open with you leads her row, under her name, not naming her again: what it is (its kind, the
+    // usual one, said to a screen reader)
     await expect(row(page, "Ana Ruiz").first()).toContainText("Phase 2 scope");
+    await expect(row(page, "Ana Ruiz").first()).toHaveAttribute("aria-description", /Waiting on you/);
   });
 
   await scenario("the search finds people by a name's start and by domain, marks what matched, and Esc clears it", async () => {
@@ -148,6 +149,28 @@ test("People: the row below the Inbox, Open and the search, a person's page, Don
     await expect(page.locator(`[data-testid=person-row][aria-current=true]`)).not.toHaveAttribute("data-key", "ana.ruiz@greenway.studio");
     await page.keyboard.press("k");
     expect(first).not.toBeNull();
+  });
+
+  await scenario("the keyboard all the way: / types at once, ↓ onto the rows, Enter into the page, D finishes the item and the keyboard moves on", async () => {
+    await page.keyboard.press("/");
+    await page.keyboard.type("ana r");
+    await expect(page.getByTestId("people-search")).toHaveValue("ana r");
+    await expect(row(page, "Ana Ruiz")).toHaveCount(1);
+    await page.keyboard.press("ArrowDown");
+    await expect(page.locator("[data-testid=person-row]:focus")).toHaveAttribute("data-key", "ana.ruiz@greenway.studio");
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("person-name")).toHaveText("Ana Ruiz");
+    await expect(page.locator("[data-testid=person-item-open]:focus")).toHaveCount(1);
+    const before = await items(page).count();
+    await page.keyboard.press("d");
+    await expect(items(page)).toHaveCount(before - 1);
+    // the keyboard is on the next thing, not nowhere
+    await expect(page.locator("[data-testid=person-page] :focus")).toHaveCount(1);
+    await page.keyboard.press("z");
+    await expect(items(page)).toHaveCount(before, { timeout: 8000 });
+    // Esc: back on her row
+    await page.keyboard.press("Escape");
+    await expect(page.locator("[data-testid=person-row]:focus")).toHaveAttribute("data-key", "ana.ruiz@greenway.studio");
   });
 });
 

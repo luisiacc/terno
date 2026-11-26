@@ -4,7 +4,10 @@ import { DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSep
 import { listDate } from "~/lib/format";
 import { openThread } from "~/lib/page";
 import { noteOpen } from "~/lib/reminders";
-import { itemGlyph, itemLine, itemWhen } from "./person-item";
+import { formatNumber } from "@terno/i18n";
+import { Badge } from "@terno/ui/components/badge";
+import { personKey } from "@terno/core";
+import { itemGlyph, itemParts, itemWhen, kindSaid } from "./person-item";
 
 /** the card's open items, at most (their page has the rest) */
 const SHOWN = 4;
@@ -30,14 +33,24 @@ export function PersonCardHead({ page, threadId }: { page: PersonPage; threadId:
         <>
           <DropdownMenuSeparator />
           <DropdownMenuGroup data-testid="person-card-open">
-            <DropdownMenuLabel>{t("people.between")}</DropdownMenuLabel>
+            <DropdownMenuLabel className="flex items-center gap-2">
+              {t("people.between")}
+              <Badge variant="neutral" className="tabular">
+                {formatNumber(page.items.length)}
+              </Badge>
+            </DropdownMenuLabel>
             {items.map((item) => {
               const Glyph = itemGlyph(item);
               const when = itemWhen(item);
+              const parts = itemParts(item);
               return (
                 <DropdownMenuItem key={personItemId(item)} data-testid="person-card-item" onClick={() => go(personItemThread(item).id)}>
                   <Glyph />
-                  <span className="min-w-0 flex-1 truncate">{itemLine(item)}</span>
+                  {/* what it is first, as the list and the page say it; its kind only when it isn't the usual one */}
+                  <span className="min-w-0 flex-1 truncate">
+                    {kindSaid(item) ? <span className="text-muted-foreground">{parts.label} · </span> : <span className="sr-only">{parts.label}: </span>}
+                    {parts.text}
+                  </span>
                   {when.text && <DropdownMenuShortcut className={when.late ? "tracking-normal text-destructive-ink tabular-nums" : "tracking-normal tabular-nums"}>{when.text}</DropdownMenuShortcut>}
                 </DropdownMenuItem>
               );
@@ -49,7 +62,7 @@ export function PersonCardHead({ page, threadId }: { page: PersonPage; threadId:
         <>
           <DropdownMenuSeparator />
           <DropdownMenuGroup data-testid="person-card-last">
-            <DropdownMenuLabel>{t("people.lastTime")}</DropdownMenuLabel>
+            <DropdownMenuLabel>{t("people.lastEmailFrom", { name: personKey(last.fromEmail) === page.key ? last.fromName || page.name || page.email : t("people.fromYou") })}</DropdownMenuLabel>
             <DropdownMenuItem data-testid="person-card-last-item" onClick={() => go(last.id)} className="items-start">
               <span className="min-w-0 flex-1">
                 <span className="flex min-w-0 items-baseline gap-3">

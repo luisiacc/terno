@@ -1,6 +1,6 @@
 import { t } from "@terno/i18n";
 import { announce } from "~/lib/announce";
-import { useApp, type AppState } from "~/state/app";
+import { getApp, useApp, type AppState } from "~/state/app";
 import { useList } from "~/state/list";
 
 /** How many conversations the selection holds: "select all N" counts its whole mailbox. */
@@ -17,6 +17,8 @@ export function installListSpeech(): () => void {
   const offList = useList.subscribe((l, prev) => {
     if (l.key !== prev.key) waiting.key = document.activeElement?.closest("#app-sidebar") ? l.key : null;
     if (!waiting.key || l.loading || l.itemsKey !== waiting.key) return;
+    // (plan 281: People's list isn't the mail list's: it has nothing to say of conversations)
+    if (getApp().people) return void (waiting.key = null);
     waiting.key = null;
     const mailbox = document.querySelector("#app-list h1")?.textContent?.trim() ?? "";
     const count = l.items.length;

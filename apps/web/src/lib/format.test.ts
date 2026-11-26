@@ -2,7 +2,7 @@ import { setLocale } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { afterEach, describe, expect, it } from "vitest";
-import { formatBytes, fullDate, listDate, messageDate, messageTime, viewLabel } from "./format";
+import { formatBytes, fullDate, initials, listDate, messageDate, messageTime, viewLabel } from "./format";
 
 afterEach(() => setLocale("en", en));
 
@@ -75,5 +75,14 @@ describe("labels and sizes", () => {
     expect(messageTime(earlier, now)).not.toBe("");
     // today, the day is the time: nothing more to say
     expect(messageTime(new Date(2026, 9, 22, 9, 27).getTime(), now)).toBe("");
+  });
+});
+
+describe("initials (plan 281)", () => {
+  it("a company in parentheses is not part of the name", () => {
+    expect(initials("Ana Muñoz (Orbita Labs)")).toBe("AM");
+    expect(initials("Tomás Smith (Banco Andino)")).toBe("TS");
+    expect(initials("(Acme)")).toBe("A");
+    expect(initials("Liam Taylor")).toBe("LT");
   });
 });

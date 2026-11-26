@@ -47,6 +47,24 @@ describe("the list's rows", () => {
   });
 });
 
+describe("the person being worked on", () => {
+  it("keeps their row where it was in Open; with nothing open any more, it stays there saying so, until another is chosen", () => {
+    const base: PeopleList = { open: [open("a@x.test", "A", [waiting(1, "One")]), open("ana@x.test", "Ana Ruiz", [waiting(2, "Two")]), open("c@x.test", "C", [waiting(3, "Three")])], everyone: [{ name: "Ana Ruiz", email: "ana@x.test", key: "ana@x.test", last: 0, written: true }], everyoneVersion: 1, index: "ready" };
+    const held = { key: "ana@x.test", index: 1 };
+    // the list put her last (an act changed her place): she stays second
+    const moved = { ...base, open: [base.open[0]!, base.open[2]!, base.open[1]!] };
+    expect(peopleRows(moved, "", null, held).filter((r) => r.kind === "person").map((r) => r.id)).toEqual(["a@x.test", "ana@x.test", "c@x.test"]);
+    // her last item done: still second, nothing open, and not in Everyone twice
+    const done = { ...base, open: [base.open[0]!, base.open[2]!] };
+    const rows = peopleRows(done, "", null, held);
+    expect(rows.filter((r) => r.kind === "person").map((r) => r.id)).toEqual(["a@x.test", "ana@x.test", "c@x.test"]);
+    expect(rows.find((r) => r.id === "ana@x.test")).toMatchObject({ openCount: 0, open: { items: [] } });
+    expect(rows.find((r) => r.kind === "heading" && r.id === "open")).toMatchObject({ count: 2 });
+    // let go: she goes where the list puts her (Everyone)
+    expect(peopleRows(done, "", null, null).map((r) => r.id)).toEqual(["open", "a@x.test", "c@x.test", "everyone", "ana@x.test"]);
+  });
+});
+
 describe("what a search matched", () => {
   it("each word at a word's start, accents and case aside", () => {
     expect(matchedParts("Andrés López", "lop")).toEqual([{ text: "Andrés ", hit: false }, { text: "Lóp", hit: true }, { text: "ez", hit: false }]);
