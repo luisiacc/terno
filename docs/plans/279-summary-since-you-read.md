@@ -501,3 +501,23 @@ On Sol's reading, Luna now misses no more than Sonnet and makes fewer serious er
 Spend for this round:
 - $108.48 on the two ledgers that hit their cap ($95.96 Sonnet judging, $8.01 Sol judging, $4.51 Luna cards);
 - plus $10.41 for the last runs (`spend-p279d`): $118.89 in all.
+
+## Sending hard conversations to Sonnet
+
+> im good with sending hard comversations to a different model like sonnet, but we need a really good identifier of what is a hard conversation
+
+**Privacy.** This stays within plan 168's routing. Pro, and a user with both keys, already send other jobs to Claude. With only an OpenAI key, Luna keeps every conversation.
+
+**What the data can say today** (offline, no spend; Luna version 11's four runs and Sonnet's one run, judged by GPT Sol; `scratchpad/hard.py`, `hard2.py`, `noise.py`):
+- **Luna's struggles are predictable.** The time Luna took on a card scores AUC 0.86 for "Luna has a serious finding", and the number of messages 0.81. Every other mail or card signal is weaker. Luna disagreeing with itself is no better than chance.
+- **Where Sonnet gains is not.** On a conversation Luna finds hard, Sonnet often struggles too: "Luna fails" predicts "Sonnet does better" at AUC 0.60. No signal correlates with Sonnet's gain (|ρ| ≤ 0.17).
+  - Picking the best signal and threshold on half the conversations and applying it to the other half gains +0.04 rely at 25% routed.
+  - Routing a random 25% would gain about +0.07.
+- **The per-conversation gain is mostly noise.** The same conversation's score moves by 1 point or more between two Luna runs 60% of the time (SD of the difference 1.32). Sonnet's gain per conversation, from its one run, spreads about as much as one run's noise alone (SD 0.96). No identifier can be learned from one Sonnet run.
+
+**What it needs** (after 1 December, when Anthropic's API usage limit resets):
+- Sonnet and Luna, both on version 11, three runs each, on about 190 conversations: the 96 and the rest of the fictional set.
+- Judging by Sol, and by Sonnet once.
+- The runner now records each card's output tokens (Luna's thinking counts), a cleaner signal than its time.
+
+Then, first, does Sonnet's gain repeat on the same conversations across runs? If it doesn't, no identifier exists, and routing is only a share. If it does, test the signals on a held-out half: Luna's tokens, the messages, and a Luna self-check call (AutoMix).

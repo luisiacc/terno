@@ -262,6 +262,8 @@ describe.skipIf(!RUN)("summaries over the corpus", () => {
     const notesFor = new Map<string, string>();
     /** plan 279's annotation: what's appended after the mail, by the exact prompt it belongs to */
     const extraFor = new Map<string, string>();
+    /** plan 279's routing: the output tokens of each call made for a card, by the card's prompt */
+    const tokensFor = new Map<string, number[]>();
     const transport = {
       ...budgeted,
       complete: (req: Parameters<typeof budgeted.complete>[0], ...rest: unknown[]) => {
@@ -306,7 +308,14 @@ describe.skipIf(!RUN)("summaries over the corpus", () => {
         const rowsFirst = process.env.TERNO_AI_SUMMARY_ROWS_FIRST === "1" && req.schema?.name === "thread_summary";
         const hasSince = rowsFirst && "since" in ((z.toJSONSchema(req.schema!.zod, { io: "input" }) as { properties?: object }).properties ?? {});
         const schema = rowsFirst ? { name: "thread_summary", zod: rowsFirstWire(hasSince) } : req.schema;
-        return (budgeted.complete as (...a: unknown[]) => ReturnType<typeof budgeted.complete>)({ ...req, system, messages, effort, reasoningEffort, ...(schema ? { schema } : {}), ...(verbosity ? { verbosity } : {}) }, ...rest);
+        const done = (budgeted.complete as (...a: unknown[]) => ReturnType<typeof budgeted.complete>)({ ...req, system, messages, effort, reasoningEffort, ...(schema ? { schema } : {}), ...(verbosity ? { verbosity } : {}) }, ...rest);
+        // plan 279's routing: the tokens each card's calls wrote (a reasoning model's thinking counts), by the card's prompt
+        const key = promptText(req.messages[0]!.content);
+        return done.then((r) => {
+          const u = r.usage;
+          if (u) tokensFor.set(key, [...(tokensFor.get(key) ?? []), u.outputTokens]);
+          return r;
+        });
       },
     };
     const ai = createAi({ id: provider, model: MODEL, apiKey: realKeys()[provider], fetch: globalThis.fetch, timeoutMs: 120_000, maxRetries: 0 }, { transport });
@@ -377,7 +386,8 @@ describe.skipIf(!RUN)("summaries over the corpus", () => {
               }, { output: "json_schema", signal: new AbortController().signal });
             }
             const newLabels = input.filter((t) => t.isNew).map((t) => t.label);
-            appendFileSync(path, `${JSON.stringify({ id: c.id, set: c.set, language: readerLanguage(c), ms: Date.now() - started, summary: r.summary, items: r.items, ...(itemsA ? { itemsA } : {}), ...(draft ? { draft: { summary: draft.summary, items: draft.items, since: draft.since ?? "" } } : {}), ...(samples ? { samples } : {}), ...(asked ? { newLabels, since: r.since ?? "" } : {}), ...(tailKind ? { tail: conv.messages.at(-1)!.text } : {}) })}\n`);
+            const tokens = tokensFor.get(summaryPrompt({ subject: request.subject, thread: request.thread, reader: request.reader }));
+            appendFileSync(path, `${JSON.stringify({ id: c.id, set: c.set, language: readerLanguage(c), ms: Date.now() - started, ...(tokens ? { tokens } : {}), summary: r.summary, items: r.items, ...(itemsA ? { itemsA } : {}), ...(draft ? { draft: { summary: draft.summary, items: draft.items, since: draft.since ?? "" } } : {}), ...(samples ? { samples } : {}), ...(asked ? { newLabels, since: r.since ?? "" } : {}), ...(tailKind ? { tail: conv.messages.at(-1)!.text } : {}) })}\n`);
           } catch (e) {
             failed++;
             appendFileSync(path, `${JSON.stringify({ id: c.id, set: c.set, language: readerLanguage(c), ms: Date.now() - started, error: e instanceof Error ? `${e.name}: ${e.message}`.slice(0, 200) : "unknown" })}\n`);
