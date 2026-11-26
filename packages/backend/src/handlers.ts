@@ -310,6 +310,11 @@ export function createHandlers(b: Backend): Handlers {
   /** The reader's: how many conversations a rule that's off still keeps put away (Stop's second step); nobody else pays the scan */
   const withHolding = async (p: PutAwayDetail | null): Promise<PutAwayDetail | null> =>
     p?.detail.by === "rule" && p.ruleLive && !p.ruleEnabled ? { ...p, ruleHolding: (await store.putAway.byRule(p.detail.filterId, p.detail.ruleHash, b.now())).length } : p;
+  /** A rule changed: forwards follow it, and Put away's boxes say it (a rule turned off in Rules, plan 282's third rating) */
+  const rulesChanged = async () => {
+    await b.forwards.rules();
+    b.putAwayChanged();
+  };
   const placedAt = async (threadId: number, at: number) => {
     const placed = await store.putAway.of(threadId, b.now());
     if (!placed || placed.at !== at) throw new RpcError("BAD_REQUEST", L("errors.putAway.changed"));
@@ -824,7 +829,7 @@ export function createHandlers(b: Backend): Handlers {
     },
     "categories.delete": async ({ id }) => {
       await store.categories.delete(id);
-      await b.forwards.rules();
+      await rulesChanged();
       b.categorizer.dropCategory(id);
       b.server.emit("categories", await store.categories.list());
       b.notifyChanged([]);
@@ -1060,12 +1065,12 @@ export function createHandlers(b: Backend): Handlers {
       const before = p.id === undefined ? [] : ((await store.filters.get(p.id))?.rule.actions ?? []);
       for (const a of p.rule.actions) if (a.type === "moveToFolder" && !before.some((x) => x.type === "moveToFolder" && x.accountId === a.accountId && x.folder === a.folder)) await requireFolder(a.accountId, a.folder);
       const f = await store.filters.save(p, b.now());
-      await b.forwards.rules();
+      await rulesChanged();
       return f;
     },
     "filters.setEnabled": async ({ ids, enabled }) => {
       const r = await similarFilters.setEnabled(ids, enabled);
-      await b.forwards.rules();
+      await rulesChanged();
       return r;
     },
     "filters.autoFor": async ({ categoryId, threadIds }) => {
@@ -1084,7 +1089,7 @@ export function createHandlers(b: Backend): Handlers {
       await store.filters.delete(id);
       // a learned filter gone: its offer may come back
       b.learningChanged();
-      await b.forwards.rules();
+      await rulesChanged();
       return { ok: true as const };
     },
     "filters.preview": ({ rule, limit }) => store.filters.preview(rule, b.now(), limit),
@@ -1201,7 +1206,7 @@ export function createHandlers(b: Backend): Handlers {
     "categories.setForward": async ({ categoryId, forward }) => {
       if (forward && JSON.stringify(forward.addresses).length > FORWARD_ADDRESSES_MAX_CHARS) throw new RpcError("BAD_REQUEST", L("filters.invalid.forwardTooMany"));
       if (!(await store.forwards.setCategory(categoryId, forward, b.now()))) throw new RpcError("NOT_FOUND", L("errors.categoryGone"));
-      await b.forwards.rules();
+      await rulesChanged();
       b.forwards.poke();
       const list = await store.categories.list();
       b.server.emit("categories", list);
@@ -1767,7 +1772,7 @@ export function createHandlers(b: Backend): Handlers {
       // checked again where it's written (an edit between the two reads keeps the rule on)
       const r = await similarFilters.setEnabled([placed.detail.filterId], false, (f) => ruleHash(f.rule) === hash);
       if (r.changed === 0) throw new RpcError("BAD_REQUEST", L("errors.putAway.changed"));
-      await b.forwards.rules();
+      await rulesChanged();
       return { filterUndo: r.filterUndo };
     },
     "putAway.byRule": async ({ threadId, at }) => {

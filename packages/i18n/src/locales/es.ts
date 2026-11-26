@@ -3630,6 +3630,8 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "putAway.box.label": "Por qué está fuera de la bandeja de entrada",
   "putAway.action.back": "Volver a la bandeja de entrada",
   "putAway.action.keep": "Preguntar antes de poner a {sender}",
+  "putAway.action.notHint": "Lo saca de {category} y lo devuelve a Entrada, y Terno aprende que no va ahí",
+  "putAway.action.keepHint": "Lo saca de {category}; desde ahora Terno pregunta antes de poner ahí el correo nuevo de {sender}",
   "putAway.action.edit": "Editar regla",
   "putAway.action.bringBack": { one: "Traer de vuelta la conversación que sacó", other: "Traer de vuelta las # que sacó" },
   "putAway.action.stop": "Detener esta regla",

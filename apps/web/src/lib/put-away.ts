@@ -9,7 +9,7 @@ import { client } from "~/rpc/connection";
 import { getApp, setApp } from "~/state/app";
 import { reloadList } from "~/state/list";
 import { markReturned, usePutAway } from "~/state/put-away";
-import { invalidateThreads, loadThread } from "~/state/threads";
+import { invalidateThreads, loadThread, useThreads } from "~/state/threads";
 
 /**
  * Plan 282: Put away in the app. What a placement says (a row's short line here, the reader box's sentence in
@@ -255,6 +255,19 @@ export async function editRule(threadId: number, filterId: number): Promise<void
   } catch {
     setApp({ dialog: "filters" });
   }
+}
+
+/**
+ * Something Put away says changed (a rule turned off in Rules, in this window or another, or mail put away): the open
+ * conversation's box reads again, and Put away's rows with it
+ */
+export function putAwayNews(): void {
+  const id = getApp().selectedId;
+  if (id !== null && useThreads.getState().details.get(id)?.putAway) {
+    invalidateThreads([id]);
+    void loadThread(id, true);
+  }
+  if (getApp().putAway) void reloadList({ keepSelection: true });
 }
 
 /** The newest mark this window acknowledged: an answer counted before it is stale */

@@ -3,7 +3,7 @@ import { Announcement } from "@terno/ui/components/announcement";
 import { Button } from "@terno/ui/components/button";
 import { useEffect, type RefObject } from "react";
 import { richT } from "~/lib/i18n";
-import { refreshNotice, seeNotice } from "~/lib/put-away";
+import { putAwayNews, refreshNotice, seeNotice } from "~/lib/put-away";
 import { client } from "~/rpc/connection";
 import { navigate, useApp } from "~/state/app";
 import { NOTICE_H, usePutAway } from "~/state/put-away";
@@ -21,7 +21,10 @@ export function PutAwaySource() {
     if (inbox) void refreshNotice();
   }, [inbox]);
   useEffect(() => {
-    const offEvent = client.on("putAwayChanged", () => void refreshNotice());
+    const offEvent = client.on("putAwayChanged", () => {
+      void refreshNotice();
+      putAwayNews();
+    });
     const offAttach = client.onAttach(() => void refreshNotice());
     return () => {
       offEvent();

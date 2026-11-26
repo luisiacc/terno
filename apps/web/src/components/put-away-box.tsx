@@ -1,6 +1,7 @@
 import type { PutAwayDetail } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { useRef, type ReactNode } from "react";
 import { dayDate } from "~/lib/format";
 import { richT } from "~/lib/i18n";
@@ -31,7 +32,8 @@ export function PutAwayBox({ threadId, placed }: { threadId: number; placed: Put
   const keepFocus = (run: () => Promise<void>) => () => (box.current?.contains(document.activeElement) ? keepFocusThrough(run, () => box.current) : void run());
   let sentence: ReactNode;
   const notes: string[] = [];
-  const actions: { label: string; testId: string; run: () => Promise<void> }[] = [{ label: t("putAway.action.back"), testId: "put-away-back", run: () => backToInbox([{ threadId, at }]) }];
+  // `hint`: what it does, said before it's pressed (the third rating: its scope came only in the snack)
+  const actions: { label: string; testId: string; hint?: string; run: () => Promise<void> }[] = [{ label: t("putAway.action.back"), testId: "put-away-back", run: () => backToInbox([{ threadId, at }]) }];
   if (d.by === "terno") {
     const category = categoryName(names, d.categoryId);
     const sender = senderOf(d);
@@ -39,10 +41,10 @@ export function PutAwayBox({ threadId, placed }: { threadId: number; placed: Put
     const why = identity ? t(`putAway.why.${identity.k}`, { count: identity.count, sender, domain: identity.domain }) : words.length ? t("putAway.why.like", { reasons: words.join(" · ") }) : t("putAway.why.likeBare");
     sentence = richT("putAway.box.terno", { category, why, b: strong });
     if (identity && words.length) notes.push(t("putAway.box.also", { reasons: words.join(" · ") }));
-    actions.push({ label: t("reader.category.notIt", { category }), testId: "put-away-not", run: () => notCategory(threadId, at, category) });
+    actions.push({ label: t("reader.category.notIt", { category }), testId: "put-away-not", hint: t("putAway.action.notHint", { category }), run: () => notCategory(threadId, at, category) });
     // said once: afterwards the box says it's done instead of offering it again
     if (placed.senderKept) notes.push(t("putAway.box.kept", { sender }));
-    else if (d.sender) actions.push({ label: t("putAway.action.keep", { sender }), testId: "put-away-keep", run: () => keepSenderOut(threadId, at, sender, category) });
+    else if (d.sender) actions.push({ label: t("putAway.action.keep", { sender }), testId: "put-away-keep", hint: t("putAway.action.keepHint", { sender, category }), run: () => keepSenderOut(threadId, at, sender, category) });
   } else {
     const values = { name: d.name, category: categoryName(names, d.categoryId), folder: folderName(names, d.folder), date: dayDate(d.createdAt), b: strong };
     sentence = !placed.ruleLive ? richT("putAway.box.changed", { name: d.name, b: strong }) : d.auto ? richT(`putAway.box.auto.${d.action}`, values) : richT(`putAway.box.rule.${d.action}`, values);
@@ -63,14 +65,25 @@ export function PutAwayBox({ threadId, placed }: { threadId: number; placed: Put
           <span key={n}> {n}</span>
         ))}
       </p>
-      {/* real buttons (the UI rating: links read as prose, and were as tall as their text): Back to Inbox leads as the primary, the rest after */}
+      {/* real buttons (the UI rating: links read as prose, and were as tall as their text): Back to Inbox leads as the primary, the rest on the secondary fill
+          (an outline read as disabled in dark, the third rating) */}
       <div className="mt-1.5 flex flex-wrap items-center gap-2">
-        {actions.map((a, i) => (
+        {actions.map((a, i) => {
           // a long name wraps inside its button rather than past the reader's edge
-          <Button key={a.testId} variant={i === 0 ? "default" : "outline"} size="sm" data-testid={a.testId} className="h-auto min-h-7 max-w-full py-1 text-left whitespace-normal" onClick={keepFocus(a.run)}>
-            {a.label}
-          </Button>
-        ))}
+          const button = (
+            <Button key={a.testId} variant={i === 0 ? "default" : "secondary"} size="sm" data-testid={a.testId} aria-description={a.hint} className="h-auto min-h-7 max-w-full py-1 text-left whitespace-normal" onClick={keepFocus(a.run)}>
+              {a.label}
+            </Button>
+          );
+          return a.hint ? (
+            <Tooltip key={a.testId}>
+              <TooltipTrigger render={button} />
+              <TooltipContent className="max-w-64">{a.hint}</TooltipContent>
+            </Tooltip>
+          ) : (
+            button
+          );
+        })}
       </div>
     </section>
   );

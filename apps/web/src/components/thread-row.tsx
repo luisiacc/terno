@@ -5,7 +5,7 @@ import { Badge } from "@terno/ui/components/badge";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import type { RowLines } from "@terno/ui/designs/rows";
 import { cn } from "@terno/ui/lib/utils";
-import { AlarmClock, Check, Paperclip, Star } from "@terno/ui/icons";
+import { AlarmClock, Check, FolderInput, Inbox, Paperclip, Star } from "@terno/ui/icons";
 import { memo } from "react";
 import { formatList, formatNumber, t } from "@terno/i18n";
 import { listDate } from "~/lib/format";
@@ -265,6 +265,9 @@ function PlacedLine({ placed }: { placed: PlacedView }) {
   // preview's, since it's what the view is for (the UI rating)
   return (
     <span data-testid="row-put-away" data-returned={placed.returned || undefined} title={placed.line} className={cn(placed.returned ? "text-foreground" : "text-foreground-soft")}>
+      {/* the view's own mark (the sidebar's), so the reason reads as why it's here and not as the mail's words (the UI
+          rating); brought back, the Inbox's */}
+      {placed.returned ? <Inbox aria-hidden className="mr-1 inline size-3 -translate-y-px align-middle" /> : <FolderInput aria-hidden className="mr-1 inline size-3 -translate-y-px align-middle" />}
       <span className="sr-only">{placed.section}: </span>
       {placed.line}
     </span>

@@ -320,16 +320,18 @@ function heldOnly(items: ThreadSummary[], top: readonly number[] = inboxTop.ids)
 }
 
 /**
- * Plan 282 (the owner): in Put away, the open conversation a fix took back to the Inbox stays at its place, as a filtered
- * list keeps the one you read; it goes once the selection moves off it.
+ * Plan 282 (the owner): in Put away, what a fix here brought back stays at its place, saying so, until you leave Put away
+ * (one another window moved simply leaves).
  */
-function holdOpen(items: ThreadSummary[], before: readonly ThreadSummary[]): ThreadSummary[] {
-  const open = getApp().selectedId;
-  // only what a fix here brought back: one another window moved simply leaves
-  if (open === null || !usePutAway.getState().returned.has(open) || items.some((t) => t.id === open)) return items;
-  const at = before.findIndex((t) => t.id === open);
-  if (at < 0) return items;
-  return [...items.slice(0, at), before[at]!, ...items.slice(at)];
+function holdReturned(items: ThreadSummary[], before: readonly ThreadSummary[]): ThreadSummary[] {
+  const { returned } = usePutAway.getState();
+  if (returned.size === 0) return items;
+  const have = new Set(items.map((t) => t.id));
+  const out = [...items];
+  before.forEach((t, at) => {
+    if (returned.has(t.id) && !have.has(t.id)) out.splice(Math.min(at, out.length), 0, t);
+  });
+  return out;
 }
 
 /**
@@ -548,7 +550,7 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
       return;
     }
     if (scope?.kind === "search" && scope.filter && (sameView || options.keepSelection)) page = keepSearchRows(page, current.items);
-    if (getApp().putAway && (sameView || options.keepSelection)) page = { ...page, items: holdOpen(page.items, current.items) };
+    if (getApp().putAway && (sameView || options.keepSelection)) page = { ...page, items: holdReturned(page.items, current.items) };
     if (scope?.filter) page = { ...page, items: heldOnly(page.items, top.ids) };
     // the window refresh keeps the first visible row where it was (new mail above it doesn't push it down): always after a page
     // (Back finds what it left), and on the list unless it's at the very top (there, new mail shows as it arrives)
@@ -822,14 +824,9 @@ useApp.subscribe((s, prev) => {
   if (s.today && prev.settings && s.settings && s.settings.today?.finished !== prev.settings.today?.finished) void reloadList({ keepSelection: true });
 });
 
-// plan 282: the conversation Put away held under the reader after a fix goes once the selection moves off it, and every
-// such row once the view does
+// plan 282: the rows Put away held after its fixes go once you leave it
 useApp.subscribe((s, prev) => {
-  if (!s.putAway && prev.putAway) return forgetReturned();
-  if (!s.putAway || !prev.putAway || s.selectedId === prev.selectedId || prev.selectedId === null) return;
-  if (!usePutAway.getState().returned.has(prev.selectedId) || !useList.getState().index.has(prev.selectedId)) return;
-  forgetReturned([prev.selectedId]);
-  void reloadList({ keepSelection: true });
+  if (!s.putAway && prev.putAway) forgetReturned();
 });
 
 // Any change of view / account / category / query reloads the list (navigation,

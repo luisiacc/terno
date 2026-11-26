@@ -92,13 +92,20 @@ test.describe("Put away (plan 282)", () => {
       await expect(rows(page).nth(1)).toHaveAttribute("data-cursor", "true");
       await expect(rows(page).nth(1).getByTestId("row-put-away")).toHaveText("Today: Back in the Inbox");
       await expect(page.getByTestId("put-away-day-label")).toContainText("Today");
-      // it leaves once the selection moves off it (Codex review #6)
+      // it stays, saying so, while you're in Put away (the owner, after the third rating: one or several alike)
       await rows(page).nth(0).click();
-      await expect(rows(page)).toHaveCount(1);
+      await expect(rows(page)).toHaveCount(2);
+      await expect(rows(page).nth(1).getByTestId("row-put-away")).toHaveText("Today: Back in the Inbox");
       await page.keyboard.press("z");
       await expect(rows(page)).toHaveCount(2);
       await rows(page).filter({ hasText: "291 gadgets" }).click();
       await expect(page.getByTestId("put-away-box")).toBeVisible();
+      // the rule turned off elsewhere (Rules, another window): the open box says so at once (the third rating)
+      const xatakaRule = (await store.filters.list()).find((f) => f.name === "Xataka")!;
+      await server.backend.server.invoke("filters.setEnabled", { ids: [xatakaRule.id], enabled: false }, { clientId: "elsewhere", origin: "dev" as const });
+      await expect(page.getByTestId("put-away-why")).toContainText("That rule is off now.");
+      await server.backend.server.invoke("filters.setEnabled", { ids: [xatakaRule.id], enabled: true }, { clientId: "elsewhere", origin: "dev" as const });
+      await expect(page.getByTestId("put-away-why")).not.toContainText("That rule is off now.");
     });
 
     await scenario("Terno's own rule: Stop this rule turns it off", async () => {
@@ -137,10 +144,12 @@ test.describe("Put away (plan 282)", () => {
       await rows(page).nth(1).click({ modifiers: ["Meta"] });
       await page.getByTestId("bar-inbox").click();
       await expect(page.getByTestId("snack-message")).toHaveText("2 back in the Inbox");
-      // the open one stays under the reader until the selection moves
-      await expect(rows(page)).toHaveCount(1);
+      // several brought back stay as one does, each saying so
+      await expect(rows(page)).toHaveCount(2);
+      await expect(page.locator("[data-testid=row-put-away][data-returned]")).toHaveCount(2);
       await page.keyboard.press("z");
       await expect(rows(page)).toHaveCount(2);
+      await expect(page.locator("[data-testid=row-put-away][data-returned]")).toHaveCount(0);
     });
 
     await scenario("a rule that's off: Bring back all it put away, with one Undo", async () => {
@@ -158,10 +167,11 @@ test.describe("Put away (plan 282)", () => {
       await expect(box.getByTestId("put-away-why")).toHaveText("Your rule “Xataka” archived this. That rule is off now.");
       await box.getByTestId("put-away-bring-back").click();
       await expect(page.getByTestId("snack-message")).toHaveText("2 back in the Inbox");
-      // the open one stays under the reader; the other leaves
-      await expect(rows(page)).toHaveCount(2);
-      await page.keyboard.press("z");
+      // both stay, saying so
       await expect(rows(page)).toHaveCount(3);
+      await expect(page.locator("[data-testid=row-put-away][data-returned]")).toHaveCount(2);
+      await page.keyboard.press("z");
+      await expect(page.locator("[data-testid=row-put-away][data-returned]")).toHaveCount(0);
     });
   });
 });
