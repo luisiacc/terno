@@ -893,10 +893,10 @@ export class ContactIndex {
 
   /**
    * Plan 281: People's search: suggest's matching and ranking (names, initials, addresses, domains), never the user's own
-   * addresses, at most `limit` (100: People asks for more than it shows, and leaves out who isn't a person).
+   * addresses, at most `limit` (200: People asks for more than it shows, and leaves out who isn't a person).
    */
   people(query: string, limit = 50): PersonEntry[] {
-    const max = Math.max(1, Math.min(limit, 100));
+    const max = Math.max(1, Math.min(limit, 200));
     const ids = this.matching(query, { exclude: this.own }, max).filter((id) => !(this.flags[id]! & OWN));
     // a piece of an address ("acme.studio", "gmail", "@proton"): whoever's address holds it, best first, after the prefix
     // matches (a common provider's name isn't a token, and a domain with its dot is two)

@@ -216,9 +216,30 @@ describe("only people (owner, after the QA panel)", () => {
     expect(without.open).toEqual([]);
     expect(without.everyone!.map((p) => p.email)).not.toContain("rita@people.test");
     expect(await hits("rita")).toEqual([]);
-    await client.call("people.setRule", { email: "stripe@stripe.com", name: "Stripe", person: true });
     await client.call("people.setRule", { email: "receipts@stripe.com", name: "Stripe", person: true });
     expect(await hits("stripe")).toEqual(["receipts@stripe.com"]);
+  });
+
+  it("Everyone is sent again when a rule changes, though the renderer holds the index's version (Codex review)", async () => {
+    const { client, to } = await setup();
+    await to("Rita", "rita@people.test");
+    await client.call("people.ready", {});
+    const first = await client.call("people.list", {});
+    expect(first.everyone!.map((p) => p.email)).toContain("rita@people.test");
+    await client.call("people.setRule", { email: "rita@people.test", name: "Rita", person: false });
+    const without = await client.call("people.list", { known: first.everyoneVersion });
+    expect(without.everyone?.map((p) => p.email)).not.toContain("rita@people.test");
+    await client.call("people.removeRule", { email: "rita@people.test" });
+    const back = await client.call("people.list", { known: without.everyoneVersion });
+    expect(back.everyone?.map((p) => p.email)).toContain("rita@people.test");
+  });
+
+  it("a role address is a person once you've written to it under any tag, as the facts judge it (Codex review)", async () => {
+    const { client, from, to } = await setup();
+    await to("Acme support", "support+ticket-12@acme.test");
+    await from("Acme support", "support@acme.test");
+    await client.call("people.ready", {});
+    expect((await client.call("people.list", {})).open.map((p) => p.email)).toEqual(["support@acme.test"]);
   });
 });
 
@@ -230,6 +251,16 @@ describe("one person", () => {
     const page = (await client.call("people.person", { email: "ana@people.test" }))!;
     expect(page.conversations.map((t) => t.id).sort()).toEqual([theirs, group].sort());
     expect(page.wrote).toEqual([theirs]);
+  });
+
+  it("a tagged address's own mail is theirs (Codex review); the card asks no more than its conversations", async () => {
+    const { backend, client, from } = await setup();
+    const theirs = await from("Ana", "ana+work@people.test", { waiting: false });
+    expect((await client.call("people.person", { email: "ana+work@people.test" }))!.wrote).toEqual([theirs]);
+    const search = vi.spyOn(backend.store.threads, "searchText");
+    const card = (await client.call("people.person", { email: "ana+work@people.test", conversations: 2, except: theirs }))!;
+    expect(card.wrote).toBeUndefined();
+    expect(search).toHaveBeenCalledTimes(1);
   });
 
   it("a promise put off with Later stays on their page, saying when it's back", async () => {

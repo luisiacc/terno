@@ -506,10 +506,17 @@ export function movePerson(delta: number): void {
 export function openInPeople(email: string): void {
   const s = getApp();
   const key = personKey(email);
-  // where it was asked from (a conversation): Esc on their page goes back there (owner, after the QA panel)
-  const from: Return | null = s.people
+  // where it was asked from (a conversation): Esc on their page goes back there (owner, after the QA panel). A rule's
+  // preview is no place to come back to (leaving it ends it, as Review's way back has it); a conversation opened from
+  // another person's page is (Codex review): that person, People's search, the conversation
+  const at = pageAddress();
+  const from: Return | null = s.actionPreview
     ? null
-    : { person: key, selectedId: s.selectedId, query: s.query, place: { view: s.view, accountId: s.accountId, categoryId: s.categoryId, reviewCategoryId: s.reviewCategoryId, folder: s.folder, gmailTab: s.gmailTab, reminders: s.reminders, followups: s.followups, putAway: s.putAway, today: s.today } };
+    : s.people
+      ? s.selectedId !== null && at
+        ? { person: key, selectedId: s.selectedId, within: { person: at.key, email: at.email, query: usePeople.getState().query } }
+        : null
+      : { person: key, selectedId: s.selectedId, mailbox: { query: s.query, solo: s.soloAccountId, place: { view: s.view, accountId: s.accountId, categoryId: s.categoryId, reviewCategoryId: s.reviewCategoryId, folder: s.folder, gmailTab: s.gmailTab, reminders: s.reminders, followups: s.followups, putAway: s.putAway, today: s.today } } };
   if (!s.people) openPeople();
   if (usePeople.getState().query) searchPeople("");
   enterPerson(key, email);
@@ -517,10 +524,13 @@ export function openInPeople(email: string): void {
 }
 
 interface Return {
+  /** whose page "Open in People" went to */
   person: string;
   selectedId: number | null;
-  query: string;
-  place: Required<Omit<Parameters<typeof navigate>[0], "people">>;
+  /** asked from a mailbox: its place, a search's words, the account a search was focused on (plan 108) */
+  mailbox?: { query: string; solo: number | null; place: Required<Omit<Parameters<typeof navigate>[0], "people">> };
+  /** asked from a conversation opened on another person's page: that person, People's search */
+  within?: { person: string; email: string; query: string };
 }
 /** (an object's property, not a module let: the React Compiler and a read-then-reset of a let don't mix) */
 const cameFrom: { at: Return | null } = { at: null };
@@ -536,8 +546,15 @@ export function returnFromPeople(): boolean {
   const el = document.activeElement;
   if (el && el !== document.body && !el.closest("[data-testid=person-page]")) return false;
   cameFrom.at = null;
-  navigate(r.place);
-  if (r.query) setApp({ query: r.query });
+  if (r.within) {
+    if (usePeople.getState().query !== r.within.query) searchPeople(r.within.query);
+    selectPerson(r.within.person, r.within.email);
+    if (r.selectedId !== null) openFromPerson(r.selectedId);
+    return true;
+  }
+  if (!r.mailbox) return true;
+  navigate(r.mailbox.place);
+  if (r.mailbox.query || r.mailbox.solo !== null) setApp({ query: r.mailbox.query, soloAccountId: r.mailbox.solo });
   if (r.selectedId !== null) {
     noteOpen(r.selectedId);
     openThread(r.selectedId);

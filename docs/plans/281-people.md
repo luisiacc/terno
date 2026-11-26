@@ -210,3 +210,14 @@ The branch was rebased onto main first (plan 278's "who is a person" rules, plan
 10. **Only people in People.** The search, Everyone and Open leave out an address that isn't a person by plan 278's rule on an address alone (`senderIsPerson(addressOnly(...))`: a no-reply, a role or service address you've never written to, your word on the sender, Always or Never), and a sender whose mail was marked as spam (the index's `spam()`); the grouping is read again when the rules change (`rulesChanged`), and the renderer on `personRules`.
 11. **Later's "Pick a date…"**, What matters' own picker (`LaterDialog`, shared with `TodayLaterDialog`), on the page's Later menu and the card's.
 12. **Selection and hover in Graphite and Atelier dark** stay as they are.
+
+## What the Codex review of the decisions changed
+
+Astra (gpt-6.2-astra) on 114e090fa, nine findings, all taken (each test fails without its fix):
+
+- Esc after Open in People: never back to a rule's preview (going to People ended it, as Review's way back has it); the account a search was focused on comes back with its words (plan 108); from a conversation opened on another person's page, back to that person, People's search and the conversation. Tests: Esc after Open in People (three).
+- Everyone's version is the index's scores and the rules together: a rule set or removed sends Everyone again though the renderer holds the index's version. Test.
+- "Not from" asks the store for the address as seen (a `+tag` kept), so a tagged sender's own mail is theirs; the card never asks (it doesn't show it). Test.
+- Written to is plan 17's correspondents, by `addressKey` (the facts' and the Inbox filter's rule): `support+ticket@` written makes `support@` someone's, for the search, Everyone and Open alike. Test.
+- The search asks the index for four times what it shows (at most 200) before leaving out who isn't a person.
+- "How long" counts calendar days: yesterday at 4 PM is "1 day" at noon. Test.

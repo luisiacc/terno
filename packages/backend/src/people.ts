@@ -15,6 +15,8 @@ export class PeopleService {
   /** plan 278's rules (your word on who is a person), read once per change of them */
   private rules: { at: number; map: Promise<ReadonlyMap<string, boolean>> } | null = null;
   private rulesAt = 0;
+  /** Everyone's version as the renderer holds it: the index's scores and the rules (either changes who's in it) */
+  private everyoneAt: { score: number; rules: number; version: number } = { score: -1, rules: -1, version: 0 };
 
   constructor(private readonly b: Backend) {}
 
@@ -28,10 +30,12 @@ export class PeopleService {
     const open = await this.open();
     const index = this.b.autocomplete.peopleIndex();
     if (!index) return { open, everyone: [], everyoneVersion: -1, index: this.indexState() };
-    const version = index.scoreVersion;
+    if (this.everyoneAt.score !== index.scoreVersion || this.everyoneAt.rules !== this.rulesAt) this.everyoneAt = { score: index.scoreVersion, rules: this.rulesAt, version: this.everyoneAt.version + 1 };
+    const version = this.everyoneAt.version;
     if (known === version) return { open, everyoneVersion: version, index: "ready" };
     const mine = await this.mine();
-    const person = await this.isPerson();
+    // (each written to: no correspondents to look up)
+    const person = await this.isPerson([]);
     // one person under two spellings once, and never you, nor a sender that isn't a person; the open people are in it too,
     // each at their place, so one whose last item goes falls into it there (the list leaves them out while they're open)
     const seen = new Set<string>();
@@ -61,11 +65,12 @@ export class PeopleService {
     const now = this.b.now();
     const open = new Map((await this.open()).map((p) => [p.key, p.items.filter((i) => personItemBackNow(i, now)).length]));
     const mine = await this.mine();
-    const person = await this.isPerson();
+    // (asked for more than are shown: senders that aren't people are left out after)
+    const found = index.people(query, PEOPLE_SEARCH_MAX * 4);
+    const person = await this.isPerson(found.map((h) => h.email));
     const seen = new Set<string>();
     const hits = [];
-    // (asked for more than are shown: senders that aren't people are left out after)
-    for (const h of index.people(query, PEOPLE_SEARCH_MAX * 2)) {
+    for (const h of found) {
       const key = personKey(h.email);
       if (mine.has(key) || seen.has(key) || !person(h.email)) continue;
       seen.add(key);
@@ -91,7 +96,8 @@ export class PeopleService {
     const shown = page?.items ?? [];
     // which of them they wrote in (the rest, a group email they were only on): theirs are a subset, newest first by the
     // same date, so the newest `want` of theirs hold every one of these they wrote
-    const wrote = want > 0 && shown.length > 0 ? await this.wroteIn(email, want, shown) : undefined;
+    // (the card says who wrote its last one: none asked for it)
+    const wrote = except === undefined && want > 0 && shown.length > 0 ? await this.wroteIn(email, want, shown) : undefined;
     const name = this.b.autocomplete.peopleIndex()?.person(email)?.name || found?.name || "";
     const last = except === undefined ? undefined : shown.find((t) => t.id !== except);
     const lastSummary = last ? (await this.b.today.summaryLine(last.id)).summary : undefined;
@@ -111,7 +117,8 @@ export class PeopleService {
   }
 
   private async wroteIn(email: string, want: number, shown: readonly ThreadSummary[]): Promise<number[]> {
-    const address = addressKey(email);
+    // the address as it was seen, as the page's own search has it (a +tag is another sender's address to the store)
+    const address = email.trim().toLowerCase();
     if (!address.includes("@") || /[\s"]/.test(address)) return shown.map((t) => t.id);
     const theirs = await this.b.store.threads.searchText({ query: `from:${address}`, place: "all", limit: want, now: this.b.now() });
     const ids = new Set(theirs.items.map((t) => t.id));
@@ -127,7 +134,7 @@ export class PeopleService {
    * Who counts as a person in People (plan 278's rule on an address alone): never a sender of mail marked as spam, then your
    * word on them, then the guesses (a no-reply, a role or service address, only when you've written to it).
    */
-  private async isPerson(): Promise<(email: string) => boolean> {
+  private async isPerson(emails: Iterable<string>): Promise<((email: string) => boolean) & { written: (email: string) => boolean }> {
     if (this.rules?.at !== this.rulesAt) {
       const map = this.b.store.facts.rules.list().then((rules) => new Map(rules.map((r) => [r.key, r.person])));
       this.rules = { at: this.rulesAt, map };
@@ -137,7 +144,14 @@ export class PeopleService {
     }
     const rules = await this.rules.map;
     const index = this.b.autocomplete.peopleIndex();
-    return (email) => !index?.spam(email) && senderIsPerson(addressOnly(email), { written: () => index?.person(email)?.written === true, rule: (key) => rules.get(key) });
+    // written to by key (plan 17's correspondents, as the facts and the Inbox's filter judge them: `support+ticket@` written
+    // is `support@`'s), looked up only for those the index doesn't already say you've written to
+    const ask = new Set<string>();
+    for (const e of emails) if (index?.person(e)?.written !== true) ask.add(addressKey(e));
+    const keys = ask.size ? await this.b.store.dated.written([...ask]) : new Set<string>();
+    const written = (email: string) => index?.person(email)?.written === true || keys.has(addressKey(email));
+    const person = (email: string) => !index?.spam(email) && senderIsPerson(addressOnly(email), { written: () => written(email), rule: (key) => rules.get(key) });
+    return Object.assign(person, { written });
   }
 
   private indexState(): PeopleList["index"] {
@@ -175,7 +189,10 @@ export class PeopleService {
   private async group(owed: boolean): Promise<PersonOpen[]> {
     const index = this.b.autocomplete.peopleIndex();
     const mine = await this.mine();
-    const person = await this.isPerson();
+    const items = await this.b.today.openItems();
+    const owedRows = owed ? await this.owedToYou() : [];
+    const addresses = [...items.flatMap((i) => [i.why.personEmail, i.from?.email, i.thread.fromEmail]), ...owedRows.map((r) => r.row.personEmail)].filter((e): e is string => !!e?.trim());
+    const person = await this.isPerson(addresses);
     const people = new Map<string, PersonOpen>();
     const give = (email: string | null | undefined, name: string | null | undefined, item: PersonItem) => {
       const address = email?.trim();
@@ -189,11 +206,11 @@ export class PeopleService {
     };
     // What matters' order is the order of urgency (Missed, today, waiting on you, the days ahead, Coming up); a row that
     // carries the reply's other promises (`also`) is one act, so it's given whole to its own person
-    for (const item of await this.b.today.openItems()) {
-      const who = personOf(item, (email) => index?.person(email)?.written === true);
+    for (const item of items) {
+      const who = personOf(item, person.written);
       if (who) give(who.email, who.name, { kind: "today", item });
     }
-    if (owed) for (const r of await this.owedToYou()) give(r.row.personEmail, r.row.personName, { kind: "awaiting", row: r.row, thread: r.thread });
+    for (const r of owedRows) give(r.row.personEmail, r.row.personName, { kind: "awaiting", row: r.row, thread: r.thread });
     // each one's items, and Open, in People's order: who's waited longest first, what's put off last
     const now = this.b.now();
     for (const p of people.values()) {

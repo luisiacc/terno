@@ -72,7 +72,9 @@ const DAY = 86_400_000;
  * the same for a screen reader ("Open for 3 days").
  */
 export function waited(since: number, now = Date.now()): { text: string; said: string } {
-  const days = Math.floor((now - since) / DAY);
+  // by the calendar: yesterday at 4 PM is a day ago at noon (Codex review)
+  const midnight = (ms: number) => new Date(ms).setHours(0, 0, 0, 0);
+  const days = Math.round((midnight(now) - midnight(since)) / DAY);
   if (days < 1) return { text: t("people.age.today"), said: t("people.ageSaidToday") };
   const text = days < 14 ? t("people.age.days", { count: days }) : days < 60 ? t("people.age.weeks", { count: Math.floor(days / 7) }) : t("people.age.months", { count: Math.floor(days / 30) });
   return { text, said: t("people.ageSaid", { age: text }) };

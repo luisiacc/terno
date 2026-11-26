@@ -11,7 +11,7 @@ vi.mock("~/rpc/connection", () => ({ client: { call: (...a: unknown[]) => call(.
 
 const { matchedParts, peopleRows, usePeople } = await import("~/state/people");
 const { getApp, navigate, ownList, setApp } = await import("~/state/app");
-const { withoutItem, withoutListItem, actOnPersonItem, movePerson, selectPerson, searchPeople, enterSearch, installPeople } = await import("~/lib/people");
+const { withoutItem, withoutListItem, actOnPersonItem, movePerson, selectPerson, searchPeople, enterSearch, installPeople, openInPeople, returnFromPeople } = await import("~/lib/people");
 installPeople();
 const { closePage } = await import("~/lib/page");
 const { useAppearance } = await import("~/lib/appearance");
@@ -105,6 +105,9 @@ describe("an item in a few words", () => {
     const ago = (days: number) => waited(now - days * 86_400_000, now).text;
     expect([ago(0.5), ago(1), ago(13), ago(14), ago(59), ago(61)]).toEqual(["Today", "1 day", "13 days", "2 weeks", "8 weeks", "2 months"]);
     expect(waited(now - 3 * 86_400_000, now).said).toBe("Open for 3 days");
+    // by the calendar (Codex review): yesterday at 4 PM, at noon, is a day; earlier this morning is today
+    expect(waited(new Date(2026, 10, 24, 16).getTime(), now).text).toBe("1 day");
+    expect(waited(new Date(2026, 10, 25, 1).getTime(), now).text).toBe("Today");
   });
 });
 
@@ -298,5 +301,48 @@ describe("Done by a click (Codex review of the QA fixes)", () => {
     expect(document.querySelector<HTMLElement>("[data-testid=person-page]")!.dataset.shield).toBe("");
     await acting;
     document.body.innerHTML = "";
+  });
+});
+
+describe("Esc after Open in People (owner, after the QA panel; Codex review)", () => {
+  const page = (key: string): PersonPage => ({ key, email: key, name: key, items: [], conversations: [], more: false });
+  const answer = () =>
+    call.mockImplementation(async (method: string, p: { email?: string }) => {
+      if (method === "people.person") return page(p.email!);
+      if (method === "people.list") return { open: [], everyone: [], everyoneVersion: 1, index: "ready" };
+      if (method === "people.search") return { hits: [], index: "ready" };
+      return null;
+    });
+
+  it("back to the mailbox, its search and the account it was focused on", () => {
+    answer();
+    navigate({ view: "inbox", accountId: 2 });
+    setApp({ soloAccountId: 2, query: "budget", selectedId: 5 });
+    openInPeople("ana@x.test");
+    expect(getApp()).toMatchObject({ people: true, person: "ana@x.test", soloAccountId: null });
+    expect(returnFromPeople()).toBe(true);
+    expect(getApp()).toMatchObject({ people: false, accountId: 2, soloAccountId: 2, query: "budget" });
+    // once: Esc is People's own again
+    expect(returnFromPeople()).toBe(false);
+  });
+
+  it("no way back to a rule's preview (leaving it ended it)", () => {
+    answer();
+    navigate({ view: "inbox" });
+    setApp({ actionPreview: "p-1", selectedId: 5 } as never);
+    openInPeople("ana@x.test");
+    expect(returnFromPeople()).toBe(false);
+  });
+
+  it("from a conversation opened on another person's page: that person again, People's search kept", async () => {
+    answer();
+    navigate({ people: true });
+    selectPerson("bo@x.test", "bo@x.test");
+    await vi.waitFor(() => expect(usePeople.getState().page?.key).toBe("bo@x.test"));
+    setApp({ selectedId: 7 });
+    openInPeople("marco@x.test");
+    expect(getApp().person).toBe("marco@x.test");
+    expect(returnFromPeople()).toBe(true);
+    expect(getApp()).toMatchObject({ people: true, person: "bo@x.test" });
   });
 });
