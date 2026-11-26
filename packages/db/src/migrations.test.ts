@@ -28,7 +28,7 @@ const ADDED: Record<number, { dated?: Record<string, unknown>; followups?: Recor
   // (iteration 5)
   71: { dated: { part_of_day: null }, followups: { part_of_day: null } },
   // plan 280: their promises (a firm one by default)
-  85: { followups: { firm: 1, due_day: null, person_key: null, arrived_hint: null, moved_at: null } },
+  85: { followups: { firm: 1, due_day: null, person_key: null, arrived_hint: null, moved_at: null, moved_by: null } },
 };
 /** the columns `table` gains migrating from `from` to today's schema, from iteration 4's migrations */
 const addedSince = (from: number, table: "dated" | "followups" | "drafts"): Record<string, unknown> =>

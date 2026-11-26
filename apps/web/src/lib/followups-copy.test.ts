@@ -88,10 +88,10 @@ describe("a promise never names its person twice (plan 210, iteration 3)", () =>
 describe("a promise of theirs (plan 280)", () => {
   const owed = (o: Partial<FollowupRow> = {}) => row({ kind: "theirs", text: "send you the contract", personName: "Alex Reed", personEmail: "alex@acme.test", personKey: "alex@acme.test", dated: true, dueDay: "2026-10-27", firm: true, sentAt: NOW - DAY, ...o });
 
-  it("says who promised what, with no pronoun guessed; a tentative one, what they hoped", () => {
+  it("says who promised what, with no pronoun guessed; a tentative one, what they hope (the QA panel: 'hoped' read as given up)", () => {
     expect(followupLine(owed(), NOW)).toBe("Alex Reed promised to send you the contract");
     expect(followupLine(owed(), NOW, { short: true })).toBe("Alex promised to send you the contract");
-    expect(followupLine(owed({ firm: false }), NOW)).toBe("Alex Reed hoped to send you the contract");
+    expect(followupLine(owed({ firm: false }), NOW)).toBe("Alex Reed hopes to send you the contract");
     setLocale("es", es as never);
     expect(followupLine(owed({ text: "enviarte el contrato" }), NOW)).toBe("Alex Reed prometió enviarte el contrato");
   });
@@ -100,6 +100,13 @@ describe("a promise of theirs (plan 280)", () => {
     expect(followupWhen(owed(), NOW)).toBe("Due Tuesday");
     expect(followupWhen(owed({ dueDay: "2026-10-21", state: "due" }), NOW)).toBe("Was due yesterday");
     expect(followupWhen(owed({ dated: false, dueDay: null }), NOW)).toBeNull();
+  });
+
+  it("a tentative one is never due: maybe by its day, and once past, hoped for (the QA panel)", () => {
+    expect(followupWhen(owed({ firm: false }), NOW)).toBe("Maybe by Tuesday");
+    expect(followupWhen(owed({ firm: false, dueDay: "2026-10-21", state: "due" }), NOW)).toBe("Hoped for yesterday");
+    setLocale("es", es as never);
+    expect(followupWhen(owed({ firm: false }), NOW)).toBe("Quizá para el martes");
   });
 
   it("may have arrived: the debtor wrote since, or a notice named them; never their own promise's message", async () => {

@@ -11,7 +11,8 @@ import type { StructuredTask } from "./ladder";
 /** 2 (the QA panel): a file the email carries that is the promised thing keeps it, words around it or not */
 /** 3 (the QA panel): one thing done in steps in one sentence ("countersign it and send it via SignNest") is one promise */
 /** 4 (the QA panel): the sender's own things are named for them, never "my" ("send you Tomas's section", never "my section") */
-export const THEIRS_PROMPT_VERSION = 4;
+/** 5 (the QA panel's reviews): a week's start is its Tuesday ("early next week" was its Sunday); amounts as written ("$1,200") */
+export const THEIRS_PROMPT_VERSION = 5;
 export const THEIRS_MAX_TOKENS = 2000;
 export const THEIRS_TEXT_CHARS = 1500 * 4;
 export const THEIRS_ANSWERING_CHARS = 800 * 4;
@@ -93,9 +94,9 @@ Return:
   One thing done in steps, or things sent together, in one sentence is one promise that says all of it, never two ("I'll countersign the addendum and send it via SignNest" is one: countersign and send the addendum).
   When the reader is only copied (Cc), only a promise that names the reader ("Nora, I'll send you the deck") is theirs.
   Each has:
-  - "text": the action as a short verb phrase in its base form, said to the reader, lowercase, with no subject, always in ${LANGUAGE_NAME[language] ?? language}, whatever language the mail is in: "${contract}", "${call}"; one that says no more is as short as its words: "${back}". It names the thing, as the mail does. The sender's own things are named for them, never "my" or "mi" ("send you Tomas's section of the draft", "enviarte la parte de Tomás"), and never "his", "her" or "their". The day goes in "due", never in the text.
+  - "text": the action as a short verb phrase in its base form, said to the reader, lowercase, with no subject, always in ${LANGUAGE_NAME[language] ?? language}, whatever language the mail is in: "${contract}", "${call}"; one that says no more is as short as its words: "${back}". It names the thing, as the mail does, amounts and numbers exactly as written ("pay you the $1,200 deposit", "pagarte los 1.200 €"). The sender's own things are named for them, never "my" or "mi" ("send you Tomas's section of the draft", "enviarte la parte de Tomás"), and never "his", "her" or "their". The day goes in "due", never in the text.
   - "quote": the sender's exact words that say it, copied from one line of <mail>, never reworded.
-  - "due": YYYY-MM-DD if they named a day ("Thursday", "el viernes", "end of the month", "tomorrow"), counted from when it arrived; a soft day is its last day ("this week" is its Sunday, "next week" the Sunday after); null when they named none. Never guess one.
+  - "due": YYYY-MM-DD if they named a day ("Thursday", "el viernes", "end of the month", "tomorrow"), counted from when it arrived; a soft day is its last day ("this week" is its Sunday, "next week" the Sunday after), and a week's start is its Tuesday ("early next week", "a principios de la semana que viene"); null when they named none. Never guess one.
   - "partOfDay": "morning", "afternoon" or "evening" when their words name that part of the day ("Friday morning", "esta tarde", "tonight"); else null.
   - "firm": false when they hedge it ("I'll try to…", "hopefully by Thursday", "should have it early next week", "if all goes well", "probablemente el viernes", "intentaré"); true otherwise.
 - <owed> holds the sender's open promises to the reader (t1, t2…), each with the day promised when it has one.

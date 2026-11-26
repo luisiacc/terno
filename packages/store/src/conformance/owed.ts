@@ -218,7 +218,8 @@ export function defineOwedConformance(fresh: () => Promise<MailStore>, reopen: (
         const wed = await got({ date: NOW + 2 * DAY });
         await finish(wed.id, wed.thread, { moved: [{ id: p.row.id, revision: p.row.revision, dueAt: NOW + 9 * DAY, dueDay: "2026-11-13" }] });
         const moved = (await store.followups.get(p.row.id))!;
-        expect(moved).toMatchObject({ dueDay: "2026-11-13", movedAt: wed.m.date });
+        // (the QA panel: and which mail, what its card names)
+        expect(moved).toMatchObject({ dueDay: "2026-11-13", movedAt: wed.m.date, movedBy: wed.id });
         // Tuesday's mail, read again after Wednesday's (a check, a replay): nothing
         const tue = await got({ date: NOW + DAY });
         await finish(tue.id, tue.thread, { moved: [{ id: moved.id, revision: moved.revision, dueAt: NOW + 5 * DAY, dueDay: "2026-11-09" }], kept: [{ id: moved.id, revision: moved.revision }] });

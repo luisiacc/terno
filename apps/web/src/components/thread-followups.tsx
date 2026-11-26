@@ -36,8 +36,13 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
   const arrived = mayHaveArrived(row, messages);
   const name = row.personName?.split(/\s+/)[0] || row.personEmail?.split("@")[0] || t("followup.someone");
   const line = arrived === "wrote" ? t("followup.theirsWroteSince", { name }) : arrived === "notice" ? t("followup.theirsMayHaveArrived") : followupLine(row);
-  // a reminder only for a firm one that's late and hasn't plainly arrived
-  const offersNudge = !theirs || (row.state === "due" && row.firm !== false && arrived === null);
+  // a reminder only for a firm one that's late, and no service said it arrived; the QA panel: their mail since asks
+  // first (Received leads) but keeps the reminder, since their mail is often about something else
+  const offersNudge = !theirs || (row.state === "due" && row.firm !== false && arrived !== "notice");
+  // the one filled button is the likeliest step: Received when something says it may have come, else the reminder
+  const receivedFirst = theirs && arrived !== null;
+  const nudgeVariant = receivedFirst ? "outline" : "default";
+  const nudgeTone = receivedFirst ? "text-foreground" : undefined;
   // when it comes back
   const when = followupWhen(row);
   // plan 147: a follow-up stays readable when its key goes; a nudge is a draft, and can't be written
@@ -46,7 +51,9 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
   // any moment ahead
   const later = laterPresets({ before: null, limit: null }, now.getTime());
   const mine = useApp((s) => s.accounts).map((a) => a.email);
-  const source = messageSource(messages, row.messageId, mine);
+  // the QA panel: the mail the card speaks of: the service's notice it asks about, the debtor's mail that gave it its day, or the promise's own
+  const target = [arrived === "notice" ? row.arrivedHint : null, row.movedBy, row.messageId].find((id) => id != null && messages.some((m) => m.id === id)) ?? row.messageId;
+  const source = messageSource(messages, target, mine);
   // the nudge Write a follow-up made, still a draft: the line offers it rather than another
   const drafted = useDrafts((s) => nudgeDraft(row.id, s.drafts) !== null);
   // plan 162 (after ai162-r03): "Open your follow-up" only once it has words; while the composer asks or writes, the
@@ -68,7 +75,7 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
       <div className={cn(AI_ACTIONS, "mt-3")} data-testid="followup-actions">
         {/* plan 280: Received first for a promise of theirs: it's what's most often true */}
         {theirs && (
-          <Button size="sm" variant={offersNudge ? "outline" : "default"} className={offersNudge ? "text-foreground" : undefined} data-testid="followup-received" onClick={() => void actOnFollowup(row, "done")}>
+          <Button size="sm" variant={receivedFirst ? "default" : "outline"} className={receivedFirst ? undefined : "text-foreground"} data-testid="followup-received" onClick={() => void actOnFollowup(row, "done")}>
             {t("followup.received")}
           </Button>
         )}
@@ -76,11 +83,11 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
           // plan 162 (after ai162-r05): its words without a spinner: the composer's "Writing…" is the one working mark
           <Button size="sm" variant="outline" className="text-foreground" data-testid="followup-nudging" aria-disabled onClick={() => void openNudge(row.id)}>{t("followup.nudging")}</Button>
         ) : drafted && nudging === "waiting" ? (
-          <Button size="sm" data-testid="followup-nudge" onClick={() => void openNudge(row.id)}>{t("followup.nudge")}</Button>
+          <Button size="sm" variant={nudgeVariant} className={nudgeTone} data-testid="followup-nudge" onClick={() => void openNudge(row.id)}>{t("followup.nudge")}</Button>
         ) : drafted ? (
-          <Button size="sm" data-testid="followup-open-nudge" onClick={() => void openNudge(row.id)}>{t("followup.openNudge")}</Button>
+          <Button size="sm" variant={nudgeVariant} className={nudgeTone} data-testid="followup-open-nudge" onClick={() => void openNudge(row.id)}>{t("followup.openNudge")}</Button>
         ) : (
-          canNudge && <Button size="sm" data-testid="followup-nudge" onClick={() => void nudge(row)}>{t("followup.nudge")}</Button>
+          canNudge && <Button size="sm" variant={nudgeVariant} className={nudgeTone} data-testid="followup-nudge" onClick={() => void nudge(row)}>{t("followup.nudge")}</Button>
         )}
         <DropdownMenu>
           <DropdownMenuTrigger render={<Button ref={laterRef} size="sm" variant="outline" className="text-foreground" data-testid="followup-later" />}>
@@ -123,26 +130,29 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
           {t(theirs ? "followup.notAPromise" : "followup.dismiss")}
         </Button>
         {/* where it came from, named ("Your message, Oct 22"), its words (the quote) on hover; nothing when it's the one
-            message on screen */}
-        {source !== null && (
-          <Tooltip>
-            <TooltipTrigger render={<Button variant="ghost" size="sm" data-testid="followup-go" className="text-muted-foreground hover:text-foreground" onClick={() => revealSummaryMessage(row.messageId)} />}>
-              {source}
-              <ArrowRight aria-hidden />
-            </TooltipTrigger>
-            {row.quote && <TooltipContent data-testid="followup-quote">{row.quote}</TooltipContent>}
-          </Tooltip>
-        )}
-        {row.model && (
-          <AiProvenance
-            model={row.model}
-            at={row.createdAt}
-            label={t("ai.provenance.found")}
-            detail={t("ai.provenance.foundDetail", { model: modelName(row.model), date: whenDate(row.createdAt) })}
-            testId="followup-provenance"
-            className="-me-1.5 ms-auto"
-          />
-        )}
+            message on screen. The QA panel: it and who found it are one group, so a narrow card wraps them together onto
+            one line (source at its start, provenance at its end), never one beside the buttons and one alone below */}
+        <span data-testid="followup-meta" className="flex min-w-max flex-1 items-center gap-2">
+          {source !== null && (
+            <Tooltip>
+              <TooltipTrigger render={<Button variant="ghost" size="sm" data-testid="followup-go" className="text-muted-foreground hover:text-foreground" onClick={() => revealSummaryMessage(target)} />}>
+                {source}
+                <ArrowRight aria-hidden />
+              </TooltipTrigger>
+              {row.quote && target === row.messageId && <TooltipContent data-testid="followup-quote">{row.quote}</TooltipContent>}
+            </Tooltip>
+          )}
+          {row.model && (
+            <AiProvenance
+              model={row.model}
+              at={row.createdAt}
+              label={t("ai.provenance.found")}
+              detail={t("ai.provenance.foundDetail", { model: modelName(row.model), date: whenDate(row.createdAt) })}
+              testId="followup-provenance"
+              className="-me-1.5 ms-auto"
+            />
+          )}
+        </span>
       </div>
     </div>
   );

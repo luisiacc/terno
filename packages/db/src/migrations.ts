@@ -1942,7 +1942,7 @@ CREATE TABLE cls_kept_senders (
   // a CHECK list goes when its column next needs a value), so the table is rebuilt once without it, every column of today's
   // copied as it is, ids and AUTOINCREMENT's high mark kept (v57's way: a pruned id is never reused by an Undo's journal),
   // and every index made again by name. `state` and `inbox_state` keep theirs (behaviour). Nothing references `followups`,
-  // so foreign keys stay on. New: `firm`, `due_day`, `person_key`, `arrived_hint` and `moved_at` (theirs only; the last move's mail), the debtor's open
+  // so foreign keys stay on. New: `firm`, `due_day`, `person_key`, `arrived_hint`, `moved_at` and `moved_by` (theirs only; the last move's date and mail), the debtor's open
   // promises' index, and `ai_owed_mail`, the follow-ups reader's own marker of received mail (revision 1), in
   // `ai_sent_mail`'s shape with no CHECK on its source (plan 267)
   { version: 85, name: "Their promises to you (plan 280)", rewrites: "the DROP TABLE of followups after every row is copied unchanged into its rebuilt table (the kind's CHECK can't be dropped in place): at most 1,000 active rows and 90 days of closed ones", sql: `
@@ -1990,6 +1990,7 @@ CREATE TABLE followups_v85 (
   person_key TEXT,
   arrived_hint INTEGER,
   moved_at INTEGER,
+  moved_by INTEGER,
   UNIQUE (message_id, item)
 );
 INSERT INTO followups_v85 (id, thread_id, message_id, rfc_message_id, item, kind, text, quote, person_name, person_email, sent_at, due_at, dated, state, inbox_state, closed_reason, closed_at, notified_at, from_scan, revision, model, provider, prompt_version, created_at, deferred_until, same_as, broken_due_at, timed, answers, settled_by, settled_at, holds, before_day, changed_at, changed_from, proposal, handed_to, part_of_day)

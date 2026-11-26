@@ -166,8 +166,8 @@ export function finishOwed(db: Db, w: OwedFinish): FollowupFinishOutcome {
       if (closed.has(m.id)) continue;
       // a new day keeps the user's Later (`deferred_until`); late again only when the new moment has passed
       db.run(
-        `UPDATE followups SET due_at = ?, due_day = ?, dated = 1, timed = ?, part_of_day = ?, state = CASE WHEN ? > ? THEN 'open' ELSE state END, inbox_state = CASE WHEN ? > ? THEN 'none' ELSE inbox_state END, notified_at = NULL, moved_at = ?, revision = revision + 1 WHERE ${mine}`,
-        m.dueAt, m.dueDay, m.timed ? 1 : 0, m.partOfDay ?? null, m.dueAt, w.now, m.dueAt, w.now, src.date, ...at(m),
+        `UPDATE followups SET due_at = ?, due_day = ?, dated = 1, timed = ?, part_of_day = ?, state = CASE WHEN ? > ? THEN 'open' ELSE state END, inbox_state = CASE WHEN ? > ? THEN 'none' ELSE inbox_state END, notified_at = NULL, moved_at = ?, moved_by = ?, revision = revision + 1 WHERE ${mine}`,
+        m.dueAt, m.dueDay, m.timed ? 1 : 0, m.partOfDay ?? null, m.dueAt, w.now, m.dueAt, w.now, src.date, w.messageId, ...at(m),
       );
     }
     // revision 5: a relay names the debtor: it may have arrived (whoever sent the relay; never a close)

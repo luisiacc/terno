@@ -35,9 +35,12 @@ async function tracked(server: DevServerFixture, subject: string, kind: "promise
   return threadId;
 }
 
-/** Plan 280: a promise of theirs the worker found in Yuki's mail, written as it would be. `later`: Yuki wrote again after it. */
-async function owedTracked(server: DevServerFixture, subject: string, o: { firm: boolean; later?: boolean }) {
-  await ingestConversation(server, { subject, count: o.later ? 3 : 1, now: E2E_NOW });
+/**
+ * Plan 280: a promise of theirs the worker found in Yuki's mail, written as it would be. `later`: Yuki wrote again after it.
+ * `debtor`: someone else promised it, the conversation going on with you and Yuki (its last sender)
+ */
+async function owedTracked(server: DevServerFixture, subject: string, o: { firm: boolean; later?: boolean; debtor?: { name: string; email: string } }) {
+  await ingestConversation(server, { subject, count: o.later || o.debtor ? 3 : 1, ...(o.debtor ? { from: { 0: o.debtor } } : {}), now: E2E_NOW });
   const store = server.backend.store;
   const { items } = await store.threads.searchText({ query: `subject:"${subject}"`, limit: 1, now: E2E_NOW });
   const threadId = items[0]!.id;
@@ -369,10 +372,10 @@ test.describe("follow-ups (plan 142)", () => {
     expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=thread-followups]").analyze()).violations).toEqual([]);
   });
 
-  test("plan 280: owed to you: a late promise of theirs on top with its card, Received and Undo; a tentative one off the top; one they wrote after asks first", async ({ app: page, server }) => {
+  test("plan 280: owed to you: a late promise of theirs on top with its card, Received and Undo; a tentative one off the top, quiet, under its debtor's name; one they wrote after asks first", async ({ app: page, server }) => {
     await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, followups: { enabled: true } });
     await owedTracked(server, "Signed contract", { firm: true });
-    await owedTracked(server, "Draft budget", { firm: false });
+    await owedTracked(server, "Draft budget", { firm: false, debtor: { name: "Tom Reed", email: "tom.reed@example.com" } });
     await owedTracked(server, "Venue deposit", { firm: true, later: true });
     await fresh(page);
 
@@ -383,7 +386,7 @@ test.describe("follow-ups (plan 142)", () => {
       await expect(page.getByTestId("inbox-reminders-label")).toHaveText(/\(2\)/);
     });
 
-    await scenario("its card: what was promised and when, Received first, a reminder, Later and Not a promise", async () => {
+    await scenario("its card: what was promised and when, Received first, the reminder the one filled button, Later and Not a promise", async () => {
       await page.getByTestId("thread-row").filter({ hasText: "Signed contract" }).first().click();
       const card = page.getByTestId("followup-line");
       await expect(card).toHaveAttribute("data-kind", "theirs");
@@ -391,6 +394,9 @@ test.describe("follow-ups (plan 142)", () => {
       await expect(card.getByTestId("followup-due")).toHaveText(/^Was due /);
       await expect(card.getByTestId("followup-received")).toHaveText("Received");
       await expect(card.getByTestId("followup-nudge")).toHaveText("Write a follow-up");
+      // (the QA panel: one filled button, the likeliest step; nothing says it arrived, so the reminder)
+      await expect(card.getByTestId("followup-received")).not.toHaveClass(/\btext-primary-foreground\b/);
+      await expect(card.getByTestId("followup-nudge")).toHaveClass(/\btext-primary-foreground\b/);
       await expect(card.getByTestId("followup-dismiss")).toHaveText("Not a promise");
       for (const scheme of ["light", "dark"] as const) {
         await page.emulateMedia({ colorScheme: scheme });
@@ -408,18 +414,24 @@ test.describe("follow-ups (plan 142)", () => {
       await expect(page.getByTestId("followup-line")).toHaveAttribute("data-kind", "theirs");
     });
 
-    await scenario("they wrote after it: the card asks whether it arrived, and offers no reminder", async () => {
+    await scenario("they wrote after it: the card asks whether it arrived, Received filled, the reminder still there (the QA panel)", async () => {
       await page.getByTestId("thread-row").filter({ hasText: "Venue deposit" }).first().click();
       const card = page.getByTestId("followup-line");
       await expect(card).toHaveAttribute("data-arrived", "wrote");
       await expect(card.getByTestId("followup-text")).toHaveText("Yuki wrote since. Did it arrive?");
       await expect(card.getByTestId("followup-promised")).toHaveText("Yuki Gutiérrez promised to send you the contract");
-      await expect(card.getByTestId("followup-nudge")).toHaveCount(0);
+      await expect(card.getByTestId("followup-received")).toHaveClass(/\btext-primary-foreground\b/);
+      await expect(card.getByTestId("followup-nudge")).not.toHaveClass(/\btext-primary-foreground\b/);
     });
 
-    await scenario("the tentative one is in Follow-ups, saying what they hoped", async () => {
+    await scenario("the tentative one is in Follow-ups, saying what they hope, quietly, under the name of who owes it", async () => {
       await page.getByTestId("palette-go-followups").or(page.getByTestId("nav-followups")).first().click();
-      await expect(page.getByTestId("thread-row").filter({ hasText: "Yuki Gutiérrez hoped to send you the contract" })).toHaveCount(1);
+      const row = page.getByTestId("thread-row").filter({ hasText: "Tom Reed hopes to send you the contract" });
+      await expect(row).toHaveCount(1);
+      await expect(row.getByTestId("row-from")).toHaveText("Tom Reed");
+      await expect(row.getByTestId("row-snippet")).not.toHaveClass(/text-draft-foreground/);
+      // a firm, late one keeps the owed ink
+      await expect(page.getByTestId("thread-row").filter({ hasText: "Signed contract" }).getByTestId("row-snippet")).toHaveClass(/text-draft-foreground/);
     });
   });
 });

@@ -10,7 +10,7 @@ import { client } from "~/rpc/connection";
 import { getApp, inPlainInbox, navigate, useApp } from "~/state/app";
 import { useFollowups } from "~/state/followups";
 import { inboxTop, reloadList, useList } from "~/state/list";
-import { reminderDated } from "~/lib/when";
+import { datedDay, reminderDated } from "~/lib/when";
 
 /**
  * Plan 142: what the windows know of follow-ups (the backend's snapshot, at startup and on its `followups` event), and
@@ -51,7 +51,8 @@ const personOf = (row: FollowupRow): string | null => row.personName || row.pers
  */
 export function followupLine(row: FollowupRow, now = Date.now(), { short = false }: { short?: boolean } = {}): string {
   const name = personOf(row);
-  // plan 280: "Alex promised to send you the contract"; a tentative one, "Alex hoped to…" (no pronoun guessed)
+  // plan 280: "Alex promised to send you the contract"; a tentative one, "Alex hopes to…" (no pronoun guessed; the QA
+  // panel: "hoped to" read as given up)
   if (row.kind === "theirs") {
     const who = name ? (short ? name.split(/\s+/)[0] || name : name) : t("followup.someone");
     return t(row.firm === false ? "followup.theirsHoped" : "followup.theirs", { name: who, text: row.text });
@@ -106,11 +107,19 @@ export function followupWhen(row: FollowupRow, now = Date.now()): string | null 
     const day = row.dueDay ? localDay(row.dueDay) : null;
     if (!day) return null;
     day.setHours(9, 0, 0, 0);
+    // the QA panel: a hedged one isn't "due", and never "was due": "Maybe by Monday", "Hoped for Monday"
+    if (row.firm === false) return hopedWhen(day.getTime(), now >= dueCutoff(row.dueDay!, row.partOfDay), now);
     return promiseWhen({ dueAt: day.getTime(), dated: true, partOfDay: row.partOfDay ?? null }, now >= dueCutoff(row.dueDay!, row.partOfDay), now);
   }
   const date = reminderDated(row.dueAt, now);
   if (row.state === "due") return t("followup.dueNow", { date });
   return t("followup.dueOnAwaiting", { date });
+}
+
+function hopedWhen(day: number, past: boolean, now: number): string {
+  const d = datedDay(day, now);
+  if (past) return d.near === "yesterday" ? t("followup.hopedYesterday") : d.near === "today" ? t("followup.hopedToday") : t("followup.hopedWasOn", { day: d.text });
+  return d.near === "today" ? t("followup.hopedToday") : d.near === "tomorrow" ? t("followup.hopedTomorrow") : t("followup.hopedOn", { day: d.text });
 }
 
 /** What a row says: its most urgent, and how many more. */

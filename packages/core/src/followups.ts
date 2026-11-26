@@ -101,6 +101,8 @@ export interface FollowupRow {
   arrivedHint?: number | null;
   /** Plan 280 (the code review): the date of the debtor's mail that last moved it: mail older than that can't move or close it */
   movedAt?: number | null;
+  /** Plan 280 (the QA panel): that mail, what the card's source names (the promise's own message said another day) */
+  movedBy?: number | null;
 }
 
 export const isFollowupKind = (kind: unknown): kind is FollowupKind => (FOLLOWUP_KINDS as readonly unknown[]).includes(kind);

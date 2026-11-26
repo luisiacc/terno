@@ -193,10 +193,28 @@ function useOwed(thread: Pick<ThreadSummary, "id">, reminderTop?: boolean) {
   const speaking = shows ? lineRows(owed, !followupsList) : undefined;
   const lead = speaking ? mostUrgent(speaking) : undefined;
   // plan 280 (the QA panel): a promise of theirs says the day it was promised for, never the moment it's late ("Mon", not
-  // "Tue 9:00 AM"), and a tentative one is said quietly
+  // "Tue 9:00 AM"), and one with no day says none (as What matters' undated promise, never the mail's date beside it);
+  // its line takes the owed ink only once it's late and firm (red on every row read as all of them overdue)
   const theirs = lead?.kind === "theirs";
   const day = theirs && lead.dueDay ? localDay(lead.dueDay) : null;
-  return { line: speaking ? rowLine(speaking) : null, dueAt: theirs ? (day ? day.getTime() : null) : (lead?.dueAt ?? null), dayOnly: theirs, quietLine: theirs && lead.firm === false };
+  return { line: speaking ? rowLine(speaking) : null, dueAt: theirs ? (day ? day.getTime() : null) : (lead?.dueAt ?? null), dayOnly: theirs, noDay: theirs && !day, quietLine: theirs && (lead.firm === false || lead.state !== "due") };
+}
+
+/**
+ * Plan 280 (the QA panel): a row a promise of theirs speaks for shows who owes it, by name and picture: a conversation's
+ * last sender is often you ("Margaret O'Neill · Maeve promised to send you…"). One string, so nothing else re-renders a row.
+ */
+function useDebtor(thread: Pick<ThreadSummary, "id">, reminderTop?: boolean): { name: string; email: string } | null {
+  const followupsList = useApp((s) => s.followups);
+  const key = useFollowups((s) => {
+    const owed = s.byThread.get(thread.id);
+    if (!owed || !(followupsList || (reminderTop && owed.some((r) => r.inboxState === "onTop")))) return null;
+    const lead = mostUrgent(lineRows(owed, !followupsList));
+    return lead?.kind === "theirs" && lead.personEmail ? `${lead.personEmail}\n${lead.personName || lead.personEmail.split("@")[0]}` : null;
+  });
+  if (key === null) return null;
+  const [email = "", name = ""] = key.split("\n");
+  return { name, email };
 }
 
 /**
@@ -310,8 +328,8 @@ const SENDER_COLUMN = "flex w-[clamp(5rem,24cqw,11rem)] min-w-0 shrink items-cen
 
 /** On the Inbox's top and in its own list, the date a row shows is when it's owed. */
 function RowDate({ thread, reminderTop, fallback, className, title }: { thread: ThreadSummary; reminderTop?: boolean; fallback: string; className: string; title?: string }) {
-  const { dueAt, dayOnly } = useOwed(thread, reminderTop);
-  return <span data-testid="row-date" data-due-at={dueAt ?? undefined} title={title} className={className}>{dueAt !== null ? (dayOnly ? dayShort(dueAt) : reminderShort(dueAt)) : fallback}</span>;
+  const { dueAt, dayOnly, noDay } = useOwed(thread, reminderTop);
+  return <span data-testid="row-date" data-due-at={dueAt ?? undefined} title={title} className={className}>{dueAt !== null ? (dayOnly ? dayShort(dueAt) : reminderShort(dueAt)) : noDay ? "" : fallback}</span>;
 }
 
 export function ThreadRowView({ thread, top, height, compact, wide, icons, layout, review, pinnedTop = false, reminderTop, selected, checked, included, pending, inSelection, account, categories, inCategory = null, kept = false, hasDraft, code, reminder, remindersList, interactive, match, excerpt, lines: previewLines = 1, pick = false, position, placedView: placed }: ViewProps) {
@@ -338,9 +356,10 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
   // the open and checked rows keep the selection's. An unread line's search marks take its weight (never lighter than it;
   // every design's unread weight is at least its semibold), a read line's stay semibold, a step above it
   const tone = thread.unread ? "[&_mark]:[font-weight:inherit]" : !opened && !checked && "text-(--row-read-ink)";
+  const debtor = useDebtor(thread, reminderTop);
   const from = (
     <span data-testid="row-from" className={cn("min-w-0 truncate", thread.unread ? "type-row-from-strong" : "type-row-from", tone)}>
-      <Marked text={thread.fromName} needles={match?.from} />
+      <Marked text={debtor?.name ?? thread.fromName} needles={debtor ? undefined : match?.from} />
     </span>
   );
   // plan 188: after the sender, what the dot, the star and the pin show, said (never last, after the whole preview); the
@@ -495,8 +514,8 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
       onClick={toggles ? (e) => { e.stopPropagation(); toggleRow(thread.id); } : undefined}
     >
       <SenderAvatar
-        name={thread.fromName}
-        email={thread.fromEmail}
+        name={debtor?.name ?? thread.fromName}
+        email={debtor?.email ?? thread.fromEmail}
         // plan 22: never an icon for spam, whatever the view or the search (nor until the backend says a row stopped being spam)
         icon={icons && !thread.inSpam && !thread.hasSpam && !thread.spamHeld}
         person={thread.person === true}

@@ -173,7 +173,7 @@ export function finishOwed(c: Ctx, w: OwedFinish): FollowupFinishOutcome {
     const r = closed.has(m.id) ? null : mine(m);
     if (!r) continue;
     const ahead = m.dueAt > w.now;
-    rows.update(r, { due_at: m.dueAt, due_day: m.dueDay, dated: 1, timed: m.timed ? 1 : 0, part_of_day: m.partOfDay ?? null, state: ahead ? "open" : r.state, inbox_state: ahead ? "none" : r.inbox_state, notified_at: null, moved_at: src.date, revision: r.revision + 1 });
+    rows.update(r, { due_at: m.dueAt, due_day: m.dueDay, dated: 1, timed: m.timed ? 1 : 0, part_of_day: m.partOfDay ?? null, state: ahead ? "open" : r.state, inbox_state: ahead ? "none" : r.inbox_state, notified_at: null, moved_at: src.date, moved_by: w.messageId, revision: r.revision + 1 });
   }
   for (const h of w.hints) {
     const r = closed.has(h.id) ? null : mine(h, false);
