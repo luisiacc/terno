@@ -96,13 +96,16 @@ export class PeopleService {
     const shown = page?.items ?? [];
     // which of them they wrote in (the rest, a group email they were only on): theirs are a subset, newest first by the
     // same date, so the newest `want` of theirs hold every one of these they wrote
-    // (the card says who wrote its last one: none asked for it)
-    const wrote = except === undefined && want > 0 && shown.length > 0 ? await this.wroteIn(email, want, shown) : undefined;
+    const wrote = want > 0 && shown.length > 0 ? await this.wroteIn(email, want, shown) : undefined;
     const name = this.b.autocomplete.peopleIndex()?.person(email)?.name || found?.name || "";
-    const last = except === undefined ? undefined : shown.find((t) => t.id !== except);
+    // the card's last time you wrote each other (r06): the newest other conversation they wrote in, or whose last message
+    // is yours (to them); never a group email someone else wrote that they were only on
+    const mine = await this.mine();
+    const theirs = new Set(wrote);
+    const last = except === undefined ? undefined : shown.find((t) => t.id !== except && (theirs.has(t.id) || mine.has(personKey(t.fromEmail))));
     const lastSummary = last ? (await this.b.today.summaryLine(last.id)).summary : undefined;
     // (the card says who wrote it: you, them, or someone else on it)
-    const lastFromMe = last ? (await this.mine()).has(personKey(last.fromEmail)) : false;
+    const lastFromMe = last ? mine.has(personKey(last.fromEmail)) : false;
     return {
       key,
       email,
@@ -110,6 +113,7 @@ export class PeopleService {
       items: found?.items ?? [],
       conversations: shown,
       more: page?.nextCursor != null,
+      ...(last ? { lastBetween: last.id } : {}),
       ...(last && lastSummary ? { lastSummary, lastSummaryOf: last.id } : {}),
       ...(lastFromMe ? { lastFromMe } : {}),
       ...(wrote ? { wrote } : {}),

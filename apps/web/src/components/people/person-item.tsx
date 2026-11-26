@@ -2,7 +2,7 @@ import { isPersonRequest, personItemBack, personItemId, personItemThread, type P
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
-import { CalendarClock, ChevronDown, Clock, ListChecks, MessageSquareReply } from "@terno/ui/icons";
+import { CalendarClock, Check, ChevronDown, Clock, ListChecks, MessageSquareReply } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { useId, type ComponentType } from "react";
 import { shortcutFor } from "@terno/core";
@@ -130,6 +130,7 @@ export function PersonItemLine({ item, morphName }: { item: PersonItem; morphNam
         <div className="flex shrink-0 items-center gap-1">
           <Tooltip>
             <TooltipTrigger render={<Button variant="ghost" size="sm" data-testid="person-item-done" aria-describedby={textId} aria-keyshortcuts={DONE_KEY} className={QUIET} onClick={(e) => void actOnPersonItem(item, "done", undefined, e.detail > 0 ? "pointer" : "keyboard")} />}>
+              <Check data-icon="inline-start" />
               {t("dated.done")}
             </TooltipTrigger>
             <TooltipContent>
@@ -142,6 +143,7 @@ export function PersonItemLine({ item, morphName }: { item: PersonItem; morphNam
                 <TooltipTrigger
                   render={<DropdownMenuTrigger render={<Button variant="ghost" size="sm" data-testid="person-item-later" aria-describedby={textId} aria-keyshortcuts={LATER_KEY} className={QUIET} />} />}
                 >
+                  <Clock data-icon="inline-start" />
                   {t("dated.later")}
                   <ChevronDown data-icon="inline-end" />
                 </TooltipTrigger>

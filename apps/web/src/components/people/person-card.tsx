@@ -37,7 +37,8 @@ export function PersonCardHead({ page, threadId }: { page: PersonPage; threadId:
     // the keyboard on the next item, else the menu's first command (never nowhere)
     requestAnimationFrame(() => document.querySelector<HTMLElement>("[data-testid=person-menu] [data-testid=person-card-item], [data-testid=person-menu] [data-testid=person-new-message]")?.focus());
   };
-  const last = page.conversations.find((c) => c.id !== threadId);
+  // the last time you wrote each other (the backend's choice: never a group email they were only on)
+  const last = page.conversations.find((c) => c.id === page.lastBetween && c.id !== threadId);
   // the summary the backend read is of the newest other conversation: said only for that one
   const summary = last && last.id === page.lastSummaryOf ? page.lastSummary : undefined;
   if (!items.length && !last) return null;

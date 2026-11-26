@@ -77,6 +77,8 @@ export interface PersonPage {
   more: boolean;
   /** the card's "Last time": the newest conversation's other than the one open, its stored summary's first sentence (never a new AI request) */
   lastSummary?: string;
+  /** the card's: the newest conversation other than the open one that they wrote in or you wrote last (to them) */
+  lastBetween?: number;
   /** which conversation `lastSummary` is of */
   lastSummaryOf?: number;
   /** the card's last conversation was last written by you (one of your addresses) */

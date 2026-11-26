@@ -328,8 +328,8 @@ const PersonRow = memo(function PersonRow({ row, selected, tabbable, query }: { 
           </span>
           {lastAt !== null && (
             <span data-testid="person-row-when" className={cn("shrink-0 text-sm tabular", selected ? "text-row-selected-foreground" : "text-row-preview")}>
-              <span aria-hidden>{listDate(lastAt)}</span>
-              <span className="sr-only">{t("people.lastEmail", { when: listDate(lastAt) })}</span>
+              {/* (said in words: in Open the same column is how long it's been open, r06) */}
+              {t("people.lastEmail", { when: listDate(lastAt) })}
             </span>
           )}
           {(age || when.text) && (

@@ -253,14 +253,10 @@ describe("one person", () => {
     expect(page.wrote).toEqual([theirs]);
   });
 
-  it("a tagged address's own mail is theirs (Codex review); the card asks no more than its conversations", async () => {
-    const { backend, client, from } = await setup();
+  it("a tagged address's own mail is theirs (Codex review)", async () => {
+    const { client, from } = await setup();
     const theirs = await from("Ana", "ana+work@people.test", { waiting: false });
     expect((await client.call("people.person", { email: "ana+work@people.test" }))!.wrote).toEqual([theirs]);
-    const search = vi.spyOn(backend.store.threads, "searchText");
-    const card = (await client.call("people.person", { email: "ana+work@people.test", conversations: 2, except: theirs }))!;
-    expect(card.wrote).toBeUndefined();
-    expect(search).toHaveBeenCalledTimes(1);
   });
 
   it("a promise put off with Later stays on their page, saying when it's back", async () => {
@@ -285,7 +281,7 @@ describe("one person", () => {
     const newer = await from("Ana", "ana@people.test", { waiting: false });
     const read = vi.spyOn(backend.today, "summaryLine").mockResolvedValue({ summary: "Agreed on two milestones." });
     const card = (await client.call("people.person", { email: "ana@people.test", conversations: 2, except: newer }))!;
-    expect(card).toMatchObject({ lastSummary: "Agreed on two milestones.", lastSummaryOf: older });
+    expect(card).toMatchObject({ lastBetween: older, lastSummary: "Agreed on two milestones.", lastSummaryOf: older });
     expect(read).toHaveBeenCalledWith(older);
     read.mockClear();
     const page = (await client.call("people.person", { email: "ana@people.test" }))!;
@@ -298,11 +294,14 @@ describe("one person", () => {
     const open = await from("Ana", "ana@people.test", { waiting: false });
     // Björn wrote last, Ana on it: not you
     await from("Björn", "bjorn@people.test", { waiting: false, over: { to: [{ name: "Ana", email: "ana@people.test" }], date: NOW - 3 * DAY } });
-    expect((await client.call("people.person", { email: "ana@people.test", conversations: 2, except: open }))!.lastFromMe).toBeUndefined();
+    // (nor is it the last time you and Ana wrote each other: the card shows none, rather than Björn's, r06)
+    const before = (await client.call("people.person", { email: "ana@people.test", conversations: 2, except: open }))!;
+    expect(before.lastFromMe).toBeUndefined();
+    expect(before.lastBetween).toBeUndefined();
     // you wrote her since
     const sent = await to("Ana", "ana@people.test");
     const card = (await client.call("people.person", { email: "ana@people.test", conversations: 3, except: open }))!;
-    expect(card.conversations.find((c) => c.id !== open)?.id).toBe(sent);
+    expect(card.lastBetween).toBe(sent);
     expect(card.lastFromMe).toBe(true);
   });
 

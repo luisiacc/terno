@@ -594,7 +594,7 @@ export function prefetchCard(email: string, threadId: number): Promise<PersonPag
   if (had) return had.ready;
   if (!aiFeaturesOffered(getApp())) return Promise.resolve(null);
   const entry: { page: PersonPage | null; ready: Promise<PersonPage | null> } = { page: null, ready: Promise.resolve(null) };
-  entry.ready = client.call("people.person", { email, conversations: 2, except: threadId }).then(
+  entry.ready = client.call("people.person", { email, conversations: 6, except: threadId }).then(
     (page) => (entry.page = page),
     () => {
       cards.delete(key);
