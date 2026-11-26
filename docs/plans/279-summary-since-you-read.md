@@ -396,3 +396,81 @@ Sonnet leaves out far less, is wrong about as often (its one serious error: Marg
 On the tails, courtesy is 98% empty, and material has a since 87% of the time (where it hasn't, the summary carries the change).
 
 **The owner's rule** that other people's work owed to each other is never a row is now in the prompt ("What other people owe each other is never an item"). The judge's few "waiting row for Kit" flags are discounted by it.
+
+## Strategies for Luna
+
+> lets try to improve the prompt or simplify it again with luna againt sonnet, i refuse to believe it won't almost nail it every time, we just need the right strategy for this, also lets bring fable 5.2 and gpt astra as subagents to give you new ideas that we should try and haven't for this, run multiple experiments to find the best way to get good and accurate summaries and todos, tell the agents to look testimonies of people who claim that have succeeded building something similar and accurate(if any exists at all, otherwise dont use their opinions)
+
+**How it was measured.** The same 96 conversations as "Getting Luna right", with the judge's corrected rubric (judgeB): "done outside this mail" marks an open to-do, and what other people owe each other is never counted missing. Version 10 run three times on Luna gives rely 7.03 to 7.12 and serious misses 34 to 41, so a strategy counts only when it holds across two runs. Sonnet 5.5 with the same prompt: rely 7.74, 12 serious misses.
+
+**What the misses are.** Luna's serious misses are systematic, not random. Across three runs of version 10, 48 conversations never have one, and 16 have one every time. On the other 80, Sonnet also scores higher (7.97 against 7.53), so it isn't only the hard cases. By class:
+- asks put to the reader that get no row (about 13): an approval with a step ("merge after the release job goes green"), the check a scam warning gives ("ring us on …"), a choice ("10 or 11 November");
+- a since that leaves out the change or the new ask (about 10);
+- a summary without what waits on what, or why a plan moved (about 7);
+- an invoice whose lines don't add up (one conversation; neither model ever catches it);
+- what's owed to the reader with no waiting row (2).
+
+**Is the judge part of the gap?** The same cards judged by GPT Sol on the same rubric: Luna 8.06, Sonnet 8.48. About a third of the gap was Claude judging Claude. The rest is real. Sol counts more serious wrong claims for Sonnet (17 against Luna's 6), so Luna is the more precise of the two and leaves more out.
+
+**The ideas.** Fable 5.2 and Codex on `gpt-6.2-astra` proposed experiments twice: blind to each other, the second time with round 1's results. Both searched for anyone who reports measured accuracy for email summaries or to-dos from a small model. None does. The nearest measured results:
+- EVE: extract, then verify, recall 0.656 → 0.814;
+- KodeKloud: answers from the raw thread 100%, against 71% from a summary;
+- Tiny Titans (NAACL 2024): small models mostly don't match large ones on meeting summaries;
+- "Structure Tax" (AACL 2026): reasoning-first field order helps small models most;
+- "Play Favorites": judges favour their own family.
+
+**What was tried on Luna** (judgeB, Sonnet 5.5 as judge):
+
+| Strategy | Rows right | Rely | Wrong, high | Missing, high |
+|---|---:|---:|---:|---:|
+| Version 10, three runs | 7.09–7.21 | 7.03–7.12 | 3–9 | 34–41 |
+| Four rules for the misses (an accepted offer, an approval with a step, the deadline set, an earlier deadline holds) and a since that ends with the new ask (p9) | 7.30 | 7.16 | 7 | 37 |
+| Weekdays on dates, and the lines put to the reader and their "I'll …" listed after the mail | 7.20 | 7.12 | 9 | 35 |
+| A parallel call writing only the rows | 7.40 | 7.21 | 5 | 32 |
+| Three answers, rows two of three agree on / every row | 7.13 / 6.85 | 6.98 / 6.78 | 9 / 19 | 40 / 32 |
+| Luna re-reads the mail with its draft, plain / with a checklist | 7.15 / 7.11 | 7.12 / 7.05 | 2 / 6 | 36 / 37 |
+| The since's ask built from the rows in code | 7.05 | 6.91 | 6 | 39 |
+| p9 and when an ask is the reader's (mail between few people, a choice, a scam's check), what waits on what (p10), three runs | 7.21–7.49 | 7.09–7.39 | 8–11 | 28–35 |
+| p10 and a last line asking for rows | 7.36 | 7.33 | 8 | 27 |
+| p10 without "when you can't tell, it isn't an item", and that last line, twice | 7.05–7.28 | 6.95–7.27 | 5–9 | 25–32 |
+| p10 and the rows before the summary in the schema, twice | 7.36–7.43 | 7.17–7.21 | 6–8 | 26 |
+| **All three: p10, the last line, rows first (version 11), twice** | **7.11–7.31** | **7.06–7.18** | **9–10** | **24–27** |
+
+What these show:
+- **Voting and union do nothing.** The misses repeat, so three answers miss the same things.
+- **Re-reading nets zero.** It changes about half the rows and two thirds of the summaries, and its fixes and new errors cancel.
+- **The since's ask built in code is worse.** The appended asks read as clutter.
+
+**Judged by GPT Sol** (Anthropic's API usage limit was reached on 26 November, with access back on 1 December; Sol scored the same cards on the same rubric):
+
+| | Rows right | Rely | Wrong, high | Missing, high |
+|---|---:|---:|---:|---:|
+| Version 10, three runs | 8.30–8.43 | 8.00–8.06 | 6–10 | 87–91 |
+| **Version 11's strategy, twice** | **8.27–8.44** | **8.14–8.19** | **11–13** | **76–78** |
+| A ledger: a rows call that quotes every request in every message with its owner and status first (Astra), twice | 7.88–7.93 | 8.00–8.03 | 15–16 | 74–75 |
+| Version 11 in the app, twice | 8.36–8.51 | 8.15–8.17 | 11–15 | 75–79 |
+| Sonnet 5.5 | 8.72 | 8.48 | 17 | 71 |
+
+**What shipped, version 11 (the strategy of the last rows above):**
+- `<whose_is_it>` says when an ask is the reader's:
+  - an approval with a step;
+  - an offer the reader made that someone accepted;
+  - mail between the reader and one or two people;
+  - a choice, as a question;
+  - a deadline set earlier still holds, and a row's due is the deadline set, not the day the reader said.
+- A scam's request is still never a row, but the check trusted mail gives for it ("call us on …") is an action. The third example shows it.
+- The summary says what still waits on what, and why a plan changed.
+- The since ends with a new ask in a short second sentence.
+- The user turn's last line asks for a row for everything open that's the reader's, in place of a warning against rows.
+- The schema asks for the rows before the summary.
+
+It's about 275 tokens longer, so a 4,096-token window now gets the compact prompt.
+
+**Where it leaves Luna.** Serious misses fall by a quarter to a third on both judges, at the cost of two or three more serious wrong claims (rows that over-fire: a fee billed to an account read as "pay", someone else's task). Sol counts the result closer to Sonnet's misses (76–78 against 71), still with fewer serious wrong claims (11–13 against 17). Rely moves from 8.03 to 8.17 on Sol against Sonnet's 8.48, which closes about a third of the gap; on Claude's judge it's flat. The rest is model capacity: no prompt, call structure or vote found it.
+
+**Not adopted:**
+- the ledger, which is no more accurate and twice as slow (median 15 s against 7 s);
+- the audit pass;
+- the parallel rows call, whose gain the rows-first schema gives in one call.
+
+**Open:** the invoice whose lines don't add up (neither model catches it; a check in code is possible), and sending the predictable hard conversations to a stronger model (Fable's idea; no simple rule found them by length or senders).
