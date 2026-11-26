@@ -83,6 +83,8 @@ async function setup() {
   await client.call("settings.update", { ai: { provider: "fake", model: "demo" } });
   await client.call("settings.update", { dated: { enabled: false } });
   await client.call("settings.update", { dated: { enabled: true } });
+  // the dated reader alone: Follow-ups (on by default) reads received mail too since plan 280, a request of its own
+  await client.call("settings.update", { followups: { enabled: false } });
   clock.now += 120_000;
   cleanups.push(async () => {
     await backend.stop();

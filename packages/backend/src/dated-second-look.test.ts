@@ -489,6 +489,8 @@ async function setup() {
   const { account } = await first.backend.store.accounts.create({ kind: "gmail", email: me.email, displayName: me.name, color: "brown", now: 0 });
   await first.client.call("settings.update", { ai: { provider: "fake", model: "demo" } });
   await first.client.call("settings.update", { dated: { enabled: true } });
+  // the dated reader alone: Follow-ups (on by default) reads received mail too since plan 280, a request of its own
+  await first.client.call("settings.update", { followups: { enabled: false } });
   clock.now += 120_000;
   let seq = 0;
   const receive = async (backend: Backend, over: Partial<IncomingMessage> = {}) => {
