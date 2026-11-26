@@ -130,12 +130,12 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
           {t(theirs ? "followup.notAPromise" : "followup.dismiss")}
         </Button>
         {/* where it came from, named ("Your message, Oct 22"), its words (the quote) on hover; nothing when it's the one
-            message on screen. The QA panel: it and who found it are one group, so a narrow card wraps them together onto
-            one line (source at its start, provenance at its end), never one beside the buttons and one alone below */}
-        <span data-testid="followup-meta" className="flex min-w-max flex-1 items-center gap-2">
+            message on screen. The QA panel: it and who found it are one line of their own under the buttons (source on the
+            card's text line, provenance at its end), never one beside the buttons on one card and wrapped below on another */}
+        <span data-testid="followup-meta" className={cn("flex min-w-max flex-1 items-center gap-2", source !== null && "basis-full")}>
           {source !== null && (
             <Tooltip>
-              <TooltipTrigger render={<Button variant="ghost" size="sm" data-testid="followup-go" className="text-muted-foreground hover:text-foreground" onClick={() => revealSummaryMessage(target)} />}>
+              <TooltipTrigger render={<Button variant="ghost" size="sm" data-testid="followup-go" className="-ms-2.5 text-muted-foreground hover:text-foreground" onClick={() => revealSummaryMessage(target)} />}>
                 {source}
                 <ArrowRight aria-hidden />
               </TooltipTrigger>

@@ -380,3 +380,47 @@ Astra (`gpt-6.2-astra` on Codex, high effort) and Fable (Claude Fable 5.2) revie
 ## Renumbered for landing
 
 Plan 278 landed first with SQL v83 and IndexedDB 42 (`de08113b3`), so this plan's step is **SQL v84** (`followups_v84`, its rebuild) and **IndexedDB 43**, on a branch rebased onto it. Everything above that says v84 and 43 was written as v83 and 42; the steps are the same.
+
+## The QA panel (the owner: "simulate our 6 or 7 users that do qa")
+
+Seven personas, each with a fictional mailbox written for them (outside the repo, `/tmp/terno-scratch/p280/panel`): Theo (a freelance developer), Priya (a London product lead), María (a Mexico City agency owner, in Spanish), Diego (a Madrid architect, in Spanish), Jordan (a Chicago operations manager), Margaret (a retired teacher in New York) and Sam (a Toronto researcher). `scripts/ai-real/owed-panel.real.ts` (gated) reads each mailbox on real models under the spend ledger, as the app would. Follow-ups goes on Tuesday 2026-11-10 at 09:00, and the checks read what was already there. The rest arrives as live mail at its own moment. The persona opens Terno on Friday 2026-11-13 at 09:30 in their zone. A capture (not committed) serves each copy to the app on that morning and screenshots the Inbox's top, Follow-ups and each card. Each persona then judged their own screens against their own key of what they were owed: four on Fable and three on Astra.
+
+**What the runs found in the reader, fixed in `85c3e9186` and `e24a928ab`:**
+
+- A mail's close or move was dropped when the promise came due while the reading was out.
+- "Two open items" was taken as talk to the app.
+- A quote whose last words the model reworded was dropped.
+- A file alone, or one named in another language, didn't close its promise.
+- The check never read service notices.
+- The tentative cues missed "intentaré" before a non-ASCII letter.
+- The model wrote the sender's "my" (prompt v4 and a local guard).
+- A row said the moment the promise turned late ("Tue 9:00 AM") instead of the day promised.
+
+**What the reviewers found, fixed in `e25a12e58`:**
+
+- **Red ink:** every row of theirs was red, read as "all of them overdue". Red now means late and firm; the rest are quiet.
+- **The row's name:** a row whose last sender was you showed your name and picture. It now shows who owes it.
+- **Undated promises:** a promise with no day showed the mail's date in the date column. It shows none, as What matters' undated promise does.
+- **Tentative wording:** "hoped to" and "esperaba" read as given up. A tentative promise now hopes ("Alex hopes to…", "espera…"), and its card says "Maybe by Monday", or "Hoped for Monday" once that day is past, never "Due".
+- **Buttons:** Received was the filled button on promises not yet due. The one filled button is now the likeliest step: Received when their mail or a notice may have brought the thing, otherwise Write a follow-up.
+- **The follow-up on "wrote since":** a late, firm card whose debtor wrote since hid Write a follow-up. It stays, as the second button (Theo: Marcus wrote about something else).
+- **The card's source:** it named the promise's mail even when another mail moved its day. It now names the mail that moved it (`moved_by`, added to v84, which hasn't shipped), or the notice the card asks about. The quote shows on hover only over the promise's own mail.
+- **Layout:** the source and "Found with AI" landed in different places from card to card. When a card has a source, the two now share a line of their own under the buttons, with the source's text on the card's text line.
+- **The tip:** it promised the Inbox's top, which tentative promises and promises from a check never reach.
+- **Prompt v5:** "early next week" became that week's Sunday; a week's start is now its Tuesday. "$1,200" lost its currency; amounts are kept as written.
+
+
+**The rerun with these fixes (prompt v5):** 56 of 84 promises came out as each persona's key has them, with no false rows. The misses are the expected ones:
+- promises the check skips because they are more than 7 days late;
+- relays that hint rather than close, by design;
+- hedged and holding promises shown as late, by policy;
+- group-addressed promises, by policy.
+
+"Early next week" now lands on its Tuesday. The spend ledger (`/tmp/terno-scratch/p280/spend-owed-panel.jsonl`) totals $4.67 for every panel run. Light and dark screenshots of the card were checked after the fixes.
+
+**Left, not this feature's:**
+
+- Margaret's "Got the photos, thanks, dear! … Give Kate my love." made plan 142 wait for a reply. That is the sent-mail reader's judgment, and `isAcknowledgment` rightly keeps a message with more in it.
+- "Decirle a Lucía si falta algo" and "Answer Jun about lunch" are the dated reader's items (What matters).
+
+**For the owner:** relay notices closing rather than hinting; what the sidebar's count counts; "Received" for calls and answers; whether a hedged or "I'll get back to you" promise ever turns late; promises addressed to a group; a grace period before suggesting a follow-up to family; and Fable's forged-From close.
