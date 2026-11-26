@@ -345,3 +345,54 @@ Flat within a reviewer's noise. Two of round 2's worst cases came from the cards
 Sonnet leaves out far less, is wrong about as often (its one serious error: Margaret's December visit put in November), and gives a since on 38 of 42 against Luna's 30 to 34. It's faster (median 2.9 s against 8.6 s) and about 18 times dearer: $0.012 a summary against $0.0007, about $3.70 a month at 300 summaries against $0.20. Neither caught Theo's invoice whose lines don't add up. For the owner.
 
 **Known:** one long solicitor's thread (`margaret-1`) is cut off in 3 of 5 runs at 5,000 tokens; the card now says so with Try again.
+
+## Getting Luna right
+
+> i'm sorry but tehre has to be a way to get luna to work really good, please investigate prompting guides, use multi-shot prompting with luna or something similar, investigate how to properly use luna and prompt it so we can get better with it, and the scores went down for this round.
+>
+> we won't do rows for work owed between other people
+
+**What the guides say.** OpenAI publishes no Luna-specific guide; the GPT-5 to 5.5 guides and the GPT-6.2 page for Astra and Sol apply to the family:
+- Contradictory or vague instructions hurt reasoning models more than older ones, because they spend their thinking reconciling them.
+- For a new model, start from "the smallest prompt that preserves the product contract", with XML-style sections and decision rules rather than stacked absolutes.
+- Put the static parts first and what changes per request last, so the prefix is cached.
+- `verbosity` (low is recommended for concise answers) is separate from `reasoning_effort`, and "higher reasoning effort isn't automatically better".
+- None of the guides covers few-shot examples: that has to be measured. Version 9 had grown across plans 132 to 279 into overlapping rules ("empty is the usual answer" beside "never empty when…", asks banned from the since and then allowed).
+
+**How it was measured.** 96 conversations: the panel's 42, with each person's expectations, and the 54 fictional conversations asked a since, with their answer keys. Each variant's cards on Luna were scored by one fixed judge (Claude Sonnet 5.5, `scripts/ai-real/summaries-judge.real.ts`) on the panel's facets, with every wrong or missing fact and its evidence. The judge scoring the same cards twice moves by 0.01; the same prompt's cards made twice move "rely" by up to 0.17 and serious misses by 15. So only differences that hold across runs count.
+
+| Variant (on Luna) | Since accurate | Concise | Rows right | Whole accurate | Rely | Wrong, high | Missing, high | Median |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Version 9, judged twice | 8.31 / 8.30 | 8.14 / 8.09 | 6.40 / 6.42 | 7.27 / 7.31 | 6.52 / 6.53 | 11 / 9 | 57 / 57 | 8.2 s |
+| V1: the rewrite per the guides | 8.38 | 8.42 | 6.45 | 7.44 | 6.40 | 13 | 59 | |
+| V2: V1 and two worked examples | 8.26 | 8.39 | 6.55 | 7.25 | 6.54 | 8 | 50 | |
+| V3: V2 and the rows as the reader's checklist | 8.31 | 8.10 | 6.65 | 7.52 | 6.70 | 7 | 44 | 7.2 s |
+| V3 at low verbosity, twice | 8.43 / 8.43 | 8.27 / 8.22 | 6.75 / 6.75 | 7.33 / 7.31 | 6.76 / 6.59 | 5 / 15 | 38 / 53 | 5.7 / 6.2 s |
+| V4: V3, a third example (a scam beside an acceptance), low verbosity | 8.42 | 8.20 | 6.80 | 7.48 | 6.71 | 15 | 46 | 5.7 s |
+| High effort, version 9 / V3 | 8.32 / 8.28 | 8.14 / 8.23 | 6.46 / 6.58 | 7.28 / 7.47 | 6.51 / 6.59 | 13 / 15 | 52 / 45 | 10 s, 6% cut off |
+| Two passes (notes, then the card), version 9 / V4 | 8.20 / 8.17 | 8.04 / 7.91 | 6.43 / 6.41 | 7.19 / 7.45 | 6.31 / 6.47 | 17 / 15 | 58 / 51 | 16–17 s |
+| **Version 10 in the app (V4)** | **8.47** | **8.29** | **6.73** | **7.46** | **6.72** | **10** | **48** | |
+
+**What held:**
+- **The rows as the reader's checklist** raise "rows right" on every run: every deadline, payment, appointment or meeting to keep is a row, even when the summary names it.
+- **Low verbosity** makes Luna 30% faster with no loss.
+- **The rewrite and the examples** do nothing measurable on their own, but they are the clean base the rows rule and the since sit on.
+- **High effort and two passes** are no better, slower, and the first cuts answers off.
+
+**What shipped (`7a23d91ab`), version 10:**
+- the full prompt in sections (role, input, card, whose is it, accuracy, since, examples, style);
+- three worked examples built in code, with "since" only when one is asked;
+- low verbosity, sent to OpenAI's own reasoning models exactly where `reasoning_effort` goes;
+- six asks, six dates or decisions and two waiting, none taking another's place;
+- the compact prompt for small windows unchanged.
+
+**Over the whole corpus** (370 conversations without a since, against version 9):
+- asks lost on 13 cards (version 9's own rerun: 12);
+- asks up 123 → 153 (group deadlines and dated promises);
+- rows up 125 → 328 (63 dates, 102 waiting);
+- summaries 299 → 222 characters;
+- no failures.
+
+On the tails, courtesy is 98% empty, and material has a since 87% of the time (where it hasn't, the summary carries the change).
+
+**The owner's rule** that other people's work owed to each other is never a row is now in the prompt ("What other people owe each other is never an item"). The judge's few "waiting row for Kit" flags are discounted by it.
