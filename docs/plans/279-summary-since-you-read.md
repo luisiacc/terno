@@ -269,3 +269,31 @@ A new preparation step, `since`, after `conversations`, opens each one as a pers
 - **Factura:** empty in one run, "Laura confirmó que recibió la factura de septiembre." in the other. The courtesy rule holds 96% of the time on the corpus, and this receipt is one of the cases it doesn't.
 
 Tests: `demo-since.test.ts` (seeded once, each conversation's boundary where its unread run starts, dated under the top six), `demo-ai.test.ts` (the step's subjects are the seed's, and an old profile runs only `since`), and `test-hooks.test.ts` (only a dev demo on the fixed clock seeds them). `pnpm dev:demo-ai` itself wasn't launched: it opens a window and would use the demo profile.
+
+## The QA panel
+
+> simulate our 6 or 7 users that do qa and have differemt personalities and get them to use this feature, see what they find and fox the obvious things thqt can be improved, then bring me whatever needs my opinion
+
+The seven people of plan 204's panel (Theo, Diego, Jordan, María, Sam, Margaret, Priya): four on Claude (Fable 5.2 twice, Opus, Sonnet), three on Codex `gpt-6.2-astra`. Each wrote six conversations from their own life as a tester would, with read flags and the since they expected, 42 in all. These went through the shipped prompt on GPT Luna, and each person then reviewed their own cards: the text, and screenshots of the real card in the app, light and dark.
+
+| Average of seven, 0 to 10 | |
+|---|---:|
+| Since is accurate | 7.9 |
+| Since is concise | 9.0 |
+| Since tells me what I needed | 6.4 |
+| Rows are right | 5.1 |
+| The card's look and the switch | 7.4 |
+| Would rely on it daily | 5.6 |
+
+**Fixed:**
+- **An answer cut off left no card.** 3 of 42 long conversations; the worker treats it as invalid output and stops. A summary's answer may now use 5,000 tokens, not 3,000; the allowance is a ceiling, billed only as used. Rerun three times, none was cut off; one in the 42 still was, once.
+- **A scam read as a disagreement** (4 of 7 people): "a conflicting message asks you to verify details … by 5pm Wednesday", "Cirrostack Billing separately requests $38,400". The since now puts it first, names its address and says it looks like a scam, and gives none of its deadlines or account details as the reader's. The summary's own scam rule says the same. All four now read, for example: "A message from accounts@cirrostack-billing.example claims new bank details and asks for $38,400, but looks like a scam."
+- **A table of contents for a since:** "Hollis's director-approved options replace Q-20931". It now gives the figures, dates and names themselves.
+- **Disagreements settled:** "Brenda confirmed lunch is Sunday 13" while Jean thought the 12th. It says so rather than settling it.
+- **The two views the same:** when the since's words are nearly all the summary's and the other way round, there's no switch.
+
+Re-measured on the corpus's 192 asked cards: asks 73 → 73 (A's rerun 72 → 70), summary length 300 (A 311), none under 60%.
+
+**Not the feature:** the screenshots' dates ("Since Oct 19" on a November thread) come from the harness, which moves each conversation to the test app's clock; and "Reply" in English on Diego's Spanish card comes from the test window's language.
+
+**For the owner:** rows (5.1, the weakest score), a since naming what's newly asked of you, overdue marks, Reply on every to-do, and wrong facts in the whole summary. Each is in the report that follows.

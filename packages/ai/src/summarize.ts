@@ -140,8 +140,8 @@ const CREDIT = `credit it to whoever said it: by name (their address when there'
  * compact one is at its window's floor). The summary and items keep the whole conversation's words.
  */
 const SINCE = `Last, once the card above is done, write "since". Write the summary and items exactly as you would with nothing marked new, and change nothing in them for "since": the summary gives where things stand now, the new messages included (a moved date is the new date there too), and every action and question stays an item with its current deadline.
-- "since": messages marked new="yes" arrived after the reader last read this conversation. The reader sees either the summary or "since", never both, so "since" stands on its own and says the change again in its own words: one short sentence, 25 words at most, on the most important thing the new messages change, a decision, an approval, a cancellation, or a date or amount that moved (from what to what), before any detail; a second sentence only for another change the reader needs. With several new messages, say where things ended up, not each message in turn. Start with who and what changed ("Ana moved the call to Friday 6 March"), credited as in the summary; never "a new reply", "the latest message" or when it arrived.
-  Say only what the new messages say, never what they leave out or don't confirm. When a short reply's meaning depends on earlier mail, say it with that meaning ("Ana approved the second quote"). An earlier message may be cut short, so call something added or replaced only when the mail shows what was there before. What a new message quotes or forwards from earlier isn't new, and the reader's own messages are context, not news. Call something done, received or booked only when a new message says so. Never copy a password, a code or another secret: say it was sent.
+- "since": messages marked new="yes" arrived after the reader last read this conversation. The reader sees either the summary or "since", never both, so "since" stands on its own and says the change again in its own words: one short sentence, 25 words at most, on the most important thing the new messages change, a decision, an approval, a cancellation, or a date or amount that moved (from what to what), before any detail; a second sentence only for another change the reader needs. Give the figures, dates and names themselves, never "the changes", "new options" or "the details" without them. With several new messages, say where things ended up, not each message in turn. Start with who and what changed ("Ana moved the call to Friday 6 March"), credited as in the summary; never "a new reply", "the latest message" or when it arrived.
+  Say only what the new messages say, never what they leave out or don't confirm. When a short reply's meaning depends on earlier mail, say it with that meaning ("Ana approved the second quote"). An earlier message may be cut short, so call something added or replaced only when the mail shows what was there before. What a new message quotes or forwards from earlier isn't new, and the reader's own messages are context, not news. Call something done, received or booked only when a new message says so. When people disagree or a point isn't confirmed, say so rather than settle it ("Brenda says Sunday 13; Jean thought Saturday 12"). A new message that looks like a scam (from an address unlike the sender's usual one, asking for money, new bank details or a login) comes first: say it's from that address and looks like a scam, and give none of its deadlines, amounts due or account details as the reader's. Never copy a password, a code or another secret: say it was sent.
   "since" never says what the reader has to do, answer or has promised, nor a question or offer put to them: those are items, even when that's all that's new, and one still open stays an item when "since" tells what led to it ("Priya accepted your offer" leaves "Bring the table" a row). Empty is the usual answer when the new messages change nothing: thanks, "got it", a receipt confirmed, "will do" (never say what they'll do unless the message does), a promise to explain later, an opinion, a joke or an aside, what was already known. Never pad it.`;
 
 const SYSTEM = (language: string, today: string, full = true, since = false) =>
@@ -164,7 +164,7 @@ Accuracy comes first: never state what you aren't sure of, and never lose what t
 ${full ? WHO_ACTS : ""}Return:
 - "summary": one to three plain sentences on where things stand: what happened, what was decided, and what the reader is waiting on from others. What the reader has to do or answer${full ? " now" : ""} goes in the items and isn't mentioned here at all, not even as pending or awaited${full ? LATER : ""}.
 - "items": ${full ? "usually at most four things the summary leaves out (up to six when there are more separate requests)" : "at most six things the summary leaves out"}, each with a short "text", under 15 words, and "message", the id of the message that says it:
-  - "action" (something the reader has to do) and "question" (a question waiting for the reader's answer), one thing each. ${full ? 'Only what "Who has to act" gives the reader.' : ONLY_ASKED} What a scam or a suspicious message demands isn't something the reader has to do: say in the summary that it asks for it.${full ? NEXT_STEP : ""}
+  - "action" (something the reader has to do) and "question" (a question waiting for the reader's answer), one thing each. ${full ? 'Only what "Who has to act" gives the reader.' : ONLY_ASKED} What a scam or a suspicious message demands isn't something the reader has to do: say in the summary that it asks for it, from which address, and that it looks like a scam, never with its deadline as the reader's.${full ? NEXT_STEP : ""}
   - Write a "question" as the question was asked, ending in "?" ("Can you make the 19th?"), never as an instruction ("Share your thoughts on…"); write an "action" as what to do, starting with the verb ("Send the signed contract").
   - "date" (a date or deadline that matters) and "decision" (something settled), when the summary doesn't already say it.
   Nothing that's already done, withdrawn or overtaken is an item, nor a question the reader has answered, a joke or an aside. Never restate the summary in an item, even in other words. When there's nothing to add, return no items: no item is better than a padded one.
@@ -255,6 +255,16 @@ const amountsIn = (text: string) => new Set((text.match(NUMBER) ?? []).map(amoun
 /** A weekday with no date beside it reads as the coming one. It can be right ("Monday to Friday"), so it's only asked about. */
 const FLOATING = new RegExp(`(?<![\\p{L}])(?<!every |each |cada |los )(${WEEKDAYS_EN}|${WEEKDAYS_ES})(?![\\p{L}])${DATE_NEXT}`, "iu");
 
+/**
+ * Plan 279's panel: the two views as good as the same, by their words (most of each in the other), is no view of its own:
+ * the card shows the summary alone.
+ */
+function alike(summary: string, since: string): boolean {
+  const a = new Set(words(summary).trim().split(" ")), b = new Set(words(since).trim().split(" "));
+  const shared = [...b].filter((w) => a.has(w)).length;
+  return shared >= 0.85 * b.size && shared >= 0.75 * a.size;
+}
+
 /** Plan 279 (Astra review 12): "Monday to Friday" is a schedule, not a day that floats. */
 const RANGES = new RegExp(`(?:${WEEKDAYS_EN}|${WEEKDAYS_ES})\\s*(?:to|through|thru|-|–|a|al|hasta(?: el)?)\\s*(?:${WEEKDAYS_EN}|${WEEKDAYS_ES})`, "giu");
 
@@ -324,7 +334,7 @@ export function summarizeTask(input: SummarizeInput): StructuredTask<Wire, Threa
       // held to the summary's checks, but never sent back: a repair rewrites the whole card, and could lose a row the
       // first answer had right (Codex code review 4). One that fails goes, and the card stands
       // the summary again (the whole of it, as good as) is no view of its own; a sentence of it is: they're never both shown
-      const again = repeats(said, written) && written.length >= summary.length * 0.8;
+      const again = (repeats(said, written) && written.length >= summary.length * 0.8) || alike(summary, written);
       const changed = written && !again && !unsupported(written, source, amounts) && !FLOATING.test(written.replace(RANGES, "")) ? written : "";
       // only what will show: a row that's going anyway is nothing to send back
       const shown = [summary, ...items.map((i) => i.text)];

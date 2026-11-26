@@ -160,6 +160,10 @@ describe("the prompt", () => {
       expect(task.system).toMatch(/one short sentence, 25 words at most/);
       expect(task.system).toMatch(/never "a new reply", "the latest message" or when it arrived/);
       expect(task.system).toMatch(/Never copy a password/);
+      // the panel: the figures themselves, disagreements left open, a scam named first
+      expect(task.system).toMatch(/Give the figures, dates and names themselves/);
+      expect(task.system).toMatch(/say so rather than settle it/);
+      expect(task.system).toMatch(/looks like a scam .* comes first/);
       // an example a small model would copy says nothing
       expect(task.example).toMatchObject({ since: "" });
       const plain = summarizeTask(input());
@@ -206,6 +210,12 @@ describe("the prompt", () => {
       await expect(run).resolves.toMatchObject({ since: "Ana now proposes the 19th." });
     });
 
+    it("the two views as good as the same: no since, so no switch (the panel)", async () => {
+      const summary = "Dana offered $1.2M at a $16M post-money cap, and the partners approved it.";
+      const { run } = ask([{ summary, items: [], since: "Dana offered $1.2M at a $16M post-money cap; partners approved." }]);
+      await expect(run).resolves.toMatchObject({ since: "" });
+    });
+
     it("a long one ends at its last whole sentence, never mid-claim", async () => {
       const first = `Ana moved the signing from the 12th to the 19th, at the notary on Calle Mayor, and ${"asked everyone to come early ".repeat(6).trim()}.`;
       const { run } = ask([answer(`${first} Then she said the deposit is 1,250 and ${"x ".repeat(200)}`)]);
@@ -224,7 +234,8 @@ describe("the prompt", () => {
     });
 
     it("the fake answers one from the first new message", async () => {
-      const r = await createAi(config(), { transport: fakeTransport() }).summarize(input(undefined, { thread }));
+      const more = [...thread, { label: "m3", from: "Ana <ana@books.test>", date: "2026-11-03", own: false, text: "Please bring the signed contract and both IDs to the notary.", isNew: true }];
+      const r = await createAi(config(), { transport: fakeTransport() }).summarize(input(undefined, { thread: more }));
       expect(r.since).toBe("New: The 12th doesn't work after all: the 19th instead.");
       expect((await createAi(config(), { transport: fakeTransport() }).summarize(input())).since).toBeUndefined();
     });
