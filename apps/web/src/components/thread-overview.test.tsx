@@ -37,9 +37,12 @@ const file = (id: number, assetId?: string, filename = `file-${id}.pdf`): Attach
 const peopleOf = (messages: MessageDetail[]) => <ThreadPeople detail={{ messages } as ThreadDetail} myEmails={[me.email]} icons={false} personOf={() => true} />;
 
 describe("ThreadPeople (plan 177)", () => {
-  it("isn't there for a single message", async () => {
+  it("on a single message, there when two or more others are on it (plan 281: a group email's way to each card); one other, none", async () => {
     const host = await render(peopleOf([msg({ to: [me, person(1)] })]));
-    expect(host.querySelector("[data-testid=thread-people]")).toBeNull();
+    expect(host.querySelectorAll("[data-testid=thread-person]")).toHaveLength(2);
+    cleanup!();
+    const alone = await render(peopleOf([msg({ to: [me] })]));
+    expect(alone.querySelector("[data-testid=thread-people]")).toBeNull();
   });
 
   it("isn't there for a one-to-one conversation: its headers say who (plan 194)", async () => {

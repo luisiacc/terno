@@ -23,7 +23,7 @@ import { printCommand } from "~/lib/print-open";
 import { checkForUpdates } from "~/lib/updates";
 import { closeEmptySearch, focusRows, focusSearch, listScroller } from "~/components/thread-list";
 import { closeFeedConversation } from "~/lib/feed-pane";
-import { backToRow, clearPeopleSearch, closePersonConversation, focusPeopleSearch, leavePerson, movePerson, openPeople, personKeyAct, personWrite } from "~/lib/people";
+import { backToRow, clearPeopleSearch, closePersonConversation, focusPeopleSearch, leavePerson, movePerson, openPeople, personKeyAct, personWrite, returnFromPeople } from "~/lib/people";
 import { popupOpen } from "~/components/composer/controller";
 import { feedPlace, feedScroller, focusFeed, openFeedKeyRow } from "~/lib/feed-focus";
 import { snackbarControls } from "~/components/category-snackbar";
@@ -210,7 +210,8 @@ function escape() {
   if (!s.checked.size && !s.scope && closeFeedConversation()) return;
   // plan 281: a conversation opened from a person's page goes back to the page (Split); in List, the page over the list
   // closes as any page does, and from a person's page there, Esc goes back to the list
-  if (closePersonConversation() || backToRow() || clearPeopleSearch()) return;
+  // (from "Open in People": back to that conversation first)
+  if (closePersonConversation() || returnFromPeople() || backToRow() || clearPeopleSearch()) return;
   if (s.people && s.person !== null && listLayout() && currentPage() === "list") return leavePerson();
   if (listLayout() && currentPage() !== "list") { markSelectionIntent(); closePage({ focus: true }); }
   // plan 161, pass 2: a matched conversation open in the reader closes first, back to the rule; then the preview ends

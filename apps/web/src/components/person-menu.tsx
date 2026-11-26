@@ -1,7 +1,7 @@
 import { formatAddressList, type ThreadDetail } from "@terno/core";
 import { t } from "@terno/i18n";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
-import { Copy, Reply, Search, SquarePen, Users } from "@terno/ui/icons";
+import { Copy, Ellipsis, Reply, Search, SquarePen, Users } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { composeLanding, type ComposeLanding } from "~/lib/compose";
@@ -24,7 +24,7 @@ export type PersonParts = MenuParts & { Separator: ComponentType };
  * focus (each menu keeps its own way of giving focus back when that's refused).
  */
 export function PersonItems({ person, detail, offerReplyOnly, compose, parts }: { person: ThreadPerson; detail: ThreadDetail; offerReplyOnly: boolean; compose: (open: () => Promise<ComposeLanding>) => void; parts: PersonParts }) {
-  const { Item, Separator } = parts;
+  const { Item, Separator, Sub, SubTrigger, SubContent } = parts;
   const categories = useApp((s) => s.categories);
   const peopleOn = useApp(aiFeaturesOffered);
   const filedIn = categories.filter((c) => detail.thread.categoryIds.includes(c.id));
@@ -62,11 +62,20 @@ export function PersonItems({ person, detail, offerReplyOnly, compose, parts }: 
         <Copy />
         <span className="min-w-0 flex-1 truncate">{t("threadMenu.copyAddress")}</span>
       </Item>
-      {/* about mail from them: only someone who wrote here */}
+      {/* about mail from them: only someone who wrote here; folded under More (owner, after the QA panel: the card above
+          is what the menu is for) */}
       {person.wrote && (
         <>
           <Separator />
-          <SenderItems sender={{ email: person.email, name: person.name }} accountId={detail.thread.accountId} categories={categories} filedIn={filedIn} parts={parts} />
+          <Sub>
+            <SubTrigger data-testid="person-more">
+              <Ellipsis />
+              <span className="min-w-0 flex-1 truncate">{t("people.moreActions")}</span>
+            </SubTrigger>
+            <SubContent className="w-max max-w-96 min-w-60" data-testid="person-more-menu">
+              <SenderItems sender={{ email: person.email, name: person.name }} accountId={detail.thread.accountId} categories={categories} filedIn={filedIn} parts={parts} />
+            </SubContent>
+          </Sub>
         </>
       )}
     </>

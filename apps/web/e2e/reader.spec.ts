@@ -157,7 +157,8 @@ test.describe("reader conversation", () => {
       await chip("Mei Nakamura").click({ button: "right" });
       await expect(menu).toBeVisible();
       await expect(page.getByTestId("message-menu")).toHaveCount(0);
-      await expect(menu.getByTestId("person-menu-who")).toHaveText(`${mei.name}${mei.email}`);
+      // (after their face, plan 281)
+      await expect(menu.getByTestId("person-menu-who")).toHaveText(new RegExp(`${mei.name}${mei.email}$`));
       await axeBothModes(page, "[data-testid=person-menu]");
       await page.keyboard.press("Escape");
       await expect(menu).toBeHidden();

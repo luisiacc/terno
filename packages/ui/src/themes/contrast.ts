@@ -57,6 +57,10 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   ...ui("destructive", ["pane", "row-hover", "row-selected"]),
   ...ui("unread", ["pane", "row-hover"]),
   ...text("success-ink", ["background", "tint"]),
+  // plan 281 (owner, after the QA panel): People's kind glyphs, your promise in the unread's ink and a reply owed to you in
+  // the success ink, on People's list (a row hovered or selected), a person's page and the card in a chip's menu
+  ...ui("unread", ["popover", "menu-highlight"]),
+  ...ui("success-ink", ["pane", "row-hover", "row-selected", "popover", "menu-highlight"]),
   ...ui("ring", ["tint", "sidebar"]),
   ...ui("primary", ["tint"]),
   ...text("sidebar-foreground", ["sidebar", "sidebar-accent"]),

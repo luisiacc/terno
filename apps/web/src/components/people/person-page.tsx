@@ -14,6 +14,7 @@ import { usePeople } from "~/state/people";
 import { useLayoutEffect, useRef, useState } from "react";
 import { SenderAvatar } from "../sender-avatar";
 import { copyAddress } from "../sender-menu-items";
+import { firstName } from "~/lib/thread-overview";
 import { itemWhen, PersonItemLine } from "./person-item";
 
 /**
@@ -113,6 +114,9 @@ function Body({ page }: { page: Page }) {
   const now = page.items.filter((i) => !itemWhen(i, stamp).later);
   const later = page.items.filter((i) => itemWhen(i, stamp).later);
   const newest = page.conversations[0];
+  // a group email they were only on says so (owner, after the QA panel): "between you" is what they wrote in too
+  const wrote = page.wrote ? new Set(page.wrote) : null;
+  const short = firstName(page.name, page.email);
   const write = () => void composeLanding("new", null, 0, () => ({ toText: formatAddressList([{ name: page.name, email: page.email }]) }), newest?.accountId);
   return (
     <>
@@ -206,7 +210,18 @@ function Body({ page }: { page: Page }) {
                     </span>
                     <span className="shrink-0 text-sm text-row-preview tabular">{listDate(c.lastDate)}</span>
                   </span>
-                  <span className="type-row-snippet mt-0.5 block truncate text-row-preview">{c.snippet}</span>
+                  <span className="type-row-snippet mt-0.5 block truncate text-row-preview">
+                    {wrote && !wrote.has(c.id) && (
+                      <>
+                        <span data-testid="person-conversation-not-from" className="font-medium" aria-hidden>
+                          {t("people.notFrom", { name: short })}
+                        </span>
+                        <span className="sr-only">{t("people.notFromSaid", { name: short })}: </span>
+                        <span aria-hidden> · </span>
+                      </>
+                    )}
+                    {c.snippet}
+                  </span>
                 </button>
                 <span aria-hidden className="hairline-b pointer-events-none absolute start-3 end-3 -bottom-px group-hover/conv:invisible" />
               </li>

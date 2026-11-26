@@ -88,7 +88,7 @@ test.describe("the People filter", () => {
     await page.keyboard.press("j");
     await expect(page.locator(`[data-thread-id="${id}"]`)).toHaveCount(0);
     if (design === "lumen" || design === null) await expect(page.getByTestId("quick-filter-people")).toHaveAttribute("aria-pressed", "true");
-    else await expectFilter(page, "people", "People");
+    else await expectFilter(page, "people", "From people");
   });
 
   test("macOS: the palette offers People and Waiting; the filter menu", async ({ app: page, server }) => {
@@ -114,7 +114,7 @@ test.describe("the People filter", () => {
       await fresh();
       await chooseFilter(page, "macos", "people");
       await showing(page, "people");
-      await expectFilter(page, "people", "People");
+      await expectFilter(page, "people", "From people");
       await chooseFilter(page, "macos", "waiting");
       await showing(page, "waiting");
       await expectFilter(page, "waiting", "To reply to");

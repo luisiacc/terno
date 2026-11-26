@@ -14,10 +14,11 @@ import { installScrollHairline } from "~/lib/scroll-hairline";
 import { useAppearance } from "~/lib/appearance";
 import { useDesign } from "~/lib/design";
 import { useApp } from "~/state/app";
-import { indexOf, matchedParts, peopleRows, usePeople, type PeopleRow } from "~/state/people";
+import { indexOf, matchedParts, openNow, peopleRows, usePeople, type PeopleRow } from "~/state/people";
 import { Marked } from "../match-mark";
 import { SenderAvatar } from "../sender-avatar";
-import { itemGlyph, itemParts, itemWhen } from "./person-item";
+import { personItemSince } from "@terno/core";
+import { itemGlyph, itemParts, itemTone, itemWhen, KindLabel, waited } from "./person-item";
 import { PersonPage } from "./person-page";
 
 /** where the list was left: coming back to People finds it there */
@@ -143,7 +144,7 @@ function PeopleList({ wide }: { wide: boolean }) {
   }, []);
 
   const failed = usePeople((s) => s.failed);
-  const openCount = state?.open.length ?? 0;
+  const openCount = openNow(state);
   const index = indexOf(state);
   const searching = query.trim() !== "";
   const empty = state !== null && rows.length === 0;
@@ -266,7 +267,8 @@ function Heading({ row }: { row: Extract<PeopleRow, { kind: "heading" }> }) {
       <Badge variant="neutral" className="tabular self-center">
         {formatNumber(row.count)}
       </Badge>
-      {row.id === "everyone" && <span className="ms-auto min-w-0 truncate text-xs font-normal text-muted-foreground">{t("people.everyoneOrder")}</span>}
+      {/* each section says its order */}
+      <span className="ms-auto min-w-0 truncate text-xs font-normal text-muted-foreground">{t(row.id === "open" ? "people.openOrder" : "people.everyoneOrder")}</span>
     </h2>
   );
 }
@@ -283,8 +285,10 @@ const PersonRow = memo(function PersonRow({ row, selected, tabbable, query }: { 
   const first = byAddress ? undefined : (row.open?.items.find((i) => !itemWhen(i).later) ?? row.open?.items[0]);
   const parts = first ? itemParts(first) : null;
   const Glyph = first ? itemGlyph(first) : null;
-  // the right column is what's open's when: with nothing open, none (the page says when you last wrote each other)
+  // the right column: how long what's open has waited (Open is longest waiting first), red when it's late; what's put off,
+  // when it's back; with nothing open, none (the page says when you last wrote each other)
   const when = first ? itemWhen(first) : { text: null, late: false, later: false };
+  const age = first && !when.later ? waited(personItemSince(first)) : null;
   // what else is open now (what's put off waits on their page, under Put off)
   const items = row.open?.items ?? [];
   const now = items.filter((i) => !itemWhen(i).later).length;
@@ -319,15 +323,27 @@ const PersonRow = memo(function PersonRow({ row, selected, tabbable, query }: { 
           <span className="type-row-from min-w-0 flex-1 truncate">
             <Marked text={row.name} needles={undefined} parts={query ? matchedParts(row.name, query) : null} testId="people-match" />
           </span>
-          {when.text && <span className={cn("shrink-0 text-sm tabular", selected ? "text-row-selected-foreground" : when.late ? "font-medium text-destructive-ink" : "text-row-preview")}>{when.text}</span>}
+          {(age || when.text) && (
+            <span data-testid="person-row-when" className={cn("shrink-0 text-sm tabular", selected ? "text-row-selected-foreground" : when.late ? "font-medium text-destructive-ink" : "text-row-preview")}>
+              {age ? (
+                <>
+                  <span aria-hidden>{age.text}</span>
+                  <span className="sr-only">{age.said}</span>
+                </>
+              ) : (
+                when.text
+              )}
+            </span>
+          )}
         </span>
         <span className={cn("mt-0.5 flex min-w-0 items-center gap-1.5 text-sm", selected ? "text-row-selected-foreground" : "text-row-preview")}>
           {first && Glyph ? (
             <>
-              <Glyph aria-hidden className="size-[1.15em] shrink-0 opacity-80" />
-              {/* what's open, in words: its kind, then what */}
+              <Glyph aria-hidden className={cn("size-[1.15em] shrink-0", !selected && itemTone(first))} />
+              {/* what's open, in words: its kind (a waiting conversation's, its glyph alone), then what */}
               <span className="min-w-0 flex-1 truncate">
-                <span className="font-medium">{parts!.label}</span> · {parts!.text}
+                <KindLabel parts={parts!} />
+                {parts!.text}
               </span>
               {more > 0 && (
                 <Badge variant="neutral" className="ms-auto tabular" title={t("people.moreSaid", { count: more })}>

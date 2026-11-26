@@ -48,7 +48,7 @@ function trackNavigation(): void {
       breadcrumb("nav", "nav.view", { view: s.query ? "search" : s.categoryId ? "category" : (s.view as FieldValueOf<"view">) });
     }
     if (s.selectedId !== prev.selectedId && s.selectedId !== null) breadcrumb("nav", "nav.thread", { threadId: s.selectedId });
-    if (s.dialog !== prev.dialog && s.dialog) breadcrumb("ui", "ui.dialog", { dialog: s.dialog === "todayLater" || s.dialog === "todayChange" || s.dialog === "firstScreen" ? "other" : s.dialog });
+    if (s.dialog !== prev.dialog && s.dialog) breadcrumb("ui", "ui.dialog", { dialog: s.dialog === "todayLater" || s.dialog === "personLater" || s.dialog === "todayChange" || s.dialog === "firstScreen" ? "other" : s.dialog });
     if (s.dialog === "settings" && s.settingsTab !== prev.settingsTab) breadcrumb("ui", "ui.settings_tab", { tab: s.settingsTab });
   });
 }

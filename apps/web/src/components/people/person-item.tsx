@@ -1,7 +1,7 @@
-import { isPersonRequest, personItemId, personItemThread, type PersonItem } from "@terno/core";
+import { isPersonRequest, personItemBack, personItemId, personItemThread, type PersonItem } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuShortcut, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
 import { CalendarClock, ChevronDown, Clock, ListChecks, MessageSquareReply } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { useId, type ComponentType } from "react";
@@ -10,7 +10,7 @@ import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { laterChoices, laterPresets, taskOf } from "~/lib/dated";
 import { listDate } from "~/lib/format";
-import { actOnPersonItem, openFromPerson } from "~/lib/people";
+import { actOnCardItem, actOnPersonItem, openFromPerson, pickPersonLater } from "~/lib/people";
 import { presetLabel, presetWhen } from "~/lib/reminders";
 import { todaySentence, todayWhen } from "~/lib/today-sentence";
 
@@ -28,26 +28,54 @@ export function itemGlyph(item: PersonItem): ComponentType<{ className?: string 
   return kind === "promise" ? ListChecks : kind === "waiting" ? MessageSquareReply : CalendarClock;
 }
 
+/**
+ * The glyph's ink (owner, after the QA panel): the two kinds a row's words alone wouldn't set apart are tinted, your
+ * promise in the unread's ink, a reply owed to you in the success ink (both 3:1 on every surface they're drawn on,
+ * `CONTRAST_PAIRS`); the rest stay muted.
+ */
+export function itemTone(item: PersonItem): string {
+  if (item.kind === "awaiting") return "text-success-ink";
+  return item.item.why.kind === "promise" ? "text-unread" : "text-muted-foreground";
+}
+
 const capital = (s: string): string => s.charAt(0).toLocaleUpperCase() + s.slice(1);
 
 /**
  * An item in a few words, under its person's name (never naming them again): what kind of thing it is ("You promised",
- * "Waiting on you", "Owes you a reply", "Asked you") and what: the promise's words, the conversation's subject, the reply
- * you're owed, a request as What matters says it.
+ * "Owes you a reply", "Asked you") and what: the promise's words, the conversation's subject, the reply you're owed, a
+ * request as What matters says it. A conversation waiting on your answer is most of what's open: its kind is said by its
+ * glyph alone (`quiet`: the words only for a screen reader), so the others stand out (owner, after the QA panel).
  */
-export function itemParts(item: PersonItem): { label: string; text: string } {
-  if (item.kind === "awaiting") return { label: t("people.kind.awaiting"), text: capital(item.row.text.trim() || item.thread.subject || t("common.noSubject")) };
+export function itemParts(item: PersonItem): { label: string; text: string; quiet: boolean } {
+  if (item.kind === "awaiting") return { label: t("people.kind.awaiting"), text: capital(item.row.text.trim() || item.thread.subject || t("common.noSubject")), quiet: false };
   const { why, thread } = item.item;
   const subject = thread.subject?.trim() || t("common.noSubject");
-  if (why.kind === "promise") return { label: t("people.kind.promise"), text: capital(why.text?.trim() || subject) };
-  if (why.kind === "waiting") return { label: t("people.kind.waiting"), text: subject };
-  return { label: t(isPersonRequest(why.item?.kind) ? "people.kind.asked" : "people.kind.todo"), text: todaySentence(item.item) };
+  if (why.kind === "promise") return { label: t("people.kind.promise"), text: capital(why.text?.trim() || subject), quiet: false };
+  if (why.kind === "waiting") return { label: t("people.kind.waiting"), text: subject, quiet: true };
+  return { label: t(isPersonRequest(why.item?.kind) ? "people.kind.asked" : "people.kind.todo"), text: todaySentence(item.item), quiet: false };
 }
 
-/** When an item put off with Later comes back, while it's ahead (it's still open, further on). */
-function backAt(item: PersonItem, now: number): number | null {
-  const at = item.kind === "awaiting" ? item.row.deferredUntil : item.item.why.back;
-  return at != null && at > now ? at : null;
+/** An item's kind before its words: in the line ("You promised · …"), or only for a screen reader when it's `quiet`. */
+export function KindLabel({ parts, sep = " · " }: { parts: ReturnType<typeof itemParts>; sep?: string }) {
+  return parts.quiet ? <span className="sr-only">{parts.label}: </span> : (
+    <>
+      <span className="font-medium">{parts.label}</span>
+      {sep}
+    </>
+  );
+}
+
+const DAY = 86_400_000;
+
+/**
+ * How long it's been open (Open's order, longest waiting first: the row says it): today, then days, weeks, months. `said`,
+ * the same for a screen reader ("Open for 3 days").
+ */
+export function waited(since: number, now = Date.now()): { text: string; said: string } {
+  const days = Math.floor((now - since) / DAY);
+  if (days < 1) return { text: t("people.age.today"), said: t("people.ageSaidToday") };
+  const text = days < 14 ? t("people.age.days", { count: days }) : days < 60 ? t("people.age.weeks", { count: Math.floor(days / 7) }) : t("people.age.months", { count: Math.floor(days / 30) });
+  return { text, said: t("people.ageSaid", { age: text }) };
 }
 
 /**
@@ -56,7 +84,7 @@ function backAt(item: PersonItem, now: number): number | null {
  * (`later`: drawn quieter).
  */
 export function itemWhen(item: PersonItem, now = Date.now()): { text: string | null; late: boolean; later: boolean } {
-  const back = backAt(item, now);
+  const back = personItemBack(item, now);
   if (back !== null) return { text: t("people.backOn", { when: listDate(back, now) }), late: false, later: true };
   if (item.kind === "awaiting")
     return { text: item.row.dueAt > now ? t("people.followUpOn", { when: listDate(item.row.dueAt, now) }) : t("people.askedOn", { when: listDate(item.row.sentAt, now) }), late: false, later: false };
@@ -74,17 +102,18 @@ export function PersonItemLine({ item, morphName }: { item: PersonItem; morphNam
   const textId = useId();
   const Glyph = itemGlyph(item);
   const thread = personItemThread(item);
-  const { label, text } = itemParts(item);
+  const parts = itemParts(item);
+  const { text } = parts;
   const subject = thread.subject?.trim() || t("common.noSubject");
   const when = itemWhen(item);
   const now = Date.now();
   const task = item.kind === "today" ? taskOf(item.item.why, now, item.item.thread) : null;
-  const presets = item.kind === "awaiting" ? laterPresets({ before: null, limit: null }, now) : task ? laterChoices(task, now) : [];
+  const presets = personLaterPresets(item, now);
   const actable = item.kind === "awaiting" || task !== null;
   return (
     <li data-morph={morphName} data-testid="person-item" data-item={personItemId(item)} data-later={when.later || undefined} className="group/item relative flex items-center gap-2 rounded-lg pe-2 hover:bg-row-hover">
       <button type="button" data-testid="person-item-open" data-place={`item:${personItemId(item)}`} onClick={() => openFromPerson(thread.id)} className="flex min-w-0 flex-1 items-start gap-3 rounded-lg px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        <Glyph aria-hidden className="mt-[calc((1lh-1.15em)/2)] size-[1.15em] shrink-0 text-muted-foreground" />
+        <Glyph aria-hidden className={cn("mt-[calc((1lh-1.15em)/2)] size-[1.15em] shrink-0", itemTone(item))} />
         <span className="min-w-0 flex-1">
           <span id={textId} className={cn("block text-base text-pretty", when.later ? "text-foreground-soft" : "text-foreground")}>
             {text}
@@ -92,12 +121,13 @@ export function PersonItemLine({ item, morphName }: { item: PersonItem; morphNam
           {/* (its when is never what a long subject cuts) */}
           <span className="mt-0.5 flex min-w-0 text-sm whitespace-pre text-row-preview">
             <span className="min-w-0 truncate">
-              <span className="font-medium">{label}</span>
+              {/* (a waiting conversation's subject is its text: the line says when alone) */}
+              {parts.quiet ? <span className="sr-only">{parts.label}</span> : <span className="font-medium">{parts.label}</span>}
               {text !== subject && <> · {subject}</>}
             </span>
             {when.text && (
               <span className="shrink-0">
-                {" · "}
+                {parts.quiet && text === subject ? null : " · "}
                 <span className={cn("tabular", when.late && "font-medium text-destructive-ink")}>{when.text}</span>
               </span>
             )}
@@ -115,7 +145,7 @@ export function PersonItemLine({ item, morphName }: { item: PersonItem; morphNam
               {t("dated.done")} <Shortcut keys={DONE_KEY} />
             </TooltipContent>
           </Tooltip>
-          {presets.length > 0 && (
+          {actable && (
             <DropdownMenu>
               <Tooltip>
                 <TooltipTrigger
@@ -129,17 +159,42 @@ export function PersonItemLine({ item, morphName }: { item: PersonItem; morphNam
                 </TooltipContent>
               </Tooltip>
               <DropdownMenuContent align="end" sideOffset={4} className="w-max min-w-60" data-testid="person-item-later-menu">
-                {presets.map((p) => (
-                  <DropdownMenuItem key={p.id} onClick={() => void actOnPersonItem(item, "later", p.at)}>
-                    <span className="min-w-0 flex-1 truncate">{presetLabel(p.id)}</span>
-                    <DropdownMenuShortcut className="tracking-normal tabular-nums">{presetWhen(p, now)}</DropdownMenuShortcut>
-                  </DropdownMenuItem>
-                ))}
+                <LaterChoices item={item} presets={presets} now={now} />
               </DropdownMenuContent>
             </DropdownMenu>
           )}
         </div>
       )}
     </li>
+  );
+}
+
+/** An item's Later moments now: a reply owed to you, anywhere ahead; one of What matters', in its window. */
+export function personLaterPresets(item: PersonItem, now: number) {
+  if (item.kind === "awaiting") return laterPresets({ before: null, limit: null }, now);
+  const task = taskOf(item.item.why, now, item.item.thread);
+  return task ? laterChoices(task, now) : [];
+}
+
+/**
+ * Later's presets in its window, then a moment of your own (What matters' own picker, `PersonLaterDialog`): the page's menu
+ * and the card's submenu.
+ */
+export function LaterChoices({ item, presets, now, via = "page", testPrefix = "person-item-later" }: { item: PersonItem; presets: ReturnType<typeof personLaterPresets>; now: number; via?: "page" | "card"; testPrefix?: string }) {
+  const later = (at: number) => void (via === "card" ? actOnCardItem(item, "later", at) : actOnPersonItem(item, "later", at));
+  return (
+    <>
+      {presets.map((p) => (
+        <DropdownMenuItem key={p.id} data-testid={`${testPrefix}-${p.id}`} onClick={() => later(p.at)}>
+          <span className="min-w-0 flex-1 truncate">{presetLabel(p.id)}</span>
+          <DropdownMenuShortcut className="tracking-normal tabular-nums">{presetWhen(p, now)}</DropdownMenuShortcut>
+        </DropdownMenuItem>
+      ))}
+      {presets.length > 0 && <DropdownMenuSeparator />}
+      <DropdownMenuItem data-testid={`${testPrefix}-pick`} onClick={() => pickPersonLater(item, via)}>
+        <CalendarClock />
+        <span className="min-w-0 flex-1 truncate">{t("dated.pickDate")}</span>
+      </DropdownMenuItem>
+    </>
   );
 }

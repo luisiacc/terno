@@ -147,8 +147,9 @@ let pageSeq = 0;
 /** Selects a person: their page shows (the reader in Split, the list's pane in List), read now (again, if it didn't come). */
 export function selectPerson(key: string, email: string): void {
   const s = getApp();
-  // another person: the one held in place goes back to where the list puts them
+  // another person: the one held in place goes back to where the list puts them; the way back to a conversation goes
   if (usePeople.getState().held?.key !== key) usePeople.setState({ held: null });
+  if (cameFrom.at?.person !== key) cameFrom.at = null;
   if (s.person === key && s.selectedId === null && usePeople.getState().page?.key === key) return;
   setApp({ person: key, selectedId: null, anchorId: null, readerOpen: false });
   void loadPage(key, email);
@@ -317,16 +318,38 @@ export async function actOnPersonItem(item: PersonItem, action: "done" | "dismis
     // (a failure reads the truth again: another act may have landed meanwhile)
     failed: () => {},
   };
-  if (item.kind === "awaiting") await actOnFollowup(item.row, action, at, left);
-  else {
-    const task = taskOf(item.item.why, Date.now(), item.item.thread);
-    // (a waiting conversation's snack names what was done, its subject: on a person's page, who it's with goes without saying)
-    if (task) await actOnTask(task.kind === "waiting" ? { ...task, name: item.item.thread.subject?.trim() || task.name } : task, action, at, left);
-  }
+  await actOn(item, action, at, left);
   const back = gone ? null : keepKeyboard();
   await settle(gone ? [id] : []);
   // Later keeps the item (further on, under Later): the keyboard stays on it
   back?.(id);
+}
+
+/** What matters' own act on an item (one snack, one exact Undo), a reply owed to you through follow-ups'. */
+async function actOn(item: PersonItem, action: "done" | "dismiss" | "later", at: number | undefined, left?: LeftRows): Promise<void> {
+  if (item.kind === "awaiting") return actOnFollowup(item.row, action, at, left);
+  const task = taskOf(item.item.why, Date.now(), item.item.thread);
+  // (a waiting conversation's snack names what was done, its subject: with their person, who it's with goes without saying)
+  if (task) await actOnTask(task.kind === "waiting" ? { ...task, name: item.item.thread.subject?.trim() || task.name } : task, action, at, left);
+}
+
+/**
+ * Done and Later on the person card (a chip's menu, owner after the QA panel): the same acts, one snack and its Undo; the
+ * menu has closed with the choice, and the cards are read again with What matters' change.
+ */
+export function actOnCardItem(item: PersonItem, action: "done" | "later", at?: number): Promise<void> {
+  return actOn(item, action, at);
+}
+
+/** Later's "Pick a date…" (a person's page, or the card): What matters' picker, for this item. */
+export function pickPersonLater(item: PersonItem, via: "page" | "card" = "page"): void {
+  usePeople.setState({ laterPick: { item, via } });
+  setApp({ dialog: "personLater" });
+}
+
+/** The picker's moment: the act, as the page's or the card's Later would have. */
+export function laterFromPersonPicker(pick: { item: PersonItem; via: "page" | "card" }, at: number): void {
+  void (pick.via === "card" ? actOnCardItem(pick.item, "later", at) : actOnPersonItem(pick.item, "later", at));
 }
 
 /**
@@ -479,11 +502,50 @@ export function movePerson(delta: number): void {
   peopleList.toKey?.(row.key, onRow !== undefined);
 }
 
-/** Opens People on someone (the person menu's "Open in People"): the view, then their page. */
+/** Opens People on someone (the person menu's "Open in People"): the view, then their page; Esc there comes back. */
 export function openInPeople(email: string): void {
-  if (!getApp().people) openPeople();
+  const s = getApp();
+  const key = personKey(email);
+  // where it was asked from (a conversation): Esc on their page goes back there (owner, after the QA panel)
+  const from: Return | null = s.people
+    ? null
+    : { person: key, selectedId: s.selectedId, query: s.query, place: { view: s.view, accountId: s.accountId, categoryId: s.categoryId, reviewCategoryId: s.reviewCategoryId, folder: s.folder, gmailTab: s.gmailTab, reminders: s.reminders, followups: s.followups, putAway: s.putAway, today: s.today } };
+  if (!s.people) openPeople();
   if (usePeople.getState().query) searchPeople("");
-  enterPerson(personKey(email), email);
+  enterPerson(key, email);
+  cameFrom.at = from;
+}
+
+interface Return {
+  person: string;
+  selectedId: number | null;
+  query: string;
+  place: Required<Omit<Parameters<typeof navigate>[0], "people">>;
+}
+/** (an object's property, not a module let: the React Compiler and a read-then-reset of a let don't mix) */
+const cameFrom: { at: Return | null } = { at: null };
+
+/**
+ * Esc on a person's page reached by "Open in People" (and nowhere else since: still that person, no conversation opened
+ * over it): back to the conversation it was asked from, where it was. False otherwise (Esc is the page's own).
+ */
+export function returnFromPeople(): boolean {
+  const r = cameFrom.at;
+  const s = getApp();
+  if (!r || !s.people || s.person !== r.person || s.selectedId !== null) return false;
+  const el = document.activeElement;
+  if (el && el !== document.body && !el.closest("[data-testid=person-page]")) return false;
+  cameFrom.at = null;
+  navigate(r.place);
+  if (r.query) setApp({ query: r.query });
+  if (r.selectedId !== null) {
+    noteOpen(r.selectedId);
+    openThread(r.selectedId);
+    requestAnimationFrame(() => {
+      if (document.activeElement === document.body || document.activeElement === null) focusReader();
+    });
+  }
+  return true;
 }
 
 /**
@@ -578,6 +640,14 @@ export function installPeople(): void {
   // a conversation moved (to Trash, back, answered): what's open may have changed, and the page's conversations
   client.on("changed", () => {
     cards.clear();
+    if (getApp().people) reread();
+  });
+  // People left, or another person chosen there: no way back to the conversation "Open in People" came from
+  useApp.subscribe((s) => {
+    if (cameFrom.at && (!s.people || s.person !== cameFrom.at.person)) cameFrom.at = null;
+  });
+  // plan 278's rules moved (who is a person): what People shows, read again
+  client.on("personRules", () => {
     if (getApp().people) reread();
   });
   // AI features no longer offered: People goes (its row too), back to the Inbox; the cards read go with it

@@ -1,4 +1,4 @@
-import type { PeopleIndexState, PeopleList, PeopleSearch, PersonEntry, PersonOpen, PersonPage } from "@terno/core";
+import type { PeopleIndexState, PeopleList, PeopleSearch, PersonEntry, PersonItem, PersonOpen, PersonPage } from "@terno/core";
 import { create } from "zustand";
 
 /**
@@ -24,9 +24,11 @@ export interface PeopleState {
    * open with them (their last item done: nothing open) never moves the row from under the user. Let go on another person.
    */
   held: { key: string; index: number } | null;
+  /** Later's "Pick a date…": the item it's for, from a person's page or the card (`PersonLaterDialog`) */
+  laterPick: { item: PersonItem; via: "page" | "card" } | null;
 }
 
-export const usePeople = create<PeopleState>(() => ({ list: null, query: "", hits: null, page: null, reading: null, failed: false, pageFailed: null, held: null }));
+export const usePeople = create<PeopleState>(() => ({ list: null, query: "", hits: null, page: null, reading: null, failed: false, pageFailed: null, held: null, laterPick: null }));
 
 /** One row of People's list: a heading, or a person (with what's open, or what the index knows of them). */
 export type PeopleRow =
@@ -57,14 +59,15 @@ export function peopleRows(list: PeopleList | null, query: string, hits: PeopleS
   if (held) {
     const at = openRows.findIndex((r) => r.id === held.key);
     const entry = list.everyone?.find((p) => p.key === held.key);
-    const row = at >= 0 ? openRows.splice(at, 1)[0] : entry ? ({ kind: "person", id: entry.key, key: entry.key, email: entry.email, name: entry.name || entry.email, last: entry.last, open: { key: entry.key, email: entry.email, name: entry.name || entry.email, items: [] }, openCount: 0 } as PeopleRow) : null;
+    const row = at >= 0 ? openRows.splice(at, 1)[0] : entry ? ({ kind: "person", id: entry.key, key: entry.key, email: entry.email, name: entry.name || entry.email, last: entry.last, open: { key: entry.key, email: entry.email, name: entry.name || entry.email, items: [], since: null }, openCount: 0 } as PeopleRow) : null;
     if (row) {
       openRows.splice(Math.min(held.index, openRows.length), 0, row);
       open.add(held.key);
     }
   }
   if (openRows.length) {
-    rows.push({ kind: "heading", id: "open", count: list.open.length });
+    // (who has only what's put off sits at Open's end, not counted with it)
+    rows.push({ kind: "heading", id: "open", count: openNow(list) });
     rows.push(...openRows);
   }
   // Everyone holds the open people too, at their places (so one whose last item goes falls in there): left out here
@@ -83,6 +86,9 @@ function entryRow(p: PersonEntry & { key: string }): PeopleRow {
   if (!row) entryRows.set(p, (row = { kind: "person", id: p.key, key: p.key, email: p.email, name: p.name || p.email, last: p.last, open: null, openCount: 0 }));
   return row;
 }
+
+/** How many have something open now (Open's count: those with only what's put off with Later aren't in it). */
+export const openNow = (list: PeopleList | null): number => list?.open.filter((p) => p.since !== null).length ?? 0;
 
 /** The index's state as the list shows it: Everyone's line while it isn't there. */
 export const indexOf = (list: PeopleList | null): PeopleIndexState => list?.index ?? "warming";

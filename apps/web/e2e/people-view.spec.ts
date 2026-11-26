@@ -6,7 +6,7 @@
 import type { Page } from "@playwright/test";
 import { sqlDb } from "../../backend-dev/src/server";
 import { E2E_NOW } from "./constants";
-import { axeBothModes, chipsOf, expect, fresh, ingestConversation, scenario, test, type DevServerFixture } from "./fixtures";
+import { axeBothModes, chipsOf, expect, fresh, ingestConversation, scenario, selectThread, test, type DevServerFixture } from "./fixtures";
 import { message } from "./helpers/today";
 
 test.use({ backendOptions: { network: true } });
@@ -74,8 +74,11 @@ test("People: the row below the Inbox, Open and the search, a person's page, Don
     await expect(page.getByTestId("list-title")).toHaveText("People");
     await expect(page.getByTestId("nav-people")).toHaveAttribute("aria-current", "page");
     await expect(page.getByTestId("people-heading").first()).toContainText("Open");
-    // Ana's newest thing open with you leads her row, under her name, not naming her again: its kind, then what
-    await expect(row(page, "Ana Ruiz").first()).toContainText("Waiting on you · Phase 2 scope");
+    // longest waiting first (owner, after the QA panel): the section says so, and Ana's row leads with what has waited
+    // longest, its kind and then what, under her name (never naming her again), and how long it's been
+    await expect(page.getByTestId("people-heading").first()).toContainText("Longest waiting first");
+    await expect(row(page, "Ana Ruiz").first()).toContainText("Owes you a reply · The signed contract");
+    await expect(row(page, "Ana Ruiz").first().getByTestId("person-row-when")).toHaveText("6 daysOpen for 6 days");
   });
 
   await scenario("the search finds people by a name's start and by domain, marks what matched, and Esc clears it", async () => {
@@ -89,7 +92,7 @@ test("People: the row below the Inbox, Open and the search, a person's page, Don
     await expect(row(page, "Marco Bell").getByTestId("people-match").first()).toHaveText("greenway");
     // found by name, a row reads as it does in the list: what's open with them
     await field.fill("ana r");
-    await expect(row(page, "Ana Ruiz").first()).toContainText("Phase 2 scope");
+    await expect(row(page, "Ana Ruiz").first()).toContainText("The signed contract");
     await field.fill("ana r");
     await expect(row(page, "Ana Ruiz")).toHaveCount(1);
     await field.press("Escape");
@@ -101,28 +104,44 @@ test("People: the row below the Inbox, Open and the search, a person's page, Don
     await openPerson(page, "Ana Ruiz");
     await page.getByTestId("people-search").fill("");
     await expect(items(page)).toHaveCount(2);
-    await expect(items(page).nth(0)).toContainText("Waiting on you");
-    await expect(items(page).nth(1)).toContainText("Owes you a reply");
-    await expect(items(page).nth(1)).toContainText("The signed contract");
+    // longest waiting first; a conversation waiting on you says so by its glyph (its words for a screen reader only)
+    await expect(items(page).nth(0)).toContainText("Owes you a reply");
+    await expect(items(page).nth(0)).toContainText("The signed contract");
+    await expect(items(page).nth(1)).toContainText("Phase 2 scope");
+    await expect(items(page).nth(1).getByText("Waiting on you")).toHaveClass(/sr-only/);
     await expect(page.getByTestId("person-conversation").filter({ hasText: "Phase 2 scope" })).toBeVisible();
     await axeBothModes(page, '[data-testid="people"]', '[data-testid="person-page"]');
   });
 
   await scenario("Done takes the item off the page, the row says the next one, and Undo brings it back", async () => {
-    const waiting = items(page).filter({ hasText: "Phase 2 scope" });
-    await waiting.hover();
-    await waiting.getByTestId("person-item-done").click();
+    const owed = items(page).filter({ hasText: "The signed contract" });
+    await owed.hover();
+    await owed.getByTestId("person-item-done").click();
     await expect(items(page)).toHaveCount(1);
     // her row follows: the next thing open leads it (found by the search: the list moved her down among the rest)
     await page.getByTestId("people-search").fill("Ana Ruiz");
-    await expect(row(page, "Ana Ruiz").first()).toContainText("The signed contract", { timeout: 8000 });
-    await expect(row(page, "Ana Ruiz").first()).not.toContainText("Phase 2 scope");
+    await expect(row(page, "Ana Ruiz").first()).toContainText("Phase 2 scope", { timeout: 8000 });
+    await expect(row(page, "Ana Ruiz").first()).not.toContainText("The signed contract");
     const snack = page.getByTestId("snack").last();
     await expect(snack).toBeVisible();
     await snack.getByRole("button", { name: "Undo" }).click();
     await expect(items(page)).toHaveCount(2, { timeout: 8000 });
-    await expect(row(page, "Ana Ruiz").first()).toContainText("Phase 2 scope");
+    await expect(row(page, "Ana Ruiz").first()).toContainText("The signed contract");
     await page.getByTestId("people-search").fill("");
+  });
+
+  await scenario("Later's Pick a date…: What matters' picker, the item put off to that moment", async () => {
+    const waiting = items(page).filter({ hasText: "Phase 2 scope" });
+    await waiting.hover();
+    await waiting.getByTestId("person-item-later").click();
+    await page.getByTestId("person-item-later-pick").click();
+    const dialog = page.getByTestId("person-later-dialog");
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Move" }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByTestId("person-later-items").getByTestId("person-item")).toHaveCount(1, { timeout: 8000 });
+    await page.getByTestId("snack").last().getByRole("button", { name: "Undo" }).click();
+    await expect(page.getByTestId("person-later-items")).toHaveCount(0, { timeout: 8000 });
   });
 
   await scenario("an item opens its conversation in the reader; Esc is the person's page again", async () => {
@@ -141,10 +160,63 @@ test("People: the row below the Inbox, Open and the search, a person's page, Don
     await expect(menu.getByTestId("person-card-open")).toBeVisible();
     await expect(menu.getByTestId("person-card-item")).toHaveCount(2);
     await expect(menu.getByTestId("person-card-last")).toContainText("Contract for phase 2");
+    // what's done with their mail waits under More (the card is what the menu is for)
+    await expect(menu.getByTestId("menu-filter")).toHaveCount(0);
+    await expect(menu.getByTestId("person-more")).toBeVisible();
     await axeBothModes(page, '[data-testid="person-menu"]');
     await menu.getByTestId("person-open-people").click();
     await expect(page.getByTestId("people")).toBeVisible();
     await expect(page.getByTestId("person-name")).toHaveText("Ana Ruiz");
+  });
+
+  await scenario("the card's Done finishes an item without leaving the conversation, with its Undo", async () => {
+    await page.getByTestId("person-item-open").filter({ hasText: "Phase 2 scope" }).click();
+    await expect(page.getByTestId("reader-subject")).toContainText("Phase 2 scope");
+    const chip = page.getByTestId("thread-person").filter({ hasText: "Ana" });
+    await chip.hover();
+    await chip.click();
+    const menu = page.getByTestId("person-menu");
+    const contract = menu.getByTestId("person-card-row").filter({ hasText: "The signed contract" });
+    await contract.getByTestId("person-card-done").click();
+    await expect(menu).toBeHidden();
+    await expect(page.getByTestId("reader-subject")).toContainText("Phase 2 scope");
+    const snack = page.getByTestId("snack").last();
+    await expect(snack).toBeVisible();
+    await chip.click();
+    await expect(menu.getByTestId("person-card-item")).toHaveCount(1, { timeout: 8000 });
+    await page.keyboard.press("Escape");
+    await snack.getByRole("button", { name: "Undo" }).click();
+    await chip.click();
+    await expect(menu.getByTestId("person-card-item")).toHaveCount(2, { timeout: 8000 });
+    // More holds what's done with their mail
+    await menu.getByTestId("person-more").hover();
+    await expect(page.getByTestId("person-more-menu").getByTestId("menu-filter")).toBeVisible();
+    // Esc: the submenu, then the menu, then the conversation (back to her page)
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("person-more-menu")).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(menu).toBeHidden();
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("person-name")).toHaveText("Ana Ruiz");
+  });
+
+  await scenario("from a conversation, Open in People and Esc comes back to it; a group email they didn't write says so", async () => {
+    // one message to you and two others: its people have chips (the way to each one's card)
+    const group = await ingestConversation(server, { subject: "Kickoff notes", count: 1, cc: [marco], now: E2E_NOW });
+    await page.getByTestId("nav-inbox").click();
+    await selectThread(page, group, 'subject:"Kickoff notes"');
+    await expect(page.getByTestId("thread-person")).toHaveCount(2);
+    const chip = page.getByTestId("thread-person").filter({ hasText: "Marco" });
+    await chip.click();
+    await page.getByTestId("person-menu").getByTestId("person-open-people").click();
+    await expect(page.getByTestId("person-name")).toHaveText("Marco Bell");
+    await expect(page.getByTestId("person-conversation").filter({ hasText: "Kickoff notes" }).getByTestId("person-conversation-not-from")).toHaveText("Not from Marco");
+    await page.getByTestId("person-page").getByTestId("person-write").focus();
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("people")).toHaveCount(0);
+    await expect(page.getByTestId("reader-subject")).toHaveText("Kickoff notes");
+    await page.getByTestId("nav-people").click();
+    await expect(page.getByTestId("people")).toBeVisible();
   });
 
   await scenario("j and k walk the people, their pages following", async () => {

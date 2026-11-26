@@ -12,19 +12,17 @@ import { SenderAvatar } from "./sender-avatar";
 const SHOWN = 6;
 
 /**
- * Plan 177: who's on a conversation of two or more messages, under its subject: a chip each (their avatar and first name),
- * without the user. Each chip opens that person's menu (plan 180). `icons` and `personOf` are the reader's avatar rules
+ * Plan 177: who's on a conversation, under its subject: a chip each (their avatar and first name), without the user; on
+ * one message too when two or more others are on it (plan 281, owner after the QA panel: a group email's chip is the way
+ * to each person's card). Each chip opens that person's menu (plan 180). `icons` and `personOf` are the reader's avatar rules
  * (plans 22, 158), read at render (a thread turning spam drops the icons at once), applied to the newest message each one
  * wrote; someone only written to is shown as a person.
  */
 export function ThreadPeople({ detail, myEmails, icons, personOf, className }: { detail: ThreadDetail; myEmails: readonly string[]; icons: boolean; personOf: (m: MessageDetail) => boolean; className?: string }) {
   const { messages } = detail;
   const mineKey = myEmails.join("\n");
-  const { everyone, replyGoesTo } = useMemo(() => {
-    if (messages.length < 2) return { everyone: [], replyGoesTo: null };
-    // plan 180: "Reply to X only" isn't offered for the one person a plain Reply already goes to alone (Reply-To counted)
-    return conversationPeople(detail, myEmails);
-  }, [messages, mineKey]);
+  // plan 180: "Reply to X only" isn't offered for the one person a plain Reply already goes to alone (Reply-To counted)
+  const { everyone, replyGoesTo } = useMemo(() => conversationPeople(detail, myEmails), [messages, mineKey]);
   const [all, setAll] = useState(false);
   // plan 194: one other person is a one-to-one conversation, whose headers already say who (each message's ⋯ has what
   // their chip's menu offered)

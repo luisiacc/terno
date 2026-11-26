@@ -15,12 +15,12 @@ const { withoutItem, withoutListItem, actOnPersonItem, movePerson, selectPerson,
 installPeople();
 const { closePage } = await import("~/lib/page");
 const { useAppearance } = await import("~/lib/appearance");
-const { itemParts } = await import("~/components/people/person-item");
+const { itemParts, waited } = await import("~/components/people/person-item");
 
 const thread = (id: number, subject: string, fromName = "Ana Ruiz", fromEmail = "ana@x.test") => ({ id, accountId: 1, subject, fromName, fromEmail, lastDate: 0 }) as ThreadSummary;
 const waiting = (id: number, subject: string): PersonItem => ({ kind: "today", item: { id: `waiting:${id}`, thread: thread(id, subject), why: { kind: "waiting", reply: { since: 1, rev: 0, message: id } } } });
 const owed = (id: number, text: string): PersonItem => ({ kind: "awaiting", row: { id, threadId: id, kind: "awaiting", text, personName: "Ana Ruiz", personEmail: "ana@x.test", sentAt: 0, dueAt: 0, revision: 0 } as never, thread: thread(id, "Contract") });
-const open = (key: string, name: string, items: PersonItem[]): PersonOpen => ({ key, email: key, name, items });
+const open = (key: string, name: string, items: PersonItem[], since: number | null = 1): PersonOpen => ({ key, email: key, name, items, since });
 
 afterEach(() => {
   call.mockReset();
@@ -29,6 +29,12 @@ afterEach(() => {
 
 describe("the list's rows", () => {
   const list: PeopleList = { open: [open("ana@x.test", "Ana Ruiz", [waiting(1, "Phase 2"), owed(2, "the contract")])], everyone: [{ name: "Marco Bell", email: "Marco@x.test", key: "marco@x.test", last: 5, written: true }], everyoneVersion: 1, index: "ready" };
+
+  it("Open counts who has something open now: one with only what's put off is at its end, not counted", () => {
+    const parked = open("bo@x.test", "Bo", [owed(3, "the deck")], null);
+    const rows = peopleRows({ ...list, open: [...list.open, parked] }, "", null);
+    expect(rows.map((r) => (r.kind === "heading" ? `#${r.id}:${r.count}` : r.key))).toEqual(["#open:1", "ana@x.test", "bo@x.test", "#everyone:1", "marco@x.test"]);
+  });
 
   it("Open, then Everyone, each under its heading with its count", () => {
     const rows = peopleRows(list, "", null);
@@ -87,11 +93,18 @@ describe("what a search matched", () => {
 });
 
 describe("an item in a few words", () => {
-  it("its kind and what, never naming the person again", () => {
-    expect(itemParts(waiting(1, "Phase 2"))).toEqual({ label: "Waiting on you", text: "Phase 2" });
-    expect(itemParts(owed(2, "the signed contract"))).toEqual({ label: "Owes you a reply", text: "The signed contract" });
+  it("its kind and what, never naming the person again; a conversation waiting on you says its kind only to a screen reader", () => {
+    expect(itemParts(waiting(1, "Phase 2"))).toEqual({ label: "Waiting on you", text: "Phase 2", quiet: true });
+    expect(itemParts(owed(2, "the signed contract"))).toEqual({ label: "Owes you a reply", text: "The signed contract", quiet: false });
     const promise: PersonItem = { kind: "today", item: { id: "promise:3", thread: thread(3, "SOW"), why: { kind: "promise", text: "send the revised SOW", personEmail: "ana@x.test" } } };
-    expect(itemParts(promise)).toEqual({ label: "You promised", text: "Send the revised SOW" });
+    expect(itemParts(promise)).toEqual({ label: "You promised", text: "Send the revised SOW", quiet: false });
+  });
+
+  it("how long it's waited: today, days, then weeks, then months", () => {
+    const now = new Date(2026, 10, 25, 12).getTime();
+    const ago = (days: number) => waited(now - days * 86_400_000, now).text;
+    expect([ago(0.5), ago(1), ago(13), ago(14), ago(59), ago(61)]).toEqual(["Today", "1 day", "13 days", "2 weeks", "8 weeks", "2 months"]);
+    expect(waited(now - 3 * 86_400_000, now).said).toBe("Open for 3 days");
   });
 });
 

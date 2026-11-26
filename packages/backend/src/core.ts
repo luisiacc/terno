@@ -507,7 +507,11 @@ export class BackendCore {
       uuid: () => globalThis.crypto.randomUUID(),
       // lists, counts and What matters read the facts again; the facts' job wakes for a sender with more threads
       threadsChanged: (threadIds) => this.notifyChanged(threadIds),
-      listChanged: (rules) => this.server.emit("personRules", { rules: [...rules] }, { origins: ["renderer", "dev"] }),
+      listChanged: (rules) => {
+        // plan 281: People leaves out who you said isn't a person (and keeps who you said is)
+        this.people.rulesChanged();
+        this.server.emit("personRules", { rules: [...rules] }, { origins: ["renderer", "dev"] });
+      },
     });
     this.facts = new FactsBackfill(this);
     this.reminders = new Reminders({

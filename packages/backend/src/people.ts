@@ -1,4 +1,4 @@
-import { isPersonRequest, PEOPLE_EVERYONE_MAX, PEOPLE_SEARCH_MAX, PERSON_CONVERSATIONS_MAX, personKey, type FollowupRow, type PeopleList, type PeopleSearch, type PersonItem, type PersonOpen, type PersonPage, type ThreadSummary, type TodayItem } from "@terno/core";
+import { addressKey, addressOnly, isPersonRequest, PEOPLE_EVERYONE_MAX, PEOPLE_SEARCH_MAX, PERSON_CONVERSATIONS_MAX, personKey, personItemBack, personSince, senderIsPerson, sortPeopleOpen, sortPersonItems, type FollowupRow, type PeopleList, type PeopleSearch, type PersonItem, type PersonOpen, type PersonPage, type ThreadSummary, type TodayItem } from "@terno/core";
 import type { BackendCore as Backend } from "./core";
 import { readSettings } from "./settings";
 
@@ -11,7 +11,10 @@ import { readSettings } from "./settings";
  * index are as they were, and read again on the next ask after either changes: no timer, nothing done while nobody asks.
  */
 export class PeopleService {
-  private cache: { today: number; index: number; owed: boolean; open: Promise<PersonOpen[]> } | null = null;
+  private cache: { today: number; index: number; owed: boolean; rules: number; open: Promise<PersonOpen[]> } | null = null;
+  /** plan 278's rules (your word on who is a person), read once per change of them */
+  private rules: { at: number; map: Promise<ReadonlyMap<string, boolean>> } | null = null;
+  private rulesAt = 0;
 
   constructor(private readonly b: Backend) {}
 
@@ -28,13 +31,14 @@ export class PeopleService {
     const version = index.scoreVersion;
     if (known === version) return { open, everyoneVersion: version, index: "ready" };
     const mine = await this.mine();
-    // one person under two spellings once, and never you; the open people are in it too, each at their place, so one
-    // whose last item goes falls into it there (the list leaves them out while they're open)
+    const person = await this.isPerson();
+    // one person under two spellings once, and never you, nor a sender that isn't a person; the open people are in it too,
+    // each at their place, so one whose last item goes falls into it there (the list leaves them out while they're open)
     const seen = new Set<string>();
     const everyone = [];
     for (const p of index.written(PEOPLE_EVERYONE_MAX * 2)) {
       const key = personKey(p.email);
-      if (seen.has(key) || mine.has(key)) continue;
+      if (seen.has(key) || mine.has(key) || !person(p.email)) continue;
       seen.add(key);
       everyone.push({ ...p, key });
       if (everyone.length === PEOPLE_EVERYONE_MAX) break;
@@ -54,15 +58,19 @@ export class PeopleService {
     if (!(await this.b.today.offered())) return { hits: [], index: "ready" };
     const index = this.b.autocomplete.peopleIndex();
     if (!index) return { hits: [], index: this.indexState() };
-    const open = new Map((await this.open()).map((p) => [p.key, p.items.length]));
+    const now = this.b.now();
+    const open = new Map((await this.open()).map((p) => [p.key, p.items.filter((i) => personItemBackNow(i, now)).length]));
     const mine = await this.mine();
+    const person = await this.isPerson();
     const seen = new Set<string>();
     const hits = [];
-    for (const h of index.people(query, PEOPLE_SEARCH_MAX)) {
+    // (asked for more than are shown: senders that aren't people are left out after)
+    for (const h of index.people(query, PEOPLE_SEARCH_MAX * 2)) {
       const key = personKey(h.email);
-      if (mine.has(key) || seen.has(key)) continue;
+      if (mine.has(key) || seen.has(key) || !person(h.email)) continue;
       seen.add(key);
       hits.push({ ...h, key, open: open.get(key) ?? 0 });
+      if (hits.length === PEOPLE_SEARCH_MAX) break;
     }
     return { hits, index: "ready" };
   }
@@ -81,6 +89,9 @@ export class PeopleService {
     // the address as it was seen (the search is exact on it), All Mail: Spam and Trash are left out by the store
     const page = want ? await this.b.store.threads.searchText({ query: email, place: "all", limit: want, now: this.b.now() }) : null;
     const shown = page?.items ?? [];
+    // which of them they wrote in (the rest, a group email they were only on): theirs are a subset, newest first by the
+    // same date, so the newest `want` of theirs hold every one of these they wrote
+    const wrote = want > 0 && shown.length > 0 ? await this.wroteIn(email, want, shown) : undefined;
     const name = this.b.autocomplete.peopleIndex()?.person(email)?.name || found?.name || "";
     const last = except === undefined ? undefined : shown.find((t) => t.id !== except);
     const lastSummary = last ? (await this.b.today.summaryLine(last.id)).summary : undefined;
@@ -95,7 +106,38 @@ export class PeopleService {
       more: page?.nextCursor != null,
       ...(last && lastSummary ? { lastSummary, lastSummaryOf: last.id } : {}),
       ...(lastFromMe ? { lastFromMe } : {}),
+      ...(wrote ? { wrote } : {}),
     };
+  }
+
+  private async wroteIn(email: string, want: number, shown: readonly ThreadSummary[]): Promise<number[]> {
+    const address = addressKey(email);
+    if (!address.includes("@") || /[\s"]/.test(address)) return shown.map((t) => t.id);
+    const theirs = await this.b.store.threads.searchText({ query: `from:${address}`, place: "all", limit: want, now: this.b.now() });
+    const ids = new Set(theirs.items.map((t) => t.id));
+    return shown.filter((t) => ids.has(t.id)).map((t) => t.id);
+  }
+
+  /** Plan 278's rules changed: who is a person may have (the grouping and the lists read them again). */
+  rulesChanged(): void {
+    this.rulesAt++;
+  }
+
+  /**
+   * Who counts as a person in People (plan 278's rule on an address alone): never a sender of mail marked as spam, then your
+   * word on them, then the guesses (a no-reply, a role or service address, only when you've written to it).
+   */
+  private async isPerson(): Promise<(email: string) => boolean> {
+    if (this.rules?.at !== this.rulesAt) {
+      const map = this.b.store.facts.rules.list().then((rules) => new Map(rules.map((r) => [r.key, r.person])));
+      this.rules = { at: this.rulesAt, map };
+      map.catch(() => {
+        if (this.rules?.map === map) this.rules = null;
+      });
+    }
+    const rules = await this.rules.map;
+    const index = this.b.autocomplete.peopleIndex();
+    return (email) => !index?.spam(email) && senderIsPerson(addressOnly(email), { written: () => index?.person(email)?.written === true, rule: (key) => rules.get(key) });
   }
 
   private indexState(): PeopleList["index"] {
@@ -118,9 +160,10 @@ export class PeopleService {
     // the index answering, or catching up, changes who a dated item's sender is (someone you've written to) and names
     const index = this.b.autocomplete.peopleIndex()?.scoreVersion ?? -1;
     const owed = (await readSettings(this.b.store)).followups?.enabled === true;
-    if (this.cache?.today !== today || this.cache.index !== index || this.cache.owed !== owed) {
+    const rules = this.rulesAt;
+    if (this.cache?.today !== today || this.cache.index !== index || this.cache.owed !== owed || this.cache.rules !== rules) {
       const open = this.group(owed);
-      this.cache = { today, index, owed, open };
+      this.cache = { today, index, owed, rules, open };
       // a failed read isn't kept: the next ask tries again
       open.catch(() => {
         if (this.cache?.open === open) this.cache = null;
@@ -132,14 +175,15 @@ export class PeopleService {
   private async group(owed: boolean): Promise<PersonOpen[]> {
     const index = this.b.autocomplete.peopleIndex();
     const mine = await this.mine();
+    const person = await this.isPerson();
     const people = new Map<string, PersonOpen>();
     const give = (email: string | null | undefined, name: string | null | undefined, item: PersonItem) => {
       const address = email?.trim();
       if (!address) return;
       const key = personKey(address);
-      if (mine.has(key)) return;
+      if (mine.has(key) || !person(address)) return;
       let p = people.get(key);
-      if (!p) people.set(key, (p = { key, email: address, name: "", items: [] }));
+      if (!p) people.set(key, (p = { key, email: address, name: "", items: [], since: null }));
       if (!p.name && name?.trim()) p.name = name.trim();
       p.items.push(item);
     };
@@ -150,8 +194,14 @@ export class PeopleService {
       if (who) give(who.email, who.name, { kind: "today", item });
     }
     if (owed) for (const r of await this.owedToYou()) give(r.row.personEmail, r.row.personName, { kind: "awaiting", row: r.row, thread: r.thread });
-    for (const p of people.values()) p.name = index?.person(p.email)?.name || p.name || p.email;
-    return [...people.values()];
+    // each one's items, and Open, in People's order: who's waited longest first, what's put off last
+    const now = this.b.now();
+    for (const p of people.values()) {
+      p.name = index?.person(p.email)?.name || p.name || p.email;
+      p.items = sortPersonItems(p.items, now);
+      p.since = personSince(p.items, now);
+    }
+    return sortPeopleOpen([...people.values()], now);
   }
 
   /**
@@ -174,6 +224,9 @@ export class PeopleService {
     return out.sort((x, y) => x.row.sentAt - y.row.sentAt || x.row.id - y.row.id);
   }
 }
+
+/** Open now: not put off with Later. */
+const personItemBackNow = (i: PersonItem, now: number): boolean => personItemBack(i, now) === null;
 
 /**
  * Whom a What matters item is between you and: a promise's person (whom you promised), a waiting conversation's sender

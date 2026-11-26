@@ -112,6 +112,39 @@ describe("who has something open with you", () => {
     expect((await client.call("people.list", {})).open).toEqual([]);
   });
 
+  it("Open is longest waiting first (owner, after the QA panel); one with only what's put off with Later is last, not counted", async () => {
+    const { backend, client, raw, account, from } = await setup({ followups: true });
+    const soon = await from("Bea", "bea@people.test");
+    const long = await from("Carl", "carl@people.test");
+    // Carl has waited a week, Bea a day: Carl first, whatever What matters' own order
+    raw.run("UPDATE threads SET waiting_since = ? WHERE id = ?", NOW - 7 * DAY, long);
+    raw.run("UPDATE threads SET waiting_since = ? WHERE id = ?", NOW - DAY, soon);
+    // Ana: only a promise put off with Later
+    const m = msg({ accountId: account.id, from: { name: "Me", email: account.email }, to: [{ name: "Ana", email: "ana@people.test" }], isSent: true, inInbox: true, date: NOW - DAY, providerMsgId: "p-1", subject: "The deck" });
+    const r = await backend.store.sync.ingest([m], { applyFilters: false, now: NOW, classifier: null, liveSent: { wanted: true } });
+    const thread = await threadOf(backend.store, "p-1");
+    await backend.store.followups.finish({ messageId: r.inserted[0]!, threadId: thread, fromScan: false, now: NOW, kept: [], model: "m", provider: "p", promptVersion: 1, clearGeneration: backend.store.followups.clearGeneration(), rows: [{ kind: "promise", item: 0, text: "send the deck", quote: "I'll send it", personName: "Ana", personEmail: "ana@people.test", dueAt: NOW - 1000, dated: false }] });
+    const row = (await backend.store.followups.ofThread(thread))[0]!;
+    await client.call("followups.act", { id: row.id, revision: row.revision, action: "later", dueAt: NOW + 3 * DAY });
+    backend.today.changed();
+    const { open } = await client.call("people.list", {});
+    expect(open.map((p) => [p.key, p.since])).toEqual([
+      ["carl@people.test", NOW - 7 * DAY],
+      ["bea@people.test", NOW - DAY],
+      ["ana@people.test", null],
+    ]);
+  });
+
+  it("a person's items: what's open now, longest waiting first, then what's put off", async () => {
+    const { client, raw, from } = await setup();
+    const newer = await from("Ana", "ana@people.test");
+    const older = await from("Ana", "ana@people.test");
+    raw.run("UPDATE threads SET waiting_since = ? WHERE id = ?", NOW - 5 * DAY, older);
+    raw.run("UPDATE threads SET waiting_since = ? WHERE id = ?", NOW - 2 * DAY, newer);
+    const page = (await client.call("people.person", { email: "ana@people.test" }))!;
+    expect(page.items.map((i) => (i.kind === "today" ? i.item.thread.id : 0))).toEqual([older, newer]);
+  });
+
   it("the grouping is read again after What matters changes, not before", async () => {
     const { backend, client, from } = await setup();
     await from("Ana", "ana@people.test");
@@ -156,7 +189,49 @@ describe("everyone and the search", () => {
   });
 });
 
+describe("only people (owner, after the QA panel)", () => {
+  it("a no-reply or a service's receipts, mail marked as spam, one you said isn't a person: never in the search, Everyone or Open", async () => {
+    const { backend, client, from, to } = await setup();
+    await from("Figma", "no-reply@figma.com", { waiting: false });
+    await from("Stripe", "receipts@stripe.com", { waiting: false });
+    // a role address you've written to is someone's (plan 278's rule)
+    await to("Acme support", "support@acme.test");
+    await to("Spammy", "deals@spammy.test");
+    await to("Rita", "rita@people.test");
+    await from("Rita", "rita@people.test");
+    await client.call("people.ready", {});
+    const hits = async (query: string) => (await client.call("people.search", { query })).hits.map((h) => h.email);
+    expect(await hits("figma")).toEqual([]);
+    expect(await hits("stripe")).toEqual([]);
+    expect(await hits("support")).toEqual(["support@acme.test"]);
+    expect(await hits("spammy")).toEqual(["deals@spammy.test"]);
+    // mail from them marked as spam: they're out
+    (backend.autocomplete as unknown as { contacts: { markSpam(e: string[]): void } }).contacts.markSpam(["deals@spammy.test"]);
+    expect(await hits("spammy")).toEqual([]);
+    expect((await client.call("people.list", {})).everyone!.map((p) => p.email)).not.toContain("deals@spammy.test");
+    // you said Rita isn't a person: out of Open, Everyone and the search; said she is again, back
+    expect((await client.call("people.list", {})).open.map((p) => p.key)).toEqual(["rita@people.test"]);
+    await client.call("people.setRule", { email: "rita@people.test", name: "Rita", person: false });
+    const without = await client.call("people.list", {});
+    expect(without.open).toEqual([]);
+    expect(without.everyone!.map((p) => p.email)).not.toContain("rita@people.test");
+    expect(await hits("rita")).toEqual([]);
+    await client.call("people.setRule", { email: "stripe@stripe.com", name: "Stripe", person: true });
+    await client.call("people.setRule", { email: "receipts@stripe.com", name: "Stripe", person: true });
+    expect(await hits("stripe")).toEqual(["receipts@stripe.com"]);
+  });
+});
+
 describe("one person", () => {
+  it("their page marks which conversations they wrote in (a group email they were only on, not)", async () => {
+    const { client, from } = await setup();
+    const theirs = await from("Ana", "ana@people.test", { waiting: false });
+    const group = await from("Björn", "bjorn@people.test", { waiting: false, over: { to: [{ name: "Me", email: "me@terno.test" }, { name: "Ana", email: "ana@people.test" }] } });
+    const page = (await client.call("people.person", { email: "ana@people.test" }))!;
+    expect(page.conversations.map((t) => t.id).sort()).toEqual([theirs, group].sort());
+    expect(page.wrote).toEqual([theirs]);
+  });
+
   it("a promise put off with Later stays on their page, saying when it's back", async () => {
     const { backend, client, account } = await setup({ followups: true });
     const m = msg({ accountId: account.id, from: { name: "Me", email: account.email }, to: [{ name: "Ana", email: "ana@people.test" }], isSent: true, inInbox: true, date: NOW - DAY, providerMsgId: "p-1", subject: "The deck" });

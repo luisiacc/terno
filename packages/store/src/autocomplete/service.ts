@@ -137,7 +137,7 @@ export class Autocomplete {
   }
 
   /** Plan 281: People's reads of the index (null while it's cold: never "nobody"). */
-  peopleIndex(): Pick<ContactIndex, "people" | "written" | "person" | "ownEmails" | "scoreVersion"> | null {
+  peopleIndex(): Pick<ContactIndex, "people" | "written" | "person" | "spam" | "ownEmails" | "scoreVersion"> | null {
     return this.contacts;
   }
 

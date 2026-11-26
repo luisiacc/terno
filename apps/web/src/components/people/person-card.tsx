@@ -1,21 +1,27 @@
 import { personItemId, personItemThread, type PersonPage } from "@terno/core";
 import { t } from "@terno/i18n";
-import { DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } from "@terno/ui/components/dropdown-menu";
-import { Mail } from "@terno/ui/icons";
+import { DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger } from "@terno/ui/components/dropdown-menu";
+import { Check, Clock, Mail } from "@terno/ui/icons";
+import { cn } from "@terno/ui/lib/utils";
+import { actOnCardItem } from "~/lib/people";
 import { listDate } from "~/lib/format";
 import { openThread } from "~/lib/page";
 import { noteOpen } from "~/lib/reminders";
 import { formatNumber } from "@terno/i18n";
 import { Badge } from "@terno/ui/components/badge";
 import { personKey } from "@terno/core";
-import { itemGlyph, itemParts, itemWhen } from "./person-item";
+import { itemGlyph, itemParts, itemTone, itemWhen, LaterChoices, personLaterPresets } from "./person-item";
 
 /** the card's open items, at most (their page has the rest) */
 const SHOWN = 4;
 
+/** a card item's Done and Later: icon-only rows of the menu beside it, quiet until hovered or highlighted */
+const ICON_ITEM = "w-7 shrink-0 justify-center px-0 text-muted-foreground data-highlighted:text-foreground";
+
 /**
  * Plan 281 (proposal A): the person card, in the head of a chip's menu: what's open between you (each item opens its
- * conversation) and the last time you wrote each other (another conversation than this one: its subject, its day, and its
+ * conversation; its Done and Later beside it, owner after the QA panel: finished without leaving the conversation) and
+ * the last time you wrote each other (another conversation than this one: its subject, its day, and its
  * stored summary's first sentence when there is one). Drawn only with what was read before the menu opened.
  */
 export function PersonCardHead({ page, threadId }: { page: PersonPage; threadId: number }) {
@@ -45,23 +51,37 @@ export function PersonCardHead({ page, threadId }: { page: PersonPage; threadId:
               const Glyph = itemGlyph(item);
               const when = itemWhen(item);
               const parts = itemParts(item);
+              const stamp = Date.now();
               return (
-                <DropdownMenuItem key={personItemId(item)} data-testid="person-card-item" onClick={() => go(personItemThread(item).id)} className="h-auto items-start py-1.5">
-                  <Glyph className="mt-0.5" />
-                  {/* what it is, on two lines at most, then its kind and its when, as the page says them */}
-                  <span className="min-w-0 flex-1">
-                    <span className="line-clamp-2 whitespace-normal">{parts.text}</span>
-                    <span className="mt-0.5 block truncate text-xs text-muted-foreground" data-testid="person-card-item-status">
-                      {parts.label}
-                      {when.text && (
-                        <>
-                          {" · "}
-                          <span className={when.late ? "text-destructive-ink tabular-nums" : "tabular-nums"}>{when.text}</span>
-                        </>
-                      )}
+                <div key={personItemId(item)} className="flex items-start gap-0.5" data-testid="person-card-row">
+                  <DropdownMenuItem data-testid="person-card-item" onClick={() => go(personItemThread(item).id)} className="h-auto min-w-0 flex-1 items-start py-1.5">
+                    <Glyph className={cn("mt-0.5", itemTone(item))} />
+                    {/* what it is, on two lines at most, then its kind and its when, as the page says them */}
+                    <span className="min-w-0 flex-1">
+                      <span className="line-clamp-2 whitespace-normal">{parts.text}</span>
+                      <span className="mt-0.5 block truncate text-xs text-muted-foreground" data-testid="person-card-item-status">
+                        {parts.quiet ? <span className="sr-only">{parts.label}</span> : parts.label}
+                        {when.text && (
+                          <>
+                            {parts.quiet ? null : " · "}
+                            <span className={when.late ? "text-destructive-ink tabular-nums" : "tabular-nums"}>{when.text}</span>
+                          </>
+                        )}
+                      </span>
                     </span>
-                  </span>
-                </DropdownMenuItem>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem data-testid="person-card-done" aria-label={t("people.card.done", { text: parts.text })} title={t("dated.done")} onClick={() => void actOnCardItem(item, "done")} className={ICON_ITEM}>
+                    <Check />
+                  </DropdownMenuItem>
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger data-testid="person-card-later" aria-label={t("people.card.later", { text: parts.text })} title={t("dated.later")} className={cn(ICON_ITEM, "w-auto gap-0.5 px-1.5")}>
+                      <Clock />
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent className="w-max min-w-56" data-testid="person-card-later-menu">
+                      <LaterChoices item={item} presets={personLaterPresets(item, stamp)} now={stamp} via="card" testPrefix="person-card-later" />
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                </div>
               );
             })}
           </DropdownMenuGroup>

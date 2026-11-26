@@ -29,6 +29,7 @@ import { installNetworkEvents } from "~/lib/network";
 import { Reader } from "./components/reader";
 import { RemindDialog } from "./components/remind-dialog";
 import { TodayLaterDialog } from "./components/today-later-dialog";
+import { PersonLaterDialog } from "./components/people/person-later-dialog";
 import DigestPage from "./components/digest-page";
 import { digestBeside as digestBesideOf, useToday } from "./state/today";
 import { TodayChangeDialog } from "./components/change-form";
@@ -270,6 +271,7 @@ export function App() {
       {dialog === "print" && <PrintSheet />}
       {dialog === "remind" && <RemindDialog />}
       {dialog === "todayLater" && <TodayLaterDialog />}
+      {dialog === "personLater" && <PersonLaterDialog />}
       {dialog === "todayChange" && <TodayChangeDialog />}
       {/* plan 207: asked once, when What matters is first offered */}
       <FirstScreenAsk />
