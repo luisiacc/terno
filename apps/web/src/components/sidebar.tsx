@@ -14,7 +14,8 @@ import { viewLabel } from "~/lib/format";
 import { getApp, navigate, setApp, useApp, type AppState, ownList } from "~/state/app";
 import { openSettings } from "~/lib/settings-place";
 import { useReminders } from "~/lib/reminders";
-import { followupsOffered, todayOffered } from "~/lib/ai";
+import { aiFeaturesOffered, followupsOffered, todayOffered } from "~/lib/ai";
+import { openPeople } from "~/lib/people";
 import { useFollowups } from "~/state/followups";
 import { createCategory as createNamedCategory } from "~/lib/new-category";
 import { usePendingTip } from "~/lib/tips";
@@ -1347,6 +1348,9 @@ export function Sidebar() {
   const dueReminders = useReminders((s) => s.due);
   const inFollowups = useApp((s) => s.followups);
   const inToday = useApp((s) => s.today);
+  // plan 281: People, below the Inbox, while AI features are offered (its lines are What matters' and follow-ups')
+  const inPeople = useApp((s) => s.people);
+  const peopleShown = useApp(aiFeaturesOffered);
   // plan 158: a search is the list's, across every place: nothing here is where you are while it shows
   const searching = useApp((s) => s.query.trim() !== "");
   // plan 145: no provider, no row, no list and no work; and never for an app that's still reading its settings
@@ -1436,7 +1440,7 @@ export function Sidebar() {
   // the folder you're in at the top: none in a category or its suggestions (both are "all" underneath), none inside an account (plan 67)
   // (Follow-ups is "all" underneath too: All Mail isn't where you are there)
   const inPutAway = useApp((s) => s.putAway);
-  const folderView = accountId === null && categoryId === null && reviewCategoryId === null && !inReminders && !inFollowups && !inPutAway && !inToday && !searching ? view : null;
+  const folderView = accountId === null && categoryId === null && reviewCategoryId === null && !inReminders && !inFollowups && !inPutAway && !inToday && !inPeople && !searching ? view : null;
   const folder = ({ view: v, icon: Icon, keys }: (typeof VIEWS)[number]) => (
     <NavItem
       key={v}
@@ -1489,7 +1493,11 @@ export function Sidebar() {
       )}
       {/* its description, as a category's is (plan 207: the only way its number is said while the Inbox leads) */}
       {todayShown && counts.today ? <span id="today-count-help" hidden>{t("today.countHelp", { count: counts.today })}</span> : null}
-      {VIEWS.slice(0, PINNED).map(folder)}
+      {folder(VIEWS[0]!)}
+      {peopleShown && (
+        <NavItem testId="nav-people" active={inPeople && !searching} onClick={openPeople} icon={<Users className="size-(--icon-nav)" />} label={t("people.title")} />
+      )}
+      {VIEWS.slice(1, PINNED).map(folder)}
       <FavoriteRows />
       <MoreFolders
         view={folderView}

@@ -44,7 +44,7 @@ export function nextToSort(categories: readonly Category[], suggestions: Readonl
 }
 
 /** Where Review was entered from: a mailbox, an account's folder, a list of its own or a search. */
-type Origin = Pick<AppState, "view" | "accountId" | "categoryId" | "folder" | "gmailTab" | "reminders" | "followups" | "putAway" | "today" | "query" | "selectedId"> & {
+type Origin = Pick<AppState, "view" | "accountId" | "categoryId" | "folder" | "gmailTab" | "reminders" | "followups" | "putAway" | "today" | "people" | "person" | "query" | "selectedId"> & {
   /** a search's rows and offset (a mailbox's own place is kept by the list; a search's isn't, Codex code review #2) */
   results: { rows: Pick<ReturnType<typeof useList.getState>, "key" | "itemsKey" | "items" | "index" | "nextCursor">; scrollTop: number } | null;
 };
@@ -62,7 +62,7 @@ export function enterReview(categoryId: number): void {
   reviewFrom.origin = s.actionPreview
     ? null
     : {
-        view: s.view, accountId: s.accountId, categoryId: s.categoryId, folder: s.folder, gmailTab: s.gmailTab, reminders: s.reminders, followups: s.followups, putAway: s.putAway, today: s.today, query: s.query, selectedId: s.selectedId,
+        view: s.view, accountId: s.accountId, categoryId: s.categoryId, folder: s.folder, gmailTab: s.gmailTab, reminders: s.reminders, followups: s.followups, putAway: s.putAway, today: s.today, people: s.people, person: s.person, query: s.query, selectedId: s.selectedId,
         results: s.query.trim() && itemsKey === key ? { rows: { key, itemsKey, items, index, nextCursor }, scrollTop: listEl()?.scrollTop ?? 0 } : null,
       };
   navigate({ view: "all", reviewCategoryId: categoryId, accountId: null });

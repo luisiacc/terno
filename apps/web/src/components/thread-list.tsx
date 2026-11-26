@@ -331,7 +331,7 @@ function QuickChips({ filter }: { filter: QuickFilter | undefined }) {
  */
 const useSearchOpen = create<{ open: boolean }>(() => ({ open: false }));
 useApp.subscribe((s, prev) => {
-  if (useSearchOpen.getState().open && !s.query && (s.view !== prev.view || s.categoryId !== prev.categoryId || s.accountId !== prev.accountId || s.folder !== prev.folder || s.gmailTab !== prev.gmailTab || s.reviewCategoryId !== prev.reviewCategoryId || s.reminders !== prev.reminders || s.followups !== prev.followups || s.putAway !== prev.putAway || s.today !== prev.today)) useSearchOpen.setState({ open: false });
+  if (useSearchOpen.getState().open && !s.query && (s.view !== prev.view || s.categoryId !== prev.categoryId || s.accountId !== prev.accountId || s.folder !== prev.folder || s.gmailTab !== prev.gmailTab || s.reviewCategoryId !== prev.reviewCategoryId || s.reminders !== prev.reminders || s.followups !== prev.followups || s.putAway !== prev.putAway || s.today !== prev.today || s.people !== prev.people)) useSearchOpen.setState({ open: false });
 });
 
 /**

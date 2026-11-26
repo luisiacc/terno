@@ -62,6 +62,10 @@ export interface AppState {
   putAway: boolean;
   /** plan 145: Today, a list of its own */
   today: boolean;
+  /** plan 281: People, a list of its own (of people, not conversations) */
+  people: boolean;
+  /** plan 281: the person People has selected (`personKey`'s), whose page the reader shows while no conversation is open */
+  person: string | null;
   /** plan 143: a sentence's preview is the list: its id with the backend */
   actionPreview: string | null;
   /** plan 108: the account the sidebar is focused on ("solo", never keyboard focus); while set, accountId is it */
@@ -160,6 +164,8 @@ export const useApp = create<AppState>(() => ({
   followups: false,
   putAway: false,
   today: false,
+  people: false,
+  person: null,
   actionPreview: null,
   soloAccountId: null,
   query: "",
@@ -232,7 +238,7 @@ export function setApp(partial: AppState | Partial<AppState> | ((state: AppState
  * scope across accounts, a tab back to the Inbox) leaves the folder too, so a list is never asked for an invalid one.
  */
 function keepFolderValid(state: AppState, next: AppState | Partial<AppState>): AppState | Partial<AppState> {
-  next = keepSoloValid(state, keepTodayValid(state, keepActionPreviewValid(state, keepPutAwayValid(state, keepFollowupsValid(state, keepRemindersValid(state, keepReviewValid(state, next)))))));
+  next = keepSoloValid(state, keepPeopleValid(state, keepTodayValid(state, keepActionPreviewValid(state, keepPutAwayValid(state, keepFollowupsValid(state, keepRemindersValid(state, keepReviewValid(state, next))))))));
   const m = { ...state, ...next };
   const out = m.folder !== null && (m.accountId === null || m.categoryId !== null || m.reviewCategoryId !== null || ownList(m) || m.view !== "all") ? { ...next, folder: null } : next;
   // plan 86: a Gmail tab is its account's Inbox, alone, likewise
@@ -248,8 +254,8 @@ function keepSoloValid(state: AppState, next: AppState | Partial<AppState>): App
   return m.soloAccountId !== null && m.accountId !== m.soloAccountId ? { ...next, soloAccountId: null } : next;
 }
 
-/** Reminders, Follow-ups, Put away and What matters: lists of their own (every account; no category, folder or filter) */
-export const ownList = (s: Pick<AppState, "reminders" | "followups" | "putAway" | "today">): boolean => s.reminders || s.followups || s.putAway || s.today;
+/** Reminders, Follow-ups, Put away, What matters and People: lists of their own (every account; no category, folder or filter) */
+export const ownList = (s: Pick<AppState, "reminders" | "followups" | "putAway" | "today" | "people">): boolean => s.reminders || s.followups || s.putAway || s.today || s.people;
 
 /** The lists of their own that only another place leaves (What matters, with its preview rule, is apart) */
 const OWN_LISTS = ["reminders", "followups", "putAway"] as const;
@@ -262,7 +268,7 @@ function keepOwnListValid(flag: (typeof OWN_LISTS)[number]) {
   return (state: AppState, next: AppState | Partial<AppState>): AppState | Partial<AppState> => {
     if (!state[flag] || Object.hasOwn(next, flag)) return next;
     const m = { ...state, ...next };
-    const other = m.view !== "all" || m.accountId !== null || m.categoryId !== null || m.reviewCategoryId !== null || m.folder !== null || OWN_LISTS.some((l) => l !== flag && m[l]) || m.query.trim() !== "";
+    const other = m.view !== "all" || m.accountId !== null || m.categoryId !== null || m.reviewCategoryId !== null || m.folder !== null || OWN_LISTS.some((l) => l !== flag && m[l]) || m.people || m.query.trim() !== "";
     return other ? { ...next, [flag]: false } : next;
   };
 }
@@ -283,8 +289,16 @@ function keepReviewValid(state: AppState, next: AppState | Partial<AppState>): A
 function keepTodayValid(state: AppState, next: AppState | Partial<AppState>): AppState | Partial<AppState> {
   if (!state.today || Object.hasOwn(next, "today")) return next;
   const m = { ...state, ...next };
-  const other = m.view !== "all" || m.accountId !== null || m.categoryId !== null || m.reviewCategoryId !== null || m.folder !== null || m.reminders || m.followups || m.putAway || m.actionPreview !== null || m.query.trim() !== "";
+  const other = m.view !== "all" || m.accountId !== null || m.categoryId !== null || m.reviewCategoryId !== null || m.folder !== null || m.reminders || m.followups || m.putAway || m.people || m.actionPreview !== null || m.query.trim() !== "";
   return other ? { ...next, today: false } : next;
+}
+
+/** Plan 281: likewise for People; leaving it, its selected person goes too (another list has its own selection). */
+function keepPeopleValid(state: AppState, next: AppState | Partial<AppState>): AppState | Partial<AppState> {
+  if (!state.people || Object.hasOwn(next, "people")) return next;
+  const m = { ...state, ...next };
+  const other = m.view !== "all" || m.accountId !== null || m.categoryId !== null || m.reviewCategoryId !== null || m.folder !== null || m.reminders || m.followups || m.putAway || m.today || m.actionPreview !== null || m.query.trim() !== "";
+  return other ? { ...next, people: false, person: null } : next;
 }
 
 /** Plan 143: any other list ends a preview too (and the backend lets go of it). */
@@ -312,7 +326,7 @@ export function setListAutoSelection(selectedId: number | null): void {
 }
 export const getApp = useApp.getState;
 
-export function navigate(to: { view?: View; accountId?: number | null; categoryId?: number | null; reviewCategoryId?: number | null; folder?: string | null; reminders?: boolean; followups?: boolean; putAway?: boolean; today?: boolean; gmailTab?: Tab | null }): void {
+export function navigate(to: { view?: View; accountId?: number | null; categoryId?: number | null; reviewCategoryId?: number | null; folder?: string | null; reminders?: boolean; followups?: boolean; putAway?: boolean; today?: boolean; people?: boolean; gmailTab?: Tab | null }): void {
   // plan 68: a folder is its account's, alone (no category, no review), its view "all"; anywhere else leaves it
   const folder = to.folder ?? null;
   // plan 87: Reminders is a list of its own, of every account
@@ -322,19 +336,22 @@ export function navigate(to: { view?: View; accountId?: number | null; categoryI
   // plan 282: Put away, the same way
   const putAway = !folder && !reminders && !followups && to.putAway === true;
   const today = !folder && !reminders && !followups && !putAway && to.today === true;
-  const ownList = reminders || followups || putAway || today;
+  // plan 281: People, likewise (its selected person kept while it stays there)
+  const people = !folder && !reminders && !followups && !putAway && !today && to.people === true;
+  const own = reminders || followups || putAway || today || people;
   // plan 86: a Gmail tab likewise, its view "inbox"
-  const gmailTab = folder || ownList ? null : (to.gmailTab ?? null);
+  const gmailTab = folder || own ? null : (to.gmailTab ?? null);
   setApp((s) => {
     const place = {
-      reviewCategoryId: folder || ownList || gmailTab ? null : (to.reviewCategoryId ?? null),
+      reviewCategoryId: folder || own || gmailTab ? null : (to.reviewCategoryId ?? null),
       reminders,
       followups,
       putAway,
       today,
-      view: folder || ownList ? ("all" as const) : gmailTab ? ("inbox" as const) : (to.view ?? (to.categoryId ? ("all" as const) : s.view)),
-      accountId: ownList ? null : to.accountId === undefined ? s.accountId : to.accountId,
-      categoryId: folder || ownList || gmailTab || to.categoryId === undefined ? null : to.categoryId,
+      people,
+      view: folder || own ? ("all" as const) : gmailTab ? ("inbox" as const) : (to.view ?? (to.categoryId ? ("all" as const) : s.view)),
+      accountId: own ? null : to.accountId === undefined ? s.accountId : to.accountId,
+      categoryId: folder || own || gmailTab || to.categoryId === undefined ? null : to.categoryId,
       folder,
       gmailTab,
     };
@@ -343,6 +360,7 @@ export function navigate(to: { view?: View; accountId?: number | null; categoryI
     if (here) return { readerOpen: false };
     return {
       ...place,
+      person: null,
       actionPreview: null,
       query: "",
       selectedId: null,

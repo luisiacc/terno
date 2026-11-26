@@ -36,6 +36,8 @@ import { ActionRule } from "./action-preview-header";
 import { ScheduledReplyLine } from "./scheduled-popover";
 import { ForwardLine } from "./forward-line";
 import { closeFeedConversation } from "~/lib/feed-pane";
+import { closePersonConversation } from "~/lib/people";
+import { PersonPage } from "./people/person-page";
 import { comingHomeKey, shownDraftKey, useDrafts } from "~/lib/drafts";
 import { reachesSeveral, replyName } from "~/lib/compose-fields";
 import { composeFocusPending, composeLanding, registerReaderFocusDestination, returnDraftsTo, subscribeComposeFocus } from "~/lib/compose";
@@ -1108,9 +1110,13 @@ const iconsFor = (t: { inSpam: boolean; hasSpam?: boolean }) => !t.inSpam && !t.
 
 export function Reader() {
   const selectedId = useApp((s) => s.selectedId);
+  const listShown = useAppearance((s) => s.layout === "list");
   const focusRequest = useApp((s) => s.draftFocus?.seq ?? null);
+  // plan 281: People's person, while no conversation is open (Split; List draws it in the list's pane)
+  const personPage = useApp((s) => s.people && s.selectedId === null) && !listShown;
   // plan 145: the digest's row reads here, and isn't a thread
   if (selectedId === DIGEST_ROW_ID) return <DigestPage />;
+  if (personPage) return <PersonPage />;
   return <MailReaderView identity={selectedId} focusRequest={focusRequest}><OriginalHost><ReaderContent /></OriginalHost></MailReaderView>;
 }
 
@@ -1149,7 +1155,9 @@ function ReaderContent() {
   const page = useAppearance((s) => s.layout === "list");
   // plan 204, the UI experiment: Split's pane beside Today's feed is the feed's (its toolbar closes it)
   const inToday = useApp((s) => s.today);
-  const feedPane = !page && inToday;
+  // plan 281: and beside People's list: its close goes back to the person's page
+  const inPeople = useApp((s) => s.people);
+  const feedPane = !page && (inToday || inPeople);
   // the dock sits over the conversation's foot in either layout (plan 158: Split's too), so its end (the reply bar) scrolls clear of it
   // plan 115: and the pinned draft sits over its foot in either layout: the last message scrolls clear of the taller one
   const dock = bottomInset(useSnack((s) => s.inset), usePinnedInset());
@@ -1343,7 +1351,7 @@ function ReaderContent() {
         {feedPane && <ToolbarDivider />}
         {feedPane && (
           <Tooltip>
-            <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={t("whatMatters.closeEmail")} aria-keyshortcuts="Escape" onClick={() => backToDigest(true) || closeFeedConversation()} data-testid="reader-close" className={cn(tool, "-mr-2 @max-[560px]:-mr-1.5")} />}>
+            <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={t("whatMatters.closeEmail")} aria-keyshortcuts="Escape" onClick={() => backToDigest(true) || closeFeedConversation() || closePersonConversation()} data-testid="reader-close" className={cn(tool, "-mr-2 @max-[560px]:-mr-1.5")} />}>
               <X />
             </TooltipTrigger>
             <TooltipContent className="flex items-center gap-2">

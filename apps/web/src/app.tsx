@@ -38,6 +38,7 @@ import { Sidebar } from "./components/sidebar";
 import { PaneHandle } from "./components/pane-handle";
 import { showColumn } from "~/lib/panes";
 import { skipToList, ThreadList } from "./components/thread-list";
+import { People } from "./components/people/people-list";
 import { WhatMattersFeed } from "./components/what-matters/feed";
 import { EngineStopped } from "./components/diag/engine-stopped";
 import { unsavedDraftWork } from "./lib/drafts";
@@ -149,6 +150,8 @@ export function App() {
   // plan 210: What matters is a feed (the owner made it the only view). In Split, with nothing open beside it, it takes
   // the reader's room too, and a conversation opened from it comes in on the right as the reader always does
   const feed = useApp((s) => s.today);
+  // plan 281: People's list is the list pane's (its person's page the reader's, in Split)
+  const people = useApp((s) => s.people);
   const feedWide = feed && !list && selectedId === null && !many && !composing && !heldView && !pinned && !pinnedAsk;
   // plan 251: a newsletter the digest opened has the digest's list beside it, over the feed (kept laid out under it)
   const digestBeside = useToday((s) => digestBesideOf(selectedId, s.fromDigest, feed, list ? "list" : "split"));
@@ -215,6 +218,8 @@ export function App() {
               <div className={cn("contents", digestBeside && "invisible")} inert={digestBeside}>
                 <WhatMattersFeed />
               </div>
+            ) : people ? (
+              <People />
             ) : (
               <ThreadList />
             )}

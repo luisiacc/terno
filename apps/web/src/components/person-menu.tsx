@@ -1,12 +1,15 @@
 import { formatAddressList, type ThreadDetail } from "@terno/core";
 import { t } from "@terno/i18n";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
-import { Copy, Reply, Search, SquarePen } from "@terno/ui/icons";
+import { Copy, Reply, Search, SquarePen, Users } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { composeLanding, type ComposeLanding } from "~/lib/compose";
 import type { ThreadPerson } from "~/lib/thread-overview";
+import { aiFeaturesOffered } from "~/lib/ai";
+import { cardOf, cardWithin, openInPeople, prefetchCard } from "~/lib/people";
 import { setApp, useApp } from "~/state/app";
+import { PersonCardHead } from "./people/person-card";
 import { copyAddress, SenderItems, type MenuParts } from "./sender-menu-items";
 
 const PARTS: PersonParts = { Item: DropdownMenuItem, Separator: DropdownMenuSeparator, Sub: DropdownMenuSub, SubTrigger: DropdownMenuSubTrigger, SubContent: DropdownMenuSubContent, RadioGroup: DropdownMenuRadioGroup, RadioItem: DropdownMenuRadioItem };
@@ -22,6 +25,7 @@ export type PersonParts = MenuParts & { Separator: ComponentType };
 export function PersonItems({ person, detail, offerReplyOnly, compose, parts }: { person: ThreadPerson; detail: ThreadDetail; offerReplyOnly: boolean; compose: (open: () => Promise<ComposeLanding>) => void; parts: PersonParts }) {
   const { Item, Separator } = parts;
   const categories = useApp((s) => s.categories);
+  const peopleOn = useApp(aiFeaturesOffered);
   const filedIn = categories.filter((c) => detail.thread.categoryIds.includes(c.id));
   const address = { name: person.name === person.email ? "" : person.name, email: person.email };
   return (
@@ -46,6 +50,13 @@ export function PersonItems({ person, detail, offerReplyOnly, compose, parts }: 
         <Search />
         <span className="min-w-0 flex-1 truncate">{t("people.conversations", { name: person.short })}</span>
       </Item>
+      {/* plan 281: their page in People, where AI features are offered */}
+      {peopleOn && (
+        <Item data-testid="person-open-people" onClick={() => openInPeople(person.email)}>
+          <Users />
+          <span className="min-w-0 flex-1 truncate">{t("people.openIn")}</span>
+        </Item>
+      )}
       <Item data-testid="person-copy" onClick={() => copyAddress(person.email)}>
         <Copy />
         <span className="min-w-0 flex-1 truncate">{t("threadMenu.copyAddress")}</span>
@@ -71,6 +82,10 @@ export const fullName = (p: ThreadPerson) => (p.name === p.email ? p.email : `${
  */
 export function PersonMenu({ person, detail, offerReplyOnly, className, children }: { person: ThreadPerson; detail: ThreadDetail; offerReplyOnly: boolean; className?: string; children: ReactNode }) {
   const [open, setOpen] = useState(false);
+  // plan 281: the card as it was when the menu opened: nothing is inserted into an open menu (keys never move under focus)
+  const [card, setCard] = useState<ReturnType<typeof cardOf>>(null);
+  const peopleOn = useApp(aiFeaturesOffered);
+  const asked = useRef(0);
   const trigger = useRef<HTMLButtonElement>(null);
   // an item that opens a draft hands focus to it: the closing menu gives none back (message-menu's useRespond)
   const handedOff = useRef(false);
@@ -79,11 +94,27 @@ export function PersonMenu({ person, detail, offerReplyOnly, className, children
   useEffect(() => () => {
     if (shown.current) setApp({ menuOpen: false });
   }, []);
-  const change = (next: boolean) => {
+  const show = (next: boolean) => {
     if (next) handedOff.current = false;
     shown.current = next;
     setOpen(next);
     setApp({ menuOpen: next });
+  };
+  const change = (next: boolean) => {
+    asked.current++;
+    if (!next || !peopleOn) return show(next);
+    const ready = cardOf(person.email);
+    if (ready) {
+      setCard(ready);
+      return show(true);
+    }
+    // (asked on the click alone: a moment's wait for it, then the menu either way)
+    const mine = asked.current;
+    void cardWithin(person.email).then((page) => {
+      if (mine !== asked.current) return;
+      setCard(page);
+      show(true);
+    });
   };
   // refused or failed: focus comes back to the chip while it's still here
   const compose = (open: () => Promise<ComposeLanding>) => {
@@ -101,6 +132,8 @@ export function PersonMenu({ person, detail, offerReplyOnly, className, children
         data-testid="thread-person"
         data-context-menu
         title={fullName(person)}
+        onPointerEnter={() => peopleOn && void prefetchCard(person.email)}
+        onFocus={() => peopleOn && void prefetchCard(person.email)}
         className={cn("group/person flex max-w-full min-w-0 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring", className)}
         onContextMenu={(e) => {
           // this menu, not the conversation's (MessageMenu's trigger is around the header) nor the system's
@@ -117,6 +150,7 @@ export function PersonMenu({ person, detail, offerReplyOnly, className, children
           <p className="truncate font-semibold">{person.name}</p>
           {person.name !== person.email && <p className="truncate text-muted-foreground">{person.email}</p>}
         </div>
+        {card && <PersonCardHead page={card} threadId={detail.thread.id} />}
         <DropdownMenuSeparator />
         <PersonItems person={person} detail={detail} offerReplyOnly={offerReplyOnly} compose={compose} parts={PARTS} />
       </DropdownMenuContent>

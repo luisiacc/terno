@@ -23,7 +23,8 @@ let running: Transition | null = null;
  */
 export function morph(update: () => void, pairs: readonly MorphPair[] = []): void {
   const doc = document as WithTransitions;
-  if (motionMs() === 0 || typeof doc.startViewTransition !== "function") return update();
+  // (plan 281) paused too, as flash.ts's motion is: a language switch re-mounting the app moves nothing
+  if (motionMs() === 0 || document.documentElement.classList.contains("motion-paused") || typeof doc.startViewTransition !== "function") return update();
   if (running) {
     running.skipTransition();
     return update();
@@ -106,6 +107,8 @@ function matchPairs(pairs: readonly MorphPair[], before: ReadonlyMap<string, DOM
 }
 
 function shown(el: HTMLElement): boolean {
+  // plan 281: what isn't drawn (List's covered list) has no picture to glide from or to
+  if (el.checkVisibility && !el.checkVisibility({ visibilityProperty: true })) return false;
   const clip = el.closest<HTMLElement>("[data-morph-clip]");
   // a sticky bar (`data-morph-pinned`) is always in its pane's view
   if (!clip || el.hasAttribute("data-morph-pinned")) return true;

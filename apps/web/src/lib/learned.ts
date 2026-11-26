@@ -51,8 +51,8 @@ function readHush(): boolean {
 }
 
 /** The place an offer was shown in: leaving it (another mailbox, an account, a search, Review) ends the visit */
-type Place = Pick<AppState, "view" | "accountId" | "categoryId" | "folder" | "gmailTab" | "reviewCategoryId" | "reminders" | "followups" | "putAway" | "today" | "actionPreview" | "query">;
-const placeOf = (s: Place): string => JSON.stringify([s.view, s.accountId, s.categoryId, s.folder, s.gmailTab, s.reviewCategoryId, s.reminders, s.followups, s.putAway, s.today, s.actionPreview, s.query.trim()]);
+type Place = Pick<AppState, "view" | "accountId" | "categoryId" | "folder" | "gmailTab" | "reviewCategoryId" | "reminders" | "followups" | "putAway" | "today" | "people" | "actionPreview" | "query">;
+const placeOf = (s: Place): string => JSON.stringify([s.view, s.accountId, s.categoryId, s.folder, s.gmailTab, s.reviewCategoryId, s.reminders, s.followups, s.putAway, s.today, s.people, s.actionPreview, s.query.trim()]);
 
 interface OfferState {
   /** the backend's offers, in its order */

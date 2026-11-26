@@ -2,6 +2,7 @@ import { installActionPreview } from "~/lib/action-preview";
 import { installAsk } from "~/lib/ask";
 import { installReplies } from "~/lib/replies";
 import { installToday } from "~/state/today";
+import { installPeople } from "~/lib/people";
 import { installShownSenders } from "~/state/shown-senders";
 import { installPersonRules } from "~/state/person-rules";
 import { installSendWarnings } from "./send-warning";
@@ -149,6 +150,7 @@ export async function boot(): Promise<void> {
     // plan 142: follow-ups: the Inbox's top, its row and each conversation's lines
     client.on("followups", applyFollowups);
     installToday();
+    installPeople();
     installShownSenders();
     installPersonRules();
     installReplies();

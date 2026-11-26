@@ -89,6 +89,8 @@ function rememberPlace(selectedId: number | null): void {
 function openedOn(place: Place | undefined, items: readonly ThreadSummary[]): number | null {
   // plan 210: What matters, a feed, opens nothing by itself (a conversation comes in beside it when asked for)
   if ((!place || place.selectedId === null) && getApp().today) return null;
+  // plan 281: People's list is of people, never a conversation's cursor (one opens from a person's page, when asked)
+  if (getApp().people) return null;
   // plan 161: Today's first row is the digest's; a list opens on its first conversation, unless that's all there is
   if (!place || place.selectedId === null) return (items.find((t) => t.id !== DIGEST_ROW_ID) ?? items[0])?.id ?? null;
   const id = place.selectedId;
@@ -125,7 +127,7 @@ export function listKey(): string {
   // plan 87: Reminders, only when it's that list (every other list's key is as it was)
   // plan 86: a Gmail tab likewise ("~promotions": never a folder's key)
   // plan 108: a search focused on an account looks only in it, so it's another list than the same search everywhere
-  return JSON.stringify([s.view, s.accountId, s.categoryId, s.reviewCategoryId, activeFilter(s) ?? null, ...(s.folder ? [s.folder] : []), ...(s.gmailTab ? [`~${s.gmailTab}`] : []), ...(s.reminders ? ["reminders"] : []), ...(s.followups ? ["followups"] : []), ...(s.putAway ? ["putAway"] : []), ...(s.actionPreview ? [`action:${s.actionPreview}`] : []), ...(s.today ? ["today"] : []), ...(soloSearch(s) ? ["~solo"] : []), s.query.trim()]);
+  return JSON.stringify([s.view, s.accountId, s.categoryId, s.reviewCategoryId, activeFilter(s) ?? null, ...(s.folder ? [s.folder] : []), ...(s.gmailTab ? [`~${s.gmailTab}`] : []), ...(s.reminders ? ["reminders"] : []), ...(s.followups ? ["followups"] : []), ...(s.putAway ? ["putAway"] : []), ...(s.actionPreview ? [`action:${s.actionPreview}`] : []), ...(s.today ? ["today"] : []), ...(s.people ? ["people"] : []), ...(soloSearch(s) ? ["~solo"] : []), s.query.trim()]);
 }
 
 /** The search a list's key holds: what its rows answer to, whatever is being typed by now. Empty for a mailbox, Review or a preview. */
@@ -252,6 +254,8 @@ function heldInReminders(selectedId: number | null, pinnedIds: ReadonlySet<numbe
 
 async function fetchPage(cursor?: ListCursor, limit = PAGE) {
   const s = getApp();
+  // plan 281: People's list is its own (state/people.ts): the mail list asks the backend nothing while it shows
+  if (s.people) return { items: [], nextCursor: null };
   if (s.reminders) {
     // plan 87: one bounded page, soonest first
     if (cursor) return { items: [], nextCursor: null };
@@ -862,7 +866,7 @@ useApp.subscribe((s, prev) => {
     pendingMore = null;
     useList.setState((l) => ({ key, itemsKey: l.itemsKey === l.key ? key : l.itemsKey, loadingMore: false, loading: false }));
     if (s.scope) setApp({ scope: null });
-  } else if (s.view !== prev.view || s.accountId !== prev.accountId || s.categoryId !== prev.categoryId || s.folder !== prev.folder || s.gmailTab !== prev.gmailTab || s.reviewCategoryId !== prev.reviewCategoryId || s.reminders !== prev.reminders || s.followups !== prev.followups || s.putAway !== prev.putAway || s.today !== prev.today || s.actionPreview !== prev.actionPreview || s.query !== prev.query || soloSearch(s) !== soloSearch(prev)) {
+  } else if (s.view !== prev.view || s.accountId !== prev.accountId || s.categoryId !== prev.categoryId || s.folder !== prev.folder || s.gmailTab !== prev.gmailTab || s.reviewCategoryId !== prev.reviewCategoryId || s.reminders !== prev.reminders || s.followups !== prev.followups || s.putAway !== prev.putAway || s.today !== prev.today || s.people !== prev.people || s.actionPreview !== prev.actionPreview || s.query !== prev.query || soloSearch(s) !== soloSearch(prev)) {
     // "all N of that list" means nothing in another one
     if (s.scope) setApp({ scope: null });
     rememberPlace(prev.selectedId);

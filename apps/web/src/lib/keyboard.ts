@@ -22,6 +22,7 @@ import { printCommand } from "~/lib/print-open";
 import { checkForUpdates } from "~/lib/updates";
 import { closeEmptySearch, focusRows, focusSearch, listScroller } from "~/components/thread-list";
 import { closeFeedConversation } from "~/lib/feed-pane";
+import { closePersonConversation, leavePerson, movePerson, peopleList } from "~/lib/people";
 import { popupOpen } from "~/components/composer/controller";
 import { feedPlace, feedScroller, focusFeed, openFeedKeyRow } from "~/lib/feed-focus";
 import { snackbarControls } from "~/components/category-snackbar";
@@ -102,6 +103,8 @@ function feedMove(delta: number, byKey: boolean): void {
 
 export function move(delta: number, byKey = false) {
   if (getApp().today) return feedMove(delta, byKey);
+  // plan 281: People's list is of people; a conversation open from a person's page has no neighbours to step to
+  if (getApp().people) return void (getApp().selectedId === null && movePerson(delta));
   const { items, index, nextCursor } = useList.getState();
   if (items.length === 0) return;
   const s = getApp();
@@ -169,6 +172,8 @@ function openCurrent() {
 /** r / a / f (and the palette's Reply): on List's list page, the conversation opens first (its draft is in it; R3). */
 /** / and the palette's Search mail: the field, wherever the list is. */
 export function focusSearchField(): void {
+  // plan 281: People's field finds people
+  if (getApp().people && peopleList.focusSearch) return peopleList.focusSearch();
   uncoverList();
   focusSearch();
 }
@@ -202,6 +207,10 @@ function escape() {
   // plan 204 (the feed), plan 210: What matters' feed puts away what's open beside it, a conversation or the digest's page
   // (whose keys were the page's), back on its item; List's digest is a page over the feed: Esc closes it as any page
   if (!s.checked.size && !s.scope && closeFeedConversation()) return;
+  // plan 281: a conversation opened from a person's page goes back to the page (Split); in List, the page over the list
+  // closes as any page does, and from a person's page there, Esc goes back to the list
+  if (closePersonConversation()) return;
+  if (s.people && s.person !== null && listLayout() && currentPage() === "list") return leavePerson();
   if (listLayout() && currentPage() !== "list") { markSelectionIntent(); closePage({ focus: true }); }
   // plan 161, pass 2: a matched conversation open in the reader closes first, back to the rule; then the preview ends
   else if (s.actionPreview) { if (listLayout() || !closePreviewRow()) leavePreview(); }
