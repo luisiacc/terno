@@ -254,3 +254,8 @@ Codex reviewed `a4888e48f..ce60174dd` (11 findings); every one is fixed, each wi
 ## The Put away rating set
 
 Plan 158's sets don't show Put away, so it has its own, `--screens putaway`, like What matters' (plan 214): five states on a seed (`apps/backend-dev/src/put-away-seed.ts`) at the AI set's instant, with `brief-pa.md`. docs/ui-rating.md says how to run it.
+
+## UI rating, first rounds (2026-11-25)
+
+- Everyday set at `ce60174dd` (`/tmp/terno-scratch/rating/p282-r01`): overall 6.5 to 8 by style and rater, below the bar as before this plan (plan 158's first climb stalled near 7.5); one rater named "Put away" among the coined terms, nothing else of this plan's.
+- Put away set at `8094aab82` (`/tmp/terno-scratch/rating/pa-r01`): overall 6 to 7 (Claude 6 to 6.5, Codex 7). Their shared points: a row brought back lingers with no state, then leaves and the list jumps; focus falls on the toolbar's Archive after a fix (Enter archives again); the box's fixes read as text, not controls, with text-high targets and no keyboard path; Needs a look's reason ("you've written to them") is what truncates, and its heading looks like a day's; "Don't file … automatically" promises more than its snack says, and the snack truncates at 1100x700; Review in the Inbox line is easy to miss.
