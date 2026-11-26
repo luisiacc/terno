@@ -73,7 +73,7 @@ export function readSpend(profile) {
 
 // ─── driving the window ─────────────────────────────────────────────────────
 
-export function driver(page, log) {
+function driver(page, log) {
   const d = { page };
   d.isVisible = (sel) => page.locator(sel).first().isVisible().catch(() => false);
   d.blur = () => page.evaluate(() => document.activeElement?.blur());
@@ -153,7 +153,7 @@ async function summaryShown(d, c) {
   }, c.title, { timeout: MODEL_MS }).then((h) => h.jsonValue(), () => "timeout");
 }
 
-export const STEPS = {
+const STEPS = {
   /** Settings → Dev mode → Pro AI, then the four background switches in Settings → AI. */
   async "ai-on"(d) {
     const { page } = d;
@@ -419,50 +419,96 @@ export const STEPS = {
 
   /**
    * Plan 281: People reads what the steps before made (What matters' items, the replies owed to you), so it only waits for
-   * Open to settle. One thing no step makes is something put off: one person's only item, waiting on your reply (the
-   * mailbox's, not a model's), goes to Later's furthest moment, so Open ends with someone put off, uncounted.
+   * Open to settle. One thing no step makes is something put off: one person whose only item is a conversation waiting on
+   * your reply (the mailbox's, not a model's) has it put off to Later's furthest preset, so Open ends with them, uncounted.
    */
   async people(d, progress) {
     const { page } = d;
+    if (progress.has("later")) return d.log("  put off on an earlier launch");
     await d.escapeAll();
-    if (!(await d.isVisible("[data-testid=nav-people]"))) await page.getByTestId("nav-more").click();
+    // People sits under the Inbox whenever the AI features are on (never in More)
+    if (!(await shows(page.getByTestId("nav-people"), 10_000))) return ["People isn't in the sidebar (are the AI features on?)"];
     await page.getByTestId("nav-people").click();
     await page.getByTestId("people").waitFor();
-    // Open's rows: those drawn above Everyone's heading (all of them, while it's below the fold)
-    const openRows = () => page.getByTestId("person-row").evaluateAll((rows) => {
-      const everyone = document.querySelector("[data-testid=people-heading][data-kind=everyone]");
-      return rows.filter((r) => !everyone || r.compareDocumentPosition(everyone) & Node.DOCUMENT_POSITION_FOLLOWING).map((r) => ({ key: r.dataset.key, text: r.innerText, more: !!r.querySelector("[data-slot=badge]") }));
-    });
-    // settled: Open's count holds for 10 s (What matters' readers may still be at it), 3 minutes at most
-    let last = "";
-    let since = Date.now();
-    for (const end = Date.now() + 180_000; Date.now() < end; await page.waitForTimeout(1000)) {
-      const now = `${await page.getByTestId("people-line").textContent()}|${(await openRows()).length}`;
+    const list = page.getByTestId("people-rows");
+    const line = async () => (await page.getByTestId("people-line").textContent())?.trim() ?? "";
+    // settled: Open's line holds for 10 s (What matters' readers may still be at it)
+    const end = Date.now() + 180_000;
+    for (let last = "", since = Date.now(); Date.now() < end; await page.waitForTimeout(1000)) {
+      const now = await line();
       if (now !== last) [last, since] = [now, Date.now()];
-      else if (Date.now() - since > 10_000 && (await openRows()).length > 0) break;
+      else if (Date.now() - since > 10_000) break;
     }
-    const rows = await openRows();
-    if (!rows.length) return ["nobody in People's Open"];
-    d.log(`  People: ${(await page.getByTestId("people-line").textContent())?.trim()}`);
-    if (progress.has("later")) return d.log("  put off on an earlier launch");
-    for (const row of rows.filter((r) => !r.more && r.text.includes("Waiting on you")).reverse()) {
-      await page.locator(`[data-testid=person-row][data-key="${row.key}"]`).click();
-      const item = page.getByTestId("person-page").getByTestId("person-item").first();
-      await item.waitFor();
+    d.log(`  People: ${await line()}`);
+    /**
+     * One person tried: their page holds one item, a conversation waiting on your reply (its id, never the words: the
+     * language may be Spanish), put off to Later's last preset. Recorded before the click, so a launch stopped after it
+     * finds that item put off and doesn't put off someone else.
+     */
+    // never a conversation an earlier step showed off (a summary, Reply ready, what's new): those stay in What matters
+    const shown = [...(loadMarker(d.profile).progress?.conversations ?? []), ...DEMO_SINCE_SUBJECTS];
+    const tryPerson = async (key) => {
+      await list.locator(`[data-testid=person-row][data-key="${key}"]`).click();
+      const items = page.getByTestId("person-page").getByTestId("person-item");
+      await items.first().waitFor({ timeout: 10_000 });
+      await page.waitForTimeout(300);
+      if ((await items.count()) !== 1) return false;
+      const id = await items.first().getAttribute("data-item");
+      if (!id?.startsWith("waiting:")) return false;
+      const text = await items.first().innerText();
+      if (shown.some((subject) => text.includes(subject))) return false;
+      const item = page.getByTestId("person-page").locator(`[data-testid=person-item][data-item="${id}"]`);
+      const name = (await page.getByTestId("person-name").innerText()).trim();
+      if (progress.has(`person:${key}`) && (await item.getAttribute("data-later")) !== null) {
+        progress.add("later");
+        d.log(`  ${name}: put off on an earlier launch`);
+        return true;
+      }
+      if ((await item.getAttribute("data-later")) !== null) return false;
       await item.hover();
       await item.getByTestId("person-item-later").click();
       const menu = page.getByTestId("person-item-later-menu");
       await menu.waitFor();
       const presets = menu.locator("[role=menuitem]:not([data-testid=person-item-later-pick])");
-      if (!(await presets.count())) { await page.keyboard.press("Escape"); continue; }
+      if (!(await presets.count())) { await page.keyboard.press("Escape"); return false; }
       const choice = (await presets.last().innerText()).replace(/\s+/g, " ").trim();
+      progress.add(`person:${key}`);
       await presets.last().click();
-      await page.getByTestId("person-page").locator("[data-testid=person-item][data-later]").first().waitFor({ timeout: 15_000 });
+      await page.getByTestId("person-page").locator(`[data-testid=person-item][data-item="${id}"][data-later]`).waitFor({ timeout: 15_000 });
       progress.add("later");
-      d.log(`  ${(await page.getByTestId("person-name").innerText()).trim()}: their only item put off (${choice}), at Open's end`);
-      return d.go("inbox");
+      d.log(`  ${name}: their only item put off (${choice}); Open lists them last, uncounted`);
+      return true;
+    };
+    // a launch stopped mid-way: the person it chose, first (they may sit at Open's end by now)
+    const chosen = progress.list().filter((k) => k.startsWith("person:")).map((k) => k.slice(7));
+    // Open, top to bottom through the virtual list: each row drawn above Everyone's heading, with nothing else open (no +N)
+    // (a first pass over Open for the person a stopped launch chose, when there's one: anyone else only after)
+    for (let pass = chosen.length ? 0 : 1; ; pass++) {
+      const tried = new Set();
+      await list.evaluate((el) => (el.scrollTop = 0));
+      for (let bottom = false; !bottom; ) {
+        const rows = await list.locator("[data-testid=person-row]").evaluateAll((els) => {
+          const everyone = document.querySelector("[data-testid=people-heading][data-kind=everyone]");
+          return els.filter((r) => !everyone || r.compareDocumentPosition(everyone) & Node.DOCUMENT_POSITION_FOLLOWING).map((r) => ({ key: r.dataset.key, more: !!r.querySelector("[data-slot=badge]") }));
+        });
+        for (const r of rows) {
+          if (r.more || tried.has(r.key) || (pass === 0 && !chosen.includes(r.key))) continue;
+          tried.add(r.key);
+          if (await tryPerson(r.key)) return d.go("inbox");
+        }
+        // Open ends where Everyone's heading is drawn
+        bottom = (await list.locator("[data-testid=people-heading][data-kind=everyone]").count()) > 0 || (await list.evaluate((el) => {
+          const end = el.scrollTop + el.clientHeight >= el.scrollHeight - 2;
+          el.scrollTop += el.clientHeight * 0.8;
+          return end;
+        }));
+        if (!bottom) await page.waitForTimeout(150);
+      }
+      if (pass === 0) continue;
+      // nobody yet: What matters may still be reading; looked at again until the step's three minutes are up
+      if (Date.now() > end) return ["no one in Open whose only item waits on your reply, to put off with Later"];
+      await page.waitForTimeout(10_000);
     }
-    return ["no one-item person waiting on your reply to put off with Later"];
   },
 };
 
@@ -505,7 +551,7 @@ export async function prepare({ electronBin, main, env, profile, steps, onPid = 
       const started = Date.now();
       const items = new Set(marker.progress[step] ?? []);
       // each item is on disk as soon as it's made: a step run again never makes it twice
-      const progress = { has: (k) => items.has(k), add: (k) => { items.add(k); marker.progress[step] = [...items]; save(); } };
+      const progress = { has: (k) => items.has(k), list: () => [...items], add: (k) => { items.add(k); marker.progress[step] = [...items]; save(); } };
       const attempt = (marker.attempts[step] = (marker.attempts[step] ?? 0) + 1);
       try {
         const missing = (await STEPS[step](d, progress)) ?? [];
