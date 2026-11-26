@@ -159,7 +159,7 @@ Follow-ups only. Never What matters, its count, or a notification.
 3. **`followups_owed ON followups(person_email) WHERE kind = 'theirs' AND state IN ('open','due')`:** the sender's open promises for the filter and `owed`.
 4. **`ai_dated_mail.wants_dated INTEGER NOT NULL DEFAULT 1`, `wants_theirs INTEGER NOT NULL DEFAULT 0`.**
 
-IndexedDB: the same fields and index, `IDB_VERSION` 42, an upgrade test. Everything else exists: `person_name`/`person_email` (the debtor), `quote`, `due_at`/`dated`/`timed`/`part_of_day`, `changed_at`/`changed_from`, `settled_by`/`settled_at` (the message that kept it), `closed_reason` (`kept`, `withdrawn`, `user`, `expired`).
+IndexedDB: the same fields and index, `IDB_VERSION` 43, an upgrade test. Everything else exists: `person_name`/`person_email` (the debtor), `quote`, `due_at`/`dated`/`timed`/`part_of_day`, `changed_at`/`changed_from`, `settled_by`/`settled_at` (the message that kept it), `closed_reason` (`kept`, `withdrawn`, `user`, `expired`).
 
 - **Bounds:** `theirs` counts in the 1,000 active rows; past it, a tentative undated `theirs` goes first, then an undated `awaiting`, as plan 142's order.
 - **Clear AI data** empties them. Not exported, synced, searched or on `MCP_ALLOWED`. Merges move them as all follow-ups.
@@ -259,7 +259,7 @@ Codex (`codex exec -s read-only`, the critique in the session's scratchpad) rais
     - **Shape:** every column of v82's `followups`, AUTOINCREMENT's mark kept (v57's way), and every index recreated by name (`followups_active`, `_thread`, `_top`, `_closed`, `_same`, `_answers`, and the rest the code names).
     - **Gate:** the migration perf fixture holds 50,000 closed rows, since the 90-day window bounds time, not count.
     - **Debtor key:** the owed index is on a normalized `person_key` (`addressKey`), a new column, filled on write.
-    - **IndexedDB 42:** the same index, defaults for old records, and an unknown kind left out before the list and the Inbox's top select, in both stores.
+    - **IndexedDB 43:** the same index, defaults for old records, and an unknown kind left out before the list and the Inbox's top select, in both stores.
 11. **One eligibility rule from the store to the draft** (point 12).
     - **The Inbox's top:** both stores' due transition puts a `theirs` row on the top only when it's firm and not `from_scan`.
     - **One rule for the row:** `threads()`, the Inbox's order and the renderer's line take the same row by one rule in `@terno/core` (`lineRow`), so the copy never shows a row the top didn't choose.
@@ -278,7 +278,7 @@ Codex (`codex exec -s read-only`, the critique in the session's scratchpad) rais
 - **One gate for all of Follow-ups.** Received mail is marked, read and checked by the gate the sent side already uses: the AI gate, the account's AI and Show in What matters switches (`gate.reads`, plan 211), Follow-ups' own setting and `enabledAt`, and the account's Track follow-ups switch. Codex's critique (point 1) asked whether What matters' switch should govern a Follow-ups feature. Follow-ups' sent half already follows it, so the received half does the same; giving Follow-ups its own predicate would be a change for both halves, outside this plan.
 - **The task runs on the follow-ups route** (`forTask("followup")`): same provider, model and limiter task, so the monthly ceiling already counts it. Revision 4's own task key isn't needed. The transport's last look (`beforeAhead`) now runs for the `followup` task, and `FollowupWorker.holdingUp` returns at once unless a received message's reading is on its way.
 - **Item ids from 200** (`THEIRS_ITEM`). Revision 7 said 100, but that is the wait's item (`AWAITING_ITEM`).
-- **No `changed_at` or `changed_from` for a mail's move.** Those columns are the user's own schedule in What matters (Change…), and `scheduleFields` reads them into every row. A promise of theirs records the moving mail's date in `moved_at` (on v83, unshipped) instead.
+- **No `changed_at` or `changed_from` for a mail's move.** Those columns are the user's own schedule in What matters (Change…), and `scheduleFields` reads them into every row. A promise of theirs records the moving mail's date in `moved_at` (on v84, unshipped) instead.
 - **No `person_key` column read by name.** The debtor's key is written at insert and indexed (`followups_owed`). IndexedDB's `owed` index is in memory, filtered to open promises of theirs.
 - **The 14-day check doesn't commit a conversation at once** (revision 3). A check's rows are `from_scan`: never on the Inbox's top, never said. The check reads a conversation oldest first, in the same pass as everything else. A debt it finds marks its debtor's later received mail again (`requeue`, at most 20, once per message), so a delivery read before the debt existed is read again. Until then the row can show in the Follow-ups list, and Received closes it.
 - **A check's candidates leave out list and bulk mail.** At check time no debt exists yet for a service's notice to name.
@@ -297,7 +297,7 @@ Codex (`codex exec -s read-only`, the review in the session's scratchpad) raised
 3. **Clipped evidence:** "send the contract" cut from "I can't send the contract until Friday" passed. Evidence is now judged with the whole of its sentences (`deliveredIn`), for their mail and for "got it" in yours. A file counts only when no other open promise of that person's, shown or not, could be it.
 4. **Re-queueing after a stale finish.** It happens only after a written finish.
 5. **A late-confirmed send of yours** that records their promise now reads the debtor's later mail again.
-6. **Older mail could undo a newer move.** `moved_at` (v83) stops it: mail older than the last move can't move or close the promise.
+6. **Older mail could undo a newer move.** `moved_at` (v84) stops it: mail older than the last move can't move or close the promise.
 7. **Undo at the bound** is admitted by worth, as a new row is: a promise of yours always fits, so What matters' Undo is never partial. One with no room says "There are too many follow-ups to bring this one back. Dismiss one first." and stays to try again.
 8. **A cue-free reply to your send** ("Friday.") was dropped when its wait had already closed. A reply to a trusted send of yours is now always read.
 9. **One rule (`lineRows`) for the row that speaks for a conversation:** on the Inbox's top, the row that put it there, never a tentative one beside it. The backend orders the top by the same rows.
@@ -328,7 +328,7 @@ Left, with why:
   - `today.spec.ts:935` failed twice at a load of about 18 and passed four times at 4–9: flaky under load.
 - **Perf:**
   - Follow-ups' workload gate on both stores, with a third of the 1,000 active rows promises of theirs. A sender's open promises to you take 0.34 ms on SQLite and 0.13 ms on IndexedDB, at a load of 18.
-  - `migrations.perf.test.ts`: v83 takes 166 ms with 50,000 closed follow-ups at 57,000 conversations.
+  - `migrations.perf.test.ts`: v84 (then v84) takes 166 ms with 50,000 closed follow-ups at 57,000 conversations.
 - **Not run:** `pnpm test:all`, which the migration and the store contract call for. The shared machine's load stayed between 4 and 18. The real-model eval and the panel wait for the owner's go-ahead.
 - **Visual:** the card in light and dark beside its neighbours (`FOLLOWUP_SHOTS`). It sits on the subject's column like the wait's card, and the top's heading counts only the firm promises.
 
@@ -376,3 +376,7 @@ Astra (`gpt-6.2-astra` on Codex, high effort) and Fable (Claude Fable 5.2) revie
 - Both stores' conformance (the owed suite now 21 a store), migrations, IndexedDB's upgrade, core, AI, backend (`followups`, `owed`, `their-promises`, `promise-answers`, `hand-to`, `today`) and web units: 2,016 pass. The same two older SQLite conformance tests fail as on `main`.
 - `followups.spec.ts`: 9 of 9.
 - The follow-ups perf gate on both stores. SQLite's active list once took 29 ms at a load of 19, then 7 ms on both reruns.
+
+## Renumbered for landing
+
+Plan 278 landed first with SQL v83 and IndexedDB 42 (`de08113b3`), so this plan's step is **SQL v84** (`followups_v84`, its rebuild) and **IndexedDB 43**, on a branch rebased onto it. Everything above that says v84 and 43 was written as v83 and 42; the steps are the same.
