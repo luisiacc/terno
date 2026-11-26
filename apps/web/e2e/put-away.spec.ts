@@ -54,6 +54,8 @@ test.describe("Put away (plan 282)", () => {
       await expect(rows(page)).toHaveCount(2);
       await expect(rows(page).nth(0).getByTestId("row-put-away")).toContainText("Archived by a rule Terno made on Oct 12 · you’ve written to them");
       await expect(rows(page).nth(1).getByTestId("row-put-away")).toContainText("Archived by your rule “Xataka”");
+      // the demo's Gmail keeps its tabs apart: said once, under the last row
+      await expect(page.getByTestId("put-away-footer")).toHaveText("Gmail and Outlook also keep some mail out of the Inbox. It’s under each account.");
       if (SHOTS) {
         await rows(page).nth(1).click();
         await expect(page.getByTestId("put-away-box")).toBeVisible();

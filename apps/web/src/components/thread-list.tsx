@@ -7,7 +7,7 @@ import { AlarmClock, ChevronDown, FolderInput, Inbox, Info, ListFilter, Search, 
 import { cn } from "@terno/ui/lib/utils";
 import { activeFilter } from "~/lib/unread-filter";
 import { setListFilter } from "~/lib/unread";
-import { matchesFilter, rowMatchOf, savesRuleOnly, tabRef, type ListFilter as QuickFilter } from "@terno/core";
+import { matchesFilter, rowMatchOf, savesRuleOnly, separatesTabs, tabRef, type ListFilter as QuickFilter } from "@terno/core";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
 import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
 import { Button } from "@terno/ui/components/button";
@@ -71,6 +71,8 @@ const pinnedOver = (snack: number, pinned: number): number => Math.max(0, bottom
 const askOverList = (): number => (usePinnedAsk.getState().overList ? usePinnedAsk.getState().inset : 0);
 const listInset = (): number => (useAppearance.getState().layout === "list" ? pinnedOver(listCovered() ? 0 : useSnack.getState().inset, pinnedInsetNow()) : askOverList());
 
+/** plan 282: the room Put away's footer line takes under the rows (one or two lines) */
+const PUT_AWAY_FOOTER = 56;
 const TOP_HEADING_ID = { pinned: "inbox-pinned-label", reminders: "inbox-reminders-label", inbox: "inbox-rest-label", needsLook: "put-away-look-label", day: "put-away-day-label" } as const satisfies Record<TopSectionKind, string>;
 
 /**
@@ -1079,6 +1081,10 @@ export function ThreadList() {
   // (the top and its count are published with the rows they came with: read beside them)
   // plan 282: Put away's sections, Needs a look and each day, from the placements the rows came with
   const placed = usePutAway((s) => s.byThread);
+  // plan 282: under Put away's last row, that Gmail and Outlook keep their own sorting out of the Inbox too (an account
+  // that keeps it apart), once every row is in
+  const hasMore = useList((s) => s.nextCursor !== null);
+  const footer = useApp((s) => s.putAway && s.accounts.some(separatesTabs)) && !hasMore ? PUT_AWAY_FOOTER : 0;
   const sections = useMemo(() => (putAway ? { ...putAwaySections(items, placed), total: null } : { ...topSections(items, inboxTop), total: inboxTop.total }), [items, putAway, placed]);
   const { top, pinned: pinnedTop } = sections;
   const inboxName = useApp((s) => (s.accountId === null ? null : (s.accounts.find((a) => a.id === s.accountId)?.displayName ?? null)));
@@ -1105,7 +1111,7 @@ export function ThreadList() {
     paddingStart: lead + (headingAt.has(0) ? label : 0),
     overscan: 10,
     getItemKey,
-    paddingEnd: dock,
+    paddingEnd: dock + footer,
     scrollPaddingEnd: dock,
   });
 
@@ -1390,6 +1396,11 @@ export function ThreadList() {
                 count={h.count !== undefined ? formatNumber(h.count) : h.kind === "pinned" ? formatNumber(pinnedTop) : h.kind === "reminders" ? formatNumber(top - pinnedTop) : sections.total ? `${formatNumber(sections.total.n)}${sections.total.capped ? "+" : ""}` : null}
               />
             ))}
+            {footer > 0 && (
+              <p data-testid="put-away-footer" className="absolute inset-x-0 px-5 pt-4 text-xs text-muted-foreground" style={{ top: virtualizer.getTotalSize() - dock - footer, height: footer }}>
+                {t("putAway.footer")}
+              </p>
+            )}
             {virtualItems.map((v) => (
               <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} showAccount={showAccount} icons={icons} layout={layout} review={review} pinnedTop={v.index < pinnedTop} reminderTop={v.index >= pinnedTop && v.index < top} match={match} lines={lines} pick={list} position={v.index + 1} />
             ))}
