@@ -19,7 +19,8 @@ const inText = (words: string, text: string) => {
 
 /** Revision 6: words that say it hasn't happened ("the contract wasn't sent", "todavía no"): never a delivery */
 const NOT_YET = /\b(?:not|no|never|yet to|still|wasn't|isn't|hasn't|haven't|didn't|won't|can't|cannot|couldn't|todavia|aun no|aun sin|sin|nunca|falta|pendiente)\b|n't\b/u;
-export const saysNotYet = (evidence: string): boolean => NOT_YET.test(normalizeText(evidence).toLowerCase().normalize("NFD").replace(/\p{M}/gu, ""));
+// (the Astra review: a typographic apostrophe is the plain one, so "can’t" reads as "can't")
+export const saysNotYet = (evidence: string): boolean => NOT_YET.test(normalizeText(evidence).toLowerCase().replace(/[’‘ʼ]/gu, "'").normalize("NFD").replace(/\p{M}/gu, ""));
 
 /**
  * The code review: evidence is judged with the whole of the sentences it's in, never its words cut out of one ("send the
@@ -39,6 +40,16 @@ export const fileNames = (name: string, text: string): boolean => {
   const promised = namingWords(text, { names: false });
   return [...fileWords(name)].some((w) => promised.has(w));
 };
+
+/** A greeting, a name and a sign-off at most ("Hi Nora,", "Here you go", "Best, Alex"): nothing said of its own. */
+const GREETING = /^(?:hi|hello|hey|dear|hola|buenas|buenos dias|here you go|here you are|aqui tienes|aqui va|aqui esta|thanks|thank you|gracias|best|regards|saludos|cheers|un saludo)\b/u;
+export function bare(text: string): boolean {
+  const lines = text.split(/\n+/u).map((l) => norm(l)).filter(Boolean);
+  return lines.every((l) => l.split(" ").length <= 4 && (GREETING.test(l.normalize("NFD").replace(/\p{M}/gu, "")) || l.split(" ").length <= 2));
+}
+
+/** Whether the mail claims a file as the delivery: only then are all the debtor's promises read for the file's uniqueness. */
+export const claimsFile = (result: TheirMailResult, attachments: readonly string[]): boolean => result.kept.some((k) => attachments.some((f) => norm(f) === norm(k.evidence)));
 
 export interface TheirChecks {
   rows: OwedWrite[];
@@ -93,11 +104,13 @@ export function checkTheirPromises(
       if (inText(k.evidence, input.relay.block) && deliveredIn(k.evidence, input.relay.block)) out.hints.push(r);
       continue;
     }
-    // a file by its exact name, naming the promised thing, and no other open promise of this person's, shown or not
+    // a file by its exact name, naming the promised thing, and no other open promise of this person's, shown or not; only
+    // when the mail says nothing else (the Astra review: words of its own, "the final one isn't ready", are what count)
     const row = input.owed.get(k.label)!;
     const file = input.attachments.find((f) => norm(f) === norm(k.evidence));
-    const others = [...input.owed.values(), ...(input.debts ?? [])].filter((o) => o.id !== row.id);
-    const byFile = file !== undefined && fileNames(file, row.text) && !others.some((o) => fileNames(file, o.text));
+    const debtor = row.personKey;
+    const others = [...input.owed.values(), ...(input.debts ?? [])].filter((o) => o.id !== row.id && (!debtor || o.personKey === debtor));
+    const byFile = file !== undefined && bare(input.text) && fileNames(file, row.text) && !others.some((o) => fileNames(file, o.text));
     if (!byFile && !(own(k.evidence) && deliveredIn(k.evidence, input.text))) continue;
     out.kept.push(r);
     done.add(r.id);
@@ -125,12 +138,13 @@ export function checkTheirPromises(
  * its sentences that name them (at most `RELAY_CHARS`), as material. Never a close: only a hint.
  */
 const RELAY_CHARS = 1200;
+/** The Astra review: a whole address, never part of another ("alex@x.test" isn't in "malex@x.test") */
+const names = (text: string, email: string) => new RegExp(`(?<![\\w.+-])${email.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}(?![\\w-]|\\.\\w)`, "iu").test(text);
 export function relayOf(text: string, owed: readonly FollowupRow[]): { rows: FollowupRow[]; block: string } | null {
-  const lower = text.toLowerCase();
-  const rows = owed.filter((r) => r.personEmail && lower.includes(r.personEmail.toLowerCase()));
+  const rows = owed.filter((r) => r.personEmail && names(text, r.personEmail));
   if (!rows.length) return null;
   const sentences = text.split(/(?<=[.!?])\s+|\n+/u).map((s) => s.trim()).filter(Boolean);
-  const named = sentences.filter((s) => rows.some((r) => s.toLowerCase().includes(r.personEmail!.toLowerCase())));
+  const named = sentences.filter((s) => rows.some((r) => names(s, r.personEmail!)));
   let block = "";
   for (const s of named) {
     if (block.length + s.length + 1 > RELAY_CHARS) break;

@@ -226,6 +226,21 @@ export function defineOwedConformance(fresh: () => Promise<MailStore>, reopen: (
         expect(await store.followups.get(p.row.id)).toMatchObject({ state: "open", dueDay: "2026-11-13", revision: moved.revision });
       });
 
+      it("the Astra review: a relay, or a 'got it' of yours, older than the last move does nothing, in both stores alike", async () => {
+        const { store, accountId, got, finish, promised } = await setup();
+        const p = await promised({ dueAt: NOW + 3 * DAY, dueDay: "2026-11-07" }, { subject: "Deal", providerMsgId: "m1", rfcMessageId: "m1@x" });
+        const wed = await got({ date: NOW + 2 * DAY });
+        await finish(wed.id, wed.thread, { moved: [{ id: p.row.id, revision: p.row.revision, dueAt: NOW + 9 * DAY, dueDay: "2026-11-13" }] });
+        const moved = (await store.followups.get(p.row.id))!;
+        const relay = await got({ from: { name: "SignFlow", email: "noreply@signflow.test" }, date: NOW + DAY });
+        await finish(relay.id, relay.thread, { hints: [{ id: moved.id, revision: moved.revision }] });
+        expect(await store.followups.get(p.row.id)).toMatchObject({ arrivedHint: null, revision: moved.revision });
+        const mine = msg({ accountId, from: me, to: [alex], isSent: true, inInbox: false, gmailLabels: ["SENT"], providerMsgId: "t-old", subject: "Re: Deal", inReplyTo: "m1@x", references: ["m1@x"], date: NOW + DAY });
+        const sentId = (await store.sync.ingest([mine], { applyFilters: false, now: NOW, classifier: null, liveSent: { wanted: true } })).inserted[0]!;
+        await store.followups.finish({ messageId: sentId, threadId: p.thread, fromScan: false, rows: [], kept: [], owedKept: [{ id: moved.id, revision: moved.revision }], now: NOW, model: "m", provider: "p", promptVersion: 1, clearGeneration: store.followups.clearGeneration() });
+        expect((await store.followups.get(p.row.id))!.state).toBe("open");
+      });
+
       it("what it could act on: its conversation's and its sender's in the account, never one in Spam or Trash, nor later than it", async () => {
         const { store, accountId, got, promised } = await setup();
         const here = await promised({}, { subject: "Here" });

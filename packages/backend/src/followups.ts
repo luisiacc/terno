@@ -3,14 +3,14 @@ import { addressOnly, addressKey, automatedLevel, dayKeyOf, dueCutoff, byUrgency
 import { captureError } from "@terno/core/diag";
 import { RpcError, type AppSettings } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
-import { AWAITING_ITEM, HELD_REQUEST_CLOSED, OWED_RETIRE_MS, OWED_SCAN_DAYS, type FollowupFinish, type FollowupSnapshot, type FollowupSource, type FollowupWrite, type MailStore, type OwedMark, type OwedSource, type SentMark } from "@terno/store";
+import { AWAITING_ITEM, FOLLOWUPS_ACTIVE_MAX, HELD_REQUEST_CLOSED, OWED_RETIRE_MS, OWED_SCAN_DAYS, type FollowupFinish, type FollowupSnapshot, type FollowupSource, type FollowupWrite, type MailStore, type OwedMark, type OwedSource, type SentMark } from "@terno/store";
 import { AccountChecks, FOLLOWUPS_CHECKED_KEY, OWED_CHECKED_KEY } from "./account-checks";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import { UI_LOCALE_KEY } from "./forwarding";
 import { contextOf, directsReader, namingWords, norm as plain, paidSaid, plainEvidence, saidClauses, sameObject, sentencesOf, sentencesWith } from "./dated-evidence";
 import { promiseMoment } from "./promise-time";
 import { untrustedSenders } from "./suspicious-sender";
-import { checkTheirPromises, deliveredIn, owedWorth, relayOf } from "./their-promises";
+import { checkTheirPromises, claimsFile, deliveredIn, owedWorth, relayOf } from "./their-promises";
 
 const MAX_DELAY = 2 ** 31 - 1;
 const PAGE = 50;
@@ -470,7 +470,7 @@ export class FollowupWorker {
   private undoSeq = 0;
   private prunedDay: string | null = null;
   /** plan 280: the received message whose reading is on its way to the provider, for the transport's last look */
-  private leaving: { messageId: number; threadId: number; accountId: number; senderKey: string; date: number; owed: { id: number; revision: number }[]; relay: boolean; stop: AbortController } | null = null;
+  private leaving: { messageId: number; threadId: number; accountId: number; senderKey: string; date: number; owed: { id: number; revision: number }[]; relay: boolean; answering: number | null; stop: AbortController } | null = null;
   /** plan 280 (revision 1): checked messages whose debtor's later mail was marked again, once each */
   private readonly requeued = new Set<string>();
 
@@ -717,7 +717,12 @@ export class FollowupWorker {
       }
       owed.shift();
       afterOwed = { arrivedAt: o!.arrivedAt, messageId: o!.messageId };
-      if (held.has(o!.threadId) || heldSenders.has(o!.senderKey)) continue;
+      // (the Astra review: one held by its conversation holds its sender too, so their mail elsewhere waits for it)
+      if (held.has(o!.threadId) || heldSenders.has(o!.senderKey)) {
+        held.add(o!.threadId);
+        heldSenders.add(o!.senderKey);
+        continue;
+      }
       const next = await this.considerOwed(o!, generation);
       if (next === "stop") return;
       if (next === "hold") {
@@ -780,7 +785,8 @@ export class FollowupWorker {
       const requestLabels = new Map(requested.map((r, i) => [`q${i + 1}`, r]));
       const recipients = [...src.to, ...src.cc].slice(0, 20).map((r, i) => ({ label: `r${i + 1}`, name: r.name || r.email.split("@")[0]!, email: r.email }));
       // plan 280 (§3): this conversation's open promises of theirs, which your message may say arrived
-      const owed = (await store.followups.ofThread(src.threadId)).filter((r) => r.kind === "theirs" && r.sentAt < src.date).sort((a, b) => b.sentAt - a.sentAt).slice(0, FOLLOWUP_OPEN_MAX);
+      // (the Astra review: through the store's own rule for what may be material, so none of a conversation with Spam in it)
+      const owed = (await store.followups.owed.openFor({ threadId: src.threadId, accountId: src.accountId, senderKey: "", before: src.date, limit: FOLLOWUP_OPEN_MAX })).filter((r) => r.threadId === src.threadId);
       const owedLabels = new Map(owed.map((r, i) => [`t${i + 1}`, r]));
       const budget = followupBudget(ai.contextTokens);
       const input = fitSentMail({ ownText: own, ...(answering ? { answering } : {}), subject: src.subject, recipients: recipients.map(({ label, name }) => ({ label, name })), attachments: src.attachments, openPromises: [...openLabels].map(([label, r]) => ({ label, text: r.text })), requests: [...requestLabels].map(([label, r]) => ({ label, text: r.text, due: r.dated ? r.dueDay : null })), owed: [...owedLabels].map(([label, r]) => ({ label, text: r.text, person: r.personName })), sentAt: inWords(src.date, language), language, outputTokens: budget.outputTokens }, budget.promptChars);
@@ -860,12 +866,13 @@ export class FollowupWorker {
       const relay = named ? relayOf(text, await this.readable(named.rows, src.accountId)) : null;
       if (service && !relay) return await drop();
       if (!service && !owedWorth({ text, owed: open.length, waiting, answers: !!src.answering })) return await drop();
-      if (!text.trim()) return await drop();
+      // (the Astra review: a file alone, to someone who owes one, is read: it may be the delivery)
+      if (!text.trim() && !(open.length && src.attachments.length)) return await drop();
       const owedRows = relay ? relay.rows.slice(0, THEIRS_OWED_MAX) : open;
       const labels = new Map(owedRows.map((r, i) => [`t${i + 1}`, r]));
       const asked = this.host.begin(`owed:${mark.messageId}`, "followup-worker");
       const stop = new AbortController();
-      this.leaving = { messageId: src.id, threadId: src.threadId, accountId: src.accountId, senderKey: src.senderKey, date: src.date, owed: owedRows.map((r) => ({ id: r.id, revision: r.revision })), relay: !!relay, stop };
+      this.leaving = { messageId: src.id, threadId: src.threadId, accountId: src.accountId, senderKey: src.senderKey, date: src.date, owed: owedRows.map((r) => ({ id: r.id, revision: r.revision })), relay: !!relay, answering: answering ? (src.answering?.id ?? null) : null, stop };
       try {
         const ai = await this.host.forTask();
         const language = await this.readerLanguage(settings);
@@ -880,7 +887,8 @@ export class FollowupWorker {
         if (!(await this.host.accountWanted(src.accountId))) return await drop();
         // only what was really sent, after fitting to the window, may be named back
         const shown = new Set(input.owed.map((o) => o.label));
-        const debts = relay ? [] : await store.followups.owed.openFor({ threadId: src.threadId, accountId: src.accountId, senderKey: src.senderKey, before: src.date, limit: THEIRS_OWED_MAX * 5 });
+        // a file claimed as the delivery: every open promise of the debtor's in the account, for the file's uniqueness
+        const debts = relay || !claimsFile(result, src.attachments) ? [] : (await store.followups.owed.openFor({ threadId: -1, accountId: src.accountId, senderKey: src.senderKey, before: src.date, limit: FOLLOWUPS_ACTIVE_MAX })).filter((r) => r.personKey === src.senderKey);
         const checked = checkTheirPromises(result, { text, attachments: src.attachments, owed: new Map([...labels].filter(([l]) => shown.has(l))), debts, from: { name: src.fromName, email: src.fromEmail }, reader: { name: readerName, addressed: src.readerIn }, relay: relay ? { block: relay.block } : null, madeAt: src.date, nudgeAfterDays: settings.followups.nudgeAfterDays });
         const fromScan = mark.source === "scan";
         const now = this.host.now();
@@ -944,6 +952,8 @@ export class FollowupWorker {
     const { store } = this.host;
     const src = await store.followups.owed.source(leaving.messageId);
     if (!src || src.spam || src.trash || src.threadSpam || src.threadId !== leaving.threadId || !(await this.host.accountWanted(src.accountId))) return leaving.stop.abort();
+    // (the Astra review: the message of yours it quotes is still one it may quote)
+    if (leaving.answering !== null && src.answering?.id !== leaving.answering) return leaving.stop.abort();
     if (!leaving.owed.length) return;
     const carried = new Set(leaving.owed.map((r) => r.id));
     const still = leaving.relay

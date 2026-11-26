@@ -219,4 +219,53 @@ describe("reading their mail (plan 280)", () => {
     backend.store.followups.restore = restore;
     backend.store.followups.get = get;
   });
+
+  it("the Astra review: a file alone, to someone who owes one, is read and can be the delivery", async () => {
+    const { model, got, drained, owed, asked, clock } = await setup();
+    model.their = () => theirs({ promises: [promise] });
+    await got({ subject: "Contract" });
+    await drained();
+    model.their = () => theirs({ kept: [{ label: "t1", evidence: "Contract_signed.pdf" }] });
+    clock.now += 3600_000;
+    await got({ subject: "Signed", bodyText: "", hasAttachments: true, attachments: [{ filename: "Contract_signed.pdf", mime: "application/pdf", size: 3, bytes: new Uint8Array([1, 2, 3]) }] });
+    await drained();
+    expect(asked()).toHaveLength(2);
+    expect(await owed()).toEqual([]);
+  });
+
+  it("the Astra review: reading what you send never carries a promise from a conversation with anything in Spam", async () => {
+    const { model, got, send, drained, owed, backend, account, clock } = await setup();
+    model.their = () => theirs({ promises: [promise] });
+    const a = await got({ subject: "Deal", rfcMessageId: "deal@x", providerThreadId: "deal" });
+    await drained();
+    expect(await owed()).toHaveLength(1);
+    // another of the conversation's messages moved to Spam
+    await backend.store.sync.ingest([msg({ accountId: account.id, from: { name: "Bea", email: "bea@acme.test" }, to: [me], providerMsgId: "spam-1", providerThreadId: "deal", inReplyTo: "deal@x", references: ["deal@x"], subject: "Re: Deal", isSpam: true, inInbox: false, date: clock.now - 30_000 })], { applyFilters: false, now: clock.now, classifier: null });
+    clock.now += 60_000;
+    const before = model.requests.length;
+    await send({ subject: "Re: Deal", providerThreadId: "deal", inReplyTo: "deal@x", references: ["deal@x"], bodyText: "Got it, thanks!" });
+    await drained();
+    const sentReads = model.requests.slice(before).filter((r) => schemaOf(r) === "sent_mail");
+    expect(sentReads.length).toBeGreaterThan(0);
+    for (const r of sentReads) expect(JSON.stringify(r.messages)).not.toContain("<owed>");
+    expect(a.id).toBeGreaterThan(0);
+  });
+
+  it("the Astra review: a conversation held for a body holds its later senders too, so their delivery elsewhere waits for their promise", async () => {
+    const { model, got, drained, owed, clock, backend } = await setup();
+    // Bob's message, its body not here yet, holds the conversation
+    const bob = await got({ from: { name: "Bob", email: "bob@acme.test" }, subject: "Plan", providerThreadId: "plan", rfcMessageId: "plan1@x", bodyState: "none", bodyText: "" });
+    clock.now += 60_000;
+    // Alex promises in that conversation, then delivers in another, with no cue
+    await got({ subject: "Re: Plan", providerThreadId: "plan", rfcMessageId: "plan2@x", inReplyTo: "plan1@x", references: ["plan1@x"] });
+    clock.now += 60_000;
+    await got({ subject: "Contract", bodyText: "Here it is." });
+    model.their = (req) => (JSON.stringify(req.messages).includes("<owed>") ? theirs({ kept: [{ label: "t1", evidence: "Here it is." }] }) : theirs({ promises: [promise] }));
+    backend.followups.wake();
+    // the delivery waits with the conversation (its marks stay)
+    await expect.poll(async () => backend.store.followups.owed.marks.count()).toBe(3);
+    await backend.store.sync.setBody(bob.id, "Can someone send the contract?", null, { now: clock.now, classifier: null });
+    await drained();
+    expect(await owed()).toEqual([]);
+  });
 });

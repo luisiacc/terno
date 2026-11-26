@@ -1,4 +1,4 @@
-import { addressKey, ANSWERED_KINDS, isFollowupKind, onTopEligible, parseHandedTo, readPartOfDay, refKey, replyAnswers, replyClosedReason, replyRecipients, type FollowupRow } from "@terno/core";
+import { addressKey, ANSWERED_KINDS, FOLLOWUP_KINDS, isFollowupKind, onTopEligible, parseHandedTo, readPartOfDay, refKey, replyAnswers, replyClosedReason, replyRecipients, type FollowupRow } from "@terno/core";
 import { FOLLOWUP_CLOSED_KEEP_MS, FOLLOWUP_WORTH_KEPT, FOLLOWUPS_ACTIVE_MAX, followupWorth, recipientList, SCAN_MARK_MS, SENT_MARK_MS, type ClosedAt, type FollowupFinish, type FollowupFinishOutcome, type FollowupSnapshot, type FollowupSource, type SentMark } from "@terno/store";
 import { ownAddresses } from "./facts";
 import { scheduleFields } from "./schedule";
@@ -316,7 +316,8 @@ export function finishFollowups(db: Db, w: FollowupFinish): FollowupFinishOutcom
     }
     // plan 280 (§3): your words say a promise of theirs arrived ("got the contract, thanks"): this conversation's, at the revision shown
     for (const k of yours ? (w.owedKept ?? []) : []) {
-      db.run("UPDATE followups SET state = 'done', closed_reason = 'kept', closed_at = ?, settled_by = ?, settled_at = ?, inbox_state = 'none', revision = revision + 1 WHERE id = ? AND revision = ? AND thread_id = ? AND kind = 'theirs' AND state IN ('open','due') AND sent_at < ?", w.now, w.messageId, src.date, k.id, k.revision, src.threadId, src.date);
+      // (the Astra review: and newer than the mail that last moved it, as their own mail must be)
+      db.run("UPDATE followups SET state = 'done', closed_reason = 'kept', closed_at = ?, settled_by = ?, settled_at = ?, inbox_state = 'none', revision = revision + 1 WHERE id = ? AND revision = ? AND thread_id = ? AND kind = 'theirs' AND state IN ('open','due') AND sent_at < ? AND coalesce(moved_at, sent_at) < ?", w.now, w.messageId, src.date, k.id, k.revision, src.threadId, src.date, src.date);
     }
     db.run("DELETE FROM ai_sent_mail WHERE message_id = ?", w.messageId);
     return "written";
@@ -347,7 +348,9 @@ export function getFollowup(db: Db, id: number): FollowupRow | null {
 }
 /** `followupWakeAt` in SQL: a promise's Later, if later than its moment. Over the open rows (the active bound, 1,000). */
 const WAKE = "max(due_at, coalesce(deferred_until, due_at))";
-export const nextFollowupDue = (db: Db): number | null => db.get<{ at: number | null }>(`SELECT min(${WAKE}) AS at FROM followups WHERE state = 'open'`)?.at ?? null;
+/** Plan 280 (the Astra review): only kinds the app knows: an unknown one, never made due, would wake the timer at once, forever */
+const KNOWN_SQL = `kind IN (${FOLLOWUP_KINDS.map((k) => `'${k}'`).join(", ")})`;
+export const nextFollowupDue = (db: Db): number | null => db.get<{ at: number | null }>(`SELECT min(${WAKE}) AS at FROM followups WHERE state = 'open' AND ${KNOWN_SQL}`)?.at ?? null;
 
 export function makeFollowupsDue(db: Db, now: number): FollowupRow[] {
   return db.tx(() => {

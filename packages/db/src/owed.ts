@@ -145,7 +145,8 @@ export function finishOwed(db: Db, w: OwedFinish): FollowupFinishOutcome {
     // revision 5: a relay names the debtor: it may have arrived (whoever sent the relay; never a close)
     for (const h of w.hints) {
       if (closed.has(h.id)) continue;
-      db.run(`UPDATE followups SET arrived_hint = ?, revision = revision + 1 WHERE ${OPEN_THEIRS} AND id = ? AND revision = ? AND sent_at < ? AND (SELECT t.account_id FROM threads t WHERE t.id = followups.thread_id) = ?`, w.messageId, h.id, h.revision, src.date, src.accountId);
+      // (the Astra review: as IndexedDB's, never from mail older than the last move)
+      db.run(`UPDATE followups SET arrived_hint = ?, revision = revision + 1 WHERE ${OPEN_THEIRS} AND id = ? AND revision = ? AND sent_at < ? AND coalesce(moved_at, sent_at) < ? AND (SELECT t.account_id FROM threads t WHERE t.id = followups.thread_id) = ?`, w.messageId, h.id, h.revision, src.date, src.date, src.accountId);
     }
     consumeOwedMark(db, w.messageId);
     return "written";

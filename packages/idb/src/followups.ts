@@ -298,7 +298,7 @@ export function finishFollowups(c: Ctx, w: FollowupFinish): FollowupFinishOutcom
   // plan 280 (§3): your words say a promise of theirs arrived: this conversation's, at the revision shown
   for (const k of yours ? (w.owedKept ?? []) : []) {
     const r = rows.get(k.id);
-    if (r && r.revision === k.revision && r.thread_id === src.threadId && r.kind === "theirs" && live(r) && r.sent_at < src.date) rows.update(r, { state: "done", closed_reason: "kept", closed_at: w.now, settled_by: w.messageId, settled_at: src.date, inbox_state: "none", revision: r.revision + 1 });
+    if (r && r.revision === k.revision && r.thread_id === src.threadId && r.kind === "theirs" && live(r) && r.sent_at < src.date && (r.moved_at ?? r.sent_at) < src.date) rows.update(r, { state: "done", closed_reason: "kept", closed_at: w.now, settled_by: w.messageId, settled_at: src.date, inbox_state: "none", revision: r.revision + 1 });
   }
   marks.deleteRow(mark);
   return "written";
@@ -327,7 +327,8 @@ export function getFollowup(c: Ctx, id: number): FollowupRow | null {
 }
 export function nextFollowupDue(c: Ctx): number | null {
   let at: number | null = null;
-  for (const r of T(c, "followups").by("state", "open")) if (at === null || wakeAt(r) < at) at = wakeAt(r);
+  // (as SQL's: only kinds the app knows)
+  for (const r of T(c, "followups").by("state", "open")) if (known(r) && (at === null || wakeAt(r) < at)) at = wakeAt(r);
   return at;
 }
 

@@ -1,7 +1,7 @@
 import type { TheirMailResult } from "@terno/ai";
 import { THEIRS_ITEM, type FollowupRow } from "@terno/core";
 import { describe, expect, it } from "vitest";
-import { checkTheirPromises, deliveredIn, fileNames, owedWorth, saysNotYet } from "./their-promises";
+import { bare, checkTheirPromises, claimsFile, deliveredIn, fileNames, owedWorth, relayOf, saysNotYet } from "./their-promises";
 
 const at = (y: number, m: number, d: number, h = 0) => new Date(y, m - 1, d, h).getTime();
 // Monday 2 March 2026
@@ -90,5 +90,26 @@ describe("their promises' checks (plan 280)", () => {
   it("the code review: a reply to a send of yours is read with no cue at all (\"Friday.\")", () => {
     expect(owedWorth({ text: "Friday.", owed: 0, waiting: false })).toBe(false);
     expect(owedWorth({ text: "Friday.", owed: 0, waiting: false, answers: true })).toBe(true);
+  });
+
+  it("the Astra review: a typographic apostrophe says not yet too", () => {
+    expect(saysNotYet("I can’t send the contract")).toBe(true);
+    expect(deliveredIn("send the contract", "I can’t send the contract until Friday.")).toBe(false);
+  });
+
+  it("the Astra review: a file is the delivery only when the mail says nothing else", () => {
+    const owed = new Map([["t1", row(7, "send you the final contract")]]);
+    const denial = { attachments: ["Contract_draft.pdf"], text: "The final contract isn't ready yet, here's the draft." };
+    expect(check({ kept: [{ label: "t1", evidence: "Contract_draft.pdf" }] }, { owed, ...denial }).kept).toEqual([]);
+    expect(check({ kept: [{ label: "t1", evidence: "Contract_final.pdf" }] }, { owed, attachments: ["Contract_final.pdf"], text: "" }).kept).toEqual([{ id: 7, revision: 3 }]);
+    expect([bare(""), bare("Hi Nora,"), bare("Here you go\nBest, Alex"), bare("The final one isn't ready yet")]).toEqual([true, true, true, false]);
+    expect(claimsFile({ promises: [], kept: [{ label: "t1", evidence: "contract_final.PDF" }], moved: [], withdrawn: [] }, ["Contract_final.pdf"])).toBe(true);
+  });
+
+  it("the Astra review: a relay names a debtor by their whole address, never part of another's", () => {
+    const alex = { ...row(7, "send you the contract"), personEmail: "alex@acme.test" };
+    expect(relayOf("malex@acme.test signed the contract.", [alex])).toBeNull();
+    expect(relayOf("alex@acme.test.evil signed it.", [alex])).toBeNull();
+    expect(relayOf("Signed by alex@acme.test. View it online.", [alex])).toEqual({ rows: [alex], block: "Signed by alex@acme.test." });
   });
 });
