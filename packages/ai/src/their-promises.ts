@@ -8,7 +8,9 @@ import type { StructuredTask } from "./ladder";
  * the sender's words, and a closing or a move must quote the evidence, tied to that promise by the backend's checks (only
  * the debtor's own mail can close what they owe), so an instruction in the mail can at worst close its own sender's debt.
  */
-export const THEIRS_PROMPT_VERSION = 1;
+/** 2 (the QA panel): a file the email carries that is the promised thing keeps it, words around it or not */
+/** 3 (the QA panel): one thing done in steps in one sentence ("countersign it and send it via SignNest") is one promise */
+export const THEIRS_PROMPT_VERSION = 3;
 export const THEIRS_MAX_TOKENS = 2000;
 export const THEIRS_TEXT_CHARS = 1500 * 4;
 export const THEIRS_ANSWERING_CHARS = 800 * 4;
@@ -87,6 +89,7 @@ Return:
   - a promise to someone other than the reader, or to everyone on a list;
   - a joke or banter ("I'll bring the whole office next time, ha");
   - a sales or recruiting pitch from someone who doesn't know the reader ("I'll send you a case study").
+  One thing done in steps, or things sent together, in one sentence is one promise that says all of it, never two ("I'll countersign the addendum and send it via SignNest" is one: countersign and send the addendum).
   When the reader is only copied (Cc), only a promise that names the reader ("Nora, I'll send you the deck") is theirs.
   Each has:
   - "text": the action as a short verb phrase in its base form, said to the reader, lowercase, with no subject, always in ${LANGUAGE_NAME[language] ?? language}, whatever language the mail is in: "${contract}", "${call}"; one that says no more is as short as its words: "${back}". It names the thing, as the mail does. The day goes in "due", never in the text.
@@ -95,7 +98,7 @@ Return:
   - "partOfDay": "morning", "afternoon" or "evening" when their words name that part of the day ("Friday morning", "esta tarde", "tonight"); else null.
   - "firm": false when they hedge it ("I'll try to…", "hopefully by Thursday", "should have it early next week", "if all goes well", "probablemente el viernes", "intentaré"); true otherwise.
 - <owed> holds the sender's open promises to the reader (t1, t2…), each with the day promised when it has one.
-- "kept": the open promises (labels t1, t2…) this email keeps, each { "label", "evidence" }, where evidence is the sender's exact words in <mail> that say they did it now ("here's the contract", "attached is the signed copy", "done, I've paid it", "te lo acabo de mandar"), or, only when <mail> says nothing more than a greeting, the exact name of the file in <files> that is the promised thing. Words that say it hasn't happened ("it isn't ready yet", "todavía no") keep nothing. If in doubt, leave it out.
+- "kept": the open promises (labels t1, t2…) this email keeps, each { "label", "evidence" }, where evidence is the sender's exact words in <mail> that say they did it now ("here's the contract", "attached is the signed copy", "done, I've paid it", "te lo acabo de mandar"), or the exact name of a file in <files> that is the promised thing: an email carrying the promised plan, contract or files as an attachment keeps it, whatever it says around it ("plan + budget math", "v2 attached"), unless it says the file isn't the promised one (a draft of a final, an old version). Words that say it hasn't happened ("it isn't ready yet", "todavía no") keep nothing. If in doubt, leave it out.
 - "moved": the open promises this email gives a new day ("I need until Monday", "it'll be Friday instead"), each { "label", "due", "evidence" }, "due" as above, evidence the sender's exact words. Never also in "promises".
 - "withdrawn": the open promises the sender says they won't do after all ("we won't be able to send it", "ya no te lo puedo mandar"), each { "label", "evidence" }. If in doubt, leave it out.
 - When <relay> is present, the email is a service's notice that someone did something (a signature, a shared file). Its sentences are in <relay>: when it says the person of an open promise did the promised thing ("Alex Reed signed the contract", "alex@acme.test shared Contract.pdf with you"), that promise is in "kept" with the relay's exact words as evidence. A relay makes no promises.`;

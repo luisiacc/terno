@@ -77,7 +77,7 @@ export function owedScanCandidates(c: Ctx, since: number, limit: number, account
   const out: R[] = [];
   for (const t of T(c, "threads").by("fk_account_id", accountId)) {
     if (t.in_trash || t.in_spam || t.last_date < since) continue;
-    for (const m of messages.by("fk_thread_id", t.id)) if (m.date >= since && received(m, own) && m.list_id == null && !m.is_bulk) out.push(m);
+    for (const m of messages.by("fk_thread_id", t.id)) if (m.date >= since && received(m, own)) out.push(m);
   }
   return out.sort((a, b) => b.date - a.date || b.id - a.id).slice(0, limit).map((m) => m.id);
 }
@@ -152,7 +152,8 @@ export function finishOwed(c: Ctx, w: OwedFinish): FollowupFinishOutcome {
   // as SQL's: only the debtor's own mail, in this account, after the promise, at the revision shown
   const mine = (ref: { id: number; revision: number }, debtor = true): R | null => {
     const r = rows.get(ref.id);
-    if (!r || r.kind !== "theirs" || !live(r) || r.revision !== ref.revision || r.sent_at >= src.date || (r.moved_at ?? r.sent_at) >= src.date || (debtor && r.person_key !== src.senderKey)) return null;
+    // (as SQL's: whatever its revision, an open one)
+    if (!r || r.kind !== "theirs" || !live(r) || r.sent_at >= src.date || (r.moved_at ?? r.sent_at) >= src.date || (debtor && r.person_key !== src.senderKey)) return null;
     return threads.get(r.thread_id)?.account_id === src.accountId ? r : null;
   };
   const closed = new Set<number>();

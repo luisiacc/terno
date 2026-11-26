@@ -111,6 +111,11 @@ describe("a commitment cue (plan 280 §2)", () => {
     "Quedo de mandarte el presupuesto.",
     "Lo reviso y te aviso.",
     "Vamos a enviarte la propuesta.",
+    // the QA panel: tentative ones
+    "A ver si puedo tener tu borrador para la semana que viene.",
+    "Intentaré mandarte las fotos el viernes.",
+    "I'll try to get the draft to you Wednesday.",
+    "Hopefully the quote is ready Monday.",
   ])("reads %s", (text) => expect(hasCommitmentCue(text)).toBe(true));
   it.each(["Thanks, got it.", "Can you send me the signed copy?", "Gracias por todo.", "Here is the report you asked for."])("passes over %s", (text) => expect(hasCommitmentCue(text)).toBe(false));
 });

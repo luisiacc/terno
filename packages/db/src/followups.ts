@@ -316,10 +316,11 @@ export function finishFollowups(db: Db, w: FollowupFinish): FollowupFinishOutcom
       const r = answers == null ? null : answerable(db, answers, src);
       if (r) settle(r);
     }
-    // plan 280 (§3): your words say a promise of theirs arrived ("got the contract, thanks"): this conversation's, at the revision shown
+    // plan 280 (§3): your words say a promise of theirs arrived ("got the contract, thanks"): this conversation's, still open
+    // (the QA panel: whatever its revision, as their own mail's)
     for (const k of yours ? (w.owedKept ?? []) : []) {
       // (the Astra review: and newer than the mail that last moved it, as their own mail must be)
-      db.run("UPDATE followups SET state = 'done', closed_reason = 'kept', closed_at = ?, settled_by = ?, settled_at = ?, inbox_state = 'none', revision = revision + 1 WHERE id = ? AND revision = ? AND thread_id = ? AND kind = 'theirs' AND state IN ('open','due') AND sent_at < ? AND coalesce(moved_at, sent_at) < ?", w.now, w.messageId, src.date, k.id, k.revision, src.threadId, src.date, src.date);
+      db.run("UPDATE followups SET state = 'done', closed_reason = 'kept', closed_at = ?, settled_by = ?, settled_at = ?, inbox_state = 'none', revision = revision + 1 WHERE id = ? AND thread_id = ? AND kind = 'theirs' AND state IN ('open','due') AND sent_at < ? AND coalesce(moved_at, sent_at) < ?", w.now, w.messageId, src.date, k.id, src.threadId, src.date, src.date);
     }
     db.run("DELETE FROM ai_sent_mail WHERE message_id = ?", w.messageId);
     return "written";

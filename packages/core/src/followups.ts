@@ -265,6 +265,9 @@ const COMMITMENT = new RegExp(
     "\\b(?:get back to you|circle back|follow up|keep you posted|send (?:it|them|you|over)|have (?:it|them) (?:to|for) you)\\b",
     "\\bby (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|tonight|end of (?:the )?(?:day|week|month)|eod|eow|cob|next week)\\b",
     "\\bwill do\\b",
+    // tentative (the QA panel: "a ver si puedo tener tu borrador…" was never read)
+    "\\b(?:i(?:'|’)ll|i will|we(?:'|’)ll) try\\b|\\bhopefully\\b|\\bshould (?:have|be able)\\b",
+    "\\ba ver si (?:puedo|te|le|podemos)\\b|\\b(?:intentar(?:é|e)|tratar(?:é|e)|procurar(?:é|e))(?!\\p{L})|\\bespero (?:tener|poder|mandar|enviar|pasar)",
     // Spanish: "te mando", "le envío", "quedo de", "me comprometo", "voy a", "vamos a"
     "\\b(?:te|le|les|se) (?:lo |la |los |las )?(?:mando|envío|envio|paso|hago llegar|comparto|confirmo|aviso|digo|respondo|contesto|llamo|escribo)\\b",
     "\\b(?:quedo|quedamos) (?:de|en)\\b",

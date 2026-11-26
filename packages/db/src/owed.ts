@@ -62,11 +62,11 @@ export const clearOwedMarks = (db: Db): void => void db.run("DELETE FROM ai_owed
 /** a check's and a requeue's live 14 days, a live one 3 */
 export const pruneOwedMarks = (db: Db, now: number): number => Number(db.run("DELETE FROM ai_owed_mail WHERE (source IN ('scan','requeue') AND queued_at < ?) OR (source NOT IN ('scan','requeue') AND queued_at < ?)", now - OWED_SCAN_MARK_MS, now - OWED_MARK_MS).changes);
 
-/** Revision 3: one account's received mail in a span, newest first, no list or bulk mail (a check finds what's promised; no debt yet for a service to deliver) */
+/** Revision 3: one account's received mail in a span, newest first: a service's notice too (the QA panel: one naming a debt the check finds earlier is read after it; one naming none is passed over locally) */
 export function owedScanCandidates(db: Db, since: number, limit: number, accountId: number): number[] {
   return db.all<{ id: number }>(
     `SELECT m.id FROM threads t INDEXED BY threads_acct_all JOIN messages m INDEXED BY messages_thread ON m.thread_id = t.id AND m.date >= ?
-     WHERE t.account_id = ? AND t.in_trash = 0 AND t.in_spam = 0 AND t.last_date >= ? AND ${RECEIVED_SQL} AND m.list_id IS NULL AND m.is_bulk = 0
+     WHERE t.account_id = ? AND t.in_trash = 0 AND t.in_spam = 0 AND t.last_date >= ? AND ${RECEIVED_SQL}
      ORDER BY m.date DESC, m.id DESC LIMIT ?`,
     since,
     accountId,
@@ -149,9 +149,11 @@ export function finishOwed(db: Db, w: OwedFinish): FollowupFinishOutcome {
       );
     }
     // §2 and revision 8: only the debtor's own mail, in this account, after the promise, at the revision shown
-    // (the code review: and newer than the mail that last moved it, so an older one read again can't undo a newer move)
-    const mine = `${OPEN_THEIRS} AND id = ? AND revision = ? AND person_key = ? AND sent_at < ? AND coalesce(moved_at, sent_at) < ? AND (SELECT t.account_id FROM threads t WHERE t.id = followups.thread_id) = ?`;
-    const at = (r: { id: number; revision: number }) => [r.id, r.revision, src.senderKey, src.date, src.date, src.accountId] as const;
+    // (the code review: and newer than the mail that last moved it, so an older one read again can't undo a newer move).
+    // The QA panel: whatever its revision, as the dated reader's moves (plan 204): coming due, or a Later, while the reading
+    // was out ups it, and the mail's word on an open promise still holds; one closed since is no longer open
+    const mine = `${OPEN_THEIRS} AND id = ? AND person_key = ? AND sent_at < ? AND coalesce(moved_at, sent_at) < ? AND (SELECT t.account_id FROM threads t WHERE t.id = followups.thread_id) = ?`;
+    const at = (r: { id: number }) => [r.id, src.senderKey, src.date, src.date, src.accountId] as const;
     const closed = new Set<number>();
     for (const k of w.kept) {
       if (db.run(`UPDATE followups SET state = 'done', closed_reason = 'kept', closed_at = ?, settled_by = ?, settled_at = ?, inbox_state = 'none', revision = revision + 1 WHERE ${mine}`, w.now, w.messageId, src.date, ...at(k)).changes) closed.add(k.id);
@@ -172,7 +174,7 @@ export function finishOwed(db: Db, w: OwedFinish): FollowupFinishOutcome {
     for (const h of w.hints) {
       if (closed.has(h.id)) continue;
       // (the Astra review: as IndexedDB's, never from mail older than the last move)
-      db.run(`UPDATE followups SET arrived_hint = ?, revision = revision + 1 WHERE ${OPEN_THEIRS} AND id = ? AND revision = ? AND sent_at < ? AND coalesce(moved_at, sent_at) < ? AND (SELECT t.account_id FROM threads t WHERE t.id = followups.thread_id) = ?`, w.messageId, h.id, h.revision, src.date, src.date, src.accountId);
+      db.run(`UPDATE followups SET arrived_hint = ?, revision = revision + 1 WHERE ${OPEN_THEIRS} AND id = ? AND sent_at < ? AND coalesce(moved_at, sent_at) < ? AND (SELECT t.account_id FROM threads t WHERE t.id = followups.thread_id) = ?`, w.messageId, h.id, src.date, src.date, src.accountId);
     }
     consumeOwedMark(db, w.messageId);
     return "written";

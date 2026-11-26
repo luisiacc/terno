@@ -154,17 +154,16 @@ export function defineOwedConformance(fresh: () => Promise<MailStore>, reopen: (
         expect((await store.followups.active()).filter((r) => r.kind === "theirs")).toEqual([]);
       });
 
-      it("only the debtor's own later mail keeps, withdraws or moves it, at the revision shown", async () => {
+      it("only the debtor's own later mail keeps, withdraws or moves it, even after it came due while the reading was out", async () => {
         const { store, accountId, got, finish, promised } = await setup();
         const p = await promised();
         // another sender's mail in the same conversation can't keep it
         const fromBea = await got({ from: bea, date: NOW });
         await finish(fromBea.id, fromBea.thread, { kept: [{ id: p.row.id, revision: p.row.revision }] });
         expect((await store.followups.get(p.row.id))!.state).toBe("open");
-        // a stale revision does nothing
-        const stale = await got({ date: NOW });
-        await finish(stale.id, stale.thread, { kept: [{ id: p.row.id, revision: p.row.revision + 7 }] });
-        expect((await store.followups.get(p.row.id))!.state).toBe("open");
+        // the QA panel: coming due while the reading was out ups its revision; the debtor's word on it still holds (below)
+        await store.followups.makeDue(p.row.dueAt + 1);
+        expect((await store.followups.get(p.row.id))!.revision).toBeGreaterThan(p.row.revision);
         // the debtor's own mail, in a new conversation, keeps it
         const delivered = await got({ subject: "Contract attached", date: NOW });
         await finish(delivered.id, delivered.thread, { kept: [{ id: p.row.id, revision: p.row.revision }] });

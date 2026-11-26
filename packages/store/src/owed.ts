@@ -115,9 +115,11 @@ export interface OwedStore {
    */
   readable(ids: readonly number[], accountId: number): Promise<Set<number>>;
   /**
-   * Results, closures, moves and consuming the mark, in one commit (revision 8: each change only at the revision shown).
-   * The Fable review: a message read before (it has a promise of theirs, closed ones too) adds none: a re-read judges what
-   * it keeps and moves, never finds the same promises again under other positions
+   * Results, closures, moves and consuming the mark, in one commit. The QA panel: a mail's close, move or hint applies to a
+   * promise still open whatever its revision (coming due, or a Later, while the reading was out ups it), as the dated
+   * reader's moves do; always the debtor's own mail, newer than the promise and its last move. The Fable review: a message
+   * read before (it has a promise of theirs, closed ones too) adds none: a re-read judges what it keeps and moves, never
+   * finds the same promises again under other positions
    */
   finish(write: OwedFinish): Promise<FollowupFinishOutcome>;
 }

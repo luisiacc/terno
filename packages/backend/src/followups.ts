@@ -10,7 +10,7 @@ import { UI_LOCALE_KEY } from "./forwarding";
 import { contextOf, directsReader, namingWords, norm as plain, paidSaid, plainEvidence, saidClauses, sameObject, sentencesOf, sentencesWith } from "./dated-evidence";
 import { promiseMoment } from "./promise-time";
 import { untrustedSenders } from "./suspicious-sender";
-import { checkTheirPromises, claimsFile, deliveredIn, owedWorth, relayOf } from "./their-promises";
+import { bare, checkTheirPromises, claimsFile, deliveredIn, owedWorth, relayOf } from "./their-promises";
 
 const MAX_DELAY = 2 ** 31 - 1;
 const PAGE = 50;
@@ -893,7 +893,8 @@ export class FollowupWorker {
         // only what was really sent, after fitting to the window, may be named back
         const shown = new Set(input.owed.map((o) => o.label));
         // a file claimed as the delivery: every open promise of the debtor's in the account, for the file's uniqueness
-        const debts = relay || !claimsFile(result, src.attachments) ? [] : (await store.followups.owed.openFor({ threadId: -1, accountId: src.accountId, senderKey: src.senderKey, before: src.date, limit: FOLLOWUPS_ACTIVE_MAX })).filter((r) => r.personKey === src.senderKey);
+        // (the QA panel: or a file alone, which may be the delivery whatever the model said)
+        const debts = relay || !(claimsFile(result, src.attachments) || (src.attachments.length && bare(text))) ? [] : (await store.followups.owed.openFor({ threadId: -1, accountId: src.accountId, senderKey: src.senderKey, before: src.date, limit: FOLLOWUPS_ACTIVE_MAX })).filter((r) => r.personKey === src.senderKey);
         const checked = checkTheirPromises(result, { text, attachments: src.attachments, owed: new Map([...labels].filter(([l]) => shown.has(l))), debts, from: { name: src.fromName, email: src.fromEmail }, reader: { name: readerName, addressed: src.readerIn }, relay: relay ? { block: relay.block } : null, madeAt: src.date, nudgeAfterDays: settings.followups.nudgeAfterDays });
         const fromScan = mark.source === "scan";
         const now = this.host.now();
@@ -1307,7 +1308,8 @@ export class FollowupWorker {
     if (!(await allowed())) return false;
     const now = this.host.now();
     const from = Math.max(now - OWED_SCAN_DAYS * 86_400_000, since ?? -Infinity);
-    const ids = await this.host.store.followups.owed.scanCandidates(from, SCAN_MESSAGES_MAX, accountId);
+    // (the QA panel: service notices too, most passed over locally, so twice the sent check's bound)
+    const ids = await this.host.store.followups.owed.scanCandidates(from, SCAN_MESSAGES_MAX * 2, accountId);
     if (!(await allowed())) return false;
     if (await this.host.store.followups.owed.marks.queueScan(ids, now)) this.wake();
     return true;

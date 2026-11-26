@@ -300,7 +300,7 @@ export function finishFollowups(c: Ctx, w: FollowupFinish): FollowupFinishOutcom
   // plan 280 (§3): your words say a promise of theirs arrived: this conversation's, at the revision shown
   for (const k of yours ? (w.owedKept ?? []) : []) {
     const r = rows.get(k.id);
-    if (r && r.revision === k.revision && r.thread_id === src.threadId && r.kind === "theirs" && live(r) && r.sent_at < src.date && (r.moved_at ?? r.sent_at) < src.date) rows.update(r, { state: "done", closed_reason: "kept", closed_at: w.now, settled_by: w.messageId, settled_at: src.date, inbox_state: "none", revision: r.revision + 1 });
+    if (r && r.thread_id === src.threadId && r.kind === "theirs" && live(r) && r.sent_at < src.date && (r.moved_at ?? r.sent_at) < src.date) rows.update(r, { state: "done", closed_reason: "kept", closed_at: w.now, settled_by: w.messageId, settled_at: src.date, inbox_state: "none", revision: r.revision + 1 });
   }
   marks.deleteRow(mark);
   return "written";
