@@ -1,6 +1,6 @@
 # Plan 279: the summary says what's new since you read
 
-- **Status:** plan. Built on `t3/summary-since` (a worktree).
+- **Status:** built on `t3/summary-since` (a worktree), not on `main` yet. Code-reviewed by Codex, reviewed again by Fable 5.2 and Astra, measured on the corpus. Later sections override the Design where they differ.
 - **Builds on:** plans 132 (summaries), 148 and 181 (the card), 151, 153 and 241 (the prompt and how it's measured), 225 (what's shown is read).
 
 ## The request
