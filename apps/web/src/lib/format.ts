@@ -7,6 +7,7 @@ interface Formats {
   day: Intl.DateTimeFormat;
   year: Intl.DateTimeFormat;
   full: Intl.DateTimeFormat;
+  weekday: Intl.DateTimeFormat;
 }
 const cache = new Map<LocaleId, Formats>();
 
@@ -21,6 +22,7 @@ function formats(): Formats {
       day: new Intl.DateTimeFormat(style.tag, { day: "numeric", month: "short" }),
       year: new Intl.DateTimeFormat(style.tag, { day: "numeric", month: "short", year: "numeric" }),
       full: fullDateFormat(id),
+      weekday: new Intl.DateTimeFormat(style.tag, { weekday: "long" }),
     };
     cache.set(id, f);
   }
@@ -41,6 +43,20 @@ export function listDate(ms: number, now = Date.now()): string {
   }
   const out = (d.getFullYear() === n.getFullYear() ? f.day : f.year).format(d);
   return f.style.stripPeriod ? out.replace(".", "") : out;
+}
+
+/** A day as a date, never a time: "Nov 12" this year, "Nov 12, 2024" before (plan 282: when a rule was made). */
+export function dayDate(ms: number, now = Date.now()): string {
+  const f = formats();
+  const d = new Date(ms);
+  const out = (d.getFullYear() === new Date(now).getFullYear() ? f.day : f.year).format(d);
+  return f.style.stripPeriod ? out.replace(".", "") : out;
+}
+
+/** The day of the week ("Monday"), capitalized as a heading */
+export function weekdayName(ms: number): string {
+  const name = formats().weekday.format(new Date(ms));
+  return name.charAt(0).toLocaleUpperCase() + name.slice(1);
 }
 
 /** A message's own date: the list's, with the time added on an earlier day, so a conversation's messages can be told apart and put in order. */

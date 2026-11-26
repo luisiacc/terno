@@ -496,7 +496,7 @@ export class SqlMailStore implements MailStore {
         // only actions that changed something feed learned filters (repeats must not manufacture support)
         if (signal && r.threadIds.length) recordUserActions(this.db, r.threadIds, signal, now);
         // plan 282: the user's own move out of the Inbox: what put the conversation away before is theirs now
-        if (ENDS_PLACEMENT.has(action)) endPlacements(this.db, r.threadIds);
+        if (ENDS_PLACEMENT.has(action)) endPlacements(this.db, ids);
         const opIds = this.queueActionOps(r, action, now);
         if (action !== "moveToInbox") return { threadIds: r.threadIds, opIds, before: r.before, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
         // plan 86: into the Inbox means out of Gmail's tabs too, in the same command and the same undo

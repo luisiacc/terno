@@ -16,9 +16,9 @@ const remPx = (rem: string) => parseFloat(rem) * 16;
  * Plan 187: the preview lines a list's rows show. Where the line says why a row is there it stays: a search's match,
  * an action preview's reason (at least one line), a category's Review answers (exactly one: they are one line).
  */
-export function previewLinesFor(setting: RowLines, list: { review: boolean; results: boolean; previewing: boolean }): RowLines {
+export function previewLinesFor(setting: RowLines, list: { review: boolean; results: boolean; previewing: boolean; /** plan 282: Put away, whose rows say why they're there */ explained?: boolean }): RowLines {
   if (list.review) return 1;
-  if (list.results || list.previewing) return setting === 0 ? 1 : setting;
+  if (list.results || list.previewing || list.explained) return setting === 0 ? 1 : setting;
   return setting;
 }
 

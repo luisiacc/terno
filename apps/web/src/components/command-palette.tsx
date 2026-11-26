@@ -270,7 +270,7 @@ export function CommandPalette() {
   const itemWords = useToday((s) => (readerItem ? readerWords(readerItem) : todayTask ? rowWords(s.rows.find((r) => r.id === todayTask.rowId)) : null));
   // the unread filter applies to a mailbox (not "Review")
   // the unread toggle's state: Unread on or not (another filter on: it switches to Unread)
-  const filter = useApp((s) => (open && s.reviewCategoryId === null && !s.reminders && !s.followups && !s.today ? (isUnreadOnly(s) ? "on" : "off") : null));
+  const filter = useApp((s) => (open && s.reviewCategoryId === null && !s.reminders && !s.followups && !s.putAway && !s.today ? (isUnreadOnly(s) ? "on" : "off") : null));
   const active = useApp((s) => (open ? activeFilter(s) : undefined));
   const supported = useApp((s) => s.supportedFilters);
   const design = useApp((s) => (open ? (s.settings?.design ?? null) : null));
@@ -414,7 +414,7 @@ export function CommandPalette() {
 
     // ── go to
     /** The heading names them, so the rows don't; "go to reminders" still finds them. */
-    const goTo = (key: "palette.goToday" | "palette.goFollowups" | "palette.goReminders") => `${t("palette.group.goTo")} ${t(key)}`;
+    const goTo = (key: "palette.goToday" | "palette.goFollowups" | "palette.goReminders" | "putAway.title") => `${t("palette.group.goTo")} ${t(key)}`;
     const folder = (id: string, key: "view.inbox" | "view.starred" | "view.sent" | "view.archive" | "view.spam" | "view.trash" | "view.all", icon: ReactNode, run: () => void, shortcut?: string, testId?: string) =>
       add({ id, group: "goTo", label: t(key), icon, shortcut, testId, keywords: english(key), run });
     folder("go.inbox", "view.inbox", <Inbox />, () => goToFolder("inbox"), keysOf("go.inbox"));
@@ -426,6 +426,7 @@ export function CommandPalette() {
     folder("go.all", "view.all", <Mails />, () => goToFolder("all"), undefined, "palette-go-all");
     if (todayOn) add({ id: "go.today", group: "goTo", label: t("palette.goToday"), icon: <Sun />, testId: "palette-go-today", keywords: [goTo("palette.goToday"), ...english("palette.goToday")], run: () => navigate({ today: true }) });
     if (followupsOn) add({ id: "go.followups", group: "goTo", label: t("palette.goFollowups"), icon: <ListChecks />, testId: "palette-go-followups", keywords: [goTo("palette.goFollowups"), ...english("palette.goFollowups")], run: () => navigate({ followups: true }) });
+    add({ id: "go.putAway", group: "goTo", label: t("putAway.title"), icon: <FolderInput />, testId: "palette-go-put-away", keywords: [goTo("putAway.title"), ...english("putAway.title")], run: () => navigate({ putAway: true }) });
     add({ id: "go.reminders", group: "goTo", label: t("palette.goReminders"), icon: <AlarmClock />, shortcut: keysOf("go.reminders"), testId: "palette-go-reminders", keywords: [goTo("palette.goReminders"), ...english("palette.goReminders")], run: () => navigate({ reminders: true }) });
     for (const c of categories) {
       add({ id: `category:${c.id}`, group: "goTo", label: c.name, search: `${t("palette.search.category")} ${c.name}`, icon: <CategoryDot color={c.color as CategoryColor} className="mx-1" />, keywords: english("palette.search.category"), run: () => navigate({ categoryId: c.id, accountId: null }) });

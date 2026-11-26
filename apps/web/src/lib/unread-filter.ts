@@ -26,6 +26,8 @@ export interface Mailbox {
   /** plan 87: the Reminders list (never filtered) */
   reminders?: boolean;
   followups?: boolean;
+  /** plan 282 */
+  putAway?: boolean;
   /** plan 86: a Gmail account's Promotions or Social */
   gmailTab?: string | null;
 }
@@ -48,7 +50,7 @@ export function supportedFilters(said: readonly unknown[] | undefined): readonly
  */
 export function activeFilter(m: Mailbox & { listFilters: ListFilters; supportedFilters?: readonly ListFilter[]; actionPreview?: string | null; today?: boolean }): ListFilter | undefined {
   // plan 143: a preview shows every row Apply acts on, whatever All Mail's filter is
-  const f = m.reviewCategoryId === null && !m.reminders && !m.followups && !m.today && !m.actionPreview ? m.listFilters.get(mailboxKey(m)) : undefined;
+  const f = m.reviewCategoryId === null && !m.reminders && !m.followups && !m.putAway && !m.today && !m.actionPreview ? m.listFilters.get(mailboxKey(m)) : undefined;
   return f && (m.supportedFilters ?? LIST_FILTERS).includes(f) ? f : undefined;
 }
 

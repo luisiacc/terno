@@ -25,6 +25,8 @@ import { useThreadCode } from "~/lib/codes";
 import { reminderShort, useReminders } from "~/lib/reminders";
 import { rowLine } from "~/lib/followups";
 import { useFollowups } from "~/state/followups";
+import { rowCategory, rowLine as placedLine, sectionOf } from "~/lib/put-away";
+import { usePutAway } from "~/state/put-away";
 import { onlyOnTop } from "~/state/list";
 import { useExcerpts } from "~/state/excerpts";
 
@@ -209,6 +211,25 @@ function useReason(thread: Pick<ThreadSummary, "id">): string | undefined {
   return tag ? t(`action.row.${tag}`) : undefined;
 }
 
+/**
+ * Plan 282: in Put away, why the row is there takes the preview's place, in the preview's ink: the filing's category dot,
+ * then who put it away and why. A screen reader hears its section first (the headings are drawn, not read). One Map read.
+ */
+function usePlaced(thread: Pick<ThreadSummary, "id">): React.ReactNode {
+  const on = useApp((s) => s.putAway);
+  const p = usePutAway((s) => (on ? s.byThread.get(thread.id) : undefined));
+  const categoryId = p ? rowCategory(p) : null;
+  const color = useApp((s) => (categoryId === null ? undefined : s.categories.find((c) => c.id === categoryId)?.color));
+  if (!p) return null;
+  return (
+    <span data-testid="row-put-away">
+      <span className="sr-only">{sectionOf(p)}: </span>
+      {color && <CategoryDot color={color as CategoryColor} className="me-1.5 inline-block align-[0.05em]" />}
+      {placedLine(p)}
+    </span>
+  );
+}
+
 /** The row's words, with an action preview's reason ahead of them when there is one: the reason keeps its place, the words truncate. */
 function withReason(reason: string | undefined, quiet: string, ink: string, words: React.ReactNode): React.ReactNode {
   if (!reason) return words;
@@ -227,6 +248,8 @@ function withReason(reason: string | undefined, quiet: string, ink: string, word
 function RowSnippet({ thread, reminderTop, ink, quiet, match, excerpt, lead, two }: { thread: ThreadSummary; reminderTop?: boolean; ink: string; quiet: string; match?: RowMatch | null; excerpt?: string; lead: number; two: boolean }) {
   const { line } = useOwed(thread, reminderTop);
   const reason = useReason(thread);
+  const placed = usePlaced(thread);
+  if (placed) return <span data-testid="row-snippet" className={cn("type-row-snippet min-w-[min(8rem,25%)]", two ? "line-clamp-2 wrap-anywhere" : "truncate", quiet)}>{placed}</span>;
   return (
     // plan 173: the marks share its line, so it keeps its first words (a search's match stands near them, LEAD); plan 187:
     // two lines wrap and clamp, a long word broken rather than overflowing
@@ -240,6 +263,8 @@ function RowSnippet({ thread, reminderTop, ink, quiet, match, excerpt, lead, two
 function WideSnippet({ thread, reminderTop, ink, quiet, match, excerpt }: { thread: ThreadSummary; reminderTop?: boolean; ink: string; quiet: string; match?: RowMatch | null; excerpt?: string }) {
   const { line } = useOwed(thread, reminderTop);
   const reason = useReason(thread);
+  const placed = usePlaced(thread);
+  if (placed) return <span data-testid="row-snippet" className={cn("ml-1.5 min-w-0 flex-1 truncate text-xs", quiet)}>{placed}</span>;
   return (
     <span data-testid="row-snippet" data-followup={line ? true : undefined} data-excerpt={!line && excerpt ? true : undefined} className={cn("ml-1.5 min-w-0 flex-1 truncate text-xs", line ? ink : reason ? undefined : quiet)}>
       {line ?? withReason(reason, quiet, ink, matchLine(match, excerpt ?? thread.snippet, LEAD.wide))}
@@ -251,6 +276,8 @@ function WideSnippet({ thread, reminderTop, ink, quiet, match, excerpt }: { thre
 function RowTail({ thread, reminderTop, ink, quiet, match, excerpt }: { thread: ThreadSummary; reminderTop?: boolean; ink: string; quiet: string; match?: RowMatch | null; excerpt?: string }) {
   const { line } = useOwed(thread, reminderTop);
   const reason = useReason(thread);
+  const placed = usePlaced(thread);
+  if (placed) return <span data-testid="row-snippet" className={cn("type-row-snippet min-w-0 flex-1 truncate", quiet)}>{placed}</span>;
   return <span data-testid="row-snippet" data-followup={line ? true : undefined} className={cn("type-row-snippet min-w-0 flex-1 truncate", line ? ink : reason ? undefined : quiet)}>{line ?? withReason(reason, quiet, ink, matchLine(match, excerpt ?? thread.snippet, LEAD.wide))}</span>;
 }
 

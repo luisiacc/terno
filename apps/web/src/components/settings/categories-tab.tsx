@@ -312,6 +312,48 @@ export function CategoriesTab({ settings, update }: { settings: AppSettings; upd
         ))}
         <NewCategory />
       </SettingsGroup>
+      <KeptSenders categories={categories} />
     </div>
+  );
+}
+
+/**
+ * Plan 282: the senders Terno asks about rather than files ("Don't file … automatically", from Put away's box), each
+ * with the way back. Shown only when there's one.
+ */
+function KeptSenders({ categories }: { categories: Category[] }) {
+  const [kept, setKept] = useState<{ categoryId: number; sender: string; at: number }[]>([]);
+  useEffect(() => {
+    void client.call("putAway.kept", {}).then((r) => setKept(r.senders)).catch(() => {});
+  }, [categories]);
+  if (kept.length === 0) return null;
+  return (
+    <SettingsGroup title={t("putAway.kept.title")} testId="kept-senders" footer={t("putAway.kept.hint")}>
+      {kept.map((k) => {
+        const category = categories.find((c) => c.id === k.categoryId);
+        return (
+          <SettingsRow key={`${k.categoryId}:${k.sender}`} testId="kept-sender" label={<span className="inline-flex min-w-0 items-center gap-2">{category && <CategoryDot color={category.color as CategoryColor} />}<span className="truncate">{k.sender}</span><span className="text-muted-foreground">· {category?.name ?? ""}</span></span>}>
+            {() => (
+              <Button
+                variant="ghost"
+                size="sm"
+                data-testid="kept-sender-remove"
+                aria-label={t("putAway.kept.remove", { sender: k.sender })}
+                onClick={async () => {
+                  try {
+                    await client.call("putAway.removeKept", { categoryId: k.categoryId, sender: k.sender });
+                    setKept((list) => list.filter((x) => x !== k));
+                  } catch (error) {
+                    snack.error(t("putAway.failed", { error: errorText(error) }));
+                  }
+                }}
+              >
+                {t("common.remove")}
+              </Button>
+            )}
+          </SettingsRow>
+        );
+      })}
+    </SettingsGroup>
   );
 }

@@ -6,7 +6,7 @@ import { AccountMark, CategoryDot } from "@terno/ui/components/category-dot";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { Sun, Archive, ArrowLeft, AlarmClock, Check, ChevronDown, ChevronRight, EyeOff, Folder as FolderIcon, Forward, Inbox, Layers, Mails, OctagonAlert, Plus, Route, Send, Settings2, SquarePen, Star, Tag, Tags, Trash2, Users, ListChecks } from "@terno/ui/icons";
+import { Sun, Archive, ArrowLeft, AlarmClock, Check, ChevronDown, ChevronRight, EyeOff, Folder as FolderIcon, FolderInput, Forward, Inbox, Layers, Mails, OctagonAlert, Plus, Route, Send, Settings2, SquarePen, Star, Tag, Tags, Trash2, Users, ListChecks } from "@terno/ui/icons";
 import { openCompose } from "~/lib/actions";
 import { useDesign, variant } from "~/lib/design";
 import { formatNumber, t } from "@terno/i18n";
@@ -422,7 +422,7 @@ function ReviewRow({ categories, suggestions, reviewing }: { categories: readonl
  * in the accessibility tree.
  */
 /** A row behind More: one of the views, Reminders (plan 87), or Follow-ups while none is owed (above More once one is) */
-type MoreSlot = View | "reminders" | "followups";
+type MoreSlot = View | "reminders" | "followups" | "putAway";
 
 /**
  * Plan 107: favorite folders, right below the pinned folders (Sent since plan 173): an account's own folder or one of its standard rows, each a way
@@ -437,7 +437,7 @@ function FavoriteRows() {
   const counts = useApp((s) => s.counts);
   // where you are, as primitives (an object would re-render this on every change of the store)
   // (plan 158: a search is nowhere in the sidebar: it looks everywhere)
-  const plain = useApp((s) => s.accountId !== null && s.reviewCategoryId === null && s.categoryId === null && s.gmailTab === null && !s.reminders && !s.followups && !s.today && s.query.trim() === "");
+  const plain = useApp((s) => s.accountId !== null && s.reviewCategoryId === null && s.categoryId === null && s.gmailTab === null && !s.reminders && !s.followups && !s.putAway && !s.today && s.query.trim() === "");
   const hereAccount = useApp((s) => s.accountId);
   const hereFolder = useApp((s) => s.folder);
   const hereView = useApp((s) => s.view);
@@ -517,16 +517,18 @@ function FavoriteRows() {
 function moreSlotOf(s: AppState): MoreSlot | null {
   if (s.reminders) return "reminders";
   if (s.followups) return "followups";
+  if (s.putAway) return "putAway";
   if (s.today) return null;
   return s.accountId === null && s.categoryId === null && s.reviewCategoryId === null && MORE_VIEWS.includes(s.view) ? s.view : null;
 }
 
-function MoreFolders({ view, folder, reminders, followups }: { view: View | null; folder: (f: (typeof VIEWS)[number]) => React.ReactNode; reminders: React.ReactNode; followups: React.ReactNode }) {
+function MoreFolders({ view, folder, reminders, followups, putAway }: { view: View | null; folder: (f: (typeof VIEWS)[number]) => React.ReactNode; reminders: React.ReactNode; followups: React.ReactNode; putAway: React.ReactNode }) {
   const open = useSidebarMore((s) => s.open);
   const inReminders = useApp((s) => s.reminders);
   // a due reminder shows its row even with More closed: its count is never behind a fold
   const due = useReminders((s) => s.due > 0);
   const inFollowups = useApp((s) => s.followups);
+  const inPutAway = useApp((s) => s.putAway);
   const followupsDue = useFollowups((s) => s.due > 0);
   const toggleRef = useRef<HTMLButtonElement>(null);
   const groupRef = useRef<HTMLDivElement>(null);
@@ -660,6 +662,21 @@ function MoreFolders({ view, folder, reminders, followups }: { view: View | null
             </div>
           );
         })}
+        {/* plan 282: Put away, the last of More (the owner), shown as the folders are */}
+        {(() => {
+          const shown = open || inPutAway || held.includes("putAway");
+          return (
+            <div
+              data-more-slot="putAway"
+              data-active-slot={inPutAway || undefined}
+              data-shown={shown || undefined}
+              inert={!shown}
+              className="invisible grid grid-rows-[0fr] opacity-0 transition-[grid-template-rows,opacity,visibility] duration-base ease-motion data-shown:visible data-shown:grid-rows-[1fr] data-shown:opacity-100 data-shown:duration-slow data-shown:[transition-timing-function:var(--ease-drawer),linear,var(--ease-drawer)]"
+            >
+              <div className="min-h-0 overflow-clip [overflow-clip-margin:3px]">{putAway}</div>
+            </div>
+          );
+        })()}
       </div>
     </>
   );
@@ -1418,7 +1435,8 @@ export function Sidebar() {
 
   // the folder you're in at the top: none in a category or its suggestions (both are "all" underneath), none inside an account (plan 67)
   // (Follow-ups is "all" underneath too: All Mail isn't where you are there)
-  const folderView = accountId === null && categoryId === null && reviewCategoryId === null && !inReminders && !inFollowups && !inToday && !searching ? view : null;
+  const inPutAway = useApp((s) => s.putAway);
+  const folderView = accountId === null && categoryId === null && reviewCategoryId === null && !inReminders && !inFollowups && !inPutAway && !inToday && !searching ? view : null;
   const folder = ({ view: v, icon: Icon, keys }: (typeof VIEWS)[number]) => (
     <NavItem
       key={v}
@@ -1502,6 +1520,10 @@ export function Sidebar() {
               countTone={design.surfaces.inboxCount}
             />
           ) : null
+        }
+        putAway={
+          // no count: nothing here asks for attention (the Inbox's line does, when someone you write to is in it)
+          <NavItem testId="nav-put-away" active={inPutAway && !searching} onClick={() => navigate({ putAway: true })} icon={<FolderInput className="size-(--icon-nav)" />} label={t("putAway.title")} />
         }
       />
 

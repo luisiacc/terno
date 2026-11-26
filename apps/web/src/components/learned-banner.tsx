@@ -52,20 +52,16 @@ export function useLearnedProposal() {
 }
 
 /**
- * One learned rule's offer, as the list's first item (plans 158, 159): a quiet line under the mail's rank that goes up
- * with the rows as they scroll. It says the rule whole ("Always archive mail from anyone at x.com?"), wrapping in a
- * narrow list rather than cutting it, its button right after it at the text's own weight, and why on hover. It lies
- * over the room the list leaves above its first row, outside the listbox (which holds only options), as tall as it's
- * laid out (measured: a wrapped line makes room), and follows the scroller's offset on its scroll timeline
- * (`data-scroll-follow`): the compositor moves it in the frame the rows move, where a scroll event comes a frame late
- * and the line trailed them. That holds with motion off too; without scroll timelines, the scroll event moves it. Shown in the Inbox once (lib/learned): seen as it first shows, kept while you
- * stay, not offered in a list again. The × and a rule made end it at once; Undo (or z) takes the rule back and brings
- * the offer back, while you're still there.
+ * The list's first item (plans 158, 159, 282): a line over the room the list leaves above its first row, outside the
+ * listbox (which holds only options), as tall as it's laid out (measured: a wrapped line makes room, `onHeight`), that
+ * follows the scroller's offset on its scroll timeline (`data-scroll-follow`): the compositor moves it in the frame the
+ * rows move, where a scroll event comes a frame late and the line trailed them. That holds with motion off too; without
+ * scroll timelines, the scroll event moves it.
  */
-export function LearnedBanner({ proposal, scroller }: { proposal: LearnedProposal; scroller: RefObject<HTMLElement | null> }) {
+export function ListLead({ scroller, onHeight, children }: { scroller: RefObject<HTMLElement | null>; onHeight: (height: number) => void; children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
-  // on screen: seen, for good
-  useEffect(() => noteShown(proposal.key, getApp()), [proposal.key]);
+  const heightRef = useRef(onHeight);
+  heightRef.current = onHeight;
   useLayoutEffect(() => {
     const el = scroller.current;
     const self = ref.current;
@@ -82,7 +78,7 @@ export function LearnedBanner({ proposal, scroller }: { proposal: LearnedProposa
     };
     // its height as laid out (a width, a language or a design that wraps it): the rows' room above them follows
     const ro = new ResizeObserver(() => {
-      setOfferHeight(Math.max(LEARNED_H, Math.ceil(self.offsetHeight)));
+      heightRef.current(self.offsetHeight);
       follow();
     });
     ro.observe(self);
@@ -93,21 +89,43 @@ export function LearnedBanner({ proposal, scroller }: { proposal: LearnedProposa
       el.removeEventListener("scroll", follow);
     };
   }, [scroller]);
-  const line = learnedLine(proposal);
   return (
     // it lies over the scroller, not in it: a wheel over it still moves the list. Clipped to its room, as the rows are
-    // Its room takes no pointer itself: only the part of the offer still showing does (a hidden one none), so a row scrolled under it is clicked
+    // Its room takes no pointer itself: only the part of the line still showing does (a hidden one none), so a row scrolled under it is clicked
     <div className="pointer-events-none absolute inset-x-0 top-0 z-10 overflow-hidden" onWheel={(e) => forwardWheel(e, scroller.current)}>
-    <div
-      ref={ref}
-      data-scroll-follow
-      className="pointer-events-auto"
-      // reached by Tab while partly scrolled away: the list comes back to its top, so what has the focus shows whole
-      onFocus={() => {
-        const el = scroller.current;
-        if (el && el.scrollTop > 0) el.scrollTop = 0;
-      }}
-    >
+      <div
+        ref={ref}
+        data-scroll-follow
+        className="pointer-events-auto"
+        // reached by Tab while partly scrolled away: the list comes back to its top, so what has the focus shows whole
+        onFocus={() => {
+          const el = scroller.current;
+          if (el && el.scrollTop > 0) el.scrollTop = 0;
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One learned rule's offer, as the list's first item (plans 158, 159): a quiet line under the mail's rank that goes up
+ * with the rows as they scroll. It says the rule whole ("Always archive mail from anyone at x.com?"), wrapping in a
+ * narrow list rather than cutting it, its button right after it at the text's own weight, and why on hover. It lies
+ * over the room the list leaves above its first row, outside the listbox (which holds only options), as tall as it's
+ * laid out (measured: a wrapped line makes room), and follows the scroller's offset on its scroll timeline
+ * (`data-scroll-follow`): the compositor moves it in the frame the rows move, where a scroll event comes a frame late
+ * and the line trailed them. That holds with motion off too; without scroll timelines, the scroll event moves it. Shown in the Inbox once (lib/learned): seen as it first shows, kept while you
+ * stay, not offered in a list again. The × and a rule made end it at once; Undo (or z) takes the rule back and brings
+ * the offer back, while you're still there.
+ */
+export function LearnedBanner({ proposal, scroller }: { proposal: LearnedProposal; scroller: RefObject<HTMLElement | null> }) {
+  // on screen: seen, for good
+  useEffect(() => noteShown(proposal.key, getApp()), [proposal.key]);
+  const line = learnedLine(proposal);
+  return (
+    <ListLead scroller={scroller} onHeight={(h) => setOfferHeight(Math.max(LEARNED_H, Math.ceil(h)))}>
     <Announcement
       data-testid="learned-banner"
       inline
@@ -152,7 +170,6 @@ export function LearnedBanner({ proposal, scroller }: { proposal: LearnedProposa
       closeProps={{ "data-testid": "learned-dismiss" }}
       onClose={() => hush(true)}
     />
-    </div>
-    </div>
+    </ListLead>
   );
 }

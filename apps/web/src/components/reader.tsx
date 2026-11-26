@@ -44,6 +44,7 @@ import { useReadOnShow } from "~/lib/read-on-show";
 import { pinThreads, unpinThreads } from "~/lib/pins";
 import { usePins } from "~/state/pins";
 import { acceptSuggestion, answerReview, rejectSuggestion, removeFromCategory } from "~/lib/categorize";
+import { PutAwayBox } from "./put-away-box";
 import { t } from "@terno/i18n";
 import { fullDate, listDate, messageDate, messageTime } from "~/lib/format";
 import { SenderAvatar } from "./sender-avatar";
@@ -901,7 +902,9 @@ function ThreadChips({ detail, account, cats, fold, className }: { detail: Threa
       {account && <ThreadAccount account={account} />}
       {detail.messages.length > 1 && <MessageCount count={detail.messages.length} fold={fold} />}
       {cats.map((c) => {
-        const auto = detail.categorization?.auto.find((a) => a.categoryId === c.id);
+        // plan 282: a filing the box below explains has no mark of its own (the box says it, with its reasons)
+        const explained = detail.putAway?.detail.by === "terno" && detail.putAway.detail.categoryId === c.id;
+        const auto = explained ? undefined : detail.categorization?.auto.find((a) => a.categoryId === c.id);
         return (
           <Chip
             key={c.id}
@@ -986,10 +989,13 @@ function ReaderHeader({ detail, account, cats, fold }: { detail: ThreadDetail; a
   const heading = <h2 id="reader-subject" data-testid="reader-subject" data-reader-head className={cn("relative min-w-0", PANE_TITLE)}><span aria-hidden data-subject-top className="pointer-events-none absolute top-0 left-0 h-px w-px" /><Marked text={subject} needles={marks} testId="reader-subject-match" /></h2>;
   // plan 194: the subject on its own line, and what it's about (account, how many, categories) a quiet line under it,
   // so nothing competes with the subject
+  // plan 282: why it's out of the Inbox, under the subject and its chips, in every design
+  const why = <PutAwayBox threadId={detail.thread.id} placed={detail.putAway} />;
   const titled = (
     <>
       {heading}
       <ThreadChips detail={detail} account={account} cats={cats} fold={fold} className="mt-1.5" />
+      {why}
     </>
   );
   // plan 177: two or more messages, who's on it closes the header, in every design, on the subject's line start; its 4 px
@@ -1003,6 +1009,7 @@ function ReaderHeader({ detail, account, cats, fold }: { detail: ThreadDetail; a
             of panes without chips keep the subject's line (--pane-title-lead); no taller than it was */}
         <ThreadChips detail={detail} account={account} cats={cats} fold={fold} className="mb-1 min-h-5" />
         {heading}
+        {why}
         {people}
       </div>
     ),

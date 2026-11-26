@@ -10,6 +10,7 @@ import { create } from "zustand";
 import { client } from "~/rpc/connection";
 import { getApp, getSelectionWriteRevision, inboxShape, inPlainInbox, setApp, setListAutoSelection, useApp } from "./app";
 import { noteRows, useActionRows } from "./action-preview";
+import { publishPlacements } from "./put-away";
 import { cursorKey, heldRows, historyCursor, historyThrough, publishHistory, todayAnswer, todayRowsLeft } from "./today";
 import type { HistoryKey, TodayHistoryItem } from "@terno/core";
 /** plan 210: the most history lines one page asks for (the backend's bound) */
@@ -124,7 +125,7 @@ export function listKey(): string {
   // plan 87: Reminders, only when it's that list (every other list's key is as it was)
   // plan 86: a Gmail tab likewise ("~promotions": never a folder's key)
   // plan 108: a search focused on an account looks only in it, so it's another list than the same search everywhere
-  return JSON.stringify([s.view, s.accountId, s.categoryId, s.reviewCategoryId, activeFilter(s) ?? null, ...(s.folder ? [s.folder] : []), ...(s.gmailTab ? [`~${s.gmailTab}`] : []), ...(s.reminders ? ["reminders"] : []), ...(s.followups ? ["followups"] : []), ...(s.actionPreview ? [`action:${s.actionPreview}`] : []), ...(s.today ? ["today"] : []), ...(soloSearch(s) ? ["~solo"] : []), s.query.trim()]);
+  return JSON.stringify([s.view, s.accountId, s.categoryId, s.reviewCategoryId, activeFilter(s) ?? null, ...(s.folder ? [s.folder] : []), ...(s.gmailTab ? [`~${s.gmailTab}`] : []), ...(s.reminders ? ["reminders"] : []), ...(s.followups ? ["followups"] : []), ...(s.putAway ? ["putAway"] : []), ...(s.actionPreview ? [`action:${s.actionPreview}`] : []), ...(s.today ? ["today"] : []), ...(soloSearch(s) ? ["~solo"] : []), s.query.trim()]);
 }
 
 /** The search a list's key holds: what its rows answer to, whatever is being typed by now. Empty for a mailbox, Review or a preview. */
@@ -191,7 +192,7 @@ type Paged = { items: ThreadSummary[]; nextCursor: ListCursor | null; /** plan 2
 /** What only Today's pages carry (plan 210): read from any page. */
 const today = (page: object): Pick<Paged, "history" | "publish"> => page as Pick<Paged, "history" | "publish">;
 /** A page's continuation: a date and an id (the Inbox's), with plan 210's history adding which table's id it is. */
-export type ListCursor = { lastDate: number; id: number; src?: HistoryKey["src"] };
+export type ListCursor = { lastDate: number; id: number; src?: HistoryKey["src"]; /** plan 282: Put away's cursor is in Needs a look */ look?: boolean };
 
 /**
  * The plain Inbox's first page with its top in front (`top` says what it is); the reader of the answer publishes it
@@ -289,6 +290,11 @@ async function fetchPage(cursor?: ListCursor, limit = PAGE) {
     const { items } = await client.call("followups.threads", { onTop: false });
     return { items, nextCursor: null };
   }
+  if (s.putAway) {
+    // plan 282: Needs a look first, then newest; each page's placements published with its rows
+    const page = await client.call("putAway.page", { after: cursor ? { needsLook: cursor.look === true, at: cursor.lastDate, threadId: cursor.id } : undefined, limit: Math.min(limit, 200) });
+    return { items: page.items, nextCursor: page.next ? { lastDate: page.next.at, id: page.next.threadId, look: page.next.needsLook } : null, publish: () => publishPlacements(page.placements, !cursor) };
+  }
   if (s.reviewCategoryId !== null) {
     // one bounded page of suggestions (each row carries its prediction)
     if (cursor) return { items: [], nextCursor: null };
@@ -330,7 +336,7 @@ function keepSearchRows<P extends { items: ThreadSummary[]; nextCursor: { lastDa
 export function currentScope(): ThreadScope | null {
   const s = getApp();
   // Revisar, Reminders: lists of their own, no "select all N"
-  if (s.reviewCategoryId !== null || s.reminders || s.followups || s.today || s.actionPreview) return null;
+  if (s.reviewCategoryId !== null || s.reminders || s.followups || s.putAway || s.today || s.actionPreview) return null;
   const filter = activeFilter(s);
   const q = s.query.trim();
   // plan 64: a search looks everywhere (every account, category and place, Spam and Trash too); in:, account:, category: narrow it
@@ -647,6 +653,8 @@ async function loadNextPage(): Promise<boolean> {
       publishHistory(lines);
       historyDepth.moved++;
     }
+    // plan 282: a later page's placements, with its rows
+    if (getApp().putAway) today(page).publish?.();
     useList.setState({ items, index: indexOf(items), nextCursor: page.nextCursor, loadingMore: false });
     // a filtered search may answer a page with nothing kept (and more after it): nothing on screen would ask for the next one
     if (fresh.length === 0 && page.nextCursor) void loadMore();
@@ -814,7 +822,7 @@ useApp.subscribe((s, prev) => {
     pendingMore = null;
     useList.setState((l) => ({ key, itemsKey: l.itemsKey === l.key ? key : l.itemsKey, loadingMore: false, loading: false }));
     if (s.scope) setApp({ scope: null });
-  } else if (s.view !== prev.view || s.accountId !== prev.accountId || s.categoryId !== prev.categoryId || s.folder !== prev.folder || s.gmailTab !== prev.gmailTab || s.reviewCategoryId !== prev.reviewCategoryId || s.reminders !== prev.reminders || s.followups !== prev.followups || s.today !== prev.today || s.actionPreview !== prev.actionPreview || s.query !== prev.query || soloSearch(s) !== soloSearch(prev)) {
+  } else if (s.view !== prev.view || s.accountId !== prev.accountId || s.categoryId !== prev.categoryId || s.folder !== prev.folder || s.gmailTab !== prev.gmailTab || s.reviewCategoryId !== prev.reviewCategoryId || s.reminders !== prev.reminders || s.followups !== prev.followups || s.putAway !== prev.putAway || s.today !== prev.today || s.actionPreview !== prev.actionPreview || s.query !== prev.query || soloSearch(s) !== soloSearch(prev)) {
     // "all N of that list" means nothing in another one
     if (s.scope) setApp({ scope: null });
     rememberPlace(prev.selectedId);

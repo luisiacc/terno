@@ -17,14 +17,15 @@ export function rowStart(i: number, h: number, s: RowSpacing): number {
   return s.lead + i * h + s.label * s.groups.filter((at) => at <= i).length;
 }
 
-/** Plan 179: Pinned, Reminders, and (once either leads) the rest of the Inbox under its own name */
-export type TopSectionKind = "pinned" | "reminders" | "inbox";
+/** Plan 179: Pinned, Reminders, and (once either leads) the rest of the Inbox under its own name. Plan 282: Put away's Needs a look and days. */
+export type TopSectionKind = "pinned" | "reminders" | "inbox" | "needsLook" | "day";
 
 /** The Inbox's top as the rows show it: how many lead, how many of them are pinned, and each section's heading */
 export interface TopSections {
   top: number;
   pinned: number;
-  headings: readonly { kind: TopSectionKind; at: number }[];
+  /** `label` and `count`: a heading that says its own name and count (plan 282's); the Inbox's are worked out by kind */
+  headings: readonly { kind: TopSectionKind; at: number; label?: string; count?: number }[];
 }
 
 export const NO_SECTIONS: TopSections = { top: 0, pinned: 0, headings: [] };

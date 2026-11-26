@@ -3,7 +3,7 @@ import { anchorAt, anchoredOffset, INBOX_LABEL, rowStart, topSections, type RowS
 import { SearchField } from "@terno/ui/components/search-field";
 import { Skeleton } from "@terno/ui/components/skeleton";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { AlarmClock, ChevronDown, Inbox, ListFilter, Search, SquarePen, ListChecks } from "@terno/ui/icons";
+import { AlarmClock, ChevronDown, FolderInput, Inbox, Info, ListFilter, Search, SquarePen, ListChecks } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { activeFilter } from "~/lib/unread-filter";
 import { setListFilter } from "~/lib/unread";
@@ -41,6 +41,9 @@ import { focusQuietly } from "~/lib/quiet-focus";
 import { ThreadRow } from "./thread-row";
 import { registerDesignAnchor, useDesign } from "~/lib/design";
 import { LearnedBanner, LearnedSource, useLearnedProposal } from "./learned-banner";
+import { putAwaySections } from "~/lib/put-away";
+import { PutAwayNotice, PutAwaySource, usePutAwayNotice } from "./put-away-notice";
+import { usePutAway } from "~/state/put-away";
 import { ForwardQuestion } from "./forward-question";
 import { ReportRow } from "./diag/report-row";
 import { DesktopBanner } from "~/lib/web-parts";
@@ -68,7 +71,7 @@ const pinnedOver = (snack: number, pinned: number): number => Math.max(0, bottom
 const askOverList = (): number => (usePinnedAsk.getState().overList ? usePinnedAsk.getState().inset : 0);
 const listInset = (): number => (useAppearance.getState().layout === "list" ? pinnedOver(listCovered() ? 0 : useSnack.getState().inset, pinnedInsetNow()) : askOverList());
 
-const TOP_HEADING_ID = { pinned: "inbox-pinned-label", reminders: "inbox-reminders-label", inbox: "inbox-rest-label" } as const satisfies Record<TopSectionKind, string>;
+const TOP_HEADING_ID = { pinned: "inbox-pinned-label", reminders: "inbox-reminders-label", inbox: "inbox-rest-label", needsLook: "put-away-look-label", day: "put-away-day-label" } as const satisfies Record<TopSectionKind, string>;
 
 /**
  * Plans 87, 179: what the Inbox's rows under it are: Pinned, Reminders and, once either leads, the rest of the Inbox
@@ -324,7 +327,7 @@ function QuickChips({ filter }: { filter: QuickFilter | undefined }) {
  */
 const useSearchOpen = create<{ open: boolean }>(() => ({ open: false }));
 useApp.subscribe((s, prev) => {
-  if (useSearchOpen.getState().open && !s.query && (s.view !== prev.view || s.categoryId !== prev.categoryId || s.accountId !== prev.accountId || s.folder !== prev.folder || s.gmailTab !== prev.gmailTab || s.reviewCategoryId !== prev.reviewCategoryId || s.reminders !== prev.reminders || s.followups !== prev.followups || s.today !== prev.today)) useSearchOpen.setState({ open: false });
+  if (useSearchOpen.getState().open && !s.query && (s.view !== prev.view || s.categoryId !== prev.categoryId || s.accountId !== prev.accountId || s.folder !== prev.folder || s.gmailTab !== prev.gmailTab || s.reviewCategoryId !== prev.reviewCategoryId || s.reminders !== prev.reminders || s.followups !== prev.followups || s.putAway !== prev.putAway || s.today !== prev.today)) useSearchOpen.setState({ open: false });
 });
 
 /**
@@ -333,7 +336,7 @@ useApp.subscribe((s, prev) => {
  */
 const searchFrom: { review: number | null } = { review: null };
 useApp.subscribe((s, prev) => {
-  if (searchFrom.review !== null && (!s.query.trim() || s.view !== prev.view || s.categoryId !== prev.categoryId || s.accountId !== prev.accountId || s.folder !== prev.folder || s.reminders || s.followups || s.today)) searchFrom.review = null;
+  if (searchFrom.review !== null && (!s.query.trim() || s.view !== prev.view || s.categoryId !== prev.categoryId || s.accountId !== prev.accountId || s.folder !== prev.folder || s.reminders || s.followups || s.putAway || s.today)) searchFrom.review = null;
 });
 
 /** What the field types into the app: from a Review, a search of everything. */
@@ -619,14 +622,32 @@ function Subtitle({ filter, greeting }: { filter: QuickFilter | undefined; greet
   );
 }
 
+/** Plan 282: what Put away is for, beside its title: an info glyph, named for screen readers, its words on hover and focus. */
+function PutAwayHelp() {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button data-testid="put-away-help" variant="ghost" size="icon-sm" aria-label={t("putAway.help.label")} aria-describedby="put-away-help-text" className="no-drag -ml-1 shrink-0 rounded-full text-muted-foreground hover:text-foreground">
+            <Info />
+          </Button>
+        }
+      />
+      <TooltipContent className="max-w-60">{t("putAway.help")}</TooltipContent>
+      <span id="put-away-help-text" hidden>{t("putAway.help")}</span>
+    </Tooltip>
+  );
+}
+
 function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement>; /** List's full-width list: everything that fits sits on the title's line */ oneRow: boolean }) {
   const view = useApp((s) => s.view);
   const category = useApp((s) => s.categories.find((c) => c.id === s.categoryId));
   const folder = useApp(folderName);
   const review = useApp((s) => s.categories.find((c) => c.id === s.reviewCategoryId));
-  // plan 87: Reminders is a list of its own, unfiltered (no quick filters)
-  const reminders = useApp((s) => s.reminders || s.followups);
+  // plan 87: Reminders is a list of its own, unfiltered (no quick filters); so are Follow-ups and Put away (plan 282)
+  const reminders = useApp((s) => s.reminders || s.followups || s.putAway);
   const followups = useApp((s) => s.followups);
+  const putAway = useApp((s) => s.putAway);
   const account = useApp((s) => s.accounts.find((a) => a.id === s.accountId));
   const query = useApp((s) => s.query);
   const soloName = useApp((s) => (s.soloAccountId === null ? null : (s.accounts.find((a) => a.id === s.soloAccountId)?.displayName ?? null)));
@@ -641,7 +662,10 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
   // plan 64: a search looks everywhere, so the list is the search's, not the sidebar mailbox's
   const searching = query.trim() !== "" && !review;
   // plan 159: Review says what it's for; the category in view is its switcher's, under the title
-  const title = searching ? t("list.search.title") : review ? t("sidebar.sort") : followups ? t("followups.title") : reminders ? t("view.reminders") : (folder ?? category?.name ?? viewLabel(view));
+  const title = searching ? t("list.search.title") : review ? t("sidebar.sort") : followups ? t("followups.title") : putAway ? t("putAway.title") : reminders ? t("view.reminders") : (folder ?? category?.name ?? viewLabel(view));
+  // plan 282: Put away says what it is for, by its title (the title then takes its own width, the controls keep the right edge)
+  const help = putAway && !searching && <PutAwayHelp />;
+  const grow = help ? "" : "flex-1";
   // the title names the mailbox; the greeting is the words under the inbox's (any account; not a Gmail tab of it, plan 86)
   const kind = design.variants.listHeader === "greeting" && view === "inbox" && !folder && !category && !review && !searching ? "greeting" : design.variants.listHeader === "title" ? "title" : "display";
   const behindButton = design.variants.search === "button";
@@ -729,6 +753,7 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
             {accountSuffix}
             {filterSuffix}
           </h1>
+          {help}
           {query && (searchMs !== null || searchAll) ? (
             <p className="flex shrink-0 items-center gap-2">
               {stats}
@@ -751,11 +776,13 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
         </div>
       ) : kind === "title" ? (
         <div inert={covered} className="flex h-(--pane-bar) items-center gap-2 pr-1.5 pl-3">
-          <h1 className={cn("min-w-0 flex-1 truncate", LIST_TITLE.title)} data-testid="list-title">
+          <h1 className={cn("min-w-0 truncate", grow, LIST_TITLE.title)} data-testid="list-title">
             {title}
             {accountSuffix}
             {filterSuffix}
           </h1>
+          {help}
+          {help && <div className="min-w-0 flex-1" />}
           {/* none found: said here, shown by the list */}
           {!underField && stats}
           {filterControl}
@@ -765,11 +792,13 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
         <>
           {/* on the reader toolbar's line */}
           <div inert={covered} className="flex h-(--pane-bar) items-center gap-2 pr-1.5 pl-3">
-            <h1 className={cn("min-w-0 flex-1 truncate", LIST_TITLE[kind])} data-testid="list-title">
+            <h1 className={cn("min-w-0 truncate", grow, LIST_TITLE[kind])} data-testid="list-title">
               {title}
               {accountSuffix}
               {filterSuffix}
             </h1>
+            {help}
+            {help && <div className="min-w-0 flex-1" />}
             {filterControl}
             <div className="flex shrink-0 items-center gap-0.5 empty:hidden">{actions}</div>
           </div>
@@ -947,6 +976,7 @@ function ListEmptyState() {
   const view = useApp((s) => s.view);
   const reminders = useApp((s) => s.reminders);
   const followups = useApp((s) => s.followups);
+  const putAway = useApp((s) => s.putAway);
   const review = useApp((s) => s.categories.find((c) => c.id === s.reviewCategoryId));
   const previewing = useApp((s) => s.actionPreview !== null);
   const ruleOnly = useActionPreview((s) => s.preview !== null && savesRuleOnly(s.preview));
@@ -957,6 +987,8 @@ function ListEmptyState() {
   if (review) return <ReviewEmpty key={review.id} category={review} />;
   if (followups)
     return <EmptyState icon={<ListChecks className="mb-2 size-7 text-muted-foreground" aria-hidden />} title={t("followups.empty")} hint={t("followups.emptyHint")} />;
+  if (putAway)
+    return <EmptyState icon={<FolderInput className="mb-2 size-7 text-muted-foreground" aria-hidden />} title={t("putAway.empty")} hint={t("putAway.emptyHint")} />;
   if (reminders)
     return <EmptyState icon={<AlarmClock className="mb-2 size-7 text-muted-foreground" aria-hidden />} title={t("remind.empty")} hint={t("remind.emptyHint")} />;
   // plan 158: a search that found nothing answers under its field, on the rows' line: what it understands (a row puts the
@@ -1016,7 +1048,9 @@ export function ThreadList() {
   // plan 80: a category's Review list, whose rows answer its suggestions
   const review = useApp((s) => s.reviewCategoryId);
   // plan 187: where the preview's line says why a row is there, it stays
-  const lines = previewLinesFor(previewSetting, { review: review !== null, results: !!resultsOf, previewing });
+  // plan 282: Put away's rows say why they're there in the preview's place, whatever the preview setting
+  const putAway = useApp((s) => s.putAway);
+  const lines = previewLinesFor(previewSetting, { review: review !== null, results: !!resultsOf, previewing, explained: putAway });
   const height = rowHeight(design, { compact, wide, results: !!resultsOf, lines });
   const parentRef = useRef<HTMLDivElement>(null);
   // a Tab stop only with rows to carry the focus (a loading skeleton has none); handed on only once truly empty
@@ -1043,13 +1077,17 @@ export function ThreadList() {
   const getItemKey = useCallback((i: number) => items[i]!.id, [items]);
   // plans 87, 179: the Inbox's top, Pinned then Reminders, then the rest of the Inbox, each under its heading
   // (the top and its count are published with the rows they came with: read beside them)
-  const sections = useMemo(() => ({ ...topSections(items, inboxTop), total: inboxTop.total }), [items]);
+  // plan 282: Put away's sections, Needs a look and each day, from the placements the rows came with
+  const placed = usePutAway((s) => s.byThread);
+  const sections = useMemo(() => (putAway ? { ...putAwaySections(items, placed), total: null } : { ...topSections(items, inboxTop), total: inboxTop.total }), [items, putAway, placed]);
   const { top, pinned: pinnedTop } = sections;
   const inboxName = useApp((s) => (s.accountId === null ? null : (s.accounts.find((a) => a.id === s.accountId)?.displayName ?? null)));
   // plan 158: the rule offer is the list's first item: room above the first row, and it goes up with them
   const learned = useLearnedProposal();
   // plan 159: as tall as it's laid out (it wraps rather than cutting the rule)
-  const lead = learned.proposal && !previewing ? learned.height : 0;
+  // plan 282: the Inbox's line about Put away goes first: one line above the rows at a time
+  const notice = usePutAwayNotice();
+  const lead = notice.shown ? notice.height : learned.proposal && !previewing ? learned.height : 0;
   const leadRef = useRef(lead);
   leadRef.current = lead;
   // every heading the rows have, by the row each stands above (the top's sections)
@@ -1324,7 +1362,8 @@ export function ThreadList() {
       {/* the list's scroll timeline reaches what lies over it from outside (globals.css, data-scroll-follow) */}
       <div className="relative flex min-h-0 flex-1 flex-col [timeline-scope:--list-scroll]">
       <LearnedSource />
-      {learned.proposal && lead > 0 && <LearnedBanner proposal={learned.proposal} scroller={parentRef} />}
+      <PutAwaySource />
+      {notice.shown ? <PutAwayNotice scroller={parentRef} /> : learned.proposal && lead > 0 && <LearnedBanner proposal={learned.proposal} scroller={parentRef} />}
       <ThreadMenu>
       <div ref={parentRef} data-keep-scroll="list" role={items.length > 0 ? "listbox" : "group"} aria-busy={loading || undefined} tabIndex={items.length > 0 ? 0 : -1} onFocus={(e) => empty && e.target === e.currentTarget && leaveEmptyList()} aria-label={t("list.label")} aria-multiselectable={items.length > 0 ? true : undefined} className="@container/rows relative min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none [contain:strict] [scroll-timeline:--list-scroll_y]" style={toastRoom ? { marginBottom: toastRoom } : undefined}>
         <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
@@ -1344,11 +1383,11 @@ export function ThreadList() {
             {/* plans 87, 179: each of the Inbox's headings above its first row */}
             {sections.headings.map((h) => (
               <TopHeading
-                key={h.kind}
+                key={`${h.kind}-${h.at}`}
                 kind={h.kind}
                 top={(virtualizer.measurementsCache[h.at]?.start ?? lead + INBOX_LABEL) - INBOX_LABEL}
-                name={h.kind === "pinned" ? t("list.pinned") : h.kind === "reminders" ? t("view.reminders") : (inboxName ?? t("view.inbox"))}
-                count={h.kind === "pinned" ? formatNumber(pinnedTop) : h.kind === "reminders" ? formatNumber(top - pinnedTop) : sections.total ? `${formatNumber(sections.total.n)}${sections.total.capped ? "+" : ""}` : null}
+                name={h.label ?? (h.kind === "pinned" ? t("list.pinned") : h.kind === "reminders" ? t("view.reminders") : (inboxName ?? t("view.inbox")))}
+                count={h.count !== undefined ? formatNumber(h.count) : h.kind === "pinned" ? formatNumber(pinnedTop) : h.kind === "reminders" ? formatNumber(top - pinnedTop) : sections.total ? `${formatNumber(sections.total.n)}${sections.total.capped ? "+" : ""}` : null}
               />
             ))}
             {virtualItems.map((v) => (

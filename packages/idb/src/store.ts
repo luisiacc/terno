@@ -1136,7 +1136,7 @@ export class IdbMailStore implements MailStore {
         const r = applyThreadAction(this.c, ids, action);
         if (signal && r.threadIds.length) recordUserActions(this.c, r.threadIds, signal, now);
         // plan 282: the user's own move out of the Inbox
-        if (ENDS_PLACEMENT.has(action)) endPlacements(this.c, r.threadIds);
+        if (ENDS_PLACEMENT.has(action)) endPlacements(this.c, ids);
         const opIds = this.queueActionOps(r, action, now);
         if (action !== "moveToInbox") return { threadIds: r.threadIds, opIds, before: r.before, ...flagReconciliation(idbFlags(this.c), flagBefore) };
         // plan 86: into the Inbox means out of Gmail's tabs too, in the same command and the same undo
