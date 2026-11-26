@@ -1,6 +1,6 @@
-import { createAi, digestPrompt, probe, type AiTasks, type ProviderConfig } from "@terno/ai";
+import { createAi, digestPrompt, probe, summarizeTask, type AiTasks, type ProviderConfig } from "@terno/ai";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { anchor, answerFor, startModelStub, type ModelStub } from "../../../scripts/ui-rating/model-stub.mjs";
+import { anchor, answerFor, startModelStub, taskOf, type ModelStub } from "../../../scripts/ui-rating/model-stub.mjs";
 import { checkSentMail } from "./followups";
 
 /**
@@ -161,6 +161,12 @@ describe("the model stub (plan 161)", () => {
     const judged = await ai.judgeVoice({ scope: "you", language: "en", sample: [{ text: "Sounds good, see you then.", to: ["a@example.com"] } as never] }, signal());
     expect(judged.judgment.notes.length).toBeGreaterThan(0);
     expect(await ai.classify({ instructions: "", labels: ["Facturas"], items: [{ id: "1", text: "Tu factura de Uber" }] }, signal())).toEqual([{ id: "1", label: "Facturas", confidence: 0.9 }]);
+  });
+
+  it("plan 279: knows the full summary prompt by its first words on a fallback with no schema name, as it knows the compact one", async () => {
+    const system = summarizeTask({ subject: "x", thread: [{ label: "m1", from: "Ana", date: "2026-11-01", own: false, text: "hi" }], language: "en", today: "2026-11-04" }).system;
+    expect(taskOf({ messages: [{ role: "system", content: system }, { role: "user", content: "x" }], response_format: { type: "json_object" } })).toBe("thread_summary");
+    expect(taskOf({ messages: [{ role: "system", content: "You summarize one email conversation for the person reading it." }] })).toBe("thread_summary");
   });
 
   it("is deterministic, and a task it doesn't know is a loud 500 rather than a filter", async () => {

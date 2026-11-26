@@ -579,6 +579,7 @@ export function classify(prompt) {
 const SYSTEM_STARTS = [
   ["probe", "This is a connectivity test."],
   ["thread_summary", "You summarize one email conversation"],
+  ["thread_summary", "<role>\nYou write the summary card of one email conversation"],
   ["ask_plan", "You turn a question about someone's own email into searches"],
   ["action_plan", "You turn one sentence about someone's email into a rule"],
   ["action_check", "Someone asked for something to be done to their email"],

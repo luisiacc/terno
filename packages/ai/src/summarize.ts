@@ -167,7 +167,7 @@ const EXAMPLES: readonly { mail: string; card: { summary: string; items: object[
         { kind: "action", text: "Bring your ID to the signing", message: "m3", due: "2026-05-18", byReply: false },
         { kind: "action", text: "Call 931 440 220 about the bank-details message", message: "m1", due: null, byReply: false },
       ],
-      since: "A message from billing@vidal-legal-pay.example asking for 900 EUR at new bank details looks like a scam. Marta accepted Monday 18 May at 12 for the signing.",
+      since: "A message from billing@vidal-legal-pay.example asking for 900 EUR at new bank details looks like a scam. Marta accepted Monday 18 May at 12 for the signing and asks you to bring your ID.",
     },
     note: "The scam comes first; its request is never an item, but the check Marta gave is; the accepted date is a change.",
   },
@@ -176,7 +176,9 @@ const EXAMPLES: readonly { mail: string; card: { summary: string; items: object[
 /** The worked examples, with "since" and new="yes" only when the request asks for a since. */
 const examples = (since: boolean) =>
   EXAMPLES.map((e) => {
-    const { since: changed, ...card } = e.card;
+    // the rows first, as the schema asks (plan 279, version 11)
+    const card = { items: e.card.items, summary: e.card.summary };
+    const changed = e.card.since;
     return `<example>
 <reader name="Luis Ortega" email="luis@ortega.example" />
 ${e.mail.replaceAll("{{new}}", since ? ' new="yes"' : "")}
@@ -212,8 +214,8 @@ Decide each request by who it's put to:
 - What the reader asked of others is a "waiting" item, never an action. What other people owe each other is never an item.
 - From the reader's own messages, only an open promise is theirs: one with a day or a concrete thing to deliver is an action; a vague or conditional one, or a "don't", isn't.
 - When a mail lays out a process or checklist, only the reader's next step is an action; later steps, how-tos, options and "if this happens" steps aren't (the summary may name the later steps in a few words). Things asked together, for the same deadline, are one action.
-- An offer the reader made that someone accepted or relies on is an action, due on the day of the event.
-- An approval with a step attached ("fine, merge after the release job goes green") is an action for whoever the step is put to.
+- An offer the reader made that someone accepted or relies on is an action, due by the deadline someone set, or else on the day of the event.
+- An approval with a step attached ("fine, merge after the release job goes green") is the reader's action when the step is put to them.
 - A row's due is the deadline someone set, not the day the reader said they'd do it. A deadline given in an earlier message still holds unless a later one changes it.
 - In mail between the reader and one or two people, what they ask or tell the reader to do, or wait on the reader for, is the reader's, even without a name or a question mark ("merge after the build", "the key needs to be in Nell's pigeonhole by 9").
 - A choice put to the reader (a slot, an option, a yes or no) is a question, due when the answer is needed.
@@ -226,14 +228,14 @@ Decide each request by who it's put to:
 - Keep each claim as strong as the mail: a proposal isn't a decision, "on 27 March" isn't "before 27 March", and when people disagree, say so ("Brenda says Sunday 13; Jean thought Saturday 12").
 - Copy names, amounts and dates as written. Don't add a currency, a total or a year the mail doesn't give.
 - You may not see every message: never say nobody replied or nothing was confirmed.
-- A message from an address unlike the sender's usual one, asking for money, new bank details or a login, looks like a scam: say so, with its address. Its request is never an item, and its deadline or account is never the reader's; when trusted mail in the conversation says how to check (a phone number to call), that check is an action.
+- A message from an address unlike the sender's usual one, asking for money, new bank details or a login, looks like a scam: say so, with its address. Its request is never an item, and its deadline or account is never the reader's; when trusted mail in the conversation tells the reader how to check (a phone number to call), that check is their action.
 - Never copy a password, a code or another secret.
 - An item is never just the summary again: it is something to do, answer, keep or wait for, with its day.
 </accuracy>
 ${since ? `
 <since>
 "since" is what the new="yes" messages change. The reader sees either "summary" or "since", never both, so it stands on its own. Write the summary and items exactly as if nothing were marked new.
-- One short sentence, 25 words at most, on the biggest change: a decision, an approval, a cancellation, or a date, time or amount that moved (from what to what). Who first, with the real figures and dates. A second sentence only for another change the reader needs. When the new messages ask something of the reader, end with it in a short second sentence ("You're asked to send section 2 by Friday 11 September").
+- One short sentence, 25 words at most, on the biggest change: a decision, an approval, a cancellation, or a date, time or amount that moved (from what to what). Who first, with the real figures and dates. A second sentence only for another change the reader needs. When the new messages ask something of the reader, end with it, in the same sentence or a short second one ("You're asked to send section 2 by Friday 11 September").
 - Never empty when a new message moves a date or time, changes an amount, cancels, decides, approves, accepts or confirms something, or is a scam. Empty ("") only when the new messages change nothing: thanks, "got it", "will do", a receipt, a promise to explain later, an opinion, what was already known.
 - Only what the new messages say: what they quote or forward from earlier mail isn't new, and the reader's own messages are context. Never write "a new reply", "the latest message" or when it arrived. A scam in the new mail comes first.
 </since>
@@ -422,7 +424,7 @@ export function summarizeTask(input: SummarizeInput): StructuredTask<Wire, Threa
     prompt: summaryPrompt(input),
     // one name for both shapes: the fake and the stubs know the task by it
     schema: { name: "thread_summary", zod: since ? wireSince : wire },
-    example: { summary: "Ana can't make the 12th and proposes the 19th.", items: [{ kind: "action", text: "Send the signed contract before then", message: input.thread[0]!.label, due: null, byReply: true }], ...(since ? { since: "" } : {}) },
+    example: { items: [{ kind: "action", text: "Send the signed contract before then", message: input.thread[0]!.label, due: null, byReply: true }], summary: "Ana can't make the 12th and proposes the 19th.", ...(since ? { since: "" } : {}) },
     maxTokens: input.outputTokens ?? SUMMARY_MAX_TOKENS,
     effort: "low",
     // plan 279: measured, the same cards 30% faster and no less complete (OpenAI's own models only: the transport says)

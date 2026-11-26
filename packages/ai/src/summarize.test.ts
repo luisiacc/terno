@@ -116,15 +116,21 @@ describe("the prompt", () => {
   it("plan 279, version 11: says when an ask is the reader's, gives a scam's check a row, and has the rows written first", () => {
     const { system, schema } = summarizeTask(input());
     // Luna's misses that repeated on every run: an approval with a step, an accepted offer, a choice, few people
-    expect(system).toMatch(/An approval with a step attached \("fine, merge after the release job goes green"\) is an action/);
-    expect(system).toMatch(/An offer the reader made that someone accepted or relies on is an action/);
+    // the step, and a scam's check, are the reader's only when put to them: Kit's step stays Kit's (Codex review)
+    expect(system).toMatch(/An approval with a step attached \("fine, merge after the release job goes green"\) is the reader's action when the step is put to them\./);
+    // a deadline someone set comes before the event's day (Codex review)
+    expect(system).toMatch(/An offer the reader made that someone accepted or relies on is an action, due by the deadline someone set, or else on the day of the event\./);
     expect(system).toMatch(/A choice put to the reader \(a slot, an option, a yes or no\) is a question/);
     expect(system).toMatch(/In mail between the reader and one or two people, what they ask or tell the reader to do/);
     expect(system).toMatch(/A deadline given in an earlier message still holds unless a later one changes it/);
     // the scam's request is never a row; the check the trusted mail gives is, and the example shows it
-    expect(system).toMatch(/Its request is never an item, .*that check is an action\./);
+    expect(system).toMatch(/Its request is never an item, .*tells the reader how to check \(a phone number to call\), that check is their action\./);
     expect(system).toContain('"text":"Call 931 440 220 about the bank-details message","message":"m1"');
     expect(system).toMatch(/what still waits on what/);
+    // every worked card and the fallback's example write the rows first too, as the schema asks (Codex review)
+    expect(system.match(/Card: \{"items":/g)).toHaveLength(3);
+    expect(system).not.toMatch(/Card: \{"summary"/);
+    expect(JSON.stringify(summarizeTask(input()).example).startsWith('{"items":')).toBe(true);
     // the schema sent asks for the rows before the summary, and the since last
     const order = (zod: z.ZodType) => Object.keys((z.toJSONSchema(zod, { io: "input" }) as { properties?: object }).properties ?? {});
     expect(order(schema.zod)).toEqual(["items", "summary"]);
@@ -168,7 +174,10 @@ describe("the prompt", () => {
       expect(task.system).toMatch(/Write the summary and items exactly as if nothing were marked new/);
       expect(task.system).toMatch(/never both, so it stands on its own/);
       // version 11: a new ask ends the since in a short second sentence
-      expect(task.system).toMatch(/When the new messages ask something of the reader, end with it in a short second sentence/);
+      expect(task.system).toMatch(/When the new messages ask something of the reader, end with it, in the same sentence or a short second one/);
+      // the examples do as the rule says: a since with a new ask ends with it (Codex review)
+      expect(task.system).toContain("Marta accepted Monday 18 May at 12 for the signing and asks you to bring your ID.");
+      expect(task.system).toContain("and asks you to confirm.\"}");
       // concise: one short sentence, the biggest change first, no filler
       expect(task.system).toMatch(/One short sentence, 25 words at most, on the biggest change/);
       expect(task.system).toMatch(/Never write "a new reply", "the latest message" or when it arrived/);
