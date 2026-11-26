@@ -55,7 +55,7 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  * Version 42 adds your word on who is a person (SQL v83, plan 278).
  * Version 43 adds Put away's placements and the senders kept out of a category's automatic filing (SQL v84, plan 282).
  * Version 44 adds the follow-ups reader's marks of received mail (SQL v85, plan 280); SQL v85's rebuild of `followups` drops
- * the kind's CHECK (none here) and adds `firm`, `due_day`, `person_key` and `arrived_hint`: absent on older records reads as
+ * the kind's CHECK (none here) and adds `firm`, `due_day`, `person_key`, `arrived_hint`, `moved_at` and `moved_by`: absent on older records reads as
  * a firm promise with none of the rest, and `owed` is an in-memory index.
  */
 export { IDB_VERSION };

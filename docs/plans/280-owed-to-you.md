@@ -470,3 +470,5 @@ The same seven personas reviewed the new screens; none was told the earlier scor
 - Write a follow-up before a promise is late (María, Diego).
 - A grace period for family (Margaret; the owner declined).
 - "Answer Jun…" and similar cards, which belong to What matters.
+
+Plan 282 then landed with SQL v84 and IndexedDB 43 (`6789c9384`), so on the branch rebased onto it this plan's step is **SQL v85** (`followups_v85`) and **IndexedDB 44**. Where this plan says v84 and 43 (or v83 and 42), read v85 and 44. The rebase also gave `moved_by` its place in the migration test's list of added columns.

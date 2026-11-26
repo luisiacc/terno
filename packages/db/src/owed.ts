@@ -5,7 +5,7 @@ import { datedSource } from "./dated";
 import { admitFollowup, followupRow, TRUSTED_SENT, type FollowupRaw } from "./followups";
 import type { Db } from "./sqlite";
 
-/** Plan 280 on SQLite (v84): see packages/store/src/owed.ts. */
+/** Plan 280 on SQLite (v85): see packages/store/src/owed.ts. */
 
 const toMark = (r: { message_id: number; thread_id: number; sender_key: string; arrived_at: number; queued_at: number; source: string }): OwedMark => ({ messageId: r.message_id, threadId: r.thread_id, senderKey: r.sender_key, arrivedAt: r.arrived_at, queuedAt: r.queued_at, source: owedSourceOf(r.source) });
 
