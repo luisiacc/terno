@@ -52,14 +52,21 @@ export interface PutAwayStore {
   keep(p: { categoryId: number; sender: string; threadId: number | null; now: number }): Promise<{ added: boolean; at: number; withdrawn: PutAwayWithdrawn | null }>;
   /** Undo of keep: only what it did (a kept row made since by another hand stays; a newer decision isn't replaced) */
   unkeep(p: { categoryId: number; sender: string; added: boolean; at: number; withdrawn: PutAwayWithdrawn | null }): Promise<void>;
-  /** A rule's placements that still hold, newest first, at most 500 (Back to Inbox's bound): what Stop's second step brings back */
-  byRule(filterId: number, now: number): Promise<{ threadId: number; at: number }[]>;
+  /** A rule's placements that still hold (that rule as it was: its id and hash), newest first: what Stop's second step brings back */
+  byRule(filterId: number, ruleHash: string, now: number): Promise<{ threadId: number; at: number }[]>;
+  /** Of these conversations, those in the Inbox view now (what a fix says it did) */
+  inInbox(threadIds: readonly number[]): Promise<number[]>;
   kept(): Promise<KeptSender[]>;
   /** Settings: back to automatic filing */
   removeKept(categoryId: number, sender: string): Promise<boolean>;
 }
 
 // ───────────────────────────── shared by both stores' watches ─────────────────────────────
+
+/** Whether a rule's actions can take mail out of the Inbox view (a watch is worth its reads only then) */
+export function ruleCanPlace(actions: readonly import("@terno/core").FilterAction[], hidden: ReadonlySet<number>): boolean {
+  return actions.some((a) => a.type === "archive" || a.type === "trash" || a.type === "moveToFolder" || (a.type === "addCategory" && hidden.has(a.categoryId)));
+}
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 

@@ -1,5 +1,5 @@
-import { endPlacements, keepSender, listKeptSenders, placedVisible, placementOf, placementPage, placementsByRule, placementsNeedingLook, PlacementWatch, refileHiddenFilings, releaseHiddenFilings, removeKeptSender, unkeepSender } from "./put-away";
-import { ruleNote } from "@terno/store";
+import { endPlacements, hiddenCategorySet, inboxVisible, keepSender, listKeptSenders, placedVisible, placementOf, placementPage, placementsByRule, placementsNeedingLook, PlacementWatch, refileHiddenFilings, releaseHiddenFilings, removeKeptSender, unkeepSender } from "./put-away";
+import { ruleCanPlace, ruleNote } from "@terno/store";
 import { ASK_MATCH_MESSAGES, ASK_MATCH_PARTS, CORPUS_TEXTS_MAX, finishBodyClose, rankSentRefs, readPassages, readThreadContext, type SentRef } from "@terno/store";
 import { ClosedOrder } from "./closed-order";
 import { actOnItems, fromOf, itemMembers, linkItems, liveAmong, restoreItems, needsCount, needsWalk, type NeedsWalk, messagesHere, senders, allDigests, beginDigest, clearDigests, digestFacts, digestLive, digestRead, getDigest, latestDigest, pendingDigestDays, pruneDigests, waitingAmong, waitingPage, writeDigest } from "./today";
@@ -1927,7 +1927,7 @@ export class IdbMailStore implements MailStore {
         const folderMoves: FolderFilterMove[] = [];
         // plan 282 (the owner, after the QA panel): what a rule run by hand takes out of the Inbox is put away too, with its fixes
         const messages = T(this.c, "messages");
-        const watch = ids.length ? new PlacementWatch(this.c, ids.flatMap((m) => { const row = messages.get(m); return row ? [row.thread_id as number] : []; })) : null;
+        const watch = ids.length && ruleCanPlace(rule.actions, hiddenCategorySet(this.c)) ? new PlacementWatch(this.c, ids.flatMap((m) => { const row = messages.get(m); return row ? [row.thread_id as number] : []; })) : null;
         // asked for by hand: wherever the mail is now, not only the Inbox (plan 128)
         const touched = this.runFilterActions(rule.actions, ids, now, opIds, folderMoves, null, watch ? { watch, filter } : null);
         this.flushFolderMoves(folderMoves, now, opIds, touched, watch);
@@ -2790,7 +2790,8 @@ export class IdbMailStore implements MailStore {
   // plan 282: Put away
   readonly putAway: MailStore["putAway"] = {
     of: (threadId, now) => this.read(() => placementOf(this.c, threadId, now)),
-    byRule: (filterId, now) => this.read(() => placementsByRule(this.c, filterId, now)),
+    byRule: (filterId, hash, now) => this.read(() => placementsByRule(this.c, filterId, hash, now)),
+    inInbox: (threadIds) => this.read(() => [...inboxVisible(this.c, threadIds)]),
     page: (p) => this.read(() => placementPage(this.c, p)),
     needsLook: (p) => this.read(() => placementsNeedingLook(this.c, p)),
     release: (threadIds) => this.command(() => releaseHiddenFilings(this.c, threadIds)),

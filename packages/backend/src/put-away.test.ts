@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
-import type { FilterRule } from "@terno/core";
+import { CategorizerModel, encodeFeatures, extractFeatures, type FilterRule } from "@terno/core";
 import { demoRegistry } from "@terno/mail";
 import { msg, threadOf, withAccounts } from "@terno/store/conformance";
 import { afterEach, describe, expect, it } from "vitest";
@@ -88,6 +88,47 @@ describe("Put away (plan 282)", () => {
     await expect(client.call("putAway.stopRule", { threadId: u, at: NOW })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     // stopped already (another window): nothing to do, and said so
     expect(await client.call("putAway.stopRule", { threadId: t, at: NOW })).toEqual({ filterUndo: null });
+  });
+
+  it("Stop's second step: the reader counts what a rule that's off still keeps away; Bring back lists it, refused once the rule is on again", async () => {
+    const { client, arrive, rule } = await setup();
+    const f = await rule("news@xataka.test", [{ type: "archive" }]);
+    const a = await arrive("news@xataka.test", { subject: "a" });
+    const b = await arrive("news@xataka.test", { subject: "b" });
+    expect((await client.call("threads.get", { threadId: a })).putAway).not.toHaveProperty("ruleHolding");
+    await client.call("putAway.stopRule", { threadId: a, at: NOW });
+    expect((await client.call("threads.get", { threadId: a })).putAway).toMatchObject({ ruleEnabled: false, ruleHolding: 2 });
+    expect((await client.call("putAway.byRule", { threadId: a, at: NOW })).items.map((i) => i.threadId).sort()).toEqual([a, b].sort());
+    await client.call("filters.setEnabled", { ids: [f.id], enabled: true });
+    await expect(client.call("putAway.byRule", { threadId: a, at: NOW })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("Not {category} on Terno's own filing: out, a correction, and its Undo puts back Terno's filing exactly", async () => {
+    const { backend, client, acct, arrive } = await setup();
+    const category = await backend.store.categories.create("Facturas", "amber", { showInInbox: false });
+    await backend.store.categories.update(category.id, { autoApply: true });
+    const sender = "billing@shop.test";
+    const own = { ownDomains: new Set(["example.com"]) };
+    const enc = encodeFeatures(extractFeatures({ fromEmail: sender, fromName: "Shop", listId: null, subject: "Tu recibo", bodyText: "Total pagado", replied: false, attachmentNames: [] }, own));
+    const model = new CategorizerModel({ decayRef: NOW });
+    for (let i = 0; i < 12; i++) {
+      const old = await arrive(sender, { from: { name: "Shop", email: sender }, subject: "Tu recibo", bodyText: "Total pagado", date: NOW - 86_400_000 - i });
+      await backend.store.categories.add({ categoryId: category.id, threadIds: [old], addedBy: "user", now: NOW - 86_400_000 });
+      model.train({ categoryId: category.id, label: 1, weight: 1, at: NOW, content: true, features: enc });
+    }
+    for (let i = 0; i < 200; i++) model.addBackground(10_000 + i, encodeFeatures(extractFeatures({ fromEmail: `amigo${i % 20}@gmail.com`, fromName: "Amigo", listId: null, subject: "Comida", bodyText: "Hola amigo", replied: false, attachmentNames: [] }, own)));
+    const m = msg({ accountId: acct, providerMsgId: "filed", from: { name: "Shop", email: sender }, subject: "Tu recibo", bodyText: "Total pagado", date: NOW });
+    await backend.store.sync.ingest([m], { applyFilters: true, now: NOW, classifier: { mode: "auto", model } });
+    const t = await threadOf(backend.store, "filed");
+    expect((await client.call("threads.get", { threadId: t })).putAway).toMatchObject({ detail: { by: "terno", categoryId: category.id } });
+    // a box showing an older placement is refused
+    await expect(client.call("putAway.not", { threadId: t, at: NOW - 1 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    const not = await client.call("putAway.not", { threadId: t, at: NOW });
+    expect(not).toMatchObject({ inInbox: true });
+    expect((await backend.store.threads.summaries([t]))[0]!.categoryIds).toEqual([]);
+    await client.call("categorize.undo", { batchId: not.batchId! });
+    expect((await backend.store.threads.summaries([t]))[0]!.categoryIds).toEqual([category.id]);
+    expect((await client.call("threads.get", { threadId: t })).putAway).toMatchObject({ detail: { by: "terno", categoryId: category.id } });
   });
 
   it("the Inbox's line: who needs a look, until it's seen", async () => {

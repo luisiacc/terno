@@ -87,9 +87,13 @@ test.describe("Put away (plan 282)", () => {
       await expect(page.getByTestId("reader-subject")).toHaveText("291 gadgets para tu escritorio");
       await expect(rows(page)).toHaveCount(2);
       await expect(rows(page).nth(1)).toHaveAttribute("data-cursor", "true");
+      // it leaves once the selection moves off it (Codex review #6)
+      await rows(page).nth(0).click();
+      await expect(rows(page)).toHaveCount(1);
       await page.keyboard.press("z");
-      await expect(page.getByTestId("put-away-box")).toBeVisible();
       await expect(rows(page)).toHaveCount(2);
+      await rows(page).filter({ hasText: "291 gadgets" }).click();
+      await expect(page.getByTestId("put-away-box")).toBeVisible();
     });
 
     await scenario("Terno's own rule: Stop this rule turns it off", async () => {

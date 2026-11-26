@@ -1,4 +1,4 @@
-import { classifierSender, parsePlacementDetail, parseReasons, PUT_AWAY_MS, ruleHash, type Placement, type PutAwayDetail } from "@terno/core";
+import { addressKey, classifierSender, parsePlacementDetail, parseReasons, PUT_AWAY_MS, ruleHash, type Placement, type PutAwayDetail } from "@terno/core";
 import { clipText, explainingNote, type KeptSender, type PlacementNote, type PutAwayCursor, type PutAwayMembership, type PutAwayPage, type PutAwayWithdrawn } from "@terno/store";
 import { hiddenCategories, tabHiddenTest } from "./inbox-hidden";
 import { summariesInOrder, T, type Ctx, type R } from "./mail";
@@ -97,7 +97,7 @@ export class PlacementWatch {
       const n = explainingNote(this.notes.get(t)!, holdsNow(this.c, t));
       if (!n) continue;
       const newest = inbound(this.c, t, own).at(-1);
-      const email = String(newest?.from_email ?? "").toLowerCase();
+      const email = addressKey(String(newest?.from_email ?? ""));
       const who = email ? correspondents.get(email) : undefined;
       const fromName = newest ? clipText(String(newest.from_name || newest.from_email)) : "";
       placements.put({ thread_id: t, at: now, by: n.by, effect: n.effect, category_id: n.categoryId, needs_look: who?.written === 1 && who.own !== 1 ? 1 : 0, detail_json: JSON.stringify({ ...n.detail, fromName }) });
@@ -173,17 +173,15 @@ export function placementOf(c: Ctx, threadId: number, now: number): PutAwayDetai
   if (p.detail.by !== "rule") return { ...p, senderKept: isKeptSender(c, p.detail.categoryId, p.detail.sender) };
   const filter = T(c, "filters").get(p.detail.filterId);
   const live = !!filter && ruleHash(JSON.parse(filter.rule_json)) === p.detail.ruleHash;
-  const enabled = live && filter!.enabled === 1;
-  return { ...p, ruleLive: live, ruleEnabled: enabled, ...(live && !enabled && { ruleHolding: placementsByRule(c, p.detail.filterId, now).length }) };
+  return { ...p, ruleLive: live, ruleEnabled: live && filter!.enabled === 1 };
 }
 
-/** A rule's placements that still hold, newest first, at most 500 */
-export function placementsByRule(c: Ctx, filterId: number, now: number): { threadId: number; at: number }[] {
+/** A rule's placements that still hold (that rule as it was), newest first */
+export function placementsByRule(c: Ctx, filterId: number, hash: string, now: number): { threadId: number; at: number }[] {
   return [...T(c, "placements").all()]
     .filter((r) => r.by === "rule" && r.at > now - PUT_AWAY_MS)
-    .filter((r) => { const d = toPlacement(r)?.detail; return d?.by === "rule" && d.filterId === filterId && holds(c, r); })
+    .filter((r) => { const d = toPlacement(r)?.detail; return d?.by === "rule" && d.filterId === filterId && d.ruleHash === hash && holds(c, r); })
     .sort((a, b) => b.at - a.at || b.thread_id - a.thread_id)
-    .slice(0, 500)
     .map((r) => ({ threadId: r.thread_id, at: r.at }));
 }
 

@@ -101,8 +101,8 @@ import {
   categoryEvidence,
   type ClassifyResult,
 } from "./categorize";
-import { endPlacements, inboxVisible, keepSender, listKeptSenders, placementOf, placementPage, placementsByRule, placementsNeedingLook, PlacementWatch, refileHiddenFilings, releaseHiddenFilings, removeKeptSender, unkeepSender } from "./put-away";
-import { ruleNote } from "@terno/store";
+import { endPlacements, hiddenCategorySet, inboxVisible, keepSender, listKeptSenders, placementOf, placementPage, placementsByRule, placementsNeedingLook, PlacementWatch, refileHiddenFilings, releaseHiddenFilings, removeKeptSender, unkeepSender } from "./put-away";
+import { ruleCanPlace, ruleNote } from "@terno/store";
 import { keptThreads, resolveSimilarPage, similarOffers, similarScopesOf } from "./similar";
 import { clearJudgments, clearWriting, commitGeneration, commitProfiles, corpusHeaders, corpusUsable, editProfile, generationForDraft, generationForMessage, generationPairs, judgeProfile, listProfiles, readProfiles, resetProfile, restoreProfiles, sentTo as writingSentTo, threadRecipients, threadsWith as writingThreadsWith, transferGeneration } from "./writing";
 import { attemptSummary, clearNewMail, clearSummaries, consumeNewMail, dropPendingSummaries, dropSummary, failSummary, finishSummary, getSummary, lastSummaryFailure, markNewMail, newMailPage, pendingSummaries, pendingSummaryCount, pruneNewMail, pruneSummaries, summarySources } from "./ai-summaries";
@@ -1537,7 +1537,7 @@ export class SqlMailStore implements MailStore {
         const opIds: string[] = [];
         const folderMoves: FolderFilterMove[] = [];
         // plan 282 (the owner, after the QA panel): what a rule run by hand takes out of the Inbox is put away too, with its fixes
-        const watch = ids.length ? new PlacementWatch(this.db, threadsOfMessages(this.db, ids)) : null;
+        const watch = ids.length && ruleCanPlace(rule.actions, hiddenCategorySet(this.db)) ? new PlacementWatch(this.db, threadsOfMessages(this.db, ids)) : null;
         // asked for by hand: wherever the mail is now, not only the Inbox (plan 128)
         const touched = this.runFilterActions(rule.actions, ids, now, opIds, folderMoves, null, watch ? { watch, filter } : null);
         this.flushFolderMoves(folderMoves, now, opIds, touched, watch);
@@ -1820,7 +1820,8 @@ export class SqlMailStore implements MailStore {
   // plan 282: Put away
   readonly putAway: MailStore["putAway"] = {
     of: async (threadId, now) => placementOf(this.db, threadId, now),
-    byRule: async (filterId, now) => placementsByRule(this.db, filterId, now),
+    byRule: async (filterId, hash, now) => placementsByRule(this.db, filterId, hash, now),
+    inInbox: async (threadIds) => [...inboxVisible(this.db, threadIds)],
     page: async (p) => placementPage(this.db, p),
     needsLook: async (p) => placementsNeedingLook(this.db, p),
     release: async (threadIds) => this.db.tx(() => releaseHiddenFilings(this.db, threadIds)),

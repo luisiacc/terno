@@ -1,8 +1,9 @@
 // The fixed evidence of a rating (plan 158): the same screens in the same states, for one style, light and dark.
 // `--screens ai` shoots plan 161's AI screens instead, with AI on Pro's real models (keys from the owner's .env,
 // keys.mjs), or on the local stand-in with `--ai stub`.
-// `--screens whatmatters` shoots What matters alone (plan 214), on the same real models.
-//   node scripts/ui-rating/capture.mjs <design> <outDir> [light|dark] [--screens everyday|ai|whatmatters] [--ai real|stub]
+// `--screens whatmatters` shoots What matters alone (plan 214), on the same real models; `--screens putaway`, Put away
+// (plan 282) on its seed.
+//   node scripts/ui-rating/capture.mjs <design> <outDir> [light|dark] [--screens everyday|ai|whatmatters|putaway] [--ai real|stub]
 import { existsSync, mkdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
@@ -506,14 +507,45 @@ async function wmPass(design, mode, dir, ai) {
   } finally { await close(); }
 }
 
+/**
+ * Plan 282: Put away, on its seed (put-away-seed.ts) at the rating's instant: the Inbox's line, Review into the view, a
+ * rule's reason box (the colleague your own rule caught), Terno's own filing's, and that in a 1100x700 window.
+ */
+async function paPass(design, mode, dir) {
+  const { app, page, close } = await launch({ design, dark: mode === "dark", clock: true });
+  const rows = page.getByTestId("thread-row");
+  const settle = async () => { await page.mouse.move(0, 0); await page.waitForTimeout(400); };
+  const open = async (subject) => {
+    await rows.filter({ hasText: subject }).first().click();
+    await page.getByTestId("put-away-box").waitFor();
+    await settle();
+  };
+  try {
+    await page.waitForTimeout(1500);
+    await page.getByTestId("put-away-notice").waitFor();
+    await settle(); await shot(page, `p01-inbox-line-${mode}`, dir);
+    await page.getByTestId("put-away-review").click();
+    await page.getByTestId("list-title").filter({ hasText: "Put away" }).waitFor();
+    await rows.nth(7).waitFor();
+    await settle(); await shot(page, `p02-put-away-${mode}`, dir);
+    await open("Reunión de seguimiento"); await shot(page, `p03-box-rule-${mode}`, dir);
+    await open("Tu recibo de luz de noviembre"); await shot(page, `p04-box-terno-${mode}`, dir);
+    await resize(app, 1100, 700); await page.waitForTimeout(600); await settle(); await shot(page, `p05-small-${mode}`, dir);
+    await resize(app, 1440, 900);
+  } catch (error) {
+    await page.screenshot({ path: join(dir, `FAILED-${mode}.png`) }).catch(() => {});
+    throw error;
+  } finally { await close(); }
+}
+
 const args = process.argv.slice(2);
 const set = screensFlag(args);
 const ai = aiFlag(args);
 const [design, dir, only] = args.filter((a, i) => !a.startsWith("--") && args[i - 1] !== "--screens" && args[i - 1] !== "--ai");
-if (!design || !dir) throw new Error("usage: capture.mjs <design> <outDir> [light|dark] [--screens everyday|ai|whatmatters] [--ai real|stub]");
+if (!design || !dir) throw new Error("usage: capture.mjs <design> <outDir> [light|dark] [--screens everyday|ai|whatmatters|putaway] [--ai real|stub]");
 try {
   mkdirSync(dir, { recursive: true });
-  for (const mode of only ? [only] : ["light", "dark"]) await (set === "ai" ? aiPass(design, mode, dir, ai) : set === "whatmatters" ? wmPass(design, mode, dir, ai) : pass(design, mode, dir));
+  for (const mode of only ? [only] : ["light", "dark"]) await (set === "ai" ? aiPass(design, mode, dir, ai) : set === "whatmatters" ? wmPass(design, mode, dir, ai) : set === "putaway" ? paPass(design, mode, dir) : pass(design, mode, dir));
   // every file of the set, or the capture failed
   const missing = shotFiles(set).filter((f) => (!only || f.endsWith(`-${only}.png`)) && !existsSync(join(dir, f)));
   if (missing.length) throw new Error(`capture ${set} is missing ${missing.join(", ")}`);

@@ -66,7 +66,7 @@ export interface PutAwayDetail extends Placement {
   ruleEnabled?: boolean;
   /** Terno's filing: the user keeps this sender out of the category's automatic filing since ("Don't file … automatically") */
   senderKept?: boolean;
-  /** a rule that's off now: how many conversations it still keeps put away, this one too ("Bring back all # it put away") */
+  /** a rule that's off now: how many conversations it still keeps put away, this one too ("Bring back all # it put away"); the reader's alone */
   ruleHolding?: number;
 }
 

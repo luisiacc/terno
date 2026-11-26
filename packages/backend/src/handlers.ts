@@ -1,6 +1,6 @@
 import { costAt, priceOf } from "@terno/ai";
 import { RpcError, type Draft, type DraftAddress, type Handlers } from "@terno/core/rpc";
-import { hasTab, agentsMaySend, nextColor, parseHandoff, capFilterName, categoryRule, folderRule, isFilterable, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, matchExcerpt, parseSearch, resolveSearch, rowMatchOf, searchWithFilter, type ThreadAction, type AccountPrefs, PINS_MAX, REMINDERS_MAX, SCHEDULED_MAX, FORWARD_ADDRESSES_MAX_CHARS, ruleHash } from "@terno/core";
+import { hasTab, agentsMaySend, nextColor, parseHandoff, capFilterName, categoryRule, folderRule, isFilterable, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, matchExcerpt, parseSearch, resolveSearch, rowMatchOf, searchWithFilter, type ThreadAction, type AccountPrefs, PINS_MAX, REMINDERS_MAX, SCHEDULED_MAX, FORWARD_ADDRESSES_MAX_CHARS, ruleHash, type PutAwayDetail } from "@terno/core";
 import { L } from "@terno/i18n";
 import { CLASSIFY_SENDER, UNCLASSIFY_SENDER, type SenderClassificationPayload, movedNothing, SearchCancelledError, StaleCursorError, wantedAsDated, type AddedBy, type DraftRow, type FolderMoved, type MessageState, type PutAwayMembership, type PutAwayWithdrawn } from "@terno/store";
 import type { GmailAccountConfig, ImapAccountConfig, OutlookAccountConfig } from "@terno/mail";
@@ -307,6 +307,9 @@ export function createHandlers(b: Backend): Handlers {
   /** plan 282: the Inbox line's seen mark, one write at a time (two windows' acknowledgments never move it back) */
   let seenWrites: Promise<unknown> = Promise.resolve();
   /** plan 282: the placement a window showed, if it's still the one (a newer placement, or none, refuses the fix) */
+  /** The reader's: how many conversations a rule that's off still keeps put away (Stop's second step); nobody else pays the scan */
+  const withHolding = async (p: PutAwayDetail | null): Promise<PutAwayDetail | null> =>
+    p?.detail.by === "rule" && p.ruleLive && !p.ruleEnabled ? { ...p, ruleHolding: (await store.putAway.byRule(p.detail.filterId, p.detail.ruleHash, b.now())).length } : p;
   const placedAt = async (threadId: number, at: number) => {
     const placed = await store.putAway.of(threadId, b.now());
     if (!placed || placed.at !== at) throw new RpcError("BAD_REQUEST", L("errors.putAway.changed"));
@@ -582,7 +585,7 @@ export function createHandlers(b: Backend): Handlers {
       return {
         ...detail,
         // plan 282: why it's out of the Inbox, while that holds
-        putAway: await store.putAway.of(threadId, b.now()),
+        putAway: await withHolding(await store.putAway.of(threadId, b.now())),
         categorization: { auto: categorization.auto, suggestions: categorization.suggestions.map((s) => ({ categoryId: s.categoryId, p: s.p, reasons: s.reasons })) },
       };
     },
@@ -1732,7 +1735,16 @@ export function createHandlers(b: Backend): Handlers {
       keptUndos.set(undoId, { categoryId, sender, ...r });
       for (const key of keptUndos.keys()) if (keptUndos.size > 16) keptUndos.delete(key);
       b.notifyChanged([threadId]);
-      return { undoId };
+      return { undoId, inInbox: (await store.putAway.inInbox([threadId])).length > 0 };
+    },
+    "putAway.not": async ({ threadId, at }) => {
+      const placed = await placedAt(threadId, at);
+      if (placed.detail.by !== "terno") throw new RpcError("BAD_REQUEST", L("errors.putAway.changed"));
+      // a correction, journaled whole (the membership as it was, the decision, the examples), so categorize.undo is exact
+      const { batchId } = await store.categories.beginMove({ to: placed.detail.categoryId, threadIds: [threadId], addedBy: "user", now: b.now(), source: "putAway", leave: true });
+      await b.finishMove(batchId);
+      const { moved } = await store.categories.moveOutcome(batchId);
+      return { batchId: moved.length ? batchId : null, inInbox: (await store.putAway.inInbox([threadId])).length > 0 };
     },
     "putAway.keepUndo": async ({ undoId }) => {
       const kept = keptUndos.get(undoId);
@@ -1754,7 +1766,12 @@ export function createHandlers(b: Backend): Handlers {
       await b.forwards.rules();
       return { filterUndo: r.filterUndo };
     },
-    "putAway.byRule": async ({ filterId }) => ({ items: await store.putAway.byRule(filterId, b.now()) }),
+    "putAway.byRule": async ({ threadId, at }) => {
+      const placed = await placedAt(threadId, at);
+      // the rule as it was, and off: turned back on (another window), there's nothing to bring back for it
+      if (placed.detail.by !== "rule" || !placed.ruleLive || placed.ruleEnabled) throw new RpcError("BAD_REQUEST", L("errors.putAway.changed"));
+      return { items: await store.putAway.byRule(placed.detail.filterId, placed.detail.ruleHash, b.now()) };
+    },
     "putAway.kept": async () => ({ senders: await store.putAway.kept() }),
     "putAway.removeKept": async ({ categoryId, sender }) => ({ removed: await store.putAway.removeKept(categoryId, sender) }),
 

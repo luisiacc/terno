@@ -245,18 +245,34 @@ export function definePutAwayConformance(fresh: () => Promise<MailStore>, reopen
       expect(await store.putAway.of(named, NOW + 2)).toMatchObject({ detail: { name: "Javier" } });
     });
 
-    it("Stop's second step: a rule that's off says how many it still keeps away, and lists them newest first", async () => {
+    it("Stop's second step: a rule's placements that still hold, newest first, only as that rule was; inInbox says where a conversation is", async () => {
       const { store, arrive, rule } = await setup();
       const f = await rule(news.email, [{ type: "archive" }], "Xataka");
       const a = await arrive({ subject: "a" }, NOW + 1);
       const b = await arrive({ subject: "b" }, NOW + 2);
-      expect(await store.putAway.of(a, NOW + 2)).not.toHaveProperty("ruleHolding");
+      const hash = ((await store.putAway.of(a, NOW + 2))!.detail as { ruleHash: string }).ruleHash;
       await store.filters.save({ id: f.id, name: f.name, enabled: false, source: "manual", rule: f.rule }, NOW + 3);
-      expect(await store.putAway.of(a, NOW + 3)).toMatchObject({ ruleLive: true, ruleEnabled: false, ruleHolding: 2 });
-      expect(await store.putAway.byRule(f.id, NOW + 3)).toEqual([{ threadId: b, at: NOW + 2 }, { threadId: a, at: NOW + 1 }]);
+      expect(await store.putAway.of(a, NOW + 3)).toMatchObject({ ruleLive: true, ruleEnabled: false });
+      expect(await store.putAway.byRule(f.id, hash, NOW + 3)).toEqual([{ threadId: b, at: NOW + 2 }, { threadId: a, at: NOW + 1 }]);
+      // another rule under the same id (or this one edited) isn't this one
+      expect(await store.putAway.byRule(f.id, "other", NOW + 3)).toEqual([]);
+      expect(await store.putAway.inInbox([a, b])).toEqual([]);
       await store.threads.act({ threadIds: [b], action: "moveToInbox", signal: null, now: NOW + 4 });
-      expect(await store.putAway.byRule(f.id, NOW + 4)).toEqual([{ threadId: a, at: NOW + 1 }]);
-      expect(await store.putAway.of(a, NOW + 4)).toMatchObject({ ruleHolding: 1 });
+      expect(await store.putAway.byRule(f.id, hash, NOW + 4)).toEqual([{ threadId: a, at: NOW + 1 }]);
+      expect(await store.putAway.inInbox([a, b])).toEqual([b]);
+    });
+
+    it("a rule Terno made spares a conversation someone you've written to is in (their +tag address too), whichever message matched", async () => {
+      const { store, accountId, arrive, listed } = await setup();
+      await store.sync.ingest([msg({ accountId, providerMsgId: "sent", from: { name: "Me", email: "me0@example.com" }, to: [{ name: "Javier", email: "javier+team@acme.test" }], isSent: true, inInbox: false, subject: "Hola", date: NOW - DAY })], { applyFilters: false, now: NOW - DAY, classifier: null });
+      const hidden = await store.categories.create("Avisos", "violet", { showInInbox: false });
+      await store.filters.save({ name: "Avisos", enabled: true, source: "manual", auto: true, rule: { match: "all", conditions: [{ field: "fromDomain", op: "equals", value: "acme.test" }], actions: [{ type: "addCategory", categoryId: hidden.id }] } }, NOW - DAY);
+      const tagged = await arrive({ from: { name: "Javier", email: "javier+team@acme.test" }, subject: "Plan", rfcMessageId: "plan@acme.test" });
+      // a notification in Javier's conversation: the conversation stays in the Inbox
+      await store.sync.ingest([msg({ accountId, providerMsgId: "bot", from: { name: "Bot", email: "bot@acme.test" }, subject: "Re: Plan", inReplyTo: "plan@acme.test", references: ["plan@acme.test"], date: NOW })], { applyFilters: true, now: NOW + 1, classifier: null });
+      expect(await threadOf(store, "bot")).toBe(tagged);
+      expect(await listed(NOW + 1)).toEqual([]);
+      expect(await store.putAway.inInbox([tagged])).toEqual([tagged]);
     });
 
     describe("Terno's own filing", () => {

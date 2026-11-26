@@ -18,6 +18,12 @@ const AI_SHOTS = ["a01-summary", "a02-draft-prompt", "a03-draft-written", "a04-a
  */
 const WM_SHOTS = ["w01-feed", "w02-feed-hover", "w03-feed-reader", "w04-feed-further", "w05-feed-small", "w06-feed-earlier"];
 
+/**
+ * Plan 282: Put away on its own, from a seed (apps/backend-dev/src/put-away-seed.ts): the Inbox with its one line, the
+ * view, a rule's box (a colleague your own rule caught), Terno's own filing's box, and that in a 1100x700 window.
+ */
+const PA_SHOTS = ["p01-inbox-line", "p02-put-away", "p03-box-rule", "p04-box-terno", "p05-small"];
+
 export const SETS = {
   everyday: {
     brief: "brief.md",
@@ -33,6 +39,11 @@ export const SETS = {
     brief: "brief-wm.md",
     screens: ["what_matters"],
     shots: WM_SHOTS,
+  },
+  putaway: {
+    brief: "brief-pa.md",
+    screens: ["put_away"],
+    shots: PA_SHOTS,
   },
 };
 

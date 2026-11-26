@@ -27,13 +27,27 @@ export function PutAwayBox({ threadId, placed }: { threadId: number; placed: Put
   if (!placed || !stillPutAway(placed.at)) return null;
   const d = placed.detail;
   const at = placed.at;
-  /** Where focus goes when a fix takes away the control it was on: the box's first fix, else the reader's toolbar */
+  /**
+   * Where focus goes when a fix takes away the control it was on: the box's first fix, else the reader's toolbar. The
+   * reader reads the conversation again after the fix answers, so the control may go a few frames later: watched for a
+   * second, and left alone once the user puts focus anywhere else.
+   */
   const keepFocus = (run: () => Promise<void>) => () => {
-    const inBox = box.current?.contains(document.activeElement) === true;
+    const from = document.activeElement;
+    if (!box.current?.contains(from)) return void run();
     void run().then(() => {
-      if (!inBox || (document.activeElement && document.activeElement !== document.body && document.activeElement.isConnected)) return;
-      const next = box.current?.isConnected ? box.current.querySelector<HTMLElement>("button") : null;
-      (next ?? document.querySelector<HTMLElement>("[data-reader-toolbar] button"))?.focus({ preventScroll: true });
+      const until = performance.now() + 1000;
+      const check = () => {
+        const now = document.activeElement;
+        const lost = !now || now === document.body || !now.isConnected;
+        if (!lost) {
+          if (now === from && performance.now() < until) requestAnimationFrame(check);
+          return;
+        }
+        const next = box.current?.isConnected ? box.current.querySelector<HTMLElement>("button") : null;
+        (next ?? document.querySelector<HTMLElement>("[data-reader-toolbar] button"))?.focus({ preventScroll: true });
+      };
+      check();
     });
   };
   let sentence: ReactNode;
@@ -46,7 +60,7 @@ export function PutAwayBox({ threadId, placed }: { threadId: number; placed: Put
     const why = identity ? t(`putAway.why.${identity.k}`, { count: identity.count, sender, domain: identity.domain }) : words.length ? t("putAway.why.like", { reasons: words.join(" · ") }) : t("putAway.why.likeBare");
     sentence = richT("putAway.box.terno", { category, why, b: strong });
     if (identity && words.length) notes.push(t("putAway.box.also", { reasons: words.join(" · ") }));
-    actions.push({ label: t("reader.category.notIt", { category }), testId: "put-away-not", run: () => notCategory(threadId, d.categoryId, category) });
+    actions.push({ label: t("reader.category.notIt", { category }), testId: "put-away-not", run: () => notCategory(threadId, at, category) });
     // said once: afterwards the box says it's done instead of offering it again
     if (placed.senderKept) notes.push(t("putAway.box.kept", { sender }));
     else if (d.sender) actions.push({ label: t("putAway.action.keep", { sender }), testId: "put-away-keep", run: () => keepSenderOut(threadId, at, sender, category) });
@@ -55,7 +69,7 @@ export function PutAwayBox({ threadId, placed }: { threadId: number; placed: Put
     sentence = !placed.ruleLive ? richT("putAway.box.changed", { name: d.name, b: strong }) : d.auto ? richT(`putAway.box.auto.${d.action}`, values) : richT(`putAway.box.rule.${d.action}`, values);
     if (placed.ruleLive && !placed.ruleEnabled) notes.push(t("putAway.box.ruleOff"));
     // Stop's second step (the owner): what the rule still keeps away, when that's more than this one
-    if ((placed.ruleHolding ?? 0) > 1) actions.push({ label: t("putAway.action.bringBack", { count: placed.ruleHolding! }), testId: "put-away-bring-back", run: () => bringBackRule(threadId, d.filterId) });
+    if ((placed.ruleHolding ?? 0) > 1) actions.push({ label: t("putAway.action.bringBack", { count: placed.ruleHolding! }), testId: "put-away-bring-back", run: () => bringBackRule(threadId, at) });
     // Terno's own rule can be stopped while it's on; the user's own is theirs to edit
     if (placed.ruleLive && d.auto && placed.ruleEnabled) actions.push({ label: t("putAway.action.stop"), testId: "put-away-stop", run: () => stopRule(threadId, at, d.name) });
     else if (placed.ruleLive && !d.auto) actions.push({ label: t("putAway.action.edit"), testId: "put-away-edit", run: () => editRule(threadId, d.filterId) });

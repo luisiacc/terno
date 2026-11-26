@@ -68,7 +68,8 @@ export function CategoryPicker() {
   const inboxNamed = !!search.trim() && [t("view.inbox"), "Inbox"].some((n) => normalizeText(n) === normalizeText(search.trim()));
   const toInbox = async () => {
     close();
-    if ("scope" in target) return;
+    // a whole view's selection goes as the bar's Move to Inbox does (a scope action, sliced, with its Undo)
+    if ("scope" in target) return void (await act("moveToInbox"));
     if (getApp().putAway) await backToInbox(placedItems(targets));
     else await act("moveToInbox", targets);
   };

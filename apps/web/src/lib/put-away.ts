@@ -105,23 +105,37 @@ function refresh(threadIds: readonly number[]): void {
   void reloadList({ keepSelection: true });
 }
 
+/** putAway.back's bound: more go in turns, under one Undo */
+const BACK_MAX = 500;
+
 /** Back to Inbox: whatever keeps them out goes (as the window showed them), with one exact Undo. */
 export async function backToInbox(items: readonly { threadId: number; at: number }[]): Promise<void> {
+  if (items.length === 0) return;
   const ids = items.map((i) => i.threadId);
   if (getApp().putAway) leaveList("moveToInbox", ids, { quiet: true });
+  const undoIds: number[] = [];
+  let affected = 0;
+  let failed: unknown = null;
   try {
-    const r = await client.call("putAway.back", { items: [...items] });
-    refresh(ids);
-    if (r.affected === 0) return;
-    const undo = registerUndo(async () => {
-      if (r.undoId !== null) await client.call("threads.undo", { undoId: r.undoId });
-      refresh(ids);
-    });
-    snack.success(t("putAway.back.done", { count: r.affected }), { action: r.undoId !== null ? undoAction(undo, t("putAway.back.undo", { count: r.affected })) : undefined });
+    for (let i = 0; i < items.length; i += BACK_MAX) {
+      const r = await client.call("putAway.back", { items: items.slice(i, i + BACK_MAX) });
+      affected += r.affected;
+      if (r.undoId !== null) undoIds.push(r.undoId);
+    }
   } catch (error) {
-    snack.error(t("putAway.back.failed", { error: errorText(error) }));
-    refresh(ids);
+    failed = error;
   }
+  refresh(ids);
+  // what went back before a failure still comes back with Undo
+  const undo = undoIds.length
+    ? registerUndo(async () => {
+        for (const undoId of [...undoIds].reverse()) await client.call("threads.undo", { undoId });
+        refresh(ids);
+      })
+    : null;
+  if (failed) return void snack.error(t("putAway.back.failed", { error: errorText(failed) }));
+  if (affected === 0) return;
+  snack.success(t("putAway.back.done", { count: affected }), { action: undo ? undoAction(undo, t("putAway.back.undo", { count: affected })) : undefined });
 }
 
 /** The placements behind these conversations, as the window shows them (Back to Inbox acts on those) */
@@ -134,19 +148,20 @@ export function placedItems(threadIds: readonly number[]): { threadId: number; a
 }
 
 /**
- * "Not {category}" on Terno's own filing: out of the category, and Terno learns (as the chip's ×). Its Undo files it back
- * the way the user files mail, so the conversation is where it was and Terno counts it as belonging there.
+ * "Not {category}" on Terno's own filing, as the window showed it (`at`): out of the category, and Terno learns (as the
+ * chip's ×), journaled whole, so its Undo puts back exactly what was (Terno's filing, its decision, its examples).
  */
-export async function notCategory(threadId: number, categoryId: number, category: string): Promise<void> {
+export async function notCategory(threadId: number, at: number, category: string): Promise<void> {
   if (getApp().putAway) leaveList("moveToInbox", [threadId], { quiet: true });
   try {
-    await client.call("categories.removeThreads", { categoryId, threadIds: [threadId], reason: "user" });
+    const { batchId, inInbox } = await client.call("putAway.not", { threadId, at });
     refresh([threadId]);
-    const undo = registerUndo(async () => {
-      await client.call("categories.addThreads", { categoryId, threadIds: [threadId], source: "snackbar" });
+    const undo = batchId === null ? null : registerUndo(async () => {
+      await client.call("categorize.undo", { batchId });
       refresh([threadId]);
     });
-    snack.success(t("putAway.not.done", { category }), { action: undoAction(undo, t("putAway.not.undo", { category })) });
+    // still kept out by something else (another hidden category): said as it is
+    snack.success(t(inInbox ? "putAway.not.done" : "putAway.not.doneOut", { category }), { action: undo ? undoAction(undo, t("putAway.not.undo", { category })) : undefined });
   } catch (error) {
     snack.error(t("category.removeFailed", { error: errorText(error) }));
     refresh([threadId]);
@@ -156,13 +171,13 @@ export async function notCategory(threadId: number, categoryId: number, category
 /** "Don't file {sender} automatically": this conversation back in the Inbox, Terno asks about the sender's next ones. */
 export async function keepSenderOut(threadId: number, at: number, sender: string, category: string): Promise<void> {
   try {
-    const { undoId } = await client.call("putAway.keep", { threadId, at });
+    const { undoId, inInbox } = await client.call("putAway.keep", { threadId, at });
     refresh([threadId]);
     const undo = registerUndo(async () => {
       await client.call("putAway.keepUndo", { undoId });
       refresh([threadId]);
     });
-    snack.success(t("putAway.keep.done", { sender, category }), { action: undoAction(undo, t("putAway.keep.undo", { sender })) });
+    snack.success(t(inInbox ? "putAway.keep.done" : "putAway.keep.doneOut", { sender, category }), { action: undoAction(undo, t("putAway.keep.undo", { sender })) });
   } catch (error) {
     snack.error(t("putAway.keep.failed", { error: errorText(error) }));
     refresh([threadId]);
@@ -185,9 +200,9 @@ export async function stopRule(threadId: number, at: number, name: string): Prom
 }
 
 /** Stop's second step: everything a rule that's off now still keeps put away, back in the Inbox (one Undo) */
-export async function bringBackRule(threadId: number, filterId: number): Promise<void> {
+export async function bringBackRule(threadId: number, at: number): Promise<void> {
   try {
-    const { items } = await client.call("putAway.byRule", { filterId });
+    const { items } = await client.call("putAway.byRule", { threadId, at });
     if (items.length) return backToInbox(items);
     refresh([threadId]);
   } catch (error) {

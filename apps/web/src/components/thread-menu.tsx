@@ -841,7 +841,7 @@ function MenuItems() {
   const inPutAway = useApp((s) => s.putAway && !s.query.trim());
   const placed: MenuEntry[] = searchPlaces
     ? searchPlaceItems(searchPlaces, (a) => run(a))
-    : inPutAway && !scope
+    : inPutAway && !scope && placedItems(ids).length > 0
       ? [{ icon: <Inbox />, label: t("putAway.action.back"), testId: "menu-inbox", onClick: () => void backToInbox(placedItems(ids)) }, ...placeItems("archive", run).filter((it) => it.testId !== "menu-inbox")]
       : placeItems(view, run);
   const wayBack = placed.filter((it) => it.testId === "menu-inbox" || it.testId === "menu-not-spam");

@@ -95,13 +95,31 @@ describe("Put away's words (plan 282)", () => {
     expect(usePutAway.getState().notice?.count).toBe(0);
   });
 
-  it("Not {category} says what it did, and its Undo files it back (the QA panel: it moved mail silently)", async () => {
+  it("Not {category} says what it did, and where it is now; its Undo takes back that correction exactly (Codex review #1, #9)", async () => {
     fake.calls.length = 0;
-    await notCategory(8, 7, "Recibos");
-    expect(fake.calls.find((c) => c.method === "categories.removeThreads")?.params).toEqual({ categoryId: 7, threadIds: [8], reason: "user" });
+    fake.handlers["putAway.not"] = async () => ({ batchId: 12, inInbox: true });
+    fake.handlers["categorize.undo"] = async () => ({ removed: 0, restored: 1 });
+    await notCategory(8, NOW, "Recibos");
+    expect(fake.calls.find((c) => c.method === "putAway.not")?.params).toEqual({ threadId: 8, at: NOW });
     expect(useSnack.getState().current?.message).toBe("Out of Recibos and back in the Inbox. Terno will learn from this");
     await runUndo(useSnack.getState().undo!);
-    expect(fake.calls.find((c) => c.method === "categories.addThreads")?.params).toEqual({ categoryId: 7, threadIds: [8], source: "snackbar" });
+    expect(fake.calls.find((c) => c.method === "categorize.undo")?.params).toEqual({ batchId: 12 });
+    // still kept out by another hidden category: it doesn't claim the Inbox
+    fake.handlers["putAway.not"] = async () => ({ batchId: 13, inInbox: false });
+    await notCategory(8, NOW, "Recibos");
+    expect(useSnack.getState().current?.message).toBe("Out of Recibos. Terno will learn from this");
+  });
+
+  it("Back to Inbox of more than one call holds goes in turns, under one Undo (Codex review #8)", async () => {
+    fake.calls.length = 0;
+    let next = 50;
+    fake.handlers["putAway.back"] = async (p) => ({ undoId: next++, affected: (p as { items: unknown[] }).items.length });
+    fake.handlers["threads.undo"] = async () => ({ restored: 1 });
+    await backToInbox(Array.from({ length: 501 }, (_, i) => ({ threadId: 1000 + i, at: NOW })));
+    expect(fake.calls.filter((c) => c.method === "putAway.back").map((c) => (c.params as { items: unknown[] }).items.length)).toEqual([500, 1]);
+    expect(useSnack.getState().current?.message).toBe("501 back in the Inbox");
+    await runUndo(useSnack.getState().undo!);
+    expect(fake.calls.filter((c) => c.method === "threads.undo").map((c) => c.params)).toEqual([{ undoId: 51 }, { undoId: 50 }]);
   });
 
   it("Back to Inbox that moved nothing says nothing", async () => {

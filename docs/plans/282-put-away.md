@@ -234,3 +234,23 @@ The owner took every recommendation:
 5. **Spanish: "Fuera de Entrada"**, not "Apartado" (in Mexico "apartar" reads as layaway); the notice and Undo say "salió de Entrada" and "sacar otra vez de Entrada".
 6. **Don't file … says it's about new mail:** "From now on Terno asks before filing {sender}'s mail in {category}; what's already there stays."
 7. Declined for now: a count or a shortcut for Put away, and a setting for the Inbox line.
+
+## Codex code review of the panel's and the owner's commits
+
+Codex reviewed `a4888e48f..ce60174dd` (11 findings); every one is fixed, each with a test:
+
+1. **Not {category}'s Undo is exact** (#1): a new `putAway.not({ threadId, at })` checks the placement the box showed and leaves the category through the journaled move (`beginMove` with `leave`, plan 77), so `categorize.undo` puts back Terno's own filing, its decision and its examples, and Put away lists it again. Before, Undo filed it as the user's, which Put away doesn't count.
+2. **Bring back all acts only on that rule as it was** (#2): `putAway.byRule` takes the conversation's placement (`{ threadId, at }`), refuses while the rule is on, and matches the rule's hash as well as its id.
+3. **A +tag address is the same correspondent** (#3): the sparing and Needs a look read `correspondents` by `addressKey` (SQLite's `terno_address_key`), as the table is written.
+4. **The scan of a stopped rule's placements is the reader's alone** (#4): `ruleHolding` is added by the backend to the reader's detail, not by `putAway.of`, so Back to Inbox's checks of 500 items pay a key read each. The perf gate times the scan at 5,000 placements: 21 ms in SQLite, 6 ms in IndexedDB.
+5. **Spared by conversation, not by message** (#5): a rule Terno made leaves alone any conversation someone you've written to is in, so a notification in a colleague's thread can't file the thread.
+6. **The held row leaves when the selection moves** (#6), and the row menu offers Back to Inbox only for a row with a placement.
+7. **Focus after a fix waits for the reader's new read** (#7): watched for a second, left alone once the user moves focus.
+8. **More than 500 go back in turns, under one Undo** (#8); Bring back lists them all (no cap).
+9. **The snack says where it is now** (#9): `putAway.not` and `putAway.keep` answer `inInbox`, and a conversation another hidden category still keeps out is "Out of {category}", not "back in the Inbox".
+10. **Move to… → Inbox on a whole view's selection** acts as the bar's Move to Inbox (#10).
+11. **A rule run by hand watches only when its actions can put mail away** (#11, `ruleCanPlace`).
+
+## The Put away rating set
+
+Plan 158's sets don't show Put away, so it has its own, `--screens putaway`, like What matters' (plan 214): five states on a seed (`apps/backend-dev/src/put-away-seed.ts`) at the AI set's instant, with `brief-pa.md`. docs/ui-rating.md says how to run it.

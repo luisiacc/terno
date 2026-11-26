@@ -45,7 +45,14 @@ export async function measurePutAway(o: WorkloadMailbox): Promise<void> {
   // new mail with the rule on: the watch's reads and one placement per conversation it puts away
   let n = 0;
   const ingest = await timed(5, () => store.sync.ingest(Array.from({ length: 20 }, (_, i) => msg({ accountId, from: { name: "Bulk", email: `late${i}@perf-bulk.test` }, providerMsgId: `pa-late-${n}-${i}`, rfcMessageId: `pa-late-${n++}-${i}@perf`, subject: `Late ${i}`, date: o.now - 10, bodyText: "x" })), { applyFilters: true, now: o.now, classifier: null }));
-  o.log(`Put away: the first page ${top.toFixed(2)} ms, the 40th ${deep.toFixed(2)} ms, the reader's ${one.toFixed(2)} ms, the Inbox line's count ${look.toFixed(2)} ms, 20 new with the rule ${ingest.toFixed(2)} ms`);
+  // Stop's second step: the rule off, what it still keeps away (the reader counts it; Bring back lists it), once the week is full
+  const placed = (await store.putAway.of(threads[0]!, o.now))!;
+  const rule = placed.detail as { filterId: number; ruleHash: string };
+  await store.filters.save({ id: rule.filterId, name: "Bulk", enabled: false, source: "manual", rule: (await store.filters.get(rule.filterId))!.rule }, o.now);
+  const byRule = await timed(5, () => store.putAway.byRule(rule.filterId, rule.ruleHash, o.now));
+  expect((await store.putAway.byRule(rule.filterId, rule.ruleHash, o.now)).length).toBeGreaterThanOrEqual(5000);
+  o.log(`Put away: the first page ${top.toFixed(2)} ms, the 40th ${deep.toFixed(2)} ms, the reader's ${one.toFixed(2)} ms, the Inbox line's count ${look.toFixed(2)} ms, 20 new with the rule ${ingest.toFixed(2)} ms, a stopped rule's ${byRule.toFixed(2)} ms`);
+  expect(byRule).toBeLessThanOrEqual(60 * o.budget);
   expect(top).toBeLessThanOrEqual(25 * o.budget);
   expect(deep).toBeLessThanOrEqual(25 * o.budget);
   expect(one).toBeLessThanOrEqual(2 * o.budget);

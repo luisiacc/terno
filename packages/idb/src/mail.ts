@@ -1744,14 +1744,29 @@ export function ruleMessage(m: R, bodyText: string | null): RuleMessage {
 
 export { ruleAwaitsBody, ruleNeedsBody, ruleReadsBody } from "@terno/core";
 
-/** Plan 282: of these messages, those not from someone you've written to (what a rule Terno made may move: `sparesCorrespondents`) */
+/**
+ * Plan 282: of these messages, those in conversations no one you've written to took part in (what a rule Terno made may
+ * move: `sparesCorrespondents`), as packages/db's
+ */
 export function withoutCorrespondents(c: Ctx, messageIds: readonly number[]): number[] {
   const messages = T(c, "messages");
   const people = T(c, "correspondents");
+  const spared = new Map<number, boolean>();
+  const written = (threadId: number) => {
+    let s = spared.get(threadId);
+    if (s === undefined) {
+      s = messages.by("fk_thread_id", threadId).some((o) => {
+        if (o.is_sent === 1) return false;
+        const who = people.get(addressKey(String(o.from_email)));
+        return who?.written === 1 && who.own !== 1;
+      });
+      spared.set(threadId, s);
+    }
+    return s;
+  };
   return messageIds.filter((id) => {
     const m = messages.get(id);
-    const who = m ? people.get(String(m.from_email).toLowerCase()) : undefined;
-    return !(who?.written === 1 && who.own !== 1);
+    return !!m && !written(m.thread_id as number);
   });
 }
 

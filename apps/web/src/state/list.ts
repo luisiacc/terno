@@ -10,7 +10,7 @@ import { create } from "zustand";
 import { client } from "~/rpc/connection";
 import { getApp, getSelectionWriteRevision, inboxShape, inPlainInbox, setApp, setListAutoSelection, useApp, ownList } from "./app";
 import { noteRows, useActionRows } from "./action-preview";
-import { publishPlacements } from "./put-away";
+import { publishPlacements, usePutAway } from "./put-away";
 import { cursorKey, heldRows, historyCursor, historyThrough, publishHistory, todayAnswer, todayRowsLeft } from "./today";
 import type { HistoryKey, TodayHistoryItem } from "@terno/core";
 /** plan 210: the most history lines one page asks for (the backend's bound) */
@@ -817,6 +817,13 @@ export const followedRename: { from: string | null; to: string | null } = { from
 // plan 210: finished items shown or hidden: the history comes or goes where the open part stays
 useApp.subscribe((s, prev) => {
   if (s.today && prev.settings && s.settings && s.settings.today?.finished !== prev.settings.today?.finished) void reloadList({ keepSelection: true });
+});
+
+// plan 282: the conversation Put away held under the reader after a fix (no placement now) goes once the selection moves off it
+useApp.subscribe((s, prev) => {
+  if (!s.putAway || !prev.putAway || s.selectedId === prev.selectedId || prev.selectedId === null) return;
+  if (usePutAway.getState().byThread.has(prev.selectedId) || !useList.getState().index.has(prev.selectedId)) return;
+  void reloadList({ keepSelection: true });
 });
 
 // Any change of view / account / category / query reloads the list (navigation,

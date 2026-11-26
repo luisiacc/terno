@@ -206,12 +206,14 @@ const KEY_VARS = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "JEV_API_KEY", "GROQ_AP
  * the net log. Real models add the keys read from the .env file (keys.mjs) and Dev mode's switch: those exist only in
  * the env handed to Electron, never in this process's.
  */
-export function electronEnv({ base = process.env, profile, log, mode, keys }) {
+export function electronEnv({ base = process.env, profile, log, mode, keys, clock = false }) {
   const env = { ...base, TERNO_DEMO: "1", TERNO_TEST_BACKGROUND: "1", TERNO_TEST_LANGUAGES: "en-US", TERNO_USER_DATA: profile };
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.TERNO_DEV_URL;
   for (const k of [...KEY_VARS, "TERNO_TEST_NOW", "TERNO_TEST_NET_LOG"]) delete env[k];
   if (mode) Object.assign(env, { TERNO_TEST_NOW: String(AI_NOW), TERNO_TEST_NET_LOG: log, TZ: "UTC" });
+  // plan 282: Put away's set rates a week up to the same instant, without AI
+  else if (clock) Object.assign(env, { TERNO_TEST_NOW: String(AI_NOW), TZ: "UTC" });
   if (mode === "real") Object.assign(env, keys.env, { TERNO_TEST_DEV_AI: "1" });
   return env;
 }
@@ -222,7 +224,8 @@ export function electronEnv({ base = process.env, profile, log, mode, keys }) {
  * the owner's .env (keys.mjs); `"stub"` the local stand-in.
  */
 /**
- * Plan 214: a round's mailbox can start from a seed (`UI_RATING_SEED`, which rate.mjs sets for What matters' set): the
+ * Plan 214: a round's mailbox can start from a seed (`UI_RATING_SEED`, which rate.mjs sets for What matters' set and
+ * plan 282's Put away, whose launches also read the clock at AI_NOW: `UI_RATING_CLOCK`): the
  * demo mailbox's database after its AI preparation, What matters' readers' queues emptied, so every launch, the capture's
  * and a rater's, opens on the same feed and reads nothing in the background. Only its database files are copied.
  */
@@ -238,7 +241,7 @@ export function seedProfile(profile, seed) {
   for (const f of readdirSync(seed)) if (/^terno\.db(\.(search|contacts|phrases))?$/.test(f)) copyFileSync(join(seed, f), join(profile, f));
 }
 
-export async function launch({ design = "lumen", dark = false, width = 1440, height = 900, layout, ai = false, seed = process.env.UI_RATING_SEED || null } = {}) {
+export async function launch({ design = "lumen", dark = false, width = 1440, height = 900, layout, ai = false, seed = process.env.UI_RATING_SEED || null, clock = process.env.UI_RATING_CLOCK === "1" } = {}) {
   const mode = aiMode(ai);
   // read before anything starts: a missing key fails here, and from now on this process's output can't carry one
   const keys = mode === "real" ? readKeys(envFile()) : null;
@@ -249,7 +252,7 @@ export async function launch({ design = "lumen", dark = false, width = 1440, hei
   const log = join(work, "net.log");
   if (seed) seedProfile(profile, seed);
   // the window's first paint reads the design from the profile (vibrancy can't change later), so the style's first launch sets it and the second is what's rated
-  const env = electronEnv({ profile, log, mode, keys });
+  const env = electronEnv({ profile, log, mode, keys, clock });
   const stub = mode === "stub" ? await startModelStub({ paceMs: 20 }) : null;
   const blocked = [];
 
@@ -263,7 +266,7 @@ export async function launch({ design = "lumen", dark = false, width = 1440, hei
     });
     const page = await app.firstWindow();
     // the window reads the same instant as the backend (e2e does the same): a line like "hasn't replied in 1 day" can't drift between rounds
-    if (mode) await page.clock.setFixedTime(AI_NOW);
+    if (mode || clock) await page.clock.setFixedTime(AI_NOW);
     await app.evaluate(({ nativeTheme }, source) => { nativeTheme.themeSource = source; }, dark ? "dark" : "light");
     await page.emulateMedia({ colorScheme: dark ? "dark" : "light" });
     await (await page.context().newCDPSession(page)).send("Emulation.setFocusEmulationEnabled", { enabled: true });

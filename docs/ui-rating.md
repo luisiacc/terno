@@ -48,6 +48,18 @@ node scripts/ui-rating/capture.mjs lumen /tmp/shots --screens ai   # the shots a
 
 Without `--screens`, everything is the everyday set, as before. A round's `round.json` freezes its set, screens, shots and the hashes of its brief, capture, stub and demo; the gate checks reports and evidence against it, never against a report's own list. AI scores compare only with AI scores.
 
+## The Put away set (plan 282)
+
+Put away gets a set of its own, `--screens putaway`: one screen, `put_away`, five states (`p01` the Inbox with its line about mail put away from someone you've written to, `p02` Put away opened from its Review, `p03` a conversation your own rule archived with its reason box, `p04` one Terno filed into a hidden category with its box, `p05` that in 1100x700). No AI: the set rates how the app explains what it moved and lets you undo it.
+
+Every launch, the capture's and a rater's, starts from a seed (`--seed`, default `/tmp/terno-scratch/rating/pa-seed`): the desktop's demo mailbox as its first launch makes it (AI off), plus a week of mail the user's rules and Terno's own filing put away. Its launches read the clock at the AI set's instant (`UI_RATING_CLOCK`, harness `clock`), so that week is always this week. Make the seed once, and again whenever the store's schema changes:
+
+```sh
+pnpm --filter @terno/backend-dev exec tsx src/put-away-seed.ts --out /tmp/terno-scratch/rating/pa-seed
+pnpm ui:rate --screens putaway --out /tmp/terno-scratch/rating/pa-r01
+pnpm ui:gate /tmp/terno-scratch/rating/pa-r01
+```
+
 ## What's scored
 
 Each screen gets an overall and eleven facets. Each facet has a score and `improve`, the specific change that would raise it, so a low number always says what to do.

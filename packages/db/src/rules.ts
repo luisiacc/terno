@@ -184,13 +184,19 @@ export function findRuleMatches(
   return { messageIds: rows.map((r) => r.id), threadIds: [...new Set(rows.map((r) => r.thread_id))] };
 }
 
-/** Plan 282: of these messages, those not from someone you've written to (what a rule Terno made may move: `sparesCorrespondents`) */
+/**
+ * Plan 282: of these messages, those in conversations no one you've written to took part in (what a rule Terno made may
+ * move: `sparesCorrespondents`). The conversation, not the message: a notification in a colleague's thread would
+ * otherwise file the whole thread.
+ */
 export function withoutCorrespondents(db: Db, messageIds: readonly number[]): number[] {
   if (messageIds.length === 0) return [];
   return db
     .all<{ id: number }>(
       `SELECT m.id FROM messages m WHERE m.id IN (SELECT value FROM json_each(?))
-       AND NOT EXISTS (SELECT 1 FROM correspondents c WHERE c.email = lower(m.from_email) AND c.written = 1 AND c.own = 0)`,
+       AND NOT EXISTS (
+         SELECT 1 FROM messages o INDEXED BY messages_thread JOIN correspondents c ON c.email = terno_address_key(o.from_email)
+         WHERE o.thread_id = m.thread_id AND o.is_sent = 0 AND c.written = 1 AND c.own = 0)`,
       JSON.stringify(messageIds),
     )
     .map((r) => r.id);

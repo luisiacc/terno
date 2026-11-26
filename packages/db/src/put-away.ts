@@ -137,7 +137,7 @@ function newestFrom(db: Db, threadIds: readonly number[]): Map<number, { name: s
            SELECT r.id FROM messages r INDEXED BY messages_thread
            WHERE r.thread_id = j.value AND r.is_sent = 0 AND lower(r.from_email) NOT IN (SELECT value FROM json_each(?))
            ORDER BY r.date DESC, r.id DESC LIMIT 1)
-         LEFT JOIN correspondents c ON c.email = lower(m.from_email)`,
+         LEFT JOIN correspondents c ON c.email = terno_address_key(m.from_email)`,
         JSON.stringify(threadIds),
         JSON.stringify(own),
       )
@@ -203,19 +203,19 @@ export function placementOf(db: Db, threadId: number, now: number): PutAwayDetai
   if (p.detail.by !== "rule") return { ...p, senderKept: isKeptSender(db, p.detail.categoryId, p.detail.sender) };
   const filter = db.get<{ rule_json: string; enabled: number }>("SELECT rule_json, enabled FROM filters WHERE id = ?", p.detail.filterId);
   const live = !!filter && ruleHash(JSON.parse(filter.rule_json)) === p.detail.ruleHash;
-  const enabled = live && filter!.enabled === 1;
-  return { ...p, ruleLive: live, ruleEnabled: enabled, ...(live && !enabled && { ruleHolding: placementsByRule(db, p.detail.filterId, now).length }) };
+  return { ...p, ruleLive: live, ruleEnabled: live && filter!.enabled === 1 };
 }
 
 /** A rule's placements that still hold, newest first (the window is a week: a scan of it, not an index) */
-export function placementsByRule(db: Db, filterId: number, now: number): { threadId: number; at: number }[] {
+export function placementsByRule(db: Db, filterId: number, hash: string, now: number): { threadId: number; at: number }[] {
   return db
     .all<{ thread_id: number; at: number }>(
       `SELECT p.thread_id, p.at FROM placements p JOIN threads t ON t.id = p.thread_id
-       WHERE p.by = 'rule' AND p.at > ? AND json_extract(p.detail_json, '$.filterId') = ? AND ${HOLDS}
-       ORDER BY p.at DESC, p.thread_id DESC LIMIT 500`,
+       WHERE p.by = 'rule' AND p.at > ? AND json_extract(p.detail_json, '$.filterId') = ? AND json_extract(p.detail_json, '$.ruleHash') = ? AND ${HOLDS}
+       ORDER BY p.at DESC, p.thread_id DESC`,
       now - PUT_AWAY_MS,
       filterId,
+      hash,
     )
     .map((r) => ({ threadId: r.thread_id, at: r.at }));
 }

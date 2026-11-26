@@ -1310,12 +1310,14 @@ export const contract = {
   /** Back to Inbox: whatever keeps each conversation out (archived, deleted, moved, a rule's hidden filing); one exact Undo (threads.undo) */
   "putAway.back": m<{ undoId: number | null; affected: number }>()(z.object({ items: z.array(z.object({ threadId: id, at: z.number().int() })).min(1).max(500) })),
   /** "Don't file {sender} automatically", from Terno's filing of this conversation as the window showed it (`at`); Undo: putAway.keepUndo */
-  "putAway.keep": m<{ undoId: string }>()(z.object({ threadId: id, at: z.number().int() })),
+  "putAway.keep": m<{ undoId: string; inInbox: boolean }>()(z.object({ threadId: id, at: z.number().int() })),
+  /** "Not {category}" on Terno's filing, as the window showed it: a correction, journaled whole; Undo: categorize.undo */
+  "putAway.not": m<{ batchId: number | null; inInbox: boolean }>()(z.object({ threadId: id, at: z.number().int() })),
   "putAway.keepUndo": m<{ ok: true }>()(z.object({ undoId: z.string().min(1).max(64) })),
   /** Stop the rule that put this conversation away (only while it's unchanged): filters.setEnabled's answer, its Undo there */
   "putAway.stopRule": m<{ filterUndo: number | null }>()(z.object({ threadId: id, at: z.number().int() })),
-  /** Stop's second step: what a rule (off now) still keeps put away, as putAway.back takes it */
-  "putAway.byRule": m<{ items: { threadId: number; at: number }[] }>()(z.object({ filterId: id })),
+  /** Stop's second step, from this conversation's placement: what its rule (off now, unchanged) still keeps put away, as putAway.back takes it */
+  "putAway.byRule": m<{ items: { threadId: number; at: number }[] }>()(z.object({ threadId: id, at: z.number().int() })),
   /** Settings → Categories: the senders kept out of a category's automatic filing, and taking one back */
   "putAway.kept": m<{ senders: { categoryId: number; sender: string; at: number }[] }>()(empty),
   "putAway.removeKept": m<{ removed: boolean }>()(z.object({ categoryId: id, sender: z.string().min(1).max(400) })),
