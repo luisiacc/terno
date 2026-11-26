@@ -137,7 +137,7 @@ describe("reading their mail (plan 280)", () => {
     expect(await owed()).toHaveLength(1);
   });
 
-  it("late one working day after its day: a firm one on the Inbox's top, a tentative one never; over after 30 days", async () => {
+  it("late one working day after its day: a firm one on the Inbox's top; a tentative one never late (the QA panel); both over after 30 days", async () => {
     const { model, got, drained, owed, clock, backend } = await setup();
     model.their = () => theirs({ promises: [promise, { ...promise, text: "send you the deck", quote: "I'll try to send you the deck by Thursday", firm: false }] });
     await got({ bodyText: "I'll send you the contract by Thursday. I'll try to send you the deck by Thursday." });
@@ -150,11 +150,11 @@ describe("reading their mail (plan 280)", () => {
     clock.now = new Date(2026, 10, 6, 9).getTime();
     await backend.followups.look();
     const rows = await owed();
-    expect(rows.map((r) => [r.firm, r.state, r.inboxState])).toEqual([[true, "due", "onTop"], [false, "due", "none"]]);
+    expect(rows.map((r) => [r.firm, r.state, r.inboxState])).toEqual([[true, "due", "onTop"], [false, "open", "none"]]);
     clock.now += 31 * DAY;
     await backend.followups.look();
     expect(await owed()).toEqual([]);
-    expect((await backend.store.followups.get(rows[0]!.id))).toMatchObject({ state: "dismissed", closedReason: "expired" });
+    for (const r of rows) expect(await backend.store.followups.get(r.id)).toMatchObject({ state: "dismissed", closedReason: "expired" });
   });
 
   it("a mail moved to Spam before its reading leaves goes nowhere", async () => {

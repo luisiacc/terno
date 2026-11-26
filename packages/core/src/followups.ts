@@ -255,6 +255,14 @@ export function theirDue(o: { madeAt: number; due: string | null; nudgeAfterDays
   return { dueAt: workingMorning(day, 1), dated: true, dueDay: o.due };
 }
 
+/**
+ * Plan 280 (the QA panel, the owner's call): a hedged promise of theirs ("I'll try…", "no promises") never turns late: it
+ * stays open, quietly, until it retires (`OWED_RETIRE_MS` after its moment) or is dismissed. Everything else comes due.
+ */
+export const comesDue = (r: Pick<FollowupRow, "kind" | "firm">): boolean => r.kind !== "theirs" || r.firm !== false;
+/** `comesDue` in SQL */
+export const COMES_DUE_SQL = "NOT (kind = 'theirs' AND firm = 0)";
+
 /** Plan 280 revision 11: a row of theirs goes on the Inbox's top only when it's firm and not from a check. */
 export const onTopEligible = (r: Pick<FollowupRow, "kind" | "fromScan" | "firm">): boolean => !r.fromScan && (r.kind !== "theirs" || r.firm !== false);
 

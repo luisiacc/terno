@@ -1516,7 +1516,10 @@ export function Sidebar() {
               icon={<ListChecks className="size-(--icon-nav)" />}
               label={t("followups.title")}
               count={dueFollowups}
-              countSaid={dueFollowups ? t("sidebar.count.due", { count: dueFollowups }) : undefined}
+              // plan 280 (the QA panel): what the count counts, said and shown on hover: the late ones (its red rows),
+              // never everything the list holds
+              countSaid={dueFollowups ? t("sidebar.count.late", { count: dueFollowups }) : undefined}
+              tip={dueFollowups ? t("sidebar.count.late", { count: dueFollowups }) : undefined}
               countTone={design.surfaces.inboxCount}
             />
           ) : null

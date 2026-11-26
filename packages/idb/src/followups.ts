@@ -1,4 +1,4 @@
-import { addressKey, ANSWERED_KINDS, isFollowupKind, onTopEligible, parseHandedTo, readPartOfDay, refKey, replyAnswers, replyClosedReason, replyRecipients, type FollowupRow } from "@terno/core";
+import { addressKey, ANSWERED_KINDS, comesDue, isFollowupKind, onTopEligible, parseHandedTo, readPartOfDay, refKey, replyAnswers, replyClosedReason, replyRecipients, type FollowupRow } from "@terno/core";
 import { FOLLOWUP_CLOSED_KEEP_MS, FOLLOWUP_WORTH_KEPT, FOLLOWUPS_ACTIVE_MAX, followupWorth, recipientList, SCAN_MARK_MS, SENT_MARK_MS, type ClosedAt, type FollowupFinish, type FollowupFinishOutcome, type FollowupSnapshot, type FollowupSource, type SentMark } from "@terno/store";
 import { T, type Ctx, type R } from "./mail";
 import { scheduleFields } from "./schedule";
@@ -330,7 +330,7 @@ export function getFollowup(c: Ctx, id: number): FollowupRow | null {
 export function nextFollowupDue(c: Ctx): number | null {
   let at: number | null = null;
   // (as SQL's: only kinds the app knows)
-  for (const r of T(c, "followups").by("state", "open")) if (known(r) && (at === null || wakeAt(r) < at)) at = wakeAt(r);
+  for (const r of T(c, "followups").by("state", "open")) if (known(r) && comesDue(toRow(r)) && (at === null || wakeAt(r) < at)) at = wakeAt(r);
   return at;
 }
 
@@ -338,7 +338,8 @@ export function makeFollowupsDue(c: Ctx, now: number): FollowupRow[] {
   const rows = T(c, "followups");
   const out: FollowupRow[] = [];
   for (const r of rows.by("state", "open")) {
-    if (wakeAt(r) > now || !known(r)) continue;
+    // (as SQL's: a hedged promise of theirs never comes due)
+    if (wakeAt(r) > now || !known(r) || !comesDue(toRow(r))) continue;
     // plan 280 (revision 11): as SQL's, one rule for the top
     out.push(toRow(rows.update(r, { state: "due", inbox_state: onTopEligible(toRow(r)) ? "onTop" : "none", revision: r.revision + 1 })));
   }

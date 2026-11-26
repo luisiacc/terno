@@ -1,4 +1,4 @@
-import { addressKey, ANSWERED_KINDS, FOLLOWUP_KINDS, isFollowupKind, onTopEligible, parseHandedTo, readPartOfDay, refKey, replyAnswers, replyClosedReason, replyRecipients, type FollowupRow } from "@terno/core";
+import { addressKey, ANSWERED_KINDS, COMES_DUE_SQL, FOLLOWUP_KINDS, isFollowupKind, onTopEligible, parseHandedTo, readPartOfDay, refKey, replyAnswers, replyClosedReason, replyRecipients, type FollowupRow } from "@terno/core";
 import { FOLLOWUP_CLOSED_KEEP_MS, FOLLOWUP_WORTH_KEPT, FOLLOWUPS_ACTIVE_MAX, followupWorth, recipientList, SCAN_MARK_MS, SENT_MARK_MS, type ClosedAt, type FollowupFinish, type FollowupFinishOutcome, type FollowupSnapshot, type FollowupSource, type SentMark } from "@terno/store";
 import { ownAddresses } from "./facts";
 import { scheduleFields } from "./schedule";
@@ -353,11 +353,11 @@ export function getFollowup(db: Db, id: number): FollowupRow | null {
 const WAKE = "max(due_at, coalesce(deferred_until, due_at))";
 /** Plan 280 (the Astra review): only kinds the app knows: an unknown one, never made due, would wake the timer at once, forever */
 const KNOWN_SQL = `kind IN (${FOLLOWUP_KINDS.map((k) => `'${k}'`).join(", ")})`;
-export const nextFollowupDue = (db: Db): number | null => db.get<{ at: number | null }>(`SELECT min(${WAKE}) AS at FROM followups WHERE state = 'open' AND ${KNOWN_SQL}`)?.at ?? null;
+export const nextFollowupDue = (db: Db): number | null => db.get<{ at: number | null }>(`SELECT min(${WAKE}) AS at FROM followups WHERE state = 'open' AND ${KNOWN_SQL} AND ${COMES_DUE_SQL}`)?.at ?? null;
 
 export function makeFollowupsDue(db: Db, now: number): FollowupRow[] {
   return db.tx(() => {
-    const rows = known(db.all<Raw>(`SELECT * FROM followups WHERE state = 'open' AND ${WAKE} <= ?`, now));
+    const rows = known(db.all<Raw>(`SELECT * FROM followups WHERE state = 'open' AND ${COMES_DUE_SQL} AND ${WAKE} <= ?`, now));
     // plan 280 (revision 11): one rule for the top: a tentative promise of theirs, or one from a check, comes due off it
     const top = (r: Raw) => (onTopEligible(toRow(r)) ? ("onTop" as const) : ("none" as const));
     for (const r of rows) db.run("UPDATE followups SET state = 'due', inbox_state = ?, revision = revision + 1 WHERE id = ?", top(r), r.id);

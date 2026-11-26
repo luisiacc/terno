@@ -140,9 +140,9 @@ export async function actOnFollowup(row: FollowupRow, action: "done" | "dismiss"
     // plan 210 (iteration 2): What matters' rows it took out come back with its Undo
     const run = () => client.call("followups.undo", { undoId: undoId! }).then(() => undefined);
     const undo = undoId === null ? null : registerUndo(() => (left ? left.undo(run) : run()));
-    // plan 280: a promise of theirs is received, or wasn't one
+    // plan 280: a promise of theirs is done, or wasn’t one
     const theirs = row.kind === "theirs";
-    const said = text !== null ? taskSaid(action, text) : action === "done" ? t(theirs ? "followup.snack.received" : "followup.snack.done") : action === "dismiss" ? t(theirs ? "followup.snack.notAPromise" : "followup.snack.dismissed") : t("followup.snack.later", { date: reminderDated(dueAt ?? row.dueAt) });
+    const said = text !== null ? taskSaid(action, text) : action === "done" ? t("followup.snack.done") : action === "dismiss" ? t(theirs ? "followup.snack.notAPromise" : "followup.snack.dismissed") : t("followup.snack.later", { date: reminderDated(dueAt ?? row.dueAt) });
     snack.success(said, undo ? { action: { label: t("common.undo"), name: t("followup.undo"), undo } } : {});
   } catch (error) {
     left?.failed();

@@ -37,12 +37,12 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
   const name = row.personName?.split(/\s+/)[0] || row.personEmail?.split("@")[0] || t("followup.someone");
   const line = arrived === "wrote" ? t("followup.theirsWroteSince", { name }) : arrived === "notice" ? t("followup.theirsMayHaveArrived") : followupLine(row);
   // a reminder only for a firm one that's late, and no service said it arrived; the QA panel: their mail since asks
-  // first (Received leads) but keeps the reminder, since their mail is often about something else
+  // first (Done leads) but keeps the reminder, since their mail is often about something else
   const offersNudge = !theirs || (row.state === "due" && row.firm !== false && arrived !== "notice");
-  // the one filled button is the likeliest step: Received when something says it may have come, else the reminder
-  const receivedFirst = theirs && arrived !== null;
-  const nudgeVariant = receivedFirst ? "outline" : "default";
-  const nudgeTone = receivedFirst ? "text-foreground" : undefined;
+  // the one filled button is the likeliest step: Done when something says it may have come, else the reminder
+  const doneFirst = theirs && arrived !== null;
+  const nudgeVariant = doneFirst ? "outline" : "default";
+  const nudgeTone = doneFirst ? "text-foreground" : undefined;
   // when it comes back
   const when = followupWhen(row);
   // plan 147: a follow-up stays readable when its key goes; a nudge is a draft, and can't be written
@@ -73,10 +73,10 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
       {arrived !== null && <p data-testid="followup-promised" className="text-sm text-muted-foreground">{followupLine(row)}</p>}
       {when && <p data-testid="followup-due" className="text-sm text-muted-foreground tabular">{when}</p>}
       <div className={cn(AI_ACTIONS, "mt-3")} data-testid="followup-actions">
-        {/* plan 280: Received first for a promise of theirs: it's what's most often true */}
+        {/* plan 280: Done first for a promise of theirs (the QA panel: "Received" was wrong for a call or an answer) */}
         {theirs && (
-          <Button size="sm" variant={receivedFirst ? "default" : "outline"} className={receivedFirst ? undefined : "text-foreground"} data-testid="followup-received" onClick={() => void actOnFollowup(row, "done")}>
-            {t("followup.received")}
+          <Button size="sm" variant={doneFirst ? "default" : "outline"} className={doneFirst ? undefined : "text-foreground"} data-testid="followup-done" onClick={() => void actOnFollowup(row, "done")}>
+            {t("followup.done")}
           </Button>
         )}
         {!offersNudge ? null : drafted && nudging === "writing" ? (

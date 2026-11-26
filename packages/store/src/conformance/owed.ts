@@ -274,7 +274,7 @@ export function defineOwedConformance(fresh: () => Promise<MailStore>, reopen: (
     });
 
     describe("the Inbox's top and the bound", () => {
-      it("a firm promise of theirs comes due on top; a tentative one, or one from a check, off it", async () => {
+      it("a firm promise of theirs comes due on top, one from a check off it; a tentative one never comes due, nor wakes the timer (the QA panel)", async () => {
         const { store, got, owed, finish } = await setup();
         const a = await got();
         await finish(a.id, a.thread, { rows: [owed({ dueAt: NOW - 1 }), owed({ item: 201, dueAt: NOW - 1, firm: false })] });
@@ -282,7 +282,10 @@ export function defineOwedConformance(fresh: () => Promise<MailStore>, reopen: (
         await store.followups.owed.marks.queueScan([b.id], NOW);
         await finish(b.id, b.thread, { rows: [owed({ dueAt: NOW - 1 })], fromScan: true });
         const due = await store.followups.makeDue(NOW);
-        expect(due.map((r) => [r.item, r.firm, r.fromScan, r.inboxState]).sort()).toEqual([[200, true, false, "onTop"], [200, true, true, "none"], [201, false, false, "none"]].sort());
+        expect(due.map((r) => [r.item, r.firm, r.fromScan, r.inboxState]).sort()).toEqual([[200, true, false, "onTop"], [200, true, true, "none"]].sort());
+        expect((await store.followups.ofThread(a.thread)).find((r) => r.item === 201)).toMatchObject({ state: "open", inboxState: "none" });
+        // what's left open is only the tentative one, past its moment: nothing for the timer
+        expect(await store.followups.nextDue()).toBeNull();
       });
 
       it("at the bound a new row takes the place of the oldest worth less; a promise of yours is never taken, and its Undo always fits; a wait's Undo with no room is refused", async () => {

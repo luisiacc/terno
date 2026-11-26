@@ -1,5 +1,5 @@
 import { AiError, fitTheirMail, theirsBudget, THEIRS_ANSWERING_CHARS, THEIRS_OWED_MAX, THEIRS_PROMPT_VERSION, THEIRS_TEXT_CHARS, FOLLOWUP_ANSWERING_CHARS, FOLLOWUP_OPEN_MAX, FOLLOWUP_OWN_CHARS, FOLLOWUP_PROMPT_VERSION, FOLLOWUP_REQUESTS_MAX, fitSentMail, followupBudget, type AiTasks, type SentMailResult } from "@terno/ai";
-import { addressOnly, addressKey, automatedLevel, dayKeyOf, dueCutoff, byUrgency, followupDue, lineRows, theirDue, THEIRS_ITEM, NUDGE_DEFAULT, followupWakeAt, normalizeText, promiseOver, readCorpus, refKey, replyAnswers, replyRecipients, SCAN_DAYS, SCAN_MESSAGES_MAX, SCAN_PROMISE_OVERDUE_MS, SCAN_WAIT_STALE_MS, validFollowupDate, withNeeds, withoutQuotes, followupNotice, type AiErrorKind, type DatedRow, type FollowupRow, type FollowupsSnapshot, type MailNotice, type ThreadSummary } from "@terno/core";
+import { addressOnly, addressKey, automatedLevel, comesDue, dayKeyOf, dueCutoff, byUrgency, followupDue, lineRows, theirDue, THEIRS_ITEM, NUDGE_DEFAULT, followupWakeAt, normalizeText, promiseOver, readCorpus, refKey, replyAnswers, replyRecipients, SCAN_DAYS, SCAN_MESSAGES_MAX, SCAN_PROMISE_OVERDUE_MS, SCAN_WAIT_STALE_MS, validFollowupDate, withNeeds, withoutQuotes, followupNotice, type AiErrorKind, type DatedRow, type FollowupRow, type FollowupsSnapshot, type MailNotice, type ThreadSummary } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import { RpcError, type AppSettings } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
@@ -11,6 +11,9 @@ import { contextOf, directsReader, namingWords, norm as plain, paidSaid, plainEv
 import { promiseMoment } from "./promise-time";
 import { untrustedSenders } from "./suspicious-sender";
 import { bare, checkTheirPromises, claimsFile, deliveredIn, owedWorth, relayOf } from "./their-promises";
+
+/** Plan 280 §4: a late promise of theirs, or a hedged one past its moment (it never comes due, the QA panel), retires */
+const retires = (r: FollowupRow): boolean => r.kind === "theirs" && (r.state === "due" || (r.state === "open" && !comesDue(r)));
 
 const MAX_DELAY = 2 ** 31 - 1;
 const PAGE = 50;
@@ -1180,7 +1183,7 @@ export class FollowupWorker {
    */
   private async retireOwed(active: readonly FollowupRow[], now: number): Promise<void> {
     const { store } = this.host;
-    for (const r of active.filter((x) => x.kind === "theirs" && x.state === "due" && now >= followupWakeAt(x) + OWED_RETIRE_MS)) {
+    for (const r of active.filter((x) => retires(x) && now >= followupWakeAt(x) + OWED_RETIRE_MS)) {
       await store.followups.update(r.id, r.revision, { state: "dismissed", inboxState: "none", closedReason: "expired", closedAt: now });
     }
   }
@@ -1190,7 +1193,7 @@ export class FollowupWorker {
     this.timer = null;
     this.armedAt = null;
     // plan 280: and the soonest moment a late promise of theirs is over
-    const retire = active.filter((r) => r.kind === "theirs" && r.state === "due").map((r) => followupWakeAt(r) + OWED_RETIRE_MS);
+    const retire = active.filter(retires).map((r) => followupWakeAt(r) + OWED_RETIRE_MS);
     const due = await this.host.store.followups.nextDue();
     const next = [due, ...retire].reduce<number | null>((a, b) => (b === null ? a : a === null ? b : Math.min(a, b)), null);
     if (next === null || this.stopped) return;

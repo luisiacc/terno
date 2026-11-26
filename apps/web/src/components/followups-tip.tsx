@@ -9,7 +9,7 @@ import { TipMenu, TipMenuItem, TipPicture } from "./tip-picture";
  * the kind the line is (a wait shows Write a follow-up, a promise Done) and points at the line, from below.
  */
 export default function FollowupsTip({ kind, name }: { kind: FollowupKind; name: string | null }) {
-  // plan 280: what's owed to you is taught as a wait is: the line, and Received
+  // plan 280: what's owed to you is taught as a wait is: the line, and Done
   if (kind === "theirs") return <OwedTip name={name} />;
   const awaiting = kind === "awaiting";
   return (
@@ -41,7 +41,7 @@ export default function FollowupsTip({ kind, name }: { kind: FollowupKind; name:
   );
 }
 
-/** Plan 280: the first promise of theirs on an open conversation: what it says, and Received. */
+/** Plan 280: the first promise of theirs on an open conversation: what it says, and Done. */
 function OwedTip({ name }: { name: string | null }) {
   return (
     <Tip
@@ -55,7 +55,7 @@ function OwedTip({ name }: { name: string | null }) {
         <TipPicture className="h-[92px]">
           <TipMenu className="w-60">
             <TipMenuItem icon={<Clock className="size-3.5" />} label={t("followup.theirs", { name: name ?? "Alex", text: t("followups.tip.owedExample") })} />
-            <TipMenuItem icon={<Check className="size-3.5" />} label={t("followup.received")} pointer />
+            <TipMenuItem icon={<Check className="size-3.5" />} label={t("followup.done")} pointer />
           </TipMenu>
         </TipPicture>
       }

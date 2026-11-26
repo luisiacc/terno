@@ -120,6 +120,8 @@ test.describe("follow-ups (plan 142)", () => {
     await scenario("plan 277: archived from Follow-ups, it stays in the list and its count; deleted, both go and Undo brings them back", async () => {
       const count = page.getByTestId("nav-followups").locator("[data-slot=nav-count]");
       await expect(count).toHaveText("1");
+      // (plan 280, the QA panel: what it counts, said)
+      await expect(page.getByTestId("nav-followups")).toHaveAccessibleDescription("1 late");
       const threadId = (await server.backend.store.followups.active())[0]!.threadId;
       await page.getByTestId("action-archive").click();
       // the archive landed: the conversation is out of the Inbox, its follow-up still tracked
@@ -372,7 +374,7 @@ test.describe("follow-ups (plan 142)", () => {
     expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=thread-followups]").analyze()).violations).toEqual([]);
   });
 
-  test("plan 280: owed to you: a late promise of theirs on top with its card, Received and Undo; a tentative one off the top, quiet, under its debtor's name; one they wrote after asks first", async ({ app: page, server }) => {
+  test("plan 280: owed to you: a late promise of theirs on top with its card, Done and Undo; a tentative one off the top, quiet, under its debtor's name; one they wrote after asks first", async ({ app: page, server }) => {
     await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, followups: { enabled: true } });
     await owedTracked(server, "Signed contract", { firm: true });
     await owedTracked(server, "Draft budget", { firm: false, debtor: { name: "Tom Reed", email: "tom.reed@example.com" } });
@@ -386,16 +388,16 @@ test.describe("follow-ups (plan 142)", () => {
       await expect(page.getByTestId("inbox-reminders-label")).toHaveText(/\(2\)/);
     });
 
-    await scenario("its card: what was promised and when, Received first, the reminder the one filled button, Later and Not a promise", async () => {
+    await scenario("its card: what was promised and when, Done first, the reminder the one filled button, Later and Not a promise", async () => {
       await page.getByTestId("thread-row").filter({ hasText: "Signed contract" }).first().click();
       const card = page.getByTestId("followup-line");
       await expect(card).toHaveAttribute("data-kind", "theirs");
       await expect(card.getByTestId("followup-text")).toHaveText("Yuki Gutiérrez promised to send you the contract");
       await expect(card.getByTestId("followup-due")).toHaveText(/^Was due /);
-      await expect(card.getByTestId("followup-received")).toHaveText("Received");
+      await expect(card.getByTestId("followup-done")).toHaveText("Done");
       await expect(card.getByTestId("followup-nudge")).toHaveText("Write a follow-up");
       // (the QA panel: one filled button, the likeliest step; nothing says it arrived, so the reminder)
-      await expect(card.getByTestId("followup-received")).not.toHaveClass(/\btext-primary-foreground\b/);
+      await expect(card.getByTestId("followup-done")).not.toHaveClass(/\btext-primary-foreground\b/);
       await expect(card.getByTestId("followup-nudge")).toHaveClass(/\btext-primary-foreground\b/);
       await expect(card.getByTestId("followup-dismiss")).toHaveText("Not a promise");
       for (const scheme of ["light", "dark"] as const) {
@@ -406,21 +408,21 @@ test.describe("follow-ups (plan 142)", () => {
       await page.emulateMedia({ colorScheme: "light" });
     });
 
-    await scenario("Received closes it with Undo, which puts it back exactly", async () => {
-      await page.getByTestId("followup-received").click();
+    await scenario("Done closes it with Undo, which puts it back exactly", async () => {
+      await page.getByTestId("followup-done").click();
       await expect(page.getByTestId("followup-line")).toHaveCount(0);
-      await expect(page.getByTestId("snack-message")).toHaveText("Marked as received");
+      await expect(page.getByTestId("snack-message")).toHaveText("Marked as done");
       await page.getByRole("button", { name: "Undo this follow-up" }).click();
       await expect(page.getByTestId("followup-line")).toHaveAttribute("data-kind", "theirs");
     });
 
-    await scenario("they wrote after it: the card asks whether it arrived, Received filled, the reminder still there (the QA panel)", async () => {
+    await scenario("they wrote after it: the card asks whether it arrived, Done filled, the reminder still there (the QA panel)", async () => {
       await page.getByTestId("thread-row").filter({ hasText: "Venue deposit" }).first().click();
       const card = page.getByTestId("followup-line");
       await expect(card).toHaveAttribute("data-arrived", "wrote");
-      await expect(card.getByTestId("followup-text")).toHaveText("Yuki wrote since. Did it arrive?");
+      await expect(card.getByTestId("followup-text")).toHaveText("Yuki wrote since. Is it done?");
       await expect(card.getByTestId("followup-promised")).toHaveText("Yuki Gutiérrez promised to send you the contract");
-      await expect(card.getByTestId("followup-received")).toHaveClass(/\btext-primary-foreground\b/);
+      await expect(card.getByTestId("followup-done")).toHaveClass(/\btext-primary-foreground\b/);
       await expect(card.getByTestId("followup-nudge")).not.toHaveClass(/\btext-primary-foreground\b/);
     });
 
