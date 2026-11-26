@@ -410,7 +410,7 @@ describe("what's sent", () => {
     const prompt = promptText(req.messages[0]!.content);
     expect(promptText(req.system).length + 1000 + prompt.length + req.maxTokens * 4).toBeLessThanOrEqual(tokens * 4);
     const marked = [...prompt.matchAll(/<message id="m(\d+)"[^\n]*?( new="yes")?>\n/g)];
-    const asked = promptText(req.system).includes('- "since":');
+    const asked = promptText(req.system).includes('<since>');
     // asked exactly when the new message went with something before it, and never of the compact prompt
     expect(asked).toBe(marked.length > 1 && marked.at(-1)![2] !== undefined && marked[0]![2] === undefined);
     expect(marked.filter((m) => m[2]).length).toBe(asked ? 1 : 0);
@@ -829,11 +829,11 @@ describe("by hand", () => {
     };
     await window(2000);
     await go(client, thread);
-    expect(promptText(model.requests[0]!.system)).not.toMatch(/Who has to act/);
+    expect(promptText(model.requests[0]!.system)).not.toMatch(/<whose_is_it>/);
     await window(8192);
     await go(client, thread);
     expect(model.requests).toHaveLength(2);
-    expect(promptText(model.requests[1]!.system)).toMatch(/Who has to act/);
+    expect(promptText(model.requests[1]!.system)).toMatch(/<whose_is_it>/);
   });
 
   it("doesn't count toward the daily cap", async () => {
@@ -1192,7 +1192,7 @@ describe("plan 279: what's new since you read", () => {
     await until(async () => expect((await s.row(next.thread))?.state).toBe("ready"));
     expect(promptOf(s.model.requests[0]!)).toMatch(/<message id="m2"[^\n]* new="yes">/);
     expect(promptOf(s.model.requests[0]!)).not.toMatch(/<message id="m1"[^\n]* new="yes">/);
-    expect(promptText(s.model.requests[0]!.system)).toContain('- "since":');
+    expect(promptText(s.model.requests[0]!.system)).toContain('<since>');
     await expect(s.read(next.thread)).resolves.toMatchObject({ state: "ready", summary: { since: { from: next.id, text: SINCE.since } } });
   });
 
@@ -1218,7 +1218,7 @@ describe("plan 279: what's new since you read", () => {
     s.model.answer = () => replying({ ...ANSWER, since: "" });
     const thanks = await s.arrive({ providerThreadId: "since" });
     await until(async () => expect((await s.row(thanks.thread))?.state).toBe("ready"));
-    expect(promptText(s.model.requests[1]!.system)).toContain('- "since":');
+    expect(promptText(s.model.requests[1]!.system)).toContain('<since>');
     expect(JSON.parse((await s.row(thanks.thread))!.bodyJson!).since).toMatchObject({ from: thanks.id, text: "" });
     await expect(s.read(thanks.thread)).resolves.toMatchObject({ summary: { since: { from: thanks.id, text: "" } } });
   });

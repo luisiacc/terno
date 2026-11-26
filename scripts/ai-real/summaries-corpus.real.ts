@@ -1,9 +1,9 @@
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { createAi, deliveryOf, summarizeTask, summaryBudget, type SummaryReader, type ThreadText } from "@terno/ai";
+import { createAi, deliveryOf, summarizeTask, summaryBudget, summaryPrompt, type SummaryReader, type ThreadText } from "@terno/ai";
 import { runStructured } from "../../packages/ai/src/ladder";
-import type { ModelTransport } from "../../packages/ai/src/types";
+import type { CompletionRequest, ModelTransport } from "../../packages/ai/src/types";
 import { describe, expect, it } from "vitest";
 import { promptText } from "../../packages/ai/src/types";
 import { withoutQuotes } from "../../packages/core/src/text";
@@ -23,6 +23,11 @@ import { realKeys, realTransport, spendReport } from "./harness";
  * - TERNO_AI_SUMMARY_EFFORT: low, medium or high in place of the task's own, or default for none at all
  * - TERNO_AI_SUMMARY_VERIFY=1: a second pass that checks the first against the mail
  * - TERNO_AI_SUMMARY_IDS: a file of JSON ids, to run only those
+ * - TERNO_AI_SUMMARY_SYSTEM (plan 279): a file holding a whole system prompt in place of the app's, with {{language}} and
+ *   {{today}} filled in, and what's between <<since>> and <</since>> kept only when the request asks for a since
+ * - TERNO_AI_SUMMARY_VERBOSITY (plan 279): OpenAI's verbosity, low, medium or high
+ * - TERNO_AI_SUMMARY_NOTES (plan 279): a file holding a first pass's system prompt: the model reads the mail once to take
+ *   notes, and the card is asked with those notes after the mail
  * - TERNO_AI_SUMMARY_SINCE=1 (plan 279): each conversation of two or more messages is read up to its last run of
  *   mail from others after the reader's last reply (the last message alone when the reader never wrote and everything
  *   is theirs), and that run is marked new="yes". Unset, the same conversations go with no marks: version 8's words
@@ -127,21 +132,34 @@ describe.skipIf(!RUN)("summaries over the corpus", () => {
     const budgeted = realTransport({ provider, model: MODEL }, `summary-corpus-${RUN}`);
     let swapped = false;
     const tail = process.env.TERNO_AI_SUMMARY_TAIL ? readFileSync(process.env.TERNO_AI_SUMMARY_TAIL, "utf8").trim() : "";
+    // plan 279's two passes: each card's first-pass notes, by the exact prompt they belong to
+    const notesSystem = process.env.TERNO_AI_SUMMARY_NOTES ? readFileSync(process.env.TERNO_AI_SUMMARY_NOTES, "utf8").trim() : null;
+    const notesFor = new Map<string, string>();
     const transport = {
       ...budgeted,
       complete: (req: Parameters<typeof budgeted.complete>[0], ...rest: unknown[]) => {
         let system = promptText(req.system);
+        const whole = process.env.TERNO_AI_SUMMARY_SYSTEM ? readFileSync(process.env.TERNO_AI_SUMMARY_SYSTEM, "utf8") : null;
+        if (whole) {
+          const asksSince = system.includes('- "since":') || system.includes("<since>");
+          const today = /Today is (\d{4}-\d{2}-\d{2})/.exec(system)?.[1] ?? "";
+          const language = /Write in (\w+)\./.exec(system)?.[1] ?? "English";
+          system = whole.replace(/<<since>>([\s\S]*?)<<\/since>>/g, (_, kept: string) => (asksSince ? kept : "")).replaceAll("{{language}}", language).replaceAll("{{today}}", today).trim();
+        }
         for (const [find, replace] of swaps) {
           if (!system.includes(find)) throw new Error(`the variant's text isn't in the prompt: ${find.slice(0, 60)}`);
           system = system.replace(find, replace);
           swapped = true;
         }
-        const messages = tail ? req.messages.map((m, i) => (i === 0 ? { ...m, content: `${promptText(m.content)}\n\n${tail}` } : m)) : req.messages;
+        const withTail = tail ? req.messages.map((m, i) => (i === 0 ? { ...m, content: `${promptText(m.content)}\n\n${tail}` } : m)) : req.messages;
+        const notes = notesFor.get(promptText(req.messages[0]!.content));
+        const messages = notes ? withTail.map((m, i) => (i === 0 ? { ...m, content: `${promptText(m.content)}\n\n<notes>\nNotes from a first read of this mail (check them against the mail; the mail decides):\n${notes}\n</notes>` } : m)) : withTail;
         const asked = process.env.TERNO_AI_SUMMARY_EFFORT as typeof req.effort | "default" | undefined;
         // "default": what a model does with none asked, as OpenAI's did before plan 202
         const effort = asked === "default" ? undefined : (asked ?? req.effort);
         const reasoningEffort = asked === "default" ? undefined : (asked ?? req.reasoningEffort);
-        return (budgeted.complete as (...a: unknown[]) => ReturnType<typeof budgeted.complete>)({ ...req, system, messages, effort, reasoningEffort }, ...rest);
+        const verbosity = process.env.TERNO_AI_SUMMARY_VERBOSITY as CompletionRequest["verbosity"] | undefined;
+        return (budgeted.complete as (...a: unknown[]) => ReturnType<typeof budgeted.complete>)({ ...req, system, messages, effort, reasoningEffort, ...(verbosity ? { verbosity } : {}) }, ...rest);
       },
     };
     const ai = createAi({ id: provider, model: MODEL, apiKey: realKeys()[provider], fetch: globalThis.fetch, timeoutMs: 120_000, maxRetries: 0 }, { transport });
@@ -171,6 +189,11 @@ describe.skipIf(!RUN)("summaries over the corpus", () => {
           const started = Date.now();
           try {
             const request = { subject: conv.subject, thread: input, reader: conv.reader, language: readerLanguage(conv), today: conv.today, outputTokens: summaryBudget(null, asked).outputTokens };
+            if (notesSystem) {
+              const prompt = summaryPrompt({ subject: request.subject, thread: request.thread, reader: request.reader });
+              const first = await budgeted.complete({ system: notesSystem.replaceAll("{{today}}", request.today), messages: [{ role: "user", content: prompt }], output: "text", maxTokens: 4000, signal: new AbortController().signal });
+              notesFor.set(prompt, promptText(first.text).trim());
+            }
             let r = await ai.summarize(request);
             if (process.env.TERNO_AI_SUMMARY_VERIFY === "1") {
               const task = summarizeTask(request);

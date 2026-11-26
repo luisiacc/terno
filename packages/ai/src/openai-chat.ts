@@ -120,6 +120,8 @@ export function openaiChatTransport(config: ProviderConfig): ModelTransport {
         messages: [{ role: "system", content: promptText(req.system) }, ...req.messages.map((m) => ({ role: m.role, content: promptText(m.content) }))],
         ...tokenLimit,
         ...(effort && req.reasoningEffort ? { reasoning_effort: req.reasoningEffort } : {}),
+        // plan 279: only where reasoning_effort goes, OpenAI's own models that document both
+        ...(effort && req.verbosity ? { verbosity: req.verbosity } : {}),
         ...(req.output === "json_schema" && req.schema
           ? { response_format: zodResponseFormat(req.schema.zod, req.schema.name) }
           : req.output === "json_object"

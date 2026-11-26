@@ -77,6 +77,11 @@ export interface CompletionRequest {
    * job was tuned there, so a job sets it only once it's measured at another (plan 202).
    */
   reasoningEffort?: Effort;
+  /**
+   * OpenAI's `verbosity` (the answer's length, not the thinking's), on the models that take `reasoning_effort`. Left out,
+   * their default (medium). Plan 279: measured per job before a job sets it.
+   */
+  verbosity?: "low" | "medium" | "high";
 }
 
 export interface Completion {
