@@ -250,3 +250,7 @@ The owner kept Open one list by date (no grouping by kind). After round 5: the c
 Round 6: level with rounds 4 and 5. Still raised: the card's "Before this one" isn't the last time you and they wrote each other (a group thread someone else wrote last); the page's Done and Later are words alone where the card's have glyphs; the right column means "open for" in Open and "last email" in Everyone, unlabeled; most of Open reads "Waiting on you" (kept: the owner's date order).
 
 After round 6: the card's last section is the last time you wrote each other (the newest other conversation they wrote in, or whose last message is yours: never a group email they were only on; none when there is none); the page's Done and Later wear the card's glyphs; Everyone's column says "Last email Oct 12" in words.
+
+| r07 (Lumen, Graphite) | 69962c622 | 6.5–7 | 7.5 | 154 of 4 reports |
+
+Round 7, a small one: level. "Before this one" was wrong once the card's conversation could be newer than the open one: it says "Last between you". Still raised: Open's repeated "Waiting on you" (the owner's date order kept), the dark selection near hover (decision 12), "Last email" in the list (the index's last date) and on the page (the newest conversation) disagreeing, the card's actions under the item while the page's sit at its right.

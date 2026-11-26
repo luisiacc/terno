@@ -1343,7 +1343,7 @@ const es = {
   "people.ageSaid": "Pendiente desde hace {age}",
   "people.ageSaidToday": "Pendiente desde hoy",
   "people.openOrder": "Primero, quien más lleva esperando",
-  "people.lastConversation": "Antes de esta",
+  "people.lastConversation": "Lo último entre ustedes",
   "people.moreInPeople": { one: "# más en Personas", other: "# más en Personas" },
   "people.card.done": "Hecho: {text}",
   "people.card.later": "Más tarde: {text}",

@@ -1359,7 +1359,7 @@ const en = {
   "people.ageSaid": "Open for {age}",
   "people.ageSaidToday": "Open since today",
   "people.openOrder": "Longest waiting first",
-  "people.lastConversation": "Before this one",
+  "people.lastConversation": "Last between you",
   "people.moreInPeople": { one: "# more in People", other: "# more in People" },
   "people.card.done": "Done: {text}",
   "people.card.later": "Later: {text}",
