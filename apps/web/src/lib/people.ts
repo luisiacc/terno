@@ -115,7 +115,7 @@ function openFirst(): void {
   if (first?.kind !== "person") return;
   selectPerson(first.key, first.email);
   // (once the list has drawn this answer's rows: the hits may have just come)
-  requestAnimationFrame(() => requestAnimationFrame(() => peopleList.toKey?.(first.key, true)));
+  afterDraw(() => peopleList.toKey?.(first.key, true));
 }
 
 /** Esc on a row while the list is a search's: the whole list again, the keyboard staying on that person. */
@@ -125,7 +125,7 @@ export function clearPeopleSearch(): boolean {
   if (!on && !document.activeElement?.closest("[data-testid=people]")) return false;
   searchPeople("");
   const key = on ?? getApp().person;
-  if (key) requestAnimationFrame(() => peopleList.toKey?.(key, true));
+  if (key) afterDraw(() => peopleList.toKey?.(key, true));
   return true;
 }
 
@@ -158,7 +158,7 @@ export function leavePerson(): void {
   opening++;
   setApp({ person: null, selectedId: null, anchorId: null });
   usePeople.setState({ page: null, reading: null, pageFailed: null, held: null });
-  requestAnimationFrame(() => requestAnimationFrame(() => peopleList.toKey?.(key, true)));
+  afterDraw(() => peopleList.toKey?.(key, true));
 }
 
 async function loadPage(key: string, email: string): Promise<void> {
@@ -440,6 +440,20 @@ export function morphName(kind: "p" | "i", key: string): string {
 /** What the list component registers: its rows as drawn, bringing a person's row into view (and the keyboard to it), its search field. */
 export const peopleList: { rows?: () => readonly PeopleRow[]; toKey?: (key: string, focus: boolean) => void; focusSearch?: () => void } = {};
 
+/**
+ * Every key and press the user makes, counted: focus put somewhere a frame or two after it was asked for (once a row is
+ * drawn, once the page has gone) goes only if nothing was typed or pressed meanwhile, never taking the keyboard from
+ * where the user has gone since (Esc, then / at once: the search keeps it).
+ */
+let inputs = 0;
+export const inputCount = (): number => inputs;
+
+/** `run` two frames on (the list drawn after a change), unless the user has typed or pressed meanwhile. */
+function afterDraw(run: () => void): void {
+  const asked = inputs;
+  requestAnimationFrame(() => requestAnimationFrame(() => asked === inputs && run()));
+}
+
 /** j/k in People: the next (or previous) person, their page with them; no motion (a key pressed many times a day). */
 export function movePerson(delta: number): void {
   const { list, query, hits } = usePeople.getState();
@@ -459,6 +473,7 @@ export function movePerson(delta: number): void {
 /** Opens People on someone (the person menu's "Open in People"): the view, then their page. */
 export function openInPeople(email: string): void {
   if (!getApp().people) openPeople();
+  if (usePeople.getState().query) searchPeople("");
   enterPerson(personKey(email), email);
 }
 
@@ -545,6 +560,8 @@ function reread(): void {
 
 /** At boot: People reads again when What matters or mail changes, only while it shows; the cards are read again when asked. */
 export function installPeople(): void {
+  // (before any handler: the key that asks for a move is counted before it asks)
+  for (const type of ["keydown", "pointerdown"] as const) window.addEventListener(type, () => void inputs++, { capture: true });
   client.on("todayChanged", () => {
     cards.clear();
     if (getApp().people) reread();

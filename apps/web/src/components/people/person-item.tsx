@@ -8,15 +8,18 @@ import { useId, type ComponentType } from "react";
 import { shortcutFor } from "@terno/core";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
-
-/** What matters' own keys for Done and Later, on the item the keyboard is on (plan 281) */
-const DONE_KEY = shortcutFor("today.done") ?? "d";
-const LATER_KEY = shortcutFor("today.later") ?? "b";
 import { laterChoices, laterPresets, taskOf } from "~/lib/dated";
 import { listDate } from "~/lib/format";
 import { actOnPersonItem, openFromPerson } from "~/lib/people";
 import { presetLabel, presetWhen } from "~/lib/reminders";
 import { todaySentence, todayWhen } from "~/lib/today-sentence";
+
+/** Done and Later at rest: there, quiet; the line hovered or with the keyboard, or the control itself, brings them up */
+const QUIET = "text-muted-foreground hover:text-foreground aria-expanded:text-foreground group-hover/item:text-foreground group-focus-within/item:text-foreground";
+
+/** What matters' own keys for Done and Later, on the item the keyboard is on (plan 281) */
+const DONE_KEY = shortcutFor("today.done") ?? "d";
+const LATER_KEY = shortcutFor("today.later") ?? "b";
 
 /** Plan 281: what an item is, in a glyph: your promise, their conversation waiting on you, a reply they owe you, their request. */
 export function itemGlyph(item: PersonItem): ComponentType<{ className?: string }> {
@@ -48,22 +51,24 @@ function backAt(item: PersonItem, now: number): number | null {
 }
 
 /**
- * When, in the list's words: What matters' own column for its items (its tone, Missed's red); a reply owed, when you asked;
- * one put off with Later, when it's back (`later`: drawn quieter).
+ * When, in the list's words: What matters' own column for its items (its tone, Missed's red); a reply owed, when you'll
+ * follow up (its Later moves that, as in Follow-ups), else when you asked; one put off with Later, when it's back
+ * (`later`: drawn quieter).
  */
 export function itemWhen(item: PersonItem, now = Date.now()): { text: string | null; late: boolean; later: boolean } {
   const back = backAt(item, now);
   if (back !== null) return { text: t("people.backOn", { when: listDate(back, now) }), late: false, later: true };
-  if (item.kind === "awaiting") return { text: listDate(item.row.sentAt, now), late: false, later: false };
+  if (item.kind === "awaiting")
+    return { text: item.row.dueAt > now ? t("people.followUpOn", { when: listDate(item.row.dueAt, now) }) : t("people.askedOn", { when: listDate(item.row.sentAt, now) }), late: false, later: false };
   const when = todayWhen(item.item, now);
   return { text: when.text, late: when.tone === "missed", later: false };
 }
 
 /**
- * One thing open between you, on a person's page: what it is, its kind and the conversation it's in, and when; Done and
- * Later at its top right on hover and focus (their room kept at rest, so nothing moves when they show), as What matters'
- * items have them. The whole line opens its conversation. `data-morph` names it for the act's morph (plan 251): it
- * leaves, and the lines under it glide up. One put off with Later reads quieter, with when it's back.
+ * One thing open between you, on a person's page: what it is, then its kind, the conversation it's in and when, on one
+ * quiet line (as the card says it); Done and Later at its end, always there (this page is for acting on these), quiet
+ * until the line is hovered or has the keyboard. The line opens its conversation. `data-morph` names it for the act's
+ * morph (plan 251): it leaves, and the lines under it glide up. One put off with Later reads quieter, with when it's back.
  */
 export function PersonItemLine({ item, morphName }: { item: PersonItem; morphName: string }) {
   const textId = useId();
@@ -77,28 +82,33 @@ export function PersonItemLine({ item, morphName }: { item: PersonItem; morphNam
   const presets = item.kind === "awaiting" ? laterPresets({ before: null, limit: null }, now) : task ? laterChoices(task, now) : [];
   const actable = item.kind === "awaiting" || task !== null;
   return (
-    <li data-morph={morphName} data-testid="person-item" data-item={personItemId(item)} data-later={when.later || undefined} className="group/item relative rounded-lg hover:bg-row-hover">
-      <button type="button" data-testid="person-item-open" data-place={`item:${personItemId(item)}`} onClick={() => openFromPerson(thread.id)} className="flex w-full min-w-0 items-start gap-3 rounded-lg px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
+    <li data-morph={morphName} data-testid="person-item" data-item={personItemId(item)} data-later={when.later || undefined} className="group/item relative flex items-center gap-2 rounded-lg pe-2 hover:bg-row-hover">
+      <button type="button" data-testid="person-item-open" data-place={`item:${personItemId(item)}`} onClick={() => openFromPerson(thread.id)} className="flex min-w-0 flex-1 items-start gap-3 rounded-lg px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
         <Glyph aria-hidden className="mt-[calc((1lh-1.15em)/2)] size-[1.15em] shrink-0 text-muted-foreground" />
         <span className="min-w-0 flex-1">
-          {/* its words keep Done and Later's room at the line's end, so they show over nothing and move nothing */}
-          <span id={textId} className={cn("block text-base text-pretty", when.later ? "text-foreground-soft" : "text-foreground", actable && "pe-40")}>
+          <span id={textId} className={cn("block text-base text-pretty", when.later ? "text-foreground-soft" : "text-foreground")}>
             {text}
           </span>
-          <span className="mt-0.5 flex min-w-0 items-baseline gap-3 text-sm">
-            <span className="min-w-0 flex-1 truncate text-row-preview">
+          {/* (its when is never what a long subject cuts) */}
+          <span className="mt-0.5 flex min-w-0 text-sm whitespace-pre text-row-preview">
+            <span className="min-w-0 truncate">
               <span className="font-medium">{label}</span>
               {text !== subject && <> · {subject}</>}
             </span>
-            {when.text && <span className={cn("shrink-0 tabular", when.late ? "font-medium text-destructive-ink" : "text-row-preview")}>{when.text}</span>}
+            {when.text && (
+              <span className="shrink-0">
+                {" · "}
+                <span className={cn("tabular", when.late && "font-medium text-destructive-ink")}>{when.text}</span>
+              </span>
+            )}
           </span>
         </span>
       </button>
       <span aria-hidden className="hairline-b pointer-events-none absolute start-3 end-3 -bottom-px group-hover/item:invisible" />
       {actable && (
-        <div className="pointer-events-none absolute end-2 top-2 flex items-center gap-1 opacity-0 transition-opacity duration-fast group-hover/item:pointer-events-auto group-hover/item:opacity-100 group-has-focus-reveal/item:pointer-events-auto group-has-focus-reveal/item:opacity-100 has-[[aria-expanded=true]]:pointer-events-auto has-[[aria-expanded=true]]:opacity-100">
+        <div className="flex shrink-0 items-center gap-1">
           <Tooltip>
-            <TooltipTrigger render={<Button variant="outline" size="sm" data-testid="person-item-done" aria-describedby={textId} aria-keyshortcuts={DONE_KEY} onClick={() => void actOnPersonItem(item, "done")} />}>
+            <TooltipTrigger render={<Button variant="ghost" size="sm" data-testid="person-item-done" aria-describedby={textId} aria-keyshortcuts={DONE_KEY} className={QUIET} onClick={() => void actOnPersonItem(item, "done")} />}>
               {t("dated.done")}
             </TooltipTrigger>
             <TooltipContent>
@@ -109,7 +119,7 @@ export function PersonItemLine({ item, morphName }: { item: PersonItem; morphNam
             <DropdownMenu>
               <Tooltip>
                 <TooltipTrigger
-                  render={<DropdownMenuTrigger render={<Button variant="ghost" size="sm" data-testid="person-item-later" aria-describedby={textId} aria-keyshortcuts={LATER_KEY} className="text-muted-foreground hover:text-foreground aria-expanded:text-foreground" />} />}
+                  render={<DropdownMenuTrigger render={<Button variant="ghost" size="sm" data-testid="person-item-later" aria-describedby={textId} aria-keyshortcuts={LATER_KEY} className={QUIET} />} />}
                 >
                   {t("dated.later")}
                   <ChevronDown data-icon="inline-end" />

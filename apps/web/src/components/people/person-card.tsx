@@ -19,7 +19,8 @@ const SHOWN = 4;
  * stored summary's first sentence when there is one). Drawn only with what was read before the menu opened.
  */
 export function PersonCardHead({ page, threadId }: { page: PersonPage; threadId: number }) {
-  const items = page.items.slice(0, SHOWN);
+  const now = page.items.filter((i) => !itemWhen(i).later);
+  const items = now.slice(0, SHOWN);
   const last = page.conversations.find((c) => c.id !== threadId);
   // the summary the backend read is of the newest other conversation: said only for that one
   const summary = last && last.id === page.lastSummaryOf ? page.lastSummary : undefined;
@@ -37,7 +38,7 @@ export function PersonCardHead({ page, threadId }: { page: PersonPage; threadId:
             <DropdownMenuLabel className="flex items-center gap-2">
               {t("people.between")}
               <Badge variant="neutral" className="tabular">
-                {formatNumber(page.items.length)}
+                {formatNumber(now.length)}
               </Badge>
             </DropdownMenuLabel>
             {items.map((item) => {

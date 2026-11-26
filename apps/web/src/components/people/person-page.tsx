@@ -59,7 +59,7 @@ export function PersonPage({ inList = false }: { inList?: boolean }) {
       <div
         ref={scroller}
         data-morph-clip
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]"
         // a line that opens a conversation: where the page is, to come back to
         onClickCapture={(e) => {
           const from = (e.target as Element).closest<HTMLElement>("[data-place]")?.dataset.place ?? null;

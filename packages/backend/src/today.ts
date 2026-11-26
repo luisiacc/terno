@@ -646,7 +646,7 @@ export class TodayService {
    * conversations are in Spam or Trash; then rows and the counts' buckets (`projectRows`). The list reads its rows'
    * conversations once, what says Spam and Trash too (`threads`); the count asks only that (`liveAmong`).
    */
-  private async project(now: number, settings: AppSettings, o: { count?: boolean; counted?: boolean; /** plan 281: People's ask: no reminders (they're nobody's) */ noReminders?: boolean } = {}): Promise<{ rows: ProjectedRow[]; counts: TodayCounts; counted?: CountedMail; threads: ReadonlyMap<number, ThreadSummary>; hidden?: ReadonlySet<FeedRowId> }> {
+  private async project(now: number, settings: AppSettings, o: { count?: boolean; counted?: boolean; /** plan 281: People's ask: no reminders (they're nobody's), and promises put off with Later kept (under Coming up) */ forPeople?: boolean } = {}): Promise<{ rows: ProjectedRow[]; counts: TodayCounts; counted?: CountedMail; threads: ReadonlyMap<number, ThreadSummary>; hidden?: ReadonlySet<FeedRowId> }> {
     const { store } = this.b;
     const read = async () => [settings.dated?.enabled ? await this.datedRows() : [], settings.followups?.enabled ? (await store.followups.active()).filter((r) => r.kind === "promise") : []] as const;
     const version = this.links.version;
@@ -662,12 +662,13 @@ export class TodayService {
     const away = promises.length ? await this.b.followups.awayAmong(promises.map((p) => p.threadId)) : new Set<number>();
     // plan 249: what the user's words brought joins after the links are reconciled (it's never linked, answered or merged)
     const placing = settings.dated?.enabled ? await this.withWanted(dated) : dated;
-    const items = this.placed(placing, await this.needs(dated, await this.aiMade(promises)), now, o.count === true, away);
+    const needing = await this.needs(dated, await this.aiMade(promises));
+    const items = o.forPeople ? placeItems(placing, needing, now, { away, keepDeferred: true }) : this.placed(placing, needing, now, o.count === true, away);
     const endOfDay = new Date(now);
     endOfDay.setHours(23, 59, 59, 999);
     // plan 210 (iteration 4, revision 8): your reminders due today are Today's to do, drawn and counted alike; the count reads
     // them as stored (a few, at most `REMINDERS_MAX`), the list as the reminders' own look has them (answered ones ended)
-    const due = (o.noReminders ? [] : o.count ? await store.reminders.list() : (await this.b.reminders.refresh()).reminders).filter((r) => r.dueAt <= endOfDay.getTime()).map((r) => ({ threadId: r.threadId, dueAt: r.dueAt }));
+    const due = (o.forPeople ? [] : o.count ? await store.reminders.list() : (await this.b.reminders.refresh()).reminders).filter((r) => r.dueAt <= endOfDay.getTime()).map((r) => ({ threadId: r.threadId, dueAt: r.dueAt }));
     // plan 211: your reminders and what's waiting on you are local: they follow the account's What matters switch alone
     const reminders = await this.local(due, (r) => r.threadId);
     const ids = [...placedThreads(items), ...reminders.map((r) => r.threadId)];
@@ -976,7 +977,7 @@ export class TodayService {
   async openItems(): Promise<TodayItem[]> {
     const settings = await readSettings(this.b.store);
     if (!(await this.available(settings))) return [];
-    const { rows, threads } = await this.project(this.b.now(), settings, { noReminders: true });
+    const { rows, threads } = await this.project(this.b.now(), settings, { forPeople: true });
     return this.itemsOf(rows, threads);
   }
 

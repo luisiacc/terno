@@ -83,9 +83,13 @@ test("People: the row below the Inbox, Open and the search, a person's page, Don
     await field.fill("greenway");
     await expect(row(page, "Ana Ruiz")).toHaveCount(1);
     await expect(row(page, "Marco Bell")).toHaveCount(1);
-    // a hit reads as its row in the list: Ana's says what's open with her; Marco, with nothing open, the address it matched
-    await expect(row(page, "Ana Ruiz").first()).toContainText("Phase 2 scope");
+    // found by their domain, each says the address it matched (it's why they're here), and how much is open
+    await expect(row(page, "Ana Ruiz").getByTestId("people-match").first()).toHaveText("greenway");
+    await expect(row(page, "Ana Ruiz").first()).toContainText("2 open");
     await expect(row(page, "Marco Bell").getByTestId("people-match").first()).toHaveText("greenway");
+    // found by name, a row reads as it does in the list: what's open with them
+    await field.fill("ana r");
+    await expect(row(page, "Ana Ruiz").first()).toContainText("Phase 2 scope");
     await field.fill("ana r");
     await expect(row(page, "Ana Ruiz")).toHaveCount(1);
     await field.press("Escape");

@@ -157,6 +157,22 @@ describe("everyone and the search", () => {
 });
 
 describe("one person", () => {
+  it("a promise put off with Later stays on their page, saying when it's back", async () => {
+    const { backend, client, account } = await setup({ followups: true });
+    const m = msg({ accountId: account.id, from: { name: "Me", email: account.email }, to: [{ name: "Ana", email: "ana@people.test" }], isSent: true, inInbox: true, date: NOW - DAY, providerMsgId: "p-1", subject: "The deck" });
+    const r = await backend.store.sync.ingest([m], { applyFilters: false, now: NOW, classifier: null, liveSent: { wanted: true } });
+    const thread = await threadOf(backend.store, "p-1");
+    await backend.store.followups.finish({ messageId: r.inserted[0]!, threadId: thread, fromScan: false, now: NOW, kept: [], model: "m", provider: "p", promptVersion: 1, clearGeneration: backend.store.followups.clearGeneration(), rows: [{ kind: "promise", item: 0, text: "send the deck", quote: "I'll send it", personName: "Ana", personEmail: "ana@people.test", dueAt: NOW - 1000, dated: false }] });
+    backend.today.changed();
+    const before = (await client.call("people.person", { email: "ana@people.test" }))!;
+    expect(before.items.map((i) => i.kind === "today" && i.item.why.kind)).toEqual(["promise"]);
+    const row = (await backend.store.followups.ofThread(thread))[0]!;
+    await client.call("followups.act", { id: row.id, revision: row.revision, action: "later", dueAt: NOW + 3 * DAY });
+    const after = (await client.call("people.person", { email: "ana@people.test" }))!;
+    expect(after.items).toHaveLength(1);
+    expect(after.items[0]!.kind === "today" && after.items[0]!.item.why.back).toBe(NOW + 3 * DAY);
+  });
+
   it("the card's Last time: the newest conversation other than the one open, its summary of that one; the page reads none", async () => {
     const { backend, client, from } = await setup();
     const older = await from("Ana", "ana@people.test", { waiting: false });

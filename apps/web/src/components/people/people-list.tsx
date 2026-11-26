@@ -1,3 +1,4 @@
+import { PEOPLE_SEARCH_MAX } from "@terno/core";
 import { formatNumber, t } from "@terno/i18n";
 import { Badge } from "@terno/ui/components/badge";
 import { Button } from "@terno/ui/components/button";
@@ -7,7 +8,7 @@ import { cn } from "@terno/ui/lib/utils";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { LIST_TITLE } from "~/lib/list-title";
-import { enterPerson, enterSearch, loadPeople, morphName, peopleList, reloadPage, searchPeople, selectPerson } from "~/lib/people";
+import { enterPerson, enterSearch, inputCount, loadPeople, morphName, peopleList, reloadPage, searchPeople, selectPerson } from "~/lib/people";
 import { renderProbe } from "~/lib/render-probe";
 import { installScrollHairline } from "~/lib/scroll-hairline";
 import { useAppearance } from "~/lib/appearance";
@@ -95,7 +96,9 @@ function PeopleList({ wide }: { wide: boolean }) {
       if (i === undefined) return;
       virtualizer.scrollToIndex(i, { align: "auto" });
       // the keyboard was on a row: it goes to the selected one, once it's drawn
-      if (focus) requestAnimationFrame(() => scrollRef.current?.querySelector<HTMLElement>(`[data-testid=person-row][data-key="${CSS.escape(key)}"]`)?.focus({ preventScroll: true }));
+      // (unless the user has typed or pressed somewhere since)
+      const asked = inputCount();
+      if (focus) requestAnimationFrame(() => asked === inputCount() && scrollRef.current?.querySelector<HTMLElement>(`[data-testid=person-row][data-key="${CSS.escape(key)}"]`)?.focus({ preventScroll: true }));
     };
     // (what was typed selected: typing replaces it)
     peopleList.focusSearch = () => {
@@ -164,7 +167,7 @@ function PeopleList({ wide }: { wide: boolean }) {
         {/* what's here: a search's count, or each section's, each a jump to it (Everyone is under the whole of Open) */}
         <p data-testid="people-line" aria-live={searching ? "polite" : undefined} className="type-list-subtitle -mt-1.5 flex min-h-[1lh] items-center gap-1 pb-2 pl-3 text-muted-foreground tabular">
           {searching ? (
-            hits && t("people.found", { count: hits.hits.length })
+            hits && (hits.hits.length >= PEOPLE_SEARCH_MAX ? t("people.foundFirst", { count: hits.hits.length }) : t("people.found", { count: hits.hits.length }))
           ) : (
             <>
               {openCount > 0 && (
@@ -274,7 +277,9 @@ function Heading({ row }: { row: Extract<PeopleRow, { kind: "heading" }> }) {
 const PersonRow = memo(function PersonRow({ row, selected, tabbable, query }: { row: Extract<PeopleRow, { kind: "person" }>; selected: boolean; /** the rows' one Tab stop */ tabbable: boolean; /** a search's words: what they matched is marked */ query: string }) {
   renderProbe("PeopleRow");
   // what's open now leads; something put off with Later only when that's all there is
-  const first = row.open?.items.find((i) => !itemWhen(i).later) ?? row.open?.items[0];
+  // a search hit found by its address (a domain, say) shows that address, marked: it's why the row is here
+  const byAddress = query !== "" && matchedParts(row.name, query) === null && matchedParts(row.email, query) !== null;
+  const first = byAddress ? undefined : (row.open?.items.find((i) => !itemWhen(i).later) ?? row.open?.items[0]);
   const parts = first ? itemParts(first) : null;
   const Glyph = first ? itemGlyph(first) : null;
   // the right column is what's open's when: with nothing open, none (the page says when you last wrote each other)
@@ -305,7 +310,7 @@ const PersonRow = memo(function PersonRow({ row, selected, tabbable, query }: { 
         selected ? "bg-row-selected text-row-selected-foreground" : "hover:bg-row-hover focus:bg-row-hover",
       )}
     >
-      <SenderAvatar name={row.name} email={row.email} person className="size-8 text-xs" />
+      <SenderAvatar name={row.name} email={row.email} person className="size-[max(var(--avatar-row),2rem)] text-[length:calc(max(var(--avatar-row),2rem)*0.34)]" />
       <span className="min-w-0 flex-1">
         <span className="flex min-w-0 items-baseline gap-3">
           <span className="type-row-from min-w-0 flex-1 truncate">

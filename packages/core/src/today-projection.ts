@@ -1,4 +1,4 @@
-import { ANSWERED_KINDS, datedGroup, datedGroupAt, dayKeyOf, displayBucket, promiseBroken, promiseDay, promiseGroupAt, shownEarly, todayCounted, type BrokenPromise, type DatedRow, type TaskPlace, type TodayGroupKind } from "./dated";
+import { ANSWERED_KINDS, datedGroup, datedGroupAt, dayKeyOf, displayBucket, promiseBroken, promiseDay, promiseDeferred, promiseGroupAt, shownEarly, todayCounted, type BrokenPromise, type DatedRow, type TaskPlace, type TodayGroupKind } from "./dated";
 import type { FollowupRow } from "./followups";
 import type { PartOfDay } from "./part-of-day";
 import { addressKey } from "./people";
@@ -336,8 +336,12 @@ function byReply(placed: readonly PlacedItem[], hidden: readonly Logical[]): Pla
  * 210, iteration 5: the panel saw one leg twice, on two clocks). Needs no store: the caller then reads which of their
  * conversations may show (`placedThreads`). `count`: Coming up is never counted nor says a conversation, so it's left out.
  */
-export function placeItems(dated: readonly DatedRow[], promises: readonly NeedingPromise[], now: number, o: { count?: boolean; away?: ReadonlySet<number> } = {}): PlacedItem[] {
+export function placeItems(dated: readonly DatedRow[], promises: readonly NeedingPromise[], now: number, o: { count?: boolean; away?: ReadonlySet<number>; /** plan 281 */ keepDeferred?: boolean } = {}): PlacedItem[] {
   const today = dayKeyOf(now);
+  // plan 281: People keeps a promise put off with Later under Coming up, by its day back (What matters shows none until
+  // then: an undated one has no day of its own to show it on); the count and What matters never ask for it
+  const promiseAt = (row: NeedingPromise): TaskPlace | null =>
+    promiseGroupAt(row, now, today) ?? (o.keepDeferred && !o.count && (row.state === "open" || row.state === "due") && promiseDeferred(row, now) ? { group: "comingUp", day: dayKeyOf(row.deferredUntil!) } : null);
   // (iteration 4, the Codex review's revision 4) a promise that only holds a request is never a row: the request is
   if (promises.some((p) => p.holds != null)) promises = promises.filter((p) => p.holds == null);
   dated = withoutAnswered(dated, promises);
@@ -359,7 +363,7 @@ export function placeItems(dated: readonly DatedRow[], promises: readonly Needin
       if (at !== null) out.push({ item: { id: own("dated", row.id), lead, members: [{ source: "dated", id: row.id }], entries: [lead] }, at });
     }
     for (const row of promises) {
-      const at = promiseGroupAt(row, now, today);
+      const at = promiseAt(row);
       const lead = { source: "promise" as const, row };
       const item: Logical = { id: own("promise", row.id), lead, members: [{ source: "promise", id: row.id }], entries: [lead] };
       if (at !== null) out.push({ item, at });
@@ -370,7 +374,7 @@ export function placeItems(dated: readonly DatedRow[], promises: readonly Needin
   const out: PlacedItem[] = [];
   for (const item of logicalItems(dated, promises)) {
     const { lead } = item;
-    const at = lead.source === "dated" ? datedGroupAt(lead.row, now, today) : promiseGroupAt(lead.row, now, today);
+    const at = lead.source === "dated" ? datedGroupAt(lead.row, now, today) : promiseAt(lead.row);
     if (at !== null) out.push({ item, at });
     else if (grouping && lead.source === "promise") hidden.push(item);
   }
