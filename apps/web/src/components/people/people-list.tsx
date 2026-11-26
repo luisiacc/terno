@@ -11,6 +11,7 @@ import { enterPerson, enterSearch, loadPeople, morphName, peopleList, reloadPage
 import { renderProbe } from "~/lib/render-probe";
 import { installScrollHairline } from "~/lib/scroll-hairline";
 import { useAppearance } from "~/lib/appearance";
+import { useDesign } from "~/lib/design";
 import { useApp } from "~/state/app";
 import { indexOf, matchedParts, peopleRows, usePeople, type PeopleRow } from "~/state/people";
 import { Marked } from "../match-mark";
@@ -59,6 +60,7 @@ const WIDE = "mx-auto w-full max-w-[44rem]";
 const WIDE_HEADER = "mx-auto w-full max-w-[45rem] pr-2";
 
 function PeopleList({ wide }: { wide: boolean }) {
+  const design = useDesign();
   const state = usePeople((s) => s.list);
   const query = usePeople((s) => s.query);
   const hits = usePeople((s) => s.hits);
@@ -155,7 +157,7 @@ function PeopleList({ wide }: { wide: boolean }) {
     <section className="relative flex h-full min-h-0 flex-col bg-pane" data-testid="people">
       <header ref={headerRef} className={cn("drag-region scroll-hairline shrink-0 pr-4 pb-2 pl-2", wide && WIDE_HEADER)}>
         <div className="flex h-(--pane-bar) items-center pr-1.5 pl-3">
-          <h1 className={cn("min-w-0 flex-1 truncate", LIST_TITLE.title)} data-testid="list-title">
+          <h1 className={cn("min-w-0 flex-1 truncate", LIST_TITLE[design.variants.listHeader === "title" ? "title" : "display"])} data-testid="list-title">
             {t("people.title")}
           </h1>
         </div>
@@ -320,7 +322,7 @@ const PersonRow = memo(function PersonRow({ row, selected, tabbable, query }: { 
                 <span className="font-medium">{parts!.label}</span> · {parts!.text}
               </span>
               {more > 0 && (
-                <Badge variant="neutral" className="ms-auto tabular">
+                <Badge variant="neutral" className="ms-auto tabular" title={t("people.moreSaid", { count: more })}>
                   <span aria-hidden>{t("people.more", { count: more })}</span>
                   <span className="sr-only">{t("people.moreSaid", { count: more })}</span>
                 </Badge>

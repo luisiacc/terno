@@ -1322,7 +1322,7 @@ const en = {
   "people.warming": "Getting your contacts ready…",
   "people.off": "Your contacts couldn’t be loaded. Open People again to try once more.",
   "people.empty": "People you write to show here.",
-  "people.noHits": "No one matches “{query}”.",
+  "people.noHits": "No one matches “{query}”. People finds names and addresses.",
   "people.none": "Choose someone to see what’s open between you.",
   "people.between": "Open between you",
   "people.noOpen": "Nothing open between you.",

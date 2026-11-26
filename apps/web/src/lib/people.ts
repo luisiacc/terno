@@ -331,7 +331,11 @@ export async function actOnPersonItem(item: PersonItem, action: "done" | "dismis
 function keyboardOnPage(): () => boolean {
   const was = document.activeElement;
   const on = !was || was === document.body || was.closest("[data-testid=person-page]") !== null || was.closest("[role=menu]") !== null;
-  return () => on && (document.activeElement === document.body || document.activeElement === null || !document.activeElement.isConnected);
+  // (still on the page or in the menu the act came from, or dropped: never taken from somewhere the user went meanwhile)
+  return () => {
+    const now = document.activeElement;
+    return on && (!now || now === document.body || !now.isConnected || now.closest("[data-testid=person-page]") !== null || now.closest("[role=menu]") !== null);
+  };
 }
 
 function focusItem(id: string): void {

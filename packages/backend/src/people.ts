@@ -84,7 +84,18 @@ export class PeopleService {
     const name = this.b.autocomplete.peopleIndex()?.person(email)?.name || found?.name || "";
     const last = except === undefined ? undefined : shown.find((t) => t.id !== except);
     const lastSummary = last ? (await this.b.today.summaryLine(last.id)).summary : undefined;
-    return { key, email, name, items: found?.items ?? [], conversations: shown, more: page?.nextCursor != null, ...(last && lastSummary ? { lastSummary, lastSummaryOf: last.id } : {}) };
+    // (the card says who wrote it: you, them, or someone else on it)
+    const lastFromMe = last ? (await this.mine()).has(personKey(last.fromEmail)) : false;
+    return {
+      key,
+      email,
+      name,
+      items: found?.items ?? [],
+      conversations: shown,
+      more: page?.nextCursor != null,
+      ...(last && lastSummary ? { lastSummary, lastSummaryOf: last.id } : {}),
+      ...(lastFromMe ? { lastFromMe } : {}),
+    };
   }
 
   private indexState(): PeopleList["index"] {

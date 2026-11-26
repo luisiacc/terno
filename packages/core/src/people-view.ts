@@ -71,6 +71,8 @@ export interface PersonPage {
   lastSummary?: string;
   /** which conversation `lastSummary` is of */
   lastSummaryOf?: number;
+  /** the card's last conversation was last written by you (one of your addresses) */
+  lastFromMe?: boolean;
 }
 
 /** Everyone is capped (past it, search finds them). */

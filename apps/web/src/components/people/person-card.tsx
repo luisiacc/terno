@@ -70,7 +70,7 @@ export function PersonCardHead({ page, threadId }: { page: PersonPage; threadId:
         <>
           <DropdownMenuSeparator />
           <DropdownMenuGroup data-testid="person-card-last">
-            <DropdownMenuLabel>{personKey(last.fromEmail) === page.key ? t("people.theyWroteLast", { name: last.fromName || page.name || page.email }) : t("people.youWroteLast")}</DropdownMenuLabel>
+            <DropdownMenuLabel>{page.lastFromMe ? t("people.youWroteLast") : t("people.theyWroteLast", { name: personKey(last.fromEmail) === page.key ? last.fromName || page.name || page.email : last.fromName || last.fromEmail })}</DropdownMenuLabel>
             <DropdownMenuItem data-testid="person-card-last-item" onClick={() => go(last.id)} className="h-auto items-start py-1.5">
               {/* (on the items' line: a glyph of its own) */}
               <Mail className="mt-0.5" />

@@ -1306,7 +1306,7 @@ const es = {
   "people.warming": "Preparando tus contactos…",
   "people.off": "No se pudieron cargar tus contactos. Vuelve a abrir Personas para intentarlo de nuevo.",
   "people.empty": "Aquí aparecen las personas a las que escribes.",
-  "people.noHits": "Nadie coincide con «{query}».",
+  "people.noHits": "Nadie coincide con «{query}». Personas busca nombres y direcciones.",
   "people.none": "Elige a alguien para ver qué hay pendiente entre ustedes.",
   "people.between": "Pendiente entre ustedes",
   "people.noOpen": "Nada pendiente entre ustedes.",

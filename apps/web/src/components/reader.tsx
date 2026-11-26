@@ -65,6 +65,7 @@ import { OriginalHost } from "./original-message";
 import { reasonText } from "~/lib/reasons";
 import { useDesign, variant } from "~/lib/design";
 import { renderProbe } from "~/lib/render-probe";
+import { usePeople } from "~/state/people";
 import { useAppearance } from "~/lib/appearance";
 import { goBack } from "~/lib/page";
 import { move } from "~/lib/keyboard";
@@ -1049,8 +1050,11 @@ function useListTitle(): string {
   const back = useToday((s) => s.fromDigest);
   const automated = useToday((s) => s.digest?.automated === true);
   const toDigest = useApp((s) => back !== null && s.selectedId === back);
+  // plan 281: from a person's page, back to them (People, when there's no page)
+  const person = usePeople((p) => p.page?.name || p.page?.email || null);
   return useApp((s) => {
     if (toDigest) return t(automated ? "today.digest.automatedTitle" : "today.digest.title");
+    if (s.people) return (s.person !== null && person) || t("people.title");
     const review = s.categories.find((c) => c.id === s.reviewCategoryId);
     if (review) return t("list.reviewTitle", { category: review.name });
     if (s.query.trim()) return t("list.scope.quoted", { label: s.query.trim() });

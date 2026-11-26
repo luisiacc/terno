@@ -171,6 +171,19 @@ describe("one person", () => {
     expect(read).not.toHaveBeenCalled();
   });
 
+  it("the card's Last time says whether you wrote it: never you for someone else's email they were on", async () => {
+    const { client, from, to } = await setup();
+    const open = await from("Ana", "ana@people.test", { waiting: false });
+    // Björn wrote last, Ana on it: not you
+    await from("Björn", "bjorn@people.test", { waiting: false, over: { to: [{ name: "Ana", email: "ana@people.test" }], date: NOW - 3 * DAY } });
+    expect((await client.call("people.person", { email: "ana@people.test", conversations: 2, except: open }))!.lastFromMe).toBeUndefined();
+    // you wrote her since
+    const sent = await to("Ana", "ana@people.test");
+    const card = (await client.call("people.person", { email: "ana@people.test", conversations: 3, except: open }))!;
+    expect(card.conversations.find((c) => c.id !== open)?.id).toBe(sent);
+    expect(card.lastFromMe).toBe(true);
+  });
+
   it("their open items and recent conversations, never Spam or Trash, with whether there are more", async () => {
     const { client, raw, from } = await setup();
     const open = await from("Ana", "ana@people.test");

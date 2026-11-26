@@ -167,6 +167,7 @@ test("People: the row below the Inbox, Open and the search, a person's page, Don
     await expect(items(page)).toHaveCount(before - 1);
     // the keyboard is on the next thing, not nowhere
     await expect(page.locator("[data-testid=person-page] :focus")).toHaveCount(1);
+    await expect(page.getByTestId("snack").last()).toBeVisible();
     await page.keyboard.press("z");
     await expect(items(page)).toHaveCount(before, { timeout: 8000 });
     // Esc: back on her row
@@ -189,6 +190,7 @@ test("People: the row below the Inbox, Open and the search, a person's page, Don
     await expect(page.getByRole("menuitem").first()).toBeVisible();
     await page.getByRole("menuitem").first().press("Enter");
     await expect(page.locator(`[data-testid=person-item][data-item="${id}"] [data-testid=person-item-open]`)).toBeFocused({ timeout: 8000 });
+    await expect(page.getByTestId("snack").last()).toBeVisible();
     await page.keyboard.press("z");
     await expect(page.locator(`[data-testid=person-item][data-item="${id}"]`)).not.toHaveAttribute("data-later", { timeout: 8000 });
     expect(await onBody()).toBe(false);
