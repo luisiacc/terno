@@ -82,8 +82,13 @@ test.describe("Put away (plan 282)", () => {
       await axeBothModes(page, "[data-testid=put-away-box]");
       await box.getByTestId("put-away-back").click();
       await expect(page.getByTestId("snack-message")).toHaveText("Back in the Inbox");
-      await expect(rows(page)).toHaveCount(1);
+      // the owner: it stays open and in its place (nothing opens and reads the next one); the box goes
+      await expect(box).toHaveCount(0);
+      await expect(page.getByTestId("reader-subject")).toHaveText("291 gadgets para tu escritorio");
+      await expect(rows(page)).toHaveCount(2);
+      await expect(rows(page).nth(1)).toHaveAttribute("data-cursor", "true");
       await page.keyboard.press("z");
+      await expect(page.getByTestId("put-away-box")).toBeVisible();
       await expect(rows(page)).toHaveCount(2);
     });
 
@@ -123,9 +128,31 @@ test.describe("Put away (plan 282)", () => {
       await rows(page).nth(1).click({ modifiers: ["Meta"] });
       await page.getByTestId("bar-inbox").click();
       await expect(page.getByTestId("snack-message")).toHaveText("2 back in the Inbox");
-      await expect(rows(page)).toHaveCount(0);
+      // the open one stays under the reader until the selection moves
+      await expect(rows(page)).toHaveCount(1);
       await page.keyboard.press("z");
       await expect(rows(page)).toHaveCount(2);
+    });
+
+    await scenario("a rule that's off: Bring back all it put away, with one Undo", async () => {
+      await arrive(server, "xataka-2", xataka, "Los mejores móviles", E2E_NOW - 50_000);
+      const f = (await store.filters.list()).find((x) => x.name === "Xataka")!;
+      await store.filters.save({ id: f.id, name: f.name, enabled: false, source: f.source, rule: f.rule }, E2E_NOW);
+      await fresh(page);
+      // More stays as it was left (open)
+      if (!(await page.getByTestId("nav-put-away").isVisible())) await page.getByTestId("nav-more").click();
+      await page.getByTestId("nav-put-away").click();
+      await expect(page.getByTestId("list-title")).toHaveText("Put away");
+      await expect(rows(page)).toHaveCount(3);
+      await rows(page).filter({ hasText: "291 gadgets" }).click();
+      const box = page.getByTestId("put-away-box");
+      await expect(box.getByTestId("put-away-why")).toHaveText("Your rule “Xataka” archived this. That rule is off now.");
+      await box.getByTestId("put-away-bring-back").click();
+      await expect(page.getByTestId("snack-message")).toHaveText("2 back in the Inbox");
+      // the open one stays under the reader; the other leaves
+      await expect(rows(page)).toHaveCount(2);
+      await page.keyboard.press("z");
+      await expect(rows(page)).toHaveCount(3);
     });
   });
 });

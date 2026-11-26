@@ -320,6 +320,18 @@ function heldOnly(items: ThreadSummary[], top: readonly number[] = inboxTop.ids)
 }
 
 /**
+ * Plan 282 (the owner): in Put away, the open conversation a fix took back to the Inbox stays at its place, as a filtered
+ * list keeps the one you read; it goes once the selection moves off it.
+ */
+function holdOpen(items: ThreadSummary[], before: readonly ThreadSummary[]): ThreadSummary[] {
+  const open = getApp().selectedId;
+  if (open === null || items.some((t) => t.id === open)) return items;
+  const at = before.findIndex((t) => t.id === open);
+  if (at < 0) return items;
+  return [...items.slice(0, at), before[at]!, ...items.slice(at)];
+}
+
+/**
  * A filtered search can't ask the store to keep a thread (it is the query's
  * answer): the kept rows it showed stay as they were, at their place in the
  * loaded window. Their terms don't change by reading them; they go when the
@@ -533,6 +545,7 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
       return;
     }
     if (scope?.kind === "search" && scope.filter && (sameView || options.keepSelection)) page = keepSearchRows(page, current.items);
+    if (getApp().putAway && (sameView || options.keepSelection)) page = { ...page, items: holdOpen(page.items, current.items) };
     if (scope?.filter) page = { ...page, items: heldOnly(page.items, top.ids) };
     // the window refresh keeps the first visible row where it was (new mail above it doesn't push it down): always after a page
     // (Back finds what it left), and on the list unless it's at the very top (there, new mail shows as it arrives)

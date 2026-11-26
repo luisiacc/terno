@@ -1744,6 +1744,17 @@ export function ruleMessage(m: R, bodyText: string | null): RuleMessage {
 
 export { ruleAwaitsBody, ruleNeedsBody, ruleReadsBody } from "@terno/core";
 
+/** Plan 282: of these messages, those not from someone you've written to (what a rule Terno made may move: `sparesCorrespondents`) */
+export function withoutCorrespondents(c: Ctx, messageIds: readonly number[]): number[] {
+  const messages = T(c, "messages");
+  const people = T(c, "correspondents");
+  return messageIds.filter((id) => {
+    const m = messages.get(id);
+    const who = m ? people.get(String(m.from_email).toLowerCase()) : undefined;
+    return !(who?.written === 1 && who.own !== 1);
+  });
+}
+
 /** Messages (not in trash) matching a rule among the given ones (their bodies read ahead when the rule needs them). */
 export function findRuleMatches(c: Ctx, rule: FilterRule, now: number, messageIds: readonly number[]): { messageIds: number[]; threadIds: number[] } {
   const messages = T(c, "messages");

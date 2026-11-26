@@ -216,6 +216,49 @@ export function definePutAwayConformance(fresh: () => Promise<MailStore>, reopen
       expect(await again.putAway.of(t, NOW)).toMatchObject({ detail: { by: "rule", action: "archive" } });
     });
 
+    it("a rule run by hand over existing mail puts away what it took out of the Inbox (the owner, after the QA panel)", async () => {
+      const { store, arrive, listed } = await setup();
+      const inbox = await arrive({ subject: "in the Inbox" });
+      await arrive({ subject: "already archived", inInbox: false });
+      const f = await store.filters.save({ name: "Xataka", enabled: true, source: "manual", rule: from(news.email, [{ type: "archive" }]) }, NOW);
+      const ids = (await store.debug.snapshot()).messages.map((m) => m.id);
+      const r = await store.filters.applyChunk(f.id, JSON.stringify(f.rule), ids, NOW + 5);
+      expect(r).toMatchObject({ applied: 2, placed: [inbox] });
+      expect(await listed(NOW + 5)).toEqual([inbox]);
+      expect(await store.putAway.of(inbox, NOW + 5)).toMatchObject({ at: NOW + 5, detail: { by: "rule", filterId: f.id, action: "archive" } });
+    });
+
+    it("a rule Terno made never moves mail from someone you've written to, unless it names that sender", async () => {
+      const { store, accountId, arrive, listed } = await setup();
+      await store.sync.ingest([msg({ accountId, providerMsgId: "sent", from: { name: "Me", email: "me0@example.com" }, to: [javier], isSent: true, inInbox: false, subject: "Hola", date: NOW - DAY })], { applyFilters: false, now: NOW - DAY, classifier: null });
+      const domain: FilterRule = { match: "all", conditions: [{ field: "fromDomain", op: "equals", value: "acme.test" }], actions: [{ type: "archive" }] };
+      const learned = await store.filters.save({ name: "Archive mail from @acme.test", enabled: true, source: "manual", auto: true, rule: domain }, NOW - DAY);
+      const colleague = await arrive({ from: javier, subject: "Reunión" });
+      const updates = await arrive({ from: { name: "Acme", email: "updates@acme.test" }, subject: "Resumen" });
+      expect(await listed()).toEqual([updates]);
+      // run by hand too
+      const ids = (await store.debug.snapshot()).messages.filter((m) => m.threadId === colleague).map((m) => m.id);
+      expect(await store.filters.applyChunk(learned.id, JSON.stringify(domain), ids, NOW + 1)).toMatchObject({ applied: 0, placed: [] });
+      // the same rule as the user's own moves everyone; Terno's rule that names Javier moves him
+      await store.filters.save({ name: "Javier", enabled: true, source: "manual", auto: true, rule: from(javier.email, [{ type: "archive" }]) }, NOW);
+      const named = await arrive({ from: javier, subject: "Otra" }, NOW + 2);
+      expect(await store.putAway.of(named, NOW + 2)).toMatchObject({ detail: { name: "Javier" } });
+    });
+
+    it("Stop's second step: a rule that's off says how many it still keeps away, and lists them newest first", async () => {
+      const { store, arrive, rule } = await setup();
+      const f = await rule(news.email, [{ type: "archive" }], "Xataka");
+      const a = await arrive({ subject: "a" }, NOW + 1);
+      const b = await arrive({ subject: "b" }, NOW + 2);
+      expect(await store.putAway.of(a, NOW + 2)).not.toHaveProperty("ruleHolding");
+      await store.filters.save({ id: f.id, name: f.name, enabled: false, source: "manual", rule: f.rule }, NOW + 3);
+      expect(await store.putAway.of(a, NOW + 3)).toMatchObject({ ruleLive: true, ruleEnabled: false, ruleHolding: 2 });
+      expect(await store.putAway.byRule(f.id, NOW + 3)).toEqual([{ threadId: b, at: NOW + 2 }, { threadId: a, at: NOW + 1 }]);
+      await store.threads.act({ threadIds: [b], action: "moveToInbox", signal: null, now: NOW + 4 });
+      expect(await store.putAway.byRule(f.id, NOW + 4)).toEqual([{ threadId: a, at: NOW + 1 }]);
+      expect(await store.putAway.of(a, NOW + 4)).toMatchObject({ ruleHolding: 1 });
+    });
+
     describe("Terno's own filing", () => {
       const sender = "billing@shop.test";
       /** a hidden category the engine files a sender's mail into on its own: the user's examples and a model trained on them */

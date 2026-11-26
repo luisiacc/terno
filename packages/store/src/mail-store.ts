@@ -577,7 +577,8 @@ export interface MailStore {
     /** each message's thread, once */
     threadsOf(messageIds: readonly number[]): Promise<number[]>;
     /** claims + actions + ops for one chunk; refuses (CANCELLED) if the filter changed since `ruleJson` */
-    applyChunk(id: number, ruleJson: string, messageIds: readonly number[], now: number): Promise<{ applied: number; touched: number[]; opIds: string[] } & FlagReconciliation>;
+    /** Plan 282: `placed`, the conversations it took out of the Inbox view (put away, as new mail's rules do) */
+    applyChunk(id: number, ruleJson: string, messageIds: readonly number[], now: number): Promise<{ applied: number; touched: number[]; opIds: string[]; placed: number[] } & FlagReconciliation>;
   };
 
   /**

@@ -4,7 +4,7 @@ import { Button } from "@terno/ui/components/button";
 import { useRef, type ReactNode } from "react";
 import { dayDate } from "~/lib/format";
 import { richT } from "~/lib/i18n";
-import { backToInbox, categoryName, editRule, folderName, keepSenderOut, notCategory, senderOf, stillPutAway, stopRule, whyOf, type PlacementNames } from "~/lib/put-away";
+import { backToInbox, bringBackRule, categoryName, editRule, folderName, keepSenderOut, notCategory, senderOf, stillPutAway, stopRule, whyOf, type PlacementNames } from "~/lib/put-away";
 import { useApp } from "~/state/app";
 
 const strong = (s: ReactNode) => <strong className="font-medium text-foreground">{s}</strong>;
@@ -54,6 +54,8 @@ export function PutAwayBox({ threadId, placed }: { threadId: number; placed: Put
     const values = { name: d.name, category: categoryName(names, d.categoryId), folder: folderName(names, d.folder), date: dayDate(d.createdAt), b: strong };
     sentence = !placed.ruleLive ? richT("putAway.box.changed", { name: d.name, b: strong }) : d.auto ? richT(`putAway.box.auto.${d.action}`, values) : richT(`putAway.box.rule.${d.action}`, values);
     if (placed.ruleLive && !placed.ruleEnabled) notes.push(t("putAway.box.ruleOff"));
+    // Stop's second step (the owner): what the rule still keeps away, when that's more than this one
+    if ((placed.ruleHolding ?? 0) > 1) actions.push({ label: t("putAway.action.bringBack", { count: placed.ruleHolding! }), testId: "put-away-bring-back", run: () => bringBackRule(threadId, d.filterId) });
     // Terno's own rule can be stopped while it's on; the user's own is theirs to edit
     if (placed.ruleLive && d.auto && placed.ruleEnabled) actions.push({ label: t("putAway.action.stop"), testId: "put-away-stop", run: () => stopRule(threadId, at, d.name) });
     else if (placed.ruleLive && !d.auto) actions.push({ label: t("putAway.action.edit"), testId: "put-away-edit", run: () => editRule(threadId, d.filterId) });

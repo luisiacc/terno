@@ -184,6 +184,18 @@ export async function stopRule(threadId: number, at: number, name: string): Prom
   }
 }
 
+/** Stop's second step: everything a rule that's off now still keeps put away, back in the Inbox (one Undo) */
+export async function bringBackRule(threadId: number, filterId: number): Promise<void> {
+  try {
+    const { items } = await client.call("putAway.byRule", { filterId });
+    if (items.length) return backToInbox(items);
+    refresh([threadId]);
+  } catch (error) {
+    snack.error(t("putAway.back.failed", { error: errorText(error) }));
+    refresh([threadId]);
+  }
+}
+
 /** Edit rule: the rule that did this, open in the Rules builder; deleted since, it says so (and the box reads it again) */
 export async function editRule(threadId: number, filterId: number): Promise<void> {
   try {

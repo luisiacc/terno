@@ -174,3 +174,11 @@ export interface FilterSave {
   /** plan 90: refused (CANCELLED) unless the filter is still exactly this (an edit made meanwhile wins) */
   expect?: FilterState;
 }
+
+/**
+ * Plan 282 (the owner, after the QA panel): a rule Terno made never moves mail from someone you've written to, unless it
+ * names that one sender. A domain's or a list's rule learned from a few newsletters mustn't sweep up a colleague.
+ */
+export function sparesCorrespondents(filter: Pick<Filter, "auto" | "rule">): boolean {
+  return filter.auto && !filter.rule.conditions.some((c) => c.field === "from" && c.op === "equals" && !c.negate);
+}

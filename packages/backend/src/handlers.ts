@@ -1090,6 +1090,7 @@ export function createHandlers(b: Backend): Handlers {
       if (applying.has(id)) throw new RpcError("BAD_REQUEST", L("errors.filterApplying"));
       applying.add(id);
       let applied = 0;
+      let placed = false;
       const touched = new Set<number>();
       try {
         const filter = await store.filters.get(id);
@@ -1115,6 +1116,7 @@ export function createHandlers(b: Backend): Handlers {
           const r = await store.filters.applyChunk(id, capturedRule, chunk, b.now());
           for (const t of r.touched) touched.add(t);
           applied += r.applied;
+          placed ||= r.placed.length > 0;
           b.opsQueued(r.opIds);
           b.reconcileFlags(r.flagReconcileAccounts);
           progress((done += chunk.length));
@@ -1128,6 +1130,8 @@ export function createHandlers(b: Backend): Handlers {
       } finally {
         applying.delete(id);
         b.notifyChanged(touched);
+        // plan 282: once a run, not once a chunk
+        if (placed) b.putAwayChanged();
       }
     },
     "filters.generate": ({ prompt }, ctx) => b.aiService.generateFilter(prompt, ctx.clientId),
@@ -1750,6 +1754,7 @@ export function createHandlers(b: Backend): Handlers {
       await b.forwards.rules();
       return { filterUndo: r.filterUndo };
     },
+    "putAway.byRule": async ({ filterId }) => ({ items: await store.putAway.byRule(filterId, b.now()) }),
     "putAway.kept": async () => ({ senders: await store.putAway.kept() }),
     "putAway.removeKept": async ({ categoryId, sender }) => ({ removed: await store.putAway.removeKept(categoryId, sender) }),
 

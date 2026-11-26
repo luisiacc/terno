@@ -173,7 +173,18 @@ export function placementOf(c: Ctx, threadId: number, now: number): PutAwayDetai
   if (p.detail.by !== "rule") return { ...p, senderKept: isKeptSender(c, p.detail.categoryId, p.detail.sender) };
   const filter = T(c, "filters").get(p.detail.filterId);
   const live = !!filter && ruleHash(JSON.parse(filter.rule_json)) === p.detail.ruleHash;
-  return { ...p, ruleLive: live, ruleEnabled: live && filter!.enabled === 1 };
+  const enabled = live && filter!.enabled === 1;
+  return { ...p, ruleLive: live, ruleEnabled: enabled, ...(live && !enabled && { ruleHolding: placementsByRule(c, p.detail.filterId, now).length }) };
+}
+
+/** A rule's placements that still hold, newest first, at most 500 */
+export function placementsByRule(c: Ctx, filterId: number, now: number): { threadId: number; at: number }[] {
+  return [...T(c, "placements").all()]
+    .filter((r) => r.by === "rule" && r.at > now - PUT_AWAY_MS)
+    .filter((r) => { const d = toPlacement(r)?.detail; return d?.by === "rule" && d.filterId === filterId && holds(c, r); })
+    .sort((a, b) => b.at - a.at || b.thread_id - a.thread_id)
+    .slice(0, 500)
+    .map((r) => ({ threadId: r.thread_id, at: r.at }));
 }
 
 export function placementPage(c: Ctx, p: { now: number; after?: PutAwayCursor | null; limit: number }): PutAwayPage {

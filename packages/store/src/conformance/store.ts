@@ -648,7 +648,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         expect((await store.debug.snapshot()).messages.every((m) => m.isStarred)).toBe(true);
         const f = (await store.filters.list())[0]!;
         const again = await store.filters.applyChunk(f.id, JSON.stringify(f.rule), r.inserted, NOW);
-        expect(again).toEqual({ applied: 0, touched: [], opIds: [] });
+        expect(again).toEqual({ applied: 0, touched: [], opIds: [], placed: [] });
         await expect(store.filters.applyChunk(f.id, JSON.stringify({ ...f.rule, actions: [] }), r.inserted, NOW)).rejects.toThrow(/changed/);
         // editing the rule forgets what the old definition was applied to
         await store.filters.save({ id: f.id, name: f.name, enabled: true, source: "manual", rule: { ...rule, actions: [{ type: "markRead" }] } }, NOW);

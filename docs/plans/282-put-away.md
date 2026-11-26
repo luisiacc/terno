@@ -222,3 +222,15 @@ Fixed from the panel:
 Not bugs: Priya's missing Inbox line (the setup check had opened her Put away, which marks it seen) and Sam's (he had already reviewed it).
 
 Left for the owner: whether "Save and apply to existing mail" records placements; whether Terno's learned rules may cover a whole domain or people you've written to; whether Stop this rule offers to bring back what it moved; whether Back to Inbox and Undo advance to the next conversation (and mark it read); the Spanish name ("Apartado"); whether Don't file … also brings the sender's other filed mail back; a count or a shortcut for Put away; a setting for the Inbox line.
+
+## The owner's decisions after the panel
+
+The owner took every recommendation:
+
+1. **A rule run by hand puts away too.** "Save and apply to existing mail" (`filters.applyChunk`) watches what it takes out of the Inbox view, as new mail's rules do: each conversation gets a placement at the time of the run, with its fixes, and the Inbox's line for someone you've written to. `putAwayChanged` fires once a run, not once a chunk.
+2. **A rule Terno made spares the people you've written to, unless it names that one sender** (`sparesCorrespondents` in core; `withoutCorrespondents` in each store, on new mail and by hand). A domain's or a list's rule learned from newsletters no longer sweeps up a colleague. A rule the user saves becomes theirs (plan 90) and moves everyone it matches.
+3. **Stop's second step.** A rule that's off says how many conversations it still keeps put away (`ruleHolding`), and the box offers "Bring back all # it put away" when that's more than this one: `putAway.byRule` lists them (at most 500, Back to Inbox's bound) and Back to Inbox takes them, with one Undo.
+4. **In Put away, the open conversation stays.** Back to Inbox (from the box, the menu or the selection), Not {category} and Don't file … keep it open and in its place, as a filtered list keeps the one you read (`leaveList` and `holdOpen`): nothing opens and reads the next one, and Undo finds the same conversation under the reader. It leaves the list once the selection moves.
+5. **Spanish: "Fuera de Entrada"**, not "Apartado" (in Mexico "apartar" reads as layaway); the notice and Undo say "salió de Entrada" and "sacar otra vez de Entrada".
+6. **Don't file … says it's about new mail:** "From now on Terno asks before filing {sender}'s mail in {category}; what's already there stays."
+7. Declined for now: a count or a shortcut for Put away, and a setting for the Inbox line.

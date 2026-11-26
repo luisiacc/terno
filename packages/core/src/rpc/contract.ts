@@ -1314,6 +1314,8 @@ export const contract = {
   "putAway.keepUndo": m<{ ok: true }>()(z.object({ undoId: z.string().min(1).max(64) })),
   /** Stop the rule that put this conversation away (only while it's unchanged): filters.setEnabled's answer, its Undo there */
   "putAway.stopRule": m<{ filterUndo: number | null }>()(z.object({ threadId: id, at: z.number().int() })),
+  /** Stop's second step: what a rule (off now) still keeps put away, as putAway.back takes it */
+  "putAway.byRule": m<{ items: { threadId: number; at: number }[] }>()(z.object({ filterId: id })),
   /** Settings → Categories: the senders kept out of a category's automatic filing, and taking one back */
   "putAway.kept": m<{ senders: { categoryId: number; sender: string; at: number }[] }>()(empty),
   "putAway.removeKept": m<{ removed: boolean }>()(z.object({ categoryId: id, sender: z.string().min(1).max(400) })),

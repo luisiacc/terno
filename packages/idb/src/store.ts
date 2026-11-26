@@ -1,4 +1,4 @@
-import { endPlacements, keepSender, listKeptSenders, placedVisible, placementOf, placementPage, placementsNeedingLook, PlacementWatch, refileHiddenFilings, releaseHiddenFilings, removeKeptSender, unkeepSender } from "./put-away";
+import { endPlacements, keepSender, listKeptSenders, placedVisible, placementOf, placementPage, placementsByRule, placementsNeedingLook, PlacementWatch, refileHiddenFilings, releaseHiddenFilings, removeKeptSender, unkeepSender } from "./put-away";
 import { ruleNote } from "@terno/store";
 import { ASK_MATCH_MESSAGES, ASK_MATCH_PARTS, CORPUS_TEXTS_MAX, finishBodyClose, rankSentRefs, readPassages, readThreadContext, type SentRef } from "@terno/store";
 import { ClosedOrder } from "./closed-order";
@@ -46,7 +46,7 @@ import { mergeBefore, sameImapLocations, reaffirmSavedFlagIntent, acceptFlagObse
 import { bindIdbPromotedFlags, idbFlags, idbFlagSnapshots, prepareIdbFlagPage } from "./flag-intents";
 import { appendAsset, assetError, assetRef, assetRow, createAsset, ASSET_CLEANUP_STEPS, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
 import { idbAssets, replaceAttachments } from "./attachments";
-import { categoryOf, COUNT_CAP, filterState, LIST_FILTERS, sameFilterState, parseSearch, searchTerms, resolvable, resolveSearch, senderVetoed, type Address, type Filter, type FilterAction, type ResolvedSearch, type FilterRule, type ListFilter, type SearchView, type ThreadAction, type ThreadFilter, type ThreadSummary } from "@terno/core";
+import { categoryOf, COUNT_CAP, filterState, LIST_FILTERS, sameFilterState, parseSearch, searchTerms, resolvable, resolveSearch, senderVetoed, sparesCorrespondents, type Address, type Filter, type FilterAction, type ResolvedSearch, type FilterRule, type ListFilter, type SearchView, type ThreadAction, type ThreadFilter, type ThreadSummary } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { MockDataset } from "@terno/mock-data";
@@ -140,6 +140,7 @@ import {
   enqueueOp,
   failOp,
   findRuleMatches,
+  withoutCorrespondents,
   getAccount,
   getAccountConfig,
   getCounts,
@@ -1197,11 +1198,12 @@ export class IdbMailStore implements MailStore {
     const messages = T(this.c, "messages");
     const inbox = filters.some((f) => movesToFolder(f.rule)) ? new Set(messageIds.filter((id) => messages.get(id)?.in_inbox === 1)) : null;
     for (const filter of filters) {
-      const matches = findRuleMatches(this.c, filter.rule, now, messageIds);
-      if (matches.messageIds.length === 0) continue;
+      const found = findRuleMatches(this.c, filter.rule, now, messageIds).messageIds;
+      const matched = sparesCorrespondents(filter) ? withoutCorrespondents(this.c, found) : found;
+      if (matched.length === 0) continue;
       try {
         const moves: FolderFilterMove[] = [];
-        const changed = this.db.tx(() => this.runFilterActions(filter.rule.actions, claimFilterApplications(this.c, filter.id, matches.messageIds, now), now, opIds, moves, inbox, watch ? { watch, filter } : null));
+        const changed = this.db.tx(() => this.runFilterActions(filter.rule.actions, claimFilterApplications(this.c, filter.id, matched, now), now, opIds, moves, inbox, watch ? { watch, filter } : null));
         // only once its savepoint held: a later action failing leaves no move behind
         folderMoves.push(...moves);
         for (const id of changed) touched.add(id);
@@ -1919,13 +1921,18 @@ export class IdbMailStore implements MailStore {
         if (!current || current.rule_json !== ruleJson) throw new RpcError("CANCELLED", L("errors.filterChanged"));
         const rule = JSON.parse(ruleJson) as FilterRule;
         const eligible = ruleNeedsBody(rule) ? messageIds.filter((messageId) => T(this.c, "messages").get(messageId)?.body_state === "full") : messageIds;
-        const ids = claimFilterApplications(this.c, id, eligible, now);
+        const filter = getFilter(this.c, id)!;
+        const ids = claimFilterApplications(this.c, id, sparesCorrespondents(filter) ? withoutCorrespondents(this.c, eligible) : eligible, now);
         const opIds: string[] = [];
         const folderMoves: FolderFilterMove[] = [];
+        // plan 282 (the owner, after the QA panel): what a rule run by hand takes out of the Inbox is put away too, with its fixes
+        const messages = T(this.c, "messages");
+        const watch = ids.length ? new PlacementWatch(this.c, ids.flatMap((m) => { const row = messages.get(m); return row ? [row.thread_id as number] : []; })) : null;
         // asked for by hand: wherever the mail is now, not only the Inbox (plan 128)
-        const touched = this.runFilterActions(rule.actions, ids, now, opIds, folderMoves, null);
-        this.flushFolderMoves(folderMoves, now, opIds, touched);
-        return { applied: ids.length, touched: [...touched], opIds, ...flagReconciliation(idbFlags(this.c), flagBefore) };
+        const touched = this.runFilterActions(rule.actions, ids, now, opIds, folderMoves, null, watch ? { watch, filter } : null);
+        this.flushFolderMoves(folderMoves, now, opIds, touched, watch);
+        const placed = watch?.commit(now) ?? [];
+        return { applied: ids.length, touched: [...touched], opIds, placed, ...flagReconciliation(idbFlags(this.c), flagBefore) };
       }),
   };
 
@@ -2783,6 +2790,7 @@ export class IdbMailStore implements MailStore {
   // plan 282: Put away
   readonly putAway: MailStore["putAway"] = {
     of: (threadId, now) => this.read(() => placementOf(this.c, threadId, now)),
+    byRule: (filterId, now) => this.read(() => placementsByRule(this.c, filterId, now)),
     page: (p) => this.read(() => placementPage(this.c, p)),
     needsLook: (p) => this.read(() => placementsNeedingLook(this.c, p)),
     release: (threadIds) => this.command(() => releaseHiddenFilings(this.c, threadIds)),

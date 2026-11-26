@@ -52,6 +52,8 @@ export interface PutAwayStore {
   keep(p: { categoryId: number; sender: string; threadId: number | null; now: number }): Promise<{ added: boolean; at: number; withdrawn: PutAwayWithdrawn | null }>;
   /** Undo of keep: only what it did (a kept row made since by another hand stays; a newer decision isn't replaced) */
   unkeep(p: { categoryId: number; sender: string; added: boolean; at: number; withdrawn: PutAwayWithdrawn | null }): Promise<void>;
+  /** A rule's placements that still hold, newest first, at most 500 (Back to Inbox's bound): what Stop's second step brings back */
+  byRule(filterId: number, now: number): Promise<{ threadId: number; at: number }[]>;
   kept(): Promise<KeptSender[]>;
   /** Settings: back to automatic filing */
   removeKept(categoryId: number, sender: string): Promise<boolean>;

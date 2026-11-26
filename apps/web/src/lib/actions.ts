@@ -347,7 +347,8 @@ async function offerSimilar(snackId: string, action: SimilarAction, targets: rea
 export function leaveList(action: ThreadAction, targets: readonly number[], options: { quiet?: boolean } = {}): void {
   const s = getApp();
   // in a filtered list a row that stops matching leaves (a search too), except the open one: it stays put until the selection moves
-  const reading = unmatches(action, activeFilter(s));
+  // plan 282 (the owner): Put away's open conversation, back in the Inbox, stays under the reader (nothing opens and reads the next)
+  const reading = unmatches(action, activeFilter(s)) || (s.putAway && action === "moveToInbox");
   const leaving = reading || (s.query ? false : !staysInView(s, action));
   const stays = reading ? s.selectedId : null;
   // plan 145 (owner's decisions 2): the newsletter the digest opened, taken away: back to the digest, on whatever page it is

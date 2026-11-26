@@ -37,7 +37,7 @@ import { mergeBefore, sameImapLocations, reaffirmSavedFlagIntent, acceptFlagObse
 import { bindSqlPromotedFlags, sqlFlags } from "./flag-intents";
 import { appendAsset, assetError, assetRef, assetRow, createAsset, ASSET_CLEANUP_STEPS, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
 import { sqlAssets, replaceAttachments } from "./attachments";
-import { categoryOf, ruleAwaitsBody, senderVetoed, type MessageTerm, type Address, type Filter, type FilterAction, type FilterRule, type ThreadAction, type ThreadSummary } from "@terno/core";
+import { categoryOf, ruleAwaitsBody, senderVetoed, sparesCorrespondents, type MessageTerm, type Address, type Filter, type FilterAction, type FilterRule, type ThreadAction, type ThreadSummary } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { MockDataset } from "@terno/mock-data";
@@ -101,7 +101,7 @@ import {
   categoryEvidence,
   type ClassifyResult,
 } from "./categorize";
-import { endPlacements, inboxVisible, keepSender, listKeptSenders, placementOf, placementPage, placementsNeedingLook, PlacementWatch, refileHiddenFilings, releaseHiddenFilings, removeKeptSender, unkeepSender } from "./put-away";
+import { endPlacements, inboxVisible, keepSender, listKeptSenders, placementOf, placementPage, placementsByRule, placementsNeedingLook, PlacementWatch, refileHiddenFilings, releaseHiddenFilings, removeKeptSender, unkeepSender } from "./put-away";
 import { ruleNote } from "@terno/store";
 import { keptThreads, resolveSimilarPage, similarOffers, similarScopesOf } from "./similar";
 import { clearJudgments, clearWriting, commitGeneration, commitProfiles, corpusHeaders, corpusUsable, editProfile, generationForDraft, generationForMessage, generationPairs, judgeProfile, listProfiles, readProfiles, resetProfile, restoreProfiles, sentTo as writingSentTo, threadRecipients, threadsWith as writingThreadsWith, transferGeneration } from "./writing";
@@ -176,7 +176,7 @@ import {
 } from "./repos";
 import { beginSearchBuild, materializeChanges, searchChangeIds, searchHead } from "./outbox";
 import { SEARCH_SCHEMA_VERSION } from "./migrations";
-import { findRuleMatches } from "./rules";
+import { findRuleMatches, withoutCorrespondents } from "./rules";
 import { ftsIndexedTermMessages, ftsTermMessages, resolveQuery } from "./search";
 import { Fts5SearchEngine } from "./search-engine";
 import { messageDocs, threadDocs } from "./search-docs";
@@ -570,12 +570,13 @@ export class SqlMailStore implements MailStore {
     // plan 128: what reached the Inbox, read before any filter acts: an archive (or another folder's) doesn't change who else moves
     const inbox = filters.some((f) => movesToFolder(f.rule)) ? new Set(this.db.all<{ id: number }>("SELECT id FROM messages WHERE in_inbox = 1 AND id IN (SELECT value FROM json_each(?))", JSON.stringify(messageIds)).map((m) => m.id)) : null;
     for (const filter of filters) {
-      const matches = findRuleMatches(this.db, filter.rule, now, messageIds);
-      if (matches.messageIds.length === 0) continue;
+      const found = findRuleMatches(this.db, filter.rule, now, messageIds).messageIds;
+      const matched = sparesCorrespondents(filter) ? withoutCorrespondents(this.db, found) : found;
+      if (matched.length === 0) continue;
       try {
         const moves: FolderFilterMove[] = [];
         // claims + actions + ops atomically (a savepoint inside the command)
-        const changed = this.db.tx(() => this.runFilterActions(filter.rule.actions, claimFilterApplications(this.db, filter.id, matches.messageIds, now), now, opIds, moves, inbox, watch ? { watch, filter } : null));
+        const changed = this.db.tx(() => this.runFilterActions(filter.rule.actions, claimFilterApplications(this.db, filter.id, matched, now), now, opIds, moves, inbox, watch ? { watch, filter } : null));
         // only once its savepoint held: a later action failing leaves no move behind
         folderMoves.push(...moves);
         for (const id of changed) touched.add(id);
@@ -1531,13 +1532,17 @@ export class SqlMailStore implements MailStore {
         const eligible = rule.conditions.some((c) => c.field === "body")
           ? this.db.all<{ id: number }>("SELECT id FROM messages WHERE body_state = 'full' AND id IN (SELECT value FROM json_each(?))", JSON.stringify(messageIds)).map((m) => m.id)
           : messageIds;
-        const ids = claimFilterApplications(this.db, id, eligible, now);
+        const filter = getFilter(this.db, id)!;
+        const ids = claimFilterApplications(this.db, id, sparesCorrespondents(filter) ? withoutCorrespondents(this.db, eligible) : eligible, now);
         const opIds: string[] = [];
         const folderMoves: FolderFilterMove[] = [];
+        // plan 282 (the owner, after the QA panel): what a rule run by hand takes out of the Inbox is put away too, with its fixes
+        const watch = ids.length ? new PlacementWatch(this.db, threadsOfMessages(this.db, ids)) : null;
         // asked for by hand: wherever the mail is now, not only the Inbox (plan 128)
-        const touched = this.runFilterActions(rule.actions, ids, now, opIds, folderMoves, null);
-        this.flushFolderMoves(folderMoves, now, opIds, touched);
-        return { applied: ids.length, touched: [...touched], opIds, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
+        const touched = this.runFilterActions(rule.actions, ids, now, opIds, folderMoves, null, watch ? { watch, filter } : null);
+        this.flushFolderMoves(folderMoves, now, opIds, touched, watch);
+        const placed = watch?.commit(now) ?? [];
+        return { applied: ids.length, touched: [...touched], opIds, placed, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
       }),
   };
 
@@ -1815,6 +1820,7 @@ export class SqlMailStore implements MailStore {
   // plan 282: Put away
   readonly putAway: MailStore["putAway"] = {
     of: async (threadId, now) => placementOf(this.db, threadId, now),
+    byRule: async (filterId, now) => placementsByRule(this.db, filterId, now),
     page: async (p) => placementPage(this.db, p),
     needsLook: async (p) => placementsNeedingLook(this.db, p),
     release: async (threadIds) => this.db.tx(() => releaseHiddenFilings(this.db, threadIds)),
