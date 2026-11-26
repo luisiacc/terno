@@ -154,3 +154,29 @@ Two independent reviews of the built branch (Astra: gpt-6.2-astra; Fable: claude
 - Unit: `contacts.test.ts` (39), `people.test.ts` backend (10), `state/people.test.ts` (13), `people.test.ts` core, `today.test.ts`, `followups.test.ts`, `compose-fields.test.ts`.
 - e2e: `people-view.spec.ts` (Split and List), `motion.spec.ts` (People: the item and the row glide in one transition, ≤ 100 ms; none with reduced motion), `people.spec.ts` (plan 17's filter), `graphite.spec.ts`, `folder-actions.spec.ts` (the sidebar's rows now include People), `list-layout.spec.ts`, `reader.spec.ts`, `keyboard.spec.ts`; the screenshot specs, 61 baselines updated (the sidebar's new row). The whole `e2e` project ran once (713 passed): of its failures, 2 were the sidebar's row (fixed), 3 passed on a second run, and 8 (`provider-errors`, `settings-pass` axe, `what-matters-feed` 1194, `print-quality`, `scrollbars`) plus `today.spec` 935 fail the same way on the base commit b4bf84456.
 - Perf: `contacts.perf.test.ts` People case passes at load ~5 (Everyone cut 20 → under 16 ms after the native-sort change; search p95 1.4 ms); `today.perf.test.ts`'s People case measured on IndexedDB (list 29.5 ms, page 48.7 ms, search 0.6 ms, at a 1.5× multiplier under load); its What matters scenarios before it fail on the base commit too on this busy machine, so SQLite's People numbers wait for a quiet run.
+
+## UI rating (plan 158): three rounds
+
+The owner asked for at least two iterations. People's set (`scripts/ui-rating/sets.mjs`: the list beside a person's page, an item hovered, the search, Everyone, a chip's card, List layout, a small window) on the local stand-in, five styles × light and dark, Claude and Codex in clean rooms.
+
+| Round | Commit | Claude | Codex | Cells under 9 |
+|---|---|---|---|---|
+| r01b | 475d33fe4 | 6–6.5 | 6.5–7.5 | 390+ |
+| r02 | 75ca11760 | 6.5 | 7 | 386 |
+| r03 | 8717f200a | 6.5–7 | 7.5–8 | 383 |
+
+- **Iteration 1 (75ca11760):** the keyboard through People (/ at once, ↓ and Enter from the search, one Tab stop, Enter and → into a page, Esc and ← back), the person acted on held in place, Done and Later at an item's top right, a one-band page header, the card led by the person.
+- **Iteration 2 (8717f200a):** every row says its kind; the header's counts jump to Open and Everyone; the chosen person kept; the card's items on two lines with their kind and when, who wrote last; Done and Later a size up with their keys; put-off items under their own heading; the header wraps in a narrow pane.
+- **Iteration 3 (d458b9023, with the QA panel's fixes below):** an item's kind, conversation and when on one line, the when never cut; Done and Later always there and quiet; Later's section called Later; People's title and avatars in the design's list sizes.
+
+Still under the bar after r03, most often: Open's rows look alike (nearly every one "Waiting on you"), its order (newest first, the longest waits at the bottom), the card can't act on an item and is a long menu, selection and hover too close in Graphite and Atelier dark, Everyone's rows don't show why they're in that order. Several of these wait on the owner (below).
+
+## QA panel (seven personas)
+
+Marta (keyboard consultant), Diego (impatient founder), Priya (accessibility), Tom (breaker, privacy), Ana (first week, mouse), Lukas (designer), Theo (reviewer); Claude and Codex, each on the frozen r03 build in a sandbox of its own. Their scores: would use weekly 6–8, look 7–9, clarity 5–8, speed 5–8, trust 4–7. What they found that was fixed (1ee70d590, 7a571b677, 71cacccc0, d458b9023):
+
+- **Trust:** the card said "You wrote last" for someone else's email (the backend now says whether you wrote it); a promise put off with Later vanished from People (What matters hides an undated one until it's back: People's read keeps it, under Later); Later on a reply owed seemed to do nothing (it moves when you'll follow up, now shown); the card counted put-off items the page didn't.
+- **Focus never lost:** Tab always lands on a drawn row; Esc in an empty search, Later, Undo, a conversation opened and Open in People each leave the keyboard somewhere; a focus asked for a frame or two on never lands after the user has typed (Esc then / at once typed into a new message); j/k go on from the focused row, and in List walk the rows rather than opening pages; Done on someone's last item goes back to their row, not to New message.
+- **Keys:** G P (in ? and the palette); Enter in the search opens what's typed, waiting for its answer; / selects the old query; Esc on a hit clears the search; C on a person's page writes to them.
+- **Words and screen readers:** the list's region is named People; the search's count is said; +N in words and on hover; "Undo this date" on a waiting conversation's Undo is "Undo"; List's Back names the person; a search for mail words says People finds names and addresses; the first 50 hits say so; a hit found by its address shows it.
+- **By design, kept:** the Undo pill's border steps once a second under reduced motion (plan 182); chips only on conversations of two or more messages (plan 177); one Undo at a time (plan 161).
