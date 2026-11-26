@@ -1471,8 +1471,8 @@ export class BackendCore {
    * an offer answered, a filter that holds one back made or gone. Windows and dev tools only, never MCP.
    */
   /** Plan 282: placements changed (new ones, or one seen): the windows' Inbox line asks again. */
-  putAwayChanged(): void {
-    this.server.emit("putAwayChanged", {}, { origins: ["renderer", "dev"] });
+  putAwayChanged(o: { rules?: boolean } = {}): void {
+    this.server.emit("putAwayChanged", o.rules ? { rules: true } : {}, { origins: ["renderer", "dev"] });
   }
 
   learningChanged(): void {

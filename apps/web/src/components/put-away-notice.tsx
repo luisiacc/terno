@@ -21,9 +21,10 @@ export function PutAwaySource() {
     if (inbox) void refreshNotice();
   }, [inbox]);
   useEffect(() => {
-    const offEvent = client.on("putAwayChanged", () => {
+    const offEvent = client.on("putAwayChanged", ({ rules }) => {
       void refreshNotice();
-      putAwayNews();
+      // only a rule's change reads boxes and Put away again (new mail put away is the line's alone: Codex review)
+      if (rules) putAwayNews();
     });
     const offAttach = client.onAttach(() => void refreshNotice());
     return () => {

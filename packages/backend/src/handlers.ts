@@ -313,7 +313,7 @@ export function createHandlers(b: Backend): Handlers {
   /** A rule changed: forwards follow it, and Put away's boxes say it (a rule turned off in Rules, plan 282's third rating) */
   const rulesChanged = async () => {
     await b.forwards.rules();
-    b.putAwayChanged();
+    b.putAwayChanged({ rules: true });
   };
   const placedAt = async (threadId: number, at: number) => {
     const placed = await store.putAway.of(threadId, b.now());
@@ -803,8 +803,9 @@ export function createHandlers(b: Backend): Handlers {
       // the filter first: no new mail is caught while the threads come back
       if (filterUndo !== null) {
         await similarFilters.undo(filterUndo);
-        // its learned offer may come back (plan 234)
+        // its learned offer may come back (plan 234); a rule back on or off is Put away's news too
         b.learningChanged();
+        await rulesChanged();
       }
       if (undoId === null) return { restored: 0 };
       return { restored: await undoActs(undoId, jobId) };

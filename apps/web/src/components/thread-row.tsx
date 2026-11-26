@@ -5,6 +5,7 @@ import { Badge } from "@terno/ui/components/badge";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import type { RowLines } from "@terno/ui/designs/rows";
 import { cn } from "@terno/ui/lib/utils";
+import type { Returned } from "~/state/put-away";
 import { AlarmClock, Check, FolderInput, Inbox, Paperclip, Star } from "@terno/ui/icons";
 import { memo } from "react";
 import { formatList, formatNumber, t } from "@terno/i18n";
@@ -59,15 +60,15 @@ export interface ThreadRowProps {
   /** plan 282: in Put away, what put it there (the list passes it; no other list's rows read Put away) */
   placed?: Placement;
   /** plan 282: a fix took it out of Put away while it's open: what the row says now, in its section */
-  returned?: string;
+  returned?: Returned;
 }
 
 /** Plan 282: a Put away row's why, as its preview shows it: the line, the filing's dot, and its section for a screen reader */
 interface PlacedView {
   line: string;
   section: string;
-  /** what a fix did, in the row's ink rather than the preview's */
-  returned?: boolean;
+  /** what a fix did, in the row's ink rather than the preview's: back in the Inbox, or only out of one category */
+  returned?: "inbox" | "out";
 }
 const NO_FOLDERS: AppState["folders"] = [];
 
@@ -93,7 +94,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
   const categories = useApp((s) => s.categories);
   // plan 282: a folder's name for a rule's move (read only where a row says it)
   const folders = useApp((s) => (placed ? s.folders : NO_FOLDERS));
-  const placedView: PlacedView | undefined = placed && { line: returned ?? placedLine(placed, { categories, folders }), section: sectionOf(placed), returned: returned !== undefined };
+  const placedView: PlacedView | undefined = placed && { line: returned?.line ?? placedLine(placed, { categories, folders }), section: sectionOf(placed), returned: returned && (returned.inbox ? "inbox" : "out") };
   /** kept in a filtered list only because it's open: it says so, or it reads as the filter's mistake (only the open row looks) */
   const kept = useApp((s) => {
     if (s.selectedId !== thread.id) return false;
@@ -267,7 +268,7 @@ function PlacedLine({ placed }: { placed: PlacedView }) {
     <span data-testid="row-put-away" data-returned={placed.returned || undefined} title={placed.line} className={cn(placed.returned ? "text-foreground" : "text-foreground-soft")}>
       {/* the view's own mark (the sidebar's), so the reason reads as why it's here and not as the mail's words (the UI
           rating); brought back, the Inbox's */}
-      {placed.returned ? <Inbox aria-hidden className="mr-1 inline size-3 -translate-y-px align-middle" /> : <FolderInput aria-hidden className="mr-1 inline size-3 -translate-y-px align-middle" />}
+      {placed.returned === "inbox" ? <Inbox aria-hidden className="mr-1 inline size-3 -translate-y-px align-middle" /> : <FolderInput aria-hidden className="mr-1 inline size-3 -translate-y-px align-middle" />}
       <span className="sr-only">{placed.section}: </span>
       {placed.line}
     </span>

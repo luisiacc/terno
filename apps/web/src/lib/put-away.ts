@@ -113,17 +113,18 @@ const BACK_MAX = 500;
 export async function backToInbox(items: readonly { threadId: number; at: number }[]): Promise<void> {
   if (items.length === 0) return;
   const ids = items.map((i) => i.threadId);
-  if (getApp().putAway) leaveList("moveToInbox", ids, { quiet: true });
+  // as any action on a selection: what it acted on stops being checked (the rows stay, saying so)
+  if (getApp().putAway) leaveList("moveToInbox", ids);
   const undoIds: number[] = [];
-  const brought: number[] = [];
   let affected = 0;
   let failed: unknown = null;
   try {
     for (let i = 0; i < items.length; i += BACK_MAX) {
       const r = await client.call("putAway.back", { items: items.slice(i, i + BACK_MAX) });
       affected += r.affected;
-      brought.push(...r.threadIds);
       if (r.undoId !== null) undoIds.push(r.undoId);
+      // said as each turn lands, so a refresh between turns keeps them (only what it brought back: one moved meanwhile isn't)
+      if (getApp().putAway) markReturned(r.threadIds, t("putAway.row.back"));
     }
   } catch (error) {
     failed = error;
@@ -136,10 +137,8 @@ export async function backToInbox(items: readonly { threadId: number; at: number
         refresh(ids);
       })
     : null;
-  if (failed) return void snack.error(t("putAway.back.failed", { error: errorText(failed) }));
+  if (failed) return void snack.error(t("putAway.back.failed", { error: errorText(failed) }), { action: undo ? undoAction(undo, t("putAway.back.undo", { count: affected })) : undefined });
   if (affected === 0) return;
-  // only what it brought back (one moved meanwhile by another window isn't)
-  if (getApp().putAway) markReturned(brought, t("putAway.row.back"));
   snack.success(t("putAway.back.done", { count: affected }), { action: undo ? undoAction(undo, t("putAway.back.undo", { count: affected })) : undefined });
 }
 
@@ -187,7 +186,7 @@ export async function notCategory(threadId: number, at: number, category: string
   if (getApp().putAway) leaveList("moveToInbox", [threadId], { quiet: true });
   try {
     const { batchId, inInbox } = await client.call("putAway.not", { threadId, at });
-    if (getApp().putAway) markReturned([threadId], inInbox ? t("putAway.row.back") : t("putAway.row.out", { category }));
+    if (getApp().putAway) markReturned([threadId], inInbox ? t("putAway.row.back") : t("putAway.row.out", { category }), inInbox);
     refresh([threadId]);
     const undo = batchId === null ? null : registerUndo(async () => {
       await client.call("categorize.undo", { batchId });
@@ -205,7 +204,7 @@ export async function notCategory(threadId: number, at: number, category: string
 export async function keepSenderOut(threadId: number, at: number, sender: string, category: string): Promise<void> {
   try {
     const { undoId, inInbox } = await client.call("putAway.keep", { threadId, at });
-    if (getApp().putAway) markReturned([threadId], inInbox ? t("putAway.row.back") : t("putAway.row.out", { category }));
+    if (getApp().putAway) markReturned([threadId], inInbox ? t("putAway.row.back") : t("putAway.row.out", { category }), inInbox);
     refresh([threadId]);
     const undo = registerUndo(async () => {
       await client.call("putAway.keepUndo", { undoId });
@@ -262,11 +261,11 @@ export async function editRule(threadId: number, filterId: number): Promise<void
  * conversation's box reads again, and Put away's rows with it
  */
 export function putAwayNews(): void {
+  // every conversation read whose box speaks of a rule (one opened again later reads afresh), the open one now
+  const stale = [...useThreads.getState().details].flatMap(([id, d]) => (d.putAway?.detail.by === "rule" ? [id] : []));
+  if (stale.length) invalidateThreads(stale);
   const id = getApp().selectedId;
-  if (id !== null && useThreads.getState().details.get(id)?.putAway) {
-    invalidateThreads([id]);
-    void loadThread(id, true);
-  }
+  if (id !== null && stale.includes(id)) void loadThread(id, true);
   if (getApp().putAway) void reloadList({ keepSelection: true });
 }
 

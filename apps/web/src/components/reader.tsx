@@ -45,7 +45,7 @@ import { pinThreads, unpinThreads } from "~/lib/pins";
 import { usePins } from "~/state/pins";
 import { acceptSuggestion, answerReview, rejectSuggestion, removeFromCategory } from "~/lib/categorize";
 import { PutAwayBox } from "./put-away-box";
-import { stillPutAway } from "~/lib/put-away";
+import { backToInbox, keepFocusThrough, stillPutAway } from "~/lib/put-away";
 import { t } from "@terno/i18n";
 import { fullDate, listDate, messageDate, messageTime } from "~/lib/format";
 import { SenderAvatar } from "./sender-avatar";
@@ -1269,6 +1269,9 @@ function ReaderContent() {
   // plan 173: who Reply all reaches, for Reply's menu (null: no one Reply doesn't, so no menu)
   const everyone = replyAll && detail ? replyAllTo(detail, myEmails) : null;
   const tabbed = !!thread && !thread.inTrash && !thread.inSpam && inSeparateTab(thread, accounts);
+  // plan 282: a conversation put away goes back by Back to Inbox's path, whichever Inbox button is pressed (a rule's hidden
+  // filing goes with it: Codex review)
+  const placedHere = detail?.putAway && stillPutAway(detail.putAway.at) ? detail.putAway : null;
   const summarize = summarizeOffered && summarizable(thread);
 
   return (
@@ -1291,14 +1294,14 @@ function ReaderContent() {
         {page && <ToolbarDivider />}
         <div className="flex items-center gap-0.5" role="group" aria-label={t("reader.group.organize")}>
         {thread?.inTrash || thread?.inSpam ? (
-          <IconButton className={tool} label={t("actions.moveToInbox")} onClick={() => act(thread.inSpam ? "notSpam" : "moveToInbox")} data-testid="action-inbox">
+          <IconButton className={tool} label={t("actions.moveToInbox")} onClick={() => (placedHere && !thread.inSpam ? keepFocusThrough(() => backToInbox([{ threadId: thread.id, at: placedHere.at }])) : act(thread.inSpam ? "notSpam" : "moveToInbox"))} data-testid="action-inbox">
             <Inbox />
           </IconButton>
         ) : (
           <>
             {/* plan 86: in Promotions or Social, out of the tab into the Inbox (Gmail learns from it) */}
             {tabbed && (
-              <IconButton className={tool} label={t("actions.moveToInbox")} onClick={() => act("moveToInbox")} data-testid="action-inbox">
+              <IconButton className={tool} label={t("actions.moveToInbox")} onClick={() => (placedHere ? keepFocusThrough(() => backToInbox([{ threadId: thread.id, at: placedHere.at }])) : act("moveToInbox"))} data-testid="action-inbox">
                 <Inbox />
               </IconButton>
             )}

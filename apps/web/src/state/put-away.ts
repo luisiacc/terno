@@ -8,7 +8,7 @@ import { create } from "zustand";
 interface PutAwayState {
   byThread: ReadonlyMap<number, Placement>;
   /** the conversations a fix took out of Put away while in view, with what the row says now ("Back in the Inbox"): the open one stays, under its section */
-  returned: ReadonlyMap<number, string>;
+  returned: ReadonlyMap<number, Returned>;
   notice: { count: number; first: { threadId: number; name: string } | null; through: number } | null;
   /** the line's laid-out height: the room the rows leave above them while it shows */
   noticeHeight: number;
@@ -33,10 +33,16 @@ export function publishPlacements(placements: readonly Placement[], replace: boo
   usePutAway.setState({ byThread: next, returned: still.size === returned.size ? returned : still });
 }
 
-/** What a fix did, said on the rows it took out of Put away (the open one stays until the selection moves) */
-export function markReturned(threadIds: readonly number[], line: string): void {
+/** What a row brought back says, and whether that's the Inbox (another hidden category may still keep it out) */
+export interface Returned {
+  line: string;
+  inbox: boolean;
+}
+
+/** What a fix did, said on the rows it took out of Put away (they stay until you leave it) */
+export function markReturned(threadIds: readonly number[], line: string, inbox = true): void {
   const returned = new Map(usePutAway.getState().returned);
-  for (const id of threadIds) returned.set(id, line);
+  for (const id of threadIds) returned.set(id, { line, inbox });
   usePutAway.setState({ returned });
 }
 

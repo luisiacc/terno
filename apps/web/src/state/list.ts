@@ -324,13 +324,25 @@ function heldOnly(items: ThreadSummary[], top: readonly number[] = inboxTop.ids)
  * (one another window moved simply leaves).
  */
 function holdReturned(items: ThreadSummary[], before: readonly ThreadSummary[]): ThreadSummary[] {
-  const { returned } = usePutAway.getState();
+  const { returned, byThread } = usePutAway.getState();
   if (returned.size === 0) return items;
   const have = new Set(items.map((t) => t.id));
+  const held = before.filter((t) => returned.has(t.id) && !have.has(t.id));
+  if (held.length === 0) return items;
+  // in the store's order (Needs a look, then newest), so a section stays one section (Codex review)
+  const key = (t: ThreadSummary): [number, number, number] => {
+    const p = byThread.get(t.id);
+    return [p?.needsLook ? 1 : 0, p?.at ?? 0, t.id];
+  };
+  const ahead = (a: ThreadSummary, b: ThreadSummary) => {
+    const [x, y] = [key(a), key(b)];
+    return x[0] - y[0] || x[1] - y[1] || x[2] - y[2];
+  };
   const out = [...items];
-  before.forEach((t, at) => {
-    if (returned.has(t.id) && !have.has(t.id)) out.splice(Math.min(at, out.length), 0, t);
-  });
+  for (const t of held) {
+    const at = out.findIndex((o) => ahead(t, o) > 0);
+    out.splice(at < 0 ? out.length : at, 0, t);
+  }
   return out;
 }
 
@@ -506,7 +518,8 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
     // unless asked to keep it (`keepWindow`: the window, without moving to its anchor)
     const windowed = sameView && (options.window || options.keepWindow || refreshPolicy.keepWindow());
     if (windowed) {
-      const want = current.items.length + (options.grow ? PAGE : 0);
+      // (plan 282: the rows Put away holds come from no page: they don't deepen it, Codex review)
+      const want = current.items.length - (getApp().putAway ? usePutAway.getState().returned.size : 0) + (options.grow ? PAGE : 0);
       // the first row on screen and the cursor must be in it: mail that arrived above them pushed them further down
       // (plan 282: a row Put away holds after a fix is in no page: never looked for)
       const held = getApp().putAway ? usePutAway.getState().returned : null;

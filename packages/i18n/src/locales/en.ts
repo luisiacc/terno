@@ -3685,7 +3685,7 @@ It contains none of your mail, contacts, settings or keys.
   "putAway.box.label": "Why this is out of the Inbox",
   "putAway.action.back": "Back to Inbox",
   "putAway.action.keep": "Ask before filing {sender}",
-  "putAway.action.notHint": "Takes it out of {category} and back to the Inbox, and Terno learns it doesn’t belong there",
+  "putAway.action.notHint": "Takes it out of {category}, and Terno learns it doesn’t belong there",
   "putAway.action.keepHint": "Takes it out of {category}; from now on Terno asks before filing {sender}’s new mail there",
   "putAway.action.edit": "Edit rule",
   "putAway.action.bringBack": { one: "Bring back the conversation it put away", other: "Bring back all # it put away" },

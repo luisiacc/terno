@@ -1724,7 +1724,8 @@ export interface Events {
   /** plan 234: the learned-filter offers may have changed (an action of the user's kept, an offer answered, a learned filter deleted): never MCP */
   learningChanged: Record<string, never>;
   /** plan 282: something was put away, or the Inbox's line was seen in a window: never MCP */
-  putAwayChanged: Record<string, never>;
+  /** plan 282: something put away, or seen (`rules`: a rule changed, so what Put away says about rules may have) */
+  putAwayChanged: { rules?: boolean };
   /** plan 204: the dated reader stopped, or it's going again */
   datedStatus: { blockedBy: { kind: AiErrorKind; message: string; i18n?: I18nRef; limit?: "daily" | "monthly" } | null };
   /** plan 249: What matters in the user's words: the record, the draft and the background work's status */

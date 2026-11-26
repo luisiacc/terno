@@ -144,8 +144,9 @@ test.describe("Put away (plan 282)", () => {
       await rows(page).nth(1).click({ modifiers: ["Meta"] });
       await page.getByTestId("bar-inbox").click();
       await expect(page.getByTestId("snack-message")).toHaveText("2 back in the Inbox");
-      // several brought back stay as one does, each saying so
+      // several brought back stay as one does, each saying so, and are no longer checked
       await expect(rows(page)).toHaveCount(2);
+      await expect(page.getByTestId("bar-inbox")).toHaveCount(0);
       await expect(page.locator("[data-testid=row-put-away][data-returned]")).toHaveCount(2);
       await page.keyboard.press("z");
       await expect(rows(page)).toHaveCount(2);

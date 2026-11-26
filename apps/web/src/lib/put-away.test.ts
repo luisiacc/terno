@@ -135,6 +135,23 @@ describe("Put away's words (plan 282)", () => {
     usePutAway.setState({ byThread: new Map(), returned: new Map() });
   });
 
+  it("a Back to Inbox that fails partway keeps what went back, said on its rows, and offers its Undo (Codex review 4 #1)", async () => {
+    useApp.setState({ putAway: true } as never);
+    usePutAway.setState({ returned: new Map() });
+    let call = 0;
+    fake.handlers["putAway.back"] = async (p) => {
+      if (call++ > 0) throw new Error("gone");
+      const items = (p as { items: { threadId: number }[] }).items;
+      return { undoId: 70, affected: items.length, threadIds: items.map((i) => i.threadId) };
+    };
+    await backToInbox(Array.from({ length: 501 }, (_, i) => ({ threadId: 2000 + i, at: NOW })));
+    expect(usePutAway.getState().returned.size).toBe(500);
+    expect(useSnack.getState().current?.tone).toBe("error");
+    expect(useSnack.getState().current?.action?.name).toBe("Undo: put 500 away again");
+    useApp.setState({ putAway: false } as never);
+    usePutAway.setState({ byThread: new Map(), returned: new Map() });
+  });
+
   it("Back to Inbox that moved nothing says nothing", async () => {
     fake.handlers["putAway.back"] = async () => ({ undoId: null, affected: 0, threadIds: [] });
     useSnack.setState({ current: null } as never);

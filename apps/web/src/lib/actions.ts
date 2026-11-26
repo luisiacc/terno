@@ -6,6 +6,7 @@ import { client } from "~/rpc/connection";
 import { currentTargets, scopeRows } from "~/lib/select";
 import { dismissSnack, registerUndo, snack, snackPublication, withdrawSnack, type Undo } from "~/lib/snack";
 import { activeFilter } from "~/lib/unread-filter";
+import { forgetReturned } from "~/state/put-away";
 import type { ListFilter } from "@terno/core";
 import { getApp, getSelectionWriteRevision, inPlainInbox, inSeparateTab, openedByApp, setApp, setAppOpened, type AppState, type ScopeSelection, ownList } from "~/state/app";
 import { listKey, moveNextRows, onlyOnTop, patchRows, reloadList, useList } from "~/state/list";
@@ -355,6 +356,8 @@ export function leaveList(action: ThreadAction, targets: readonly number[], opti
   // plan 145 (owner's decisions 2): the newsletter the digest opened, taken away: back to the digest, on whatever page it is
   // (only while the reader shows it: List's Back keeps the selection with the reader closed, and an action there is the list's, Codex review)
   const backToDigest = !options.quiet && toDigest(action) && readerShown() && leaveToDigest(targets, action);
+  // plan 282: a row Put away kept after bringing it back says so only until something else moves it (Codex review)
+  if (s.putAway && action !== "moveToInbox" && !staysInView(s, action)) forgetReturned(targets);
   // List's conversation page (plan 24): an action that takes the open thread away, or marks it unread, is done reading it
   const backToList = !backToDigest && s.selectedId !== null && targets.includes(s.selectedId) && ((leaving && s.selectedId !== stays) || DONE_READING.has(action)) && listLayout() && currentPage() === "thread";
 
