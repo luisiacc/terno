@@ -178,10 +178,15 @@ test("People: the row below the Inbox, Open and the search, a person's page, Don
     const menu = page.getByTestId("person-menu");
     const contract = menu.getByTestId("person-card-row").filter({ hasText: "The signed contract" });
     await contract.getByTestId("person-card-done").click();
-    await expect(menu).toBeHidden();
+    // the card stays, the item leaves it in place, the keyboard on the next one
+    await expect(menu).toBeVisible();
+    await expect(menu.getByTestId("person-card-item")).toHaveCount(1);
+    await expect(menu.getByTestId("person-card-item")).toBeFocused();
     await expect(page.getByTestId("reader-subject")).toContainText("Phase 2 scope");
     const snack = page.getByTestId("snack").last();
     await expect(snack).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(menu).toBeHidden();
     await chip.click();
     await expect(menu.getByTestId("person-card-item")).toHaveCount(1, { timeout: 8000 });
     await page.keyboard.press("Escape");

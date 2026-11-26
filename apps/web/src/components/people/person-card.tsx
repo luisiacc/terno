@@ -1,9 +1,10 @@
-import { personItemId, personItemThread, type PersonPage } from "@terno/core";
+import { personItemId, personItemThread, type PersonItem, type PersonPage } from "@terno/core";
 import { t } from "@terno/i18n";
 import { DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger } from "@terno/ui/components/dropdown-menu";
 import { Check, Clock, Mail } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
-import { actOnCardItem } from "~/lib/people";
+import { actOnCardItem, openInPeople } from "~/lib/people";
+import { useState } from "react";
 import { listDate } from "~/lib/format";
 import { openThread } from "~/lib/page";
 import { noteOpen } from "~/lib/reminders";
@@ -12,8 +13,8 @@ import { Badge } from "@terno/ui/components/badge";
 import { personKey } from "@terno/core";
 import { itemGlyph, itemParts, itemTone, itemWhen, LaterChoices, personLaterPresets } from "./person-item";
 
-/** the card's open items, at most (their page has the rest) */
-const SHOWN = 4;
+/** the card's open items, at most (their page has the rest: r05, a third pushed the menu's own commands out of a small window) */
+const SHOWN = 2;
 
 /** a card item's Done and Later: the page's words, small menu items under the item's text (r04: icons alone read as states) */
 const ACTION_ITEM = "h-6 w-auto gap-1 px-2 text-xs text-foreground-soft data-highlighted:text-foreground";
@@ -25,8 +26,17 @@ const ACTION_ITEM = "h-6 w-auto gap-1 px-2 text-xs text-foreground-soft data-hig
  * stored summary's first sentence when there is one). Drawn only with what was read before the menu opened.
  */
 export function PersonCardHead({ page, threadId }: { page: PersonPage; threadId: number }) {
-  const now = page.items.filter((i) => !itemWhen(i).later);
+  // what Done took off while the card is open: it leaves in place, the card stays (r05: one open per item was slow)
+  const [gone, setGone] = useState<ReadonlySet<string>>(() => new Set());
+  const now = page.items.filter((i) => !itemWhen(i).later && !gone.has(personItemId(i)));
   const items = now.slice(0, SHOWN);
+  const done = (item: PersonItem) => {
+    const id = personItemId(item);
+    setGone((g) => new Set([...g, id]));
+    void actOnCardItem(item, "done");
+    // the keyboard on the next item, else the menu's first command (never nowhere)
+    requestAnimationFrame(() => document.querySelector<HTMLElement>("[data-testid=person-menu] [data-testid=person-card-item], [data-testid=person-menu] [data-testid=person-new-message]")?.focus());
+  };
   const last = page.conversations.find((c) => c.id !== threadId);
   // the summary the backend read is of the newest other conversation: said only for that one
   const summary = last && last.id === page.lastSummaryOf ? page.lastSummary : undefined;
@@ -72,7 +82,7 @@ export function PersonCardHead({ page, threadId }: { page: PersonPage; threadId:
                   </DropdownMenuItem>
                   {/* (on the text's line: after the glyph's width) */}
                   <div className="flex items-center gap-0.5 ps-[calc(1.15em+0.5rem)] pb-1">
-                    <DropdownMenuItem data-testid="person-card-done" aria-label={t("people.card.done", { text: parts.text })} onClick={() => void actOnCardItem(item, "done")} className={ACTION_ITEM}>
+                    <DropdownMenuItem data-testid="person-card-done" aria-label={t("people.card.done", { text: parts.text })} closeOnClick={false} onClick={() => done(item)} className={ACTION_ITEM}>
                       <Check />
                       {t("dated.done")}
                     </DropdownMenuItem>
@@ -89,6 +99,11 @@ export function PersonCardHead({ page, threadId }: { page: PersonPage; threadId:
                 </div>
               );
             })}
+            {now.length > SHOWN && (
+              <DropdownMenuItem data-testid="person-card-more" onClick={() => openInPeople(page.email)} className="text-muted-foreground">
+                <span className="ps-[calc(1.15em+0.5rem)]">{t("people.moreInPeople", { count: now.length - SHOWN })}</span>
+              </DropdownMenuItem>
+            )}
           </DropdownMenuGroup>
         </>
       )}

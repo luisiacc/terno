@@ -8,6 +8,7 @@ import { cn } from "@terno/ui/lib/utils";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { LIST_TITLE } from "~/lib/list-title";
+import { listDate } from "~/lib/format";
 import { enterPerson, enterSearch, inputCount, loadPeople, morphName, peopleList, reloadPage, searchPeople, selectPerson } from "~/lib/people";
 import { renderProbe } from "~/lib/render-probe";
 import { installScrollHairline } from "~/lib/scroll-hairline";
@@ -289,6 +290,8 @@ const PersonRow = memo(function PersonRow({ row, selected, tabbable, query }: { 
   // when it's back; with nothing open, none (the page says when you last wrote each other)
   const when = first ? itemWhen(first) : { text: null, late: false, later: false };
   const age = first && !when.later ? waited(personItemSince(first)) : null;
+  // nothing open: when you last wrote each other (Everyone's order is how much and how recently: r05)
+  const lastAt = !first && row.open === null && row.last > 0 ? row.last : null;
   // what else is open now (what's put off waits on their page, under Put off)
   const items = row.open?.items ?? [];
   const now = items.filter((i) => !itemWhen(i).later).length;
@@ -323,6 +326,12 @@ const PersonRow = memo(function PersonRow({ row, selected, tabbable, query }: { 
           <span className="type-row-from min-w-0 flex-1 truncate">
             <Marked text={row.name} needles={undefined} parts={query ? matchedParts(row.name, query) : null} testId="people-match" />
           </span>
+          {lastAt !== null && (
+            <span data-testid="person-row-when" className={cn("shrink-0 text-sm tabular", selected ? "text-row-selected-foreground" : "text-row-preview")}>
+              <span aria-hidden>{listDate(lastAt)}</span>
+              <span className="sr-only">{t("people.lastEmail", { when: listDate(lastAt) })}</span>
+            </span>
+          )}
           {(age || when.text) && (
             <span data-testid="person-row-when" className={cn("shrink-0 text-sm tabular", selected ? "text-row-selected-foreground" : when.late ? "font-medium text-destructive-ink" : "text-row-preview")}>
               {age ? (
@@ -341,11 +350,12 @@ const PersonRow = memo(function PersonRow({ row, selected, tabbable, query }: { 
             <>
               <Glyph aria-hidden className={cn("size-[1.15em] shrink-0", !selected && itemTone(first))} />
               {/* what's open, in words: its kind, then what */}
-              <span className="min-w-0 flex-1 truncate">
+              {/* (the +N right after it, not across the row) */}
+              <span className="min-w-0 truncate">
                 <span className="font-medium">{parts!.label}</span> · {parts!.text}
               </span>
               {more > 0 && (
-                <Badge variant="neutral" className="ms-auto tabular" title={t("people.moreSaid", { count: more })}>
+                <Badge variant="neutral" className="shrink-0 tabular" title={t("people.moreSaid", { count: more })}>
                   <span aria-hidden>{t("people.more", { count: more })}</span>
                   <span className="sr-only">{t("people.moreSaid", { count: more })}</span>
                 </Badge>
