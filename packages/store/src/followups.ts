@@ -136,7 +136,8 @@ export interface FollowupSnapshot {
  * Plan 280 (revision 9): what a row is worth when the active bound is full, the one admission rule of both stores: a new
  * row takes the place of the oldest active row worth strictly less, the least worth first (a tentative undated promise of
  * theirs, then a wait, then an undated promise of theirs, then a dated one); a promise of yours is never taken. With none
- * worth less, the new row isn't added. An Undo never takes anyone's place: past the bound it's refused.
+ * worth less, the new row isn't added. An Undo that makes a row active again is admitted the same way (the code review: a
+ * promise of yours always fits, so What matters' Undo is never partial); one refused is said by the caller.
  */
 export function followupWorth(r: { kind: string; dated: boolean | number; firm?: boolean | number | null }): number {
   const dated = r.dated === true || r.dated === 1;
@@ -195,7 +196,7 @@ export interface FollowupStore {
   update(id: number, revision: number, patch: Partial<Pick<FollowupRow, "state" | "dueAt" | "deferredUntil" | "inboxState" | "closedReason" | "closedAt">>): Promise<FollowupSnapshot | null>;
   /**
    * Undo: each row only if nothing else changed it since. Plan 280 (revision 9): a row it would make active again past the
-   * bound is left as it is (counted out), so the caller can say why
+   * bound is admitted as a new row is (`followupWorth`); one with no room is left as it is (counted out), so the caller can say why
    */
   restore(rows: readonly { snapshot: FollowupSnapshot; expectRevision: number }[]): Promise<number>;
   prune(now: number): Promise<number>;

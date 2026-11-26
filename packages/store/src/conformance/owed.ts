@@ -203,6 +203,29 @@ export function defineOwedConformance(fresh: () => Promise<MailStore>, reopen: (
         expect(await store.followups.get(p.row.id)).toMatchObject({ state: "open", arrivedHint: relay.id });
       });
 
+      it("the code review: a conversation with anything in Spam is never material, whatever the rest of it", async () => {
+        const { store, accountId, got, promised } = await setup();
+        const p = await promised({}, { subject: "Deal", providerMsgId: "d1", rfcMessageId: "d1@x" });
+        // a later message of the same conversation moved to Spam; the promise's own message stays in the Inbox
+        await store.sync.ingest([msg({ accountId, from: bea, to: [me], providerMsgId: "d2", inReplyTo: "d1@x", references: ["d1@x"], subject: "Re: Deal", isSpam: true, inInbox: false, date: NOW - 1000 })], { applyFilters: false, now: NOW, classifier: null });
+        const next = await got({ subject: "Elsewhere", date: NOW + 1000 });
+        expect(await store.followups.owed.openFor({ threadId: next.thread, accountId, senderKey: alex.email, before: NOW + 1000, limit: 10 })).toEqual([]);
+        expect(p.row.state).toBe("open");
+      });
+
+      it("the code review: mail older than the one that last moved it can't move it back, nor close it", async () => {
+        const { store, got, finish, promised } = await setup();
+        const p = await promised({ dueAt: NOW + 3 * DAY, dueDay: "2026-11-07" });
+        const wed = await got({ date: NOW + 2 * DAY });
+        await finish(wed.id, wed.thread, { moved: [{ id: p.row.id, revision: p.row.revision, dueAt: NOW + 9 * DAY, dueDay: "2026-11-13" }] });
+        const moved = (await store.followups.get(p.row.id))!;
+        expect(moved).toMatchObject({ dueDay: "2026-11-13", movedAt: wed.m.date });
+        // Tuesday's mail, read again after Wednesday's (a check, a replay): nothing
+        const tue = await got({ date: NOW + DAY });
+        await finish(tue.id, tue.thread, { moved: [{ id: moved.id, revision: moved.revision, dueAt: NOW + 5 * DAY, dueDay: "2026-11-09" }], kept: [{ id: moved.id, revision: moved.revision }] });
+        expect(await store.followups.get(p.row.id)).toMatchObject({ state: "open", dueDay: "2026-11-13", revision: moved.revision });
+      });
+
       it("what it could act on: its conversation's and its sender's in the account, never one in Spam or Trash, nor later than it", async () => {
         const { store, accountId, got, promised } = await setup();
         const here = await promised({}, { subject: "Here" });
@@ -229,7 +252,7 @@ export function defineOwedConformance(fresh: () => Promise<MailStore>, reopen: (
         expect(due.map((r) => [r.item, r.firm, r.fromScan, r.inboxState]).sort()).toEqual([[200, true, false, "onTop"], [200, true, true, "none"], [201, false, false, "none"]].sort());
       });
 
-      it("at the bound a new row takes the place of the oldest worth less; a promise of yours is never taken; an Undo is refused", async () => {
+      it("at the bound a new row takes the place of the oldest worth less; a promise of yours is never taken, and its Undo always fits; a wait's Undo with no room is refused", async () => {
         const { store, accountId, got, owed, finish } = await setup();
         const sent = msg({ accountId, from: me, to: [alex], isSent: true, inInbox: false, providerMsgId: "cap", rfcMessageId: "cap@x", date: NOW - 60_000 });
         const s = (await store.sync.ingest([sent], { applyFilters: false, now: NOW, classifier: null, liveSent: { wanted: true } })).inserted[0]!;
@@ -254,8 +277,17 @@ export function defineOwedConformance(fresh: () => Promise<MailStore>, reopen: (
         expect(theirs.map((r) => r.firm)).toEqual([true]);
         expect(await count()).toBe(FOLLOWUPS_ACTIVE_MAX);
         expect((await store.followups.active()).some((r) => r.kind === "promise")).toBe(true);
-        // Done on it, a new one in its place, then Undo: refused past the bound
-        const row = theirs[0]!;
+        // a promise of yours always fits: Done, a new row in its place, Undo takes the least worth's place
+        const yours = (await store.followups.active()).find((r) => r.kind === "promise")!;
+        const doneYours = (await store.followups.update(yours.id, yours.revision, { state: "done", closedReason: "user", closedAt: NOW }))!;
+        const e = await got();
+        await finish(e.id, e.thread, { rows: [owed()] });
+        expect(await count()).toBe(FOLLOWUPS_ACTIVE_MAX);
+        expect(await store.followups.restore([{ snapshot: doneYours, expectRevision: doneYours.revision + 1 }])).toBe(1);
+        expect((await store.followups.get(yours.id))!.state).toBe("open");
+        expect(await count()).toBe(FOLLOWUPS_ACTIVE_MAX);
+        // Done on a wait, a new row in its place, then Undo: no room for it (nothing worth less than a wait), refused
+        const row = (await store.followups.active()).filter((r) => r.kind === "awaiting").sort((a, b) => a.id - b.id)[0]!;
         const before = (await store.followups.update(row.id, row.revision, { state: "done", closedReason: "user", closedAt: NOW }))!;
         const d = await got();
         await finish(d.id, d.thread, { rows: [owed()] });

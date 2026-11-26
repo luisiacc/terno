@@ -58,8 +58,8 @@ it(`each migration since v${FIRST} runs in ≤ ${STEP_MS} ms at 57,000 conversat
       if (ms > STEP_MS * MULT) slow.push(`v${m.version} ${m.name}: ${ms.toFixed(0)} ms`);
       fillNewTables(db, before);
       // plan 216: v75 rebuilds the waiting acts' table: a record for every received message, far past any history of acts
-      // plan 280 (revision 10): v83 rebuilds follow-ups: 50,000 closed rows, far past 90 days of any mailbox's history
-      if (m.version === 82) db.exec("INSERT INTO followups (thread_id, message_id, item, kind, text, quote, sent_at, due_at, dated, state, inbox_state, closed_reason, closed_at, revision, created_at) SELECT id, id, 0, CASE id % 2 WHEN 0 THEN 'promise' ELSE 'awaiting' END, 'send the contract', 'I''ll send the contract', last_date, last_date, 0, 'done', 'none', 'user', last_date, 1, last_date FROM threads LIMIT 50000");
+      // plan 280 (revision 10): v84 rebuilds follow-ups: 50,000 closed rows, far past 90 days of any mailbox's history
+      if (m.version === 83) db.exec("INSERT INTO followups (thread_id, message_id, item, kind, text, quote, sent_at, due_at, dated, state, inbox_state, closed_reason, closed_at, revision, created_at) SELECT id, id, 0, CASE id % 2 WHEN 0 THEN 'promise' ELSE 'awaiting' END, 'send the contract', 'I''ll send the contract', last_date, last_date, 0, 'done', 'none', 'user', last_date, 1, last_date FROM threads LIMIT 50000");
       if (m.version === 74) db.exec("INSERT INTO waiting_acts (message_id, state, until, at, rev, who, subject) SELECT id, CASE id % 3 WHEN 0 THEN 'done' WHEN 1 THEN 'later' ELSE 'done' END, date, date, 1, 'Someone', 'A subject' FROM messages WHERE is_sent = 0");
     }
   } finally {

@@ -175,4 +175,48 @@ describe("reading their mail (plan 280)", () => {
     expect(asked()).toEqual([]);
     expect((await backend.store.followups.active()).filter((r) => r.kind === "theirs")).toEqual([]);
   });
+
+  it("the code review: a cue-free reply to a send of yours is read, its wait gone or not", async () => {
+    const { model, send, got, drained, owed, clock, backend } = await setup();
+    await send({ rfcMessageId: "q2@x", subject: "Floor plan", bodyText: "Could you send me the floor plan this week?" });
+    await drained();
+    clock.now += 3600_000;
+    model.their = () => theirs({ promises: [{ text: "send you the floor plan", quote: "Friday.", due: "2026-11-06" }] });
+    await got({ inReplyTo: "q2@x", references: ["q2@x"], subject: "Re: Floor plan", bodyText: "Friday." });
+    await backend.followups.look();
+    await drained();
+    expect(await owed()).toEqual([expect.objectContaining({ text: "send you the floor plan", dueDay: "2026-11-06" })]);
+  });
+
+  it("the code review: a promise of theirs your mail records, read after their delivery was, reads the delivery again and is kept", async () => {
+    const { model, send, got, drained, owed, clock, backend, asked } = await setup();
+    // their delivery arrives first: nothing is owed yet and it has no cue, so it's passed over unasked
+    model.their = () => theirs({ kept: [{ label: "t1", evidence: "Here's the contract." }] });
+    await got({ subject: "Contract attached", bodyText: "Here's the contract.", date: clock.now - 30_000 });
+    await drained();
+    // your earlier message, which records their promise, is read only now (a send confirmed late)
+    model.sent = () => ({ text: JSON.stringify({ promises: [], expectsReply: false, awaiting: [], kept: [], answers: [], theirs: [{ text: "send you the contract", quote: "as agreed, you'll send the contract Thursday", who: "r1", due: "2026-11-05", partOfDay: null, firm: true }], owedKept: [] }), stop: "end" });
+    await send({ subject: "Contract", bodyText: "Thanks Alex, as agreed, you'll send the contract Thursday.", date: clock.now - 90_000 });
+    await drained();
+    await backend.followups.look();
+    // the delivery was marked again and read with the promise now open (t1), and kept it
+    expect(asked()).toHaveLength(1);
+    expect(JSON.stringify(asked()[0]!.messages)).toContain("t1");
+    expect(await owed()).toEqual([]);
+    const all = await backend.store.followups.ofThread((await backend.store.threads.searchText({ query: 'subject:"Contract"', limit: 5, now: clock.now })).items.find((t) => t.subject === "Contract")!.id);
+    expect(all).toEqual([]);
+  });
+
+  it("the code review: an Undo with no room under the bound says so and can be tried again", async () => {
+    const { backend } = await setup();
+    const restore = backend.store.followups.restore;
+    backend.store.followups.restore = async () => 0;
+    const get = backend.store.followups.get;
+    // a promise of theirs Done, still at the revision the Undo expects
+    backend.store.followups.get = async () => ({ id: 1, revision: 2, state: "done" }) as never;
+    const undoId = (backend.followups as unknown as { remember: (e: unknown[]) => string }).remember([{ snapshot: { id: 1, revision: 1, state: "open", dueAt: 0, deferredUntil: null, inboxState: "none", closedReason: null, closedAt: null }, expectRevision: 2 }]);
+    await expect(backend.followups.undoAct(undoId)).rejects.toThrow(/too many follow-ups/);
+    backend.store.followups.restore = restore;
+    backend.store.followups.get = get;
+  });
 });

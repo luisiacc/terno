@@ -21,6 +21,18 @@ const inText = (words: string, text: string) => {
 const NOT_YET = /\b(?:not|no|never|yet to|still|wasn't|isn't|hasn't|haven't|didn't|won't|can't|cannot|couldn't|todavia|aun no|aun sin|sin|nunca|falta|pendiente)\b|n't\b/u;
 export const saysNotYet = (evidence: string): boolean => NOT_YET.test(normalizeText(evidence).toLowerCase().normalize("NFD").replace(/\p{M}/gu, ""));
 
+/**
+ * The code review: evidence is judged with the whole of the sentences it's in, never its words cut out of one ("send the
+ * contract" from "I can't send the contract until Friday" keeps nothing).
+ */
+export function deliveredIn(evidence: string, text: string): boolean {
+  const e = norm(evidence);
+  if (!e) return false;
+  const sentences = text.split(/(?<=[.!?])\s+|\n+/u).map((x) => x.trim()).filter(Boolean);
+  const around = sentences.filter((x) => norm(x).includes(e) || e.includes(norm(x)));
+  return !saysNotYet(evidence) && !around.some(saysNotYet);
+}
+
 /** The words a file's name and a promise's text share ("Contract_signed.pdf" and "send you the contract"). */
 const fileWords = (name: string) => namingWords(name.replace(/\.[a-z0-9]{1,5}$/iu, "").replace(/[_\-.]+/gu, " ").toLowerCase(), { names: false });
 export const fileNames = (name: string, text: string): boolean => {
@@ -49,6 +61,8 @@ export function checkTheirPromises(
     reader: { name: string; addressed: "to" | "cc" | "none" };
     /** a service's notice: what it says may have arrived, never closes it (revision 5) */
     relay: { block: string } | null;
+    /** the code review: all this person's open promises to you, shown or not, so a file names one only when no other could be it */
+    debts?: readonly FollowupRow[];
     madeAt: number;
     nudgeAfterDays: number;
   },
@@ -73,17 +87,18 @@ export function checkTheirPromises(
   const done = new Set<number>();
   for (const k of result.kept) {
     const r = ref(k.label);
-    if (!r || saysNotYet(k.evidence)) continue;
+    if (!r) continue;
     if (input.relay) {
       // revision 5: a relay naming the thing may have delivered it: a hint, from its own words
-      if (inText(k.evidence, input.relay.block)) out.hints.push(r);
+      if (inText(k.evidence, input.relay.block) && deliveredIn(k.evidence, input.relay.block)) out.hints.push(r);
       continue;
     }
-    // a file by its exact name, naming the promised thing, and no other open promise of this person's
+    // a file by its exact name, naming the promised thing, and no other open promise of this person's, shown or not
     const row = input.owed.get(k.label)!;
     const file = input.attachments.find((f) => norm(f) === norm(k.evidence));
-    const byFile = file !== undefined && fileNames(file, row.text) && ![...input.owed.values()].some((o) => o.id !== row.id && fileNames(file, o.text));
-    if (!byFile && !own(k.evidence)) continue;
+    const others = [...input.owed.values(), ...(input.debts ?? [])].filter((o) => o.id !== row.id);
+    const byFile = file !== undefined && fileNames(file, row.text) && !others.some((o) => fileNames(file, o.text));
+    if (!byFile && !(own(k.evidence) && deliveredIn(k.evidence, input.text))) continue;
     out.kept.push(r);
     done.add(r.id);
   }
@@ -126,8 +141,10 @@ export function relayOf(text: string, owed: readonly FollowupRow[]): { rows: Fol
 
 /**
  * §2: whether a person's received message is worth asking about: a promise of theirs open on its conversation or from its
- * sender, a wait of yours on its conversation, or a commitment cue in their words. A cost filter, not a judgment.
+ * sender, a wait of yours on its conversation, a reply to a send of yours, or a commitment cue in their words. A cost
+ * filter, not a judgment.
  */
-export function owedWorth(o: { text: string; owed: number; waiting: boolean }): boolean {
-  return o.owed > 0 || o.waiting || hasCommitmentCue(o.text);
+export function owedWorth(o: { text: string; owed: number; waiting: boolean; answers?: boolean }): boolean {
+  // the code review: a reply to a send of yours is read even with no cue ("Friday."), since the wait it answered may be gone
+  return o.owed > 0 || o.waiting || o.answers === true || hasCommitmentCue(o.text);
 }

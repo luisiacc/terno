@@ -99,6 +99,8 @@ export interface FollowupRow {
   personKey?: string | null;
   /** Plan 280 (revision 5): a service's mail naming the debtor's address and the thing: it may have arrived, never closed by it */
   arrivedHint?: number | null;
+  /** Plan 280 (the code review): the date of the debtor's mail that last moved it: mail older than that can't move or close it */
+  movedAt?: number | null;
 }
 
 export const isFollowupKind = (kind: unknown): kind is FollowupKind => (FOLLOWUP_KINDS as readonly unknown[]).includes(kind);
@@ -209,6 +211,15 @@ export const byUrgency = (a: Urgency, b: Urgency): number => (a.state === "due" 
 /** The thread's most urgent, for a row (`byUrgency`). */
 export function mostUrgent<T extends Urgency>(rows: readonly T[]): T | undefined {
   return [...rows].sort(byUrgency)[0];
+}
+
+/**
+ * Plan 280 (revision 11, the code review): the one rule for which of a conversation's follow-ups speaks for its row. On the
+ * Inbox's top, what put it there (its most urgent row on top: never a tentative promise of theirs beside it); elsewhere,
+ * its most urgent. The backend orders the top by the same rows.
+ */
+export function lineRows<T extends Urgency & { inboxState: FollowupInboxState }>(rows: readonly T[], onTop: boolean): T[] {
+  return onTop ? rows.filter((r) => r.inboxState === "onTop") : [...rows];
 }
 
 /** Whole days since it was sent, for "hasn't replied in 5 days": 0 until a full day has passed (plan 161: "yet", never "in 1 day" minutes after). */

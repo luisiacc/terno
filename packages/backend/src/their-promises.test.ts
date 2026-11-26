@@ -1,7 +1,7 @@
 import type { TheirMailResult } from "@terno/ai";
 import { THEIRS_ITEM, type FollowupRow } from "@terno/core";
 import { describe, expect, it } from "vitest";
-import { checkTheirPromises, fileNames, saysNotYet } from "./their-promises";
+import { checkTheirPromises, deliveredIn, fileNames, owedWorth, saysNotYet } from "./their-promises";
 
 const at = (y: number, m: number, d: number, h = 0) => new Date(y, m - 1, d, h).getTime();
 // Monday 2 March 2026
@@ -70,5 +70,25 @@ describe("their promises' checks (plan 280)", () => {
     expect(["Here's the contract", "Te lo acabo de mandar"].some(saysNotYet)).toBe(false);
     expect(fileNames("Q3-Budget_final.xlsx", "send you the Q3 budget")).toBe(true);
     expect(fileNames("IMG_2041.jpg", "send you the Q3 budget")).toBe(false);
+  });
+
+  it("the code review: evidence cut out of a sentence that says it hasn't happened keeps nothing", () => {
+    const owed = new Map([["t1", row(7, "send you the contract")]]);
+    const text = "I can't send the contract until Friday, sorry.";
+    expect(check({ kept: [{ label: "t1", evidence: "send the contract" }] }, { owed, text }).kept).toEqual([]);
+    expect(deliveredIn("send the contract", text)).toBe(false);
+    expect(deliveredIn("Here's the contract", "Here's the contract. Sorry it's late!")).toBe(true);
+  });
+
+  it("the code review: a file names a promise only when no other open one of theirs, shown or not, could be it", () => {
+    const owed = new Map([["t1", row(7, "send you the signed contract")]]);
+    const files = { attachments: ["Contract_signed.pdf"], text: "Hi Nora," };
+    expect(check({ kept: [{ label: "t1", evidence: "Contract_signed.pdf" }] }, { owed, ...files }).kept).toEqual([{ id: 7, revision: 3 }]);
+    expect(check({ kept: [{ label: "t1", evidence: "Contract_signed.pdf" }] }, { owed, ...files, debts: [row(9, "send you the contract draft")] }).kept).toEqual([]);
+  });
+
+  it("the code review: a reply to a send of yours is read with no cue at all (\"Friday.\")", () => {
+    expect(owedWorth({ text: "Friday.", owed: 0, waiting: false })).toBe(false);
+    expect(owedWorth({ text: "Friday.", owed: 0, waiting: false, answers: true })).toBe(true);
   });
 });

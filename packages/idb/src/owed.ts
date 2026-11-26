@@ -100,10 +100,12 @@ export function openOwedFor(c: Ctx, o: { threadId: number; accountId: number; se
   const found = new Map<number, R>();
   for (const r of rows.by("fk_thread_id", o.threadId)) if (r.kind === "theirs" && live(r)) found.set(r.id, r);
   for (const r of rows.by("owed", o.senderKey)) found.set(r.id, r);
+  const messages = T(c, "messages");
+  // (as SQL's: no conversation with anything in Spam)
   return [...found.values()]
     .filter((r) => {
       const t = threads.get(r.thread_id);
-      return r.sent_at < o.before && t && t.account_id === o.accountId && !t.in_trash && !t.in_spam;
+      return r.sent_at < o.before && t && t.account_id === o.accountId && !t.in_trash && !t.in_spam && !messages.by("fk_thread_id", r.thread_id).some((x) => !!x.is_spam);
     })
     .sort((a, b) => b.sent_at - a.sent_at || b.id - a.id)
     .slice(0, o.limit)
@@ -131,7 +133,7 @@ export function finishOwed(c: Ctx, w: OwedFinish): FollowupFinishOutcome {
   // as SQL's: only the debtor's own mail, in this account, after the promise, at the revision shown
   const mine = (ref: { id: number; revision: number }, debtor = true): R | null => {
     const r = rows.get(ref.id);
-    if (!r || r.kind !== "theirs" || !live(r) || r.revision !== ref.revision || r.sent_at >= src.date || (debtor && r.person_key !== src.senderKey)) return null;
+    if (!r || r.kind !== "theirs" || !live(r) || r.revision !== ref.revision || r.sent_at >= src.date || (r.moved_at ?? r.sent_at) >= src.date || (debtor && r.person_key !== src.senderKey)) return null;
     return threads.get(r.thread_id)?.account_id === src.accountId ? r : null;
   };
   const closed = new Set<number>();
@@ -151,7 +153,7 @@ export function finishOwed(c: Ctx, w: OwedFinish): FollowupFinishOutcome {
     const r = closed.has(m.id) ? null : mine(m);
     if (!r) continue;
     const ahead = m.dueAt > w.now;
-    rows.update(r, { due_at: m.dueAt, due_day: m.dueDay, dated: 1, timed: m.timed ? 1 : 0, part_of_day: m.partOfDay ?? null, state: ahead ? "open" : r.state, inbox_state: ahead ? "none" : r.inbox_state, notified_at: null, revision: r.revision + 1 });
+    rows.update(r, { due_at: m.dueAt, due_day: m.dueDay, dated: 1, timed: m.timed ? 1 : 0, part_of_day: m.partOfDay ?? null, state: ahead ? "open" : r.state, inbox_state: ahead ? "none" : r.inbox_state, notified_at: null, moved_at: src.date, revision: r.revision + 1 });
   }
   for (const h of w.hints) {
     const r = closed.has(h.id) ? null : mine(h, false);

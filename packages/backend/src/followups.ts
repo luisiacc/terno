@@ -1,5 +1,5 @@
 import { AiError, fitTheirMail, theirsBudget, THEIRS_ANSWERING_CHARS, THEIRS_OWED_MAX, THEIRS_PROMPT_VERSION, THEIRS_TEXT_CHARS, FOLLOWUP_ANSWERING_CHARS, FOLLOWUP_OPEN_MAX, FOLLOWUP_OWN_CHARS, FOLLOWUP_PROMPT_VERSION, FOLLOWUP_REQUESTS_MAX, fitSentMail, followupBudget, type AiTasks, type SentMailResult } from "@terno/ai";
-import { addressOnly, addressKey, automatedLevel, dayKeyOf, dueCutoff, byUrgency, followupDue, theirDue, THEIRS_ITEM, NUDGE_DEFAULT, followupWakeAt, normalizeText, promiseOver, readCorpus, refKey, replyAnswers, replyRecipients, SCAN_DAYS, SCAN_MESSAGES_MAX, SCAN_PROMISE_OVERDUE_MS, SCAN_WAIT_STALE_MS, validFollowupDate, withNeeds, withoutQuotes, followupNotice, type AiErrorKind, type DatedRow, type FollowupRow, type FollowupsSnapshot, type MailNotice, type ThreadSummary } from "@terno/core";
+import { addressOnly, addressKey, automatedLevel, dayKeyOf, dueCutoff, byUrgency, followupDue, lineRows, theirDue, THEIRS_ITEM, NUDGE_DEFAULT, followupWakeAt, normalizeText, promiseOver, readCorpus, refKey, replyAnswers, replyRecipients, SCAN_DAYS, SCAN_MESSAGES_MAX, SCAN_PROMISE_OVERDUE_MS, SCAN_WAIT_STALE_MS, validFollowupDate, withNeeds, withoutQuotes, followupNotice, type AiErrorKind, type DatedRow, type FollowupRow, type FollowupsSnapshot, type MailNotice, type ThreadSummary } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import { RpcError, type AppSettings } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
@@ -10,7 +10,7 @@ import { UI_LOCALE_KEY } from "./forwarding";
 import { contextOf, directsReader, namingWords, norm as plain, paidSaid, plainEvidence, saidClauses, sameObject, sentencesOf, sentencesWith } from "./dated-evidence";
 import { promiseMoment } from "./promise-time";
 import { untrustedSenders } from "./suspicious-sender";
-import { checkTheirPromises, owedWorth, relayOf, saysNotYet } from "./their-promises";
+import { checkTheirPromises, deliveredIn, owedWorth, relayOf } from "./their-promises";
 
 const MAX_DELAY = 2 ** 31 - 1;
 const PAGE = 50;
@@ -392,7 +392,7 @@ export function checkSentMail(result: SentMailResult, input: { ownText: string; 
   // plan 280 (§3): an open promise of theirs your words say arrived ("got the contract, thanks"), never "still waiting on it"
   const owedKept = (result.owedKept ?? []).flatMap((k) => {
     const row = input.owed?.get(k.label);
-    return row && ownPieces(k.evidence, input.ownText) && !saysNotYet(k.evidence) ? [{ id: row.id, revision: row.revision }] : [];
+    return row && ownPieces(k.evidence, input.ownText) && deliveredIn(k.evidence, input.ownText) ? [{ id: row.id, revision: row.revision }] : [];
   });
   if (result.expectsReply) {
     // round 19 (María's "let me check with Chris … and I'll get back to you", read as waiting on Jessica): a reply that holds
@@ -472,7 +472,7 @@ export class FollowupWorker {
   /** plan 280: the received message whose reading is on its way to the provider, for the transport's last look */
   private leaving: { messageId: number; threadId: number; accountId: number; senderKey: string; date: number; owed: { id: number; revision: number }[]; relay: boolean; stop: AbortController } | null = null;
   /** plan 280 (revision 1): checked messages whose debtor's later mail was marked again, once each */
-  private readonly requeued = new Set<number>();
+  private readonly requeued = new Set<string>();
 
   /** plan 211: the check of what you sent, the backend's, one account at a time */
   private readonly checks: AccountChecks;
@@ -800,7 +800,10 @@ export class FollowupWorker {
       const rows = fromScan ? checked.rows.filter((r) => scanKeeps(r, src.date, now)) : checked.rows;
       // a promise a scan leaves out links nothing
       const verdicts = checked.verdicts.filter((v) => v.verdict === "fulfilled" || rows.some((r) => r.item === v.item));
-      await store.followups.finish({ messageId: src.id, threadId: src.threadId, fromScan, rows, kept: checked.kept, verdicts, owedKept: checked.owedKept, now, model: ai.model, provider: ai.providerId, promptVersion: FOLLOWUP_PROMPT_VERSION, clearGeneration });
+      const finished = await store.followups.finish({ messageId: src.id, threadId: src.threadId, fromScan, rows, kept: checked.kept, verdicts, owedKept: checked.owedKept, now, model: ai.model, provider: ai.providerId, promptVersion: FOLLOWUP_PROMPT_VERSION, clearGeneration });
+      // plan 280 (the code review): a promise of theirs your mail records, read after their later mail was (a send confirmed
+      // late, a check): that mail is read again, once
+      for (const r of finished === "written" ? rows.filter((x) => x.kind === "theirs" && x.personEmail) : []) await this.requeue(src.id, r.personEmail!, src.accountId, src.date);
       // a request settled or answered: What matters reads again
       if (verdicts.length) this.host.requestsAnswered();
       this.attempts.delete(src.id);
@@ -852,9 +855,11 @@ export class FollowupWorker {
       if (src.bodyState !== "full" && !src.bodyUnavailable) return "hold";
       if (src.answering && src.answering.bodyState === "none" && !src.answering.bodyUnavailable) return "hold";
       const { text, answering } = await this.owedTexts(src);
-      const relay = service ? relayOf(text, await this.sameAccount(debts, src.accountId)) : null;
+      // the code review: only the debts it names, then only those of a conversation in this account with nothing in Spam
+      const named = service ? relayOf(text, debts) : null;
+      const relay = named ? relayOf(text, await this.readable(named.rows, src.accountId)) : null;
       if (service && !relay) return await drop();
-      if (!service && !owedWorth({ text, owed: open.length, waiting })) return await drop();
+      if (!service && !owedWorth({ text, owed: open.length, waiting, answers: !!src.answering })) return await drop();
       if (!text.trim()) return await drop();
       const owedRows = relay ? relay.rows.slice(0, THEIRS_OWED_MAX) : open;
       const labels = new Map(owedRows.map((r, i) => [`t${i + 1}`, r]));
@@ -875,18 +880,16 @@ export class FollowupWorker {
         if (!(await this.host.accountWanted(src.accountId))) return await drop();
         // only what was really sent, after fitting to the window, may be named back
         const shown = new Set(input.owed.map((o) => o.label));
-        const checked = checkTheirPromises(result, { text, attachments: src.attachments, owed: new Map([...labels].filter(([l]) => shown.has(l))), from: { name: src.fromName, email: src.fromEmail }, reader: { name: readerName, addressed: src.readerIn }, relay: relay ? { block: relay.block } : null, madeAt: src.date, nudgeAfterDays: settings.followups.nudgeAfterDays });
+        const debts = relay ? [] : await store.followups.owed.openFor({ threadId: src.threadId, accountId: src.accountId, senderKey: src.senderKey, before: src.date, limit: THEIRS_OWED_MAX * 5 });
+        const checked = checkTheirPromises(result, { text, attachments: src.attachments, owed: new Map([...labels].filter(([l]) => shown.has(l))), debts, from: { name: src.fromName, email: src.fromEmail }, reader: { name: readerName, addressed: src.readerIn }, relay: relay ? { block: relay.block } : null, madeAt: src.date, nudgeAfterDays: settings.followups.nudgeAfterDays });
         const fromScan = mark.source === "scan";
         const now = this.host.now();
         // a check's own rule (plan 142 §8): a promise long late is over, not a follow-up
         const rows = fromScan ? checked.rows.filter((r) => now - r.dueAt <= SCAN_PROMISE_OVERDUE_MS) : checked.rows;
-        await store.followups.owed.finish({ messageId: src.id, threadId: src.threadId, fromScan, rows, kept: checked.kept, moved: checked.moved, withdrawn: checked.withdrawn, hints: checked.hints, now, model: ai.model, provider: ai.providerId, promptVersion: THEIRS_PROMPT_VERSION, clearGeneration });
-        // revision 1: a debt found after the debtor's later mail was read (a check): that mail is read again, once
-        if (rows.length && fromScan && !this.requeued.has(src.id)) {
-          this.requeued.add(src.id);
-          if (this.requeued.size > REQUEUED_KEPT) this.requeued.delete(this.requeued.values().next().value!);
-          await store.followups.owed.marks.requeue(src.fromEmail, src.accountId, src.date + 1, now);
-        }
+        const outcome = await store.followups.owed.finish({ messageId: src.id, threadId: src.threadId, fromScan, rows, kept: checked.kept, moved: checked.moved, withdrawn: checked.withdrawn, hints: checked.hints, now, model: ai.model, provider: ai.providerId, promptVersion: THEIRS_PROMPT_VERSION, clearGeneration });
+        // revision 1: a debt found after the debtor's later mail was read (a check): that mail is read again, once (the
+        // code review: only for what was written, under this generation)
+        if (outcome === "written" && rows.length && fromScan) await this.requeue(src.id, src.fromEmail, src.accountId, src.date);
         this.attempts.delete(src.id);
         await this.look();
         return "next";
@@ -902,14 +905,27 @@ export class FollowupWorker {
     }
   }
 
-  /** Revision 4: what's sent of a debt is only the account's own. */
-  private async sameAccount(rows: readonly FollowupRow[], accountId: number): Promise<FollowupRow[]> {
-    if (!rows.length) return [];
-    const threads = new Map((await this.host.summaries([...new Set(rows.map((r) => r.threadId))])).map((t) => [t.id, t]));
-    return rows.filter((r) => {
-      const t = threads.get(r.threadId);
-      return t && t.accountId === accountId && !t.inSpam && !t.inTrash;
-    });
+  /**
+   * Revision 4 (and the code review): what's sent of a debt is only the account's own, from a conversation not in Trash and
+   * with nothing in Spam (whatever the rest of it): the store's own rule for what may be material (`owed.openFor`).
+   */
+  private async readable(rows: readonly FollowupRow[], accountId: number): Promise<FollowupRow[]> {
+    const { store } = this.host;
+    const ok = new Set<number>();
+    for (const r of rows) {
+      if (!r.personKey) continue;
+      if ((await store.followups.owed.openFor({ threadId: r.threadId, accountId, senderKey: r.personKey, before: Number.MAX_SAFE_INTEGER, limit: THEIRS_OWED_MAX * 5 })).some((x) => x.id === r.id)) ok.add(r.id);
+    }
+    return rows.filter((r) => ok.has(r.id));
+  }
+
+  /** Revision 1: a debtor's received mail since a debt's message, read again, once a message. */
+  private async requeue(messageId: number, personEmail: string, accountId: number, since: number): Promise<void> {
+    const key = `${messageId}:${addressKey(personEmail)}`;
+    if (this.requeued.has(key)) return;
+    this.requeued.add(key);
+    if (this.requeued.size > REQUEUED_KEPT) this.requeued.delete(this.requeued.values().next().value!);
+    if (await this.host.store.followups.owed.marks.requeue(personEmail, accountId, since + 1, this.host.now())) this.again = true;
   }
 
   private async owedTexts(src: OwedSource): Promise<{ text: string; answering: string | null }> {
@@ -929,10 +945,12 @@ export class FollowupWorker {
     const src = await store.followups.owed.source(leaving.messageId);
     if (!src || src.spam || src.trash || src.threadSpam || src.threadId !== leaving.threadId || !(await this.host.accountWanted(src.accountId))) return leaving.stop.abort();
     if (!leaving.owed.length) return;
+    const carried = new Set(leaving.owed.map((r) => r.id));
     const still = leaving.relay
-      ? new Map((await this.sameAccount((await store.followups.active()).filter((r) => r.kind === "theirs"), leaving.accountId)).map((r) => [r.id, r.revision]))
+      ? new Map((await this.readable((await store.followups.active()).filter((r) => carried.has(r.id)), leaving.accountId)).map((r) => [r.id, r.revision]))
       : new Map((await store.followups.owed.openFor({ threadId: leaving.threadId, accountId: leaving.accountId, senderKey: leaving.senderKey, before: leaving.date, limit: THEIRS_OWED_MAX * 2 })).map((r) => [r.id, r.revision]));
-    if (leaving.owed.some((r) => !still.has(r.id))) leaving.stop.abort();
+    // (the code review: at the revision it carries: a move since would send the old day)
+    if (leaving.owed.some((r) => still.get(r.id) !== r.revision)) leaving.stop.abort();
   }
 
   private async texts(src: FollowupSource): Promise<{ own: string; answering: string | null }> {
@@ -1186,9 +1204,20 @@ export class FollowupWorker {
   async undoAct(undoId: string): Promise<void> {
     const entries = this.undo.get(undoId);
     if (!entries) return;
+    const restored = await this.host.store.followups.restore(entries);
+    // plan 280 (the code review): a row with no room under the bound stays closed: said, and the Undo kept to try again
+    if (restored < entries.length && (await this.refusedForRoom(entries))) throw new RpcError("STALE", L("errors.followups.full"));
     this.undo.delete(undoId);
-    await this.host.store.followups.restore(entries);
     await this.look();
+  }
+
+  /** Whether an Undo's rows left closed were refused for room (still at the revision it expected, active before it). */
+  private async refusedForRoom(entries: readonly { snapshot: FollowupSnapshot; expectRevision: number }[]): Promise<boolean> {
+    for (const e of entries) {
+      const now = await this.host.store.followups.get(e.snapshot.id);
+      if (now && now.revision === e.expectRevision && (e.snapshot.state === "open" || e.snapshot.state === "due")) return true;
+    }
+    return false;
   }
 
   /** The Inbox's top ends for these threads; what an Undo would put back. */
@@ -1207,7 +1236,8 @@ export class FollowupWorker {
 
   /** One row a thread, its most urgent first: the Inbox's top, or the whole list (revision 10). */
   async threads(onTop: boolean, accountId?: number): Promise<ThreadSummary[]> {
-    const rows = (await this.host.store.followups.active()).filter((r) => !onTop || r.inboxState === "onTop");
+    // plan 280 (the code review): the same rows that speak for its line (`lineRows`)
+    const rows = lineRows(await this.host.store.followups.active(), onTop);
     // the row's own order (`byUrgency`, as its line picks), so a thread is placed by the promise it shows
     const order = [...new Set(rows.sort(byUrgency).map((r) => r.threadId))];
     const threads = new Map((await this.host.summaries(order)).map((t) => [t.id, t]));

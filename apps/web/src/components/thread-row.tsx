@@ -1,6 +1,6 @@
 import { CheckboxMark } from "@terno/ui/components/checkbox";
 import { toggleRow, useActionPreview, useActionRows } from "~/state/action-preview";
-import { listFilterOf, matchesFilter, matchFocus, mostUrgent, type CategoryColor, type Placement, type RowMatch, type ThreadSummary } from "@terno/core";
+import { lineRows, listFilterOf, matchesFilter, matchFocus, mostUrgent, type CategoryColor, type Placement, type RowMatch, type ThreadSummary } from "@terno/core";
 import { Badge } from "@terno/ui/components/badge";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import type { RowLines } from "@terno/ui/designs/rows";
@@ -188,7 +188,9 @@ function useOwed(thread: Pick<ThreadSummary, "id">, reminderTop?: boolean) {
   const followupsList = useApp((s) => s.followups);
   const owed = useFollowups((s) => s.byThread.get(thread.id));
   const shows = !!owed && (followupsList || (reminderTop && owed.some((r) => r.inboxState === "onTop")));
-  return { line: shows ? rowLine(owed) : null, dueAt: shows ? (mostUrgent(owed)?.dueAt ?? null) : null };
+  // plan 280 (the code review): on the top, the row that put it there speaks for it, never a quiet one beside it
+  const speaking = shows ? lineRows(owed, !followupsList) : undefined;
+  return { line: speaking ? rowLine(speaking) : null, dueAt: speaking ? (mostUrgent(speaking)?.dueAt ?? null) : null };
 }
 
 /**

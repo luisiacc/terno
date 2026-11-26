@@ -3082,6 +3082,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "errors.ai.askRefused": "El modelo se ha negado a responder.",
   "errors.ai.askTooSmall": "Esta pregunta es demasiado larga para este modelo. Acórtala o elige un modelo con más capacidad.",
   "errors.followups.changed": "Este seguimiento ha cambiado mientras tanto. Vuelve a mirarlo.",
+  "errors.followups.full": "Hay demasiados seguimientos para recuperar este. Descarta uno primero.",
   "errors.dated.changed": "Esto ha cambiado mientras tanto. Vuelve a mirarlo.",
   "errors.dated.later": "Elige un momento posterior a ahora.",
   "errors.dated.laterLate": "Es demasiado tarde para esto. Elige un momento anterior.",

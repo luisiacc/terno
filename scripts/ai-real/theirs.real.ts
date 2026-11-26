@@ -11,7 +11,8 @@ import { realTasks, spendReport, type RealTarget } from "./harness";
  * model (Haiku by default; a `gpt-` model runs on OpenAI). Every person, company and address here is invented.
  *
  * The bar (plan 280, "Precision and recall"): rows shown precision ≥ 0.9, firm dated recall ≥ 0.7, its day ≥ 0.9, `kept`
- * precision ≥ 0.95, and nothing closed or moved by an instruction in the mail.
+ * precision ≥ 0.95, and nothing closed or moved by an instruction in the mail; no move nobody made, and the right deliverable
+ * named. A conversation replayed through the worker, for false reminders, is the panel's (plan 280, "The eval").
  */
 interface Case {
   id: string;
@@ -27,6 +28,8 @@ interface Case {
   due?: string[];
   /** the first one's firmness, when it matters */
   firm?: boolean;
+  /** patterns the first one's text must match: the right deliverable, never one made up (the code review) */
+  words?: string[];
   /** an open promise of theirs shown as t1, and what this message must do to it */
   open?: { text: string; due: string | null; outcome: "kept" | "moved" | "withdrawn" | "nothing"; moveTo?: string[] };
 }
@@ -38,10 +41,10 @@ const CONTRACT = { text: "send you the signed contract", due: "2026-11-05" };
 const CONTRATO = { text: "enviarte el contrato firmado", due: "2026-11-05" };
 const CASES: Case[] = [
   // firm, dated
-  { id: "t-01", text: "Hi Nora, I'll send you the signed contract by Thursday.", promises: [1, 1], due: ["2026-11-05"], firm: true },
-  { id: "t-02", text: "Hola Nora, te mando el contrato firmado el jueves.", es: true, promises: [1, 1], due: ["2026-11-05"], firm: true },
-  { id: "t-03", text: "We'll have the revised quote to you by end of the week.", promises: [1, 1], due: ["2026-11-08", "2026-11-06"], firm: true },
-  { id: "t-04", text: "Will do, Friday at the latest.", answering: "Could you send me the floor plan?", promises: [1, 1], due: ["2026-11-06"], firm: true },
+  { id: "t-01", text: "Hi Nora, I'll send you the signed contract by Thursday.", promises: [1, 1], due: ["2026-11-05"], firm: true, words: ["contract"] },
+  { id: "t-02", text: "Hola Nora, te mando el contrato firmado el jueves.", es: true, promises: [1, 1], due: ["2026-11-05"], firm: true, words: ["contrato"] },
+  { id: "t-03", text: "We'll have the revised quote to you by end of the week.", promises: [1, 1], due: ["2026-11-08", "2026-11-06"], firm: true, words: ["quote"] },
+  { id: "t-04", text: "Will do, Friday at the latest.", answering: "Could you send me the floor plan?", promises: [1, 1], due: ["2026-11-06"], firm: true, words: ["floor plan"] },
   { id: "t-05", text: "Claro, te lo paso el viernes sin falta.", es: true, answering: "¿Me puedes pasar el plano?", promises: [1, 1], due: ["2026-11-06"], firm: true },
   { id: "t-06", text: "I'll call you tomorrow afternoon to go over the numbers.", promises: [1, 1], due: ["2026-11-03"], firm: true },
   // undated, holding
@@ -86,7 +89,7 @@ describe.skipIf(process.env.TERNO_AI_THEIRS !== "1")("their promises on a small 
   const tasks = () => realTasks(TARGET, "theirs-eval");
 
   it("finds their promises to you and only those; keeps, moves and withdraws only by their words", async () => {
-    let shown = 0, wrongShown = 0, firmDated = 0, foundFirmDated = 0, days = 0, rightDays = 0, firmness = 0, rightFirmness = 0, closes = 0, wrongCloses = 0, moves = 0, rightMoves = 0;
+    let shown = 0, wrongShown = 0, firmDated = 0, foundFirmDated = 0, days = 0, rightDays = 0, firmness = 0, rightFirmness = 0, closes = 0, wrongCloses = 0, moves = 0, rightMoves = 0, wrongMoves = 0, worded = 0, rightWords = 0;
     for (let round = 0; round < REPEAT; round++) {
       for (const c of CASES) {
         const language = c.es ? "es" : "en";
@@ -110,6 +113,11 @@ describe.skipIf(process.env.TERNO_AI_THEIRS !== "1")("their promises on a small 
           if (c.due.includes(kept.rows[0]!.dueDay ?? "")) rightDays++;
           else process.stderr.write(`${c.id}: due ${kept.rows[0]!.dueDay} for ${c.due.join("|")}\n`);
         }
+        if (n && c.words) {
+          worded++;
+          if (c.words.every((w) => new RegExp(w, "iu").test(kept.rows[0]!.text))) rightWords++;
+          else process.stderr.write(`${c.id}: words "${kept.rows[0]!.text}"\n`);
+        }
         if (n && c.firm !== undefined) {
           firmness++;
           if (kept.rows[0]!.firm === c.firm) rightFirmness++;
@@ -128,15 +136,21 @@ describe.skipIf(process.env.TERNO_AI_THEIRS !== "1")("their promises on a small 
             moves++;
             if (kept.moved.length && c.open.moveTo!.includes(kept.moved[0]!.dueDay)) rightMoves++;
             else process.stderr.write(`${c.id}: moved ${kept.moved[0]?.dueDay ?? "nowhere"}\n`);
-          } else if (kept.moved.length) process.stderr.write(`${c.id}: moved, shouldn't be\n`);
+          } else if (kept.moved.length) {
+            wrongMoves++;
+            process.stderr.write(`${c.id}: moved, shouldn't be\n`);
+          }
         }
       }
     }
     // stderr: vitest keeps a passing test's console to itself
-    process.stderr.write(`${JSON.stringify({ model: MODEL, shown, wrongShown, firmDated, foundFirmDated, days, rightDays, firmness, rightFirmness, closes, wrongCloses, moves, rightMoves })}\n${spendReport()}\n`);
+    process.stderr.write(`${JSON.stringify({ model: MODEL, shown, wrongShown, firmDated, foundFirmDated, days, rightDays, firmness, rightFirmness, closes, wrongCloses, moves, rightMoves, wrongMoves, worded, rightWords })}\n${spendReport()}\n`);
     expect(1 - wrongShown / Math.max(1, shown)).toBeGreaterThanOrEqual(0.9);
     expect(foundFirmDated / firmDated).toBeGreaterThanOrEqual(0.7);
     expect(rightDays / Math.max(1, days)).toBeGreaterThanOrEqual(0.9);
     expect(1 - wrongCloses / Math.max(1, closes)).toBeGreaterThanOrEqual(0.95);
+    // the code review: a move nobody made, or a made-up deliverable, is wrong whatever else is right
+    expect(wrongMoves).toBe(0);
+    expect(rightWords).toBe(worded);
   }, 1_800_000);
 });

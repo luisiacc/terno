@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { followupDaysSince, followupDue, hasCommitmentCue, isFollowupKind, mostUrgent, onTopEligible, theirDue, validFollowupDate } from "./followups";
+import { followupDaysSince, followupDue, hasCommitmentCue, isFollowupKind, lineRows, mostUrgent, onTopEligible, theirDue, validFollowupDate } from "./followups";
 
 const at = (y: number, m: number, d: number, h = 0, min = 0) => new Date(y, m - 1, d, h, min).getTime();
 const clock = (ms: number) => { const d = new Date(ms); return [d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes()]; };
@@ -113,4 +113,13 @@ describe("a commitment cue (plan 280 §2)", () => {
     "Vamos a enviarte la propuesta.",
   ])("reads %s", (text) => expect(hasCommitmentCue(text)).toBe(true));
   it.each(["Thanks, got it.", "Can you send me the signed copy?", "Gracias por todo.", "Here is the report you asked for."])("passes over %s", (text) => expect(hasCommitmentCue(text)).toBe(false));
+});
+
+describe("which row speaks for a conversation (plan 280, the code review)", () => {
+  it("on the Inbox's top, the row that put it there, never a quiet one beside it; elsewhere, all of them", () => {
+    const quiet = { id: 1, state: "due" as const, dueAt: 1, inboxState: "none" as const };
+    const firm = { id: 2, state: "due" as const, dueAt: 5, inboxState: "onTop" as const };
+    expect(mostUrgent(lineRows([quiet, firm], true))!.id).toBe(2);
+    expect(mostUrgent(lineRows([quiet, firm], false))!.id).toBe(1);
+  });
 });

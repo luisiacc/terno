@@ -3131,6 +3131,7 @@ It contains none of your mail, contacts, settings or keys.
   "errors.ai.askRefused": "The model declined to answer this.",
   "errors.ai.askTooSmall": "This question is too long for this model. Shorten it, or choose a model with more room.",
   "errors.followups.changed": "This follow-up changed in the meantime. Look at it again.",
+  "errors.followups.full": "There are too many follow-ups to bring this one back. Dismiss one first.",
   "errors.dated.changed": "This item changed in the meantime. Look at it again.",
   "errors.dated.later": "Choose a time after now.",
   "errors.dated.laterLate": "That’s too late for it. Choose an earlier time.",

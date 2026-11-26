@@ -5,7 +5,7 @@ import { scheduleFields } from "./schedule";
 
 /** Plan 142 on IndexedDB, like SQL's (packages/db/src/followups.ts). */
 
-const toRow = (r: R): FollowupRow => ({ id: r.id, threadId: r.thread_id, messageId: r.message_id, rfcMessageId: r.rfc_message_id ?? null, item: r.item, kind: r.kind, text: r.text, quote: r.quote ?? null, personName: r.person_name ?? null, personEmail: r.person_email ?? null, sentAt: r.sent_at, dueAt: r.due_at, dated: r.dated === 1, deferredUntil: r.deferred_until ?? null, state: r.state, inboxState: r.inbox_state, closedReason: r.closed_reason ?? null, closedAt: r.closed_at ?? null, notifiedAt: r.notified_at ?? null, fromScan: r.from_scan === 1, revision: r.revision, model: r.model ?? null, provider: r.provider ?? null, createdAt: r.created_at, sameAs: r.same_as ?? null, brokenDueAt: r.broken_due_at ?? null, timed: r.timed === 1, answers: r.answers ?? null, ...scheduleFields(r), handedTo: parseHandedTo(r.handed_to), settledBy: r.settled_by ?? null, settledAt: r.settled_at ?? null, before: r.before_day ?? null, holds: r.holds ?? null, partOfDay: readPartOfDay(r.part_of_day), firm: r.firm !== 0, dueDay: r.due_day ?? null, personKey: r.person_key ?? null, arrivedHint: r.arrived_hint ?? null });
+const toRow = (r: R): FollowupRow => ({ id: r.id, threadId: r.thread_id, messageId: r.message_id, rfcMessageId: r.rfc_message_id ?? null, item: r.item, kind: r.kind, text: r.text, quote: r.quote ?? null, personName: r.person_name ?? null, personEmail: r.person_email ?? null, sentAt: r.sent_at, dueAt: r.due_at, dated: r.dated === 1, deferredUntil: r.deferred_until ?? null, state: r.state, inboxState: r.inbox_state, closedReason: r.closed_reason ?? null, closedAt: r.closed_at ?? null, notifiedAt: r.notified_at ?? null, fromScan: r.from_scan === 1, revision: r.revision, model: r.model ?? null, provider: r.provider ?? null, createdAt: r.created_at, sameAs: r.same_as ?? null, brokenDueAt: r.broken_due_at ?? null, timed: r.timed === 1, answers: r.answers ?? null, ...scheduleFields(r), handedTo: parseHandedTo(r.handed_to), settledBy: r.settled_by ?? null, settledAt: r.settled_at ?? null, before: r.before_day ?? null, holds: r.holds ?? null, partOfDay: readPartOfDay(r.part_of_day), firm: r.firm !== 0, dueDay: r.due_day ?? null, personKey: r.person_key ?? null, arrivedHint: r.arrived_hint ?? null, movedAt: r.moved_at ?? null });
 
 export function own(c: Ctx): Set<string> {
   const out = new Set<string>();
@@ -409,8 +409,8 @@ export function restoreFollowups(c: Ctx, list: readonly { snapshot: FollowupSnap
   for (const { snapshot: s, expectRevision } of list) {
     const r = rows.get(s.id);
     if (!r || r.revision !== expectRevision) continue;
-    // plan 280 (revision 9): as SQL's, an Undo never takes anyone's place
-    if (!live(r) && (s.state === "open" || s.state === "due") && activeCount(c) >= FOLLOWUPS_ACTIVE_MAX) continue;
+    // plan 280 (revision 9, the code review): as SQL's, admitted as a new row is
+    if (!live(r) && (s.state === "open" || s.state === "due") && !admitFollowup(c, followupWorth({ kind: r.kind, dated: r.dated, firm: r.firm ?? 1 }))) continue;
     // the deferral as it was, null too (a journal from before it has none)
     rows.update(r, { state: s.state, due_at: s.dueAt, deferred_until: s.deferredUntil ?? null, inbox_state: s.inboxState, closed_reason: s.closedReason, closed_at: s.closedAt, revision: r.revision + 1 });
     n++;

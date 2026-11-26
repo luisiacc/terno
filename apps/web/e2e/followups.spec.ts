@@ -277,7 +277,7 @@ test.describe("follow-ups (plan 142)", () => {
     await page.getByTestId("tab-ai").click();
     const group = page.getByTestId("ai-followups");
     await group.scrollIntoViewIfNeeded();
-    await expect(group).toContainText("Sends the text of each message you send, and the message it answers, to Offline demo.");
+    await expect(group).toContainText("Sends the text of each message you send, the message it answers, and mail people send you, to Offline demo.");
     await page.getByTestId("ai-followups-switch").click();
     // the Nudge row comes with the switch, and nothing else: no offer, and nothing old read (plan 211)
     await expect(page.getByTestId("ai-followups-nudge")).toBeVisible();

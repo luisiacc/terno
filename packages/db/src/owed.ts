@@ -82,13 +82,18 @@ export function owedSource(db: Db, messageId: number): OwedSource | null {
   };
 }
 
-/** Open promises of theirs this message could act on: its conversation's and its sender's in this account, none in Spam or Trash. */
+/**
+ * Open promises of theirs this message could act on: its conversation's and its sender's in this account, none of a
+ * conversation in Trash or with anything in Spam (the code review: a promise read from mail moved to Spam since is never
+ * material, whatever the rest of its conversation)
+ */
 export function openOwedFor(db: Db, o: { threadId: number; accountId: number; senderKey: string; before: number; limit: number }): FollowupRow[] {
   return db
     .all<FollowupRaw>(
       `SELECT f.* FROM followups f JOIN threads t ON t.id = f.thread_id
        WHERE f.id IN (SELECT id FROM followups INDEXED BY followups_thread WHERE thread_id = ? AND state IN ('open','due') UNION SELECT id FROM followups INDEXED BY followups_owed WHERE person_key = ? AND kind = 'theirs' AND state IN ('open','due'))
          AND f.kind = 'theirs' AND f.sent_at < ? AND t.account_id = ? AND t.in_trash = 0 AND t.in_spam = 0
+         AND NOT EXISTS (SELECT 1 FROM messages x INDEXED BY messages_thread WHERE x.thread_id = f.thread_id AND x.is_spam = 1)
        ORDER BY f.sent_at DESC, f.id DESC LIMIT ?`,
       o.threadId, o.senderKey, o.before, o.accountId, o.limit,
     )
@@ -118,8 +123,9 @@ export function finishOwed(db: Db, w: OwedFinish): FollowupFinishOutcome {
       );
     }
     // §2 and revision 8: only the debtor's own mail, in this account, after the promise, at the revision shown
-    const mine = `${OPEN_THEIRS} AND id = ? AND revision = ? AND person_key = ? AND sent_at < ? AND (SELECT t.account_id FROM threads t WHERE t.id = followups.thread_id) = ?`;
-    const at = (r: { id: number; revision: number }) => [r.id, r.revision, src.senderKey, src.date, src.accountId] as const;
+    // (the code review: and newer than the mail that last moved it, so an older one read again can't undo a newer move)
+    const mine = `${OPEN_THEIRS} AND id = ? AND revision = ? AND person_key = ? AND sent_at < ? AND coalesce(moved_at, sent_at) < ? AND (SELECT t.account_id FROM threads t WHERE t.id = followups.thread_id) = ?`;
+    const at = (r: { id: number; revision: number }) => [r.id, r.revision, src.senderKey, src.date, src.date, src.accountId] as const;
     const closed = new Set<number>();
     for (const k of w.kept) {
       if (db.run(`UPDATE followups SET state = 'done', closed_reason = 'kept', closed_at = ?, settled_by = ?, settled_at = ?, inbox_state = 'none', revision = revision + 1 WHERE ${mine}`, w.now, w.messageId, src.date, ...at(k)).changes) closed.add(k.id);
@@ -132,8 +138,8 @@ export function finishOwed(db: Db, w: OwedFinish): FollowupFinishOutcome {
       if (closed.has(m.id)) continue;
       // a new day keeps the user's Later (`deferred_until`); late again only when the new moment has passed
       db.run(
-        `UPDATE followups SET due_at = ?, due_day = ?, dated = 1, timed = ?, part_of_day = ?, state = CASE WHEN ? > ? THEN 'open' ELSE state END, inbox_state = CASE WHEN ? > ? THEN 'none' ELSE inbox_state END, notified_at = NULL, revision = revision + 1 WHERE ${mine}`,
-        m.dueAt, m.dueDay, m.timed ? 1 : 0, m.partOfDay ?? null, m.dueAt, w.now, m.dueAt, w.now, ...at(m),
+        `UPDATE followups SET due_at = ?, due_day = ?, dated = 1, timed = ?, part_of_day = ?, state = CASE WHEN ? > ? THEN 'open' ELSE state END, inbox_state = CASE WHEN ? > ? THEN 'none' ELSE inbox_state END, notified_at = NULL, moved_at = ?, revision = revision + 1 WHERE ${mine}`,
+        m.dueAt, m.dueDay, m.timed ? 1 : 0, m.partOfDay ?? null, m.dueAt, w.now, m.dueAt, w.now, src.date, ...at(m),
       );
     }
     // revision 5: a relay names the debtor: it may have arrived (whoever sent the relay; never a close)
