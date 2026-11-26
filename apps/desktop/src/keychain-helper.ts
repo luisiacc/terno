@@ -8,21 +8,36 @@
  * a pipe only main holds. The backend seals them again under Terno's item and
  * replaces a blob only after the new one opens to the same text
  * (packages/backend/src/keychain.ts). Nothing is deleted, not even the old item.
+ *
+ * Plan 283: anyone can start the helper, and the keychain trusts this signed
+ * binary, so it never opens Terno's own item: it would turn the binary into
+ * a way to read Terno's secrets without a prompt.
  */
 import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { app, safeStorage } from "electron";
+import { APP_NAME } from "./profile";
 
 export const KEYCHAIN_HELPER_FLAG = "--terno-legacy-keychain";
 /** the name Única's secrets are sealed under (tests point both names at throwaway keychain items) */
 export const LEGACY_APP_NAME = process.env.TERNO_TEST_LEGACY_APP_NAME ?? "Única";
 const RESULT = "TERNO_KEYCHAIN_RESULT ";
 
+/** Whether the helper may open `name`'s item: never Terno's, nor the one this process runs as (a test's stand-in). */
+export function legacyNameAllowed(name: string, own: string = APP_NAME): boolean {
+  return name !== "Terno" && name !== own;
+}
+
 /** Helper mode: no window, no profile (a scratch userData), exits as soon as it answered. */
 export function runKeychainHelper(): void {
   const name = process.argv.find((a) => a.startsWith("--legacy-name="))?.slice("--legacy-name=".length) || LEGACY_APP_NAME;
+  if (!legacyNameAllowed(name)) {
+    process.stderr.write(`the keychain helper doesn't open "${name}"\n`);
+    app.exit(2);
+    return;
+  }
   // before ready: Electron derives the keychain item from the name at startup
   app.setName(name);
   const scratch = mkdtempSync(join(tmpdir(), "terno-keychain-"));
