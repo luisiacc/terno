@@ -71,6 +71,9 @@ class Stub {
 
 type Stop = "end" | "length" | "refusal";
 
+/** A message's text, sent as a string or (plan 291: a prefix marked for the cache) as text parts. */
+const flat = (content: any): string => (typeof content === "string" ? content : content.map((p: { text: string }) => p.text).join(""));
+
 /** How a provider's dialect looks on the wire. */
 interface Dialect {
   chatPath: string;
@@ -92,9 +95,9 @@ const openaiDialect = (chatPath: string): Dialect => ({
     usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
   }),
   error: (status, message) => ({ error: { message, type: status === 401 ? "invalid_request_error" : "error", code: status === 403 ? "permission_denied" : null } }),
-  system: (b) => b.messages[0].content,
+  system: (b) => flat(b.messages[0].content),
   structured: (b) => b.response_format?.type === "json_schema",
-  lastUser: (b) => b.messages.at(-1).content,
+  lastUser: (b) => flat(b.messages.at(-1).content),
 });
 
 const anthropicDialect: Dialect = {
@@ -110,9 +113,9 @@ const anthropicDialect: Dialect = {
     usage: { input_tokens: 10, output_tokens: 10 },
   }),
   error: (status, message) => ({ type: "error", error: { type: status === 401 ? "authentication_error" : status === 403 ? "permission_error" : status === 429 ? "rate_limit_error" : "invalid_request_error", message } }),
-  system: (b) => b.system,
+  system: (b) => flat(b.system),
   structured: (b) => b.output_config?.format?.type === "json_schema",
-  lastUser: (b) => b.messages.at(-1).content,
+  lastUser: (b) => flat(b.messages.at(-1).content),
 };
 
 interface Contract {

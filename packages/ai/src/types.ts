@@ -35,7 +35,11 @@ export interface ProviderConfig {
   maxRetries: number;
 }
 
-/** A stretch of a prompt. `cache`: end a cacheable prefix here (Anthropic's breakpoints; other servers just concatenate). */
+/**
+ * A stretch of a prompt. `cache`: end a cacheable prefix here, for a prefix that is byte-identical across calls and
+ * recurs within minutes (plan 291). Anthropic gets a breakpoint, OpenAI's models that take explicit caching an explicit
+ * one; other servers just concatenate. A request with no mark caches nothing where the server lets us say so.
+ */
 export interface PromptBlock {
   text: string;
   cache?: boolean;
@@ -45,8 +49,20 @@ export type PromptText = string | readonly PromptBlock[];
 
 /** A prompt's text in order, for servers with no notion of blocks. */
 export function promptText(content: PromptText): string {
-  return typeof content === "string" ? content : content.map((b) => b.text).join("\n\n");
+  return typeof content === "string" ? content : blockTexts(content).join("");
 }
+
+/**
+ * Blocks as a server's own parts, each but the last ending in the blank line that separates them, unless it ends in a
+ * line break of its own (a block split from one text carries its separator): every server reads the same characters,
+ * in parts or flattened. Anthropic's blocks go as written, as they always have.
+ */
+export function blockTexts(blocks: readonly PromptBlock[]): string[] {
+  return blocks.map((b, i) => (i < blocks.length - 1 && !b.text.endsWith("\n") ? `${b.text}\n\n` : b.text));
+}
+
+/** Some block of it ends a cacheable prefix. */
+export const marksCache = (content: PromptText): boolean => typeof content !== "string" && content.some((b) => b.cache);
 
 export interface ChatMsg {
   role: "user" | "assistant";

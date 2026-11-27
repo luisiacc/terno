@@ -1,13 +1,22 @@
 import { z } from "zod";
 import { parseModelJson } from "./json";
 import { L } from "@terno/i18n";
-import { AiError, type ChatMsg, type Effort, type ModelTransport, type OutputMode } from "./types";
+import { AiError, type ChatMsg, type Effort, type ModelTransport, type OutputMode, type PromptBlock, type PromptText } from "./types";
 
 export type Validation<T> = { ok: true; value: T } | { ok: false; error: string };
 
 export interface StructuredTask<W, T> {
   system: string;
+  /**
+   * Plan 291: `system` is byte-identical across calls and recurs within minutes (a worker's drain, an Ask sitting), so
+   * a cacheable prefix ends after it. Only where it pays: long enough to be cached and read before it expires.
+   */
+  cache?: boolean;
+  /** Plan 291: what closes the system prompt but differs per call (a mail's arrival), read after `system` and a blank line, after any cached prefix. */
+  systemTail?: string;
   prompt: string;
+  /** Plan 291: the user turn's head, the same across calls (categorizing's labels and what they hold): it ends a cached prefix, and `prompt` follows it. */
+  promptHead?: string;
   schema: { name: string; zod: z.ZodType<W> };
   /** domain checks after the shape parses; the error text is fed back in the repair turn */
   validate: (wire: W, attempt?: { last: boolean }) => Validation<T>;
@@ -31,15 +40,20 @@ const WEAKER: Record<OutputMode, OutputMode | null> = { json_schema: "json_objec
 /** json_schema output is grammar-constrained, so one repair suffices; free-form modes get two */
 const REPAIRS: Record<OutputMode, number> = { json_schema: 1, json_object: 2, text: 2 };
 
-function systemFor<W>(task: StructuredTask<W, unknown>, output: OutputMode): string {
-  if (output === "json_schema") return task.system;
-  return [
-    task.system,
-    "",
-    "Respond with a single JSON object and nothing else (no prose, no code fences).",
-    `It must match this JSON Schema:\n${JSON.stringify(z.toJSONSchema(task.schema.zod))}`,
-    `Example:\n${JSON.stringify(task.example)}`,
-  ].join("\n");
+/** The system prompt: plain text, or (plan 291) blocks with the cached prefix first and what differs per call after it. */
+function systemFor<W>(task: StructuredTask<W, unknown>, output: OutputMode): PromptText {
+  const schema =
+    output === "json_schema"
+      ? null
+      : [
+          "Respond with a single JSON object and nothing else (no prose, no code fences).",
+          `It must match this JSON Schema:\n${JSON.stringify(z.toJSONSchema(task.schema.zod))}`,
+          `Example:\n${JSON.stringify(task.example)}`,
+        ].join("\n");
+  if (!task.cache && task.systemTail === undefined) return schema ? `${task.system}\n\n${schema}` : task.system;
+  // one text cut in parts: each part but the last carries the blank line before the next, so every server reads that text
+  const parts: PromptBlock[] = [{ text: task.system, ...(task.cache ? { cache: true } : {}) }, ...(task.systemTail !== undefined ? [{ text: task.systemTail }] : []), ...(schema ? [{ text: schema }] : [])];
+  return parts.map((p, i) => (i < parts.length - 1 ? { ...p, text: `${p.text}\n\n` } : p));
 }
 
 function check<W, T>(task: StructuredTask<W, T>, text: string, last: boolean): Validation<T> {
@@ -59,7 +73,7 @@ function check<W, T>(task: StructuredTask<W, T>, text: string, last: boolean): V
 export async function runStructured<W, T>(transport: ModelTransport, task: StructuredTask<W, T>, options: LadderOptions): Promise<T> {
   let output = options.output;
   let repairsLeft = REPAIRS[output];
-  const messages: ChatMsg[] = [{ role: "user", content: task.prompt }];
+  const messages: ChatMsg[] = [{ role: "user", content: task.promptHead === undefined ? task.prompt : [{ text: task.promptHead, cache: true }, { text: task.prompt }] }];
   for (;;) {
     options.signal.throwIfAborted();
     let completion;

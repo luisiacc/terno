@@ -5,7 +5,7 @@ import { OPENAI_DEFAULT_MODEL, OPENAI_DRAFT_MODEL } from "@terno/core";
 import { L } from "@terno/i18n";
 import { describeProvider, isLocalProvider, needsKey, PRESETS, resolveBaseURL } from "./providers";
 import { mapNetworkError, mapSdkError, type ErrorInfo } from "./sdk-errors";
-import { AiError, promptText, type CompletionRequest, type ModelInfo, type ModelTransport, type ProviderConfig, type StreamEvent, type Usage } from "./types";
+import { AiError, blockTexts, marksCache, promptText, type CompletionRequest, type ModelInfo, type ModelTransport, type PromptText, type ProviderConfig, type StreamEvent, type Usage } from "./types";
 
 /** GA version with structured outputs (json_schema) on chat completions. */
 export const AZURE_API_VERSION = "2024-10-21";
@@ -27,6 +27,15 @@ export function usageOf(u: { prompt_tokens: number; completion_tokens: number; p
  */
 const REASONING_MODELS: ReadonlySet<string> = new Set([OPENAI_DEFAULT_MODEL, OPENAI_DRAFT_MODEL, "gpt-6.1-terra"]);
 export const takesReasoningEffort = (model: string) => REASONING_MODELS.has(model);
+
+/**
+ * Plan 291: OpenAI's models that take `prompt_cache_options` (GPT-5.6 and later): the ones Terno routes to, and Terra.
+ * Left to its default (implicit) mode such a model writes every whole prompt to its cache at 1.25× input, mail and all,
+ * and reads back only the system prompt; so each request goes in explicit mode, where only a marked block's end is
+ * written ("no explicit breakpoints: no prompt caching"). Others never get the field.
+ */
+const EXPLICIT_CACHE_MODELS: ReadonlySet<string> = new Set([OPENAI_DEFAULT_MODEL, OPENAI_DRAFT_MODEL, "gpt-6.1-terra"]);
+export const takesExplicitCache = (model: string) => EXPLICIT_CACHE_MODELS.has(model);
 
 /** OpenRouter attributes traffic to the calling app with these. */
 const OPENROUTER_HEADERS = { "HTTP-Referer": "https://terno.app", "X-Title": "Terno" };
@@ -120,11 +129,18 @@ export function openaiChatTransport(config: ProviderConfig): ModelTransport {
   }
 
   const effort = config.id === "openai" && takesReasoningEffort(config.model);
+  const explicitCache = config.id === "openai" && takesExplicitCache(config.model);
+  /** A marked prompt as text parts, a breakpoint where a prefix ends; anything else as the plain text it always was. */
+  const content = (c: PromptText) =>
+    explicitCache && typeof c !== "string" && marksCache(c)
+      ? blockTexts(c).map((text, i) => ({ type: "text" as const, text, ...(c[i]!.cache ? { prompt_cache_breakpoint: { mode: "explicit" as const } } : {}) }))
+      : promptText(c);
   const request = async (req: CompletionRequest): Promise<ChatCompletionCreateParamsNonStreaming> => {
       const tokenLimit = config.id === "openai" || azure ? { max_completion_tokens: req.maxTokens } : { max_tokens: req.maxTokens };
       return {
         model: config.model,
-        messages: [{ role: "system", content: promptText(req.system) }, ...req.messages.map((m) => ({ role: m.role, content: promptText(m.content) }))],
+        messages: [{ role: "system", content: content(req.system) }, ...req.messages.map((m) => (m.role === "user" ? { role: m.role, content: content(m.content) } : { role: m.role, content: promptText(m.content) }))],
+        ...(explicitCache ? { prompt_cache_options: { mode: "explicit" as const } } : {}),
         ...tokenLimit,
         ...(effort && req.reasoningEffort ? { reasoning_effort: req.reasoningEffort } : {}),
         // plan 279: only where reasoning_effort goes, OpenAI's own models that document both
@@ -145,8 +161,10 @@ export function openaiChatTransport(config: ProviderConfig): ModelTransport {
         const completion = await client.chat.completions.create(body, { signal: req.signal });
         const choice = completion.choices[0];
         if (!choice) throw new AiError(L("errors.ai.emptyAnswer", { provider: info.label }), "invalid_output");
-        if (choice.message.refusal) return { text: "", stop: "refusal" };
-        return { text: choice.message.content ?? "", stop: choice.finish_reason === "length" ? "length" : "end", usage: usageOf(completion.usage) };
+        const usage = usageOf(completion.usage);
+        // a refusal is billed too: its usage is what the book settles, not the worst case
+        if (choice.message.refusal) return { text: "", stop: "refusal", ...(usage ? { usage } : {}) };
+        return { text: choice.message.content ?? "", stop: choice.finish_reason === "length" ? "length" : "end", usage };
       } catch (error) {
         throw mapSdkError(error, OpenAI, info);
       }

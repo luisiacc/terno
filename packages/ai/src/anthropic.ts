@@ -5,7 +5,7 @@ import { resolveBaseURL } from "./providers";
 import { mapSdkError } from "./sdk-errors";
 import { AiError, type CompletionRequest, type ModelInfo, type ModelTransport, type PromptText, type ProviderConfig, type StreamEvent, type Usage } from "./types";
 
-/** cache_control on the blocks that end a cacheable prefix */
+/** cache_control on the blocks that end a cacheable prefix: 5 minutes, refreshed by each read (plan 291: 1 hour's double write doesn't pay) */
 function blocks(content: PromptText) {
   if (typeof content === "string") return content;
   return content.map((b) => ({ type: "text" as const, text: b.text, ...(b.cache ? { cache_control: { type: "ephemeral" as const } } : {}) }));
