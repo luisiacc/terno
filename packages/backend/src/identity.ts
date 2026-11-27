@@ -1,3 +1,4 @@
+import { SecretUnreadableError } from "./keychain";
 import { log } from "@terno/core/diag";
 import { isOAuthKind, isValidEmail, messageOf, OAUTH_SUBJECT, signInMethod, unhandled, type Account } from "@terno/core";
 import { RpcError, type OwnerIdentity } from "@terno/core/rpc";
@@ -172,7 +173,8 @@ export async function oauthCredentialIntent(b: Backend, account: Account, stamp:
   }
   if (!pending) {
     let refreshToken: string | null;
-    try { refreshToken = await b.getSecret(name, "renewal"); } catch { throw invalidRenewal(); }
+    // plan 293 (Codex code review #10): a keychain failure keeps its one fixed category, never "invalid response"
+    try { refreshToken = await b.getSecret(name, "renewal"); } catch (error) { throw error instanceof SecretUnreadableError ? error : invalidRenewal(); }
     b.assertSignIn(account.id, flow);
     if (!refreshToken) throw invalidRenewal();
     // getSecret honors the keychain migration fingerprint. Assert the exact ciphertext again before exchange.

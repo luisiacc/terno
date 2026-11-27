@@ -37,7 +37,7 @@ export const CODES = {
   // plan 20: main's network watcher (scutil) stopped or gave up
   "net.watch_failed": c("errno", "exitCode", "attempt"),
   // plan 293 (CASA 4.1.4): main's safeStorage refused; its category only, never what Electron said
-  "keychain.secret_failed": c("op", "errorCategory"),
+  "keychain.secret_failed": local("op", "errorCategory"),
   "appearance.save_failed": c("errno"),
   "legacy.storage_failed": c("errorClass"),
   // plan 226: the launch offer to move Terno into Applications (no path, folder or error text)

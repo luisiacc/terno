@@ -207,6 +207,12 @@ describe("keychain migration (Única → Terno)", () => {
     expect(entries.some((e) => e.code === "keychain.legacy_read_failed" && e.fields?.errorCategory === "secret_storage_failed")).toBe(true);
     expect(entries.some((e) => e.code === "secret.access" && e.fields?.component === "migration" && e.fields.secretOutcome === "failed" && e.fields.errorCategory === "secret_storage_failed")).toBe(true);
     expect(entries.some((e) => e.code === "keychain.migrated" && e.fields?.secretOutcome === "failed" && e.fields.count === 2)).toBe(true);
+    // Codex code review #11: and on a start where the helper answered but couldn't open them, each is its own failed read
+    entries.length = 0;
+    const third = open(dir, terno, async (blobs) => blobs.map(() => null));
+    await third.backend.start();
+    await third.backend.stop();
+    expect(entries.filter((e) => e.code === "secret.access" && e.fields?.secretOp === "read" && e.fields.secretOutcome === "failed").map((e) => e.fields?.secretKind).sort()).toEqual(["apiKey", "password"]);
   });
 
   it("rejects what a wrong key can produce (garbage that passed the padding check) and keeps the rest", async () => {

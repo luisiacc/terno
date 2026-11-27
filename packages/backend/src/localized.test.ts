@@ -81,7 +81,7 @@ describe("errors as catalog messages", () => {
     expect(new SecretUnreadableError("ai:openai", true).i18n).toEqual({ key: "errors.secret.legacy.apiKey" });
     expect(new SecretUnreadableError("something", false).i18n).toEqual({ key: "errors.secret.keychain.other" });
     setLocale("es", es);
-    expect(translate({ ...e.i18n, message: e.message })).toBe("El llavero no abre la sesión de Google de esta cuenta. Vuelve a conectarla en Ajustes → Cuentas (Conectar con Google).");
+    expect(translate({ ...e.i18n!, message: e.message })).toBe("El llavero no abre la sesión de Google de esta cuenta. Vuelve a conectarla en Ajustes → Cuentas (Conectar con Google).");
   });
 });
 

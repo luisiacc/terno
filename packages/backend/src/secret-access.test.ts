@@ -7,11 +7,12 @@
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { breadcrumbs, installDiag, setDiagSink, type DiagEntry, type ErrorRecord } from "@terno/core/diag";
+import { breadcrumbs, installDiag, log, setDiagSink, type DiagEntry, type ErrorRecord } from "@terno/core/diag";
 import { createMemoryTransportPair, RpcClient, RpcError, toErrorPayload } from "@terno/core/rpc";
 import { demoRegistry } from "@terno/mail";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher, type SecretCipher } from "./backend";
+import { SecretUnreadableError } from "./keychain";
 import { describeSecret, SECRET_STORAGE_FAILED, SecretAccess, SecretStorageError } from "./secret-access";
 
 const LEAKS = [
@@ -123,6 +124,35 @@ describe("CASA 4.1.4: a cryptographic failure is one generic error, whatever its
     expect(records).toEqual([]);
     expectNoLeak(entries);
   });
+});
+
+it("a secret that can't be opened carries the same fixed category on the wire, whatever kind it is (Codex code review #10)", () => {
+  for (const name of ["account:3:password", "account:3:refreshToken", "ai:openai:apiKey"]) {
+    for (const legacy of [false, true]) {
+      expect(toErrorPayload(new SecretUnreadableError(name, legacy))).toMatchObject({ code: "UNAVAILABLE", details: { category: SECRET_STORAGE_FAILED }, expected: true });
+    }
+  }
+  // main's own keychain line stays local too (never a breadcrumb, so never in a record or a report)
+  const before = breadcrumbs().length;
+  log.warn("keychain.secret_failed", { op: "decrypt", errorCategory: SECRET_STORAGE_FAILED });
+  expect(breadcrumbs().length).toBe(before);
+  expect(entries.at(-1)).toMatchObject({ code: "keychain.secret_failed", fields: { op: "decrypt", errorCategory: SECRET_STORAGE_FAILED } });
+});
+
+it("adding an account whose transaction fails after its secret was sealed records the failed write (Codex code review #11)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "terno-secret-"));
+  const backend = new Backend({ dbPath: join(dir, "t.db"), version: "t", cipher: plaintextCipher, providers: demoRegistry, autoSync: false });
+  cleanups.push(async () => {
+    await backend.stop();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  const [c, s2] = createMemoryTransportPair();
+  backend.connect(s2, { clientId: "r", origin: "renderer" });
+  const client = new RpcClient(c);
+  await backend.start();
+  vi.spyOn(backend.store.accounts, "create").mockRejectedValueOnce(new Error("disk full"));
+  await expect(client.call("accounts.addImap", { email: "luis@example.com", displayName: "Luis", imap: { host: "imap.example.com", port: 993, secure: true, user: "luis@example.com" }, smtp: { host: "smtp.example.com", port: 465, secure: true, user: "luis@example.com" }, password: "pw", verify: false })).rejects.toBeTruthy();
+  expect(lines()).toContainEqual({ level: "warn", secretOp: "write", secretKind: "password", component: "signIn", secretOutcome: "failed", errorCategory: SECRET_STORAGE_FAILED });
 });
 
 describe("CASA 6.7.1: every access to a stored secret is recorded, locally", () => {

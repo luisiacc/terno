@@ -1,5 +1,5 @@
-import { textRef, type TextRef } from "@terno/core";
 import { log } from "@terno/core/diag";
+import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { MailStore } from "@terno/store";
 import { SECRET_STORAGE_FAILED, type SecretAccess } from "./secret-access";
@@ -35,21 +35,21 @@ export function secretKind(name: string): "password" | "googleSession" | "client
   return "other";
 }
 
-export class SecretUnreadableError extends Error {
-  readonly expected = true;
-  /** plan 293 (CASA 4.1.4): the category every cryptographic failure carries, whatever its cause */
+/**
+ * A saved secret that can't be opened: sealed by Única and not migrated, or refused by the keychain. Plan 293 (CASA
+ * 4.1.4): on the wire it is the same fixed category as every cryptographic failure (UNAVAILABLE,
+ * details.category = secret_storage_failed), with a fixed message per kind of secret saying where to enter it again;
+ * never what the keychain said.
+ */
+export class SecretUnreadableError extends RpcError {
   readonly category = SECRET_STORAGE_FAILED;
-  /** the message as a catalog key: the renderer shows it in the user's language */
-  readonly i18n: TextRef;
   constructor(
     readonly secretName: string,
     /** sealed by Única and not migrated (else: the keychain refused it) */
     readonly legacy: boolean,
   ) {
-    const message = L(`errors.secret.${legacy ? "legacy" : "keychain"}.${secretKind(secretName)}`);
-    super(message.message);
+    super("UNAVAILABLE", L(`errors.secret.${legacy ? "legacy" : "keychain"}.${secretKind(secretName)}`), { category: SECRET_STORAGE_FAILED }, { expected: true });
     this.name = "SecretUnreadableError";
-    this.i18n = textRef(message)!;
   }
 }
 
@@ -140,7 +140,11 @@ export async function migrateLegacySecrets(store: MailStore, secrets: SecretAcce
   const migrated: string[] = [];
   for (const [i, { name, blob }] of todo.entries()) {
     const plain = plains[i] ?? null;
-    if (plain === null || !plausibleSecret(plain)) continue;
+    if (plain === null || !plausibleSecret(plain)) {
+      // each secret the old keychain wouldn't give back is its own failed read (Codex code review #11)
+      secrets.unreadable(name, "migration");
+      continue;
+    }
     try {
       // each step's failure is recorded by the secret access (a write or read, failed) and kept as it was
       const sealed = await secrets.seal(name, plain, "migration");

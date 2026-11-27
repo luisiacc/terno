@@ -1365,6 +1365,10 @@ export function createHandlers(b: Backend): Handlers {
         secret: { key: "password", blob },
         ownerClaim: claim ? imapClaim({ email: p.email }, config, p.displayName || p.email) : undefined,
         now: b.now(),
+      }).catch((error: unknown) => {
+        // the sealed secret never went in (Codex code review #11)
+        b.secrets.committed("write", "account:new:password", "signIn", "failed");
+        throw error;
       });
       b.secrets.committed("write", `account:${account.id}:password`, "signIn");
       // the account it now shares a name with shows its address too
@@ -1419,6 +1423,10 @@ export function createHandlers(b: Backend): Handlers {
         secret: { key: "refreshToken", blob },
         ownerClaim: b.canClaimOwner() ? gmailClaim({ ...result, name: result.name || result.email }) : undefined,
         now: b.now(),
+      }).catch((error: unknown) => {
+        // the sealed secret never went in (Codex code review #11)
+        b.secrets.committed("write", "account:new:refreshToken", "signIn", "failed");
+        throw error;
       });
       b.secrets.committed("write", `account:${account.id}:refreshToken`, "signIn");
       log.info("signin.stored", { provider: "google", encrypted: true, accountId: account.id });
@@ -1461,6 +1469,10 @@ export function createHandlers(b: Backend): Handlers {
         secret: { key: "refreshToken", blob },
         ownerClaim: b.canClaimOwner() ? microsoftClaim({ ...result, name: result.name || result.email }) : undefined,
         now: b.now(),
+      }).catch((error: unknown) => {
+        // the sealed secret never went in (Codex code review #11)
+        b.secrets.committed("write", "account:new:refreshToken", "signIn", "failed");
+        throw error;
       });
       b.secrets.committed("write", `account:${account.id}:refreshToken`, "signIn");
       log.info("signin.stored", { provider: "microsoft", encrypted: true, accountId: account.id });

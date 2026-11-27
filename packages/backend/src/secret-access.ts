@@ -81,6 +81,11 @@ export class SecretAccess {
     return plain;
   }
 
+  /** A read that couldn't open what's stored (the legacy keychain's helper gave nothing back for it). */
+  unreadable(name: string, component: SecretComponent): void {
+    this.record("read", name, component, "failed");
+  }
+
   /** A read that found nothing stored. */
   missing(name: string, component: SecretComponent): void {
     this.record("read", name, component, "missing");
