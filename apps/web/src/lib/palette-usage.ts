@@ -51,6 +51,17 @@ export function noteUse(id: string, now = Date.now()): void {
   }
 }
 
+/** Plan 293: drops the commands `gone` says to (an account removed, or every one after the last). */
+export function forgetUsage(gone: (id: string) => boolean): void {
+  const kept = [...readUsage()].filter(([id]) => !gone(id));
+  try {
+    if (kept.length) localStorage.setItem(KEY, JSON.stringify(kept.map(([k, u]) => [k, u.n, u.at])));
+    else localStorage.removeItem(KEY);
+  } catch {
+    // storage refused: nothing kept there to begin with
+  }
+}
+
 /** The factor a match score is multiplied by: 1 for unused, at most 1.5, halving with every two weeks unused. */
 export function boost(use: Use | undefined, now: number): number {
   if (!use) return 1;

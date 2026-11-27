@@ -100,6 +100,17 @@ export function noteShown(key: string, place: Place): void {
   }
 }
 
+/** Plan 293: the last account is gone: the offers seen (senders and domains) and this launch's hush go, here and stored. */
+export function forgetSeenOffers(): void {
+  useOffer.setState({ seen: new Set(), hushed: false, visit: null });
+  try {
+    localStorage.removeItem(SEEN_KEY);
+    sessionStorage.removeItem(HUSH_KEY);
+  } catch {
+    // storage refused: nothing kept there to begin with
+  }
+}
+
 /** Answered (on), or not any more (Undo, within the visit that showed it): kept for the session, a reload of the window included. */
 export function hush(on: boolean): void {
   useOffer.setState({ hushed: on });

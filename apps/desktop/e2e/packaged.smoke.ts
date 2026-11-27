@@ -225,6 +225,46 @@ test("the bundled terno-mcp bridge answers MCP requests against the running app 
   await page.keyboard.press("Escape");
 });
 
+test("plan 293 (CASA 6.6.1): the renderer's browser storage, inventoried: preferences in localStorage and sessionStorage only; no IndexedDB, Cache Storage, service worker, cookie, WebSQL or file system; no credential anywhere", async () => {
+  const inventory = await page.evaluate(async () => {
+    const all = (s: Storage) => Object.fromEntries(Object.keys(s).sort().map((k) => [k, s.getItem(k)]));
+    const opfs: string[] = [];
+    try {
+      const root = (await navigator.storage.getDirectory()) as unknown as { keys(): AsyncIterable<string> };
+      for await (const name of root.keys()) opfs.push(name);
+    } catch {
+      // no origin file system here: nothing in it
+    }
+    return {
+      localStorage: all(localStorage),
+      sessionStorage: all(sessionStorage),
+      indexedDB: (await indexedDB.databases()).map((d) => d.name),
+      cacheStorage: await caches.keys().catch((e: Error) => `unavailable here (${e.name})`),
+      // app:// isn't a scheme service workers may register on: Chromium refuses to list any (InvalidStateError)
+      serviceWorkers: navigator.serviceWorker ? await navigator.serviceWorker.getRegistrations().then((r) => r.length, (e: Error) => `unavailable here (${e.name})`) : "absent",
+      documentCookie: document.cookie,
+      webSql: typeof (window as unknown as { openDatabase?: unknown }).openDatabase,
+      fileSystem: opfs,
+    };
+  });
+  const cookies = await app.evaluate(async ({ session }) => (await session.defaultSession.cookies.get({})).length);
+  // the evidence, as the run saw it
+  console.log(`renderer storage inventory: ${JSON.stringify({ ...inventory, sessionCookies: cookies }, null, 2)}`);
+  expect(inventory.indexedDB).toEqual([]);
+  expect(inventory.cacheStorage === "unavailable here (SecurityError)" || (Array.isArray(inventory.cacheStorage) && inventory.cacheStorage.length === 0)).toBe(true);
+  expect([0, "absent", "unavailable here (InvalidStateError)"]).toContain(inventory.serviceWorkers);
+  expect(inventory.documentCookie).toBe("");
+  expect(cookies).toBe(0);
+  expect(inventory.webSql).toBe("undefined");
+  expect(inventory.fileSystem).toEqual([]);
+  // every key is one the inventory names (plan 293 §7)
+  const known = /^terno(:appearance|:first-run|:language|:print|:sidebar-more|:format-bar|:summaryOpen|\.today\.comingUp|\.whatMatters\.clearDays|:panes|:[a-z-]+-tip|:sidebar-account|:sidebar-solo|:people-filter|:list-filter|:palette-usage|:learned-seen|:learned-hushed)$/;
+  for (const key of [...Object.keys(inventory.localStorage), ...Object.keys(inventory.sessionStorage)]) expect(key).toMatch(known);
+  // and nothing that authenticates: no token, key, password or session id
+  const values = JSON.stringify([inventory.localStorage, inventory.sessionStorage]);
+  expect(values).not.toMatch(/ya29\.|1\/\/0|access_token|refresh_?token|password|passwd|bearer|sk-[a-z0-9]|api[_-]?key|secret|session[_-]?id/i);
+});
+
 test("a release carries no test build's world: no baked feed or profile, GitHub's feed, a stable signature for Squirrel", async () => {
   // app.asar: a pickled JSON header (size at byte 12, from byte 16), then the files
   const asar = readFileSync(join(appPath, "Contents/Resources/app.asar"));
