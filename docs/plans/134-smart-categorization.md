@@ -165,3 +165,7 @@ Codex (`gpt-6.1-sol`, high, read-only, against `f787771c`) raised 5 points on th
 ## What a real mailbox changed
 
 JEV in the app, through the live ingest path, on 33 real messages and four invented categories with up to 8 real examples each: 3 filed, all right; 7 suggested, all reasonable; 1 filed by the local engine, before anything was sent. Nothing was filed wrongly. Small, and the categories were made up for the test, so it says the wiring works and the bar looks right, not what the accuracy is. About 150 to 450 ms a call.
+
+## The key moves to Settings → AI (2026-11-27)
+
+The owner: "the set up of the jev api key should be on the "AI" section, not on 'categories'". It's a provider key like Claude's and OpenAI's, so it now sits in Settings → AI, in a Categories group above AI use (`ai-categorizing.tsx`, search id `ai.jev`). Settings → Categories keeps the Ask AI switch, which still names JEV once the key is saved. As before, Dev mode's keys come from the environment, so the row isn't shown there.

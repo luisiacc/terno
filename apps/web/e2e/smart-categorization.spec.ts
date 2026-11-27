@@ -127,23 +127,26 @@ test.describe("smart categorization (plan 134)", () => {
     await expect(chips.filter({ hasText: "Hushed" })).toHaveCount(0);
   });
 
-  test("Settings → Categories: the switch says what it sends, the JEV key saves, tests and goes", async ({ app: page, server }) => {
+  test("Settings → Categories: the switch says what it sends, and names JEV once its key is saved in Settings → AI", async ({ app: page, server }) => {
     await settingUp(page, server, { ai: { provider: "fake" } });
     await openCategoriesTab(page);
     const tab = page.getByTestId("categories-tab");
     await expect(tab).toContainText("with a few sender names and subjects from your categories");
-    const row = page.getByTestId("jev-key-row");
+    // the key is a provider's: it lives with the others in Settings → AI, not here
+    await expect(page.getByTestId("jev-key-row")).toHaveCount(0);
+
+    await page.getByTestId("tab-ai").click();
+    const row = page.getByTestId("ai-categorize").getByTestId("jev-key-row");
     await expect(row).toContainText("TypeSafe AI");
+    await expect(row).toContainText("Settings → Categories");
     await expect(page.getByTestId("jev-key")).toHaveValue("");
     await expect(page.getByTestId("jev-key")).toHaveAttribute("type", "password");
-    expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=categories-tab]").analyze()).violations).toEqual([]);
+    expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=ai-tab]").analyze()).violations).toEqual([]);
 
     await page.getByTestId("jev-key").fill("jev-synthetic-key-9876");
     await page.getByTestId("jev-key-save").click();
     await expect(page.getByTestId("jev-key-saved")).toContainText("9876");
     await expect(page.getByTestId("jev-key")).toHaveCount(0);
-    // the switch now names where it goes
-    await expect(tab).toContainText("Sends each one to JEV");
 
     // Test lists models at TypeSafe AI: stubbed, nothing leaves this machine
     const tests: { provider: string; model?: string }[] = [];
@@ -154,10 +157,15 @@ test.describe("smart categorization (plan 134)", () => {
     await page.getByTestId("jev-key-test").click();
     await expect(page.getByTestId("jev-key-test-result")).toBeVisible();
     expect(tests[0]).toMatchObject({ provider: "jev", model: "jev-latest" });
-    expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=categories-tab]").analyze()).violations).toEqual([]);
+    expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=ai-tab]").analyze()).violations).toEqual([]);
     await page.getByTestId("jev-key-test").click();
     await expect(page.getByTestId("jev-key-test-error")).toContainText("refused");
 
+    // the switch in Categories now names where it goes
+    await page.getByTestId("tab-categories").click();
+    await expect(tab).toContainText("Sends each one to JEV");
+
+    await page.getByTestId("tab-ai").click();
     await page.getByTestId("jev-key-remove").click();
     await expect(page.getByTestId("jev-key")).toHaveValue("");
     await expect(page.getByTestId("jev-key-saved")).toHaveCount(0);
@@ -187,8 +195,10 @@ test.describe("smart categorization (plan 134)", () => {
     await expect(page.getByTestId("reader").getByTestId("suggestion-chip")).toContainText("¿Quartz?");
     await settingUp(page, server, { aiCategorize: false, aiCategorizeWidened: true });
     await openCategoriesTab(page);
-    await expect(page.getByTestId("jev-key-row")).toContainText("TypeSafe AI");
     await expect(page.getByTestId("ai-categorize-widened")).toContainText("desactivado");
+    expect(await englishLeaks(page)).toEqual([]);
+    await page.getByTestId("tab-ai").click();
+    await expect(page.getByTestId("jev-key-row")).toContainText("TypeSafe AI");
     expect(await englishLeaks(page)).toEqual([]);
   });
 });

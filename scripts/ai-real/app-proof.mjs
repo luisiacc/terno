@@ -104,13 +104,12 @@ await step("settings", async () => {
   await page.getByTestId("ai-key-anthropic").waitFor({ state: "detached", timeout: 10_000 }).catch(() => {});
   await page.waitForTimeout(400);
   await shot("settings-ai");
-  await page.getByTestId("tab-categories").click();
-  assertGuarded();
+  // the JEV key sits in Settings → AI too, under Categories
   await page.getByTestId("jev-key").fill(env.JEV_API_KEY);
   await page.getByTestId("jev-key-save").click();
   await page.getByTestId("jev-key-test").click();
   await page.getByTestId("jev-key-test-result").waitFor({ timeout: 20_000 });
-  await shot("settings-categories-jev");
+  await shot("settings-ai-jev");
   log("settings", { jevTest: await text(page.getByTestId("jev-key-test-result")) });
   await page.keyboard.press("Escape");
   await page.locator('[data-testid="settings-dialog"], [data-testid="ai-tab"]').first().waitFor({ state: "detached", timeout: 3000 }).catch(() => {});

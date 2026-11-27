@@ -4,6 +4,7 @@ import type { AiSettings, AiTestResult, AppSettings } from "@terno/core/rpc";
 import { AI_JOBS, routeFor } from "@terno/core";
 import { AiUseGroup, AskGroup, FollowupsGroup, SummariesGroup } from "./ai-summaries";
 import { DraftingGroup } from "./ai-drafting";
+import { CategorizingGroup } from "./ai-categorizing";
 import { useAiDraftUi } from "~/lib/ai-draft-state";
 import { findAttrs, openSettingsTab, PrivacyNote, SettingsGroup, SettingsNote, SettingsRow, type RowA11y, type SettingsUpdate } from "./parts";
 import { Button } from "@terno/ui/components/button";
@@ -268,6 +269,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
       <SummariesGroup settings={settings} update={update} />
       <AskGroup settings={settings} update={update} />
       <FollowupsGroup settings={settings} update={update} />
+      <CategorizingGroup settings={settings} />
       <AiUseGroup settings={settings} update={update} />
     </>
   );

@@ -141,7 +141,6 @@ export const SETTINGS_INDEX = [
   // Categories
   { id: "categories.smart", tab: "categories", label: "settings.categories.smart", hint: "settings.categories.smart.hint", words: "settings.find.words.smart" },
   { id: "categories.askAi", tab: "categories", label: "settings.categories.askAi" },
-  { id: "categories.jev", tab: "categories", label: "settings.categories.jev", hint: "settings.categories.jev.hint", when: ownAi },
   { id: "categories.new", tab: "categories", label: "settings.categories.new" },
   { id: "category.autoAdd", tab: "categories", label: "settings.categories.autoAdd", words: "settings.find.words.smart", scope: "category" },
   { id: "category.name", tab: "categories", label: "account.name", words: "settings.find.words.rename", scope: "category" },
@@ -171,6 +170,7 @@ export const SETTINGS_INDEX = [
   { id: "ai.ask", tab: "ai", group: "ai.ask.title", label: "ai.ask.switch", words: "settings.find.words.ask" },
   { id: "ai.followups", tab: "ai", group: "followups.title", label: "ai.followups.switch", words: "settings.find.words.followups" },
   { id: "ai.nudge", tab: "ai", group: "followups.title", label: "ai.followups.nudge", hint: "ai.followups.nudgeHint", under: "ai.followups" },
+  { id: "ai.jev", tab: "ai", group: "ai.categorize.title", label: "ai.jev", hint: "ai.jev.hint", words: "settings.find.words.key", when: ownAi },
   { id: "ai.usage", tab: "ai", label: "ai.usage.label", hint: "ai.usage.hint", words: "settings.find.words.usage" },
   { id: "ai.limit", tab: "ai", label: "ai.limit.label", hint: "ai.limit.hint", words: "settings.find.words.usage" },
   // Writing style, a page of Drafting's

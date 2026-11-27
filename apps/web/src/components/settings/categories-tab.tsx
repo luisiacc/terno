@@ -1,5 +1,5 @@
-import { JEV_DEFAULT_MODEL, type Category, type CategoryColor, type CategoryModelStats } from "@terno/core";
-import type { AiTestResult, AppSettings } from "@terno/core/rpc";
+import { type Category, type CategoryColor, type CategoryModelStats } from "@terno/core";
+import type { AppSettings } from "@terno/core/rpc";
 import { Button, GHOST_DANGER_PRESS } from "@terno/ui/components/button";
 import { cn } from "@terno/ui/lib/utils";
 import { CategoryDot } from "@terno/ui/components/category-dot";
@@ -7,12 +7,10 @@ import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@terno/ui/com
 import { Input } from "@terno/ui/components/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Switch } from "@terno/ui/components/switch";
-import { ChevronDown, ChevronUp, CircleCheck, Plus, Trash2 } from "@terno/ui/icons";
+import { ChevronDown, ChevronUp, Plus, Trash2 } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { useEffect, useId, useState } from "react";
 import { providerLabel, routeOf } from "~/lib/ai";
-import { reconcileSettings } from "~/lib/appearance";
-import { localized } from "~/lib/i18n";
 import { snack } from "~/lib/snack";
 import { deleteCategory, setShowInInbox } from "~/lib/categorize";
 import { offerTip } from "~/lib/tips";
@@ -185,75 +183,6 @@ function NewCategory() {
   );
 }
 
-/** Plan 134: the key that makes categorization run on JEV. Never prefilled; the backend only says it's saved and its last 4. */
-function JevKeyRow({ saved, hint }: { saved: boolean; hint: string | null }) {
-  const [key, setKey] = useState("");
-  const [testing, setTesting] = useState(false);
-  const [test, setTest] = useState<AiTestResult | null>(null);
-  const save = async (value: string) => {
-    try {
-      setApp({ settings: reconcileSettings(await client.call("ai.setKey", { provider: "jev", value })) });
-      setKey("");
-      setTest(null);
-      snack.success(value ? t("ai.key.savedSnack") : t("ai.key.removedSnack"));
-    } catch (error) {
-      snack.error(errorText(error));
-    }
-  };
-  const runTest = async () => {
-    setTesting(true);
-    try {
-      setTest(await client.call("ai.test", { provider: "jev", model: JEV_DEFAULT_MODEL }));
-    } finally {
-      setTesting(false);
-    }
-  };
-  return (
-    <SettingsRow find="categories.jev" stacked labelFor={!saved} label={t("settings.categories.jev")} hint={t("settings.categories.jev.hint")} testId="jev-key-row">
-      {(a) =>
-        saved ? (
-          <div className="space-y-1.5">
-            <div className="flex flex-wrap items-center gap-2 text-sm" data-testid="jev-key-saved">
-              <span className="text-success-ink">{hint ? t("ai.key.savedHint", { hint }) : t("ai.key.saved")}</span>
-              <Button variant="outline" size="xs" loading={testing} data-testid="jev-key-test" onClick={() => void runTest()}>
-                {t("ai.test")}
-              </Button>
-              <Button variant="ghost" size="xs" aria-label={t("ai.key.remove", { provider: "JEV" })} data-testid="jev-key-remove" onClick={() => void save("")}>
-                {t("common.remove")}
-              </Button>
-              <span role="status" aria-live="polite" className="text-xs">
-                {test?.ok && (
-                  <span className="flex items-center gap-1.5 text-success-ink" data-testid="jev-key-test-result">
-                    <CircleCheck className="size-3.5" aria-hidden /> {t("ai.test.connected")}
-                  </span>
-                )}
-              </span>
-            </div>
-            {test && !test.ok && (
-              <p role="alert" className="text-xs text-destructive-ink" data-testid="jev-key-test-error">
-                {localized(test.error?.message, test.error?.i18n)}
-              </p>
-            )}
-          </div>
-        ) : (
-          <form
-            className="flex gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (key.trim()) void save(key.trim());
-            }}
-          >
-            <Input {...a} data-testid="jev-key" type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} className="h-7 bg-background dark:bg-input/30" />
-            <Button type="submit" size="sm" disabled={!key.trim()} data-testid="jev-key-save">
-              {t("common.save")}
-            </Button>
-          </form>
-        )
-      }
-    </SettingsRow>
-  );
-}
-
 /** Ajustes → Categorías: what the engine may do, and each category: name, color, order, auto-filing, removal. */
 export function CategoriesTab({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
   const categories = useApp((s) => s.categories);
@@ -261,7 +190,6 @@ export function CategoriesTab({ settings, update }: { settings: AppSettings; upd
   useEffect(() => {
     void client.call("categorize.stats", {}).then(setStats).catch(() => {});
   }, [categories]);
-  const jev = settings.ai.keys.jev;
   // plan 168: where categorizing really goes (JEV with a usable key, else the provider routing picks), as the backend sends it
   const categorizer = routeOf("categorize", settings.ai).provider;
   const noAi = categorizer === "none";
@@ -299,7 +227,6 @@ export function CategoriesTab({ settings, update }: { settings: AppSettings; upd
           {(a) => <Switch {...a} data-testid="ai-categorize-switch" checked={settings.aiCategorize} disabled={noAi && !settings.aiCategorize} onCheckedChange={(on) => void update({ aiCategorize: on })} />}
         </SettingsRow>
         {widened && !settings.aiCategorize && <SettingsNote testId="ai-categorize-widened">{t("settings.categories.askAi.widened")}</SettingsNote>}
-        {!settings.ai.fromEnv && <JevKeyRow saved={!!jev?.hasKey} hint={jev?.keyHint ?? null} />}
       </SettingsGroup>
 
       <SettingsGroup
