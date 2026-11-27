@@ -216,12 +216,15 @@ async function runDay(p: Persona) {
   const seed = `${p.id}`;
   const day = (j: Job) => (run(j) ? p.day[j] ?? 0 : 0);
   const run = (j: Job) => !ONLY_JOBS || ONLY_JOBS.includes(j);
+  let failures = 0;
   const tolerate = async (f: () => Promise<unknown>) => {
     try {
       await f();
     } catch (error) {
       // a failure is recorded with its job and the day goes on; a spent cap ends the run (a day with jobs missing would read cheap)
       if (error instanceof Error && error.name === "BudgetExceededError") throw error;
+      // and one that never reached a request would go unseen: say so
+      failures++;
     }
   };
   const languageName = p.language === "es" ? "Spanish" : "English";
@@ -314,16 +317,19 @@ async function runDay(p: Persona) {
   process.stderr.write(`${p.id}: Ask…\n`);
   const questions = ASK_QUESTIONS[p.language];
   const pool = shuffled(SYNTHETIC.filter((c) => c.language === p.language || p.language === "en"), `${seed}-ask`);
-  for (let q = 0; q < day("ask"); q++) {
+  // the planner and the answer are separate jobs (TERNO_CACHE_JOBS may ask for either)
+  const asks = run("ask") || run("askPlan") ? p.day.ask ?? 0 : 0;
+  for (let q = 0; q < asks; q++) {
     const question = questions[q % questions.length]!;
     const accounts = [{ name: "Reader", address: "reader@terno.example" }];
     let plan: Awaited<ReturnType<AiTasks["planAsk"]>> | null = null;
-    await tolerate(async () => (plan = await ai.askPlan.planAsk({ question, today, timezone: p.zone, accounts, categories: CATEGORIES })));
+    if (run("askPlan")) await tolerate(async () => (plan = await ai.askPlan.planAsk({ question, today, timezone: p.zone, accounts, categories: CATEGORIES })));
     // one question in three finds nothing at first and is planned again
     if (q % 3 === 2 && plan) await tolerate(() => ai.askPlan.planAsk({ question, today, timezone: p.zone, accounts, categories: CATEGORIES, foundNothing: (plan as { queries?: never[] }).queries ?? [] }));
     const material = pool.slice(q * 5, q * 5 + 5).flatMap((c) => c.messages.slice(-3).map((m, k) => ({ label: `${c.id}-${k}`, from: m.from, date: m.date, subject: c.subject, own: m.own, text: m.text.slice(0, 3000) })));
-    await tolerate(() => ai.ask.answerFromMail({ question, today, material, language: languageName, ...(q % p.sitting ? { earlier: [{ question: questions[(q - 1) % questions.length]!, answer: "(an earlier answer)" }] } : {}) }, { onDelta: () => {} }));
+    if (run("ask")) await tolerate(() => ai.ask.answerFromMail({ question, today, material, language: languageName, ...(q % p.sitting ? { earlier: [{ question: questions[(q - 1) % questions.length]!, answer: "(an earlier answer)" }] } : {}) }, { onDelta: () => {}, signal: AbortSignal.timeout(120_000) }));
   }
+  process.stderr.write(`${p.id}: ${failures} tasks failed\n`);
 }
 
 describe.skipIf(process.env.TERNO_AI_REAL !== "1" || process.env.TERNO_CACHE_REPORT === "1")("plan 291: a day per persona, for the cache's arms", () => {
