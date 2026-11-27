@@ -19,7 +19,9 @@
 #define _POSIX_C_SOURCE 200809L
 #include <errno.h>
 #include <poll.h>
+#ifdef __APPLE__
 #include <pwd.h>
+#endif
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -393,10 +395,15 @@ static void resolve_paths(void) {
     join3(profile, sizeof profile, u, "", "");
   } else {
     const char *home = getenv("HOME");
+#ifdef __APPLE__
     if (!home || !*home) {
       struct passwd *pw = getpwuid(getuid());
       home = pw && pw->pw_dir ? pw->pw_dir : "";
     }
+#else
+    /* the Linux bridge is static, and glibc's getpwuid needs its shared NSS modules at run time: HOME it is */
+    if (!home) home = "";
+#endif
 #ifdef __APPLE__
     join3(profile, sizeof profile, home, "/Library/Application Support/Terno", "");
 #else

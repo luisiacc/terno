@@ -47,8 +47,10 @@ export function bridgeCompiler({ os, arch }) {
   if (os === "linux") {
     const cross = { x64: "x86_64-linux-gnu-gcc", arm64: "aarch64-linux-gnu-gcc" }[arch];
     if (!cross) throw new Error(`no compiler for Linux ${arch}`);
-    // TERNO_CC_X64 / TERNO_CC_ARM64 name another; the host's own gcc builds its own architecture
-    return { cc: process.env[`TERNO_CC_${arch.toUpperCase()}`] || (process.arch === arch ? "gcc" : cross), flags: warnings };
+    // TERNO_CC_X64 / TERNO_CC_ARM64 name another; the host's own gcc builds its own architecture. Static: a binary
+    // linked against the build machine's glibc (2.34+ names __libc_start_main@GLIBC_2.34) wouldn't start on the older
+    // systems Electron runs on, and a static one needs no glibc at all
+    return { cc: process.env[`TERNO_CC_${arch.toUpperCase()}`] || (process.arch === arch ? "gcc" : cross), flags: [...warnings, "-static"] };
   }
   throw new Error(`no bridge for ${os}`);
 }
@@ -115,13 +117,17 @@ export function newestGlibc(bytes) {
 const ELF_ARCH = { x64: "x86-64", arm64: "ARM aarch64" };
 
 /**
- * Throws unless a Linux package's bridge is an executable ELF for `arch` that needs no newer glibc than Electron's own
- * binary beside it (`electron`), so it runs wherever Terno does.
+ * Throws unless a Linux package's bridge is a statically linked executable ELF for `arch`, so it runs wherever Terno
+ * does whatever glibc the system has; a dynamic one must need no newer glibc than Electron's own binary (`electron`).
  */
 export function assertLinuxBridge(bridge, { arch, electron }) {
   const kind = execFileSync("file", ["-b", bridge], { encoding: "utf8" }).trim();
   if (!kind.startsWith("ELF 64-bit") || !kind.includes(ELF_ARCH[arch])) throw new Error(`${bridge} isn't an ${ELF_ARCH[arch]} executable: ${kind}`);
   if (!(statSync(bridge).mode & 0o111)) throw new Error(`${bridge} isn't executable`);
+  if (kind.includes("statically linked")) {
+    console.log(`✓ ${bridge}: ${ELF_ARCH[arch]}, executable, statically linked`);
+    return;
+  }
   const own = newestGlibc(readFileSync(bridge));
   const theirs = newestGlibc(readFileSync(electron));
   if (own && theirs && (own[0] > theirs[0] || (own[0] === theirs[0] && own[1] > theirs[1]))) throw new Error(`${bridge} needs glibc ${own.join(".")}, newer than Electron's ${theirs.join(".")}`);
