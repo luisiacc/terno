@@ -1225,7 +1225,9 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await focusList(page);
       await page.keyboard.press("b");
       await laterMenu.getByTestId("wm-later-tomorrow").click();
-      await gone();
+      // put off, it leaves its place for Coming up, which draws it when that's open and near (5970e8d23), as the reader's
+      // Later below
+      await leftSoon(page, "Electricity bill");
       await expect(snack).toContainText("Later: Electricity bill");
       await undo("b");
       if (await page.getByTestId("reader").count()) await page.keyboard.press("Escape");
