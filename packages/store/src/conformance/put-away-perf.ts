@@ -51,6 +51,8 @@ export async function measurePutAway(o: WorkloadMailbox): Promise<void> {
   await store.filters.save({ id: rule.filterId, name: "Bulk", enabled: false, source: "manual", rule: (await store.filters.get(rule.filterId))!.rule }, o.now);
   const byRule = await timed(5, () => store.putAway.byRule(rule.filterId, rule.ruleHash, o.now));
   expect((await store.putAway.byRule(rule.filterId, rule.ruleHash, o.now)).length).toBeGreaterThanOrEqual(5000);
+  // the rule goes with the workload: one that follows on this mailbox may need it without filters (forwards, plan 116)
+  await store.filters.delete(rule.filterId);
   o.log(`Put away: the first page ${top.toFixed(2)} ms, the 40th ${deep.toFixed(2)} ms, the reader's ${one.toFixed(2)} ms, the Inbox line's count ${look.toFixed(2)} ms, 20 new with the rule ${ingest.toFixed(2)} ms, a stopped rule's ${byRule.toFixed(2)} ms`);
   expect(byRule).toBeLessThanOrEqual(60 * o.budget);
   expect(top).toBeLessThanOrEqual(25 * o.budget);
