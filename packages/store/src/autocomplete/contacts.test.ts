@@ -463,3 +463,99 @@ describe("People's lists (plan 281)", () => {
     expect(c.person("nobody@x.com")).toBeNull();
   });
 });
+
+describe("People's filter (plan 287)", () => {
+  const bea = { name: "Bea Ortiz", email: "bea@ortiz.studio" };
+  const carl = { name: "Carl Nunes", email: "carl@nunes.dev" };
+  const dora = { name: "Dora Vélez", email: "dora@velez.dev" };
+  const emails = (list: readonly { email: string }[]) => list.map((p) => p.email);
+
+  it("Everyone in an account is who you wrote to from it; one only copied there isn't (the search still finds them)", async () => {
+    const c = await built([
+      sent([ana], { accountId: 1 }),
+      // bea: written to from account 2 only, copied on mail in account 1
+      sent([bea], { accountId: 2 }),
+      received(andres, { accountId: 1, cc: [bea] }),
+      sent([carl], { accountId: 2 }),
+    ]);
+    expect(emails(c.written(10, { accounts: [1] }))).toEqual([ana.email]);
+    expect(emails(c.written(10, { accounts: [2] })).sort()).toEqual([bea.email, carl.email].sort());
+    expect(emails(c.written(10, { accounts: [1, 2] })).sort()).toEqual([ana.email, bea.email, carl.email].sort());
+    // seen in account 1 (copied): the search finds her there
+    expect(emails(c.people("bea", 50, { accounts: [1] }))).toEqual([bea.email]);
+    expect(emails(c.people("carl", 50, { accounts: [1] }))).toEqual([]);
+    // an account the index never saw: nobody (never everyone)
+    expect(c.written(10, { accounts: [99] })).toEqual([]);
+    expect(c.people("a", 50, { accounts: [99] })).toEqual([]);
+  });
+
+  it("the date is the last message in the chosen accounts, exact when someone is in several", async () => {
+    const c = await built([
+      // ana: account 1 a year ago, account 2 yesterday
+      sent([ana], { accountId: 1, date: NOW - 300 * DAY }),
+      sent([ana], { accountId: 2, date: NOW - DAY }),
+      // andres: account 1 only, last week
+      sent([andres], { accountId: 1, date: NOW - 5 * DAY }),
+    ]);
+    const month = NOW - 30 * DAY;
+    expect(emails(c.written(10, { since: month })).sort()).toEqual([ana.email, andres.email].sort());
+    expect(emails(c.written(10, { accounts: [1], since: month }))).toEqual([andres.email]);
+    expect(emails(c.written(10, { accounts: [2], since: month }))).toEqual([ana.email]);
+    expect(c.written(10, { accounts: [1] }).find((p) => p.email === ana.email)?.last).toBe(NOW - 300 * DAY);
+    expect(c.lastWith(ana.email, [1])).toBe(NOW - 300 * DAY);
+    expect(c.lastWith(ana.email, [2])).toBe(NOW - DAY);
+    expect(c.lastWith(ana.email)).toBe(NOW - DAY);
+    expect(c.lastWith(ana.email, [99])).toBe(0);
+    expect(c.lastWith("nobody@x.io", [1])).toBeNull();
+    // a third account later: its own date, the first two's kept
+    c.add(received(ana, { accountId: 3, date: NOW - 2 * DAY }));
+    expect([c.lastWith(ana.email, [1]), c.lastWith(ana.email, [3]), c.lastWith(ana.email, [1, 3])]).toEqual([NOW - 300 * DAY, NOW - 2 * DAY, NOW - 2 * DAY]);
+  });
+
+  it("the filter applies before the cut, and each filter is its own list (kept until the scores move)", async () => {
+    const c = await built([
+      ...Array.from({ length: 5 }, () => sent([ana], { accountId: 1 })),
+      ...Array.from({ length: 3 }, () => sent([andres], { accountId: 1 })),
+      sent([dora], { accountId: 2 }),
+    ]);
+    expect(emails(c.written(1))).toEqual([ana.email]);
+    expect(emails(c.written(1, { accounts: [2] }))).toEqual([dora.email]);
+    const first = c.written(5, { accounts: [1] });
+    expect(c.written(5, { accounts: [1] })).toBe(first);
+    c.add(sent([dora], { accountId: 1 }));
+    expect(emails(c.written(5, { accounts: [1] }))).toEqual([ana.email, andres.email, dora.email]);
+  });
+
+  it("a narrow filter still fills the search past the short query's cached top", async () => {
+    const many = Array.from({ length: 300 }, (_, i) => sent([{ name: `Ana ${i}`, email: `ana${i}@x${i}.com` }], { accountId: 1 }));
+    const c = await built([...many, ...Array.from({ length: 30 }, (_, i) => received({ name: `Ana Two ${i}`, email: `two${i}@y.com` }, { accountId: 2 }))]);
+    expect(c.people("a", 50, { accounts: [2] })).toHaveLength(30);
+    expect(c.people("a", 50, { accounts: [2] }).every((p) => p.email.endsWith("@y.com"))).toBe(true);
+  });
+
+  it("a snapshot and a compaction keep each account's dates and whom you wrote from where; memory counts them", async () => {
+    const c = await built([sent([ana], { accountId: 1, date: NOW - 300 * DAY }), sent([ana], { accountId: 2, date: NOW - DAY }), sent([bea], { accountId: 2 }), received(carl, { accountId: 1, cc: [bea] })]);
+    c.revision = { epoch: "e", seq: 1 };
+    const r = new ContactIndex({ now: () => NOW });
+    expect(await r.restore(await c.snapshot("test", clock()), "test", clock())).toBe(true);
+    r.setOwn([me]);
+    for (const x of [c, r]) {
+      expect(x.lastWith(ana.email, [1])).toBe(NOW - 300 * DAY);
+      expect(x.lastWith(ana.email, [2])).toBe(NOW - DAY);
+      expect(emails(x.written(10, { accounts: [1] }))).toEqual([ana.email]);
+    }
+    const plain = await built([sent([andres], { accountId: 1 })]);
+    expect(c.allocatedBytes()).toBeGreaterThan(plain.allocatedBytes());
+    // compaction: the least ranked go, ids move; ana's dates move with her
+    const k = new ContactIndex({ now: () => NOW, caps: { maxContacts: 3, maxBytes: 64 * 1024 * 1024 } });
+    k.beginBuild({ epoch: "e", seq: 0 });
+    for (const m of [received({ name: "Zed", email: "zed@z.io" }, { accountId: 1 }), received({ name: "Yan", email: "yan@y.io" }, { accountId: 1 }), sent([ana], { accountId: 1, date: NOW - 300 * DAY }), sent([ana], { accountId: 2, date: NOW - DAY }), sent([bea], { accountId: 2 })]) k.add(m);
+    await k.finishBuild(clock());
+    k.setOwn([me]);
+    while (k.overCaps()) await k.enforceCaps(clock());
+    await k.compact(clock());
+    expect(k.person("zed@z.io")).toBeNull();
+    expect([k.lastWith(ana.email, [1]), k.lastWith(ana.email, [2])]).toEqual([NOW - 300 * DAY, NOW - DAY]);
+    expect(emails(k.written(10, { accounts: [2] })).sort()).toEqual([ana.email, bea.email].sort());
+  });
+});

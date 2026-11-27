@@ -367,7 +367,21 @@ async function unpackStrings(s: SectionReader, name: string, clock: SliceClock):
 // format 4: names cleaned as plan 34 reads them (older snapshots rebuild once)
 // plan 161: tokenizer 2 indexes a domain's own label (netflix of account.netflix.com); format 5 holds SENDER
 // plan 228: format 6 tells names people gave themselves from names others gave them (NAMED, altSelf)
-export const CONTACTS_SNAPSHOT: Omit<SnapshotKind, "identity"> = { tokenizer: 2, format: 6 };
+// plan 287: format 7 holds the accounts you wrote to each contact from (sentIn) and a last date per account for
+// contacts seen in more than one (lastById, lastByLen, lastBy)
+export const CONTACTS_SNAPSHOT: Omit<SnapshotKind, "identity"> = { tokenizer: 2, format: 7 };
+
+/**
+ * Plan 287: People's filter as the index applies it: seen in one of `accounts` (absent: any), and the last message with
+ * them there no older than `since` (absent: any time).
+ */
+export interface PeopleScope {
+  accounts?: readonly number[];
+  since?: number;
+}
+
+/** what one account's last date costs a contact seen in more than one (plan 287): its bit and date, as two doubles */
+const PAIR_BYTES = 16;
 
 export interface ContactIndexOptions {
   caps?: ContactCaps;
@@ -396,7 +410,7 @@ export interface OwnAddress { email: string; name: string }
 /** The per-contact typed arrays, grown and compacted together. */
 const F64 = ["sent", "recv", "last", "key", "best"] as const;
 const F32 = ["nameW"] as const;
-const U32 = ["accounts", "m3", "m2", "m1", "mw", "stamp"] as const;
+const U32 = ["accounts", "sentIn", "m3", "m2", "m1", "mw", "stamp"] as const;
 const U8 = ["flags", "bcls"] as const;
 const PER_CONTACT = F64.length * 8 + F32.length * 4 + U32.length * 4 + U8.length;
 
@@ -415,6 +429,8 @@ export class ContactIndex {
   private key = new Float64Array(0);
   private best = new Float64Array(0);
   private accounts = new Uint32Array(0);
+  /** plan 287: the accounts (bits, as `accounts`) you wrote to each contact from */
+  private sentIn = new Uint32Array(0);
   /** first characters of a contact's tokens, by class (3, 2, 1) and of its one-character tokens */
   private m3 = new Uint32Array(0);
   private m2 = new Uint32Array(0);
@@ -445,7 +461,13 @@ export class ContactIndex {
   private version = 0;
   private readonly shortCache = new Map<string, { version: number; ids: number[] }>();
   /** plan 281: the written-to contacts, best first, for one version of the scores */
-  private writtenCache: { version: number; max: number; ids: number[]; entries: PersonEntry[] } | null = null;
+  private readonly writtenCache = new Map<string, { version: number; max: number; ids: number[]; entries: PersonEntry[] }>();
+  /**
+   * Plan 287: the last message's date in each account, only for contacts seen in two accounts or more (for the rest,
+   * `last` is their one account's): pairs of an account's bit number and its date. `lastByHeld`: their bytes.
+   */
+  private readonly lastBy = new Map<number, Float64Array>();
+  private lastByHeld = 0;
   private ownCache: { version: number; emails: string[] } | null = null;
   private frozen = false;
   readonly caps: ContactCaps;
@@ -577,6 +599,71 @@ export class ContactIndex {
     return (1 << b) >>> 0;
   }
 
+  /** Plan 287: the accounts' bits, together (0: none of them has one, so nothing is in them). */
+  private accountMask(accounts: readonly number[]): number {
+    let mask = 0;
+    for (const a of accounts) mask = (mask | this.accountBit(a, false)) >>> 0;
+    return mask;
+  }
+
+  /**
+   * Plan 287: a message at `t` in the account of `bit`: its pair, once the contact is in two accounts (the first account's
+   * pair starts at the contact's last date, all of it that account's until now). Called before `last` and `accounts` move.
+   */
+  private noteLastIn(id: number, bit: number, t: number): void {
+    const had = this.accounts[id]!;
+    let pairs = this.lastBy.get(id);
+    if (!pairs) {
+      if (!(had & ~bit)) return;
+      const seed: number[] = [];
+      for (let b = 0; b < 32; b++) if (had & ((1 << b) >>> 0)) seed.push(b, this.last[id]!);
+      pairs = Float64Array.from(seed);
+      this.lastBy.set(id, pairs);
+      this.lastByHeld += MAP_ENTRY + pairs.byteLength;
+    }
+    const b = 31 - Math.clz32(bit);
+    for (let i = 0; i < pairs.length; i += 2) {
+      if (pairs[i] !== b) continue;
+      if (t > pairs[i + 1]!) pairs[i + 1] = t;
+      return;
+    }
+    const grown = new Float64Array(pairs.length + 2);
+    grown.set(pairs);
+    grown[pairs.length] = b;
+    grown[pairs.length + 1] = t;
+    this.lastBy.set(id, grown);
+    this.lastByHeld += PAIR_BYTES;
+  }
+
+  /** Plan 287: the newest message with a contact in the accounts of `mask` (0: in any), 0 when none was there. */
+  private lastIn(id: number, mask: number): number {
+    if (!mask) return this.last[id]!;
+    const had = this.accounts[id]!;
+    if (!(had & mask)) return 0;
+    if (!(had & ~mask)) return this.last[id]!;
+    const pairs = this.lastBy.get(id);
+    if (!pairs) return this.last[id]!;
+    let best = 0;
+    for (let i = 0; i < pairs.length; i += 2) if (mask & ((1 << pairs[i]!) >>> 0) && pairs[i + 1]! > best) best = pairs[i + 1]!;
+    return best;
+  }
+
+  /**
+   * Plan 287: who's in a scope (`keep` null: everyone), and the mask its dates are read in. `written`: Everyone's form, the
+   * accounts you wrote to them from; else any account they were seen in (the search finds anyone there).
+   */
+  private scopeOf(scope: PeopleScope | undefined, written = false): { keep: ((id: number) => boolean) | null; mask: number; key: string } {
+    const accounts = scope?.accounts?.length ? scope.accounts : null;
+    const since = scope?.since ?? 0;
+    if (!accounts && !since) return { keep: null, mask: 0, key: "" };
+    const mask = accounts ? this.accountMask(accounts) : 0;
+    // chosen accounts none of which the index has seen: nobody is in them
+    if (accounts && !mask) return { keep: () => false, mask, key: `none|${since}` };
+    const seenIn = written ? this.sentIn : this.accounts;
+    const keep = (id: number) => (!mask || (seenIn[id]! & mask) !== 0) && (!since || this.lastIn(id, mask) >= since);
+    return { keep, mask, key: `${mask}|${since}` };
+  }
+
   /** Senders of mail marked as spam after it was counted: not suggested unless you've written to them. */
   markSpam(emails: Iterable<string>): void {
     for (const e of emails) {
@@ -643,8 +730,11 @@ export class ContactIndex {
       if (this.frozen) return;
       id = this.create(email, name, w, self);
     } else if (name) this.addName(id, name, w, self);
-    if (sent) this.sent[id]! += w * share;
-    else this.recv[id]! += w * share;
+    if (sent) {
+      this.sent[id]! += w * share;
+      this.sentIn[id]! |= bit;
+    } else this.recv[id]! += w * share;
+    if (bit) this.noteLastIn(id, bit, t);
     if (t > this.last[id]!) this.last[id] = t;
     this.accounts[id]! |= bit;
     this.rekey(id);
@@ -895,33 +985,40 @@ export class ContactIndex {
    * Plan 281: People's search: suggest's matching and ranking (names, initials, addresses, domains), never the user's own
    * addresses, at most `limit` (200: People asks for more than it shows, and leaves out who isn't a person).
    */
-  people(query: string, limit = 50): PersonEntry[] {
+  people(query: string, limit = 50, scope?: PeopleScope): PersonEntry[] {
     const max = Math.max(1, Math.min(limit, 200));
-    const ids = this.matching(query, { exclude: this.own }, max).filter((id) => !(this.flags[id]! & OWN));
+    // plan 287: within People's filter, inside the walk (a narrow filter still fills its hits)
+    const { keep, mask } = this.scopeOf(scope);
+    const ids = this.matching(query, { exclude: this.own }, max, keep).filter((id) => !(this.flags[id]! & OWN));
     // a piece of an address ("acme.studio", "gmail", "@proton"): whoever's address holds it, best first, after the prefix
     // matches (a common provider's name isn't a token, and a domain with its dot is two)
     const piece = query.trim().toLowerCase();
     if (ids.length < max && piece.length >= 3 && !/\s/.test(piece) && /[.@]|^[a-z0-9-]+$/.test(piece)) {
       const seen = new Set(ids);
       const more: number[] = [];
-      for (let id = 0; id < this.n; id++) if (!seen.has(id) && !(this.flags[id]! & (OWN | DEAD)) && this.emails[id]!.includes(piece)) more.push(id);
+      for (let id = 0; id < this.n; id++) if (!seen.has(id) && !(this.flags[id]! & (OWN | DEAD)) && this.emails[id]!.includes(piece) && (!keep || keep(id))) more.push(id);
       more.sort((a, b) => this.key[b]! - this.key[a]! || this.last[b]! - this.last[a]! || a - b);
       ids.push(...more.slice(0, max - ids.length));
     }
-    return ids.map((id) => this.entry(id));
+    return ids.map((id) => this.entry(id, mask));
   }
 
   /**
    * Plan 281: People's Everyone: those you've written to, not your own, best first (how much and how recently you wrote,
    * then they did), at most `max`. Sorted once per version of the scores.
    */
-  written(max: number): readonly PersonEntry[] {
-    let cache = this.writtenCache;
+  written(max: number, scope?: PeopleScope): readonly PersonEntry[] {
+    // plan 287: within People's filter, before the cut (the best `max` of those in it); a few filters kept per version
+    const { keep, mask, key } = this.scopeOf(scope, true);
+    let cache = this.writtenCache.get(key);
     if (cache?.version !== this.version || cache.max < max) {
-      cache = this.writtenCache = { version: this.version, max, ids: this.topWritten(max), entries: [] };
+      cache = { version: this.version, max, ids: this.topWritten(max, keep), entries: [] };
+      this.writtenCache.delete(key);
+      this.writtenCache.set(key, cache);
+      for (const [k, c] of this.writtenCache) if (c.version !== this.version || this.writtenCache.size > WRITTEN_CACHED) this.writtenCache.delete(k);
     }
     // the entries are made once per version, as far as asked
-    for (let i = cache.entries.length; i < Math.min(max, cache.ids.length); i++) cache.entries.push(this.entry(cache.ids[i]!));
+    for (let i = cache.entries.length; i < Math.min(max, cache.ids.length); i++) cache.entries.push(this.entry(cache.ids[i]!, mask));
     return max >= cache.entries.length ? cache.entries : cache.entries.slice(0, Math.max(0, max));
   }
 
@@ -929,9 +1026,9 @@ export class ContactIndex {
    * The best `k` of those you've written to, in order. Only the top is sorted by the full rule: the scores' cut is found by a
    * typed-array sort (native, no comparator), so a big index sorts a few thousand, never every one written to.
    */
-  private topWritten(k: number): number[] {
+  private topWritten(k: number, keep: ((id: number) => boolean) | null): number[] {
     const ids: number[] = [];
-    for (let id = 0; id < this.n; id++) if (this.sent[id]! > 0 && !(this.flags[id]! & (OWN | DEAD))) ids.push(id);
+    for (let id = 0; id < this.n; id++) if (this.sent[id]! > 0 && !(this.flags[id]! & (OWN | DEAD)) && (!keep || keep(id))) ids.push(id);
     const order = (a: number, b: number) => this.key[b]! - this.key[a]! || this.last[b]! - this.last[a]! || a - b;
     if (ids.length <= k) return ids.sort(order);
     const keys = new Float64Array(ids.length);
@@ -966,12 +1063,22 @@ export class ContactIndex {
     return id === undefined || this.flags[id]! & DEAD ? null : this.entry(id);
   }
 
-  private entry(id: number): PersonEntry {
-    return { name: this.shownName(id), email: this.emails[id]!, last: this.last[id]!, written: this.sent[id]! > 0 };
+  private entry(id: number, mask = 0): PersonEntry {
+    return { name: this.shownName(id), email: this.emails[id]!, last: this.lastIn(id, mask), written: this.sent[id]! > 0 };
+  }
+
+  /** Plan 287: an address's last message in some accounts (all of them when none are given), 0 when none or unknown. */
+  lastWith(email: string, accounts?: readonly number[]): number | null {
+    const key = normalizeEmail(email);
+    const id = key === null ? undefined : this.byEmail.get(key);
+    if (id === undefined || this.flags[id]! & DEAD) return null;
+    if (!accounts?.length) return this.last[id]!;
+    const mask = this.accountMask(accounts);
+    return mask ? this.lastIn(id, mask) : 0;
   }
 
   /** The ids `suggest` and `people` rank for what is typed, best first. */
-  private matching(query: string, o: SuggestOptions, limit: number): number[] {
+  private matching(query: string, o: SuggestOptions, limit: number, keep: ((id: number) => boolean) | null = null): number[] {
     const q = fold(query.trim()).slice(0, 320);
     if (!q) return [];
     const exclude = new Set<string>();
@@ -989,7 +1096,7 @@ export class ContactIndex {
       .map((t) => (t.length > MAX_TOKEN ? t.slice(0, MAX_TOKEN) : t));
     if (terms.length === 0) return [];
     const bit = o.accountId === undefined ? 0 : this.accountBit(o.accountId, false);
-    if (scanForTests) return this.scan(terms, emailPrefix, exclude, bit, limit, q).map((h) => this.byEmail.get(h.email)!);
+    if (scanForTests) return this.scan(terms, emailPrefix, exclude, bit, limit, q, keep).map((h) => this.byEmail.get(h.email)!);
     // a 1–2 letter word matches a large share of everyone: its top contacts are kept until a score changes
     if (terms.length === 1 && terms[0]!.length <= 2 && emailPrefix === null) {
       const key = `${terms[0]}|${bit}`;
@@ -1000,11 +1107,11 @@ export class ContactIndex {
         this.shortCache.set(key, cached);
         if (this.shortCache.size > 256) this.shortCache.delete(this.shortCache.keys().next().value!);
       }
-      const ids = cached.ids.filter((id) => !(this.flags[id]! & DEAD) && !exclude.has(this.emails[id]!));
+      const ids = cached.ids.filter((id) => !(this.flags[id]! & DEAD) && !exclude.has(this.emails[id]!) && (!keep || keep(id)));
       // complete when nothing was cut off, or enough is left after the exclusions
       if (ids.length >= limit || cached.ids.length < SHORT_CACHE) return ids.slice(0, limit);
     }
-    return this.rank(terms, emailPrefix, exclude, bit, limit, q);
+    return this.rank(terms, emailPrefix, exclude, bit, limit, q, keep);
   }
 
   private hit(id: number): ContactHit {
@@ -1113,7 +1220,7 @@ export class ContactIndex {
    * by one multiplication against the worst kept score. Nothing is allocated
    * per candidate.
    */
-  private rank(terms: string[], emailPrefix: string | null, exclude: Set<string>, bit: number, limit: number, typed: string): number[] {
+  private rank(terms: string[], emailPrefix: string | null, exclude: Set<string>, bit: number, limit: number, typed: string, keep: ((id: number) => boolean) | null = null): number[] {
     const masked: number[] = [];
     let walked = terms;
     if (terms.length > 1) {
@@ -1171,6 +1278,7 @@ export class ContactIndex {
       if (f & SPAM && !(this.sent[id]! > 0)) return;
       if (emailPrefix !== null && !email.startsWith(emailPrefix)) return;
       if (exclude.size && exclude.has(email)) return;
+      if (keep && !keep(id)) return;
       const s = this.score(id, b & 3, (b & 4) !== 0, bit);
       if (stamp[id] === done) {
         // matched again through another token: keep the better
@@ -1242,7 +1350,7 @@ export class ContactIndex {
   }
 
   /** Every live contact tokenized now and tested: the slow, obviously right answer (oracle and injected twin). */
-  private scan(terms: string[], emailPrefix: string | null, exclude: Set<string>, bit: number, limit: number, typed: string): ContactHit[] {
+  private scan(terms: string[], emailPrefix: string | null, exclude: Set<string>, bit: number, limit: number, typed: string, keep: ((id: number) => boolean) | null = null): ContactHit[] {
     const scored: { id: number; s: number }[] = [];
     for (let id = 0; id < this.n; id++) {
       const f = this.flags[id]!;
@@ -1250,6 +1358,7 @@ export class ContactIndex {
       const email = this.emails[id]!;
       if ((f & OWN && email !== typed) || exclude.has(email) || (f & SPAM && !(this.sent[id]! > 0))) continue;
       if (emailPrefix !== null && !email.startsWith(emailPrefix)) continue;
+      if (keep && !keep(id)) continue;
       const tokens = [...contactTokens(email, [this.names[id]!, ...(this.alts.get(id) ?? []).map((a) => a.name)].filter(Boolean))];
       if (!terms.every((t) => tokens.some(([tok]) => tok.startsWith(t)))) continue;
       // the best class among tokens any term matched, and the bonus when a term is a whole token
@@ -1285,6 +1394,7 @@ export class ContactIndex {
     if (this.merging) bytes += this.merging.tok.length * (STRING_OVERHEAD + 24);
     bytes += this.stringsHeld + (this.emails.length + this.names.length) * 8;
     bytes += this.byEmail.size * MAP_ENTRY + this.seen.byteLength;
+    bytes += this.lastByHeld;
     return bytes;
   }
 
@@ -1346,6 +1456,7 @@ export class ContactIndex {
     const emails: string[] = Array.from({ length: live }, () => "");
     const names: string[] = Array.from({ length: live }, () => "");
     const alts = new Map<number, AltName[]>();
+    const lastBy = new Map<number, Float64Array>();
     const byEmail = new Map<string, number>();
     for (let id = 0; id < n; id++) {
       const to = remap[id]!;
@@ -1354,6 +1465,8 @@ export class ContactIndex {
       names[to] = this.names[id]!;
       const a = this.alts.get(id);
       if (a) alts.set(to, a);
+      const l = this.lastBy.get(id);
+      if (l) lastBy.set(to, l);
       byEmail.set(this.emails[id]!, to);
       if ((id & 8191) === 0) await clock.tick();
     }
@@ -1373,6 +1486,12 @@ export class ContactIndex {
     this.names = names;
     this.alts.clear();
     for (const [k, v] of alts) this.alts.set(k, v);
+    this.lastBy.clear();
+    this.lastByHeld = 0;
+    for (const [k, v] of lastBy) {
+      this.lastBy.set(k, v);
+      this.lastByHeld += MAP_ENTRY + v.byteLength;
+    }
     this.byEmail = byEmail;
     this.n = live;
     this.live = live;
@@ -1403,10 +1522,19 @@ export class ContactIndex {
     const altNames: string[] = [];
     const altW: number[] = [];
     const altSelf: number[] = [];
+    const lastById: number[] = [];
+    const lastByLen: number[] = [];
+    const lastByPairs: Float64Array[] = [];
     for (let id = 0; id < this.n; id++) {
       if (remap[id]! < 0) continue;
       emails.push(this.emails[id]!);
       names.push(this.names[id]!);
+      const pairs = this.lastBy.get(id);
+      if (pairs) {
+        lastById.push(remap[id]!);
+        lastByLen.push(pairs.length / 2);
+        lastByPairs.push(pairs);
+      }
       for (const a of this.alts.get(id) ?? []) {
         altOwner.push(remap[id]!);
         altNames.push(a.name);
@@ -1470,6 +1598,10 @@ export class ContactIndex {
       seen: this.seen.words(),
       accountIds: Uint32Array.from(this.accountBits.keys()),
       accountBits: Uint32Array.from(this.accountBits.values()),
+      lastById: Uint32Array.from(lastById),
+      lastByLen: Uint8Array.from(lastByLen),
+      lastBy: flat(lastByPairs),
+      sentIn: pick(this.sentIn),
     };
     const changes = this.changes;
     const packed = await packSnapshot({ ...CONTACTS_SNAPSHOT, identity }, revision, { contacts: live, entries: keep, bytes: total }, sections, clock);
@@ -1491,8 +1623,9 @@ export class ContactIndex {
       const last = Float64Array.from(s.f64("last"));
       const nameW = Float32Array.from(s.f32("nameW"));
       const accounts = Uint32Array.from(s.u32("accounts"));
+      const sentIn = Uint32Array.from(s.u32("sentIn"));
       const flags = Uint8Array.from(s.u8("flags"));
-      if (names.length !== n || [sent, recv, last, nameW, accounts, flags].some((a) => a.length !== n)) return false;
+      if (names.length !== n || [sent, recv, last, nameW, accounts, sentIn, flags].some((a) => a.length !== n)) return false;
       const len = Uint8Array.from(s.u8("len"));
       const ids = Int32Array.from(s.i32("ids"));
       const cls = Uint8Array.from(s.u8("cls"));
@@ -1526,6 +1659,11 @@ export class ContactIndex {
       const accountIds = s.u32("accountIds");
       const accountBits = s.u32("accountBits");
       if (accountIds.length !== accountBits.length || accountIds.length > 32) return false;
+      const lastById = s.u32("lastById");
+      const lastByLen = s.u8("lastByLen");
+      const lastByPairs = s.f64("lastBy");
+      if (lastByLen.length !== lastById.length || lastById.some((id) => id >= n) || lastByLen.reduce((a, k) => a + k * 2, 0) !== lastByPairs.length) return false;
+      for (let i = 0; i < lastByPairs.length; i += 2) if (!Number.isInteger(lastByPairs[i]) || lastByPairs[i]! < 0 || lastByPairs[i]! > 31) return false;
       // valid: replace everything
       this.n = n;
       this.live = n;
@@ -1536,6 +1674,7 @@ export class ContactIndex {
       this.last = last;
       this.nameW = nameW;
       this.accounts = accounts;
+      this.sentIn = sentIn;
       this.flags = flags;
       const capacity = Math.max(n, 16);
       this.key = new Float64Array(capacity);
@@ -1585,6 +1724,15 @@ export class ContactIndex {
       this.seen.load(seen);
       this.accountBits.clear();
       for (let i = 0; i < accountIds.length; i++) this.accountBits.set(accountIds[i]!, accountBits[i]!);
+      this.lastBy.clear();
+      this.lastByHeld = 0;
+      for (let i = 0, at = 0; i < lastById.length; i++) {
+        const pairs = Float64Array.from(lastByPairs.subarray(at, at + lastByLen[i]! * 2));
+        at += pairs.length;
+        this.lastBy.set(lastById[i]!, pairs);
+        this.lastByHeld += MAP_ENTRY + pairs.byteLength;
+      }
+      this.writtenCache.clear();
       this.revision = r.revision;
       this.changes = 0;
       this.version++;
@@ -1595,3 +1743,17 @@ export class ContactIndex {
     }
   }
 }
+
+/** Plan 287: the per-account last dates, each contact's pairs end to end (a snapshot's section). */
+function flat(rows: readonly Float64Array[]): Float64Array {
+  const out = new Float64Array(rows.reduce((a, r) => a + r.length, 0));
+  let at = 0;
+  for (const r of rows) {
+    out.set(r, at);
+    at += r.length;
+  }
+  return out;
+}
+
+/** Plan 287: Everyone's lists kept at once, one per filter (the last few asked). */
+const WRITTEN_CACHED = 4;
