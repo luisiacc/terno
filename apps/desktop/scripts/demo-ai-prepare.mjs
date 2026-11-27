@@ -536,17 +536,27 @@ export async function prepare({ electronBin, main, env, profile, steps, onPid = 
   const pid = app.process().pid;
   onPid(pid);
   const failed = [];
-  // set before our own close, so only yours counts
-  let ending = false;
+  // You closing its window or quitting it is a stop, not a failure. Its main process notes either the moment it
+  // happens (Playwright's close events and the errors they cause arrive in no set order, and a step may swallow those
+  // errors); asked only before our own close, so that one never counts.
+  const exited = new Promise((r) => app.process().once("exit", (code) => r(code)));
+  await app.evaluate(({ app: electronApp, BrowserWindow }) => {
+    const note = (why) => () => (globalThis.demoAiStopped ??= why);
+    electronApp.once("before-quit", note("quit"));
+    for (const w of BrowserWindow.getAllWindows()) w.once("close", note("close"));
+    electronApp.on("browser-window-created", (_e, w) => w.once("close", note("close")));
+  }).catch(() => {});
   let closed = false;
+  const youStopped = async () => {
+    if (closed) return true;
+    const said = await app.evaluate(() => globalThis.demoAiStopped ?? false).catch(() => null);
+    // gone before it could say: a quit ends with 0, a crash doesn't (and is a failure)
+    closed = !!(said ?? (await Promise.race([exited, new Promise((r) => setTimeout(r, 5_000).unref())])) === 0);
+    return closed;
+  };
   let page = null;
-  const youClosed = () => { if (!ending) closed = true; };
-  app.process().once("exit", youClosed);
-  // the page may say so before its close event arrives; either way it sticks
-  const stopped = () => (closed ||= !ending && !!page?.isClosed());
   try {
     page = await app.firstWindow();
-    page.once("close", youClosed);
     // keys and shortcuts work in a window that never takes focus (the rating's way)
     await (await page.context().newCDPSession(page)).send("Emulation.setFocusEmulationEnabled", { enabled: true });
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(1440, 900));
@@ -565,13 +575,14 @@ export async function prepare({ electronBin, main, env, profile, steps, onPid = 
       const attempt = (marker.attempts[step] = (marker.attempts[step] ?? 0) + 1);
       try {
         const missing = (await STEPS[step](d, progress)) ?? [];
+        if (await youStopped()) throw new Error("stopped");
         const verdict = partialVerdict(missing, attempt);
         if (verdict === "again") throw new Error(`${missing.length} not finished: ${missing.join("; ")}`);
         if (verdict === "keep") log(`[demo-ai] ${step}: ${missing.join("; ")} still not finished after ${attempt} launches; keeping what's there`);
         marker.done[step] = now();
         log(`[demo-ai] ${step} done in ${Math.round((Date.now() - started) / 1000)} s`);
       } catch (error) {
-        if (stopped()) {
+        if (await youStopped()) {
           marker.attempts[step] = attempt - 1;
           log(`[demo-ai] ${step} stopped: its window was closed`);
           break;
@@ -587,9 +598,10 @@ export async function prepare({ electronBin, main, env, profile, steps, onPid = 
     }
   } catch (error) {
     // closed before the first step began (the window still loading)
-    if (!stopped()) throw error;
+    if (!(await youStopped())) throw error;
   } finally {
-    ending = true;
+    // the last word before our own close: a quit you began as the last step ended counts
+    await youStopped();
     // a clean quit, so what was written is on disk before the window you use opens the same profile
     await Promise.race([app.close().catch(() => {}), new Promise((r) => setTimeout(r, 20_000))]);
     try { process.kill(pid, 0); process.kill(pid, "SIGKILL"); } catch { /* gone */ }
