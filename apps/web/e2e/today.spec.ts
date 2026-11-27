@@ -1229,7 +1229,12 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       // Later below
       await leftSoon(page, "Electricity bill");
       await expect(snack).toContainText("Later: Electricity bill");
+      const deferred = async () => (await server.backend.store.dated.active()).find((r) => r.text === "Electricity bill")?.deferredUntil ?? null;
+      await expect.poll(deferred).not.toBeNull();
+      // (a row drawn under Coming up is one row too: undone means nothing put off, and the row out of Coming up again)
       await undo("b");
+      await expect.poll(deferred).toBeNull();
+      await expect.poll(() => groupOf(page, "Electricity bill")).not.toMatch(/^(gone|comingUp)$/);
       if (await page.getByTestId("reader").count()) await page.keyboard.press("Escape");
 
       // Later ▸ Pick a date…: the reminder's own date and time; a timed Plan's only before it starts (the third panel
