@@ -3385,7 +3385,7 @@ describe("plan 210 (iteration 5): Remove's narrow offer, a kind from one sender 
     const offer = await removing(client)(first!);
     expect(offer).toMatchObject({ on: "pair", key: "delivery|track@parcelo.test" });
     await sendTo(receive, parcelo);
-    await expect(client.call("dated.mute", { on: "pair", key: offer!.key, name: offer!.name })).rejects.toThrow("You’ve written to Parcelo, so What matters keeps showing their mail.");
+    await expect(client.call("dated.mute", { on: "pair", key: offer!.key, name: offer!.name })).rejects.toThrow("You’ve written to Parcelo, so “What matters” keeps showing their mail.");
     // the sender alone likewise
     await expect(client.call("dated.mute", { on: "sender", key: "track@parcelo.test", name: "Parcelo" })).rejects.toThrow(/written to Parcelo/);
     expect((await client.call("dated.mutes", {})).mutes).toEqual([]);
