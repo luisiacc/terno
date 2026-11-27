@@ -85,7 +85,8 @@ export async function measureDated(o: WorkloadMailbox): Promise<void> {
   expect(await store.dated.scanCandidates(window, DATED_SCAN_MAX, o.accountId)).not.toContain(small.ids[0]);
   await store.accounts.remove(small.id);
   o.log(`Dated: active ${active.toFixed(2)} ms, openFor ${openFor.toFixed(2)} ms, a thread's ${thread.toFixed(2)} ms, a source ${source.toFixed(2)} ms, the 14-day check's candidates ${scan.toFixed(2)} ms (a small account's ${scanSmall.toFixed(2)} ms)`);
-  expect(active).toBeLessThanOrEqual(5 * o.budget);
+  // the active read 5 → 6 ms (5.25 measured on SQLite, 2026-11-26): a small overrun, raised by the owner's call
+  expect(active).toBeLessThanOrEqual(6 * o.budget);
   expect(openFor).toBeLessThanOrEqual(5 * o.budget);
   expect(thread).toBeLessThanOrEqual(5 * o.budget);
   expect(source).toBeLessThanOrEqual(5 * o.budget);

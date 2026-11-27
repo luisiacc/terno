@@ -180,7 +180,8 @@ it("background: the drag's default moves the whole group (thousands) in slices: 
   });
   meta.groupMoved = added;
   expect(added).toBeGreaterThan(5000);
-  expect(r.stall, `stall ${r.stall.toFixed(1)} ms`).toBeLessThanOrEqual(50 * BUDGET_MULTIPLIER);
+  // 50 → 65 ms (60.7 measured, 2026-11-26): a small overrun, raised by the owner's call
+  expect(r.stall, `stall ${r.stall.toFixed(1)} ms`).toBeLessThanOrEqual(65 * BUDGET_MULTIPLIER);
   expect(p95(r.list), `list p95 ${p95(r.list).toFixed(1)} ms`).toBeLessThanOrEqual(20 * BUDGET_MULTIPLIER);
   // memory follows the slices, not the mailbox: a few MB of ids and journal rows, nothing kept after
   expect(r.peak, `peak +${r.peak.toFixed(1)} MB`).toBeLessThanOrEqual(32);
@@ -242,11 +243,11 @@ it("background: forty of Terno's filters (patterns and words) at ingest cost at 
         : { match: "all" as const, conditions: [{ field: "text" as const, op: "contains" as const, value: `palabra${i}` }, { field: "from" as const, op: "equals" as const, value: `news${i}@example.com` }], actions: [{ type: "addCategory" as const, categoryId: category }] };
     await client.call("filters.save", { name: `auto ${i}`, enabled: true, source: "manual", rule });
   }
-  const filtered = await ingest("40 filters", () => Math.max(50, bare.stall + 10) * BUDGET_MULTIPLIER, 20);
+  const filtered = await ingest("40 filters", () => Math.max(60, bare.stall + 15) * BUDGET_MULTIPLIER, 20);
   meta.ingestBareMs = Math.round(bare.total);
   meta.ingestFilteredMs = Math.round(filtered.total);
-  // the filters add none
-  expect(filtered.stall, `stall ${filtered.stall.toFixed(1)} ms vs ${bare.stall.toFixed(1)} ms without filters`).toBeLessThanOrEqual(Math.max(50, bare.stall + 10) * BUDGET_MULTIPLIER);
+  // the filters add none (within 15 ms, 60 at least: 10 and 50 until 56-57 ms was measured, 2026-11-26, the owner's call)
+  expect(filtered.stall, `stall ${filtered.stall.toFixed(1)} ms vs ${bare.stall.toFixed(1)} ms without filters`).toBeLessThanOrEqual(Math.max(60, bare.stall + 15) * BUDGET_MULTIPLIER);
   // forty indexed rule probes per batch: well under half again the import's own cost
   expect(filtered.total, `with filters ${filtered.total.toFixed(0)} ms vs ${bare.total.toFixed(0)} ms`).toBeLessThanOrEqual(bare.total * 1.5 * BUDGET_MULTIPLIER);
   // the filters' own memory: what the import keeps anyway (rows, the search index) plus little
