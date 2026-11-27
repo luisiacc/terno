@@ -404,6 +404,14 @@ describe("terno MCP server", () => {
       expect(JSON.parse(answers[1].result.content[0].text).accounts).toHaveLength(3);
     });
 
+    it("a frame past the bound closes the connection, so the agent's side hears it (Codex code review #2)", async () => {
+      const socket = await handshake(paths);
+      socket.on("error", () => {});
+      const closed = new Promise<void>((r) => socket.once("close", () => r()));
+      socket.write("x".repeat(17 * 1024 * 1024));
+      await closed;
+    });
+
     it("refuses a wrong token and serves nothing", async () => {
       const { connect } = await import("node:net");
       const socket = connect(paths.socketPath);

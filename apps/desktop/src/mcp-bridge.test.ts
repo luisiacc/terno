@@ -33,6 +33,8 @@ class Agent {
   readonly exited: Promise<number | null>;
   constructor(env: Record<string, string> = {}) {
     this.child = spawn(bridge, [], { env: { PATH: process.env.PATH ?? "", HOME: dir, TERNO_SOCKET: paths.socketPath, TERNO_TOKEN_FILE: paths.tokenPath, ...env } });
+    // a bridge that refuses what it's sent exits mid-write: that's the point, not an error here
+    this.child.stdin.on("error", () => {});
     this.child.stdout.setEncoding("utf8").on("data", (d: string) => {
       this.out += d;
       for (const w of this.waiters.splice(0)) w();
@@ -175,6 +177,48 @@ describe.skipIf(!compiler)("the agents' bridge (plan 293)", () => {
       const started = Date.now();
       expect(await agent.end()).toBe(0);
       expect(Date.now() - started).toBeLessThan(10_000);
+    } finally {
+      await stopTerno();
+    }
+  });
+
+  it("an answer cut off by Terno quitting never reaches the agent as half a line: the call is answered as lost (Codex code review #9)", async () => {
+    // a fake app that starts an answer and dies mid-line
+    const sock = join(dir, "half.sock");
+    const server = createServer((s) => {
+      let authed = false;
+      s.on("data", (d) => {
+        if (!authed) {
+          authed = true;
+          s.write('{"ok":true}\n');
+          return;
+        }
+        if (String(d).includes('"tools/call"')) s.end('{"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"cut off');
+      });
+    });
+    await new Promise<void>((r) => server.listen(sock, () => r()));
+    writeFileSync(join(dir, "half.token"), "t");
+    try {
+      const agent = new Agent({ TERNO_SOCKET: sock, TERNO_TOKEN_FILE: join(dir, "half.token") });
+      agent.send(INIT, INITIALIZED, call(2, "list_accounts"));
+      expect(text(await agent.answer(2))).toBe(LOST);
+      await agent.end();
+      // every line the agent got is whole JSON (lines() parses each)
+      expect(agent.lines().every((l) => typeof l === "object")).toBe(true);
+    } finally {
+      server.close();
+    }
+  });
+
+  it("a message past the bound ends the session plainly instead of wedging it (Codex code review #2)", async () => {
+    await startTerno();
+    try {
+      const agent = new Agent();
+      agent.send(INIT, INITIALIZED);
+      await agent.answer(1);
+      // 17 MiB without a newline: the bridge refuses it (the app would close the session at 16 MiB)
+      agent.child.stdin.write("x".repeat(17 * 1024 * 1024));
+      expect(await agent.exited).toBe(1);
     } finally {
       await stopTerno();
     }

@@ -34,8 +34,11 @@
 
 /* the id of the initialize the bridge replays on a new connection; its answer never reaches the agent */
 #define REPLAY_ID "\"terno-mcp-bridge-initialize\""
-/* one message, either way: an attachment page or an image is a few MB; past this the stream is broken */
-#define MAX_LINE ((size_t)256 << 20)
+/* One message from the agent: the in-app server reads at most this much of one (its transport's bound, serve.ts's
+   AGENT_FRAME_MAX); past it the agent's stream is broken. The app's answers (an attachment's page, an image) may be
+   larger, up to MAX_ANSWER. */
+#define MAX_REQUEST ((size_t)16 << 20)
+#define MAX_ANSWER ((size_t)256 << 20)
 #define HANDSHAKE_MS 5000
 
 typedef struct {
@@ -373,11 +376,21 @@ static void pending_settle(span_t id) {
 
 /* ───────────────────────────── the connection ───────────────────────────── */
 
+/* dst = a + b + c, or "" when it wouldn't fit (an unusable path: Terno then reads as not running) */
+static void join3(char *dst, size_t size, const char *a, const char *b, const char *c) {
+  size_t na = strlen(a), nb = strlen(b), nc = strlen(c);
+  dst[0] = 0;
+  if (na + nb + nc + 1 > size) return;
+  memcpy(dst, a, na);
+  memcpy(dst + na, b, nb);
+  memcpy(dst + na + nb, c, nc + 1);
+}
+
 static void resolve_paths(void) {
   const char *s = getenv("TERNO_SOCKET"), *t = getenv("TERNO_TOKEN_FILE"), *u = getenv("TERNO_USER_DATA");
   char profile[4096];
   if (u && *u) {
-    snprintf(profile, sizeof profile, "%s", u);
+    join3(profile, sizeof profile, u, "", "");
   } else {
     const char *home = getenv("HOME");
     if (!home || !*home) {
@@ -385,17 +398,17 @@ static void resolve_paths(void) {
       home = pw && pw->pw_dir ? pw->pw_dir : "";
     }
 #ifdef __APPLE__
-    snprintf(profile, sizeof profile, "%s/Library/Application Support/Terno", home);
+    join3(profile, sizeof profile, home, "/Library/Application Support/Terno", "");
 #else
     const char *xdg = getenv("XDG_CONFIG_HOME");
-    if (xdg && *xdg) snprintf(profile, sizeof profile, "%s/Terno", xdg);
-    else snprintf(profile, sizeof profile, "%s/.config/Terno", home);
+    if (xdg && *xdg) join3(profile, sizeof profile, xdg, "/Terno", "");
+    else join3(profile, sizeof profile, home, "/.config/Terno", "");
 #endif
   }
-  if (s && *s) snprintf(sock_path, sizeof sock_path, "%s", s);
-  else snprintf(sock_path, sizeof sock_path, "%s/agent.sock", profile);
-  if (t && *t) snprintf(token_path, sizeof token_path, "%s", t);
-  else snprintf(token_path, sizeof token_path, "%s/agent.token", profile);
+  if (s && *s) join3(sock_path, sizeof sock_path, s, "", "");
+  else if (*profile) join3(sock_path, sizeof sock_path, profile, "/agent.sock", "");
+  if (t && *t) join3(token_path, sizeof token_path, t, "", "");
+  else if (*profile) join3(token_path, sizeof token_path, profile, "/agent.token", "");
 }
 
 static long now_ms(void) {
@@ -539,7 +552,7 @@ static void from_app_line(const char *line, size_t n) {
 }
 
 /* Hands every whole line in `b` to `each`; `last` also hands over what's left (the stream ended). */
-static void lines(buf_t *b, void (*each)(const char *, size_t), int last) {
+static void lines(buf_t *b, void (*each)(const char *, size_t), int last, size_t max) {
   size_t start = 0;
   for (;;) {
     char *nl = memchr(b->data + start, '\n', b->len - start);
@@ -554,7 +567,7 @@ static void lines(buf_t *b, void (*each)(const char *, size_t), int last) {
     each(b->data, b->len);
     b->len = 0;
   }
-  if (b->len > MAX_LINE) {
+  if (b->len > max) {
     static const char m[] = "terno-mcp: a message is too large\n";
     (void)!write(2, m, sizeof m - 1);
     exit(1);
@@ -587,9 +600,9 @@ int main(void) {
       ssize_t r = read(sock, chunk, sizeof chunk);
       if (r > 0) {
         buf_append(&from_app, chunk, (size_t)r);
-        lines(&from_app, from_app_line, 0);
+        lines(&from_app, from_app_line, 0, MAX_ANSWER);
       } else if (!(r < 0 && errno == EINTR)) {
-        if (r == 0) lines(&from_app, from_app_line, 1);
+        /* an answer cut off by the drop is no answer: its request is answered as lost, below (never half a line) */
         connection_lost();
       }
     }
@@ -597,9 +610,9 @@ int main(void) {
       ssize_t r = read(0, chunk, sizeof chunk);
       if (r > 0) {
         buf_append(&from_agent, chunk, (size_t)r);
-        lines(&from_agent, from_agent_line, 0);
+        lines(&from_agent, from_agent_line, 0, MAX_REQUEST);
       } else if (!(r < 0 && errno == EINTR)) {
-        lines(&from_agent, from_agent_line, 1);
+        lines(&from_agent, from_agent_line, 1, MAX_REQUEST);
         agent_open = 0;
         /* the agent is done: the app finishes what's in flight and closes */
         if (sock >= 0) shutdown(sock, SHUT_WR);
