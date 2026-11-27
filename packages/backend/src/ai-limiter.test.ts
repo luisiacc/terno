@@ -189,6 +189,26 @@ describe("AiLimiter", () => {
     });
   });
 
+  it("plan 291: a cache read settles cheaper than input and a write dearer, on each provider, Sol's drafting included", async () => {
+    // 4,000 read, 1,000 written, 500 plain in, 100 out: each at its own price, never also as input
+    const usage = { inputTokens: 500, outputTokens: 100, cacheReadTokens: 4_000, cacheWriteTokens: 1_000 };
+    const cases = [
+      { model: "gpt-6-luna", usd: (500 * 0.1 + 100 * 0.5 + 4_000 * 0.01 + 1_000 * 0.125) / 1e6 },
+      { model: "gpt-6-sol", usd: (500 * 2 + 100 * 10 + 4_000 * 0.2 + 1_000 * 2.5) / 1e6 },
+      { model: "claude-sonnet-5-5", usd: (500 * 2 + 100 * 10 + 4_000 * 0.1 + 1_000 * 2.5) / 1e6 },
+      { model: "claude-opus-5-5", usd: (500 * 4 + 100 * 20 + 4_000 * 0.2 + 1_000 * 5) / 1e6 },
+    ];
+    for (const c of cases) {
+      const limiter = new AiLimiter(host());
+      const cached: ModelTransport = { complete: async () => ({ text: "", stop: "end", usage }) };
+      await limiter.wrap(cached, { task: "summary", model: c.model, local: false, foreground: false }).complete(req());
+      const report = await limiter.report();
+      expect(report.month.usd, c.model).toBeCloseTo(c.usd, 12);
+      // a known price: Sol's is no longer an estimate (it was counted at the unknown model's $10 / $50)
+      expect(report.estimated, c.model).toBe(false);
+    }
+  });
+
   describe("the worst case stands when nothing says otherwise (plan 131 review)", () => {
     const chars = "x".repeat(2_500);
     const sized = (): CompletionRequest => ({ system: chars, messages: [], output: "text", maxTokens: 1_000, signal: new AbortController().signal });

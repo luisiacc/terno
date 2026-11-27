@@ -21,6 +21,8 @@ const PRICES: Readonly<Record<string, ModelPrice>> = {
   "claude-haiku-5-5": { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 },
   // OpenAI's list price: a cache read at a tenth of input, a write (caching is on by default) at 1.25×
   "gpt-6-luna": { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 },
+  // drafting on an OpenAI key alone (plan 168); plan 291: its page's prices, so its cache reads and writes count as they're billed
+  "gpt-6-sol": { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
   "jev-latest": { input: 0.042, output: 0 },
   "jev-preview": { input: 0.042, output: 0 },
 };
