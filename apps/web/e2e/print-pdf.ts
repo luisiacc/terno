@@ -76,7 +76,8 @@ export const EXPECT: Record<PrintFixtureKey, FixtureExpectation> = {
   "wide-table": { text: ["Variación", "Metropolitana", "101%"], absent: [], pages: [1, 2] },
   "cjk-emoji": { text: ["来週の東京オフィス訪問の日程", "我们会在会议上提供中文资料", "서울 팀도 화상으로 참여합니다"], absent: [], pages: [1, 2] },
   "long-urls": { text: ["drive.example.test", "Clave:"], absent: [], pages: [1, 2] },
-  images: { text: ["Plano de la planta baja", "Foto en alta resolución del acceso norte"], absent: [], pages: [1, 3], headersText: ["planta-baja.png"] },
+  // plan 220 (da92aa929): the plan the text shows (cid:, printed as its alt text) isn't listed as a file; the report still is
+  images: { text: ["Plano de la planta baja", "Foto en alta resolución del acceso norte"], absent: ["planta-baja.png"], pages: [1, 3], headersText: ["Reporte de visita 22-10-2026.pdf"] },
   hostile: { text: ["Tu factura está lista."], absent: ["alert(4)", "body{background"], pages: [1, 1] },
 };
 
