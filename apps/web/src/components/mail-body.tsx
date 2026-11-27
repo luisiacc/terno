@@ -13,6 +13,8 @@ import { READ_MAX_CSS, READ_MEASURE } from "~/lib/pane-lines";
 import { t } from "@terno/i18n";
 import { mailColors, useAppearance } from "~/lib/appearance";
 import { csp, hasRemoteContent, mailDesign, QUIET_ATTR } from "~/lib/mail";
+import { darkenMail, darkenPictures } from "~/lib/mail-dark";
+import { showOriginal, useMailOriginal } from "~/lib/mail-original";
 import { splitTextQuote } from "~/lib/quote";
 import { withoutTrailingQuote } from "~/lib/quote-html";
 import { forwardPrintKey, ownsLinkMenu, wantsNativeMenu } from "~/lib/print-open";
@@ -30,6 +32,13 @@ export { openLink };
 const MAX_HEIGHT = FRAME_MAX_HEIGHT;
 const WEB = import.meta.env.VITE_TARGET === "web";
 
+/**
+ * The reader's own sanitizer. On desktop its pictures are fetched in CORS mode (no cookies go with them), and main lets a
+ * mail frame read them (plan 295: a darkened mail reads its logos' pixels); printing and the rest keep the shared instance.
+ */
+const purify = DOMPurify(window);
+if (!WEB) purify.addHook("afterSanitizeAttributes", (node) => { if (node.nodeName === "IMG") node.setAttribute("crossorigin", "anonymous"); });
+
 
 /**
  * Renders an HTML email in a sandboxed iframe: sanitized with DOMPurify, no
@@ -37,7 +46,8 @@ const WEB = import.meta.env.VITE_TARGET === "web";
  * allow-same-origin (without scripts) only lets the parent measure the height.
  */
 interface MailLook {
-  mail: "paper" | "themed";
+  /** plan 295: "dark" is a designed mail rewritten onto the dark theme's colors, flowing on the page like themed mail */
+  mail: "paper" | "themed" | "dark";
   /** the root's custom properties */
   vars: Record<string, string>;
   /** the same, as a style attribute for the document's first paint */
@@ -45,10 +55,27 @@ interface MailLook {
 }
 
 /** A mail document's colors, scheme and padding for the painted theme. */
-function mailLook(paper: boolean, mode: string): MailLook {
+function mailLook(mail: MailLook["mail"], mode: string): MailLook {
+  const paper = mail === "paper";
   const c = mailColors()[paper ? "paper" : "themed"];
   const vars = { "--m-bg": c.bg, "--m-fg": c.fg, "--m-quiet": c.quiet, "--m-link": c.link, "--m-mark": c.mark, "--m-scheme": paper ? "light" : mode, "--m-pad": paper ? "16px" : "0" };
-  return { mail: paper ? "paper" : "themed", vars, style: Object.entries(vars).map(([k, v]) => `${k}:${v}`).join(";") };
+  return { mail, vars, style: Object.entries(vars).map(([k, v]) => `${k}:${v}`).join(";") };
+}
+
+/**
+ * Plan 295: the loaded mail rewritten onto the dark theme's colors (its pictures too, as they load), or put back. Undoes
+ * the last conversion first, so a palette change converts from the colors as written. True when the mail is darkened.
+ */
+function convert(flow: HTMLElement, want: boolean, current: { current: (() => void) | null }): boolean {
+  current.current?.();
+  current.current = null;
+  if (!want) return false;
+  const { themed, paper } = mailColors();
+  const result = darkenMail(flow, { background: themed.bg, card: themed.card, foreground: themed.fg, muted: themed.quiet, link: themed.link, border: themed.border });
+  if (!result.converted) return false;
+  const pictures = darkenPictures(flow, paper.bg);
+  current.current = () => { pictures(); result.undo(); };
+  return true;
 }
 
 /** Repaints the loaded document without replacing its own style properties. */
@@ -86,7 +113,7 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
   // re-rendered when the painted theme changes (the colors are literals inside the document)
   const themeKey = useAppearance((s) => s.themeKey);
   const mode = useAppearance((s) => s.mode);
-  const sanitized = useMemo(() => DOMPurify.sanitize(html, { WHOLE_DOCUMENT: false, FORBID_TAGS: ["style"], FORBID_ATTR: ["srcset"], ADD_ATTR: ["target"] }), [html]);
+  const sanitized = useMemo(() => purify.sanitize(html, { WHOLE_DOCUMENT: false, FORBID_TAGS: ["style"], FORBID_ATTR: ["srcset"], ADD_ATTR: ["target"] }), [html]);
   // plan 158: a designed mail keeps its colors on paper; a simple one takes the theme's, its grey text marked quiet
   // (a section of the full-message view: its paper or theme is the caller's, from the whole mail; its quiet text still marked)
   const design = useMemo(() => mailDesign(sanitized), [sanitized]);
@@ -116,11 +143,25 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
   const resolved = cidAllowed && cidResult?.key === cidKey ? cidResult.html : clean;
   const visibleHtml = useMemo(() => (!folded ? resolved : resolved === clean ? main : (withoutTrailingQuote(resolved) ?? resolved)), [resolved, clean, main, folded]);
   const ownColors = !section && design.designed;
-  const paper = appearance === "paper" || ownColors;
+  // plan 295: in a dark theme, "Match theme" rewrites a designed mail onto the theme's colors, unless the mail is better on
+  // its paper (the converter says) or the reader asked for the original
+  const original = useMailOriginal((s) => s.shown.has(messageId));
+  const offerDark = ownColors && appearance === "auto" && mode === "dark";
+  const wantDark = offerDark && !original;
+  // whether the loaded document is darkened: decided on it, when it loads and when the above changes
+  const [darkened, setDarkened] = useState(false);
+  const paper = appearance === "paper" || (ownColors && !darkened);
   // a designed mail keeps its own layout; anything else wraps at the reader's measure, while its pictures and fixed tables keep the frame's width
   const measured = !section && !ownColors;
   // the colors, as variables on the document's root: a theme or "HTML mail" change repaints the loaded mail in place
-  const look = useMemo(() => mailLook(paper, mode), [paper, themeKey, mode]);
+  const lookFor = (dark: boolean) => mailLook(dark ? "dark" : appearance === "paper" || ownColors ? "paper" : "themed", mode);
+  const look = useMemo(() => lookFor(darkened), [darkened, appearance, ownColors, themeKey, mode]);
+  const lookForRef = useRef(lookFor);
+  const wantDarkRef = useRef(wantDark);
+  useLayoutEffect(() => { lookForRef.current = lookFor; wantDarkRef.current = wantDark; });
+  const darkUndo = useRef<(() => void) | null>(null);
+  // the loaded document's measure, for a repaint that changes its geometry (paper's padding, plan 295)
+  const measureRef = useRef<(() => void) | null>(null);
   // the document is rebuilt only when what it shows changes (the mail, its remote content); its first paint has the
   // colors of that moment. A rebuild reloads the frame (blank, then re-measured): theming must never cause one.
   const [built, setBuilt] = useState({ html: visibleHtml, allowRemote, look });
@@ -154,7 +195,10 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
   useEffect(() => {
     lookRef.current = look;
     const root = ref.current?.contentDocument?.documentElement;
-    if (root) paint(root, look);
+    if (!root) return;
+    paint(root, look);
+    // paper's padding comes and goes with the look: the frame's height follows (its observer watches a viewport that doesn't change)
+    measureRef.current?.();
   }, [look]);
 
   useLayoutEffect(() => {
@@ -178,7 +222,12 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
       detach?.();
       const finish = () => {
         if (!active || frame.contentDocument !== d || !flow.isConnected) return;
+        // plan 295: converted (or not) before anything is measured or shown, so a darkened mail never flashes its paper
+        darkUndo.current = null;
+        const dark = !section && convert(flow, wantDarkRef.current, darkUndo);
+        lookRef.current = lookForRef.current(dark);
         paint(d.documentElement, lookRef.current);
+        flushSync(() => setDarkened(dark));
         // (counted, and scrolled to, once the height measured below is on the frame)
         if (!section && marksRef.current?.length) {
           markDocument(flow, marksRef.current);
@@ -238,6 +287,7 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
           if (!section && !sized) { sized = true; flushSync(() => { setHeight(h); setShown(true); }); } else setHeight(h);
         };
         measure();
+        measureRef.current = measure;
         d.addEventListener("load", measure, true);
         observer = new ResizeObserver(measure);
         observer.observe(d.documentElement);
@@ -288,6 +338,7 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
         const interacted = () => { frame.dispatchEvent(new Event(MAIL_INTERACTION, { bubbles: true })); };
         for (const type of ["wheel", "keydown", "pointerdown"]) d.addEventListener(type, interacted, { capture: true, passive: true });
         detach = () => {
+          if (measureRef.current === measure) measureRef.current = null;
           for (const type of ["wheel", "keydown", "pointerdown"]) d.removeEventListener(type, interacted, true);
           d.removeEventListener("pointerdown", chooseOpenThread, true);
           d.removeEventListener("load", measure, true);
@@ -324,6 +375,14 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
     };
   }, [doc, section, sourceId]);
 
+  // plan 295: the theme, the setting or "Show original" changed under a loaded mail: converted again (or put back) in place
+  useEffect(() => {
+    const current = loaded.current;
+    const flow = current && current.doc === ref.current?.contentDocument ? current.doc.querySelector<HTMLElement>("[data-terno-flow]") : null;
+    if (!flow || section) return;
+    setDarkened(convert(flow, wantDark, darkUndo));
+  }, [wantDark, themeKey, mode, section]);
+
   // a message folded away takes its marks with it
   useEffect(() => () => marksChanged(), []);
   // the search changed under a mail that's already loaded
@@ -341,6 +400,14 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
     <div>
       {!section && hasCid && !cidAllowed && <button type="button" data-testid="inline-load" className="mb-3 text-xs text-muted-foreground hover:text-foreground" onClick={() => setCidAllowed(true)}>{t("attachments.loadInline")}</button>}
       {!section && blocked && <RemoteBlocked onLoad={() => allowRemoteFor(messageId)} />}
+      {/* plan 295: a darkened mail can be seen as it was written, for the session */}
+      {!section && offerDark && (darkened || original) && (
+        <div className="mb-2 flex justify-end">
+          <Button variant="link-secondary" size="xs" data-testid="mail-original" className="font-normal text-muted-foreground hover:text-foreground" onClick={() => showOriginal(messageId, !original)}>
+            {t(original ? "reader.mail.matchTheme" : "reader.mail.showOriginal")}
+          </Button>
+        </div>
+      )}
       {/* themed mail flows on the page with no box; mail with its own colors keeps a paper surface, its edge drawn so its inset reads as the sheet's, on paper-white pages too */}
       <div className={paper ? "hairline overflow-hidden rounded-lg bg-[var(--mail-paper)] [--hairline-color:var(--border)]" : undefined}>
         <iframe
@@ -350,7 +417,7 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
           scrolling="no"
           srcDoc={doc}
           style={{ height, visibility: shown ? undefined : "hidden" }}
-          data-mail={paper ? "paper" : "themed"}
+          data-mail={look.mail}
           className="block w-full border-0"
         />
       </div>

@@ -155,15 +155,19 @@ test.describe("themes", () => {
     });
   });
 
-  test("HTML mail: uncolored takes the theme, designed sits on paper, from its parsed styles", async ({ app: page, server }) => {
-    await scenario("HTML mail: uncolored mail takes the theme, designed mail sits on paper", async () => {
+  test("HTML mail: uncolored takes the theme, designed is rewritten onto it in the dark (or sits on paper), from its parsed styles", async ({ app: page, server }) => {
+    await scenario("HTML mail: uncolored mail takes the theme, a light designed one is rewritten onto it (plan 295), Always paper keeps both as written", async () => {
       await server.backend.server.invoke("settings.update", { theme: "dark", darkTheme: "dracula" }, ctx);
       const dracula = builtinTheme("dracula")!.tokens;
-      // one thread without colors of its own, and one designed (a dark band behind white text)
+      // one thread without colors of its own, and one designed: a white card on a grey page, a brand band, a call to action
       const plain = Number(await page.locator("[data-testid=thread-row]").first().getAttribute("data-thread-id"));
       sqlDb(server.backend.store).run("UPDATE message_bodies SET body_html = ? WHERE message_id IN (SELECT id FROM messages WHERE thread_id = ?)", "<p>Hola, <b>sin colores</b>: <a href='https://x.test'>enlace</a></p>", plain);
       const designed = Number(await page.locator("[data-testid=thread-row]").nth(2).getAttribute("data-thread-id"));
-      sqlDb(server.backend.store).run("UPDATE message_bodies SET body_html = ? WHERE message_id IN (SELECT id FROM messages WHERE thread_id = ?)", "<div style='background:#1a1a2e;color:#fff;padding:24px'><h1>Boletín</h1></div><p>Debajo</p>", designed);
+      sqlDb(server.backend.store).run("UPDATE message_bodies SET body_html = ? WHERE message_id IN (SELECT id FROM messages WHERE thread_id = ?)", `<table bgcolor="#f2f2f2" width="100%"><tr><td><table id="card" style="background-color:#ffffff;width:560px"><tr><td>
+        <div id="band" style="background-color:#1d5bb0;color:#ffffff;padding:12px">Boletín</div>
+        <p id="text" style="color:#222222">${"Un texto largo del boletín, con bastante para leer. ".repeat(4)}</p>
+        <a id="cta" href="https://x.test" style="background-color:#ec008c;color:#ffffff;padding:8px">Registrarse</a>
+      </td></tr></table></td></tr></table>`, designed);
       await page.reload();
       await page.locator("[data-ready]").waitFor();
       const bodyBg = async () => {
@@ -179,15 +183,35 @@ test.describe("themes", () => {
       // the frame is its own document: it smooths text like the app (grayscale on macOS), not the subpixel default
       expect(await page.frameLocator("iframe[title^='Message']").locator("body").evaluate((b) => getComputedStyle(b).getPropertyValue("-webkit-font-smoothing"))).toBe("antialiased");
 
-      // a designed newsletter keeps its colors on the light paper card
+      // a light designed newsletter takes the theme's page; its brand band and button keep their colors, its text the theme's ink
       await openRow(page, 2);
-      await expect(page.locator("iframe[data-mail=paper]")).toBeVisible();
+      const mailFrame = page.locator("iframe[data-mail]").first();
+      await expect(mailFrame).toHaveAttribute("data-mail", "dark");
+      expect(await bodyBg()).toBe(rgb(toHex(dracula.background)));
+      const inMail = page.frameLocator("iframe[title^='Message']");
+      const css = (id: string, prop: "color" | "backgroundColor") => inMail.locator(id).evaluate((el, p) => getComputedStyle(el)[p as "color"], prop);
+      expect(await css("#band", "backgroundColor")).toBe("rgb(29, 91, 176)");
+      expect(await css("#cta", "backgroundColor")).toBe("rgb(236, 0, 140)");
+      expect(await css("#card", "backgroundColor")).not.toBe("rgb(255, 255, 255)");
+      expect(await css("#text", "color")).not.toBe("rgb(34, 34, 34)");
+      // "Show original" puts this message back on its paper, as written, and "Match theme" rewrites it again: the same document
+      await mailFrame.evaluate((f: HTMLIFrameElement) => { (window as unknown as { __doc: Document | null }).__doc = f.contentDocument; });
+      await page.getByTestId("mail-original").click();
+      await expect(mailFrame).toHaveAttribute("data-mail", "paper");
       expect(await bodyBg()).toBe(rgb(toHex(dracula["mail-paper"])));
+      expect(await css("#card", "backgroundColor")).toBe("rgb(255, 255, 255)");
+      await expect(page.getByTestId("mail-original")).toHaveText("Match theme");
+      await page.getByTestId("mail-original").click();
+      await expect(mailFrame).toHaveAttribute("data-mail", "dark");
+      expect(await css("#card", "backgroundColor")).not.toBe("rgb(255, 255, 255)");
+      expect(await mailFrame.evaluate((f: HTMLIFrameElement) => (window as unknown as { __doc: Document | null }).__doc === f.contentDocument)).toBe(true);
 
-      // "Always paper": the plain one too
+      // "Always paper": the designed one as written, with nothing to switch, and the plain one too
       await openAppearance(page);
       await page.getByTestId("mail-paper").click();
       await page.keyboard.press("Escape");
+      await expect(mailFrame).toHaveAttribute("data-mail", "paper");
+      await expect(page.getByTestId("mail-original")).toHaveCount(0);
       await openRow(page, 0);
       await expect(page.locator("iframe[data-mail=paper]").first()).toBeVisible();
       expect(await bodyBg()).toBe(rgb(toHex(dracula["mail-paper"])));
@@ -220,7 +244,8 @@ test.describe("themes", () => {
       expect(results).toEqual(cases.map(([, expected]) => expected));
 
       // and in the reader, in a dark theme: a simple mail's dark text takes the theme's ink, its grey footer the theme's quiet
-      // ink and its white page the theme's (never a light slab in a dark reader); a designed one keeps its paper
+      // ink and its white page the theme's (never a light slab in a dark reader); a designed one that is already dark keeps its
+      // paper (plan 295: the converter leaves it as written)
       await server.backend.server.invoke("settings.update", { theme: "dark", darkTheme: "dracula", htmlMailAppearance: "auto" }, ctx);
       const thread = Number(await page.locator("[data-testid=thread-row]").first().getAttribute("data-thread-id"));
       const designed = Number(await page.locator("[data-testid=thread-row]").nth(1).getAttribute("data-thread-id"));

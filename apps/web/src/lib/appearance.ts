@@ -380,8 +380,8 @@ function commitAppearance(asked: AppearancePatch | { font: FontChoice }): Promis
 }
 
 export interface MailColors {
-  /** the theme itself: mail that brings no colors of its own */
-  themed: { bg: string; fg: string; quiet: string; link: string; mark: string };
+  /** the theme itself: mail that brings no colors of its own, and designed mail rewritten onto it in a dark theme (plan 295: its card and line too) */
+  themed: { bg: string; fg: string; quiet: string; link: string; mark: string; card: string; border: string };
   /** the light card designed mail sits on, so it is never inverted */
   paper: { bg: string; fg: string; quiet: string; link: string; mark: string };
 }
@@ -401,7 +401,7 @@ export function mailColors(): MailColors {
   };
   const ink = builtinTheme(DEFAULT_THEME.light)!.tokens;
   return {
-    themed: { bg: hex("background", ink.background), fg: hex("foreground", ink.foreground), quiet: hex("muted-foreground", ink["muted-foreground"]), link: hex("primary", ink.primary), mark: hex("star", ink.star) },
+    themed: { bg: hex("background", ink.background), fg: hex("foreground", ink.foreground), quiet: hex("muted-foreground", ink["muted-foreground"]), link: hex("primary", ink.primary), mark: hex("star", ink.star), card: hex("card", ink.card), border: hex("border", ink.border) },
     // a paper mail's greys are its own (the quiet ink only applies to themed mail)
     paper: { bg: hex("mail-paper", ink["mail-paper"]), fg: hex("mail-ink", ink["mail-ink"]), quiet: hex("mail-ink", ink["mail-ink"]), link: hex("mail-link", ink["mail-link"]), mark: hex("star", ink.star) },
   };
