@@ -621,6 +621,8 @@ export function answerFor(body) {
     case "sent_mail": return json(sentMail(`${system}\n${prompt}`));
     // plan 280: the rated screens show no promise of theirs
     case "their_mail": return json({ promises: [], kept: [], moved: [], withdrawn: [] });
+    // plan 204: the reader of received mail finds nothing, so the rated screens' What matters is the demo's own
+    case "dated_mail": return json({ items: [], settled: [], moved: [], replaced: [] });
     case "needs_reply": return json(needsReply(prompt));
     case "newsletter_digest": return json(digest(system, prompt));
     case "filter": return json(filter(prompt, system));

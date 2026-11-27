@@ -109,6 +109,10 @@ export async function setUpAi(page, mode, url, quiet = () => {}) {
   if (mode !== "real") await quietNetwork(page);
   await page.keyboard.press("Escape");
   await page.getByTestId("settings-dialog").waitFor({ state: "detached" });
+  // plan 207: AI on asks once, as Settings closes, which screen to open on; the round keeps the Inbox, as it always rated
+  const keep = page.getByTestId("first-screen-keep-inbox");
+  await keep.waitFor({ timeout: 5_000 }).then(() => keep.click(), () => {});
+  await page.getByTestId("first-screen-question").waitFor({ state: "detached" });
 }
 
 /** After the relaunch: what setUpAi saved is what the app now reads, or the round would rate AI off. */
