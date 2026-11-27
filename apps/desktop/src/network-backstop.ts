@@ -88,6 +88,16 @@ export function backstopAllows(req: { url: string; resourceType: string; frame: 
  * visible by them). The reader asks for them in CORS mode, without cookies, and this answers for the server: the same
  * picture, the same request, only readable. Anything else (null) keeps the server's headers as they came.
  */
+/**
+ * Plan 295: a mail frame's picture is asked for in CORS mode, which would tell every server (a tracker's too) it comes
+ * from Terno's app page. Main answers the CORS check itself (`mailImageHeaders`), so the request goes without its Origin,
+ * like an ordinary picture request. Anything else (null) is sent as it is.
+ */
+export function mailImageRequestHeaders(req: { resourceType: string; frame: RequestFrame | null }, headers: Record<string, string>, o: { appOrigins: readonly string[] }): Record<string, string> | null {
+  if (req.resourceType !== "image" || !isMailFrame(req.frame, o.appOrigins)) return null;
+  return Object.fromEntries(Object.entries(headers).filter(([name]) => name.toLowerCase() !== "origin"));
+}
+
 export function mailImageHeaders(req: { resourceType: string; frame: RequestFrame | null }, headers: Record<string, string[]>, o: { appOrigins: readonly string[] }): Record<string, string[]> | null {
   if (req.resourceType !== "image" || !isMailFrame(req.frame, o.appOrigins)) return null;
   const out: Record<string, string[]> = {};

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { backstopAllows, isLoopbackHost, isMailFrame, mailImageHeaders, originOf, requestFrame, type FrameLike, type RequestFrame } from "./network-backstop";
+import { backstopAllows, isLoopbackHost, isMailFrame, mailImageHeaders, mailImageRequestHeaders, originOf, requestFrame, type FrameLike, type RequestFrame } from "./network-backstop";
 
 const app = ["app://terno"];
 const mail: RequestFrame = { url: "about:srcdoc", parentIsTop: true, topUrl: "app://terno/index.html" };
@@ -30,6 +30,14 @@ describe("main: the renderer's network backstop", () => {
     expect(mailImageHeaders({ resourceType: "image", frame: { ...mail, parentIsTop: false } }, headers, local)).toBeNull();
     expect(mailImageHeaders({ resourceType: "image", frame: null }, headers, local)).toBeNull();
     for (const resourceType of ["script", "xhr", "stylesheet", "font", "media", "mainFrame"]) expect(mailImageHeaders({ resourceType, frame: mail }, headers, local)).toBeNull();
+  });
+
+  it("plan 295: a mail frame's picture request goes without the Origin CORS mode adds; nothing else is touched", () => {
+    const headers = { Accept: "image/*", origin: "app://terno", "User-Agent": "x" };
+    expect(mailImageRequestHeaders({ resourceType: "image", frame: mail }, headers, local)).toEqual({ Accept: "image/*", "User-Agent": "x" });
+    expect(mailImageRequestHeaders({ resourceType: "image", frame: { ...mail, url: "app://terno/index.html" } }, headers, local)).toBeNull();
+    expect(mailImageRequestHeaders({ resourceType: "image", frame: null }, headers, local)).toBeNull();
+    expect(mailImageRequestHeaders({ resourceType: "xhr", frame: mail }, headers, local)).toBeNull();
   });
 
   it("in local mode nothing but images passes, even from a mail frame", () => {

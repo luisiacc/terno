@@ -709,7 +709,7 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
     const store = server.backend.store;
     const account = (await store.accounts.list())[0]!;
     // a tall light newsletter (clipped, so it offers the full view) with a white-to-red band the converter leaves as written
-    const tall = `<table style="background-color:#ffffff;width:560px"><tr><td><h1 style="color:#1d5bb0">Boletín</h1><div id="band" style="background-image:linear-gradient(#ffffff, #ee0000);color:#111111">Sobre el degradado</div>${Array.from({ length: 1400 }, (_, i) => `<p style="margin:0;height:20px;color:#222">Line ${i}</p>`).join("")}</td></tr></table>`;
+    const tall = `<table id="card" style="background-color:#ffffff;width:560px"><tr><td><h1 style="color:#1d5bb0">Boletín</h1><div id="band" style="background-image:linear-gradient(#ffffff, #ee0000);color:#111111">Sobre el degradado</div>${Array.from({ length: 1400 }, (_, i) => `<p style="margin:0;height:20px;color:#222">Line ${i}</p>`).join("")}</td></tr></table>`;
     const { touched } = await store.sync.ingest([{ accountId: account.id, providerMsgId: "dark-tall", providerThreadId: null, rfcMessageId: "<dark-tall@e2e.test>", inReplyTo: null, references: [], from: { name: "Boletín", email: "news@acme.studio" }, replyTo: [], to: [{ name: "", email: account.email }], cc: [], bcc: [], subject: "Un boletín largo", date: E2E_NOW, snippet: "Boletín", bodyText: null, bodyHtml: tall, bodyState: "full", listId: null, isRead: true, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: tall.length }], { applyFilters: false, now: E2E_NOW, classifier: null });
     await page.reload();
     await page.locator("[data-ready]").waitFor();
@@ -732,6 +732,20 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
     await expect.poll(async () => (await band())?.image).toBe("none");
     const found = (await band())!;
     expect(found.color).toBe(found.body);
+    // the theme turns light with the view open: its sections are prepared again from the mail's own colors, never left
+    // with the dark ones on paper
+    await page.evaluate(() => (window as unknown as { __terno: { updateAppearance(p: object): Promise<unknown> } }).__terno.updateAppearance({ theme: "light" }));
+    const card = async () => {
+      for (const frame of await scroller.locator("iframe").all()) {
+        const bg = await frame.evaluate((f) => {
+          const el = (f as HTMLIFrameElement).contentDocument!.getElementById("card");
+          return el && getComputedStyle(el).backgroundColor;
+        });
+        if (bg) return bg;
+      }
+      return null;
+    };
+    await expect.poll(card).toBe("rgb(255, 255, 255)");
     await page.keyboard.press("Escape");
   });
 

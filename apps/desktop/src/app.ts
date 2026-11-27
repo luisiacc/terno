@@ -42,7 +42,7 @@ import { readLegacySecrets } from "./keychain-helper";
 import { legacyReply, secretReply } from "./secret-service";
 import { NetworkWatch } from "./network-watch";
 import { FocusReporter } from "./window-focus";
-import { backstopAllows, mailImageHeaders, originOf, requestFrame } from "./network-backstop";
+import { backstopAllows, mailImageHeaders, mailImageRequestHeaders, originOf, requestFrame } from "./network-backstop";
 import { DB_FILE } from "./legacy-profile";
 import { registerPrint } from "./print";
 import { registerMboxExport } from "./mbox-export";
@@ -177,10 +177,15 @@ function installNetworkBackstop() {
     const frame = details.resourceType === "image" ? requestFrame(details.frame) : null;
     callback({ cancel: !backstopAllows({ url: details.url, resourceType: details.resourceType, frame }, { appOrigins }) });
   });
-  // plan 295: a mail frame's pictures are readable by it (the reader fetches them in CORS mode, without cookies)
-  session.defaultSession.webRequest.onHeadersReceived({ urls: ["http://*/*", "https://*/*"] }, (details, callback) => {
-    const frame = details.resourceType === "image" ? requestFrame(details.frame) : null;
-    const responseHeaders = mailImageHeaders({ resourceType: details.resourceType, frame }, details.responseHeaders ?? {}, { appOrigins });
+  // plan 295: a mail frame's pictures are readable by it (the reader fetches them in CORS mode, without cookies), and
+  // they go without the Origin that mode adds; only picture requests pass through main for this
+  const pictures = { urls: ["http://*/*", "https://*/*"], types: ["image" as const] };
+  session.defaultSession.webRequest.onBeforeSendHeaders(pictures, (details, callback) => {
+    const requestHeaders = mailImageRequestHeaders({ resourceType: details.resourceType, frame: requestFrame(details.frame) }, details.requestHeaders, { appOrigins });
+    callback(requestHeaders ? { requestHeaders } : {});
+  });
+  session.defaultSession.webRequest.onHeadersReceived(pictures, (details, callback) => {
+    const responseHeaders = mailImageHeaders({ resourceType: details.resourceType, frame: requestFrame(details.frame) }, details.responseHeaders ?? {}, { appOrigins });
     callback(responseHeaders ? { responseHeaders } : {});
   });
 }

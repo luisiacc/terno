@@ -190,7 +190,9 @@ test("main cancels the renderer's remote requests, for everyone (plan 97: not a 
 test("plan 295: a mail frame's pictures come back readable by it (fresh, redirected, cached); the app's own page's don't", async () => {
   // a 1×1 see-through PNG, from a server that says nothing about CORS
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
+  const origins: (string | undefined)[] = [];
   const server = createServer((req, res) => {
+    origins.push(req.headers.origin);
     if (req.url?.startsWith("/redirect")) {
       res.writeHead(302, { Location: "/logo.png?redirected" });
       res.end();
@@ -226,6 +228,9 @@ test("plan 295: a mail frame's pictures come back readable by it (fresh, redirec
         return out;
       }, sources);
     expect(await read([`${base}/logo.png?fresh`, `${base}/redirect?to-logo`])).toEqual(["readable", "readable"]);
+    // and the server never learned they came from Terno's app page
+    expect(origins.length).toBeGreaterThan(0);
+    expect(origins.every((origin) => origin === undefined)).toBe(true);
     // again, from the cache
     expect(await read([`${base}/logo.png?fresh`])).toEqual(["readable"]);
     // the app's own page gets no such answer: a CORS picture there fails

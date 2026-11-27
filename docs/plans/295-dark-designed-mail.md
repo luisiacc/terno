@@ -137,3 +137,19 @@ Not changed: **9**, white text on an unchanged brand button below 4.5:1 (Evexia'
 - A gradient converts only when its mapped stops end up close (≤ 1.5:1 apart), so the ink judged against the hardest stop reads on all of it; a wider one (a brand gradient, light into a kept red) stays as written. A gradient in a notation the parser doesn't read (`oklch()`, `color-mix()`…) stays as written too, never its fill mapped under an unmapped gradient.
 - `<hr color>` leaves the fill and any side the style names.
 - The themed sheet also clears `background-image`: a simple mail never has one (it would be designed), and a darkened mail's full view, which is themed, no longer puts the theme's ink on a picture or gradient left behind.
+
+## Third look: Astra and Fable bug reviews
+
+After landing, the owner asked for two independent bug reviews (Codex Astra and Claude Fable, the same brief, read-only). Thirteen distinct findings, all fixed, each with a test that fails without it:
+
+- **Colors it can't read** (`var(--x)`, `oklch()`, a legacy oddity) on a background, ink, `bgcolor` or `<font color>`: the element stays as written, an island. An island pins only what it doesn't set itself, never over the sender's own value. (Astra)
+- **A gradient's see-through stops** are composited over the element's own fill, not its parent's. (Astra)
+- **A table whose columns are painted** (`<col>` / `<colgroup>` with a background) stays as written: the walk can't see what's under its cells. (Astra)
+- **Inline SVG** keeps the page it was drawn on (its backdrop pinned), never black art on the dark page. (Astra, Fable)
+- **The full view re-prepares** when the conversion is done or undone while it's open (a theme turning light), so paper never shows the dark copies. (Astra; e2e)
+- **Pictures:** a dark glyph that already reads on its ground (a black wordmark on a kept green band) is never turned light (Astra). Only logo-like pictures are touched, with a few tones or colors; a cut-out photo or round avatar is left alone (Fable). A plate only goes on a dark page.
+- **The picture pass skips** JPEGs (opaque), pictures over a million pixels (reading one decodes it whole, on the main thread), and cross-origin pictures not asked for in CORS mode (unreadable, the web build's). (Fable)
+- **A bulletproof button** (a black link in a black cell) becomes one light button: a fill the same as its parent's goes where the parent's went. (Fable)
+- **A full-width black bar** holding one link ("View in your browser") is a band, never a button. (Fable)
+- **Outlook's system colors** (`windowtext`, `window`…) are read as they resolve on paper; under the dark frame they would flip. (Fable)
+- **Desktop:** main's two hooks see only image requests (`types: ["image"]`), and a mail frame's picture request goes **without its Origin**, so no server (a tracker's included) learns it came from Terno's app page. Main answers the CORS check itself. Packaged smoke: the server saw no Origin. (Fable)

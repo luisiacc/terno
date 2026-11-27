@@ -119,6 +119,44 @@ describe("darkenMail (plan 295)", () => {
     expect(hexOf($("#hr").style.borderBottomColor)).not.toBe("#eeeeee");
   });
 
+  it("a color it can't read (a variable, oklch) stays as written with its ink, never pinned over; a table's painted columns keep it as written", () => {
+    darkenMail(mail(`<p style="color:#222">${"Plenty of ordinary text on the page. ".repeat(6)}</p>
+      <div id="v" style="--panel:#ffffff;background-color:var(--panel);color:#222222">On a variable's white</div>
+      <div id="k" style="background-color:oklch(0.98 0 0)"><span id="ki">Inherited ink on a modern white</span></div>
+      <table><colgroup><col style="background-color:#ffff00"></colgroup><tr><td id="cell" style="color:#000000">On a yellow column</td></tr></table>`), DRACULA);
+    expect($("#v").style.backgroundColor).toBe("var(--panel)");
+    expect(hexOf($("#v").style.color)).toBe("#222222");
+    // the inherited ink is pinned to what it was on paper, the color it can't read left as the sender wrote it
+    expect($("#k").style.backgroundColor).toMatch(/oklch/);
+    expect(contrast($("#k").style.color, "#ffffff")).toBeGreaterThan(10);
+    expect(hexOf($("#cell").style.color)).toBe("#000000");
+  });
+
+  it("a gradient's see-through stops are judged over the element's own fill; drawn art keeps the page it was drawn on", () => {
+    darkenMail(mail(`<p style="color:#222">${"Plenty of ordinary text on the page. ".repeat(6)}</p>
+      <div id="g" style="background-color:#000000;background-image:linear-gradient(rgba(255,255,255,0.1), rgba(255,255,255,0.1));color:#ffffff">A label over a dark sheen</div>
+      <svg id="s" width="10" height="10"><circle cx="5" cy="5" r="4" fill="#000"></circle></svg>`), DRACULA);
+    const stop = /rgb\([^)]*\)|#[0-9a-f]{6}/i.exec($("#g").style.backgroundImage)![0];
+    expect(contrast($("#g").style.color, stop)).toBeGreaterThanOrEqual(4.5);
+    expect(hexOf($("#s").style.backgroundColor)).toBe("#ffffff");
+  });
+
+  it("a bulletproof button (a filled link in a cell of its fill) is one light button; a full-width black bar stays a band", () => {
+    darkenMail(mail(`<p style="color:#111">${"An ordinary newsletter paragraph with enough words. ".repeat(4)}</p>
+      <table width="100%"><tr><td id="bar" bgcolor="#000000"><a id="bar-link" href="https://x.test/web" style="color:#ffffff">View this email in your browser</a></td></tr></table>
+      <table><tr><td id="cell" bgcolor="#000000"><a id="link" href="https://x.test" style="background-color:#000000;border:1px solid #000000;color:#ffffff;padding:12px 24px">Shop now</a></td></tr></table>`), DRACULA);
+    expect($("#link").style.backgroundColor).toBe($("#cell").style.backgroundColor);
+    expect(contrast($("#cell").style.backgroundColor, DRACULA.background)).toBeGreaterThan(7);
+    expect(contrast($("#link").style.color, $("#link").style.backgroundColor)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast($("#bar").style.backgroundColor, DRACULA.background)).toBeLessThan(1.5);
+  });
+
+  it("reads Outlook's system colors as they were on paper: black windowtext on a kept yellow highlight stays black", () => {
+    darkenMail(mail(`<p style="color:#111">${"An ordinary newsletter paragraph with enough words. ".repeat(4)}</p><span style="background-color:#ffff00"><span id="w" style="color:windowtext">highlighted</span></span>`), DRACULA);
+    expect(mailColor("WindowText")).toEqual({ r: 0, g: 0, b: 0, alpha: 1 });
+    expect(hexOf($("#w").style.color)).toBe("#000000");
+  });
+
   it("turns a black call to action into the theme's light button, and keeps its label readable", () => {
     darkenMail(mail(`<p style="color:#111">Update the app to try the new keyboard in every app you use today.</p><table><tr><td id="btn" style="background-color:#111111"><a id="label" href="https://x.test" style="color:#ffffff">Update app</a></td></tr></table>`), DRACULA);
     const button = mailColor($("#btn").style.backgroundColor)!;
@@ -189,6 +227,22 @@ describe("pictureFix (plan 295)", () => {
     expect(pictureFix(picture([255, 255, 255, 255]), DARK_PAGE)).toBeNull();
     expect(pictureFix(picture([0, 0, 0, 255], [255, 255, 255, 255]), DARK_PAGE)).toBeNull();
     expect(pictureFix(picture([0, 0, 0, 255]), LIGHT_PAGE)).toBeNull();
+    // a black wordmark on a kept brand band (green, luminance 0.3) already reads: never turned light there
+    expect(pictureFix(picture([0, 0, 0, 255]), 0.3)).toBeNull();
     expect(pictureFix([], DARK_PAGE)).toBeNull();
+  });
+
+  it("leaves a photo cut out on a see-through ground alone (an avatar, a product): no negative, no plate", () => {
+    // a round grey portrait: lightness spread over the whole range, corners clear
+    const portrait: number[] = [];
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+      const inside = (x - 7.5) ** 2 + (y - 7.5) ** 2 < 64;
+      const v = Math.round(((x + y) / 30) * 120);
+      portrait.push(v, v, v, inside ? 255 : 0);
+    }
+    expect(pictureFix(portrait, DARK_PAGE)).toBeNull();
+    // the same in color, with dark hair: many colors
+    const avatar = portrait.map((v, i) => (i % 4 === 3 ? v : i % 4 === 0 ? (v * 3 + i) % 140 : i % 4 === 1 ? (v * 5 + i * 7) % 120 : (v + i * 13) % 160));
+    expect(pictureFix(avatar, DARK_PAGE)).toBeNull();
   });
 });

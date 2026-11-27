@@ -67,6 +67,8 @@ function fromHsl(h: number, s: number, l: number, alpha: number): Rgb {
 }
 
 const COLOR = /^(rgb|hsl)a?\(\s*([-\d.]+)(%|deg)?[\s,]+([-\d.]+)(%?)[\s,]+([-\d.]+)(%?)(?:[\s,/]+([\d.]+)(%?))?\s*\)$/;
+/** System colors as they resolve on light paper (Outlook and Word write `windowtext`); under the dark frame they'd flip */
+const SYSTEM: Record<string, string> = { windowtext: "000000", canvastext: "000000", buttontext: "000000", fieldtext: "000000", window: "ffffff", canvas: "ffffff", field: "ffffff", buttonface: "f0f0f0", graytext: "6d6d6d" };
 const parsed = new Map<string, Rgb | null>();
 
 /** A color as mail writes it, in CSS or a legacy attribute ("ffffff" without its #). null: no color of its own (transparent, inherit, a variable…). */
@@ -87,6 +89,7 @@ export function mailColor(value: string | null | undefined): Rgb | null {
       } else out = fromHsl(((Number(m[2]) % 360) + 360) % 360, clamp(Number(m[4]) / 100), clamp(Number(m[6]) / 100), alpha);
     }
   } else if (v in NAMES) out = hexRgb(NAMES[v]!);
+  else if (v in SYSTEM) out = hexRgb(SYSTEM[v]!);
   else out = hexRgb(v);
   if (out && (out.alpha === 0 || [out.r, out.g, out.b].some(Number.isNaN))) out = null;
   // (bounded: a session reads many mails)
@@ -248,6 +251,10 @@ const NO_IMAGE = new Set(["", "none", "initial", "unset", "inherit", "revert"]);
 const COLOR_IN_CSS = /#[0-9a-f]{3,8}\b|(?:rgb|hsl)a?\([^)]*\)|\b[a-z]{3,20}\b/gi;
 const SIDES = ["top", "right", "bottom", "left"] as const;
 const HAS_COLOR = /colou?r|background|border|fill/i;
+/** values that name no color of their own */
+const NO_COLOR = new Set(["", "transparent", "inherit", "initial", "unset", "revert", "revert-layer", "currentcolor", "none"]);
+/** A color the mail sets that the parser can't read (a newer notation, a legacy oddity): the browser still paints it. */
+const unreadable = (v: string | null | undefined) => !!v && !NO_COLOR.has(v.trim().toLowerCase()) && !mailColor(v);
 /** color notations the mail parser doesn't read */
 const OTHER_COLOR = /\b(?:oklch|oklab|lab|lch|hwb|color|color-mix|light-dark)\(/i;
 
@@ -272,6 +279,15 @@ function ownText(el: Element): number {
 
 /** A small filled box that is a link, sits in one, or holds nothing but one. */
 function isButton(el: Element): boolean {
+  // a bar across the mail ("View in your browser") is a band, never a button
+  const wide = (e: Element | null) => {
+    if (!e) return false;
+    const width = e.getAttribute("width") || (e as HTMLElement).style?.width || "";
+    return /^\s*(?:9\d|100)(?:\.\d+)?%/.test(width) || (px(width) ?? 0) >= 400;
+  };
+  if (wide(el)) return false;
+  const row = el.parentElement;
+  if ((el.localName === "td" || el.localName === "th") && row && row.children.length === 1 && wide(el.closest("table"))) return false;
   if (el.localName === "a" || el.closest("a")) return true;
   const text = (el.textContent ?? "").trim();
   if (text.length > 60 || el.querySelector("img[width], table table")) return false;
@@ -362,6 +378,8 @@ export function darkenMail(root: HTMLElement, palette: DarkPalette): DarkResult 
     if (styled) {
       bg = mailColor(s.backgroundColor);
       ink = mailColor(s.color);
+      // a color it can't know (a variable, `oklch()`): what's painted there can't be judged, so it stays as written
+      if (/var\(/i.test(el.getAttribute("style")!) || unreadable(s.backgroundColor) || unreadable(s.color)) picture = true;
       const image = s.backgroundImage;
       if (image && !NO_IMAGE.has(image)) {
         if (image.includes("url(")) picture = !EMPTY_URL.test(image);
@@ -369,8 +387,20 @@ export function darkenMail(root: HTMLElement, palette: DarkPalette): DarkResult 
       }
       if (s.getPropertyValue("-webkit-text-fill-color") || s.getPropertyValue("background-clip") === "text") picture = true;
     }
-    if (!bg && el.hasAttribute("bgcolor")) bg = mailColor(el.getAttribute("bgcolor"));
-    if (!ink && (tag === "font" || tag === "basefont") && el.hasAttribute("color")) ink = mailColor(el.getAttribute("color"));
+    if (!bg && el.hasAttribute("bgcolor")) {
+      bg = mailColor(el.getAttribute("bgcolor"));
+      if (!bg && unreadable(el.getAttribute("bgcolor"))) picture = true;
+    }
+    if (!ink && (tag === "font" || tag === "basefont") && el.hasAttribute("color")) {
+      ink = mailColor(el.getAttribute("color"));
+      if (!ink && unreadable(el.getAttribute("color"))) picture = true;
+    }
+    // a table's columns paint under its cells, which the walk can't see: such a table stays as written
+    if (tag === "table") {
+      for (const col of el.querySelectorAll<HTMLElement>(":scope > col, :scope > colgroup, :scope > colgroup > col")) {
+        if (col.hasAttribute("bgcolor") || /background/i.test(col.getAttribute("style") ?? "")) picture = true;
+      }
+    }
     if (el.hasAttribute("background") && (tag === "table" || tag === "td" || tag === "th" || tag === "tr" || tag === "tbody")) picture = true;
     // a gradient's stops through the surface mapping, written opaque (each was composited over its backdrop to be mapped).
     // Only see-through stops: just its fill. A stop it can't read, or stops that end up apart (a brand gradient, or one that
@@ -379,6 +409,8 @@ export function darkenMail(root: HTMLElement, palette: DarkPalette): DarkResult 
     let grad: { css: string; was: Rgb; now: Rgb } | null = null;
     if (gradient && !kept[p]) {
       const stops: Rgb[] = [], mapped: Rgb[] = [];
+      // (its stops paint over its own fill, if it has one)
+      const under = bg ? over(bg, wasBg[p]!) : wasBg[p]!;
       let unread = OTHER_COLOR.test(gradient);
       const css = gradient.replace(COLOR_IN_CSS, (m) => {
         const c = mailColor(m);
@@ -386,7 +418,7 @@ export function darkenMail(root: HTMLElement, palette: DarkPalette): DarkResult 
           if (m[0] === "#" || m.endsWith(")")) unread = true;
           return m;
         }
-        const solid = over(c, wasBg[p]!);
+        const solid = over(c, under);
         const to = mapSurface(t, solid, pageL, surfaces);
         stops.push(solid);
         mapped.push(to);
@@ -421,9 +453,13 @@ export function darkenMail(root: HTMLElement, palette: DarkPalette): DarkResult 
       wasInk[i] = ink ? over(ink, wasBg[i]!) : wasInk[p]!;
       nowInk[i] = wasInk[i]!;
       if (!kept[p]) {
-        // the island starts here: pin what it used to inherit
-        if (!bg && tag !== "svg") writes.push([el, "background-color", hex(wasBg[i]!)]);
-        if (!ink && !same(nowInk[p]!, wasInk[i]!)) writes.push([el, "color", hex(wasInk[i]!)]);
+        // the island starts here: pin what it used to inherit, never over what it sets itself (even a color the parser
+        // can't read). Drawn art too: its strokes were drawn for that page
+        const style = styled ? el.getAttribute("style")! : "";
+        const ownBg = bg || el.hasAttribute("bgcolor") || /(?:^|;)\s*background(?:-color)?\s*:/i.test(style);
+        const ownInk = ink || /(?:^|;)\s*color\s*:/i.test(style) || ((tag === "font" || tag === "basefont") && el.hasAttribute("color"));
+        if (!ownBg) writes.push([el, "background-color", hex(wasBg[i]!)]);
+        if (!ownInk && !same(nowInk[p]!, wasInk[i]!)) writes.push([el, "color", hex(wasInk[i]!)]);
       }
       if (tag === "a" && !ink) writes.push([el, "color", hex(PAPER_LINK)]);
       textPicture += own;
@@ -447,7 +483,8 @@ export function darkenMail(root: HTMLElement, palette: DarkPalette): DarkResult 
       // a black button on a light surface is the mail's call to action: it becomes the theme's light button, not a dark well
       const sl = rgbToOklab(solid);
       const button = !thin && sl.l < 0.4 && chroma(sl) < 0.04 && rgbToOklab(wasBg[p]!).l > 0.8 && rgbToOklab(nowBg[p]!).l < 0.5 && buttonChecks++ < MAX_BUTTON_CHECKS && isButton(el);
-      const to = thin ? mapLine(t, solid, wasBg[p]!, nowBg[p]!) : button ? oklabToRgb(mixLab(t.bgL, t.fgL, 0.9)) : mapSurface(t, solid, pageL, surfaces);
+      // a fill the same as its parent's goes where the parent's went (a link filled like the button cell it sits in)
+      const to = !thin && same(solid, wasBg[p]!) ? nowBg[p]! : thin ? mapLine(t, solid, wasBg[p]!, nowBg[p]!) : button ? oklabToRgb(mixLab(t.bgL, t.fgL, 0.9)) : mapSurface(t, solid, pageL, surfaces);
       wasBg[i] = solid;
       nowBg[i] = to;
       if (!same(solid, to) || bg.alpha < 1) writes.push([el, "background-color", hex(to)]);
@@ -540,6 +577,8 @@ export type PictureFix = "invert" | "plate" | null;
  */
 export function pictureFix(pixels: ArrayLike<number>, ground: number): PictureFix {
   let n = 0, clear = 0, ink = 0, dark = 0, colorful = 0, inkLum = 0;
+  // tones (16 lightness steps) and colors (6 levels a channel) of the ink: a logo has a few, a photo a spread
+  const tones = new Map<number, number>(), hues = new Map<number, number>();
   const lin = (c: number) => { c /= 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
   for (let i = 0; i + 3 < pixels.length; i += 4) {
     n++;
@@ -549,18 +588,29 @@ export function pictureFix(pixels: ArrayLike<number>, ground: number): PictureFi
     const y = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
     inkLum += y;
     if (y < 0.12) dark++;
+    const tone = Math.min(15, Math.floor(Math.sqrt(y) * 16));
+    tones.set(tone, (tones.get(tone) ?? 0) + 1);
+    const hue = Math.floor(r / 43) * 36 + Math.floor(g / 43) * 6 + Math.floor(b / 43);
+    hues.set(hue, (hues.get(hue) ?? 0) + 1);
     colorful += (Math.max(r, g, b) - Math.min(r, g, b)) / 255;
   }
   // opaque: it brings its own ground; still on a light surface: it reads as drawn
   if (!ink || clear / n < 0.12 || ground > 0.35) return null;
+  const top = (counts: Map<number, number>, k: number) => [...counts.values()].sort((a, b) => b - a).slice(0, k).reduce((x, c) => x + c, 0) / ink;
   const darkShare = dark / ink;
   const mean = inkLum / ink;
-  // its ink already stands out on the page
-  if ((Math.max(mean, ground) + 0.05) / (Math.min(mean, ground) + 0.05) >= 3 && darkShare < 0.3) return null;
-  if (colorful / ink < 0.15 && darkShare > 0.4) return "invert";
-  return darkShare > 0.15 ? "plate" : null;
+  const stands = (Math.max(mean, ground) + 0.05) / (Math.min(mean, ground) + 0.05) >= 3;
+  // a dark glyph turns light only where it doesn't already read (a black wordmark on a kept green band does)
+  // a photo cut out on a see-through ground (an avatar, a product) is left as it is: a negative or a plate would spoil it
+  if (colorful / ink < 0.15 && darkShare > 0.4) return stands || top(tones, 2) < 0.8 ? null : "invert";
+  if (top(hues, 5) < 0.8) return null;
+  // a mixed one: its ink already stands out, or its dark parts read on this ground (not a dark page)
+  if (stands && darkShare < 0.3) return null;
+  return darkShare > 0.15 && ground < 0.1 ? "plate" : null;
 }
 
+/** past this many pixels a picture is a photo or a banner, never a logo to fix (and reading it costs a full decode) */
+const MAX_PICTURE_AREA = 1_000_000;
 /** what a picture is drawn at to be read: a few thousand pixels say enough */
 const SAMPLE = 48;
 
@@ -570,7 +620,10 @@ const SAMPLE = 48;
  */
 export function darkenPicture(img: HTMLImageElement, plate: string, canvas: HTMLCanvasElement, root: HTMLElement, page: string): (() => void) | null {
   const w = img.naturalWidth, h = img.naturalHeight;
-  if (!img.complete || w * h < 100) return null;
+  // a tracking pixel; a large picture (a photo or banner: reading it decodes it whole, on this thread); a JPEG (opaque, so
+  // never fixed); one from elsewhere not asked for in CORS mode (unreadable): nothing to read, or nothing it could change
+  if (!img.complete || w * h < 100 || w * h > MAX_PICTURE_AREA || /\.jpe?g(?:[?#]|$)/i.test(img.src)) return null;
+  if (!img.hasAttribute("crossorigin") && /^https?:/i.test(img.src) && new URL(img.src).origin !== img.ownerDocument.defaultView?.location.origin) return null;
   const scale = Math.min(1, SAMPLE / Math.max(w, h));
   canvas.width = Math.max(1, Math.round(w * scale));
   canvas.height = Math.max(1, Math.round(h * scale));

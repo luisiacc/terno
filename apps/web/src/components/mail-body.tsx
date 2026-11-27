@@ -214,7 +214,8 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
     };
     if (signal.aborted) { abort(); return; }
     frame?.addEventListener("load", check); signal.addEventListener("abort", abort, { once: true }); check();
-  }), [sourceId]);
+    // (a conversion done or undone while the full view is open: it prepares again from the colors now on the mail)
+  }), [sourceId, darkened]);
   // the loaded document follows the colors (and gets them again once a rebuilt one loads)
   const lookRef = useRef(look);
   useEffect(() => {
