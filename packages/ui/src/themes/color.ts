@@ -81,6 +81,35 @@ function linearToOklab(r: number, g: number, b: number): [number, number, number
   ];
 }
 
+/** OKLab: lightness and the two opponent axes (plan 295 maps mail colors in it). */
+export interface Oklab {
+  l: number;
+  a: number;
+  b: number;
+}
+
+export function rgbToOklab(c: Rgb): Oklab {
+  const [l, a, b] = linearToOklab(toLinear(c.r), toLinear(c.g), toLinear(c.b));
+  return { l, a, b };
+}
+
+/** OKLab → opaque gamma-encoded sRGB; out of gamut, chroma gives way (hue and lightness kept) rather than a channel clipping. */
+export function oklabToRgb(c: Oklab): Rgb {
+  const fits = (v: number[]) => v.every((n) => n >= -0.0005 && n <= 1.0005);
+  let v = oklabToLinear(c.l, c.a, c.b);
+  if (!fits(v)) {
+    const l = clamp01(c.l);
+    let lo = 0, hi = 1;
+    for (let i = 0; i < 12; i++) {
+      const k = (lo + hi) / 2;
+      if (fits(oklabToLinear(l, c.a * k, c.b * k))) lo = k;
+      else hi = k;
+    }
+    v = oklabToLinear(l, c.a * lo, c.b * lo);
+  }
+  return { r: clamp01(toGamma(clamp01(v[0]))), g: clamp01(toGamma(clamp01(v[1]))), b: clamp01(toGamma(clamp01(v[2]))), alpha: 1 };
+}
+
 export function toOklab(c: Oklch): [number, number, number] {
   const rad = (c.h * Math.PI) / 180;
   return [c.l, c.c * Math.cos(rad), c.c * Math.sin(rad)];

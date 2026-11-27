@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { composite, contrast, formatOklch, inGamut, mixOklab, oklchToRgb, parseColor, parseHex, rgbToOklch, toHex } from "./color";
+import { composite, contrast, formatOklch, inGamut, mixOklab, oklabToRgb, oklchToRgb, parseColor, parseHex, rgbToOklab, rgbToOklch, toHex } from "./color";
 
 describe("color conversion", () => {
   it("converts sRGB references to oklch", () => {
@@ -29,6 +29,16 @@ describe("color conversion", () => {
     }
     expect(toHex("oklch(1 0 0)")).toBe("#ffffff");
     expect(toHex(parseColor("#4f46e5"))).toBe("#4f46e5");
+  });
+
+  it("round-trips sRGB → OKLab → sRGB and brings an out-of-gamut OKLab color in by its chroma (plan 295)", () => {
+    for (const hex of ["#ffffff", "#000000", "#ec008c", "#1d5bb0", "#f4f1ea"]) expect(toHex(oklabToRgb(rgbToOklab(parseHex(hex))))).toBe(hex);
+    // far outside sRGB: hue and lightness kept, chroma reduced until it fits
+    const wild = { l: 0.7, a: 0.4, b: 0.1 };
+    const back = rgbToOklab(oklabToRgb(wild));
+    expect(back.l).toBeCloseTo(0.7, 2);
+    expect(Math.atan2(back.b, back.a)).toBeCloseTo(Math.atan2(0.1, 0.4), 1);
+    expect(Math.hypot(back.a, back.b)).toBeLessThan(Math.hypot(0.4, 0.1));
   });
 
   it("clips out-of-gamut colors per channel", () => {
