@@ -12,7 +12,7 @@ pnpm brand              # every icon (app, Tahoe, DMG, favicons, the in-app mark
 pnpm --filter @terno/desktop gen:dmg-background   # the DMG window's background (apps/desktop/src/dmg-layout.ts), plan 226
 
 pnpm dev:desktop         # Electron + Vite HMR on your real profile
-pnpm dev:desktop:demo    # separate profile with the ~3k-thread demo mailbox
+pnpm dev:desktop:demo    # separate profile with the written demo mailbox (plan 292, ~7k messages; scripts/demo-corpus)
 pnpm dev:demo-ai         # the demo mailbox with every AI feature already holding something, on real models (Dev mode);
                          # the first launch prepares it (~4 min, ~US$0.15), --fresh starts over: docs/AI-DEMO.md
 pnpm dev:desktop:seeded  # 8 accounts / ~21k messages, seeded once (--reseed to regenerate)
@@ -24,7 +24,7 @@ pnpm build:web           # → apps/web/dist-web, a static site (any static host
 ```
 
 - **Shipped and inspectable packages (plan 283):** `pnpm dist:mac` and `dist:linux` package an *inspectable* app: Electron's fuses as a release has them (no NODE_OPTIONS, only the integrity-checked asar) except Node's inspector, which Playwright needs to attach. Only `release.mjs` packages a *shipped* one (`TERNO_SHIPPED=1`): inspector fused off, DevTools protocol refused, checked when packaged and again before a release keeps it. Never hand an inspectable copy to anyone. `node apps/desktop/scripts/fuses.mjs check <Terno.app> shipped` reads a build's fuses.
-- **Demo mode:** launch the packaged app with a demo mailbox: `TERNO_DEMO=1 open apps/desktop/release/mac-arm64/Terno.app`. The data is a deterministic set of ~3,000 conversations across 4 accounts: in English, except Freelance, in Spanish, to try summaries and replies in another language (plan 289). The tests' fixture (`apps/backend-dev`, every e2e spec and perf gate) is the same generator's other edition: Spanish and English mixed on every account, kept byte for byte.
+- **Demo mode:** launch the packaged app with a demo mailbox: `TERNO_DEMO=1 open apps/desktop/release/mac-arm64/Terno.app`. The data is a deterministic set of ~3,000 conversations across 4 accounts: in English, except Freelance, in Spanish, to try summaries and replies in another language (plan 289). The tests' fixture (`apps/backend-dev`, every e2e spec and perf gate) is the same generator's other edition: Spanish and English mixed on every account, kept byte for byte. The dev commands (`pnpm dev:desktop:demo`, `pnpm dev:demo-ai`) seed the written mailbox instead (plan 292): about 7,000 messages written by agents from a cast of 98 people, read from `packages/mock-data/demo-corpus` in dev builds only; `scripts/demo-corpus/README.md` says how it was made and how to change it.
 - **Gmail:** create a Google Cloud OAuth client of type *Desktop app* with the Gmail API enabled. Paste its client ID in Settings → Accounts, then use "Continue with Google". On the web, use a client of type *Web application* with the site's origin as an authorized JavaScript origin.
 
 ## Tests
