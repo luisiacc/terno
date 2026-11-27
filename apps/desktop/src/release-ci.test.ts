@@ -209,6 +209,8 @@ describe("plan 126: the release workflow", () => {
     const linux = job("linux");
     const at = (text: string) => linux.indexOf(text);
     expect(step("Install the packaging and test tools", "linux")).toMatch(/\brpm\b[\s\S]*xvfb[\s\S]*gnome-keyring/);
+    // plan 293: the agents' bridge is compiled for both architectures on the x64 runner
+    expect(step("Install the packaging and test tools", "linux")).toMatch(/\bgcc\b[\s\S]*\bgcc-aarch64-linux-gnu\b/);
     expect(step("Build and package for Linux", "linux")).toContain("release.mjs build-linux");
     const install = step("Install the x64 package", "linux");
     expect(install).toContain("kernel.apparmor_restrict_unprivileged_userns=1");

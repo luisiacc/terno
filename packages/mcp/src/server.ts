@@ -1,9 +1,8 @@
 import { captureError } from "@terno/core/diag";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { AGENT_ACCESS_LABEL, ATTACHMENT_CHUNK, base64Bytes, filterRuleSchema, mailLink, VIEWS, type AgentAccess, type MessageDetail, type ThreadDetail, type ThreadSummary } from "@terno/core";
-import { RpcError, type Bootstrap } from "@terno/core/rpc";
+import { RpcError, type Bootstrap, type RpcClient } from "@terno/core/rpc";
 import { z } from "zod";
-import type { AppConnection } from "./connection";
 import { contentKind, decodeText, inlineParts, textPage, unkeptReason } from "./attachment-content";
 
 const MAX_BODY = 20_000;
@@ -44,7 +43,10 @@ function failure(error: unknown) {
   return { content: [{ type: "text" as const, text: message }], isError: true };
 }
 
-export function createMcpServer(app: AppConnection, version = "0.1.0"): McpServer {
+/** How the server reaches the backend: an RPC client whose calls arrive as origin `mcp` (plan 293: in the same process). */
+export type AgentCalls = Pick<RpcClient, "call">;
+
+export function createMcpServer(app: AgentCalls, version = "0.1.0"): McpServer {
   const server = new McpServer(
     { name: "terno", version },
     {

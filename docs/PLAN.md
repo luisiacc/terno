@@ -179,7 +179,7 @@ Sidebar counts are computed with `count(*)` over partial indexes (measured; no t
 ## 8. Agent integration (decision: MCP primary + SKILL)
 
 - MCP works identically in Claude Code and Codex with typed tools. The SKILL.md teaches Claude Code the query syntax, safety rules (never send without explicit confirmation), and workflows.
-- `terno-mcp` is a standalone CJS bundle in `extraResources` plus a wrapper script `Contents/Resources/bin/terno-mcp` that runs `ELECTRON_RUN_AS_NODE=1 "<app binary>" "<resources>/mcp/terno-mcp.cjs"`. The RunAsNode fuse stays enabled, paths are quoted, and stdout carries only protocol output.
+- `terno-mcp` (`Contents/Resources/bin/terno-mcp`) is a small native bridge (`apps/desktop/native/terno-mcp.c`) that carries the agent's stdio to the MCP server inside the running app's backend over the agent socket (plan 293). No Node and no Electron run for it; the RunAsNode fuse is off.
 - It connects to the running app's backend via a unix socket in `userData` with a token file (0600). The backend stays the sole writer. If the app isn't running, tools return a clear error.
 - Tools: `list_accounts`, `search_emails`, `get_thread`, `list_categories`, `add_to_category`, `archive_threads`, `trash_threads`, `mark_read`, `create_draft`, `send_email` (only if "allow agents to send" is on; otherwise it fails with guidance), `list_filters`, `create_filter`.
 - Settings → Agents shows copy-paste setup commands for Claude Code and Codex.

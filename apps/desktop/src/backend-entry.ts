@@ -11,6 +11,7 @@ import { classifyOpenError, diskFree, mailboxBytes, mailboxSchema, migrateHeadro
 import { captureError, diagPlatform, installDiag, log, type DiagEntry, type DiagOptions } from "@terno/core/diag";
 import { isRpcMessage, type RpcMessage, type Transport } from "@terno/core/rpc";
 import { createRegistry } from "@terno/mail/registry";
+import { serveMcp } from "@terno/mcp";
 import { loopbackInsecure } from "./imap-seam";
 import type { BackendToMain, MainToBackend } from "./ipc";
 import { demoCodeWanted, demoSinceWanted, netRecorder, offsetClock } from "./test-hooks";
@@ -181,8 +182,9 @@ async function initialize(msg: Extract<MainToBackend, { type: "init" }>, signal:
       version: msg.version,
       cipher,
       legacySecrets,
-      // plan 183: the MCP socket opens there only while the user has agents on (start() and the switch decide)
-      agentEndpoint: { socketPath: msg.socketPath, tokenPath: msg.tokenPath },
+      // plan 183: the MCP socket opens there only while the user has agents on (start() and the switch decide);
+      // plan 293: the MCP server runs here, the agent's command only carries its stdio to the socket
+      agentEndpoint: { socketPath: msg.socketPath, tokenPath: msg.tokenPath, serve: (socket, rpc) => serveMcp(socket, rpc, msg.version) },
       // the demo mailbox's sends go to the packaged smoke's SMTP server when it asks (main checked it may)
       // and plan 41's notification smoke adds an IMAP account on its own plain-text servers (the demo mailbox only,
       // and only for an account whose servers are loopback: imap-seam.ts)

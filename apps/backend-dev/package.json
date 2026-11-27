@@ -14,6 +14,7 @@
     "@terno/backend": "workspace:*",
     "@terno/core": "workspace:*",
     "@terno/mail": "workspace:*",
+    "@terno/mcp": "workspace:*",
     "ws": "^8.22.0",
     "@terno/db": "workspace:*"
   },

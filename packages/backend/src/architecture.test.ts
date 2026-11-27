@@ -46,7 +46,6 @@ const ALLOWED: Record<string, { patterns: string[]; why: string }> = {
   "apps/desktop/src/app.ts": { patterns: ["Electron net"], why: "app:// handler reading bundled files (file: URLs only)" },
   "apps/web/src/rpc/connection.ts": { patterns: ["WebSocket client"], why: "renderer ↔ loopback backend-dev; the renderer is fenced by main's webRequest backstop" },
   "apps/web/src/web/sw.js": { patterns: ["global fetch"], why: "web build's service worker: same-origin app files only (cross-origin requests are not intercepted)" },
-  "packages/mcp/src/connection.ts": { patterns: ["raw sockets"], why: "unix socket to the local backend" },
   "apps/desktop/src/diag/reporter.ts": { patterns: ["Electron session fetch"], why: "plan 78: error reports from main, in a session fenced to the DSN's envelope URL, each asked of the consent boundary (the setting, the user's approval, the DSN)" },
   "apps/web/src/lib/diag-report.ts": { patterns: ["global fetch"], why: "plan 78: error reports from the web page to the DSN's envelope URL only (no redirects, no credentials), each asked of the consent boundary" },
   "apps/site/src/client.ts": { patterns: ["global fetch"], why: "plan 97: terno.app's waitlist form posts to its own Worker; the marketing site, not the mail client" },

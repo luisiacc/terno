@@ -5,10 +5,9 @@ import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { createAccount, setSetting, sqlDb } from "@terno/db";
 import { demoRegistry } from "@terno/mail";
 import { afterEach, describe, expect, it } from "vitest";
-import { startAgentSocket } from "./agent-socket";
+import { startAgentSocket, type AgentServe } from "./agent-socket";
 import { Backend, plaintextCipher } from "./backend";
 import { readSettings } from "./settings";
-import { socketTransport } from "./transports";
 
 const NOW = Date.UTC(2026, 10, 11, 12);
 const cleanups: (() => Promise<void> | void)[] = [];
@@ -16,11 +15,35 @@ afterEach(async () => {
   for (const c of cleanups.splice(0).reverse()) await c();
 });
 
+/** Plan 293: the socket's session for these tests: each line `{ id, method, params }` is called through `rpc` (origin mcp). */
+const lineSession: AgentServe = async (socket, rpc) => {
+  let buffer = "";
+  socket.setEncoding("utf8").on("data", (d: string) => {
+    buffer += d;
+    for (let nl = buffer.indexOf("\n"); nl !== -1; nl = buffer.indexOf("\n")) {
+      const m = JSON.parse(buffer.slice(0, nl)) as { id: number; method: "app.bootstrap"; params: {} };
+      buffer = buffer.slice(nl + 1);
+      rpc.call(m.method, m.params).then(
+        (result) => socket.write(`${JSON.stringify({ id: m.id, result })}\n`),
+        (error: Error) => socket.write(`${JSON.stringify({ id: m.id, error: error.message })}\n`),
+      );
+    }
+  });
+};
+
+/** One call on a session socket. */
+function ask(sock: ReturnType<typeof connect>, method: string, params: unknown): Promise<{ result?: any; error?: string }> {
+  return new Promise((resolve) => {
+    sock.setEncoding("utf8").once("data", (d: string) => resolve(JSON.parse(d)));
+    sock.write(`${JSON.stringify({ id: 1, method, params })}\n`);
+  });
+}
+
 /** A backend with the connector (as on the desktop), a renderer, and an agent on a memory transport. */
 async function setup(o: { stored?: Record<string, unknown>; start?: typeof startAgentSocket } = {}) {
   // short: unix socket paths are limited to ~104 bytes on macOS
   const dir = mkdtempSync(join("/tmp", "tagent-"));
-  const paths = { socketPath: join(dir, "a.sock"), tokenPath: join(dir, "a.token") };
+  const paths = { socketPath: join(dir, "a.sock"), tokenPath: join(dir, "a.token"), serve: lineSession };
   const backend = new Backend({ dbPath: join(dir, "t.db"), version: "test", cipher: plaintextCipher, providers: demoRegistry, autoSync: false, now: () => NOW, agentEndpoint: paths });
   if (o.start) (backend.agentConnector as unknown as { start: typeof startAgentSocket }).start = o.start;
   await backend.store.ready;
@@ -149,8 +172,8 @@ describe("plan 183: the connector", () => {
     expect((await handshake("nope")).reply).toContain("unauthorized");
     const { sock, reply } = await handshake(readFileSync(paths.tokenPath, "utf8"));
     expect(reply).toContain('"ok":true');
-    const mcp = new RpcClient(socketTransport(sock));
-    expect(await mcp.call("app.bootstrap", {})).toMatchObject({ version: "test" });
+    // plan 293: the session runs on the in-process client, so the call arrives as an agent's
+    expect((await ask(sock, "app.bootstrap", {})).result).toMatchObject({ version: "test" });
     expect(await client.call("agents.status", {})).toEqual({ available: true, enabled: true, running: true, connected: 1, tokenSince: NOW });
 
     const closed = new Promise<void>((r) => sock.once("close", () => r()));
@@ -190,7 +213,7 @@ describe("plan 183: the connector", () => {
   it("a start that fails leaves no file, says so, and the next switch retries (Codex critique #9)", async () => {
     let fail = true;
     const { backend, paths, set, client } = await setup({
-      start: (b, socketPath, tokenPath) => (fail ? Promise.reject(Object.assign(new Error("in use"), { code: "EADDRINUSE" })) : startAgentSocket(b, socketPath, tokenPath)),
+      start: (b, socketPath, tokenPath) => (fail ? Promise.reject(Object.assign(new Error("in use"), { code: "EADDRINUSE" })) : startAgentSocket(b, socketPath, tokenPath, lineSession)),
     });
     await backend.start();
     expect(await client.call("agents.status", {})).toMatchObject({ enabled: true, running: false });
@@ -205,7 +228,7 @@ describe("plan 183: the connector", () => {
   it("stop fences a start still in flight (Codex critique #8)", async () => {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
-    const { backend, paths, set, stop } = await setup({ start: async (b, s, t) => (await gate, startAgentSocket(b, s, t)) });
+    const { backend, paths, set, stop } = await setup({ start: async (b, s, t) => (await gate, startAgentSocket(b, s, t, lineSession)) });
     await set({ enabled: false });
     await backend.start();
     const turningOn = set({ enabled: true });

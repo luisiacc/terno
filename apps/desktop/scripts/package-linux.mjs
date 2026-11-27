@@ -12,7 +12,8 @@ import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { Arch, build, Platform } from "electron-builder";
 import { assertFuses } from "./fuses.mjs";
-import { commonConfig, commonResources, productName, publisher, release, root, shipped, stageApp, testBuild, uploadReleaseMaps, version } from "./package-stage.mjs";
+import { assertLinuxBridge } from "./mcp-bridge.mjs";
+import { commonConfig, commonResources, productName, publisher, release, root, shipped, stageApp, stageBridges, testBuild, uploadReleaseMaps, version } from "./package-stage.mjs";
 import { LINUX_ARCHES, linuxPackages, packageVersion } from "./release-assets.mjs";
 
 if (process.platform !== "linux") throw new Error("Linux packages are built on Linux: see docs/DEVELOPMENT.md → Linux for Docker");
@@ -27,6 +28,8 @@ const maintainer = `${publisher} <support@terno.app>`;
 
 await uploadReleaseMaps();
 const stage = stageApp({ desktopName: `${executableName}.desktop`, homepage: "https://terno.app" });
+// plan 293: the agents' command for each architecture (gcc, and a cross gcc for the other: release.yml installs both)
+stageBridges("linux", arches.map((a) => a.arch));
 
 await build({
   targets: Platform.LINUX.createTarget(["deb", "rpm"], ...arches.map((a) => Arch[a.arch])),
@@ -62,15 +65,17 @@ const fail = (message) => {
 };
 
 for (const a of arches) {
-  // the app itself, per architecture: the right Electron, the bundles, the agents' server and the License
+  // the app itself, per architecture: the right Electron, the bundles, the agents' bridge and skill, the License
   const dir = join(release, a.unpacked);
-  for (const f of [executableName, "chrome-sandbox", "resources/app.asar", "resources/bin/terno-mcp", "resources/mcp/terno-mcp.cjs", "resources/mcp/SKILL.md", "resources/LICENSE", "resources/icon.png", "resources/apparmor-profile"]) {
+  for (const f of [executableName, "chrome-sandbox", "resources/app.asar", "resources/bin/terno-mcp", "resources/mcp/SKILL.md", "resources/LICENSE", "resources/icon.png", "resources/apparmor-profile"]) {
     if (!existsSync(join(dir, f))) fail(`${a.unpacked}/${f} is missing`);
   }
   const elf = read("file", ["-b", join(dir, executableName)]);
   if (!elf.includes("ELF 64-bit") || !elf.includes(a.elf)) fail(`${a.unpacked}/${executableName} isn't ${a.elf}: ${elf}`);
   // plan 283: the deb and rpm are made from this directory
   assertFuses(join(dir, executableName), { platform: "linux", shipped });
+  // plan 293: its bridge runs where its Electron does
+  assertLinuxBridge(join(dir, "resources/bin/terno-mcp"), { arch: a.arch, electron: join(dir, executableName) });
 
   const [deb, rpm] = linuxPackages(version, a.arch).map((f) => join(release, f));
   if (!existsSync(deb) || !existsSync(rpm)) fail(`missing ${!existsSync(deb) ? deb : rpm}`);

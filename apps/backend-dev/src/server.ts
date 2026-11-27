@@ -1,9 +1,12 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
+import type { Socket } from "node:net";
 import { join } from "node:path";
 import { AGENTS_VERSION, APPEARANCE_VERSION, Backend, countAsChecked, plaintextCipher, seedDemo, webSocketTransport, type AiFactory, type BackendOptions, type LookupAll } from "@terno/backend";
 import type { DevAiKeys } from "@terno/core";
+import type { RpcClient } from "@terno/core/rpc";
 import { demoRegistry, type ProviderRegistry } from "@terno/mail";
+import { serveMcp } from "@terno/mcp";
 export { sqlDb } from "@terno/db";
 import { WebSocketServer } from "ws";
 import { logBackend } from "./log";
@@ -60,7 +63,8 @@ export async function startDevServer(o: DevServerOptions): Promise<DevServer> {
   mkdirSync(o.dataDir, { recursive: true });
   const dbPath = join(o.dataDir, "terno.db");
   if (o.fresh) for (const s of ["", "-wal", "-shm", ".search"]) rmSync(dbPath + s, { force: true });
-  const agents = o.agentSocket ? { socketPath: join(o.dataDir, "agent.sock"), tokenPath: join(o.dataDir, "agent.token") } : null;
+  // plan 293: an agent's connection is an MCP session served here, as in the app
+  const agents = o.agentSocket ? { socketPath: join(o.dataDir, "agent.sock"), tokenPath: join(o.dataDir, "agent.token"), serve: (socket: Socket, rpc: RpcClient) => serveMcp(socket, rpc, "dev") } : null;
   const backend = new Backend({
     dbPath,
     version: "dev",

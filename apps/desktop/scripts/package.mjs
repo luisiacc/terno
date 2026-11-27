@@ -26,7 +26,8 @@ import { dmgProblems, hasCustomIconFlag, withMounted, withRetries } from "../src
 import { assertFuses } from "./fuses.mjs";
 import { channelOf } from "./release-assets.mjs";
 import { builderIdentity } from "./sign-identity.mjs";
-import { appId, commonConfig, commonResources, electronDist, productName, release, root, shipped, stageApp, stampMinimumVersion, testBuild, uploadReleaseMaps, version } from "./package-stage.mjs";
+import { assertMacBridge } from "./mcp-bridge.mjs";
+import { appId, commonConfig, commonResources, electronDist, productName, release, root, shipped, stageApp, stageBridges, stampMinimumVersion, testBuild, uploadReleaseMaps, version } from "./package-stage.mjs";
 
 /** The identity to sign with: explicit, else the best one in the keychain, else ad-hoc ("-"). */
 function pickIdentity() {
@@ -96,6 +97,8 @@ console.log(`signing with ${identity === "-" ? "an ad-hoc signature (this build 
 
 await uploadReleaseMaps();
 const stage = stageApp();
+// plan 293: the agents' command, compiled before electron-builder signs the bundle around it
+stageBridges("darwin", ["arm64"]);
 
 await build({
   // the zip target builds the .app too; with a publish config it also writes the channel file, the
@@ -146,6 +149,8 @@ if (!existsSync(join(app, "Contents/Resources/app-update.yml"))) throw new Error
 assertIcon(app);
 // plan 283: what electron-builder flipped, read back from the signed binary
 assertFuses(app, { platform: "darwin", shipped });
+// plan 293: the agents' bridge, signed as the app is
+assertMacBridge(app, { signed: identity !== "-", hardened: developerId });
 
 // plan 257: exactly the version's channel (a nightly once wrote latest-mac.yml, which no Nightly copy reads)
 const channelFile = `${channelOf(version)}-mac.yml`;
@@ -176,8 +181,9 @@ if (process.env.TERNO_PACKAGE_DMG === "1" || (!testBuild && process.env.TERNO_PA
   withMounted(dmg, true, (volume) => {
     const problems = dmgProblems(volume, productName, mountedVolume);
     if (problems.length) throw new Error(`the DMG isn't a drag-to-install window: ${problems.join("; ")}`);
-    // plan 283: the copy people download, fused as the app is
+    // plan 283: the copy people download, fused as the app is; plan 293: its bridge signed as the app is
     assertFuses(join(volume, `${productName}.app`), { platform: "darwin", shipped });
+    assertMacBridge(join(volume, `${productName}.app`), { signed: identity !== "-", hardened: developerId });
   });
   console.log(`\n✓ ${dmg}`);
 }

@@ -1,6 +1,6 @@
 import { rmSync } from "node:fs";
 import { log } from "@terno/core/diag";
-import { startAgentSocket, type AgentEndpoint } from "./agent-socket";
+import { startAgentSocket, type AgentEndpoint, type AgentServe } from "./agent-socket";
 import { agentFilesDir } from "./agent-files";
 import type { BackendCore } from "./core";
 import { readAgents } from "./settings";
@@ -8,6 +8,8 @@ import { readAgents } from "./settings";
 export interface AgentPaths {
   socketPath: string;
   tokenPath: string;
+  /** plan 293: what an authenticated connection is (the desktop's MCP session) */
+  serve: AgentServe;
 }
 
 /**
@@ -54,7 +56,7 @@ export class AgentConnector implements NonNullable<BackendCore["agentConnector"]
 
   private async open(): Promise<void> {
     try {
-      this.endpoint = await this.start(this.backend, this.paths.socketPath, this.paths.tokenPath);
+      this.endpoint = await this.start(this.backend, this.paths.socketPath, this.paths.tokenPath, this.paths.serve);
       this.startFailed = false;
     } catch (error) {
       this.startFailed = true;

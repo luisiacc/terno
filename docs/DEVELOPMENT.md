@@ -77,7 +77,7 @@ From a Mac, in Docker (arm64 Linux on Apple silicon). Build from a clean copy of
 cat > /tmp/Dockerfile.terno-linux <<'EOF'
 FROM node:24-bookworm
 RUN apt-get update && apt-get install -y --no-install-recommends xvfb xauth dbus-x11 gnome-keyring libsecret-1-0 \
-    libgtk-3-0 libnss3 libasound2 libgbm1 libxss1 libxtst6 libnotify4 rpm file && rm -rf /var/lib/apt/lists/*
+    libgtk-3-0 libnss3 libasound2 libgbm1 libxss1 libxtst6 libnotify4 rpm file gcc libc6-dev && rm -rf /var/lib/apt/lists/*
 RUN corepack enable && corepack prepare pnpm@12.2.1 --activate
 WORKDIR /work
 EOF

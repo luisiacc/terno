@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fuseTable } from "./fuses.mjs";
+import { bridgeDir, buildBridge, readManifest } from "./mcp-bridge.mjs";
 import { publishConfig } from "./release-assets.mjs";
 
 export const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -51,9 +52,24 @@ export function stageApp(extra = {}) {
   return stage;
 }
 
-/** What every platform ships beside the app: the MCP server and its launcher, and the License (BSL 1.1). */
+/**
+ * Plan 293: compiles the agents' bridge for each architecture into the staging app (after stageApp), from this
+ * build's offline manifest; extraResources picks it up per architecture.
+ */
+export function stageBridges(os, arches) {
+  const manifest = readManifest(dist);
+  for (const arch of arches) {
+    const out = buildBridge({ manifest, target: { os, arch }, out: join(bridgeDir(stage, os, arch), "terno-mcp") });
+    console.log(`✓ the agents' bridge for ${os} ${arch}: ${out}`);
+  }
+}
+
+/**
+ * What every platform ships beside the app: the agents' bridge (plan 293: Resources/bin/terno-mcp, the path every
+ * agent's config holds), the agents' skill, and the License (BSL 1.1). `${os}-${arch}` is electron-builder's.
+ */
 export const commonResources = [
-  { from: join(root, "resources/bin"), to: "bin" },
+  { from: join(stage, "bridge", "${os}-${arch}"), to: "bin" },
   { from: join(dist, "mcp"), to: "mcp" },
   { from: join(root, "../../LICENSE"), to: "LICENSE" },
 ];
@@ -67,7 +83,7 @@ export function commonConfig(platform) {
     ...(testBuild ? {} : { protocols: [{ name: "Terno email link", schemes: ["terno"] }] }),
     copyright: `© 2026 ${publisher}`,
     electronVersion,
-    files: ["dist/**/*", "!dist/mcp/**", "package.json"],
+    files: ["dist/**/*", "!dist/mcp/**", "!dist/native/**", "package.json"],
     asar: true,
     npmRebuild: false,
     nodeGypRebuild: false,

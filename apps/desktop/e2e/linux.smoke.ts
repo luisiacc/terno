@@ -3,7 +3,7 @@
  * demo mailbox in a temp profile, Chromium's sandbox on (Playwright turns it off on Linux unless asked), under a
  * display and a session bus with an unlocked keyring (`.github/workflows/release.yml`, docs/DEVELOPMENT.md → Linux).
  */
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -84,9 +84,11 @@ test("Help → Check for Updates… says Linux updates come from the releases pa
   await page.keyboard.press("Escape");
 });
 
-test("the bundled terno-mcp wrapper finds the Linux binary and the app's default profile, and answers (plan 183)", async () => {
+test("the bundled terno-mcp bridge finds the app's default profile, and answers (plans 183, 293)", async () => {
   const wrapper = join(RESOURCES, "bin/terno-mcp");
-  // only what an agent's environment has: no TERNO_USER_DATA, so the sidecar finds $XDG_CONFIG_HOME/Terno itself (review)
+  // plan 293: a native bridge for this machine's architecture, not a script that runs Terno as Node
+  expect(execFileSync("file", ["-b", wrapper], { encoding: "utf8" })).toMatch(new RegExp(`^ELF 64-bit .*${process.arch === "arm64" ? "aarch64" : "x86-64"}`));
+  // only what an agent's environment has: no TERNO_USER_DATA, so the bridge finds $XDG_CONFIG_HOME/Terno itself (review)
   const env = { ...process.env, XDG_CONFIG_HOME: config };
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.TERNO_USER_DATA;

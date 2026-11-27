@@ -52,7 +52,7 @@ describe("plan 185: the backend's agent file calls", () => {
   async function setup() {
     const dir = mkdtempSync(join("/tmp", "tagatt-"));
     dirs.push(dir);
-    const backend = new Backend({ dbPath: join(dir, "t.db"), version: "test", cipher: plaintextCipher, providers: demoRegistry, autoSync: false, agentEndpoint: { socketPath: join(dir, "a.sock"), tokenPath: join(dir, "a.token") } });
+    const backend = new Backend({ dbPath: join(dir, "t.db"), version: "test", cipher: plaintextCipher, providers: demoRegistry, autoSync: false, agentEndpoint: { socketPath: join(dir, "a.sock"), tokenPath: join(dir, "a.token"), serve: async () => {} } });
     stops.push(() => backend.stop().catch(() => {}));
     await backend.store.ready;
     const pair = (origin: "renderer" | "mcp", clientId: string) => {

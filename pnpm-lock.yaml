@@ -228,6 +228,9 @@ importers:
       '@terno/mail':
         specifier: workspace:*
         version: link:../../packages/mail
+      '@terno/mcp':
+        specifier: workspace:*
+        version: link:../../packages/mcp
       ws:
         specifier: ^8.22.0
         version: 8.22.0

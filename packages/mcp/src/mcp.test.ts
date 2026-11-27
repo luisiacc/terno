@@ -5,17 +5,20 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Backend, plaintextCipher, seedDemo } from "@terno/backend";
 import { demoRegistry } from "@terno/mail";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { AppConnection } from "./connection";
+import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
+import { NOT_RUNNING, offlineManifest } from "./offline";
+import { serveMcp } from "./serve";
 import { createMcpServer } from "./server";
+import { connectAgent, handshake } from "./test/agent";
 import { sqlDb } from "@terno/db";
 import { msg } from "@terno/store/conformance";
 import { canonicalMessageId, nextColor, parseMailLink } from "@terno/core";
 
 let dir: string;
 let backend: Backend;
-let paths: { socketPath: string; tokenPath: string };
+let paths: { socketPath: string; tokenPath: string; serve: typeof serveMcp extends (s: infer S, r: infer R, v: string) => infer P ? (s: S, r: R) => P : never };
 let client: Client;
-let app: AppConnection;
+let app: RpcClient;
 
 async function call(name: string, args: Record<string, unknown> = {}) {
   const r = (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean };
@@ -32,13 +35,16 @@ async function call(name: string, args: Record<string, unknown> = {}) {
 beforeAll(async () => {
   // short path: unix socket paths are limited to ~104 bytes on macOS
   dir = mkdtempSync(join("/tmp", "umcp-"));
-  paths = { socketPath: join(dir, "a.sock"), tokenPath: join(dir, "a.token") };
+  paths = { socketPath: join(dir, "a.sock"), tokenPath: join(dir, "a.token"), serve: (socket, rpc) => serveMcp(socket, rpc, "t") };
   backend = new Backend({ dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, providers: demoRegistry, autoSync: false, agentEndpoint: paths });
   await seedDemo(backend.store, { threads: 400, accounts: 3 });
   await backend.start();
   // plan 183: as the user would, in Settings → Agents
   await setAgents({ enabled: true, access: "organize" });
-  app = new AppConnection(paths);
+  // the tools' backend calls as the agent socket makes them: origin mcp, through the gate
+  const [ours, theirs] = createMemoryTransportPair();
+  backend.connect(theirs, { clientId: "mcp-test", origin: "mcp" });
+  app = new RpcClient(ours);
   const [a, b] = InMemoryTransport.createLinkedPair();
   await createMcpServer(app).connect(a);
   client = new Client({ name: "test", version: "1" });
@@ -365,28 +371,56 @@ describe("terno MCP server", () => {
     expect(bad.isError).toBe(true);
   });
 
-  it("fails fast (no hang) if the app drops the connection during the handshake", async () => {
-    const { createServer } = await import("node:net");
-    const { writeFileSync } = await import("node:fs");
-    const sock = join(dir, "drop.sock");
-    const server = createServer((s) => s.destroy());
-    await new Promise<void>((r) => server.listen(sock, () => r()));
-    writeFileSync(join(dir, "drop.token"), "x");
-    const { connectToApp } = await import("./connection");
-    const started = Date.now();
-    await expect(connectToApp({ socketPath: sock, tokenPath: join(dir, "drop.token") })).rejects.toThrow(/Can't reach Terno/);
-    expect(Date.now() - started).toBeLessThan(2000);
-    server.close();
-  });
+  describe("plan 293: the server in the app, on the agent socket", () => {
+    it("serves MCP on the socket as the bridge carries it: the same tools, through the agent gate", async () => {
+      const agent = await connectAgent(paths);
+      try {
+        expect((await agent.client.listTools()).tools.map((t) => t.name)).toEqual((await client.listTools()).tools.map((t) => t.name));
+        const r = (await agent.client.callTool({ name: "list_accounts", arguments: {} })) as { content: { text: string }[]; isError?: boolean };
+        expect(r.isError).toBeFalsy();
+        expect(JSON.parse(r.content[0]!.text).accounts).toHaveLength(3);
+        // organize is the level set above: send is still refused with what it needs
+        const refused = (await agent.client.callTool({ name: "send_email", arguments: { accountId: 1, to: ["a@example.com"], subject: "x", body: "y" } })) as { content: { text: string }[]; isError?: boolean };
+        expect(refused.isError).toBe(true);
+      } finally {
+        await agent.client.close();
+      }
+    });
 
-  it("reports clearly when the app is not running or agents are off", async () => {
-    const offline = new AppConnection({ socketPath: join(dir, "nope.sock"), tokenPath: join(dir, "nope.token") });
-    const [a, b] = InMemoryTransport.createLinkedPair();
-    await createMcpServer(offline).connect(a);
-    const c = new Client({ name: "t2", version: "1" });
-    await c.connect(b);
-    const r = (await c.callTool({ name: "list_accounts", arguments: {} })) as { content: { text: string }[]; isError: boolean };
-    expect(r.isError).toBe(true);
-    expect(r.content[0]!.text).toMatch(/Open Terno and turn on Settings → Agents → Allow agents/);
+    it("answers a call written just before the agent's end, then ends the session (the bridge half-closes)", async () => {
+      const socket = await handshake(paths);
+      let out = "";
+      socket.setEncoding("utf8").on("data", (d: string) => (out += d));
+      const ended = new Promise<void>((r) => socket.once("end", () => r()));
+      const line = (m: unknown) => `${JSON.stringify(m)}\n`;
+      socket.end(
+        line({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "1" } } }) +
+          line({ jsonrpc: "2.0", method: "notifications/initialized" }) +
+          line({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "list_accounts", arguments: {} } }),
+      );
+      await ended;
+      const answers = out.split("\n").filter(Boolean).map((l) => JSON.parse(l));
+      expect(answers.map((a) => a.id)).toEqual([1, 2]);
+      expect(JSON.parse(answers[1].result.content[0].text).accounts).toHaveLength(3);
+    });
+
+    it("refuses a wrong token and serves nothing", async () => {
+      const { connect } = await import("node:net");
+      const socket = connect(paths.socketPath);
+      let out = "";
+      socket.setEncoding("utf8").on("data", (d: string) => (out += d));
+      const closed = new Promise<void>((r) => socket.once("close", () => r()));
+      socket.write("nope\n" + JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }) + "\n");
+      await closed;
+      expect(out).toBe('{"error":"unauthorized"}\n');
+    });
+
+    it("the bridge's offline manifest is this server's own initialize result and tool list", async () => {
+      const m = await offlineManifest("t");
+      expect(m.tools).toEqual((await client.listTools()).tools);
+      expect(m.initialize).toEqual({ capabilities: client.getServerCapabilities(), serverInfo: { name: "terno", version: "t" }, instructions: client.getInstructions() });
+      expect(m.notRunning).toBe(NOT_RUNNING);
+      expect(m.supportedVersions).toContain(m.latestVersion);
+    });
   });
 });

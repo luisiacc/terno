@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertFuses } from "./fuses.mjs";
+import { assertLinuxBridge, assertMacBridge } from "./mcp-bridge.mjs";
 import { assertNightlyVersion, deleteFailedDraft, dispatch, isMainTip, KEEP_NIGHTLIES, publishNightly, pruneNightlies, STEP_ENV, tagExists } from "./release-ci.mjs";
 import { channelOf, LINUX_ARCHES, linuxPackages, PLATFORMS, releaseAssets } from "./release-assets.mjs";
 
@@ -94,6 +95,9 @@ function buildMac() {
   // (package.mjs checks the DMG's copy): fused for users, the zip's copy still sealed by its signature
   verify((dir) => {
     assertFuses(app, { platform: "darwin", shipped: true });
+    // plan 293: the agents' bridge, in the app and in the zip, signed as the app is
+    const developerId = /Authority=Developer ID Application/.test(signature);
+    assertMacBridge(app, { signed: true, hardened: developerId });
     if (/Authority=Developer ID Application/.test(signature)) {
       if (!/flags=0x[0-9a-f]*\(runtime\)/.test(signature)) throw new Error("the app isn't signed with the hardened runtime");
       const plist = join(dir, "entitlements.plist");
@@ -105,6 +109,7 @@ function buildMac() {
     must("ditto", ["-x", "-k", zip, dir], `couldn't unpack ${zip}`);
     must("codesign", ["--verify", "--deep", "--strict", join(dir, "Terno.app")], `the app in ${zip} doesn't verify`);
     assertFuses(join(dir, "Terno.app"), { platform: "darwin", shipped: true });
+    assertMacBridge(join(dir, "Terno.app"), { signed: true, hardened: developerId });
   });
   checkFiles([out], ["mac"]);
 }
@@ -115,14 +120,20 @@ function buildLinux() {
   step("pnpm", ["build"], repo);
   step("node", [join(here, "package-linux.mjs")], root);
   // plan 283: the executable inside each package users download (CI checks the installed copy too, release.yml)
-  for (const [deb, rpm] of LINUX_ARCHES.map((a) => linuxPackages(version, a.arch).map((f) => join(out, f)))) {
+  // plan 293: and the agents' bridge beside it, executable, for that architecture
+  const installed = (dir, arch) => {
+    assertFuses(join(dir, "opt/Terno/terno"), { platform: "linux", shipped: true });
+    assertLinuxBridge(join(dir, "opt/Terno/resources/bin/terno-mcp"), { arch, electron: join(dir, "opt/Terno/terno") });
+  };
+  for (const a of LINUX_ARCHES) {
+    const [deb, rpm] = linuxPackages(version, a.arch).map((f) => join(out, f));
     verify((dir) => {
       must("dpkg-deb", ["-x", deb, dir], `couldn't unpack ${deb}`);
-      assertFuses(join(dir, "opt/Terno/terno"), { platform: "linux", shipped: true });
+      installed(dir, a.arch);
     });
     verify((dir) => {
       must("sh", ["-c", 'rpm2cpio "$1" | cpio -idm --quiet', "sh", rpm], `couldn't unpack ${rpm}`, { cwd: dir });
-      assertFuses(join(dir, "opt/Terno/terno"), { platform: "linux", shipped: true });
+      installed(dir, a.arch);
     });
   }
   checkFiles([out], ["linux"]);

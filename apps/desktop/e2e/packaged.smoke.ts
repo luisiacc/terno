@@ -186,8 +186,11 @@ test("main cancels the renderer's remote requests, for everyone (plan 97: not a 
   await expect.poll(() => app.evaluate(() => (globalThis as unknown as { blocked: string[] }).blocked)).toContainEqual(expect.stringContaining("https://example.com/pixel.png"));
 });
 
-test("the bundled terno-mcp wrapper answers MCP requests against the running app while agents are allowed, as they are by default (plan 183)", async () => {
+test("the bundled terno-mcp bridge answers MCP requests against the running app while agents are allowed, as they are by default (plans 183, 293)", async () => {
   const wrapper = join(appPath, "Contents/Resources/bin/terno-mcp");
+  // plan 293: a native arm64 bridge signed with the app, no script that would run Terno as Node
+  expect(execFileSync("file", ["-b", wrapper], { encoding: "utf8" })).toMatch(/^Mach-O 64-bit executable arm64/);
+  execFileSync("codesign", ["--verify", "--strict", wrapper]);
   const env = { ...process.env, TERNO_USER_DATA: userData };
   delete env.ELECTRON_RUN_AS_NODE;
   const listAccounts = async () => {

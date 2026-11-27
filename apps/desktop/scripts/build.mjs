@@ -1,6 +1,6 @@
 // Bundles every process into self-contained CommonJS so the packaged app needs
 // no node_modules at all (no native modules either: SQLite is node:sqlite).
-// Every bundle (main, backend, preload, MCP and the renderer) gets an external
+// Every bundle (main, backend with the MCP server, preload and the renderer) gets an external
 // source map and a debug id; the maps then move to .maps/<version>-<sha>/,
 // outside dist/ and release/, before anything is packaged or signed.
 import { execFileSync } from "node:child_process";
@@ -80,7 +80,6 @@ const entries = [
   { in: join(root, "src/backend-boot.ts"), out: "backend-boot" },
   { in: join(repo, "packages/backend/src/incoming.worker.ts"), out: "incoming.worker" },
   { in: join(root, "src/preload.ts"), out: "preload" },
-  { in: join(repo, "packages/mcp/src/bin.ts"), out: "mcp/terno-mcp" },
 ];
 
 const results = await Promise.all(
@@ -119,7 +118,18 @@ if (!process.argv.includes("--no-renderer")) {
   if (!existsSync(join(web, "index.html"))) throw new Error("apps/web/dist missing: run `pnpm --filter @terno/web build` first");
   cpSync(web, join(out, "renderer"), { recursive: true });
 }
+mkdirSync(join(out, "mcp"), { recursive: true });
 cpSync(join(repo, "packages/mcp/SKILL.md"), join(out, "mcp/SKILL.md"));
+// plan 293: what the agents' bridge answers while Terno can't be reached, read from the server this build ships
+// (dist/native/ is never packaged: the packagers compile it into Resources/bin/terno-mcp)
+{
+  const scratch = join(out, "native");
+  mkdirSync(scratch, { recursive: true });
+  const entry = join(scratch, "manifest.cjs");
+  await build({ ...common, entryPoints: [join(repo, "packages/mcp/src/manifest-entry.ts")], outfile: entry, sourcemap: false, minify: false, define: { ...common.define, "import.meta.url": "__importMetaUrl" } });
+  writeFileSync(join(scratch, "mcp-offline.json"), execFileSync(process.execPath, [entry, version], { encoding: "utf8" }));
+  rmSync(entry);
+}
 // package.mjs refuses to package a test build as a release, or the other way round
 if (testBuild) writeFileSync(join(out, "test-build.json"), JSON.stringify(testBuild));
 
