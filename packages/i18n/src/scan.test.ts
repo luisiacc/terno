@@ -236,6 +236,13 @@ describe("site copy catalog boundary", () => {
     }
   });
 
+  it("reads a string named as a type (`as Lang`, 54efcdcd3) as data, the locale marker too", () => {
+    expect(scan(en.replace('lang: "en"', 'lang: "en" as Lang'), path)).toEqual([]);
+    expect(scan(es.replace('lang: "es"', 'lang: "es" as Lang'), "apps/site/src/copy/es.ts")).toEqual([]);
+    expect(scan(en.replace('lang: "en"', 'lang: "es" as Lang'), path)).toContain("prop English title");
+    expect(scan(en.replace('lang: "en"', 'lang: "en" as Langs<string>'), path)).toContain("prop English title");
+  });
+
   it("retains same-export siblings and reasonless ignores in catalog data", () => {
     expect(scan(en.replace('};', '}, extra = { title: "Extra title" };'), path)).toEqual(["prop Extra title"]);
     expect(scan(en.replace('meta:', '// i18n-ignore\nmeta:'), path)).toEqual(["ignore-without-reason i18n-ignore"]);

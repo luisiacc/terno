@@ -206,10 +206,19 @@ function oneLine(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
+/** A string, or one named as a type (`"en" as Lang`): still data, nothing runs. */
+function copyString(node: unknown): Node | null {
+  if (!isNode(node)) return null;
+  if (node.type === "StringLiteral") return node;
+  const type = node.typeAnnotation;
+  if (node.type === "TSAsExpression" && isNode(type) && type.type === "TSTypeReference" && !type.typeParameters) return copyString(node.expression);
+  return null;
+}
+
 /** Plan 97's typed site catalogs are data, not UI declarations. Fail closed on executable values. */
 function isCopyData(node: unknown): node is Node {
   if (!isNode(node)) return false;
-  if (node.type === "StringLiteral") return true;
+  if (copyString(node)) return true;
   if (node.type === "ArrayExpression") return (node.elements as unknown[]).every(isCopyData);
   if (node.type !== "ObjectExpression") return false;
   return (node.properties as Node[]).every((p) => p.type === "ObjectProperty" && !p.shorthand && keyName(p) !== null && isCopyData(p.value));
@@ -242,7 +251,7 @@ function siteCatalog(program: Node, file: string): Node | null {
       const value = binding.init;
       if (!isCopyData(value) || value.type !== "ObjectExpression") continue;
       const langs = (value.properties as Node[]).filter((p) => keyName(p) === "lang");
-      if (langs.length === 1 && isNode(langs[0]!.value) && langs[0]!.value.type === "StringLiteral" && langs[0]!.value.value === locale) return value;
+      if (langs.length === 1 && copyString(langs[0]!.value)?.value === locale) return value;
     }
   }
   return null;
