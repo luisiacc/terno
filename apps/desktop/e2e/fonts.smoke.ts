@@ -7,7 +7,6 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
-import en from "@terno/i18n/locales/en";
 import { closePackaged, copyTree, seededProfile } from "./packaged-fixture";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -41,12 +40,6 @@ test.afterAll(async () => {
 });
 
 test("the font field lists this Mac's families; Helvetica, typed, shows at once and is kept", async () => {
-  // a first launch may offer the "What matters" view: declined, it's out of the way
-  const decline = page.getByRole("button", { name: en["firstScreen.ask.keepInbox"] });
-  await decline.waitFor({ timeout: 5_000 }).then(
-    () => decline.click(),
-    () => undefined,
-  );
   await page.getByTestId("open-settings").click();
   await page.getByTestId("tab-appearance").click();
   const field = page.getByTestId("font-field");
@@ -55,8 +48,10 @@ test("the font field lists this Mac's families; Helvetica, typed, shows at once 
   await expect.poll(() => page.locator('[data-testid=font-option][data-font-option^="local:"]').count(), { timeout: 10_000 }).toBeGreaterThan(5);
   await page.keyboard.type("Helvetica");
   await expect(page.locator('[data-font-option="local:Helvetica"]')).toBeVisible();
-  await expect(page.locator("html")).toHaveAttribute("data-font", "local");
+  // plan 248 (1bb84904f): typing moves the highlight and nothing else; the app changes font once one is chosen
+  await expect(page.locator("html")).not.toHaveAttribute("data-font", "local");
   await page.keyboard.press("Enter");
+  await expect(page.locator("html")).toHaveAttribute("data-font", "local");
   await expect(field).toHaveValue("Helvetica");
   expect(await page.evaluate(() => getComputedStyle(document.body).fontFamily)).toMatch(/^"?Helvetica"?,/);
 });
