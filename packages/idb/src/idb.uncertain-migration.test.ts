@@ -170,7 +170,8 @@ it.each(["drafts", "settings", "messages"])("retains uncertainty after a real pr
         { id: 22, account_id: 1, to_json: "[]", cc_json: "[]", subject: "exact", body_text: "retained body 22", in_reply_to_message_id: null, updated_at: 5 },
       ]);
     } else if (stage === "settings") {
-      expect(saved.rows.find((s) => s.name === "settings")!.values).toEqual([{ key: "anchor", value_json: "true" }]);
+      // the anchor kept; v42's stamp (plan 278) goes on in the same transaction, which commits
+      expect(saved.rows.find((s) => s.name === "settings")!.values).toEqual([{ key: "anchor", value_json: "true" }, { key: "facts_rules", value_json: "1" }]);
     } else {
       expect(saved.rows.find((s) => s.name === "messages")!.values).toEqual([{ id: 41, account_id: 1, thread_id: 9, attachment_pending: 0 }, { id: 42, account_id: 1, thread_id: 9, attachment_pending: 1 }]);
     }
