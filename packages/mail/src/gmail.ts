@@ -1,5 +1,6 @@
 import { L } from "@terno/i18n";
 import { callbackPage } from "./oauth-page";
+import { signInLog } from "./login-log";
 import { openLoopback, pkce } from "./oauth-loopback";
 import { validTokenResponse } from "./oauth-flow";
 import { createOAuthSession } from "./oauth-session";
@@ -44,7 +45,7 @@ export async function connectGmail(options: ConnectOptions): Promise<GmailConnec
     const page = await flow.wait(callbackPage());
     const invalid = () => new ProviderError(L("errors.google.invalidResponse"), false);
     const loopback = openLoopback({
-      authorize: ep.auth, state, redirectHost: "127.0.0.1", redirectPath: "/callback", page, invalid, invalidPage: "backend.oauth.invalid", openExternal: options.openExternal, signal: flow.signal,
+      provider: "google", authorize: ep.auth, state, redirectHost: "127.0.0.1", redirectPath: "/callback", page, invalid, invalidPage: "backend.oauth.invalid", openExternal: options.openExternal, signal: flow.signal,
       params: {
         client_id: options.clientId,
         response_type: "code",
@@ -65,7 +66,12 @@ export async function connectGmail(options: ConnectOptions): Promise<GmailConnec
       const code = await flow.wait(loopback.code);
       const body = new URLSearchParams({ client_id: options.clientId, code: code.code, code_verifier: verifier, grant_type: "authorization_code", redirect_uri: code.redirectUri });
       if (options.clientSecret) body.set("client_secret", options.clientSecret);
-      const tokens = await flow.json(ep.token, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body }, { endpoint: "oauth-token", purpose: "authorization-code" });
+      // plan 293 (CASA 6.5.1): the request and its answer are logged, every secret value redacted
+      const tokens = await flow.json(ep.token, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body }, { endpoint: "oauth-token", purpose: "authorization-code" }).catch((error: unknown) => {
+        signInLog.tokenExchange("google", ep.token, { error });
+        throw error;
+      });
+      signInLog.tokenExchange("google", ep.token, { tokens });
       if (!validTokenResponse(tokens, { allowOmittedRefreshToken: options.allowOmittedRefreshToken })) throw new ProviderError(L("errors.google.invalidResponse"), false);
       const grantedScopes = typeof tokens.scope === "string" ? tokens.scope.split(/\s+/).filter(Boolean) : requestedScopes;
       if (!grantedScopes.includes("https://www.googleapis.com/auth/gmail.modify") && !grantedScopes.includes("https://mail.google.com/")) throw new ProviderError(L("errors.google.mailScopeRequired"), false);

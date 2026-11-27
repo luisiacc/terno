@@ -1,3 +1,4 @@
+import { log } from "@terno/core/diag";
 import { costAt, priceOf } from "@terno/ai";
 import { RpcError, type Draft, type DraftAddress, type Handlers } from "@terno/core/rpc";
 import { hasTab, agentsMaySend, nextColor, parseHandoff, capFilterName, categoryRule, folderRule, isFilterable, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, matchExcerpt, parseSearch, resolveSearch, rowMatchOf, searchWithFilter, type ThreadAction, type AccountPrefs, PINS_MAX, REMINDERS_MAX, SCHEDULED_MAX, FORWARD_ADDRESSES_MAX_CHARS, ruleHash, type PutAwayDetail } from "@terno/core";
@@ -1416,6 +1417,7 @@ export function createHandlers(b: Backend): Handlers {
         now: b.now(),
       });
       b.secrets.committed("write", `account:${account.id}:refreshToken`, "signIn");
+      log.info("signin.stored", { provider: "google", encrypted: true, accountId: account.id });
       // the account it now shares a name with shows its address too
       for (const r of label.renames) await store.accounts.update(r.id, { displayName: r.displayName });
       await b.emitAccounts();
@@ -1457,6 +1459,7 @@ export function createHandlers(b: Backend): Handlers {
         now: b.now(),
       });
       b.secrets.committed("write", `account:${account.id}:refreshToken`, "signIn");
+      log.info("signin.stored", { provider: "microsoft", encrypted: true, accountId: account.id });
       for (const r of label.renames) await store.accounts.update(r.id, { displayName: r.displayName });
       await b.emitAccounts();
       if (claimed) await b.emitOwner();

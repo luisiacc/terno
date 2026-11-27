@@ -11,7 +11,9 @@ export type FieldType =
   | { t: "int"; min: number; max: number }
   | { t: "bool" }
   /** a short machine id: error classes, errno names, socket codes (camelCase allowed: class and method names are) */
-  | { t: "id" };
+  | { t: "id" }
+  /** plan 293: space-separated words, each kept only if it matches `word` (else "other"), at most `max` of them */
+  | { t: "words"; word: RegExp; max: number };
 
 export type FieldValue = string | number | boolean;
 export type Fields = Record<string, FieldValue>;
@@ -22,6 +24,8 @@ const ID = /^[A-Za-z0-9_.-]{1,40}$/;
 const enumOf = <const V extends readonly string[]>(...values: V) => ({ t: "enum", values }) as const;
 const int = (min: number, max: number) => ({ t: "int", min, max }) as const;
 const bool = { t: "bool" } as const;
+/** plan 293: a value that is never written, only its presence: a code, a token, a verifier, a user name */
+const redacted = { t: "enum", values: ["[redacted]"] } as const;
 const id = { t: "id" } as const;
 
 const RPC_CODES = ["BAD_REQUEST", "NOT_FOUND", "UNAVAILABLE", "TIMEOUT", "INTERNAL", "UNKNOWN_METHOD", "FORBIDDEN", "CANCELLED", "STALE"] as const;
@@ -29,6 +33,29 @@ const THREAD_ACTIONS = ["archive", "trash", "spam", "notSpam", "moveToInbox", "m
 
 /** Every field any code may use, with its type. */
 export const FIELD_TYPES = {
+  /** plan 293: the sign-in's and the logins' lines (CASA 6.5.1): every secret value is "[redacted]", only its presence shows */
+  accessToken: redacted,
+  authCode: redacted,
+  codeVerifier: redacted,
+  idToken: redacted,
+  refreshToken: redacted,
+  user: redacted,
+  callback: enumOf("code", "error", "malformed"),
+  encrypted: bool,
+  endpoint: enumOf("https://oauth2.googleapis.com/token", "https://login.microsoftonline.com/common/oauth2/v2.0/token", "other"),
+  expiresIn: int(0, 31_536_000),
+  grantType: enumOf("authorization_code", "refresh_token"),
+  httpMethod: enumOf("POST"),
+  loginResult: enumOf("OK", "NO", "error"),
+  oauthState: enumOf("verified", "mismatch"),
+  pkce: enumOf("S256"),
+  port: int(0, 65_535),
+  provider: enumOf("google", "microsoft"),
+  redirectHost: enumOf("127.0.0.1", "localhost"),
+  responseCode: id,
+  /** granted scopes by name: Google's and Graph's scope URLs and bare names only */
+  scope: { t: "words", word: /^(https:\/\/(www\.googleapis\.com\/auth\/[a-z.]+|mail\.google\.com\/|graph\.microsoft\.com\/[A-Za-z.]+)|[A-Za-z_.]{1,32})$/, max: 12 },
+  tokenType: enumOf("Bearer", "other"),
   /** plan 293: an account's internal row id (never its address or name) */
   accountId: int(0, Number.MAX_SAFE_INTEGER),
   accountKind: enumOf("imap", "gmail", "outlook", "demo", "other"),
@@ -121,5 +148,7 @@ export function sanitizeField(name: string, value: unknown): FieldValue | undefi
       return typeof value === "boolean" ? value : undefined;
     case "id":
       return typeof value === "string" ? (ID.test(value) ? value : REDACTED) : typeof value === "number" && Number.isInteger(value) ? String(value) : undefined;
+    case "words":
+      return typeof value === "string" ? value.split(/\s+/).filter(Boolean).slice(0, type.max).map((w) => (type.word.test(w) ? w : "other")).join(" ") : undefined;
   }
 }

@@ -11,7 +11,7 @@ const page = (ok: boolean, key: string) => `${ok}:${key}`;
 function open(redirectHost: "127.0.0.1" | "localhost", state = "s1", redirectPath: "/callback" | "" = "/callback") {
   let opened!: URL;
   const loopback = openLoopback({
-    authorize: "https://login.example.test/authorize", state, redirectHost, redirectPath, page, signal: new AbortController().signal,
+    provider: "microsoft", authorize: "https://login.example.test/authorize", state, redirectHost, redirectPath, page, signal: new AbortController().signal,
     params: { client_id: "public-client", response_type: "code", state, prompt: "select_account" },
     refused: (error, description) => ({ page: "backend.oauth.denied", error: new ProviderError(`refused ${error} ${description ?? "-"}`, false) }),
     invalid: () => new ProviderError("invalid", false), invalidPage: "backend.oauth.invalid",

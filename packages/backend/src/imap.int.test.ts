@@ -7,6 +7,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { createServer as createTcpServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { installDiag, setDiagSink, type DiagEntry } from "@terno/core/diag";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { createRegistry, ProviderError } from "@terno/mail";
 import imapkit from "imapkit";
@@ -249,6 +250,35 @@ describe("IMAP provider against ImapKit", () => {
         password: "wrong",
       }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("plan 293 (CASA 6.5.1): IMAP's LOGIN and SMTP's AUTH are logged as user=[redacted] → OK or NO, never the user or the password", async () => {
+    const { imap } = await setup();
+    // an SMTP server that refuses every password but one
+    const smtp = new SMTPServer({ authOptional: false, disabledCommands: ["STARTTLS"], logger: false, onAuth: (auth, _s, cb) => (auth.password === "testpass" ? cb(null, { user: auth.username }) : cb(Object.assign(new Error("Authentication failed"), { responseCode: 535 }))) });
+    await new Promise<void>((r) => smtp.listen(0, "127.0.0.1", r));
+    cleanups.push(() => new Promise<void>((r) => smtp.close(() => r())));
+    const smtpPort = (smtp.server.address() as { port: number }).port;
+    const entries: DiagEntry[] = [];
+    installDiag({ proc: "backend", version: "t", build: "t", channel: "dev" });
+    setDiagSink({ write: (e) => void entries.push(e), capture: () => {} });
+    const registry = createRegistry({ imap: { allowInsecure: true } });
+    const config = (user: string) => ({ email: "luis@test.local", imap: { host: "127.0.0.1", port: imap.port, secure: false, user }, smtp: { host: "127.0.0.1", port: smtpPort, secure: false, user } });
+    await registry.verifyImap(config("testuser") as never, "testpass");
+    await expect(registry.verifyImap(config("testuser") as never, "wrong-pässword")).rejects.toBeInstanceOf(ProviderError);
+    const logins = entries.filter((e) => e.code === "imap.login" || e.code === "smtp.login").map((e) => ({ code: e.code, level: e.level, ...e.fields }));
+    expect(logins).toEqual([
+      { code: "imap.login", level: "info", user: "[redacted]", loginResult: "OK" },
+      { code: "smtp.login", level: "info", user: "[redacted]", loginResult: "OK" },
+      // (the server's bracketed code, AUTHENTICATIONFAILED, rides along when the server sends one: this one doesn't)
+      { code: "imap.login", level: "warn", user: "[redacted]", loginResult: "NO" },
+    ]);
+    // and SMTP's refusal on its own (IMAP's came first above)
+    const { verifySmtp } = await import("../../mail/src/smtp");
+    await expect(verifySmtp({ host: "127.0.0.1", port: smtpPort, secure: false, user: "testuser", password: "wrong-pässword", allowInsecure: true })).rejects.toBeTruthy();
+    expect(entries.filter((e) => e.code === "smtp.login").at(-1)).toMatchObject({ level: "warn", fields: { user: "[redacted]", loginResult: "NO", responseCode: "535" } });
+    const all = JSON.stringify(entries);
+    for (const secret of ["testuser", "testpass", "wrong-pässword", "luis@test.local"]) expect(all).not.toContain(secret);
   });
 
   it("syncs folders, threads replies, downloads bodies and derives state from folders", async () => {

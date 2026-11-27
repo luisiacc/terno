@@ -1,3 +1,4 @@
+import { loggedImapConnect } from "./login-log";
 import { RpcError } from "@terno/core/rpc";
 import { sentCopyWarning, type SentCopyHooks } from "./sent-copy";
 import { FOLDERS_PER_ACCOUNT_MAX, MAX_INCOMING_MIME_BYTES } from "@terno/core";
@@ -908,7 +909,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       // a reset while the secret was read: never start on the old network
       if (attempt.gen !== generation) throw ProviderError.network(L("errors.network.changed"));
       try {
-        await c.connect();
+        // plan 293 (CASA 6.5.1): LOGIN user=[redacted] → OK / NO, logged
+        await loggedImapConnect(() => c.connect());
       } catch (error) {
         throw toProviderError(error);
       }
@@ -1891,7 +1893,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       const c = await makeClient();
       c.on("error", () => {});
       try {
-        await c.connect();
+        await loggedImapConnect(() => c.connect());
         await discoverRoles(c);
         await c.logout();
       } catch (error) {
@@ -2857,7 +2859,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           });
           // the password lookup took a while: never start on the network that just went away
           if (stale()) throw new Error("stale");
-          await c.connect();
+          const idleClient = c;
+          await loggedImapConnect(() => idleClient.connect());
           await c.mailboxOpen("INBOX");
           if (stale()) throw new Error("stale");
           pending = null;

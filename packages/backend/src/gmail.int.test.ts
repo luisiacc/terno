@@ -8,7 +8,7 @@ import { createServer, type IncomingMessage as Req, type ServerResponse } from "
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { encodeText } from "@terno/core";
-import { installDiag, setDiagSink, type DiagEntry } from "@terno/core/diag";
+import { breadcrumbs, installDiag, setDiagSink, type DiagEntry } from "@terno/core/diag";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { createGmailTokenBroker, createRegistry, gmailReconnect, type ProviderRegistry } from "@terno/mail";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -48,6 +48,8 @@ class FakeGoogle {
   historyId = 1000;
   challenges = new Map<string, string>(); // code → code_challenge
   refreshCalls = 0;
+  /** plan 293: the PKCE verifiers the token endpoint was sent (so a test can look for them where they mustn't be) */
+  verifiers: string[] = [];
   /** plan 293: while set, every refresh answers this status (with invalid_grant's body, which only a 400 means) */
   refreshStatus: number | null = null;
   validTokens = new Set<string>();
@@ -128,6 +130,7 @@ class FakeGoogle {
       if (p.get("grant_type") === "authorization_code") {
         const challenge = this.challenges.get(p.get("code") ?? "");
         const verifier = p.get("code_verifier") ?? "";
+        this.verifiers.push(verifier);
         const computed = createHash("sha256").update(verifier).digest("base64url");
         if (!challenge || computed !== challenge) return json(400, { error: "invalid_grant" });
         // each consent grants its own refresh token (refresh-1, refresh-2 …); every one stays valid, as with Google
@@ -914,6 +917,32 @@ describe("plan 293 (CASA 2.2.1): a grant Google says is gone deletes its refresh
     expect(await state()).toMatchObject({ authRequired: false });
     await backend.runWorker();
     expect(sqlDb(backend.store).get("SELECT state FROM ops WHERE kind = 'star'")).toEqual({ state: "succeeded" });
+  });
+
+  it("plan 293 (CASA 6.5.1): the sign-in logs each step, the request and the answer, every secret value redacted", async () => {
+    const entries: DiagEntry[] = [];
+    installDiag({ proc: "backend", version: "t", build: "t", channel: "dev" });
+    setDiagSink({ write: (e) => void entries.push(e), capture: () => {} });
+    const { google, client, backend } = await setup();
+    seed(google);
+    const account = await client.call("accounts.connectGmail", {});
+    await backend.syncAccount(account.id);
+    const signIn: Record<string, unknown>[] = entries.filter((e) => /^(signin|token)\./.test(e.code)).map((e) => ({ code: e.code, ...e.fields }));
+    const port = signIn[0]?.port;
+    expect(port).toEqual(expect.any(Number));
+    expect(signIn).toEqual([
+      { code: "signin.authorize", provider: "google", pkce: "S256", port, redirectHost: "127.0.0.1" },
+      { code: "signin.callback", provider: "google", callback: "code", oauthState: "verified", authCode: "[redacted]" },
+      // the fake's endpoint is a loopback URL, so "other"; Google's own is named
+      { code: "signin.token_exchange", provider: "google", httpMethod: "POST", endpoint: "other", grantType: "authorization_code", authCode: "[redacted]", codeVerifier: "[redacted]", status: 200, accessToken: "[redacted]", refreshToken: "[redacted]", expiresIn: 3600, tokenType: "Bearer" },
+      { code: "signin.stored", provider: "google", encrypted: true, accountId: account.id },
+      // the first sync's refresh: the refresh token sent and the access token back, both redacted
+      { code: "token.refresh", provider: "google", httpMethod: "POST", endpoint: "other", grantType: "refresh_token", refreshToken: "[redacted]", status: 200, accessToken: "[redacted]", expiresIn: 3600, tokenType: "Bearer" },
+    ]);
+    const all = JSON.stringify(entries);
+    for (const secret of ["auth-code", ...google.verifiers, "tok-1", "tok-2", "refresh-1", "luis@gmail.com", "Luis"]) expect(all).not.toContain(secret);
+    // none of it is a breadcrumb: never in a record or a report
+    expect(breadcrumbs().filter((c) => /^(signin|token|secret)\./.test(c.code))).toEqual([]);
   });
 
   it.each([503, 500, 429, 401])("a transient or unproven answer (%i, even with invalid_grant's body) keeps the token", async (status) => {

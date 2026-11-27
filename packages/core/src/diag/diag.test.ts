@@ -301,3 +301,28 @@ describe("a record keeps its own build (review finding 9)", () => {
     expect(buildReport(old, { installId: "i" })).toMatchObject({ release: "terno@0.1.0+oldsha", environment: "demo", contexts: { app: { app_version: "0.1.0", build: "0.1.0+oldsha" } } });
   });
 });
+
+describe("plan 293: credential and sign-in fields (CASA 6.5.1, 6.7.1)", () => {
+  it("a secret field holds only [redacted], whatever it's handed", () => {
+    for (const name of ["accessToken", "refreshToken", "idToken", "authCode", "codeVerifier", "user"]) {
+      expect(sanitizeField(name, "[redacted]")).toBe("[redacted]");
+      for (const leak of ["ya29.a0AfH6SMBx", "1//0gLx-secret", "luis@example.com", "4/0AY0e-g7"]) expect(sanitizeField(name, leak)).toBe(REDACTED);
+    }
+  });
+
+  it("scopes keep known names only, a token-shaped or address-shaped word becomes other", () => {
+    expect(sanitizeField("scope", "https://www.googleapis.com/auth/gmail.modify openid email https://mail.google.com/ Mail.ReadWrite offline_access")).toBe("https://www.googleapis.com/auth/gmail.modify openid email https://mail.google.com/ Mail.ReadWrite offline_access");
+    expect(sanitizeField("scope", "openid ya29.a0AfH6SMBx-token/abc luis@example.com https://evil.example/x")).toBe("openid other other other");
+  });
+
+  it("local codes are logged but never become breadcrumbs", () => {
+    const written: DiagEntry[] = [];
+    installDiag({ proc: "backend", version: "t", build: "t", channel: "dev", sink: { write: (e) => void written.push(e), capture: () => {} } });
+    const before = breadcrumbs().length;
+    log.info("signin.authorize", { provider: "google", pkce: "S256", port: 49152, redirectHost: "127.0.0.1" });
+    log.warn("secret.access", { secretOp: "read", secretKind: "password", component: "mailLogin", accountId: 3, secretOutcome: "failed", errorCategory: "secret_storage_failed" });
+    breadcrumb("action", "imap.login", { user: "[redacted]", loginResult: "OK" });
+    expect(written.map((e) => e.code)).toEqual(["signin.authorize", "secret.access"]);
+    expect(breadcrumbs().length).toBe(before);
+  });
+});

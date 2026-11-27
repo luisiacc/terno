@@ -4,6 +4,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { signInLog, type SignInProvider } from "./login-log";
 import type { CallbackKey } from "./oauth-page";
 
 const b64url = (buf: Buffer) => buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -15,6 +16,8 @@ export function pkce(): { verifier: string; challenge: string; state: string } {
 }
 
 export interface LoopbackAuthorization {
+  /** whose sign-in, for its log lines (plan 293) */
+  provider: SignInProvider;
   /** the provider's authorize endpoint */
   authorize: string;
   /** every query parameter but redirect_uri (state and the PKCE challenge among them) */
@@ -60,6 +63,7 @@ export function openLoopback(a: LoopbackAuthorization): { code: Promise<{ code: 
         res.end(a.page(ok, msg));
       };
       if (url.searchParams.get("state") !== a.state) {
+        signInLog.callback(a.provider, "mismatch");
         done(false, a.invalidPage);
         return; // ignore forged/stale redirects, keep waiting for the real one
       }
@@ -68,10 +72,12 @@ export function openLoopback(a: LoopbackAuthorization): { code: Promise<{ code: 
       const errors = url.searchParams.getAll("error");
       if (errors.length) {
         if (errors.length !== 1 || !errors[0] || url.searchParams.has("code")) {
+          signInLog.callback(a.provider, "malformed");
           done(false, a.invalidPage);
           reject(a.invalid());
           return;
         }
+        signInLog.callback(a.provider, "error");
         const refusal = a.refused(errors[0], url.searchParams.get("error_description")?.slice(0, 1024) ?? null);
         done(false, refusal.page);
         reject(refusal.error);
@@ -79,17 +85,21 @@ export function openLoopback(a: LoopbackAuthorization): { code: Promise<{ code: 
       }
       const authorizationCode = url.searchParams.get("code");
       if (!authorizationCode?.trim() || url.searchParams.getAll("code").length !== 1) {
+        signInLog.callback(a.provider, "malformed");
         done(false, a.invalidPage);
         reject(a.invalid());
         return;
       }
+      signInLog.callback(a.provider, "code");
       done(true, "backend.oauth.back");
       resolve({ code: authorizationCode, redirectUri: redirectUri((server!.address() as AddressInfo).port) });
     });
     server.on("error", reject);
     server.listen(0, "127.0.0.1", () => {
       if (a.signal.aborted) return;
-      const params = new URLSearchParams({ ...a.params, redirect_uri: redirectUri((server!.address() as AddressInfo).port) });
+      const port = (server!.address() as AddressInfo).port;
+      signInLog.authorize(a.provider, port, a.redirectHost);
+      const params = new URLSearchParams({ ...a.params, redirect_uri: redirectUri(port) });
       void Promise.resolve().then(() => a.openExternal(`${a.authorize}?${params}`)).catch(reject);
     });
   });

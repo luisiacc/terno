@@ -1,3 +1,4 @@
+import { smtpLogin } from "./login-log";
 import { L } from "@terno/i18n";
 import { asciiEmail, normalizeEmail } from "@terno/core";
 import nodemailer from "nodemailer";
@@ -96,9 +97,15 @@ export async function sendViaSmtp(config: SmtpConfig, payload: SendPayload, hook
   // nodemailer reports a dropped connection as "CONN" no matter the stage, so we
   // follow the SMTP transcript to know whether the body was already handed over.
   let dataStarted = false;
+  // plan 293 (CASA 6.5.1): AUTH's answer (235 accepted, 5xx refused), for the login's log line; nothing else is kept
+  let authAnswer: number | null = null;
   const watch = (entry: { tnx?: string } | undefined, message: string) => {
     // server replies arrive as their own log lines, e.g. "354 Go ahead"
-    if ((entry?.tnx === "server" || entry?.tnx === undefined) && /^354\b/.test(String(message))) dataStarted = true;
+    if (!(entry?.tnx === "server" || entry?.tnx === undefined)) return;
+    const reply = String(message);
+    if (/^354\b/.test(reply)) dataStarted = true;
+    if (/^235\b/.test(reply)) authAnswer = 235;
+    else if (authAnswer === null && /^5(35|34|38)\b/.test(reply)) authAnswer = Number(reply.slice(0, 3));
   };
   const noop = () => {};
   const logger = { level: noop, trace: noop, debug: watch, info: noop, warn: noop, error: noop, fatal: noop };
@@ -118,7 +125,10 @@ export async function sendViaSmtp(config: SmtpConfig, payload: SendPayload, hook
   });
   try {
     const envelope = hooks?.recovery?.envelope ?? envelopeOf(payload);
-    const info = (await transport.sendMail({ envelope, raw })) as { accepted?: unknown; rejected?: unknown };
+    const info = (await transport.sendMail({ envelope, raw }).finally(() => {
+      if (authAnswer === 235) smtpLogin("OK");
+      else if (authAnswer !== null) smtpLogin("NO", authAnswer);
+    })) as { accepted?: unknown; rejected?: unknown };
     accepted = true;
     hooks?.accepted?.();
     const outcomes = smtpRecipientOutcomes(envelope.to, info.accepted, info.rejected);
@@ -146,6 +156,11 @@ export async function verifySmtp(config: SmtpConfig): Promise<void> {
   });
   try {
     await transport.verify();
+    smtpLogin("OK");
+  } catch (error) {
+    const e = error as { code?: unknown; responseCode?: unknown };
+    smtpLogin(e?.code === "EAUTH" ? "NO" : "error", typeof e?.responseCode === "number" ? e.responseCode : undefined);
+    throw error;
   } finally {
     transport.close();
   }

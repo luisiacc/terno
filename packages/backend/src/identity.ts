@@ -1,3 +1,4 @@
+import { log } from "@terno/core/diag";
 import { isOAuthKind, isValidEmail, messageOf, OAUTH_SUBJECT, signInMethod, unhandled, type Account } from "@terno/core";
 import { RpcError, type OwnerIdentity } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
@@ -126,7 +127,11 @@ export function encryptCredential(b: Backend, accountId: number, key: "refreshTo
 
 /** Records a sign-in's credential write once its commit returned (plan 293); a retained credential wrote nothing. */
 function recordCommit(b: Backend, intent: SecretIntent, outcome: "ok" | "refused" | "failed"): void {
-  if (intent.kind === "replace") b.secrets.committed("write", intent.name, "signIn", outcome);
+  if (intent.kind !== "replace") return;
+  b.secrets.committed("write", intent.name, "signIn", outcome);
+  // plan 293 (CASA 6.5.1): the sign-in's last step, its credentials stored sealed
+  const accountId = Number(/^account:(\d+):refreshToken$/.exec(intent.name)?.[1]);
+  if (outcome === "ok" && accountId) log.info("signin.stored", { provider: intent.oauth?.kind === "outlook" ? "microsoft" : "google", encrypted: true, accountId });
 }
 
 export async function sameAccount(b: Backend, stamp: { id: number; email: string; createdAt: number }, flow: AbortController): Promise<void> {

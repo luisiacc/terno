@@ -1,6 +1,7 @@
 // Plan 259: one refresh-token exchange at a provider's token endpoint (lifted out of exchangeGmailRefresh). Bounded
 // time and body; error bodies never turn a quota or server status into a refusal; the provider names its refusals,
 // its scope check and its words. The caller owns durable credential replacement before publishing the access token.
+import { signInLog } from "./login-log";
 import { isFetchNetworkFailure, RequestNotDispatchedError } from "./net-errors";
 import { L } from "@terno/i18n";
 import { oauthToken } from "./oauth-flow";
@@ -44,6 +45,8 @@ export interface OAuthRefreshProvider {
 }
 
 export async function exchangeOAuthRefresh(options: OAuthRefreshOptions, provider: OAuthRefreshProvider): Promise<OAuthRefreshExchange> {
+  // plan 293 (CASA 6.5.1): the request and its answer are logged, every secret value redacted
+  const logged = provider.request.endpoint === "microsoft-token" ? "microsoft" : "google";
   const invalid = provider.invalid;
   const networkFailure = () => ProviderError.network(L("errors.network.offline"));
   const statusFailure = (status: number, httpResponse?: HttpResponseEvidence) => Object.assign(new ProviderError(provider.failed(status), status === 429 || status >= 500, false, false, httpResponse), { status });
@@ -131,6 +134,7 @@ export async function exchangeOAuthRefresh(options: OAuthRefreshOptions, provide
     const expiresAt = receivedAt + duration;
     if (!Number.isFinite(duration) || duration > Number.MAX_SAFE_INTEGER || !Number.isFinite(expiresAt) || expiresAt > Number.MAX_SAFE_INTEGER || expiresAt <= receivedAt) throw invalid();
     const grantedScopes = typeof value.scope === "string" ? value.scope.split(/\s+/).filter(Boolean) : undefined;
+    signInLog.refresh(logged, options.url, { tokens: value, status: response.status });
     const withoutMail = grantedScopes && provider.scopes(grantedScopes);
     if (withoutMail) throw withoutMail;
     return {
@@ -141,6 +145,7 @@ export async function exchangeOAuthRefresh(options: OAuthRefreshOptions, provide
       grantedScopes,
     };
   } catch (error) {
+    if (!options.signal?.aborted && !(error instanceof RequestNotDispatchedError)) signInLog.refresh(logged, options.url, { error: { status: responseStatus } });
     if (responseStatus === 429) throw statusFailure(429, httpResponse);
     if (options.signal?.aborted) throw new DOMException("closed", "AbortError");
     if (signal.aborted && responseStatus !== undefined && responseStatus >= 400) throw statusFailure(responseStatus, httpResponse);

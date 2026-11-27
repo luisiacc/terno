@@ -2,6 +2,7 @@
 // http://localhost (the one loopback form whose port Microsoft ignores) with PKCE and state, a public client (no
 // secret), and the person read from Graph's /me plus the id_token's oid and tid. Refresh tokens rotate on every use;
 // the shared session persists each one by CAS before its access token is published (plan 32).
+import { signInLog } from "./login-log";
 import { isValidEmail } from "@terno/core";
 import { L } from "@terno/i18n";
 import { readResponseText } from "./http-body";
@@ -151,7 +152,7 @@ export async function connectMicrosoft(options: MicrosoftConnectOptions & { endp
     const { verifier, challenge, state } = pkce();
     const page = await flow.wait(callbackPage());
     const loopback = openLoopback({
-      authorize: ep.authorize, state, redirectHost: "localhost", redirectPath: "", page, invalid, invalidPage: "backend.oauth.microsoftInvalid", openExternal: options.openExternal, signal: flow.signal,
+      provider: "microsoft", authorize: ep.authorize, state, redirectHost: "localhost", redirectPath: "", page, invalid, invalidPage: "backend.oauth.microsoftInvalid", openExternal: options.openExternal, signal: flow.signal,
       params: {
         client_id: options.clientId,
         response_type: "code",
@@ -169,7 +170,12 @@ export async function connectMicrosoft(options: MicrosoftConnectOptions & { endp
       // a public client: PKCE and the loopback protect the code, there is no secret
       const body = new URLSearchParams({ client_id: options.clientId, scope, code: code.code, redirect_uri: code.redirectUri, grant_type: "authorization_code", code_verifier: verifier });
       const reach: MicrosoftNet = { fetch: options.fetch, ...(options.requests && { requests: options.requests }) };
-      const tokens = await microsoftJson(flow, reach, ep.token, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body }, { endpoint: "microsoft-token", purpose: "authorization-code" });
+      // plan 293 (CASA 6.5.1): the request and its answer are logged, every secret value redacted
+      const tokens = await microsoftJson(flow, reach, ep.token, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body }, { endpoint: "microsoft-token", purpose: "authorization-code" }).catch((error: unknown) => {
+        signInLog.tokenExchange("microsoft", ep.token, { error });
+        throw error;
+      });
+      signInLog.tokenExchange("microsoft", ep.token, { tokens });
       if (!validTokenResponse(tokens)) throw invalid();
       const grantedScopes = typeof tokens.scope === "string" ? tokens.scope.split(/\s+/).filter(Boolean) : [...MICROSOFT_SCOPES];
       if (!microsoftMailGranted(grantedScopes)) throw new ProviderError(L("errors.microsoft.mailScopeRequired"), false);

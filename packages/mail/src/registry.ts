@@ -1,3 +1,4 @@
+import { loggedImapConnect } from "./login-log";
 import { L } from "@terno/i18n";
 import { createDemoProvider } from "./demo";
 import { beginGmailRenewal } from "./gmail-renewal";
@@ -65,7 +66,7 @@ export function createRegistry(options: RegistryOptions = {}): ProviderRegistry 
       });
       c.on("error", () => {});
       try {
-        await c.connect();
+        await loggedImapConnect(() => c.connect());
         await c.logout();
       } catch (error) {
         const e = error as { authenticationFailed?: boolean; message?: string };
