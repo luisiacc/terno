@@ -586,6 +586,7 @@ const SYSTEM_STARTS = [
   // plan 280 (before sent_mail, whose first words it shares)
   ["their_mail", "You read one email a person sent to the reader"],
   ["sent_mail", "You read one email a person sent"],
+  ["dated_mail", "You read one email a person received, to note what in it matters"],
   ["needs_reply", "Someone received this email and hasn't answered"],
   ["newsletter_digest", "Each <mail> block below is one automated email"],
   ["voice_judgment", "You study how one person writes email"],

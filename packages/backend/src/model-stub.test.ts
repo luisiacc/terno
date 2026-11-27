@@ -169,6 +169,17 @@ describe("the model stub (plan 161)", () => {
     expect(taskOf({ messages: [{ role: "system", content: "You summarize one email conversation for the person reading it." }] })).toBe("thread_summary");
   });
 
+  it("plan 204: the reader of received mail finds nothing, with a schema or on a fallback without one (its first words)", async () => {
+    const input = { text: "Your bill of $54.20 is due Friday.", subject: "Bill", from: { name: "Power Co", automated: true }, reader: { name: "Luis", addressed: "to" as const }, to: [], cc: [], receivedAt: "Thursday, 22 October 2026, 10:00", zone: "America/Mexico_City", open: [], language: "en" };
+    for (const output of ["json_schema", "json_object", "text"] as const) {
+      const before = asked("dated_mail");
+      const reader = createAi({ ...config(stub.url), capabilities: { output, contextTokens: 40_960, embeddings: false, probedAt: 1 } });
+      expect((await reader.readDates(input, signal())).items, output).toEqual([]);
+      expect(asked("dated_mail") - before, output).toBe(1);
+    }
+    expect(stub.unknown).toEqual([]);
+  });
+
   it("is deterministic, and a task it doesn't know is a loud 500 rather than a filter", async () => {
     const body = { model: "qwen3:8b", messages: [{ role: "system", content: "You summarize one email conversation for the person reading it.\n\nWrite in English." }, { role: "user", content: `<subject>x</subject>\n\n<message id="m1" from="Ana <a@b.c>" date="2026-10-22">\nHi Luis,\n\nLet me know what you think.\n\nBest,\nAna\n</message>` }], response_format: { type: "json_schema", json_schema: { name: "thread_summary" } } };
     expect(JSON.stringify(answerFor(body))).toBe(JSON.stringify(answerFor(structuredClone(body))));
