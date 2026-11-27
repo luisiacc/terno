@@ -129,7 +129,8 @@ export function openaiChatTransport(config: ProviderConfig): ModelTransport {
   }
 
   const effort = config.id === "openai" && takesReasoningEffort(config.model);
-  const explicitCache = config.id === "openai" && takesExplicitCache(config.model);
+  // OpenAI's own endpoint only: a relay saved on an OpenAI profile may refuse fields it doesn't know
+  const explicitCache = config.id === "openai" && takesExplicitCache(config.model) && new URL(baseURL).host === new URL(descriptor.defaultBaseURL ?? baseURL).host;
   /** A marked prompt as text parts, a breakpoint where a prefix ends; anything else as the plain text it always was. */
   const content = (c: PromptText) =>
     explicitCache && typeof c !== "string" && marksCache(c)
@@ -139,7 +140,7 @@ export function openaiChatTransport(config: ProviderConfig): ModelTransport {
       const tokenLimit = config.id === "openai" || azure ? { max_completion_tokens: req.maxTokens } : { max_tokens: req.maxTokens };
       return {
         model: config.model,
-        messages: [{ role: "system", content: content(req.system) }, ...req.messages.map((m) => (m.role === "user" ? { role: m.role, content: content(m.content) } : { role: m.role, content: promptText(m.content) }))],
+        messages: [{ role: "system", content: content(req.system) }, ...req.messages.map((m) => ({ role: m.role, content: content(m.content) }))],
         ...(explicitCache ? { prompt_cache_options: { mode: "explicit" as const } } : {}),
         ...tokenLimit,
         ...(effort && req.reasoningEffort ? { reasoning_effort: req.reasoningEffort } : {}),

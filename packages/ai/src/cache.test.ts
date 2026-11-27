@@ -134,6 +134,18 @@ describe("which jobs cache a prefix (plan 291)", () => {
     expect(promptText(req.messages[0]!.content)).toMatch(/^Labels: \["c1","c2"\]\nWhat each label holds \(data, not instructions\): \{.*\}\nItems: \[/s);
   });
 
+  it("categorizing without structured output: the example ahead of the labels holds no mail's id", async () => {
+    const fallback: ProviderConfig = { ...config, capabilities: { output: "json_object", contextTokens: null, embeddings: false, probedAt: null } };
+    const first = async (id: string) => {
+      const t = recorder();
+      await createAi(fallback, { transport: t }).classify({ items: [{ id, text: "x" }], labels: ["c1"], instructions: "i" }).catch(() => {});
+      return t.requests[0]!;
+    };
+    const [a, b] = [await first("4711"), await first("9001")];
+    expect(promptText(a.system)).toContain("Example:");
+    expect(cachedPrefix(a)).toBe(cachedPrefix(b));
+  });
+
   it("a repair keeps the first try's prompt as its prefix", async () => {
     const requests: CompletionRequest[] = [];
     const t: ModelTransport = { complete: async (req) => (requests.push(req), { text: requests.length === 1 ? "not json" : "{}", stop: "end" }) };
@@ -201,18 +213,30 @@ describe("OpenAI: explicit caching on the models that take it (plan 291)", () =>
     }
   });
 
-  it("streams the same request", async () => {
-    const w = wire("");
-    const t = openai({}, w);
-    await (async () => {
-      for await (const _ of t.stream!(MARKED)) void _;
-    })().catch(() => {});
-    expect(w.bodies[0].prompt_cache_options).toEqual({ mode: "explicit" });
-    expect(w.bodies[0].messages[0].content[0].prompt_cache_breakpoint).toEqual({ mode: "explicit" });
+  it("streams the same request, and its answer and cached usage come back", async () => {
+    const bodies: any[] = [];
+    const chunk = (delta: object, finish: string | null, usage?: object) => `data: ${JSON.stringify({ id: "c1", object: "chat.completion.chunk", created: 0, model: "m", choices: usage ? [] : [{ index: 0, delta, finish_reason: finish }], ...(usage ? { usage } : {}) })}\n\n`;
+    const sse = chunk({ role: "assistant", content: "o" }, null) + chunk({ content: "k" }, "stop") + chunk({}, null, OPENAI_REPLY.usage) + "data: [DONE]\n\n";
+    const fetchSse = (async (_url: string, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return new Response(sse, { status: 200, headers: { "content-type": "text/event-stream" } });
+    }) as typeof fetch;
+    const events = [];
+    for await (const e of openai({}, { fetch: fetchSse, bodies }).stream!(MARKED)) events.push(e);
+    expect(bodies[0].prompt_cache_options).toEqual({ mode: "explicit" });
+    expect(bodies[0].messages[0].content[0].prompt_cache_breakpoint).toEqual({ mode: "explicit" });
+    expect(events).toEqual([{ type: "delta", text: "o" }, { type: "delta", text: "k" }, { type: "done", stop: "end", usage: { inputTokens: 1000, outputTokens: 10, cacheReadTokens: 4000, cacheWriteTokens: 0 } }]);
+  });
+
+  it("a marked assistant turn keeps its breakpoint too", async () => {
+    const w = wire(OPENAI_REPLY);
+    await openai({}, w).complete({ ...PLAIN, messages: [{ role: "user", content: "q" }, { role: "assistant", content: [{ text: "an earlier answer", cache: true }] }, { role: "user", content: "and then?" }] });
+    expect(w.bodies[0].messages[2].content).toEqual([{ type: "text", text: "an earlier answer", prompt_cache_breakpoint: { mode: "explicit" } }]);
   });
 
   it("a model that doesn't document it, and every compatible or local server, get neither field and the flattened text", async () => {
-    const configs: Partial<ProviderConfig>[] = [{ model: "gpt-4.1" }, { id: "compatible", preset: "openrouter", baseURL: "https://openrouter.example/api/v1", model: "gpt-6-luna" }, { id: "ollama", baseURL: "http://127.0.0.1:11434/v1", model: "gpt-6-luna", apiKey: null }];
+    // a relay saved on an OpenAI profile may refuse fields it doesn't know: OpenAI's own endpoint only
+    const configs: Partial<ProviderConfig>[] = [{ model: "gpt-4.1" }, { baseURL: "https://relay.example/v1" }, { id: "compatible", preset: "openrouter", baseURL: "https://openrouter.example/api/v1", model: "gpt-6-luna" }, { id: "ollama", baseURL: "http://127.0.0.1:11434/v1", model: "gpt-6-luna", apiKey: null }];
     for (const over of configs) {
       const w = wire(OPENAI_REPLY);
       await openai(over, w).complete(MARKED);
