@@ -4,6 +4,7 @@
  * breakpoints, nothing for other servers). Nothing here leaves the machine: transports get a recording fetch.
  */
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import { anthropicTransport } from "./anthropic";
 import { openaiChatTransport } from "./openai-chat";
 import { createAi } from "./tasks";
@@ -200,6 +201,21 @@ describe("OpenAI: explicit caching on the models that take it (plan 291)", () =>
     expect(body.messages[1].content[1].prompt_cache_breakpoint).toBeUndefined();
     // reads are counted at their own price, apart from input
     expect(c.usage).toEqual({ inputTokens: 1000, outputTokens: 10, cacheReadTokens: 4000, cacheWriteTokens: 0 });
+  });
+
+  it("with a JSON schema, each breakpoint ends a message (one inside a message is written and never read): the same text, roles and order", async () => {
+    const w = wire(OPENAI_REPLY);
+    await openai({}, w).complete({ ...MARKED, output: "json_schema", schema: { name: "s", zod: z.object({ a: z.string() }) } });
+    const body = w.bodies[0];
+    expect(body.messages).toEqual([
+      { role: "system", content: [{ type: "text", text: "The rules every call shares.\n\n", prompt_cache_breakpoint: { mode: "explicit" } }] },
+      { role: "system", content: [{ type: "text", text: "It arrived Monday." }] },
+      { role: "user", content: [{ type: "text", text: "Labels: a, b\n", prompt_cache_breakpoint: { mode: "explicit" } }] },
+      { role: "user", content: [{ type: "text", text: "Items: the mail" }] },
+    ]);
+    const text = (role: string) => body.messages.filter((m: { role: string }) => m.role === role).flatMap((m: { content: { text: string }[] }) => m.content.map((p) => p.text)).join("");
+    expect(text("system")).toBe(promptText(MARKED.system));
+    expect(text("user")).toBe(promptText(MARKED.messages[0]!.content));
   });
 
   it("no mark: explicit mode with no breakpoint, so nothing is written to the cache, and the text goes as it always has", async () => {

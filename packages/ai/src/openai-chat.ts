@@ -5,7 +5,7 @@ import { OPENAI_DEFAULT_MODEL, OPENAI_DRAFT_MODEL } from "@terno/core";
 import { L } from "@terno/i18n";
 import { describeProvider, isLocalProvider, needsKey, PRESETS, resolveBaseURL } from "./providers";
 import { mapNetworkError, mapSdkError, type ErrorInfo } from "./sdk-errors";
-import { AiError, blockTexts, marksCache, promptText, type CompletionRequest, type ModelInfo, type ModelTransport, type PromptText, type ProviderConfig, type StreamEvent, type Usage } from "./types";
+import { AiError, blockTexts, marksCache, promptText, type CompletionRequest, type ModelInfo, type ModelTransport, type PromptBlock, type PromptText, type ProviderConfig, type StreamEvent, type Usage } from "./types";
 
 /** GA version with structured outputs (json_schema) on chat completions. */
 export const AZURE_API_VERSION = "2024-10-21";
@@ -132,15 +132,33 @@ export function openaiChatTransport(config: ProviderConfig): ModelTransport {
   // OpenAI's own endpoint only: a relay saved on an OpenAI profile may refuse fields it doesn't know
   const explicitCache = config.id === "openai" && takesExplicitCache(config.model) && new URL(baseURL).host === new URL(descriptor.defaultBaseURL ?? baseURL).host;
   /** A marked prompt as text parts, a breakpoint where a prefix ends; anything else as the plain text it always was. */
-  const content = (c: PromptText) =>
-    explicitCache && typeof c !== "string" && marksCache(c)
-      ? blockTexts(c).map((text, i) => ({ type: "text" as const, text, ...(c[i]!.cache ? { prompt_cache_breakpoint: { mode: "explicit" as const } } : {}) }))
-      : promptText(c);
+  const parts = (c: readonly PromptBlock[], texts: readonly string[]) => c.map((b, i) => ({ type: "text" as const, text: texts[i]!, ...(b.cache ? { prompt_cache_breakpoint: { mode: "explicit" as const } } : {}) }));
+  /**
+   * One message, or (plan 291) several of the same role, each marked block ending one. Measured on Luna: with a JSON
+   * schema, a breakpoint inside a message is written on every call and never read (2,312 tokens written three times
+   * running), one at a message's end is read (2,297); without a schema both are. So structured requests end a message
+   * at each breakpoint: the same text in the same role, one message boundary more.
+   */
+  const message = <R extends "system" | "user" | "assistant">(role: R, c: PromptText, structured: boolean): { role: R; content: string | ReturnType<typeof parts> }[] => {
+    if (!explicitCache || typeof c === "string" || !marksCache(c)) return [{ role, content: promptText(c) }];
+    const texts = blockTexts(c);
+    if (!structured) return [{ role, content: parts(c, texts) }];
+    const out: { role: R; content: ReturnType<typeof parts> }[] = [];
+    let start = 0;
+    c.forEach((b, i) => {
+      if (b.cache || i === c.length - 1) {
+        out.push({ role, content: parts(c.slice(start, i + 1), texts.slice(start, i + 1)) });
+        start = i + 1;
+      }
+    });
+    return out;
+  };
   const request = async (req: CompletionRequest): Promise<ChatCompletionCreateParamsNonStreaming> => {
       const tokenLimit = config.id === "openai" || azure ? { max_completion_tokens: req.maxTokens } : { max_tokens: req.maxTokens };
+      const structured = req.output === "json_schema" && !!req.schema;
       return {
         model: config.model,
-        messages: [{ role: "system", content: content(req.system) }, ...req.messages.map((m) => ({ role: m.role, content: content(m.content) }))],
+        messages: [...message("system", req.system, structured), ...req.messages.flatMap((m) => message(m.role, m.content, structured))] as ChatCompletionCreateParamsNonStreaming["messages"],
         ...(explicitCache ? { prompt_cache_options: { mode: "explicit" as const } } : {}),
         ...tokenLimit,
         ...(effort && req.reasoningEffort ? { reasoning_effort: req.reasoningEffort } : {}),
