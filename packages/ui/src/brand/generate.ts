@@ -126,6 +126,7 @@ export function macIconSvg(p: IconParts): string {
 }
 
 /** The badge a dev run's Dock icon wears: system orange, so it reads apart from the shipped icon even at Dock size. */
+// i18n-ignore: drawn into a dev build's icon file, never shipped or shown as text
 export const DEV_BADGE = { fill: "#FF9F0A", text: "#1D1D1F", label: "DEV" } as const;
 
 /** The macOS icon with a "DEV" pill over the tile's foot: what an unpackaged run shows in the Dock (never shipped). */

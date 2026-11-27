@@ -11,8 +11,9 @@ import { describe, expect, it } from "vitest";
  */
 const ROOT = join(import.meta.dirname, "../../../..");
 const SCANNED = ["packages/ui/src", "apps/web/src"];
-// plan 276: a sign-in provider's own mark keeps its company's colors in every palette (BoardUI's Social Button)
-const EXEMPT = [/\/themes\//, /\.test\.tsx?$/, /themes\.generated\.css$/, /\/brand\/provider-marks\.tsx$/];
+// plan 276: a sign-in provider's own mark keeps its company's colors in every palette (BoardUI's Social Button); `pnpm brand`
+// draws the app's icon files at build time, never on screen in a palette (its DEV badge, 565e58643, is system orange)
+const EXEMPT = [/\/themes\//, /\.test\.tsx?$/, /themes\.generated\.css$/, /\/brand\/provider-marks\.tsx$/, /\/brand\/generate\.ts$/];
 
 const CODE_RULES: [string, RegExp][] = [
   ["hex color", /(?<![\w&/])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})\b/],
