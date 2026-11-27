@@ -242,7 +242,7 @@ describe("People in Terno Pro (plan 288)", () => {
         const h3s = [...pro.querySelectorAll("h3")].filter((h) => titles.includes(h.textContent!));
         expect(h3s.map((h) => h.textContent), where).toEqual(titles);
         expect(pro.querySelector("#what-matters")!.compareDocumentPosition(h3s[0]!) & 4, where).toBe(4);
-        const [, , followups, people, digest] = h3s as [Element, Element, Element, Element, Element];
+        const [followups, people, digest] = [h3s[2]!, h3s[3]!, h3s[4]!];
         const between = (e: Element, from: Element, to: Element) => !!(from.compareDocumentPosition(e) & 4) && !!(e.compareDocumentPosition(to) & 4);
         // its body and three points between its title and the digest's (Lumen puts its picture above the title)
         const texts = [...pro.querySelectorAll("p, li")];
@@ -259,6 +259,10 @@ describe("People in Terno Pro (plan 288)", () => {
           expect(between(img, followups, digest), where).toBe(true);
           expect(img.closest(".site-pro-lead.site-pro-ai-people"), where).not.toBeNull();
         }
+        // and it's People's own: no other feature's title or picture between it and People's title, either way round
+        const [first, last] = people.compareDocumentPosition(imgs[0]!) & 4 ? [people, imgs[0]!] : [imgs[0]!, people];
+        const others = [...pro.querySelectorAll("h3, img[data-mode=light]")].filter((e) => e !== people && e !== imgs[0]);
+        expect(others.filter((e) => between(e, first, last)), where).toEqual([]);
       }
   });
 });

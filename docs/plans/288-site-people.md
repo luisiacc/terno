@@ -74,3 +74,22 @@ Twelve points, all taken:
 ## Taking the picture
 
 On a copy of the AI demo's profile (`rsync` without `Singleton*`), started as plan 224 says, then `pnpm --filter @terno/site shots:demo -- --only=ai-people`. The first pick, Liam Taylor, showed a conversation typed into the demo by hand (“hi”, two words of body), not fixture mail. The capture now skips a page whose conversations in view have a subject under 4 characters or a snippet under 24 (the fixture's are whole sentences); it took Natalia Navarro: a conversation waiting on your answer and three requests, then her recent conversations.
+
+## What the Codex code review changed
+
+Twelve findings; ten fixed, two declined:
+
+1. **The window must be the demo's mailbox.** Before anything is changed or taken, every account in the window must be one of `@terno/mock-data`'s (all its accounts and the contacts fixture's); a window on real mail is refused. This guards all three demo pictures.
+2. **The address check compares whole addresses**, painted text only (a text range's box, not its element's), and allows the person's own address only in their page's head. A refusal says why and never echoes the words.
+3. **Filters are cleared through the app** (`setPeopleFilter(NO_PEOPLE_FILTER)`; the old click only reached the empty list's button), a focused account stops the run with what to do, and the run checks that no filter chip is left.
+4. **Candidates come from the app's state:** Open's keys from People's store, not a row's words (an `@` in a request no longer skips it), and the kinds from the items' own kinds, not their labels. Every candidate is checked as a picture before it's ranked, so a winner can't fail the capture.
+5. **The hand-typed check runs again right before each mode's capture.** It stays a heuristic by length. The demo has no record of which conversations were typed by hand, and the check can only refuse a candidate, never pass a wrong picture. Declined: matching the fixture's conversation ids, which the demo doesn't keep.
+6. **Copy:** “the others you’ve written to” (Everyone is capped and filtered by plan 278), and “replies you’re waiting for in Follow-ups” (they come from Follow-ups), in both languages.
+7. **Declined:** at 640 px and wider, Lumen shows the whole window, so text is small until Enlarge. The drafted reply's picture already works this way. Changing the breakpoint for both is a design change, not this plan's.
+8. **Alt text leads with what the phone crop shows:** the person's page first, then the list beside it.
+9. **Declined:** Lumen puts the picture before the feature's heading, as it does for the drafted reply. That's the design's idiom, and the alt text describes the picture.
+10. **The pictures' e2e checks each mode's 1× and 2× file:** both must be served as WebP (a 404 used to pass the “two different files” check), for “What matters”, Follow-ups and People.
+11. **People's picture is its own:** the render test checks that no other feature's title or picture sits between People's picture and People's title. A new e2e checks that the picture is as wide as the drafted reply's in every design at 1440 px.
+12. **Each run captures into its own folder** (`.shots-raw-ai/run-<time>`) and encodes only that folder, so a retake that fails after its light frame can't pair it with an older dark one.
+
+Retaken after the fixes: the same choice, Natalia Navarro, with Liam Taylor's page skipped for a hand-typed conversation.

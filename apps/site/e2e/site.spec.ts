@@ -276,10 +276,30 @@ test("“What matters”, Follow-ups and People have a real light and dark pictu
       await shot.getByRole("button", { name: other === "light" ? "Light" : "Dark" }).click();
       await expect(shot.locator(`img[data-mode=${other}]`), path).toBeVisible();
       await expect(shot.locator(`img[data-mode=${scheme}]`), path).toBeHidden();
-      // two different captures, not one picture under two names
-      const [light, dark] = await Promise.all(["light", "dark"].map(async (m) => (await page.request.get((await shot.locator(`img[data-mode=${m}]`).getAttribute("src"))!)).body()));
-      expect(light!.equals(dark!), path).toBe(false);
+      // two different captures, not one picture under two names, each served at 1× and 2× (the 2× is what Enlarge opens)
+      const files = await Promise.all(
+        ["light", "dark"].map(async (m) => {
+          const img = shot.locator(`img[data-mode=${m}]`);
+          const urls = await Promise.all([img.getAttribute("src"), img.getAttribute("data-full")]);
+          const [one, two] = await Promise.all(urls.map((url) => page.request.get(url!)));
+          for (const r of [one!, two!]) {
+            expect(r.ok(), `${path} ${r.url()}`).toBe(true);
+            expect(r.headers()["content-type"], `${path} ${r.url()}`).toBe("image/webp");
+          }
+          return one!.body();
+        }),
+      );
+      expect(files[0]!.equals(files[1]!), path).toBe(false);
     }
+  }
+});
+
+test("People's picture is as wide as the drafted reply's in every design (plan 288)", async ({ page }) => {
+  for (const design of DESIGNS) {
+    await page.goto(`/designs/${design}/`);
+    const [reply, people] = await Promise.all(["ai-reply", "ai-people"].map((name) => page.locator(`.site-pro-${name}`).evaluate((b) => b.getBoundingClientRect().width)));
+    expect(people, design).toBeGreaterThan(900);
+    expect(people, design).toBeCloseTo(reply!, 0);
   }
 });
 

@@ -155,7 +155,7 @@ export const en = {
     /** People (plan 281), shown wide between the pairs (plan 288) */
     people: {
       title: "What’s open with each person.",
-      body: "People puts first the ones with something open: what they asked of you, what you promised them, conversations waiting on your answer, replies you’re waiting for. Then everyone else you write to. Choose someone to see what’s open between you and your recent conversations.",
+      body: "People puts first the ones with something open: what they asked of you, what you promised them, conversations waiting on your answer, replies you’re waiting for in Follow-ups. Then the others you’ve written to. Choose someone to see what’s open between you and your recent conversations.",
       points: ["Longest waiting first, with how long", "Mark items Done or move them to Later, with Undo", "Search by name or address as you type"],
     },
     digest: {
@@ -245,7 +245,7 @@ export const en = {
     "ai-reply": "A conversation open in Terno, with a reply already drafted under the last message and one gap marked to fill in",
     "ai-ask": "Ask your mail answering “What did Isabella say about the payment?”, with numbered links to the emails it came from",
     "ai-what-matters": "The “What matters” view: what you missed, what’s due today and who’s waiting on your answer, one plain sentence each, with when it’s due",
-    "ai-people": "The People view: everyone with something open, longest waiting first and for how long, beside one person’s page with what’s open between you and your recent conversations",
+    "ai-people": "One person’s page in People: what’s open between you, each with its kind and how long it’s been, then your recent conversations; beside it, the list of people with something open, longest waiting first",
     "ai-followups": "A question that got no answer, back in Follow-ups with a button to write a follow-up",
     "ai-digest": "Today’s newsletters on one page, one line each, with a button to archive them all",
     "ai-summary": "A short summary above a conversation, with a to-do and a Reply button",

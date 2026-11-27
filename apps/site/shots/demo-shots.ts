@@ -17,17 +17,22 @@
  * - `ai-followups`: the reading pane's head (subject and the unanswered question's card) of the first unanswered question whose head
  *   holds nothing else, at 1180×900: never a sender's line (a one-message conversation shows it between the two) or the
  *   messages under the card, where the demo account's own name and address are; no address at all in the picture.
- * - `ai-people` (plan 288): the window at 1280×800 (the drafted reply's size), Split, on People with no search or
- *   filter: the list from its top and the page of the Open person in view whose items show the most kinds (asked you,
- *   waiting on you, owes you a reply, you promised), then the most items that fit above Conversations. The only address
- *   painted is that person's own, in their page's head.
+ * - `ai-people` (plan 288): the window at 1280×800 (the drafted reply's size), Split, on People with no search, filter
+ *   or focused account: the list from its top and the page of the Open person in view whose items are of the most kinds
+ *   (asked you, waiting on you, owes you a reply, you promised), then the most items that fit above Conversations. The
+ *   only address painted is that person's own, in their page's head.
+ *
+ * Nothing is changed or taken until the window shows the demo's mailbox: every account in it is one of the mock
+ * mailbox's (`@terno/mock-data`), so a window on real mail is refused. Each run writes its captures to a folder of its
+ * own and encodes only those, so a run that fails halfway never pairs its frame with an older run's.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { chromium, type CDPSession, type Page } from "@playwright/test";
+import { chromium, expect, type CDPSession, type Page } from "@playwright/test";
+import { CONTACTS_ACCOUNT, generateDataset } from "@terno/mock-data";
 import { encode, site } from "./lib";
 
-const raw = join(site, ".shots-raw-ai");
+const raw = join(site, ".shots-raw-ai", `run-${Date.now()}`);
 const port = Number(process.argv.find((a) => a.startsWith("--port="))?.slice(7) ?? 9333);
 const PICTURES = ["ai-what-matters", "ai-followups", "ai-people"] as const;
 const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7).split(",") ?? [...PICTURES];
@@ -36,14 +41,20 @@ if (unknown.length) throw new Error(`no such picture: ${unknown.join(", ")} (the
 const wanted = (name: (typeof PICTURES)[number]) => only.includes(name);
 type Mode = "light" | "dark";
 type Box = { x: number; y: number; width: number; height: number };
-/** People's kinds of item, as its page says them (plan 288 picks the person showing the most) */
-const KINDS = [/\bAsked you\b/, /\bWaiting on you\b/, /\bOwes you a reply\b/, /\bYou promised\b/];
+/** the mock mailbox's own addresses: every account of the window must be one */
+const FIXTURE_ACCOUNTS = new Set([...generateDataset({ threads: 0, accounts: Number.MAX_SAFE_INTEGER }).accounts, CONTACTS_ACCOUNT].map((a) => a.email.toLowerCase()));
 
 mkdirSync(raw, { recursive: true });
 const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
 try {
   const page = browser.contexts().flatMap((c) => c.pages()).find((p) => !p.url().startsWith("devtools:"));
   if (!page) throw new Error(`no app window on port ${port}: start the demo with TERNO_REMOTE_DEBUGGING_PORT=${port}`);
+  const accounts = await page.evaluate(async () => {
+    const module = "/src/state/app.ts";
+    const { useApp } = (await import(/* @vite-ignore */ module)) as { useApp: { getState: () => { accounts: { email: string }[] } } };
+    return useApp.getState().accounts.map((a) => a.email.toLowerCase());
+  });
+  if (!accounts.length || accounts.some((a) => !FIXTURE_ACCOUNTS.has(a))) throw new Error(`the window on port ${port} isn't the demo's mailbox (an account isn't one of @terno/mock-data's): nothing changed or taken`);
   const cdp = await page.context().newCDPSession(page);
   // the window's zoom: CSS pixels to the window's own (the capture's clip is in those), read at a device scale of 2
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1200, height: 860, deviceScaleFactor: 2, mobile: false });
@@ -119,10 +130,10 @@ try {
 encode(raw, { only });
 
 /**
- * People in Split with nothing typed or filtered, the list from its top; of the Open people wholly in view, the one
- * whose page shows the most kinds of item, then the most items above Conversations. Both modes are checked again
- * before each capture: the chosen row, the page's items and its first conversation inside the window, and no address
- * painted but the person's own.
+ * People in Split with nothing typed, filtered or focused, the list from its top. Of the Open people wholly in view
+ * (the app's own list, not the rows' words), each one's page is checked as a picture would be, and of those that pass,
+ * the one whose items are of the most kinds, then the most items above Conversations. Both modes are checked again
+ * right before each capture.
  */
 async function people(page: Page, size: (w: number, h: number) => Promise<void>, appearance: (patch: Record<string, unknown>) => Promise<void>, both: (name: string, frame: () => Promise<Box>) => Promise<void>) {
   const W = 1280;
@@ -131,49 +142,78 @@ async function people(page: Page, size: (w: number, h: number) => Promise<void>,
   await size(W, H);
   await page.getByTestId("nav-people").click();
   await page.getByTestId("people-rows").waitFor();
-  if (await page.getByTestId("people-filter-clear").isVisible()) await page.getByTestId("people-filter-clear").click();
+  if (await page.evaluate(() => {
+    const module = "/src/state/app.ts";
+    return import(/* @vite-ignore */ module).then(({ useApp }) => (useApp as { getState: () => { soloAccountId: number | null } }).getState().soloAccountId !== null);
+  })) throw new Error("the sidebar is focused on one account: unfocus it so People lists everyone, then run again");
+  await page.evaluate(async () => {
+    const [lib, filter] = ["/src/lib/people.ts", "/src/lib/people-filter.ts"];
+    const { setPeopleFilter } = (await import(/* @vite-ignore */ lib)) as { setPeopleFilter: (choice: unknown) => void };
+    const { NO_PEOPLE_FILTER } = (await import(/* @vite-ignore */ filter)) as { NO_PEOPLE_FILTER: unknown };
+    setPeopleFilter(NO_PEOPLE_FILTER);
+  });
   const search = page.getByTestId("people-search");
   if (await search.inputValue()) await search.fill("");
+  await expect(page.getByTestId("people-filter-chips")).toHaveCount(0);
   await page.getByTestId("person-row").first().waitFor();
   await page.getByTestId("people-rows").evaluate((e) => (e.scrollTop = 0));
   await page.waitForTimeout(300);
 
-  const keys = await page.getByTestId("person-row").evaluateAll((rows, H) => rows.filter((r) => r.closest("[data-testid=people-rows]") && r.getBoundingClientRect().bottom <= H - 8 && r.getBoundingClientRect().top >= 0).map((r) => (r as HTMLElement).dataset.key!), H);
+  const open = new Set(await openKeys(page));
+  const keys = (await page.getByTestId("person-row").evaluateAll((rows, H) => rows.filter((r) => r.closest("[data-testid=people-rows]") && r.getBoundingClientRect().bottom <= H - 8 && r.getBoundingClientRect().top >= 0).map((r) => (r as HTMLElement).dataset.key!), H)).filter((k) => open.has(k));
   let best: { key: string; kinds: number; fit: number; name: string } | null = null;
-  for (const key of keys) {
-    const row = page.locator(`[data-testid=person-row][data-key="${key}"]`);
-    // only Open's people (a row with an age); Everyone's say an address
-    if (await row.evaluate((r) => /@/.test(r.textContent ?? ""))) continue;
-    await row.click();
+  for (const [i, key] of keys.entries()) {
+    await page.locator(`[data-testid=person-row][data-key="${key}"]`).click();
     await page.getByTestId("person-items").waitFor();
     await page.waitForTimeout(500);
-    const items = await page.getByTestId("person-item").allInnerTexts();
-    const kinds = KINDS.filter((k) => items.some((t) => k.test(t))).length;
+    const kinds = new Set(await itemKinds(page)).size;
     const fit = await page.evaluate((H) => {
       const conv = document.querySelector("[data-testid=person-conversation]")?.getBoundingClientRect();
       const lines = [...document.querySelectorAll("[data-testid=person-item]")];
       return conv && conv.bottom <= H ? lines.filter((l) => l.getBoundingClientRect().bottom <= H).length : 0;
     }, H);
     const name = await page.getByTestId("person-name").innerText();
-    const typed = await handTyped(page, H);
-    console.log(`    ${name}: ${kinds} kinds, ${fit} of ${items.length} items above Conversations${typed ? `; skipped, it shows mail typed into the demo (“${typed}”)` : ""}`);
-    if (typed) continue;
-    if (fit && (!best || kinds > best.kinds || (kinds === best.kinds && fit > best.fit))) best = { key, kinds, fit, name };
+    // never printed: a refused page's words stay out of the terminal
+    const problem = (await handTyped(page, H)) ?? (await peopleProblem(page, key, W, H));
+    console.log(`    #${i + 1}: ${kinds} kinds, ${fit} items above Conversations${problem ? `; skipped: ${problem}` : ""}`);
+    if (problem || !fit) continue;
+    if (!best || kinds > best.kinds || (kinds === best.kinds && fit > best.fit)) best = { key, kinds, fit, name };
   }
-  if (!best) throw new Error("no Open person in view whose page shows an item and a conversation: nothing taken");
+  if (!best) throw new Error("no Open person in view whose page passes as a picture: nothing taken");
   await page.locator(`[data-testid=person-row][data-key="${best.key}"]`).click();
   await page.getByTestId("person-items").waitFor();
   console.log(`  people: ${best.name}, ${best.kinds} kinds, ${best.fit} items`);
   await both("ai-people", async () => {
-    const bad = await peopleProblem(page, best.key, W, H);
+    const bad = (await handTyped(page, H)) ?? (await peopleProblem(page, best.key, W, H));
     if (bad) throw new Error(`ai-people: ${bad}`);
     return { x: 0, y: 0, width: W, height: H };
   });
 }
 
+type PeopleStore = { list: { open: { key: string }[] } | null; page: { items: ({ kind: "awaiting" } | { kind: "today"; item: { why: { kind: string } } })[] } | null };
+
+/** People's state as the app holds it (its own store, as the dev build serves it): the Open people's keys */
+async function openKeys(page: Page): Promise<string[]> {
+  return page.evaluate(async () => {
+    const module = "/src/state/people.ts";
+    const { usePeople } = (await import(/* @vite-ignore */ module)) as { usePeople: { getState: () => PeopleStore } };
+    return usePeople.getState().list?.open.map((p) => p.key) ?? [];
+  });
+}
+
+/** …and the kinds of the shown person's items: a reply owed you, your promise, a conversation waiting on you, their request */
+async function itemKinds(page: Page): Promise<string[]> {
+  return page.evaluate(async () => {
+    const module = "/src/state/people.ts";
+    const { usePeople } = (await import(/* @vite-ignore */ module)) as { usePeople: { getState: () => PeopleStore } };
+    return usePeople.getState().page?.items.map((item) => (item.kind === "awaiting" ? "awaiting" : item.item.why.kind)) ?? [];
+  });
+}
+
 /**
- * A conversation in view that was typed into the demo by hand rather than generated (someone trying it out: “hi”,
- * two words of body), or null. The fixture's subjects and snippets are always whole sentences; a short one is a test.
+ * Whether a conversation in view looks typed into the demo by hand rather than generated (someone trying it out:
+ * “hi”, two words of body): the fixture's subjects and snippets are always whole sentences. A heuristic that only
+ * refuses: a short generated one costs a candidate, never a wrong picture. Says why, never the words.
  */
 async function handTyped(page: Page, H: number): Promise<string | null> {
   return page.getByTestId("person-conversation").evaluateAll((rows, H) => {
@@ -181,14 +221,17 @@ async function handTyped(page: Page, H: number): Promise<string | null> {
       const r = row.getBoundingClientRect();
       if (r.top > H) continue;
       const [subject = "", , ...rest] = (row as HTMLElement).innerText.split("\n").map((l) => l.trim()).filter(Boolean);
-      const snippet = rest.join(" ").replace(/^.*? wrote last · /, "");
-      if (subject.length < 4 || snippet.length < 24) return `${subject} · ${snippet}`;
+      const snippet = rest.join(" ").replace(/^.*? · /, "");
+      if (subject.length < 4 || snippet.length < 24) return "a conversation in view looks typed into the demo by hand";
     }
     return null;
   }, H);
 }
 
-/** What's wrong with the People window as it stands, or null: the row, the items and a conversation in view, one address. */
+/**
+ * What's wrong with the People window as a picture, or null: the row, an item, a conversation and the sidebar's People
+ * in view, and no address painted anywhere but the person's own, whole, in their page's head. Says why, never the words.
+ */
 async function peopleProblem(page: Page, key: string, W: number, H: number): Promise<string | null> {
   return page.evaluate(
     ({ key, W, H }) => {
@@ -203,18 +246,21 @@ async function peopleProblem(page: Page, key: string, W: number, H: number): Pro
         const r = document.querySelector(selector)?.getBoundingClientRect();
         if (!r || r.width === 0 || r.top < 0 || r.left < 0 || r.bottom > H || r.right > W) return problem;
       }
-      const page = document.querySelector("[data-testid=person-page]")!;
       // the line under the name: their address, then when you last heard from each other
-      const own = page.querySelector("[data-testid=person-name]")?.nextElementSibling?.textContent ?? "";
-      const theirs = own.match(/[^\s·]+@[^\s·]+/)?.[0];
+      const head = document.querySelector("[data-testid=person-name]")?.nextElementSibling ?? null;
+      const theirs = head?.textContent?.split(/[\s·]+/).find((w) => w.includes("@"));
       const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
       for (let n = walker.nextNode(); n; n = walker.nextNode()) {
         const text = n.textContent ?? "";
-        if (!/@/.test(text)) continue;
-        const box = n.parentElement?.getBoundingClientRect();
+        if (!text.includes("@")) continue;
         // painted text only, in the window: a screen reader's 1 px line never shows
-        if (!box || box.width <= 1 || box.height <= 1 || box.bottom < 0 || box.top > H || box.right < 0 || box.left > W) continue;
-        if (!theirs || !text.includes(theirs) || text.replace(theirs, "").includes("@")) return `an address other than the person's is painted: “${text.trim()}”`;
+        const range = document.createRange();
+        range.selectNodeContents(n);
+        const box = range.getBoundingClientRect();
+        if (box.width <= 1 || box.height <= 1 || box.bottom < 0 || box.top > H || box.right < 0 || box.left > W) continue;
+        // their own address, whole, in their head; any other text with an @ is refused
+        const words = text.split(/[\s·,;<>()]+/).filter((w) => w.includes("@"));
+        if (!head?.contains(n) || !theirs || words.some((w) => w !== theirs)) return "an address other than the person's own is painted";
       }
       return null;
     },
