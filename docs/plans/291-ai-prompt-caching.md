@@ -1,6 +1,6 @@
 # Plan 291: Prompt caching where it pays, across every AI job
 
-- **Status:** planned.
+- **Status:** built; Anthropic measured once its usage limit resets (2026-12-01).
 - **Builds on:** plan 133 (drafting's cache breakpoints), plan 168 (routing: Pro is both keys), plan 202 (summaries' volumes), plan 204 (dated reads' volumes), plan 280 (their promises), the price fix in d0dc057ba and 32ac5ee34 (OpenAI's cache reads and writes counted at their own prices).
 
 ## The request (verbatim)
@@ -121,3 +121,84 @@ Codex read the plan against the code (`codex exec -s read-only`, 12 points). Wha
 
 **Renumbered:** written as plan 290; main took 290 for Needs you's batched read, so this is 291.
 
+
+## What the code review changed
+
+Codex reviewed the series (`codex exec -s read-only`, 10 findings). Each fix has a test that fails without it.
+
+1. **(High) Explicit caching only on OpenAI's own endpoint.** An OpenAI profile can be saved with another base URL (a relay); it got `prompt_cache_options` and content parts it may refuse. Now `api.openai.com` only; a relay gets the flattened text and neither field (`cache.test.ts`).
+2. **Categorizing's example holds a fixed id.** On a server without structured output the ladder puts the example in the system prompt, ahead of the cached labels, and it carried the mail's id: every mail had its own prefix. Test: two mails, one prefix.
+3. **A marked assistant turn keeps its breakpoint** on OpenAI (it was flattened). Test.
+4. **The stream test reads a real event stream** (deltas, the end and the cached usage), not only what was sent.
+5. **The harness** spreads a repair's cost over its job's calls instead of counting it as a call; counts the intent reads that come with each draft and the second looks as the day sends them; runs a job alone when asked (intent, the Ask planner or answer); counts a task that fails before any request. The second-look estimate (`dated-second-look.real.ts`) counts the arrival line now read last.
+
+Left as stated limits, not fixed: prices are pooled across personas (the prompts are the same jobs, and each persona's prefix is its own, so a cold and a warm price per job is what changes); the replay's summaries include short newest messages the worker would skip, and its "since" share is about a fifth, not a third (both arms alike: only the absolute summary cost leans low); each arm file is one complete run (an interrupted first attempt was moved aside, below).
+
+Building it also found that the harness's Ask answers had failed before sending anything (no `signal`): the before arm's answers were run again alone.
+
+## What measuring found: a breakpoint inside a message isn't read with a JSON schema
+
+The first after run had the dated and follow-up readers writing their 6,423- and 2,595-token prefixes again on nearly every call and almost never reading them (dated 13% hits, the others 0%), while summaries read theirs. The difference: a breakpoint that ends a block in the *middle* of a message (the per-call arrival line follows it). Probes on Luna (`/tmp/terno-ai/spend-cache-1.jsonl`, label `cache-shape-probe`): without a response schema, a mid-message breakpoint is read; **with a JSON schema it's written on every call and never read** (2,312 tokens three times running), while one that ends a message is read on every later call (2,297), whether the tail is a second system message or the start of the user turn. The docs don't say this; it's measured, and the fix only adds a message boundary: **on OpenAI, a structured request ends a message at each breakpoint**, the same text in the same role (`openai-chat.ts`, test in `cache.test.ts`). Drafting (no schema) keeps one message. The after arm's dated, follow-up and categorizing rows from before the fix were set aside (`/tmp/terno-ai/cache-runs/discarded-after-openai-midmessage.jsonl`) and those jobs run again.
+
+## Results
+
+**Anthropic couldn't be measured.** The Anthropic key's monthly API usage limit is reached until 2026-12-01 00:00 UTC (every request, token counting included, gets a 400). So the replay ran every job on **an OpenAI key alone** (`TERNO_CACHE_ROUTE=openai`: drafting on Sol, everything else on Luna), which exercises every declaration through real breakpoints, and Pro's Anthropic jobs are estimated below from the measured prompt sizes and Anthropic's published prices. Once the limit resets: `TERNO_AI_REAL=1 TERNO_CACHE_ARM=after pnpm exec vitest run --config vitest.real.config.ts scripts/ai-real/cache-strategy.real.ts` (and `before` from a checkout of 32ac5ee34), then `TERNO_CACHE_REPORT=1`.
+
+**Method.** Each arm replayed the three personas' days once, the before arm from a checkout of the base (32ac5ee34), the after arm 30 minutes later (OpenAI's cache lasts 30). A call is warm when the provider reports a read. Per job: the input's cost cold and warm (repairs spread over their job's calls), and the answer's cost pooled over both arms (its length is the model's, run to run, and caching doesn't change it). A month: 30 days of each persona's calls, each job's share of warm calls from its arrivals (above). In the before arm the dated and follow-up readers never count warm: their prefix carried each mail's own arrival minute, and the replay's few warm reads there were the corpus's repeated days and minutes.
+
+### Per job (Luna and Sol, measured)
+
+| Job | Before: in / read / write tokens a call, hit rate | After | Input $ a call, cold → warm, before | After | Latency median, cold / warm, before → after |
+|---|---|---|---|---|---|
+| summary (Luna) | 3 / 2,718 / 344, 84% | 427 / 2,480 / 158, 80% | $0.00044 → $0.000069 | $0.00041 → $0.000080 | 7.8 / 5.3 s → 9.2 / 4.6 s |
+| dated read and second look (Luna) | 3 / 794 / 5,845, never warm | 212 / **6,266** / 169, **97%** | $0.00074, always | $0.00082 → **$0.000086** | 2.1 s → 2.4 / 2.1 s |
+| your mail (Luna) | 3 / 0 / 2,694, 0% | 113 / **2,421** / 168, **94%** | $0.00034, always | $0.00033 → **$0.000037** | 2.5 s → 2.7 / 2.3 s |
+| their mail (Luna) | 3 / 28 / 1,753, never warm | 145 / **1,588** / 55, **97%** | $0.00022, always | $0.00022 → **$0.000031** | 1.5 s → 1.6 / 1.2 s |
+| digest, reply check, wanted, match, intent, Ask's planner and answer, categorize (Luna) | whole prompt written at 1.25× when over 1,024 tokens (digest 367, match 1,122, ask 2,259, categorize 702 written a call) | nothing written or read | e.g. ask $0.00028, categorize $0.00012 | ask $0.00023, categorize $0.00011 | unchanged (within a run's spread) |
+| Replies ready draft (Sol) | 3 / 1,091 / 503, 87% | 49 / 1,211 / 337, 87% | $0.0040 → $0.0011 | $0.0040 → $0.00075 | 2.6 / 1.6 s → 2.0 / 2.1 s (first word) |
+| draft asked for (Sol) | 3 / 438 / 1,150, 33% | 78 / 446 / 1,067, 33% | $0.0040 → $0.00088 | $0.0040 → $0.00081 | 0.9 / 0.6 s → 1.0 / 1.3 s |
+| refinement (Sol) | 3 / 1,058 / 549, 100% | 96 / **1,513** / 0, 100% | $0.0016 | **$0.00049** | 0.9 s → 0.8 s |
+
+Before, Luna wrote every prompt over 1,024 tokens to its cache at 1.25×, mail and all, and read back only a system prompt that stayed the same. Now it writes a prefix only where one is marked, once per 30 minutes per prefix, and reads it on 94–97% of the readers' calls. Summaries are about even: implicit mode also read their system prompt (it never changed), and the after arm's warm call costs a hundred-thousandth of a dollar more (it reads 240 tokens fewer than implicit mode found). The dated reader is the big one: 6,266 of its 6,650 input tokens now come from the cache, at a tenth of the price, where before all of them were written at 1.25×. Latency: no regression; warm calls are as fast as or faster than before, and every difference is within one run's spread.
+
+### Per persona, a month (an OpenAI key alone, measured)
+
+| Persona | Before | After | Saved | Input alone, before → after |
+|---|---:|---:|---:|---|
+| light | $0.92 | $0.82 | 11% | $0.69 → $0.59 |
+| typical | $2.70 | $2.04 | 24% | $1.98 → $1.31 |
+| heavy | $6.12 | $4.54 | 26% | $4.33 → $2.75 |
+
+By job, typical: dated $0.78 → $0.30 of input, their mail $0.10 → $0.04, your mail $0.08 → $0.06, refinements $0.10 → $0.03, Replies ready $0.38 → $0.37; heavy: dated $1.55 → $0.51, their mail $0.26 → $0.08, your mail $0.20 → $0.12, refinements $0.24 → $0.07 (`TERNO_CACHE_REPORT=1` prints every job).
+
+### Pro's routing (both keys), a month: Luna measured, Anthropic estimated
+
+The Luna jobs (summary, dated, both follow-ups, digest, reply check, preferences, intent) are the measurements above: light $0.50 → $0.44, typical $1.50 → $0.94, heavy $3.26 → $1.95. Anthropic's jobs are estimated from Luna's token counts (Anthropic's tokenizer may count up to about a third more), Anthropic's prices and each job's warm share at 5 minutes (light, typical, heavy: Ask 0/67/75%, the planner 0/75/80%, categorize 20/40/38%, drafts 0/14/0%):
+
+- **Drafting and Replies ready on Sonnet:** unchanged (the same blocks, bytes and breakpoints as before): about $0.35, $1.06 and $2.97 a month, at plan 133's $0.005 a first draft and $0.0018 a warm one.
+- **Ask's answer on Sonnet** (2,262 tokens in, of which the rules ≈920; 281 out): $0.0073 a question before; a warm one saves $0.0017, a cold one pays $0.0005 more. Light $0.22 → $0.23, typical $0.66 → $0.57, heavy $1.76 → $1.47.
+- **Ask's planner on Haiku** (≈730 of 953 cached): under a cent a month either way.
+- **Categorizing on Opus**, when it's on (the labels and examples ≈850 of 1,053 tokens; 164 out): $0.0075 a mail before; warm $0.0041 less, cold $0.0008 more. Light $1.12 → $1.13, typical $4.49 → $4.03, heavy $13.48 → $12.22.
+
+| Persona | Before | After | Saved | Without AI categorizing |
+|---|---:|---:|---:|---|
+| light | ≈$2.20 | ≈$2.17 | 1% | $1.08 → $1.04 |
+| typical | ≈$7.75 | ≈$6.63 | 14% | $3.26 → $2.60 (20%) |
+| heavy | ≈$21.56 | ≈$18.69 | 13% | $8.08 → $6.47 (20%) |
+
+The owner's rough baseline (light ≈$1.40, typical ≈$5.10, heavy ≈$17) sits between the two columns: these personas categorize every undecided mail on Opus, which most people won't turn on. **Where it doesn't pay:** a light persona's Ask and categorizing are cold most of the day, and their writes cost a little more (cents a month); everything else is cheaper or even. A worthwhile next measurement once Anthropic is back: a 1-hour TTL for categorizing's labels (a 2× write, but most of a heavy day's mail would then read it), out of scope here.
+
+### The evals of the reordered prompts (Luna, old prompt and new, same day)
+
+| Eval | Old prompt | New prompt |
+|---|---|---|
+| dated, run 1 | found 187/187, times 44/44, moves 5/5, wrong shown 0, wrong texts 3 (fails ≤ 1) | 187/187, 44/44, 5/5, wrong shown 1, wrong texts 2 (fails ≤ 1) |
+| dated, run 2 | 185/187, 43/43, 5/5, wrong shown 0, wrong texts 2 (fails ≤ 1) | 187/187, 44/44, 5/5, wrong shown 0, wrong texts 3 (fails ≤ 1) |
+| your mail (followups.real.ts) | run 1 cut off by a time limit; run 2: 1 of 6 failed (v11: one wrong row shown) | 6 of 6 pass, twice: promises 170/170, replies 30/30, dates 90/90, words 70/70, nothing false |
+| their mail (theirs.real.ts) | passes: 36 shown, 0 wrong, days 24/24, firmness 33/33, moves 6/6 | identical, passes |
+
+The dated eval's wrong-text threshold fails on both prompts in every run (Luna's texts, as before this change); on everything else the new prompt holds or does better.
+
+### Spend
+
+One ledger, `/tmp/terno-ai/spend-cache-1.jsonl` (cap $55): **$1.91 counted**, of which about $0.42 is worst-case reservations for Anthropic requests refused before running (not billed), so about $1.50 billed: the replay's arms $0.58, the evals $0.80, probes $0.02, and a first before run that was interrupted (its arrival times repeated; moved aside to `discarded-before-1.jsonl`) about $0.05.
