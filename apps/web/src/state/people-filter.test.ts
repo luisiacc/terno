@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 /** Plan 287: People's filter (remembered, what's asked, its words) and People inside a focused account. */
 import type { Account, PeopleList } from "@terno/core";
+import { setLocale } from "@terno/i18n";
+import en from "@terno/i18n/locales/en";
+import es from "@terno/i18n/locales/es";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.hoisted(() => {
@@ -15,7 +18,7 @@ const { actOnPersonItem, askLastEmails, installPeople, loadPeople, openPeople, p
 const { enterPreview, leavePreview } = await import("~/state/action-preview");
 const { enterReview, leaveReview } = await import("~/lib/review");
 installPeople();
-const { accountsLabel, effectivePeopleFilter, filterSummary, loadPeopleFilter, NO_PEOPLE_FILTER, savePeopleFilter, toggleAccount } = await import("~/lib/people-filter");
+const { accountsLabel, effectivePeopleFilter, filterSummary, loadPeopleFilter, NO_PEOPLE_FILTER, rangeDays, rangeLabel: rangeWords, savePeopleFilter, toggleAccount, withoutDate } = await import("~/lib/people-filter");
 
 const account = (id: number, name: string) => ({ id, displayName: name, email: `${name.toLowerCase()}@x.test`, color: "brown" }) as unknown as Account;
 const accounts = [account(1, "Home"), account(2, "Work"), account(3, "Club")];
@@ -32,12 +35,12 @@ describe("the filter as set", () => {
   it("is remembered, and anything unreadable is none", () => {
     const store = new Map<string, string>();
     const storage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v), removeItem: (k: string) => void store.delete(k) };
-    savePeopleFilter({ within: "month", accounts: [2, 3] }, storage);
-    expect(loadPeopleFilter(storage)).toEqual({ within: "month", accounts: [2, 3] });
+    savePeopleFilter({ within: "month", range: null, accounts: [2, 3] }, storage);
+    expect(loadPeopleFilter(storage)).toEqual({ within: "month", range: null, accounts: [2, 3] });
     savePeopleFilter(NO_PEOPLE_FILTER, storage);
     expect(store.size).toBe(0);
     store.set("terno:people-filter", '{"within":"decade","accounts":[1,"x",-2,1]}');
-    expect(loadPeopleFilter(storage)).toEqual({ within: null, accounts: [1] });
+    expect(loadPeopleFilter(storage)).toEqual({ within: null, range: null, accounts: [1] });
     store.set("terno:people-filter", "{nope");
     expect(loadPeopleFilter(storage)).toEqual(NO_PEOPLE_FILTER);
   });
@@ -49,19 +52,19 @@ describe("the filter as set", () => {
     expect(c.accounts).toEqual([2, 3]);
     expect(toggleAccount(c, 1, accounts).accounts).toEqual([]);
     expect(toggleAccount(c, 2, accounts).accounts).toEqual([3]);
-    expect(effectivePeopleFilter({ within: null, accounts: [2, 9] }, accounts, null)).toEqual({ accounts: [2] });
-    expect(effectivePeopleFilter({ within: null, accounts: [9] }, accounts, null)).toEqual({});
+    expect(effectivePeopleFilter({ within: null, range: null, accounts: [2, 9] }, accounts, null)).toEqual({ accounts: [2] });
+    expect(effectivePeopleFilter({ within: null, range: null, accounts: [9] }, accounts, null)).toEqual({});
   });
 
   it("in a focused account, that account alone (whatever was chosen); the date holds", () => {
-    expect(effectivePeopleFilter({ within: "week", accounts: [2, 3] }, accounts, 1)).toEqual({ within: "week", accounts: [1] });
+    expect(effectivePeopleFilter({ within: "week", range: null, accounts: [2, 3] }, accounts, 1)).toEqual({ within: "week", accounts: [1] });
   });
 
   it("its words: the date, one or two accounts by name, more by their count; a focused account's say only the date", () => {
     expect(accountsLabel([accounts[0]!, accounts[1]!])).toBe("Home, Work");
     expect(accountsLabel(accounts.slice(0, 2).concat(account(4, "Four")))).toBe("3 accounts");
-    expect(filterSummary({ within: "quarter", accounts: [2] }, accounts, false)).toBe("Past 3 months, Work");
-    expect(filterSummary({ within: null, accounts: [2] }, accounts, true)).toBeNull();
+    expect(filterSummary({ within: "quarter", range: null, accounts: [2] }, accounts, false)).toBe("Past 3 months, Work");
+    expect(filterSummary({ within: null, range: null, accounts: [2] }, accounts, true)).toBeNull();
     expect(filterSummary(NO_PEOPLE_FILTER, accounts, false)).toBeNull();
   });
 });
@@ -73,7 +76,7 @@ describe("People in a focused account (plan 287)", () => {
     setApp({ soloAccountId: 2 });
     openPeople();
     expect(getApp()).toMatchObject({ people: true, accountId: 2, soloAccountId: 2, view: "all" });
-    usePeople.setState({ filter: { within: "week", accounts: [3] } });
+    usePeople.setState({ filter: { within: "week", range: null, accounts: [3] } });
     expect(peopleFilter()).toEqual({ within: "week", accounts: [2] });
   });
 
@@ -114,7 +117,7 @@ describe("a new filter, while reads are on their way (plan 287)", () => {
     call.mockImplementationOnce(() => new Promise((r) => (late = r)));
     const first = loadPeople();
     call.mockImplementation(async () => ({ ...empty, everyoneVersion: 7 }));
-    setPeopleFilter({ within: "month", accounts: [] });
+    setPeopleFilter({ within: "month", range: null, accounts: [] });
     await vi.waitFor(() => expect(usePeople.getState().list?.everyoneVersion).toBe(7));
     late({ ...empty, everyoneVersion: 3 });
     await first;
@@ -136,7 +139,7 @@ describe("a new filter, while reads are on their way (plan 287)", () => {
     searchPeople("an");
     call.mockImplementationOnce(() => new Promise((r) => (lateLast = r)));
     askLastEmails([{ key: "bo@x.test", email: "bo@x.test" }]);
-    setPeopleFilter({ within: null, accounts: [2] });
+    setPeopleFilter({ within: null, range: null, accounts: [2] });
     expect(call).toHaveBeenCalledWith("people.person", { email: "ana@x.test", filter: { accounts: [2] } });
     expect(call).toHaveBeenCalledWith("people.search", { query: "an", filter: { accounts: [2] } });
     lateHits({ hits: [{ name: "Old", email: "old@x.test", key: "old@x.test", last: 0, written: true, open: 0 }], index: "ready" });
@@ -159,7 +162,7 @@ describe("after the Codex code review (plan 287)", () => {
     void loadPeople();
     usePeople.setState({ list: withAna([item]), hits: { hits: [], index: "ready" }, page: { key: "ana@x.test", email: "ana@x.test", name: "Ana", items: [item], conversations: [], more: false }, lastEmails: new Map([["bo@x.test", 5]]) });
     setApp({ person: "ana@x.test" });
-    setPeopleFilter({ within: null, accounts: [2] });
+    setPeopleFilter({ within: null, range: null, accounts: [2] });
     expect(usePeople.getState()).toMatchObject({ list: null, hits: null, page: null });
     expect(usePeople.getState().lastEmails.size).toBe(0);
     expect(getApp().person).toBe("ana@x.test");
@@ -184,7 +187,7 @@ describe("after the Codex code review (plan 287)", () => {
     });
     const acting = actOnPersonItem(item, "done");
     await vi.waitFor(() => expect(listCalls).toBe(1));
-    setPeopleFilter({ within: "year", accounts: [] });
+    setPeopleFilter({ within: "year", range: null, accounts: [] });
     await vi.waitFor(() => expect(listCalls).toBe(2));
     settleList(withAna([item]));
     await acting;
@@ -221,11 +224,11 @@ describe("after the Codex code review (plan 287)", () => {
     openPeople();
     call.mockImplementation(() => new Promise(() => {}));
     // (a scope first: the session's first one clears nothing)
-    setPeopleFilter({ within: "month", accounts: [] });
+    setPeopleFilter({ within: "month", range: null, accounts: [] });
     usePeople.setState({ page: { key: "ana@x.test", email: "ana+work@x.test", name: "Ana", items: [], conversations: [], more: false } });
     setApp({ person: "ana@x.test" });
     call.mockClear();
-    setPeopleFilter({ within: "week", accounts: [] });
+    setPeopleFilter({ within: "week", range: null, accounts: [] });
     expect(call).toHaveBeenCalledWith("people.person", { email: "ana+work@x.test", filter: { within: "week" } });
     expect(usePeople.getState().reading).toEqual({ key: "ana@x.test", email: "ana+work@x.test" });
   });
@@ -234,7 +237,7 @@ describe("after the Codex code review (plan 287)", () => {
     setApp({ accounts });
     openPeople();
     call.mockImplementation((method: string) => (method === "people.search" ? Promise.reject(Object.assign(new Error("offline"), { code: "UNAVAILABLE" })) : new Promise(() => {})));
-    setPeopleFilter({ within: "month", accounts: [] });
+    setPeopleFilter({ within: "month", range: null, accounts: [] });
     searchPeople("an");
     await vi.waitFor(() => expect(usePeople.getState().searchFailed).toBe(true));
     call.mockImplementation((method: string) => (method === "people.search" ? Promise.reject(Object.assign(new Error("newer"), { code: "CANCELLED" })) : new Promise(() => {})));
@@ -246,16 +249,73 @@ describe("after the Codex code review (plan 287)", () => {
   it("an account removed while the app was closed leaves the filter as the app starts", () => {
     // (the app's accounts are in before People installs, as at boot)
     setApp({ ready: true, accounts });
-    usePeople.setState({ filter: { within: null, accounts: [2, 9] } });
+    usePeople.setState({ filter: { within: null, range: null, accounts: [2, 9] } });
     installPeople();
     expect(usePeople.getState().filter.accounts).toEqual([2]);
   });
 
   it("an account gone leaves the filter as it's remembered", () => {
     setApp({ accounts });
-    usePeople.setState({ filter: { within: "week", accounts: [2, 3] } });
+    usePeople.setState({ filter: { within: "week", range: null, accounts: [2, 3] } });
     setApp({ accounts: accounts.filter((a) => a.id !== 3) });
-    expect(usePeople.getState().filter).toEqual({ within: "week", accounts: [2] });
-    expect(JSON.parse(localStorage.getItem("terno:people-filter")!)).toEqual({ within: "week", accounts: [2] });
+    expect(usePeople.getState().filter).toEqual({ within: "week", range: null, accounts: [2] });
+    expect(JSON.parse(localStorage.getItem("terno:people-filter")!)).toEqual({ within: "week", range: null, accounts: [2] });
+  });
+});
+
+describe("a custom range (plan 287)", () => {
+  const storage = () => {
+    const store = new Map<string, string>();
+    return { store, getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v), removeItem: (k: string) => void store.delete(k) };
+  };
+
+  it("is remembered as days; a broken one (no such day, its ends the wrong way round) is none, and a range drops a period", () => {
+    const s = storage();
+    savePeopleFilter({ within: null, range: { from: "2026-11-03", to: "2026-11-20" }, accounts: [] }, s);
+    expect(loadPeopleFilter(s)).toEqual({ within: null, range: { from: "2026-11-03", to: "2026-11-20" }, accounts: [] });
+    s.store.set("terno:people-filter", '{"within":"week","range":{"from":"2026-02-30","to":"2026-03-02"}}');
+    expect(loadPeopleFilter(s)).toMatchObject({ within: "week", range: null });
+    s.store.set("terno:people-filter", '{"range":{"from":"2026-11-20","to":"2026-11-03"}}');
+    expect(loadPeopleFilter(s).range).toBeNull();
+    s.store.set("terno:people-filter", '{"within":"week","range":{"from":"2026-11-03","to":"2026-11-03"}}');
+    expect(loadPeopleFilter(s)).toMatchObject({ within: null, range: { from: "2026-11-03", to: "2026-11-03" } });
+  });
+
+  it("is asked from the local start of its first day to the local end of its last, without a period", () => {
+    const f = effectivePeopleFilter({ within: "week", range: { from: "2026-11-03", to: "2026-11-03" }, accounts: [] }, accounts, null);
+    expect(f).toEqual({ range: { from: new Date(2026, 10, 3).getTime(), to: new Date(2026, 10, 4).getTime() - 1 } });
+  });
+
+  it("its words: as short as they read, a year only when it isn't this one; its days counted whole", () => {
+    const now = new Date(2026, 10, 26);
+    // (Intl's thin spaces around the dash, read as plain ones)
+    const rangeLabel = (r: Parameters<typeof rangeWords>[0], at: Date) => rangeWords(r, at).replace(/\s/g, " ");
+    expect(rangeLabel({ from: "2026-11-03", to: "2026-11-20" }, now)).toBe("Nov 3 – 20");
+    expect(rangeLabel({ from: "2026-10-28", to: "2026-11-04" }, now)).toBe("Oct 28 – Nov 4");
+    expect(rangeLabel({ from: "2025-12-12", to: "2026-01-04" }, now)).toBe("Dec 12, 2025 – Jan 4, 2026");
+    expect(rangeDays({ from: "2026-11-03", to: "2026-11-20" })).toBe(18);
+    expect(rangeDays({ from: "2026-11-03", to: "2026-11-03" })).toBe(1);
+    // (across a change of the clocks: still whole days)
+    expect(rangeDays({ from: "2026-10-20", to: "2026-11-10" })).toBe(22);
+    expect(filterSummary({ within: null, range: { from: "2026-11-03", to: "2026-11-20" }, accounts: [2] }, accounts, false)?.replace(/\s/g, " ")).toMatch(/^Nov 3 – 20(, \d{4})?, Work$/);
+  });
+
+  it("in Spanish, as the app's own locale says it (Codex review)", () => {
+    setLocale("es", es);
+    try {
+      expect(rangeWords({ from: "2026-10-19", to: "2026-10-21" }, new Date(2026, 10, 26)).replace(/\s/g, " ")).toBe("19–21 de oct");
+    } finally {
+      setLocale("en", en);
+    }
+  });
+
+  it("never starts before 1970 (what the filter's moments can be): a stored one that does is none (Codex review)", () => {
+    const s = storage();
+    s.store.set("terno:people-filter", '{"range":{"from":"1969-12-20","to":"1970-02-01"}}');
+    expect(loadPeopleFilter(s).range).toBeNull();
+  });
+
+  it("clearing the date keeps the accounts", () => {
+    expect(withoutDate({ within: null, range: { from: "2026-11-03", to: "2026-11-20" }, accounts: [2] })).toEqual({ within: null, range: null, accounts: [2] });
   });
 });

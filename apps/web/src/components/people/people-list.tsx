@@ -20,7 +20,7 @@ import { Marked } from "../match-mark";
 import { SenderAvatar } from "../sender-avatar";
 import { personItemSince } from "@terno/core";
 import { itemGlyph, itemParts, itemTone, itemWhen, waited } from "./person-item";
-import { chosenAccounts } from "~/lib/people-filter";
+import { chosenAccounts, hasDate } from "~/lib/people-filter";
 import { PeopleFilterButton, PeopleFilterChips, PeopleFilterEmpty } from "./people-filter";
 import { PersonPage } from "./person-page";
 
@@ -185,7 +185,7 @@ function PeopleList({ wide }: { wide: boolean }) {
   // (as the button says it: an account gone isn't a filter)
   const accounts = useApp((s) => s.accounts);
   const choice = usePeople((s) => s.filter);
-  const filtered = !!choice.within || (soloAccount === null && chosenAccounts(choice, accounts).length > 0);
+  const filtered = hasDate(choice) || (soloAccount === null && chosenAccounts(choice, accounts).length > 0);
   const everyoneCount = (rows.find((r) => r.kind === "heading" && r.id === "everyone") as Extract<PeopleRow, { kind: "heading" }> | undefined)?.count ?? 0;
   /** a section's heading to the top of the list (the header's jump) */
   const jump = (id: "open" | "everyone") => {

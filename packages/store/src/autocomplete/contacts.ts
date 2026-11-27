@@ -378,6 +378,8 @@ export const CONTACTS_SNAPSHOT: Omit<SnapshotKind, "identity"> = { tokenizer: 2,
 export interface PeopleScope {
   accounts?: readonly number[];
   since?: number;
+  /** a custom range's end: the last message no newer than this */
+  until?: number;
 }
 
 /** plan 287: the per-account dates' pool starts this big (doubles) and doubles; it's packed again when half is garbage */
@@ -703,13 +705,19 @@ export class ContactIndex {
   private scopeOf(scope: PeopleScope | undefined, written = false): { keep: ((id: number) => boolean) | null; mask: number; key: string } {
     const accounts = scope?.accounts?.length ? scope.accounts : null;
     const since = scope?.since ?? 0;
-    if (!accounts && !since) return { keep: null, mask: 0, key: "" };
+    const until = scope?.until ?? 0;
+    if (!accounts && !since && !until) return { keep: null, mask: 0, key: "" };
     const mask = accounts ? this.accountMask(accounts) : 0;
     // chosen accounts none of which the index has seen: nobody is in them
-    if (accounts && !mask) return { keep: () => false, mask, key: `none|${since}` };
+    if (accounts && !mask) return { keep: () => false, mask, key: `none|${since}|${until}` };
     const seenIn = written ? this.sentIn : this.accounts;
-    const keep = (id: number) => (!mask || (seenIn[id]! & mask) !== 0) && (!since || this.lastIn(id, mask) >= since);
-    return { keep, mask, key: `${mask}|${since}` };
+    const dated = (id: number) => {
+      if (!since && !until) return true;
+      const last = this.lastIn(id, mask);
+      return (!since || last >= since) && (!until || last <= until);
+    };
+    const keep = (id: number) => (!mask || (seenIn[id]! & mask) !== 0) && dated(id);
+    return { keep, mask, key: `${mask}|${since}|${until}` };
   }
 
   /** Senders of mail marked as spam after it was counted: not suggested unless you've written to them. */

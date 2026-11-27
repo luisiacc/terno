@@ -99,6 +99,8 @@ export const PEOPLE_WITHIN = ["week", "month", "quarter", "year"] as const;
 export type PeopleWithin = (typeof PEOPLE_WITHIN)[number];
 export interface PeopleFilter {
   within?: PeopleWithin;
+  /** a custom range (plan 287): the last email at or after `from` and at or before `to` (ms); `within` is ignored with it */
+  range?: { from: number; to: number };
   accounts?: number[];
 }
 const DAY_MS = 86_400_000;

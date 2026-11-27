@@ -80,7 +80,7 @@ export class PeopleService {
     const now = this.b.now();
     const scope = await this.scope(filter);
     // (each hit's count is what's open with them in the filter's accounts, as their row and page say it)
-    const open = new Map(this.within(await this.open(), { ...scope, since: 0 }).map((p) => [p.key, p.items.filter((i) => openNow(i, now)).length]));
+    const open = new Map(this.within(await this.open(), { ...scope, since: 0, until: 0 }).map((p) => [p.key, p.items.filter((i) => openNow(i, now)).length]));
     const mine = await this.mine();
     // (asked for more than are shown: senders that aren't people are left out after)
     const found = index.people(query, PEOPLE_SEARCH_MAX * 4, scope.index);
@@ -172,17 +172,19 @@ export class PeopleService {
    * is), the oldest last email it lets in, and the index's form of both. `key` names it for Everyone's version.
    */
   private async scope(filter: PeopleFilter | undefined): Promise<Scope> {
-    // the cutoff by the hour: Everyone's list, its cache and its version are of one cutoff (Codex code review)
-    const exact = peopleSince(filter?.within, this.b.now());
-    const since = exact ? Math.floor(exact / HOUR) * HOUR : 0;
+    // the cutoff by the hour: Everyone's list, its cache and its version are of one cutoff (Codex code review); a custom
+    // range's days are its own
+    const exact = filter?.range ? 0 : peopleSince(filter?.within, this.b.now());
+    const since = filter?.range ? filter.range.from : exact ? Math.floor(exact / HOUR) * HOUR : 0;
+    const until = filter?.range?.to ?? 0;
     let accounts: number[] | null = null;
     if (filter?.accounts?.length) {
       const ids = new Set((await this.b.store.accounts.list()).map((a) => a.id));
       const kept = [...new Set(filter.accounts)].filter((id) => ids.has(id)).sort((a, b) => a - b);
       accounts = kept.length ? kept : null;
     }
-    const key = `${accounts?.join(",") ?? ""}|${since}`;
-    return { accounts, since, key, index: { ...(accounts ? { accounts } : {}), ...(since ? { since } : {}) } };
+    const key = `${accounts?.join(",") ?? ""}|${since}|${until}`;
+    return { accounts, since, until, key, index: { ...(accounts ? { accounts } : {}), ...(since ? { since } : {}), ...(until ? { until } : {}) } };
   }
 
   /**
@@ -190,9 +192,9 @@ export class PeopleService {
    * account, each person's items whose conversation is in one of them (who has none left isn't in it); by date, whose last
    * email (in those accounts) is recent enough: the index's date, else their items' newest conversation.
    */
-  private within(open: PersonOpen[], scope: Pick<Scope, "accounts" | "since">): PersonOpen[] {
-    const { accounts, since } = scope;
-    if (!accounts && !since) return open;
+  private within(open: PersonOpen[], scope: Pick<Scope, "accounts" | "since"> & { until?: number }): PersonOpen[] {
+    const { accounts, since, until = 0 } = scope;
+    if (!accounts && !since && !until) return open;
     const index = this.b.autocomplete.peopleIndex();
     const now = this.b.now();
     const inAccounts = accounts ? new Set(accounts) : null;
@@ -201,7 +203,9 @@ export class PeopleService {
     for (const p of open) {
       const kept = inAccounts ? p.items.filter((i) => inAccounts.has(personItemThread(i).accountId)) : p.items;
       // (one the index doesn't know, or not yet, is kept: their date is unknown)
-      if (!kept.length || (since && (index?.lastWith(p.email, accounts ?? undefined) ?? since) < since)) {
+      // (unknown to the index, or not in these accounts by it: kept, their date unknown)
+      const last = since || until ? index?.lastWith(p.email, accounts ?? undefined) : null;
+      if (!kept.length || (last && ((since && last < since) || (until && last > until)))) {
         changed = true;
         continue;
       }
@@ -347,8 +351,10 @@ const EVERYONE_FILTERS = 8;
 interface Scope {
   accounts: number[] | null;
   since: number;
+  /** a custom range's end (0: none) */
+  until: number;
   key: string;
-  index: { accounts?: readonly number[]; since?: number };
+  index: { accounts?: readonly number[]; since?: number; until?: number };
 }
 
 /** Open now: not put off with Later, nor behind What matters' Coming up. */

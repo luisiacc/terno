@@ -512,6 +512,22 @@ describe("People's filter (plan 287)", () => {
     expect([c.lastWith(ana.email, [1]), c.lastWith(ana.email, [3]), c.lastWith(ana.email, [1, 3])]).toEqual([NOW - 300 * DAY, NOW - 2 * DAY, NOW - 2 * DAY]);
   });
 
+  it("a custom range: whose last email in the accounts falls in it (mail in it and newer after isn't)", async () => {
+    const c = await built([
+      // ana: in the range and again after it; andres: in it only; bea: before it
+      sent([ana], { date: NOW - 20 * DAY }),
+      sent([ana], { date: NOW - DAY }),
+      sent([andres], { date: NOW - 15 * DAY }),
+      sent([bea], { date: NOW - 60 * DAY }),
+    ]);
+    const range = { since: NOW - 30 * DAY, until: NOW - 10 * DAY };
+    expect(emails(c.written(10, range))).toEqual([andres.email]);
+    expect(emails(c.people("a", 50, range))).toEqual([andres.email]);
+    // another end is another list, whatever was asked before
+    expect(emails(c.written(10, { since: NOW - 30 * DAY, until: NOW })).sort()).toEqual([ana.email, andres.email].sort());
+    expect(emails(c.written(10, range))).toEqual([andres.email]);
+  });
+
   it("the filter applies before the cut, and each filter is its own list (kept until the scores move)", async () => {
     const c = await built([
       ...Array.from({ length: 5 }, () => sent([ana], { accountId: 1 })),

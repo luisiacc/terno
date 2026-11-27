@@ -438,6 +438,85 @@ test.describe("People's filter and People in a focused account (plan 287)", () =
       await expect(page.getByTestId("people-filter-chip-date")).toBeVisible();
     });
 
+    await scenario("a custom range: two days in the picker and Apply; Esc and Cancel change nothing; its chip's × takes it away", async () => {
+      const day = (offset: number) => {
+        const d = new Date(E2E_NOW + offset * 86_400_000);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      };
+      const picker = page.getByTestId("people-range");
+      const dayButton = (offset: number) => picker.locator(`button[data-day="${day(offset)}"]`);
+      // Custom range… by the keyboard: the picker opens, today's day has the keyboard, said as today
+      await openMenu(page);
+      await page.getByTestId("people-filter-custom").focus();
+      await page.keyboard.press("Enter");
+      await expect(picker).toBeVisible();
+      await expect(dayButton(0)).toBeFocused();
+      await expect(dayButton(0)).toHaveAttribute("aria-label", /^Today, \w+day, October 22, 2026/);
+      await expect(picker).toContainText("Last email between");
+      await expect(page.getByTestId("people-range-apply")).toBeDisabled();
+      // no day after today
+      await expect(dayButton(1)).toBeDisabled();
+      await dayButton(-3).click();
+      await expect(page.getByTestId("people-range-said")).toContainText("now the last day");
+      await dayButton(-1).click();
+      await expect(page.getByTestId("people-range-said")).toContainText("3 days");
+      await axeBothModes(page, '[data-testid="people-range"]');
+      await page.getByTestId("people-range-apply").click();
+      await expect(picker).toBeHidden();
+      await expect(page.getByTestId("people-filter")).toBeFocused();
+      const chip = page.getByTestId("people-filter-chip-date");
+      await expect(chip).toHaveText(/^Oct 19\s–\s21$/);
+      // Zoe (written two days ago) is in it; Bob, who wrote today, isn't
+      await page.getByTestId("people-search").fill("Zoe");
+      await expect(row(page, zoe.name).first()).toBeVisible();
+      await page.getByTestId("people-search").fill("Bob");
+      await expect(page.getByTestId("people-note")).toBeVisible();
+      await expect(row(page, bob.name)).toHaveCount(0);
+      await page.getByTestId("people-search").fill("");
+      // reopened, it shows the range, its first day with the keyboard; Esc leaves it as it was, the keyboard back on the button
+      await openMenu(page);
+      await expect(page.getByTestId("people-filter-custom")).toHaveAttribute("aria-checked", "true");
+      await page.getByTestId("people-filter-custom").click();
+      await expect(dayButton(-3)).toBeFocused();
+      await expect(page.getByTestId("people-range-said")).toContainText("3 days");
+      await dayButton(-6).click();
+      await page.keyboard.press("Escape");
+      await expect(picker).toBeHidden();
+      await expect(page.getByTestId("people-filter")).toBeFocused();
+      await expect(chip).toHaveText(/^Oct 19\s–\s21$/);
+      // Cancel likewise
+      await openMenu(page);
+      await page.getByTestId("people-filter-custom").click();
+      await dayButton(-6).click();
+      await page.getByTestId("people-range-cancel").click();
+      await expect(page.getByTestId("people-filter")).toBeFocused();
+      await expect(chip).toHaveText(/^Oct 19\s–\s21$/);
+      // one day, twice the same, then reopened: the next day starts a new range (never extends the old one)
+      await openMenu(page);
+      await page.getByTestId("people-filter-custom").click();
+      await dayButton(-5).click();
+      await dayButton(-5).click();
+      await expect(page.getByTestId("people-range-said")).toContainText("1 day");
+      await page.getByTestId("people-range-apply").click();
+      await expect(chip).toHaveText("Oct 17");
+      await openMenu(page);
+      await page.getByTestId("people-filter-custom").click();
+      await dayButton(-2).click();
+      await expect(page.getByTestId("people-range-said")).toContainText("now the last day");
+      await page.getByTestId("people-range-cancel").click();
+      // its chip's ×, with an account's chip beside it: the range goes, the account stays
+      await openMenu(page);
+      await page.getByTestId(`people-filter-account-${work.id}`).click();
+      await page.keyboard.press("Escape");
+      await chip.getByRole("button").click();
+      await expect(chip).toHaveCount(0);
+      await expect(page.getByTestId("people-filter-chip-accounts")).toBeVisible();
+      await openMenu(page);
+      await expect(page.getByTestId("people-filter-any")).toHaveAttribute("aria-checked", "true");
+      await page.getByTestId("people-filter-clear-menu").click();
+      await expect(page.getByTestId("people-filter-chips")).toHaveCount(0);
+    });
+
     await scenario("nobody in the filter: it says so, and Clear filters is the way out", async () => {
       const { account: lonely } = await server.backend.store.accounts.create({ kind: "gmail", email: "lonely@example.test", displayName: "Lonely", color: "brown", now: E2E_NOW });
       await fresh(page);

@@ -40,8 +40,8 @@ Terno's shared controls (`src/components/`) are BoardUI's free **Base** componen
 | Combobox, picker form | `combobox-picker.tsx` | on Base UI's Combobox (plan 248: Settings → Appearance → Font): one value, chosen from a list that finds as you type |
 | Command Palette | `command.tsx` | cmdk underneath |
 | Context Menu | `context-menu.tsx` | rows from `menu-styles.ts` |
-| Date Calendar | `calendar.tsx` | react-day-picker; no ranges yet |
-| Date Picker | `calendar.tsx` in a Popover | the trigger is the secondary button |
+| Date Calendar | `calendar.tsx` | react-day-picker; the range form (`mode="range"`, plan 287): ends filled in the primary, a joined band of the chosen day's wash between them |
+| Date Picker | `calendar.tsx` in a Popover | the trigger is the secondary button; the range form (People's Custom range…, `people-range.tsx`): two months, what's chosen and its days, Cancel and Apply; its presets are the menu it opens from |
 | Divider | `separator.tsx` | a hairline; `SeparatorLabel` the labelled one (plan 204's chat experiment); double dividers: port on first use |
 | Drawer | port on first use | |
 | Dropdown | `dropdown-menu.tsx` | rows from `menu-styles.ts` |

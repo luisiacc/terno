@@ -521,6 +521,27 @@ describe("People's filter (plan 287)", () => {
     expect((await t.client.call("people.list", { known: read.everyoneVersion })).everyone).toBeDefined();
   });
 
+  it("a custom range: Open and Everyone by whose last email falls in it; another end is another Everyone; never with a period", async () => {
+    const t = await setup();
+    const w = await second(t);
+    await w.from("Ana", "ana@people.test", { date: NOW - 20 * DAY });
+    await w.from("Bob", "bob@people.test", { date: NOW - 2 * DAY });
+    await w.to("Cara", "cara@people.test", NOW - 25 * DAY);
+    await w.to("Bob", "bob@people.test", NOW - 3 * DAY);
+    await t.client.call("people.ready", {});
+    const a = { range: { from: NOW - 30 * DAY, to: NOW - 10 * DAY } };
+    const b = { range: { from: NOW - 30 * DAY, to: NOW } };
+    const inA = await t.client.call("people.list", { filter: a });
+    expect(inA.open.map((p) => p.key)).toEqual(["ana@people.test"]);
+    expect(ids(inA.everyone)).toEqual(["cara@people.test"]);
+    // A's version asked with B: B's own list; then A again with its version: not sent again
+    const inB = await t.client.call("people.list", { known: inA.everyoneVersion, filter: b });
+    expect(ids(inB.everyone)).toEqual(["bob@people.test", "cara@people.test"]);
+    expect((await t.client.call("people.list", { known: inA.everyoneVersion, filter: a })).everyone).toBeUndefined();
+    await expect(t.client.call("people.list", { filter: { within: "week", range: a.range } })).rejects.toThrow();
+    await expect(t.client.call("people.list", { filter: { range: { from: NOW, to: NOW - DAY } } })).rejects.toThrow();
+  });
+
   it("Everyone's version is per filter: two windows on two filters don't make each other send it again", async () => {
     const t = await setup();
     const w = await second(t);

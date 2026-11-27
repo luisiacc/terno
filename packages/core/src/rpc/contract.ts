@@ -763,7 +763,14 @@ function m<R>() {
 
 const empty = z.object({}).strict();
 /** plan 287: People's filter (an empty `accounts` is every account) */
-const peopleFilter = z.object({ within: z.enum(PEOPLE_WITHIN).optional(), accounts: z.array(id).max(PEOPLE_FILTER_ACCOUNTS_MAX).optional() });
+const peopleFilter = z
+  .object({
+    within: z.enum(PEOPLE_WITHIN).optional(),
+    // (a custom range: real moments, in order; never with a period)
+    range: z.object({ from: z.number().int().positive(), to: z.number().int().positive() }).refine((r) => r.from <= r.to).optional(),
+    accounts: z.array(id).max(PEOPLE_FILTER_ACCOUNTS_MAX).optional(),
+  })
+  .refine((f) => !(f.within && f.range));
 
 /** compose.send's parameters (plan 94's compose.schedule adds the moment and requires the draft) */
 const composeSend = z.object({
