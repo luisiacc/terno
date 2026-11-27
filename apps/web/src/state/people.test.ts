@@ -135,7 +135,8 @@ describe("acting on a person's page", () => {
     navigate({ people: true });
     setApp({ person: "ana@x.test" });
     const list: PeopleList = { open: [open("ana@x.test", "Ana Ruiz", page.items)], everyone: [], everyoneVersion: 1, index: "ready" };
-    usePeople.setState({ page, list });
+    // (read in this scope, no filter: its Everyone is the one `known` names, plan 287)
+    usePeople.setState({ page, list, listScope: "{}" });
     let answer!: (r: unknown) => void;
     call.mockImplementationOnce(() => new Promise((r) => (answer = r)));
     const acting = actOnPersonItem(page.items[0]!, "done");
@@ -150,8 +151,8 @@ describe("acting on a person's page", () => {
     answer({ undoId: "u1" });
     await acting;
     // the settled read: the list (Everyone not sent again) and the page, landing together
-    expect(call).toHaveBeenCalledWith("people.list", { known: 1 });
-    expect(call).toHaveBeenCalledWith("people.person", { email: "ana@x.test" });
+    expect(call).toHaveBeenCalledWith("people.list", { known: 1, filter: {} });
+    expect(call).toHaveBeenCalledWith("people.person", { email: "ana@x.test", filter: {} });
     expect(usePeople.getState().page?.items.map((i) => (i.kind === "awaiting" ? i.row.id : 0))).toEqual([2]);
     expect(usePeople.getState().list?.open[0]?.items).toHaveLength(1);
   });
@@ -231,7 +232,7 @@ describe("j and k", () => {
     expect(getApp().person).toBe("c@x.test");
     movePerson(-1);
     expect(getApp().person).toBe("b@x.test");
-    expect(call).toHaveBeenLastCalledWith("people.person", { email: "b@x.test" });
+    expect(call).toHaveBeenLastCalledWith("people.person", { email: "b@x.test", filter: {} });
     selectPerson("b@x.test", "b@x.test");
     expect(getApp().person).toBe("b@x.test");
   });
@@ -327,7 +328,8 @@ describe("Esc after Open in People (owner, after the QA panel; Codex review)", (
     navigate({ view: "inbox", accountId: 2 });
     setApp({ soloAccountId: 2, query: "budget", selectedId: 5 });
     openInPeople("ana@x.test");
-    expect(getApp()).toMatchObject({ people: true, person: "ana@x.test", soloAccountId: null });
+    // plan 287: a focused account's People (the focus stays, as its other places keep it)
+    expect(getApp()).toMatchObject({ people: true, person: "ana@x.test", accountId: 2, soloAccountId: 2 });
     expect(returnFromPeople()).toBe(true);
     expect(getApp()).toMatchObject({ people: false, accountId: 2, soloAccountId: 2, query: "budget" });
     // once: Esc is People's own again

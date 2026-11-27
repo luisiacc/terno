@@ -1,4 +1,4 @@
-import { PEOPLE_LAST_MAX, personItemId, personKey, personSince, type PeopleList, type PersonItem, type PersonPage } from "@terno/core";
+import { PEOPLE_LAST_MAX, personItemId, personKey, personSince, type PeopleFilter, type PeopleList, type PersonItem, type PersonPage } from "@terno/core";
 import { t } from "@terno/i18n";
 import type { LeftRows } from "~/lib/actions";
 import { aiFeaturesOffered } from "~/lib/ai";
@@ -8,9 +8,10 @@ import { morph, morphSettled } from "~/lib/morph";
 import { closePage, currentPage, listLayout, openThread } from "~/lib/page";
 import { focusReader } from "~/lib/pane-focus";
 import { noteOpen } from "~/lib/reminders";
+import { effectivePeopleFilter, savePeopleFilter, type PeopleFilterChoice } from "~/lib/people-filter";
 import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
-import { getApp, navigate, setApp, useApp } from "~/state/app";
+import { getApp, navigate, setApp, useApp, type AppState } from "~/state/app";
 import { peopleRows, usePeople, type PeopleRow } from "~/state/people";
 import { loadThread } from "~/state/threads";
 
@@ -30,29 +31,83 @@ let settling = 0;
 const withoutLeaving = (list: PeopleList): PeopleList => (leaving.size ? [...leaving].reduce(withoutListItem, list) : list);
 const pageWithoutLeaving = (page: PersonPage | null): PersonPage | null => (page && leaving.size ? [...leaving].reduce(withoutItem, page) : page);
 
-/** The sidebar's People: the view (its list is read as it shows). */
+/** The sidebar's People: the view (its list is read as it shows); in a focused account, that account's (plan 287). */
 export function openPeople(): void {
   navigate({ people: true });
+}
+
+/** Plan 287: the focused account People is in, else null (People of every account). */
+export const peopleSolo = (s: Pick<AppState, "people" | "soloAccountId" | "accountId">): number | null => (s.people && s.soloAccountId !== null && s.accountId === s.soloAccountId ? s.soloAccountId : null);
+
+/** Plan 287: what every read of People asks for: the filter as set, a focused account alone. */
+export function peopleFilter(): PeopleFilter {
+  const s = getApp();
+  return effectivePeopleFilter(usePeople.getState().filter, s.accounts, peopleSolo(s));
+}
+
+/**
+ * Plan 287: the scope People reads in and its generation. When the filter or the focused account changes, every read on its
+ * way (the list, the page, the search, a conversation opening, the rows' dates) is dropped as it answers, and Enter's
+ * queued open with them; the person being worked on is let go of. What's drawn stays until the new reads answer.
+ */
+const scope = { key: "", gen: 0 };
+
+function currentScope(): { filter: PeopleFilter; key: string; gen: number } {
+  const filter = peopleFilter();
+  const key = JSON.stringify(filter);
+  if (key !== scope.key) {
+    scope.key = key;
+    scope.gen++;
+    listSeq++;
+    pageSeq++;
+    searchSeq++;
+    opening++;
+    hitsFor = "";
+    enterWhenIn = null;
+    lastAsked.clear();
+    usePeople.setState((s) => ({ held: null, lastRev: s.lastRev + 1 }));
+  }
+  return { filter, key, gen: scope.gen };
+}
+
+/** Plan 287: the scope the list on screen was read in is the one asked now (its empty line is said only then). */
+export const listInScope = (): boolean => usePeople.getState().listScope === JSON.stringify(peopleFilter());
+
+/** Plan 287: a new filter, remembered on this device; People reads again in it (the list, a search, the page). */
+export function setPeopleFilter(choice: PeopleFilterChoice): void {
+  usePeople.setState({ filter: choice });
+  savePeopleFilter(choice);
+  if (getApp().people) refreshPeople();
+}
+
+/** Everything People shows, read now (it opened, or its scope changed). */
+export function refreshPeople(): void {
+  void loadPeople();
+  const { query } = usePeople.getState();
+  if (query.trim()) searchPeople(query);
+  reloadPage();
 }
 
 let listSeq = 0;
 let waitingForIndex = false;
 
-/** The list as the backend says it now, Everyone kept when it hasn't changed (`known`). */
-async function fetchList(): Promise<PeopleList> {
-  const held = usePeople.getState().list;
-  const list = await client.call("people.list", held ? { known: held.everyoneVersion } : {});
+/** The list as the backend says it now, Everyone kept when it hasn't changed (`known`) and is of this scope. */
+async function fetchList(at: { filter: PeopleFilter; key: string }): Promise<PeopleList> {
+  const { list: shown, listScope } = usePeople.getState();
+  const held = shown && listScope === at.key ? shown : null;
+  const list = await client.call("people.list", { ...(held ? { known: held.everyoneVersion } : {}), filter: at.filter });
   return list.everyone ? list : { ...list, everyone: held?.everyone ?? [] };
 }
 
 /** Reads the list (Open, Everyone); while the index is being made ready, one call waits for it, then the list (and a search) reads again. */
 export async function loadPeople(): Promise<void> {
+  const at = currentScope();
   const mine = ++listSeq;
   const current = () => mine === listSeq && getApp().people;
   try {
-    const list = await fetchList();
+    const list = await fetchList(at);
     if (!current()) return;
-    usePeople.setState({ list: withoutLeaving(list), failed: false });
+    usePeople.setState({ list: withoutLeaving(list), failed: false, listScope: at.key });
     if (list.index === "warming") waitForIndex();
   } catch {
     // said where the list is, with a way to try again; what was shown stays
@@ -83,11 +138,12 @@ let enterWhenIn: { query: string; inputs: number } | null = null;
 
 /** What's typed in the list's field: names and addresses only, answered as it's typed (a late answer is dropped; a failed one keeps the last). */
 export function searchPeople(query: string): void {
+  const { filter } = currentScope();
   const mine = ++searchSeq;
   if (enterWhenIn?.query !== query) enterWhenIn = null;
   usePeople.setState({ query, ...(query.trim() ? {} : { hits: null }) });
   if (!query.trim()) return void (hitsFor = "");
-  client.call("people.search", { query }).then(
+  client.call("people.search", { query, filter }).then(
     (hits) => {
       if (mine !== searchSeq) return;
       // (an answer while the contacts warm up isn't one: Enter waits for the one after)
@@ -163,16 +219,18 @@ export function leavePerson(to: "row" | "search" = "row"): void {
   opening++;
   setApp({ person: null, selectedId: null, anchorId: null });
   usePeople.setState({ page: null, reading: null, pageFailed: null, held: null });
-  afterDraw(() => (to === "search" ? peopleList.focusSearch?.() : peopleList.toKey?.(key, true)));
+  // (their row, else the search: a filter may have left them out of the list, plan 287)
+  afterDraw(() => (to === "search" || !peopleList.toKey?.(key, true) ? peopleList.focusSearch?.() : undefined));
 }
 
 async function loadPage(key: string, email: string): Promise<void> {
+  const { filter } = currentScope();
   const mine = ++pageSeq;
   const current = () => mine === pageSeq && getApp().people && getApp().person === key;
   const shown = usePeople.getState().page;
   usePeople.setState({ reading: { key, email }, pageFailed: null, ...(shown?.key === key ? {} : { page: null }) });
   try {
-    const page = await client.call("people.person", { email });
+    const page = await client.call("people.person", { email, filter });
     if (!current()) return;
     usePeople.setState({ page: pageWithoutLeaving(page), reading: null });
   } catch {
@@ -201,15 +259,16 @@ export function reloadPage(): void {
  */
 async function settle(ids: readonly string[]): Promise<void> {
   const page = pageAddress();
+  const at = currentScope();
   const lists = ++listSeq;
   const pages = ++pageSeq;
   try {
-    const [list, read] = await Promise.all([fetchList(), page ? client.call("people.person", { email: page.email }) : Promise.resolve(null)]);
+    const [list, read] = await Promise.all([fetchList(at), page ? client.call("people.person", { email: page.email, filter: at.filter }) : Promise.resolve(null)]);
     for (const id of ids) leaving.delete(id);
     await morphSettled();
     morph(() => {
       if (!getApp().people) return;
-      if (lists === listSeq) usePeople.setState({ list: withoutLeaving(list), failed: false });
+      if (lists === listSeq) usePeople.setState({ list: withoutLeaving(list), failed: false, listScope: at.key });
       if (page && pages === pageSeq && getApp().person === page.key) usePeople.setState({ page: pageWithoutLeaving(read), reading: null });
     });
   } catch {
@@ -636,18 +695,22 @@ const lastAsked = new Set<string>();
  */
 export function askLastEmails(rows: readonly { key: string; email: string }[]): void {
   if (!getApp().people) return;
+  // (in the filter's accounts; an answer or a failure from another scope is dropped, plan 287)
+  const { filter, gen } = currentScope();
   const want = rows.filter((r) => !lastAsked.has(r.key)).slice(0, PEOPLE_LAST_MAX);
   if (!want.length) return;
   for (const r of want) lastAsked.add(r.key);
-  client.call("people.lastEmails", { emails: want.map((r) => r.email) }).then(
-    ({ last }) =>
+  client.call("people.lastEmails", { emails: want.map((r) => r.email), filter }).then(
+    ({ last }) => {
+      if (gen !== scope.gen) return;
       usePeople.setState((s) => {
         const next = new Map(s.lastEmails);
         for (const r of want) next.set(r.key, last[r.email] ?? 0);
         return { lastEmails: next };
-      }),
+      });
+    },
     () => {
-      for (const r of want) lastAsked.delete(r.key);
+      if (gen === scope.gen) for (const r of want) lastAsked.delete(r.key);
     },
   );
 }
@@ -700,6 +763,10 @@ export function installPeople(): void {
   // plan 278's rules moved (who is a person): what People shows, read again
   client.on("personRules", () => {
     if (getApp().people) reread();
+  });
+  // plan 287: the scope moved under an open People (the focus ended and People stayed, an account came or went)
+  useApp.subscribe((s, prev) => {
+    if (s.people && (s.accounts !== prev.accounts || s.soloAccountId !== prev.soloAccountId || s.accountId !== prev.accountId) && prev.people && JSON.stringify(peopleFilter()) !== scope.key) refreshPeople();
   });
   // AI features no longer offered: People goes (its row too), back to the Inbox; the cards read go with it
   useApp.subscribe((s, prev) => {

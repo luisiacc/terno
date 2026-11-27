@@ -811,6 +811,7 @@ function AccountFolders({
   tabUnread,
   viewUnread,
   solo = false,
+  people,
 }: {
   account: Account;
   open: boolean;
@@ -829,6 +830,8 @@ function AccountFolders({
   viewUnread: Readonly<Record<CountedView, number>>;
   /** plan 108: the whole sidebar, focused on this account: every view, flush, its own folders under a title */
   solo?: boolean;
+  /** plan 287: focused, People (the account's) right below its Inbox, while AI features are offered; whether it's where you are */
+  people?: { active: boolean };
 }) {
   const groupRef = useRef<HTMLDivElement>(null);
   const [batches, setBatches] = useState(1);
@@ -951,12 +954,21 @@ function AccountFolders({
               />
             );
             // plan 107: a standard row's menu: favorite and export (Starred and All Mail aren't folders: none)
-            return isFolderView(v) ? (
+            const row = isFolderView(v) ? (
               <FolderMenu key={v} target={{ accountId: account.id, folder: null, view: v }} name={viewLabel(v)} account={account}>
                 <div>{item}</div>
               </FolderMenu>
             ) : (
               <Fragment key={v}>{item}</Fragment>
+            );
+            // plan 287: the account's People, below its Inbox (as the sidebar's own People sits below the Inbox)
+            return v === "inbox" && people ? (
+              <Fragment key={v}>
+                {row}
+                <NavItem testId={`nav-solo-people-${account.id}`} active={people.active} onClick={openPeople} icon={<Users className="size-(--icon-nav)" />} label={t("people.title")} shortcut="g p" />
+              </Fragment>
+            ) : (
+              row
             );
           })}
         {/* plan 86: Gmail's Promotions and Social (plan 275: Outlook's Other), out of the Inbox, after its standard folders */}
@@ -1275,9 +1287,12 @@ function SoloSidebar({ account: a, countTone }: { account: Account; countTone: C
   const tabUnread = useMemo(() => ({ promotions: counts.tabUnread?.[tabRef(a.id, "promotions")] ?? 0, social: counts.tabUnread?.[tabRef(a.id, "social")] ?? 0, other: counts.tabUnread?.[tabRef(a.id, "other")] ?? 0 }), [counts.tabUnread, a.id]);
   const viewUnread = useMemo(() => ({ archive: counts.viewUnread?.[viewRef(a.id, "archive")] ?? 0, spam: counts.viewUnread?.[viewRef(a.id, "spam")] ?? 0 }), [counts.viewUnread, a.id]);
   const [renaming, setRenaming] = useState(false);
+  // plan 287: the account's People (its view is "all", which is no row's while it's on)
+  const inPeople = useApp((s) => s.people);
+  const peopleShown = useApp(aiFeaturesOffered);
   const ownActive = ownFolder !== null && rows.some((r) => r.key === ownFolder) && !searching;
   // a category in the account is its list there: no row of its own, so none is selected; nor is one during a search
-  const active = ownFolder === null && gmailTab === null && categoryId === null && !searching ? view : null;
+  const active = ownFolder === null && gmailTab === null && categoryId === null && !searching && !inPeople ? view : null;
   return (
     <>
       {/* the back row and the title share the account's menu: ⇧F10 on the back row opens it */}
@@ -1334,6 +1349,7 @@ function SoloSidebar({ account: a, countTone }: { account: Account; countTone: C
         activeTab={tabs && !searching ? gmailTab : null}
         tabUnread={tabUnread}
         viewUnread={viewUnread}
+        people={peopleShown ? { active: inPeople && !searching } : undefined}
       />
     </>
   );

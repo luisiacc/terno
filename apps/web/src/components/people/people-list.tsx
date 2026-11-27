@@ -9,7 +9,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { LIST_TITLE } from "~/lib/list-title";
 import { listDate } from "~/lib/format";
-import { askLastEmails, enterPerson, enterSearch, inputCount, loadPeople, morphName, peopleList, reloadPage, searchPeople, selectPerson } from "~/lib/people";
+import { askLastEmails, enterPerson, enterSearch, inputCount, listInScope, loadPeople, morphName, peopleList, peopleSolo, refreshPeople, searchPeople, selectPerson } from "~/lib/people";
 import { renderProbe } from "~/lib/render-probe";
 import { installScrollHairline } from "~/lib/scroll-hairline";
 import { useAppearance } from "~/lib/appearance";
@@ -20,10 +20,11 @@ import { Marked } from "../match-mark";
 import { SenderAvatar } from "../sender-avatar";
 import { personItemSince } from "@terno/core";
 import { itemGlyph, itemParts, itemTone, itemWhen, waited } from "./person-item";
+import { PeopleFilterButton, PeopleFilterChips, PeopleFilterEmpty } from "./people-filter";
 import { PersonPage } from "./person-page";
 
-/** where the list was left: coming back to People finds it there */
-const kept = { top: 0 };
+/** where the list was left, by scope (a focused account's People apart, plan 287): coming back to People finds it there */
+const kept = new Map<string, number>();
 
 /**
  * Plan 281: People's list, in the list pane: its title, how many have something open, the search (names and addresses,
@@ -84,10 +85,9 @@ function PeopleList({ wide }: { wide: boolean }) {
   });
 
   // read when it shows (a reload of the app, or coming back from Review or a preview, lands here too), and the selected
-  // person's page with it; the events keep both current after
+  // person's page with it (and a search, in this scope); the events keep them current after
   useEffect(() => {
-    void loadPeople();
-    reloadPage();
+    refreshPeople();
   }, []);
 
   const placeOf = useMemo(() => new Map(rows.flatMap((r, i) => (r.kind === "person" ? [[r.key, i] as const] : []))), [rows]);
@@ -132,12 +132,17 @@ function PeopleList({ wide }: { wide: boolean }) {
   const firstDrawn = drawn.map((v) => rows[v.index]).find((r) => r?.kind === "person")?.id ?? null;
   const tabKey = preferredAt !== undefined && drawn.some((v) => v.index === preferredAt) ? preferred : (firstDrawn ?? preferred);
 
-  // coming back, where it was left; leaving, where that is
+  // coming back, where it was left; leaving, where that is; another scope's list (a filter, plan 287) from its top
+  const listScope = usePeople((s) => s.listScope);
   useLayoutEffect(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTop = kept.top;
-    return () => void (kept.top = el?.scrollTop ?? 0);
-  }, []);
+    if (el) el.scrollTop = kept.get(listScope) ?? 0;
+    return () => {
+      kept.delete(listScope);
+      kept.set(listScope, el?.scrollTop ?? 0);
+      if (kept.size > 8) kept.delete(kept.keys().next().value!);
+    };
+  }, [listScope]);
 
   useEffect(() => {
     const [root, sentinel, header] = [scrollRef.current, sentinelRef.current, headerRef.current];
@@ -158,6 +163,12 @@ function PeopleList({ wide }: { wide: boolean }) {
   const index = indexOf(state);
   const searching = query.trim() !== "";
   const empty = state !== null && rows.length === 0;
+  // plan 287: a focused account's People says whose it is; a filter on says what it keeps out (and nobody, as such)
+  const soloAccount = useApp((s) => {
+    const id = peopleSolo(s);
+    return id === null ? null : (s.accounts.find((a) => a.id === id) ?? null);
+  });
+  const filtered = usePeople((s) => !!s.filter.within || (soloAccount === null && s.filter.accounts.length > 0));
   const everyoneCount = (rows.find((r) => r.kind === "heading" && r.id === "everyone") as Extract<PeopleRow, { kind: "heading" }> | undefined)?.count ?? 0;
   /** a section's heading to the top of the list (the header's jump) */
   const jump = (id: "open" | "everyone") => {
@@ -174,12 +185,15 @@ function PeopleList({ wide }: { wide: boolean }) {
         <div className="flex h-(--pane-bar) items-center pr-1.5 pl-3">
           <h1 className={cn("min-w-0 flex-1 truncate", LIST_TITLE[design.variants.listHeader === "title" ? "title" : "display"])} data-testid="list-title">
             {t("people.title")}
+            {/* plan 287: a focused account's, named as its mailboxes' titles are */}
+            {soloAccount && <span data-testid="people-title-account" className="ml-1.5 text-sm font-normal tracking-normal text-muted-foreground not-italic">· {soloAccount.displayName}</span>}
           </h1>
+          <PeopleFilterButton />
         </div>
         {/* what's here: a search's count, or each section's, each a jump to it (Everyone is under the whole of Open) */}
         <p data-testid="people-line" aria-live={searching ? "polite" : undefined} className="type-list-subtitle -mt-1.5 flex min-h-[1lh] items-center gap-1 pb-2 pl-3 text-muted-foreground tabular">
           {searching ? (
-            hits && (hits.hits.length >= PEOPLE_SEARCH_MAX ? t("people.foundFirst", { count: hits.hits.length }) : t("people.found", { count: hits.hits.length }))
+            hits && (hits.hits.length >= PEOPLE_SEARCH_MAX ? t("people.foundFirst", { count: hits.hits.length }) : t(filtered ? "people.foundIn" : "people.found", { count: hits.hits.length }))
           ) : (
             <>
               {openCount > 0 && (
@@ -196,6 +210,7 @@ function PeopleList({ wide }: { wide: boolean }) {
             </>
           )}
         </p>
+        <PeopleFilterChips />
         <SearchField
           className="no-drag"
           ref={(el) => {
@@ -257,7 +272,7 @@ function PeopleList({ wide }: { wide: boolean }) {
         ) : (
           (empty || (!searching && index !== "ready") || (searching && hits?.index === "warming")) && (
             <p data-testid="people-note" className={cn("px-3 pt-3 text-sm text-muted-foreground", wide && WIDE)}>
-              {searching ? (hits?.index === "warming" ? t("people.warming") : hits ? t("people.noHits", { query: query.trim() }) : null) : index === "warming" ? t("people.warming") : index === "off" ? t("people.off") : t("people.empty")}
+              {searching ? (hits?.index === "warming" ? t("people.warming") : hits ? t("people.noHits", { query: query.trim() }) : null) : index === "warming" ? t("people.warming") : index === "off" ? t("people.off") : filtered ? listInScope() && <PeopleFilterEmpty /> : t("people.empty")}
             </p>
           )
         )}

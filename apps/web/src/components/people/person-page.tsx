@@ -7,7 +7,7 @@ import { ChevronLeft, Copy, SquarePen, Users } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { composeLanding } from "~/lib/compose";
 import { listDate } from "~/lib/format";
-import { leavePerson, morphName, notePagePlace, openFromPerson, pagePlaces, retryPage, takePageFocus } from "~/lib/people";
+import { leavePerson, morphName, notePagePlace, openFromPerson, pagePlaces, peopleFilter, retryPage, takePageFocus } from "~/lib/people";
 import { PANE_TITLE, PANE_TITLE_TOP, READING_COLUMN } from "~/lib/pane-lines";
 import { setApp, useApp } from "~/state/app";
 import { usePeople } from "~/state/people";
@@ -118,7 +118,8 @@ function Body({ page }: { page: Page }) {
   // a group email they were only on says so (owner, after the QA panel): "between you" is what they wrote in too
   const wrote = page.wrote ? new Set(page.wrote) : null;
   const mine = new Set(accounts.map((a) => a.email.toLowerCase()));
-  const write = () => void composeLanding("new", null, 0, () => ({ toText: formatAddressList([{ name: page.name, email: page.email }]) }), newest?.accountId);
+  // from the newest conversation's account (in the filter's accounts), else the filter's first (a focused account's own), plan 287
+  const write = () => void composeLanding("new", null, 0, () => ({ toText: formatAddressList([{ name: page.name, email: page.email }]) }), newest?.accountId ?? peopleFilter().accounts?.[0]);
   return (
     <>
       {/* who, and what to do with them, on one band: the page's first screen is what's open, not its header */}

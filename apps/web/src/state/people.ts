@@ -1,5 +1,6 @@
 import type { PeopleIndexState, PeopleList, PeopleSearch, PersonEntry, PersonItem, PersonOpen, PersonPage } from "@terno/core";
 import { create } from "zustand";
+import { loadPeopleFilter, type PeopleFilterChoice } from "~/lib/people-filter";
 
 /**
  * Plan 281: People's state. The list as the backend last said it (Open, then Everyone), the search typed into it and its
@@ -32,9 +33,13 @@ export interface PeopleState {
   lastRev: number;
   /** Later's "Pick a date…": the item it's for, from a person's page or the card (`PersonLaterDialog`) */
   laterPick: { item: PersonItem; via: "page" | "card" } | null;
+  /** plan 287: the filter as set (remembered on this device); what's asked is `peopleFilter()` (a focused account alone) */
+  filter: PeopleFilterChoice;
+  /** plan 287: the scope (`peopleScopeKey`) `list` was read in: its empty line is said only for the scope asked now */
+  listScope: string;
 }
 
-export const usePeople = create<PeopleState>(() => ({ list: null, query: "", hits: null, page: null, reading: null, failed: false, pageFailed: null, held: null, lastEmails: new Map(), lastRev: 0, laterPick: null }));
+export const usePeople = create<PeopleState>(() => ({ list: null, query: "", hits: null, page: null, reading: null, failed: false, pageFailed: null, held: null, lastEmails: new Map(), lastRev: 0, laterPick: null, filter: loadPeopleFilter(), listScope: "" }));
 
 /** One row of People's list: a heading, or a person (with what's open, or what the index knows of them). */
 export type PeopleRow =

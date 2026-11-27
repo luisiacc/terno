@@ -335,3 +335,151 @@ test.describe("List layout", () => {
     await expect(page.getByTestId("people")).toBeVisible();
   });
 });
+
+test.describe("People's filter and People in a focused account (plan 287)", () => {
+  const bob = { name: "Bob Archer", email: "bob.archer@harbor.test" };
+  const zoe = { name: "Zoe Lindqvist", email: "zoe.lindqvist@harbor.test" };
+  const olga = { name: "Olga Petrova", email: "olga.petrova@oldmail.test" };
+
+  /** Ana's (plan 281's seed) in the first account; Bob waiting on you and Zoe written to in the second; Olga written to long ago */
+  async function seedTwo(server: DevServerFixture) {
+    await seed(server);
+    const db = sqlDb(server.backend.store);
+    const [home, work] = db.all<{ id: number; email: string; display_name: string }>("SELECT id, email, display_name FROM accounts ORDER BY id LIMIT 2");
+    const meAt = (a: { email: string }) => ({ name: "Luis Cordero", email: a.email });
+    await server.backend.store.sync.ingest(
+      [
+        message(server, "bob-1", bob, "Harbor lease", "Can you confirm the lease by Friday?", E2E_NOW - 2 * 3_600_000, { accountId: work!.id, to: [meAt(work!)], inInbox: true, isRead: false }),
+        message(server, "zoe-1", meAt(work!), "Dock schedule", "Here's the schedule.", E2E_NOW - 2 * 86_400_000, { accountId: work!.id, isSent: true, to: [zoe] }),
+        message(server, "olga-1", meAt(home!), "Old times", "It was good to see you.", E2E_NOW - 200 * 86_400_000, { accountId: home!.id, isSent: true, to: [olga] }),
+      ],
+      { applyFilters: false, now: E2E_NOW, classifier: null },
+    );
+    const bobThread = db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = 'bob-1'")!.thread_id;
+    db.run("UPDATE threads SET waiting_since = ?, has_sent = 1, person = 1 WHERE id = ?", E2E_NOW - 2 * 3_600_000, bobThread);
+    server.backend.today.changed();
+    return { home: home!, work: work! };
+  }
+
+  const menu = (page: Page) => page.getByTestId("people-filter-menu");
+  /** the menu, open with the keyboard in it */
+  async function openMenu(page: Page) {
+    await page.getByTestId("people-filter").click();
+    await expect(menu(page)).toBeVisible();
+    await expect.poll(() => page.evaluate(() => !!document.activeElement?.closest("[data-testid=people-filter-menu]"))).toBe(true);
+  }
+
+  test("the filter: a date and several accounts, said as chips, each removable; nobody matching says so; a focused account's People is its own", async ({ app: page, server }) => {
+    const { home, work } = await seedTwo(server);
+    await fresh(page);
+    await page.getByTestId("nav-people").click();
+    // (Everyone is long: Olga, written to once long ago, is found by the search)
+    await page.getByTestId("people-search").fill("Olga");
+    await expect(row(page, olga.name)).toBeVisible();
+    await page.getByTestId("people-search").fill("");
+
+    await scenario("Past month: Olga, last written to 200 days ago, isn't listed; the chip and the button say the filter is on", async () => {
+      await expect(page.getByTestId("people-filter")).not.toHaveAttribute("data-active");
+      await openMenu(page);
+      await page.getByTestId("people-filter-month").click();
+      await expect(menu(page)).toBeHidden();
+      await expect(page.getByTestId("people-filter")).toHaveAttribute("data-active", "true");
+      await expect(page.getByTestId("people-filter")).toHaveAccessibleName("Filter people: Past month");
+      await expect(page.getByTestId("people-filter-chip-date")).toHaveText("Past month");
+      await page.getByTestId("people-search").fill("Olga");
+      await expect(page.getByTestId("people-note")).toBeVisible();
+      await expect(row(page, olga.name)).toHaveCount(0);
+      await page.getByTestId("people-search").fill("");
+      await expect(row(page, ana.name).first()).toBeVisible();
+    });
+
+    await scenario("ticking an account keeps the menu open (several at once); the list is that account's: Bob, not Ana", async () => {
+      await openMenu(page);
+      await page.getByTestId(`people-filter-account-${work.id}`).click();
+      await expect(menu(page)).toBeVisible();
+      await expect(page.getByTestId(`people-filter-account-${work.id}`)).toHaveAttribute("aria-checked", "true");
+      await expect(page.getByTestId("people-filter-all-accounts")).toHaveAttribute("aria-checked", "false");
+      await axeBothModes(page, '[data-testid="people-filter-menu"]');
+      await page.keyboard.press("Escape");
+      await expect(menu(page)).toBeHidden();
+      await expect(page.getByTestId("people-filter")).toBeFocused();
+      await expect(page.getByTestId("people-filter-chip-accounts")).toHaveText(work.display_name);
+      await expect(row(page, bob.name).first()).toBeVisible();
+      await expect(row(page, ana.name)).toHaveCount(0);
+      // (Everyone is long: Zoe, written to from that account, is found by the search, within the filter)
+      await page.getByTestId("people-search").fill("Zoe");
+      await expect(row(page, zoe.name).first()).toBeVisible();
+      await expect(page.getByTestId("people-line")).toHaveText("1 person in your filter");
+      await page.getByTestId("people-search").fill("");
+      await axeBothModes(page, '[data-testid="people"]');
+    });
+
+    await scenario("a chip's × takes its part away, the keyboard back on the filter's button", async () => {
+      await page.getByTestId("people-filter-chip-accounts").getByRole("button").focus();
+      await page.keyboard.press("Enter");
+      await expect(page.getByTestId("people-filter-chip-accounts")).toHaveCount(0);
+      await expect(page.getByTestId("people-filter")).toBeFocused();
+      await expect(row(page, ana.name).first()).toBeVisible();
+      await expect(page.getByTestId("people-filter-chip-date")).toBeVisible();
+    });
+
+    await scenario("nobody in the filter: it says so, and Clear filters is the way out", async () => {
+      const { account: lonely } = await server.backend.store.accounts.create({ kind: "gmail", email: "lonely@example.test", displayName: "Lonely", color: "brown", now: E2E_NOW });
+      await fresh(page);
+      await page.getByTestId("nav-people").click();
+      await openMenu(page);
+      await page.getByTestId(`people-filter-account-${lonely.id}`).click();
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("people-note")).toContainText("No one matches these filters.");
+      await page.getByTestId("people-filter-clear").click();
+      await expect(page.getByTestId("people-filter-chips")).toHaveCount(0);
+      await expect(row(page, ana.name).first()).toBeVisible();
+      await expect(page.getByTestId("people-filter")).not.toHaveAttribute("data-active");
+    });
+
+    await scenario("the filter is remembered on this device", async () => {
+      await openMenu(page);
+      await page.getByTestId("people-filter-year").click();
+      await fresh(page);
+      await page.getByTestId("nav-people").click();
+      await expect(page.getByTestId("people-filter-chip-date")).toHaveText("Past year");
+      await openMenu(page);
+      await page.getByTestId("people-filter-clear-menu").click();
+      await expect(page.getByTestId("people-filter-chips")).toHaveCount(0);
+    });
+
+    await scenario("focused on an account: People right below its Inbox, that account's people only, no accounts to choose", async () => {
+      await page.getByTestId(`nav-account-${work.id}`).click({ button: "right" });
+      await page.getByTestId("account-menu-focus").click();
+      await expect(page.getByTestId("solo-back")).toBeVisible();
+      const order = await page.locator("#app-sidebar nav [data-testid^=nav-]").evaluateAll((els) => els.map((e) => e.getAttribute("data-testid")));
+      expect(order.indexOf(`nav-solo-people-${work.id}`)).toBe(order.indexOf(`nav-folder-${work.id}-inbox`) + 1);
+      await page.getByTestId(`nav-solo-people-${work.id}`).click();
+      await expect(page.getByTestId("people-title-account")).toHaveText(`· ${work.display_name}`);
+      await expect(page.getByTestId(`nav-solo-people-${work.id}`)).toHaveAttribute("aria-current", "page");
+      await expect(page.getByTestId(`nav-folder-${work.id}-all`)).not.toHaveAttribute("aria-current", "page");
+      await expect(row(page, bob.name).first()).toBeVisible();
+      await expect(row(page, ana.name)).toHaveCount(0);
+      await openMenu(page);
+      await expect(menu(page).getByText("Accounts")).toHaveCount(0);
+      await expect(page.getByTestId(`people-filter-account-${home.id}`)).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      // the search too: Ana isn't anyone in this account
+      await page.getByTestId("people-search").fill("Ana Ruiz");
+      await expect(page.getByTestId("people-note")).toBeVisible();
+      await expect(row(page, ana.name)).toHaveCount(0);
+      await page.getByTestId("people-search").fill("");
+      // Bob's page: his conversation of this account
+      await row(page, bob.name).first().click();
+      await expect(page.getByTestId("person-name")).toHaveText(bob.name);
+      await expect(page.getByTestId("person-page")).toContainText("Harbor lease");
+      await axeBothModes(page, '[data-testid="people"]', '[data-testid="person-page"]');
+    });
+
+    await scenario("the way back to all accounts leaves the focused People", async () => {
+      await page.getByTestId("solo-back").click();
+      await expect(page.getByTestId("solo-back")).toHaveCount(0);
+      await expect(page.getByTestId("people")).toHaveCount(0);
+    });
+  });
+});

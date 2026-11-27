@@ -238,7 +238,8 @@ export function setApp(partial: AppState | Partial<AppState> | ((state: AppState
  * scope across accounts, a tab back to the Inbox) leaves the folder too, so a list is never asked for an invalid one.
  */
 function keepFolderValid(state: AppState, next: AppState | Partial<AppState>): AppState | Partial<AppState> {
-  next = keepSoloValid(state, keepPeopleValid(state, keepTodayValid(state, keepActionPreviewValid(state, keepPutAwayValid(state, keepFollowupsValid(state, keepRemindersValid(state, keepReviewValid(state, next))))))));
+  // (People after the focus: its account is the focused one, as the focus stands after this write, plan 287)
+  next = keepPeopleValid(state, keepSoloValid(state, keepTodayValid(state, keepActionPreviewValid(state, keepPutAwayValid(state, keepFollowupsValid(state, keepRemindersValid(state, keepReviewValid(state, next))))))));
   const m = { ...state, ...next };
   const out = m.folder !== null && (m.accountId === null || m.categoryId !== null || m.reviewCategoryId !== null || ownList(m) || m.view !== "all") ? { ...next, folder: null } : next;
   // plan 86: a Gmail tab is its account's Inbox, alone, likewise
@@ -293,11 +294,18 @@ function keepTodayValid(state: AppState, next: AppState | Partial<AppState>): Ap
   return other ? { ...next, today: false } : next;
 }
 
-/** Plan 281: likewise for People (its chosen person kept, for when it's back). */
+/**
+ * Plan 281: likewise for People (its chosen person kept, for when it's back). Plan 287: People is every account's, or the
+ * focused account's (its `accountId`); a write that ends the focus without going anywhere keeps it, for every account.
+ */
 function keepPeopleValid(state: AppState, next: AppState | Partial<AppState>): AppState | Partial<AppState> {
-  if (!state.people || Object.hasOwn(next, "people")) return next;
   const m = { ...state, ...next };
-  const other = m.view !== "all" || m.accountId !== null || m.categoryId !== null || m.reviewCategoryId !== null || m.folder !== null || m.reminders || m.followups || m.putAway || m.today || m.actionPreview !== null || m.query.trim() !== "";
+  if (!m.people) return next;
+  const account = m.soloAccountId ?? null;
+  // People asked for: its account is the focus's (navigate makes it so; any other write is held to it)
+  if (!state.people || Object.hasOwn(next, "people")) return m.accountId === account ? next : { ...next, accountId: account };
+  if (state.soloAccountId !== null && account === null && !Object.hasOwn(next, "accountId")) return { ...next, accountId: null };
+  const other = m.view !== "all" || m.accountId !== account || m.categoryId !== null || m.reviewCategoryId !== null || m.folder !== null || m.reminders || m.followups || m.putAway || m.today || m.actionPreview !== null || m.query.trim() !== "";
   // (the person chosen stays chosen: coming back to People finds them)
   return other ? { ...next, people: false } : next;
 }
@@ -351,7 +359,8 @@ export function navigate(to: { view?: View; accountId?: number | null; categoryI
       today,
       people,
       view: folder || own ? ("all" as const) : gmailTab ? ("inbox" as const) : (to.view ?? (to.categoryId ? ("all" as const) : s.view)),
-      accountId: own ? null : to.accountId === undefined ? s.accountId : to.accountId,
+      // (plan 287: People in a focused account is that account's; the other lists are every account's, leaving the focus)
+      accountId: people ? s.soloAccountId : own ? null : to.accountId === undefined ? s.accountId : to.accountId,
       categoryId: folder || own || gmailTab || to.categoryId === undefined ? null : to.categoryId,
       folder,
       gmailTab,
