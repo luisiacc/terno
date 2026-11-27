@@ -50,7 +50,7 @@ export async function googleGrantOf(b: Backend, accountId: number): Promise<stri
   const saved = await b.store.accounts.config<GmailAccountConfig & { demo?: boolean }>(accountId).catch(() => null);
   if (!saved || saved.config.demo) return undefined;
   try {
-    return (await b.getSecret(`account:${accountId}:refreshToken`)) ?? undefined;
+    return (await b.getSecret(`account:${accountId}:refreshToken`, "revoke")) ?? undefined;
   } catch {
     return null;
   }

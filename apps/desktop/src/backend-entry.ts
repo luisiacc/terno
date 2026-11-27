@@ -134,7 +134,8 @@ parentPort.on("message", async (event) => {
     pendingSecrets.delete(msg.id);
     if (!p) return;
     if (msg.ok) p.resolve(msg.value);
-    else p.reject(new Error(msg.error ?? "secret storage failed"));
+    // plan 293: main says only that it failed; the backend's secret access turns it into its one generic error
+    else p.reject(new Error("secret storage failed"));
     return;
   }
   if (msg.type === "shutdown") {

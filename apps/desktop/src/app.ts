@@ -39,6 +39,7 @@ import { devToolsAllowed, packagedApp } from "./debugging";
 import { rendererFile } from "./renderer-path";
 import type { BackendToMain, MainToBackend } from "./ipc";
 import { readLegacySecrets } from "./keychain-helper";
+import { legacyReply, secretReply } from "./secret-service";
 import { NetworkWatch } from "./network-watch";
 import { FocusReporter } from "./window-focus";
 import { backstopAllows, originOf, requestFrame } from "./network-backstop";
@@ -309,24 +310,12 @@ function startBackend() {
         if (/^https:\/\//i.test(msg.url)) void shell.openExternal(msg.url);
         break;
       case "secret":
-        // the async API: the sync one is deprecated, and reads blobs it sealed
-        void (async () => {
-          if (!(await safeStorage.isAsyncEncryptionAvailable())) throw new Error("Keychain encryption unavailable");
-          return msg.op === "encrypt" ? [...(await safeStorage.encryptStringAsync(msg.plain))] : (await safeStorage.decryptStringAsync(Buffer.from(msg.blob))).result;
-        })().then(
-          (value) => child.postMessage({ type: "secret-result", id: msg.id, ok: true, value } satisfies MainToBackend),
-          (error: unknown) => {
-            diagLog.warn("keychain.secret_failed", { op: msg.op, errorClass: error instanceof Error ? error.name : "Error" });
-            child.postMessage({ type: "secret-result", id: msg.id, ok: false, error: String(error) } satisfies MainToBackend);
-          },
-        );
+        // plan 293 (CASA 4.1.4): a failure crosses with no text, and is logged by its operation and category only
+        void secretReply(msg, safeStorage, (op) => diagLog.warn("keychain.secret_failed", { op, errorCategory: "secret_storage_failed" })).then((reply) => child.postMessage(reply satisfies MainToBackend));
         break;
       case "legacy-secrets":
         // sealed by Única: opened by the helper under the old name, sealed again by the backend
-        readLegacySecrets(msg.blobs.map((b) => Uint8Array.from(b))).then(
-          (values) => child.postMessage({ type: "secret-result", id: msg.id, ok: true, value: values } satisfies MainToBackend),
-          (error: unknown) => child.postMessage({ type: "secret-result", id: msg.id, ok: false, error: String(error) } satisfies MainToBackend),
-        );
+        void legacyReply(msg, readLegacySecrets, () => diagLog.warn("keychain.secret_failed", { op: "legacy", errorCategory: "secret_storage_failed" })).then((reply) => child.postMessage(reply satisfies MainToBackend));
         break;
     }
   });

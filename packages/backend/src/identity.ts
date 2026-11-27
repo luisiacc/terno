@@ -119,9 +119,14 @@ export async function endSignIn(b: Backend, accountId: number, flow: AbortContro
   finally { if (b.signIns.get(accountId) === flow) b.signIns.delete(accountId); }
 }
 
-export async function encryptCredential(b: Backend, value: string): Promise<Uint8Array> {
-  try { return await b.options.cipher.encrypt(value); }
-  catch { throw new RpcError("BAD_REQUEST", L("errors.secret.replaceFailed")); }
+/** Plan 293: a keychain failure is the one generic SecretStorageError, recorded; never what the keychain said. */
+export function encryptCredential(b: Backend, accountId: number, key: "refreshToken" | "password", value: string): Promise<Uint8Array> {
+  return b.secrets.seal(`account:${accountId}:${key}`, value, "signIn");
+}
+
+/** Records a sign-in's credential write once its commit returned (plan 293); a retained credential wrote nothing. */
+function recordCommit(b: Backend, intent: SecretIntent, outcome: "ok" | "refused" | "failed"): void {
+  if (intent.kind === "replace") b.secrets.committed("write", intent.name, "signIn", outcome);
 }
 
 export async function sameAccount(b: Backend, stamp: { id: number; email: string; createdAt: number }, flow: AbortController): Promise<void> {
@@ -162,7 +167,7 @@ export async function oauthCredentialIntent(b: Backend, account: Account, stamp:
   }
   if (!pending) {
     let refreshToken: string | null;
-    try { refreshToken = await b.getSecret(name); } catch { throw invalidRenewal(); }
+    try { refreshToken = await b.getSecret(name, "renewal"); } catch { throw invalidRenewal(); }
     b.assertSignIn(account.id, flow);
     if (!refreshToken) throw invalidRenewal();
     // getSecret honors the keychain migration fingerprint. Assert the exact ciphertext again before exchange.
@@ -193,10 +198,10 @@ export async function oauthCredentialIntent(b: Backend, account: Account, stamp:
     pending.subject = who.sub!;
   }
   if (!pending.blob) {
-    let old: string;
-    try { old = await b.options.cipher.decrypt(pending.expectedBlob); } catch { throw invalidRenewal(); }
+    // plan 293: a keychain failure here is the one generic SecretStorageError
+    const old = await b.secrets.open(name, pending.expectedBlob, "renewal");
     b.assertSignIn(account.id, flow);
-    pending.blob = old === pending.proof.refreshToken ? pending.expectedBlob : await encryptCredential(b, pending.proof.refreshToken);
+    pending.blob = old === pending.proof.refreshToken ? pending.expectedBlob : await encryptCredential(b, account.id, "refreshToken", pending.proof.refreshToken);
     b.assertSignIn(account.id, flow);
   }
   // A commit may have succeeded before its adapter threw. Never restore the old bytes.
@@ -212,7 +217,8 @@ export async function commitGoogleCredential(b: Backend, accountId: number, stam
   await sameAccount(b, stamp, flow);
   let committed: boolean;
   try { committed = await b.credentialCommit(accountId, flow, (active) => b.store.secrets.commit({ ...intent, oauth: intent.oauth && { ...intent.oauth, eligible: () => active() && (!intent.oauth!.eligible || intent.oauth!.eligible()) } }, stamp), () => confirmCredential(b, stamp, intent)); }
-  catch { b.assertSignIn(accountId, flow); throw persistenceFailed(); }
+  catch { recordCommit(b, intent, "failed"); b.assertSignIn(accountId, flow); throw persistenceFailed(); }
+  recordCommit(b, intent, committed ? "ok" : "refused");
   b.assertSignIn(accountId, flow);
   if (!committed) { b.gmailRenewals.delete(accountId); throw persistenceFailed(); }
   b.gmailRenewals.delete(accountId);
@@ -290,12 +296,12 @@ async function signInAgain(b: Backend, account: Account, flow: AbortController, 
   if (method === "google") {
     const google = await connectExistingGoogle(b, account, flow);
     if (expectedSubject !== null && expectedSubject !== google.sub) throw invalidRenewal();
-    return { grant: { refreshToken: google.refreshToken, sub: google.sub! }, blob: google.refreshToken !== null ? await encryptCredential(b, google.refreshToken) : undefined, google };
+    return { grant: { refreshToken: google.refreshToken, sub: google.sub! }, blob: google.refreshToken !== null ? await encryptCredential(b, account.id, "refreshToken", google.refreshToken) : undefined, google };
   }
   const microsoft = await connectExistingMicrosoft(b, account, flow);
   // another person behind the same address (a recreated mailbox): never this account's
   if (expectedSubject !== null && expectedSubject !== microsoft.subject) throw new RpcError("BAD_REQUEST", L("errors.microsoft.invalidResponse"));
-  return { grant: { refreshToken: microsoft.refreshToken, sub: microsoft.subject }, blob: await encryptCredential(b, microsoft.refreshToken), microsoft };
+  return { grant: { refreshToken: microsoft.refreshToken, sub: microsoft.subject }, blob: await encryptCredential(b, account.id, "refreshToken", microsoft.refreshToken), microsoft };
 }
 
 /** Explicit credential changes retain one owner through preparation, durable commit and state publication. */
@@ -318,7 +324,7 @@ export async function reconnectAccount(b: Backend, accountId: number, password: 
       const config = (await b.store.accounts.config<ImapAccountConfig>(accountId))!.config;
       try { await b.options.providers.verifyImap(config, password); } catch (error) { throw loginFailed("errors.couldNotConnectAccount", account.email, error); }
       b.assertSignIn(accountId, flow);
-      blob = await encryptCredential(b, password);
+      blob = await encryptCredential(b, accountId, "password", password);
       break;
     }
     case "google":
@@ -375,7 +381,7 @@ export async function changeOwnerTo(b: Backend, accountId: number, password: str
       if (!password) throw new RpcError("BAD_REQUEST", L("errors.passwordToVerify"));
       try { await b.options.providers.verifyImap(config as unknown as ImapAccountConfig, password); } catch (error) { throw loginFailed("errors.couldNotVerifyAccount", account.email, error); }
       b.assertSignIn(accountId, flow);
-      blob = await encryptCredential(b, password);
+      blob = await encryptCredential(b, accountId, "password", password);
       claim = imapClaim(account, config as unknown as ImapAccountConfig, (config as unknown as ImapAccountConfig).senderName || account.displayName);
       break;
     case "google": {
@@ -416,7 +422,8 @@ export async function changeOwnerTo(b: Backend, accountId: number, password: str
           if (recovered && b.gmailRenewals.get(accountId) === prepared.pending) b.gmailRenewals.delete(accountId);
           return recovered;
         }, () => confirmCredential(b, stamp, prepared.intent, ownerAttempt ? decision : undefined));
-      } catch { b.assertSignIn(accountId, flow); throw persistenceFailed(); }
+      } catch { recordCommit(b, prepared.intent, "failed"); b.assertSignIn(accountId, flow); throw persistenceFailed(); }
+      recordCommit(b, prepared.intent, changed ? "ok" : "refused");
       b.assertSignIn(accountId, flow);
       if (!changed) throw prepared.pending ? invalidRenewal() : persistenceFailed();
       b.gmailRenewals.delete(accountId);

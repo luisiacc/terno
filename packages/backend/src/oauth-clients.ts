@@ -56,7 +56,7 @@ export async function rememberedClient(b: Backend, accountId: number, method: OA
 
 /** Plan 123: a client secret the user saved for a client of their own (before it) is used by nothing now. */
 export async function forgetOwnGoogleClient(b: Backend): Promise<void> {
-  if (await b.store.secrets.has(OWN_SECRET)) await b.store.secrets.delete(OWN_SECRET);
+  if (await b.store.secrets.has(OWN_SECRET)) await b.secrets.delete(OWN_SECRET, "migration");
 }
 
 const OWN_SECRET = "gmailClientSecret";

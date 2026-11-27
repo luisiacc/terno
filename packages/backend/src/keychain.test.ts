@@ -7,6 +7,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { installDiag, setDiagSink, type DiagEntry } from "@terno/core/diag";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import type { MailProvider, ProviderRegistry } from "@terno/mail";
 import { afterEach, describe, expect, it } from "vitest";
@@ -177,6 +178,35 @@ describe("keychain migration (Única → Terno)", () => {
     // (the Google client secret was forgotten before the migration: plan 123)
     for (const n of names.filter((n) => n !== "gmailClientSecret")) expect(unica.opens((await backend.store.secrets.get(n))!)).toBe(true);
     expect(Object.keys((await readKeychainState(backend.store))!.pending)).toHaveLength(2);
+  });
+
+  it("plan 293 (CASA 4.1.4): a failing migration logs fixed codes and counts, never what the keychain or the helper said, nor a secret's name", async () => {
+    const { dir } = await unicaProfile();
+    const entries: DiagEntry[] = [];
+    const lines: string[] = [];
+    installDiag({ proc: "backend", version: "t", build: "t", channel: "dev" });
+    setDiagSink({ write: (e) => void entries.push(e), capture: () => {} });
+    const said = "error:1C800064:Provider routines::bad decrypt (key: 0x5f3a…)";
+    const failingReader: LegacySecretReader = async () => Promise.reject(new Error(said));
+    const refusing: SecretCipher = { encrypt: async () => Promise.reject(new Error(said)), decrypt: async () => Promise.reject(new Error(said)) };
+    // the helper fails outright, then (next start) it opens but the keychain refuses to seal
+    const first = open(dir, terno, failingReader);
+    const log = (_: string, message: string, extra?: unknown) => void lines.push(`${message} ${JSON.stringify(extra ?? "")}`);
+    (first.backend.options as { log?: typeof log }).log = log;
+    await first.backend.start();
+    await first.backend.stop();
+    const second = open(dir, refusing, helper());
+    (second.backend.options as { log?: typeof log }).log = log;
+    await second.backend.start();
+    await second.backend.stop();
+    const all = JSON.stringify({ entries, lines });
+    expect(all).not.toContain("bad decrypt");
+    expect(all).not.toContain("0x5f3a");
+    expect(all).not.toContain("account:1:password");
+    expect(all).not.toContain("ai:openai:apiKey");
+    expect(entries.some((e) => e.code === "keychain.legacy_read_failed" && e.fields?.errorCategory === "secret_storage_failed")).toBe(true);
+    expect(entries.some((e) => e.code === "secret.access" && e.fields?.component === "migration" && e.fields.secretOutcome === "failed" && e.fields.errorCategory === "secret_storage_failed")).toBe(true);
+    expect(entries.some((e) => e.code === "keychain.migrated" && e.fields?.secretOutcome === "failed" && e.fields.count === 2)).toBe(true);
   });
 
   it("rejects what a wrong key can produce (garbage that passed the padding check) and keeps the rest", async () => {

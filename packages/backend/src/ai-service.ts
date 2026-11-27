@@ -176,7 +176,7 @@ export class AiService {
     const secretName = keySecretName(provider, preset);
     let apiKey = dev
       ? (dev[provider as keyof typeof dev] ?? null)
-      : await this.b.getSecret(secretName).catch((error: unknown) => {
+      : await this.b.getSecret(secretName, "ai").catch((error: unknown) => {
           throw error instanceof SecretUnreadableError ? new AiError(messageOf(error), "not_configured") : error;
         });
     if (apiKey && !dev) {
@@ -396,12 +396,12 @@ export class AiService {
     if (this.b.options.devAi && isDevAiProvider(provider) && (await activeDevAi(this.b.store))) throw new RpcError("BAD_REQUEST", L("errors.ai.devKeyFromEnv"));
     const name = keySecretName(provider, preset);
     if (value) {
-      await this.b.setSecret(name, value);
+      await this.b.setSecret(name, value, "settings");
       await bindKeyOrigin(this.b.store, name, await this.profileOrigin(provider, preset));
       // short keys would give too much away
       await setKeyHint(this.b.store, provider, preset, value.length >= 12 ? value.slice(-4) : null);
     } else {
-      await this.b.store.secrets.delete(name);
+      await this.b.secrets.delete(name, "settings");
       await setKeyHint(this.b.store, provider, preset, null);
       await bindKeyOrigin(this.b.store, name, null);
     }

@@ -2782,6 +2782,8 @@ It contains none of your mail, contacts, settings or keys.
   "errors.theme.tooBig": "The themes take up more than 16 KB",
   // keychain: a secret that can't be opened, and where Settings asks for it again
   "errors.secret.replaceFailed": "Couldn’t save the updated sign-in. Try again.",
+  // plan 293 (CASA 4.1.4): every keychain failure, whatever its cause
+  "errors.secret.storage": "Terno couldn’t use the system keychain to protect your sign-in. Make sure the keychain is unlocked, then try again.",
   "errors.secret.keychain.password": "The keychain won’t open this account’s password. Enter it again in Settings → Accounts (Change password…).",
   "errors.secret.keychain.googleSession": "The keychain won’t open this account’s Google session. Reconnect it in Settings → Accounts (Connect with Google).",
   "errors.secret.keychain.clientSecret": "The keychain won’t open the Google client secret. Save it again in Settings → Accounts.",

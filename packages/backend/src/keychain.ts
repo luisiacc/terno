@@ -1,6 +1,8 @@
 import { textRef, type TextRef } from "@terno/core";
+import { log } from "@terno/core/diag";
 import { L } from "@terno/i18n";
 import type { MailStore } from "@terno/store";
+import { SECRET_STORAGE_FAILED, type SecretAccess } from "./secret-access";
 
 /**
  * Secrets sealed when the app was called Única. On desktop, Electron's
@@ -24,11 +26,6 @@ export interface KeychainState {
 /** Opens blobs sealed under the previous keychain: one plaintext per blob, null where it couldn't. */
 export type LegacySecretReader = (blobs: Uint8Array[]) => Promise<(string | null)[]>;
 
-export interface SecretSealer {
-  encrypt(plain: string): Promise<Uint8Array>;
-  decrypt(blob: Uint8Array): Promise<string>;
-}
-
 /** What a secret is (the message then says where Settings asks for it again). */
 export function secretKind(name: string): "password" | "googleSession" | "clientSecret" | "apiKey" | "other" {
   if (/^account:\d+:password$/.test(name)) return "password";
@@ -40,6 +37,8 @@ export function secretKind(name: string): "password" | "googleSession" | "client
 
 export class SecretUnreadableError extends Error {
   readonly expected = true;
+  /** plan 293 (CASA 4.1.4): the category every cryptographic failure carries, whatever its cause */
+  readonly category = SECRET_STORAGE_FAILED;
   /** the message as a catalog key: the renderer shows it in the user's language */
   readonly i18n: TextRef;
   constructor(
@@ -100,14 +99,10 @@ export interface SecretMigrationResult {
  * under Terno records every stored secret as pending (all of them were sealed
  * by Única); later starts retry only what is still pending. A secret is
  * replaced only after its new blob decrypts to the same text, and only if
- * nothing rewrote it meanwhile.
+ * nothing rewrote it meanwhile. Plan 293 (CASA 4.1.4): what fails is logged
+ * by fixed codes and counts, never an exception's text or a secret's name.
  */
-export async function migrateLegacySecrets(
-  store: MailStore,
-  cipher: SecretSealer,
-  read: LegacySecretReader,
-  log: (level: "info" | "warn", message: string) => void = () => {},
-): Promise<SecretMigrationResult> {
+export async function migrateLegacySecrets(store: MailStore, secrets: SecretAccess, read: LegacySecretReader): Promise<SecretMigrationResult> {
   let state = await readKeychainState(store);
   if (!state) {
     const pending: Record<string, string> = {};
@@ -138,8 +133,8 @@ export async function migrateLegacySecrets(
   let plains: (string | null)[];
   try {
     plains = await read(todo.map((t) => t.blob));
-  } catch (error) {
-    log("warn", `the previous keychain couldn't be read: ${error instanceof Error ? error.message : String(error)}`);
+  } catch {
+    log.warn("keychain.legacy_read_failed", { count: todo.length, errorCategory: SECRET_STORAGE_FAILED });
     plains = todo.map(() => null);
   }
   const migrated: string[] = [];
@@ -147,18 +142,20 @@ export async function migrateLegacySecrets(
     const plain = plains[i] ?? null;
     if (plain === null || !plausibleSecret(plain)) continue;
     try {
-      const sealed = await cipher.encrypt(plain);
-      if ((await cipher.decrypt(sealed)) !== plain) throw new Error("the new blob doesn't open to the same text");
+      // each step's failure is recorded by the secret access (a write or read, failed) and kept as it was
+      const sealed = await secrets.seal(name, plain, "migration");
+      if ((await secrets.open(name, sealed, "migration")) !== plain) continue;
       const current = await store.secrets.get(name);
       if (!current || blobFingerprint(current) !== blobFingerprint(blob)) continue;
-      await store.secrets.put(name, sealed);
+      await secrets.putSealed(name, sealed, "migration");
       migrated.push(name);
-    } catch (error) {
-      log("warn", `secret ${name} kept as it was: ${error instanceof Error ? error.message : String(error)}`);
+    } catch {
+      // kept as it was: pending, retried on the next start
     }
   }
   await settle(migrated);
   const pending = todo.map((t) => t.name).filter((n) => !migrated.includes(n));
-  log(pending.length ? "warn" : "info", `keychain migration: ${migrated.length} secret(s) sealed again, ${pending.length} to enter again${pending.length ? ` (${pending.join(", ")})` : ""}`);
+  log.info("keychain.migrated", { count: migrated.length, secretOutcome: "ok" });
+  if (pending.length) log.warn("keychain.migrated", { count: pending.length, secretOutcome: "failed" });
   return { migrated, pending, attempted: true };
 }

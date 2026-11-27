@@ -48,6 +48,7 @@ import { createHandlers } from "./handlers";
 import { forgetOwnGoogleClient, oauthClientFor, rememberedClient, type GoogleClients, type OAuthClientSet } from "./oauth-clients";
 import { restorePending } from "./import";
 import { blobFingerprint, keychainRefusal, migrateLegacySecrets, readKeychainState, SecretUnreadableError, type LegacySecretReader } from "./keychain";
+import { SecretAccess, type SecretComponent } from "./secret-access";
 import { createNetworkPolicy, type LookupAll, type NetDecision, type NetworkPolicy } from "./net-policy";
 import { CARRY_SLICE, carryRenamed } from "./folders";
 import { followFolderFilters } from "./similar";
@@ -234,6 +235,8 @@ const REBUILD_SLICE = 250;
 
 export class BackendCore {
   readonly store: MailStore;
+  /** plan 293: every seal, open, write and delete of a stored secret, and its record */
+  readonly secrets: SecretAccess;
   readonly server: RpcServer;
   readonly options: Required<Pick<BackendCoreOptions, "now" | "sliceBudgetMs" | "syncIntervalMs">> & BackendCoreOptions;
   private readonly incoming: IncomingPipeline;
@@ -388,6 +391,7 @@ export class BackendCore {
     this.incoming = new IncomingPipeline(options.incomingProcessor);
     this.platform = options.platform;
     this.store = options.store;
+    this.secrets = new SecretAccess(options.cipher, this.store, () => this.options.now());
     if (options.devAi) provideDevAi(this.store, options.devAi);
     this.net = createNetworkPolicy({ siteIcons: () => readSiteIcons(this.store), lookup: options.lookup, providerChanged: () => this.cooldownChanged(), observe: options.onNet });
     // the web host POSTs through the policy (no-cors); other hosts pass theirs (Node's in backend.ts)
@@ -868,9 +872,10 @@ export class BackendCore {
     void this.icons.forgetGooglePhotos();
     // before anything syncs: secrets sealed by Única are sealed again (or stay pending, and Settings asks for them)
     if (this.options.legacySecrets) {
-      await migrateLegacySecrets(this.store, this.options.cipher, this.options.legacySecrets, (level, message) => this.log(level, message)).catch((error: unknown) => {
+      // plan 293 (CASA 4.1.4): its failures are logged by fixed codes, never an exception's text or a secret's name
+      await migrateLegacySecrets(this.store, this.secrets, this.options.legacySecrets).catch((error: unknown) => {
         captureError(error, { code: "keychain.migration_failed" });
-        this.log("warn", "keychain migration failed; it is retried on the next start", error instanceof Error ? error.message : error);
+        this.log("warn", "keychain migration failed; it is retried on the next start");
       });
       if (this.stopped) return;
     }
@@ -1126,7 +1131,7 @@ export class BackendCore {
       if (isOAuthKind(account?.kind) && scope && keychainRefusal(status.refusalKey) && this.current(life)) {
         this.rechecked.set(accountId, this.now());
         const recover = status.localRecoveryProof(this.statusAuthority(life));
-        if (!await this.accountRead(life, () => this.getSecret(`account:${accountId}:refreshToken`)) || !this.current(life)) return false;
+        if (!await this.accountRead(life, () => this.getSecret(`account:${accountId}:refreshToken`, "recheck")) || !this.current(life)) return false;
         await recover();
         if (status.signInRequired) return false;
         // as an IMAP recheck (plan 263): push and a pass start whatever resuming its ops does
@@ -1146,7 +1151,7 @@ export class BackendCore {
         await provider.verify();
       } else {
         const config = (await this.store.accounts.config<ImapAccountConfig>(accountId))?.config;
-        const password = await this.getSecret(`account:${accountId}:password`);
+        const password = await this.getSecret(`account:${accountId}:password`, "recheck");
         if (!config || !password || !this.current(life)) return false;
         await this.options.providers.verifyImap(config, password);
       }
@@ -1270,6 +1275,8 @@ export class BackendCore {
 
   async stop(): Promise<void> {
     this.stopped = true;
+    // plan 293: what's folded of the access record is written now
+    this.secrets.flush();
     this.originals.stop();
     for (const timer of this.backfillTimers.values()) clearTimeout(timer);
     this.backfillTimers.clear();
@@ -1362,22 +1369,29 @@ export class BackendCore {
 
   // ───────────────────────────── secrets ─────────────────────────────
 
-  /** null: none saved. Throws SecretUnreadableError when one is saved but can't be opened (sealed by Única and not migrated, or refused by the keychain). */
-  async getSecret(name: string): Promise<string | null> {
+  /**
+   * null: none saved. Throws SecretUnreadableError when one is saved but can't be opened (sealed by Única and not
+   * migrated, or refused by the keychain): a fixed message saying where to enter it again, never what the keychain said.
+   * `component`: who asks, for the access record (plan 293).
+   */
+  async getSecret(name: string, component: SecretComponent = "other"): Promise<string | null> {
     const blob = await this.store.secrets.get(name);
-    if (!blob) return null;
+    if (!blob) {
+      this.secrets.missing(name, component);
+      return null;
+    }
     if ((await readKeychainState(this.store))?.pending[name] === blobFingerprint(blob)) throw new SecretUnreadableError(name, true);
     try {
-      return await this.options.cipher.decrypt(blob);
+      return await this.secrets.open(name, blob, component);
     } catch {
-      log.warn("secret.unreadable", { op: "decrypt" });
+      // the access record holds the failure's category; this line says only which operation
       this.log("warn", "saved secret couldn't be opened", { op: "decrypt" });
       throw new SecretUnreadableError(name, false);
     }
   }
 
-  async setSecret(name: string, value: string): Promise<void> {
-    await this.store.secrets.put(name, await this.options.cipher.encrypt(value));
+  async setSecret(name: string, value: string, component: SecretComponent = "other"): Promise<void> {
+    await this.secrets.put(name, value, component);
   }
 
   // ───────────────────────────── events ─────────────────────────────
@@ -2033,17 +2047,18 @@ export class BackendCore {
         unreadable = new ProviderAuthError(messageOf(new SecretUnreadableError(name, true)));
         throw unreadable;
       }
+      const component = key === "refreshToken" ? "refresh" : "mailLogin";
       let plain: string;
       try {
-        plain = await this.options.cipher.decrypt(blob);
+        plain = await this.secrets.open(name, blob, component);
       } catch {
         unreadable = new ProviderAuthError(messageOf(new SecretUnreadableError(name, false)));
         throw unreadable;
       }
       this.assertCurrent(life);
       if (plain !== expected) return false;
-      const candidate = next === expected ? blob : await this.options.cipher.encrypt(next);
-      const replaced = await this.accountWrite(life, () => this.store.secrets.replace(name, blob, candidate, stamp));
+      const candidate = next === expected ? blob : await this.secrets.seal(name, next, component);
+      const replaced = await this.accountWrite(life, () => this.secrets.replace(name, blob, candidate, component, stamp));
       this.assertCurrent(life);
       return replaced;
     } catch {
@@ -2155,16 +2170,17 @@ export class BackendCore {
         },
         incomingProcessor: this.processing(life),
         getSecret: (name) => this.accountRead(life, () =>
-          this.getSecret(`account:${accountId}:${name}`).catch((error: unknown) => {
+          this.getSecret(`account:${accountId}:${name}`, name === "refreshToken" ? "refresh" : "mailLogin").catch((error: unknown) => {
             throw error instanceof SecretUnreadableError ? new ProviderAuthError(messageOf(error)) : error;
           })),
         setSecret: async (name, value) => {
           this.assertCurrent(life);
-          const blob = await this.options.cipher.encrypt(value);
-          await this.accountWrite(life, () => this.store.secrets.put(`account:${accountId}:${name}`, blob));
+          const component = name === "refreshToken" ? "refresh" : "mailLogin";
+          const blob = await this.secrets.seal(`account:${accountId}:${name}`, value, component);
+          await this.accountWrite(life, () => this.secrets.putSealed(`account:${accountId}:${name}`, blob, component));
         },
         replaceSecret: (name, expected, next) => this.replaceProviderSecret(life, stamp, name, expected, next),
-        getAppSecret: (name) => this.accountRead(life, () => this.getSecret(name)),
+        getAppSecret: (name) => this.accountRead(life, () => this.getSecret(name, "other")),
         // plans 99, 259: the client this account's refresh token belongs to (read now: a reconnect may have recorded it)
         ...(method !== "password" && { oauthClient: () => this.accountRead(life, async () => oauthClientFor(this, method, await rememberedClient(this, accountId, method))) }),
         event: (code, fields) => {

@@ -6,6 +6,7 @@ export { countAsChecked } from "./account-checks";
 export * from "./transports";
 export * from "./agent-socket";
 export * from "./agent-connector";
+export * from "./secret-access";
 export * from "./demo";
 export * from "./demo-since";
 export * from "./net-policy";

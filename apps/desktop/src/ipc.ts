@@ -15,7 +15,8 @@ export type MainToBackend =
    * backend keeps running and says "sending", then "sends-idle" once it isn't.
    */
   | { type: "shutdown"; id: number; deadlineMs: number; force: boolean }
-  | { type: "secret-result"; id: number; ok: boolean; value?: string | number[] | (string | null)[]; error?: string };
+  /** plan 293 (CASA 4.1.4): a failure carries no text, only ok: false */
+  | { type: "secret-result"; id: number; ok: boolean; value?: string | number[] | (string | null)[] };
 
 export type BackendToMain =
   | { type: "ready" }

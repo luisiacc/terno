@@ -444,12 +444,20 @@ export function createHandlers(b: Backend): Handlers {
     const grant = gmail ? await googleGrantOf(b, id) : undefined;
     // plan 107: and its favorite folders, in the one turn of its folder list with the account row (Codex code review
     // round 11 #3: a favorite waiting for the list found the account still there and was written after the cleanup)
+    // plan 293: its secrets go with it, in the same transaction; each delete is recorded once it committed
+    const secrets = (await store.secrets.names()).filter((name) => name.startsWith(`account:${id}:`));
     await b.withFolderList(id, async () => {
       await b.writeFavorites(() => followFavoriteFolders(store, id, { deleted: "all" }));
       await followFolderFilters(store, id, { deleted: "all" }, b.now(), (m, d) => b.log("warn", m, d));
       // the owner row survives: its account_id is cleared (ON DELETE SET NULL)
-      await store.accounts.remove(id);
+      try {
+        await store.accounts.remove(id);
+      } catch (error) {
+        for (const name of secrets) b.secrets.committed("delete", name, "removal", "failed");
+        throw error;
+      }
     });
+    for (const name of secrets) b.secrets.committed("delete", name, "removal");
     b.accountRemoved(id);
     // plan 141: what questions drew on it goes, and what's asking on it stops
     await b.ask.accountRemoved(id);
@@ -1338,8 +1346,9 @@ export function createHandlers(b: Backend): Handlers {
       }
       // only a live login establishes the owner; it is claimed in the same transaction as the account
       const claim = p.verify && b.canClaimOwner();
-      // encrypt first, so the account, its password and the ownership commit together
-      const blob = await b.options.cipher.encrypt(p.password);
+      // encrypt first, so the account, its password and the ownership commit together (plan 293: a keychain failure is
+      // the one generic SecretStorageError, and its write is recorded once the account is created)
+      const blob = await b.secrets.seal("account:new:password", p.password, "signIn");
       const accounts = await store.accounts.list();
       const label = accountLabel(p.displayName || p.email, p.email, accounts);
       const { account, claimed } = await store.accounts.create({
@@ -1352,6 +1361,7 @@ export function createHandlers(b: Backend): Handlers {
         ownerClaim: claim ? imapClaim({ email: p.email }, config, p.displayName || p.email) : undefined,
         now: b.now(),
       });
+      b.secrets.committed("write", `account:${account.id}:password`, "signIn");
       // the account it now shares a name with shows its address too
       for (const r of label.renames) await store.accounts.update(r.id, { displayName: r.displayName });
       await b.emitAccounts();
@@ -1390,7 +1400,7 @@ export function createHandlers(b: Backend): Handlers {
       const existing = (await store.accounts.list()).find((a) => a.email === result.email.toLowerCase());
       if (existing) throw new RpcError("BAD_REQUEST", L("errors.alreadyConnected", { email: result.email }));
       const config: GmailAccountConfig & AccountPrefs = { senderName: result.name || result.email, googleSubject: result.sub!, googleClientId: oauth.clientId, ...(syncWindowDays !== undefined && { syncWindowDays }) };
-      const blob = await b.options.cipher.encrypt(result.refreshToken);
+      const blob = await b.secrets.seal("account:new:refreshToken", result.refreshToken, "signIn");
       const accounts = await store.accounts.list();
       const color = newAccountColor(accounts);
       const label = accountLabel(result.email.split("@")[0]!, result.email, accounts);
@@ -1405,6 +1415,7 @@ export function createHandlers(b: Backend): Handlers {
         ownerClaim: b.canClaimOwner() ? gmailClaim({ ...result, name: result.name || result.email }) : undefined,
         now: b.now(),
       });
+      b.secrets.committed("write", `account:${account.id}:refreshToken`, "signIn");
       // the account it now shares a name with shows its address too
       for (const r of label.renames) await store.accounts.update(r.id, { displayName: r.displayName });
       await b.emitAccounts();
@@ -1430,7 +1441,7 @@ export function createHandlers(b: Backend): Handlers {
       const existing = (await store.accounts.list()).find((a) => a.email === result.email.toLowerCase());
       if (existing) throw new RpcError("BAD_REQUEST", L("errors.alreadyConnected", { email: result.email }));
       const config: OutlookAccountConfig & AccountPrefs = { senderName: result.name || result.email, microsoftSubject: result.subject, microsoftClientId: oauth.clientId, tenant: result.tenant, ...(result.username && { microsoftUsername: result.username }), ...(syncWindowDays !== undefined && { syncWindowDays }) };
-      const blob = await b.options.cipher.encrypt(result.refreshToken);
+      const blob = await b.secrets.seal("account:new:refreshToken", result.refreshToken, "signIn");
       const accounts = await store.accounts.list();
       const color = newAccountColor(accounts);
       const label = accountLabel(result.email.split("@")[0]!, result.email, accounts);
@@ -1445,6 +1456,7 @@ export function createHandlers(b: Backend): Handlers {
         ownerClaim: b.canClaimOwner() ? microsoftClaim({ ...result, name: result.name || result.email }) : undefined,
         now: b.now(),
       });
+      b.secrets.committed("write", `account:${account.id}:refreshToken`, "signIn");
       for (const r of label.renames) await store.accounts.update(r.id, { displayName: r.displayName });
       await b.emitAccounts();
       if (claimed) await b.emitOwner();
