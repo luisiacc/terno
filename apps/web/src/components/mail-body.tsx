@@ -15,7 +15,7 @@ import { mailColors, useAppearance } from "~/lib/appearance";
 import { csp, hasRemoteContent, mailDesign, QUIET_ATTR } from "~/lib/mail";
 import { splitTextQuote } from "~/lib/quote";
 import { withoutTrailingQuote } from "~/lib/quote-html";
-import { forwardPrintKey, wantsNativeMenu } from "~/lib/print-open";
+import { forwardPrintKey, ownsLinkMenu, wantsNativeMenu } from "~/lib/print-open";
 import { forwardMouseNav, forwardNavKey } from "~/lib/page";
 import { chooseOpenThread } from "~/state/app";
 import { allowRemoteFor, remoteAllowed, useRemoteConsent } from "~/lib/remote-consent";
@@ -23,6 +23,7 @@ import { FRAME_MAX_HEIGHT, htmlHolds, MAIL_INTERACTION, markDocument, markTextPa
 import { Marked } from "./match-mark";
 
 import { openLink } from "~/lib/open-link";
+import { linkAt, menuLink } from "~/lib/menu-link";
 import { replayMenu } from "~/lib/menu-origin";
 export { openLink };
 
@@ -267,8 +268,9 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
             const forwarded = new KeyboardEvent("keydown", { key: "F6", shiftKey: event.shiftKey, bubbles: true, cancelable: true });
             document.dispatchEvent(forwarded);
             if (forwarded.defaultPrevented) event.preventDefault();
-          } else if ((event.key === "F10" && event.shiftKey || event.key === "ContextMenu") && !event.metaKey && !event.ctrlKey && !event.altKey) {
-            // plan 284: the menu key on a link in the mail opens the conversation's menu with the link's items (openFocusedMenu)
+          } else if ((event.key === "F10" && event.shiftKey || event.key === "ContextMenu") && !event.metaKey && !event.ctrlKey && !event.altKey && ownsLinkMenu(linkAt(d.activeElement))) {
+            // plan 284: the menu key on a link in the mail opens the conversation's menu with the link's items (openFocusedMenu);
+            // anywhere else in the mail it's the frame's own (never the list's menu), as a page's link on the web is the browser's
             const forwarded = new KeyboardEvent("keydown", { key: event.key, shiftKey: event.shiftKey, bubbles: true, cancelable: true });
             document.dispatchEvent(forwarded);
             if (forwarded.defaultPrevented) event.preventDefault();
@@ -423,7 +425,7 @@ export function TextBody({ text, marks }: { text: string; /** plan 158: a search
     list.map(({ text: part, parts }, i) =>
       i % 2 ? (
         // ⇧F10 on it opens the conversation's menu with the link's items, as a right-click does (plan 284)
-        <a key={i} href={part} data-context-menu className="text-primary underline-offset-2 hover:underline" onClick={(e) => (e.preventDefault(), openLink(part))}>
+        <a key={i} href={part} data-context-menu={ownsLinkMenu(menuLink(part)) || undefined} className="text-primary underline-offset-2 hover:underline" onClick={(e) => (e.preventDefault(), openLink(part))}>
           <Marked text={part} needles={marks} parts={parts ?? null} testId="reader-match" body />
         </a>
       ) : (

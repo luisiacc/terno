@@ -292,6 +292,9 @@ export function MessageMenu({ threadId, children }: { threadId: number; children
           // app replays (a mail's frame, ⇧F10) has no browser menu behind it: it was decided where it began
           if (!e.currentTarget.contains(target) || (e.nativeEvent.isTrusted && wantsNativeMenu(target, text))) {
             (e as unknown as { preventBaseUIHandler(): void }).preventBaseUIHandler();
+            // the browser's own (a web link in plain text): Base UI's document listener would cancel it for anything inside
+            // the trigger, leaving no menu at all (plan 284, Codex code review)
+            if (e.currentTarget.contains(target)) e.stopPropagation();
             return;
           }
           const el = target.closest<HTMLElement>("[data-message-id]");

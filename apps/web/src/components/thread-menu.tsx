@@ -74,7 +74,7 @@ import { isMac, scopeRows, selectAll } from "~/lib/select";
 import { openThread } from "~/lib/page";
 import { menuTargets } from "~/lib/selection";
 import { ROW_OUTLINE } from "./thread-row";
-import { openPrint } from "~/lib/print-open";
+import { openPrint, ownsLinkMenu } from "~/lib/print-open";
 import { useFolderRows } from "~/lib/account-folders";
 import { moveToFolder } from "~/lib/folder-move";
 import { factsOf, listingFolder } from "~/lib/folder-rules";
@@ -100,6 +100,7 @@ import { changeOfTask, openChange } from "~/lib/change";
 import { actOnTodayRow, openTodayLater } from "~/lib/today-task";
 import { handTo, othersOfTask, seenOfTask } from "~/lib/hand-to";
 import { fitWholeRows } from "@terno/ui/lib/whole-rows";
+import { linkAt } from "~/lib/menu-link";
 import { replayMenu } from "~/lib/menu-origin";
 
 /** What the open menu acts on: explicit threads, or a "select all N" scope. Set at right-click; rows never read it. */
@@ -147,7 +148,7 @@ export function openFocusedMenu(): boolean {
   const el = document.activeElement;
   if (el instanceof HTMLIFrameElement && el.matches("[data-mail]")) {
     const link = el.contentDocument?.activeElement?.closest("a[href]");
-    if (!link) return false;
+    if (!link || !ownsLinkMenu(linkAt(link))) return false;
     const frame = el.getBoundingClientRect(), r = link.getBoundingClientRect();
     replayMenu(el, link, Math.round(frame.left + r.left + Math.min(24, r.width / 2)), Math.round(frame.top + r.top + r.height / 2));
     return true;

@@ -70,3 +70,15 @@ Codex's critique of the plan (10 points), and what changed:
 8. **Two Copy address rows** (point 8): gone with the owner's follow-up: on a link, only the link's items.
 9. **Width** (point 9): capped by the room there is.
 10. **Desktop smoke for the web link** (point 10): not added. Open link is `openLink`, the same call the link's click makes, and Copy link is the clipboard as Copy address uses it; the e2e covers the shared path.
+
+## What the Codex code review changed
+
+Seven findings; five fixed, each with an e2e check that fails without it:
+
+1. **⇧F10 off a link** (finding 1): the frame forwarded the key wherever focus was in the mail, and with no link the list's menu opened for its selection. The frame forwards it only on a link whose menu is ours.
+2. **⇧F10 on a page's link on the web** (finding 2): it opened our menu, where a right-click keeps the browser's. One rule now says whose a link's menu is (`ownsLinkMenu`: every link we offer on the desktop, an address's on the web), used by the right-click (`wantsNativeMenu`), the frame's key, `openFocusedMenu` and a plain-text link's `data-context-menu`.
+3. **A right-click on a plain-text URL on the web had no menu at all** (finding 3, older than this plan): skipping Base UI's handler left its document listener, which cancels every right-click inside the trigger. A right-click left to the browser stops at the trigger.
+4. **A picture inside an address's link** (finding 4) took the browser's menu on the web: the link around it decides now.
+5. **The draft's account** (finding 6): the mail is in the second account, so the compose fallback (the first) would fail the check.
+
+Not changed: a long press on a touch screen keeping the last link's items (finding 5; the menu learns what it's on from `contextmenu`, as it always has for the message, and a touch screen on the desktop app is rare), and a packaged smoke for Open link and Copy link (finding 7; see point 10 above).

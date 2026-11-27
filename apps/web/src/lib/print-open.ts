@@ -6,7 +6,7 @@
  */
 import { chordOf } from "@terno/core";
 import { isMac } from "~/lib/select";
-import { linkAt } from "~/lib/menu-link";
+import { linkAt, type MenuLink } from "~/lib/menu-link";
 import { getApp, setApp } from "~/state/app";
 
 export type PrintIntent = "print" | "pdf";
@@ -56,13 +56,22 @@ export function forwardPrintKey(e: KeyboardEvent): void {
 }
 
 /**
+ * Plan 284: is a link's menu ours (its items) rather than the browser's? On the desktop every link we offer (it has
+ * no other menu); on the web an address's, which writes to it: a page's keeps the browser's (new tab, copy).
+ */
+export function ownsLinkMenu(link: MenuLink | null): boolean {
+  return link !== null && (Boolean(window.ternoDesktop) || link.kind === "mail");
+}
+
+/**
  * A right-click in a message opens its menu (Imprimir este mensaje…). On the
  * web the browser's own menu stays for selected text, web links and images
- * (copy, open); an address's link takes ours, which writes to it (plan 284).
+ * (copy, open); an address's link takes ours, its picture too (plan 284).
  * The desktop app has no other menu there.
  */
 export function wantsNativeMenu(target: EventTarget | null, selection: string): boolean {
   if (window.ternoDesktop) return false;
+  if (selection.trim() !== "") return true;
   const on = (target as Element | null)?.closest?.("a[href], img, input, textarea, [contenteditable=true]");
-  return selection.trim() !== "" || Boolean(on && !(on.matches("a[href]") && linkAt(on)?.kind === "mail"));
+  return Boolean(on) && !ownsLinkMenu(linkAt(on!));
 }
