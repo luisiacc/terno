@@ -102,8 +102,7 @@ if (demoAi) {
   const marker = readMarker(read(join(profile, MARKER_FILE)));
   const steps = stepsToRun(marker, args);
   const aside = args.fresh ? [] : stepsSetAside(marker);
-  // (what each said last is in its screenshot: the marker keeps only the latest launch's words)
-  if (aside.length) console.log(`[demo-ai] set aside, as it can't finish on this profile: ${aside.join(", ")} (its last screen: ${join(profile, `demo-ai-${aside[0]}-failed.png`)}${aside.length > 1 ? ", and so on" : ""}); pnpm dev:demo-ai --fresh starts over`);
+  if (aside.length) console.log(`[demo-ai] set aside, after failing on three launches or in a way no launch can mend: ${aside.join(", ")} (each one's last screen, when one was taken, is demo-ai-<step>-failed.png in ${profile}); pnpm dev:demo-ai --fresh starts over`);
   console.log(`[demo-ai] keys: ${Object.entries(from).map(([k, f]) => `${k} (${f})`).join(", ")}`);
   console.log(steps.length ? `[demo-ai] ${profile}: preparing ${steps.join(", ")} on real models before the window opens (a few minutes, once)` : `[demo-ai] ${profile}: prepared (pnpm dev:demo-ai --fresh starts over)`);
   demoAiPlan = { profile, keys, steps, read };
@@ -213,7 +212,10 @@ if (demoAiPlan) {
     const spend = Object.entries(readSpend(profile));
     const total = spend.reduce((a, [, t]) => ({ requests: a.requests + t.requests, usd: a.usd + t.usd }), { requests: 0, usd: 0 });
     console.log(`[demo-ai] prepared in ${Math.round((Date.now() - started) / 1000)} s; the profile's AI so far (Settings → AI → usage): ${total.requests} model requests, about US$${total.usd.toFixed(2)} (${spend.map(([task, t]) => `${task} ${t.requests}`).join(", ")})`);
-    if (failed.length) console.log(`[demo-ai] ${failed.join(", ")} didn't finish: they run again on the next launch (a screenshot of each is in the profile)`);
+    const after = stepsSetAside(readMarker(read(join(profile, MARKER_FILE))));
+    const again = failed.filter((s) => !after.includes(s));
+    if (again.length) console.log(`[demo-ai] ${again.join(", ")} didn't finish: ${again.length > 1 ? "they run" : "it runs"} again on the next launch (a screenshot of each is in the profile)`);
+    if (failed.length > again.length) console.log(`[demo-ai] ${failed.filter((s) => after.includes(s)).join(", ")} set aside: no launch runs it again until --fresh`);
   }
   env = demoAiEnv({ base: process.env, profile, keys, devUrl: url, background: false, now: demoAiClock(readMarker(read(join(profile, MARKER_FILE)))) });
 }

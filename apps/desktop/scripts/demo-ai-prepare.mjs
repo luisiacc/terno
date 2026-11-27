@@ -55,9 +55,9 @@ const replyStored = (profile, threadId) => readStored(profile, (db) => ({
   waitingSince: db.prepare("SELECT waiting_since FROM threads WHERE id = ?").get(threadId)?.waiting_since ?? null,
 }));
 const summaryStored = (profile, threadId) => readStored(profile, (db) => db.prepare("SELECT state FROM ai_summaries WHERE thread_id = ?").get(threadId)?.state === "ready");
-/** the newest digest the app stored: its state and how many newsletters it kept */
-const digestStored = (profile) => readStored(profile, (db) => {
-  const row = db.prepare("SELECT state, body_json FROM ai_digests ORDER BY day DESC LIMIT 1").get();
+/** the day's digest as the app stored it: its state and how many newsletters it kept */
+const digestStored = (profile, day) => readStored(profile, (db) => {
+  const row = db.prepare("SELECT state, body_json FROM ai_digests WHERE day = ?").get(day);
   return row ? { state: row.state, items: JSON.parse(row.body_json ?? "{}").items?.length ?? 0 } : null;
 });
 const aiRules = (profile) => readStored(profile, (db) => db.prepare("SELECT name FROM filters WHERE source = 'ai'").all().map((r) => r.name));
@@ -191,20 +191,29 @@ const STEPS = {
     await page.getByTestId("wm-heading").first().waitFor({ timeout: 30_000 });
     const row = page.locator("[data-testid=wm-item][data-digest]").first();
     // the open part's last row, under everything that needs you: the feed is a virtual list, so it's drawn only once
-    // scrolled to (a long What matters left it never drawn). Walked down until it is; still there at the end, waited for.
-    const until = Date.now() + JOB_MS;
-    for (let end = false; !(await row.count()); ) {
-      if (Date.now() > until) throw new Error("What matters had no digest row in 5 minutes");
-      if (!end) end = await page.locator("#wm-feed-rows").evaluate((el) => {
-        const bottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 2;
+    // scrolled to (a long What matters left it never drawn). Walked down from the top until it is, as far as what comes
+    // after it (Coming up, the history: never on into the history's next pages); not there yet, a second and again.
+    const scroller = page.locator("#wm-feed-rows");
+    const found = Date.now() + JOB_MS;
+    while (!(await row.count())) {
+      if (Date.now() > found) throw new Error("What matters had no digest row in 5 minutes");
+      const passed = await scroller.evaluate((el) => {
+        if (el.querySelector("[data-testid=wm-coming-up], [data-testid=wm-item][data-history]") || el.scrollTop + el.clientHeight >= el.scrollHeight - 2) return true;
         el.scrollTop += el.clientHeight * 0.8;
-        return bottom;
+        return false;
       });
-      await page.waitForTimeout(end ? 1000 : 150);
+      if (passed) {
+        await page.waitForTimeout(1000);
+        await scroller.evaluate((el) => (el.scrollTop = 0));
+      }
+      await page.waitForTimeout(150);
     }
     await row.scrollIntoViewIfNeeded();
     await row.click();
     await page.getByTestId("digest-page").waitFor({ timeout: 30_000 });
+    // the demo's day, as the app keys its digest (the demo runs in UTC)
+    const day = await page.evaluate(() => new Date().toISOString().slice(0, 10));
+    const until = Date.now() + JOB_MS;
     let retried = false;
     for (;;) {
       // a failure first: a digest whose later batch failed keeps the lines of the earlier ones
@@ -219,7 +228,7 @@ const STEPS = {
       const preparing = await page.getByTestId("digest-preparing").first().isVisible().catch(() => false);
       if (!preparing && (await page.getByTestId("digest-item").first().isVisible().catch(() => false))) break;
       // made, and kept no newsletter: no wait or launch brings one (a day's digest is made once, and the demo's day stays)
-      const stored = digestStored(d.profile);
+      const stored = digestStored(d.profile, day);
       if (!preparing && stored?.state === "ready" && !stored.items) throw Object.assign(new Error("the day's digest came out empty, and a day's digest is made once"), { final: true });
       if (Date.now() > until) throw new Error("the digest wasn't ready in 5 minutes");
       await page.waitForTimeout(1000);
@@ -538,7 +547,8 @@ const STEPS = {
  */
 export async function prepare({ electronBin, main, env, profile, steps, onPid = () => {}, onSave = () => {}, log = console.log }) {
   const marker = loadMarker(profile);
-  if (steps.length === DEMO_AI_STEPS.length) Object.assign(marker, { done: {}, progress: {}, attempts: {}, failures: {} });
+  // (failures stay: a launch where every step failed runs them all again, and --fresh starts with no marker at all)
+  if (steps.length === DEMO_AI_STEPS.length) Object.assign(marker, { done: {}, progress: {}, attempts: {} });
   marker.failed = {};
   marker.progress ??= {};
   marker.attempts ??= {};
@@ -599,7 +609,8 @@ export async function prepare({ electronBin, main, env, profile, steps, onPid = 
         const missing = (await STEPS[step](d, progress)) ?? [];
         if (await youStopped()) throw new Error("stopped");
         const verdict = partialVerdict(missing, attempt);
-        if (verdict === "again") throw new Error(`${missing.length} not finished: ${missing.join("; ")}`);
+        // something left to finish isn't a failure: partialVerdict's tries bound it
+        if (verdict === "again") throw Object.assign(new Error(`${missing.length} not finished: ${missing.join("; ")}`), { partial: true });
         if (verdict === "keep") log(`[demo-ai] ${step}: ${missing.join("; ")} still not finished after ${attempt} launches; keeping what's there`);
         marker.done[step] = now();
         log(`[demo-ai] ${step} done in ${Math.round((Date.now() - started) / 1000)} s`);
@@ -613,7 +624,7 @@ export async function prepare({ electronBin, main, env, profile, steps, onPid = 
         marker.failed[step] = why;
         failed.push(step);
         // `final`: no later launch can do better, so it's set aside now
-        const failures = (marker.failures[step] = error?.final ? MAX_ATTEMPTS : (marker.failures[step] ?? 0) + 1);
+        const failures = (marker.failures[step] = error?.final ? MAX_ATTEMPTS : (marker.failures[step] ?? 0) + (error?.partial ? 0 : 1));
         log(`[demo-ai] ${step} didn't finish (${why}); ${error?.final ? "it's set aside (--fresh starts over)" : failures >= MAX_ATTEMPTS ? `that's ${failures} launches, so it's set aside (--fresh starts over)` : "it runs again on the next launch"}`);
         await page.screenshot({ path: join(profile, `demo-ai-${step}-failed.png`) }).catch(() => {});
         await d.escapeAll().catch(() => {});
