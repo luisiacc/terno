@@ -1,6 +1,6 @@
 # Plan 291: Prompt caching where it pays, across every AI job
 
-- **Status:** built; Anthropic measured once its usage limit resets (2026-12-01).
+- **Status:** built; measured on Luna and Sol, then on Sonnet, Haiku and Opus once the Anthropic key was back (2026-11-27).
 - **Builds on:** plan 133 (drafting's cache breakpoints), plan 168 (routing: Pro is both keys), plan 202 (summaries' volumes), plan 204 (dated reads' volumes), plan 280 (their promises), the price fix in d0dc057ba and 32ac5ee34 (OpenAI's cache reads and writes counted at their own prices).
 
 ## The request (verbatim)
@@ -142,7 +142,7 @@ The first after run had the dated and follow-up readers writing their 6,423- and
 
 ## Results
 
-**Anthropic couldn't be measured.** The Anthropic key's monthly API usage limit is reached until 2026-12-01 00:00 UTC (every request, token counting included, gets a 400). So the replay ran every job on **an OpenAI key alone** (`TERNO_CACHE_ROUTE=openai`: drafting on Sol, everything else on Luna), which exercises every declaration through real breakpoints, and Pro's Anthropic jobs are estimated below from the measured prompt sizes and Anthropic's published prices. Once the limit resets: `TERNO_AI_REAL=1 TERNO_CACHE_ARM=after pnpm exec vitest run --config vitest.real.config.ts scripts/ai-real/cache-strategy.real.ts` (and `before` from a checkout of 32ac5ee34), then `TERNO_CACHE_REPORT=1`.
+**Measured in two passes.** The Anthropic key first had its monthly usage limit reached (every request, token counting included, got a 400), so the replay first ran every job on **an OpenAI key alone** (`TERNO_CACHE_ROUTE=openai`: drafting on Sol, everything else on Luna), which exercises every declaration through real breakpoints. Once the key was back, the same replay ran Pro's Anthropic jobs (drafting, Replies ready and Ask's answer on Sonnet, the planner on Haiku, categorizing on Opus) in both arms (`TERNO_CACHE_JOBS=reply,writing,refine,askPlan,ask,categorize`, the after arm 6 minutes after the before arm ended), and Pro's month takes its Luna jobs from the OpenAI arms (the same calls).
 
 **Method.** Each arm replayed the three personas' days once, the before arm from a checkout of the base (32ac5ee34), the after arm 30 minutes later (OpenAI's cache lasts 30). A call is warm when the provider reports a read. Per job: the input's cost cold and warm (repairs spread over their job's calls), and the answer's cost pooled over both arms (its length is the model's, run to run, and caching doesn't change it). A month: 30 days of each persona's calls, each job's share of warm calls from its arrivals (above). In the before arm the dated and follow-up readers never count warm: their prefix carried each mail's own arrival minute, and the replay's few warm reads there were the corpus's repeated days and minutes.
 
@@ -171,22 +171,34 @@ Before, Luna wrote every prompt over 1,024 tokens to its cache at 1.25×, mail a
 
 By job, typical: dated $0.78 → $0.30 of input, their mail $0.10 → $0.04, your mail $0.08 → $0.06, refinements $0.10 → $0.03, Replies ready $0.38 → $0.37; heavy: dated $1.55 → $0.51, their mail $0.26 → $0.08, your mail $0.20 → $0.12, refinements $0.24 → $0.07 (`TERNO_CACHE_REPORT=1` prints every job).
 
-### Pro's routing (both keys), a month: Luna measured, Anthropic estimated
+### Pro's routing (both keys), measured
 
-The Luna jobs (summary, dated, both follow-ups, digest, reply check, preferences, intent) are the measurements above: light $0.50 → $0.44, typical $1.50 → $0.94, heavy $3.26 → $1.95. Anthropic's jobs are estimated from Luna's token counts (Anthropic's tokenizer may count up to about a third more), Anthropic's prices and each job's warm share at 5 minutes (light, typical, heavy: Ask 0/67/75%, the planner 0/75/80%, categorize 20/40/38%, drafts 0/14/0%):
+Pro's Anthropic jobs, per call (all three personas' days):
 
-- **Drafting and Replies ready on Sonnet:** unchanged (the same blocks, bytes and breakpoints as before): about $0.35, $1.06 and $2.97 a month, at plan 133's $0.005 a first draft and $0.0018 a warm one.
-- **Ask's answer on Sonnet** (2,262 tokens in, of which the rules ≈920; 281 out): $0.0073 a question before; a warm one saves $0.0017, a cold one pays $0.0005 more. Light $0.22 → $0.23, typical $0.66 → $0.57, heavy $1.76 → $1.47.
-- **Ask's planner on Haiku** (≈730 of 953 cached): under a cent a month either way.
-- **Categorizing on Opus**, when it's on (the labels and examples ≈850 of 1,053 tokens; 164 out): $0.0075 a mail before; warm $0.0041 less, cold $0.0008 more. Light $1.12 → $1.13, typical $4.49 → $4.03, heavy $13.48 → $12.22.
+| Job | Before: in / read / write / out tokens a call, hit rate | After | Input $ a call, cold → warm, before | After | Latency median, cold / warm, before → after |
+|---|---|---|---|---|---|
+| Replies ready (Sonnet) | 71 / 1,669 / 499 / 90, 87% | the same | $0.0056 → $0.00093 | the same | 1.5 / 0.8 s → 0.9 / 0.8 s (first word) |
+| draft asked for (Sonnet) | 117 / 606 / 1,481 / 61, 33% | the same | $0.0055 → $0.00097 | the same | 0.5 / 0.8 s → 0.8 / 0.7 s |
+| refinement (Sonnet) | 148 / 2,090 / 0 / 43, 100% | the same | $0.00051 | the same | 0.5 s → 0.5 s |
+| Ask's planner (Haiku) | 1,742 / 0 / 0 / 346, 0% | 122 / **1,288** / 322 / 387, **80%** | $0.00017, always | $0.00021 → **$0.000029** | 2.2 s → 2.1 / 2.2 s |
+| Ask's answer (Sonnet) | 3,225 / 0 / 0 / 177, 0% | 2,083 / **1,047** / 95 / 182, **92%** | $0.0065, always | $0.0068 → **$0.0043** | 0.7 s → 1.0 / 0.6 s (first word) |
+| categorize (Opus) | 2,096 / 0 / 0 / 32, 0% | 155 / **1,873** / 68 / 33, **96%** | $0.0084, always | $0.0105 → **$0.0010** | 1.6 s → 1.9 / 1.1 s |
+
+Drafting is unchanged, as designed: the same blocks, bytes and breakpoints as plan 133. The three newly marked jobs read their prefix on 80–96% of the replay's calls, which run back to back; a real day's share comes from its arrivals (below). Anthropic's tokenizer counts these prompts at about one and a half to two times Luna's (categorizing 2,096 tokens against Luna's 1,053, Ask's answer 3,225 against 2,262), so the estimates written while the key was blocked were low: a categorized mail costs $0.009 on Opus, not $0.0075. A cold call pays the 1.25× write: categorizing $0.0084 → $0.0105, Ask's answer $0.0065 → $0.0068.
+
+A month, Pro's routing: the Luna jobs from the OpenAI arms, the Anthropic jobs from these, each job's warm share at 5 minutes (light, typical, heavy: categorize 20/40/38%, Ask 0/67/75%, the planner 0/75/80%, drafts 0/14/0%).
 
 | Persona | Before | After | Saved | Without AI categorizing |
 |---|---:|---:|---:|---|
-| light | ≈$2.20 | ≈$2.17 | 1% | $1.08 → $1.04 |
-| typical | ≈$7.75 | ≈$6.63 | 14% | $3.26 → $2.60 (20%) |
-| heavy | ≈$21.56 | ≈$18.69 | 13% | $8.08 → $6.47 (20%) |
+| light | $2.52 | $2.51 | under 1% | $1.16 → $1.12 (4%) |
+| typical | $8.96 | $7.26 | 19% | $3.54 → $2.84 (20%) |
+| heavy | $25.18 | $20.73 | 18% | $8.91 → $7.20 (19%) |
 
-The owner's rough baseline (light ≈$1.40, typical ≈$5.10, heavy ≈$17) sits between the two columns: these personas categorize every undecided mail on Opus, which most people won't turn on. **Where it doesn't pay:** a light persona's Ask and categorizing are cold most of the day, and their writes cost a little more (cents a month); everything else is cheaper or even. A worthwhile next measurement once Anthropic is back: a 1-hour TTL for categorizing's labels (a 2× write, but most of a heavy day's mail would then read it), out of scope here.
+By Anthropic job (a month, before → after): categorizing light $1.36 → $1.39, typical $5.42 → $4.42, heavy $16.27 → $13.53; Ask's answer $0.25 → $0.26, $0.74 → $0.62, $1.98 → $1.61; the planner a cent or a few either way; drafting $0.41, $1.25 and $3.57, unchanged.
+
+The owner's rough baseline (light ≈$1.40, typical ≈$5.10, heavy ≈$17) sits between the two columns: these personas categorize every undecided mail on Opus, which most people won't turn on, and Opus categorizing is most of a Pro month when it is on. **Where it doesn't pay:** a light persona's categorizing and Ask are cold most of the day, and their writes cost a little more (3 and 1 cents a month); everything else is cheaper or even.
+
+**A 1-hour lifetime, worked out from these prices (not built).** Anthropic's 1-hour cache writes at 2× input and reads at the same price. From the same arrival model, categorizing's warm share at 1 hour is 40/60/98% (light, typical, heavy) and drafting's 0/57/78%. Categorizing's input then costs light $1.51 (against $1.29 at 5 minutes), typical $4.24 (against $4.02) and heavy about $2.3 (against $12.36); drafting's light $0.53 (against $0.34), typical $0.91 (against $1.04) and heavy about $1.5 (against $3.0). One lifetime for everyone doesn't pay: an hour wins only when a prefix comes back more than once an hour, which a heavy user's mail does and a light user's doesn't. Choosing the lifetime from how often the account's prefix was used in the last hour would take most of heavy's $10 a month; it's the next step if the owner wants it.
 
 ### The evals of the reordered prompts (Luna, old prompt and new, same day)
 
@@ -201,7 +213,7 @@ The dated eval's wrong-text threshold fails on both prompts in every run (Luna's
 
 ### Spend
 
-One ledger, `/tmp/terno-ai/spend-cache-1.jsonl` (cap $55): **$1.91 counted**, of which about $0.42 is worst-case reservations for Anthropic requests refused before running (not billed), so about $1.50 billed: the replay's arms $0.58, the evals $0.80, probes $0.02, and a first before run that was interrupted (its arrival times repeated; moved aside to `discarded-before-1.jsonl`) about $0.05.
+One ledger, `/tmp/terno-ai/spend-cache-1.jsonl` (cap $55): **$3.17 counted**, of which about $0.42 is worst-case reservations for Anthropic requests refused before running while the key was blocked (not billed), so about $2.75 billed: the OpenAI replay's arms $0.58, the Anthropic replay's arms $1.26 (before $0.94, after $0.32: Opus categorizing read its prefix in the after arm), the evals $0.80, probes $0.02, and a first before run that was interrupted (its arrival times repeated; moved aside to `discarded-before-1.jsonl`) about $0.05.
 
 ## Tests run
 
