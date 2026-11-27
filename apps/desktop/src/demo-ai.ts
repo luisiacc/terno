@@ -121,6 +121,8 @@ export interface DemoAiMarker {
   progress?: Partial<Record<DemoAiStep, string[]>>;
   /** how many launches tried each step (MAX_ATTEMPTS) */
   attempts?: Partial<Record<DemoAiStep, number>>;
+  /** how many launches each step failed on: closing the preparation's window isn't one (MAX_ATTEMPTS, then it's set aside) */
+  failures?: Partial<Record<DemoAiStep, number>>;
   /**
    * The demo's clock when the preparation ended (epoch ms). Later launches start there, not back at 16:00: what it made
    * (the follow-up switch's time, an answer) is never ahead of the clock.
@@ -152,7 +154,10 @@ export function demoAiProfileProblem(o: { path: string; entries: readonly string
   return null;
 }
 
-/** A step that still has something missing runs again on the next launch, up to this many tries; then what's there stays. */
+/**
+ * A step that still has something missing runs again on the next launch, up to this many tries; then what's there stays.
+ * One that fails outright is set aside after failing on this many launches, so a launch never waits on it for good.
+ */
 export const MAX_ATTEMPTS = 3;
 
 /** Ask: a question counts once every turn finished with an answer of some kind (not_found is the model's answer too). */
@@ -213,5 +218,12 @@ export function readMarker(text: string | null): DemoAiMarker | null {
 /** The steps this launch runs: all on a fresh profile, none once every one is done, else the ones still missing. */
 export function stepsToRun(marker: DemoAiMarker | null, args: DemoAiArgs): DemoAiStep[] {
   if (args.fresh || !marker) return [...DEMO_AI_STEPS];
-  return DEMO_AI_STEPS.filter((s) => !marker.done[s]);
+  return DEMO_AI_STEPS.filter((s) => !marker.done[s] && !setAside(marker, s));
 }
+
+/** The steps set aside after failing on MAX_ATTEMPTS launches: no launch runs them until --fresh starts over. */
+export function stepsSetAside(marker: DemoAiMarker | null): DemoAiStep[] {
+  return marker ? DEMO_AI_STEPS.filter((s) => !marker.done[s] && setAside(marker, s)) : [];
+}
+
+const setAside = (marker: DemoAiMarker, step: DemoAiStep) => (marker.failures?.[step] ?? 0) >= MAX_ATTEMPTS;

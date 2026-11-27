@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEMO_SINCE } from "@terno/backend";
-import { askFinished, conversationDone, replyOutcome, replyStillComing, DEMO_AI_NOW, DEMO_AI_STEPS, DEMO_SINCE_SUBJECTS, demoAiArgs, demoAiClock, demoAiEnv, demoAiProfileProblem, MAX_ATTEMPTS, partialVerdict, devKeysIn, keyFiles, MARKER_VERSION, missingKeysMessage, readMarker, resolveKeys, stepsToRun } from "./demo-ai";
+import { askFinished, conversationDone, replyOutcome, replyStillComing, DEMO_AI_NOW, DEMO_AI_STEPS, DEMO_SINCE_SUBJECTS, demoAiArgs, demoAiClock, demoAiEnv, demoAiProfileProblem, MAX_ATTEMPTS, partialVerdict, devKeysIn, keyFiles, MARKER_VERSION, missingKeysMessage, readMarker, resolveKeys, stepsSetAside, stepsToRun } from "./demo-ai";
 
 describe("plan 167: pnpm dev:demo-ai", () => {
   it("takes --fresh (and dev.mjs's --cleandb), and refuses anything else so a typo isn't a silent no-op", () => {
@@ -78,6 +78,18 @@ describe("plan 167: pnpm dev:demo-ai", () => {
     expect(stepsToRun(marker, { fresh: true })).toEqual(all);
     const { ask: _, rule: __, ...partial } = done;
     expect(stepsToRun({ version: MARKER_VERSION, done: partial, failed: { ask: "timeout" } }, { fresh: false })).toEqual(["ask", "rule"]);
+  });
+
+  it("a step that failed on MAX_ATTEMPTS launches is set aside until --fresh; tries alone (a closed window's) don't count", () => {
+    const { digest: _, people: __, ...done } = Object.fromEntries(DEMO_AI_STEPS.map((s) => [s, "2026-11-09T00:00:00Z"]));
+    const marker = (failures: number) => ({ version: MARKER_VERSION, done, attempts: { digest: 12, people: 1 }, failures: { digest: failures } });
+    expect(stepsToRun({ version: MARKER_VERSION, done, attempts: { digest: 12 } }, { fresh: false })).toEqual(["digest", "people"]);
+    expect(stepsToRun(marker(MAX_ATTEMPTS - 1), { fresh: false })).toEqual(["digest", "people"]);
+    expect(stepsSetAside(marker(MAX_ATTEMPTS - 1))).toEqual([]);
+    expect(stepsToRun(marker(MAX_ATTEMPTS), { fresh: false })).toEqual(["people"]);
+    expect(stepsSetAside(marker(MAX_ATTEMPTS))).toEqual(["digest"]);
+    expect(stepsToRun(marker(MAX_ATTEMPTS), { fresh: true })).toEqual([...DEMO_AI_STEPS]);
+    expect(stepsSetAside(null)).toEqual([]);
   });
 
   it("a marker that's unreadable or from another version starts over", () => {

@@ -7,7 +7,7 @@ import { createRequire } from "node:module";
 import { DatabaseSync } from "node:sqlite";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { askFinished, conversationDone, replyOutcome, replyStillComing, DEMO_AI_STEPS, DEMO_SINCE_SUBJECTS, demoAiClock, MARKER_FILE, MARKER_VERSION, partialVerdict, readMarker } from "../src/demo-ai.ts";
+import { askFinished, conversationDone, replyOutcome, replyStillComing, DEMO_AI_STEPS, DEMO_SINCE_SUBJECTS, demoAiClock, MARKER_FILE, MARKER_VERSION, MAX_ATTEMPTS, partialVerdict, readMarker } from "../src/demo-ai.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const { _electron: electron } = createRequire(join(root, "package.json"))("@playwright/test");
@@ -519,10 +519,11 @@ const STEPS = {
  */
 export async function prepare({ electronBin, main, env, profile, steps, onPid = () => {}, onSave = () => {}, log = console.log }) {
   const marker = loadMarker(profile);
-  if (steps.length === DEMO_AI_STEPS.length) Object.assign(marker, { done: {}, progress: {}, attempts: {} });
+  if (steps.length === DEMO_AI_STEPS.length) Object.assign(marker, { done: {}, progress: {}, attempts: {}, failures: {} });
   marker.failed = {};
   marker.progress ??= {};
   marker.attempts ??= {};
+  marker.failures ??= {};
   // the marker first: the profile is this demo's from its first moment, even if this launch stops early
   mkdirSync(profile, { recursive: true });
   writeMarker(profile, marker);
@@ -592,7 +593,8 @@ export async function prepare({ electronBin, main, env, profile, steps, onPid = 
         const why = String(error?.message ?? error).split("\n")[0];
         marker.failed[step] = why;
         failed.push(step);
-        log(`[demo-ai] ${step} didn't finish (${why}); it runs again on the next launch`);
+        const failures = (marker.failures[step] = (marker.failures[step] ?? 0) + 1);
+        log(`[demo-ai] ${step} didn't finish (${why}); ${failures >= MAX_ATTEMPTS ? `that's ${failures} launches, so it's set aside (--fresh starts over)` : "it runs again on the next launch"}`);
         await page.screenshot({ path: join(profile, `demo-ai-${step}-failed.png`) }).catch(() => {});
         await d.escapeAll().catch(() => {});
       }
