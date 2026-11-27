@@ -10,10 +10,7 @@ import type { Db } from "./sqlite";
 /** Plan 145 on SQLite (v54): see packages/store/src/today.ts. */
 
 /** The newest waiting threads in date order: threads_waiting is in it, threads_waiting_inbox isn't (revision 11). */
-const PROF = process.env.TERNO_PROF_NEEDS ? (globalThis as any).__needsProf ??= {} : null;
-const tick = (k: string, t0: number) => { if (PROF) PROF[k] = (PROF[k] ?? 0) + performance.now() - t0; return performance.now(); };
 function needsRows(db: Db, now: number): WaitingRow[] {
-  let t = performance.now();
   const cutoff = waitingCutoff(now);
   const hiding = shownSql(inboxHiding(db));
   // plan 240: a sender said to be always shown outranks the Inbox's hiding (a Gmail tab kept apart, a hidden category)
@@ -29,7 +26,6 @@ function needsRows(db: Db, now: number): WaitingRow[] {
     ...hiding.params,
     NEEDS_WALK,
   );
-  t = tick("rows", t);
   const snippets = new Map(rows.map((r) => [r.id, r.snippet]));
   const isShown = (key: string) => shown.has(key);
   // plan 240 (Codex code review): who it waits on is the waiting message's sender; the thread's last is yours when a synced
@@ -39,21 +35,20 @@ function needsRows(db: Db, now: number): WaitingRow[] {
     own?.has(addressKey(r.last_from_email))
       ? (db.get<{ from_email: string }>("SELECT from_email FROM messages INDEXED BY messages_thread WHERE thread_id = ? AND date = ? AND is_draft = 0 AND is_sent = 0 ORDER BY id DESC LIMIT 1", r.id, r.waiting_since)?.from_email ?? r.last_from_email)
       : r.last_from_email;
-  const needs = needsYou(
-    rows.map((r) => ({ id: r.id, lastDate: r.last_date, waitingSince: r.waiting_since, from: waitingFrom(r), subject: r.subject, hasSent: r.has_sent === 1 })),
-    (key) => db.get<{ written: number; own: number }>("SELECT written, own FROM correspondents WHERE email = ?", key),
-    isShown,
+  const waiting = rows.map((r) => ({ id: r.id, lastDate: r.last_date, waitingSince: r.waiting_since, from: waitingFrom(r), subject: r.subject, hasSent: r.has_sent === 1 }));
+  // plan 290: who you've written to, for the walk's senders in one read (a statement each was 2,000 at Needs you's bound)
+  const correspondents = new Map(
+    db
+      .all<{ email: string; written: number; own: number }>("SELECT email, written, own FROM correspondents WHERE email IN (SELECT value FROM json_each(?))", JSON.stringify([...new Set(waiting.map((r) => addressKey(r.from)))]))
+      .map((c) => [c.email, c] as const),
   );
-  t = tick("needsYou", t);
+  const needs = needsYou(waiting, (key) => correspondents.get(key), isShown);
   // plan 210 (iteration 4): a muted sender's conversations aren't waiting on you in What matters, read once a walk; nothing
   // is recorded for them (`dated_nothing_asked`), so Unmute brings them back as they are
   const muted = mutedSenders(db);
   // plan 204, the second panel round (plan 145's rule, tighter): on what needsYou let in, never widening it
   const candidates = needs.filter((r) => !(muted.size && muted.has(addressKey(r.from))));
-  t = tick("muted", t);
   const still = stillWaitingAmong(db, candidates.map((r) => ({ id: r.id, snippet: snippets.get(r.id) ?? null, shown: shown.size > 0 && isShown(addressKey(r.from)) })), now);
-  tick("still", t);
-  if (PROF) PROF.calls = (PROF.calls ?? 0) + 1;
   return candidates.filter((r) => still.has(r.id));
 }
 
