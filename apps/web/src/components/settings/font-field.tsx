@@ -148,7 +148,13 @@ export function FontField({ settings, a }: { settings: AppSettings; a: RowA11y }
         </ComboboxPickerPopup>
       </ComboboxPicker>
       {chosen && (
-        <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => void setStyleFont(design.id, null)} data-testid="font-reset">
+        <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={(e) => {
+            // the button goes with the reset: pressed from the keyboard, the place goes back to the field (Codex code review)
+            if (e.currentTarget.matches(":focus-visible")) input.current?.focus();
+            void setStyleFont(design.id, null);
+          }}
+          data-testid="font-reset"
+        >
           <Undo2 aria-hidden /> {t("settings.appearance.font.reset", { font: fontName(design.fonts.typeface as FontId) })}
         </Button>
       )}

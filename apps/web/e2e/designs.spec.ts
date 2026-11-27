@@ -486,6 +486,23 @@ test.describe("plans 245 and 248: each style keeps the font it was given, any fo
       expect(await family()).toMatch(/^"?Georgia"?, "Figtree Variable"/);
       await expect(page.getByTestId("design-card-lumen").locator("[data-design]")).toHaveAttribute("data-font", "local");
     });
+    await scenario("the pointer over a row changes nothing either; a click keeps it (Codex code review)", async () => {
+      const local = () => html.evaluate((el) => el.style.getPropertyValue("--local-font"));
+      await field.click();
+      // Georgia, Menlo, Times New Roman: few enough to all be drawn
+      await page.keyboard.type("o");
+      const menlo = page.locator('[data-font-option="local:Menlo"]');
+      await menlo.hover();
+      await expect(menlo).toHaveAttribute("data-highlighted", "");
+      expect(await local()).toBe('"Georgia"');
+      await menlo.click();
+      await expect.poll(local).toBe('"Menlo"');
+      await expect.poll(saved).toEqual({ lumen: "local:Menlo" });
+      // back to Georgia for what follows
+      await page.keyboard.type("Georgia");
+      await page.keyboard.press("Enter");
+      await expect.poll(saved).toEqual({ lumen: "local:Georgia" });
+    });
     await scenario("a name the computer doesn't have: nothing to choose", async () => {
       await field.click();
       await page.keyboard.type("Comic Nonsense");
@@ -520,10 +537,15 @@ test.describe("plans 245 and 248: each style keeps the font it was given, any fo
       const [f, r] = await Promise.all([field.boundingBox(), reset.boundingBox()]);
       expect(r!.y).toBeGreaterThanOrEqual(f!.y + f!.height);
       expect(Math.abs(r!.x - f!.x)).toBeLessThan(1);
-      await reset.click();
+      // pressed from the keyboard, the place goes back to the field, not lost with the button (Codex code review)
+      await field.focus();
+      await page.keyboard.press("Tab");
+      await expect(reset).toBeFocused();
+      await page.keyboard.press("Enter");
       await expect(html).not.toHaveAttribute("data-font");
       await expect(field).toHaveValue("Figtree");
       await expect(page.getByTestId("font-reset")).toHaveCount(0);
+      await expect(field).toBeFocused();
       await expect.poll(saved).toEqual({});
     });
   });

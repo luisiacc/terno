@@ -28,9 +28,9 @@
 - `generate.ts` writes one block per design: `[data-design="lumen"][data-font="local"] { --ds-font-sans: var(--local-font, <Lumen's own stack>), <Lumen's own stack>; --ds-font-display: …; --ds-font-features: normal; font-feature-settings: normal }`. Only the family's quoted name lives inline, as `--local-font` on the element carrying `data-design`: on `<html>` (`applyAppearance`, and `theme.js` before React), or on a preview. Missing family → the style's own font, with no script.
 - One helper decides the attributes for any font: `fontPaint(font) → { "data-font", style }` in `designs/index.ts`, used by `applyAppearance`, the Style cards, first run's preview and specimens, and the font list's rows. `withFont` learns `local:`; it keeps the style's own faces, which a family that's gone falls back to.
 
-### Preview without saving
+### Preview without saving (removed 2026-11-26)
 
-`previewStyleFont(font)` in `appearance.ts` paints a font on `<html>` (only `data-font` and `--local-font`: no React state, no save, no anchors), `previewStyleFont(undefined)` paints the saved one back. `applyAppearance` paints the preview while one is on, so an unrelated settings change during it doesn't end it. The launch cache only ever holds the saved font.
+Superseded by the owner's changes at the end: the app changes font only on a choice. As first built: `previewStyleFont(font)` in `appearance.ts` paints a font on `<html>` (only `data-font` and `--local-font`: no React state, no save, no anchors), `previewStyleFont(undefined)` paints the saved one back. `applyAppearance` paints the preview while one is on, so an unrelated settings change during it doesn't end it. The launch cache only ever holds the saved font.
 
 ### The field
 
@@ -56,15 +56,15 @@ The patch schema, the read sanitizer and `theme.js` accept `local:` families wit
 
 - core: `isStyleFont` (the five, a family, every refused character, length, spaces at the ends).
 - ui: the `local` blocks per design and their fallback; `fontPaint`; `withFont` with a family.
-- web unit: preview paints and restores, survives an unrelated apply, never reaches the cache or the backend; choosing a family saves `local:<name>`; the reset; `installedFamilies` (dedupe, sort, hidden names and invalid names dropped, read once, `null` when the API is missing or refused); the field's filter order; the rendered row count with 1,000 families.
+- web unit: ~~preview paints and restores, survives an unrelated apply, never reaches the cache or the backend~~ (removed with the look, 2026-11-26); choosing a family saves `local:<name>`; the reset; `installedFamilies` (dedupe, sort, hidden names and invalid names dropped, read once, `null` when the API is missing or refused); the field's filter order; the rendered row count with 1,000 families.
 - `theme-script.test.ts`: a cached family paints `data-font="local"` and `--local-font`; a tampered one paints nothing.
 - backend: a family persists; a tampered one reads as the style's own; the patch refuses one with a quote.
-- e2e (`designs.spec.ts`, with `queryLocalFonts` stubbed to a fixed list so it's the same on every machine): open, type, the highlighted font previews on `<html>` and in Settings, Esc puts it back, Enter saves, the reset button brings the style's font back; a reload paints the family before React; the "Use “X”" path with the API absent.
+- e2e (`designs.spec.ts`, with `queryLocalFonts` stubbed to a fixed list so it's the same on every machine): open, type, a highlight (by keys or the pointer) leaves `<html>` alone, Esc keeps the font, Enter or a click saves and paints, the reset button brings the style's font back; a reload paints the family before React; the "Use “X”" path with the API absent.
 - Smoke (`pnpm test:smoke`, packaged): the field lists this Mac's installed families.
 
 ## Performance and resources
 
-Nothing runs until the field is opened; the family list is read once (tens of ms) and kept in memory (~300 short strings). Rows are virtualized. A preview is two attribute writes on `<html>`, no React render; a choice is the existing save. No network: installed fonts are local by definition, and the list never leaves the renderer.
+Nothing runs until the field is opened; the family list is read once (tens of ms) and kept in memory (~300 short strings). Rows are virtualized. A highlight writes nothing outside the list (2026-11-26); a choice is the existing save. No network: installed fonts are local by definition, and the list never leaves the renderer.
 
 ## Out of scope
 
@@ -93,7 +93,7 @@ Twelve points. What changed:
 
 - `@terno/core`: `StyleFont`, `isStyleFont`, `LOCAL_FAMILY_RE` (copied into `theme.js`, compared by a test).
 - `@terno/ui`: `withFont` and `fontPaint` for families, the per-design local blocks, and the Combobox's picker form (`combobox-picker.tsx`, on Base UI's Combobox; BOARDUI.md).
-- `apps/web`: `lib/local-fonts.ts` (the computer's families, read once), `lib/fonts.ts` (the list and how typing finds), `previewStyleFont` in `appearance.ts`, and `settings/font-field.tsx`, which replaces plan 245's Select.
+- `apps/web`: `lib/local-fonts.ts` (the computer's families, read once), `lib/fonts.ts` (the list and how typing finds), `previewStyleFont` in `appearance.ts` (removed 2026-11-26), and `settings/font-field.tsx`, which replaces plan 245's Select.
 - Tests: core, ui, web unit (`appearance`, `local-fonts`, `fonts`, `theme-script`), backend (`settings`, `settings-edits`), e2e (`designs.spec`: the whole flow with a stubbed list of 404 families, and the browser without a list), and a packaged smoke (`fonts.smoke.ts`: this Mac's own list, Helvetica typed and kept). The Appearance baselines moved for the field.
 
 ## The Codex code review
@@ -115,3 +115,7 @@ Found while fixing #4: Base UI mounts the popup after React's commit, so the vir
 
 1. **No look on highlight.** The app's font changes only on Enter or a click; arrows, the pointer and typing only move the highlight, and each row still draws its name in its own face. `previewStyleFont` and everything that kept a look alive (in `applyAppearance`, `adoptSettings`, `setStyleFont`, the field's cleanup) are gone, with their unit tests; Codex critique #4–#6 and code review #5 were about the look and no longer apply. The e2e now checks a highlight leaves `<html>` alone and a choice paints it.
 2. **"Use Figtree" sits under the field**, its left edge on the field's (so its icon is on the field's text line), which also gives the row's hint its width back. The e2e checks the place.
+
+### The Codex code review of these changes
+
+No path left that changes the font before a choice. Fixed: the e2e now hovers a row and checks the app keeps its font, then clicks it and checks it paints and saves (it only used keys before); pressing "Use Figtree" from the keyboard puts focus back in the field instead of losing it with the button (checked by the e2e). Not taken: two races when the computer's font list is slow (older than this change, rare), and keeping the field level with the label when the button shows (the row reads well with the label and hint centred on both).
