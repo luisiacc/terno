@@ -23,13 +23,13 @@ export interface DemoOptions {
 
 /**
  * Plan 289: set on a profile seeded with the demo edition (seeding is once per profile: an older one keeps its mailbox);
- * plan 292: "corpus" on one seeded with the written mailbox. Written after the last write, so a seed that stopped part
- * way has none and reads as an older mailbox (`--fresh` starts over).
+ * plan 292: "corpus" on one seeded with the written mailbox. "seeding" from before the first write until after the last
+ * (Codex code review): a profile still saying so stopped part way, and the backend won't start on it.
  */
 export const DEMO_EDITION_KEY = "demo.edition";
-export type DemoEdition = "demo" | "corpus";
+export type DemoEdition = "demo" | "corpus" | "seeding";
 
-/** What seeded a demo profile: null for the fixture, a seed that stopped part way, or a profile from before plan 289. */
+/** What seeded a demo profile: null for the fixture or a profile from before plan 289; "seeding" for one that stopped. */
 export const demoEditionOf = (store: MailStore) => store.settings.get<DemoEdition | null>(DEMO_EDITION_KEY, null);
 
 /** Seeds an empty store with the demo mailbox (no-op if accounts exist): the written one when given, else the generated. */
@@ -42,6 +42,9 @@ export async function seedDemo(store: MailStore, options: DemoOptions = {}): Pro
   const rule = written?.rule ?? { name: edition === "demo" ? "GitHub notifications → Dev" : "Notificaciones de GitHub → Desarrollo", from: "notifications@github.com", category: data.categories[4]!.name };
   const category = data.categories.findIndex((c) => c.name === rule.category);
   if (category < 0) throw new Error(`the demo's rule names a category it doesn't have: ${rule.category}`);
+  // only the demo's: the fixture's profiles stay as they were (a profile without it holds the fixture's mailbox)
+  const recorded = Boolean(written) || edition === "demo";
+  if (recorded) await store.settings.set(DEMO_EDITION_KEY, "seeding");
   const seeded = await store.dev.seed(data, { now, learningSignals: true, ...(written && { learningSender: written.learningSender }) });
   for (const [i, id] of seeded.accountIds.entries()) await store.accounts.setProviderConfig(id, { demo: true, senderName: data.accounts[i]!.ownerName });
   await store.filters.save(
@@ -57,9 +60,13 @@ export async function seedDemo(store: MailStore, options: DemoOptions = {}): Pro
     },
     now,
   );
-  // only the demo's: the fixture's profiles stay as they were (a profile without it holds the fixture's mailbox)
-  if (written || edition === "demo") await store.settings.set(DEMO_EDITION_KEY, written ? "corpus" : "demo");
+  if (recorded) await store.settings.set(DEMO_EDITION_KEY, written ? "corpus" : "demo");
   return true;
+}
+
+/** A demo profile whose seed stopped part way: what to tell the person, or null when it's whole. */
+export async function demoSeedProblem(store: MailStore): Promise<string | null> {
+  return (await demoEditionOf(store)) === "seeding" ? "the demo mailbox stopped seeding part way: start over with --cleandb (dev:desktop:demo) or --fresh (dev:demo-ai)" : null;
 }
 
 /**

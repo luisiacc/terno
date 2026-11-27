@@ -4,9 +4,11 @@ import { askFinished, conversationDone, replyOutcome, replyStillComing, DEMO_AI_
 
 describe("plan 167: pnpm dev:demo-ai", () => {
   it("takes --fresh (and dev.mjs's --cleandb), and refuses anything else so a typo isn't a silent no-op", () => {
-    expect(demoAiArgs(["node", "dev.mjs", "--demo-ai"])).toEqual({ fresh: false });
-    expect(demoAiArgs(["node", "dev.mjs", "--demo-ai", "--fresh"])).toEqual({ fresh: true });
-    expect(demoAiArgs(["node", "dev.mjs", "--demo-ai", "--cleandb"])).toEqual({ fresh: true });
+    expect(demoAiArgs(["node", "dev.mjs", "--demo-ai"])).toEqual({ fresh: false, generated: false });
+    expect(demoAiArgs(["node", "dev.mjs", "--demo-ai", "--fresh"])).toEqual({ fresh: true, generated: false });
+    expect(demoAiArgs(["node", "dev.mjs", "--demo-ai", "--cleandb"])).toEqual({ fresh: true, generated: false });
+    // plan 292: plan 289's generated mailbox where the written one is (the site's demo pictures)
+    expect(demoAiArgs(["node", "dev.mjs", "--demo-ai", "--generated"])).toEqual({ fresh: false, generated: true });
     expect(() => demoAiArgs(["node", "dev.mjs", "--demo-ai", "--frsh"])).toThrow(/--frsh.*--fresh/);
   });
 
@@ -114,8 +116,8 @@ describe("plan 167: pnpm dev:demo-ai", () => {
     expect(oldMailboxProblem({ hasMailbox: true, edition: "corpus" }, "corpus")).toBeNull();
     expect(oldMailboxProblem({ hasMailbox: true, edition: "demo" }, "corpus")).toMatch(/generated demo mailbox.*--fresh.*written one/);
     expect(oldMailboxProblem({ hasMailbox: true, edition: "corpus" }, "demo")).toMatch(/written demo mailbox.*--fresh.*generated one/);
-    // a seed that stopped part way has no edition: refused too
-    expect(oldMailboxProblem({ hasMailbox: true, edition: null }, "corpus")).toMatch(/part way.*--fresh/);
+    // a seed that stopped part way says so (Codex code review): refused too
+    expect(oldMailboxProblem({ hasMailbox: true, edition: "seeding" }, "corpus")).toMatch(/stopped seeding part way.*--fresh/);
   });
 
   it("later launches start where the preparation ended, never before 16:00", () => {

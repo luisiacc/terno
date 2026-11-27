@@ -131,6 +131,20 @@ export function validateWorld(world: World): Issue[] {
   const err = (where: string, message: string) => out.push({ level: "error", where, message });
   if (Number.isNaN(Date.parse(world.anchor))) err("anchor", "not a date");
   if (!world.owner?.bio) err("owner", "no bio");
+  // the accounts are created first when the mailbox is seeded: one that can't be is caught here, before any write
+  const keys = new Set<string>();
+  for (const a of world.accounts ?? []) {
+    const where = `accounts/${a.key}`;
+    if (keys.has(a.key)) err(where, "twice");
+    keys.add(a.key);
+    if (a.kind !== "gmail" && a.kind !== "imap") err(where, `kind "${a.kind}"`);
+    if (a.lang !== "en" && a.lang !== "es") err(where, `lang "${a.lang}"`);
+    if (!EMAIL.test(a.email ?? "")) err(where, `address "${a.email}"`);
+    if (!a.displayName || !a.ownerName || !a.color) err(where, "needs displayName, ownerName and color");
+    if (!Array.isArray(a.folders)) err(where, "folders");
+  }
+  if (!world.accounts?.length) err("accounts", "none");
+  if (!world.categories?.length) err("categories", "none");
   for (const lang of ["en", "es"] as const) if (!world.owner?.style?.[lang]) err("owner", `no ${lang} style card`);
   const ids = new Set<string>();
   const emails = new Set(world.accounts.map((a) => a.email));
@@ -279,7 +293,11 @@ export function validateBulk(world: World, bulk: BulkSource[], spam: SpamSource[
     const s = b.schedule;
     if (!s || !["daily", "weekdays", "weekly", "fortnightly", "monthly", "random"].includes(s.every)) err(where, "schedule.every");
     else if (!ZONE.test(s.zone ?? "")) err(where, `schedule.zone "${s.zone}"`);
-    else if (s.at && !/^\d{2}:\d{2}$/.test(s.at)) err(where, `schedule.at "${s.at}"`);
+    else if (s.at && !/^([01]\d|2[0-3]):[0-5]\d$/.test(s.at)) err(where, `schedule.at "${s.at}"`);
+    else if (zoneOffset(0, s.zone) === null) err(where, `schedule.zone "${s.zone}" isn't a zone this runtime knows`);
+    else if ((s.every === "weekly" || s.every === "fortnightly") && s.day !== undefined && !(s.day >= 0 && s.day <= 6)) err(where, `schedule.day ${s.day}`);
+    else if (s.every === "monthly" && (s.nth ? !(s.nth[0] >= 1 && s.nth[0] <= 5 && s.nth[1] >= 0 && s.nth[1] <= 6) : s.day !== undefined && !(s.day >= 1 && s.day <= 31))) err(where, "schedule.day or nth");
+    else if ((s.from && Number.isNaN(Date.parse(s.from))) || (s.to && Number.isNaN(Date.parse(s.to)))) err(where, "schedule.from or to");
     const texts: [string, string][] = [];
     if (brand.kind === "newsletter") {
       const need = s?.every === "daily" || s?.every === "weekdays" ? 15 : s?.every === "weekly" || s?.every === "fortnightly" ? 6 : 3;

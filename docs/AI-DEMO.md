@@ -7,6 +7,7 @@ The demo mailbox with every AI feature already showing something, on real models
 ```bash
 pnpm dev:demo-ai           # prepares the profile on its first launch, then opens the window
 pnpm dev:demo-ai --fresh   # the profile goes to the Trash and is prepared again
+pnpm dev:demo-ai --generated   # plan 289's generated mailbox instead of the written one (the site's pictures)
 ```
 
 - **Keys.** It needs `ANTHROPIC_API_KEY` and `OPENAI_API_KEY`; `JEV_API_KEY` is optional (smart categories are off in the demo). It reads only these three names: from your shell first, then this checkout's `.env`, then the main checkout's `.env` (so a worktree works without its own). The terminal names which file each came from, never a value. If one is missing, it stops before building and says where it looked.
@@ -72,7 +73,7 @@ Every account is in English but **Freelance** (hola@luiscordero.example in the w
 - In **¿Sí salieron las de Ofrenda?** (Fernanda Ríos), press ⌘J and type an instruction in English ("say yes, I'll send the invoice on Monday"): the draft should be in Spanish.
 - Summaries and What matters' lines are in the app's language (English), whatever the mail's.
 
-The site's pictures (`apps/site/shots/demo-shots.ts`) leave Freelance out: it turns off Freelance's Show in What matters and Follow-ups in its copy of the profile and refuses any frame with Spanish in it.
+The site's pictures (`apps/site/shots/demo-shots.ts`) are taken on plan 289's generated mailbox, so their demo runs with `pnpm dev:demo-ai --generated` (plan 292), and they leave Freelance out: it turns off Freelance's Show in What matters and Follow-ups in its copy of the profile and refuses any frame with Spanish in it.
 
 ## Resetting
 

@@ -1,6 +1,6 @@
 import type { Address } from "@terno/core";
 import type { MockAccount, MockDataset, MockMessage } from "../generate";
-import { validateBulk, validateThreads, validateWorld, type Issue } from "./rules";
+import { foreignLinks, validateBulk, validateThreads, validateWorld, type Issue } from "./rules";
 import type { AccountDef, BrandKind, BulkSlot, BulkSource, CorpusSources, Lang, MessageRecord, Person, SpamSource, StyleCard, ThreadRecord } from "./types";
 
 /**
@@ -8,7 +8,7 @@ import type { AccountDef, BrandKind, BulkSlot, BulkSource, CorpusSources, Lang, 
  * the same messages, byte for byte. Validates everything first (revision 2) and throws before anything is written.
  */
 export function demoCorpusDataset(src: CorpusSources): MockDataset {
-  const issues = [...validateWorld(src.world), ...validateThreads(src.world, src.threads, [], src.lists), ...validateBulk(src.world, src.bulk, src.spam)];
+  const issues = [...validateWorld(src.world), ...validateThreads(src.world, src.threads, src.seeds ?? [], src.lists), ...validateBulk(src.world, src.bulk, src.spam)];
   const errors = issues.filter((i) => i.level === "error");
   if (errors.length) throw new CorpusError(errors);
   const ctx = new Context(src);
@@ -16,11 +16,32 @@ export function demoCorpusDataset(src: CorpusSources): MockDataset {
   // revision 7: inserted in date order, so the newest mail has the highest ids (the digest walks them newest first)
   messages.sort((a, b) => a.date - b.date || a.providerMsgId.localeCompare(b.providerMsgId));
   ctx.placeImap(messages);
+  // what the templates and forwards became, checked as it will be stored (Codex code review): ids unique, links inert
+  const built = builtProblems(messages, Date.parse(src.world.anchor));
+  if (built.length) throw new CorpusError(built);
   return {
     accounts: src.world.accounts.map(toAccount),
     categories: src.world.categories.map((c) => ({ ...c })),
     messages,
   };
+}
+
+/** The built messages as they'll be written: one row each (ids unique), nothing after the anchor, every link inert. */
+export function builtProblems(messages: readonly MockMessage[], anchor: number): Issue[] {
+  const out: Issue[] = [];
+  const rfc = new Set<string>();
+  const provider = new Set<string>();
+  for (const m of messages) {
+    const where = `${m.providerMsgId} (${m.subject})`;
+    if (rfc.has(m.rfcMessageId)) out.push({ level: "error", where, message: `Message-ID ${m.rfcMessageId} twice` });
+    rfc.add(m.rfcMessageId);
+    const key = `${m.accountIndex}:${m.providerMsgId}`;
+    if (provider.has(key)) out.push({ level: "error", where, message: "provider id twice on one account" });
+    provider.add(key);
+    if (m.date > anchor) out.push({ level: "error", where, message: "dated after the anchor" });
+    for (const host of foreignLinks(`${m.bodyText}\n${m.bodyHtml ?? ""}`)) out.push({ level: "error", where, message: `link to ${host}` });
+  }
+  return out;
 }
 
 // no parameter properties here or below: scripts run this file under Node's type stripping
@@ -69,10 +90,15 @@ function zoned(utc: number, zone: string) {
 }
 /** The UTC instant of a wall-clock time in `zone`. */
 function fromZoned(year: number, month: number, day: number, hour: number, minute: number, zone: string): number {
-  const guess = Date.UTC(year, month, day, hour, minute);
-  const z = zoned(guess, zone);
-  const offset = Date.UTC(z.year, z.month, z.day, z.hour, z.minute) - guess;
-  return guess - offset;
+  const wall = Date.UTC(year, month, day, hour, minute);
+  const offsetAt = (utc: number) => {
+    const z = zoned(utc, zone);
+    return Date.UTC(z.year, z.month, z.day, z.hour, z.minute) - Math.floor(utc / 60_000) * 60_000;
+  };
+  // twice: the offset at the wall time read as UTC can be the other side of a clock change (Codex code review); a wall
+  // time the change skips lands an hour later, one it repeats on its first pass
+  const first = wall - offsetAt(wall);
+  return wall - offsetAt(first);
 }
 
 /** "On Thu, 22 Oct 2026 at 09:14, Name <a@b> wrote:" in the replier's language, at the quoted message's local time. */
@@ -371,9 +397,13 @@ class Context {
         const n = perDay >= 1 ? Math.floor(perDay) + (unit(`${key}:extra`) < perDay % 1 ? 1 : 0) : unit(`${key}:n`) < perDay ? 1 : 0;
         times = Array.from({ length: n }, (_, k) => at(8 + Math.floor(unit(`${key}:h${k}`) * 13), Math.floor(unit(`${key}:m${k}`) * 60)));
       }
-      for (const t of times) if (t >= start && t < end && t <= this.anchor) out.push(t + Math.floor(unit(`${key}:${t}:s`) * 90) * 1000);
+      // the jitter first, then the bounds: nothing lands after the anchor
+      for (const t of times.map((t) => t + Math.floor(unit(`${key}:${t}:s`) * 90) * 1000)) if (t >= start && t < end && t <= this.anchor) out.push(t);
     }
-    return out.sort((a, b2) => a - b2);
+    // two sends on the same second would share their ids (both are made from the date): the later one moves a second
+    out.sort((a, b2) => a - b2);
+    for (let i = 1; i < out.length; i++) if (out[i]! <= out[i - 1]!) out[i] = out[i - 1]! + 1000;
+    return out.filter((t) => t <= this.anchor);
   }
 
   private builtins(date: number, lang: Lang, b: BulkSource): Record<string, string> {

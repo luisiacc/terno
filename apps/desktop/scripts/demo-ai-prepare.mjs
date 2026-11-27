@@ -8,6 +8,7 @@ import { DatabaseSync } from "node:sqlite";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { askFinished, conversationDone, replyOutcome, replyStillComing, DEMO_AI_STEPS, DEMO_SINCE_SUBJECTS, demoAiClock, MARKER_FILE, MARKER_VERSION, MAX_ATTEMPTS, partialVerdict, readMarker } from "../src/demo-ai.ts";
+import { readsAs } from "../../../packages/mock-data/src/demo-corpus/rules.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const { _electron: electron } = createRequire(join(root, "package.json"))("@playwright/test");
@@ -30,15 +31,18 @@ export const ASK_QUESTIONS = [
 export const FOLLOWUP = { to: "Henry Haddad", subject: "The flat on Saturday", body: "Hi Henry,\n\nCould you send me the address of the flat before Friday? I'd like to see it on Saturday.\n\nThanks,\nLuis" };
 export const RULE_REQUEST = "archive receipts from uber.com";
 /** What the preparation names in the generated mailbox. Plan 292's written one brings its own (`targetsOf`). */
-export const GENERATED_TARGETS = { since: [...DEMO_SINCE_SUBJECTS], ask: ASK_QUESTIONS, followup: FOLLOWUP, ruleRequest: RULE_REQUEST };
+export const GENERATED_TARGETS = { since: [...DEMO_SINCE_SUBJECTS], sinceWhole: DEMO_SINCE_SUBJECTS.at(-1), named: [], spanish: [], ask: ASK_QUESTIONS, followup: FOLLOWUP, ruleRequest: RULE_REQUEST };
 
 /**
  * Plan 292 (revision 8): the written mailbox's targets, from its demo.json, by subject: the since conversations (the one
- * where nothing changed last), the Ask questions with the facts their answers must state, the fallback send, the rule.
+ * where nothing changed last), the conversations to summarize and prepare a reply for (the Spanish ones' in Spanish),
+ * the Ask questions with the facts their answers must state and the threads they must cite, the fallback send, the rule.
+ * The fallback is the corpus's own: never the generated mailbox's recipient (Codex code review).
  */
 export function targetsOf(manifest) {
   const p = manifest.prepare;
-  return { since: [...p.since, p.sinceWhole], ask: p.ask, followup: p.followup ?? FOLLOWUP, ruleRequest: p.ruleRequest };
+  if (!p.followup) throw new Error("demo.json names no fallback follow-up (prepare.followup)");
+  return { since: [...p.since, p.sinceWhole], sinceWhole: p.sinceWhole, named: [...p.summaries, ...p.spanishReply], spanish: p.spanishReply, ask: p.ask, followup: p.followup, ruleRequest: p.ruleRequest };
 }
 
 const now = () => new Date().toISOString();
@@ -99,6 +103,14 @@ function driver(page, log) {
       await page.keyboard.press("Escape");
       await page.waitForTimeout(250);
     }
+  };
+  /** plan 292: the conversation's Reply ready, opened again, reads as Spanish (function words, as the corpus checker reads) */
+  d.replyIsSpanish = async (c) => {
+    await d.go("inbox");
+    await d.rows.filter({ hasText: c.title }).first().click();
+    const text = page.getByTestId("reply-ready-text").first();
+    if (!(await shows(text, 30_000))) return false;
+    return readsAs(await text.innerText()) === "es";
   };
   d.go = async (view) => {
     await d.escapeAll();
@@ -303,7 +315,21 @@ const STEPS = {
       if (since(await todayRows.nth(i).innerText())) continue;
       await visit(todayRows.nth(i), `Today #${i + 1}`, "today");
     }
-    return settleConversations(d, progress, started);
+    // plan 292 (Codex code review): the ones the written mailbox names, by subject, wherever the rows above stopped
+    const missing = [];
+    for (const subject of d.targets.named) {
+      await d.go("inbox");
+      const row = d.rows.filter({ hasText: subject }).first();
+      if (!(await shows(row, 15_000))) { missing.push(`${subject} isn't in the Inbox`); continue; }
+      await visit(row, `named: ${subject}`, "inbox");
+    }
+    const settled = await settleConversations(d, progress, started);
+    // the Spanish ones' Reply ready must be in Spanish: the reason the account is there (plan 289)
+    for (const subject of d.targets.spanish) {
+      const done = started.find((c) => c.title === subject);
+      if (done?.writing && !(await d.replyIsSpanish(done))) missing.push(`${subject}: Reply ready isn't in Spanish`);
+    }
+    return [...(settled ?? []), ...missing];
   },
 
   /**
@@ -328,6 +354,9 @@ const STEPS = {
       const view = await d.isVisible("[data-testid=summary-view]");
       const text = (await page.getByTestId("summary-text").innerText()).replace(/\s+/g, " ").trim();
       d.log(`  ${subject}: ${view ? `since: "${text}"` : `whole summary only: "${text}"`}`);
+      // the ones with new mail that changes something must open on what's new, or the step isn't done (Codex code
+      // review); the one where nothing changed may show either
+      if (!view && subject !== d.targets.sinceWhole) { missing.push(`${subject}: the whole summary, not what's new`); continue; }
       progress.add(subject);
     }
     return missing;
@@ -399,7 +428,7 @@ const STEPS = {
       return turns.length >= n && ["answered", "partial", "not_found", "stopped", "failed"].includes(turns[turns.length - 1].getAttribute("data-status") ?? "");
     }, min, { timeout: MODEL_MS });
     const missing = [];
-    for (const { q, followUp, facts = [] } of d.targets.ask) {
+    for (const { q, followUp, facts = [], cites = [] } of d.targets.ask) {
       // asked on an earlier launch whose step didn't finish: in the history already
       if (progress.has(q)) continue;
       await d.go("inbox");
@@ -411,10 +440,14 @@ const STEPS = {
       const statuses = [await page.locator("[data-testid=ask-turn]").last().getAttribute("data-status")];
       // plan 292: a planted question's answer must say what the mail says; one that found nothing, or not that, is a miss
       if (facts.length) {
-        const said = (await page.locator("[data-testid=ask-turn]").last().innerText()).toLowerCase();
+        // the facts in the answer itself, and one of its sources a thread it should cite (Codex code review)
+        const turn = page.locator("[data-testid=ask-turn]").last();
+        const said = (await turn.getByTestId("ask-answer").first().innerText().catch(() => "")).toLowerCase();
         const unsaid = facts.filter((f) => !said.includes(f.toLowerCase()));
-        if (statuses[0] !== "answered" || unsaid.length) {
-          d.log(`  "${q}": ${statuses[0]}${unsaid.length ? `, without ${unsaid.map((f) => `"${f}"`).join(", ")}` : ""}`);
+        const sources = await page.getByTestId("ask-source").allInnerTexts().catch(() => []);
+        const cited = !cites.length || sources.some((s) => cites.some((c) => s.includes(c)));
+        if (statuses[0] !== "answered" || unsaid.length || !cited) {
+          d.log(`  "${q}": ${statuses[0]}${unsaid.length ? `, without ${unsaid.map((f) => `"${f}"`).join(", ")}` : ""}${cited ? "" : `, citing none of ${cites.map((c) => `"${c}"`).join(", ")}`}`);
           missing.push(q);
           await d.escapeAll();
           continue;

@@ -6,7 +6,10 @@
  * Start the demo with its DevTools port open, on a copy of its profile so the pictures' appearance doesn't stay in yours
  * (copy without Chromium's Singleton* files, or a running demo's lock makes the copy quit at once):
  *
- *   TERNO_USER_DATA=<copy> TERNO_REMOTE_DEBUGGING_PORT=9333 TERNO_VITE_PORT=<free port> pnpm dev:demo-ai
+ *   TERNO_USER_DATA=<copy> TERNO_REMOTE_DEBUGGING_PORT=9333 TERNO_VITE_PORT=<free port> pnpm dev:demo-ai --generated
+ *
+ * (`--generated`, plan 292: these pictures are taken on plan 289's generated mailbox, not the written one the command seeds
+ * by default; a profile prepared on the written one is refused with `--fresh` as the way on.)
  *
  * then run this (`--port=9333` by default; `--only=ai-people` takes just the pictures named). It sets the pictures' appearance in that window (Lumen, the GitHub palettes,
  * no motion, as shots/lib.ts's `pictureSettings`) and takes each picture light, then dark, at 2×, into .shots-raw-ai/,

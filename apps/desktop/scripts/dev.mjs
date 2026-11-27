@@ -41,7 +41,11 @@ const cleandb = process.argv.includes("--cleandb");
 const demoAi = process.argv.includes("--demo-ai");
 /** plan 292: the written demo mailbox, once it's complete (its demo.json is written last); main reads it in dev builds only */
 const corpusDir = join(repo, "packages/mock-data/demo-corpus");
-const demoCorpus = existsSync(join(corpusDir, "demo.json")) ? corpusDir : null;
+// --generated keeps plan 289's mailbox (the site's demo pictures are taken on it). A path the shell exported never
+// counts, nor reaches the build or Vite (Codex code review): only the Electron launches below get the one chosen here.
+const generated = process.argv.includes("--generated");
+delete process.env.TERNO_DEMO_CORPUS;
+const demoCorpus = !generated && existsSync(join(corpusDir, "demo.json")) ? corpusDir : null;
 
 /**
  * The dev profile (TERNO_USER_DATA wins, as is), with its legacy files renamed

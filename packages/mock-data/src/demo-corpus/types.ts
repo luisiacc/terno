@@ -283,6 +283,8 @@ export interface CorpusSources {
   threads: ThreadRecord[];
   bulk: BulkSource[];
   spam: SpamSource[];
+  /** the briefs: given, every one must have been written (a batch file gone is an error, never a smaller mailbox) */
+  seeds?: Seed[];
 }
 
 /** A brief for one thread, sampled in code (seeds.ts). */

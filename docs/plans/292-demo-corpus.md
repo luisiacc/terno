@@ -116,6 +116,23 @@ Seeding runs once per profile; the loader expands ~7,000 messages in well under 
 - **Beside plan 289,** which landed first: one record of what seeded a demo profile, 289's `demo.edition`, now `"demo"` (the generated English edition) or `"corpus"`, written after the last write so a partial seed reads as an older mailbox; 289's `oldMailboxProblem` takes the edition this checkout wants, and replaces the marker field and the `demo.mailbox` record this plan first had. `seedDemo` takes either 289's `edition` or this plan's `mailbox`.
 - **Verified:** the corpus, loader, seed and wiring tests (80 across the touched files); the dev build seeded from the corpus on a temp profile, AI through the UI rating's loopback stub: the Inbox opens on the planted conversations in English and Spanish, People and What matters fill, the learning example's offer shows, light and dark.
 
+## Revisions after the Codex code review
+
+Twelve findings; ten fixed, each with a test that fails without the fix where a unit test can hold it:
+
+1. **A seed that stopped part way started as a mailbox.** `demo.edition` is `"seeding"` from before the first write to after the last; the desktop backend won't start on such a profile (it says `--cleandb` or `--fresh`), and dev:demo-ai's profile check names it (`demo-mailbox.test.ts`).
+2. **A batch file gone went unnoticed.** The reader reads the seeds too, and the loader holds every brief to its thread before building; the world's accounts are checked (kind, language, address) before they're created (`load.test.ts`).
+3. **Links were checked in templates, not in what they became.** The built messages are checked as they'll be stored: links on `.example` only (a slot filling a real URL is refused), ids unique, nothing after the anchor.
+5. **Two sends on the same second shared their ids.** The later moves a second.
+6. **A send near a clock change could move an hour, and jitter could pass the anchor.** The wall time is resolved in two passes (a 03:00 New York send on 8 March 2026 is 07:00 UTC, not 08:00), the bounds are applied after the jitter, and schedule fields are validated.
+7. **The preparation ignored demo.json's named conversations and Spanish replies.** They're visited by subject after the positional rows, a Spanish one's Reply ready must read as Spanish, and the fallback send must be the corpus's own.
+8. **A since conversation passed with the whole summary.** Only the one where nothing changed may.
+9. **Ask passed on the right fact with the wrong source.** The facts are read in the answer itself, and one source must be a thread the question cites.
+11. **The site's retake refused the demo it documents.** `pnpm dev:demo-ai --generated` (and `dev:desktop:demo --generated`) seeds plan 289's mailbox where the written one is; `demo-shots.ts` and the guide say to use it.
+12. **A shell-exported corpus path reached the build and Vite.** `dev.mjs` drops it at once and gives only its own choice to the Electron launches.
+
+Not changed: **4** (a profile seeded from an older revision of the corpus prepared on newer targets): a renamed subject makes its step fail visibly ("isn't in the Inbox") and retry, and tying profiles to the corpus's revision would force a paid `--fresh` after every typo fix. **10** (checking the AI-built rule against the planted receipts): that judges the model's rule, not the demo's plumbing; the guide says what to look for.
+
 ## Out of scope
 
 - The tests' fixture and plan 289's generated demo edition (smokes, e2e, the UI rating's harness, `--seeded`, the web demo).

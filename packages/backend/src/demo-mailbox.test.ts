@@ -6,7 +6,7 @@ import { demoRegistry } from "@terno/mail";
 import { generateDataset } from "@terno/mock-data";
 import { afterEach, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
-import { demoEditionOf, seedDemo, type DemoMailbox } from "./demo";
+import { demoEditionOf, demoSeedProblem, seedDemo, type DemoMailbox } from "./demo";
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -36,6 +36,24 @@ it("seeds the given mailbox with its rule and learning example by name, and reco
   // a seeded profile is left alone, and the corpus isn't even read
   expect(await seedDemo(b.store, { mailbox: () => (built++, mailbox) })).toBe(false);
   expect(built).toBe(1);
+});
+
+it("leaves a seed that stops part way marked, so the next launch refuses it instead of starting on half a mailbox (Codex code review)", async () => {
+  const b = backend();
+  const dataset = generateDataset({ threads: 30, accounts: 1, seed: 3 });
+  // a message for an account the dataset doesn't have: the accounts are written, then the seed fails
+  dataset.messages.push({ ...dataset.messages[0]!, accountIndex: 7, providerMsgId: "x-1", rfcMessageId: "x-1@broken.example" });
+  const mailbox: DemoMailbox = { dataset, rule: { name: "r", from: "a@b.example", category: dataset.categories[0]!.name }, learningSender: "a@b.example" };
+  await expect(seedDemo(b.store, { mailbox: () => mailbox })).rejects.toThrow();
+  expect((await b.store.accounts.list()).length).toBeGreaterThan(0);
+  expect(await demoEditionOf(b.store)).toBe("seeding");
+  expect(await demoSeedProblem(b.store)).toMatch(/stopped seeding part way.*--cleandb.*--fresh/);
+  // a launch doesn't seed over it, and a whole one has no problem
+  expect(await seedDemo(b.store, { mailbox: () => mailbox })).toBe(false);
+  const c = backend();
+  await seedDemo(c.store, { threads: 30, accounts: 1, edition: "demo" });
+  expect(await demoEditionOf(c.store)).toBe("demo");
+  expect(await demoSeedProblem(c.store)).toBeNull();
 });
 
 it("refuses a rule naming a category the mailbox lacks before writing anything, and the fixture records nothing", async () => {

@@ -4,7 +4,7 @@
  * mail data never hops through the main process.
  */
 import { dirname } from "node:path";
-import { Backend, demoEditionOf, openNodeMailbox, nodeStore, parseGoogleClients, parseOAuthClients, seedDemo, seedDemoCode, seedDemoSince, type LegacySecretReader, type SecretCipher } from "@terno/backend";
+import { Backend, demoEditionOf, demoSeedProblem, openNodeMailbox, nodeStore, parseGoogleClients, parseOAuthClients, seedDemo, seedDemoCode, seedDemoSince, type LegacySecretReader, type SecretCipher } from "@terno/backend";
 import { devAiKeys } from "@terno/core";
 import { GATE_OPEN } from "@terno/core/mailbox";
 import { classifyOpenError, diskFree, mailboxBytes, mailboxSchema, migrateHeadroom, nodePlatform, removeOldBackups, SCHEMA_VERSION, SqlMailStore } from "@terno/db";
@@ -219,6 +219,13 @@ async function initialize(msg: Extract<MainToBackend, { type: "init" }>, signal:
       await backend.store.settings.set("app", { ai: { provider: "none" } });
     }
     if (signal.aborted) return;
+    // plan 292 (Codex code review): a seed that stopped part way never starts as if it were a mailbox; a dev run's
+    // terminal says why (diag codes are for users' reports, and this happens only on a demo profile)
+    const partial = msg.demo ? await demoSeedProblem(backend.store) : null;
+    if (partial) {
+      console.error(`[demo] ${partial}`);
+      throw new Error(partial);
+    }
     // `pnpm dev:demo`: a fresh verification code every launch, to try the list's code chip (plan 72); not in smokes
     if (demoCodeWanted(msg)) await seedDemoCode(backend.store, Date.now());
     if (signal.aborted) return;

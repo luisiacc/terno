@@ -159,6 +159,40 @@ describe("the written demo mailbox's loader (plan 292)", () => {
     expect(subjects.filter((s) => { const [, a, b, c] = s.split(" "); return a === b && b === c; }).length).toBeLessThan(subjects.length / 4);
   });
 
+  it("keeps a send's wall time across a clock change, and nothing after the anchor (Codex code review)", () => {
+    const w = world();
+    w.brands = [{ ...w.brands[0]!, kind: "receipt", tag: "receipt" }];
+    const at = (schedule: CorpusSources["bulk"][number]["schedule"]) =>
+      demoCorpusDataset(sources({ world: w, bulk: [{ brand: "grid", account: "personal", schedule, templates: [{ subject: "s", text: "t" }] }] })).messages.filter((m) => m.bulk);
+    // New York springs forward at 02:00 on Sunday 8 March 2026: 03:00 there is 07:00 UTC that day (EDT), 08:00 the day
+    // before (EST); reading the offset at 03:00 UTC, still the evening before, put the Sunday send at 04:00 local
+    const ny = at({ every: "daily", at: "03:00", zone: "America/New_York", from: "2026-03-07", to: "2026-03-08" }).map((m) => new Date(m.date).toISOString().slice(0, 13));
+    expect(ny).toEqual(["2026-03-07T08", "2026-03-08T07"]);
+    // 15:29 London plus up to 90 s of jitter never passes the 15:30 UTC anchor (London is UTC+1 then: 16:29 local)
+    expect(at({ every: "daily", at: "16:29", zone: "Europe/London", from: "2026-10-01" }).every((m) => m.date <= Date.parse("2026-10-22T15:30:00Z"))).toBe(true);
+  });
+
+  it("gives two sends on the same second their own ids (Codex code review)", () => {
+    const w = world();
+    w.brands = [{ ...w.brands[0]!, kind: "receipt", tag: "receipt" }];
+    const sent = demoCorpusDataset(sources({ world: w, bulk: [{ brand: "grid", account: "personal", schedule: { every: "random", perWeek: [300, 300], zone: "Europe/London", from: "2026-10-01" }, templates: [{ subject: "s", text: "t" }] }] })).messages.filter((m) => m.bulk);
+    expect(sent.length).toBeGreaterThan(500);
+    expect(new Set(sent.map((m) => m.providerMsgId)).size).toBe(sent.length);
+    expect(new Set(sent.map((m) => m.rfcMessageId)).size).toBe(sent.length);
+  });
+
+  it("refuses a link a template's slot fills in, a batch gone missing, and an account that can't be made (Codex code review)", () => {
+    const w = world();
+    w.brands = [{ ...w.brands[0]!, kind: "receipt", tag: "receipt" }];
+    const link = { subject: "s", text: "see {url}", slots: { url: ["https://real-shop.com/r/1"] } };
+    expect(() => demoCorpusDataset(sources({ world: w, bulk: [{ brand: "grid", account: "personal", schedule: { every: "daily", zone: "Europe/London", from: "2026-10-20" }, templates: [link] }] }))).toThrow(/link to real-shop.com/);
+    const seed = { id: "t9", account: "personal", lang: "en", kind: "k", people: [], shape: "fyi", outcome: "o", messages: [1, 1], window: ["2026-10-01", "2026-10-02"], length: "short", attachments: "none", tags: ["personal"], inbox: true, must: [] } as const;
+    expect(() => demoCorpusDataset(sources({ seeds: [{ ...seed, messages: [1, 1], window: ["2026-10-01", "2026-10-02"], tags: ["personal"], people: [], must: [] }] }))).toThrow(/seed not written/);
+    const bad = world();
+    (bad.accounts[1] as { kind: string }).kind = "pop3";
+    expect(() => demoCorpusDataset(sources({ world: bad }))).toThrow(/kind "pop3"/);
+  });
+
   it("refuses a corpus with an error before building anything", () => {
     const bad = structuredClone(threads);
     bad[0]!.messages[0]!.text = "Hope you're well. Visit https://real-company.com";

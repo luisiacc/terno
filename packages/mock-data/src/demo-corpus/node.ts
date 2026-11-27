@@ -20,7 +20,7 @@ function revisionOf(files: { name: string; text: string }[]): string {
 
 export function readCorpusSources(dir: string): { sources: CorpusSources; manifest: DemoManifest | null; revision: string } {
   const list = (sub: string, keep: (f: string) => boolean) => (existsSync(join(dir, sub)) ? readdirSync(join(dir, sub)).filter(keep).sort().map((f) => `${sub}/${f}`) : []);
-  const names = ["world.json", "lists.json", ...(existsSync(join(dir, "demo.json")) ? ["demo.json"] : []), ...list("threads", (f) => /^batch-\d+\.json$/.test(f)), ...list("bulk", (f) => f.endsWith(".json"))];
+  const names = ["world.json", "lists.json", ...(existsSync(join(dir, "demo.json")) ? ["demo.json"] : []), ...list("seeds", (f) => /^batch-\d+\.json$/.test(f)), ...list("threads", (f) => /^batch-\d+\.json$/.test(f)), ...list("bulk", (f) => f.endsWith(".json"))];
   const files = names.map((name) => ({ name, text: readFileSync(join(dir, name), "utf8") }));
   const parsed = new Map(files.map((f) => [f.name, JSON.parse(f.text) as unknown]));
   const sources: CorpusSources = {
@@ -34,6 +34,8 @@ export function readCorpusSources(dir: string): { sources: CorpusSources; manife
         return Array.isArray(v) ? v : [v];
       }),
     spam: (parsed.get("bulk/spam.json") as CorpusSources["spam"] | undefined) ?? [],
+    // every brief must have its thread: a batch file gone is caught before seeding (Codex code review)
+    seeds: names.filter((n) => n.startsWith("seeds/")).flatMap((n) => parsed.get(n) as NonNullable<CorpusSources["seeds"]>),
   };
   return { sources, manifest: (parsed.get("demo.json") as DemoManifest | undefined) ?? null, revision: revisionOf(files) };
 }

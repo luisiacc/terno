@@ -32,16 +32,18 @@ export const MARKER_VERSION = 1;
 export interface DemoAiArgs {
   /** the profile to the Trash first, prepared again */
   fresh: boolean;
+  /** plan 292: plan 289's generated mailbox even where the written one is (the site's demo pictures are taken on it) */
+  generated: boolean;
 }
 
-const ACCEPTED = ["--demo-ai", "--fresh", "--cleandb"];
+const ACCEPTED = ["--demo-ai", "--fresh", "--cleandb", "--generated"];
 
 /** `--fresh` (or dev.mjs's `--cleandb`, the same here); anything else is refused, so a typo isn't a silent no-op. */
 export function demoAiArgs(argv: readonly string[]): DemoAiArgs {
   const flags = argv.filter((a) => a.startsWith("-"));
   const unknown = flags.filter((a) => !ACCEPTED.includes(a));
-  if (unknown.length) throw new Error(`dev:demo-ai doesn't take ${unknown.join(", ")}: it takes --fresh (start over)`);
-  return { fresh: flags.includes("--fresh") || flags.includes("--cleandb") };
+  if (unknown.length) throw new Error(`dev:demo-ai doesn't take ${unknown.join(", ")}: it takes --fresh (start over) and --generated (plan 289's generated mailbox, not the written one)`);
+  return { fresh: flags.includes("--fresh") || flags.includes("--cleandb"), generated: flags.includes("--generated") };
 }
 
 /**
@@ -213,7 +215,7 @@ export function partialVerdict(missing: readonly string[], attempt: number): "do
 export function oldMailboxProblem(o: { hasMailbox: boolean; edition: unknown }, want: "demo" | "corpus" = "demo"): string | null {
   if (!o.hasMailbox || o.edition === want) return null;
   // plan 292: the written mailbox ("corpus") and plan 289's generated edition ("demo") name different conversations
-  const held = o.edition === "corpus" ? "the written demo mailbox" : o.edition === "demo" ? "the generated demo mailbox (English, with Freelance in Spanish)" : "an earlier demo mailbox, or one that stopped seeding part way";
+  const held = o.edition === "corpus" ? "the written demo mailbox" : o.edition === "demo" ? "the generated demo mailbox (English, with Freelance in Spanish)" : o.edition === "seeding" ? "a demo mailbox that stopped seeding part way" : "an earlier demo mailbox";
   const wanted = want === "corpus" ? "the written one (plan 292)" : "the generated one (English, with Freelance in Spanish)";
   return `this profile holds ${held}: pnpm dev:demo-ai --fresh prepares it again on ${wanted}`;
 }
@@ -230,7 +232,7 @@ export function readMarker(text: string | null): DemoAiMarker | null {
 }
 
 /** The steps this launch runs: all on a fresh profile, none once every one is done, else the ones still missing. */
-export function stepsToRun(marker: DemoAiMarker | null, args: DemoAiArgs): DemoAiStep[] {
+export function stepsToRun(marker: DemoAiMarker | null, args: Pick<DemoAiArgs, "fresh">): DemoAiStep[] {
   if (args.fresh || !marker) return [...DEMO_AI_STEPS];
   return DEMO_AI_STEPS.filter((s) => !marker.done[s] && !setAside(marker, s));
 }
