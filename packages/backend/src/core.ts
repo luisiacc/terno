@@ -36,7 +36,7 @@ import { WhatMattersWords } from "./preferences";
 import { SummaryWorker } from "./summaries";
 import { WritingService } from "./writing";
 import { Attention, type AttentionHost } from "./attention";
-import { hydrateSendAttachments } from "./attachments";
+import { assertGmailSendable, hydrateSendAttachments } from "./attachments";
 import { Categorizer } from "./categorizer";
 import { FactsBackfill } from "./facts";
 import { Reminders } from "./reminders";
@@ -1415,7 +1415,14 @@ export class BackendCore {
    * (the draft deleted with it), then announced. Once queued, nothing after
    * it can fail the send: the announcing is logged instead.
    */
+  /** Plan 293: refuses a Gmail message carrying a file Gmail won't send, in plain words (the composer's own). */
+  assertGmailSendable(accountId: number, attachments: ComposeSendParams["attachments"]): Promise<void> {
+    return assertGmailSendable(this.store, accountId, attachments, () => this.yieldTurn());
+  }
+
   async queueComposeSend(p: ComposeSendParams, o: { renderer: boolean; scheduledAt?: number }): Promise<{ opId: string; threadId: number; messageId: number }> {
+    // plan 293 (CASA 5.2.1): never queue for Gmail what Gmail won't send (a send now, Undo Send's fallback, a scheduled send's turn)
+    await this.assertGmailSendable(p.accountId, p.attachments);
     const { opId, threadId, messageId, deltas } = await this.store.compose.queueSend({
       accountId: p.accountId,
       to: p.to,

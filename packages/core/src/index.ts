@@ -37,6 +37,7 @@ export * from "./localized";
 export * from "./agents";
 export * from "./mail-link";
 export * from "./attachments";
+export * from "./gmail-blocked";
 export * from "./attachment-open";
 export * from "./original";
 export * from "./similar";

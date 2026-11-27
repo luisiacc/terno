@@ -52,6 +52,11 @@ const en = {
   "attachments.busy": "An attachment is busy. Try again in a moment.",
   "attachments.unavailable": "This attachment is unavailable. Reattach the file before sending.",
   "attachments.tooLarge": "This message is too large. Remove an attachment or shorten the message.",
+  // plan 293 (CASA 5.2.1): what Gmail's help page says it won't send (support.google.com/mail/answer/6590)
+  "attachments.gmailBlocked.type": "Gmail won’t send {name}: it doesn’t allow .{ext} files.",
+  "attachments.gmailBlocked.archive": "Gmail won’t send {name}: it holds a .{ext} file, a type Gmail doesn’t allow.",
+  "attachments.gmailBlocked.protected": "Gmail won’t send {name}: it doesn’t allow password-protected archives.",
+  "attachments.gmailBlocked.executable": "Gmail won’t send {name}: it doesn’t allow programs.",
   // ── common
   "common.cancel": "Cancel",
   "common.close": "Close",

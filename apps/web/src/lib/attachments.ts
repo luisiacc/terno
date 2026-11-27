@@ -7,6 +7,7 @@ import { mergeAttachmentRefs } from "./compose-fields";
 import { client } from "~/rpc/connection";
 import { beginDraftWork, editDraft, fieldsOf, flushDraft, materialize, sendBody, sendHtml, useDrafts, type DraftFields, type LocalDraft } from "./drafts";
 import { formatBytes } from "./format";
+import { gmailRefusal } from "./gmail-attachments";
 import { outOfText } from "./inline-images";
 import { snack } from "./snack";
 
@@ -95,6 +96,18 @@ async function attachFilesNow(key: string, files: readonly File[], o: { contentI
     return live;
   };
   try {
+    // plan 293 (CASA 5.2.1): on a Gmail account, a file Gmail won't send (its type, an archive holding one, a protected
+    // archive, a program by its content) is said and left out; the others still attach, each with its own content id
+    if (getApp().accounts.find((a) => a.id === draft.accountId)?.kind === "gmail") {
+      const refusals = await Promise.all(files.map((f) => gmailRefusal(f)));
+      if (refusals.some(Boolean)) {
+        snack.error(refusals.filter(Boolean).join(" "));
+        const kept = refusals.map((r) => !r);
+        files = files.filter((_, i) => kept[i]);
+        o = { ...o, ...(o.contentIds && { contentIds: o.contentIds.filter((_, i) => kept[i]) }) };
+        if (!files.length) return false;
+      }
+    }
     // plan 76: one file mail can't carry at all is named, with the limit (nothing to remove would help)
     const huge = files.find((f) => f.size > MAX_ATTACHMENT_BYTES);
     if (huge) throw new Error(t("attachments.fileTooLarge", { name: huge.name, size: formatBytes(huge.size), limit: formatBytes(MAX_ATTACHMENT_BYTES) }));

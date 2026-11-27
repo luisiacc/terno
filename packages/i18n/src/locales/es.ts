@@ -46,6 +46,10 @@ const es = {
   "attachments.busy": "Un adjunto está ocupado. Inténtalo de nuevo en un momento.",
   "attachments.unavailable": "Este adjunto no está disponible. Vuelve a adjuntar el archivo antes de enviar.",
   "attachments.tooLarge": "Este mensaje es demasiado grande. Quita un adjunto o acorta el mensaje.",
+  "attachments.gmailBlocked.type": "Gmail no envía {name}: no permite archivos .{ext}.",
+  "attachments.gmailBlocked.archive": "Gmail no envía {name}: contiene un archivo .{ext}, un tipo que Gmail no permite.",
+  "attachments.gmailBlocked.protected": "Gmail no envía {name}: no permite archivos comprimidos protegidos con contraseña.",
+  "attachments.gmailBlocked.executable": "Gmail no envía {name}: no permite programas.",
   // ── common
   "common.cancel": "Cancelar",
   "common.close": "Cerrar",

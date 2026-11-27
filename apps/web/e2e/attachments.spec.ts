@@ -237,3 +237,26 @@ test("Forward refuses foreign account refs before changing authored work, with k
   expect(await server.backend.store.attachments.read(source.id, refs[1].assetId, 0)).toBe(null);
   await expect(body).toHaveText("later text remains savable");
 });
+
+test("plan 293 (CASA 5.2.1): a Gmail message leaves out a file Gmail won't send, says why in plain words, and attaches the rest", async ({ app: page, server }) => {
+  const gmail = (await server.backend.store.accounts.list()).find((a) => a.kind === "gmail")!;
+  await page.getByTestId("thread-list").locator("[data-keep-scroll=list]").focus();
+  await page.keyboard.press("c");
+  await expect(page.getByTestId("compose-to")).toBeFocused();
+  const showFrom = page.getByTestId("compose-show-from");
+  if (await showFrom.isVisible()) await showFrom.click();
+  const from = page.getByTestId("compose-from");
+  if (!(await from.textContent())?.includes(gmail.email)) {
+    await from.focus();
+    await page.keyboard.press("Space");
+    await page.getByRole("option", { name: `${gmail.displayName} · ${gmail.email}`, exact: true }).click();
+  }
+  await expect(from).toContainText(gmail.email);
+  await page.getByTestId("attachment-input").setInputFiles([
+    { name: "setup.exe", mimeType: "application/octet-stream", buffer: Buffer.from([0x4d, 0x5a, 0x90, 0]) },
+    { name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("hello") },
+  ]);
+  await expect(page.getByText("Gmail won’t send setup.exe: it doesn’t allow .exe files.").first()).toBeVisible();
+  await expect(page.getByTestId("draft-attachment")).toHaveCount(1);
+  await expect(page.getByTestId("draft-attachment")).toContainText("notes.txt");
+});

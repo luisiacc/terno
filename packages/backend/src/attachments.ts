@@ -77,5 +77,43 @@ export async function portableAttachmentFingerprint(part: import("@terno/core/rp
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
-import { ATTACHMENT_CHUNK, base64Bytes } from "@terno/core";
+import { ATTACHMENT_CHUNK, base64Bytes, GMAIL_HEAD_BYTES, gmailBlocked, gmailNeedsWholeFile } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
+
+/**
+ * Plan 293 (CASA 5.2.1): refuses a Gmail account's message carrying a file Gmail won't send (its help page's list, an
+ * archive holding one, a protected archive, a program by its content), with the same plain words the composer uses.
+ * Reads the sealed assets the request names (their first bytes; an archive's whole). Other accounts pass untouched.
+ */
+export async function assertGmailSendable(store: MailStore, accountId: number, refs: readonly import("@terno/core").AttachmentRef[] | undefined, yieldTo: () => Promise<void>): Promise<void> {
+  if (!refs?.length || (await store.accounts.get(accountId))?.kind !== "gmail") return;
+  for (const ref of refs) {
+    const want = gmailNeedsWholeFile(ref.filename) ? ref.size : Math.min(ref.size, GMAIL_HEAD_BYTES);
+    const parts: Uint8Array[] = [];
+    let got = 0;
+    for (let index = 0; got < want; index++) {
+      const chunk = await store.attachments.read(accountId, ref.assetId, index);
+      // a missing asset is the send path's own refusal (attachments.unavailable)
+      if (chunk === null) break;
+      const bytes = base64Bytes(chunk);
+      if (!bytes.length) break;
+      parts.push(bytes);
+      got += bytes.length;
+      await yieldTo();
+    }
+    const bytes = new Uint8Array(got);
+    let at = 0;
+    for (const p of parts) {
+      bytes.set(p, at);
+      at += p.length;
+    }
+    const block = await gmailBlocked(ref.filename, bytes);
+    if (!block) continue;
+    const name = ref.filename;
+    const message = block.reason === "type" ? L("attachments.gmailBlocked.type", { name, ext: block.ext })
+      : block.reason === "archive" ? L("attachments.gmailBlocked.archive", { name, ext: block.ext })
+      : block.reason === "protected" ? L("attachments.gmailBlocked.protected", { name })
+      : L("attachments.gmailBlocked.executable", { name });
+    throw new RpcError("BAD_REQUEST", message, { reason: "gmailBlocked" });
+  }
+}

@@ -1185,6 +1185,8 @@ export function createHandlers(b: Backend): Handlers {
       // plan 188: the window the renderer's countdown shows (it read the setting once for both, so a change mid-call can't
       // split them); from elsewhere, the user's setting
       const seconds = holdSeconds ?? (await readSettings(store)).undoSendSeconds;
+      // plan 293: refused now, not when Undo's window closes
+      await b.assertGmailSendable(p.accountId, p.attachments);
       const r = await b.scheduled.schedule(params, b.now() + seconds * 1000, true);
       if (r === "stale") throw new RpcError("STALE", L("errors.draftGone"), { reason: "draftRevision" });
       if (r === "ok") return { held: true as const };
@@ -1194,6 +1196,8 @@ export function createHandlers(b: Backend): Handlers {
     },
     "compose.schedule": async ({ sendAt, ...p }, ctx) => {
       const params = ctx.origin === "renderer" ? p : { ...p, bodyHtml: undefined, authoredText: undefined };
+      // plan 293: refused now, not at its time
+      await b.assertGmailSendable(p.accountId, p.attachments);
       const r = await b.scheduled.schedule(params, sendAt);
       if (r === "stale") throw new RpcError("STALE", L("errors.draftGone"), { reason: "draftRevision" });
       if (r === "full") throw new RpcError("BAD_REQUEST", L("errors.scheduledFull", { max: SCHEDULED_MAX }));

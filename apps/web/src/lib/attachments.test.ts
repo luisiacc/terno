@@ -48,3 +48,32 @@ it("an account switch fences a pending upload and its cleanup stays bound to the
   expect(useDrafts.getState().drafts[u.key]!.attachments).toBeUndefined();
   expect(call).toHaveBeenCalledWith("attachments.discard", { accountId: 1, assetId: u.ref.assetId });
 });
+
+it("plan 293 (CASA 5.2.1): a Gmail draft leaves out what Gmail won't send, says so plainly, and attaches the rest; IMAP attaches both", async () => {
+  const files = () => [
+    new File([new Uint8Array([0x4d, 0x5a, 0x90, 0])], "setup.exe", { type: "application/octet-stream" }),
+    new File([new TextEncoder().encode("%PDF-1.7")], "report.pdf", { type: "application/pdf" }),
+  ];
+  const created: string[] = [];
+  call.mockImplementation(async (method: string, p: { filename?: string }) => {
+    if (method === "attachments.create") return (created.push(p.filename!), { assetId: `00000000-0000-4000-8000-00000000000${created.length}`, filename: p.filename, mime: "application/octet-stream", size: 4, contentId: null });
+    return { ok: true };
+  });
+  setDraftTransport(async () => ({ id: 1, revision: 1 }));
+  setApp({ accounts: [{ id: 1, kind: "gmail" } as import("@terno/core").Account, { id: 2, kind: "imap" } as import("@terno/core").Account] });
+  const gmail = createDraft(newFields(1));
+  expect(await attachFiles(gmail, files())).toBe(true);
+  expect(error).toHaveBeenCalledWith("Gmail won’t send setup.exe: it doesn’t allow .exe files.");
+  expect(created).toEqual(["report.pdf"]);
+  expect(useDrafts.getState().drafts[gmail]!.attachments!.map((a) => a.filename)).toEqual(["report.pdf"]);
+  // a renamed program is caught by its content
+  error.mockReset();
+  expect(await attachFiles(gmail, [new File([new Uint8Array([0x7f, 0x45, 0x4c, 0x46])], "photo.jpg")])).toBe(false);
+  expect(error).toHaveBeenCalledWith("Gmail won’t send photo.jpg: it doesn’t allow programs.");
+  created.length = 0;
+  error.mockReset();
+  const imap = createDraft(newFields(2));
+  expect(await attachFiles(imap, files())).toBe(true);
+  expect(error).not.toHaveBeenCalled();
+  expect(created).toEqual(["setup.exe", "report.pdf"]);
+});
