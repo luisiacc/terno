@@ -63,7 +63,9 @@ describe.skipIf(process.env.TERNO_AI_SECOND_LOOK_REPLAY !== "1")("the second loo
         lines.push(`${persona}: "${subject}" → ${asked.map((s) => `"${s}"`).join(" · ")}`);
       }
     }
-    const system = readDatesTask({ text: "", subject: "", from: { name: "", automated: false }, reader: { name: "", addressed: "to" }, to: [], cc: [], receivedAt: "", zone: "UTC", open: [], language: "en" }).system.length;
+    // the whole system prompt the model reads: plan 291 moved the arrival to its end
+    const task = readDatesTask({ text: "", subject: "", from: { name: "", automated: false }, reader: { name: "", addressed: "to" }, to: [], cc: [], receivedAt: "Monday, 2 March 2026, 09:14", zone: "UTC", open: [], language: "en" });
+    const system = task.system.length + (task.systemTail ? task.systemTail.length + 2 : 0);
     process.stderr.write(`${lines.join("\n")}\n${JSON.stringify({ mails, triggered, rate: +(triggered / Math.max(1, mails)).toFixed(3), sentences, systemChars: system, lookPromptChars: chars, firstPromptChars: firstChars, extraTokensApprox: Math.round((triggered * system + chars) / 4) })}\n`);
     expect(mails).toBeGreaterThan(0);
   });

@@ -293,11 +293,16 @@ async function runDay(p: Persona) {
     const { input } = draftRequest(f, c, corpora.get(f.id)!, arm("one-tap"), new Map());
     await tolerate(() => ai.reply.compose(input, { onDelta: () => {}, effort: "low" }));
   }
-  for (const [i, { f, c }] of cases.slice(day("reply"), day("reply") + day("writing")).entries()) {
-    await tolerate(() => ai.intent.readDraft({ text: c.instruction, maybe: [] }));
-    await tolerate(() => ai.intent.parseIntent({ instruction: c.instruction, candidates: [{ id: "p1", name: c.to.name }] }));
+  const drafts = run("writing") || run("intent") ? p.day.writing ?? 0 : 0;
+  for (const [i, { f, c }] of cases.slice(day("reply"), day("reply") + drafts).entries()) {
+    // reading what they typed comes with each draft they ask for (its own job, `intent`)
+    if (run("intent")) {
+      await tolerate(() => ai.intent.readDraft({ text: c.instruction, maybe: [] }));
+      await tolerate(() => ai.intent.parseIntent({ instruction: c.instruction, candidates: [{ id: "p1", name: c.to.name }] }));
+    }
     const { input } = draftRequest(f, c, corpora.get(f.id)!, arm("local+examples"), new Map());
     let draft = "";
+    if (!run("writing")) continue;
     await tolerate(async () => (draft = (await ai.writing.compose(input, { onDelta: () => {}, effort: "low" })).text));
     if (i < day("refine") && draft) {
       const refined = draftRequest(f, c, corpora.get(f.id)!, arm("refine"), new Map(), draft);
@@ -398,9 +403,12 @@ describe.skipIf(process.env.TERNO_CACHE_REPORT !== "1")("plan 291: the report", 
         const rs = rows.filter((r) => r.arm === arm && r.job === job);
         const failed = all.filter((r) => r.arm === arm && r.job === job && r.failed).length;
         if (!rs.length) continue;
-        const warm = rs.filter(warmOf), cold = rs.filter((r) => !warmOf(r));
+        // a repair belongs to the call it repairs: its cost is spread over the job's calls, never counted as a call
+        const firsts = rs.filter((r) => !r.repair);
+        const repairUsd = firsts.length ? rs.filter((r) => r.repair).reduce((n, r) => n + r.usd!, 0) / firsts.length : 0;
+        const warm = firsts.filter(warmOf), cold = firsts.filter((r) => !warmOf(r));
         const avg = (f: (u: Usage) => number) => Math.round(mean(rs.map((r) => f(r.usage!))));
-        const coldUsd = mean(cold.map((r) => r.usd!)), warmUsd = mean(warm.map((r) => r.usd!));
+        const coldUsd = mean(cold.map((r) => r.usd!)) + repairUsd, warmUsd = mean(warm.map((r) => r.usd!)) + repairUsd;
         // a job with no warm call (nothing to read) costs its cold price warm too, and the other way round
         perCall[arm]![job] = { cold: Number.isFinite(coldUsd) ? coldUsd : warmUsd, warm: Number.isFinite(warmUsd) ? warmUsd : coldUsd };
         const lat = (xs: Row[]) => median(xs.map((r) => r.firstMs ?? r.ms));
@@ -415,7 +423,8 @@ describe.skipIf(process.env.TERNO_CACHE_REPORT !== "1")("plan 291: the report", 
         let total = 0;
         for (const job of JOBS) {
           // a third of the questions are planned twice; one dated read in six gets a second look
-          const calls = job === "askPlan" ? Math.round((p.day.ask ?? 0) * (4 / 3)) : job === "dated" ? Math.round((p.day.dated ?? 0) * (7 / 6)) : p.day[job] ?? 0;
+          // as the day sends them: every third question planned twice, every sixth dated read looked at again, two intent reads a draft
+          const calls = job === "askPlan" ? (p.day.ask ?? 0) + Math.floor((p.day.ask ?? 0) / 3) : job === "dated" ? (p.day.dated ?? 0) + Math.floor((p.day.dated ?? 0) / 6) : job === "intent" ? 2 * (p.day.writing ?? 0) : p.day[job] ?? 0;
           const c = perCall[arm]![job];
           if (!calls || !c) continue;
           const share = warmShare(p, job, TTL_MS[providerOf(arm, job)]);
