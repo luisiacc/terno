@@ -21,7 +21,9 @@ const SHOWN = 2;
  * round 7), shown while the item is hovered or has the keyboard (one of its rows highlighted), or Later's submenu is open.
  */
 const ACTION_ITEM = "h-6 w-auto gap-1 px-1.5 text-xs text-foreground-soft data-highlighted:text-foreground";
-const ON_HOVER = "opacity-0 transition-opacity duration-fast ease-motion group-hover/card-row:opacity-100 group-has-[[data-highlighted]]/card-row:opacity-100 has-[[data-popup-open]]:opacity-100";
+// the keyboard on a row is its focus (the menu moves focus with its highlight): never `:has([data-highlighted])`, a
+// selector every highlight in every menu re-matches (2,000 drafts' ArrowDown went from under 33 ms to 85, perf.spec)
+const ON_HOVER = "opacity-0 transition-opacity duration-fast ease-motion group-hover/card-row:opacity-100 group-focus-within/card-row:opacity-100 has-[[data-popup-open]]:opacity-100";
 
 /**
  * Plan 281 (proposal A): the person card, in the head of a chip's menu: what's open between you (each item opens its
