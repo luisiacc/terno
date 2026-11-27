@@ -1,4 +1,4 @@
-import { isValidEmail } from "./address";
+import { mailtoLink } from "./mailto";
 
 /**
  * Plan 96: how a sender says to stop their mail, from List-Unsubscribe (RFC 2369) and
@@ -44,29 +44,10 @@ export function parseListUnsubscribe(header: string | null | undefined, post: st
   return out.mailto || out.url ? out : null;
 }
 
-/** A mailto URI's one address, subject and body (RFC 6068), or null when it isn't one address. */
+/** A mailto URI's one address, subject and body (RFC 6068), or null when it isn't one address; plan 96's defaults for what it leaves out. */
 export function mailtoParts(uri: string): { to: string; subject: string; body: string } | null {
-  const m = /^mailto:([^?]*)(?:\?(.*))?$/i.exec(uri.trim());
-  if (!m) return null;
-  let to: string;
-  const params = new Map<string, string>();
-  try {
-    to = decodeURIComponent(m[1]!).trim();
-    for (const pair of (m[2] ?? "").split("&")) {
-      const eq = pair.indexOf("=");
-      if (eq <= 0) continue;
-      const key = decodeURIComponent(pair.slice(0, eq)).toLowerCase();
-      // RFC 6068: a "+" is a plus (tokens use it); a space comes as %20
-      if (!params.has(key)) params.set(key, decodeURIComponent(pair.slice(eq + 1)));
-    }
-  } catch {
-    return null;
-  }
-  // one recipient, no extra headers smuggled in the address part
-  if (!to || /[,;\s]/.test(to) || !isValidEmail(to)) return null;
-  // only these three fields: cc, bcc and headers a URI may carry are never used
-  const subject = (params.get("subject") ?? "").replace(/[\r\n]+/g, " ").trim().slice(0, 998);
-  return { to, subject: subject || "unsubscribe", body: (params.get("body") ?? "").slice(0, 10_000) || "unsubscribe" };
+  const m = mailtoLink(uri);
+  return m && { to: m.to, subject: m.subject || "unsubscribe", body: m.body || "unsubscribe" };
 }
 
 /** What a link to stop the mail says, in English and Spanish (accents and case folded). */

@@ -5,18 +5,23 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { Button } from "@terno/ui/components/button";
 import { cn } from "@terno/ui/lib/utils";
 import { t } from "@terno/i18n";
-import { Code, Copy, Download, Ellipsis, FileDown, Forward, Printer, Reply, ReplyAll } from "@terno/ui/icons";
-import { messageParts } from "@terno/core";
+import { Code, Copy, Download, Ellipsis, ExternalLink, FileDown, Forward, Printer, Reply, ReplyAll, Search, SquarePen } from "@terno/ui/icons";
+import { formatAddressList, messageParts } from "@terno/core";
 import { useMemo, useRef, useState, type MouseEvent, type ReactElement } from "react";
 import { composeLanding, type ComposeLanding } from "~/lib/compose";
 import { identitiesIn, reachesSeveral } from "~/lib/compose-fields";
 import { copyThreadText } from "~/lib/copy-thread";
+import { linkAt, type MenuLink } from "~/lib/menu-link";
+import { menuOrigin } from "~/lib/menu-origin";
+import { openLink } from "~/lib/open-link";
+import { searchConversationsWith } from "~/lib/people";
 import { openPrint, wantsNativeMenu, type PrintIntent } from "~/lib/print-open";
 import { snack } from "~/lib/snack";
 import { setApp, useApp } from "~/state/app";
 import { useThread } from "~/state/threads";
 import { messagePerson, type ThreadPerson } from "~/lib/thread-overview";
 import { PersonItems, type PersonParts } from "./person-menu";
+import { copyAddress } from "./sender-menu-items";
 import { saveFile } from "./attachments";
 import { formatBytes } from "~/lib/format";
 import { originalBack, useOriginalOpener } from "./original-message";
@@ -136,6 +141,54 @@ function MessageItems({ threadId, messageId, respond, compose, showOriginal, par
   );
 }
 
+/** Plan 284: a link's address on the clipboard, said as Copy address says it */
+function copyLink(href: string): void {
+  void navigator.clipboard.writeText(href).then(
+    () => snack(t("threadMenu.linkCopied"), { duration: 2000 }),
+    () => snack.error(t("threadMenu.copyFailed")),
+  );
+}
+
+/**
+ * Plan 284: a right-click on a link is about the link, not the message it's in: an address to write to, look up or copy;
+ * a page to open or copy. The message's own items are a right-click beside it, or its ⋯.
+ */
+function LinkItems({ threadId, link, compose }: { threadId: number; link: MenuLink; compose: (open: () => Promise<ComposeLanding>) => void }) {
+  const accountId = useThread(threadId)?.thread.accountId;
+  if (link.kind === "web") {
+    return (
+      <>
+        <ContextMenuItem data-testid="link-menu-open" onClick={() => openLink(link.href)}>
+          <ExternalLink />
+          <span className="flex-1">{t("compose.link.open")}</span>
+        </ContextMenuItem>
+        <ContextMenuItem data-testid="link-menu-copy-link" onClick={() => copyLink(link.href)}>
+          <Copy />
+          <span className="flex-1">{t("threadMenu.copyLink")}</span>
+        </ContextMenuItem>
+      </>
+    );
+  }
+  // (from the conversation's account, as a person's New message is; with the subject the link gives)
+  const prefill = () => ({ toText: formatAddressList([{ name: "", email: link.to }]), ...(link.subject ? { subject: link.subject } : {}) });
+  return (
+    <>
+      <ContextMenuItem data-testid="link-menu-new-message" onClick={() => compose(() => composeLanding("new", null, 0, prefill, accountId))}>
+        <SquarePen />
+        <span className="min-w-0 flex-1 truncate">{t("people.newMessage", { name: link.to })}</span>
+      </ContextMenuItem>
+      <ContextMenuItem data-testid="link-menu-conversations" onClick={() => searchConversationsWith(link.to)}>
+        <Search />
+        <span className="min-w-0 flex-1 truncate">{t("people.conversations", { name: link.to })}</span>
+      </ContextMenuItem>
+      <ContextMenuItem data-testid="link-menu-copy-address" onClick={() => copyAddress(link.to)}>
+        <Copy />
+        <span className="flex-1">{t("threadMenu.copyAddress")}</span>
+      </ContextMenuItem>
+    </>
+  );
+}
+
 const CONTEXT_PARTS: PersonParts = { Item: ContextMenuItem, Separator: ContextMenuSeparator, Sub: ContextMenuSub, SubTrigger: ContextMenuSubTrigger, SubContent: ContextMenuSubContent, RadioGroup: ContextMenuRadioGroup, RadioItem: ContextMenuRadioItem };
 const DROPDOWN_PARTS: PersonParts = { Item: DropdownMenuItem, Separator: DropdownMenuSeparator, Sub: DropdownMenuSub, SubTrigger: DropdownMenuSubTrigger, SubContent: DropdownMenuSubContent, RadioGroup: DropdownMenuRadioGroup, RadioItem: DropdownMenuRadioItem };
 
@@ -218,11 +271,12 @@ export function MessageActions({ threadId, messageId, label, className }: { thre
  * The conversation's menu: answer, print or export the message the right-click landed in (HTML mail replays its
  * frame's right-click here), and copy the conversation as text (plan 149); off a message, the header or the
  * background, only the copy. One menu around the conversation, no per-message trigger. Selected text adds Copy: the
- * desktop app has no native menu to offer it.
+ * desktop app has no native menu to offer it. On a link, the link's own items instead of the message's (plan 284).
  */
 export function MessageMenu({ threadId, children }: { threadId: number; children: ReactElement }) {
   const [messageId, setMessageId] = useState<number | null>(null);
   const [selected, setSelected] = useState("");
+  const [link, setLink] = useState<MenuLink | null>(null);
   const { respond, compose, opened, showOriginal, finalFocus } = useRespond(threadId, messageId, () => document.querySelector<HTMLElement>(`[aria-controls="msg-body-${messageId}"]`));
   return (
     <ContextMenu onOpenChange={opened}>
@@ -234,17 +288,20 @@ export function MessageMenu({ threadId, children }: { threadId: number; children
           const target = e.target as Element;
           // a right-click replayed from an HTML mail lands on its frame: the selection is the frame's
           const text = (e.target instanceof HTMLIFrameElement ? e.target.contentDocument : document)?.getSelection()?.toString() ?? "";
-          // React bubbles through portals: the full-message view's own controls land here from outside this trigger
-          if (!e.currentTarget.contains(target) || wantsNativeMenu(target, text)) {
+          // React bubbles through portals: the full-message view's own controls land here from outside this trigger. One the
+          // app replays (a mail's frame, ⇧F10) has no browser menu behind it: it was decided where it began
+          if (!e.currentTarget.contains(target) || (e.nativeEvent.isTrusted && wantsNativeMenu(target, text))) {
             (e as unknown as { preventBaseUIHandler(): void }).preventBaseUIHandler();
             return;
           }
           const el = target.closest<HTMLElement>("[data-message-id]");
           setMessageId(el ? Number(el.dataset.messageId) : null);
           setSelected(text.trim() ? text : "");
+          setLink(linkAt(menuOrigin(e.nativeEvent)));
         }}
       />
-      <ContextMenuContent className="w-60" data-testid="message-menu" finalFocus={finalFocus}>
+      {/* an address is long: the menu grows for it, to a point */}
+      <ContextMenuContent className={link?.kind === "mail" ? "w-max max-w-[min(24rem,var(--available-width))] min-w-60" : "w-60"} data-testid="message-menu" finalFocus={finalFocus}>
         {selected && (
           <>
             <ContextMenuItem data-testid="message-menu-copy" onClick={() => void navigator.clipboard.writeText(selected).catch(() => snack.error(t("threadMenu.copyFailed")))}>
@@ -255,8 +312,12 @@ export function MessageMenu({ threadId, children }: { threadId: number; children
             <ContextMenuSeparator />
           </>
         )}
-        {/* the message's ⋯ is where focus goes back to (its header while it's folded) */}
-        <MessageItems threadId={threadId} messageId={messageId} respond={respond} compose={compose} showOriginal={showOriginal(() => document.querySelector<HTMLElement>(`[data-message-id="${messageId}"] [data-testid="message-more"]`) ?? document.querySelector<HTMLElement>(`[aria-controls="msg-body-${messageId}"]`))} parts={CONTEXT_PARTS} />
+        {link ? (
+          <LinkItems threadId={threadId} link={link} compose={compose} />
+        ) : (
+          // the message's ⋯ is where focus goes back to (its header while it's folded)
+          <MessageItems threadId={threadId} messageId={messageId} respond={respond} compose={compose} showOriginal={showOriginal(() => document.querySelector<HTMLElement>(`[data-message-id="${messageId}"] [data-testid="message-more"]`) ?? document.querySelector<HTMLElement>(`[aria-controls="msg-body-${messageId}"]`))} parts={CONTEXT_PARTS} />
+        )}
       </ContextMenuContent>
     </ContextMenu>
   );

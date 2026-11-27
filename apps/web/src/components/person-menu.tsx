@@ -7,7 +7,7 @@ import { useEffect, useRef, useState, type ComponentType, type ReactNode } from 
 import { composeLanding, type ComposeLanding } from "~/lib/compose";
 import type { ThreadPerson } from "~/lib/thread-overview";
 import { aiFeaturesOffered } from "~/lib/ai";
-import { cardOf, cardWithin, openInPeople, prefetchCard } from "~/lib/people";
+import { cardOf, cardWithin, openInPeople, prefetchCard, searchConversationsWith } from "~/lib/people";
 import { setApp, useApp } from "~/state/app";
 import { PersonCardHead } from "./people/person-card";
 import { SenderAvatar } from "./sender-avatar";
@@ -47,7 +47,7 @@ export function PersonItems({ person, detail, offerReplyOnly, compose, parts }: 
       )}
       <Separator />
       {/* plan 140: an address is mail they sent or were sent, everywhere (plan 64) */}
-      <Item data-testid="person-conversations" onClick={() => setApp({ query: person.email, view: "all", categoryId: null, reviewCategoryId: null, checked: new Set(), scope: null })}>
+      <Item data-testid="person-conversations" onClick={() => searchConversationsWith(person.email)}>
         <Search />
         <span className="min-w-0 flex-1 truncate">{t("people.conversations", { name: person.short })}</span>
       </Item>

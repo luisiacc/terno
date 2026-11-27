@@ -100,6 +100,7 @@ import { changeOfTask, openChange } from "~/lib/change";
 import { actOnTodayRow, openTodayLater } from "~/lib/today-task";
 import { handTo, othersOfTask, seenOfTask } from "~/lib/hand-to";
 import { fitWholeRows } from "@terno/ui/lib/whole-rows";
+import { replayMenu } from "~/lib/menu-origin";
 
 /** What the open menu acts on: explicit threads, or a "select all N" scope. Set at right-click; rows never read it. */
 interface MenuTarget {
@@ -138,10 +139,19 @@ export function menuAnchor(selectedId: number | null, checked: ReadonlySet<numbe
 
 /**
  * Plan 106: ⇧F10 / the ContextMenu key on a row with a menu of its own (a sidebar account or category, marked
- * `data-context-menu`) opens that one, as a right-click at the row's start would. False: none has focus.
+ * `data-context-menu`) opens that one, as a right-click at the row's start would. Plan 284: a link focused in a mail's
+ * frame opens the conversation's menu with the link's items, replayed as the frame replays a right-click. False: none has
+ * focus.
  */
 export function openFocusedMenu(): boolean {
   const el = document.activeElement;
+  if (el instanceof HTMLIFrameElement && el.matches("[data-mail]")) {
+    const link = el.contentDocument?.activeElement?.closest("a[href]");
+    if (!link) return false;
+    const frame = el.getBoundingClientRect(), r = link.getBoundingClientRect();
+    replayMenu(el, link, Math.round(frame.left + r.left + Math.min(24, r.width / 2)), Math.round(frame.top + r.top + r.height / 2));
+    return true;
+  }
   if (!(el instanceof HTMLElement) || !el.closest("[data-context-menu]")) return false;
   const r = el.getBoundingClientRect();
   el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: Math.round(r.left + 24), clientY: Math.round(r.top + r.height / 2), button: 2 }));

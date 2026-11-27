@@ -6,6 +6,7 @@
  */
 import { chordOf } from "@terno/core";
 import { isMac } from "~/lib/select";
+import { linkAt } from "~/lib/menu-link";
 import { getApp, setApp } from "~/state/app";
 
 export type PrintIntent = "print" | "pdf";
@@ -56,10 +57,12 @@ export function forwardPrintKey(e: KeyboardEvent): void {
 
 /**
  * A right-click in a message opens its menu (Imprimir este mensaje…). On the
- * web the browser's own menu stays for selected text, links and images (copy,
- * open); the desktop app has no other menu there.
+ * web the browser's own menu stays for selected text, web links and images
+ * (copy, open); an address's link takes ours, which writes to it (plan 284).
+ * The desktop app has no other menu there.
  */
 export function wantsNativeMenu(target: EventTarget | null, selection: string): boolean {
   if (window.ternoDesktop) return false;
-  return selection.trim() !== "" || Boolean((target as Element | null)?.closest?.("a[href], img, input, textarea, [contenteditable=true]"));
+  const on = (target as Element | null)?.closest?.("a[href], img, input, textarea, [contenteditable=true]");
+  return selection.trim() !== "" || Boolean(on && !(on.matches("a[href]") && linkAt(on)?.kind === "mail"));
 }

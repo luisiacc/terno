@@ -23,6 +23,7 @@ import { FRAME_MAX_HEIGHT, htmlHolds, MAIL_INTERACTION, markDocument, markTextPa
 import { Marked } from "./match-mark";
 
 import { openLink } from "~/lib/open-link";
+import { replayMenu } from "~/lib/menu-origin";
 export { openLink };
 
 const MAX_HEIGHT = FRAME_MAX_HEIGHT;
@@ -246,12 +247,13 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
             openLink(a.href);
           }
         };
-        // a right-click inside the mail doesn't leave its frame: replayed on the frame, where the message's menu listens
+        // a right-click inside the mail doesn't leave its frame: replayed on the frame, where the message's menu listens (with
+        // what it was on: a link has its own items, plan 284)
         const onMenu = (e: MouseEvent) => {
           if (wantsNativeMenu(e.target, d.getSelection()?.toString() ?? "")) return;
           e.preventDefault();
           const r = frame.getBoundingClientRect();
-          frame.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + e.clientX, clientY: r.top + e.clientY, button: 2 }));
+          replayMenu(frame, e.target as Element, r.left + e.clientX, r.top + e.clientY);
         };
         d.addEventListener("click", onClick);
         d.addEventListener("contextmenu", onMenu);
@@ -263,6 +265,11 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
           } else if (event.key === "F6" && !event.metaKey && !event.ctrlKey && !event.altKey) {
             // plan 188 (Codex review): F6 between the panes with focus in the mail too; the frame keeps it if nothing moved
             const forwarded = new KeyboardEvent("keydown", { key: "F6", shiftKey: event.shiftKey, bubbles: true, cancelable: true });
+            document.dispatchEvent(forwarded);
+            if (forwarded.defaultPrevented) event.preventDefault();
+          } else if ((event.key === "F10" && event.shiftKey || event.key === "ContextMenu") && !event.metaKey && !event.ctrlKey && !event.altKey) {
+            // plan 284: the menu key on a link in the mail opens the conversation's menu with the link's items (openFocusedMenu)
+            const forwarded = new KeyboardEvent("keydown", { key: event.key, shiftKey: event.shiftKey, bubbles: true, cancelable: true });
             document.dispatchEvent(forwarded);
             if (forwarded.defaultPrevented) event.preventDefault();
           } else if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "g") {
@@ -415,7 +422,8 @@ export function TextBody({ text, marks }: { text: string; /** plan 158: a search
   const render = (list: readonly { text: string; parts: ReturnType<typeof markTextParts>[number] | undefined }[]) =>
     list.map(({ text: part, parts }, i) =>
       i % 2 ? (
-        <a key={i} href={part} className="text-primary underline-offset-2 hover:underline" onClick={(e) => (e.preventDefault(), openLink(part))}>
+        // ⇧F10 on it opens the conversation's menu with the link's items, as a right-click does (plan 284)
+        <a key={i} href={part} data-context-menu className="text-primary underline-offset-2 hover:underline" onClick={(e) => (e.preventDefault(), openLink(part))}>
           <Marked text={part} needles={marks} parts={parts ?? null} testId="reader-match" body />
         </a>
       ) : (

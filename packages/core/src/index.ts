@@ -47,6 +47,7 @@ export * from "./codes";
 export * from "./capture-repair";
 export * from "./tabs";
 export * from "./snippets";
+export * from "./mailto";
 export * from "./unsubscribe";
 export * from "./forwarding";
 export * from "./date-styles";

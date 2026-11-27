@@ -502,6 +502,11 @@ export function movePerson(delta: number): void {
   peopleList.toKey?.(row.key, onRow !== undefined);
 }
 
+/** Plan 140: an address's conversations, mail they sent or were sent, everywhere (plan 64): "Conversations with …" */
+export function searchConversationsWith(email: string): void {
+  setApp({ query: email, view: "all", categoryId: null, reviewCategoryId: null, checked: new Set(), scope: null });
+}
+
 /** Opens People on someone (the person menu's "Open in People"): the view, then their page; Esc there comes back. */
 export function openInPeople(email: string): void {
   const s = getApp();

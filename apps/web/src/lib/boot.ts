@@ -88,12 +88,12 @@ export async function boot(): Promise<void> {
       loadedIds: () => useList.getState().items.map((t) => t.id),
       // the reader specs wait on what the cache holds (a refetch that changes nothing on screen)
       threadDetail: (id: number) => useThreads.getState().details.get(id),
-      // plan 180: who a draft goes to and what it answers
+      // plan 180: who a draft goes to and what it answers; plan 284: what it's about and whose account it's from
       draft: (threadId?: number) => {
         const s = getApp();
         const key = threadId === undefined ? s.compose?.key : shownDraftKey(useDrafts.getState().drafts, threadId, s.draftShown);
         const d = key ? useDrafts.getState().drafts[key] : undefined;
-        return d && { toText: d.toText, ccText: d.ccText, bccText: d.bccText, inReplyToMessageId: d.inReplyToMessageId, mode: d.mode };
+        return d && { toText: d.toText, ccText: d.ccText, bccText: d.bccText, inReplyToMessageId: d.inReplyToMessageId, mode: d.mode, subject: d.subject, accountId: d.accountId };
       },
       updatesBridge: setBridgeForTests,
       mailboxBridge: setMailboxBridgeForTests,

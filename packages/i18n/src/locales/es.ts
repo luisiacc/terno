@@ -1408,6 +1408,8 @@ const es = {
   "threadMenu.fileAll": "Clasificar todo su correo",
   "threadMenu.copyAddress": "Copiar dirección",
   "threadMenu.copied": "Copiado: {email}",
+  "threadMenu.copyLink": "Copiar enlace",
+  "threadMenu.linkCopied": "Enlace copiado",
   "threadMenu.copyFailed": "No se pudo copiar",
   "threadMenu.copyText": "Copiar conversación como texto",
   "threadText.subject": "Asunto",

@@ -1424,6 +1424,8 @@ const en = {
   "threadMenu.fileAll": "File all their mail",
   "threadMenu.copyAddress": "Copy address",
   "threadMenu.copied": "Copied: {email}",
+  "threadMenu.copyLink": "Copy link",
+  "threadMenu.linkCopied": "Copied link",
   "threadMenu.copyFailed": "Couldn’t copy",
   "threadMenu.copyText": "Copy conversation as text",
   "threadText.subject": "Subject",
