@@ -653,30 +653,17 @@ export class ContactIndex {
   /** Room for `pairs` pairs at the pool's end (packed first when half of it is garbage, else grown); counted as live. */
   private poolAlloc(pairs: number): number {
     const want = 2 * pairs;
+    // grown in steps of an eighth (never doubled: unused room counts against the index's cap), every pair where it was,
+    // so adding a message never walks the contacts; the garbage is packed away by compaction, in slices
     if (this.poolUsed + want > this.pool.length) {
-      const garbage = this.poolUsed - this.poolLive;
-      this.packPool(garbage >= this.poolUsed / 2 && this.poolLive + want <= this.pool.length ? this.pool.length : Math.max(POOL_START, this.pool.length * 2, this.poolLive + want));
+      const next = new Float64Array(Math.max(this.poolUsed + want, this.pool.length + Math.max(POOL_START, this.pool.length >> 3)));
+      next.set(this.pool.subarray(0, this.poolUsed));
+      this.pool = next;
     }
     const at = this.poolUsed;
     this.poolUsed += want;
     this.poolLive += want;
     return at;
-  }
-
-  /** The live contacts' pairs, one after another, in a pool of `capacity` doubles (the garbage left behind). */
-  private packPool(capacity: number): void {
-    const next = new Float64Array(capacity);
-    let used = 0;
-    for (let id = 0; id < this.n; id++) {
-      const k = this.lastN[id]!;
-      if (!k) continue;
-      const at = this.lastAt[id]! - 1;
-      next.set(this.pool.subarray(at, at + 2 * k), used);
-      this.lastAt[id] = used + 1;
-      used += 2 * k;
-    }
-    this.pool = next;
-    this.poolUsed = this.poolLive = used;
   }
 
   /** Plan 287: a contact evicted: its per-account dates are garbage at once (packed away with the rest). */
@@ -1515,6 +1502,21 @@ export class ContactIndex {
       }
       await clock.tick();
     }
+    // plan 287: the live contacts' per-account dates, packed one after another at their new ids, before the swap
+    const outAt = arrays.lastAt as Uint32Array;
+    const pool = new Float64Array(Math.max(POOL_START, this.poolLive));
+    let pooled = 0;
+    for (let id = 0; id < n; id++) {
+      const to = remap[id]!;
+      const k = this.lastN[id]!;
+      if (to >= 0 && k) {
+        const at = this.lastAt[id]! - 1;
+        for (let j = 0; j < 2 * k; j++) pool[pooled + j] = this.pool[at + j]!;
+        outAt[to] = pooled + 1;
+        pooled += 2 * k;
+      }
+      if ((id & 16383) === 0) await clock.tick();
+    }
     const emails: string[] = Array.from({ length: live }, () => "");
     const names: string[] = Array.from({ length: live }, () => "");
     const alts = new Map<number, AltName[]>();
@@ -1548,8 +1550,9 @@ export class ContactIndex {
     this.byEmail = byEmail;
     this.n = live;
     this.live = live;
-    // (lastAt and lastN moved with their contacts: the pool, packed to what's live)
-    this.packPool(Math.max(POOL_START, this.poolLive));
+    // (lastAt and lastN moved with their contacts, the pool packed above)
+    this.pool = pool;
+    this.poolUsed = this.poolLive = pooled;
     this.stringsHeld = 0;
     for (let id = 0; id < live; id++) this.stringsHeld += stringBytes(emails[id]!) + stringBytes(names[id]!);
     for (const a of alts.values()) for (const x of a) this.stringsHeld += stringBytes(x.name) + MAP_ENTRY / 2;
@@ -1735,7 +1738,8 @@ export class ContactIndex {
         }
         if (bits !== accounts[id]) return false;
       }
-      for (let id = 0; id < n; id++) if (sentIn[id]! & ~accounts[id]!) return false;
+      // and every contact in two accounts or more has its dates (else its accounts would read its overall last date)
+      for (let id = 0; id < n; id++) if (sentIn[id]! & ~accounts[id]! || (accounts[id]! & (accounts[id]! - 1) && !owners.has(id))) return false;
       // valid: replace everything
       this.n = n;
       this.live = n;

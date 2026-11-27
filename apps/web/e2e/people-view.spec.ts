@@ -463,6 +463,22 @@ test.describe("People's filter and People in a focused account (plan 287)", () =
       await expect(page.getByTestId("people-filter-chips")).toHaveCount(0);
     });
 
+    await scenario("People of every account is where it was left after a focused account's People (Codex review 2)", async () => {
+      // (nobody chosen: a chosen person's row would be brought into view)
+      await fresh(page);
+      await page.getByTestId("nav-people").click();
+      await expect(row(page, ana.name).first()).toBeVisible();
+      await page.getByTestId("people-rows").evaluate((el) => (el.scrollTop = 900));
+      await page.getByTestId(`nav-account-${work.id}`).click({ button: "right" });
+      await page.getByTestId("account-menu-focus").click();
+      await page.getByTestId(`nav-solo-people-${work.id}`).click();
+      await expect(row(page, bob.name).first()).toBeVisible();
+      await page.getByTestId("solo-back").click();
+      await page.getByTestId("nav-people").click();
+      await expect(row(page, ana.name).first()).toBeAttached();
+      await expect.poll(() => page.getByTestId("people-rows").evaluate((el) => el.scrollTop)).toBe(900);
+    });
+
     await scenario("focused on an account: People right below its Inbox, that account's people only, no accounts to choose", async () => {
       await page.getByTestId(`nav-account-${work.id}`).click({ button: "right" });
       await page.getByTestId("account-menu-focus").click();
@@ -495,6 +511,7 @@ test.describe("People's filter and People in a focused account (plan 287)", () =
       await page.getByTestId("solo-back").click();
       await expect(page.getByTestId("solo-back")).toHaveCount(0);
       await expect(page.getByTestId("people")).toHaveCount(0);
+
     });
   });
 });

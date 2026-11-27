@@ -70,7 +70,9 @@ function currentScope(): { filter: PeopleFilter; key: string; gen: number } {
     // nothing of another scope stays on screen to be read or acted on (Codex code review): its list and hits (a search's
     // rows would join one scope's open items to the other's hits), the page (its New message and items are of other
     // accounts) and the rows' dates; the person stays chosen, their page read again
-    usePeople.setState((s) => ({ held: null, list: null, hits: null, failed: false, page: null, pageFailed: null, lastEmails: new Map(), lastRev: s.lastRev + 1 }));
+    // (the person's address as seen goes on, as the page being read: a +tag is another address to the search, Codex review)
+    const at = pageAddress();
+    usePeople.setState((s) => ({ held: null, list: null, hits: null, failed: false, searchFailed: false, page: null, pageFailed: null, reading: at, lastEmails: new Map(), lastRev: s.lastRev + 1 }));
   }
   return { filter, key, gen: scope.gen };
 }
@@ -146,7 +148,7 @@ export function searchPeople(query: string): void {
   const { filter } = currentScope();
   const mine = ++searchSeq;
   if (enterWhenIn?.query !== query) enterWhenIn = null;
-  usePeople.setState({ query, ...(query.trim() ? {} : { hits: null }) });
+  usePeople.setState({ query, searchFailed: false, ...(query.trim() ? {} : { hits: null }) });
   if (!query.trim()) return void (hitsFor = "");
   client.call("people.search", { query, filter }).then(
     (hits) => {
@@ -161,7 +163,11 @@ export function searchPeople(query: string): void {
       enterWhenIn = null;
       if (asked.inputs === inputs && getApp().people) openFirst();
     },
-    () => {},
+    // a failed one keeps the last hits; with none to keep (a new filter took them), it says so, with Retry (plan 287)
+    (e: unknown) => {
+      if (mine !== searchSeq || (e as { code?: string } | null)?.code === "CANCELLED") return;
+      if (!usePeople.getState().hits) usePeople.setState({ searchFailed: true });
+    },
   );
 }
 
@@ -751,6 +757,16 @@ function reread(): void {
   });
 }
 
+/** Plan 287: the stored filter without the accounts that are gone. */
+function pruneFilter(accounts: readonly { id: number }[]): void {
+  const { filter } = usePeople.getState();
+  const kept = filter.accounts.filter((id) => accounts.some((a) => a.id === id));
+  if (kept.length === filter.accounts.length) return;
+  const next = { ...filter, accounts: kept };
+  usePeople.setState({ filter: next });
+  savePeopleFilter(next);
+}
+
 /** At boot: People reads again when What matters or mail changes, only while it shows; the cards are read again when asked. */
 export function installPeople(): void {
   // (before any handler: the key that asks for a move is counted before it asks)
@@ -773,17 +789,11 @@ export function installPeople(): void {
     if (getApp().people) reread();
   });
   // plan 287: the scope moved under an open People (the focus ended and People stayed, an account came or went); an account
-  // gone leaves the filter as it's remembered too (else it would still say "in your filter" with nothing chosen)
+  // gone leaves the filter as it's remembered too (else it would still say "in your filter" with nothing chosen), checked
+  // against the accounts the app has once it's ready (they may have gone while this window was closed)
+  if (getApp().ready) pruneFilter(getApp().accounts);
   useApp.subscribe((s, prev) => {
-    if (s.accounts !== prev.accounts && s.accounts.length) {
-      const { filter } = usePeople.getState();
-      const kept = filter.accounts.filter((id) => s.accounts.some((a) => a.id === id));
-      if (kept.length !== filter.accounts.length) {
-        const next = { ...filter, accounts: kept };
-        usePeople.setState({ filter: next });
-        savePeopleFilter(next);
-      }
-    }
+    if (s.ready && (s.accounts !== prev.accounts || !prev.ready)) pruneFilter(s.accounts);
     if (s.people && (s.accounts !== prev.accounts || s.soloAccountId !== prev.soloAccountId || s.accountId !== prev.accountId) && prev.people && JSON.stringify(peopleFilter()) !== scope.key) refreshPeople();
   });
   // AI features no longer offered: People goes (its row too), back to the Inbox; the cards read go with it

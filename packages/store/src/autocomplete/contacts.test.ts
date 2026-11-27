@@ -546,15 +546,21 @@ describe("People's filter (plan 287)", () => {
     expect(k.perAccountDates().contacts).toBeLessThan(before);
   });
 
-  it("the shared pool: a contact gaining accounts moves its dates, garbage is packed away, every date stays right", async () => {
+  it("the shared pool: a contact gaining accounts moves its dates, the pool grows in steps, a restore holds only what's live", async () => {
     // many contacts each seen in turn in up to 5 accounts: their pairs move (and the pool packs) many times
     const k = await built([]);
     const who = Array.from({ length: 400 }, (_, i) => ({ name: `P ${i}`, email: `p${i}@x.io` }));
     for (let a = 1; a <= 5; a++) for (const [i, p] of who.entries()) k.add(sent([p], { accountId: a, date: NOW - (a * 1000 + i) * 60_000 }));
     for (const [i, p] of who.entries()) for (let a = 1; a <= 5; a++) expect(k.lastWith(p.email, [a])).toBe(NOW - (a * 1000 + i) * 60_000);
     expect(k.perAccountDates().contacts).toBe(400);
-    // 400 contacts × 5 pairs × 16 bytes live: the pool holds no more than about twice that
-    expect(k.perAccountDates().bytes).toBeLessThanOrEqual(2 * 400 * 5 * 16 + 4096 * 8);
+    // the moves' garbage stays until compaction or a restore (never a walk of every contact while a message is added)
+    const live = 400 * 5 * 16;
+    expect(k.perAccountDates().bytes).toBeLessThanOrEqual(4 * live);
+    k.revision = { epoch: "e", seq: 1 };
+    const r = new ContactIndex({ now: () => NOW });
+    expect(await r.restore(await k.snapshot("test", clock()), "test", clock())).toBe(true);
+    expect(r.perAccountDates().bytes).toBe(live);
+    for (const [i, p] of who.entries()) expect(r.lastWith(p.email, [3])).toBe(NOW - (3000 + i) * 60_000);
   });
 
   it("a snapshot whose per-account dates don't agree with its accounts is refused (Codex code review)", async () => {
@@ -575,6 +581,10 @@ describe("People's filter (plan 287)", () => {
     const short = await make();
     short.inside.pool[short.at + 2] = 5;
     await refused(short.c);
+    // a contact in two accounts without its dates at all
+    const dropped = await make();
+    dropped.inside.lastN[dropped.id] = 0;
+    await refused(dropped.c);
     // written to from an account never seen there
     const stranger = await make();
     stranger.inside.sentIn[stranger.id] = 0b100;

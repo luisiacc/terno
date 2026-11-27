@@ -9,7 +9,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { LIST_TITLE } from "~/lib/list-title";
 import { listDate } from "~/lib/format";
-import { askLastEmails, enterPerson, enterSearch, inputCount, listInScope, loadPeople, morphName, peopleList, peopleSolo, refreshPeople, searchPeople, selectPerson } from "~/lib/people";
+import { askLastEmails, enterPerson, enterSearch, inputCount, listInScope, morphName, peopleList, peopleSolo, refreshPeople, searchPeople, selectPerson } from "~/lib/people";
 import { renderProbe } from "~/lib/render-probe";
 import { installScrollHairline } from "~/lib/scroll-hairline";
 import { useAppearance } from "~/lib/appearance";
@@ -25,7 +25,7 @@ import { PeopleFilterButton, PeopleFilterChips, PeopleFilterEmpty } from "./peop
 import { PersonPage } from "./person-page";
 
 /** where the list was left, by place (a focused account's People apart, plan 287): coming back to People finds it there */
-const kept = new Map<number, number>();
+const kept = new Map<number, { scope: string; top: number }>();
 
 /**
  * Plan 281: People's list, in the list pane: its title, how many have something open, the search (names and addresses,
@@ -133,25 +133,29 @@ function PeopleList({ wide }: { wide: boolean }) {
   const firstDrawn = drawn.map((v) => rows[v.index]).find((r) => r?.kind === "person")?.id ?? null;
   const tabKey = preferredAt !== undefined && drawn.some((v) => v.index === preferredAt) ? preferred : (firstDrawn ?? preferred);
 
-  // coming back, where it was left (People of every account, or of a focused one); leaving, where that is
+  // coming back, where it was left (People of every account, or of a focused one), once its list in the same filter is
+  // drawn; another filter's list from its top (plan 287); leaving, where that is and in which filter
   const place = useApp((s) => peopleSolo(s) ?? 0);
+  const listScope = usePeople((s) => s.listScope);
+  const scopeNow = useRef(listScope);
+  scopeNow.current = listScope;
+  const applied = useRef<string | null>(null);
   useLayoutEffect(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTop = kept.get(place) ?? 0;
+    const at = `${place}\n${listScope}`;
+    if (!el || !listScope || applied.current === at) return;
+    applied.current = at;
+    const was = kept.get(place);
+    el.scrollTop = was?.scope === listScope ? was.top : 0;
+  }, [place, listScope]);
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
     return () => {
       kept.delete(place);
-      kept.set(place, el?.scrollTop ?? 0);
+      kept.set(place, { scope: scopeNow.current, top: el?.scrollTop ?? 0 });
       if (kept.size > 8) kept.delete(kept.keys().next().value!);
     };
   }, [place]);
-  // another filter's list starts at its top (plan 287): the one read in the scope before isn't this one
-  const listScope = usePeople((s) => s.listScope);
-  const scopeWas = useRef(listScope);
-  useLayoutEffect(() => {
-    const was = scopeWas.current;
-    scopeWas.current = listScope;
-    if (was && listScope && was !== listScope && scrollRef.current) scrollRef.current.scrollTop = 0;
-  }, [listScope]);
 
   useEffect(() => {
     const [root, sentinel, header] = [scrollRef.current, sentinelRef.current, headerRef.current];
@@ -159,6 +163,7 @@ function PeopleList({ wide }: { wide: boolean }) {
   }, []);
 
   const failed = usePeople((s) => s.failed);
+  const searchFailed = usePeople((s) => s.searchFailed);
   // the drawn rows with nothing open: their last email, as their pages say it (asked once per mail change)
   const lastEmails = usePeople((s) => s.lastEmails);
   const lastRev = usePeople((s) => s.lastRev);
@@ -274,10 +279,11 @@ function PeopleList({ wide }: { wide: boolean }) {
           })}
         </ul>
         {/* what the list says when it holds nobody, or not yet, or its read failed */}
-        {failed && state === null ? (
+        {(failed && state === null) || (searching && searchFailed && !hits) ? (
           <p data-testid="people-note" role="alert" className={cn("flex items-center gap-2 px-3 pt-3 text-sm text-muted-foreground", wide && WIDE)}>
             {t("people.listFailed")}
-            <Button variant="link-secondary" size="xs" data-testid="people-retry" className="px-0" onClick={() => void loadPeople()}>
+            {/* (everything People shows, the search typed too) */}
+            <Button variant="link-secondary" size="xs" data-testid="people-retry" className="px-0" onClick={refreshPeople}>
               {t("common.retry")}
             </Button>
           </p>

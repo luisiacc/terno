@@ -216,6 +216,41 @@ describe("after the Codex code review (plan 287)", () => {
     expect(getApp()).toMatchObject({ people: true, accountId: 2, soloAccountId: 2, reviewCategoryId: null });
   });
 
+  it("a new filter reads the chosen person's page by the address as it was seen, never the key's spelling (Codex review 2)", () => {
+    setApp({ accounts });
+    openPeople();
+    call.mockImplementation(() => new Promise(() => {}));
+    // (a scope first: the session's first one clears nothing)
+    setPeopleFilter({ within: "month", accounts: [] });
+    usePeople.setState({ page: { key: "ana@x.test", email: "ana+work@x.test", name: "Ana", items: [], conversations: [], more: false } });
+    setApp({ person: "ana@x.test" });
+    call.mockClear();
+    setPeopleFilter({ within: "week", accounts: [] });
+    expect(call).toHaveBeenCalledWith("people.person", { email: "ana+work@x.test", filter: { within: "week" } });
+    expect(usePeople.getState().reading).toEqual({ key: "ana@x.test", email: "ana+work@x.test" });
+  });
+
+  it("a search that fails with no hits of its own to keep says so (Retry reads it again); one that's superseded says nothing", async () => {
+    setApp({ accounts });
+    openPeople();
+    call.mockImplementation((method: string) => (method === "people.search" ? Promise.reject(Object.assign(new Error("offline"), { code: "UNAVAILABLE" })) : new Promise(() => {})));
+    setPeopleFilter({ within: "month", accounts: [] });
+    searchPeople("an");
+    await vi.waitFor(() => expect(usePeople.getState().searchFailed).toBe(true));
+    call.mockImplementation((method: string) => (method === "people.search" ? Promise.reject(Object.assign(new Error("newer"), { code: "CANCELLED" })) : new Promise(() => {})));
+    searchPeople("ana");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(usePeople.getState().searchFailed).toBe(false);
+  });
+
+  it("an account removed while the app was closed leaves the filter as the app starts", () => {
+    // (the app's accounts are in before People installs, as at boot)
+    setApp({ ready: true, accounts });
+    usePeople.setState({ filter: { within: null, accounts: [2, 9] } });
+    installPeople();
+    expect(usePeople.getState().filter.accounts).toEqual([2]);
+  });
+
   it("an account gone leaves the filter as it's remembered", () => {
     setApp({ accounts });
     usePeople.setState({ filter: { within: "week", accounts: [2, 3] } });

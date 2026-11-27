@@ -37,9 +37,11 @@ export interface PeopleState {
   filter: PeopleFilterChoice;
   /** plan 287: the scope (`peopleScopeKey`) `list` was read in: its empty line is said only for the scope asked now */
   listScope: string;
+  /** plan 287: the search failed with nothing of its own to show (a new filter took its hits): said, with Retry */
+  searchFailed: boolean;
 }
 
-export const usePeople = create<PeopleState>(() => ({ list: null, query: "", hits: null, page: null, reading: null, failed: false, pageFailed: null, held: null, lastEmails: new Map(), lastRev: 0, laterPick: null, filter: loadPeopleFilter(), listScope: "" }));
+export const usePeople = create<PeopleState>(() => ({ list: null, query: "", hits: null, page: null, reading: null, failed: false, pageFailed: null, held: null, lastEmails: new Map(), lastRev: 0, laterPick: null, filter: loadPeopleFilter(), listScope: "", searchFailed: false }));
 
 /** One row of People's list: a heading, or a person (with what's open, or what the index knows of them). */
 export type PeopleRow =

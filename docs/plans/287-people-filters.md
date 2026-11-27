@@ -170,3 +170,16 @@ Fifteen findings; fourteen fixed, each with a test that fails without its fix:
 - Unit: `contacts.test.ts` (44), `people.test.ts` backend (26), `parse.test.ts` (77), `people-view.test.ts`, `state/people.test.ts`, `state/people-filter.test.ts` (14), `account-focus.test.ts`, `review.test.ts`, `db/search.test.ts`. Each review fix's test was run against the code before its fix and failed. `action-preview.test.ts` fails to load on main as on this branch (`classList` of undefined at import), so the preview's way back is tested in `people-filter.test.ts`.
 - e2e: `people-view.spec.ts` (with the new plan 287 test), `account-focus.spec.ts`, `people.spec.ts`: all pass.
 - Perf (load 2–5): `contacts.perf.test.ts`'s plan 287 case passes (filtered Everyone cold ~5 ms, cached 0.4 µs, filtered search p95 ~5.6 ms, per-account dates under 8 MiB for 74k contacts in three accounts). Plan 281's search gate (2 ms) flips either way on main and on this branch (main 2.75 ms on a failing run, this branch 2.30 ms). `today.perf.test.ts`: What matters' earlier scenarios fail on this machine as they did for plan 281, so People's case was measured alone, on main and here: SQLite list p95 100.9 → 98.6 ms, longest busy 171 → 168 ms (over its 120 ms on both), page 2.1 → 2.4 ms, search 1.2 → 2.1 ms; IndexedDB list 38.8 → 38.3 ms, page 63.8 → 61.5 ms (over its 60 ms on both), search 1.6 → 1.7 ms.
+
+## Codex code review, round 2 (of the fixes)
+
+Seven findings, all fixed, each with a test that fails without its fix; the review's rounds stop here (plan cap):
+
+1. A new filter re-read the chosen person's page by their key's spelling (`ana@` for `ana+work@`): the address as seen goes on as the page being read.
+2. and 3. The pool doubled on one new pair (unused room counts against the index's cap) and packed itself by walking every contact inside `add()`: it grows by an eighth, keeping every pair where it is; the garbage goes only at compaction, packed in slices before the swap, and at a restore.
+4. People of every account lost its scroll after a focused account's People: the place's scroll is kept with the filter it was read in and restored when that list is drawn; another filter starts at the top.
+5. A search that failed after a new filter took its hits left the list blank: it says the read failed, and Retry reads everything (the search too).
+6. A snapshot could drop a multi-account contact's dates whole: every contact in two accounts or more must have them.
+7. An account removed while the app was closed stayed in the stored filter: it's pruned once the app is ready, as well as on every change.
+
+Tests after round 2: the touched unit files (363), `people-view.spec.ts`, `account-focus.spec.ts`, `people.spec.ts` (16), and `contacts.perf.test.ts` whole (8, at load ~3.5) all pass.
