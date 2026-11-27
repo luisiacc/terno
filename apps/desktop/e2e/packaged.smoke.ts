@@ -3,6 +3,7 @@
  * resolve from the workspace. Demo mode seeds a mock mailbox in a temp profile.
  */
 import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { createServer } from "node:http";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -184,6 +185,55 @@ test("main cancels the renderer's remote requests, for everyone (plan 97: not a 
   );
   expect(result).toBe("error");
   await expect.poll(() => app.evaluate(() => (globalThis as unknown as { blocked: string[] }).blocked)).toContainEqual(expect.stringContaining("https://example.com/pixel.png"));
+});
+
+test("plan 295: a mail frame's pictures come back readable by it (fresh, redirected, cached); the app's own page's don't", async () => {
+  // a 1×1 see-through PNG, from a server that says nothing about CORS
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
+  const server = createServer((req, res) => {
+    if (req.url?.startsWith("/redirect")) {
+      res.writeHead(302, { Location: "/logo.png?redirected" });
+      res.end();
+      return;
+    }
+    res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "max-age=600" });
+    res.end(png);
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  try {
+    // a reader-like frame: a srcdoc child of the app's page, sandboxed without scripts, its pictures asked for in CORS mode
+    const read = (sources: string[]) =>
+      page.evaluate(async (list) => {
+        const frame = document.createElement("iframe");
+        frame.setAttribute("sandbox", "allow-same-origin");
+        frame.srcdoc = `<!doctype html><body>${list.map((src) => `<img crossorigin="anonymous" src="${src}">`).join("")}</body>`;
+        const loaded = new Promise((r) => (frame.onload = r));
+        document.body.append(frame);
+        await loaded;
+        const out = [...frame.contentDocument!.images].map((img) => {
+          if (!img.complete || !img.naturalWidth) return "error";
+          const ctx = Object.assign(document.createElement("canvas"), { width: 1, height: 1 }).getContext("2d")!;
+          ctx.drawImage(img, 0, 0);
+          try {
+            ctx.getImageData(0, 0, 1, 1);
+            return "readable";
+          } catch {
+            return "tainted";
+          }
+        });
+        frame.remove();
+        return out;
+      }, sources);
+    expect(await read([`${base}/logo.png?fresh`, `${base}/redirect?to-logo`])).toEqual(["readable", "readable"]);
+    // again, from the cache
+    expect(await read([`${base}/logo.png?fresh`])).toEqual(["readable"]);
+    // the app's own page gets no such answer: a CORS picture there fails
+    const own = await page.evaluate((src) => new Promise<string>((r) => Object.assign(new Image(), { crossOrigin: "anonymous", onload: () => r("loaded"), onerror: () => r("error"), src })), `${base}/logo.png?own`);
+    expect(own).toBe("error");
+  } finally {
+    server.close();
+  }
 });
 
 test("the bundled terno-mcp bridge answers MCP requests against the running app while agents are allowed, as they are by default (plans 183, 293)", async () => {

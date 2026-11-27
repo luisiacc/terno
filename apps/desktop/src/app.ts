@@ -42,7 +42,7 @@ import { readLegacySecrets } from "./keychain-helper";
 import { legacyReply, secretReply } from "./secret-service";
 import { NetworkWatch } from "./network-watch";
 import { FocusReporter } from "./window-focus";
-import { backstopAllows, originOf, requestFrame } from "./network-backstop";
+import { backstopAllows, mailImageHeaders, originOf, requestFrame } from "./network-backstop";
 import { DB_FILE } from "./legacy-profile";
 import { registerPrint } from "./print";
 import { registerMboxExport } from "./mbox-export";
@@ -176,6 +176,12 @@ function installNetworkBackstop() {
     // frames are only looked at when they can matter: an image
     const frame = details.resourceType === "image" ? requestFrame(details.frame) : null;
     callback({ cancel: !backstopAllows({ url: details.url, resourceType: details.resourceType, frame }, { appOrigins }) });
+  });
+  // plan 295: a mail frame's pictures are readable by it (the reader fetches them in CORS mode, without cookies)
+  session.defaultSession.webRequest.onHeadersReceived({ urls: ["http://*/*", "https://*/*"] }, (details, callback) => {
+    const frame = details.resourceType === "image" ? requestFrame(details.frame) : null;
+    const responseHeaders = mailImageHeaders({ resourceType: details.resourceType, frame }, details.responseHeaders ?? {}, { appOrigins });
+    callback(responseHeaders ? { responseHeaders } : {});
   });
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { backstopAllows, isLoopbackHost, isMailFrame, originOf, requestFrame, type FrameLike, type RequestFrame } from "./network-backstop";
+import { backstopAllows, isLoopbackHost, isMailFrame, mailImageHeaders, originOf, requestFrame, type FrameLike, type RequestFrame } from "./network-backstop";
 
 const app = ["app://terno"];
 const mail: RequestFrame = { url: "about:srcdoc", parentIsTop: true, topUrl: "app://terno/index.html" };
@@ -19,6 +19,17 @@ describe("main: the renderer's network backstop", () => {
     expect(backstopAllows(image(mail, "http://tracker.test/pixel.gif"), local)).toBe(true);
     // the dev renderer's page is a mail frame's top too
     expect(backstopAllows(image({ ...mail, topUrl: "http://localhost:5173/" }), { appOrigins: [...app, "http://localhost:5173"] })).toBe(true);
+  });
+
+  it("plan 295: a mail frame's pictures come back readable by it (one answer, ours), and nothing else is touched", () => {
+    const headers = { "Content-Type": ["image/png"], "access-control-allow-origin": ["https://sender.test"], "Access-Control-Allow-Credentials": ["true"] };
+    expect(mailImageHeaders({ resourceType: "image", frame: mail }, headers, local)).toEqual({ "Content-Type": ["image/png"], "Access-Control-Allow-Origin": ["*"] });
+    expect(mailImageHeaders({ resourceType: "image", frame: mail }, {}, local)).toEqual({ "Access-Control-Allow-Origin": ["*"] });
+    // the app's own page, another frame, a frame gone, or anything but a picture: the server's headers as they came
+    expect(mailImageHeaders({ resourceType: "image", frame: { ...mail, url: "app://terno/index.html" } }, headers, local)).toBeNull();
+    expect(mailImageHeaders({ resourceType: "image", frame: { ...mail, parentIsTop: false } }, headers, local)).toBeNull();
+    expect(mailImageHeaders({ resourceType: "image", frame: null }, headers, local)).toBeNull();
+    for (const resourceType of ["script", "xhr", "stylesheet", "font", "media", "mainFrame"]) expect(mailImageHeaders({ resourceType, frame: mail }, headers, local)).toBeNull();
   });
 
   it("in local mode nothing but images passes, even from a mail frame", () => {

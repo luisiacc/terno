@@ -82,3 +82,20 @@ export function backstopAllows(req: { url: string; resourceType: string; frame: 
   if (isLoopbackHost(host)) return true;
   return req.resourceType === "image" && isMailFrame(req.frame, o.appOrigins);
 }
+
+/**
+ * Plan 295: a mail frame may read its own pictures' pixels (a mail darkened for the dark theme keeps a dark logo
+ * visible by them). The reader asks for them in CORS mode, without cookies, and this answers for the server: the same
+ * picture, the same request, only readable. Anything else (null) keeps the server's headers as they came.
+ */
+export function mailImageHeaders(req: { resourceType: string; frame: RequestFrame | null }, headers: Record<string, string[]>, o: { appOrigins: readonly string[] }): Record<string, string[]> | null {
+  if (req.resourceType !== "image" || !isMailFrame(req.frame, o.appOrigins)) return null;
+  const out: Record<string, string[]> = {};
+  for (const [name, value] of Object.entries(headers)) {
+    const lower = name.toLowerCase();
+    // (one answer, ours: a server's own origin or credentials flag would fail the check)
+    if (lower !== "access-control-allow-origin" && lower !== "access-control-allow-credentials") out[name] = value;
+  }
+  out["Access-Control-Allow-Origin"] = ["*"];
+  return out;
+}
