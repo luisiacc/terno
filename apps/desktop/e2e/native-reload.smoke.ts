@@ -191,6 +191,8 @@ test.beforeEach(async () => {
     });
   });
   await page.reload(); await page.getByTestId("thread-row").first().waitFor();
+  // plan 207: the seeded mailbox has AI, so the first-screen question may be up: Esc keeps the Inbox
+  await page.getByTestId("first-screen-question").waitFor({ timeout: 5_000 }).then(() => page.keyboard.press("Escape"), () => {});
   nativeDeadline("beforeEach-complete", info);
 });
 test.afterEach(async () => {
