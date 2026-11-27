@@ -5,11 +5,13 @@ import { create } from "zustand";
 interface FollowupsState {
   rows: readonly FollowupRow[];
   byThread: ReadonlyMap<number, readonly FollowupRow[]>;
-  /** the threads with something due: the sidebar's number */
+  /** plan 285: the threads with something late (`countsLate`): the sidebar's number, and the Follow-ups list's dots */
+  late: ReadonlySet<number>;
+  /** the threads with something due: the sidebar's number (`late`'s size) */
   due: number;
   /** the threads on the Inbox's top */
   onTop: number;
   loaded: boolean;
 }
 
-export const useFollowups = create<FollowupsState>(() => ({ rows: [], byThread: new Map(), due: 0, onTop: 0, loaded: false }));
+export const useFollowups = create<FollowupsState>(() => ({ rows: [], byThread: new Map(), late: new Set(), due: 0, onTop: 0, loaded: false }));

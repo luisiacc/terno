@@ -137,6 +137,13 @@ export function searchOfKey(key: string): string {
   return parts[3] === null && !parts.some((p) => typeof p === "string" && p.startsWith("action:")) ? (parts.at(-1) as string) : "";
 }
 
+/** Plan 285: whether a list's key is the Follow-ups list (what the rows on screen are, not where the app is going). */
+export function followupsOfKey(key: string): boolean {
+  if (!key) return false;
+  // (the query is the key's last element: a search for "followups" isn't the list)
+  return (JSON.parse(key) as unknown[]).slice(0, -1).includes("followups");
+}
+
 /** plan 108: a search while focused on an account: only that account's mail */
 export function soloSearch(s: { soloAccountId: number | null; query: string }): boolean {
   return s.soloAccountId !== null && s.query.trim() !== "";

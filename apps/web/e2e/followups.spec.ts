@@ -39,8 +39,8 @@ async function tracked(server: DevServerFixture, subject: string, kind: "promise
  * Plan 280: a promise of theirs the worker found in Yuki's mail, written as it would be. `later`: Yuki wrote again after it.
  * `debtor`: someone else promised it, the conversation going on with you and Yuki (its last sender)
  */
-async function owedTracked(server: DevServerFixture, subject: string, o: { firm: boolean; later?: boolean; debtor?: { name: string; email: string } }) {
-  await ingestConversation(server, { subject, count: o.later || o.debtor ? 3 : 1, ...(o.debtor ? { from: { 0: o.debtor } } : {}), now: E2E_NOW });
+async function owedTracked(server: DevServerFixture, subject: string, o: { firm: boolean; later?: boolean; debtor?: { name: string; email: string }; unread?: boolean }) {
+  await ingestConversation(server, { subject, count: o.later || o.debtor ? 3 : 1, ...(o.debtor ? { from: { 0: o.debtor } } : {}), ...(o.unread ? { unread: 1 } : {}), now: E2E_NOW });
   const store = server.backend.store;
   const { items } = await store.threads.searchText({ query: `subject:"${subject}"`, limit: 1, now: E2E_NOW });
   const threadId = items[0]!.id;
@@ -310,6 +310,8 @@ test.describe("follow-ups (plan 142)", () => {
     await page.getByTestId("nav-followups").click();
     await expect(rows(page)).toHaveCount(1);
     await expect(rows(page).first().getByTestId("row-date")).toHaveAttribute("data-due-at", /\d+/);
+    // plan 285: a read conversation, late: List's row has the dot (in its pointer box's slot)
+    await expect(rows(page).first().getByTestId("row-unread-dot")).toHaveAttribute("data-late", "true");
     // Follow-ups is "all" underneath, but All Mail isn't where you are: it stays behind More
     await expect(page.getByTestId("nav-followups")).toHaveAttribute("aria-current", "page");
     await expect(page.locator('[data-more-slot="all"]')).toHaveAttribute("inert", "");
@@ -377,7 +379,7 @@ test.describe("follow-ups (plan 142)", () => {
   test("plan 280: owed to you: a late promise of theirs on top with its card, Done and Undo; a tentative one off the top, quiet, under its debtor's name; one they wrote after asks first", async ({ app: page, server }) => {
     await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, followups: { enabled: true } });
     await owedTracked(server, "Signed contract", { firm: true });
-    await owedTracked(server, "Draft budget", { firm: false, debtor: { name: "Tom Reed", email: "tom.reed@example.com" } });
+    await owedTracked(server, "Draft budget", { firm: false, debtor: { name: "Tom Reed", email: "tom.reed@example.com" }, unread: true });
     await owedTracked(server, "Venue deposit", { firm: true, later: true });
     await fresh(page);
 
@@ -434,6 +436,34 @@ test.describe("follow-ups (plan 142)", () => {
       await expect(row.getByTestId("row-snippet")).not.toHaveClass(/text-draft-foreground/);
       // a firm, late one keeps the owed ink
       await expect(page.getByTestId("thread-row").filter({ hasText: "Signed contract" }).getByTestId("row-snippet")).toHaveClass(/text-draft-foreground/);
+    });
+
+    await scenario("plan 285: the dot marks what the sidebar counts, read or not; an unread one that isn't late has none here, and has it again in the Inbox", async () => {
+      const row = (subject: string) => page.getByTestId("thread-row").filter({ has: page.getByTestId("row-subject").getByText(subject, { exact: true }) });
+      // the two firm ones are late (one they wrote after still is: nothing says it came), both read
+      await expect(page.getByTestId("nav-followups").locator("[data-slot=nav-count]")).toHaveText("2");
+      for (const subject of ["Signed contract", "Venue deposit"]) {
+        await expect(row(subject).getByTestId("row-unread-dot")).toBeVisible();
+        await expect(row(subject)).not.toHaveAttribute("data-unread");
+        await expect(row(subject)).toHaveAccessibleName(/, late,/);
+        await expect(row(subject)).not.toHaveAccessibleName(/unread/);
+      }
+      // the tentative one: unread (its weight says so), no dot, not late
+      await expect(row("Draft budget")).toHaveAttribute("data-unread", "true");
+      await expect(row("Draft budget").getByTestId("row-unread-dot")).toHaveCount(0);
+      await expect(row("Draft budget")).toHaveAccessibleName(/, unread,/);
+      await expect(row("Draft budget")).not.toHaveAccessibleName(/late/);
+      await expect(page.getByTestId("row-unread-dot")).toHaveCount(2);
+      if (SHOTS) {
+        for (const scheme of ["light", "dark"] as const) {
+          await page.emulateMedia({ colorScheme: scheme });
+          await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-late-dots-${scheme}.png` });
+        }
+        await page.emulateMedia({ colorScheme: "light" });
+      }
+      await page.getByTestId("nav-inbox").click();
+      await expect(row("Draft budget").getByTestId("row-unread-dot")).toBeVisible();
+      await expect(row("Signed contract").getByTestId("row-unread-dot")).toHaveCount(0);
     });
   });
 });

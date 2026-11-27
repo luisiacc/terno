@@ -21,10 +21,8 @@ export function applyFollowups(snapshot: FollowupsSnapshot): void {
   const byThread = new Map<number, FollowupRow[]>();
   for (const r of snapshot.rows) byThread.set(r.threadId, [...(byThread.get(r.threadId) ?? []), r]);
   const onTop = new Set(snapshot.rows.filter((r) => r.inboxState === "onTop").map((r) => r.threadId)).size;
-  // plan 280: a tentative promise of theirs is kept quietly: in the list, never in the count that calls for attention
-  // (the second QA round: and one with no day, or one a notice may have brought: the count is the red rows, "late")
-  const due = new Set(snapshot.rows.filter((r) => r.state === "due" && (r.kind !== "theirs" || owedLate(r))).map((r) => r.threadId)).size;
-  useFollowups.setState({ rows: snapshot.rows, byThread, due, onTop, loaded: true });
+  const late = new Set(snapshot.rows.filter(countsLate).map((r) => r.threadId));
+  useFollowups.setState({ rows: snapshot.rows, byThread, late, due: late.size, onTop, loaded: true });
   const s = getApp();
   if (!before.loaded && useList.getState().itemsKey === "") return;
   // a promise's Later (plan 204, the fifth panel round) moves its place in the list, not its moment
@@ -47,6 +45,13 @@ export const anyFollowupOnTop = (): boolean => on() && useFollowups.getState().o
  * named, firm, and nothing saying it may have come. One with no day, or one a notice may have brought, stays quiet.
  */
 export const owedLate = (r: FollowupRow): boolean => r.kind === "theirs" && r.state === "due" && r.firm !== false && r.dated && r.arrivedHint == null;
+
+/**
+ * What the sidebar's Follow-ups number counts, and what the list marks with the dot (plan 285): one that's due. Plan 280: a
+ * tentative promise of theirs is kept quietly, in the list, never in the count that calls for attention (the second QA
+ * round: nor one with no day, or one a notice may have brought: the count is the red rows, "late").
+ */
+export const countsLate = (r: FollowupRow): boolean => r.state === "due" && (r.kind !== "theirs" || owedLate(r));
 
 const personOf = (row: FollowupRow): string | null => row.personName || row.personEmail?.split("@")[0] || null;
 

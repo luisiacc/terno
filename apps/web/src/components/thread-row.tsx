@@ -61,6 +61,8 @@ export interface ThreadRowProps {
   placed?: Placement;
   /** plan 282: a fix took it out of Put away while it's open: what the row says now, in its section */
   returned?: Returned;
+  /** plan 285: the Follow-ups list's rows, whose dot marks what the sidebar's number counts rather than unread */
+  lateDots?: boolean;
 }
 
 /** Plan 282: a Put away row's why, as its preview shows it: the line, the filing's dot, and its section for a screen reader */
@@ -79,7 +81,7 @@ const NO_FOLDERS: AppState["folders"] = [];
  * checking one re-renders one. The design picks the layout inside it (classic,
  * avatar, large avatar); the shell, roles, ids and handlers are the same in all.
  */
-export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, wide = false, showAccount, icons, layout, review = null, pinnedTop = false, reminderTop = false, match = null, lines = 1, pick = false, position, placed, returned }: ThreadRowProps) {
+export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, wide = false, showAccount, icons, layout, review = null, pinnedTop = false, reminderTop = false, match = null, lines = 1, pick = false, position, placed, returned, lateDots = false }: ThreadRowProps) {
   renderProbe("ThreadRow");
   /** the open thread (the cursor; the listbox's active descendant) */
   const selected = useApp((s) => s.selectedId === thread.id);
@@ -118,6 +120,8 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
   const pending = useActionPreview((s) => previewing && s.preview?.check === "needed");
   /** plan 158: the sentence it matched in, when its own words don't show it (one Map read: only this row renders when it comes) */
   const excerpt = useExcerpts((s) => (match && s.match === match ? s.byThread.get(thread.id) : undefined));
+  /** plan 285: one Set lookup, only in Follow-ups (only this row renders when its answer changes) */
+  const late = useFollowups((s) => lateDots && s.late.has(thread.id));
   return (
     <ThreadRowView
       thread={thread}
@@ -149,12 +153,13 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
       pick={pick}
       position={position}
       placedView={placedView}
+      late={lateDots ? late : undefined}
       interactive
     />
   );
 });
 
-type ViewProps = Omit<ThreadRowProps, "showAccount" | "wide" | "review" | "reminderTop" | "match"> & {
+type ViewProps = Omit<ThreadRowProps, "showAccount" | "wide" | "review" | "reminderTop" | "match" | "lateDots"> & {
   match?: RowMatch | null;
   excerpt?: string;
   wide: boolean;
@@ -171,6 +176,11 @@ type ViewProps = Omit<ThreadRowProps, "showAccount" | "wide" | "review" | "remin
   categories: AppState["categories"];
   /** plan 282 */
   placedView?: PlacedView;
+  /**
+   * Plan 285: in Follow-ups, whether the sidebar's number counts it: the dot is that, not unread (the number and the dots
+   * agree, as the Inbox's do). Undefined elsewhere: the dot is unread
+   */
+  late?: boolean;
   inCategory?: number | null;
   kept?: boolean;
   hasDraft: boolean;
@@ -342,7 +352,7 @@ function RowDate({ thread, reminderTop, fallback, className, title }: { thread: 
   return <span data-testid="row-date" data-due-at={dueAt ?? undefined} title={said ?? title} className={className}>{dueAt !== null ? (dayOnly ? dayDate(dueAt) : reminderShort(dueAt)) : noDay ? "" : fallback}</span>;
 }
 
-export function ThreadRowView({ thread, top, height, compact, wide, icons, layout, review, pinnedTop = false, reminderTop, selected, checked, included, pending, inSelection, account, categories, inCategory = null, kept = false, hasDraft, code, reminder, remindersList, interactive, match, excerpt, lines: previewLines = 1, pick = false, position, placedView: placed }: ViewProps) {
+export function ThreadRowView({ thread, top, height, compact, wide, icons, layout, review, pinnedTop = false, reminderTop, selected, checked, included, pending, inSelection, account, categories, inCategory = null, kept = false, hasDraft, code, reminder, remindersList, interactive, match, excerpt, lines: previewLines = 1, pick = false, position, placedView: placed, late }: ViewProps) {
   const cats = thread.categoryIds.length ? categories.filter((c) => c.id !== inCategory && thread.categoryIds.includes(c.id)) : [];
   const classic = layout === "classic";
   const big = layout === "large-avatar";
@@ -357,6 +367,8 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
   /** where it lives when that isn't where mail usually is (Trash wins: trashed spam is in the trash) */
   const place = thread.inTrash ? "trash" : thread.inSpam ? "spam" : null;
   const rowId = `thread-${thread.id}`;
+  /** the marks' column's dot: unread, or in Follow-ups late (plan 285; the row's weight still says unread there) */
+  const dotted = late ?? thread.unread;
 
   // plan 158: who, then what, then how it starts: sender and subject in the row's ink (the sender a step heavier), the
   // preview and meta quiet. Unread reads first, by more than one cue: a stronger sender and subject, the dot (8 px), and
@@ -375,7 +387,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
   // plan 188: after the sender, what the dot, the star and the pin show, said (never last, after the whole preview); the
   // count with its word ("3 messages", never a bare 3). The name stays the row's own words in their order, with these in
   // them, so it holds what's shown (WCAG 2.5.3) and a voice user can say it
-  const state = [thread.unread && t("list.row.unread"), thread.starred && t("list.row.starred"), pinnedTop && t("list.row.pinned")].filter(Boolean);
+  const state = [thread.unread && t("list.row.unread"), late && t("list.row.late"), thread.starred && t("list.row.starred"), pinnedTop && t("list.row.pinned")].filter(Boolean);
   const count = (
     <>
       {state.length > 0 && <span className="sr-only">, {state.join(", ")},</span>}
@@ -550,14 +562,14 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
     checked && included === undefined && !picking ? (
       <Check aria-hidden data-testid="row-check" className={cn("absolute -left-[13px] size-3 -translate-y-1/2 text-row-selected-foreground [--icon-line:1.5px]", onSenderLine)} />
     ) : (
-      thread.unread && included === undefined && <span data-testid="row-unread-dot" className={cn("absolute -left-[11px] size-2 -translate-y-1/2 rounded-full bg-unread", onSenderLine)} />
+      dotted && included === undefined && <span data-testid="row-unread-dot" data-late={late || undefined} className={cn("absolute -left-[11px] size-2 -translate-y-1/2 rounded-full bg-unread", onSenderLine)} />
     );
   // With no avatar, List's rows keep a slot of Lumen's wide avatar's size where one would be, at rest too, so nothing
   // moves for the box: the unread dot sits in it, and over a hovered row or while a selection is made the full box
   // takes its place (one mark per slot)
   const slot = picking && classic && (
     <span data-testid="row-pick-slot" className={cn("relative flex w-6 shrink-0 items-center justify-center", line ? "self-stretch" : "h-(--type-row-from-leading) self-start")}>
-      {thread.unread && <span data-testid="row-unread-dot" className={cn("size-2 rounded-full bg-unread", SWAP, "ease-spring group-hover/row:invisible group-hover/row:scale-50 group-hover/row:opacity-0 group-hover/row:ease-exit", SWAP_AWAY)} />}
+      {dotted && <span data-testid="row-unread-dot" data-late={late || undefined} className={cn("size-2 rounded-full bg-unread", SWAP, "ease-spring group-hover/row:invisible group-hover/row:scale-50 group-hover/row:opacity-0 group-hover/row:ease-exit", SWAP_AWAY)} />}
       {pickBox("absolute inset-0 m-auto group-hover/row:visible group-hover/row:scale-100 group-hover/row:opacity-100 group-hover/row:ease-spring")}
     </span>
   );
@@ -625,6 +637,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
       data-testid="thread-row"
       data-thread-id={thread.id}
       data-unread={thread.unread || undefined}
+      data-late={late || undefined}
       data-messages={thread.messageCount > 1 ? thread.messageCount : undefined}
       data-checked={checked || undefined}
       data-included={included}

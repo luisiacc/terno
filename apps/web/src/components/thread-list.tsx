@@ -23,7 +23,7 @@ import { viewLabel } from "~/lib/format";
 import { useActionPreview } from "~/state/action-preview";
 import { getApp, inboxShape, navigate, publishCounts, setApp, useApp, ownList } from "~/state/app";
 import { installDragController } from "~/lib/drag-install";
-import { currentScope, inboxTop, listKey, loadMore, searchOfKey, useList } from "~/state/list";
+import { currentScope, followupsOfKey, inboxTop, listKey, loadMore, searchOfKey, useList } from "~/state/list";
 import { wantExcerpts } from "~/state/excerpts";
 import { clearSelection, selectScope } from "~/lib/select";
 import { scopeLabel } from "~/lib/selection";
@@ -1062,6 +1062,9 @@ export function ThreadList() {
   const wide = list && wideEnough;
   // plan 158: the search these rows answer, not what's being typed by now (the row height and marks change with the rows they're for)
   const resultsOf = searchOfKey(itemsKey);
+  // plan 285: in Follow-ups the dot marks what the sidebar counts; read from the rows on screen (leaving or arriving, the
+  // old list's rows keep their own dots until the new ones come)
+  const lateDots = followupsOfKey(itemsKey);
   const layout = design.variants.row;
   // List has no pane to say a row is checked: the toolbar comes with the first (one conversation, as with x)
   const many = useApp((s) => s.scope !== null || s.checked.size >= (list ? 1 : 2));
@@ -1423,7 +1426,7 @@ export function ThreadList() {
               </p>
             )}
             {virtualItems.map((v) => (
-              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} showAccount={showAccount} icons={icons} layout={layout} review={review} pinnedTop={v.index < pinnedTop} reminderTop={v.index >= pinnedTop && v.index < top} match={match} lines={lines} pick={list} position={v.index + 1} placed={putAway ? placed.get(items[v.index]!.id) : undefined} returned={putAway ? returned.get(items[v.index]!.id) : undefined} />
+              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} showAccount={showAccount} icons={icons} layout={layout} review={review} pinnedTop={v.index < pinnedTop} reminderTop={v.index >= pinnedTop && v.index < top} match={match} lines={lines} pick={list} position={v.index + 1} lateDots={lateDots} placed={putAway ? placed.get(items[v.index]!.id) : undefined} returned={putAway ? returned.get(items[v.index]!.id) : undefined} />
             ))}
           </div>
         )}

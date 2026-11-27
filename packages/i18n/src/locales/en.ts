@@ -1226,6 +1226,7 @@ const en = {
   "list.place.trash": "Trash",
   "list.pinned": "Pinned",
   "list.row.unread": "unread",
+  "list.row.late": "late",
   "list.row.starred": "starred",
   "list.row.pinned": "pinned",
   "list.row.messagesWord": { one: "message", other: "messages" },

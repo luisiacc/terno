@@ -1210,6 +1210,7 @@ const es = {
   "list.place.trash": "Papelera",
   "list.pinned": "Fijadas",
   "list.row.unread": "sin leer",
+  "list.row.late": "atrasada",
   "list.row.starred": "destacada",
   "list.row.pinned": "fijada",
   "list.row.messagesWord": { one: "mensaje", other: "mensajes" },
