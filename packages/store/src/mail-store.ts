@@ -1044,6 +1044,8 @@ export interface MailStore {
     /** Explicit verified flow only: stamp and exact expected secret are one transaction. */
     commit(intent: SecretIntent, stamp: { id: number; email: string; createdAt: number }): Promise<boolean>;
     delete(name: string): Promise<void>;
+    /** Plan 293: deletes `name` only while it holds exactly `expectedBlob` (a compare-and-delete); true when it did. */
+    remove(name: string, expectedBlob: Uint8Array): Promise<boolean>;
   };
 
   learning: {

@@ -2214,6 +2214,20 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         expect(await store.secrets.names()).toEqual(["account:1:password"]);
         expect(await store.secrets.has("gmailClientSecret")).toBe(false);
       });
+
+      it("plan 293: removes a secret only while it holds exactly the expected bytes (a compare-and-delete)", async () => {
+        const store = await fresh();
+        const name = "account:1:refreshToken";
+        expect(await store.secrets.remove(name, Uint8Array.of(1, 2))).toBe(false);
+        await store.secrets.put(name, Uint8Array.of(1, 2));
+        // a sign-in saved another token meanwhile: never removed
+        for (const other of [Uint8Array.of(1), Uint8Array.of(1, 2, 3), Uint8Array.of(1, 3)]) expect(await store.secrets.remove(name, other)).toBe(false);
+        expect(await store.secrets.get(name)).toEqual(Uint8Array.of(1, 2));
+        // a view into a larger buffer compares by its own bytes
+        expect(await store.secrets.remove(name, Uint8Array.of(9, 1, 2, 9).subarray(1, 3))).toBe(true);
+        expect(await store.secrets.has(name)).toBe(false);
+        expect(await store.secrets.remove(name, Uint8Array.of(1, 2))).toBe(false);
+      });
     });
 
     describe("portable message references (exports)", () => {

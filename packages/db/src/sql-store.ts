@@ -1923,6 +1923,7 @@ export class SqlMailStore implements MailStore {
       return this.db.run(`UPDATE secrets SET blob = ? WHERE ${predicate}`, next, ...params).changes === 1;
     }),
     delete: async (name) => deleteSecret(this.db, name),
+    remove: async (name, expected) => this.db.run("DELETE FROM secrets WHERE name = ? AND blob = ?", name, expected).changes === 1,
   };
 
   readonly learning: MailStore["learning"] = {

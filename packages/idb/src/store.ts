@@ -2905,6 +2905,16 @@ export class IdbMailStore implements MailStore {
       }, { early: true });
     },
     delete: (name) => this.command(() => void T(this.c, "secrets").delete(name)),
+    remove: (name, expectedBlob) => {
+      const expected = Uint8Array.from(expectedBlob);
+      return this.command(() => {
+        const secrets = T(this.c, "secrets");
+        const blob = secrets.get(name)?.blob as Uint8Array | undefined;
+        if (!blob || blob.length !== expected.length || !blob.every((b, i) => b === expected[i])) return false;
+        secrets.delete(name);
+        return true;
+      }, { early: true });
+    },
   };
 
   readonly learning: MailStore["learning"] = {
