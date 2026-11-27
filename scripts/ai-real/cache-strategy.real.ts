@@ -393,6 +393,13 @@ const median = (xs: number[]) => {
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : NaN);
 const fmt = (usd: number, digits = 5) => (Number.isFinite(usd) ? `$${usd.toFixed(digits)}` : "–");
 
+/**
+ * Before the change, these jobs' system prompts carried each mail's arrival (or sending) time near their start: a real
+ * day never reads that prefix again (two mails in the same minute aside). The replay's few warm reads there are the
+ * corpus's repeated days and minutes, so the before arms count them cold.
+ */
+const PER_CALL_BEFORE: ReadonlySet<Job> = new Set(["dated", "sent", "theirs"]);
+
 describe.skipIf(process.env.TERNO_CACHE_REPORT !== "1")("plan 291: the report", () => {
   it("prints the tables", () => {
     const arms = ARMS_REPORTED.filter((a) => existsSync(join(DIR, `${a}.jsonl`)));
@@ -400,8 +407,16 @@ describe.skipIf(process.env.TERNO_CACHE_REPORT !== "1")("plan 291: the report", 
     const rows = all.filter((r) => r.usage && r.usd !== null);
     // warm: the provider read a prefix from its cache
     const warmOf = (r: Row) => (r.usage!.cacheReadTokens ?? 0) > 0;
+    // caching changes what the input costs; the answer's length is the model's, run to run, so it's priced once for both arms
+    const inputUsd = (r: Row) => {
+      const price = evalPriceOf(r.model)!;
+      const u = r.usage!;
+      return (u.inputTokens * price.input + (u.cacheReadTokens ?? 0) * (price.cacheRead ?? price.input) + (u.cacheWriteTokens ?? 0) * (price.cacheWrite ?? price.input)) / 1e6;
+    };
+    const outputUsd = (r: Row) => (r.usage!.outputTokens * evalPriceOf(r.model)!.output) / 1e6;
+    const route = (arm: string) => (arm.endsWith("-openai") ? "openai" : "pro");
     const out: string[] = [];
-    out.push("| Job | Model | Arm | Calls (failed, repairs) | Hit rate | Avg in / read / write / out | $ cold | $ warm | $ a call | Latency median cold / warm |", "|---|---|---|---:|---:|---|---:|---:|---:|---|");
+    out.push("| Job | Model | Arm | Calls (failed, repairs) | Hit rate | Avg in / read / write / out | Input $ cold | Input $ warm | $ a call (all) | Latency median cold / warm |", "|---|---|---|---:|---:|---|---:|---:|---:|---|");
     const perCall: Record<string, Partial<Record<Job, { cold: number; warm: number }>>> = {};
     for (const arm of arms) {
       perCall[arm] = {};
@@ -411,36 +426,43 @@ describe.skipIf(process.env.TERNO_CACHE_REPORT !== "1")("plan 291: the report", 
         if (!rs.length) continue;
         // a repair belongs to the call it repairs: its cost is spread over the job's calls, never counted as a call
         const firsts = rs.filter((r) => !r.repair);
-        const repairUsd = firsts.length ? rs.filter((r) => r.repair).reduce((n, r) => n + r.usd!, 0) / firsts.length : 0;
-        const warm = firsts.filter(warmOf), cold = firsts.filter((r) => !warmOf(r));
+        const repairIn = firsts.length ? rs.filter((r) => r.repair).reduce((n, r) => n + inputUsd(r), 0) / firsts.length : 0;
+        const warmCounts = (r: Row) => warmOf(r) && !(arm.startsWith("before") && PER_CALL_BEFORE.has(job));
+        const warm = firsts.filter(warmCounts), cold = firsts.filter((r) => !warmCounts(r));
         const avg = (f: (u: Usage) => number) => Math.round(mean(rs.map((r) => f(r.usage!))));
-        const coldUsd = mean(cold.map((r) => r.usd!)) + repairUsd, warmUsd = mean(warm.map((r) => r.usd!)) + repairUsd;
+        const coldIn = mean(cold.map(inputUsd)) + repairIn, warmIn = mean(warm.map(inputUsd)) + repairIn;
         // a job with no warm call (nothing to read) costs its cold price warm too, and the other way round
-        perCall[arm]![job] = { cold: Number.isFinite(coldUsd) ? coldUsd : warmUsd, warm: Number.isFinite(warmUsd) ? warmUsd : coldUsd };
+        perCall[arm]![job] = { cold: Number.isFinite(coldIn) ? coldIn : warmIn, warm: Number.isFinite(warmIn) ? warmIn : coldIn };
         const lat = (xs: Row[]) => median(xs.map((r) => r.firstMs ?? r.ms));
         const latency = (xs: Row[]) => (Number.isFinite(lat(xs)) ? `${lat(xs)}` : "–");
-        out.push(`| ${job} | ${rs[0]!.model} | ${arm} | ${rs.length} (${failed}, ${rs.filter((r) => r.repair).length}) | ${Math.round((100 * warm.length) / rs.length)}% | ${avg((u) => u.inputTokens)} / ${avg((u) => u.cacheReadTokens ?? 0)} / ${avg((u) => u.cacheWriteTokens ?? 0)} / ${avg((u) => u.outputTokens)} | ${fmt(coldUsd)} | ${fmt(warmUsd)} | ${fmt(mean(rs.map((r) => r.usd!)))} | ${latency(cold)} / ${latency(warm)} ms |`);
+        out.push(`| ${job} | ${rs[0]!.model} | ${arm} | ${rs.length} (${failed}, ${rs.filter((r) => r.repair).length}) | ${Math.round((100 * rs.filter(warmOf).length) / rs.length)}% | ${avg((u) => u.inputTokens)} / ${avg((u) => u.cacheReadTokens ?? 0)} / ${avg((u) => u.cacheWriteTokens ?? 0)} / ${avg((u) => u.outputTokens)} | ${fmt(coldIn, 6)} | ${fmt(warmIn, 6)} | ${fmt(mean(rs.map((r) => r.usd!)))} | ${latency(cold)} / ${latency(warm)} ms |`);
       }
     }
-    out.push("", "| Persona | Arm | $ a month (jobs measured) | by job, with the share of calls warm |", "|---|---|---:|---|");
+    out.push("", "| Persona | Arm | $ a month (jobs measured) | input $ a month | by job: $ a month (its input, the share of calls warm) |", "|---|---|---:|---:|---|");
     for (const p of PERSONAS) {
       for (const arm of arms) {
         const parts: string[] = [];
-        let total = 0;
+        let total = 0, input = 0;
         for (const job of JOBS) {
-          // a third of the questions are planned twice; one dated read in six gets a second look
           // as the day sends them: every third question planned twice, every sixth dated read looked at again, two intent reads a draft
           const calls = job === "askPlan" ? (p.day.ask ?? 0) + Math.floor((p.day.ask ?? 0) / 3) : job === "dated" ? (p.day.dated ?? 0) + Math.floor((p.day.dated ?? 0) / 6) : job === "intent" ? 2 * (p.day.writing ?? 0) : p.day[job] ?? 0;
           const c = perCall[arm]![job];
           if (!calls || !c) continue;
-          const share = warmShare(p, job, TTL_MS[providerOf(arm, job)]);
-          const usd = 30 * calls * (share * c.warm + (1 - share) * c.cold);
-          total += usd;
-          parts.push(`${job} ${fmt(usd, 3)} (${Math.round(share * 100)}%)`);
+          // the answer's cost, the same for both arms of a route: every first try of the job, both arms pooled
+          const pooled = rows.filter((r) => r.job === job && !r.repair && route(r.arm) === route(arm));
+          const outUsd = mean(pooled.map(outputUsd));
+          const share = arm.startsWith("before") && PER_CALL_BEFORE.has(job) ? 0 : warmShare(p, job, TTL_MS[providerOf(arm, job)]);
+          const inUsd = 30 * calls * (share * c.warm + (1 - share) * c.cold);
+          input += inUsd;
+          total += inUsd + 30 * calls * outUsd;
+          parts.push(`${job} ${fmt(inUsd + 30 * calls * outUsd, 3)} (in ${fmt(inUsd, 3)}, ${Math.round(share * 100)}%)`);
         }
-        out.push(`| ${p.id} | ${arm} | ${fmt(total, 2)} | ${parts.join(", ")} |`);
+        out.push(`| ${p.id} | ${arm} | ${fmt(total, 2)} | ${fmt(input, 2)} | ${parts.join(", ")} |`);
       }
     }
+    // the share of each job's calls that find their prefix, under each provider's lifetime (for jobs not measured on one)
+    out.push("", "| Persona | Warm share at 30 min (OpenAI) / 5 min (Anthropic) |", "|---|---|");
+    for (const p of PERSONAS) out.push(`| ${p.id} | ${JOBS.map((j) => `${j} ${Math.round(100 * warmShare(p, j, TTL_MS.openai))}/${Math.round(100 * warmShare(p, j, TTL_MS.anthropic))}%`).join(", ")} |`);
     process.stderr.write(`${out.join("\n")}\n`);
   });
 });
