@@ -101,7 +101,7 @@ describe.skipIf(process.env.TERNO_AI_SECOND_LOOK !== "1")("the second look on a 
   it("recovers the panel's lost dated sentences and leaves the traps out", async () => {
     const answers: string[] = [];
     // tokens as the provider counted them, by phase: the shared ledger's total moves with other runs too
-    const tokens = { first: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 }, look: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 } };
+    const tokens = { first: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }, look: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } };
     let phase: keyof typeof tokens = "first";
     const base = realTransport(TARGET, "dated-second-look-eval");
     const counted: ModelTransport = {
@@ -112,6 +112,7 @@ describe.skipIf(process.env.TERNO_AI_SECOND_LOOK !== "1")("the second look on a 
         tokens[phase].inputTokens += c.usage?.inputTokens ?? 0;
         tokens[phase].outputTokens += c.usage?.outputTokens ?? 0;
         tokens[phase].cacheReadTokens += c.usage?.cacheReadTokens ?? 0;
+        tokens[phase].cacheWriteTokens += c.usage?.cacheWriteTokens ?? 0;
         return c;
       },
     };
@@ -178,7 +179,8 @@ describe.skipIf(process.env.TERNO_AI_SECOND_LOOK !== "1")("the second look on a 
     const price = evalPriceOf(MODEL);
     const usd = (t: (typeof tokens)["first"]) => (price ? +costAt(price, t).toFixed(5) : null);
     const looks = score.fresh.looks + score.recorded.looks;
-    const per = (t: (typeof tokens)["first"], n: number) => (n ? { inputTokens: Math.round(t.inputTokens / n), outputTokens: Math.round(t.outputTokens / n) } : null);
+    // the prompt's whole size: what a cache read or wrote is part of it
+    const per = (t: (typeof tokens)["first"], n: number) => (n ? { inputTokens: Math.round((t.inputTokens + t.cacheReadTokens + t.cacheWriteTokens) / n), outputTokens: Math.round(t.outputTokens / n) } : null);
     process.stderr.write(`${lines.join("\n")}\n${JSON.stringify({ model: MODEL, ...score, failures, tokens, firstUsd: usd(tokens.first), lookUsd: usd(tokens.look), perLook: per(tokens.look, looks), perFirst: per(tokens.first, score.fresh.readings) })}\n${spendReport()}\n`);
     const wrongShown = score.fresh.wrongShown + score.recorded.wrongShown;
     const found = score.fresh.found + score.recorded.found;

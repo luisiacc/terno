@@ -38,7 +38,7 @@ export function realKeys(): { anthropic: string; openai: string; jev: string } {
  * an eval must still be held to the ledger. From the provider's model page.
  */
 const EVAL_PRICES: Readonly<Record<string, ModelPrice>> = {
-  "gpt-6-sol": { input: 2, cacheRead: 0.2, output: 10 },
+  "gpt-6-sol": { input: 2, cacheRead: 0.2, cacheWrite: 2.5, output: 10 },
   // short prompts only: past 272k input tokens it costs more, and no summary sends that much
   "gpt-6.1-terra": { input: 1, cacheRead: 0.05, cacheWrite: 1.25, output: 5 },
 };

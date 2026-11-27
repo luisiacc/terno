@@ -9,11 +9,15 @@ import { AiError, promptText, type CompletionRequest, type ModelInfo, type Model
 
 /** GA version with structured outputs (json_schema) on chat completions. */
 export const AZURE_API_VERSION = "2024-10-21";
-/** As Anthropic reports it: `prompt_tokens` includes the cached ones, so they're taken out of input and counted once, as cache reads. */
-export function usageOf(u: { prompt_tokens: number; completion_tokens: number; prompt_tokens_details?: { cached_tokens?: number | null } | null } | null | undefined): Usage | undefined {
+/**
+ * As Anthropic reports it. OpenAI bills each prompt token at one rate: uncached, a cache read or a cache write; so
+ * `prompt_tokens` holds the cached and written ones, and they're taken out of input to be counted once, at their own price.
+ */
+export function usageOf(u: { prompt_tokens: number; completion_tokens: number; prompt_tokens_details?: { cached_tokens?: number | null; cache_write_tokens?: number | null } | null } | null | undefined): Usage | undefined {
   if (!u) return undefined;
-  const cached = Math.min(u.prompt_tokens_details?.cached_tokens ?? 0, u.prompt_tokens);
-  return { inputTokens: u.prompt_tokens - cached, outputTokens: u.completion_tokens, cacheReadTokens: cached };
+  const read = Math.min(u.prompt_tokens_details?.cached_tokens ?? 0, u.prompt_tokens);
+  const written = Math.min(u.prompt_tokens_details?.cache_write_tokens ?? 0, u.prompt_tokens - read);
+  return { inputTokens: u.prompt_tokens - read - written, outputTokens: u.completion_tokens, cacheReadTokens: read, cacheWriteTokens: written };
 }
 
 /**

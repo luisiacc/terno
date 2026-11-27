@@ -228,10 +228,14 @@ describe("prices", () => {
 describe("OpenAI's usage", () => {
   it("counts a cached token once, as a cache read, never also as input", () => {
     const usage = openaiUsageOf({ prompt_tokens: 10_000, completion_tokens: 200, prompt_tokens_details: { cached_tokens: 8_000 } });
-    expect(usage).toEqual({ inputTokens: 2_000, outputTokens: 200, cacheReadTokens: 8_000 });
+    expect(usage).toEqual({ inputTokens: 2_000, outputTokens: 200, cacheReadTokens: 8_000, cacheWriteTokens: 0 });
     // 2k at $0.10, 8k at $0.01, 200 at $0.50 a million
     expect(costOf("gpt-6-luna", usage!)).toBeCloseTo((2_000 * 0.1 + 8_000 * 0.01 + 200 * 0.5) / 1e6, 12);
-    expect(openaiUsageOf({ prompt_tokens: 5, completion_tokens: 1 })).toEqual({ inputTokens: 5, outputTokens: 1, cacheReadTokens: 0 });
+    // a first request writes the cache: those tokens at $0.125, not also at input's $0.10
+    const first = openaiUsageOf({ prompt_tokens: 10_000, completion_tokens: 200, prompt_tokens_details: { cached_tokens: 0, cache_write_tokens: 9_000 } });
+    expect(first).toEqual({ inputTokens: 1_000, outputTokens: 200, cacheReadTokens: 0, cacheWriteTokens: 9_000 });
+    expect(costOf("gpt-6-luna", first!)).toBeCloseTo((1_000 * 0.1 + 9_000 * 0.125 + 200 * 0.5) / 1e6, 12);
+    expect(openaiUsageOf({ prompt_tokens: 5, completion_tokens: 1 })).toEqual({ inputTokens: 5, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 });
     expect(openaiUsageOf(null)).toBeUndefined();
   });
 });

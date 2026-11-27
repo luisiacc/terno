@@ -19,8 +19,8 @@ const PRICES: Readonly<Record<string, ModelPrice>> = {
   "claude-opus-5-5": { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 },
   "claude-sonnet-5-5": { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 },
   "claude-haiku-5-5": { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 },
-  // OpenAI's list price since its launch (2026-09-22): cached input at a tenth, writing the cache at the input price
-  "gpt-6-luna": { input: 0.1, output: 0.5, cacheRead: 0.01 },
+  // OpenAI's list price: a cache read at a tenth of input, a write (caching is on by default) at 1.25×
+  "gpt-6-luna": { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 },
   "jev-latest": { input: 0.042, output: 0 },
   "jev-preview": { input: 0.042, output: 0 },
 };
