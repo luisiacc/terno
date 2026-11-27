@@ -19,7 +19,7 @@ import { backToDigest } from "~/state/today";
 import { closeFeedConversation } from "~/lib/feed-pane";
 import { setHeldThreadOpener } from "~/lib/held-sends";
 import { keepOpening, loadThread, useThreads } from "~/state/threads";
-import { morph } from "~/lib/morph";
+import { digestMorph, morph } from "~/lib/morph";
 
 export type { Page };
 
@@ -258,7 +258,7 @@ export function forwardNavKey(e: KeyboardEvent): void {
   if (returnFromMailReaderView()) { e.preventDefault(); return; }
   // plan 161, pass 2 (Codex review): from inside a newsletter's own document too, Esc goes back to the digest that opened it
   // plan 251: and ⌘[ in List, as its toolbar's Back does
-  if ((e.key === "Escape" || (listLayout() && currentPage() === "thread")) && backToDigest(true)) { e.preventDefault(); return; }
+  if ((e.key === "Escape" || (listLayout() && currentPage() === "thread")) && backToDigest(digestMorph)) { e.preventDefault(); return; }
   if (!listLayout() || currentPage() === "list") {
     // plan 161, pass 2: a preview's matched conversation closes back to its rule from inside its mail too (Split)
     if (e.key === "Escape" && !listLayout() && closePreviewRow()) {

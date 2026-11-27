@@ -1,5 +1,5 @@
 import { flushSync } from "react-dom";
-import { motionMs } from "~/lib/appearance";
+import { motionMs, useAppearance } from "~/lib/appearance";
 
 interface Transition {
   finished: Promise<void>;
@@ -54,6 +54,9 @@ export function morph(update: () => void, pairs: readonly MorphPair[] = []): voi
       if (running === transition) running = null;
     });
 }
+
+/** Plan 251: the layout changes between the digest's page and its list beside (Split only): the list glides across. */
+export const digestMorph = (update: () => void): void => (useAppearance.getState().layout === "list" ? update() : morph(update));
 
 /** Plan 281: resolves once the running morph (if any) has finished, so a change that follows doesn't cut it short. */
 export function morphSettled(): Promise<void> {

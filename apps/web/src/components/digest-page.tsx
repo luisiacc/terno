@@ -29,7 +29,8 @@ import { setApp, useApp } from "~/state/app";
 import { openFound } from "./settings/find-open";
 import { openSettings } from "~/lib/settings-place";
 import { reloadList } from "~/state/list";
-import { digestKeys, digestMorph, digestPick, keepDigestPick, leaveOut, letBackIn, openFromDigest, senderKey, useToday, withoutSenders } from "~/state/today";
+import { digestMorph } from "~/lib/morph";
+import { digestKeys, digestPick, keepDigestPick, leaveOut, letBackIn, openFromDigest, senderKey, useToday, withoutSenders } from "~/state/today";
 import { AiProvenance } from "~/components/ai-provenance";
 import { AutomatedClear } from "~/components/automated-clear";
 

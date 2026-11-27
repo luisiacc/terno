@@ -1,5 +1,6 @@
 import { DIGEST_ROW_ID, messageParts } from "@terno/core";
 import { backToDigest, useToday } from "~/state/today";
+import { digestMorph } from "~/lib/morph";
 import "~/lib/replies";
 import { folderName } from "~/lib/account-folders";
 import { ReaderAttachments, ThreadAttachments } from "./attachments";
@@ -1355,7 +1356,7 @@ function ReaderContent() {
         {feedPane && <ToolbarDivider />}
         {feedPane && (
           <Tooltip>
-            <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={t("whatMatters.closeEmail")} aria-keyshortcuts="Escape" onClick={() => backToDigest(true) || closeFeedConversation() || closePersonConversation()} data-testid="reader-close" className={cn(tool, "-mr-2 @max-[560px]:-mr-1.5")} />}>
+            <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={t("whatMatters.closeEmail")} aria-keyshortcuts="Escape" onClick={() => backToDigest(digestMorph) || closeFeedConversation() || closePersonConversation()} data-testid="reader-close" className={cn(tool, "-mr-2 @max-[560px]:-mr-1.5")} />}>
               <X />
             </TooltipTrigger>
             <TooltipContent className="flex items-center gap-2">

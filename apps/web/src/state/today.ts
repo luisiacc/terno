@@ -7,8 +7,6 @@ import { momentsOfList, type Moment } from "~/lib/clear";
 import type { ReaderItem } from "~/lib/reader-items";
 import { client } from "~/rpc/connection";
 import type { Undo } from "~/lib/snack";
-import { useAppearance } from "~/lib/appearance";
-import { morph } from "~/lib/morph";
 import { getApp, navigate, setApp, useApp } from "./app";
 import { moveNextRows, reloadList } from "./list";
 
@@ -366,15 +364,13 @@ export function openFromDigest(day: string, threadId: number, scroll: number, ti
  */
 export const digestBeside = (selectedId: number | null, fromDigest: number | null, today: boolean, layout: string): boolean => today && layout !== "list" && fromDigest !== null && selectedId === fromDigest;
 
-/** Plan 251: the layout changes between the page and the list beside (Split only): the list glides across. */
-export const digestMorph = (update: () => void): void => (useAppearance.getState().layout === "list" ? update() : morph(update));
-
 /**
- * Plan 161: Esc, the reader's ×, List's Back, from the newsletter the digest opened: back to the page. Plan 251: `glide`,
- * from a person's way back (never an action's, whose Undo reads the selection it leaves at once), moves the list beside
- * back into the reader as one view transition; its state then changes on the transition's frame, checked again there.
+ * Plan 161: Esc, the reader's ×, List's Back, from the newsletter the digest opened: back to the page. Plan 251: `glide`
+ * (`digestMorph`), from a person's way back (never an action's, whose Undo reads the selection it leaves at once), moves the
+ * list beside back into the reader as one view transition; its state then changes on the transition's frame, checked again
+ * there. Passed in, so this store stays free of the DOM's modules (every state module reaches it through the list's).
  */
-export function backToDigest(glide = false): boolean {
+export function backToDigest(glide?: (update: () => void) => void): boolean {
   // the newsletter it was asked from: a later one opened before the frame isn't put away (Codex review)
   const from = useToday.getState().fromDigest;
   const ready = () => {
@@ -390,7 +386,7 @@ export function backToDigest(glide = false): boolean {
     useToday.setState({ fromDigest: null });
     setApp({ selectedId: DIGEST_ROW_ID });
   };
-  if (glide) digestMorph(go);
+  if (glide) glide(go);
   else go();
   return true;
 }
