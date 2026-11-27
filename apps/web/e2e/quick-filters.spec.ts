@@ -129,8 +129,13 @@ test.describe("Lumen: chips", () => {
       // what doesn't fit is behind More (With attachments, since plan 281 named People "From people"); chosen there, its
       // chip shows on the strip
       await expect(chips.getByTestId("quick-filter-attachments")).toHaveCount(0);
-      await page.getByTestId("quick-filter-more").click();
-      await page.getByTestId("quick-filter-attachments").click();
+      // the keyboard's way there: Tab from the strip's chips to More, Enter opens it, the arrows reach it, Enter picks it
+      await page.keyboard.press("Tab");
+      await expect(page.getByTestId("quick-filter-more")).toBeFocused();
+      await page.keyboard.press("Enter");
+      const attachments = page.getByTestId("quick-filter-attachments");
+      await expect.poll(async () => (await attachments.evaluate((el) => el === document.activeElement)) || (await page.keyboard.press("ArrowDown"), false)).toBe(true);
+      await page.keyboard.press("Enter");
       await showing(page, "attachments");
       await expect(chips.getByTestId("quick-filter-attachments")).toHaveAttribute("aria-pressed", "true");
       // pressing the chosen chip again keeps it (one choice is always on)
