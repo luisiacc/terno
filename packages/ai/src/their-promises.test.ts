@@ -21,8 +21,10 @@ describe("reading their mail (plan 280)", () => {
   });
 
   it("is frozen at its version: a change to the words is a new version", () => {
-    expect(THEIRS_PROMPT_VERSION).toBe(6);
-    expect(readTheirMailTask(input()).system).toMatchSnapshot();
+    expect(THEIRS_PROMPT_VERSION).toBe(7);
+    const task = readTheirMailTask(input());
+    // as the model reads it: the cached words, then the mail's arrival (plan 291)
+    expect(`${task.system}\n\n${task.systemTail}`).toMatchSnapshot();
     expect(readTheirMailTask(input({ language: "es" })).system).toContain("Spanish");
   });
 

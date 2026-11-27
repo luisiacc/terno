@@ -96,6 +96,8 @@ const clip = (text: string, max: number) => text.trim().slice(0, max);
 export function planAskTask(input: PlanAskInput): StructuredTask<PlanWire, AskPlanResult> {
   return {
     system: PLAN_SYSTEM(input.today, input.timezone),
+    // plan 291: the same all day, and asked again within seconds when the first search finds nothing, or in a sitting
+    cache: true,
     prompt: planAskPrompt(input),
     schema: { name: "ask_plan", zod: planWire },
     example: { kind: "question", queries: [{ terms: ["door code"], anyOf: [["airbnb", "booking"]], from: null, to: null, subject: null, after: null, before: null, hasAttachment: null }] },
@@ -359,7 +361,8 @@ export async function runAnswerFromMail(transport: ModelTransport, input: Answer
   }, (label) => labels.has(label));
   const result = await streamCompletion(
     transport,
-    { system: ASK_ANSWER_RULES, messages: [{ role: "user", content: answerPrompt(input) }], output: "text", maxTokens: options.maxTokens ?? ASK_ANSWER_MAX_TOKENS, signal: options.signal, effort: options.effort ?? "low" },
+    // plan 291: the rules are what a sitting's questions share; the mail found and the question follow
+    { system: [{ text: ASK_ANSWER_RULES, cache: true }], messages: [{ role: "user", content: answerPrompt(input) }], output: "text", maxTokens: options.maxTokens ?? ASK_ANSWER_MAX_TOKENS, signal: options.signal, effort: options.effort ?? "low" },
     (delta) => filter.push(delta),
     ASK_TIMING,
   );

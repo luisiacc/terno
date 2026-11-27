@@ -104,8 +104,10 @@ describe("reading what you sent (plan 142)", () => {
   });
 
   it("is frozen at its version: a change to the words is a new version", () => {
-    expect(FOLLOWUP_PROMPT_VERSION).toBe(16);
-    expect(readSentMailTask(input()).system).toMatchSnapshot();
+    expect(FOLLOWUP_PROMPT_VERSION).toBe(17);
+    const task = readSentMailTask(input());
+    // as the model reads it: the cached words, then when it was sent (plan 291)
+    expect(`${task.system}\n\n${task.systemTail}`).toMatchSnapshot();
   });
 
   it("has a limit on every input", () => {

@@ -421,6 +421,8 @@ export function summarizeTask(input: SummarizeInput): StructuredTask<Wire, Threa
   const since = !input.compact && input.thread.some((m) => m.isNew);
   return {
     system: SYSTEM(input.language, input.today, !input.compact, since),
+    // plan 291: the same all day for one language (today's date is at its end), and the worker drains back to back
+    cache: true,
     prompt: summaryPrompt(input),
     // one name for both shapes: the fake and the stubs know the task by it
     schema: { name: "thread_summary", zod: since ? wireSince : wire },
