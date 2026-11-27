@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, expect, it } from "vitest";
 import { openDatabase } from "./index";
+import { MIGRATIONS, runMigration, SCHEMA_VERSION } from "./migrations";
 import { sqlDb, SqlMailStore } from "./sql-store";
 import { requestTabRefresh } from "./tabs";
 
@@ -95,12 +96,13 @@ it.each([["no pass under way", null], ["a pass past every thread", '{"phase":"th
   ]);
   const note = await threadOf(store, "note");
   const person = await threadOf(store, "person");
-  // what v77 was: no column
+  // what v77 was: no column; then v78 alone, as an upgrade runs it (rewinding user_version would run every later step again)
   const db = sqlDb(store);
   db.run("ALTER TABLE threads DROP COLUMN only_yours");
   db.run("DELETE FROM settings WHERE key = 'tabs_backfill'");
   if (job) db.run("INSERT INTO settings (key, value_json) VALUES ('tabs_backfill', ?)", job);
-  db.run("PRAGMA user_version = 77");
+  runMigration(db, MIGRATIONS.find((m) => m.version === 78)!);
+  db.run(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   await store.close();
 
   store = open(path);
