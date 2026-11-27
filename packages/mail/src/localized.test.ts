@@ -21,9 +21,11 @@ describe("what the mail providers say to the user", () => {
     expect(page(false, "backend.oauth.invalid")).toContain("<p>Terno couldn’t verify Google’s answer. Go back to Terno to try again.</p>");
   });
 
-  it("SMTP failures are catalog messages around the server's own words", () => {
-    const auth = classifySmtpError({ code: "EAUTH", message: "535 5.7.8 bad credentials" });
-    expect(auth).toMatchObject({ message: "SMTP authentication failed: 535 5.7.8 bad credentials", retryable: false, i18n: { key: "errors.smtp.authFailed", params: { detail: "535 5.7.8 bad credentials" } } });
+  it("SMTP failures are catalog messages around the server's own words; a refused AUTH says its code only (plan 293)", () => {
+    // a server may echo what was sent in its refusal: only the code reaches the user
+    const auth = classifySmtpError({ code: "EAUTH", responseCode: 535, message: "535 5.7.8 bad credentials for luis@example.com / hunter2" });
+    expect(auth).toMatchObject({ message: "SMTP authentication failed: 535", retryable: false, i18n: { key: "errors.smtp.authFailed", params: { detail: "535" } } });
+    expect(JSON.stringify(auth)).not.toContain("hunter2");
     const lost = classifySmtpError({ code: "ECONNECTION", message: "socket hang up" }, true);
     expect(lost).toMatchObject({ ambiguous: true, i18n: { key: "errors.smtp.connectionLost" } });
     // a server's reply passes through as it is

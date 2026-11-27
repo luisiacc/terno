@@ -75,6 +75,9 @@ export function createRegistry(options: RegistryOptions = {}): ProviderRegistry 
       try {
         await verifySmtp({ ...config.smtp, password, allowInsecure: options.imap?.allowInsecure });
       } catch (error) {
+        // plan 293 (Codex code review #5): a refused AUTH says its code only (its text may echo what was sent)
+        const e = error as { code?: unknown; responseCode?: unknown };
+        if (e?.code === "EAUTH") throw new ProviderError(L("errors.smtp.authFailed", { detail: String(e.responseCode ?? "AUTH") }), false);
         throw new ProviderError(L("errors.smtp.cannotConnect", { host: config.smtp.host, detail: error instanceof Error ? error.message : String(error) }), false);
       }
     },

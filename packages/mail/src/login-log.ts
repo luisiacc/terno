@@ -27,8 +27,10 @@ function answered(tokens: Record<string, unknown> | null) {
   };
 }
 
+/** a failed request's HTTP status: the error's own, or the response evidence it carries (Codex code review #12) */
 const statusOf = (error: unknown): number | undefined => {
-  const status = (error as { status?: unknown } | null)?.status;
+  const e = error as { status?: unknown; httpResponse?: { status?: unknown } } | null;
+  const status = e?.status ?? e?.httpResponse?.status;
   return typeof status === "number" ? status : undefined;
 };
 
@@ -47,6 +49,7 @@ export const signInLog = {
   /** POST to the token endpoint with the code and the verifier (both redacted), and what came back */
   tokenExchange(provider: SignInProvider, url: string, result: { tokens: Record<string, unknown> } | { error: unknown }): void {
     const sent = { provider, httpMethod: "POST", endpoint: endpointOf(url), grantType: "authorization_code", authCode: R, codeVerifier: R } as const;
+    // a token answer is only ever read from a 200 (RFC 6749 §5.1; the flows refuse anything else first)
     if ("tokens" in result) log.info("signin.token_exchange", { ...sent, status: 200, ...answered(result.tokens) });
     else log.warn("signin.token_exchange", { ...sent, ...(statusOf(result.error) !== undefined && { status: statusOf(result.error) }) });
   },
@@ -66,7 +69,8 @@ export const signInLog = {
 
 /** IMAP's LOGIN (or AUTHENTICATE) and its answer; `responseCode` is the server's bracketed code (AUTHENTICATIONFAILED). */
 export function imapLogin(result: "OK" | "NO" | "error", responseCode?: string): void {
-  const fields = { user: R, loginResult: result, ...(responseCode && { responseCode }) } as const;
+  // the field keeps known codes only (anything else is "other")
+  const fields = { user: R, loginResult: result, ...(responseCode && { responseCode: responseCode as "other" }) } as const;
   if (result === "OK") log.info("imap.login", fields);
   else log.warn("imap.login", fields);
 }
@@ -85,7 +89,7 @@ export async function loggedImapConnect(connect: () => Promise<void>): Promise<v
 
 /** SMTP's AUTH and its answer: OK (235), NO (535 and the like), or error (never reached AUTH). */
 export function smtpLogin(result: "OK" | "NO" | "error", responseCode?: number): void {
-  const fields = { user: R, loginResult: result, ...(responseCode !== undefined && { responseCode: String(responseCode) }) } as const;
+  const fields = { user: R, loginResult: result, ...(responseCode !== undefined && { responseCode: String(responseCode) as "other" }) } as const;
   if (result === "OK") log.info("smtp.login", fields);
   else log.warn("smtp.login", fields);
 }

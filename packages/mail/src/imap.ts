@@ -742,7 +742,11 @@ export function toProviderError(error: unknown): ProviderError {
   const message = e?.message ?? String(error);
   // the server refused the login: a sign-in to redo (plan 25), unless it says the refusal is temporary
   // (RFC 5530, or "too many connections": the user's other mail apps hold the server's slots)
-  if (e.authenticationFailed) return temporaryRefusal(error) ? ProviderError.deferred(L("errors.imap.loginFailed", { detail: message })) : new ProviderAuthError(L("errors.imap.loginFailed", { detail: message }));
+  // plan 293 (Codex code review #5): the server's code, never its text (a refusal can echo the user name or password)
+  if (e.authenticationFailed) {
+    const detail = e.serverResponseCode ?? "NO";
+    return temporaryRefusal(error) ? ProviderError.deferred(L("errors.imap.loginFailed", { detail })) : new ProviderAuthError(L("errors.imap.loginFailed", { detail }));
+  }
   // throttled or busy: the same command later works
   if (temporaryRefusal(error)) return ProviderError.deferred(`IMAP: ${message}`);
   if (e.responseStatus === "NO" || e.responseStatus === "BAD") return new ProviderError(`IMAP: ${message}`, false);

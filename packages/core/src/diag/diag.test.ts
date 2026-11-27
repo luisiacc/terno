@@ -313,6 +313,11 @@ describe("plan 293: credential and sign-in fields (CASA 6.5.1, 6.7.1)", () => {
   it("scopes keep known names only, a token-shaped or address-shaped word becomes other", () => {
     expect(sanitizeField("scope", "https://www.googleapis.com/auth/gmail.modify openid email https://mail.google.com/ Mail.ReadWrite offline_access")).toBe("https://www.googleapis.com/auth/gmail.modify openid email https://mail.google.com/ Mail.ReadWrite offline_access");
     expect(sanitizeField("scope", "openid ya29.a0AfH6SMBx-token/abc luis@example.com https://evil.example/x")).toBe("openid other other other");
+    // Codex code review #4: a short secret that looks like a word, or a server's own response atom, is never kept
+    expect(sanitizeField("scope", "openid hunter2 Mail.Send")).toBe("openid other Mail.Send");
+    expect(sanitizeField("responseCode", "AUTHENTICATIONFAILED")).toBe("AUTHENTICATIONFAILED");
+    expect(sanitizeField("responseCode", "535")).toBe("535");
+    expect(sanitizeField("responseCode", "hunter2")).toBe("other");
   });
 
   it("local codes are logged but never become breadcrumbs", () => {

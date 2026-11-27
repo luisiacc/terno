@@ -35,7 +35,8 @@ export function classifySmtpError(error: unknown, dataStarted = false): Provider
   const e = error as SmtpLikeError;
   const message = e?.message ?? String(error);
   // the password was refused (EAUTH comes before DATA: never ambiguous); a 454 is "try again later"
-  if (e.code === "EAUTH" && !(e.responseCode && e.responseCode >= 400 && e.responseCode < 500)) return new ProviderAuthError(L("errors.smtp.authFailed", { detail: message }));
+  // plan 293 (Codex code review #5): the reply's code only; its text may echo what was sent
+  if (e.code === "EAUTH" && !(e.responseCode && e.responseCode >= 400 && e.responseCode < 500)) return new ProviderAuthError(L("errors.smtp.authFailed", { detail: String(e.responseCode ?? "AUTH") }));
   // An explicit reply code is a definitive answer: 5xx permanent, 4xx temporary (retry),
   // whether it came for a recipient (450/550) or after the body (451/554).
   if (e.responseCode && e.responseCode >= 500) return new ProviderError(e.code === "EENVELOPE" ? L("errors.smtp.recipientRejected", { detail: message }) : message, false);

@@ -12,8 +12,8 @@ export type FieldType =
   | { t: "bool" }
   /** a short machine id: error classes, errno names, socket codes (camelCase allowed: class and method names are) */
   | { t: "id" }
-  /** plan 293: space-separated words, each kept only if it matches `word` (else "other"), at most `max` of them */
-  | { t: "words"; word: RegExp; max: number };
+  /** plan 293: space-separated words, each kept only if it's one of `values` (else "other"), at most `max` of them */
+  | { t: "words"; values: readonly string[]; max: number };
 
 export type FieldValue = string | number | boolean;
 export type Fields = Record<string, FieldValue>;
@@ -52,9 +52,14 @@ export const FIELD_TYPES = {
   port: int(0, 65_535),
   provider: enumOf("google", "microsoft"),
   redirectHost: enumOf("127.0.0.1", "localhost"),
-  responseCode: id,
-  /** granted scopes by name: Google's and Graph's scope URLs and bare names only */
-  scope: { t: "words", word: /^(https:\/\/(www\.googleapis\.com\/auth\/[a-z.]+|mail\.google\.com\/|graph\.microsoft\.com\/[A-Za-z.]+)|[A-Za-z_.]{1,32})$/, max: 12 },
+  /** a login refusal's code: IMAP's RFC 5530 codes and SMTP's AUTH replies, nothing a server made up (Codex code review #4) */
+  responseCode: enumOf("AUTHENTICATIONFAILED", "AUTHORIZATIONFAILED", "EXPIRED", "PRIVACYREQUIRED", "CONTACTADMIN", "UNAVAILABLE", "LIMIT", "INUSE", "SERVERBUG", "CANNOT", "430", "454", "530", "534", "535", "538", "other"),
+  /** granted scopes, the ones Terno asks Google and Microsoft for (plan 258's list); any other word is "other" */
+  scope: {
+    t: "words",
+    values: ["openid", "email", "profile", "https://www.googleapis.com/auth/gmail.modify", "https://mail.google.com/", "offline_access", "User.Read", "Mail.ReadWrite", "Mail.Send", "https://graph.microsoft.com/User.Read", "https://graph.microsoft.com/Mail.ReadWrite", "https://graph.microsoft.com/Mail.Send"],
+    max: 12,
+  },
   tokenType: enumOf("Bearer", "other"),
   /** plan 293: an account's internal row id (never its address or name) */
   accountId: int(0, Number.MAX_SAFE_INTEGER),
@@ -149,6 +154,6 @@ export function sanitizeField(name: string, value: unknown): FieldValue | undefi
     case "id":
       return typeof value === "string" ? (ID.test(value) ? value : REDACTED) : typeof value === "number" && Number.isInteger(value) ? String(value) : undefined;
     case "words":
-      return typeof value === "string" ? value.split(/\s+/).filter(Boolean).slice(0, type.max).map((w) => (type.word.test(w) ? w : "other")).join(" ") : undefined;
+      return typeof value === "string" ? value.split(/\s+/).filter(Boolean).slice(0, type.max).map((w) => (type.values.includes(w) ? w : "other")).join(" ") : undefined;
   }
 }
