@@ -1,6 +1,6 @@
 # Plan 293: CASA remediation, second round (6.2.1, 4.1.4, 2.2.1, 6.7.1, 6.5.1, 5.2.1, 6.6.1)
 
-- **Status:** planned
+- **Status:** built (macOS verified locally, inspectable and shipped; the Linux bridge compiles in the release workflow, not verified here)
 - **Why:** TAC Security's CASA Tier 2 review of Terno's Gmail verification failed nine controls (2026-11-27). Six need product changes, one (6.6.1) needs an exact inventory. The tester's comments are in `~/.cache/terno-casa-evidence/tac-findings/findings.md` ("Failed findings"); each section below quotes what the tester asked for.
 
 ## The request (verbatim)
@@ -382,3 +382,37 @@ Codex read the plan against the code (12 points). What changed:
 10. **Linux: the helper's ABI and the packages' contents are checked.** `package-linux.mjs` checks each helper is an ELF of its architecture, executable, and that its `GLIBC_` needs are no newer than Electron's own binary's; `release.mjs build-linux` checks the helper inside every deb and rpm (present, executable, right architecture). The CJS bundle leaves the file list.
 11. **Archive inspection is bounded and never guesses.** At most 18 MiB read (the attachment limit), 10,000 entries, a malformed or unreadable archive is "couldn't inspect" and **allowed** (Gmail decides; Terno only refuses what the page names). The attach batch keeps its inline images' content ids: a blocked file is removed before ids are assigned. Attaching isn't a hot path (once per file, bounded), so no perf gate. `pnpm test:all` runs for the store contract change.
 12. **Storage cleanup covers the legacy key and the live state.** `terno:unread-filter` (legacy, read once) is in the inventory and is cleared with the others; the learned-offer module's in-memory set is reset with its key, so it can't write it back. The packaged smoke seeds known values under two accounts, removes one, then the other, and checks what's left.
+
+## What was built, where it differs from the plan
+
+- **6.6.1:** the cleanup reconciles renderer storage with the backend's own account list at boot and on every accounts event (not from the remove dialog, which a reload or another window could skip). Two accounts → one → none is covered by unit tests (`account-ui-storage.test.ts`); the packaged smoke inventories storage at runtime but doesn't remove accounts.
+- **4.1.4:** `SecretUnreadableError` (a saved secret that won't open) is itself an `RpcError` with the same category (`UNAVAILABLE`, `secret_storage_failed`) and keeps its fixed per-kind message ("…enter it again in Settings → Accounts"). Where an account's provider reads one, it becomes the account's "sign in again" state with that fixed message, as before.
+- **6.5.1:** the IMAP response code is kept only when the server sends an RFC 5530 one (imapkit, the test server, sends none). SMTP's AUTH answer is read from Nodemailer's transcript (235 / 5xx).
+- **2.2.1:** the deletion is a compare-and-delete on the blob the provider last opened for its refresh, done from `tokenResult` after the refusal is reported; Microsoft's `interaction_required` / `consent_required` keep the token.
+- **6.2.1:** RunAsNode is off in both kinds; nothing in the smoke suite needs it.
+
+## What the Codex code review changed
+
+One round, twelve findings, each fixed with a test that fails without it:
+
+1. **Linux packaging would have failed:** gcc's `-Wformat-truncation` on the bridge's `snprintf` path joins (with `-Werror`). Paths are joined with explicit bounds (an overlong one reads as "not running").
+2. **An oversized agent frame wedged the session:** the SDK's transport stops at its buffer bound but left the socket open. Both sides now bound one agent message at 16 MiB (`AGENT_FRAME_MAX`, `MAX_REQUEST`); a transport that gives up destroys its socket, and a write waiting on a drain settles with the close.
+3. **Archive scans could exhaust the renderer's memory:** archives are opened one at a time, never for a batch already over the size limit, unpacking at most 32 MiB.
+4. **Login lines could keep a provider's own words:** the response code and the scopes are allowlists now (RFC 5530 codes and SMTP's AUTH replies; the scopes Terno asks for), anything else is `other`.
+5. **A refused SMTP or IMAP login showed the server's text to the user** (which can echo the user or password): the error carries the reply's code only.
+6. **A blocked file before an inline image broke its placement:** staged refs go back to their files' own places.
+7. **Storage cleanup could be skipped** (a reload after removal, two windows): reconciled against the authoritative list (above).
+8. **Valid archives could slip past:** a zip's end record must agree with its comment and directory; tar's GNU long names and pax paths are read.
+9. **A reply cut off by Terno quitting was forwarded as half a line:** dropped; its request answered as lost.
+10. **The wire category was lost on reads:** `SecretUnreadableError` carries it; explicit Gmail renewal passes it on; main's `keychain.secret_failed` is local-only.
+11. **Audit gaps:** each secret the old keychain wouldn't give back is a failed read; an account whose transaction fails after sealing records a failed write.
+12. **A refused token exchange logged no status:** it's read from the error's response evidence.
+
+## Tests run
+
+- Unit (touched packages): `pnpm exec vitest run --project unit packages/mcp/src apps/desktop/src packages/backend/src packages/mail/src packages/core/src/diag packages/core/src/gmail-blocked.test.ts apps/web/src/lib/attachments.test.ts apps/web/src/lib/account-ui-storage.test.ts packages/i18n/src`: 300 files, 6,382 tests passed.
+- `pnpm test:all` (before the review fixes): lint, build, typecheck, web, db-wasm passed; unit's three failures passed alone (load); e2e: `visual.spec.ts:164` (settings-ai-local baseline) fails on the base commit too, the ⌘J axe case passed 5/5 when rerun; its smoke step can't build a release in a worktree without the repo's `.env` (the Google client), so the smokes ran from `pnpm build && pnpm --filter @terno/desktop dist:mac` instead.
+- e2e: `attachments.spec.ts` (7 passed).
+- Packaged, inspectable (`dist:mac`, Developer ID, hardened runtime): `packaged`, `links`, `debugging`, `diagnostics` smokes: 29 passed, 1 skipped (the shipped-only case).
+- Packaged, shipped (`TERNO_SHIPPED=1`, its own output): `debugging.smoke.ts`: 5 passed.
+- Not run here: Linux packaging and `linux.smoke.ts` (no Linux machine or Docker daemon); notarization (no APPLE_* credentials locally; the bridge is signed with the hardened runtime and a secure timestamp, which notarization requires).
