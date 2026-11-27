@@ -1,3 +1,4 @@
+import { SecretStorageError } from "./secret-access";
 import { captureError } from "@terno/core/diag";
 import {
   AiError,
@@ -65,6 +66,8 @@ function revocable(inner: ModelTransport, revoked: AbortSignal): ModelTransport 
 /** AI failures cross the RPC boundary with their kind, so the UI can give specific help. */
 export function toRpcError(error: unknown): RpcError {
   if (error instanceof RpcError) return error;
+  // plan 293: a key that wouldn't open is the one storage error on the wire, as every secret failure is
+  if (error instanceof AiError && error.cause instanceof SecretStorageError) return error.cause;
   if (error instanceof AiError) {
     if (error.kind === "cancelled") return new RpcError("CANCELLED", messageOf(error), { aiErrorKind: error.kind });
     return new RpcError("UNAVAILABLE", messageOf(error), { aiErrorKind: error.kind });
@@ -177,7 +180,8 @@ export class AiService {
     let apiKey = dev
       ? (dev[provider as keyof typeof dev] ?? null)
       : await this.b.getSecret(secretName, "ai").catch((error: unknown) => {
-          throw error instanceof SecretUnreadableError ? new AiError(messageOf(error), "not_configured") : error;
+          // AI's own callers hear "not configured"; the RPC boundary gives the one storage error (plan 293)
+          throw error instanceof SecretUnreadableError ? Object.assign(new AiError(messageOf(error), "not_configured"), { cause: error }) : error;
         });
     if (apiKey && !dev) {
       // a key goes only to the origin it was saved (or confirmed) for

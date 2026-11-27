@@ -1,4 +1,5 @@
 import type { AccountSyncState } from "@terno/core";
+import { L } from "@terno/i18n";
 import { keychainRefusal } from "./keychain";
 
 export interface StatusAuthority {
@@ -10,6 +11,17 @@ export interface StatusFailure {
   i18n?: AccountSyncState["lastErrorI18n"];
   /** plan 293: a saved secret that wouldn't open, and why (the message alone can't tell: it's one for every cause) */
   secretFailure?: "keychain" | "legacy" | null;
+}
+
+/**
+ * Plan 293: a refusal 0.1.11 or earlier saved names its cause in its catalog key (errors.secret.keychain.* or
+ * errors.secret.legacy.*, gone from the catalogs): read as today's one message with the cause as its flag, so the
+ * keychain's is still rechecked locally after an update (Codex review of the one-message change #1).
+ */
+function upgradedSecretFailure(state: AccountSyncState): AccountSyncState {
+  const old = /^errors\.secret\.(keychain|legacy)\./.exec(state.lastErrorI18n?.key ?? "");
+  if (!old) return state;
+  return { ...state, lastError: L("errors.secret.unavailable").message, lastErrorI18n: { key: "errors.secret.unavailable" }, lastErrorSecret: old[1] as "keychain" | "legacy" };
 }
 
 /** One account-stamp authority survives provider replacement and orders every status write. */
@@ -38,8 +50,8 @@ export class AccountStatus {
     admissionChanged?(): void;
     failed?(): void;
   }) {
-    this.state = { ...options.initial };
-    this.secretStored = !!options.initial.lastErrorSecret;
+    this.state = upgradedSecretFailure({ ...options.initial });
+    this.secretStored = !!this.state.lastErrorSecret;
     if (this.state.status === "syncing") this.state = { ...this.state, status: this.state.lastError ? "error" : "idle", progress: null };
     if (this.state.authRequired) {
       const failure = { message: this.state.lastError ?? "", i18n: this.state.lastErrorI18n, secretFailure: this.state.lastErrorSecret };

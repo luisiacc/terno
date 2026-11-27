@@ -21,8 +21,10 @@ export function installNetworkEvents(): () => void {
   const retryOffline = () => {
     if (document.visibilityState !== "visible" || Date.now() - lastFocus < FOCUS_EVERY_MS) return;
     // offline or backing off, or (plan 25) an IMAP account whose saved password the backend may recheck
-    // plan 264: or a Gmail account whose saved session the keychain wouldn't open (the backend opens it again)
-    if (!getApp().accounts.some((a) => a.syncState.connection || (a.syncState.authRequired && a.syncState.authScope !== "send" && (a.kind === "imap" || a.syncState.lastErrorSecret === "keychain")))) return;
+    // plan 264: or a Gmail account whose saved session the keychain wouldn't open (the backend opens it again); plan
+    // 293: the window can't tell that from a server's refusal (one message for every secret failure), so it asks for
+    // any account waiting on a sign-in, and the backend rechecks only what it may (its own rules, throttled)
+    if (!getApp().accounts.some((a) => a.syncState.connection || (a.syncState.authRequired && a.syncState.authScope !== "send"))) return;
     lastFocus = Date.now();
     void client.call("sync.now", { reason: "focus" }).catch(() => {});
   };

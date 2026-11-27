@@ -151,3 +151,15 @@ it("plan 293: the flag outlives a restart, and a legacy secret (same message) is
   await legacy.verified(authority);
   expect(legacy.project().lastErrorSecret).toBeNull();
 });
+
+it("plan 293 (Codex review #1): a refusal saved by 0.1.11 under its old per-cause key reads as the one message, its cause kept", () => {
+  const old = (key: string) => new AccountStatus({ initial: { ...initial, status: "error", authRequired: true, authScope: null, lastError: "old words", lastErrorI18n: { key } }, generation: () => 1, write: async () => {}, changed() {} });
+  const keychain = old("errors.secret.keychain.googleSession");
+  expect(keychain.keychainRefused).toBe(true);
+  expect(keychain.project()).toMatchObject({ lastError: "Terno couldn’t open a saved sign-in or key. Sign in or enter it again.", lastErrorI18n: { key: "errors.secret.unavailable" }, lastErrorSecret: "keychain" });
+  const legacy = old("errors.secret.legacy.password");
+  expect(legacy.keychainRefused).toBe(false);
+  expect(legacy.project()).toMatchObject({ lastErrorI18n: { key: "errors.secret.unavailable" }, lastErrorSecret: "legacy" });
+  // anything else is left as it was
+  expect(old("errors.gmail.revoked").project()).toMatchObject({ lastError: "old words", lastErrorI18n: { key: "errors.gmail.revoked" } });
+});

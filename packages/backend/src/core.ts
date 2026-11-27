@@ -1688,7 +1688,11 @@ export class BackendCore {
 
   async accountViews(accounts: Account[]): Promise<Account[]> {
     await Promise.all(accounts.map(async (account) => { await this.accountStatus(account.id); }));
-    return accounts.map((account) => ({ ...account, syncState: this.statuses.get(account.id)!.project() }));
+    // plan 293: why a saved secret wouldn't open stays in the backend (the window sees the one message)
+    return accounts.map((account) => {
+      const { lastErrorSecret: _why, ...syncState } = this.statuses.get(account.id)!.project();
+      return { ...account, syncState };
+    });
   }
 
   async emitAccounts(): Promise<void> {

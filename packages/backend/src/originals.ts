@@ -1,3 +1,4 @@
+import { SecretStorageError } from "./secret-access";
 import { bytesBase64, describeOriginal, ORIGINAL_PIECE, type OriginalResult, type OriginalUnavailable } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
@@ -121,6 +122,8 @@ export class Originals {
 /** What a failed read says: the server's own refusal as it put it; anything about reaching it, plainly */
 function readFailed(error: unknown): unknown {
   if (error instanceof RpcError || !(error instanceof ProviderError)) return error;
+  // plan 293: a saved secret that wouldn't open is the one storage error, whatever asked for it
+  if (error.secretFailure) return new SecretStorageError(error.secretFailure);
   if (error instanceof ProviderAuthError) return new RpcError("UNAVAILABLE", L("errors.original.signin"), undefined, { expected: true, cause: error });
   // what Show original's own reads say (still matching, an unreadable answer) is said as it is
   if (!error.i18n?.key.startsWith("errors.original.") && (error.network || error.retryable)) return new RpcError("UNAVAILABLE", L("errors.original.unreachable"), undefined, { expected: true, cause: error });

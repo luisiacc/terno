@@ -200,6 +200,28 @@ describe("plan 293 (CASA 4.1.4, the tester's ask): one generic error, whatever t
     });
   });
 
+  it("an AI key that won't open is the same payload on the wire, and the window never sees why a secret failed (Codex review #3, #4)", async () => {
+    const { toRpcError } = await import("./ai-service");
+    const { AiError } = await import("@terno/ai");
+    const unreadable = new SecretUnreadableError("ai:openai:apiKey", true);
+    const asAi = Object.assign(new AiError(unreadable.message, "not_configured"), { cause: unreadable });
+    expect(JSON.stringify(toErrorPayload(toRpcError(asAi)))).toBe(JSON.stringify(toErrorPayload(new SecretStorageError())));
+    // an account the keychain refused: the backend keeps why, the account the window gets doesn't carry it
+    const dir = mkdtempSync(join(tmpdir(), "terno-secret-"));
+    const b = new Backend({ dbPath: join(dir, "t.db"), version: "t", cipher: plaintextCipher, providers: demoRegistry, autoSync: false });
+    cleanups.push(async () => {
+      await b.stop();
+      rmSync(dir, { recursive: true, force: true });
+    });
+    await b.store.ready;
+    const { createAccount, sqlDb, setAccountSyncState } = await import("@terno/db");
+    const id = createAccount(sqlDb(b.store), { kind: "gmail", email: "me@gmail.com", displayName: "Me", color: "brown" }).id;
+    setAccountSyncState(sqlDb(b.store), id, { status: "error", authRequired: true, authScope: null, lastError: "x", lastErrorI18n: { key: "errors.secret.unavailable" }, lastErrorSecret: "legacy" });
+    const [view] = await b.accountViews(await b.store.accounts.list());
+    expect(view!.syncState).toMatchObject({ authRequired: true, lastErrorI18n: { key: "errors.secret.unavailable" } });
+    expect("lastErrorSecret" in view!.syncState).toBe(false);
+  });
+
   it("the log line of a failure holds the operation and the category, and nothing the cipher said", async () => {
     await new SecretAccess(throwing({ decrypt: "error:1C800064:Provider routines::bad decrypt" }), memoryStore()).open("account:4:password", Uint8Array.of(1), "mailLogin").catch(() => {});
     await new SecretAccess(throwing({ encrypt: "Encryption is not available." }), memoryStore()).seal("account:4:password", "x", "signIn").catch(() => {});

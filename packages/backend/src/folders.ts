@@ -1,3 +1,4 @@
+import { SecretStorageError } from "./secret-access";
 import type { FavoriteFolder, FavoriteFoldersSnapshot, Folder, FolderRename } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
@@ -17,6 +18,8 @@ import { followFavoriteFolders, setFavoriteFolder, SettingsError } from "./setti
 /** What a failure says to the person: offline, the server's own reason, a name taken, a standard folder. */
 function folderError(b: Backend, error: unknown): unknown {
   if (error instanceof RpcError || !(error instanceof ProviderError)) return error;
+  // plan 293: a saved secret that wouldn't open is the one storage error, whatever asked for it
+  if (error.secretFailure) return new SecretStorageError(error.secretFailure);
   if (error.network || !b.connectivity.online) return new RpcError("UNAVAILABLE", L("errors.folder.offline"));
   return new RpcError("BAD_REQUEST", error.message, undefined, { i18n: error.i18n, cause: error });
 }
