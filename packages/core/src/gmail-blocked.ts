@@ -31,7 +31,7 @@ export type GmailBlock =
 export const GMAIL_HEAD_BYTES = 64 * 1024;
 /** bounds on what an archive may cost to open */
 const MAX_ENTRIES = 10_000;
-const MAX_UNPACKED = 64 * 1024 * 1024;
+const MAX_UNPACKED = 32 * 1024 * 1024;
 
 const extensionsOf = (name: string): string[] => {
   const base = name.slice(Math.max(name.lastIndexOf("/"), name.lastIndexOf("\\")) + 1).toLowerCase();
@@ -89,9 +89,16 @@ function executable(name: string, head: Uint8Array): boolean {
 
 /** A zip's entries from its central directory; null when it can't be read (ZIP64, malformed, too many). */
 function zipEntries(b: Uint8Array): { name: string; encrypted: boolean }[] | null {
+  // the end record is the one whose comment ends the file and whose directory ends where it starts (the signature can
+  // also appear inside a comment: Codex code review #8)
   const floor = Math.max(0, b.length - 65_557);
   let eocd = -1;
-  for (let at = b.length - 22; at >= floor; at--) if (u32(b, at) === 0x06054b50) { eocd = at; break; }
+  for (let at = b.length - 22; at >= floor; at--) {
+    if (u32(b, at) !== 0x06054b50 || at + 22 + u16(b, at + 20) !== b.length) continue;
+    if (u32(b, at + 16) + u32(b, at + 12) !== at && u32(b, at + 16) !== 0xffffffff) continue;
+    eocd = at;
+    break;
+  }
   if (eocd < 0) return null;
   const count = u16(b, eocd + 10);
   const offset = u32(b, eocd + 16);
@@ -118,6 +125,8 @@ function tarEntries(b: Uint8Array): string[] | null {
     const end = slice.indexOf(0);
     return decoder.decode(end < 0 ? slice : slice.subarray(0, end));
   };
+  // the next file's real name, when a GNU long-name ('L') or pax ('x') header carries it (Codex code review #8)
+  let longName: string | null = null;
   for (let at = 0; at + 512 <= b.length; ) {
     if (b.subarray(at, at + 512).every((x) => x === 0)) return names;
     if (names.length >= MAX_ENTRIES) return null;
@@ -125,8 +134,22 @@ function tarEntries(b: Uint8Array): string[] | null {
     if (!Number.isFinite(size) || size < 0) return null;
     const prefix = text(at + 345, 155);
     const type = String.fromCharCode(b[at + 156] ?? 0);
-    // regular files (and their old form); pax and GNU long-name headers carry no file of their own
-    if (type === "0" || type === "\0" || type === "7") names.push(prefix ? `${prefix}/${text(at, 100)}` : text(at, 100));
+    const body = () => (at + 512 + size <= b.length ? b.subarray(at + 512, at + 512 + Math.min(size, 65_536)) : null);
+    if (type === "L") {
+      const data = body();
+      if (!data) return null;
+      const end = data.indexOf(0);
+      longName = decoder.decode(end < 0 ? data : data.subarray(0, end));
+    } else if (type === "x") {
+      const data = body();
+      if (!data) return null;
+      const path = /(?:^|\n)\d+ path=([^\n]*)\n/.exec(decoder.decode(data))?.[1];
+      if (path) longName = path;
+    } else if (type === "0" || type === "\0" || type === "7") {
+      // regular files (and their old form)
+      names.push(longName ?? (prefix ? `${prefix}/${text(at, 100)}` : text(at, 100)));
+      longName = null;
+    } else longName = null;
     at += 512 + Math.ceil(size / 512) * 512;
   }
   return names;

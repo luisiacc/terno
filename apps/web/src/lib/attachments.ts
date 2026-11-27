@@ -98,13 +98,26 @@ async function attachFilesNow(key: string, files: readonly File[], o: { contentI
   try {
     // plan 293 (CASA 5.2.1): on a Gmail account, a file Gmail won't send (its type, an archive holding one, a protected
     // archive, a program by its content) is said and left out; the others still attach, each with its own content id
-    if (getApp().accounts.find((a) => a.id === draft.accountId)?.kind === "gmail") {
-      const refusals = await Promise.all(files.map((f) => gmailRefusal(f)));
+    // (one file at a time, and none when the batch is past what a message carries: it's refused for its size below, and
+    // opening every archive of a refused batch at once could take more memory than the window has; Codex code review #3)
+    const total = files.reduce((n, f) => n + f.size, 0);
+    if (getApp().accounts.find((a) => a.id === draft.accountId)?.kind === "gmail" && total <= MAX_ATTACHMENT_BYTES) {
+      const refusals: (string | null)[] = [];
+      for (const f of files) refusals.push(await gmailRefusal(f));
       if (refusals.some(Boolean)) {
         snack.error(refusals.filter(Boolean).join(" "));
-        const kept = refusals.map((r) => !r);
-        files = files.filter((_, i) => kept[i]);
-        o = { ...o, ...(o.contentIds && { contentIds: o.contentIds.filter((_, i) => kept[i]) }) };
+        const kept = files.flatMap((_, i) => (refusals[i] ? [] : [i]));
+        const placed = o.placed;
+        files = kept.map((i) => files[i]!);
+        o = {
+          ...(o.contentIds && { contentIds: kept.map((i) => o.contentIds![i] ?? null) }),
+          // the caller's placement reads refs by its own files' places: each staged ref goes back to its file's (Codex code review #6)
+          ...(placed && { placed: (refs: AttachmentRef[]) => {
+            const aligned: AttachmentRef[] = [];
+            refs.forEach((r, k) => { aligned[kept[k]!] = r; });
+            placed(aligned);
+          } }),
+        };
         if (!files.length) return false;
       }
     }

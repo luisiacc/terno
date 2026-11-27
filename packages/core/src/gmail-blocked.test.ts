@@ -29,17 +29,31 @@ function zip(files: { name: string; data?: Uint8Array; encrypted?: boolean }[]):
   return Uint8Array.from([...parts, ...central, ...le(0x06054b50, 4), ...le(0, 2), ...le(0, 2), ...le(files.length, 2), ...le(files.length, 2), ...le(central.length, 4), ...le(cd, 4), ...le(0, 2)]);
 }
 
-/** A ustar archive of regular files. */
-function tar(names: string[]): Uint8Array {
+/** A ustar archive of regular files; a name may come with a GNU long-name ('L') or pax ('x') header before it. */
+function tar(names: (string | { name: string; via: "L" | "x" })[]): Uint8Array {
   const blocks: Uint8Array[] = [];
-  for (const name of names) {
+  const header = (name: string, type: string, size: number) => {
     const h = new Uint8Array(512);
-    h.set(text(name), 0);
+    h.set(text(name.slice(0, 99)), 0);
     h.set(text("0000644\0"), 100);
-    h.set(text("00000000001\0"), 124);
-    h[156] = "0".charCodeAt(0);
+    h.set(text(`${size.toString(8).padStart(11, "0")}\0`), 124);
+    h[156] = type.charCodeAt(0);
     h.set(text("ustar\0"), 257);
-    blocks.push(h, new Uint8Array(512).fill(0x41, 0, 1));
+    return h;
+  };
+  const data = (bytes: Uint8Array) => {
+    const out = new Uint8Array(Math.ceil(bytes.length / 512) * 512);
+    out.set(bytes);
+    return out;
+  };
+  for (const entry of names) {
+    let name = typeof entry === "string" ? entry : entry.name;
+    if (typeof entry !== "string") {
+      const record = entry.via === "L" ? text(`${name}\0`) : (() => { const line = ` path=${name}\n`; return text(`${line.length + String(line.length).length}${line}`); })();
+      blocks.push(header(entry.via === "L" ? "././@LongLink" : "PaxHeader/x", entry.via, record.length), data(record));
+      name = "truncated-name.txt";
+    }
+    blocks.push(header(name, "0", 1), new Uint8Array(512).fill(0x41, 0, 1));
   }
   blocks.push(new Uint8Array(1024));
   const out = new Uint8Array(blocks.reduce((n, b) => n + b.length, 0));
@@ -76,6 +90,17 @@ describe("Gmail's blocked file types (plan 293)", () => {
     expect(await gmailBlocked("src.tar", tar(["src/a.ts", "bin/run.bat"]))).toEqual({ reason: "archive", ext: "bat" });
     expect(await gmailBlocked("src.tgz", await gzipSync(tar(["README.md", "x/y/hack.ps1"])))).toEqual({ reason: "archive", ext: "ps1" });
     expect(await gmailBlocked("src.tar.gz", await gzipSync(tar(["README.md"])))).toBeNull();
+    // Codex code review #8: a name carried by a GNU long-name or pax header, and a zip whose comment holds the end signature
+    expect(await gmailBlocked("long.tar", tar([{ name: `${"d/".repeat(60)}payload.exe`, via: "L" }]))).toEqual({ reason: "archive", ext: "exe" });
+    expect(await gmailBlocked("pax.tar", tar([{ name: `${"p/".repeat(60)}payload.scr`, via: "x" }]))).toEqual({ reason: "archive", ext: "scr" });
+    const commented = zip([{ name: "tools/install.msi" }]);
+    const fakeEnd = Uint8Array.from([0x50, 0x4b, 0x05, 0x06, ...new Uint8Array(18)]);
+    const withComment = new Uint8Array(commented.length + fakeEnd.length);
+    withComment.set(commented);
+    withComment.set(fakeEnd, commented.length);
+    // the real end record's comment length now covers the fake one
+    withComment[commented.length - 2] = fakeEnd.length;
+    expect(await gmailBlocked("commented.zip", withComment)).toEqual({ reason: "archive", ext: "msi" });
   });
 
   it("refuses a program by its content, whatever its name: Windows (MZ), Linux (ELF), macOS (Mach-O thin or fat), an extensionless #! script", async () => {

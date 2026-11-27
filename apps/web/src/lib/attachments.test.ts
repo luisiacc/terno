@@ -77,3 +77,18 @@ it("plan 293 (CASA 5.2.1): a Gmail draft leaves out what Gmail won't send, says 
   expect(error).not.toHaveBeenCalled();
   expect(created).toEqual(["setup.exe", "report.pdf"]);
 });
+
+it("plan 293 (Codex code review #6): a blocked file before an inline image leaves the image's placement at its own place", async () => {
+  call.mockImplementation(async (method: string, p: { filename?: string; contentId?: string }) => {
+    if (method === "attachments.create") return { assetId: "00000000-0000-4000-8000-000000000009", filename: p.filename, mime: "image/png", size: 4, contentId: p.contentId ?? null };
+    return { ok: true };
+  });
+  setDraftTransport(async () => ({ id: 1, revision: 1 }));
+  setApp({ accounts: [{ id: 1, kind: "gmail" } as import("@terno/core").Account] });
+  const key = createDraft(newFields(1));
+  let placed: (import("@terno/core").AttachmentRef | undefined)[] = [];
+  const files = [new File([new Uint8Array([0x4d, 0x5a, 0, 0])], "setup.exe"), new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], "photo.png", { type: "image/png" })];
+  expect(await attachFiles(key, files, { contentIds: [null, "cid-photo"], placed: (refs) => { placed = refs; } })).toBe(true);
+  expect(placed[0]).toBeUndefined();
+  expect(placed[1]).toMatchObject({ filename: "photo.png", contentId: "cid-photo" });
+});
