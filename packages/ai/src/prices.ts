@@ -17,10 +17,10 @@ export interface ModelPrice {
 const PRICES: Readonly<Record<string, ModelPrice>> = {
   "claude-fable-5-1": { input: 10, output: 50, cacheRead: 0.25, cacheWrite: 12.5 },
   "claude-opus-5-5": { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 },
-  "claude-sonnet-5-5": { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
+  "claude-sonnet-5-5": { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 },
   "claude-haiku-5-5": { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 },
-  // the user's figure for input; output isn't known, so it's priced as if it were GPT's usual 4× to stay on the safe side
-  "gpt-6-luna": { input: 0.1, output: 0.4 },
+  // OpenAI's list price since its launch (2026-09-22): cached input at a tenth, writing the cache at the input price
+  "gpt-6-luna": { input: 0.1, output: 0.5, cacheRead: 0.01 },
   "jev-latest": { input: 0.042, output: 0 },
   "jev-preview": { input: 0.042, output: 0 },
 };
@@ -46,7 +46,7 @@ export function worstCaseUsd(price: ModelPrice, req: Pick<CompletionRequest, "sy
 /** What a request cost at a price, in US dollars. */
 export function costAt(price: ModelPrice, usage: Usage): number {
   const cached = (usage.cacheReadTokens ?? 0) * (price.cacheRead ?? price.input) + (usage.cacheWriteTokens ?? 0) * (price.cacheWrite ?? price.input);
-  // OpenAI counts cached tokens inside input; Anthropic reports them apart. Only OpenAI's would double-count, and only upward.
+  // input is what wasn't read from or written to a cache: each transport reports it so (OpenAI's prompt_tokens include its cached ones)
   return (usage.inputTokens * price.input + usage.outputTokens * price.output + cached) / 1_000_000;
 }
 

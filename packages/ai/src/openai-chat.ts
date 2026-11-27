@@ -9,8 +9,11 @@ import { AiError, promptText, type CompletionRequest, type ModelInfo, type Model
 
 /** GA version with structured outputs (json_schema) on chat completions. */
 export const AZURE_API_VERSION = "2024-10-21";
-function usageOf(u: { prompt_tokens: number; completion_tokens: number; prompt_tokens_details?: { cached_tokens?: number } | null } | null | undefined): Usage | undefined {
-  return u ? { inputTokens: u.prompt_tokens, outputTokens: u.completion_tokens, cacheReadTokens: u.prompt_tokens_details?.cached_tokens ?? 0 } : undefined;
+/** As Anthropic reports it: `prompt_tokens` includes the cached ones, so they're taken out of input and counted once, as cache reads. */
+export function usageOf(u: { prompt_tokens: number; completion_tokens: number; prompt_tokens_details?: { cached_tokens?: number | null } | null } | null | undefined): Usage | undefined {
+  if (!u) return undefined;
+  const cached = Math.min(u.prompt_tokens_details?.cached_tokens ?? 0, u.prompt_tokens);
+  return { inputTokens: u.prompt_tokens - cached, outputTokens: u.completion_tokens, cacheReadTokens: cached };
 }
 
 /**

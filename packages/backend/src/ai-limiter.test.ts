@@ -245,7 +245,7 @@ describe("AiLimiter", () => {
       await running;
       const usage = await h.store.settings.get<Record<string, Record<string, { requests: number; usd: number }>>>("ai:usage", {});
       expect(Object.keys(usage)).toHaveLength(1);
-      expect(Object.values(usage)[0]!.summary!.usd).toBeCloseTo((0.1 + 0.4) / 1e6, 12);
+      expect(Object.values(usage)[0]!.summary!.usd).toBeCloseTo((0.1 + 0.5) / 1e6, 12);
     });
   });
 

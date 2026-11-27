@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { fileLedger } from "./file-ledger";
 import { budgetedTransport, BudgetExceededError, type SpendLedger } from "./spend";
+import { usageOf as openaiUsageOf } from "./openai-chat";
 import { costOf } from "./prices";
 import { streamCompletion } from "./stream";
 import { createAi } from "./tasks";
@@ -217,8 +218,21 @@ describe("plan 162: a key without permission", () => {
 describe("prices", () => {
   it("knows what the defaults cost, and says nothing about what it doesn't know", () => {
     expect(costOf("gpt-6-luna", { inputTokens: 1_000_000, outputTokens: 0 })).toBeCloseTo(0.1, 6);
-    expect(costOf("claude-sonnet-5-5", { inputTokens: 0, outputTokens: 0, cacheReadTokens: 1_000_000 })).toBeCloseTo(0.2, 6);
+    expect(costOf("gpt-6-luna", { inputTokens: 0, outputTokens: 1_000_000 })).toBeCloseTo(0.5, 6);
+    expect(costOf("gpt-6-luna", { inputTokens: 0, outputTokens: 0, cacheReadTokens: 1_000_000 })).toBeCloseTo(0.01, 6);
+    expect(costOf("claude-sonnet-5-5", { inputTokens: 0, outputTokens: 0, cacheReadTokens: 1_000_000 })).toBeCloseTo(0.1, 6);
     expect(costOf("who-knows", { inputTokens: 1, outputTokens: 1 })).toBeNull();
+  });
+});
+
+describe("OpenAI's usage", () => {
+  it("counts a cached token once, as a cache read, never also as input", () => {
+    const usage = openaiUsageOf({ prompt_tokens: 10_000, completion_tokens: 200, prompt_tokens_details: { cached_tokens: 8_000 } });
+    expect(usage).toEqual({ inputTokens: 2_000, outputTokens: 200, cacheReadTokens: 8_000 });
+    // 2k at $0.10, 8k at $0.01, 200 at $0.50 a million
+    expect(costOf("gpt-6-luna", usage!)).toBeCloseTo((2_000 * 0.1 + 8_000 * 0.01 + 200 * 0.5) / 1e6, 12);
+    expect(openaiUsageOf({ prompt_tokens: 5, completion_tokens: 1 })).toEqual({ inputTokens: 5, outputTokens: 1, cacheReadTokens: 0 });
+    expect(openaiUsageOf(null)).toBeUndefined();
   });
 });
 
