@@ -57,6 +57,7 @@ function ComboboxPickerInput({
         {...props}
       />
       <Combobox.Trigger
+        data-slot="combobox-picker-trigger"
         tabIndex={-1}
         aria-hidden
         // focus stays in the field while the pointer opens the list

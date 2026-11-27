@@ -526,11 +526,11 @@ test("accessible: axe finds nothing serious on any tab; controls have names and 
   for (const [tab] of TABS) {
     await show(page, tab);
     expect(await axe(page), `tab ${tab}`).toEqual([]);
-    // every switch, select and text field in the panel has a name; what's hidden from screen readers isn't one of their
-    // controls (a combobox's pointer-only chevron, plan 248: the field is the control; axe's aria-hidden-focus keeps it unfocusable)
+    // every switch, select and text field in the panel has a name; a combobox picker's chevron isn't one of their controls
+    // (plan 248: pointer-only, hidden and out of the tab order, the field beside it is the control), and only it is skipped
     const unnamed = await panel(page).evaluate((el) =>
-      [...el.querySelectorAll<HTMLElement>("[role=switch], [role=combobox], input:not([type=hidden]), textarea, button")]
-        .filter((c) => c.offsetParent !== null && !c.closest("[aria-hidden=true]"))
+      [...el.querySelectorAll<HTMLElement>("[role=switch], [role=combobox], input:not([type=hidden]):not([aria-hidden=true]), textarea, button")]
+        .filter((c) => c.offsetParent !== null && !c.matches('[data-slot=combobox-picker-trigger][aria-hidden=true][tabindex="-1"]'))
         .filter((c) => {
           const named = c.getAttribute("aria-label") || c.getAttribute("aria-labelledby") || (c.id && el.ownerDocument.querySelector(`label[for="${c.id}"]`)) || c.closest("label") || (c.textContent ?? "").trim();
           return !named;
