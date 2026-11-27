@@ -252,10 +252,11 @@ describe.each(["SQL", "IndexedDB"] as const)("%s public provider secret replacem
     const cipher = vi.spyOn(t.cipher, "decrypt").mockRejectedValue(new Error(detail));
     const accountError = await t.ctx.getSecret("password").catch((error: unknown) => error);
     const appError = await t.ctx.getAppSecret(appName).catch((error: unknown) => error);
+    // plan 293: the one message, with the keychain's refusal told apart by its flag
     expect(accountError).toBeInstanceOf(ProviderAuthError);
-    expect(String(accountError)).toContain("keychain");
+    expect(accountError).toMatchObject({ secretFailure: "keychain", i18n: { key: "errors.secret.unavailable" } });
     expect(appError).toBeInstanceOf(SecretUnreadableError);
-    expect(String(appError)).toContain("keychain");
+    expect(appError).toMatchObject({ secretFailure: "keychain", i18n: { key: "errors.secret.unavailable" } });
     const exposed = JSON.stringify({ logs: t.logs, accountError: String(accountError), appError: String(appError) });
     for (const marker of markers) expect(exposed).not.toContain(marker);
     expect(t.logs.some((entry) => JSON.stringify(entry).includes("decrypt"))).toBe(true);

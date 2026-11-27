@@ -185,6 +185,11 @@ export interface AccountSyncState {
   lastError: string | null;
   /** lastError as a catalog message (when it is one of Terno's): the renderer shows it in the user's language */
   lastErrorI18n?: { key: string; params?: Readonly<Record<string, string | number>> } | null;
+  /**
+   * Plan 293: the error is a saved secret that wouldn't open, and why: the keychain refused it (rechecked locally, plan
+   * 264) or it is still sealed under Única's. Its message is the same for every cause; this is what tells them apart.
+   */
+  lastErrorSecret?: "keychain" | "legacy" | null;
   lastSyncAt: number | null;
   /**
    * Plan 20: the account can't reach its server (after two failures in a row, or at once while the

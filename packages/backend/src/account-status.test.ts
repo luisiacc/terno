@@ -116,7 +116,8 @@ it("plan 264 (Codex review): a keychain refusal never hides the server's, and it
   const status = new AccountStatus({ initial, generation: () => 1, write: async () => {}, changed() {} });
   const authority = { generation: 1, live: () => true };
   await status.refuse(authority, { message: "Revoked", i18n: { key: "errors.gmail.revoked" } });
-  const keychain = { message: "Keychain", i18n: { key: "errors.secret.keychain.googleSession" } };
+  // plan 293: told apart by its flag (every secret failure has the same message)
+  const keychain = { message: "Keychain", i18n: { key: "errors.secret.unavailable" }, secretFailure: "keychain" as const };
   await status.refuse(authority, keychain);
   expect(status.refusalKey).toBe("errors.gmail.revoked");
   await status.localRecoveryProof(authority)();
@@ -128,4 +129,25 @@ it("plan 264 (Codex review): a keychain refusal never hides the server's, and it
   await local.localRecoveryProof(authority)();
   expect(local.signInRequired).toBe(false);
   expect(local.policyPaused).toBe(true);
+});
+
+it("plan 293: the flag outlives a restart, and a legacy secret (same message) is never rechecked locally", async () => {
+  const authority = { generation: 1, live: () => true };
+  let saved: import("@terno/core").AccountSyncState = initial;
+  const first = new AccountStatus({ initial, generation: () => 1, write: async (s) => { saved = s; }, changed() {} });
+  await first.refuse(authority, { message: "M", i18n: { key: "errors.secret.unavailable" }, secretFailure: "keychain" });
+  await first.flush();
+  expect(saved).toMatchObject({ lastErrorI18n: { key: "errors.secret.unavailable" }, lastErrorSecret: "keychain" });
+  const again = new AccountStatus({ initial: saved, generation: () => 1, write: async () => {}, changed() {} });
+  expect(again.keychainRefused).toBe(true);
+  await again.localRecoveryProof(authority)();
+  expect(again.signInRequired).toBe(false);
+  const legacy = new AccountStatus({ initial, generation: () => 1, write: async () => {}, changed() {} });
+  await legacy.refuse(authority, { message: "M", i18n: { key: "errors.secret.unavailable" }, secretFailure: "legacy" });
+  expect(legacy.keychainRefused).toBe(false);
+  await legacy.localRecoveryProof(authority)();
+  expect(legacy.signInRequired).toBe(true);
+  // a sign-in clears it, and the flag with it
+  await legacy.verified(authority);
+  expect(legacy.project().lastErrorSecret).toBeNull();
 });

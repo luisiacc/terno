@@ -145,13 +145,15 @@ describe("keychain migration (Única → Terno)", () => {
     await backend.syncAccount(accountId);
     const account = (await backend.store.accounts.list())[0]!;
     expect(account.syncState.status).toBe("error");
-    expect(account.syncState.lastError).toMatch(/couldn’t open what Única saved: this account’s password\. Enter it again in Settings → Accounts/);
-    // the account's error goes to the renderer as a catalog message (its language)
-    expect(account.syncState.lastErrorI18n).toEqual({ key: "errors.secret.legacy.password" });
+    // plan 293: the one message for every secret failure; the account's Sign in again says which and what to do
+    expect(account.syncState.lastError).toBe("Terno couldn’t open a saved sign-in or key. Sign in or enter it again.");
+    // the account's error goes to the renderer as a catalog message (its language), with why kept apart
+    expect(account.syncState.lastErrorI18n).toEqual({ key: "errors.secret.unavailable" });
+    expect(account.syncState.lastErrorSecret).toBe("legacy");
     // the AI key
     let settings = (await client.call("app.bootstrap", {})).settings;
     expect(settings.ai).toMatchObject({ provider: "openai", hasKey: true, keyUnreadable: true });
-    await expect(backend.aiService.config({ provider: "openai", model: "gpt-x" })).rejects.toMatchObject({ kind: "not_configured", message: expect.stringMatching(/your API key\. Save it again in Settings → AI/), i18n: { key: "errors.secret.legacy.apiKey" } });
+    await expect(backend.aiService.config({ provider: "openai", model: "gpt-x" })).rejects.toMatchObject({ kind: "not_configured", message: "Terno couldn’t open a saved sign-in or key. Sign in or enter it again.", i18n: { key: "errors.secret.unavailable" } });
 
     // entering them again clears each one, whichever way it is saved
     await client.call("accounts.reconnect", { id: accountId, password: "nueva" });

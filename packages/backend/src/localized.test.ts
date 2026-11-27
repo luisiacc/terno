@@ -74,14 +74,12 @@ describe("errors as catalog messages", () => {
     expect(loginFailed("errors.couldNotConnect", "ana@x.mx", "timeout").message).toBe("Couldn’t connect: timeout");
   });
 
-  it("an unreadable secret says which one and where to enter it again", () => {
+  it("plan 293: an unreadable secret says one thing, whichever secret and whatever the cause, in both languages", () => {
     const e = new SecretUnreadableError("account:3:refreshToken", false);
-    expect(e.message).toBe("The keychain won’t open this account’s Google session. Reconnect it in Settings → Accounts (Connect with Google).");
-    expect(e.i18n).toEqual({ key: "errors.secret.keychain.googleSession" });
-    expect(new SecretUnreadableError("ai:openai", true).i18n).toEqual({ key: "errors.secret.legacy.apiKey" });
-    expect(new SecretUnreadableError("something", false).i18n).toEqual({ key: "errors.secret.keychain.other" });
+    expect(e.message).toBe("Terno couldn’t open a saved sign-in or key. Sign in or enter it again.");
+    for (const other of [new SecretUnreadableError("ai:openai", true), new SecretUnreadableError("something", false)]) expect(other.i18n).toEqual({ key: "errors.secret.unavailable" });
     setLocale("es", es);
-    expect(translate({ ...e.i18n!, message: e.message })).toBe("El llavero no abre la sesión de Google de esta cuenta. Vuelve a conectarla en Ajustes → Cuentas (Conectar con Google).");
+    expect(translate({ ...e.i18n!, message: e.message })).toBe("Terno no pudo abrir un inicio de sesión o una clave guardados. Vuelve a iniciar sesión o a introducirla.");
   });
 });
 

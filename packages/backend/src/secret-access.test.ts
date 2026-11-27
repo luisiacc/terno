@@ -86,14 +86,14 @@ describe("CASA 4.1.4: a cryptographic failure is one generic error, whatever its
       const opened = await secrets.open("account:3:refreshToken", Uint8Array.of(1, 2, 3), "refresh").catch((e: unknown) => e);
       for (const error of [sealed, opened]) {
         expect(error).toBeInstanceOf(SecretStorageError);
-        expect((error as Error).message).toBe("Terno couldn’t use the system keychain to protect your sign-in. Make sure the keychain is unlocked, then try again.");
+        expect((error as Error).message).toBe("Terno couldn’t open a saved sign-in or key. Sign in or enter it again.");
         expect((error as Error).cause).toBeUndefined();
         expectNoLeak({ message: (error as Error).message, payload: toErrorPayload(error) });
       }
     }
     // the payload the renderer gets: one code, one category, the catalog message, expected (no crash record)
     const payload = toErrorPayload(new SecretStorageError());
-    expect(payload).toMatchObject({ code: "UNAVAILABLE", details: { category: SECRET_STORAGE_FAILED }, expected: true, i18n: { key: "errors.secret.storage" } });
+    expect(payload).toMatchObject({ code: "UNAVAILABLE", details: { category: SECRET_STORAGE_FAILED }, expected: true, i18n: { key: "errors.secret.unavailable" } });
     expect(records).toEqual([]);
     expectNoLeak(entries);
     // every failure is logged by its category only
@@ -117,7 +117,7 @@ describe("CASA 4.1.4: a cryptographic failure is one generic error, whatever its
     const key = await client.call("ai.setKey", { provider: "openai", value: "sk-live-0000-SECRET" }).catch((e: unknown) => e);
     for (const error of [add, key]) {
       expect(error).toBeInstanceOf(RpcError);
-      expect(error).toMatchObject({ code: "UNAVAILABLE", details: { category: SECRET_STORAGE_FAILED }, i18n: { key: "errors.secret.storage" } });
+      expect(error).toMatchObject({ code: "UNAVAILABLE", details: { category: SECRET_STORAGE_FAILED }, i18n: { key: "errors.secret.unavailable" } });
       expectNoLeak({ message: (error as RpcError).message, details: (error as RpcError).details });
     }
     expect(await backend.store.accounts.list()).toEqual([]);
@@ -153,6 +153,66 @@ it("adding an account whose transaction fails after its secret was sealed record
   vi.spyOn(backend.store.accounts, "create").mockRejectedValueOnce(new Error("disk full"));
   await expect(client.call("accounts.addImap", { email: "luis@example.com", displayName: "Luis", imap: { host: "imap.example.com", port: 993, secure: true, user: "luis@example.com" }, smtp: { host: "smtp.example.com", port: 465, secure: true, user: "luis@example.com" }, password: "pw", verify: false })).rejects.toBeTruthy();
   expect(lines()).toContainEqual({ level: "warn", secretOp: "write", secretKind: "password", component: "signIn", secretOutcome: "failed", errorCategory: SECRET_STORAGE_FAILED });
+});
+
+describe("plan 293 (CASA 4.1.4, the tester's ask): one generic error, whatever the cause", () => {
+  const throwing = (o: { encrypt?: string; decrypt?: string }): SecretCipher => ({
+    encrypt: async () => Promise.reject(new Error(o.encrypt ?? "unused")),
+    decrypt: async () => Promise.reject(new Error(o.decrypt ?? "unused")),
+  });
+
+  it("keychain unavailable, padding, MAC or key validation, a legacy blob, and a failed seal give the renderer the byte-identical payload", async () => {
+    const backend = async (cipher: SecretCipher) => {
+      const dir = mkdtempSync(join(tmpdir(), "terno-secret-"));
+      const b = new Backend({ dbPath: join(dir, "t.db"), version: "t", cipher, providers: demoRegistry, autoSync: false });
+      cleanups.push(async () => {
+        await b.stop();
+        rmSync(dir, { recursive: true, force: true });
+      });
+      await b.store.ready;
+      await b.store.secrets.put("account:4:password", Uint8Array.of(1, 2, 3));
+      return b;
+    };
+    const failures: Record<string, unknown> = {
+      // main answers { ok: false } when safeStorage has no keychain; the backend's cipher rejects without text
+      "keychain unavailable": await (await backend(throwing({ decrypt: "secret storage failed" }))).getSecret("account:4:password").catch((e: unknown) => e),
+      padding: await (await backend(throwing({ decrypt: "error:1C800064:Provider routines::bad decrypt" }))).getSecret("account:4:password").catch((e: unknown) => e),
+      "MAC or key validation": await (await backend(throwing({ decrypt: "OperationError: GCM tag mismatch (wrong key)" }))).getSecret("account:4:password").catch((e: unknown) => e),
+      "legacy migration": await (async () => {
+        const b = await backend(plaintextCipher);
+        const { blobFingerprint, KEYCHAIN_STATE_KEY } = await import("./keychain");
+        await b.store.settings.set(KEYCHAIN_STATE_KEY, { generation: "terno", pending: { "account:4:password": blobFingerprint(Uint8Array.of(1, 2, 3)) } });
+        return b.getSecret("account:4:password").catch((e: unknown) => e);
+      })(),
+      seal: await new SecretAccess(throwing({ encrypt: "Encryption is not available." }), memoryStore()).seal("ai:openai:apiKey", "sk-live-0000-SECRET", "settings").catch((e: unknown) => e),
+    };
+    const payloads = Object.entries(failures).map(([cause, error]) => {
+      expect(error, cause).toBeInstanceOf(SecretStorageError);
+      return JSON.stringify(toErrorPayload(error));
+    });
+    expect(new Set(payloads).size).toBe(1);
+    expect(JSON.parse(payloads[0]!)).toEqual({
+      code: "UNAVAILABLE",
+      message: "Terno couldn’t open a saved sign-in or key. Sign in or enter it again.",
+      details: { category: SECRET_STORAGE_FAILED },
+      expected: true,
+      i18n: { key: "errors.secret.unavailable" },
+    });
+  });
+
+  it("the log line of a failure holds the operation and the category, and nothing the cipher said", async () => {
+    await new SecretAccess(throwing({ decrypt: "error:1C800064:Provider routines::bad decrypt" }), memoryStore()).open("account:4:password", Uint8Array.of(1), "mailLogin").catch(() => {});
+    await new SecretAccess(throwing({ encrypt: "Encryption is not available." }), memoryStore()).seal("account:4:password", "x", "signIn").catch(() => {});
+    log.warn("keychain.secret_failed", { op: "decrypt", errorCategory: SECRET_STORAGE_FAILED });
+    const failed = entries.filter((e) => e.level === "warn");
+    // the access record (CASA 6.7.1) adds which kind of secret, which part of Terno and the account's internal id
+    expect(failed.map((e) => ({ code: e.code, fields: e.fields, err: e.err }))).toEqual([
+      { code: "secret.access", fields: { secretOp: "read", secretKind: "password", accountId: 4, component: "mailLogin", secretOutcome: "failed", errorCategory: SECRET_STORAGE_FAILED }, err: undefined },
+      { code: "secret.access", fields: { secretOp: "write", secretKind: "password", accountId: 4, component: "signIn", secretOutcome: "failed", errorCategory: SECRET_STORAGE_FAILED }, err: undefined },
+      { code: "keychain.secret_failed", fields: { op: "decrypt", errorCategory: SECRET_STORAGE_FAILED }, err: undefined },
+    ]);
+    expect(JSON.stringify(entries)).not.toMatch(/bad decrypt|not available|1C800064/);
+  });
 });
 
 describe("CASA 6.7.1: every access to a stored secret is recorded, locally", () => {

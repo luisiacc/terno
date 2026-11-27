@@ -2785,20 +2785,10 @@ It contains none of your mail, contacts, settings or keys.
   "errors.theme.max": "Up to {max} themes",
   "errors.theme.duplicateIds": "Repeated theme ids",
   "errors.theme.tooBig": "The themes take up more than 16 KB",
-  // keychain: a secret that can't be opened, and where Settings asks for it again
+  // plan 293 (CASA 4.1.4): every keychain or secret-storage failure, whatever its cause or secret: one message;
+  // which secret, and what to do, is where the UI shows it (Reconnect, Sign in, the AI key field)
+  "errors.secret.unavailable": "Terno couldn’t open a saved sign-in or key. Sign in or enter it again.",
   "errors.secret.replaceFailed": "Couldn’t save the updated sign-in. Try again.",
-  // plan 293 (CASA 4.1.4): every keychain failure, whatever its cause
-  "errors.secret.storage": "Terno couldn’t use the system keychain to protect your sign-in. Make sure the keychain is unlocked, then try again.",
-  "errors.secret.keychain.password": "The keychain won’t open this account’s password. Enter it again in Settings → Accounts (Change password…).",
-  "errors.secret.keychain.googleSession": "The keychain won’t open this account’s Google session. Reconnect it in Settings → Accounts (Connect with Google).",
-  "errors.secret.keychain.clientSecret": "The keychain won’t open the Google client secret. Save it again in Settings → Accounts.",
-  "errors.secret.keychain.apiKey": "The keychain won’t open your API key. Save it again in Settings → AI.",
-  "errors.secret.keychain.other": "The keychain won’t open a saved secret. Enter it again in Settings.",
-  "errors.secret.legacy.password": "Terno couldn’t open what Única saved: this account’s password. Enter it again in Settings → Accounts (Change password…).",
-  "errors.secret.legacy.googleSession": "Terno couldn’t open what Única saved: this account’s Google session. Reconnect it in Settings → Accounts (Connect with Google).",
-  "errors.secret.legacy.clientSecret": "Terno couldn’t open what Única saved: the Google client secret. Save it again in Settings → Accounts.",
-  "errors.secret.legacy.apiKey": "Terno couldn’t open what Única saved: your API key. Save it again in Settings → AI.",
-  "errors.secret.legacy.other": "Terno couldn’t open what Única saved: a saved secret. Enter it again in Settings.",
   // network policy (local mode)
   "errors.net.redirect": "{from} answered with a redirect to {to}: Terno doesn’t follow redirects for requests that carry your API key. Check the server URL in Settings → AI.",
   "errors.net.redirectNowhere": "{from} answered with a redirect: Terno doesn’t follow redirects for requests that carry your API key. Check the server URL in Settings → AI.",

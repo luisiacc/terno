@@ -1,8 +1,6 @@
 import { log } from "@terno/core/diag";
-import { RpcError } from "@terno/core/rpc";
-import { L } from "@terno/i18n";
 import type { MailStore } from "@terno/store";
-import { SECRET_STORAGE_FAILED, type SecretAccess } from "./secret-access";
+import { SECRET_STORAGE_FAILED, SecretStorageError, type SecretAccess } from "./secret-access";
 
 /**
  * Secrets sealed when the app was called Única. On desktop, Electron's
@@ -26,35 +24,27 @@ export interface KeychainState {
 /** Opens blobs sealed under the previous keychain: one plaintext per blob, null where it couldn't. */
 export type LegacySecretReader = (blobs: Uint8Array[]) => Promise<(string | null)[]>;
 
-/** What a secret is (the message then says where Settings asks for it again). */
-export function secretKind(name: string): "password" | "googleSession" | "clientSecret" | "apiKey" | "other" {
-  if (/^account:\d+:password$/.test(name)) return "password";
-  if (/^account:\d+:refreshToken$/.test(name)) return "googleSession";
-  if (name === "gmailClientSecret") return "clientSecret";
-  if (name.startsWith("ai:")) return "apiKey";
-  return "other";
-}
-
 /**
  * A saved secret that can't be opened: sealed by Única and not migrated, or refused by the keychain. Plan 293 (CASA
- * 4.1.4): on the wire it is the same fixed category as every cryptographic failure (UNAVAILABLE,
- * details.category = secret_storage_failed), with a fixed message per kind of secret saying where to enter it again;
- * never what the keychain said.
+ * 4.1.4): to the user and on the wire it is exactly the one storage error (same code, category and message, whatever
+ * the cause or the secret); which one it was stays internal.
  */
-export class SecretUnreadableError extends RpcError {
-  readonly category = SECRET_STORAGE_FAILED;
+export class SecretUnreadableError extends SecretStorageError {
   constructor(
     readonly secretName: string,
     /** sealed by Única and not migrated (else: the keychain refused it) */
     readonly legacy: boolean,
   ) {
-    super("UNAVAILABLE", L(`errors.secret.${legacy ? "legacy" : "keychain"}.${secretKind(secretName)}`), { category: SECRET_STORAGE_FAILED }, { expected: true });
+    super(legacy ? "legacy" : "keychain");
     this.name = "SecretUnreadableError";
   }
 }
 
-/** plan 264: a sign-in demand the keychain made (it wouldn't open a saved secret), not the server: rechecked locally */
-export const keychainRefusal = (key: string | undefined): boolean => !!key?.startsWith("errors.secret.keychain.");
+/**
+ * Plan 264: a sign-in demand the keychain made (it wouldn't open a saved secret), not the server: rechecked locally.
+ * Plan 293: told by the failure's own flag, never its message (which is the same for every cause).
+ */
+export const keychainRefusal = (failure: { secretFailure?: string | null } | undefined): boolean => failure?.secretFailure === "keychain";
 
 /** FNV-1a over the blob: tells "still the legacy blob" from "rewritten since" without keeping a copy. */
 export function blobFingerprint(blob: Uint8Array): string {

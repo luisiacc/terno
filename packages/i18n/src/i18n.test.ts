@@ -168,12 +168,10 @@ describe("locales", () => {
     }
   });
 
-  it("errors that name a button quote its exact label, in both languages", () => {
+  it("plan 293 (CASA 4.1.4): one message for every secret that won't open, whatever the cause or the secret", () => {
     for (const catalog of [en, es] as Record<string, unknown>[]) {
-      for (const kind of ["keychain", "legacy"]) {
-        expect(catalog[`errors.secret.${kind}.password`]).toContain(`(${catalog["account.changePassword"]})`);
-        expect(catalog[`errors.secret.${kind}.googleSession`]).toContain(`(${catalog["account.connectGoogle"]})`);
-      }
+      expect(Object.keys(catalog).filter((k) => /^errors\.secret\.(keychain|legacy|storage)\b/.test(k))).toEqual([]);
+      expect(catalog["errors.secret.unavailable"]).toEqual(expect.any(String));
     }
   });
 

@@ -58,6 +58,8 @@ export function createOAuthSession(ctx: ProviderContext, options: OAuthSessionOp
       assertOpen();
       if (candidate === pending) pending.uncertain = true;
       if (error instanceof ProviderAuthError) throw error;
+      // plan 293: the keychain refusing the rotated token keeps its one message (not "couldn't save")
+      if (error instanceof ProviderError && error.secretFailure) throw error;
       if (error instanceof Error && error.name === "AbortError") throw new DOMException("closed", "AbortError");
       throw persistenceFailure();
     }

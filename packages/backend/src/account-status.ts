@@ -8,6 +8,8 @@ export interface StatusAuthority {
 export interface StatusFailure {
   message: string;
   i18n?: AccountSyncState["lastErrorI18n"];
+  /** plan 293: a saved secret that wouldn't open, and why (the message alone can't tell: it's one for every cause) */
+  secretFailure?: "keychain" | "legacy" | null;
 }
 
 /** One account-stamp authority survives provider replacement and orders every status write. */
@@ -25,6 +27,8 @@ export class AccountStatus {
   private writing: Promise<void> | undefined;
   private recovery = 0;
   private refusal = 0;
+  /** plan 293: a secret failure's flag was stored: clearing it must be written (the store merges a patch) */
+  private secretStored: boolean;
 
   constructor(private readonly options: {
     initial: AccountSyncState;
@@ -35,9 +39,10 @@ export class AccountStatus {
     failed?(): void;
   }) {
     this.state = { ...options.initial };
+    this.secretStored = !!options.initial.lastErrorSecret;
     if (this.state.status === "syncing") this.state = { ...this.state, status: this.state.lastError ? "error" : "idle", progress: null };
     if (this.state.authRequired) {
-      const failure = { message: this.state.lastError ?? "", i18n: this.state.lastErrorI18n };
+      const failure = { message: this.state.lastError ?? "", i18n: this.state.lastErrorI18n, secretFailure: this.state.lastErrorSecret };
       if (this.state.authScope === "send") this.send = { scope: "send", failure };
       else this.whole = { scope: null, source: "account", failure };
     }
@@ -52,17 +57,23 @@ export class AccountStatus {
   get signInRequired(): boolean { return this.auth?.scope === null; }
   /** What lifts a whole-account refusal besides a sign-in: IMAP accepting its own refusal again, else IMAP and SMTP. */
   get recheck(): "incoming" | "account" | null { return this.whole?.source ?? null; }
-  /** the whole-account refusal's catalog key (plan 264: a keychain refusal is rechecked locally) */
+  /** the whole-account refusal's catalog key */
   get refusalKey(): string | undefined { return this.whole?.failure.i18n?.key; }
+  /** plan 264: the whole-account refusal is our keychain's, rechecked locally (plan 293: by its flag, not its message) */
+  get keychainRefused(): boolean { return keychainRefusal(this.whole?.failure); }
   holds(kind: string): boolean { return !!this.auth && (this.auth.scope === null || kind === "send"); }
   get policyPaused(): boolean { return this.policy !== undefined; }
   get policyRevision(): number { return this.recovery; }
 
   project(): AccountSyncState {
-    const state = { ...this.state, ...(this.auth ? { authRequired: true, authScope: this.auth.scope } : {}) };
+    const { lastErrorSecret: _secret, ...rest } = this.state;
+    const state = { ...rest, ...(this.auth ? { authRequired: true, authScope: this.auth.scope } : {}) };
     const failure = this.signInRequired ? this.auth!.failure : this.policyPaused ? this.policy!.failure : this.constraint?.active() ? this.constraint.failure : this.auth?.failure;
-    if (failure) return { ...state, ...(this.auth?.scope !== "send" || this.policyPaused || this.constraint?.active() ? { status: "error" as const, connection: null } : {}), lastError: failure.message, lastErrorI18n: failure.i18n ?? null };
-    return state;
+    const secret = failure?.secretFailure ?? null;
+    if (secret) this.secretStored = true;
+    const flag = secret || this.secretStored ? { lastErrorSecret: secret } : {};
+    if (failure) return { ...state, ...(this.auth?.scope !== "send" || this.policyPaused || this.constraint?.active() ? { status: "error" as const, connection: null } : {}), lastError: failure.message, lastErrorI18n: failure.i18n ?? null, ...flag };
+    return { ...state, ...flag };
   }
 
   begin(authority: StatusAuthority) {
@@ -92,7 +103,7 @@ export class AccountStatus {
     if (!this.current(authority)) return Promise.resolve();
     // plan 264: our keychain failing to open a secret never hides the server's refusal of the same credentials (the
     // keychain's is lifted by opening the secret again; the server's only by a sign-in)
-    if (scope === null && keychainRefusal(failure.i18n?.key) && this.whole && !keychainRefusal(this.refusalKey)) return Promise.resolve();
+    if (scope === null && keychainRefusal(failure) && this.whole && !keychainRefusal(this.whole.failure)) return Promise.resolve();
     if (scope === "send") this.send = { failure, scope };
     else this.whole = { failure, scope, source };
     this.refusal++;
@@ -129,9 +140,9 @@ export class AccountStatus {
    * read: a newer one, or another key, stays), never a policy pause or a send refusal beside it.
    */
   localRecoveryProof(authority: StatusAuthority): () => Promise<void> {
-    const refusal = this.refusal, key = this.refusalKey;
+    const refusal = this.refusal, failure = this.whole?.failure;
     return () => {
-      if (!this.current(authority) || refusal !== this.refusal || !keychainRefusal(key) || this.refusalKey !== key) return Promise.resolve();
+      if (!this.current(authority) || refusal !== this.refusal || !keychainRefusal(failure) || this.whole?.failure !== failure) return Promise.resolve();
       this.whole = undefined;
       this.run = undefined;
       this.state = { ...this.state, status: "idle", lastError: null, lastErrorI18n: null, authRequired: false, authScope: null, connection: null };

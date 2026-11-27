@@ -79,6 +79,11 @@ export class ProviderError extends Error {
   readonly i18n?: TextRef;
   /** Local evidence only: raw response fields must never enter error projections. */
   declare readonly httpResponse?: HttpResponseEvidence;
+  /**
+   * Plan 293: a saved secret couldn't be opened, and why (the keychain refused it, or it is still Única's). The
+   * message is the same either way; this decides plan 264's local recheck.
+   */
+  secretFailure?: "keychain" | "legacy";
   constructor(
     message: string | Localized,
     readonly retryable: boolean,
@@ -137,10 +142,11 @@ export class ProviderAuthError extends ProviderError {
    * for a refusal that asks the user to act on a grant that may still be good (Microsoft's interaction_required).
    */
   readonly grantRejected: boolean;
-  constructor(message: string | Localized, httpResponse?: HttpResponseEvidence, o: { grantRejected?: boolean } = {}) {
+  constructor(message: string | Localized, httpResponse?: HttpResponseEvidence, o: { grantRejected?: boolean; secretFailure?: "keychain" | "legacy" } = {}) {
     super(message, false, false, false, httpResponse);
     this.name = "ProviderAuthError";
     this.grantRejected = o.grantRejected === true;
+    if (o.secretFailure) this.secretFailure = o.secretFailure;
   }
 
   override get expected(): boolean {

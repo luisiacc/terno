@@ -47,8 +47,11 @@ import { Forwarding } from "./forwarding";
 import { createHandlers } from "./handlers";
 import { forgetOwnGoogleClient, oauthClientFor, rememberedClient, type GoogleClients, type OAuthClientSet } from "./oauth-clients";
 import { restorePending } from "./import";
-import { blobFingerprint, keychainRefusal, migrateLegacySecrets, readKeychainState, SecretUnreadableError, type LegacySecretReader } from "./keychain";
-import { SecretAccess, type SecretComponent } from "./secret-access";
+import { blobFingerprint, migrateLegacySecrets, readKeychainState, SecretUnreadableError, type LegacySecretReader } from "./keychain";
+import { SecretAccess, SecretStorageError, type SecretComponent } from "./secret-access";
+
+/** Plan 293: a secret that won't open is the account's sign-in to redo, with the one message and why (plan 264's recheck). */
+const unreadableSecret = (error: SecretUnreadableError) => new ProviderAuthError(messageOf(error), undefined, { secretFailure: error.legacy ? "legacy" : "keychain" });
 import { createNetworkPolicy, type LookupAll, type NetDecision, type NetworkPolicy } from "./net-policy";
 import { CARRY_SLICE, carryRenamed } from "./folders";
 import { followFolderFilters } from "./similar";
@@ -963,7 +966,7 @@ export class BackendCore {
       } else {
         this.startAccount(account);
         // plan 264: a Gmail session the keychain wouldn't open last time may open now
-        if (isOAuthKind(account.kind) && keychainRefusal((await this.accountStatus(account.id)).refusalKey)) void this.recheckSignIn(account.id, "start");
+        if (isOAuthKind(account.kind) && (await this.accountStatus(account.id)).keychainRefused) void this.recheckSignIn(account.id, "start");
       }
     }
     this.syncTimer = setInterval(() => this.inBackground(this.tick()), this.options.syncIntervalMs);
@@ -1128,7 +1131,7 @@ export class BackendCore {
       const scope = status.recheck;
       // plan 264: a Gmail refusal the keychain made (it wouldn't open the saved Google session) is ours to recheck,
       // locally: once the session opens, the refusal lifts as a sign-in would. Google's own refusal waits for one.
-      if (isOAuthKind(account?.kind) && scope && keychainRefusal(status.refusalKey) && this.current(life)) {
+      if (isOAuthKind(account?.kind) && scope && status.keychainRefused && this.current(life)) {
         this.rechecked.set(accountId, this.now());
         const recover = status.localRecoveryProof(this.statusAuthority(life));
         if (!await this.accountRead(life, () => this.getSecret(`account:${accountId}:refreshToken`, "recheck")) || !this.current(life)) return false;
@@ -2070,7 +2073,7 @@ export class BackendCore {
       if (!blob) return false;
       const pending = await this.accountRead(life, () => readKeychainState(this.store));
       if (pending?.pending[name] === blobFingerprint(blob)) {
-        unreadable = new ProviderAuthError(messageOf(new SecretUnreadableError(name, true)));
+        unreadable = unreadableSecret(new SecretUnreadableError(name, true));
         throw unreadable;
       }
       const component = key === "refreshToken" ? "refresh" : "mailLogin";
@@ -2078,7 +2081,7 @@ export class BackendCore {
       try {
         plain = await this.secrets.open(name, blob, component);
       } catch {
-        unreadable = new ProviderAuthError(messageOf(new SecretUnreadableError(name, false)));
+        unreadable = unreadableSecret(new SecretUnreadableError(name, false));
         throw unreadable;
       }
       this.assertCurrent(life);
@@ -2087,9 +2090,11 @@ export class BackendCore {
       const replaced = await this.accountWrite(life, () => this.secrets.replace(name, blob, candidate, component, stamp));
       this.assertCurrent(life);
       return replaced;
-    } catch {
+    } catch (error) {
       this.assertCurrent(life);
       if (unreadable) throw unreadable;
+      // plan 293: the keychain refusing to seal the rotated token is the one storage failure, kept as such
+      if (error instanceof SecretStorageError) throw Object.assign(new ProviderError(messageOf(error), true), { secretFailure: error.secretFailure });
       throw new ProviderError(L("errors.secret.replaceFailed"), true);
     }
   }
@@ -2205,7 +2210,7 @@ export class BackendCore {
             if (name === "refreshToken") grantBlob = opened?.blob ?? null;
             return opened?.plain ?? null;
           } catch (error) {
-            throw error instanceof SecretUnreadableError ? new ProviderAuthError(messageOf(error)) : error;
+            throw error instanceof SecretUnreadableError ? unreadableSecret(error) : error;
           }
         }),
         setSecret: async (name, value) => {

@@ -135,12 +135,13 @@ describe("plan 264: a Gmail session the keychain wouldn't open", () => {
     h.unreadable(true);
     await h.backend.syncAccount(account!.id);
     let state = (await h.backend.store.accounts.get(account!.id))!.syncState;
-    expect(state).toMatchObject({ authRequired: true, lastErrorI18n: { key: "errors.secret.keychain.googleSession" } });
+    expect(state).toMatchObject({ authRequired: true, lastErrorI18n: { key: "errors.secret.unavailable" }, lastErrorSecret: "keychain" });
     h.unreadable(false);
     await h.backend.retryNow(account!.id, "user");
     await vi.waitFor(async () => expect((await h.backend.store.accounts.get(account!.id))!.syncState.authRequired).toBe(false));
     state = (await h.backend.store.accounts.get(account!.id))!.syncState;
-    expect(state.lastErrorI18n?.key).not.toBe("errors.secret.keychain.googleSession");
+    expect(state.lastErrorI18n?.key).not.toBe("errors.secret.unavailable");
+    expect(state.lastErrorSecret ?? null).toBeNull();
   });
 
   it("Google refusing the grant is not rechecked: only a sign-in answers it", async () => {

@@ -22,7 +22,7 @@ export function installNetworkEvents(): () => void {
     if (document.visibilityState !== "visible" || Date.now() - lastFocus < FOCUS_EVERY_MS) return;
     // offline or backing off, or (plan 25) an IMAP account whose saved password the backend may recheck
     // plan 264: or a Gmail account whose saved session the keychain wouldn't open (the backend opens it again)
-    if (!getApp().accounts.some((a) => a.syncState.connection || (a.syncState.authRequired && a.syncState.authScope !== "send" && (a.kind === "imap" || a.syncState.lastErrorI18n?.key.startsWith("errors.secret.keychain."))))) return;
+    if (!getApp().accounts.some((a) => a.syncState.connection || (a.syncState.authRequired && a.syncState.authScope !== "send" && (a.kind === "imap" || a.syncState.lastErrorSecret === "keychain")))) return;
     lastFocus = Date.now();
     void client.call("sync.now", { reason: "focus" }).catch(() => {});
   };

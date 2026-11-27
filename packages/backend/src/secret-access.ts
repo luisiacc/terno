@@ -20,12 +20,24 @@ import type { SecretCipher } from "./core";
 
 export const SECRET_STORAGE_FAILED = "secret_storage_failed";
 
-/** The one error every cryptographic failure becomes (the renderer gets this payload as is). */
+/**
+ * Why a secret couldn't be used, kept off the wire (it only decides plan 264's local recheck): the keychain refused
+ * it, or it is still sealed under Única's and not migrated.
+ */
+export type SecretFailure = "keychain" | "legacy";
+
+/**
+ * The one error every cryptographic or secret-storage failure becomes, whatever its cause (no keychain, a refused
+ * item, bad padding or MAC, a wrong key, a legacy blob) and whatever the secret: one code, one category, one message
+ * (errors.secret.unavailable). The renderer gets this payload as is; what to do is where the UI shows it.
+ */
 export class SecretStorageError extends RpcError {
   readonly category = SECRET_STORAGE_FAILED;
-  constructor() {
-    super("UNAVAILABLE", L("errors.secret.storage"), { category: SECRET_STORAGE_FAILED }, { expected: true });
+  readonly secretFailure: SecretFailure;
+  constructor(secretFailure: SecretFailure = "keychain") {
+    super("UNAVAILABLE", L("errors.secret.unavailable"), { category: SECRET_STORAGE_FAILED }, { expected: true });
     this.name = "SecretStorageError";
+    this.secretFailure = secretFailure;
   }
 }
 
