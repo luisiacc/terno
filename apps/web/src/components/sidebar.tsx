@@ -1681,8 +1681,9 @@ export function Sidebar() {
         {/* keyed: another account focused is another sidebar (Codex code review #1: never the last one's rows) */}
         {soloAccount ? <SoloSidebar key={soloAccount.id} account={soloAccount} countTone={inboxTone} /> : all}
       </nav>
-      {/* The last pill stands clear of the footer; empty, the stack takes no room. */}
-      <div className="flex shrink-0 flex-col pb-2 empty:hidden">
+      {/* The last pill stands clear of the footer; empty, the stack takes no room. The stack spaces its cards, 8 px
+          apart as a popover stands off its card, so none sits on another */}
+      <div className="flex shrink-0 flex-col gap-2 px-(--sidebar-pad) pt-1 pb-2 empty:hidden">
         <SignInNotice />
         <ConnectionPill />
         <FirstSyncPill />

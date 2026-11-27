@@ -78,14 +78,14 @@ export function FirstSyncPill() {
   // every account still syncing, first syncs and backfills both
   const rows = accounts.filter((a) => firstSyncing(a) || backfilling(a));
   return (
-    <div className="flex shrink-0 px-(--sidebar-pad) pt-1" data-testid="first-sync-pill">
-      <div className="group min-w-0 flex-1 rounded-lg border border-sidebar-border text-xs">
+    <div className="flex shrink-0" data-testid="first-sync-pill">
+      <div className="group min-w-0 flex-1 rounded-2xl border border-sidebar-border text-xs">
         <button
           type="button"
           aria-expanded={open}
           aria-controls={panel}
           onClick={() => setOpen((o) => !o)}
-          className="flex w-full items-center gap-2 rounded-lg py-1.5 pr-2 pl-2.5 text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          className="flex w-full items-center gap-2 rounded-2xl py-1.5 pr-2 pl-2.5 text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           data-testid="first-sync-toggle"
         >
           <Spinner className="size-3.5 text-muted-foreground" aria-hidden />

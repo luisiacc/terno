@@ -3,8 +3,9 @@ import { t } from "@terno/i18n";
 import { CloseButton } from "@terno/ui/components/close-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
+import { FLOAT_INSET } from "@terno/ui/lib/float-inset";
 import { KeyRound } from "@terno/ui/icons";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { clearAttemptError, needsGoogleScript, noticeAccounts, prepareGoogle, putOff, sendOnly, useSignIn } from "~/lib/sign-in";
 import { useApp } from "~/state/app";
 import SignInPanel from "./sign-in-panel";
@@ -21,6 +22,9 @@ function usePrepare(accounts: readonly Account[]): void {
 function closed(accounts: readonly Account[]): void {
   for (const a of accounts) clearAttemptError(a.id);
 }
+
+/** the popover keeps its card's left line (the sidebar's inset); every other edge keeps plan 160's */
+const COLLISION = { top: FLOAT_INSET, right: FLOAT_INSET, bottom: FLOAT_INSET, left: 0 };
 
 /** the request (a parked send's "Sign in") this window already opened */
 let handled = 0;
@@ -41,6 +45,7 @@ export function SignInNotice() {
 
 function Notice({ accounts }: { accounts: Account[] }) {
   const [open, setOpen] = useState(false);
+  const card = useRef<HTMLDivElement>(null);
   const request = useSignIn((s) => s.request);
   usePrepare(accounts);
   useEffect(() => {
@@ -56,12 +61,13 @@ function Notice({ accounts }: { accounts: Account[] }) {
     putOff(accounts.map((a) => a.id));
   };
   return (
-    <div className="flex shrink-0 px-(--sidebar-pad) pt-1" data-testid="sign-in-notice" data-count={accounts.length} data-sign-in-ui>
+    <div className="flex shrink-0" data-testid="sign-in-notice" data-count={accounts.length} data-sign-in-ui>
       {/* said once, when it changes (the backend's account events leave it as it is) */}
       <p role="status" className="sr-only">
         {title}
       </p>
-      <div className="flex min-w-0 flex-1 items-center gap-1 rounded-lg border border-sidebar-border py-1 pr-1 pl-1 text-xs">
+      {/* the popover's radius: the panel it opens stands over it, and two corners that differ look off */}
+      <div ref={card} data-testid="sign-in-card" className="flex min-w-0 flex-1 items-center gap-1 rounded-2xl border border-sidebar-border py-1 pr-1 pl-1 text-xs">
         <Popover
           open={open}
           onOpenChange={(next) => {
@@ -74,7 +80,8 @@ function Notice({ accounts }: { accounts: Account[] }) {
               <button
                 type="button"
                 data-testid="sign-in-open"
-                className="flex min-w-0 flex-1 items-center gap-2 rounded-md py-0.5 pr-1 pl-1.5 text-left outline-none hover:bg-sidebar-hover focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+                // concentric with the card: its radius less the 1 px hairline and the 4 px inset
+                className="flex min-w-0 flex-1 items-center gap-2 rounded-[calc(var(--radius-2xl)-5px)] py-0.5 pr-1 pl-1.5 text-left outline-none hover:bg-sidebar-hover focus-visible:ring-2 focus-visible:ring-sidebar-ring"
               />
             }
           >
@@ -86,7 +93,9 @@ function Notice({ accounts }: { accounts: Account[] }) {
               <span className="block text-balance break-words text-muted-foreground">{waits}</span>
             </span>
           </PopoverTrigger>
-          <PopoverContent side="top" align="start" sideOffset={6} className="max-h-(--available-height) w-80 max-w-(--available-width) gap-3 overflow-y-auto" data-testid="sign-in-popover" data-sign-in-ui>
+          {/* off the card, not the line inside it: its edge on the card's, the popover's 8 px clear of its hairline. On the
+              left the card's own inset from the window is the margin (plan 160's 12 px would push it off the card's line) */}
+          <PopoverContent anchor={card} side="top" align="start" collisionPadding={COLLISION} className="max-h-(--available-height) w-80 max-w-(--available-width) gap-3 overflow-y-auto" data-testid="sign-in-popover" data-sign-in-ui>
             <SignInPanel accounts={accounts} onLater={later} />
           </PopoverContent>
         </Popover>

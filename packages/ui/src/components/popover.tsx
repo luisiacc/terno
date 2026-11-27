@@ -20,11 +20,12 @@ function PopoverContent({
   side = "bottom",
   sideOffset = 8,
   anchor,
+  collisionPadding = FLOAT_INSET,
   ...props
 }: PopoverPrimitive.Popup.Props &
   Pick<
     PopoverPrimitive.Positioner.Props,
-    "align" | "alignOffset" | "side" | "sideOffset" | "anchor"
+    "align" | "alignOffset" | "side" | "sideOffset" | "anchor" | "collisionPadding"
   >) {
   return (
     <PopoverPrimitive.Portal>
@@ -34,8 +35,9 @@ function PopoverContent({
         side={side}
         sideOffset={sideOffset}
         anchor={anchor}
-        // plan 160: what floats keeps --float-inset from the window's edges
-        collisionPadding={FLOAT_INSET}
+        // plan 160: what floats keeps --float-inset from the window's edges (a popover that stands on a card nearer
+        // an edge may keep the card's line there instead)
+        collisionPadding={collisionPadding}
         className="isolate z-50"
       >
         <PopoverPrimitive.Popup

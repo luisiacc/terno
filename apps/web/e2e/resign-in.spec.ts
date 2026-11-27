@@ -60,6 +60,11 @@ test.describe("signing in again", () => {
 
     await page.getByTestId("sign-in-open").click();
     await expect(popover(page)).toBeVisible();
+    // it stands on the card: the same left edge (not plan 160's window inset), 8 px clear of its top
+    const cardBox = (await page.getByTestId("sign-in-card").boundingBox())!;
+    const panelBox = (await popover(page).boundingBox())!;
+    expect(Math.abs(panelBox.x - cardBox.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(cardBox.y - (panelBox.y + panelBox.height) - 8)).toBeLessThanOrEqual(1);
     await expect(popover(page)).toContainText(`Sign in to ${personal.displayName}`);
     await expect(popover(page)).toContainText("Your mail stays here.");
     await popover(page).getByRole("button", { name: "Continue with Google" }).click();

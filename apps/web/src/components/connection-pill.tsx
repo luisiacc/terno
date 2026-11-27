@@ -63,8 +63,8 @@ function Pill({ down, total }: { down: Account[]; total: number }) {
   const title = reconnecting ? t("connection.reconnecting") : one ? t("connection.accountOffline", { name: one }) : t("connection.offline");
   const when = !reconnecting && Number.isFinite(retryAt) ? t("connection.retryingIn", { time: retryIn(retryAt - now) }) : null;
   return (
-    <div className="flex shrink-0 px-(--sidebar-pad) pt-1" data-testid="connection-pill" data-state={reconnecting ? "reconnecting" : "offline"}>
-      <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-sidebar-border py-1 pr-1 pl-2.5 text-xs">
+    <div className="flex shrink-0" data-testid="connection-pill" data-state={reconnecting ? "reconnecting" : "offline"}>
+      <div className="flex min-w-0 flex-1 items-center gap-2 rounded-2xl border border-sidebar-border py-1 pr-1 pl-2.5 text-xs">
         {reconnecting ? <Spinner className="size-3.5 text-muted-foreground" aria-hidden /> : <WifiOff className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />}
         <div className="min-w-0 flex-1 leading-tight">
           {/* a screen reader hears the state when it changes, never the countdown */}
