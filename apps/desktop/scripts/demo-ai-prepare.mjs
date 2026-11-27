@@ -55,6 +55,11 @@ const replyStored = (profile, threadId) => readStored(profile, (db) => ({
   waitingSince: db.prepare("SELECT waiting_since FROM threads WHERE id = ?").get(threadId)?.waiting_since ?? null,
 }));
 const summaryStored = (profile, threadId) => readStored(profile, (db) => db.prepare("SELECT state FROM ai_summaries WHERE thread_id = ?").get(threadId)?.state === "ready");
+/** the newest digest the app stored: its state and how many newsletters it kept */
+const digestStored = (profile) => readStored(profile, (db) => {
+  const row = db.prepare("SELECT state, body_json FROM ai_digests ORDER BY day DESC LIMIT 1").get();
+  return row ? { state: row.state, items: JSON.parse(row.body_json ?? "{}").items?.length ?? 0 } : null;
+});
 const aiRules = (profile) => readStored(profile, (db) => db.prepare("SELECT name FROM filters WHERE source = 'ai'").all().map((r) => r.name));
 
 export function readSpend(profile) {
@@ -185,10 +190,21 @@ const STEPS = {
     await d.go("today");
     await page.getByTestId("wm-heading").first().waitFor({ timeout: 30_000 });
     const row = page.locator("[data-testid=wm-item][data-digest]").first();
-    await row.waitFor({ timeout: JOB_MS });
+    // the open part's last row, under everything that needs you: the feed is a virtual list, so it's drawn only once
+    // scrolled to (a long What matters left it never drawn). Walked down until it is; still there at the end, waited for.
+    const until = Date.now() + JOB_MS;
+    for (let end = false; !(await row.count()); ) {
+      if (Date.now() > until) throw new Error("What matters had no digest row in 5 minutes");
+      if (!end) end = await page.locator("#wm-feed-rows").evaluate((el) => {
+        const bottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 2;
+        el.scrollTop += el.clientHeight * 0.8;
+        return bottom;
+      });
+      await page.waitForTimeout(end ? 1000 : 150);
+    }
+    await row.scrollIntoViewIfNeeded();
     await row.click();
     await page.getByTestId("digest-page").waitFor({ timeout: 30_000 });
-    const until = Date.now() + JOB_MS;
     let retried = false;
     for (;;) {
       // a failure first: a digest whose later batch failed keeps the lines of the earlier ones
@@ -202,6 +218,9 @@ const STEPS = {
       }
       const preparing = await page.getByTestId("digest-preparing").first().isVisible().catch(() => false);
       if (!preparing && (await page.getByTestId("digest-item").first().isVisible().catch(() => false))) break;
+      // made, and kept no newsletter: no wait or launch brings one (a day's digest is made once, and the demo's day stays)
+      const stored = digestStored(d.profile);
+      if (!preparing && stored?.state === "ready" && !stored.items) throw Object.assign(new Error("the day's digest came out empty, and a day's digest is made once"), { final: true });
       if (Date.now() > until) throw new Error("the digest wasn't ready in 5 minutes");
       await page.waitForTimeout(1000);
     }
@@ -593,8 +612,9 @@ export async function prepare({ electronBin, main, env, profile, steps, onPid = 
         const why = String(error?.message ?? error).split("\n")[0];
         marker.failed[step] = why;
         failed.push(step);
-        const failures = (marker.failures[step] = (marker.failures[step] ?? 0) + 1);
-        log(`[demo-ai] ${step} didn't finish (${why}); ${failures >= MAX_ATTEMPTS ? `that's ${failures} launches, so it's set aside (--fresh starts over)` : "it runs again on the next launch"}`);
+        // `final`: no later launch can do better, so it's set aside now
+        const failures = (marker.failures[step] = error?.final ? MAX_ATTEMPTS : (marker.failures[step] ?? 0) + 1);
+        log(`[demo-ai] ${step} didn't finish (${why}); ${error?.final ? "it's set aside (--fresh starts over)" : failures >= MAX_ATTEMPTS ? `that's ${failures} launches, so it's set aside (--fresh starts over)` : "it runs again on the next launch"}`);
         await page.screenshot({ path: join(profile, `demo-ai-${step}-failed.png`) }).catch(() => {});
         await d.escapeAll().catch(() => {});
       }

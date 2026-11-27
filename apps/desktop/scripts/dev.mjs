@@ -18,7 +18,7 @@ import { existsSync, readdirSync, readFileSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_DEV_PORT, devPort, viteLocalUrl } from "../src/dev-port.ts";
-import { DEMO_AI_PROFILE, demoAiArgs, demoAiClock, demoAiEnv, demoAiProfileProblem, keyFiles, MARKER_FILE, MAX_ATTEMPTS, missingKeysMessage, readMarker, resolveKeys, stepsSetAside, stepsToRun } from "../src/demo-ai.ts";
+import { DEMO_AI_PROFILE, demoAiArgs, demoAiClock, demoAiEnv, demoAiProfileProblem, keyFiles, MARKER_FILE, missingKeysMessage, readMarker, resolveKeys, stepsSetAside, stepsToRun } from "../src/demo-ai.ts";
 import { DB_FILE, LegacyProfileConflictError, LegacyProfileInUseError, migrateLegacyProfile, profileInUse, resolveProfile } from "../src/legacy-profile.ts";
 
 // For one release UNICA_* variables still work (the same rule as @terno/core/legacy-env).
@@ -103,7 +103,7 @@ if (demoAi) {
   const steps = stepsToRun(marker, args);
   const aside = args.fresh ? [] : stepsSetAside(marker);
   // (what each said last is in its screenshot: the marker keeps only the latest launch's words)
-  if (aside.length) console.log(`[demo-ai] set aside after failing on ${MAX_ATTEMPTS} launches: ${aside.join(", ")} (its last screen: ${join(profile, `demo-ai-${aside[0]}-failed.png`)}${aside.length > 1 ? ", and so on" : ""}); pnpm dev:demo-ai --fresh starts over`);
+  if (aside.length) console.log(`[demo-ai] set aside, as it can't finish on this profile: ${aside.join(", ")} (its last screen: ${join(profile, `demo-ai-${aside[0]}-failed.png`)}${aside.length > 1 ? ", and so on" : ""}); pnpm dev:demo-ai --fresh starts over`);
   console.log(`[demo-ai] keys: ${Object.entries(from).map(([k, f]) => `${k} (${f})`).join(", ")}`);
   console.log(steps.length ? `[demo-ai] ${profile}: preparing ${steps.join(", ")} on real models before the window opens (a few minutes, once)` : `[demo-ai] ${profile}: prepared (pnpm dev:demo-ai --fresh starts over)`);
   demoAiPlan = { profile, keys, steps, read };
