@@ -29,6 +29,8 @@ const THREAD_ACTIONS = ["archive", "trash", "spam", "notSpam", "moveToInbox", "m
 
 /** Every field any code may use, with its type. */
 export const FIELD_TYPES = {
+  /** plan 293: an account's internal row id (never its address or name) */
+  accountId: int(0, Number.MAX_SAFE_INTEGER),
   accountKind: enumOf("imap", "gmail", "outlook", "demo", "other"),
   aiKind: enumOf("invalid_output", "refused", "auth", "rate_limited", "unavailable", "timeout", "blocked", "not_configured", "unsupported", "cancelled", "other"),
   action: enumOf(...THREAD_ACTIONS, "print", "pdf", "other"),
@@ -66,6 +68,10 @@ export const FIELD_TYPES = {
   openFailure: enumOf("newer", "no-room", "migration", "corrupt", "unwritable", "other"),
   /** how a quit ended: the database closed, a send kept it open (deferred), or the deadline passed */
   codeCache: enumOf("accepted", "rejected", "none"),
+  /** plan 293: which part of Terno touched a secret */
+  component: enumOf("signIn", "refresh", "mailLogin", "renewal", "recheck", "revoke", "removal", "ai", "settings", "migration", "other"),
+  /** plan 293 (CASA 4.1.4): a cryptographic failure's category, the only thing logged of it */
+  errorCategory: enumOf("secret_storage_failed"),
   outcome: enumOf("closed", "sending", "forced", "timeout", "other", "unsaved", "rolled-back", "completed"),
   op: enumOf("encrypt", "decrypt", "legacy", "sync", "send", "move", "import", "export", "persist", "rebuild", "restore", "generate", "test", "classify", "other"),
   opKind: enumOf(...THREAD_ACTIONS, "send", "move", "moveToFolder", "leaveFolder", "returnTo", "other"),
@@ -82,6 +88,10 @@ export const FIELD_TYPES = {
   source: enumOf("backend", "store", "search", "categorizer", "keychain", "main", "renderer", "worker", "mcp", "other"),
   status: int(0, 999),
   schema: int(0, 100_000),
+  /** plan 293: what happened to a stored secret, and which one it was (by kind, never by value) */
+  secretOp: enumOf("read", "write", "delete"),
+  secretKind: enumOf("refreshToken", "password", "apiKey", "clientSecret", "other"),
+  secretOutcome: enumOf("ok", "missing", "failed", "refused"),
   step: int(0, 100_000),
   tab: enumOf("general", "whatMatters", "appearance", "accounts", "categories", "filters", "snippets", "ai", "agents", "dev", "data", "storage", "about", "other"),
   threadId: int(0, Number.MAX_SAFE_INTEGER),

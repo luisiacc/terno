@@ -5,7 +5,7 @@
  * waits: entries are sanitized against their code's schema and handed to the
  * sink, which batches, writes and forwards.
  */
-import { CODES, type DiagCode, type FieldsFor } from "./codes";
+import { CODES, isLocalCode, type DiagCode, type FieldsFor } from "./codes";
 import { appRelative, errorClass, isExpected, normalizeError, type NormalizedError } from "./error";
 import { sanitizeField, type Fields } from "./fields";
 import { Ring } from "./ring";
@@ -139,7 +139,8 @@ function emit(level: Level, code: DiagCode, fields: unknown, err?: NormalizedErr
     const entry: DiagEntry = { ts, level, proc: s.o.proc, code, session: s.o.session, version: s.o.version, build: s.o.build };
     if (clean) entry.fields = clean;
     if (err) entry.err = err;
-    pushCrumb(s, { ts, cat: categoryOf(code), code, level, ...(clean ? { fields: clean } : {}) });
+    // plan 293: a credential or sign-in line stays in the local log, never in a record or a report
+    if (!isLocalCode(code)) pushCrumb(s, { ts, cat: categoryOf(code), code, level, ...(clean ? { fields: clean } : {}) });
     if (s.o.sink) s.o.sink.write(entry);
     else if (s.early.length < 200) s.early.push(entry);
   });
@@ -181,6 +182,7 @@ export const log = {
 export function breadcrumb<C extends DiagCode>(cat: CrumbCategory, code: C, fields?: FieldsFor<C>): void {
   safe(() => {
     const s = state;
+    if (isLocalCode(code)) return;
     const clean = sanitizeFields(code, fields);
     pushCrumb(s, { ts: s.o.now(), cat, code, level: "info", ...(clean ? { fields: clean } : {}) });
   });

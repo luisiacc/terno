@@ -5,7 +5,12 @@
  */
 import type { FieldName, FieldValueOf } from "./fields";
 
-const c = <const F extends readonly FieldName[]>(...fields: F) => ({ fields });
+const c = <const F extends readonly FieldName[]>(...fields: F) => ({ fields, local: false as const });
+/**
+ * Plan 293: a credential or sign-in line. Written to this process's local log like any other, but never a breadcrumb,
+ * so it's never in an error record or a report, whatever the consent.
+ */
+const local = <const F extends readonly FieldName[]>(...fields: F) => ({ fields, local: true as const });
 
 export const CODES = {
   // lifecycle (any process)
@@ -31,7 +36,8 @@ export const CODES = {
   "child.gone": c("childType", "reason", "exitCode"),
   // plan 20: main's network watcher (scutil) stopped or gave up
   "net.watch_failed": c("errno", "exitCode", "attempt"),
-  "keychain.secret_failed": c("op", "errorClass"),
+  // plan 293 (CASA 4.1.4): main's safeStorage refused; its category only, never what Electron said
+  "keychain.secret_failed": c("op", "errorCategory"),
   "appearance.save_failed": c("errno"),
   "legacy.storage_failed": c("errorClass"),
   // plan 226: the launch offer to move Terno into Applications (no path, folder or error text)
@@ -96,7 +102,11 @@ export const CODES = {
   "tabs.backfill_failed": c("errorClass"),
   "tabs.backfilled": c("durationMs"),
   "import.restore_failed": c("errorClass"),
-  "secret.unreadable": c("op"),
+  // plan 293 (CASA 6.7.1, 4.1.4): every access to a stored secret, and a failure as its category only
+  "secret.access": local("secretOp", "secretKind", "component", "accountId", "secretOutcome", "errorCategory", "count"),
+  "secret.failures_repeated": local("secretKind", "component", "accountId", "count"),
+  "keychain.legacy_read_failed": local("count", "errorCategory"),
+  "keychain.migrated": local("count", "secretOutcome"),
   "agents.socket_failed": c("errno"),
   "search.failed": c("errorClass"),
   // autocomplete (plan 18): counts, sizes and durations only
@@ -154,6 +164,11 @@ export type DiagCode = keyof typeof CODES;
 type FieldsOfCode<C extends DiagCode> = (typeof CODES)[C]["fields"][number];
 /** The fields one code may carry, each with its own type. */
 export type FieldsFor<C extends DiagCode> = { [K in FieldsOfCode<C>]?: FieldValueOf<K> };
+
+/** Plan 293: kept out of the breadcrumbs (credential and sign-in lines). */
+export function isLocalCode(code: DiagCode): boolean {
+  return CODES[code].local;
+}
 
 export function isDiagCode(code: unknown): code is DiagCode {
   return typeof code === "string" && Object.prototype.hasOwnProperty.call(CODES, code);
