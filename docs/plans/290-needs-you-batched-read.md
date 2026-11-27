@@ -56,3 +56,21 @@ From up to ~6 × 2,000 statements a walk to 6. Each batched statement is bounded
 ## Out of scope
 
 IndexedDB's `stillWaiting` (within its gates); raising any budget.
+
+## Revisions after the Codex critique
+
+Codex compared the batched code with the per-thread rules and found no case that decides differently; `EXPLAIN QUERY
+PLAN` (node SQLite 3.53.4) showed an indexed search for all six statements. Its other points are tests and cheaper early
+exits, not yet taken: summaries read only for the threads still deciding, the latest message skipped for a thread its
+put-off promises already took out, and the perf fixture asserting the walk it times.
+
+## What was built and measured (2026-11-27)
+
+`stillWaitingAmong` (104984916, taken into another session's commit mid-measurement, with measuring hooks that
+674513fc6 removed). The store conformance suite passes on node SQLite and WASM.
+
+SQLite's "Needs you at its bound", list p95: ~67–80 ms per-thread, 49–53 ms batched; its longest turn ~100 → 80–95 ms. Still
+over the gate (45 and 60 ms), as are the spread's added time (4–5 ms, gate 2), the linked scenarios' added time (13–20,
+gate 12) and People's longest turn (130–150, gate 120). The machine was at load 2–14 throughout (system daemons, other
+sessions), so these are rough. One read for the walk's correspondents too was tried and measured no faster beside the
+first batch (674513fc6, reverted in 4ffb516e7).
