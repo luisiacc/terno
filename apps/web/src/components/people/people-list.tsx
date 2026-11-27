@@ -20,11 +20,12 @@ import { Marked } from "../match-mark";
 import { SenderAvatar } from "../sender-avatar";
 import { personItemSince } from "@terno/core";
 import { itemGlyph, itemParts, itemTone, itemWhen, waited } from "./person-item";
+import { chosenAccounts } from "~/lib/people-filter";
 import { PeopleFilterButton, PeopleFilterChips, PeopleFilterEmpty } from "./people-filter";
 import { PersonPage } from "./person-page";
 
-/** where the list was left, by scope (a focused account's People apart, plan 287): coming back to People finds it there */
-const kept = new Map<string, number>();
+/** where the list was left, by place (a focused account's People apart, plan 287): coming back to People finds it there */
+const kept = new Map<number, number>();
 
 /**
  * Plan 281: People's list, in the list pane: its title, how many have something open, the search (names and addresses,
@@ -132,16 +133,24 @@ function PeopleList({ wide }: { wide: boolean }) {
   const firstDrawn = drawn.map((v) => rows[v.index]).find((r) => r?.kind === "person")?.id ?? null;
   const tabKey = preferredAt !== undefined && drawn.some((v) => v.index === preferredAt) ? preferred : (firstDrawn ?? preferred);
 
-  // coming back, where it was left; leaving, where that is; another scope's list (a filter, plan 287) from its top
-  const listScope = usePeople((s) => s.listScope);
+  // coming back, where it was left (People of every account, or of a focused one); leaving, where that is
+  const place = useApp((s) => peopleSolo(s) ?? 0);
   useLayoutEffect(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTop = kept.get(listScope) ?? 0;
+    if (el) el.scrollTop = kept.get(place) ?? 0;
     return () => {
-      kept.delete(listScope);
-      kept.set(listScope, el?.scrollTop ?? 0);
+      kept.delete(place);
+      kept.set(place, el?.scrollTop ?? 0);
       if (kept.size > 8) kept.delete(kept.keys().next().value!);
     };
+  }, [place]);
+  // another filter's list starts at its top (plan 287): the one read in the scope before isn't this one
+  const listScope = usePeople((s) => s.listScope);
+  const scopeWas = useRef(listScope);
+  useLayoutEffect(() => {
+    const was = scopeWas.current;
+    scopeWas.current = listScope;
+    if (was && listScope && was !== listScope && scrollRef.current) scrollRef.current.scrollTop = 0;
   }, [listScope]);
 
   useEffect(() => {
@@ -168,7 +177,10 @@ function PeopleList({ wide }: { wide: boolean }) {
     const id = peopleSolo(s);
     return id === null ? null : (s.accounts.find((a) => a.id === id) ?? null);
   });
-  const filtered = usePeople((s) => !!s.filter.within || (soloAccount === null && s.filter.accounts.length > 0));
+  // (as the button says it: an account gone isn't a filter)
+  const accounts = useApp((s) => s.accounts);
+  const choice = usePeople((s) => s.filter);
+  const filtered = !!choice.within || (soloAccount === null && chosenAccounts(choice, accounts).length > 0);
   const everyoneCount = (rows.find((r) => r.kind === "heading" && r.id === "everyone") as Extract<PeopleRow, { kind: "heading" }> | undefined)?.count ?? 0;
   /** a section's heading to the top of the list (the header's jump) */
   const jump = (id: "open" | "everyone") => {
@@ -270,7 +282,8 @@ function PeopleList({ wide }: { wide: boolean }) {
             </Button>
           </p>
         ) : (
-          (empty || (!searching && index !== "ready") || (searching && hits?.index === "warming")) && (
+          // (warming as the backend says it: no list yet, a new filter's on its way, says nothing, plan 287)
+          (empty || (!searching && state !== null && index !== "ready") || (searching && hits?.index === "warming")) && (
             <p data-testid="people-note" className={cn("px-3 pt-3 text-sm text-muted-foreground", wide && WIDE)}>
               {searching ? (hits?.index === "warming" ? t("people.warming") : hits ? t("people.noHits", { query: query.trim() }) : null) : index === "warming" ? t("people.warming") : index === "off" ? t("people.off") : filtered ? listInScope() && <PeopleFilterEmpty /> : t("people.empty")}
             </p>

@@ -109,7 +109,12 @@ export function leaveReview(): void {
   if (s.reviewCategoryId === null) return;
   if (!from || !stillThere(from, s)) return navigate({ view: "inbox", accountId: null, categoryId: null, reviewCategoryId: null });
   const { query, selectedId, results, ...place } = from;
-  if (!query.trim()) return navigate({ ...place, reviewCategoryId: null });
+  if (!query.trim()) {
+    navigate({ ...place, reviewCategoryId: null });
+    // plan 287: a focused account's People (its account is its own only while focused): the focus again with it
+    if (place.people && place.accountId !== null) setApp({ soloAccountId: place.accountId, accountId: place.accountId });
+    return;
+  }
   // a search: its query again, in one step, on the rows it showed (the cursor and offset with them), then refreshed in
   // place, as a sentence's preview comes back to its list
   if (results) useList.setState({ ...results.rows, loading: false, loadingMore: false, error: null });

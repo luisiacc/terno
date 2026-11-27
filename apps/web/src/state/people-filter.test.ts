@@ -11,7 +11,10 @@ vi.mock("~/rpc/connection", () => ({ client: { call: (...a: unknown[]) => call(.
 
 const { usePeople } = await import("~/state/people");
 const { getApp, navigate, setApp } = await import("~/state/app");
-const { askLastEmails, loadPeople, openPeople, peopleFilter, setPeopleFilter, searchPeople, selectPerson } = await import("~/lib/people");
+const { actOnPersonItem, askLastEmails, installPeople, loadPeople, openPeople, peopleFilter, setPeopleFilter, searchPeople, selectPerson } = await import("~/lib/people");
+const { enterPreview, leavePreview } = await import("~/state/action-preview");
+const { enterReview, leaveReview } = await import("~/lib/review");
+installPeople();
 const { accountsLabel, effectivePeopleFilter, filterSummary, loadPeopleFilter, NO_PEOPLE_FILTER, savePeopleFilter, toggleAccount } = await import("~/lib/people-filter");
 
 const account = (id: number, name: string) => ({ id, displayName: name, email: `${name.toLowerCase()}@x.test`, color: "brown" }) as unknown as Account;
@@ -141,5 +144,83 @@ describe("a new filter, while reads are on their way (plan 287)", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(usePeople.getState().hits?.hits.map((h) => h.key) ?? []).not.toContain("old@x.test");
     expect(usePeople.getState().lastEmails.get("bo@x.test")).toBeUndefined();
+  });
+});
+
+describe("after the Codex code review (plan 287)", () => {
+  const thread = (id: number, accountId = 1) => ({ id, accountId, subject: "Lease", fromName: "Ana", fromEmail: "ana@x.test", lastDate: 0 }) as never;
+  const item = { kind: "today", item: { id: "waiting:1", thread: thread(1), why: { kind: "waiting", reply: { since: 1, rev: 0, message: 1 } } } } as never;
+  const withAna = (items: unknown[]): PeopleList => ({ ...empty, open: items.length ? [{ key: "ana@x.test", email: "ana@x.test", name: "Ana", items: items as never, since: 1 }] : [] });
+
+  it("a new filter takes what was shown in the old one off the screen at once: the list, the hits, the page, the rows' dates", () => {
+    setApp({ accounts });
+    openPeople();
+    call.mockImplementation(() => new Promise(() => {}));
+    void loadPeople();
+    usePeople.setState({ list: withAna([item]), hits: { hits: [], index: "ready" }, page: { key: "ana@x.test", email: "ana@x.test", name: "Ana", items: [item], conversations: [], more: false }, lastEmails: new Map([["bo@x.test", 5]]) });
+    setApp({ person: "ana@x.test" });
+    setPeopleFilter({ within: null, accounts: [2] });
+    expect(usePeople.getState()).toMatchObject({ list: null, hits: null, page: null });
+    expect(usePeople.getState().lastEmails.size).toBe(0);
+    expect(getApp().person).toBe("ana@x.test");
+  });
+
+  it("an act whose settled read a new filter overtook reads the scope again, so its item isn't left out", async () => {
+    setApp({ accounts });
+    openPeople();
+    setApp({ person: "ana@x.test" });
+    usePeople.setState({ list: withAna([item]), listScope: "{}", page: { key: "ana@x.test", email: "ana@x.test", name: "Ana", items: [item], conversations: [], more: false } });
+    let settleList!: (l: PeopleList) => void;
+    let listCalls = 0;
+    call.mockImplementation((method: string) => {
+      if (method === "today.waitingAct") return Promise.reject(new Error("offline"));
+      if (method === "people.person") return Promise.resolve({ key: "ana@x.test", email: "ana@x.test", name: "Ana", items: [item], conversations: [], more: false });
+      if (method === "people.list") {
+        listCalls++;
+        // the act's own settled read waits; the new filter's and any after answer at once, the item still open
+        return listCalls === 1 ? new Promise((r) => (settleList = r)) : Promise.resolve(withAna([item]));
+      }
+      return Promise.resolve(null);
+    });
+    const acting = actOnPersonItem(item, "done");
+    await vi.waitFor(() => expect(listCalls).toBe(1));
+    setPeopleFilter({ within: "year", accounts: [] });
+    await vi.waitFor(() => expect(listCalls).toBe(2));
+    settleList(withAna([item]));
+    await acting;
+    await vi.waitFor(() => expect(listCalls).toBeGreaterThanOrEqual(3));
+    await vi.waitFor(() => expect(usePeople.getState().list?.open[0]?.items).toHaveLength(1));
+  });
+
+  it("a preview left goes back to the focused account's People, focus and all", () => {
+    setApp({ accounts });
+    navigate({ view: "inbox", accountId: 2 });
+    setApp({ soloAccountId: 2 });
+    openPeople();
+    call.mockImplementation(() => new Promise(() => {}));
+    enterPreview("p-1");
+    expect(getApp()).toMatchObject({ people: false, soloAccountId: null });
+    leavePreview();
+    expect(getApp()).toMatchObject({ people: true, accountId: 2, soloAccountId: 2 });
+  });
+
+  it("Review's way back is the focused account's People too", () => {
+    setApp({ accounts, categories: [{ id: 7, name: "Work" } as never] });
+    navigate({ view: "inbox", accountId: 2 });
+    setApp({ soloAccountId: 2 });
+    openPeople();
+    call.mockImplementation(() => new Promise(() => {}));
+    enterReview(7);
+    expect(getApp()).toMatchObject({ people: false, reviewCategoryId: 7, soloAccountId: null });
+    leaveReview();
+    expect(getApp()).toMatchObject({ people: true, accountId: 2, soloAccountId: 2, reviewCategoryId: null });
+  });
+
+  it("an account gone leaves the filter as it's remembered", () => {
+    setApp({ accounts });
+    usePeople.setState({ filter: { within: "week", accounts: [2, 3] } });
+    setApp({ accounts: accounts.filter((a) => a.id !== 3) });
+    expect(usePeople.getState().filter).toEqual({ within: "week", accounts: [2] });
+    expect(JSON.parse(localStorage.getItem("terno:people-filter")!)).toEqual({ within: "week", accounts: [2] });
   });
 });

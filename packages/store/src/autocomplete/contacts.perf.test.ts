@@ -31,8 +31,8 @@ let people: Address[] = [];
 let queries: string[] = [];
 let index: ContactIndex;
 
-function toContact(m: ReturnType<typeof generateContactsDataset>["messages"][number], id: number): ContactMessage {
-  return { id, accountId: 1, date: m.date, sent: m.isSent, spam: false, draft: false, from: m.from, to: m.to, cc: m.cc, bcc: m.bcc, hasBody: true };
+function toContact(m: ReturnType<typeof generateContactsDataset>["messages"][number], id: number, accounts = 1): ContactMessage {
+  return { id, accountId: 1 + (id % accounts), date: m.date, sent: m.isSent, spam: false, draft: false, from: m.from, to: m.to, cc: m.cc, bcc: m.bcc, hasBody: true };
 }
 
 /** What people type in a To field: prefixes of first names, last names, addresses, initials, "first l". */
@@ -60,7 +60,7 @@ function realisticQueries(n: number): string[] {
 }
 
 /** As the service builds: pages of 500 headers (a store read each, then a yield), the clock in between. */
-async function build(o: ContactsDatasetOptions): Promise<{ index: ContactIndex; stall: number; longest: string; descheduled: number }> {
+async function build(o: ContactsDatasetOptions, accounts = 1): Promise<{ index: ContactIndex; stall: number; longest: string; descheduled: number }> {
   const loop = watchLoop(BUDGET.stallMs * MULT);
   const clock = new SliceClock({ yield: () => new Promise((r) => setTimeout(r, 0)), sliceMs: 4 });
   const idx = new ContactIndex({ now: () => NOW });
@@ -68,7 +68,7 @@ async function build(o: ContactsDatasetOptions): Promise<{ index: ContactIndex; 
   let id = 0;
   // the people are generated beforehand (test data, not the build's work)
   for (const raw of contactsPages(o, 500, people)) {
-    const page = raw.map((m) => toContact(m, ++id));
+    const page = raw.map((m) => toContact(m, ++id, accounts));
     await clock.pause();
     for (let i = 0; i < page.length; i++) {
       idx.add(page[i]!);
@@ -178,6 +178,45 @@ describe(`the contact index at ${N.toLocaleString("en")} messages`, () => {
     expect(cached, "Everyone cached (ms)").toBeLessThanOrEqual(0.05 * MULT);
     expect(p95, "People search p95 (ms)").toBeLessThanOrEqual(2 * MULT);
   });
+
+  it("plan 287: People's filter over three accounts (most people in each): Everyone by account and date, cold and cached, the search within it, the dates' memory", async () => {
+    // the worst case for the per-account dates: every message's account in turn, so nearly everyone is in several
+    const { index: three } = await build(DATA, 3);
+    // (what the per-account dates hold, as allocatedBytes counts them)
+    const dates = three.perAccountDates();
+    const extra = dates.bytes;
+    const month = NOW - 30 * 86_400_000;
+    const scopes = [{ accounts: [2] }, { since: month }, { accounts: [1, 3], since: month }];
+    const cold: number[] = [];
+    for (let r = 0; r < 3; r++) {
+      three.add({ ...toContact(generateContactsDataset({ messages: 1, contacts: 1, now: NOW, seed: 200 + r, bodyChars: 0 }).messages[0]!, N + 200_000 + r, 3) });
+      for (const scope of scopes) {
+        const t0 = performance.now();
+        three.written(5000, scope);
+        cold.push(performance.now() - t0);
+      }
+    }
+    const t1 = performance.now();
+    for (let r = 0; r < 100; r++) for (const scope of scopes) three.written(5000, scope);
+    const cached = (performance.now() - t1) / 300;
+    const searched: number[] = [];
+    // one letter, realistic prefixes and a common provider's name (the address-piece walk), each within a filter
+    for (const q of ["a", "e", "m", "gmail", "outlook", ...queries.slice(0, 100)]) {
+      const t = performance.now();
+      three.people(q, 200, scopes[2]);
+      searched.push(performance.now() - t);
+    }
+    searched.sort((x, y) => x - y);
+    const coldBest = [...cold].sort((x, y) => x - y)[Math.floor(cold.length / 2)]!;
+    const p95 = searched[Math.floor(searched.length * 0.95)]!;
+    log(`People filter: Everyone cold median ${coldBest.toFixed(2)} ms (max ${Math.max(...cold).toFixed(1)}), cached ${(cached * 1000).toFixed(1)} µs; search p95 ${p95.toFixed(3)} ms, max ${searched.at(-1)!.toFixed(2)} ms; per-account dates ${(extra / MiB).toFixed(1)} MiB for ${dates.contacts} contacts in several accounts`);
+    expect(coldBest, "filtered Everyone, cold (ms)").toBeLessThanOrEqual(FRAME * 2 * MULT);
+    expect(cached, "filtered Everyone, cached (ms)").toBeLessThanOrEqual(0.05 * MULT);
+    // (a piece of an address, "gmail", walks every contact as the unfiltered search does past its prefix matches; one
+    // letter under a filter walks its prefix's range: the backend's, one search at a time per window)
+    expect(p95, "filtered search p95 (ms)").toBeLessThanOrEqual(FRAME * MULT);
+    expect(extra, "per-account dates (bytes)").toBeLessThanOrEqual(8 * MiB);
+  }, 600_000);
 
   it("injected regression: the same lookups by scanning every contact fail the gate", () => {
     setContactsScanForTests(true);

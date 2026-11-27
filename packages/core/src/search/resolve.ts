@@ -40,7 +40,7 @@ export function searchKey(text: string, scope: { accountId?: number; accountIds?
   // plan 185: a place only when one is set, so the keys (and cursors) of a search that has none never change
   const key = scope.place === undefined ? [text, scope.accountId ?? null, scope.categoryId ?? null] : [text, scope.accountId ?? null, scope.categoryId ?? null, scope.place];
   // plan 287: a set of accounts only when one is given, likewise
-  return JSON.stringify(scope.accountIds?.length ? [...key, [...scope.accountIds].sort((a, b) => a - b)] : key);
+  return JSON.stringify(scope.accountIds?.length ? [...key, [...new Set(scope.accountIds)].sort((a, b) => a - b)] : key);
 }
 
 export function resolveSearch(
@@ -58,18 +58,23 @@ export function resolveSearch(
   else if (thread === "people") query = { ...query, threadPeople: true };
   else if (thread === "waiting") query = { ...query, threadWaitingSince: waitingCutoff(scope.now ?? Date.now()) };
   let impossible = false;
-  // the scope's accounts: an account view's one, or a set of them (plan 287); account:x inside them narrows instead of widening
-  const fixed = scope.accountId !== undefined ? [scope.accountId] : scope.accountIds?.length ? [...new Set(scope.accountIds)] : null;
-  let accountIds = new Set<number>(fixed);
+  let accountIds = new Set<number>();
+  if (scope.accountId !== undefined) accountIds.add(scope.accountId);
   for (const token of query.accounts) {
     const matches = accountMatches(lookup, token);
     if (matches.length === 0) impossible = true;
-    if (fixed) {
-      accountIds = new Set([...accountIds].filter((id) => matches.includes(id)));
-      if (accountIds.size === 0) impossible = true;
+    // account:x inside an account view narrows instead of widening
+    if (scope.accountId !== undefined) {
+      if (!matches.includes(scope.accountId)) impossible = true;
     } else {
       for (const id of matches) accountIds.add(id);
     }
+  }
+  // plan 287: a set of accounts (People's filter): what account:x named (any of them, as outside it), within the set
+  if (scope.accountId === undefined && scope.accountIds?.length) {
+    const set = new Set(scope.accountIds);
+    accountIds = query.accounts.length ? new Set([...accountIds].filter((id) => set.has(id))) : set;
+    if (accountIds.size === 0) impossible = true;
   }
   const categoryIds = new Set<number>();
   if (scope.categoryId !== undefined) categoryIds.add(scope.categoryId);

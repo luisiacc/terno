@@ -380,8 +380,8 @@ export interface PeopleScope {
   since?: number;
 }
 
-/** what one account's last date costs a contact seen in more than one (plan 287): its bit and date, as two doubles */
-const PAIR_BYTES = 16;
+/** plan 287: the per-account dates' pool starts this big (doubles) and doubles; it's packed again when half is garbage */
+const POOL_START = 2048;
 
 export interface ContactIndexOptions {
   caps?: ContactCaps;
@@ -410,8 +410,8 @@ export interface OwnAddress { email: string; name: string }
 /** The per-contact typed arrays, grown and compacted together. */
 const F64 = ["sent", "recv", "last", "key", "best"] as const;
 const F32 = ["nameW"] as const;
-const U32 = ["accounts", "sentIn", "m3", "m2", "m1", "mw", "stamp"] as const;
-const U8 = ["flags", "bcls"] as const;
+const U32 = ["accounts", "sentIn", "lastAt", "m3", "m2", "m1", "mw", "stamp"] as const;
+const U8 = ["flags", "bcls", "lastN"] as const;
 const PER_CONTACT = F64.length * 8 + F32.length * 4 + U32.length * 4 + U8.length;
 
 export class ContactIndex {
@@ -464,10 +464,16 @@ export class ContactIndex {
   private readonly writtenCache = new Map<string, { version: number; max: number; ids: number[]; entries: PersonEntry[] }>();
   /**
    * Plan 287: the last message's date in each account, only for contacts seen in two accounts or more (for the rest,
-   * `last` is their one account's): pairs of an account's bit number and its date. `lastByHeld`: their bytes.
+   * `last` is their one account's): pairs of an account's bit number and its date, each contact's together in one shared
+   * pool (`lastAt`: where they start, +1, 0 for none; `lastN`: how many). A contact that gains an account moves its pairs
+   * to the pool's end; what it leaves (and what evicted contacts held) is garbage, packed away when it's half the pool.
    */
-  private readonly lastBy = new Map<number, Float64Array>();
-  private lastByHeld = 0;
+  private lastAt = new Uint32Array(0);
+  private lastN = new Uint8Array(0);
+  private pool = new Float64Array(0);
+  /** doubles written to the pool, and of them the live contacts' */
+  private poolUsed = 0;
+  private poolLive = 0;
   private ownCache: { version: number; emails: string[] } | null = null;
   private frozen = false;
   readonly caps: ContactCaps;
@@ -611,28 +617,75 @@ export class ContactIndex {
    * pair starts at the contact's last date, all of it that account's until now). Called before `last` and `accounts` move.
    */
   private noteLastIn(id: number, bit: number, t: number): void {
-    const had = this.accounts[id]!;
-    let pairs = this.lastBy.get(id);
-    if (!pairs) {
-      if (!(had & ~bit)) return;
-      const seed: number[] = [];
-      for (let b = 0; b < 32; b++) if (had & ((1 << b) >>> 0)) seed.push(b, this.last[id]!);
-      pairs = Float64Array.from(seed);
-      this.lastBy.set(id, pairs);
-      this.lastByHeld += MAP_ENTRY + pairs.byteLength;
-    }
     const b = 31 - Math.clz32(bit);
-    for (let i = 0; i < pairs.length; i += 2) {
-      if (pairs[i] !== b) continue;
-      if (t > pairs[i + 1]!) pairs[i + 1] = t;
+    let n = this.lastN[id]!;
+    if (n === 0) {
+      const had = this.accounts[id]!;
+      if (!(had & ~bit)) return;
+      const bits: number[] = [];
+      for (let x = 0; x < 32; x++) if (had & ((1 << x) >>> 0)) bits.push(x);
+      const at = this.poolAlloc(bits.length);
+      bits.forEach((x, i) => {
+        this.pool[at + 2 * i] = x;
+        this.pool[at + 2 * i + 1] = this.last[id]!;
+      });
+      this.lastAt[id] = at + 1;
+      this.lastN[id] = n = bits.length;
+    }
+    const at = this.lastAt[id]! - 1;
+    for (let i = 0; i < n; i++) {
+      if (this.pool[at + 2 * i] !== b) continue;
+      if (t > this.pool[at + 2 * i + 1]!) this.pool[at + 2 * i + 1] = t;
       return;
     }
-    const grown = new Float64Array(pairs.length + 2);
-    grown.set(pairs);
-    grown[pairs.length] = b;
-    grown[pairs.length + 1] = t;
-    this.lastBy.set(id, grown);
-    this.lastByHeld += PAIR_BYTES;
+    // a new account: its pairs move to the pool's end with one more (a pack on the way moves them first, so where they
+    // are is read after); what they leave is garbage
+    const to = this.poolAlloc(n + 1);
+    const from = this.lastAt[id]! - 1;
+    this.pool.copyWithin(to, from, from + 2 * n);
+    this.pool[to + 2 * n] = b;
+    this.pool[to + 2 * n + 1] = t;
+    this.poolLive -= 2 * n;
+    this.lastAt[id] = to + 1;
+    this.lastN[id] = n + 1;
+  }
+
+  /** Room for `pairs` pairs at the pool's end (packed first when half of it is garbage, else grown); counted as live. */
+  private poolAlloc(pairs: number): number {
+    const want = 2 * pairs;
+    if (this.poolUsed + want > this.pool.length) {
+      const garbage = this.poolUsed - this.poolLive;
+      this.packPool(garbage >= this.poolUsed / 2 && this.poolLive + want <= this.pool.length ? this.pool.length : Math.max(POOL_START, this.pool.length * 2, this.poolLive + want));
+    }
+    const at = this.poolUsed;
+    this.poolUsed += want;
+    this.poolLive += want;
+    return at;
+  }
+
+  /** The live contacts' pairs, one after another, in a pool of `capacity` doubles (the garbage left behind). */
+  private packPool(capacity: number): void {
+    const next = new Float64Array(capacity);
+    let used = 0;
+    for (let id = 0; id < this.n; id++) {
+      const k = this.lastN[id]!;
+      if (!k) continue;
+      const at = this.lastAt[id]! - 1;
+      next.set(this.pool.subarray(at, at + 2 * k), used);
+      this.lastAt[id] = used + 1;
+      used += 2 * k;
+    }
+    this.pool = next;
+    this.poolUsed = this.poolLive = used;
+  }
+
+  /** Plan 287: a contact evicted: its per-account dates are garbage at once (packed away with the rest). */
+  private forgetLastBy(id: number): void {
+    const k = this.lastN[id]!;
+    if (!k) return;
+    this.poolLive -= 2 * k;
+    this.lastN[id] = 0;
+    this.lastAt[id] = 0;
   }
 
   /** Plan 287: the newest message with a contact in the accounts of `mask` (0: in any), 0 when none was there. */
@@ -641,11 +694,19 @@ export class ContactIndex {
     const had = this.accounts[id]!;
     if (!(had & mask)) return 0;
     if (!(had & ~mask)) return this.last[id]!;
-    const pairs = this.lastBy.get(id);
-    if (!pairs) return this.last[id]!;
+    const k = this.lastN[id]!;
+    if (!k) return this.last[id]!;
+    const at = this.lastAt[id]! - 1;
     let best = 0;
-    for (let i = 0; i < pairs.length; i += 2) if (mask & ((1 << pairs[i]!) >>> 0) && pairs[i + 1]! > best) best = pairs[i + 1]!;
+    for (let i = 0; i < k; i++) if (mask & ((1 << this.pool[at + 2 * i]!) >>> 0) && this.pool[at + 2 * i + 1]! > best) best = this.pool[at + 2 * i + 1]!;
     return best;
+  }
+
+  /** Plan 287 (tests, the perf gate): how many contacts hold per-account dates, and the pool's bytes. */
+  perAccountDates(): { contacts: number; bytes: number } {
+    let contacts = 0;
+    for (let id = 0; id < this.n; id++) if (this.lastN[id]) contacts++;
+    return { contacts, bytes: this.pool.byteLength };
   }
 
   /**
@@ -1394,7 +1455,7 @@ export class ContactIndex {
     if (this.merging) bytes += this.merging.tok.length * (STRING_OVERHEAD + 24);
     bytes += this.stringsHeld + (this.emails.length + this.names.length) * 8;
     bytes += this.byEmail.size * MAP_ENTRY + this.seen.byteLength;
-    bytes += this.lastByHeld;
+    bytes += this.pool.byteLength;
     return bytes;
   }
 
@@ -1421,6 +1482,7 @@ export class ContactIndex {
       this.stringsHeld += 2 * stringBytes("");
       for (const a of this.alts.get(id) ?? []) this.stringsHeld -= stringBytes(a.name) + MAP_ENTRY / 2;
       this.alts.delete(id);
+      this.forgetLastBy(id);
       this.live--;
       evicted++;
     }
@@ -1456,7 +1518,6 @@ export class ContactIndex {
     const emails: string[] = Array.from({ length: live }, () => "");
     const names: string[] = Array.from({ length: live }, () => "");
     const alts = new Map<number, AltName[]>();
-    const lastBy = new Map<number, Float64Array>();
     const byEmail = new Map<string, number>();
     for (let id = 0; id < n; id++) {
       const to = remap[id]!;
@@ -1465,8 +1526,6 @@ export class ContactIndex {
       names[to] = this.names[id]!;
       const a = this.alts.get(id);
       if (a) alts.set(to, a);
-      const l = this.lastBy.get(id);
-      if (l) lastBy.set(to, l);
       byEmail.set(this.emails[id]!, to);
       if ((id & 8191) === 0) await clock.tick();
     }
@@ -1486,15 +1545,11 @@ export class ContactIndex {
     this.names = names;
     this.alts.clear();
     for (const [k, v] of alts) this.alts.set(k, v);
-    this.lastBy.clear();
-    this.lastByHeld = 0;
-    for (const [k, v] of lastBy) {
-      this.lastBy.set(k, v);
-      this.lastByHeld += MAP_ENTRY + v.byteLength;
-    }
     this.byEmail = byEmail;
     this.n = live;
     this.live = live;
+    // (lastAt and lastN moved with their contacts: the pool, packed to what's live)
+    this.packPool(Math.max(POOL_START, this.poolLive));
     this.stringsHeld = 0;
     for (let id = 0; id < live; id++) this.stringsHeld += stringBytes(emails[id]!) + stringBytes(names[id]!);
     for (const a of alts.values()) for (const x of a) this.stringsHeld += stringBytes(x.name) + MAP_ENTRY / 2;
@@ -1529,11 +1584,11 @@ export class ContactIndex {
       if (remap[id]! < 0) continue;
       emails.push(this.emails[id]!);
       names.push(this.names[id]!);
-      const pairs = this.lastBy.get(id);
-      if (pairs) {
+      const k = this.lastN[id]!;
+      if (k) {
         lastById.push(remap[id]!);
-        lastByLen.push(pairs.length / 2);
-        lastByPairs.push(pairs);
+        lastByLen.push(k);
+        lastByPairs.push(this.pool.subarray(this.lastAt[id]! - 1, this.lastAt[id]! - 1 + 2 * k));
       }
       for (const a of this.alts.get(id) ?? []) {
         altOwner.push(remap[id]!);
@@ -1662,8 +1717,25 @@ export class ContactIndex {
       const lastById = s.u32("lastById");
       const lastByLen = s.u8("lastByLen");
       const lastByPairs = s.f64("lastBy");
-      if (lastByLen.length !== lastById.length || lastById.some((id) => id >= n) || lastByLen.reduce((a, k) => a + k * 2, 0) !== lastByPairs.length) return false;
-      for (let i = 0; i < lastByPairs.length; i += 2) if (!Number.isInteger(lastByPairs[i]) || lastByPairs[i]! < 0 || lastByPairs[i]! > 31) return false;
+      if (lastByLen.length !== lastById.length || lastByLen.reduce((a, k) => a + k * 2, 0) !== lastByPairs.length) return false;
+      // each contact once, its pairs exactly its accounts' bits (two or more), each once, with a real date; whom you wrote
+      // to from an account is someone seen in it
+      const owners = new Set<number>();
+      for (let i = 0, at = 0; i < lastById.length; i++) {
+        const id = lastById[i]!;
+        const k = lastByLen[i]!;
+        if (id >= n || owners.has(id) || k < 2) return false;
+        owners.add(id);
+        let bits = 0;
+        for (let j = 0; j < k; j++, at += 2) {
+          const b = lastByPairs[at]!;
+          const bit = (1 << b) >>> 0;
+          if (!Number.isInteger(b) || b < 0 || b > 31 || bits & bit || !Number.isFinite(lastByPairs[at + 1]!)) return false;
+          bits = (bits | bit) >>> 0;
+        }
+        if (bits !== accounts[id]) return false;
+      }
+      for (let id = 0; id < n; id++) if (sentIn[id]! & ~accounts[id]!) return false;
       // valid: replace everything
       this.n = n;
       this.live = n;
@@ -1685,6 +1757,8 @@ export class ContactIndex {
       this.mw = new Uint32Array(capacity);
       this.stamp = new Uint32Array(capacity);
       this.bcls = new Uint8Array(capacity);
+      this.lastAt = new Uint32Array(capacity);
+      this.lastN = new Uint8Array(capacity);
       this.resize(capacity);
       this.gen = 0;
       for (let id = 0; id < n; id++) {
@@ -1724,13 +1798,13 @@ export class ContactIndex {
       this.seen.load(seen);
       this.accountBits.clear();
       for (let i = 0; i < accountIds.length; i++) this.accountBits.set(accountIds[i]!, accountBits[i]!);
-      this.lastBy.clear();
-      this.lastByHeld = 0;
+      this.pool = new Float64Array(Math.max(POOL_START, lastByPairs.length));
+      this.pool.set(lastByPairs);
+      this.poolUsed = this.poolLive = lastByPairs.length;
       for (let i = 0, at = 0; i < lastById.length; i++) {
-        const pairs = Float64Array.from(lastByPairs.subarray(at, at + lastByLen[i]! * 2));
-        at += pairs.length;
-        this.lastBy.set(lastById[i]!, pairs);
-        this.lastByHeld += MAP_ENTRY + pairs.byteLength;
+        this.lastAt[lastById[i]!] = at + 1;
+        this.lastN[lastById[i]!] = lastByLen[i]!;
+        at += lastByLen[i]! * 2;
       }
       this.writtenCache.clear();
       this.revision = r.revision;

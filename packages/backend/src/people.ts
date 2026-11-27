@@ -40,7 +40,9 @@ export class PeopleService {
     const held = this.everyoneAt.get(scope.key);
     if (held && held.index === this.indexAt(index) && held.rules === this.rulesAt && known === held.version) return { open, everyoneVersion: held.version, index: "ready" };
     const mine = await this.mine();
-    // (each written to: no correspondents to look up)
+    // (each written to: no correspondents to look up; the rules as they were when asked, so a change meanwhile isn't
+    // stamped on a list made without it, Codex code review)
+    const rules = this.rulesAt;
     const person = await this.isPerson([]);
     // one person under two spellings once, and never you, nor a sender that isn't a person; the open people are in it too,
     // each at their place, so one whose last item goes falls into it there (the list leaves them out while they're open)
@@ -54,7 +56,7 @@ export class PeopleService {
       if (everyone.length === PEOPLE_EVERYONE_MAX) break;
     }
     // (named as it was read: the index and the rules after the awaits above, so a change meanwhile reads again next time)
-    const at = { index: this.indexAt(index), rules: this.rulesAt };
+    const at = { index: this.indexAt(index), rules };
     const was = this.everyoneAt.get(scope.key);
     const version = was && was.index === at.index && was.rules === at.rules ? was.version : ++this.versions;
     this.everyoneAt.delete(scope.key);
@@ -170,15 +172,16 @@ export class PeopleService {
    * is), the oldest last email it lets in, and the index's form of both. `key` names it for Everyone's version.
    */
   private async scope(filter: PeopleFilter | undefined): Promise<Scope> {
-    const since = peopleSince(filter?.within, this.b.now());
+    // the cutoff by the hour: Everyone's list, its cache and its version are of one cutoff (Codex code review)
+    const exact = peopleSince(filter?.within, this.b.now());
+    const since = exact ? Math.floor(exact / HOUR) * HOUR : 0;
     let accounts: number[] | null = null;
     if (filter?.accounts?.length) {
       const ids = new Set((await this.b.store.accounts.list()).map((a) => a.id));
       const kept = [...new Set(filter.accounts)].filter((id) => ids.has(id)).sort((a, b) => a - b);
       accounts = kept.length ? kept : null;
     }
-    // the date in the key by the hour: Everyone isn't sent again every read for a boundary that moved by milliseconds
-    const key = `${accounts?.join(",") ?? ""}|${filter?.within ?? ""}|${since ? Math.floor(since / HOUR) : 0}`;
+    const key = `${accounts?.join(",") ?? ""}|${since}`;
     return { accounts, since, key, index: { ...(accounts ? { accounts } : {}), ...(since ? { since } : {}) } };
   }
 

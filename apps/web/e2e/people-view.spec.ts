@@ -380,22 +380,37 @@ test.describe("People's filter and People in a focused account (plan 287)", () =
 
     await scenario("Past month: Olga, last written to 200 days ago, isn't listed; the chip and the button say the filter is on", async () => {
       await expect(page.getByTestId("people-filter")).not.toHaveAttribute("data-active");
+      // (scrolled down first: another filter's list starts at its top, and so does this one's again after it)
+      await page.getByTestId("people-rows").evaluate((el) => (el.scrollTop = 1500));
       await openMenu(page);
       await page.getByTestId("people-filter-month").click();
       await expect(menu(page)).toBeHidden();
       await expect(page.getByTestId("people-filter")).toHaveAttribute("data-active", "true");
       await expect(page.getByTestId("people-filter")).toHaveAccessibleName("Filter people: Past month");
       await expect(page.getByTestId("people-filter-chip-date")).toHaveText("Past month");
+      await expect.poll(() => page.getByTestId("people-rows").evaluate((el) => el.scrollTop)).toBe(0);
       await page.getByTestId("people-search").fill("Olga");
       await expect(page.getByTestId("people-note")).toBeVisible();
       await expect(row(page, olga.name)).toHaveCount(0);
       await page.getByTestId("people-search").fill("");
       await expect(row(page, ana.name).first()).toBeVisible();
+      // back to Any time: the whole list again from its top, not where it was left before the filter (Codex code review)
+      await openMenu(page);
+      await page.getByTestId("people-filter-any").click();
+      await expect(page.getByTestId("people-filter-chips")).toHaveCount(0);
+      await expect.poll(() => page.getByTestId("people-rows").evaluate((el) => el.scrollTop)).toBe(0);
+      await openMenu(page);
+      await page.getByTestId("people-filter-month").click();
     });
 
     await scenario("ticking an account keeps the menu open (several at once); the list is that account's: Bob, not Ana", async () => {
       await openMenu(page);
+      // two in one go: the menu stays, the chip names both; then one unticked
       await page.getByTestId(`people-filter-account-${work.id}`).click();
+      await page.getByTestId(`people-filter-account-${home.id}`).click();
+      await expect(menu(page)).toBeVisible();
+      await expect(page.getByTestId("people-filter-chip-accounts")).toHaveText(`${home.display_name}, ${work.display_name}`);
+      await page.getByTestId(`people-filter-account-${home.id}`).click();
       await expect(menu(page)).toBeVisible();
       await expect(page.getByTestId(`people-filter-account-${work.id}`)).toHaveAttribute("aria-checked", "true");
       await expect(page.getByTestId("people-filter-all-accounts")).toHaveAttribute("aria-checked", "false");

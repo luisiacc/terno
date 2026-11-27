@@ -118,7 +118,8 @@ export function PeopleFilterChips() {
     if (had) requestAnimationFrame(focusButton);
   };
   return (
-    <div data-testid="people-filter-chips" className="flex min-w-0 flex-wrap items-center gap-1.5 pb-2 pl-3">
+    // (no-drag: the header is the window's drag region, and a × in it would move the window, Codex code review)
+    <div data-testid="people-filter-chips" className="no-drag flex min-w-0 flex-wrap items-center gap-1.5 pb-2 pl-3">
       {date && (
         <Chip data-testid="people-filter-chip-date" onRemove={remove({ ...choice, within: null })} removeLabel={t("people.filter.remove", { what: date })}>
           {date}

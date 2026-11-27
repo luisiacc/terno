@@ -173,7 +173,7 @@ describe("plan 64: a search looks everywhere", () => {
   });
   it("plan 287: a set of accounts is where it looks, a part of its key; account:x inside it narrows", () => {
     const at = (q: string, accountIds?: number[]) => resolveSearch(parseSearch(q, NOW), q, accountIds ? { accountIds } : {}, lookup);
-    expect(at("factura", [2, 1]).accountIds?.sort()).toEqual([1, 2]);
+    expect([...(at("factura", [2, 1]).accountIds ?? [])].sort()).toEqual([1, 2]);
     expect(at("factura", []).accountIds).toBeNull();
     expect(at("factura", [1, 2]).key).toBe(at("factura", [2, 1]).key);
     expect(at("factura", [1]).key).not.toBe(at("factura").key);
@@ -182,6 +182,10 @@ describe("plan 64: a search looks everywhere", () => {
     const within = (q: string, accountIds: number[]) => resolveSearch(parseSearch(q, NOW), q, { accountIds }, two);
     expect(within("account:work factura", [1, 2])).toMatchObject({ accountIds: [2], impossible: false });
     expect(within("account:work factura", [1]).impossible).toBe(true);
+    // two account: operators are either, as outside a set (Codex code review); the same set however it's spelled
+    expect(within("account:home account:work factura", [1, 2])).toMatchObject({ impossible: false });
+    expect([...(within("account:home account:work factura", [1, 2]).accountIds ?? [])].sort()).toEqual([1, 2]);
+    expect(within("factura", [1, 2, 2]).key).toBe(within("factura", [2, 1]).key);
   });
 });
 

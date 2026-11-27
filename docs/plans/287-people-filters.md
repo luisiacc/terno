@@ -137,3 +137,36 @@ Twelve points. These override the sections above where they differ.
 10. **Costs.** The per-account dates are sparse: `[bit, date]` pairs per contact seen in two or more accounts (16 bytes a pair), not 32 slots; counted in `allocatedBytes`, remapped by compaction, validated on restore. The perf gate adds a narrow account filter, a filter change after new mail (cold `written`), and a common-domain search under a filter.
 11. **A selected person the filter leaves out.** Their page stays (they're still selected); Back in List goes to their row, else the search field. People's kept scroll is per scope (the focused account's apart). New message on a page: in a focused account, from it; else the newest shown conversation's account (within the filter), else the filter's first account, else the default.
 12. **Keyboard and states.** The filter button is on the title line, `no-drag`, before the search in the DOM as it is on screen; removing a chip by keyboard, or Clear filters, puts the keyboard on the button. "No one matches these filters" only after the current filter's answer; warming, failure and the search's cap keep their lines. The focused sidebar's People is the shared `NavItem`, after Inbox, current while People is on; no view row is current then.
+
+## As built
+
+- **Index** (`ContactIndex`): `sentIn` (the accounts you wrote to each contact from) and the per-account dates of contacts seen in two accounts or more, as `[bit, date]` pairs in one shared pool (`lastAt`, `lastN` per contact; a contact gaining an account moves its pairs to the pool's end, the garbage packed away when it's half the pool, and by compaction); snapshot format 7. `written(max, scope)` and `people(query, limit, scope)` apply the scope inside the walk (Everyone by `sentIn`, the search by `accounts`), a few filters cached per version; `lastWith(email, accounts)`.
+- **Search engines:** `threads.searchText({ accountIds })`, resolved into `ResolvedSearch.accountIds` and the search's key.
+- **Backend** (`PeopleService.scope`/`within`): every read takes `filter`; Open's items by their conversation's account, its people by the index's date (unknown kept); the cutoff by the hour; Everyone's version per filter and per index object.
+- **Renderer:** `lib/people-filter.ts` (the choice, stored; what's asked; its words), `PeopleFilterButton`, `PeopleFilterChips`, `PeopleFilterEmpty` (`components/people/people-filter.tsx`); `lib/people.ts`'s `currentScope()` (the generation every read snapshots); People in a focused account through `navigate` and `keepPeopleValid` (after the focus is settled), the focused sidebar's `nav-solo-people-<id>` below its Inbox.
+
+## What the Codex code review changed
+
+Fifteen findings; fourteen fixed, each with a test that fails without its fix:
+
+1. **A page of another scope** stayed on screen (its New message from the old filter's account, its items actionable): a scope change takes the page off at once (the person stays chosen, their page read again); New message in a focused account is from it.
+2. **A search joined to another scope's list:** the list and the hits go with the scope too; a failed read in the new scope shows Retry (no old list to hide it).
+3. **A failed Done hidden by a filter change:** a settled read a newer read overtook reads the scope again once it's done, and a failed one does the same.
+4. **A rules change during Everyone's read** was stamped on a list made without it: the rules' generation is taken before the read.
+5. Not taken: a notification from the focused account goes to the all-accounts Inbox (plan 108's decision 4, unchanged here).
+6. **A preview's Cancel** (and Review's way back) lost the focus: the preview keeps the focused account and restores it while it exists; Review's way back to a focused account's People restores it.
+7. **Everyone's membership and version** used different cutoffs: the cutoff is the hour's for the list, its cache and its version.
+8. **Rows kept the other scope's Last email:** the dates go with the scope.
+9. **The chips' × in the window's drag region:** the chips' line is `no-drag`.
+10. **`account:` twice in a set** became impossible: the operators' matches are either (as outside a set), then within the set; the set's key is deduplicated.
+11. **An account removed** left a phantom filter: the stored choice drops accounts that are gone, and the list's words use the same effective facets as the button.
+12. **The per-account dates' memory:** one small typed array per contact cost ~290 bytes each in V8; they're now one packed pool (the perf gate: 74k contacts in three accounts, 19.6 → under 8 MiB), and an evicted contact's dates are garbage at once.
+13. **A snapshot with inconsistent dates** restored: each contact once, its pairs exactly its accounts' bits, finite dates, `sentIn` within `accounts`, else refused.
+14. **Back to an earlier filter restored its old scroll:** the scroll is kept per place (People of every account, or a focused one's), and any filter change starts at the top.
+15. **Tests:** the filtered perf cases (index and the 50k backend gate), two accounts ticked in one menu session, a two-account page past its limit, the set's key across spellings.
+
+## Tests run
+
+- Unit: `contacts.test.ts` (44), `people.test.ts` backend (26), `parse.test.ts` (77), `people-view.test.ts`, `state/people.test.ts`, `state/people-filter.test.ts` (14), `account-focus.test.ts`, `review.test.ts`, `db/search.test.ts`. Each review fix's test was run against the code before its fix and failed. `action-preview.test.ts` fails to load on main as on this branch (`classList` of undefined at import), so the preview's way back is tested in `people-filter.test.ts`.
+- e2e: `people-view.spec.ts` (with the new plan 287 test), `account-focus.spec.ts`, `people.spec.ts`: all pass.
+- Perf (load 2–5): `contacts.perf.test.ts`'s plan 287 case passes (filtered Everyone cold ~5 ms, cached 0.4 µs, filtered search p95 ~5.6 ms, per-account dates under 8 MiB for 74k contacts in three accounts). Plan 281's search gate (2 ms) flips either way on main and on this branch (main 2.75 ms on a failing run, this branch 2.30 ms). `today.perf.test.ts`: What matters' earlier scenarios fail on this machine as they did for plan 281, so People's case was measured alone, on main and here: SQLite list p95 100.9 → 98.6 ms, longest busy 171 → 168 ms (over its 120 ms on both), page 2.1 → 2.4 ms, search 1.2 → 2.1 ms; IndexedDB list 38.8 → 38.3 ms, page 63.8 → 61.5 ms (over its 60 ms on both), search 1.6 → 1.7 ms.

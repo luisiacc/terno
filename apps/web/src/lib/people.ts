@@ -55,6 +55,8 @@ const scope = { key: "", gen: 0 };
 function currentScope(): { filter: PeopleFilter; key: string; gen: number } {
   const filter = peopleFilter();
   const key = JSON.stringify(filter);
+  // (the first scope of the session follows none: nothing of another is on screen)
+  if (key !== scope.key && scope.key === "") scope.key = key;
   if (key !== scope.key) {
     scope.key = key;
     scope.gen++;
@@ -65,7 +67,10 @@ function currentScope(): { filter: PeopleFilter; key: string; gen: number } {
     hitsFor = "";
     enterWhenIn = null;
     lastAsked.clear();
-    usePeople.setState((s) => ({ held: null, lastRev: s.lastRev + 1 }));
+    // nothing of another scope stays on screen to be read or acted on (Codex code review): its list and hits (a search's
+    // rows would join one scope's open items to the other's hits), the page (its New message and items are of other
+    // accounts) and the rows' dates; the person stays chosen, their page read again
+    usePeople.setState((s) => ({ held: null, list: null, hits: null, failed: false, page: null, pageFailed: null, lastEmails: new Map(), lastRev: s.lastRev + 1 }));
   }
   return { filter, key, gen: scope.gen };
 }
@@ -265,6 +270,9 @@ async function settle(ids: readonly string[]): Promise<void> {
   try {
     const [list, read] = await Promise.all([fetchList(at), page ? client.call("people.person", { email: page.email, filter: at.filter }) : Promise.resolve(null)]);
     for (const id of ids) leaving.delete(id);
+    // a read made meanwhile (a new filter) left these items out while they were leaving: the scope now is read again
+    // once this settles (Codex code review: a failed Done stayed hidden)
+    if (lists !== listSeq || pages !== pageSeq) again = true;
     await morphSettled();
     morph(() => {
       if (!getApp().people) return;
@@ -273,7 +281,7 @@ async function settle(ids: readonly string[]): Promise<void> {
     });
   } catch {
     for (const id of ids) leaving.delete(id);
-    reread();
+    again = true;
   } finally {
     settling--;
     if (again) reread();
@@ -764,8 +772,18 @@ export function installPeople(): void {
   client.on("personRules", () => {
     if (getApp().people) reread();
   });
-  // plan 287: the scope moved under an open People (the focus ended and People stayed, an account came or went)
+  // plan 287: the scope moved under an open People (the focus ended and People stayed, an account came or went); an account
+  // gone leaves the filter as it's remembered too (else it would still say "in your filter" with nothing chosen)
   useApp.subscribe((s, prev) => {
+    if (s.accounts !== prev.accounts && s.accounts.length) {
+      const { filter } = usePeople.getState();
+      const kept = filter.accounts.filter((id) => s.accounts.some((a) => a.id === id));
+      if (kept.length !== filter.accounts.length) {
+        const next = { ...filter, accounts: kept };
+        usePeople.setState({ filter: next });
+        savePeopleFilter(next);
+      }
+    }
     if (s.people && (s.accounts !== prev.accounts || s.soloAccountId !== prev.soloAccountId || s.accountId !== prev.accountId) && prev.people && JSON.stringify(peopleFilter()) !== scope.key) refreshPeople();
   });
   // AI features no longer offered: People goes (its row too), back to the Inbox; the cards read go with it

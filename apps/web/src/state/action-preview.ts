@@ -10,7 +10,7 @@ import { reloadList, useList } from "./list";
  * Plan 143: a sentence's preview, a list of its own. What's here: which rows are unticked, and the way back to where you
  * were. The rest of it is in `lib/action-preview.ts`.
  */
-type From = Pick<AppState, "view" | "accountId" | "categoryId" | "reviewCategoryId" | "folder" | "gmailTab" | "reminders" | "followups" | "putAway" | "today" | "people" | "person" | "query" | "selectedId" | "readerOpen"> & {
+type From = Pick<AppState, "view" | "accountId" | "categoryId" | "reviewCategoryId" | "folder" | "gmailTab" | "reminders" | "followups" | "putAway" | "today" | "people" | "person" | "query" | "selectedId" | "readerOpen" | "soloAccountId"> & {
   scrollTop: number;
   /** the rows you were among, however deep: scroll can't come back to a place the list doesn't hold yet */
   rows: Pick<ReturnType<typeof useList.getState>, "key" | "itemsKey" | "items" | "index" | "nextCursor">;
@@ -73,7 +73,7 @@ export function enterPreview(previewId: string, view: "inbox" | "all" = "all"): 
     unticked: new Set(),
     tags: new Map(),
     showLeftOut: false,
-    from: { view: s.view, accountId: s.accountId, categoryId: s.categoryId, reviewCategoryId: s.reviewCategoryId, folder: s.folder, gmailTab: s.gmailTab, reminders: s.reminders, followups: s.followups, putAway: s.putAway, today: s.today, people: s.people, person: s.person, query: s.query, selectedId: s.selectedId, readerOpen: s.readerOpen, scrollTop: listEl()?.scrollTop ?? 0, rows: { key, itemsKey, items, index, nextCursor } },
+    from: { view: s.view, accountId: s.accountId, categoryId: s.categoryId, reviewCategoryId: s.reviewCategoryId, folder: s.folder, gmailTab: s.gmailTab, reminders: s.reminders, followups: s.followups, putAway: s.putAway, today: s.today, people: s.people, person: s.person, query: s.query, selectedId: s.selectedId, readerOpen: s.readerOpen, soloAccountId: s.soloAccountId, scrollTop: listEl()?.scrollTop ?? 0, rows: { key, itemsKey, items, index, nextCursor } },
   });
   // the place it leaves is remembered first (the list's own memory, for coming back by the sidebar), then its rows go
   setApp({ actionPreview: previewId, view, accountId: null, categoryId: null, reviewCategoryId: null, folder: null, gmailTab: null, reminders: false, followups: false, putAway: false, today: false, people: false, query: "", selectedId: null, checked: new Set(), anchorId: null, scope: null, readerOpen: false });
@@ -143,7 +143,9 @@ export function leavePreview(): void {
   if (!from) return setApp({ actionPreview: null });
   const { scrollTop, rows, ...place } = from;
   useList.setState({ ...rows, loading: false, loadingMore: false, error: null });
-  setApp({ ...place, actionPreview: null, checked: new Set(), anchorId: null, scope: null });
+  // (the account it was focused on too, while it's still there: a focused account's People is that account's, plan 287)
+  const solo = place.soloAccountId !== null && getApp().accounts.some((a) => a.id === place.soloAccountId) ? place.soloAccountId : null;
+  setApp({ ...place, soloAccountId: solo, actionPreview: null, checked: new Set(), anchorId: null, scope: null });
   // what changed while away comes in place, over the same window
   void reloadList({ keepSelection: true, window: true });
   // once those rows have rendered

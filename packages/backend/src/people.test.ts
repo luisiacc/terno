@@ -475,6 +475,52 @@ describe("People's filter (plan 287)", () => {
     expect(ids((await t.client.call("people.search", { query: "people.test", filter: { within: "week" } })).hits)).toEqual(["bob@people.test"]);
   });
 
+  it("a page in two accounts is one search: the newest of both, with whether there are more (Codex code review)", async () => {
+    const t = await setup();
+    const w = await second(t);
+    for (let i = 0; i < 3; i++) await t.from("Ana", "ana@people.test", { waiting: false });
+    for (let i = 0; i < 3; i++) await w.from("Ana", "ana@people.test", { waiting: false });
+    const both = { accounts: [t.account.id, w.work.id] };
+    const page = (await t.client.call("people.person", { email: "ana@people.test", conversations: 4, filter: both }))!;
+    expect(page.conversations).toHaveLength(4);
+    expect(new Set(page.conversations.map((c) => c.accountId))).toEqual(new Set([t.account.id, w.work.id]));
+    expect(page.more).toBe(true);
+    expect((await t.client.call("people.person", { email: "ana@people.test", conversations: 6, filter: both }))!.more).toBe(false);
+  });
+
+  it("the date's cutoff is the hour's: a contact at its edge is in a fresh read and a held one alike (Codex code review)", async () => {
+    const t = await setup();
+    // written to 7 days ago less 5 minutes: inside Past week at 9:00, past its exact edge at 9:10
+    await t.backend.store.sync.ingest([msg({ accountId: t.account.id, date: NOW - 7 * DAY + 5 * 60_000, from: { name: "Me", email: t.account.email }, to: [{ name: "Edge", email: "edge@people.test" }], subject: "Edge", providerMsgId: "edge-last", isSent: true, isRead: true })], { applyFilters: false, now: NOW, classifier: null });
+    await t.client.call("people.ready", {});
+    const week = { within: "week" as const };
+    const first = await t.client.call("people.list", { filter: week });
+    expect(ids(first.everyone)).toContain("edge@people.test");
+    t.clock.now = NOW + 10 * 60_000;
+    expect(ids((await t.client.call("people.list", { filter: week })).everyone)).toContain("edge@people.test");
+    expect((await t.client.call("people.list", { known: first.everyoneVersion, filter: week })).everyone).toBeUndefined();
+  });
+
+  it("a rule changed while Everyone is read is never stamped on the list made without it (Codex code review)", async () => {
+    const t = await setup();
+    await t.to("Marco", "marco@people.test");
+    await t.client.call("people.ready", {});
+    const rules = t.backend.store.facts.rules;
+    const list = rules.list.bind(rules);
+    // the rules change as they're read, twice (another window's word on someone, landing mid-read): the second time
+    // while Everyone's own read of them is on its way
+    let reads = 0;
+    const spy = vi.spyOn(rules, "list").mockImplementation(async () => {
+      const r = await list();
+      if (++reads <= 2) t.backend.people.rulesChanged();
+      return r;
+    });
+    const read = await t.client.call("people.list", {});
+    spy.mockRestore();
+    // the next read with that version reads Everyone again (it was made with the rules before the change)
+    expect((await t.client.call("people.list", { known: read.everyoneVersion })).everyone).toBeDefined();
+  });
+
   it("Everyone's version is per filter: two windows on two filters don't make each other send it again", async () => {
     const t = await setup();
     const w = await second(t);

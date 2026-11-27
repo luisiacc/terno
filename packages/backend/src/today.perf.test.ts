@@ -226,20 +226,24 @@ async function people(kind: string, backend: Backend, budget: { listMs: number; 
   expect(first.index).toBe("ready");
   expect(first.everyone.length).toBeGreaterThan(0);
   const someone = first.open[0]?.email ?? first.everyone[0]!.email;
+  // plan 287: every other round within a filter (one of the two accounts, the past month): the same budgets
+  const [account] = await backend.store.accounts.list();
+  const filter = { accounts: [account!.id], within: "month" as const };
   const loop = watchLoop(budget.busyMs * MULT);
   for (let i = 0; i < 12; i++) {
+    const within = i % 2 ? filter : undefined;
     await turn();
     backend.today.changed();
     let t = performance.now();
-    await backend.people.list();
+    await backend.people.list(undefined, within);
     lists.push(performance.now() - t);
     await turn();
     t = performance.now();
-    await backend.people.person(someone);
+    await backend.people.person(someone, undefined, undefined, within);
     pages.push(performance.now() - t);
     await turn();
     t = performance.now();
-    await backend.people.search("a");
+    await backend.people.search("a", within);
     searches.push(performance.now() - t);
   }
   const report = loop.stop();

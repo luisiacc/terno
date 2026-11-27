@@ -533,6 +533,57 @@ describe("People's filter (plan 287)", () => {
     expect(c.people("a", 50, { accounts: [2] }).every((p) => p.email.endsWith("@y.com"))).toBe(true);
   });
 
+  it("an evicted contact's per-account dates go at once, not at the next compaction (Codex code review)", async () => {
+    const k = new ContactIndex({ now: () => NOW, caps: { maxContacts: 2, maxBytes: 64 * 1024 * 1024 } });
+    k.beginBuild({ epoch: "e", seq: 0 });
+    // zed: copied in two accounts, never written to (the least ranked); ana and bea written to
+    for (const m of [received(andres, { accountId: 1, cc: [{ name: "Zed", email: "zed@z.io" }] }), received(andres, { accountId: 2, cc: [{ name: "Zed", email: "zed@z.io" }] }), sent([ana], { accountId: 1 }), sent([ana], { accountId: 1 }), sent([bea], { accountId: 1 }), sent([bea], { accountId: 1 })]) k.add(m);
+    await k.finishBuild(clock());
+    const before = k.perAccountDates().contacts;
+    expect(before).toBeGreaterThan(0);
+    while (k.overCaps()) await k.enforceCaps(clock());
+    expect(k.person("zed@z.io")).toBeNull();
+    expect(k.perAccountDates().contacts).toBeLessThan(before);
+  });
+
+  it("the shared pool: a contact gaining accounts moves its dates, garbage is packed away, every date stays right", async () => {
+    // many contacts each seen in turn in up to 5 accounts: their pairs move (and the pool packs) many times
+    const k = await built([]);
+    const who = Array.from({ length: 400 }, (_, i) => ({ name: `P ${i}`, email: `p${i}@x.io` }));
+    for (let a = 1; a <= 5; a++) for (const [i, p] of who.entries()) k.add(sent([p], { accountId: a, date: NOW - (a * 1000 + i) * 60_000 }));
+    for (const [i, p] of who.entries()) for (let a = 1; a <= 5; a++) expect(k.lastWith(p.email, [a])).toBe(NOW - (a * 1000 + i) * 60_000);
+    expect(k.perAccountDates().contacts).toBe(400);
+    // 400 contacts × 5 pairs × 16 bytes live: the pool holds no more than about twice that
+    expect(k.perAccountDates().bytes).toBeLessThanOrEqual(2 * 400 * 5 * 16 + 4096 * 8);
+  });
+
+  it("a snapshot whose per-account dates don't agree with its accounts is refused (Codex code review)", async () => {
+    type Inside = { pool: Float64Array; lastAt: Uint32Array; lastN: Uint8Array; sentIn: Uint32Array };
+    const make = async () => {
+      const c = await built([sent([ana], { accountId: 1, date: NOW - 300 * DAY }), sent([ana], { accountId: 2, date: NOW - DAY })]);
+      c.revision = { epoch: "e", seq: 1 };
+      const inside = c as unknown as Inside;
+      const id = inside.lastN.findIndex((n) => n > 0);
+      return { c, inside, id, at: inside.lastAt[id]! - 1 };
+    };
+    const refused = async (c: ContactIndex) => expect(await new ContactIndex({ now: () => NOW }).restore(await c.snapshot("test", clock()), "test", clock())).toBe(false);
+    // an account's pair twice
+    const twice = await make();
+    twice.inside.pool[twice.at + 2] = twice.inside.pool[twice.at]!;
+    await refused(twice.c);
+    // one of its accounts' pairs missing (another account's in its place)
+    const short = await make();
+    short.inside.pool[short.at + 2] = 5;
+    await refused(short.c);
+    // written to from an account never seen there
+    const stranger = await make();
+    stranger.inside.sentIn[stranger.id] = 0b100;
+    await refused(stranger.c);
+    // and the honest one restores
+    const ok = await make();
+    expect(await new ContactIndex({ now: () => NOW }).restore(await ok.c.snapshot("test", clock()), "test", clock())).toBe(true);
+  });
+
   it("a snapshot and a compaction keep each account's dates and whom you wrote from where; memory counts them", async () => {
     const c = await built([sent([ana], { accountId: 1, date: NOW - 300 * DAY }), sent([ana], { accountId: 2, date: NOW - DAY }), sent([bea], { accountId: 2 }), received(carl, { accountId: 1, cc: [bea] })]);
     c.revision = { epoch: "e", seq: 1 };
