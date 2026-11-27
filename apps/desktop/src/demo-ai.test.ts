@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEMO_SINCE } from "@terno/backend";
-import { askFinished, conversationDone, replyOutcome, replyStillComing, DEMO_AI_NOW, DEMO_AI_STEPS, DEMO_SINCE_SUBJECTS, demoAiArgs, demoAiClock, demoAiEnv, demoAiProfileProblem, MAX_ATTEMPTS, partialVerdict, devKeysIn, keyFiles, MARKER_VERSION, missingKeysMessage, readMarker, resolveKeys, stepsSetAside, stepsToRun } from "./demo-ai";
+import { askFinished, conversationDone, replyOutcome, replyStillComing, DEMO_AI_NOW, DEMO_AI_STEPS, DEMO_SINCE_SUBJECTS, demoAiArgs, demoAiClock, demoAiEnv, demoAiProfileProblem, MAX_ATTEMPTS, partialVerdict, devKeysIn, keyFiles, MARKER_VERSION, missingKeysMessage, oldMailboxProblem, readMarker, resolveKeys, stepsSetAside, stepsToRun } from "./demo-ai";
 
 describe("plan 167: pnpm dev:demo-ai", () => {
   it("takes --fresh (and dev.mjs's --cleandb), and refuses anything else so a typo isn't a silent no-op", () => {
@@ -97,6 +97,14 @@ describe("plan 167: pnpm dev:demo-ai", () => {
     expect(readMarker("{oops")).toBeNull();
     expect(readMarker(JSON.stringify({ version: MARKER_VERSION + 1, done: {} }))).toBeNull();
     expect(readMarker(JSON.stringify({ version: MARKER_VERSION, done: { "ai-on": "x" } }))).toEqual({ version: MARKER_VERSION, done: { "ai-on": "x" } });
+  });
+
+  it("plan 289: a profile seeded with the earlier, Spanish mailbox is refused with --fresh as the way on", () => {
+    expect(oldMailboxProblem({ hasMailbox: true, edition: null })).toMatch(/--fresh/);
+    expect(oldMailboxProblem({ hasMailbox: true, edition: "fixture" })).toMatch(/--fresh/);
+    expect(oldMailboxProblem({ hasMailbox: true, edition: "demo" })).toBeNull();
+    // nothing seeded yet: the launch seeds the new one
+    expect(oldMailboxProblem({ hasMailbox: false, edition: null })).toBeNull();
   });
 
   it("later launches start where the preparation ended, never before 16:00", () => {

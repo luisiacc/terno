@@ -21,13 +21,13 @@ const TODAY_ROWS = 4;
 
 /** Questions about the demo mailbox's own mail; the first gets a follow-up question. */
 export const ASK_QUESTIONS = [
-  { q: "What did Isabella say about the payment?", followUp: "When did she write about it?" },
-  { q: "What's blocking the sistema de diseño work?" },
+  { q: "What did James Harris say about the payment?", followUp: "When did he write about it?" },
+  { q: "What's blocking the instant search work?" },
   { q: "Who asked me for a call this week, and when?" },
   { q: "Which newsletters came in this week, and what were they about?" },
 ];
 /** Sent only if reading the last month's sent mail found nothing to follow up (the fallback, so the line still shows). */
-export const FOLLOWUP = { to: "Arjun Ramírez", subject: "The flat on Saturday", body: "Hi Arjun,\n\nCould you send me the address of the flat before Friday? I'd like to see it on Saturday.\n\nThanks,\nLuis" };
+export const FOLLOWUP = { to: "Henry Haddad", subject: "The flat on Saturday", body: "Hi Henry,\n\nCould you send me the address of the flat before Friday? I'd like to see it on Saturday.\n\nThanks,\nLuis" };
 export const RULE_REQUEST = "archive receipts from uber.com";
 
 const now = () => new Date().toISOString();

@@ -206,7 +206,7 @@ async function initialize(msg: Extract<MainToBackend, { type: "init" }>, signal:
     mailbox = null;
     if (signal.aborted) return;
     send({ type: "gate", gate: GATE_OPEN });
-    if (msg.demo && (await seedDemo(backend.store, { threads: 3000, accounts: 4 }))) {
+    if (msg.demo && (await seedDemo(backend.store, { threads: 3000, accounts: 4, edition: "demo" }))) {
       if (signal.aborted) return;
       // AI off, as on a real install: the AI features show only once a real model is set up (the demo model is still
       // in the AI tab to try them)

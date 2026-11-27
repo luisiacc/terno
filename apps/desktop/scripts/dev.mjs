@@ -15,10 +15,11 @@ import { createRequire } from "node:module";
 import { withDotEnv } from "../../../scripts/release-env.mjs";
 import { dirname, join } from "node:path";
 import { existsSync, readdirSync, readFileSync, renameSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_DEV_PORT, devPort, viteLocalUrl } from "../src/dev-port.ts";
-import { DEMO_AI_PROFILE, demoAiArgs, demoAiClock, demoAiEnv, demoAiProfileProblem, keyFiles, MARKER_FILE, missingKeysMessage, readMarker, resolveKeys, stepsSetAside, stepsToRun } from "../src/demo-ai.ts";
+import { DEMO_AI_PROFILE, demoAiArgs, demoAiClock, demoAiEnv, demoAiProfileProblem, keyFiles, MARKER_FILE, missingKeysMessage, oldMailboxProblem, readMarker, resolveKeys, stepsSetAside, stepsToRun } from "../src/demo-ai.ts";
 import { DB_FILE, LegacyProfileConflictError, LegacyProfileInUseError, migrateLegacyProfile, profileInUse, resolveProfile } from "../src/legacy-profile.ts";
 
 // For one release UNICA_* variables still work (the same rule as @terno/core/legacy-env).
@@ -80,6 +81,26 @@ function cleanProfile(profile) {
 }
 
 /**
+ * Plan 289: whether the profile's database holds a mailbox, and which demo edition seeded it (read only, before anything
+ * opens it; a database that can't be read is left to the launch, which says what's wrong).
+ */
+function demoMailboxOf(profile) {
+  const path = join(profile, DB_FILE);
+  if (!existsSync(path)) return { hasMailbox: false, edition: null };
+  let db;
+  try {
+    db = new DatabaseSync(path, { readOnly: true });
+    const hasMailbox = (db.prepare("SELECT COUNT(*) AS n FROM accounts").get()?.n ?? 0) > 0;
+    const row = db.prepare("SELECT value_json FROM settings WHERE key = 'demo.edition'").get();
+    return { hasMailbox, edition: row ? JSON.parse(row.value_json) : null };
+  } catch {
+    return { hasMailbox: false, edition: null };
+  } finally {
+    db?.close();
+  }
+}
+
+/**
  * Plan 167: before anything builds, what --demo-ai needs: its arguments, its keys (this checkout's .env, then the main
  * checkout's, under the shell's), and what its profile still has to prepare. No key value is ever printed.
  */
@@ -99,6 +120,10 @@ if (demoAi) {
   // the checked path itself: no legacy sibling is adopted (an unchecked Unica-dev-demo-ai would be), and nothing is migrated
   const profile = candidate;
   if (args.fresh) cleanProfile(profile);
+  else {
+    const old = oldMailboxProblem(demoMailboxOf(profile));
+    if (old) { console.error(`[demo-ai] ${profile}: ${old}`); process.exit(1); }
+  }
   const marker = readMarker(read(join(profile, MARKER_FILE)));
   const steps = stepsToRun(marker, args);
   const aside = args.fresh ? [] : stepsSetAside(marker);

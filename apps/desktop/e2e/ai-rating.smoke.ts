@@ -16,7 +16,7 @@ test("launch({ ai: \"stub\" }): settings survive the relaunch, the AI entry poin
     // the window and the backend read the demo's own instant
     expect(await page.evaluate(() => new Date().toISOString())).toBe("2026-10-22T16:00:00.000Z");
     await expect(page.getByTestId("nav-today")).toBeVisible();
-    await page.getByTestId("thread-row").filter({ hasText: "departamento en la Roma" }).first().click();
+    await page.getByTestId("thread-row").filter({ hasText: "Plans for the long weekend" }).first().click();
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     // plan 163: ⌘J opens the reply for AI, the keys in its body
     await page.keyboard.press("Meta+j");
@@ -28,7 +28,7 @@ test("launch({ ai: \"stub\" }): settings survive the relaunch, the AI entry poin
     await expect(page.getByRole("dialog", { name: "Ask your mail" })).toBeVisible();
     // plan 168: the rated launch asks for itself (Settings no longer lists a local server's models for each feature,
     // which was the request it used to make), so the log has this launch's own AI requests to judge
-    await page.getByTestId("palette-input").fill("What did Isabella say about the payment?");
+    await page.getByTestId("palette-input").fill("What did James Harris say about the payment?");
     await page.keyboard.press("Enter");
     await expect(page.getByTestId("ask-answer").first()).not.toBeEmpty({ timeout: 30_000 });
     await page.keyboard.press("Escape");

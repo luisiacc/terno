@@ -1,22 +1,30 @@
-import { generateDataset, printFixtures, type PrintFixtureKey } from "@terno/mock-data";
+import { DEMO_DATASET, generateDataset, printFixtures, type Edition, type PrintFixtureKey } from "@terno/mock-data";
 import type { IncomingMessage, MailStore } from "@terno/store";
 
 export interface DemoOptions {
   threads?: number;
   accounts?: number;
   now?: number;
+  /** plan 289: `demo` for what people look at (English, one Spanish account); the tests' fixture by default */
+  edition?: Edition;
 }
+
+/** Plan 289: set on a profile seeded with the demo edition (seeding is once per profile: an older one keeps its mailbox). */
+export const DEMO_EDITION_KEY = "demo.edition";
 
 /** Seeds an empty store with the deterministic demo mailbox (no-op if accounts exist). */
 export async function seedDemo(store: MailStore, options: DemoOptions = {}): Promise<boolean> {
   if ((await store.accounts.list()).length > 0) return false;
   const now = options.now ?? Date.UTC(2026, 9, 22, 15, 30);
-  const data = generateDataset({ threads: options.threads ?? 3000, accounts: options.accounts ?? 4, now, seed: 42, bodyScale: 2 });
+  const edition = options.edition ?? "fixture";
+  const data = generateDataset({ ...DEMO_DATASET, threads: options.threads ?? DEMO_DATASET.threads, accounts: options.accounts ?? DEMO_DATASET.accounts, now, edition });
   const seeded = await store.dev.seed(data, { now, learningSignals: true });
   for (const [i, id] of seeded.accountIds.entries()) await store.accounts.setProviderConfig(id, { demo: true, senderName: data.accounts[i]!.ownerName });
+  // only the demo's: the fixture's profiles stay as they were (a profile without it holds the fixture's mailbox)
+  if (edition === "demo") await store.settings.set(DEMO_EDITION_KEY, edition);
   await store.filters.save(
     {
-      name: "Notificaciones de GitHub → Desarrollo",
+      name: edition === "demo" ? "GitHub notifications → Dev" : "Notificaciones de GitHub → Desarrollo",
       enabled: true,
       source: "manual",
       rule: {

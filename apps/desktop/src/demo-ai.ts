@@ -204,6 +204,16 @@ export function partialVerdict(missing: readonly string[], attempt: number): "do
   return missing.length === 0 ? "done" : attempt >= MAX_ATTEMPTS ? "keep" : "again";
 }
 
+/**
+ * Plan 289: why a profile can't be prepared as it is, or null. One seeded before the demo mailbox went English holds the
+ * old mailbox (a launch never seeds over one), so preparing it would show the old mail: its database has a mailbox but
+ * not the demo edition's setting (`edition`: the `demo.edition` setting's value, null when unset). `--fresh` starts over.
+ */
+export function oldMailboxProblem(o: { hasMailbox: boolean; edition: unknown }): string | null {
+  if (!o.hasMailbox || o.edition === "demo") return null;
+  return "this profile holds the earlier demo mailbox (Spanish throughout): pnpm dev:demo-ai --fresh prepares it again on the new one (English, with Freelance in Spanish)";
+}
+
 /** The marker's text, or null when it's missing, unreadable or from another version: all of those start over. */
 export function readMarker(text: string | null): DemoAiMarker | null {
   if (text === null) return null;

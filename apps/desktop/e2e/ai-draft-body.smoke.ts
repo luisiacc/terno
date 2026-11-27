@@ -59,22 +59,22 @@ test("plan 163 on real models: write, fill, and the fast read, timed", async () 
   try {
     // an instruction (the rules know): the draft replaces it
     for (const round of [1, 2]) {
-      await reply(page, "departamento en la Roma", "friday works for me, ask him to send the address of the flat");
+      await reply(page, "Plans for the long weekend", "friday works for me, ask her to send the address of the cabin");
       const t = await press(page);
       await expect(page.getByTestId("ai-strip")).toBeVisible();
       const text = await body(page);
-      expect(text).not.toContain("ask him to send");
+      expect(text).not.toContain("ask her to send");
       expect(text.toLowerCase()).toContain("address");
       out[`write ${round}`] = { ...t, text };
     }
     // their email with gaps: only the gaps change
-    const typed = "Hi Arjun,\nThe changes to the pricing page are fine, [something warm about his work]. When is the new deadline, [the date he mentioned]?\nLuis";
+    const typed = "Hi Ava,\nThe changes to the pricing page are fine, [something warm about her work]. When is the new deadline, [the date she mentioned]?\nLuis";
     for (const round of [1, 2]) {
-      await reply(page, "departamento en la Roma", typed);
+      await reply(page, "Plans for the long weekend", typed);
       const t = await press(page);
       const text = await body(page);
-      for (const kept of ["Hi Arjun,", "The changes to the pricing page are fine, ", "When is the new deadline, ", "Luis"]) expect(text).toContain(kept);
-      expect(text).not.toContain("[something warm about his work]");
+      for (const kept of ["Hi Ava,", "The changes to the pricing page are fine, ", "When is the new deadline, ", "Luis"]) expect(text).toContain(kept);
+      expect(text).not.toContain("[something warm about her work]");
       const fills = await page.getByTestId("compose-fill").allInnerTexts();
       out[`fill ${round}`] = { ...t, text, fills, left: await page.getByTestId("compose-gap").allInnerTexts() };
     }
@@ -87,7 +87,7 @@ test("plan 163 on real models: write, fill, and the fast read, timed", async () 
       ["Great news about the pricing page. I'll look at it tomorrow and send you my comments by Thursday.", "expand"],
     ];
     for (const [text, expected] of unsure) {
-      await reply(page, "departamento en la Roma", text);
+      await reply(page, "Plans for the long weekend", text);
       const t = await press(page);
       const got = (await page.getByTestId("ai-choice").count()) ? "expand" : (await page.getByTestId("ai-strip").count()) ? "write" : "error";
       out[`unsure: ${text}`] = { ...t, expected, got };

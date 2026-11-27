@@ -16,7 +16,7 @@ import { AI_SMALL, aiFlag, screensFlag, shotFiles } from "./sets.mjs";
 const WM_ITEM = "[data-testid=wm-feed] [data-testid=wm-item]";
 const WM_SCROLLER = "[data-testid=wm-feed] [data-keep-scroll=list]";
 
-const REPLY = "Hi Isabella,\n\nThanks for flagging this. I looked at the payment and it went through on our side, so it may just be the bank holding it. Can you send me the error you saw?\n\nI'm free for the concert on Friday, by the way.";
+const REPLY = "Hi Isla,\n\nThanks for setting this up. Tuesday at 10 works for the follow-up on the checkout redesign; I'll bring the latest mockups and the numbers from the test.\n\nSee you then.";
 
 async function pass(design, mode, dir) {
   const { app, page, close } = await launch({ design, dark: mode === "dark" });
@@ -30,7 +30,7 @@ async function pass(design, mode, dir) {
 
     // --- Split view ---
     await settle(); await s("01-split-inbox");
-    await rows.filter({ hasText: "Recomendaciones de libros" }).first().click(); await subject(); await settle(); await s("02-split-conversation");
+    await rows.filter({ hasText: "Review of the holiday campaign" }).first().click(); await subject(); await settle(); await s("02-split-conversation");
 
     await rows.first().click(); await subject(); await blur();
     await page.keyboard.press("r"); await page.getByTestId("compose-body").waitFor();
@@ -87,19 +87,19 @@ async function pass(design, mode, dir) {
     await setLayout(page, "list"); await page.waitForTimeout(500); await blur();
     for (let i = 0; i < 2 && (await page.getByTestId("reader").isVisible().catch(() => false)); i++) { await page.keyboard.press("Meta+["); await page.waitForTimeout(400); }
     await settle(); await s("11-list-inbox");
-    await rows.filter({ hasText: "Recomendaciones de libros" }).first().click(); await subject(); await settle(); await s("12-list-conversation");
+    await rows.filter({ hasText: "Review of the holiday campaign" }).first().click(); await subject(); await settle(); await s("12-list-conversation");
     await blur(); await page.keyboard.press("r"); await page.getByTestId("compose-body").waitFor();
-    await page.keyboard.type("Hey Arjun,\n\nI liked the second one. Do you have anything shorter for the flight?");
+    await page.keyboard.type("Hey Lucas,\n\nI liked the second direction. Can we keep the red for the banner and try a shorter headline?");
     await settle(); await s("13-list-draft-open");
   } finally { await close(); }
 }
 
 /** Plan 161's instruction for ⌘J and its question for Ask: fixed, so every round asks the same. */
 const AI_INPUTS = {
-  draft: "friday works for me, ask him to send the address of the flat",
-  ask: "What did Isabella say about the payment?",
+  draft: "friday works for me, ask her to send the address of the cabin",
+  ask: "What did James Harris say about the payment?",
   action: "Archive shipping notices older than a month",
-  followup: { to: "Arjun Ramírez", subject: "The flat on Saturday", body: "Hi Arjun,\n\nCould you send me the address of the flat before Friday? I'd like to see it on Saturday.\n\nThanks,\nLuis" },
+  followup: { to: "Henry Haddad", subject: "The flat on Saturday", body: "Hi Henry,\n\nCould you send me the address of the flat before Friday? I'd like to see it on Saturday.\n\nThanks,\nLuis" },
   filter: "archive receipts from uber.com",
 };
 
@@ -226,7 +226,7 @@ async function aiPass(design, mode, dir, ai) {
 
     // --- a summary, asked for (old mail isn't summarized on its own) ---
     await page.getByTestId("nav-inbox").click();
-    await rows.filter({ hasText: "Recomendaciones de libros" }).first().click(); await subject();
+    await rows.filter({ hasText: "Review of the holiday campaign" }).first().click(); await subject();
     await page.getByTestId("action-summarize").click();
     // no per-use consent (plan 131, the owner's decision): it runs on the click, on a cloud model too
     await page.locator("[data-testid=summary-block][data-state=ready]").waitFor({ timeout: wait.model });
@@ -236,7 +236,7 @@ async function aiPass(design, mode, dir, ai) {
 
     // --- ⌘J (plan 163): the reply opened for AI, the instruction typed in its body (its Sparkles lit), then the draft
     // written in its place ---
-    await rows.filter({ hasText: "departamento en la Roma" }).first().click(); await subject();
+    await rows.filter({ hasText: "Plans for the long weekend" }).first().click(); await subject();
     await blur();
     await page.keyboard.press("Meta+j");
     await page.locator("[data-testid=compose-body]:focus").waitFor();
@@ -299,7 +299,7 @@ async function aiPass(design, mode, dir, ai) {
 
     // --- Reply ready, on mail waiting for the user ---
     await page.getByTestId("nav-inbox").click();
-    await rows.filter({ hasText: "Blockers for sistema de diseño" }).first().click(); await subject();
+    await rows.filter({ hasText: "Blockers for instant search" }).first().click(); await subject();
     // the model decides whether it needs a reply (needs_reply), once per conversation as it stands: not a step to retry
     await page.locator("[data-testid=reply-ready][data-phase=ready]").waitFor({ timeout: wait.model });
     await visible("reply-ready-use");

@@ -17,8 +17,11 @@ interface Line {
 
 interface Conversation {
   key: string;
-  /** index into the demo's accounts: 0 the personal Gmail, 1 Acme Studio */
-  account: 0 | 1;
+  /**
+   * The demo account it's on, by address (plan 289): Acme Studio's English, the Spanish ones on the Spanish account
+   * (Freelance), where they test Spanish summaries and replies. By address, as the stores list accounts in the user's order.
+   */
+  account: string;
   subject: string;
   /** everyone else on it, for the To line of your own mail */
   with: { name: string; email: string }[];
@@ -26,6 +29,8 @@ interface Conversation {
 }
 
 const DAY = 24 * 60;
+const ACME = "luis@acme.studio";
+const FREELANCE = "hola@luiscordero.dev";
 const priya = { name: "Priya Shah", email: "priya.shah@acme.studio" };
 const mariana = { name: "Mariana Cordero", email: "mariana.cordero@gmail.com" };
 const diego = { name: "Diego Cordero", email: "diego.cordero@gmail.com" };
@@ -36,7 +41,7 @@ const laura = { name: "Laura Méndez", email: "laura.mendez@acme.studio" };
 export const DEMO_SINCE: readonly Conversation[] = [
   {
     key: "offsite",
-    account: 1,
+    account: ACME,
     subject: "Venue for the team offsite",
     with: [priya],
     lines: [
@@ -47,7 +52,7 @@ export const DEMO_SINCE: readonly Conversation[] = [
   },
   {
     key: "cena",
-    account: 0,
+    account: FREELANCE,
     subject: "Cena de cumpleaños de papá",
     with: [mariana, diego],
     lines: [
@@ -59,7 +64,7 @@ export const DEMO_SINCE: readonly Conversation[] = [
   },
   {
     key: "contrato",
-    account: 1,
+    account: FREELANCE,
     subject: "Contrato con Lumbre Café",
     with: [andres, sofia],
     lines: [
@@ -72,7 +77,7 @@ export const DEMO_SINCE: readonly Conversation[] = [
   },
   {
     key: "factura",
-    account: 1,
+    account: FREELANCE,
     subject: "Factura de septiembre",
     with: [laura],
     lines: [
@@ -90,11 +95,13 @@ const SEEDED_KEY = "demo.sinceSeeded";
 export async function seedDemoSince(store: MailStore): Promise<boolean> {
   if (await store.settings.get<boolean>(SEEDED_KEY, false)) return false;
   const accounts = await store.accounts.list();
-  if (accounts.length < 2) return false;
+  const of = (email: string) => accounts.find((a) => a.email === email);
+  if (!DEMO_SINCE.every((c) => of(c.account))) return false;
   const messages: IncomingMessage[] = [];
   for (const c of DEMO_SINCE) {
-    const account = accounts[c.account]!;
-    const me = { name: account.displayName || "Luis Cordero", email: account.email };
+    const account = of(c.account)!;
+    // who writes: the account's sender name (the demo's owner), never its label ("Freelance")
+    const me = { name: account.senderName || "Luis Cordero", email: account.email };
     const refs: string[] = [];
     c.lines.forEach((line, i) => {
       const mine = line.from === "me";
@@ -128,7 +135,8 @@ export async function seedDemoSince(store: MailStore): Promise<boolean> {
         isTrash: false,
         isSpam: false,
         hasAttachments: false,
-        gmailLabels: mine ? ["SENT"] : line.read ? ["INBOX", "CATEGORY_PERSONAL"] : ["INBOX", "CATEGORY_PERSONAL", "UNREAD"],
+        // Gmail's labels on a Gmail account only (Freelance is IMAP: inInbox and isRead say it)
+        ...(account.kind === "gmail" ? { gmailLabels: mine ? ["SENT"] : line.read ? ["INBOX", "CATEGORY_PERSONAL"] : ["INBOX", "CATEGORY_PERSONAL", "UNREAD"] } : {}),
         size: line.text.length,
       });
       refs.push(rfc);
