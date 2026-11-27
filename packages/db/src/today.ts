@@ -10,7 +10,10 @@ import type { Db } from "./sqlite";
 /** Plan 145 on SQLite (v54): see packages/store/src/today.ts. */
 
 /** The newest waiting threads in date order: threads_waiting is in it, threads_waiting_inbox isn't (revision 11). */
+const PROF = process.env.TERNO_PROF_NEEDS ? (globalThis as any).__needsProf ??= {} : null;
+const tick = (k: string, t0: number) => { if (PROF) PROF[k] = (PROF[k] ?? 0) + performance.now() - t0; return performance.now(); };
 function needsRows(db: Db, now: number): WaitingRow[] {
+  let t = performance.now();
   const cutoff = waitingCutoff(now);
   const hiding = shownSql(inboxHiding(db));
   // plan 240: a sender said to be always shown outranks the Inbox's hiding (a Gmail tab kept apart, a hidden category)
@@ -26,6 +29,7 @@ function needsRows(db: Db, now: number): WaitingRow[] {
     ...hiding.params,
     NEEDS_WALK,
   );
+  t = tick("rows", t);
   const snippets = new Map(rows.map((r) => [r.id, r.snippet]));
   const isShown = (key: string) => shown.has(key);
   // plan 240 (Codex code review): who it waits on is the waiting message's sender; the thread's last is yours when a synced
@@ -40,62 +44,119 @@ function needsRows(db: Db, now: number): WaitingRow[] {
     (key) => db.get<{ written: number; own: number }>("SELECT written, own FROM correspondents WHERE email = ?", key),
     isShown,
   );
+  t = tick("needsYou", t);
   // plan 210 (iteration 4): a muted sender's conversations aren't waiting on you in What matters, read once a walk; nothing
   // is recorded for them (`dated_nothing_asked`), so Unmute brings them back as they are
   const muted = mutedSenders(db);
   // plan 204, the second panel round (plan 145's rule, tighter): on what needsYou let in, never widening it
-  return needs.filter((r) => !(muted.size && muted.has(addressKey(r.from))) && stillWaiting(db, r.id, snippets.get(r.id) ?? null, now, shown.size > 0 && isShown(addressKey(r.from))));
+  const candidates = needs.filter((r) => !(muted.size && muted.has(addressKey(r.from))));
+  t = tick("muted", t);
+  const still = stillWaitingAmong(db, candidates.map((r) => ({ id: r.id, snippet: snippets.get(r.id) ?? null, shown: shown.size > 0 && isShown(addressKey(r.from)) })), now);
+  tick("still", t);
+  if (PROF) PROF.calls = (PROF.calls ?? 0) + 1;
+  return candidates.filter((r) => still.has(r.id));
 }
 
+/** A thread's rows of one table, by thread. */
+function byThread<T extends { thread_id: number }>(rows: readonly T[]): Map<number, T[]> {
+  const out = new Map<number, T[]>();
+  for (const r of rows) {
+    const list = out.get(r.thread_id);
+    if (list) list.push(r);
+    else out.set(r.thread_id, [r]);
+  }
+  return out;
+}
+
+const inIds = (ids: readonly number[]) => JSON.stringify(ids);
+
 /**
- * Not read by the dated reader with nothing asked (plan 210), not handled, not an acknowledgment, and no current summary that gives the reader nothing to do or answer (see
+ * Of these threads, those still waiting on you: not read by the dated reader with nothing asked (plan 210), not handled,
+ * not an acknowledgment, and no current summary that gives the reader nothing to do or answer (see
  * packages/store/src/today.ts). Handled (Codex code review): a dated item read from their latest message is done, not a
  * task, settled or put off till later; it's read from the item, so the item's Undo brings the conversation back as it was.
+ *
+ * Plan 290: each table is read once for the whole walk (`thread_id IN json_each`, on the index a thread's read used), then
+ * each thread meets the same rules in the same order; a statement a thread was ~6 × 2,000 a walk at Needs you's bound.
  */
-function stillWaiting(db: Db, threadId: number, snippet: string | null, now: number, shown = false): boolean {
+function stillWaitingAmong(db: Db, threads: readonly { id: number; snippet: string | null; shown: boolean }[], now: number): Set<number> {
+  const still = new Set<number>();
   // the fourth panel read: they said no answer is needed ("No action needed!"), in its first words; plan 240: not for a
   // sender always shown (the user's word outranks a reading of their words, here and below: only what was handled counts)
-  if (!shown && saysNoReplyNeeded(snippet)) return false;
-  const ack = !shown && looksLikeAcknowledgment(snippet);
-  // their latest message, looked up once and only when a rule below needs it; its text in the same statement when the
-  // snippet starts like a thanks
-  let latest: { id: number; date: number; text: string | null } | null | undefined;
-  const last = () =>
-    latest !== undefined
-      ? latest
-      : (latest =
-          db.get<{ id: number; date: number; text: string | null }>(
-            `SELECT m.id, m.date, CASE WHEN ? THEN (SELECT coalesce(b.body_text, b.body_preview) FROM message_bodies b WHERE b.message_id = m.id) END AS text
-             FROM messages m INDEXED BY messages_thread WHERE m.thread_id = ? AND m.is_sent = 0 AND m.is_draft = 0 AND m.is_spam = 0 AND m.is_trash = 0 ORDER BY m.date DESC, m.id DESC LIMIT 1`,
-            ack ? 1 : 0,
-            threadId,
-          ) ?? null);
+  const rows = threads.filter((t) => t.shown || !saysNoReplyNeeded(t.snippet)).map((t) => ({ ...t, ack: !t.shown && looksLikeAcknowledgment(t.snippet) }));
+  if (!rows.length) return still;
+  const all = inIds(rows.map((r) => r.id));
+  const unshown = rows.filter((r) => !r.shown).map((r) => r.id);
   // plan 210 (iteration 2, the owner: "only when something is asked"): the dated reader read their latest message and found
   // nothing asked of the reader. Mail it hasn't read (off, older, still queued) keeps plan 145's rule; newer mail isn't the one read
-  const read = shown ? [] : db.all<{ message_id: number }>("SELECT message_id FROM dated_nothing_asked INDEXED BY dated_nothing_asked_thread WHERE thread_id = ? AND prompt_version >= ?", threadId, DATED_NOTHING_ASKED_SINCE);
-  if (read.length && read.some((r) => r.message_id === last()?.id)) return false;
-  // the thread's items (most have none): a dated item read from their latest message, handled
-  const handled = db.all<{ message_id: number }>("SELECT message_id FROM dated_items INDEXED BY dated_thread WHERE thread_id = ? AND (state IN ('done', 'dismissed', 'settled') OR deferred_until > ?)", threadId, now);
-  if (handled.length && handled.some((h) => h.message_id === last()?.id)) return false;
+  const read = byThread(
+    unshown.length
+      ? db.all<{ thread_id: number; message_id: number }>("SELECT thread_id, message_id FROM dated_nothing_asked INDEXED BY dated_nothing_asked_thread WHERE thread_id IN (SELECT value FROM json_each(?)) AND prompt_version >= ?", inIds(unshown), DATED_NOTHING_ASKED_SINCE)
+      : [],
+  );
+  // the threads' items (most have none): a dated item read from their latest message, handled
+  const handled = byThread(db.all<{ thread_id: number; message_id: number }>("SELECT thread_id, message_id FROM dated_items INDEXED BY dated_thread WHERE thread_id IN (SELECT value FROM json_each(?)) AND (state IN ('done', 'dismissed', 'settled') OR deferred_until > ?)", all, now));
   // Codex code review (round 4): a promise of yours there closed (Done, Not a promise) since their latest message, with
   // none still open, is the row you handled; from the promises' states, so Undo brings the conversation back, and newer
-  // mail from them too
-  const kept = db.get<{ at: number | null; open: number; deferred: number }>(
-    "SELECT max(CASE WHEN state IN ('done', 'dismissed') THEN closed_at END) AS at, count(CASE WHEN state IN ('open', 'due') AND coalesce(deferred_until, 0) <= ? THEN 1 END) AS open, count(CASE WHEN state IN ('open', 'due') AND deferred_until > ? THEN 1 END) AS deferred FROM followups INDEXED BY followups_thread WHERE thread_id = ? AND kind = 'promise'",
-    now, now, threadId,
+  // mail from them too (a thread with none has no row: no close, nothing open or put off)
+  const kept = new Map(
+    db
+      .all<{ thread_id: number; at: number | null; open: number; deferred: number }>(
+        "SELECT thread_id, max(CASE WHEN state IN ('done', 'dismissed') THEN closed_at END) AS at, count(CASE WHEN state IN ('open', 'due') AND coalesce(deferred_until, 0) <= ? THEN 1 END) AS open, count(CASE WHEN state IN ('open', 'due') AND deferred_until > ? THEN 1 END) AS deferred FROM followups INDEXED BY followups_thread WHERE thread_id IN (SELECT value FROM json_each(?)) AND kind = 'promise' GROUP BY thread_id",
+        now, now, all,
+      )
+      .map((k) => [k.thread_id, k]),
   );
-  // plan 204 (the fifth panel round): its only open promises put off with Later, it waits for them (Undo brings it back)
-  if (kept && kept.deferred > 0 && kept.open === 0) return false;
-  if (kept?.at != null && kept.open === 0) {
-    const m = last();
-    if (m && kept.at >= m.date) return false;
+  // their latest received message, for the threads a rule reads it in; its text only where the snippet starts like a thanks
+  const wanted = rows.filter((r) => read.has(r.id) || handled.has(r.id) || (kept.get(r.id)?.at != null && kept.get(r.id)!.open === 0) || r.ack);
+  const latest = new Map(
+    wanted.length
+      ? db
+          .all<{ thread_id: number; id: number; date: number; text: string | null }>(
+            `SELECT t.value AS thread_id, m.id, m.date,
+               CASE WHEN t.value IN (SELECT value FROM json_each(?)) THEN (SELECT coalesce(b.body_text, b.body_preview) FROM message_bodies b WHERE b.message_id = m.id) END AS text
+             FROM json_each(?) t JOIN messages m ON m.id = (SELECT l.id FROM messages l INDEXED BY messages_thread WHERE l.thread_id = t.value AND l.is_sent = 0 AND l.is_draft = 0 AND l.is_spam = 0 AND l.is_trash = 0 ORDER BY l.date DESC, l.id DESC LIMIT 1)`,
+            inIds(wanted.filter((r) => r.ack).map((r) => r.id)),
+            inIds(wanted.map((r) => r.id)),
+          )
+          .map((m) => [m.thread_id, m] as const)
+      : [],
+  );
+  const summaries = new Map(
+    unshown.length
+      ? db
+          .all<{ thread_id: number; state: string; prompt_version: number | null; body_json: string | null; generated_at: number | null }>("SELECT thread_id, state, prompt_version, body_json, generated_at FROM ai_summaries WHERE thread_id IN (SELECT value FROM json_each(?))", inIds(unshown))
+          .map((s) => [s.thread_id, s] as const)
+      : [],
+  );
+  // what a current summary that asks nothing leaves to the last check: anything the thread shows arrived after it
+  const afterSummary: [number, number | null][] = [];
+  for (const r of rows) {
+    const last = latest.get(r.id) ?? null;
+    if (read.get(r.id)?.some((x) => x.message_id === last?.id)) continue;
+    if (handled.get(r.id)?.some((h) => h.message_id === last?.id)) continue;
+    const k = kept.get(r.id);
+    // plan 204 (the fifth panel round): its only open promises put off with Later, it waits for them (Undo brings it back)
+    if (k && k.deferred > 0 && k.open === 0) continue;
+    if (k?.at != null && k.open === 0 && last && k.at >= last.date) continue;
+    if (r.ack && isAcknowledgment(last?.text)) continue;
+    if (r.shown) {
+      still.add(r.id);
+      continue;
+    }
+    const summary = summaries.get(r.id);
+    if (!summaryAsksNothing(summary)) still.add(r.id);
+    else afterSummary.push([r.id, summary!.generated_at]);
   }
-  if (ack && isAcknowledgment(last()?.text)) return false;
-  if (shown) return true;
-  const summary = db.get<{ state: string; prompt_version: number | null; body_json: string | null; generated_at: number | null }>("SELECT state, prompt_version, body_json, generated_at FROM ai_summaries WHERE thread_id = ?", threadId);
-  if (!summaryAsksNothing(summary)) return true;
-  // current: nothing the thread shows arrived after it was written
-  return !!db.get("SELECT 1 FROM messages INDEXED BY messages_thread WHERE thread_id = ? AND created_at >= ? AND is_draft = 0 AND is_spam = 0 AND is_trash = 0 LIMIT 1", threadId, summary!.generated_at);
+  if (afterSummary.length) {
+    for (const { thread_id } of db.all<{ thread_id: number }>(
+      `SELECT json_extract(p.value, '$[0]') AS thread_id FROM json_each(?) p
+       WHERE EXISTS (SELECT 1 FROM messages INDEXED BY messages_thread WHERE thread_id = json_extract(p.value, '$[0]') AND created_at >= json_extract(p.value, '$[1]') AND is_draft = 0 AND is_spam = 0 AND is_trash = 0)`,
+      JSON.stringify(afterSummary),
+    ))
+      still.add(thread_id);
+  }
+  return still;
 }
 
 export function waitingPage(db: Db, o: { now: number; after: { lastDate: number; id: number } | null; limit: number }): { id: number; lastDate: number; hasSent: boolean; waitingSince: number }[] {

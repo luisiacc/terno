@@ -24,6 +24,7 @@ const NOW = Date.UTC(2026, 10, 1, 12);
 const DAY = 86_400_000;
 const MULT = Number(process.env.PERF_BUDGET_MULTIPLIER ?? "1");
 const dir = mkdtempSync(join(tmpdir(), "terno-today-perf-"));
+afterAll(() => { if ((globalThis as any).__needsProf) process.stderr.write(`PROF ${JSON.stringify((globalThis as any).__needsProf)}\n`); });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 /** list: today.list; added: what the count adds to plan 145's; needs and count: absolute, so a slower Needs you shows (plan 204, the second panel round) */
