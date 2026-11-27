@@ -303,7 +303,15 @@ function pageLightness(root: HTMLElement): number {
   return 1;
 }
 
-type Write = [el: HTMLElement, prop: string, value: string, important: boolean];
+/**
+ * A declaration to write. Always without `!important`: inline, it replaces the sender's own declaration whatever its
+ * priority (no sheet competes in the reader), and the full message view's themed sheet can still take over a section.
+ * Shorthands are written as their longhands, so `undo` can put back mixed sides exactly.
+ */
+type Write = [el: HTMLElement, prop: string, value: string];
+const sides = (el: HTMLElement, value: string): Write[] => SIDES.map((side) => [el, `border-${side}-color`, value]);
+/** past this many call-to-action checks in one mail, the rest are surfaces (each reads its subtree) */
+const MAX_BUTTON_CHECKS = 100;
 
 /**
  * Rewrites the light designed mail under `root` onto the dark palette, in place. `converted: false` (nothing written)
@@ -332,6 +340,7 @@ export function darkenMail(root: HTMLElement, palette: DarkPalette): DarkResult 
   nowInk[n] = t.fg;
 
   const writes: Write[] = [];
+  let buttonChecks = 0;
   let text = 0, textDark = 0, textPicture = 0, textLightAfter = 0, bigImages = 0, colors = 0;
 
   for (let i = 0; i < n; i++) {
@@ -346,13 +355,11 @@ export function darkenMail(root: HTMLElement, palette: DarkPalette): DarkResult 
     hidden[i] = hidden[p] || (s && (s.display === "none" || s.visibility === "hidden")) ? 1 : 0;
 
     // its own colors, as written
-    let bg: Rgb | null = null, ink: Rgb | null = null, bgPrio = false, inkPrio = false;
+    let bg: Rgb | null = null, ink: Rgb | null = null;
     let picture = false, gradient: string | null = null;
     if (styled) {
       bg = mailColor(s.backgroundColor);
-      bgPrio = s.getPropertyPriority("background-color") === "important";
       ink = mailColor(s.color);
-      inkPrio = s.getPropertyPriority("color") === "important";
       const image = s.backgroundImage;
       if (image && !NO_IMAGE.has(image)) {
         if (image.includes("url(")) picture = !EMPTY_URL.test(image);
@@ -363,6 +370,35 @@ export function darkenMail(root: HTMLElement, palette: DarkPalette): DarkResult 
     if (!bg && el.hasAttribute("bgcolor")) bg = mailColor(el.getAttribute("bgcolor"));
     if (!ink && (tag === "font" || tag === "basefont") && el.hasAttribute("color")) ink = mailColor(el.getAttribute("color"));
     if (el.hasAttribute("background") && (tag === "table" || tag === "td" || tag === "th" || tag === "tr" || tag === "tbody")) picture = true;
+    // a gradient's stops through the surface mapping, written opaque (each was composited over its backdrop to be mapped).
+    // No stop it can read: just its fill. Stops that end up both light and dark: no one ink reads on all of it, so it
+    // stays as written, an island like a picture
+    let grad: { css: string; was: Rgb; now: Rgb } | null = null;
+    if (gradient && !kept[p]) {
+      const stops: Rgb[] = [], mapped: Rgb[] = [];
+      const css = gradient.replace(COLOR_IN_CSS, (m) => {
+        const c = mailColor(m);
+        if (!c) return m;
+        const solid = over(c, wasBg[p]!);
+        const to = mapSurface(t, solid, pageL, surfaces);
+        stops.push(solid);
+        mapped.push(to);
+        return hex(to);
+      });
+      if (stops.length) {
+        let lo = 0, hi = 0;
+        for (let j = 1; j < mapped.length; j++) {
+          if (luminance(mapped[j]!) < luminance(mapped[lo]!)) lo = j;
+          if (luminance(mapped[j]!) > luminance(mapped[hi]!)) hi = j;
+        }
+        if (ratio(mapped[lo]!, mapped[hi]!) > 3) picture = true;
+        else {
+          // the text over it is judged against its hardest stop: the lightest on a dark mapping
+          const k = luminance(mapped[hi]!) < 0.18 ? hi : lo;
+          grad = { css, was: stops[k]!, now: mapped[k]! };
+        }
+      }
+    }
     if (bg || ink || gradient) colors++;
 
     const own = hidden[i] ? 0 : ownText(el);
@@ -377,10 +413,10 @@ export function darkenMail(root: HTMLElement, palette: DarkPalette): DarkResult 
       nowInk[i] = wasInk[i]!;
       if (!kept[p]) {
         // the island starts here: pin what it used to inherit
-        if (!bg && tag !== "svg") writes.push([el, "background-color", hex(wasBg[i]!), false]);
-        if (!ink && !same(nowInk[p]!, wasInk[i]!)) writes.push([el, "color", hex(wasInk[i]!), false]);
+        if (!bg && tag !== "svg") writes.push([el, "background-color", hex(wasBg[i]!)]);
+        if (!ink && !same(nowInk[p]!, wasInk[i]!)) writes.push([el, "color", hex(wasInk[i]!)]);
       }
-      if (tag === "a" && !ink) writes.push([el, "color", hex(PAPER_LINK), false]);
+      if (tag === "a" && !ink) writes.push([el, "color", hex(PAPER_LINK)]);
       textPicture += own;
       if (rgbToOklab(nowBg[i]!).l >= 0.6) textLightAfter += own;
       continue;
@@ -389,28 +425,11 @@ export function darkenMail(root: HTMLElement, palette: DarkPalette): DarkResult 
     // the surface
     wasBg[i] = wasBg[p]!;
     nowBg[i] = nowBg[p]!;
-    if (gradient) {
-      // each stop through the surface mapping, written opaque (it was composited over its backdrop to be mapped); the text
-      // over it is judged against its hardest stop: the lightest on a dark mapping, the darkest on a light one
-      const stops: Rgb[] = [], mapped: Rgb[] = [];
-      const out = gradient.replace(COLOR_IN_CSS, (m) => {
-        const c = mailColor(m);
-        if (!c) return m;
-        const solid = over(c, wasBg[p]!);
-        const to = mapSurface(t, solid, pageL, surfaces);
-        stops.push(solid);
-        mapped.push(to);
-        return hex(to);
-      });
-      if (stops.length) {
-        const darkMapping = mapped.reduce((x, c) => x + luminance(c), 0) / mapped.length < 0.18;
-        let k = 0;
-        for (let j = 1; j < mapped.length; j++) if (darkMapping ? luminance(mapped[j]!) > luminance(mapped[k]!) : luminance(mapped[j]!) < luminance(mapped[k]!)) k = j;
-        wasBg[i] = stops[k]!;
-        nowBg[i] = mapped[k]!;
-        writes.push([el, "background-image", out, s!.getPropertyPriority("background-image") === "important"]);
-        if (bg) writes.push([el, "background-color", hex(nowBg[i]!), bgPrio]);
-      }
+    if (grad) {
+      wasBg[i] = grad.was;
+      nowBg[i] = grad.now;
+      writes.push([el, "background-image", grad.css]);
+      if (bg) writes.push([el, "background-color", hex(grad.now)]);
     } else if (bg) {
       const solid = over(bg, wasBg[p]!);
       // a cell a few pixels thin is a drawn line, not a surface
@@ -418,21 +437,21 @@ export function darkenMail(root: HTMLElement, palette: DarkPalette): DarkResult 
       const thin = (h !== null && h <= 3) || (w !== null && w <= 3) || tag === "hr";
       // a black button on a light surface is the mail's call to action: it becomes the theme's light button, not a dark well
       const sl = rgbToOklab(solid);
-      const button = !thin && sl.l < 0.4 && chroma(sl) < 0.04 && rgbToOklab(wasBg[p]!).l > 0.8 && rgbToOklab(nowBg[p]!).l < 0.5 && isButton(el);
+      const button = !thin && sl.l < 0.4 && chroma(sl) < 0.04 && rgbToOklab(wasBg[p]!).l > 0.8 && rgbToOklab(nowBg[p]!).l < 0.5 && buttonChecks++ < MAX_BUTTON_CHECKS && isButton(el);
       const to = thin ? mapLine(t, solid, wasBg[p]!, nowBg[p]!) : button ? oklabToRgb(mixLab(t.bgL, t.fgL, 0.9)) : mapSurface(t, solid, pageL, surfaces);
       wasBg[i] = solid;
       nowBg[i] = to;
-      if (!same(solid, to) || bg.alpha < 1) writes.push([el, "background-color", hex(to), bgPrio]);
+      if (!same(solid, to) || bg.alpha < 1) writes.push([el, "background-color", hex(to)]);
     }
 
     // the ink: where the mail names one, where the surface changed under inherited text, and a link's default
     const link = tag === "a" && !ink;
     wasInk[i] = ink ? over(ink, wasBg[i]!) : link ? PAPER_LINK : wasInk[p]!;
-    if (ink || bg || gradient || link) {
+    if (ink || bg || grad || link) {
       const to = mapInk(t, wasInk[i]!, wasBg[i]!, nowBg[i]!, link, inks);
       nowInk[i] = to;
       const inherited = link ? t.link : nowInk[p]!;
-      if (ink || !same(to, inherited)) writes.push([el, "color", hex(to), inkPrio]);
+      if (ink || !same(to, inherited)) writes.push([el, "color", hex(to)]);
     } else nowInk[i] = nowInk[p]!;
 
     // lines
@@ -443,18 +462,19 @@ export function darkenMail(root: HTMLElement, palette: DarkPalette): DarkResult 
         if (!v || v === "currentcolor" || v === "initial") continue;
         const c = mailColor(v);
         if (!c) continue;
-        writes.push([el, prop, hex(mapLine(t, over(c, wasBg[i]!), wasBg[i]!, nowBg[i]!)), s.getPropertyPriority(prop) === "important"]);
+        writes.push([el, prop, hex(mapLine(t, over(c, wasBg[i]!), wasBg[i]!, nowBg[i]!))]);
       }
     }
     if (el.hasAttribute("bordercolor")) {
+      // (a side the style names already outranks the attribute, and was mapped above)
       const c = mailColor(el.getAttribute("bordercolor"));
-      if (c) writes.push([el, "border-color", hex(mapLine(t, c, wasBg[i]!, nowBg[i]!)), false]);
+      if (c) writes.push(...sides(el, hex(mapLine(t, c, wasBg[i]!, nowBg[i]!))).filter(([, prop]) => !(styled && s.getPropertyValue(prop))));
     }
     if (tag === "hr" && el.hasAttribute("color")) {
       const c = mailColor(el.getAttribute("color"));
       if (c) {
         const to = hex(mapLine(t, c, wasBg[p]!, nowBg[p]!));
-        writes.push([el, "background-color", to, false], [el, "border-color", to, false]);
+        writes.push([el, "background-color", to], ...sides(el, to));
       }
     }
 
@@ -483,9 +503,9 @@ export function darkenMail(root: HTMLElement, palette: DarkPalette): DarkResult 
 
   // the declarations replaced, in order, to put back in reverse
   const before: [HTMLElement, string, string, string][] = [];
-  for (const [el, prop, value, important] of writes) {
+  for (const [el, prop, value] of writes) {
     before.push([el, prop, el.style.getPropertyValue(prop), el.style.getPropertyPriority(prop)]);
-    el.style.setProperty(prop, value, important ? "important" : "");
+    el.style.setProperty(prop, value);
   }
   return { converted: true, undo: () => restore(before) };
 }
@@ -537,7 +557,7 @@ const SAMPLE = 48;
  * Reads a loaded picture of a darkened mail and fixes it if the dark page would hide it (`pictureFix`). A picture whose
  * pixels can't be read (not CORS-approved) or that is a tracking pixel is left. Returns an undo, or null when untouched.
  */
-export function darkenPicture(img: HTMLImageElement, plate: string, canvas: HTMLCanvasElement): (() => void) | null {
+export function darkenPicture(img: HTMLImageElement, plate: string, canvas: HTMLCanvasElement, root: HTMLElement, page: string): (() => void) | null {
   const w = img.naturalWidth, h = img.naturalHeight;
   if (!img.complete || w * h < 100) return null;
   const scale = Math.min(1, SAMPLE / Math.max(w, h));
@@ -554,9 +574,10 @@ export function darkenPicture(img: HTMLImageElement, plate: string, canvas: HTML
     // tainted (a picture the server didn't allow to be read) or undecodable
     return null;
   }
-  const fix = pictureFix(pixels, groundBehind(img));
+  const fix = pictureFix(pixels, groundBehind(img, root, page));
   if (!fix) return null;
-  const props = fix === "invert" ? { filter: "invert(1) hue-rotate(180deg) brightness(0.94)" } : { "background-color": plate, "border-radius": "6px", "box-shadow": `0 0 0 6px ${plate}` };
+  const corners = ["top-left", "top-right", "bottom-right", "bottom-left"].map((c) => [`border-${c}-radius`, "6px"]);
+  const props: Record<string, string> = fix === "invert" ? { filter: "invert(1) hue-rotate(180deg) brightness(0.94)" } : { "background-color": plate, ...Object.fromEntries(corners), "box-shadow": `0 0 0 6px ${plate}` };
   const before: [HTMLElement, string, string, string][] = [];
   for (const [prop, value] of Object.entries(props)) {
     before.push([img, prop, img.style.getPropertyValue(prop), img.style.getPropertyPriority(prop)]);
@@ -572,14 +593,14 @@ const MAX_PICTURES = 60;
  * `darkenPicture` for each picture of a darkened mail: the loaded ones now, the rest as they load. Returns the undo of
  * all of it (fixes put back, listeners gone).
  */
-export function darkenPictures(root: HTMLElement, plate: string): () => void {
+export function darkenPictures(root: HTMLElement, plate: string, page: string): () => void {
   const canvas = root.ownerDocument.createElement("canvas");
   const undo: (() => void)[] = [];
   const pending = new Map<HTMLImageElement, () => void>();
   for (const img of [...root.querySelectorAll("img")].slice(0, MAX_PICTURES)) {
     const read = () => {
       pending.delete(img);
-      const fix = darkenPicture(img, plate, canvas);
+      const fix = darkenPicture(img, plate, canvas, root, page);
       if (fix) undo.push(fix);
     };
     if (img.complete) read();
@@ -595,12 +616,15 @@ export function darkenPictures(root: HTMLElement, plate: string): () => void {
   };
 }
 
-/** The luminance of the nearest painted surface behind an element, as it is now. */
-function groundBehind(el: Element): number {
+/**
+ * The luminance of the nearest surface the mail paints behind an element, as converted; with none, the page the mail now
+ * sits on (`page`: the frame's own background may not be repainted yet).
+ */
+function groundBehind(el: Element, root: HTMLElement, page: string): number {
   const view = el.ownerDocument.defaultView;
-  for (let e = el.parentElement; e && view; e = e.parentElement) {
+  for (let e = el.parentElement; e && view && e !== root; e = e.parentElement) {
     const c = mailColor(view.getComputedStyle(e).backgroundColor);
     if (c && c.alpha > 0.5) return luminance(c);
   }
-  return 0;
+  return luminance(mailColor(page) ?? WHITE);
 }

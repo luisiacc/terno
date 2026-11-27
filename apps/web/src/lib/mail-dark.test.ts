@@ -73,8 +73,8 @@ describe("darkenMail (plan 295)", () => {
     const before = $("#a").style.cssText;
     const result = darkenMail(root, DRACULA);
     if (!result.converted) throw new Error("expected a conversion");
-    // the sender's !important stays !important on the new color
-    expect($("#a").style.getPropertyPriority("background-color")).toBe("important");
+    // written plainly: inline, it replaces the sender's declaration whatever its priority (and the full view can theme it)
+    expect($("#a").style.getPropertyPriority("background-color")).toBe("");
     $("#a").style.setProperty("overflow-y", "clip", "important");
     result.undo();
     expect(hexOf($("#a").style.backgroundColor)).toBe("#ffffff");
@@ -84,6 +84,26 @@ describe("darkenMail (plan 295)", () => {
     $("#a").style.removeProperty("overflow-y");
     expect($("#a").style.cssText).toBe(before);
     expect(darkenMail(root, NORD).converted).toBe(true);
+  });
+
+  it("puts mixed border sides back exactly: a legacy bordercolor under inline sides, one of them !important", () => {
+    const root = mail(`<table><tr><td id="c" bordercolor="#cccccc" style="border-top-color:#ff0000 !important;border-right-color:#0000ff;color:#222">Text in a bordered cell, long enough to count</td></tr></table>`);
+    const before = $("#c").style.cssText;
+    const result = darkenMail(root, DRACULA);
+    if (!result.converted) throw new Error("expected a conversion");
+    // the sides the style names keep their own (mapped) colors; the attribute's go to the others
+    expect(hexOf($("#c").style.borderTopColor)).toBe("#ff0000");
+    expect($("#c").style.borderBottomColor).not.toBe("");
+    result.undo();
+    expect($("#c").style.cssText).toBe(before);
+  });
+
+  it("a gradient with stops a single ink can't read on both ends stays as written; one with no readable stop maps its fill", () => {
+    darkenMail(mail(`<p style="color:#222">${"Plenty of ordinary text on the page. ".repeat(6)}</p><div id="g" style="background-image:linear-gradient(#ffffff, #ff0000);color:#111111">On the gradient</div><div id="t" style="background-color:#ffffff;background-image:linear-gradient(transparent, transparent);color:#111">Over a see-through gradient</div>`), DRACULA);
+    expect($("#g").style.backgroundImage).toMatch(/255, 255, 255|#ffffff/i);
+    expect(hexOf($("#g").style.color)).toBe("#111111");
+    expect(hexOf($("#t").style.backgroundColor)).not.toBe("#ffffff");
+    expect(contrast($("#t").style.color, $("#t").style.backgroundColor)).toBeGreaterThanOrEqual(4.5);
   });
 
   it("turns a black call to action into the theme's light button, and keeps its label readable", () => {

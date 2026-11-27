@@ -110,3 +110,24 @@ Codex (`codex exec -s read-only`) made twelve points against the plan and the fi
 9. **The size bound** counts a live `getElementsByTagName` collection, so a huge mail bails out without building an array.
 10–11. `crossorigin` and the response header: kept, desktop only, verified in Electron (cold load, cache, a redirect). `isMailFrame` also matches the print preview's frame, whose pictures are fetched without CORS; an added header there changes nothing.
 12. **E2E fixture:** a light newsletter with a nested card and a call to action; the existing designed fixtures (mostly dark) now check the `already-dark` bail-out.
+
+## What the Codex code review changed
+
+Codex reviewed the five commits (eleven findings). Fixed, each with a test that fails without it:
+
+1. **Undo of mixed sides:** a legacy `bordercolor` and `<hr color>` are written as the four `border-*-color` longhands (only sides the style doesn't name), and a plated picture's corners as the four radius longhands, so `undo` puts back mixed and `!important` sides exactly.
+2. **Gradients spanning light and dark** (a white-to-red gradient: white maps dark, red stays) can't hold one ink: such a gradient stays as written, an island, its inherited ink pinned.
+3. **A gradient with no stop it can read** (`linear-gradient(transparent, transparent)` over white) no longer hides its fill from the mapping.
+4. **Full message view:** mapped declarations are written without `!important` (inline, they replace the sender's whatever its priority; no sheet competes in the reader), so a section's themed sheet takes over the whole of a converted call to action instead of leaving its dark label on a cleared fill.
+5. **A late load of the outgoing document** is ignored: `onLoad` checks the document's source id, as the parse path did.
+6. **Pictures already loaded** were judged against the frame's paper before it was repainted: the backdrop is now the nearest surface inside the mail, else the dark page it now sits on.
+7. **A server that refuses CORS-mode picture requests:** the reader asks again without CORS (removing the attribute refetches), on the picture's error and for any that failed before the document was set up. E2E with a route that answers 403 to a request carrying an Origin.
+8. **Call-to-action checks** read a subtree each: at most 100 per mail.
+10. **No light slab before the first reveal:** a mail that may darken gets no paper card until its document is converted and measured.
+11. **React Compiler:** the look is chosen by a pure `lookOf`; what a load needs is read from one ref.
+
+Also found while testing: simple (themed) mail in a dark theme had the same vanishing dark logo, so the picture pass runs there too (`DarkWork` "pictures").
+
+Not changed: **9**, white text on an unchanged brand button below 4.5:1 (Evexia's pink, 4.25:1). The pair is exactly as the sender wrote it and as it shows on paper; the conversion doesn't make it worse, and rewriting a brand's button label is not the converter's call.
+
+**Not rated (plan 158):** the rated screens' conversation is person-to-person mail, which this doesn't change; designed mail in dark appears in none of them.

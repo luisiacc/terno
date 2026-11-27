@@ -7,6 +7,7 @@
 import { formatOklch, parseColor, toHex } from "../../../packages/ui/src/themes/color";
 import { builtinTheme, THEMES } from "../../../packages/ui/src/themes/registry";
 import type { Page } from "@playwright/test";
+import { crc32, deflateSync } from "node:zlib";
 import { expect, openRow, stabilize, test, fresh, scenario } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
@@ -14,6 +15,24 @@ import { sqlDb } from "../../backend-dev/src/server";
 test.use({ deviceScaleFactor: 2 });
 
 const ctx = { clientId: "setup", origin: "dev" as const };
+
+/** A square RGBA PNG drawn by `pixel(x, y)` (plan 295's pictures). */
+function png(size: number, pixel: (x: number, y: number) => number[]): Buffer {
+  const chunk = (type: string, data: Buffer) => {
+    const body = Buffer.concat([Buffer.from(type), data]);
+    const out = Buffer.alloc(12 + data.length);
+    out.writeUInt32BE(data.length, 0);
+    body.copy(out, 4);
+    out.writeUInt32BE(crc32(body), 8 + data.length);
+    return out;
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(size, 0);
+  header.writeUInt32BE(size, 4);
+  header.set([8, 6, 0, 0, 0], 8);
+  const rows = Array.from({ length: size }, (_, y) => Buffer.from([0, ...Array.from({ length: size }, (_, x) => pixel(x, y)).flat()]));
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", header), chunk("IDAT", deflateSync(Buffer.concat(rows))), chunk("IEND", Buffer.alloc(0))]);
+}
 
 async function openAppearance(page: Page) {
   await page.getByTestId("open-settings").click();
@@ -264,6 +283,50 @@ test.describe("themes", () => {
       expect(await frame.locator("#ink").evaluate((el) => getComputedStyle(el.parentElement!).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
       await openRow(page, 1);
       await expect(page.locator("iframe[data-mail=paper]").first()).toBeVisible();
+    });
+    await scenario("plan 295: a picture refused in CORS mode still shows; a dark see-through logo in a darkened mail turns light, and back", async () => {
+      await fresh(page);
+      await server.backend.server.invoke("settings.update", { theme: "dark", darkTheme: "dracula", htmlMailAppearance: "auto", remoteImages: "always" }, ctx);
+      // 16×16, a black square in the middle of nothing: a logo's glyph
+      const logo = png(16, (x, y) => (x >= 4 && x < 12 && y >= 4 && y < 12 ? [0, 0, 0, 255] : [0, 0, 0, 0]));
+      const modes: string[] = [];
+      await page.route("https://pictures.test/**", async (route) => {
+        // (a CORS-mode picture request carries its Origin; an ordinary one doesn't)
+        const mode = (await route.request().headerValue("origin")) ? "cors" : "no-cors";
+        modes.push(mode);
+        // one server refuses a CORS-mode request outright; the other allows it (main answers for it on desktop)
+        if (route.request().url().includes("strict")) return mode === "cors" ? route.fulfill({ status: 403 }) : route.fulfill({ contentType: "image/png", body: logo });
+        return route.fulfill({ contentType: "image/png", body: logo, headers: { "access-control-allow-origin": "*" } });
+      });
+      const thread = Number(await page.locator("[data-testid=thread-row]").first().getAttribute("data-thread-id"));
+      sqlDb(server.backend.store).run("UPDATE message_bodies SET body_html = ? WHERE message_id IN (SELECT id FROM messages WHERE thread_id = ?)", `<table bgcolor="#f2f2f2" width="100%"><tr><td><table style="background-color:#ffffff;width:560px"><tr><td>
+        <img id="logo" width="64" height="64" alt="Acme" src="https://pictures.test/logo.png">
+        <h1 style="color:#1d5bb0">Boletín</h1>
+        <p style="color:#222222">${"Un boletín con su logotipo arriba y bastante texto para leer. ".repeat(4)}</p>
+        <img id="strict" width="32" height="32" alt="" src="https://pictures.test/strict.png">
+      </td></tr></table></td></tr></table>`, thread);
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      await openRow(page, 0);
+      const mailFrame = page.locator("iframe[data-mail]").first();
+      await expect(mailFrame).toHaveAttribute("data-mail", "dark");
+      const inMail = page.frameLocator("iframe[title^='Message']");
+      await expect.poll(() => inMail.locator("#strict").evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(16);
+      // asked for in CORS mode first, refused, then asked for again the ordinary way
+      expect(modes).toContain("cors");
+      expect(modes).toContain("no-cors");
+      await expect.poll(() => inMail.locator("#logo").evaluate((img) => getComputedStyle(img).filter)).toContain("invert");
+      await page.getByTestId("mail-original").click();
+      await expect(mailFrame).toHaveAttribute("data-mail", "paper");
+      expect(await inMail.locator("#logo").evaluate((img) => getComputedStyle(img).filter)).toBe("none");
+      // a simple mail is on the dark page already: its dark logo turns light too
+      const simple = Number(await page.locator("[data-testid=thread-row]").nth(1).getAttribute("data-thread-id"));
+      sqlDb(server.backend.store).run("UPDATE message_bodies SET body_html = ? WHERE message_id IN (SELECT id FROM messages WHERE thread_id = ?)", `<p>Hola, gracias por escribir.</p><img id="logo" width="64" height="64" alt="Acme" src="https://pictures.test/signature.png">`, simple);
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      await openRow(page, 1);
+      await expect(page.locator("iframe[data-mail]").first()).toHaveAttribute("data-mail", "themed");
+      await expect.poll(() => page.frameLocator("iframe[title^='Message']").locator("#logo").evaluate((img) => getComputedStyle(img).filter)).toContain("invert");
     });
   });
 

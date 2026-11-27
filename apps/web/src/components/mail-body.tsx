@@ -62,20 +62,42 @@ function mailLook(mail: MailLook["mail"], mode: string): MailLook {
   return { mail, vars, style: Object.entries(vars).map(([k, v]) => `${k}:${v}`).join(";") };
 }
 
+/** Which look a mail gets: darkened, on paper (the setting, or a designed mail left as written), or themed. */
+function lookOf(dark: boolean, appearance: "auto" | "paper", ownColors: boolean, mode: string): MailLook {
+  return mailLook(dark ? "dark" : appearance === "paper" || ownColors ? "paper" : "themed", mode);
+}
+
 /**
- * Plan 295: the loaded mail rewritten onto the dark theme's colors (its pictures too, as they load), or put back. Undoes
- * the last conversion first, so a palette change converts from the colors as written. True when the mail is darkened.
+ * Plan 295: on desktop a picture is asked for in CORS mode (`purify`); one that fails that way (a server refusing it)
+ * is asked for again the ordinary way, so a picture never goes missing for being readable.
  */
-function convert(flow: HTMLElement, want: boolean, current: { current: (() => void) | null }): boolean {
+function plainAgain(event: Event): void {
+  const img = event.target as Element | null;
+  // (changing the attribute is enough: the picture is fetched again, without CORS)
+  if (img?.nodeName === "IMG" && img.hasAttribute("crossorigin")) img.removeAttribute("crossorigin");
+}
+
+/**
+ * Plan 295: what a loaded mail gets in a dark theme. "dark": a designed mail rewritten onto the theme's colors, and its
+ * pictures read; "pictures": a themed mail (already on the dark page) has only its pictures read, so a dark logo never
+ * vanishes; "none": as it is.
+ */
+type DarkWork = "dark" | "pictures" | "none";
+
+/**
+ * Does `work` on the loaded mail, undoing the last first (so a palette change converts from the colors as written).
+ * True when the mail is darkened.
+ */
+function convert(flow: HTMLElement, work: DarkWork, current: { current: (() => void) | null }): boolean {
   current.current?.();
   current.current = null;
-  if (!want) return false;
+  if (work === "none") return false;
   const { themed, paper } = mailColors();
-  const result = darkenMail(flow, { background: themed.bg, card: themed.card, foreground: themed.fg, muted: themed.quiet, link: themed.link, border: themed.border });
-  if (!result.converted) return false;
-  const pictures = darkenPictures(flow, paper.bg);
-  current.current = () => { pictures(); result.undo(); };
-  return true;
+  const result = work === "dark" ? darkenMail(flow, { background: themed.bg, card: themed.card, foreground: themed.fg, muted: themed.quiet, link: themed.link, border: themed.border }) : null;
+  if (result && !result.converted) return false;
+  const pictures = darkenPictures(flow, paper.bg, themed.bg);
+  current.current = () => { pictures(); if (result?.converted) result.undo(); };
+  return result !== null;
 }
 
 /** Repaints the loaded document without replacing its own style properties. */
@@ -148,17 +170,19 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
   const original = useMailOriginal((s) => s.shown.has(messageId));
   const offerDark = ownColors && appearance === "auto" && mode === "dark";
   const wantDark = offerDark && !original;
+  // a themed mail is on the dark page already: only its pictures are read
+  const work: DarkWork = section || mode !== "dark" ? "none" : wantDark ? "dark" : !ownColors && appearance === "auto" ? "pictures" : "none";
   // whether the loaded document is darkened: decided on it, when it loads and when the above changes
   const [darkened, setDarkened] = useState(false);
   const paper = appearance === "paper" || (ownColors && !darkened);
   // a designed mail keeps its own layout; anything else wraps at the reader's measure, while its pictures and fixed tables keep the frame's width
   const measured = !section && !ownColors;
   // the colors, as variables on the document's root: a theme or "HTML mail" change repaints the loaded mail in place
-  const lookFor = (dark: boolean) => mailLook(dark ? "dark" : appearance === "paper" || ownColors ? "paper" : "themed", mode);
-  const look = useMemo(() => lookFor(darkened), [darkened, appearance, ownColors, themeKey, mode]);
-  const lookForRef = useRef(lookFor);
-  const wantDarkRef = useRef(wantDark);
-  useLayoutEffect(() => { lookForRef.current = lookFor; wantDarkRef.current = wantDark; });
+  // (themeKey: the painted palette, read by mailLook)
+  const look = useMemo(() => lookOf(darkened, appearance, ownColors, mode), [darkened, appearance, ownColors, themeKey, mode]);
+  // what a document that loads is converted and painted with (read in its load, outside render)
+  const loadWith = useRef({ work, appearance, ownColors, mode });
+  useLayoutEffect(() => { loadWith.current = { work, appearance, ownColors, mode }; });
   const darkUndo = useRef<(() => void) | null>(null);
   // the loaded document's measure, for a repaint that changes its geometry (paper's padding, plan 295)
   const measureRef = useRef<(() => void) | null>(null);
@@ -214,8 +238,9 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
     const onLoad = () => {
       const d = frame.contentDocument;
       const flow = d?.querySelector<HTMLElement>("[data-terno-flow]");
-      // (once a document: when it's parsed, or at its load if that comes first)
-      if (!d || !flow || d === setUp) return;
+      // (once a document: when it's parsed, or at its load if that comes first; never the outgoing one, whose late load
+      // can land after a rebuild was asked for)
+      if (!d || !flow || d === setUp || flow.dataset.ternoDocument !== sourceId) return;
       setUp = d;
       hydration?.abort();
       observer?.disconnect();
@@ -224,8 +249,9 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
         if (!active || frame.contentDocument !== d || !flow.isConnected) return;
         // plan 295: converted (or not) before anything is measured or shown, so a darkened mail never flashes its paper
         darkUndo.current = null;
-        const dark = !section && convert(flow, wantDarkRef.current, darkUndo);
-        lookRef.current = lookForRef.current(dark);
+        const now = loadWith.current;
+        const dark = convert(flow, now.work, darkUndo);
+        lookRef.current = lookOf(dark, now.appearance, now.ownColors, now.mode);
         paint(d.documentElement, lookRef.current);
         flushSync(() => setDarkened(dark));
         // (counted, and scrolled to, once the height measured below is on the frame)
@@ -306,6 +332,11 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
           const r = frame.getBoundingClientRect();
           replayMenu(frame, e.target as Element, r.left + e.clientX, r.top + e.clientY);
         };
+        if (!WEB) {
+          d.addEventListener("error", plainAgain, true);
+          // (and one that failed before this: a quick refusal can beat the document's setup)
+          for (const img of d.images) if (img.complete && !img.naturalWidth && img.hasAttribute("crossorigin") && img.getAttribute("src")) img.removeAttribute("crossorigin");
+        }
         d.addEventListener("click", onClick);
         d.addEventListener("contextmenu", onMenu);
         d.addEventListener("keydown", forwardPrintKey);
@@ -342,6 +373,7 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
           for (const type of ["wheel", "keydown", "pointerdown"]) d.removeEventListener(type, interacted, true);
           d.removeEventListener("pointerdown", chooseOpenThread, true);
           d.removeEventListener("load", measure, true);
+          d.removeEventListener("error", plainAgain, true);
           d.removeEventListener("click", onClick);
           d.removeEventListener("contextmenu", onMenu);
           d.removeEventListener("keydown", forwardPrintKey);
@@ -379,9 +411,9 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
   useEffect(() => {
     const current = loaded.current;
     const flow = current && current.doc === ref.current?.contentDocument ? current.doc.querySelector<HTMLElement>("[data-terno-flow]") : null;
-    if (!flow || section) return;
-    setDarkened(convert(flow, wantDark, darkUndo));
-  }, [wantDark, themeKey, mode, section]);
+    if (!flow) return;
+    setDarkened(convert(flow, work, darkUndo));
+  }, [work, themeKey]);
 
   // a message folded away takes its marks with it
   useEffect(() => () => marksChanged(), []);
@@ -409,7 +441,8 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
         </div>
       )}
       {/* themed mail flows on the page with no box; mail with its own colors keeps a paper surface, its edge drawn so its inset reads as the sheet's, on paper-white pages too */}
-      <div className={paper ? "hairline overflow-hidden rounded-lg bg-[var(--mail-paper)] [--hairline-color:var(--border)]" : undefined}>
+      {/* (a mail that may darken shows no paper until its document has been converted and measured: never a light slab first) */}
+      <div className={paper && (shown || !wantDark) ? "hairline overflow-hidden rounded-lg bg-[var(--mail-paper)] [--hairline-color:var(--border)]" : undefined}>
         <iframe
           ref={ref}
           title={label ?? t("reader.mailContent")}
