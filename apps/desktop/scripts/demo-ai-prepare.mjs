@@ -549,9 +549,11 @@ export async function prepare({ electronBin, main, env, profile, steps, onPid = 
   let closed = false;
   const youStopped = async () => {
     if (closed) return true;
-    const said = await app.evaluate(() => globalThis.demoAiStopped ?? false).catch(() => null);
+    const within = (p) => Promise.race([p, new Promise((r) => setTimeout(() => r(null), 5_000).unref())]);
+    // a main that hangs doesn't hold up the close below (it's killed after it)
+    const said = await within(app.evaluate(() => globalThis.demoAiStopped ?? false).catch(() => null));
     // gone before it could say: a quit ends with 0, a crash doesn't (and is a failure)
-    closed = !!(said ?? (await Promise.race([exited, new Promise((r) => setTimeout(r, 5_000).unref())])) === 0);
+    closed = !!(said ?? (await within(exited)) === 0);
     return closed;
   };
   let page = null;
