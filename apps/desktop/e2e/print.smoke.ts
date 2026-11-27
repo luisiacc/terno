@@ -42,7 +42,7 @@ test.beforeAll(async () => {
   mkdirSync(pdfDir);
   const profile = join(workdir, "profile");
   // a small demo mailbox plus the print fixtures, seeded before the app opens it
-  execFileSync("pnpm", ["--filter", "@terno/backend-dev", "exec", "tsx", "src/seed.ts", "--out", profile, "--accounts", "2", "--threads", "300", "--print-fixtures"], { cwd: repo, stdio: "ignore" });
+  execFileSync("pnpm", ["--filter", "@terno/backend-dev", "exec", "tsx", "src/seed.ts", "--out", profile, "--first-screen", "inbox", "--accounts", "2", "--threads", "300", "--print-fixtures"], { cwd: repo, stdio: "ignore" });
   const env: Record<string, string> = { ...process.env, TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US", TERNO_USER_DATA: profile, TERNO_TEST_PDF_DIR: pdfDir };
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.TERNO_DEV_URL;

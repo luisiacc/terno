@@ -42,7 +42,7 @@ test.beforeAll(async () => {
   expect(existsSync(SOURCE_APP), "packaged app fixture must exist").toBe(true);
   workdir = mkdtempSync(join("/tmp", "terno-people-smoke-"));
   const profile = join(workdir, "profile");
-  execFileSync("pnpm", ["--filter", "@terno/backend-dev", "exec", "tsx", "src/seed.ts", "--out", profile, "--accounts", "2", "--threads", "1500"], { cwd: repo, stdio: "ignore" });
+  execFileSync("pnpm", ["--filter", "@terno/backend-dev", "exec", "tsx", "src/seed.ts", "--out", profile, "--first-screen", "inbox", "--accounts", "2", "--threads", "1500"], { cwd: repo, stdio: "ignore" });
   dbPath = join(profile, "terno.db");
   // the search snapshot of the current file would be a newer version's: an upgrade starts without one
   rmSync(`${dbPath}.search`, { force: true });

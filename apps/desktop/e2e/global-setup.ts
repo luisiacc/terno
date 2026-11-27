@@ -9,7 +9,7 @@ const repo = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 export default function globalSetup(): () => void {
   const dir = mkdtempSync("/tmp/terno-smoke-seed-");
   const profile = join(dir, "profile");
-  execFileSync("pnpm", ["--filter", "@terno/backend-dev", "exec", "tsx", "src/seed.ts", "--out", profile, "--accounts", "2", "--threads", "300"], { cwd: repo, stdio: "ignore" });
+  execFileSync("pnpm", ["--filter", "@terno/backend-dev", "exec", "tsx", "src/seed.ts", "--out", profile, "--first-screen", "inbox", "--accounts", "2", "--threads", "300"], { cwd: repo, stdio: "ignore" });
   process.env.TERNO_SMOKE_SEED = profile;
   return () => rmSync(dir, { recursive: true, force: true });
 }
