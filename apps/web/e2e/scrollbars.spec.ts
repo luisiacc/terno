@@ -10,10 +10,12 @@ test("scrollbars are a hairline thumb that only shows while their pane is hovere
   expect(gutter).toBeLessThanOrEqual(8);
   // the standard properties would disable the custom pill in Chromium, so they must stay unset here
   expect(await list.evaluate((el) => getComputedStyle(el).scrollbarWidth)).toBe("auto");
-  // paint: the rightmost 8 px of the pane, decoded in the page; how many device-pixel columns carry ink
+  // paint: the rightmost 8 px of the pane, clear of its card's rounded corners (plan 250), decoded in the page; how many
+  // device-pixel columns carry ink
+  const inset = Math.max(4, await list.evaluate((el) => parseFloat(getComputedStyle(el.closest(".pane-card")!).borderBottomRightRadius)));
   const inkColumns = async () => {
     const box = (await list.boundingBox())!;
-    const png = await page.screenshot({ clip: { x: box.x + box.width - 8, y: box.y + 4, width: 8, height: box.height - 8 }, animations: "disabled" });
+    const png = await page.screenshot({ clip: { x: box.x + box.width - 8, y: box.y + inset, width: 8, height: box.height - 2 * inset }, animations: "disabled" });
     return page.evaluate(async (b64) => {
       const bitmap = await createImageBitmap(await (await fetch(`data:image/png;base64,${b64}`)).blob());
       const ctx = new OffscreenCanvas(bitmap.width, bitmap.height).getContext("2d")!;
