@@ -446,10 +446,12 @@ describe.skipIf(process.env.TERNO_CACHE_REPORT !== "1")("plan 291: the report", 
         for (const job of JOBS) {
           // as the day sends them: every third question planned twice, every sixth dated read looked at again, two intent reads a draft
           const calls = job === "askPlan" ? (p.day.ask ?? 0) + Math.floor((p.day.ask ?? 0) / 3) : job === "dated" ? (p.day.dated ?? 0) + Math.floor((p.day.dated ?? 0) / 6) : job === "intent" ? 2 * (p.day.writing ?? 0) : p.day[job] ?? 0;
-          const c = perCall[arm]![job];
+          // Pro's Luna jobs are the same calls on an OpenAI key alone: a Pro arm run on Anthropic's jobs only takes them from there
+          const source = !perCall[arm]![job] && route(arm) === "pro" && PRO_PROVIDER[job] === "openai" ? `${arm}-openai` : arm;
+          const c = perCall[source]?.[job];
           if (!calls || !c) continue;
           // the answer's cost, the same for both arms of a route: every first try of the job, both arms pooled
-          const pooled = rows.filter((r) => r.job === job && !r.repair && route(r.arm) === route(arm));
+          const pooled = rows.filter((r) => r.job === job && !r.repair && route(r.arm) === route(source));
           const outUsd = mean(pooled.map(outputUsd));
           const share = arm.startsWith("before") && PER_CALL_BEFORE.has(job) ? 0 : warmShare(p, job, TTL_MS[providerOf(arm, job)]);
           const inUsd = 30 * calls * (share * c.warm + (1 - share) * c.cold);
