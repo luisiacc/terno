@@ -171,6 +171,18 @@ describe("plan 64: a search looks everywhere", () => {
     expect(key({})).toBe(JSON.stringify(["factura", null, null]));
     expect(key({ place: "all" })).not.toBe(key({}));
   });
+  it("plan 287: a set of accounts is where it looks, a part of its key; account:x inside it narrows", () => {
+    const at = (q: string, accountIds?: number[]) => resolveSearch(parseSearch(q, NOW), q, accountIds ? { accountIds } : {}, lookup);
+    expect(at("factura", [2, 1]).accountIds?.sort()).toEqual([1, 2]);
+    expect(at("factura", []).accountIds).toBeNull();
+    expect(at("factura", [1, 2]).key).toBe(at("factura", [2, 1]).key);
+    expect(at("factura", [1]).key).not.toBe(at("factura").key);
+    expect(at("factura").key).toBe(JSON.stringify(["factura", null, null]));
+    const two = { accounts: [{ id: 1, email: "me@home.test", display_name: "Home" }, { id: 2, email: "me@work.test", display_name: "Work" }], categories: [] };
+    const within = (q: string, accountIds: number[]) => resolveSearch(parseSearch(q, NOW), q, { accountIds }, two);
+    expect(within("account:work factura", [1, 2])).toMatchObject({ accountIds: [2], impossible: false });
+    expect(within("account:work factura", [1]).impossible).toBe(true);
+  });
 });
 
 describe("a comma means any of (plan 140)", () => {

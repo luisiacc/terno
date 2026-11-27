@@ -36,16 +36,19 @@ function categoryMatch(lookup: ScopeLookup, token: string): number | undefined {
   )?.id;
 }
 
-export function searchKey(text: string, scope: { accountId?: number; categoryId?: number; place?: SearchView }): string {
+export function searchKey(text: string, scope: { accountId?: number; accountIds?: readonly number[]; categoryId?: number; place?: SearchView }): string {
   // plan 185: a place only when one is set, so the keys (and cursors) of a search that has none never change
-  return JSON.stringify(scope.place === undefined ? [text, scope.accountId ?? null, scope.categoryId ?? null] : [text, scope.accountId ?? null, scope.categoryId ?? null, scope.place]);
+  const key = scope.place === undefined ? [text, scope.accountId ?? null, scope.categoryId ?? null] : [text, scope.accountId ?? null, scope.categoryId ?? null, scope.place];
+  // plan 287: a set of accounts only when one is given, likewise
+  return JSON.stringify(scope.accountIds?.length ? [...key, [...scope.accountIds].sort((a, b) => a - b)] : key);
 }
 
 export function resolveSearch(
   query: SearchQuery,
   text: string,
   /** `place` (plan 185): where a query that names none looks; anywhere unless set (an agent's search: `all`) */
-  scope: { accountId?: number; categoryId?: number; threadAttachments?: boolean; threadFilter?: ThreadFilter; now?: number; place?: SearchView },
+  /** `accountIds` (plan 287, People's filter): in any of these accounts, as `accountId` is in one */
+  scope: { accountId?: number; accountIds?: readonly number[]; categoryId?: number; threadAttachments?: boolean; threadFilter?: ThreadFilter; now?: number; place?: SearchView },
   lookup: ScopeLookup,
 ): ResolvedSearch {
   // the list's thread filters (plan 15's attachments, plan 17's people and waiting): thread-level, applied by the
@@ -55,14 +58,15 @@ export function resolveSearch(
   else if (thread === "people") query = { ...query, threadPeople: true };
   else if (thread === "waiting") query = { ...query, threadWaitingSince: waitingCutoff(scope.now ?? Date.now()) };
   let impossible = false;
-  const accountIds = new Set<number>();
-  if (scope.accountId !== undefined) accountIds.add(scope.accountId);
+  // the scope's accounts: an account view's one, or a set of them (plan 287); account:x inside them narrows instead of widening
+  const fixed = scope.accountId !== undefined ? [scope.accountId] : scope.accountIds?.length ? [...new Set(scope.accountIds)] : null;
+  let accountIds = new Set<number>(fixed);
   for (const token of query.accounts) {
     const matches = accountMatches(lookup, token);
     if (matches.length === 0) impossible = true;
-    // account:x inside an account view narrows instead of widening
-    if (scope.accountId !== undefined) {
-      if (!matches.includes(scope.accountId)) impossible = true;
+    if (fixed) {
+      accountIds = new Set([...accountIds].filter((id) => matches.includes(id)));
+      if (accountIds.size === 0) impossible = true;
     } else {
       for (const id of matches) accountIds.add(id);
     }
