@@ -599,7 +599,7 @@ describe("plan 286: nothing left to review is clear skies", () => {
     await show(null);
     expect(clear()).not.toBeNull();
     expect(clear()!.textContent).toContain("Clear skies.");
-    expect(clear()!.textContent).toContain("No automated mail to review right now.");
+    expect(clear()!.textContent).toContain("Nothing left to review.");
     expect(host.querySelector("[data-testid=digest-clear-kite]")!.getAttribute("aria-hidden")).toBe("true");
     expect(host.querySelector("[data-testid=digest-close]")).not.toBeNull();
     served = digestOf("2026-10-25", true);
@@ -617,17 +617,42 @@ describe("plan 286: nothing left to review is clear skies", () => {
     expect(document.activeElement).toBe(host.querySelector("[data-testid=digest-clear-title]"));
   });
 
-  it("every sender hidden brings it before the backend's next read; Undo brings the rows back", async () => {
+  it("every sender hidden brings it before the backend's next read, and while that read says none; Undo brings the rows back, ticked as each was when hidden", async () => {
+    // Codex review: the snacks stand on the foot that's there: lifted with the rows, down with clear skies, up with the Undo
+    const height = vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) {
+      return this.dataset.testid === "digest-actions" ? 48 : 0;
+    });
     const row: DigestRow = { ...digestOf("2026-10-25", true), liveIds: [1, 2, 3] };
     await show(row);
+    expect(useSnack.getState().pageLift).toBe(48);
     await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-tick-all]")!.click());
+    await act(async () => host.querySelectorAll<HTMLElement>("[data-testid=digest-tick]")[1]!.click());
+    expect(ticks()).toEqual([true, false, true]);
+    calls.length = 0;
+    // hidden from the row's menu's way: the foot's Hide takes the ticked, so the last one goes by its own
+    await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-hide]")!.click());
+    expect(clear()).toBeNull();
+    const undoFirst = useSnack.getState().current!.action!.undo!;
+    await act(async () => host.querySelectorAll<HTMLElement>("[data-testid=digest-tick]")[0]!.click());
     await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-hide]")!.click());
     expect(clear()).not.toBeNull();
+    expect(useSnack.getState().pageLift).toBe(0);
+    // the backend's read: nothing automated left
+    served = null;
+    await act(async () => listeners.get("todayDigest")!());
+    expect(clear()).not.toBeNull();
     await act(async () => undoNow(useSnack.getState().current!.action!.undo!));
-    // the list's reload after the Undo
-    await act(async () => useToday.setState({ digest: { ...row } }));
+    await act(async () => undoNow(undoFirst));
+    expect(calls.filter((c) => c.method === "today.notNewslettersUndo")).toHaveLength(2);
+    // its read after the Undo: the rows again, on the same page
+    served = row;
+    await act(async () => listeners.get("todayDigest")!());
     expect(clear()).toBeNull();
-    expect(host.querySelectorAll("[data-testid=digest-item]")).toHaveLength(3);
+    expect([...host.querySelectorAll("[data-testid=digest-item]")].map((e) => e.textContent!.match(/Issue \d/)![0])).toEqual(["Issue 1", "Issue 2", "Issue 3"]);
+    // each ticked as it was when hidden (the second was ticked on its own before its Hide)
+    expect(ticks()).toEqual([true, true, true]);
+    expect(useSnack.getState().pageLift).toBe(48);
+    height.mockRestore();
   });
 
   it("archiving the last row keeps the finished state and its words, not the scene", async () => {

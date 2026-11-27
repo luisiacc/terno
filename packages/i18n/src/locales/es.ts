@@ -2975,7 +2975,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "today.digest.failedShort": "No se pudo preparar el resumen de hoy",
   "today.digest.failed": "No se pudo preparar el resumen de hoy.",
   "today.digest.clear.title": "Cielo despejado.",
-  "today.digest.clear.body": "Ahora no hay correo automático por revisar.",
+  "today.digest.clear.body": "No queda nada por revisar.",
   "today.digest.count": { one: "# boletín", other: "# boletines" },
   "today.digest.countSelected": { one: "{selected} de # seleccionado", other: "{selected} de # seleccionados" },
   "today.digest.toArchive": { one: "# para archivar", other: "# para archivar" },

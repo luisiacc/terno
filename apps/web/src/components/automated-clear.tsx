@@ -20,7 +20,13 @@ export function AutomatedClear({ heading, className, children, ...rest }: { head
           <p className="max-w-64 text-xs text-muted-foreground">{t("today.digest.clear.body")}</p>
         </div>
       </div>
-      {children}
+      {/* plan 286 (Codex review): on the reader's column, as the page with rows has its ×, so it doesn't move when they go */}
+      {/* (its scroller's gutter too: the page's is kept stable, and centres the column off it) */}
+      {children && (
+        <div className="pointer-events-none absolute inset-0 overflow-hidden [scrollbar-gutter:stable]">
+          <div className="pointer-events-auto relative mx-auto max-w-(--reader-max,48rem)">{children}</div>
+        </div>
+      )}
     </div>
   );
 }

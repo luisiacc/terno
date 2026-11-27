@@ -174,11 +174,13 @@ export default function DigestPage({ place = "page" }: { place?: "page" | "colum
   const lastUndo = batches?.at(-1)?.undo ?? null;
   const undoInSnack = useSnack((s) => lastUndo !== null && s.current?.action?.undo === lastUndo);
   const scroller = useRef<HTMLDivElement>(null);
-  const foot = useRef<HTMLElement>(null);
+  // plan 286 (Codex review): the foot itself, not whether there's a row: it goes with the rows when they all go (clear
+  // skies) and comes back with their Undo, and each one mounted is the one measured
+  const [foot, setFoot] = useState<HTMLElement | null>(null);
   const [footHeight, setFootHeight] = useState(0);
   const [atEnd, setAtEnd] = useState(false);
   useLayoutEffect(() => {
-    const el = foot.current;
+    const el = foot;
     if (!el) return;
     const set = () => {
       setFootHeight(el.offsetHeight);
@@ -194,7 +196,7 @@ export default function DigestPage({ place = "page" }: { place?: "page" | "colum
       ro.disconnect();
       if (!beside) useSnack.setState({ pageLift: 0 });
     };
-  }, [row !== null]);
+  }, [foot]);
   const scrollAt = useRef(digestPick(day).scroll);
   // back where it was left, once its rows are there: once a digest
   const restored = useRef<string | null>(null);
@@ -623,7 +625,7 @@ export default function DigestPage({ place = "page" }: { place?: "page" | "colum
   );
   const footer = (
   <footer
-    ref={foot}
+    ref={setFoot}
     // plan 251: the foot glides with the list between the forms; beside, it closes the column under its rows
     data-morph="digest-foot"
     data-morph-class="morph-crop"

@@ -3025,7 +3025,7 @@ It contains none of your mail, contacts, settings or keys.
   "today.digest.failedShort": "Couldn't prepare today's digest",
   "today.digest.failed": "Couldn't prepare today's digest.",
   "today.digest.clear.title": "Clear skies.",
-  "today.digest.clear.body": "No automated mail to review right now.",
+  "today.digest.clear.body": "Nothing left to review.",
   "today.digest.count": { one: "# newsletter", other: "# newsletters" },
   "today.digest.countSelected": { one: "{selected} of # selected", other: "{selected} of # selected" },
   "today.digest.toArchive": { one: "# to archive", other: "# to archive" },

@@ -1,6 +1,6 @@
 # Plan 286: Automated mail, clear skies
 
-- **Status:** building
+- **Status:** built
 - **Builds on:** `5db0298c7` (main).
 
 ## The request (verbatim)
@@ -33,7 +33,7 @@ A: the horizon of plan 222 again (the same hairline), a kite over it in the pale
   - Opacities are SVG attributes, never utilities; no literal colours, so every palette and design draws it.
 - **Words** (i18n, `en` and `es` together), replacing `today.digest.none` (no other user):
   - `today.digest.clear.title`: "Clear skies." / "Cielo despejado."
-  - `today.digest.clear.body`: "No automated mail to review right now." / "Ahora no hay correo automático por revisar." (Codex: the list is bounded and filtered, so a promise that everything gathers here would overpromise.)
+  - `today.digest.clear.body`: "Nothing left to review." / "No queda nada por revisar." (Codex's critique: a promise that everything gathers here would overpromise; its code review: the same pane is Today's digest's, so not "automated mail" either.)
 - The title is the pane's `h1` (`ref={heading}`, `tabIndex={-1}`, `outline-none`), as the page's title is: the column's F6 lands on it (`digestKeys.focus` falls back to `heading`, which the bare line left unset) and a screen reader finds the pane by it.
 
 ## Tests
@@ -45,6 +45,18 @@ A: the horizon of plan 222 again (the same hairline), a kite over it in the pale
 ## Revisions after the Codex review
 
 Codex's critique (10 points): taken, the empty rows case (3), the title as the focus target (5), the column's surface and a bounded scroller (6), the test that re-reads on one mount (7) and plain present-state copy (9). Left out, with why above: a cold scan's `null` (1), `null` for an unavailable or unmade digest (2: neither page is reachable then, and "nothing to review" is true), the swap after the last Archive (4), an axe e2e for the empty pane (8) and the UI rating (10).
+
+## Revisions after the Codex code review
+
+Seven points. Fixed, each with a test that fails without it:
+
+- **The foot's measure followed whether there was a row** (`[row !== null]`), so with every row hidden the snacks stayed lifted over a foot that was gone, and the one back with Undo wasn't measured. The foot element itself is the effect's key now (a callback ref). The unit test checks the lift: 48, then 0 on clear skies, then 48 after the Undo.
+- **The × moved** 57 px to the pane's edge when the rows went: it sits on the reader's column again, off the same stable scrollbar gutter (the e2e compares its box before and after).
+- **The words said "automated mail" on Today's digest too:** "Nothing left to review."
+- **The Hide/Undo test wrote its own answer:** it now goes through the backend's `todayDigest` reads on one mount (none left, then the rows back), asserts both Undo calls and the ticks each row had when hidden.
+- **The e2e's dark pass could read the light theme:** it uses `axeBothModes`, which waits for the root's `dark`.
+
+Left: `j` on the empty page moves What matters' list (there's nothing on the page to move through, as with the bare line before); scroll and focus after an Undo of every sender hidden (the Hide button that had focus is gone either way); a named landmark for the empty pane (its `h1` names it).
 
 ## Perf
 
