@@ -25,11 +25,20 @@
  * Nothing is changed or taken until the window shows the demo's mailbox: every account in it is one of the mock
  * mailbox's (`@terno/mock-data`), so a window on real mail is refused. Each run writes its captures to a folder of its
  * own and encodes only those, so a run that fails halfway never pairs its frame with an older run's.
+ *
+ * Plan 289: the pictures are English throughout. The demo mailbox is English but for one account (Freelance, in Spanish,
+ * for trying replies in another language): before anything is taken, that account's Show in What matters and Follow-ups
+ * are turned off in the copy (the app's own switches), so What matters and People leave it out. The window must be in
+ * English, and every frame is refused that paints a Spanish letter or anything only that account says (its people, its
+ * subjects, its folders, its "since" conversations) or a word only Spanish writes: a Follow-up or a person of that
+ * account is passed over. The window's language is set to English in the copy, and its categories must be the demo
+ * edition's (a profile seeded before plan 289 has the same addresses but Spanish throughout).
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { chromium, expect, type CDPSession, type Page } from "@playwright/test";
-import { CONTACTS_ACCOUNT, generateDataset } from "@terno/mock-data";
+import { DEMO_SINCE } from "@terno/backend";
+import { CONTACTS_ACCOUNT, DEMO_CATEGORIES, DEMO_SPANISH_ACCOUNT, demoSpanishWords, generateDataset } from "@terno/mock-data";
 import { encode, site } from "./lib";
 
 const raw = join(site, ".shots-raw-ai", `run-${Date.now()}`);
@@ -43,6 +52,14 @@ type Mode = "light" | "dark";
 type Box = { x: number; y: number; width: number; height: number };
 /** the mock mailbox's own addresses: every account of the window must be one */
 const FIXTURE_ACCOUNTS = new Set([...generateDataset({ threads: 0, accounts: Number.MAX_SAFE_INTEGER }).accounts, CONTACTS_ACCOUNT].map((a) => a.email.toLowerCase()));
+/** plan 289: the demo's Spanish account, and what only it says (with its "since" conversations) */
+const { email: SPANISH_ACCOUNT, displayName: SPANISH_LABEL } = generateDataset({ threads: 0, edition: "demo" }).accounts[DEMO_SPANISH_ACCOUNT]!;
+const SPANISH_WORDS = [...new Set([...demoSpanishWords(), ...DEMO_SINCE.filter((c) => c.account === SPANISH_ACCOUNT).flatMap((c) => [c.subject, ...c.with.map((p) => p.name)])])];
+/** each as a whole word (so "Ana" never matches "Analytics"), matched in the page */
+const whole = (w: string) => String.raw`(^|[^\p{L}\p{N}])` + w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + String.raw`($|[^\p{L}\p{N}])`;
+/** and words only Spanish writes, for what the list can't know: AI text written in Spanish, an unaccented label */
+const SPANISH_ONLY = ["el", "los", "las", "del", "que", "para", "por", "con", "una", "hola", "gracias", "pago", "pendiente", "semana", "factura", "facturas", "clientes", "lecturas", "desarrollo", "viajes"];
+const SPANISH_PATTERNS = [...SPANISH_WORDS.map(whole), ...SPANISH_ONLY.map((w) => `(?i)${whole(w)}`)];
 
 mkdirSync(raw, { recursive: true });
 const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
@@ -55,6 +72,31 @@ try {
     return useApp.getState().accounts.map((a) => a.email.toLowerCase());
   });
   if (!accounts.length || accounts.some((a) => !FIXTURE_ACCOUNTS.has(a))) throw new Error(`the window on port ${port} isn't the demo's mailbox (an account isn't one of @terno/mock-data's): nothing changed or taken`);
+  // the English demo, not a profile seeded before plan 289 (the same addresses): its categories are the demo edition's
+  const categories = await page.evaluate(async () => {
+    const module = "/src/state/app.ts";
+    const { useApp } = (await import(/* @vite-ignore */ module)) as { useApp: { getState: () => { categories: { name: string }[] } } };
+    return useApp.getState().categories.map((c) => c.name);
+  });
+  if (!DEMO_CATEGORIES.every((c) => categories.includes(c.name))) throw new Error(`the window on port ${port} holds the earlier demo mailbox (Spanish throughout): prepare a new one with pnpm dev:demo-ai --fresh: nothing changed or taken`);
+  // English whatever the Mac's language, as Settings → General sets it (the copy's own setting)
+  await page.evaluate(async () => {
+    const module = "/src/rpc/connection.ts";
+    const { client } = (await import(/* @vite-ignore */ module)) as { client: { call: (method: string, params: unknown) => Promise<unknown> } };
+    await client.call("settings.update", { language: "en" });
+  });
+  await page.waitForFunction(() => document.documentElement.lang.startsWith("en"), undefined, { timeout: 10_000 }).catch(() => {
+    throw new Error("the window didn't switch to English: nothing taken");
+  });
+  // the Spanish account out of What matters, Follow-ups and so People, as Settings → Accounts turns them off
+  await page.evaluate(async (email) => {
+    const [app, rpc] = ["/src/state/app.ts", "/src/rpc/connection.ts"];
+    const { useApp } = (await import(/* @vite-ignore */ app)) as { useApp: { getState: () => { accounts: { id: number; email: string }[] } } };
+    const { client } = (await import(/* @vite-ignore */ rpc)) as { client: { call: (method: string, params: unknown) => Promise<unknown> } };
+    const account = useApp.getState().accounts.find((a) => a.email.toLowerCase() === email);
+    if (account) await client.call("accounts.update", { id: account.id, feed: false, followups: false });
+  }, SPANISH_ACCOUNT);
+  await page.waitForTimeout(1500);
   const cdp = await page.context().newCDPSession(page);
   // the window's zoom: CSS pixels to the window's own (the capture's clip is in those), read at a device scale of 2
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1200, height: 860, deviceScaleFactor: 2, mobile: false });
@@ -77,6 +119,8 @@ try {
       await page.waitForFunction((dark) => document.documentElement.classList.contains("dark") === dark, mode === "dark");
       await still(page);
       const b = await frame();
+      const spanish = await spanishIn(page, b);
+      if (spanish) throw new Error(`${name} (${mode}): ${spanish}: nothing taken`);
       writeFileSync(join(raw, `${name}-${mode}.png`), await capture(cdp, b, zoom));
     }
     console.log(`✓ ${name}`);
@@ -113,7 +157,9 @@ try {
     await page.waitForTimeout(600);
     // a promise of yours shows What matters' card instead: only an unanswered question's card is pictured
     if (!(await page.getByTestId("followup-line").first().isVisible())) continue;
-    found = await safeHead(page, await head());
+    // one on the Spanish account is passed over: its head names the account, and its words may carry no accent
+    const box = await head();
+    found = (await safeHead(page, box)) && !(await spanishIn(page, box)) && !(await page.getByTestId("reader").innerText()).includes(SPANISH_LABEL);
   }
   if (!found) throw new Error("no follow-up whose head holds only its subject and card: nothing taken");
   console.log(`  follow-up: ${(await page.getByTestId("followup-line").first().innerText()).replace(/\s+/g, " ")}`);
@@ -174,7 +220,7 @@ async function people(page: Page, size: (w: number, h: number) => Promise<void>,
     }, H);
     const name = await page.getByTestId("person-name").innerText();
     // never printed: a refused page's words stay out of the terminal
-    const problem = (await handTyped(page, H)) ?? (await peopleProblem(page, key, W, H));
+    const problem = (await handTyped(page, H)) ?? (await peopleProblem(page, key, W, H)) ?? (await spanishIn(page, { x: 0, y: 0, width: W, height: H }));
     console.log(`    #${i + 1}: ${kinds} kinds, ${fit} items above Conversations${problem ? `; skipped: ${problem}` : ""}`);
     if (problem || !fit) continue;
     if (!best || kinds > best.kinds || (kinds === best.kinds && fit > best.fit)) best = { key, kinds, fit, name };
@@ -290,6 +336,34 @@ async function safeHead(page: Page, box: Box): Promise<boolean> {
     }
     return true;
   }, box);
+}
+
+/**
+ * Plan 289: what in `box` isn't English, or null: a Spanish letter, or a word only the demo's Spanish account says (whole
+ * words, so "Ana" never matches "Analytics"), in painted text. Says why, never the words.
+ */
+async function spanishIn(page: Page, box: Box): Promise<string | null> {
+  return page.evaluate(
+    ({ box, words }) => {
+      const patterns = words.map((w) => (w.startsWith("(?i)") ? new RegExp(w.slice(4), "iu") : new RegExp(w, "u")));
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        const text = n.textContent ?? "";
+        if (!text.trim()) continue;
+        const range = document.createRange();
+        range.selectNodeContents(n);
+        const r = range.getBoundingClientRect();
+        const inside = r.width > 0 && r.right > box.x && r.x < box.x + box.width && r.bottom > box.y && r.y < box.y + box.height;
+        // painted text only: a screen reader's line (sr-only, a clipped 1 px box) never shows in a picture
+        const own = n.parentElement?.getBoundingClientRect();
+        if (!inside || !own || own.width <= 1 || own.height <= 1) continue;
+        if (/[áéíóúñÁÉÍÓÚÑ¿¡]/.test(text)) return "Spanish is painted (a Spanish letter)";
+        if (patterns.some((p) => p.test(text))) return "the Spanish account's mail is painted";
+      }
+      return null;
+    },
+    { box, words: SPANISH_PATTERNS },
+  );
 }
 
 /** The mouse to a corner, focus dropped, a moment for anything still settling. */
