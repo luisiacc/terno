@@ -98,10 +98,11 @@ export function missingKeysMessage(missing: readonly string[], files: readonly s
  * your windows (TERNO_TEST_BACKGROUND); the window you use doesn't unless the shell sets it. Every rating-only hook the caller might have set is
  * dropped: this is a dev build on a dev server, Dev mode comes from that.
  */
-export function demoAiEnv(o: { base: Record<string, string | undefined>; profile: string; keys: Record<string, string>; devUrl: string; background: boolean; now?: number }): Record<string, string> {
+export function demoAiEnv(o: { base: Record<string, string | undefined>; profile: string; keys: Record<string, string>; devUrl: string; background: boolean; now?: number; /** plan 292: the written demo mailbox's folder */ corpus?: string | null }): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(o.base)) if (v !== undefined) env[k] = v;
-  for (const k of ["ELECTRON_RUN_AS_NODE", "TERNO_TEST_BACKGROUND", "TERNO_TEST_LANGUAGES", "TERNO_TEST_DEV_AI", "TERNO_TEST_NET_LOG", "TERNO_TEST_NOW", ...DEMO_AI_KEYS]) delete env[k];
+  for (const k of ["ELECTRON_RUN_AS_NODE", "TERNO_TEST_BACKGROUND", "TERNO_TEST_LANGUAGES", "TERNO_TEST_DEV_AI", "TERNO_TEST_NET_LOG", "TERNO_TEST_NOW", "TERNO_DEMO_CORPUS", ...DEMO_AI_KEYS]) delete env[k];
+  if (o.corpus) env.TERNO_DEMO_CORPUS = o.corpus;
   Object.assign(env, o.keys, { TERNO_DEMO: "1", TERNO_USER_DATA: o.profile, TERNO_DEV_URL: o.devUrl, TERNO_TEST_NOW: String(o.now ?? DEMO_AI_NOW), TZ: "UTC" });
   // the preparation always; your window only if your shell asked (a scripted check that mustn't take focus)
   if (o.background || o.base.TERNO_TEST_BACKGROUND === "1") env.TERNO_TEST_BACKGROUND = "1";
@@ -209,9 +210,12 @@ export function partialVerdict(missing: readonly string[], attempt: number): "do
  * old mailbox (a launch never seeds over one), so preparing it would show the old mail: its database has a mailbox but
  * not the demo edition's setting (`edition`: the `demo.edition` setting's value, null when unset). `--fresh` starts over.
  */
-export function oldMailboxProblem(o: { hasMailbox: boolean; edition: unknown }): string | null {
-  if (!o.hasMailbox || o.edition === "demo") return null;
-  return "this profile holds the earlier demo mailbox (Spanish throughout): pnpm dev:demo-ai --fresh prepares it again on the new one (English, with Freelance in Spanish)";
+export function oldMailboxProblem(o: { hasMailbox: boolean; edition: unknown }, want: "demo" | "corpus" = "demo"): string | null {
+  if (!o.hasMailbox || o.edition === want) return null;
+  // plan 292: the written mailbox ("corpus") and plan 289's generated edition ("demo") name different conversations
+  const held = o.edition === "corpus" ? "the written demo mailbox" : o.edition === "demo" ? "the generated demo mailbox (English, with Freelance in Spanish)" : "an earlier demo mailbox, or one that stopped seeding part way";
+  const wanted = want === "corpus" ? "the written one (plan 292)" : "the generated one (English, with Freelance in Spanish)";
+  return `this profile holds ${held}: pnpm dev:demo-ai --fresh prepares it again on ${wanted}`;
 }
 
 /** The marker's text, or null when it's missing, unreadable or from another version: all of those start over. */

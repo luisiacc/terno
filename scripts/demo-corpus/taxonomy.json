@@ -1,0 +1,36 @@
+{
+  "shapes": {
+    "fyi": { "messages": [1, 1], "about": "someone tells Luis something; no reply is needed and none comes", "lastFrom": "them" },
+    "unanswered": { "messages": [1, 1], "about": "someone writes to Luis and he hasn't answered (yet)", "lastFrom": "them" },
+    "ask-answer": { "messages": [2, 3], "about": "a question and its answer, maybe a thanks" },
+    "back-and-forth": { "messages": [3, 8], "about": "a real exchange between Luis and one or two people" },
+    "group": { "messages": [5, 14], "about": "a reply-all thread among 3 to 6 people, Luis one of them; people cc others, someone drops off, someone replies only to Luis" },
+    "luis-starts": { "messages": [1, 4], "about": "Luis writes first", "firstFrom": "me" },
+    "forward": { "messages": [2, 4], "about": "someone forwards something to Luis with a line on top, or Luis forwards something on; mark it with forward: true" },
+    "list": { "messages": [3, 10], "about": "a discussion on a mailing list Luis is on; not every message is to him by name" }
+  },
+  "shapeWeights": { "fyi": 9, "unanswered": 5, "ask-answer": 22, "back-and-forth": 26, "group": 9, "luis-starts": 16, "forward": 6, "list": 7 },
+  "outcomes": ["resolved", "decided", "rescheduled", "cancelled", "dropped (nobody followed up)", "waiting on Luis", "waiting on them", "ongoing", "a misunderstanding cleared up", "declined politely"],
+  "nudges": {
+    "personal": ["borrowing something", "a recommendation", "splitting a bill", "photos from a weekend", "something left behind at a dinner", "a gift idea", "a parcel delivered to the wrong flat", "a plumber's quote", "a spare concert ticket", "a sick pet", "returning a book", "a surprise party", "selling a bike", "a recipe", "a podcast he should hear", "a parking fine", "council tax", "a house-warming", "dog-sitting", "a camera lens for sale", "a training plan", "an RSVP and dietary needs", "a visa question", "a volunteering shift", "a sponsorship for a charity run", "hiring a van", "a broken washing machine", "an old photo found", "a film night", "a job referral", "moving a dentist appointment", "a letter from the GP", "a weekend away", "a gym membership freeze", "a lost key", "a wedding speech draft", "a stag do budget", "a favour for a friend's CV", "a bake sale", "the boiler again"],
+    "acme": ["a design critique", "access to a design file", "a bug on staging", "a client's feedback round", "a holiday request", "an expense claim", "a contractor's invoice", "a team lunch", "a conference ticket", "a laptop replacement", "IT's security training", "portfolio pieces for a pitch", "an intro to a potential client", "recruiting for a usability test", "a brand guidelines question", "timesheets", "retro notes", "a candidate's portfolio", "a print proof", "a font licence", "an accessibility audit", "the rate card", "a press request", "an awards submission", "the office move", "parental leave cover", "a workshop agenda", "quarterly planning", "a performance review", "a mentoring session", "a client dinner", "scope creep", "a change to the statement of work", "a user research readout", "a design system component", "a deadline moving", "a freelancer's availability", "a meeting room double-booked", "a broken build", "a client's legal review"],
+    "freelance": ["una cotización", "cambios al logotipo", "una factura pendiente", "una videollamada", "el manual de marca", "fotos de producto", "un nuevo prospecto", "el contrato", "una recomendación de un cliente", "el acceso al dominio", "una propuesta para redes sociales", "la constancia de situación fiscal", "el anticipo", "una revisión del sitio", "un error en la tienda en línea", "la imprenta", "empaque nuevo", "el menú del restaurante", "un video de lanzamiento", "las tipografías", "un cambio de alcance", "una presentación para inversionistas", "la paleta de colores", "un retraso del cliente", "el hosting", "una encuesta a clientes"],
+    "icloud": ["a booking a friend made for the group", "an old flatmate getting in touch", "an insurance renewal", "photos from a trip", "a shared album", "the deposit from a previous flat", "an alumni event", "a travel plan with old friends", "a warranty claim", "a reunion", "a postcard he never got", "a car hire excess", "a museum membership", "a lost luggage claim"]
+  },
+  "strangers": {
+    "personal": ["a stranger who found something he lost", "a neighbour he hasn't met", "a charity's fundraiser asking him personally", "a wrong-recipient email meant for another Luis", "a seller on a marketplace"],
+    "acme": ["a recruiter's cold message", "a cold sales pitch", "a podcast invitation", "a student asking for portfolio advice", "a conference inviting him to speak", "an agency proposing a partnership", "someone asking for a reference for an ex-colleague"],
+    "freelance": ["un prospecto que vio su portafolio", "una agencia que busca colaborar", "un estudiante que pide consejo", "alguien que busca una cotización rápida", "un proveedor de impresión que ofrece servicios"],
+    "icloud": ["a travel agent following up", "a hotel asking for a review in person", "a survey from an old university"]
+  },
+  "plants": {
+    "since": { "count": 4, "about": "plan 279: earlier mail from others that he has read, then a contiguous tail of new mail from others, unread, all within the two hours before the anchor, that changes something (a plan, a date, an amount). One of the four changes nothing (a short thanks). Nothing from Luis after the unread tail." },
+    "top": { "count": 6, "about": "the top of the Inbox: someone wrote today, unread, and waits for his reply to a real question. Four are English, two Spanish (Freelance). One is dated exactly 15:30 UTC on the anchor day." },
+    "owner-promise": { "count": 12, "about": "in the 14 days before the anchor Luis promised something with a time (I'll send it Friday, I'll call you tomorrow), in his own message; due between 7 days before the anchor and 10 days after; nothing in the thread shows it done." },
+    "promise-to-owner": { "count": 10, "about": "in the 14 days before the anchor someone promised Luis something with a time (I'll send the deck Monday); about half are already due and nothing came." },
+    "awaiting": { "count": 10, "about": "Luis, in his own message sent 6 to 13 days before the anchor, asked someone outside his own addresses a clear question or for something; nobody has answered." },
+    "deadline": { "count": 10, "about": "in the 14 days before the anchor someone asked Luis to do something by a stated date within the 10 days after the anchor; he hasn't done it." },
+    "waiting-on-you": { "count": 6, "about": "a recent Inbox thread: Luis wrote earlier in it, and the latest message, from a person, asks him something he hasn't answered." },
+    "facts": { "count": 6, "about": "rich in facts a question could find, stated plainly with a distinctive word or name: who paid what and when, an address, a booking reference, a time, a decision and who made it." }
+  }
+}

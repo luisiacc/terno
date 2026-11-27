@@ -29,6 +29,17 @@ export const ASK_QUESTIONS = [
 /** Sent only if reading the last month's sent mail found nothing to follow up (the fallback, so the line still shows). */
 export const FOLLOWUP = { to: "Henry Haddad", subject: "The flat on Saturday", body: "Hi Henry,\n\nCould you send me the address of the flat before Friday? I'd like to see it on Saturday.\n\nThanks,\nLuis" };
 export const RULE_REQUEST = "archive receipts from uber.com";
+/** What the preparation names in the generated mailbox. Plan 292's written one brings its own (`targetsOf`). */
+export const GENERATED_TARGETS = { since: [...DEMO_SINCE_SUBJECTS], ask: ASK_QUESTIONS, followup: FOLLOWUP, ruleRequest: RULE_REQUEST };
+
+/**
+ * Plan 292 (revision 8): the written mailbox's targets, from its demo.json, by subject: the since conversations (the one
+ * where nothing changed last), the Ask questions with the facts their answers must state, the fallback send, the rule.
+ */
+export function targetsOf(manifest) {
+  const p = manifest.prepare;
+  return { since: [...p.since, p.sinceWhole], ask: p.ask, followup: p.followup ?? FOLLOWUP, ruleRequest: p.ruleRequest };
+}
 
 const now = () => new Date().toISOString();
 /** Whether it shows within `timeout` (Playwright's isVisible doesn't wait). */
@@ -278,12 +289,18 @@ const STEPS = {
       started.push({ threadId, title, where, view, summarized, writing });
     };
     await d.go("inbox");
-    for (let i = 0; i < TOP; i++) await visit(d.rows.nth(i), `Inbox #${i + 1}`, "inbox");
+    // the since conversations are the next step's: opening one here would read its new mail first (plan 292)
+    const since = (text) => d.targets.since.some((s) => text.includes(s));
+    for (let i = 0, n = 0; n < TOP && i < (await d.rows.count()); i++) {
+      if (since(await d.rows.nth(i).innerText())) continue;
+      await visit(d.rows.nth(i), `Inbox #${++n}`, "inbox");
+    }
     await d.go("today");
     const todayRows = page.locator("[data-testid=thread-row]");
     const n = Math.min(TODAY_ROWS, await todayRows.count());
     for (let i = 0; i < n; i++) {
       await d.go("today");
+      if (since(await todayRows.nth(i).innerText())) continue;
       await visit(todayRows.nth(i), `Today #${i + 1}`, "today");
     }
     return settleConversations(d, progress, started);
@@ -297,7 +314,7 @@ const STEPS = {
   async since(d, progress) {
     const { page } = d;
     const missing = [];
-    for (const subject of DEMO_SINCE_SUBJECTS) {
+    for (const subject of d.targets.since) {
       if (progress.has(subject)) { d.log(`  ${subject}: done earlier`); continue; }
       await d.go("inbox");
       const row = d.rows.filter({ hasText: subject }).first();
@@ -337,31 +354,31 @@ const STEPS = {
       if (Date.now() > until) break;
       await page.waitForTimeout(10_000);
     }
-    if (!progress.has(FOLLOWUP.subject)) {
+    if (!progress.has(d.targets.followup.subject)) {
       await d.go("inbox");
       await d.blur();
       await page.keyboard.press("c");
       await page.getByTestId("compose-to").waitFor();
-      await page.keyboard.type(FOLLOWUP.to);
+      await page.keyboard.type(d.targets.followup.to);
       await page.getByTestId("recipient-suggestion").first().click();
       await page.getByTestId("recipient-chip").first().waitFor();
-      await page.getByTestId("compose-subject").fill(FOLLOWUP.subject);
+      await page.getByTestId("compose-subject").fill(d.targets.followup.subject);
       await page.getByTestId("compose-body").click();
-      await page.keyboard.type(FOLLOWUP.body);
+      await page.keyboard.type(d.targets.followup.body);
       await page.keyboard.press("Meta+Enter");
       await page.getByTestId("composer").waitFor({ state: "detached" });
-      progress.add(FOLLOWUP.subject);
-      d.log(`  nothing in the month's sent mail: sent "${FOLLOWUP.subject}" to ${FOLLOWUP.to}`);
+      progress.add(d.targets.followup.subject);
+      d.log(`  nothing in the month's sent mail: sent "${d.targets.followup.subject}" to ${d.targets.followup.to}`);
     }
     await d.blur();
     await page.keyboard.press("g");
     await page.keyboard.press("t");
-    const sent = d.rows.filter({ hasText: FOLLOWUP.subject }).first();
+    const sent = d.rows.filter({ hasText: d.targets.followup.subject }).first();
     await sent.waitFor({ timeout: 30_000 });
     await sent.click();
     await page.getByTestId("reader-subject").waitFor();
     if (!(await shows(page.getByTestId("followup-line"), JOB_MS))) throw new Error("no follow-up line on the sent message in 5 minutes");
-    d.log(`  the follow-up line is on "${FOLLOWUP.subject}"`);
+    d.log(`  the follow-up line is on "${d.targets.followup.subject}"`);
   },
 
   /** Four questions, one with a follow-up: Ask's history (⇧⌘K) has four conversations. */
@@ -382,7 +399,7 @@ const STEPS = {
       return turns.length >= n && ["answered", "partial", "not_found", "stopped", "failed"].includes(turns[turns.length - 1].getAttribute("data-status") ?? "");
     }, min, { timeout: MODEL_MS });
     const missing = [];
-    for (const { q, followUp } of ASK_QUESTIONS) {
+    for (const { q, followUp, facts = [] } of d.targets.ask) {
       // asked on an earlier launch whose step didn't finish: in the history already
       if (progress.has(q)) continue;
       await d.go("inbox");
@@ -392,6 +409,17 @@ const STEPS = {
       await page.keyboard.press("Enter");
       await finished(1);
       const statuses = [await page.locator("[data-testid=ask-turn]").last().getAttribute("data-status")];
+      // plan 292: a planted question's answer must say what the mail says; one that found nothing, or not that, is a miss
+      if (facts.length) {
+        const said = (await page.locator("[data-testid=ask-turn]").last().innerText()).toLowerCase();
+        const unsaid = facts.filter((f) => !said.includes(f.toLowerCase()));
+        if (statuses[0] !== "answered" || unsaid.length) {
+          d.log(`  "${q}": ${statuses[0]}${unsaid.length ? `, without ${unsaid.map((f) => `"${f}"`).join(", ")}` : ""}`);
+          missing.push(q);
+          await d.escapeAll();
+          continue;
+        }
+      }
       if (followUp && askFinished(statuses)) {
         await page.getByTestId("ask-follow-up").fill(followUp);
         await page.getByTestId("ask-follow-up").press("Enter");
@@ -410,18 +438,18 @@ const STEPS = {
   /** Filters → Create with AI → saved, for future mail only: the Inbox stays as it is. */
   async rule(d, progress) {
     const { page } = d;
-    if (progress.has(RULE_REQUEST)) return d.log("  saved on an earlier launch");
+    if (progress.has(d.targets.ruleRequest)) return d.log("  saved on an earlier launch");
     await d.go("inbox");
     await page.getByTestId("open-filters").click();
     // the demo mailbox has no rule made with AI: one there is ours, saved by a launch that stopped before recording
     // it, and kept rather than made twice
     const before = aiRules(d.profile);
     if (before.length) {
-      progress.add(RULE_REQUEST);
+      progress.add(d.targets.ruleRequest);
       d.log(`  already saved: ${before.join(", ")}`);
       return d.escapeAll();
     }
-    await page.getByTestId("ai-prompt").fill(RULE_REQUEST);
+    await page.getByTestId("ai-prompt").fill(d.targets.ruleRequest);
     await page.getByTestId("ai-generate").click();
     await page.getByTestId("ai-explanation").first().waitFor({ timeout: MODEL_MS });
     await page.locator("[data-testid=filter-preview][data-ready]").first().waitFor({ timeout: MODEL_MS }).catch(() => {});
@@ -429,8 +457,8 @@ const STEPS = {
     await page.getByTestId("filter-save").click();
     // saved is a rule made with AI in the store: only then is it recorded
     for (const until = Date.now() + 15_000; !aiRules(d.profile).length; await page.waitForTimeout(250)) if (Date.now() > until) throw new Error("the rule wasn't saved");
-    progress.add(RULE_REQUEST);
-    d.log(`  "${RULE_REQUEST}" → ${name || "a rule"}`);
+    progress.add(d.targets.ruleRequest);
+    d.log(`  "${d.targets.ruleRequest}" → ${name || "a rule"}`);
     await d.escapeAll();
   },
 
@@ -474,7 +502,7 @@ const STEPS = {
      * finds that item put off and doesn't put off someone else.
      */
     // never a conversation an earlier step showed off (a summary, Reply ready, what's new): those stay in What matters
-    const shown = [...(loadMarker(d.profile).progress?.conversations ?? []), ...DEMO_SINCE_SUBJECTS];
+    const shown = [...(loadMarker(d.profile).progress?.conversations ?? []), ...d.targets.since];
     const tryPerson = async (key) => {
       await list.locator(`[data-testid=person-row][data-key="${key}"]`).click();
       const items = page.getByTestId("person-page").getByTestId("person-item");
@@ -545,7 +573,7 @@ const STEPS = {
  * `closed` when you closed its window or quit it: a stop, as Ctrl-C is, so nothing opens after it and the step it was on
  * isn't counted as a try. `env(now)` is demoAiEnv's with `background: true`, the clock starting at `now`.
  */
-export async function prepare({ electronBin, main, env, profile, steps, onPid = () => {}, onSave = () => {}, log = console.log }) {
+export async function prepare({ electronBin, main, env, profile, steps, targets = GENERATED_TARGETS, onPid = () => {}, onSave = () => {}, log = console.log }) {
   const marker = loadMarker(profile);
   // (failures stay: a launch where every step failed runs them all again, and --fresh starts with no marker at all)
   if (steps.length === DEMO_AI_STEPS.length) Object.assign(marker, { done: {}, progress: {}, attempts: {} });
@@ -598,6 +626,7 @@ export async function prepare({ electronBin, main, env, profile, steps, onPid = 
     if (Math.abs(windowNow - startsAt - (Date.now() - launched)) > 60_000) log(`[demo-ai] note: the window's clock reads ${new Date(windowNow).toISOString()}, not the demo's`);
     const d = driver(page, log);
     d.profile = profile;
+    d.targets = targets;
     for (const [i, step] of steps.entries()) {
       log(`[demo-ai] ${i + 1}/${steps.length} ${step} …`);
       const started = Date.now();

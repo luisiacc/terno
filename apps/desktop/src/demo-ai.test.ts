@@ -44,6 +44,9 @@ describe("plan 167: pnpm dev:demo-ai", () => {
     const window = demoAiEnv({ base, profile: "/p", keys: { ANTHROPIC_API_KEY: "a", OPENAI_API_KEY: "o" }, devUrl: "http://localhost:5199/", background: false });
     expect(window).toEqual({ PATH: "/bin", ANTHROPIC_API_KEY: "a", OPENAI_API_KEY: "o", TERNO_DEMO: "1", TERNO_USER_DATA: "/p", TERNO_DEV_URL: "http://localhost:5199/", TERNO_TEST_NOW: String(DEMO_AI_NOW), TZ: "UTC" });
     expect(new Date(DEMO_AI_NOW).toISOString()).toBe("2026-10-22T16:00:00.000Z");
+    // plan 292: the written mailbox's folder only when dev.mjs names it, never one the shell left behind
+    expect(demoAiEnv({ base: { ...base, TERNO_DEMO_CORPUS: "/stale" }, profile: "/p", keys: {}, devUrl: "http://x/", background: false }).TERNO_DEMO_CORPUS).toBeUndefined();
+    expect(demoAiEnv({ base, profile: "/p", keys: {}, devUrl: "http://x/", background: false, corpus: "/repo/packages/mock-data/demo-corpus" }).TERNO_DEMO_CORPUS).toBe("/repo/packages/mock-data/demo-corpus");
     const preparing = demoAiEnv({ base: { ...base, TERNO_TEST_LANGUAGES: "es-MX" }, profile: "/p", keys: {}, devUrl: "http://x/", background: true });
     expect(preparing.TERNO_TEST_BACKGROUND).toBe("1");
     // the preparation reads the app's English words whatever the Mac's language; your window keeps the Mac's
@@ -105,6 +108,14 @@ describe("plan 167: pnpm dev:demo-ai", () => {
     expect(oldMailboxProblem({ hasMailbox: true, edition: "demo" })).toBeNull();
     // nothing seeded yet: the launch seeds the new one
     expect(oldMailboxProblem({ hasMailbox: false, edition: null })).toBeNull();
+  });
+
+  it("plan 292: the written mailbox and the generated edition never stand in for each other", () => {
+    expect(oldMailboxProblem({ hasMailbox: true, edition: "corpus" }, "corpus")).toBeNull();
+    expect(oldMailboxProblem({ hasMailbox: true, edition: "demo" }, "corpus")).toMatch(/generated demo mailbox.*--fresh.*written one/);
+    expect(oldMailboxProblem({ hasMailbox: true, edition: "corpus" }, "demo")).toMatch(/written demo mailbox.*--fresh.*generated one/);
+    // a seed that stopped part way has no edition: refused too
+    expect(oldMailboxProblem({ hasMailbox: true, edition: null }, "corpus")).toMatch(/part way.*--fresh/);
   });
 
   it("later launches start where the preparation ended, never before 16:00", () => {

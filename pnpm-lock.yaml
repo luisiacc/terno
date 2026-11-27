@@ -711,6 +711,10 @@ importers:
       '@terno/core':
         specifier: workspace:*
         version: link:../core
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.19.2
 
   packages/richtext:
     dependencies:

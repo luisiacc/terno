@@ -4,7 +4,7 @@
  * mail data never hops through the main process.
  */
 import { dirname } from "node:path";
-import { Backend, openNodeMailbox, nodeStore, parseGoogleClients, parseOAuthClients, seedDemo, seedDemoCode, seedDemoSince, type LegacySecretReader, type SecretCipher } from "@terno/backend";
+import { Backend, demoEditionOf, openNodeMailbox, nodeStore, parseGoogleClients, parseOAuthClients, seedDemo, seedDemoCode, seedDemoSince, type LegacySecretReader, type SecretCipher } from "@terno/backend";
 import { devAiKeys } from "@terno/core";
 import { GATE_OPEN } from "@terno/core/mailbox";
 import { classifyOpenError, diskFree, mailboxBytes, mailboxSchema, migrateHeadroom, nodePlatform, removeOldBackups, SCHEMA_VERSION, SqlMailStore } from "@terno/db";
@@ -15,6 +15,7 @@ import { serveMcp } from "@terno/mcp";
 import { loopbackInsecure } from "./imap-seam";
 import type { BackendToMain, MainToBackend } from "./ipc";
 import { demoCodeWanted, demoSinceWanted, netRecorder, offsetClock } from "./test-hooks";
+import { readDemoCorpus } from "./demo-corpus";
 
 type PortMain = {
   on(event: "message", l: (e: { data: unknown }) => void): void;
@@ -209,7 +210,9 @@ async function initialize(msg: Extract<MainToBackend, { type: "init" }>, signal:
     mailbox = null;
     if (signal.aborted) return;
     send({ type: "gate", gate: GATE_OPEN });
-    if (msg.demo && (await seedDemo(backend.store, { threads: 3000, accounts: 4, edition: "demo" }))) {
+    // plan 292: the written mailbox when `dev.mjs` names it (a dev build only, main checked), else plan 289's demo edition
+    const corpus = msg.demoCorpus;
+    if (msg.demo && (await seedDemo(backend.store, corpus ? { mailbox: () => readDemoCorpus(corpus) } : { threads: 3000, accounts: 4, edition: "demo" }))) {
       if (signal.aborted) return;
       // AI off, as on a real install: the AI features show only once a real model is set up (the demo model is still
       // in the AI tab to try them)
@@ -219,7 +222,8 @@ async function initialize(msg: Extract<MainToBackend, { type: "init" }>, signal:
     // `pnpm dev:demo`: a fresh verification code every launch, to try the list's code chip (plan 72); not in smokes
     if (demoCodeWanted(msg)) await seedDemoCode(backend.store, Date.now());
     if (signal.aborted) return;
-    if (demoSinceWanted(msg)) await seedDemoSince(backend.store);
+    // plan 279's hand-written conversations belong to the generated mailbox; the written one has its own (plan 292)
+    if (demoSinceWanted(msg) && (await demoEditionOf(backend.store)) !== "corpus") await seedDemoSince(backend.store);
     if (signal.aborted) return;
     await backend.publishPolicy();
     if (signal.aborted) return;

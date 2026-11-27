@@ -1,5 +1,15 @@
-import { DEMO_DATASET, generateDataset, printFixtures, type Edition, type PrintFixtureKey } from "@terno/mock-data";
+import { DEMO_DATASET, generateDataset, printFixtures, type Edition, type MockDataset, type PrintFixtureKey } from "@terno/mock-data";
 import type { IncomingMessage, MailStore } from "@terno/store";
+
+/**
+ * Plan 292: a demo mailbox other than the generated one (the written corpus): its dataset, and the starter rule and
+ * learning example it seeds with, by sender and category name.
+ */
+export interface DemoMailbox {
+  dataset: MockDataset;
+  rule: { name: string; from: string; category: string };
+  learningSender: string;
+}
 
 export interface DemoOptions {
   threads?: number;
@@ -7,34 +17,48 @@ export interface DemoOptions {
   now?: number;
   /** plan 289: `demo` for what people look at (English, one Spanish account); the tests' fixture by default */
   edition?: Edition;
+  /** plan 292: the written mailbox instead, read only when the store is empty (a disk read and a few hundred ms) */
+  mailbox?: () => DemoMailbox;
 }
 
-/** Plan 289: set on a profile seeded with the demo edition (seeding is once per profile: an older one keeps its mailbox). */
+/**
+ * Plan 289: set on a profile seeded with the demo edition (seeding is once per profile: an older one keeps its mailbox);
+ * plan 292: "corpus" on one seeded with the written mailbox. Written after the last write, so a seed that stopped part
+ * way has none and reads as an older mailbox (`--fresh` starts over).
+ */
 export const DEMO_EDITION_KEY = "demo.edition";
+export type DemoEdition = "demo" | "corpus";
 
-/** Seeds an empty store with the deterministic demo mailbox (no-op if accounts exist). */
+/** What seeded a demo profile: null for the fixture, a seed that stopped part way, or a profile from before plan 289. */
+export const demoEditionOf = (store: MailStore) => store.settings.get<DemoEdition | null>(DEMO_EDITION_KEY, null);
+
+/** Seeds an empty store with the demo mailbox (no-op if accounts exist): the written one when given, else the generated. */
 export async function seedDemo(store: MailStore, options: DemoOptions = {}): Promise<boolean> {
   if ((await store.accounts.list()).length > 0) return false;
   const now = options.now ?? Date.UTC(2026, 9, 22, 15, 30);
   const edition = options.edition ?? "fixture";
-  const data = generateDataset({ ...DEMO_DATASET, threads: options.threads ?? DEMO_DATASET.threads, accounts: options.accounts ?? DEMO_DATASET.accounts, now, edition });
-  const seeded = await store.dev.seed(data, { now, learningSignals: true });
+  const written = options.mailbox?.();
+  const data = written?.dataset ?? generateDataset({ ...DEMO_DATASET, threads: options.threads ?? DEMO_DATASET.threads, accounts: options.accounts ?? DEMO_DATASET.accounts, now, edition });
+  const rule = written?.rule ?? { name: edition === "demo" ? "GitHub notifications → Dev" : "Notificaciones de GitHub → Desarrollo", from: "notifications@github.com", category: data.categories[4]!.name };
+  const category = data.categories.findIndex((c) => c.name === rule.category);
+  if (category < 0) throw new Error(`the demo's rule names a category it doesn't have: ${rule.category}`);
+  const seeded = await store.dev.seed(data, { now, learningSignals: true, ...(written && { learningSender: written.learningSender }) });
   for (const [i, id] of seeded.accountIds.entries()) await store.accounts.setProviderConfig(id, { demo: true, senderName: data.accounts[i]!.ownerName });
-  // only the demo's: the fixture's profiles stay as they were (a profile without it holds the fixture's mailbox)
-  if (edition === "demo") await store.settings.set(DEMO_EDITION_KEY, edition);
   await store.filters.save(
     {
-      name: edition === "demo" ? "GitHub notifications → Dev" : "Notificaciones de GitHub → Desarrollo",
+      name: rule.name,
       enabled: true,
       source: "manual",
       rule: {
         match: "all",
-        conditions: [{ field: "from", op: "equals", value: "notifications@github.com" }],
-        actions: [{ type: "addCategory", categoryId: seeded.categoryIds[4]! }],
+        conditions: [{ field: "from", op: "equals", value: rule.from }],
+        actions: [{ type: "addCategory", categoryId: seeded.categoryIds[category]! }],
       },
     },
     now,
   );
+  // only the demo's: the fixture's profiles stay as they were (a profile without it holds the fixture's mailbox)
+  if (written || edition === "demo") await store.settings.set(DEMO_EDITION_KEY, written ? "corpus" : "demo");
   return true;
 }
 

@@ -39,6 +39,9 @@ const demo = process.argv.includes("--demo");
 const seeded = process.argv.includes("--seeded");
 const cleandb = process.argv.includes("--cleandb");
 const demoAi = process.argv.includes("--demo-ai");
+/** plan 292: the written demo mailbox, once it's complete (its demo.json is written last); main reads it in dev builds only */
+const corpusDir = join(repo, "packages/mock-data/demo-corpus");
+const demoCorpus = existsSync(join(corpusDir, "demo.json")) ? corpusDir : null;
 
 /**
  * The dev profile (TERNO_USER_DATA wins, as is), with its legacy files renamed
@@ -121,7 +124,8 @@ if (demoAi) {
   const profile = candidate;
   if (args.fresh) cleanProfile(profile);
   else {
-    const old = oldMailboxProblem(demoMailboxOf(profile));
+    // plan 292: the edition this checkout seeds: the written mailbox once it's here, else plan 289's
+    const old = oldMailboxProblem(demoMailboxOf(profile), demoCorpus ? "corpus" : "demo");
     if (old) { console.error(`[demo-ai] ${profile}: ${old}`); process.exit(1); }
   }
   const marker = readMarker(read(join(profile, MARKER_FILE)));
@@ -211,19 +215,22 @@ for (const name of ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "JEV_API_KEY"]) if (d
 if (demo) {
   env.TERNO_DEMO = "1";
   env.TERNO_USER_DATA = devProfile("Terno-dev-demo");
+  if (demoCorpus) env.TERNO_DEMO_CORPUS = demoCorpus;
 }
 if (demoAiPlan) {
   const { profile, keys, steps, read } = demoAiPlan;
   if (steps.length) {
     // plan 167: the real AI jobs once, behind your windows, then the window you use on the same profile
-    const { prepare, readSpend } = await import("./demo-ai-prepare.mjs");
+    const { prepare, readSpend, targetsOf } = await import("./demo-ai-prepare.mjs");
     const started = Date.now();
     const { failed, closed } = await prepare({
       electronBin,
       main: join(root, "dist/main.cjs"),
-      env: (now) => demoAiEnv({ base: process.env, profile, keys, devUrl: url, background: true, now }),
+      env: (now) => demoAiEnv({ base: process.env, profile, keys, devUrl: url, background: true, now, corpus: demoCorpus }),
       profile,
       steps,
+      // plan 292: the written mailbox names its own conversations, questions and rule
+      ...(demoCorpus && { targets: targetsOf(JSON.parse(readFileSync(join(demoCorpus, "demo.json"), "utf8"))) }),
       // Ctrl-C while it prepares stops that Electron too, by its PID
       onPid: (pid) => (preparing = pid),
       onSave: (save) => (preparingSave = save),
@@ -242,7 +249,7 @@ if (demoAiPlan) {
     if (again.length) console.log(`[demo-ai] ${again.join(", ")} didn't finish: ${again.length > 1 ? "they run" : "it runs"} again on the next launch (a screenshot of each is in the profile)`);
     if (failed.length > again.length) console.log(`[demo-ai] ${failed.filter((s) => after.includes(s)).join(", ")} set aside: no launch runs it again until --fresh`);
   }
-  env = demoAiEnv({ base: process.env, profile, keys, devUrl: url, background: false, now: demoAiClock(readMarker(read(join(profile, MARKER_FILE)))) });
+  env = demoAiEnv({ base: process.env, profile, keys, devUrl: url, background: false, now: demoAiClock(readMarker(read(join(profile, MARKER_FILE)))), corpus: demoCorpus });
 }
 console.log(`\n[dev] launching Electron → ${url}${demoAiPlan ? ` (the AI demo, ${new Date(Number(env.TERNO_TEST_NOW)).toISOString().slice(0, 16).replace("T", " ")} UTC; docs/AI-DEMO.md)` : demo ? " (demo profile)" : ""}\n`);
 const args = [join(root, "dist/main.cjs")];

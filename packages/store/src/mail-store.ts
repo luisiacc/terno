@@ -1107,6 +1107,6 @@ export interface MailStore {
   /** development hosts and tests */
   dev: {
     /** loads a mock dataset into an empty store (deterministic) */
-    seed(data: unknown, options: { now?: number; learningSignals?: boolean; categorizeRate?: number }): Promise<{ accountIds: number[]; categoryIds: number[]; messageCount: number; threadCount: number }>;
+    seed(data: unknown, options: { now?: number; learningSignals?: boolean; /** plan 292: whose mail the learning example archived (default the fixture's Morning Brew) */ learningSender?: string; categorizeRate?: number }): Promise<{ accountIds: number[]; categoryIds: number[]; messageCount: number; threadCount: number }>;
   };
 }

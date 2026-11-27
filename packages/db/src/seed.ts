@@ -10,6 +10,8 @@ export interface SeedOptions {
   categorizeRate?: number;
   /** add explicit archive actions so a learned-filter proposal exists */
   learningSignals?: boolean;
+  /** plan 292: whose mail those archives are (default the fixture's Morning Brew) */
+  learningSender?: string;
   now?: number;
 }
 
@@ -62,7 +64,8 @@ export function seedDataset(db: Db, data: MockDataset, options: SeedOptions = {}
 
   if (options.learningSignals) {
     const brew = db.all<{ thread_id: number }>(
-      "SELECT DISTINCT thread_id FROM messages WHERE from_email = 'crew@morningbrew.com' ORDER BY date DESC LIMIT 8",
+      "SELECT DISTINCT thread_id FROM messages WHERE from_email = ? ORDER BY date DESC LIMIT 8",
+      options.learningSender ?? "crew@morningbrew.com",
     );
     db.tx(() => recordUserActions(db, brew.map((r) => r.thread_id), "archive", now - 86_400_000));
   }

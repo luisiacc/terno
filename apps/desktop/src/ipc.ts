@@ -2,7 +2,7 @@ import type { MailboxGate } from "@terno/core/mailbox";
 
 /** Messages between main and the backend utility process (parent port). */
 export type MainToBackend =
-  | { type: "init"; dbPath: string; demo: boolean; dev: boolean; /** plan 146: a local build, whose environment Dev mode may read */ devMode: boolean; socketPath: string; tokenPath: string; version: string; diag: { session: string; build: string; channel: "production" | "dev" | "test" | "demo" }; testSmtpPort?: number; testImapInsecure?: boolean; /** plan 161, the demo mailbox only (test-hooks.ts) */ testNow?: number; testNetLog?: string; online: boolean; /** plan 176: a Terno window has focus now */ focused: boolean }
+  | { type: "init"; dbPath: string; demo: boolean; dev: boolean; /** plan 146: a local build, whose environment Dev mode may read */ devMode: boolean; socketPath: string; tokenPath: string; version: string; diag: { session: string; build: string; channel: "production" | "dev" | "test" | "demo" }; testSmtpPort?: number; testImapInsecure?: boolean; /** plan 161, the demo mailbox only (test-hooks.ts) */ testNow?: number; testNetLog?: string; /** plan 292: the written demo mailbox's folder (a dev build's demo only, demo-corpus.ts) */ demoCorpus?: string; online: boolean; /** plan 176: a Terno window has focus now */ focused: boolean }
   | { type: "port"; clientId: string }
   /** plan 20: the network changed (network-watch.ts), or the Mac woke up */
   | { type: "network"; online: boolean; reason: "network" | "wake" | "online" | "offline" }

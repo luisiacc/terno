@@ -49,6 +49,7 @@ import { registerMboxExport } from "./mbox-export";
 import { registerAttachmentOpen } from "./attachment-open";
 import { isTrustedSender, testImapInsecure, testPdfDir, testSmtpPort } from "./print-policy";
 import { testClock, testDevAi, testNetLog } from "./test-hooks";
+import { takeDemoCorpus } from "./demo-corpus";
 import { clockArgs } from "./window-clock";
 import { menuTemplate } from "./menu";
 import { readLanguage, switchLanguage, writeLanguage } from "./locale";
@@ -79,6 +80,8 @@ const isDev = devModeOf({ devUrl: process.env.TERNO_DEV_URL, packaged });
 /** plan 283: DevTools exist only in an unpackaged run; every window takes this */
 const devTools = devToolsAllowed(packaged);
 const demo = process.env.TERNO_DEMO === "1" || process.argv.includes("--demo");
+/** plan 292: the written demo mailbox's folder, a dev build's demo only; out of the environment the backend inherits */
+const demoCorpus = takeDemoCorpus(process.env, demo, packaged);
 // plan 146's keys, out of main's environment before anything is spawned: only the backend gets them, in Dev mode
 const devAiEnv = takeDevAiEnv(process.env);
 /** plan 146: a local build, whose keys Dev mode may read; plan 161: the rating's frozen build too (test-hooks.ts) */
@@ -371,6 +374,7 @@ function startBackend() {
     testImapInsecure: testImapInsecure(process.env, demo) || undefined,
     testNow: clockShift === null ? undefined : Date.now() + clockShift,
     testNetLog: testNetLog(process.env, demo) ?? undefined,
+    demoCorpus: demoCorpus ?? undefined,
     // a restarted backend starts from what the network is now
     online: net.isOnline(),
     // a restarted backend starts from whether a window has focus now; later changes are told as they happen

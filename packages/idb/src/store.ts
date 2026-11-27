@@ -3045,7 +3045,7 @@ export class IdbMailStore implements MailStore {
         }
         if (options.learningSignals) {
           await this.command(() => {
-            const brew = [...new Set(T(this.c, "messages").by("from", "crew@morningbrew.com").sort((x, y) => y.date - x.date || y.id - x.id).map((m) => m.thread_id as number))].slice(0, 8);
+            const brew = [...new Set(T(this.c, "messages").by("from", options.learningSender ?? "crew@morningbrew.com").sort((x, y) => y.date - x.date || y.id - x.id).map((m) => m.thread_id as number))].slice(0, 8);
             recordUserActions(this.c, brew, "archive", now - 86_400_000);
           });
         }
