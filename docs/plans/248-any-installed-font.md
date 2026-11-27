@@ -38,10 +38,10 @@ The Font row's control becomes a font field: a text field showing the font in us
 
 - **Opening** (a click, focus by Tab then ↓, or typing) lists every font: the five Terno ones first, then the installed families A–Z (`installedFamilies()`, read once when the field is first opened, and kept; nothing runs until then). Each row's name is drawn in its own font; Terno's rows carry a quiet "Built in", the style's own "Style's font". An installed family with a Terno font's name (Inter, Geist…) shows once, as Terno's.
 - **Typing** filters as you type, ignoring case and accents, names that start with it first. The first match is highlighted.
-- **Previewing:** whatever is highlighted, by the arrows, the pointer or typing, is painted on the whole app at once, Settings included, without being saved.
+- **Previewing:** ~~whatever is highlighted is painted on the whole app at once~~ (removed 2026-11-26, see the owner's changes below): each row's name is drawn in its own face; the app changes only on a choice.
 - **Choosing** (Enter or a click) saves it for the style in use and closes the list; the field shows its name. **Esc** or leaving the field without choosing puts the saved font back.
 - **Typing a name the list doesn't have:** with the list, "No installed font called “X”." Without one (a browser that can't list fonts, or a refused prompt), the list offers "Use “X”", previewed like any other: what you see is what you get.
-- **Back to the style's font:** a quiet ghost button beside the field, "Use Figtree" (the style's own font by name), shown only while the style has another font. It sits to the field's left, so the field never moves. Picking the style's own font in the list does the same.
+- **Back to the style's font:** a quiet ghost button, "Use Figtree" (the style's own font by name), shown only while the style has another font. It sits under the field (2026-11-26; it was to its left), its icon on the field's text line. Picking the style's own font in the list does the same.
 - The hint: "For Lumen. Pick or type any installed font. Each style keeps its own."
 
 The list is virtualized (TanStack, through Base UI's `virtualized`): ~300 families draw only the rows in view, so only their fonts are read. A unit test asserts the rendered row count.
@@ -107,3 +107,11 @@ One round, five findings, all fixed, each with an e2e regression that fails with
 5. **Leaving Appearance while a choice waited for its faces painted the old font for a moment.** The field's cleanup now ends only a look that wasn't chosen; a chosen one is the choice's, which paints it as it commits.
 
 Found while fixing #4: Base UI mounts the popup after React's commit, so the virtualizer could miss its scroll box and draw no rows. The scroll box is now state (a callback ref), so its arrival draws the rows and scrolls to the font in use.
+
+## The owner's changes (2026-11-26)
+
+> 1. only preview the font when its actually selected, its currently changing the font to preview it when i hover over each font in the dropdown, its very annoying.
+> 2. when another font is used from the original and we show 'Use X' , lets have that button below the select component instead of the left
+
+1. **No look on highlight.** The app's font changes only on Enter or a click; arrows, the pointer and typing only move the highlight, and each row still draws its name in its own face. `previewStyleFont` and everything that kept a look alive (in `applyAppearance`, `adoptSettings`, `setStyleFont`, the field's cleanup) are gone, with their unit tests; Codex critique #4–#6 and code review #5 were about the look and no longer apply. The e2e now checks a highlight leaves `<html>` alone and a choice paints it.
+2. **"Use Figtree" sits under the field**, its left edge on the field's (so its icon is on the field's text line), which also gives the row's hint its width back. The e2e checks the place.

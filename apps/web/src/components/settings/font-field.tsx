@@ -7,7 +7,7 @@ import { Undo2 } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { previewStyleFont, setStyleFont, styleFont } from "~/lib/appearance";
+import { setStyleFont, styleFont } from "~/lib/appearance";
 import { fontItem, fontItems, fontName, matchFonts, type FontItem } from "~/lib/fonts";
 import { installedFamilies } from "~/lib/local-fonts";
 import type { RowA11y } from "./parts";
@@ -16,9 +16,9 @@ const ROW_H = 32;
 
 /**
  * Settings → Appearance → Font (plan 248): the font the style in use draws in. A field showing it; opened, every font
- * (Terno's, then the computer's), each in its own face. Typing finds; what's highlighted shows on the whole app at once,
- * unsaved; Enter or a click keeps it for this style; Esc or leaving puts the saved one back. Beside it, while the style
- * has another font, a button back to the style's own.
+ * (Terno's, then the computer's), each in its own face. Typing finds; Enter or a click keeps it for this style, and only
+ * then does the app change (the owner found a look on every highlight jumpy); Esc or leaving keeps the font in use. Under
+ * it, while the style has another font, a button back to the style's own.
  */
 export function FontField({ settings, a }: { settings: AppSettings; a: RowA11y }) {
   const design = designById(settings.design);
@@ -31,8 +31,6 @@ export function FontField({ settings, a }: { settings: AppSettings; a: RowA11y }
   const [query, setQuery] = useState(current.name);
   /** the field has been typed in since it opened: only then does it filter */
   const [typed, setTyped] = useState(false);
-  /** a choice was made: closing keeps what it shows */
-  const picked = useRef(false);
   /** open now (a highlight can come before React has the open state) */
   const isOpen = useRef(false);
   /** the list's scroll box, as state: Base UI mounts the popup after this renders, and its arrival must draw the rows */
@@ -45,20 +43,11 @@ export function FontField({ settings, a }: { settings: AppSettings; a: RowA11y }
   const shown = useMemo(() => {
     if (!typed) return all;
     const found = matchFonts(all, query);
-    // no list to look in (a browser without one, or a refusal): the typed name itself, previewed like any other
+    // no list to look in (a browser without one, or a refusal): the typed name itself, drawn in its face like any other
     const name = query.trim();
     if (!families && isLocalFamily(name) && !found.some((f) => f.name.toLowerCase() === name.toLowerCase())) found.push({ font: localFont(name), name, kind: "typed" });
     return found;
   }, [all, families, query, typed]);
-
-  // Settings closing (or the tab changing) with a look still on puts the saved font back (Codex critique #6); a font
-  // just chosen is the choice's now, which paints it as it commits (Codex code review #5)
-  useEffect(
-    () => () => {
-      if (!picked.current) previewStyleFont(undefined);
-    },
-    [],
-  );
 
   /** the computer's families, read once (the field's focus starts it, so a click finds them there) */
   const load = (): Promise<readonly string[] | null> =>
@@ -84,10 +73,8 @@ export function FontField({ settings, a }: { settings: AppSettings; a: RowA11y }
     if (!next) {
       isOpen.current = false;
       setOpen(false);
-      if (!picked.current) previewStyleFont(undefined);
       return;
     }
-    picked.current = false;
     // opened by typing in the closed field: what's typed is the query (Codex code review #3)
     const byTyping = details.reason === "input-change";
     if (!byTyping) {
@@ -107,13 +94,9 @@ export function FontField({ settings, a }: { settings: AppSettings; a: RowA11y }
     });
   };
 
+  // the field first, the way back under it (owner, 2026-11-26), its icon on the field's text line
   return (
-    <div className="flex items-center gap-1.5">
-      {chosen && (
-        <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => void setStyleFont(design.id, null)} data-testid="font-reset">
-          <Undo2 aria-hidden /> {t("settings.appearance.font.reset", { font: fontName(design.fonts.typeface as FontId) })}
-        </Button>
-      )}
+    <div className="flex w-56 flex-col items-start gap-1">
       <ComboboxPicker<FontItem>
         items={all}
         filteredItems={shown}
@@ -136,18 +119,14 @@ export function FontField({ settings, a }: { settings: AppSettings; a: RowA11y }
             if (details.reason === "escape-key") details.allowPropagation();
             return;
           }
-          picked.current = true;
           void setStyleFont(design.id, item.font);
           // the field keeps focus with the chosen name selected: typing again starts a new search
           requestAnimationFrame(() => input.current?.select());
         }}
         onItemHighlighted={(item, details) => {
-          // a highlight change as the list closes (after a choice, or Esc) is no look of the user's
-          if (!isOpen.current || picked.current) return;
-          // what's highlighted shows on the whole app, unsaved; nothing highlighted shows the saved font
-          previewStyleFont(item ? item.font : undefined);
-          // the keyboard's and typing's highlight are brought into view (Enter clicks a drawn row: Codex code review #1)
-          if (item && details.reason !== "pointer") virtualizer.scrollToIndex(details.index);
+          // the keyboard's and typing's highlight are brought into view (Enter clicks a drawn row: Codex code review #1);
+          // a highlight change as the list closes has no list to scroll
+          if (item && isOpen.current && details.reason !== "pointer") virtualizer.scrollToIndex(details.index);
         }}
       >
         <ComboboxPickerInput ref={input} {...a} onFocus={() => void load()} className="w-56" spellCheck={false} autoComplete="off" data-testid="font-field" />
@@ -168,6 +147,11 @@ export function FontField({ settings, a }: { settings: AppSettings; a: RowA11y }
           </div>
         </ComboboxPickerPopup>
       </ComboboxPicker>
+      {chosen && (
+        <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => void setStyleFont(design.id, null)} data-testid="font-reset">
+          <Undo2 aria-hidden /> {t("settings.appearance.font.reset", { font: fontName(design.fonts.typeface as FontId) })}
+        </Button>
+      )}
     </div>
   );
 }

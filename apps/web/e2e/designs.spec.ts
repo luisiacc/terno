@@ -425,7 +425,7 @@ test.describe("plans 245 and 248: each style keeps the font it was given, any fo
   const FAMILIES = ["Georgia", "Menlo", "Times New Roman", "Avenir Next", ...Array.from({ length: 400 }, (_, i) => `Fake Family ${String(i).padStart(3, "0")}`)];
   const stub = (page: Page) => page.addInitScript((f) => Object.assign(window, { queryLocalFonts: async () => f.map((family) => ({ family })) }), FAMILIES);
 
-  test("from Settings: open, look, put back, choose, the style's font back; kept per style and painted before React", async ({ app: page, server }) => {
+  test("from Settings: open, look through, choose, the style's font back; kept per style and painted before React", async ({ app: page, server }) => {
     const html = page.locator("html");
     const family = () => page.getByTestId("list-title").evaluate((el) => getComputedStyle(el).fontFamily);
     const field = page.getByTestId("font-field");
@@ -442,7 +442,7 @@ test.describe("plans 245 and 248: each style keeps the font it was given, any fo
       await expect(field).toHaveValue("Figtree");
       await expect(page.getByTestId("font-reset")).toHaveCount(0);
     });
-    await scenario("opened, it lists every font, few of them drawn, on Lumen's own; the arrows look at each on the whole app; Esc puts Figtree back", async () => {
+    await scenario("opened, it lists every font, few of them drawn, on Lumen's own; the arrows change nothing until a choice; Esc keeps Figtree", async () => {
       await field.focus();
       await page.keyboard.press("ArrowDown");
       const list = page.getByTestId("font-list");
@@ -452,16 +452,18 @@ test.describe("plans 245 and 248: each style keeps the font it was given, any fo
       await expect(page.locator('[data-font-option="figtree"]')).toHaveAttribute("data-highlighted", "");
       await page.keyboard.press("ArrowDown");
       await expect(page.locator('[data-font-option="instrument-sans"]')).toHaveAttribute("data-highlighted", "");
-      await expect(html).toHaveAttribute("data-font", "instrument-sans");
       await page.keyboard.press("ArrowDown");
-      await expect(html).toHaveAttribute("data-font", "local");
-      expect(await html.evaluate((el) => el.style.getPropertyValue("--local-font"))).toBe('"Avenir Next"');
+      await expect(page.locator('[data-font-option="local:Avenir Next"]')).toHaveAttribute("data-highlighted", "");
+      // a highlight is no choice: the app keeps its font (owner, 2026-11-26)
+      await expect(html).not.toHaveAttribute("data-font");
+      expect(await family()).toMatch(/^"Figtree Variable"/);
       // far down the list, past what was drawn: the highlighted row is drawn and is the field's active option
       for (let i = 0; i < 40; i++) await page.keyboard.press("ArrowDown");
       const active = await field.getAttribute("aria-activedescendant");
       expect(active).toBeTruthy();
       await expect(page.locator(`[id="${active}"]`)).toBeInViewport();
-      // nothing is saved while looking
+      // nothing is saved or painted while looking
+      await expect(html).not.toHaveAttribute("data-font");
       expect(await saved()).toEqual({});
       await page.keyboard.press("Escape");
       await expect(list).toBeHidden();
@@ -476,9 +478,10 @@ test.describe("plans 245 and 248: each style keeps the font it was given, any fo
       await expect(field).toBeFocused();
       await page.keyboard.type("GEÓR");
       await expect(page.getByTestId("font-option")).toHaveCount(1);
-      await expect(html).toHaveAttribute("data-font", "local");
+      await expect(html).not.toHaveAttribute("data-font");
       await page.keyboard.press("Enter");
       await expect(field).toHaveValue("Georgia");
+      await expect(html).toHaveAttribute("data-font", "local");
       await expect.poll(saved).toEqual({ lumen: "local:Georgia" });
       expect(await family()).toMatch(/^"?Georgia"?, "Figtree Variable"/);
       await expect(page.getByTestId("design-card-lumen").locator("[data-design]")).toHaveAttribute("data-font", "local");
@@ -508,11 +511,16 @@ test.describe("plans 245 and 248: each style keeps the font it was given, any fo
       expect(await page.evaluate(() => (window as unknown as { __early: string[] }).__early)).toEqual(["local", '"Georgia"']);
       expect(await family()).toMatch(/^"?Georgia"?,/);
     });
-    await scenario("the button beside the field brings the style's font back", async () => {
+    await scenario("the button under the field brings the style's font back", async () => {
       await page.getByTestId("open-settings").click();
       await page.getByTestId("tab-appearance").click();
-      await expect(page.getByTestId("font-reset")).toHaveText(en["settings.appearance.font.reset"].replace("{font}", "Figtree"));
-      await page.getByTestId("font-reset").click();
+      const reset = page.getByTestId("font-reset");
+      await expect(reset).toHaveText(en["settings.appearance.font.reset"].replace("{font}", "Figtree"));
+      // under the field, its left edge on the field's
+      const [f, r] = await Promise.all([field.boundingBox(), reset.boundingBox()]);
+      expect(r!.y).toBeGreaterThanOrEqual(f!.y + f!.height);
+      expect(Math.abs(r!.x - f!.x)).toBeLessThan(1);
+      await reset.click();
       await expect(html).not.toHaveAttribute("data-font");
       await expect(field).toHaveValue("Figtree");
       await expect(page.getByTestId("font-reset")).toHaveCount(0);
@@ -566,7 +574,7 @@ test.describe("plans 245 and 248: each style keeps the font it was given, any fo
       await expect(page.getByTestId("settings-dialog")).toBeHidden();
       expect(await saved()).toEqual({ lumen: "local:Fake Family 000" });
     });
-    await scenario("#5: leaving Appearance while a choice waits for its faces keeps the choice on screen", async () => {
+    await scenario("#5: leaving Appearance while a choice waits for its faces still lands the choice", async () => {
       let arrive!: () => void;
       const held = new Promise<void>((r) => (arrive = r));
       await page.route(/inter.*\.woff2$/, async (route) => {
@@ -577,11 +585,9 @@ test.describe("plans 245 and 248: each style keeps the font it was given, any fo
       await page.getByTestId("tab-appearance").click();
       await field.click();
       await page.keyboard.type("Inter");
-      await expect(html).toHaveAttribute("data-font", "inter");
+      await expect(page.locator('[data-font-option="inter"]')).toHaveAttribute("data-highlighted", "");
       await page.keyboard.press("Enter");
       await page.getByTestId("tab-general").click();
-      // the field is gone and Inter is still waiting: what was chosen stays, never the font before it
-      expect(await html.getAttribute("data-font")).toBe("inter");
       arrive();
       await expect.poll(saved).toEqual({ lumen: "inter" });
       await expect(html).toHaveAttribute("data-font", "inter");
@@ -589,7 +595,7 @@ test.describe("plans 245 and 248: each style keeps the font it was given, any fo
     });
   });
 
-  test("a browser that can't list the computer's fonts takes a typed name, shown before it's kept", async ({ app: page, server }) => {
+  test("a browser that can't list the computer's fonts takes a typed name", async ({ app: page, server }) => {
     const html = page.locator("html");
     const field = page.getByTestId("font-field");
     await server.backend.server.invoke("settings.update", { design: "lumen" }, ctx);
@@ -603,9 +609,10 @@ test.describe("plans 245 and 248: each style keeps the font it was given, any fo
     await expect(use).toHaveCount(1);
     await expect(use).toContainText(en["settings.appearance.font.use"].replace("{name}", "Menlo"));
     await expect(use).toContainText(en["settings.appearance.font.ifInstalled"]);
-    await expect(html).toHaveAttribute("data-font", "local");
+    await expect(html).not.toHaveAttribute("data-font");
     await page.keyboard.press("Enter");
     await expect(field).toHaveValue("Menlo");
+    await expect(html).toHaveAttribute("data-font", "local");
     await expect.poll(async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).settings.designFonts).toEqual({ lumen: "local:Menlo" });
   });
 });

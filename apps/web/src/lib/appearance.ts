@@ -112,29 +112,6 @@ function paintFont(design: DesignDefinition, font: StyleFont | null): void {
 }
 
 /**
- * Plan 248: a font shown on the whole app while the user looks through the list, never saved or cached. Only the style
- * it was picked in shows it; an apply meanwhile (an unrelated change) keeps showing it.
- */
-let preview: { design: DesignId; font: StyleFont | null } | null = null;
-
-/**
- * Shows a font for the style in use without saving it (null: its own); undefined puts the saved one back. Text reflows
- * as on a real change, so the list's and the reader's places are kept the same way (Codex critique #4).
- */
-export function previewStyleFont(font: StyleFont | null | undefined): void {
-  const settings = getApp().settings;
-  if (!settings) return;
-  const design = designById(settings.design);
-  if (font === undefined && !preview) return;
-  preview = font === undefined ? null : { design: design.id, font: ownOrChosen(font, design) };
-  const next = preview ? preview.font : styleFont(settings, design);
-  if (paintedFont() === next) return;
-  const restore = captureDesignAnchors();
-  paintFont(design, next);
-  restore();
-}
-
-/**
  * Waits (at most `capMs`) for the faces these settings draw in when they aren't what's painted: a launch cache that's
  * behind (another window, an import) would otherwise paint the first frame in a fallback font (Codex critique #5).
  */
@@ -177,17 +154,14 @@ export function applyAppearance(a: Appearance): void {
   const custom = theme.id.startsWith(CUSTOM_PREFIX);
   const design = designById(a.design);
   const font = styleFont(a, design);
-  // what's on screen: a preview while one is on (plan 248); another style ends it (Codex critique #6)
-  if (preview && preview.design !== design.id) preview = null;
-  const shown = preview ? preview.font : font;
   const layout: Layout = a.layout ?? "split";
   const density = a.density ?? "comfortable";
   const previewLines = a.previewLines ?? 1;
   // the design may keep its sidebar opaque (Atelier's and Lumen's paper) whatever the palette allows
   const vibrancy = sidebarVibrancy(isMacDesktop(), theme.vibrancy && design.vibrancy, matchMedia(REDUCED_TRANSPARENCY).matches);
-  const key = JSON.stringify([mode, design.id, shown, theme.id, custom ? theme.tokens : null, ms, reduced, vibrancy, layout, density, previewLines]);
+  const key = JSON.stringify([mode, design.id, font, theme.id, custom ? theme.tokens : null, ms, reduced, vibrancy, layout, density, previewLines]);
   // plan 245: a font change reflows text like a design change, and keeps the same anchors
-  const designChanged = useAppearance.getState().design !== design.id || html.dataset.design !== design.id || useAppearance.getState().font !== font || paintedFont() !== shown;
+  const designChanged = useAppearance.getState().design !== design.id || html.dataset.design !== design.id || useAppearance.getState().font !== font || paintedFont() !== font;
   // a layout switch (plan 24) changes the list's width and row heights: the same capture and restore as a design switch
   const layoutChanged = useAppearance.getState().layout !== layout || html.dataset.layout !== layout;
   // plan 187: so do density and the preview's lines (the first row on screen and the open one stay put)
@@ -199,7 +173,7 @@ export function applyAppearance(a: Appearance): void {
     html.setAttribute("data-theme-switching", "");
     // CSS first, so the structure React commits below is measured with its own tokens
     html.dataset.design = design.id;
-    paintFont(design, shown);
+    paintFont(design, font);
     html.dataset.layout = layout;
     html.classList.toggle("dark", mode === "dark");
     html.dataset.theme = baseId(theme, a);
@@ -221,9 +195,6 @@ export function applyAppearance(a: Appearance): void {
     unswitch = requestAnimationFrame(() => {
       unswitch = requestAnimationFrame(() => html.removeAttribute("data-theme-switching"));
     });
-  } else if (paintedFont() !== shown) {
-    // a look painted outside this (plan 248) that has since ended: the font alone goes back
-    paintFont(design, shown);
   }
 
   // after the DOM: listeners (the mail iframe) read the painted colors
@@ -337,8 +308,6 @@ export async function launchSettings(snapshot: AppSettings, capMs: number): Prom
 
 /** Settings changed outside this window's edits (an import, a storage switch): stored, reconciled and painted. */
 export function adoptSettings(settings: AppSettings): void {
-  // settings from elsewhere (an import, a storage switch) end a preview: it was a look at the old ones (Codex critique #6)
-  preview = null;
   show(reconcileSettings(settings));
 }
 
@@ -379,9 +348,6 @@ export async function setStyleFont(design: DesignId, font: StyleFont | null): Pr
   const chosen = ownOrChosen(font, own);
   if (design === getApp().settings?.design) await loadDesignFaces(withFont(own, chosen), DESIGN_FONT_WAIT_MS);
   if (fontSeq.get(design) !== seq) return null;
-  // the choice paints from here on (plan 248): a preview of it ends as it commits, with no frame of the old font between.
-  // A preview of something else (the list opened again meanwhile) is the user's newer look and stays (Codex critique #5)
-  if (preview?.design === design && preview.font === chosen) preview = null;
   return commitAppearance({ font: { design, font: chosen } });
 }
 

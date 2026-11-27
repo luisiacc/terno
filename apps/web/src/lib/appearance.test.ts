@@ -37,7 +37,7 @@ vi.mock("~/rpc/connection", () => ({
 }));
 vi.mock("~/lib/snack", () => ({ snack: Object.assign(() => "", { error: vi.fn(), success: () => "" }) }));
 
-const { adoptSettings, launchSettings, previewStyleFont, reconcileSettings, resolveTheme, setStyleFont, sidebarVibrancy, updateAppearance, useAppearance, APPEARANCE_KEY } = await import("./appearance");
+const { adoptSettings, launchSettings, reconcileSettings, resolveTheme, setStyleFont, sidebarVibrancy, updateAppearance, useAppearance, APPEARANCE_KEY } = await import("./appearance");
 const { getApp, setApp } = await import("~/state/app");
 const { snack } = await import("~/lib/snack");
 
@@ -342,7 +342,7 @@ describe("designs (plan 15)", () => {
       faces.mockRestore();
     });
 
-    describe("plan 248: any installed family, looked at before it's kept", () => {
+    describe("plan 248: any installed family", () => {
       const family = () => fake.props.get("--local-font");
 
       it("a family is painted by name, cached for theme.js and saved as local:<name>", async () => {
@@ -356,65 +356,6 @@ describe("designs (plan 15)", () => {
         await tick();
         expect([fake.html.dataset.font, family()]).toEqual(["inter", undefined]);
         await answer();
-      });
-
-      it("a look paints the whole app, never the cache or the backend; nothing chosen puts the saved font back", async () => {
-        const before = fake.stored.get(APPEARANCE_KEY);
-        const state = useAppearance.getState().font;
-        previewStyleFont("local:Menlo");
-        expect([fake.html.dataset.font, family()]).toEqual(["local", '"Menlo"']);
-        previewStyleFont("inter");
-        expect([fake.html.dataset.font, family()]).toEqual(["inter", undefined]);
-        // the style's own, looked at, is no font of its own
-        previewStyleFont("system");
-        expect(fake.html.dataset.font).toBeUndefined();
-        await tick();
-        expect(fake.calls).toEqual([]);
-        expect(fake.stored.get(APPEARANCE_KEY)).toBe(before);
-        expect(useAppearance.getState().font).toBe(state);
-        previewStyleFont("local:Menlo");
-        previewStyleFont(undefined);
-        expect([fake.html.dataset.font, family()]).toEqual([undefined, undefined]);
-      });
-
-      it("an unrelated change while looking keeps the look; another style or adopted settings end it (Codex critique #6)", async () => {
-        previewStyleFont("local:Menlo");
-        void updateAppearance({ motionMs: 50 });
-        await tick();
-        expect(family()).toBe('"Menlo"');
-        await answer();
-        expect(family()).toBe('"Menlo"');
-        void updateAppearance({ design: "lumen" });
-        await tick();
-        expect(fake.html.dataset.font).toBeUndefined();
-        await answer();
-        void updateAppearance({ design: "macos" });
-        await tick();
-        expect(fake.html.dataset.font).toBeUndefined();
-        await answer();
-        previewStyleFont("local:Menlo");
-        adoptSettings({ ...server });
-        expect(fake.html.dataset.font).toBeUndefined();
-      });
-
-      it("choosing what's looked at goes straight from the look to the choice, no frame of the old font (Codex critique #5)", async () => {
-        const faces = vi.spyOn(await import("~/lib/design"), "loadDesignFaces");
-        let release!: () => void;
-        faces.mockImplementationOnce(() => new Promise<void>((r) => (release = r)));
-        previewStyleFont("inter");
-        void setStyleFont("macos", "inter");
-        await tick();
-        // waiting for Inter's faces: the look stays on
-        expect(fake.html.dataset.font).toBe("inter");
-        release();
-        await tick();
-        expect(fake.html.dataset.font).toBe("inter");
-        expect(fake.calls[0]!.patch).toEqual({ designFonts: { macos: "inter" } });
-        await answer();
-        // the look ended with the choice: nothing chosen now paints the choice, not the font before it
-        previewStyleFont(undefined);
-        expect(fake.html.dataset.font).toBe("inter");
-        faces.mockRestore();
       });
     });
 
