@@ -74,7 +74,7 @@ for (const [design, language, theme, entry] of PAIRS) {
       const backend = server.backend;
       const account = (await backend.store.accounts.list()).find((a) => a.kind === "imap")!;
       await backend.store.accounts.setSyncState(account.id, { status: "error", authRequired: true });
-      await backend.server.invoke("settings.update", { design, layout: design === "lumen" ? "list" : "split", language, theme, senderIcons: false }, ctx);
+      await backend.server.invoke("settings.update", { design, layout: design === "lumen" ? "list" : "split", language, theme, senderIcons: false, firstScreen: "inbox" }, ctx);
       await page.addInitScript((language) => localStorage.setItem("terno:language", language), language);
       await page.goto(`/?backend=${encodeURIComponent(server.url)}&token=synthetic`);
       await page.locator("[data-ready]").waitFor();
