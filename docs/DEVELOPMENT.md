@@ -23,7 +23,7 @@ pnpm build:web           # → apps/web/dist-web, a static site (any static host
 ```
 
 - **Shipped and inspectable packages (plan 283):** `pnpm dist:mac` and `dist:linux` package an *inspectable* app: Electron's fuses as a release has them (no NODE_OPTIONS, only the integrity-checked asar) except Node's inspector, which Playwright needs to attach. Only `release.mjs` packages a *shipped* one (`TERNO_SHIPPED=1`): inspector fused off, DevTools protocol refused, checked when packaged and again before a release keeps it. Never hand an inspectable copy to anyone. `node apps/desktop/scripts/fuses.mjs check <Terno.app> shipped` reads a build's fuses.
-- **Demo mode:** launch the packaged app with a demo mailbox: `TERNO_DEMO=1 open apps/desktop/release/mac-arm64/Terno.app`. The data is a deterministic set of ~3,000 Spanish/English conversations across 4 accounts.
+- **Demo mode:** launch the packaged app with a demo mailbox: `TERNO_DEMO=1 open apps/desktop/release/mac-arm64/Terno.app`. The data is a deterministic set of ~3,000 conversations across 4 accounts: in English, except Freelance, in Spanish, to try summaries and replies in another language (plan 289). The tests' fixture (`apps/backend-dev`, every e2e spec and perf gate) is the same generator's other edition: Spanish and English mixed on every account, kept byte for byte.
 - **Gmail:** create a Google Cloud OAuth client of type *Desktop app* with the Gmail API enabled. Paste its client ID in Settings → Accounts, then use "Continue with Google". On the web, use a client of type *Web application* with the site's origin as an authorized JavaScript origin.
 
 ## Tests
