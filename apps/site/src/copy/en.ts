@@ -285,7 +285,7 @@ export const en = {
     terms: {
       title: "Terms of Service",
       intro: "These terms cover using Terno, the email app, its AI features, Terno Pro and this website. They are short, and they say plainly what you can expect from us and what we expect from you.",
-      updated: "Last updated: November 23, 2026",
+      updated: "Last updated: November 27, 2026",
       contents: "On this page",
       sections: [
         {
@@ -354,7 +354,7 @@ export const en = {
             "**Payment.** Payments are handled by Creem (Armitage Labs OÜ), our reseller and merchant of record, which is the seller on your receipt and handles taxes, invoices and payment details. We never see your card.",
             "**Renewal.** Pro is billed monthly in advance. Each billing period starts on the day of the month you subscribed, and Pro renews at the end of each one until you cancel.",
             "**Cancelling.** Cancel at any time from the app or from the link in your receipt. You won’t be charged again, and Pro keeps working until the end of the billing period you paid for.",
-            "**Included AI.** Pro includes a monthly amount of AI use, shown in the app. If you use it all, Pro’s AI pauses until your next billing period starts, when it resets; you can switch to your own provider meanwhile. You are never charged extra automatically.",
+            "**AI use.** Pro’s AI has no monthly allowance to keep track of: use it as much as you like. To guard against faults and abuse, it pauses if an account’s use in a billing period goes far beyond what even heavy everyday use needs. The app says so when it happens, Pro’s AI resumes when your next billing period starts, and you can switch to your own provider meanwhile. You are never charged extra automatically.",
             "**Price changes.** If the price changes, we’ll email you at least 30 days before it applies to your subscription, so you can cancel first.",
             "**Business use.** A Pro subscription includes using Terno for work, at an organization of any size.",
           ],

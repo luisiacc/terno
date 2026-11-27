@@ -269,7 +269,7 @@ export const es: SiteCopy = {
     terms: {
       title: "Términos del servicio",
       intro: "Estos términos cubren el uso de Terno, la app de correo, sus funciones de IA, Terno Pro y este sitio web. Son breves y dicen con claridad qué puedes esperar de nosotros y qué esperamos de ti.",
-      updated: "Última actualización: 23 de noviembre de 2026",
+      updated: "Última actualización: 27 de noviembre de 2026",
       contents: "En esta página",
       sections: [
         {
@@ -338,7 +338,7 @@ export const es: SiteCopy = {
             "**Pago.** Los pagos los gestiona Creem (Armitage Labs OÜ), nuestro revendedor y comerciante registrado (merchant of record), que figura como vendedor en tu recibo y se ocupa de los impuestos, las facturas y los datos de pago. Nunca vemos tu tarjeta.",
             "**Renovación.** Pro se cobra mensualmente por adelantado. Cada periodo de facturación empieza el día del mes en que te suscribiste, y Pro se renueva al final de cada uno hasta que lo canceles.",
             "**Cancelación.** Cancela cuando quieras desde la app o desde el enlace de tu recibo. No se te volverá a cobrar, y Pro sigue funcionando hasta el final del periodo de facturación que pagaste.",
-            "**IA incluida.** Pro incluye una cantidad mensual de uso de IA, que se muestra en la app. Si la agotas, la IA de Pro se pausa hasta que empieza tu siguiente periodo de facturación, cuando se renueva; mientras tanto puedes usar tu propio proveedor. Nunca se te cobra nada extra automáticamente.",
+            "**Uso de la IA.** La IA de Pro no tiene una cantidad mensual que vigilar: úsala cuanto quieras. Para protegerla de fallos y abusos, se pausa si el uso de una cuenta en un periodo de facturación va mucho más allá de lo que necesita incluso el uso diario más intenso. La app te lo dice cuando ocurre, la IA de Pro se reanuda cuando empieza tu siguiente periodo de facturación y, mientras tanto, puedes usar tu propio proveedor. Nunca se te cobra nada extra automáticamente.",
             "**Cambios de precio.** Si el precio cambia, te escribiremos al menos 30 días antes de que se aplique a tu suscripción, para que puedas cancelar antes.",
             "**Uso profesional.** Una suscripción Pro incluye usar Terno para trabajar, en una organización de cualquier tamaño.",
           ],
