@@ -190,7 +190,7 @@ if (demoAiPlan) {
     // plan 167: the real AI jobs once, behind your windows, then the window you use on the same profile
     const { prepare, readSpend } = await import("./demo-ai-prepare.mjs");
     const started = Date.now();
-    const failed = await prepare({
+    const { failed, closed } = await prepare({
       electronBin,
       main: join(root, "dist/main.cjs"),
       env: (now) => demoAiEnv({ base: process.env, profile, keys, devUrl: url, background: true, now }),
@@ -202,6 +202,10 @@ if (demoAiPlan) {
     });
     preparing = null;
     preparingSave = null;
+    if (closed) {
+      console.log("[demo-ai] you closed the preparation's window, so nothing else opens: run it again to pick up where it stopped (it needs a few minutes left alone)");
+      shutdown(0);
+    }
     const spend = Object.entries(readSpend(profile));
     const total = spend.reduce((a, [, t]) => ({ requests: a.requests + t.requests, usd: a.usd + t.usd }), { requests: 0, usd: 0 });
     console.log(`[demo-ai] prepared in ${Math.round((Date.now() - started) / 1000)} s; the profile's AI so far (Settings → AI → usage): ${total.requests} model requests, about US$${total.usd.toFixed(2)} (${spend.map(([task, t]) => `${task} ${t.requests}`).join(", ")})`);

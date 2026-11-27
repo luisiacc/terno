@@ -513,8 +513,9 @@ const STEPS = {
 };
 
 /**
- * Runs `steps` on the profile behind your windows and records each in the marker. Returns the steps that failed.
- * `env(now)` is demoAiEnv's with `background: true`, the clock starting at `now`.
+ * Runs `steps` on the profile behind your windows and records each in the marker. Returns the steps that failed, and
+ * `closed` when you closed its window or quit it: a stop, as Ctrl-C is, so nothing opens after it and the step it was on
+ * isn't counted as a try. `env(now)` is demoAiEnv's with `background: true`, the clock starting at `now`.
  */
 export async function prepare({ electronBin, main, env, profile, steps, onPid = () => {}, onSave = () => {}, log = console.log }) {
   const marker = loadMarker(profile);
@@ -535,8 +536,17 @@ export async function prepare({ electronBin, main, env, profile, steps, onPid = 
   const pid = app.process().pid;
   onPid(pid);
   const failed = [];
+  // set before our own close, so only yours counts
+  let ending = false;
+  let closed = false;
+  let page = null;
+  const youClosed = () => { if (!ending) closed = true; };
+  app.process().once("exit", youClosed);
+  // the page may say so before its close event arrives; either way it sticks
+  const stopped = () => (closed ||= !ending && !!page?.isClosed());
   try {
-    const page = await app.firstWindow();
+    page = await app.firstWindow();
+    page.once("close", youClosed);
     // keys and shortcuts work in a window that never takes focus (the rating's way)
     await (await page.context().newCDPSession(page)).send("Emulation.setFocusEmulationEnabled", { enabled: true });
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(1440, 900));
@@ -561,6 +571,11 @@ export async function prepare({ electronBin, main, env, profile, steps, onPid = 
         marker.done[step] = now();
         log(`[demo-ai] ${step} done in ${Math.round((Date.now() - started) / 1000)} s`);
       } catch (error) {
+        if (stopped()) {
+          marker.attempts[step] = attempt - 1;
+          log(`[demo-ai] ${step} stopped: its window was closed`);
+          break;
+        }
         const why = String(error?.message ?? error).split("\n")[0];
         marker.failed[step] = why;
         failed.push(step);
@@ -570,12 +585,16 @@ export async function prepare({ electronBin, main, env, profile, steps, onPid = 
       }
       save();
     }
+  } catch (error) {
+    // closed before the first step began (the window still loading)
+    if (!stopped()) throw error;
   } finally {
+    ending = true;
     // a clean quit, so what was written is on disk before the window you use opens the same profile
     await Promise.race([app.close().catch(() => {}), new Promise((r) => setTimeout(r, 20_000))]);
     try { process.kill(pid, 0); process.kill(pid, "SIGKILL"); } catch { /* gone */ }
     // later launches start just after this one ended, so nothing it made is ahead of their clock
     save();
   }
-  return failed;
+  return { failed, closed };
 }
