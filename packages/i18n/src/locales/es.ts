@@ -1204,6 +1204,7 @@ const es = {
   "list.empty.inboxBody": "Disfruta el silencio.",
   "list.empty.title": "Nada por aquí",
   "list.empty.body": "Los correos aparecerán aquí.",
+  "list.late": "Atrasado",
   "list.kept": "Abierta",
   "list.draft": "Borrador",
   "list.place.spam": "Spam",

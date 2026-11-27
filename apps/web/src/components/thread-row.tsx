@@ -61,8 +61,8 @@ export interface ThreadRowProps {
   placed?: Placement;
   /** plan 282: a fix took it out of Put away while it's open: what the row says now, in its section */
   returned?: Returned;
-  /** plan 285: the Follow-ups list's rows, whose dot marks what the sidebar's number counts rather than unread */
-  lateDots?: boolean;
+  /** plan 285: the Follow-ups list's rows, which say Late where the sidebar's number counts them */
+  lateTags?: boolean;
 }
 
 /** Plan 282: a Put away row's why, as its preview shows it: the line, the filing's dot, and its section for a screen reader */
@@ -81,7 +81,7 @@ const NO_FOLDERS: AppState["folders"] = [];
  * checking one re-renders one. The design picks the layout inside it (classic,
  * avatar, large avatar); the shell, roles, ids and handlers are the same in all.
  */
-export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, wide = false, showAccount, icons, layout, review = null, pinnedTop = false, reminderTop = false, match = null, lines = 1, pick = false, position, placed, returned, lateDots = false }: ThreadRowProps) {
+export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, wide = false, showAccount, icons, layout, review = null, pinnedTop = false, reminderTop = false, match = null, lines = 1, pick = false, position, placed, returned, lateTags = false }: ThreadRowProps) {
   renderProbe("ThreadRow");
   /** the open thread (the cursor; the listbox's active descendant) */
   const selected = useApp((s) => s.selectedId === thread.id);
@@ -121,7 +121,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
   /** plan 158: the sentence it matched in, when its own words don't show it (one Map read: only this row renders when it comes) */
   const excerpt = useExcerpts((s) => (match && s.match === match ? s.byThread.get(thread.id) : undefined));
   /** plan 285: one Set lookup, only in Follow-ups (only this row renders when its answer changes) */
-  const late = useFollowups((s) => lateDots && s.late.has(thread.id));
+  const late = useFollowups((s) => lateTags && s.late.has(thread.id));
   return (
     <ThreadRowView
       thread={thread}
@@ -153,13 +153,13 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
       pick={pick}
       position={position}
       placedView={placedView}
-      late={lateDots ? late : undefined}
+      late={late}
       interactive
     />
   );
 });
 
-type ViewProps = Omit<ThreadRowProps, "showAccount" | "wide" | "review" | "reminderTop" | "match" | "lateDots"> & {
+type ViewProps = Omit<ThreadRowProps, "showAccount" | "wide" | "review" | "reminderTop" | "match" | "lateTags"> & {
   match?: RowMatch | null;
   excerpt?: string;
   wide: boolean;
@@ -176,10 +176,7 @@ type ViewProps = Omit<ThreadRowProps, "showAccount" | "wide" | "review" | "remin
   categories: AppState["categories"];
   /** plan 282 */
   placedView?: PlacedView;
-  /**
-   * Plan 285: in Follow-ups, whether the sidebar's number counts it: the dot is that, not unread (the number and the dots
-   * agree, as the Inbox's do). Undefined elsewhere: the dot is unread
-   */
+  /** Plan 285: in Follow-ups, the sidebar's number counts it: a Late tag says so (never the dot: opening it doesn't end it) */
   late?: boolean;
   inCategory?: number | null;
   kept?: boolean;
@@ -367,8 +364,6 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
   /** where it lives when that isn't where mail usually is (Trash wins: trashed spam is in the trash) */
   const place = thread.inTrash ? "trash" : thread.inSpam ? "spam" : null;
   const rowId = `thread-${thread.id}`;
-  /** the marks' column's dot: unread, or in Follow-ups late (plan 285; the row's weight still says unread there) */
-  const dotted = late ?? thread.unread;
 
   // plan 158: who, then what, then how it starts: sender and subject in the row's ink (the sender a step heavier), the
   // preview and meta quiet. Unread reads first, by more than one cue: a stronger sender and subject, the dot (8 px), and
@@ -412,6 +407,13 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
     </span>
   );
   const keptTag = kept && <span data-testid="row-kept" className="shrink-0 text-2xs text-muted-foreground">{t("list.kept")}</span>;
+  // plan 285 (the owner): in Follow-ups, what the sidebar's number counts, in the late line's ink (said once, with the row's
+  // states); a word, not the unread dot, since reading the mail doesn't end it
+  const lateTag = late && (
+    <Badge aria-hidden data-testid="row-late" variant="outline" className="border-draft-foreground/40 text-draft-foreground">
+      {t("list.late")}
+    </Badge>
+  );
   /**
    * Plan 194 (after plan 173 put them on the preview's line): a three-line row's marks end its first line, before the
    * date, so the preview has its line to itself. Two category dots at most (every name is said to a screen reader and in
@@ -433,6 +435,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
       {clip}
       {star}
       {!reminderTop && bell}
+      {lateTag}
       {placeTag}
       {keptTag}
     </>
@@ -562,14 +565,14 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
     checked && included === undefined && !picking ? (
       <Check aria-hidden data-testid="row-check" className={cn("absolute -left-[13px] size-3 -translate-y-1/2 text-row-selected-foreground [--icon-line:1.5px]", onSenderLine)} />
     ) : (
-      dotted && included === undefined && <span data-testid="row-unread-dot" data-late={late || undefined} className={cn("absolute -left-[11px] size-2 -translate-y-1/2 rounded-full bg-unread", onSenderLine)} />
+      thread.unread && included === undefined && <span data-testid="row-unread-dot" className={cn("absolute -left-[11px] size-2 -translate-y-1/2 rounded-full bg-unread", onSenderLine)} />
     );
   // With no avatar, List's rows keep a slot of Lumen's wide avatar's size where one would be, at rest too, so nothing
   // moves for the box: the unread dot sits in it, and over a hovered row or while a selection is made the full box
   // takes its place (one mark per slot)
   const slot = picking && classic && (
     <span data-testid="row-pick-slot" className={cn("relative flex w-6 shrink-0 items-center justify-center", line ? "self-stretch" : "h-(--type-row-from-leading) self-start")}>
-      {dotted && <span data-testid="row-unread-dot" data-late={late || undefined} className={cn("size-2 rounded-full bg-unread", SWAP, "ease-spring group-hover/row:invisible group-hover/row:scale-50 group-hover/row:opacity-0 group-hover/row:ease-exit", SWAP_AWAY)} />}
+      {thread.unread && <span data-testid="row-unread-dot" className={cn("size-2 rounded-full bg-unread", SWAP, "ease-spring group-hover/row:invisible group-hover/row:scale-50 group-hover/row:opacity-0 group-hover/row:ease-exit", SWAP_AWAY)} />}
       {pickBox("absolute inset-0 m-auto group-hover/row:visible group-hover/row:scale-100 group-hover/row:opacity-100 group-hover/row:ease-spring")}
     </span>
   );
@@ -594,7 +597,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
       {!answer && topMarks}
       <span className={cn("flex shrink-0 items-center gap-1.5 pl-1", (answer || !topMarks) && "ml-auto")}>
         {chip}
-        {answer ? marks : <>{placeTag}{keptTag}</>}
+        {answer ? marks : <>{lateTag}{placeTag}{keptTag}</>}
         {date}
       </span>
     </div>
@@ -696,6 +699,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
             <span data-testid="row-subject" className={cn(FLOWING_SUBJECT, subjectInk)}>{subjectWords}</span>
             {/* what a row is, not a column: beside the subject, so the columns on the right never move */}
             {draft}
+            {lateTag}
             {keptTag}
             {placeTag}
             {reminder && !reminderTop && bell}

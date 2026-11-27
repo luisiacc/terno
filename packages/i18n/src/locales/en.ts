@@ -1220,6 +1220,7 @@ const en = {
   "list.empty.inboxBody": "Enjoy the quiet.",
   "list.empty.title": "Nothing here",
   "list.empty.body": "Mail will show up here.",
+  "list.late": "Late",
   "list.kept": "Opened",
   "list.draft": "Draft",
   "list.place.spam": "Spam",

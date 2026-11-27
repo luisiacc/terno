@@ -310,8 +310,8 @@ test.describe("follow-ups (plan 142)", () => {
     await page.getByTestId("nav-followups").click();
     await expect(rows(page)).toHaveCount(1);
     await expect(rows(page).first().getByTestId("row-date")).toHaveAttribute("data-due-at", /\d+/);
-    // plan 285: a read conversation, late: List's row has the dot (in its pointer box's slot)
-    await expect(rows(page).first().getByTestId("row-unread-dot")).toHaveAttribute("data-late", "true");
+    // plan 285: List's row says it's late too
+    await expect(rows(page).first().getByTestId("row-late")).toBeVisible();
     // Follow-ups is "all" underneath, but All Mail isn't where you are: it stays behind More
     await expect(page.getByTestId("nav-followups")).toHaveAttribute("aria-current", "page");
     await expect(page.locator('[data-more-slot="all"]')).toHaveAttribute("inert", "");
@@ -438,32 +438,34 @@ test.describe("follow-ups (plan 142)", () => {
       await expect(page.getByTestId("thread-row").filter({ hasText: "Signed contract" }).getByTestId("row-snippet")).toHaveClass(/text-draft-foreground/);
     });
 
-    await scenario("plan 285: the dot marks what the sidebar counts, read or not; an unread one that isn't late has none here, and has it again in the Inbox", async () => {
+    await scenario("plan 285: a Late tag on what the sidebar counts, read or not; the dot stays unread's", async () => {
       const row = (subject: string) => page.getByTestId("thread-row").filter({ has: page.getByTestId("row-subject").getByText(subject, { exact: true }) });
       // the two firm ones are late (one they wrote after still is: nothing says it came), both read
       await expect(page.getByTestId("nav-followups").locator("[data-slot=nav-count]")).toHaveText("2");
       for (const subject of ["Signed contract", "Venue deposit"]) {
-        await expect(row(subject).getByTestId("row-unread-dot")).toBeVisible();
-        await expect(row(subject)).not.toHaveAttribute("data-unread");
+        await expect(row(subject).getByTestId("row-late")).toHaveText("Late");
+        await expect(row(subject).getByTestId("row-unread-dot")).toHaveCount(0);
         await expect(row(subject)).toHaveAccessibleName(/, late,/);
         await expect(row(subject)).not.toHaveAccessibleName(/unread/);
       }
-      // the tentative one: unread (its weight says so), no dot, not late
-      await expect(row("Draft budget")).toHaveAttribute("data-unread", "true");
-      await expect(row("Draft budget").getByTestId("row-unread-dot")).toHaveCount(0);
+      // the tentative one: unread, its dot as anywhere, not late
+      await expect(row("Draft budget").getByTestId("row-unread-dot")).toBeVisible();
+      await expect(row("Draft budget").getByTestId("row-late")).toHaveCount(0);
       await expect(row("Draft budget")).toHaveAccessibleName(/, unread,/);
       await expect(row("Draft budget")).not.toHaveAccessibleName(/late/);
-      await expect(page.getByTestId("row-unread-dot")).toHaveCount(2);
+      await expect(page.getByTestId("row-late")).toHaveCount(2);
       if (SHOTS) {
         for (const scheme of ["light", "dark"] as const) {
           await page.emulateMedia({ colorScheme: scheme });
-          await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-late-dots-${scheme}.png` });
+          expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=thread-row]").analyze()).violations).toEqual([]);
+          await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-late-tags-${scheme}.png` });
         }
         await page.emulateMedia({ colorScheme: "light" });
       }
+      // only Follow-ups says it
       await page.getByTestId("nav-inbox").click();
-      await expect(row("Draft budget").getByTestId("row-unread-dot")).toBeVisible();
-      await expect(row("Signed contract").getByTestId("row-unread-dot")).toHaveCount(0);
+      await expect(row("Draft budget")).toBeVisible();
+      await expect(page.getByTestId("row-late")).toHaveCount(0);
     });
   });
 });

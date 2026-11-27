@@ -1,4 +1,4 @@
-# 285: Follow-ups marks its late rows with the dot
+# 285: Follow-ups says which rows are late
 
 ## Request (verbatim)
 
@@ -6,6 +6,18 @@
 > followup items were overdue thru the ui, we should have like a unread marker for those in this particular view only, i'm
 > not saying they should be marked as unread, but in this view, they should have the unread marker so the user knows which
 > ones are actually the ones that we are saying they need to attend
+
+## Owner revision (after the first build)
+
+> hmm i'm thinking maybe not do the same 'unread', because they will expect to dissappear when they view it, so no, lets
+> have a small badge for the ones that are represented in the number, like 'due' or something like that, what do yo uthink
+
+The dot stays unread's everywhere. A row the sidebar's number counts says **Late** instead: BoardUI's Badge, outlined, in
+the late line's ink (`draft-foreground`, a pair on every row state), before the date with the row's other words (Spam,
+Trash, Opened), in every layout. "Late", not "Due": the number's description already says "N late" and the card "Was
+due …". Hidden from a screen reader as those words are; the row's states say "late" once (`list.row.late`). New key
+`list.late` (en "Late", es "Atrasado": the follow-up is). The Design section below is the first build's; where it says
+dot, read the tag.
 
 ## What exists
 
