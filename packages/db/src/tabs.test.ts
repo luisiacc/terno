@@ -9,9 +9,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, expect, it } from "vitest";
 import { openDatabase } from "./index";
-import { MIGRATIONS, runMigration, SCHEMA_VERSION } from "./migrations";
 import { sqlDb, SqlMailStore } from "./sql-store";
 import { requestTabRefresh } from "./tabs";
+import { writeLegacyCopy } from "./test/legacy";
 
 const dirs: string[] = [];
 const opened: SqlMailStore[] = [];
@@ -96,16 +96,15 @@ it.each([["no pass under way", null], ["a pass past every thread", '{"phase":"th
   ]);
   const note = await threadOf(store, "note");
   const person = await threadOf(store, "person");
-  // what v77 was: no column; then v78 alone, as an upgrade runs it (rewinding user_version would run every later step again)
+  // what v77 held (its own schema: no column), the pass's progress as given, opened as an upgrade from v77 runs every step
   const db = sqlDb(store);
-  db.run("ALTER TABLE threads DROP COLUMN only_yours");
   db.run("DELETE FROM settings WHERE key = 'tabs_backfill'");
   if (job) db.run("INSERT INTO settings (key, value_json) VALUES ('tabs_backfill', ?)", job);
-  runMigration(db, MIGRATIONS.find((m) => m.version === 78)!);
-  db.run(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+  const legacy = join(dir, "v77.db");
+  writeLegacyCopy(db, legacy, 77);
   await store.close();
 
-  store = open(path);
+  store = open(legacy);
   // the upgrade only adds the column and asks for the pass: offered as before until the pass reaches it
   expect((await store.threads.summaries([note]))[0]!.onlyYours).toBeUndefined();
   expect(JSON.parse(sqlDb(store).get<{ value_json: string }>("SELECT value_json FROM settings WHERE key = 'tabs_backfill'")!.value_json)).toEqual({ phase: "threads", after: 0 });
