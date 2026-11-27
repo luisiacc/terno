@@ -66,7 +66,9 @@ test.describe("diagnostics", () => {
       await expect(page.getByTestId("about-version")).toContainText(/Version \d+\.\d+\.\d+ \(/);
       await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
       await page.getByTestId("build-copy").click();
-      expect(await page.evaluate(() => navigator.clipboard.readText())).toMatch(/^Terno \d+\.\d+\.\d+ \([0-9a-f]{7,}|^Terno \d+\.\d+\.\d+ \(dev/);
+      // the whole commit (longer than the card's seven) and the test build's channel (Codex code review #7)
+      const short = (await page.getByTestId("about-version").textContent())!.match(/\(([0-9a-f]{7})\)/)![1]!;
+      await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toMatch(new RegExp(`^Terno \\d+\\.\\d+\\.\\d+ \\(${short}[0-9a-f]+(-dirty)?, test\\)$`));
 
       await page.getByTestId("report-sample").click();
       const sample = (await page.getByTestId("report-preview-json").textContent()) ?? "";

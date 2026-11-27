@@ -27,6 +27,7 @@ const TABS = [
   ["agents", "Agents"],
   // plan 294: Data's backup is in Storage
   ["storage", "Storage"],
+  ["about", "About"],
 ] as const;
 type Tab = (typeof TABS)[number][0];
 
@@ -161,7 +162,7 @@ test("General and Appearance edit, persist and take effect; the sidebar's rows; 
     await images.click();
     await expect(images).toBeChecked();
     await show(page, "accounts");
-    const days = page.getByLabel("Default sync window");
+    const days = page.getByLabel("Sync window for all accounts");
     await days.fill("3");
     await days.press("Enter");
     await expect(page.getByTestId("sync-window-error")).toHaveText("Enter a number of days from 7 to 3,650.");
@@ -172,7 +173,7 @@ test("General and Appearance edit, persist and take effect; the sidebar's rows; 
     await expect(page.getByTestId("sync-window-error")).toHaveCount(0);
 
     await reopen(page, "accounts");
-    await expect(page.getByLabel("Default sync window")).toHaveValue("45");
+    await expect(page.getByLabel("Sync window for all accounts")).toHaveValue("45");
     await show(page, "appearance");
     await expect(page.getByRole("switch", { name: "Always load remote images" })).toBeChecked();
     await expect(page.getByRole("switch", { name: "Always load remote images" })).toHaveAccessibleDescription(/senders can tell when you open their mail/);
@@ -552,6 +553,14 @@ test("accessible: axe finds nothing serious on any tab; controls have names and 
   // plan 294: an account's parts are sections named by their titles, under the account's own heading
   for (const part of ["Name and signature", "Mailbox", "Connection"]) await expect(panel(page).getByRole("region", { name: part }).first()).toBeVisible();
   await expect(panel(page).getByRole("heading", { level: 5, name: "Mailbox" }).first()).toBeVisible();
+  // with two accounts open, each part is named with its account: no two "Mailbox" landmarks alike (Codex code review #3)
+  const toggles = panel(page).getByTestId("account-toggle");
+  const names: string[] = [];
+  for (const i of [0, 1]) {
+    if ((await toggles.nth(i).getAttribute("aria-expanded")) !== "true") await toggles.nth(i).click();
+    names.push((await toggles.nth(i).locator("span span").first().textContent())!.trim());
+  }
+  for (const name of names) await expect(panel(page).getByRole("region", { name: `Mailbox ${name}`, exact: true })).toHaveCount(1);
   await page.getByTestId("tab-appearance").click();
   await expect(page.getByRole("switch", { name: "Always load remote images" })).toHaveAccessibleDescription(/Blocked by default to prevent tracking/);
 });

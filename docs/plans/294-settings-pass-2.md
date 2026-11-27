@@ -153,3 +153,16 @@ Codex (`codex exec -s read-only`) gave 12 points; what each changed:
 - Tests run: typecheck, lint, unit (settings, i18n, diag, settings-values, outlook-account), e2e (`settings-pass`, `settings-search`, `settings`, `storage`, `person-rules`, `account-folders`, `diagnostics`, `i18n`, `local-ai`, `icons`, `account-menu`, `first-sync`, `settings-toggles`, `motion-switch`, `summaries`, `design-axe` in macOS and Lumen), web (`web.spec`, `diagnostics.web`). Not run: the packaged desktop smoke (`diagnostics.smoke.ts` only changes which tab it opens).
 - Not rated with `ui:rate`: Settings' sections aren't among the rated screens except AI's Writing style, which didn't change.
 
+## 10. Codex code review (of 7a80c15ed..3d85b66c9)
+
+Eight findings; what each changed:
+
+1. "sync window" ranked an account's override above the default (a name starting with the query scores higher) → the pair is named alike, "Sync window for all accounts" and "Sync window for this account", and All accounts' entries come first among Accounts' in the index, so the tie keeps the default first. `settings-search.spec` checks the order.
+2. Visual baselines → the seven Settings screenshots in `visual.spec` regenerated and looked at (every one shows the sidebar); the others passed unchanged.
+3. Two open accounts gave two "Mailbox" landmarks → each part is named by its title and its account ("Mailbox Personal"); `settings-pass` opens two accounts and checks each name.
+4. Search's Export opens Storage, which reads the storage report → **kept**: the report is Storage's own first screen, read on every visit to the section; Backup sitting in it is the owner's merge (P8). It is one backend read, sliced, the same a visit to Storage always cost.
+5. The moved-rows scenario could pass on a tab switch alone → it checks each row's `data-found` mark and the sync window's focus.
+6. About was missing from `settings-pass`'s tab list → added (reachability, axe, names, contrast, minimum size).
+7. The clipboard check accepted a short commit and no channel → it now requires the card's commit and more, and the test channel.
+8. Spanish footer "las muestra" after "iconos" → "los muestra"; `docs/WEB.md` sent people to Data → Storage's Backup.
+

@@ -77,11 +77,16 @@ export const SETTINGS_INDEX = [
 
   // Accounts (plan 294: the accounts first, then what holds for all of them, then the Terno account)
   { id: "accounts.add", tab: "accounts", group: "account.list", label: "account.add", words: "settings.find.words.addAccount" },
+  // All accounts' rows ahead of each account's (drawn below the list): a search for the sync window leads with the
+  // default, not one account's override (Codex code review #1); search ties keep this order
+  { id: "accounts.syncWindow", tab: "accounts", group: "account.all", label: "account.defaultSyncWindow", hint: "settings.general.syncWindow.hint", words: "settings.find.words.syncWindow" },
+  // plan 207 (the owner): the accounts' numbers in the sidebar
+  { id: "accounts.counts", tab: "accounts", group: "account.all", label: "account.counts", hint: "account.counts.hint", words: "settings.find.words.accountCounts" },
   { id: "account.name", tab: "accounts", label: "account.name", hint: "account.name.hint", scope: "account" },
   { id: "account.sender", tab: "accounts", label: "account.sender", hint: "account.sender.hint", scope: "account" },
   { id: "account.color", tab: "accounts", label: "settings.color", scope: "account" },
   { id: "account.signature", tab: "accounts", label: "account.signature", hint: "account.signature.hint", scope: "account" },
-  { id: "account.syncWindow", tab: "accounts", label: "settings.general.syncWindow", words: "settings.find.words.syncWindow", scope: "account" },
+  { id: "account.syncWindow", tab: "accounts", label: "account.syncWindow", words: "settings.find.words.syncWindow", scope: "account" },
   { id: "account.allInbox", tab: "accounts", label: "account.allInbox", hint: "account.allInbox.hint", words: "settings.find.words.allInbox", scope: "account", when: (ctx, a) => !!a && allInboxOffered(a, ctx.accounts) },
   { id: "account.separateTabs", tab: "accounts", label: "account.separateTabs", hint: "account.separateTabs.hint", words: "settings.find.words.separateTabs", scope: "account", when: (_c, a) => a?.kind === "gmail" },
   { id: "account.separateOther", tab: "accounts", label: "account.separateOther", hint: "account.separateOther.hint", words: "settings.find.words.separateOther", scope: "account", when: (_c, a) => a?.kind === "outlook" },
@@ -96,9 +101,6 @@ export const SETTINGS_INDEX = [
   { id: "account.sentCopies", tab: "accounts", label: "account.sentCopies", hint: "account.sentCopies.hint", scope: "account", when: (_c, a) => a?.kind === "imap" },
   { id: "account.recipientReceipts", tab: "accounts", label: "account.recipientReceipts", hint: "account.recipientReceipts.hint", scope: "account", when: (_c, a) => a?.kind === "imap" },
   { id: "account.remove", tab: "accounts", label: "account.remove", hint: "account.remove.hint", words: "settings.find.words.remove", scope: "account" },
-  { id: "accounts.syncWindow", tab: "accounts", group: "account.all", label: "account.defaultSyncWindow", hint: "settings.general.syncWindow.hint", words: "settings.find.words.syncWindow" },
-  // plan 207 (the owner): the accounts' numbers in the sidebar
-  { id: "accounts.counts", tab: "accounts", group: "account.all", label: "account.counts", hint: "account.counts.hint", words: "settings.find.words.accountCounts" },
   { id: "accounts.owner", tab: "accounts", label: "account.owner.title", hint: "account.owner.footer", words: "settings.find.words.owner" },
 
   // Appearance

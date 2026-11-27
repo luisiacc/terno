@@ -183,7 +183,7 @@ function Reconnect({ account }: { account: Account }) {
   );
 }
 
-function AccountEditor({ account, generalWindow, isOwner }: { account: Account; generalWindow: number; isOwner: boolean }) {
+function AccountEditor({ account, generalWindow, isOwner, nameId }: { account: Account; generalWindow: number; isOwner: boolean; /** the account's name in its row: each part is named by it too */ nameId: string }) {
   const [removing, setRemoving] = useState(false);
   // the text fields keep what was typed and say a failure under it: the account changes once the backend has it
   const save = (patch: AccountEdit) => patchAccount(account.id, patch, { optimistic: "color" in patch });
@@ -194,7 +194,7 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
   const allInbox = useApp((s) => allInboxOffered(account, s.accounts.length));
   return (
     <div className="hairline-divide pb-1 pl-5" data-testid="account-editor">
-      <AccountPart title={t("account.part.identity")} testId="account-part-identity">
+      <AccountPart title={t("account.part.identity")} nameId={nameId} testId="account-part-identity">
         <SettingsRow find="account.name" labelFor label={t("account.name")} hint={t("account.name.hint")}>
           {(a) => <CommitInput a11y={a} className="w-56" data-testid="account-name" value={account.displayName} validate={(v) => (v.trim() ? null : t("settings.nameEmpty"))} onCommit={(v) => save({ displayName: v.trim() })} />}
         </SettingsRow>
@@ -208,8 +208,8 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
           {(a) => <CommitInput multiline a11y={a} data-testid="account-signature" value={account.signature} placeholder={t("account.signature.placeholder")} maxLength={10_000} onCommit={(v) => save({ signature: v })} />}
         </SettingsRow>
       </AccountPart>
-      <AccountPart title={t("account.part.mailbox")} testId="account-part-mailbox">
-        <SettingsRow find="account.syncWindow" labelFor label={t("settings.general.syncWindow")} hint={t("account.syncWindow.hint", { days: generalWindow })}>
+      <AccountPart title={t("account.part.mailbox")} nameId={nameId} testId="account-part-mailbox">
+        <SettingsRow find="account.syncWindow" labelFor label={t("account.syncWindow")} hint={t("account.syncWindow.hint", { days: generalWindow })}>
           {(a) => (
             <DaysField
               a11y={a}
@@ -241,7 +241,7 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
         )}
       </AccountPart>
       {(aiOffered || aiOn) && (
-        <AccountPart title={t("account.part.ai")} testId="account-part-ai">
+        <AccountPart title={t("account.part.ai")} nameId={nameId} testId="account-part-ai">
           {aiOffered && (
             <>
               <SettingsRow find="account.ai" label={t("account.ai")} hint={t("account.ai.hint")}>
@@ -261,7 +261,7 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
           {aiOn && <AccountWriting accountId={account.id} />}
         </AccountPart>
       )}
-      <AccountPart title={t("account.part.connection")} testId="account-part-connection">
+      <AccountPart title={t("account.part.connection")} nameId={nameId} testId="account-part-connection">
         <SettingsRow find="account.connection" stacked label={t("account.status")} hint={<span className="whitespace-pre-wrap [overflow-wrap:anywhere]">{status(account)}</span>}>
           {() => <Reconnect account={account} />}
         </SettingsRow>
@@ -284,12 +284,13 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
 
 /**
  * Plan 294: a part of an account's settings (name and signature, mailbox, AI, connection) under a small title, its
- * rows split by hairlines as before; the account's name above is the h4.
+ * rows split by hairlines as before; the account's name above is the h4. Its region is named by both ("Mailbox
+ * Personal"), so two accounts open never give a screen reader two "Mailbox" landmarks (Codex code review #3).
  */
-function AccountPart({ title, testId, children }: { title: string; testId: string; children: React.ReactNode }) {
+function AccountPart({ title, nameId, testId, children }: { title: string; nameId: string; testId: string; children: React.ReactNode }) {
   const id = useId();
   return (
-    <section aria-labelledby={id} data-testid={testId}>
+    <section aria-labelledby={`${id} ${nameId}`} data-testid={testId}>
       <h5 id={id} className="pt-3.5 pb-0.5 text-xs font-semibold text-muted-foreground">
         {title}
       </h5>
@@ -343,12 +344,15 @@ function RowSignIn({ account }: { account: Account }) {
 function AccountItem({ account, generalWindow, isOwner }: { account: Account; generalWindow: number; isOwner: boolean }) {
   // a sign-in to redo reads calmly (plan 25); a real error or an outage in the error ink
   const attention = !needsSignIn(account) && (account.syncState.status === "error" || account.syncState.status === "offline");
+  const nameId = useId();
   return (
     <AccordionItem value={account.id} className="group/account" data-testid="settings-account" data-account-id={account.id} data-setting-scope={`account:${account.id}`}>
       <AccordionTrigger level={4} className="-mx-2 w-[calc(100%+1rem)] rounded-md px-2 py-2.5 [contain:inline-size]" data-testid="account-toggle" data-setting-open>
         <AccountMark color={account.color} />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium">{account.displayName}</span>
+          <span id={nameId} className="block truncate text-sm font-medium">
+            {account.displayName}
+          </span>
           <span className={cn("block truncate text-xs", attention ? "text-destructive-ink" : "text-muted-foreground")}>
             {account.email} · {serviceLabel(account.kind)} · {status(account)}
           </span>
@@ -356,7 +360,7 @@ function AccountItem({ account, generalWindow, isOwner }: { account: Account; ge
       </AccordionTrigger>
       {needsSignIn(account) && <RowSignIn account={account} />}
       <AccordionPanel>
-        <AccountEditor account={account} generalWindow={generalWindow} isOwner={isOwner} />
+        <AccountEditor account={account} generalWindow={generalWindow} isOwner={isOwner} nameId={nameId} />
       </AccordionPanel>
     </AccordionItem>
   );

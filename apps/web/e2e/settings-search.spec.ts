@@ -112,17 +112,22 @@ test("Settings' search finds every kind of setting, says where and why, and open
       await expect(hit.getByTestId("settings-find-where")).toHaveText(where);
       await hit.click();
       await expect(page.getByTestId(`tab-${tab}`)).toHaveAttribute("aria-selected", "true");
+      // the row itself is marked and in view, not only its section shown (Codex code review #5)
+      await expect(setting(page, id)).toHaveAttribute("data-found", "on");
       await expect(setting(page, id)).toBeInViewport();
     };
     await opens("remote images", "Always load remote images", /^Appearance.*Messages/, "appearance", "appearance.remoteImages");
-    await opens("default sync", "Default sync window", /^Accounts.*All accounts/, "accounts", "accounts.syncWindow");
+    await opens("sync all accounts", "Sync window for all accounts", /^Accounts.*All accounts/, "accounts", "accounts.syncWindow");
+    await expect(dialog(page).getByLabel("Sync window for all accounts")).toBeFocused();
     await opens("export", "Export", /^Storage.*Backup/, "storage", "storage.export");
     await opens("error reports", "Error reports", /^About.*Diagnostics/, "about", "about.reports");
-    // the default and each account's own are named apart, an account's under that account
+    // the default and each account's own are named apart, the default first (Codex code review #1), an account's under it
     await page.keyboard.press("Meta+f");
     await find(page, "sync window");
-    await expect(results(page).getByTestId("settings-find-name").getByText("Default sync window", { exact: true })).toHaveCount(1);
-    await expect(results(page).filter({ has: page.getByTestId("settings-find-name").getByText("Sync window", { exact: true }) }).first().getByTestId("settings-find-where")).toHaveText(/^Accounts.*(Personal|Acme|Freelance|iCloud)/);
+    await expect(results(page).first().getByTestId("settings-find-name")).toHaveText("Sync window for all accounts");
+    const own = results(page).filter({ has: page.getByTestId("settings-find-name").getByText("Sync window for this account", { exact: true }) });
+    expect(await own.count()).toBeGreaterThan(1);
+    await expect(own.first().getByTestId("settings-find-where")).toHaveText(/^Accounts.*(Personal|Acme|Freelance|iCloud)/);
   });
 
   await scenario("a group comes into view untinted: only rows are marked (owner, 2026-11-12)", async () => {
