@@ -36,4 +36,8 @@ Agents are allowed by default at **Read only**: `update_threads`, `categorize`, 
 - `list_filters`
 - `create_filter`: supports a dry run.
 
+## How it runs (plan 293)
+
+The MCP server runs inside Terno (its backend process). `terno-mcp` is a small native program (`apps/desktop/native/terno-mcp.c`, compiled at packaging and signed with the app) that only carries the agent's stdio to Terno's agent socket after the per-start token from the profile's 0600 token file. No Node and no Electron run for it. While Terno is closed (or agents are off), it answers `initialize` and `tools/list` itself and every tool call says to open Terno; the next call after Terno opens works.
+
 [`packages/mcp/SKILL.md`](../packages/mcp/SKILL.md) teaches Claude Code the search syntax and etiquette.

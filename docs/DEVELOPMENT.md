@@ -5,7 +5,8 @@
 ```bash
 pnpm install            # Node 24+, pnpm 12
 pnpm dev                # backend (WebSocket, demo mailbox) + renderer at http://localhost:5173
-pnpm dist:mac           # → apps/desktop/release/mac-arm64/Terno.app and Terno-<v>-arm64.dmg
+pnpm dist:mac           # → apps/desktop/release/mac-arm64/Terno.app and Terno-<v>-arm64.dmg (needs a C compiler:
+                        #   the agents' terno-mcp bridge is compiled at packaging, plan 293; Xcode's command-line tools)
 pnpm dist:linux         # on Linux: the .deb and .rpm packages, x64 and arm64 (see Linux below)
 pnpm brand              # every icon (app, Tahoe, DMG, favicons, the in-app mark) from the logo in brand/ (macOS, Xcode 26)
 pnpm --filter @terno/desktop gen:dmg-background   # the DMG window's background (apps/desktop/src/dmg-layout.ts), plan 226
