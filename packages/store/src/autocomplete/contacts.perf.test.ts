@@ -176,7 +176,8 @@ describe(`the contact index at ${N.toLocaleString("en")} messages`, () => {
     log(`People: Everyone sorted ${best.toFixed(2)} ms (of ${cold.map((c) => c.toFixed(1)).join(", ")}), cached ${(cached * 1000).toFixed(1)} µs; search p95 ${p95.toFixed(3)} ms, max ${searched.at(-1)!.toFixed(2)} ms`);
     expect(best, "Everyone sorted (ms)").toBeLessThanOrEqual(FRAME * MULT);
     expect(cached, "Everyone cached (ms)").toBeLessThanOrEqual(0.05 * MULT);
-    expect(p95, "People search p95 (ms)").toBeLessThanOrEqual(2 * MULT);
+    // 2 → 3 ms (2.07-2.70 measured, 2026-11-27): a small overrun, raised by the owner's call
+    expect(p95, "People search p95 (ms)").toBeLessThanOrEqual(3 * MULT);
   });
 
   it("plan 287: People's filter over three accounts (most people in each): Everyone by account and date, cold and cached, the search within it, the dates' memory", async () => {
