@@ -133,8 +133,10 @@ function FindsGroup({ settings, update }: { settings: AppSettings; update: Setti
         {(a) => <Switch {...a} checked={dated.enabled} disabled={!ready && !dated.enabled} data-testid="ai-dated-switch" onCheckedChange={(enabled) => void update({ dated: { enabled } })} />}
       </SettingsRow>
       {/* plan 249: what the user wants there and what they don't, in their own words */}
-      <SettingsRow find="whatMatters.words" label={t("whatMatters.words.title")} hint={t("whatMatters.words.hint")} stacked testId="today-words">
-        {(a) => <WhatMattersWords labelledBy={a["aria-labelledby"]} describedBy={a["aria-describedby"]} />}
+      {/* a native box, so a <label for> as every text field in Settings (its name holds scrolled out of view, and a click
+          on it lands in the box) */}
+      <SettingsRow find="whatMatters.words" labelFor label={t("whatMatters.words.title")} hint={t("whatMatters.words.hint")} stacked testId="today-words">
+        {(a) => <WhatMattersWords id={a.id} labelledBy={a["aria-labelledby"]} describedBy={a["aria-describedby"]} />}
       </SettingsRow>
       {dated.enabled && status?.blockedBy && (
         <SettingsNote testId="ai-dated-status">

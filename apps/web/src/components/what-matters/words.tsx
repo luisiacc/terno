@@ -106,7 +106,7 @@ function LookBack() {
  * Under it, what Terno understood (a line per rule, what each show looks for), what it couldn't do, and the work on its
  * way. An empty box changes nothing in What matters.
  */
-export function WhatMattersWords({ labelledBy, describedBy }: { labelledBy?: string; describedBy?: string }) {
+export function WhatMattersWords({ id, labelledBy, describedBy }: { /** the box's, for its row's <label for> */ id?: string; labelledBy?: string; describedBy?: string }) {
   const [state] = useWords();
   const reading = useApp((s) => s.settings?.dated?.enabled === true);
   const [text, setText] = useState<string | null>(null);
@@ -182,6 +182,7 @@ export function WhatMattersWords({ labelledBy, describedBy }: { labelledBy?: str
     <div className="flex flex-col gap-2" data-testid="wm-words">
       <Textarea
         ref={field}
+        id={id}
         aria-labelledby={labelledBy}
         aria-describedby={[describedBy, text.length >= COUNT_FROM ? countId : null].filter(Boolean).join(" ") || undefined}
         value={text}
