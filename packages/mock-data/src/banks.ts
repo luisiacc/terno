@@ -212,3 +212,158 @@ export const ATTACHMENT_NAMES = [
   { filename: "mockups.fig", mime: "application/octet-stream" },
   { filename: "boarding-pass.pdf", mime: "application/pdf" },
 ];
+
+/*
+ * Plan 289: the demo edition's lists, one language each. The fixture above draws from the shared lists (mixed); the demo
+ * draws an English account's mail from EN_* and the Spanish account's from ES_*, so no English account shows a word of
+ * Spanish (no accented letter either: the demo's test checks it).
+ */
+export type Lang = "en" | "es";
+
+export const EN_FIRST_NAMES = [
+  "Emma", "Liam", "Olivia", "Noah", "Ava", "Ethan", "Mia", "Lucas", "Chloe", "Jack",
+  "Grace", "Henry", "Sophie", "Oliver", "Hannah", "James", "Nora", "Owen", "Ruby", "Caleb",
+  "Priya", "Arjun", "Wei", "Mei", "Yuki", "Hiro", "Omar", "Fatima", "Zara", "Daniel",
+  "Rachel", "Ben", "Claire", "Maya", "Theo", "Isla", "Leo", "Alice", "Max", "Amara",
+];
+export const EN_LAST_NAMES = [
+  "Smith", "Johnson", "Brown", "Taylor", "Wilson", "Nakamura", "Chen", "Kumar", "Haddad", "Walker",
+  "Harris", "Clarke", "Patel", "Shah", "Murphy", "Bennett", "Hughes", "Foster", "Reed", "Collins",
+  "Brooks", "Turner", "Price", "Kim", "Park", "Nguyen", "Cohen", "Fischer", "Okafor", "Lindgren",
+];
+/** the fixture's Spanish names only (its lists hold them first) */
+export const ES_FIRST_NAMES = FIRST_NAMES.slice(0, 30);
+export const ES_LAST_NAMES = LAST_NAMES.slice(0, 30);
+
+export const EN_CLIENT_COMPANIES = [
+  { name: "Northwind Traders", domain: "northwind.com" },
+  { name: "Lumen Health", domain: "lumenhealth.io" },
+  { name: "Orbita Labs", domain: "orbitalabs.dev" },
+  { name: "Harbor & Pine", domain: "harborpine.com" },
+  { name: "Fieldstone Bakery", domain: "fieldstonebakery.com" },
+  { name: "Atlas Travel", domain: "atlastravel.co" },
+];
+export const ES_CLIENT_COMPANIES = CLIENT_COMPANIES.filter((c) => ["cafealtura.mx", "nomadaviajes.com", "bancoandino.co", "panaderialupita.mx", "estudioambar.es"].includes(c.domain));
+
+export const EN_NEWSLETTERS: NewsletterSource[] = [
+  ...NEWSLETTERS.filter((n) => n.lang === "en"),
+  {
+    name: "Fieldnotes Weekly",
+    email: "hello@fieldnotes.email",
+    listId: "weekly.fieldnotes.email",
+    subjects: ["Fieldnotes #{n}: {topic}", "This week in design: {topic}", "Three links on {topic}"],
+    topics: ["type on screens", "calm software", "design critiques", "color systems", "writing for interfaces"],
+    lang: "en",
+  },
+  {
+    name: "Product Hunt Daily",
+    email: "hello@digest.producthunt.com",
+    listId: "digest.producthunt.com",
+    subjects: ["Today's top products: {topic}", "The best of {topic} this week"],
+    topics: ["AI note takers", "email clients", "habit trackers", "password managers", "photo editors"],
+    lang: "en",
+  },
+];
+export const ES_NEWSLETTERS = NEWSLETTERS.filter((n) => n.lang === "es");
+
+/** the English accounts' notifications: GitHub and Linear, and English versions of the shops, banks and trips */
+export const EN_NOTIFIERS: NotificationSource[] = [
+  { name: "Amazon", email: "shipment-tracking@amazon.com", listId: null, kind: "shipping", lang: "en" },
+  { name: "Uber Receipts", email: "uber.receipts@uber.com", listId: null, kind: "receipt", lang: "en" },
+  { name: "DoorDash", email: "no-reply@doordash.com", listId: null, kind: "receipt", lang: "en" },
+  ...NOTIFIERS.filter((n) => n.lang === "en"),
+  { name: "Chase", email: "no.reply.alerts@chase.com", listId: null, kind: "bank", lang: "en" },
+  { name: "Delta Air Lines", email: "deltaairlines@t.delta.com", listId: null, kind: "travel", lang: "en" },
+  { name: "Airbnb", email: "automated@airbnb.com", listId: null, kind: "travel", lang: "en" },
+  { name: "Google Calendar", email: "calendar-notification@google.com", listId: null, kind: "calendar", lang: "en" },
+];
+export const ES_NOTIFIERS = NOTIFIERS.filter((n) => n.lang === "es");
+
+export const EN_SPAMMERS = [
+  { name: "Prize Center", email: "winner@prize-center.biz" },
+  { name: "Crypto Signals", email: "vip@cryptosignals.top" },
+  { name: "Pharmacy 24h", email: "deals@pharma24h.click" },
+  { name: "Lottery Department", email: "claims@intl-lottery.win" },
+];
+export const ES_SPAMMERS = SPAMMERS.filter((s) => ["ganador@premios-express.biz", "ofertas@farma24h.click"].includes(s.email));
+export const SPAM = {
+  en: { subjects: ["You've won an iPhone 17!!", "URGENT: claim your prize now", "💰 Earn $5,000 a day from home", "Your account will be suspended"], body: "Click here to claim your prize before the offer expires." },
+  es: { subjects: ["¡¡Felicidades!! Has ganado un iPhone 17", "💰 Gana $5,000 diarios desde casa", "Tu cuenta será suspendida"], body: "Haz clic aquí para reclamar tu premio antes de que expire la oferta." },
+};
+
+export const EN_PROJECT_WORDS = [
+  "checkout redesign", "SQLite migration", "spring landing page", "mobile app", "design system",
+  "metrics dashboard", "Stripe integration", "onboarding", "instant search", "payments API",
+  "holiday campaign", "accessibility audit", "new logo", "client portal",
+];
+
+export const EN_WORK_SUBJECTS = [
+  ...WORK_SUBJECTS_EN,
+  "Review of the {project}",
+  "Sprint {n} planning",
+  "Follow-up meeting: {project}",
+  "Questions about the {project}",
+  "Updated budget for the {project}",
+  "Client feedback on the {project}",
+];
+
+export const EN_PERSONAL_SUBJECTS = [
+  "Lunch on Saturday?",
+  "Photos from the lake trip 📸",
+  "Mom's birthday 🎂",
+  "Re: the apartment on Elm Street",
+  "Book recommendations",
+  "Concert on Friday?",
+  "Tickets for the game 🏀",
+  "Grandma's recipe",
+  "Plans for the long weekend",
+  "Sending you the document",
+  "Weekend plans?",
+  "Long time no see!",
+];
+export const ES_PERSONAL_SUBJECTS = PERSONAL_SUBJECTS.slice(0, 10);
+
+/** the fixture's twelve, then the rest of the Spanish ones' meaning, so both languages say the same things */
+export const EN_SENTENCES = [
+  ...SENTENCES_EN,
+  "There was a problem with the payment, can you take a look?",
+  "I'll call you tomorrow to go over the details.",
+  "The song I sent you is the one from the concert.",
+  "Just a reminder that the contract renews next month.",
+  "Are you free on Thursday for a quick call?",
+  "The photos from the event are in the link below.",
+  "Heads up: the calendar dates changed again.",
+  "The design turned out great, please thank the team for me.",
+];
+
+export const EN_ATTACHMENT_NAMES = [
+  { filename: "invoice-{n}.pdf", mime: "application/pdf" },
+  { filename: "proposal-v{n}.pdf", mime: "application/pdf" },
+  { filename: "budget.xlsx", mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+  { filename: "photo-{n}.jpg", mime: "image/jpeg" },
+  { filename: "signed-contract.pdf", mime: "application/pdf" },
+  { filename: "mockups.fig", mime: "application/octet-stream" },
+  { filename: "boarding-pass.pdf", mime: "application/pdf" },
+];
+
+/** the demo's newsletter paragraphs: what a newsletter says (the fixture's borrow the conversations' sentences) */
+export const NEWSLETTER_LINES: Record<Lang, string[]> = {
+  en: [
+    "Here is what caught our eye this week.",
+    "Plus: three tools we tried and kept.",
+    "Our pick of the week is a short read worth your time.",
+    "A reader wrote in with a question we loved.",
+    "The full story is on our site.",
+    "Next week: a deep dive with a guest writer.",
+    "Thanks for reading, and see you next week.",
+  ],
+  es: [
+    "Esto fue lo que más nos llamó la atención esta semana.",
+    "Además: tres herramientas que probamos y nos quedamos.",
+    "Nuestra recomendación de la semana es una lectura corta que vale la pena.",
+    "Un lector nos escribió con una pregunta que nos encantó.",
+    "La historia completa está en nuestro sitio.",
+    "La próxima semana: un análisis a fondo con un autor invitado.",
+    "Gracias por leer, nos vemos la próxima semana.",
+  ],
+};

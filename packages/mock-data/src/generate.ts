@@ -50,6 +50,8 @@ export type ThreadTag = "newsletter" | "receipt" | "shipping" | "bank" | "dev" |
 
 export interface MockAccount {
   kind: "imap" | "gmail";
+  /** plan 289: the demo edition's: every conversation on the account in this language (the fixture's mix both) */
+  lang?: B.Lang;
   email: string;
   displayName: string;
   color: string;
@@ -66,8 +68,16 @@ export interface MockCategory {
   tags: ThreadTag[];
 }
 
+/**
+ * Plan 289: who the mailbox is for. `fixture` (the default) is what the tests, baselines and perf gates read, byte for
+ * byte as before: three conversations in four Spanish, on every account. `demo` is what people look at (the demo
+ * commands, the site's pictures): every account English but one, Freelance, in Spanish.
+ */
+export type Edition = "fixture" | "demo";
+
 export interface GenerateOptions {
   seed?: number;
+  edition?: Edition;
   /** number of conversation threads; messages ≈ threads × 2.5 */
   threads: number;
   accounts?: number;
@@ -121,6 +131,110 @@ const ALL_ACCOUNTS: MockAccount[] = [
   { kind: "gmail", email: "compras.luis@gmail.com", displayName: "Compras", color: "lime", ownerName: "Luis Cordero", weight: 0.02 },
 ];
 
+/** plan 289: the demo's accounts: the fixture's, each in one language, the English ones' labels and folders in English */
+const DEMO_ACCOUNTS: MockAccount[] = [
+  {
+    ...ALL_ACCOUNTS[0]!,
+    lang: "en",
+    folders: [
+      { key: "Label_11", path: ["Family"], selectable: true, tags: ["personal"] },
+      { key: "Label_12", path: ["Receipts"], selectable: true, tags: ["receipt", "bank"] },
+      { key: "Label_13", path: ["Receipts", "Taxes 2026"], selectable: true, tags: ["bank"] },
+    ],
+  },
+  {
+    ...ALL_ACCOUNTS[1]!,
+    lang: "en",
+    folders: [
+      { key: "Label_21", path: ["Projects"], selectable: true, tags: ["work"] },
+      { key: "Label_22", path: ["Projects", "Website redesign"], selectable: true, tags: ["client"] },
+      { key: "Label_23", path: ["Team"], selectable: true, tags: ["calendar"] },
+    ],
+  },
+  { ...ALL_ACCOUNTS[2]!, lang: "es" },
+  { ...ALL_ACCOUNTS[3]!, lang: "en", folders: [{ key: "Saved trips", path: ["Saved trips"], selectable: true, tags: ["travel"] }] },
+  { ...ALL_ACCOUNTS[4]!, lang: "en" },
+  { ...ALL_ACCOUNTS[5]!, lang: "en", displayName: "University", ownerName: "Luis Cordero" },
+  { ...ALL_ACCOUNTS[6]!, lang: "en", displayName: "Hotmail (old)" },
+  { ...ALL_ACCOUNTS[7]!, lang: "en", displayName: "Shopping" },
+];
+/** Plan 289: the demo mailbox `seedDemo` seeds for the demo commands (the site's picture checks generate it again). */
+export const DEMO_DATASET = { threads: 3000, accounts: 4, seed: 42, bodyScale: 2, edition: "demo" } as const satisfies GenerateOptions;
+
+/** the index of the demo's Spanish account (Freelance) */
+export const DEMO_SPANISH_ACCOUNT = DEMO_ACCOUNTS.findIndex((a) => a.lang === "es");
+
+/** plan 289: the demo's categories, in English (the order and colors are the fixture's) */
+export const DEMO_CATEGORIES: MockCategory[] = [
+  { name: "Receipts", color: "amber", tags: ["receipt", "bank"] },
+  { name: "Clients", color: "emerald", tags: ["client"] },
+  { name: "Travel", color: "cyan", tags: ["travel"] },
+  { name: "Reading", color: "violet", tags: ["newsletter"] },
+  { name: "Dev", color: "brown", tags: ["dev"] },
+];
+
+/** What an account's mail draws from: in the fixture one shared, mixed set; in the demo one per language. */
+interface Pools {
+  first: readonly string[];
+  last: readonly string[];
+  newsletters: readonly B.NewsletterSource[];
+  notifiers: readonly B.NotificationSource[];
+  spammers: readonly Address[];
+  spamSubjects: readonly string[];
+  spamBody: string;
+  personalSubjects: readonly string[];
+  projects: readonly string[];
+  clients: readonly { name: string; domain: string }[];
+  attachments: readonly { filename: string; mime: string }[];
+}
+const FIXTURE_POOLS: Pools = {
+  first: B.FIRST_NAMES,
+  last: B.LAST_NAMES,
+  newsletters: B.NEWSLETTERS,
+  notifiers: B.NOTIFIERS,
+  spammers: B.SPAMMERS,
+  spamSubjects: ["¡¡Felicidades!! Has ganado un iPhone 17", "URGENT: claim your prize now", "💰 Gana $5,000 diarios desde casa", "Your account will be suspended"],
+  spamBody: "Haz clic aquí para reclamar tu premio antes de que expire la oferta.",
+  personalSubjects: B.PERSONAL_SUBJECTS,
+  projects: B.PROJECT_WORDS,
+  clients: B.CLIENT_COMPANIES,
+  attachments: B.ATTACHMENT_NAMES,
+};
+const DEMO_POOLS: Record<B.Lang, Pools> = {
+  en: {
+    first: B.EN_FIRST_NAMES,
+    last: B.EN_LAST_NAMES,
+    newsletters: B.EN_NEWSLETTERS,
+    notifiers: B.EN_NOTIFIERS,
+    spammers: B.EN_SPAMMERS,
+    spamSubjects: B.SPAM.en.subjects,
+    spamBody: B.SPAM.en.body,
+    personalSubjects: B.EN_PERSONAL_SUBJECTS,
+    projects: B.EN_PROJECT_WORDS,
+    clients: B.EN_CLIENT_COMPANIES,
+    attachments: B.EN_ATTACHMENT_NAMES,
+  },
+  es: {
+    first: B.ES_FIRST_NAMES,
+    last: B.ES_LAST_NAMES,
+    newsletters: B.ES_NEWSLETTERS,
+    notifiers: B.ES_NOTIFIERS,
+    spammers: B.ES_SPAMMERS,
+    spamSubjects: B.SPAM.es.subjects,
+    spamBody: B.SPAM.es.body,
+    personalSubjects: B.ES_PERSONAL_SUBJECTS,
+    projects: B.PROJECT_WORDS,
+    clients: B.ES_CLIENT_COMPANIES,
+    attachments: B.ATTACHMENT_NAMES,
+  },
+};
+
+/** How one language writes a conversation (the fixture's English has fewer sentences and subjects than the demo's). */
+const voice = (lang: B.Lang, demo: boolean) =>
+  lang === "es"
+    ? { openers: B.OPENERS_ES, closers: B.CLOSERS_ES, sentences: B.SENTENCES_ES, workSubjects: B.WORK_SUBJECTS_ES }
+    : { openers: B.OPENERS_EN, closers: B.CLOSERS_EN, sentences: demo ? B.EN_SENTENCES : B.SENTENCES_EN, workSubjects: demo ? B.EN_WORK_SUBJECTS : B.WORK_SUBJECTS_EN };
+
 export const MOCK_CATEGORIES: MockCategory[] = [
   { name: "Facturas", color: "amber", tags: ["receipt", "bank"] },
   { name: "Clientes", color: "emerald", tags: ["client"] },
@@ -148,7 +262,12 @@ export function generateDataset(options: GenerateOptions): MockDataset {
   const rand = prng(options.seed ?? 42);
   const now = options.now ?? DEFAULT_NOW;
   const spanDays = options.spanDays ?? 730;
-  const accounts = ALL_ACCOUNTS.slice(0, Math.max(1, Math.min(options.accounts ?? 4, ALL_ACCOUNTS.length)));
+  const demo = options.edition === "demo";
+  // the categorization eval's families are Spanish and English mixed: the fixture's only
+  if (demo && options.adversarial) throw new Error("the demo edition has no adversarial families (the fixture's, for the categorization eval)");
+  const accounts = (demo ? DEMO_ACCOUNTS : ALL_ACCOUNTS).slice(0, Math.max(1, Math.min(options.accounts ?? 4, ALL_ACCOUNTS.length)));
+  /** the fixture's accounts have no language: one mixed set for all */
+  const poolsOf = (lang: B.Lang | undefined) => (lang ? DEMO_POOLS[lang] : FIXTURE_POOLS);
   const totalWeight = accounts.reduce((s, a) => s + a.weight, 0);
 
   const pick = <T>(list: readonly T[]): T => list[Math.floor(rand() * list.length)]!;
@@ -164,9 +283,10 @@ export function generateDataset(options: GenerateOptions): MockDataset {
     }
     return accounts.length - 1;
   };
-  const person = (): Address => {
-    const first = pick(B.FIRST_NAMES);
-    const last = pick(B.LAST_NAMES);
+  const person = (lang?: B.Lang): Address => {
+    const pools = poolsOf(lang);
+    const first = pick(pools.first);
+    const last = pick(pools.last);
     const local = `${first}.${last}`
       .normalize("NFKD")
       .replace(/[̀-ͯ]/g, "")
@@ -178,19 +298,24 @@ export function generateDataset(options: GenerateOptions): MockDataset {
   const dateFor = () => now - Math.floor(Math.pow(rand(), 2.2) * spanDays * DAY) - int(0, 3_600_000);
 
   // Stable pools so senders repeat (needed for suggestions and learned filters)
-  const friends = Array.from({ length: 40 }, person);
-  const coworkers = Array.from({ length: 18 }, () => {
-    const p = person();
-    return { name: p.name, email: p.email.replace(/@.*/, "@acme.studio") };
-  });
+  const people = (lang?: B.Lang) => {
+    const friends = Array.from({ length: 40 }, () => person(lang));
+    const coworkers = Array.from({ length: 18 }, () => {
+      const p = person(lang);
+      return { name: p.name, email: p.email.replace(/@.*/, "@acme.studio") };
+    });
+    return { friends, coworkers };
+  };
+  // the demo's: one set per language, so nobody on an English account writes on the Spanish one
+  const circles: Partial<Record<B.Lang | "mixed", ReturnType<typeof people>>> = demo ? { en: people("en"), es: people("es") } : { mixed: people() };
+  const circleOf = (lang: B.Lang | undefined) => circles[lang ?? "mixed"]!;
 
   const messages: MockMessage[] = [];
   let msgCounter = 0;
   let threadCounter = 0;
 
   const bodyScale = Math.max(1, options.bodyScale ?? 1);
-  const sentences = (lang: "es" | "en", n: number) =>
-    Array.from({ length: n * bodyScale }, () => pick(lang === "es" ? B.SENTENCES_ES : B.SENTENCES_EN)).join(" ");
+  const sentences = (lang: B.Lang, n: number, list = voice(lang, demo).sentences) => Array.from({ length: n * bodyScale }, () => pick(list)).join(" ");
 
   type Draft = Omit<MockMessage, "accountIndex" | "providerMsgId" | "providerThreadId" | "rfcMessageId" | "inReplyTo" | "references" | "snippet" | "bodyState" | "size" | "isDraft" | "tags" | "family">;
   const emit = (drafts: readonly Draft[], accountIndex: number, threadKey: string, providerThreadId: string | null, family?: AdversarialFamily) => {
@@ -220,9 +345,35 @@ export function generateDataset(options: GenerateOptions): MockDataset {
     }
   };
 
+  /** Plan 289: the demo's English notices (the fixture's English ones are a few words: "Order 123 shipped"). */
+  const englishNotice = (src: B.NotificationSource, n: number, amount: string, coworkers: readonly Address[]): { tag: ThreadTag; subject: string; body: string; attach: boolean } => {
+    switch (src.kind) {
+      case "receipt":
+        return { tag: "receipt", subject: `Your receipt from ${src.name} · $${amount}`, body: `Thanks for your order. Total: $${amount}. Invoice ${n} is ready in your account.`, attach: chance(0.6) };
+      case "shipping":
+        return { tag: "shipping", subject: `Your order ${n} ${pick(["has shipped", "is on its way", "was delivered"])}`, body: `Your package (tracking number 1Z${n}${int(10, 99)}) will arrive soon. You can track it in the app.`, attach: false };
+      case "bank": {
+        const subject = pick([`A charge of $${amount} on your card`, `Your ${pick(["January", "February", "March", "April", "May", "June"])} statement is ready`, "Transfer received"]);
+        return { tag: "bank", subject, body: `A transaction of $${amount} was made on your account. If you don't recognize it, contact us.`, attach: subject.includes("statement") };
+      }
+      case "dev": {
+        const repo = src.listId?.split(".")[0] ?? "web";
+        const pr = int(100, 4000);
+        const subject = src.name === "GitHub" ? `[acme/${repo}] ${pick(["Fix flaky test in checkout", "Add search index for threads", "Bump dependencies", "Refactor sync engine", "Improve keyboard navigation"])} (#${pr})` : `[ACM-${pr}] ${pick(["Search is slow on large inboxes", "Crash when opening attachment", "Polish empty states", "Dark mode contrast"])}`;
+        return { tag: "dev", subject, body: `${pick(coworkers).name} ${pick(["commented", "approved these changes", "requested changes", "merged"])}: ${sentences("en", 2)}`, attach: false };
+      }
+      case "travel":
+        return { tag: "travel", subject: `Your ${pick(["flight", "booking", "trip"])} to ${pick(["Lisbon", "Chicago", "Vancouver", "Tokyo", "Denver", "London"])} is confirmed · ${n}`, body: `Booking ${n} is confirmed. Show your boarding pass at the airport.`, attach: chance(0.5) };
+      case "calendar":
+        return { tag: "calendar", subject: `Invitation: ${pick(["Weekly review", "1:1 with Emma", "Client demo", "Q4 planning"])} @ ${pick(["Mon", "Tue", "Wed", "Thu", "Fri"])} ${int(9, 18)}:00`, body: "You have been invited to an event. Going? Yes · Maybe · No", attach: false };
+    }
+  };
+
   for (let t = 0; t < options.threads; t++) {
     const accountIndex = pickAccount();
     const account = accounts[accountIndex]!;
+    const pools = poolsOf(account.lang);
+    const { friends, coworkers } = circleOf(account.lang);
     const me: Address = { name: account.ownerName, email: account.email };
     const threadKey = `t${++threadCounter}`;
     const providerThreadId = account.kind === "gmail" ? `gth-${threadKey}` : null;
@@ -247,11 +398,13 @@ export function generateDataset(options: GenerateOptions): MockDataset {
     };
 
     if (roll < 0.26) {
-      const nl = pick(B.NEWSLETTERS);
+      const nl = pick(pools.newsletters);
       const topic = pick(nl.topics);
       const subject = fill(pick(nl.subjects), { topic, n: int(200, 720), product: "Pixel Fold", thing: "escritorio" });
       const intro = nl.lang === "es" ? `Esta semana hablamos de ${topic}.` : `This week: ${topic}.`;
-      const body = `${intro} ${sentences(nl.lang, int(3, 7))}\n\n${nl.lang === "es" ? "Darse de baja" : "Unsubscribe"}: https://${nl.listId}/u`;
+      // the demo's say what a newsletter says; the fixture's borrow the conversations' sentences
+      const lines = demo ? B.NEWSLETTER_LINES[nl.lang] : undefined;
+      const body = `${intro} ${sentences(nl.lang, int(3, 7), lines)}\n\n${nl.lang === "es" ? "Darse de baja" : "Unsubscribe"}: https://${nl.listId}/u`;
       drafts.push({
         ...base,
         tag: "newsletter",
@@ -260,7 +413,7 @@ export function generateDataset(options: GenerateOptions): MockDataset {
         subject,
         date: baseDate,
         bodyText: body,
-        bodyHtml: `<div style="font-family:Georgia,serif;max-width:600px;margin:auto"><h1 style="font-size:22px">${escapeHtml(subject)}</h1><p>${escapeHtml(intro)}</p><p>${escapeHtml(sentences(nl.lang, 3))}</p><img src="https://${nl.listId}/pixel.gif" width="1" height="1" alt=""><p style="color:#888;font-size:12px"><a href="https://${nl.listId}/u">${nl.lang === "es" ? "Darse de baja" : "Unsubscribe"}</a></p></div>`,
+        bodyHtml: `<div style="font-family:Georgia,serif;max-width:600px;margin:auto"><h1 style="font-size:22px">${escapeHtml(subject)}</h1><p>${escapeHtml(intro)}</p><p>${escapeHtml(sentences(nl.lang, 3, lines))}</p><img src="https://${nl.listId}/pixel.gif" width="1" height="1" alt=""><p style="color:#888;font-size:12px"><a href="https://${nl.listId}/u">${nl.lang === "es" ? "Darse de baja" : "Unsubscribe"}</a></p></div>`,
         listId: nl.listId,
         bulk: true,
         unsubscribe: { mailto: `mailto:unsubscribe@${nl.listId}?subject=unsubscribe` },
@@ -269,7 +422,7 @@ export function generateDataset(options: GenerateOptions): MockDataset {
         isSent: false,
       });
     } else if (roll < 0.52) {
-      const src = pick(B.NOTIFIERS);
+      const src = pick(pools.notifiers);
       const n = int(1000, 99999);
       const amount = (int(80, 25000) + int(0, 99) / 100).toFixed(2);
       const es = src.lang === "es";
@@ -277,7 +430,9 @@ export function generateDataset(options: GenerateOptions): MockDataset {
       let body: string;
       let tag: ThreadTag;
       let attach = false;
-      switch (src.kind) {
+      // the demo's English accounts read proper English notices; the rest (the fixture, the Spanish account) as before
+      if (demo && !es) ({ tag, subject, body, attach } = englishNotice(src, n, amount, coworkers));
+      else switch (src.kind) {
         case "receipt":
           tag = "receipt";
           subject = es ? `Tu recibo de ${src.name} · $${amount} MXN` : `Your receipt from ${src.name} #${n}`;
@@ -332,27 +487,26 @@ export function generateDataset(options: GenerateOptions): MockDataset {
         isSent: false,
         isStarred: chance(0.02),
         hasAttachments: attach,
-        attachments: attach ? [{ ...pick(B.ATTACHMENT_NAMES.slice(0, 1)), filename: `factura-${n}.pdf`, size: int(40_000, 400_000) }] : [],
+        attachments: attach ? [{ ...pick(pools.attachments.slice(0, 1)), filename: `${es || !demo ? "factura" : "invoice"}-${n}.pdf`, size: int(40_000, 400_000) }] : [],
       });
     } else if (roll < 0.95) {
       // conversations: personal, work, client
       const kind: ThreadTag = rand() < 0.4 ? "personal" : rand() < 0.6 ? "work" : "client";
-      const es = chance(0.75);
+      // the demo's accounts each have one language; the fixture's threads toss for it
+      const es = account.lang ? account.lang === "es" : chance(0.75);
+      const v = voice(es ? "es" : "en", demo);
       const participants: Address[] =
         kind === "personal"
           ? [pick(friends)]
           : kind === "work"
             ? Array.from({ length: int(1, 4) }, () => pick(coworkers))
             : (() => {
-                const c = pick(B.CLIENT_COMPANIES);
-                const p = person();
+                const c = pick(pools.clients);
+                const p = person(account.lang);
                 return [{ name: `${p.name} (${c.name})`, email: `${p.email.split("@")[0]}@${c.domain}` }];
               })();
-      const project = pick(B.PROJECT_WORDS);
-      const subject =
-        kind === "personal"
-          ? pick(B.PERSONAL_SUBJECTS)
-          : fill(pick(es ? B.WORK_SUBJECTS_ES : B.WORK_SUBJECTS_EN), { project, n: int(1, 40) });
+      const project = pick(pools.projects);
+      const subject = kind === "personal" ? pick(pools.personalSubjects) : fill(pick(v.workSubjects), { project, n: int(1, 40) });
       // Long-tail thread lengths, a few very long work threads.
       const length = kind === "work" && chance(0.03) ? int(18, 40) : Math.max(1, Math.round(Math.pow(rand(), 2) * 7));
       let date = baseDate;
@@ -365,8 +519,8 @@ export function generateDataset(options: GenerateOptions): MockDataset {
         const from = fromMe ? me : other;
         const to = fromMe ? participants : [me, ...participants.filter((p) => p !== other)];
         const name = (fromMe ? other.name : me.name).split(" ")[0]!;
-        const opener = fill(pick(es ? B.OPENERS_ES : B.OPENERS_EN), { name });
-        const closer = pick(es ? B.CLOSERS_ES : B.CLOSERS_EN);
+        const opener = fill(pick(v.openers), { name });
+        const closer = pick(v.closers);
         const text = `${opener}\n\n${sentences(es ? "es" : "en", int(1, 4))}\n\n${closer}\n${from.name.split(" ")[0]}`;
         const quoted = previousBody ? `\n\n> ${previousBody.split("\n").slice(0, 4).join("\n> ")}` : "";
         const attach = chance(kind === "client" ? 0.25 : 0.08);
@@ -386,7 +540,7 @@ export function generateDataset(options: GenerateOptions): MockDataset {
           isStarred: starred && last,
           isTrash: trashed,
           hasAttachments: attach,
-          attachments: attach ? [{ ...pick(B.ATTACHMENT_NAMES), filename: fill(pick(B.ATTACHMENT_NAMES).filename, { n: int(1, 9) }), size: int(20_000, 3_000_000) }] : [],
+          attachments: attach ? [{ ...pick(pools.attachments), filename: fill(pick(pools.attachments).filename, { n: int(1, 9) }), size: int(20_000, 3_000_000) }] : [],
         });
         previousBody = text;
         date += int(10, 60 * 24) * 60_000;
@@ -394,15 +548,15 @@ export function generateDataset(options: GenerateOptions): MockDataset {
         if (date > now) break;
       }
     } else {
-      const s = pick(B.SPAMMERS);
+      const s = pick(pools.spammers);
       drafts.push({
         ...base,
         tag: "spam",
         from: s,
         to: [me],
-        subject: pick(["¡¡Felicidades!! Has ganado un iPhone 17", "URGENT: claim your prize now", "💰 Gana $5,000 diarios desde casa", "Your account will be suspended"]),
+        subject: pick(pools.spamSubjects),
         date: baseDate,
-        bodyText: "Haz clic aquí para reclamar tu premio antes de que expire la oferta.",
+        bodyText: pools.spamBody,
         isRead: false,
         inInbox: false,
         isSent: false,
@@ -421,7 +575,7 @@ export function generateDataset(options: GenerateOptions): MockDataset {
       pick: <T,>(list: readonly T[]): T => list[Math.floor(r() * list.length)]!,
       int: (min: number, max: number) => min + Math.floor(r() * (max - min + 1)),
       chance: (p: number) => r() < p,
-      friends,
+      friends: circleOf(accounts[0]!.lang).friends,
       clients: B.CLIENT_COMPANIES,
       projects: B.PROJECT_WORDS,
       person: () => {
@@ -454,7 +608,7 @@ export function generateDataset(options: GenerateOptions): MockDataset {
   }
   placeInFolders(accounts, messages);
   placeInTabs(accounts, messages);
-  return { accounts, categories: MOCK_CATEGORIES, messages };
+  return { accounts, categories: demo ? DEMO_CATEGORIES : MOCK_CATEGORIES, messages };
 }
 
 function familyDraft(m: FamilyMessage, me: Address, date: number, inInbox: boolean, ageDays: number, tag: ThreadTag) {
@@ -514,4 +668,26 @@ function placeInFolders(accounts: readonly MockAccount[], messages: MockMessage[
     if (accounts[m.accountIndex]!.kind === "gmail") m.gmailLabels = keys;
     else m.locations = keys.map((mailbox) => ({ mailbox, uidvalidity: 1, uid: i + 1, flags: m.isRead ? ["\\Seen"] : [] }));
   });
+}
+
+/**
+ * Plan 289: what only the demo's Spanish account says: its people's names (whole, and every Spanish first name), its
+ * subjects and its folders. The site's pictures refuse a frame that paints any of them.
+ */
+export function demoSpanishWords(data: MockDataset = generateDataset(DEMO_DATASET)): string[] {
+  const of = (index: (i: number) => boolean) => {
+    const words = new Set<string>();
+    data.accounts.forEach((a, i) => index(i) && a.folders?.forEach((f) => f.path.forEach((part) => words.add(part))));
+    for (const m of data.messages) {
+      if (!index(m.accountIndex)) continue;
+      words.add(m.subject.replace(/^(re|RE): /, ""));
+      for (const a of [m.from, ...m.to, ...m.cc]) if (!data.accounts.some((own) => own.email === a.email)) words.add(a.name);
+    }
+    return words;
+  };
+  const spanish = of((i) => i === DEMO_SPANISH_ACCOUNT);
+  for (const name of B.ES_FIRST_NAMES) spanish.add(name);
+  // what the English accounts say too (Google Calendar, Uber Receipts) isn't Spanish, nor is a word with no letter ("2026")
+  const english = of((i) => i !== DEMO_SPANISH_ACCOUNT);
+  return [...spanish].filter((w) => /\p{L}/u.test(w) && !english.has(w));
 }
