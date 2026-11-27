@@ -294,5 +294,13 @@
   "filed-detail-light": {
     "width": 607,
     "height": 460
+  },
+  "ai-people-dark": {
+    "width": 1280,
+    "height": 800
+  },
+  "ai-people-light": {
+    "width": 1280,
+    "height": 800
   }
 }

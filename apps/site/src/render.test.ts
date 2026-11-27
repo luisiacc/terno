@@ -186,7 +186,7 @@ describe("Terno Pro (plan 97)", () => {
   const homes = routes().filter((r) => r.page === "home");
   const doc = (path: string) => new JSDOM(render(routes().find((r) => r.path === path)!).body).window.document;
 
-  it("every home design has the section, its nav link, the five pictures with alt text, and no way to buy", () => {
+  it("every home design has the section, its nav link, the six pictures with alt text, and no way to buy", () => {
     for (const route of homes) {
       const copy = COPY[route.lang];
       const page = new JSDOM(render(route).body).window.document;
@@ -199,7 +199,7 @@ describe("Terno Pro (plan 97)", () => {
       expect(pro.textContent).toContain(copy.pro.status);
       expect(pro.textContent).toContain(copy.pro.price);
       expect(pro.textContent).toContain(copy.pro.ownKey);
-      for (const name of ["ai-reply", "ai-ask", "ai-followups", "ai-digest", "ai-summary"] as const) {
+      for (const name of ["ai-reply", "ai-ask", "ai-followups", "ai-people", "ai-digest", "ai-summary"] as const) {
         const imgs = [...pro.querySelectorAll(`img[src^="/shots/${name}-"]`)];
         expect(imgs.map((i) => i.getAttribute("data-mode")), `${route.path} ${name}`).toEqual(["light", "dark"]);
         for (const img of imgs) expect(img.getAttribute("alt")).toBe(copy.alt[name]);
@@ -226,6 +226,40 @@ describe("Terno Pro (plan 97)", () => {
     expect(COPY.en.features.local.body).toContain("syncs between your computer and your mail servers");
     expect(COPY.es.stats[1]!.label).toBe("servidores de Terno que guardan tu correo");
     for (const lang of ["en", "es"] as const) expect(COPY[lang].meta.description).toContain("Terno Pro");
+  });
+});
+
+describe("People in Terno Pro (plan 288)", () => {
+  it("every home design, in each language, shows People between the pairs, with its words and its own picture", () => {
+    for (const lang of ["en", "es"] as const)
+      for (const design of DESIGNS) {
+        const route = { ...routes().find((r) => r.path === (lang === "es" ? "/es/" : "/"))!, design };
+        const pro = new JSDOM(render(route).body).window.document.querySelector("section#pro")!;
+        const p = COPY[lang].pro;
+        const where = `${lang} ${design}`;
+        // the features in order, after “What matters”' own (its title is an h3 too)
+        const titles = [p.reply, p.ask, p.followups, p.people, p.digest, p.summaries].map((f) => f.title);
+        const h3s = [...pro.querySelectorAll("h3")].filter((h) => titles.includes(h.textContent!));
+        expect(h3s.map((h) => h.textContent), where).toEqual(titles);
+        expect(pro.querySelector("#what-matters")!.compareDocumentPosition(h3s[0]!) & 4, where).toBe(4);
+        const [, , followups, people, digest] = h3s as [Element, Element, Element, Element, Element];
+        const between = (e: Element, from: Element, to: Element) => !!(from.compareDocumentPosition(e) & 4) && !!(e.compareDocumentPosition(to) & 4);
+        // its body and three points between its title and the digest's (Lumen puts its picture above the title)
+        const texts = [...pro.querySelectorAll("p, li")];
+        for (const words of [p.people.body, ...p.people.points]) {
+          const at = texts.filter((e) => e.textContent === words);
+          expect(at, `${where} ${words}`).toHaveLength(1);
+          expect(between(at[0]!, people, digest), `${where} ${words}`).toBe(true);
+        }
+        // one picture, light and dark, between Follow-ups' title and the digest's, wide and cropped as its own
+        const imgs = [...pro.querySelectorAll('img[src^="/shots/ai-people-"]')];
+        expect(imgs.map((i) => i.getAttribute("data-mode")), where).toEqual(["light", "dark"]);
+        for (const img of imgs) {
+          expect(img.getAttribute("alt"), where).toBe(COPY[lang].alt["ai-people"]);
+          expect(between(img, followups, digest), where).toBe(true);
+          expect(img.closest(".site-pro-lead.site-pro-ai-people"), where).not.toBeNull();
+        }
+      }
   });
 });
 

@@ -5,7 +5,7 @@ import { Check, ChevronRight, ExternalLink, Github, ShieldCheck } from "../parts
 import { Kbd } from "../parts/kbd";
 import { Logo } from "../parts/logo";
 import { AgentSession, agentsPrivacyLink } from "../parts/agents";
-import { PRO_LEAD, PRO_MORE, Peek, ProLeadShot, proPrivacyLink } from "../parts/pro";
+import { PRO_LEAD, PRO_PAIRS, PRO_PEOPLE, Peek, ProWideShot, proPrivacyLink } from "../parts/pro";
 import { DESIGN_SHOTS, Shot, type ShotName } from "../parts/shot";
 import { WM_ANCHOR, WM_BENEFITS, WM_SHOT, WhatMattersNews } from "../parts/what-matters";
 import { Waitlist } from "../parts/waitlist";
@@ -76,15 +76,52 @@ function Section({ name, copy, wide = "" }: { name: ShotName; copy: SiteCopy; wi
   );
 }
 
+/** A wide Pro feature (the drafted reply, People): its picture large in a window, its words and points under it. */
+function Wide({ f, copy }: { f: typeof PRO_LEAD | typeof PRO_PEOPLE; copy: SiteCopy }) {
+  const words = copy.pro[f.id];
+  return (
+    <div className="mx-auto mt-24 max-w-5xl">
+      <Window className="lumen-window site-pro-lead-window rounded-xl">
+        <ProWideShot name={f.shot} copy={copy} sizes="(min-width: 1024px) 1024px, (min-width: 640px) 92vw, 200vw" />
+      </Window>
+      <div className="mt-12 grid gap-8 lg:grid-cols-2 lg:gap-16">
+        <div>
+          <h3 className={`${h3} sm:text-[1.75rem]`}>{words.title}</h3>
+          <p className={`mt-4 ${lead}`}>{words.body}</p>
+        </div>
+        <Points points={words.points} className="lg:mt-1.5" />
+      </div>
+    </div>
+  );
+}
+
+/** Two smaller Pro features side by side, each a tile with its picture peeking up from the bottom. */
+function Tiles({ pair, copy }: { pair: (typeof PRO_PAIRS)[number]; copy: SiteCopy }) {
+  return (
+    <ul className="mx-auto mt-16 grid max-w-5xl gap-6 md:grid-cols-2">
+      {pair.map(({ id, shot }) => (
+        <li key={id} className="lumen-tile lumen-pro-tile flex flex-col overflow-hidden rounded-2xl">
+          <div className="p-7 sm:p-8">
+            <h3 className={h3}>{copy.pro[id].title}</h3>
+            <p className="mt-3 text-[0.98rem] leading-relaxed text-pretty text-(--l-muted)">{copy.pro[id].body}</p>
+            <Points points={copy.pro[id].points} className="mt-5 pt-5" />
+          </div>
+          <Peek name={shot} copy={copy} sizes="(min-width: 768px) 470px, 88vw" className="mt-auto" frameClassName="lumen-pro-frame" />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /**
  * Terno Pro (plan 97), right after the privacy band so the promise comes first: the header with its "Coming soon"
- * chip and the planned price, “What matters” (plan 224), the drafted reply large, the other four as tiles with their
- * pictures peeking up from the bottom, then what AI sends and the own-key note. A quiet violet marks it as Pro; no
+ * chip and the planned price, “What matters” (plan 224), the drafted reply large, Ask and Follow-ups as tiles with
+ * their pictures peeking up from the bottom, People large (plan 288), the digest and summaries as tiles, then what AI
+ * sends and the own-key note. A quiet violet marks it as Pro; no
  * button, it isn't for sale yet.
  */
 function Pro({ copy }: { copy: SiteCopy }) {
   const p = copy.pro;
-  const reply = p[PRO_LEAD.id];
   const privacyAi = proPrivacyLink(copy);
   return (
     <section id="pro" aria-labelledby="pro-title" className="py-24 sm:py-32">
@@ -103,31 +140,10 @@ function Pro({ copy }: { copy: SiteCopy }) {
 
         <WhatMatters copy={copy} />
 
-        <div className="mx-auto mt-24 max-w-5xl">
-          <Window className="lumen-window site-pro-lead-window rounded-xl">
-            <ProLeadShot copy={copy} sizes="(min-width: 1024px) 1024px, (min-width: 640px) 92vw, 200vw" />
-          </Window>
-          <div className="mt-12 grid gap-8 lg:grid-cols-2 lg:gap-16">
-            <div>
-              <h3 className={`${h3} sm:text-[1.75rem]`}>{reply.title}</h3>
-              <p className={`mt-4 ${lead}`}>{reply.body}</p>
-            </div>
-            <Points points={reply.points} className="lg:mt-1.5" />
-          </div>
-        </div>
-
-        <ul className="mx-auto mt-16 grid max-w-5xl gap-6 md:grid-cols-2">
-          {PRO_MORE.map(({ id, shot }) => (
-            <li key={id} className="lumen-tile lumen-pro-tile flex flex-col overflow-hidden rounded-2xl">
-              <div className="p-7 sm:p-8">
-                <h3 className={h3}>{p[id].title}</h3>
-                <p className="mt-3 text-[0.98rem] leading-relaxed text-pretty text-(--l-muted)">{p[id].body}</p>
-                <Points points={p[id].points} className="mt-5 pt-5" />
-              </div>
-              <Peek name={shot} copy={copy} sizes="(min-width: 768px) 470px, 88vw" className="mt-auto" frameClassName="lumen-pro-frame" />
-            </li>
-          ))}
-        </ul>
+        <Wide f={PRO_LEAD} copy={copy} />
+        <Tiles pair={PRO_PAIRS[0]} copy={copy} />
+        <Wide f={PRO_PEOPLE} copy={copy} />
+        <Tiles pair={PRO_PAIRS[1]} copy={copy} />
 
         <div className="mx-auto mt-16 max-w-2xl text-center">
           <p className="text-[1.05rem] leading-relaxed text-pretty">{p.privacy}</p>

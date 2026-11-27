@@ -5,7 +5,7 @@ import { Github } from "../parts/icons";
 import { AgentSession, agentsPrivacyLink } from "../parts/agents";
 import { Kbd } from "../parts/kbd";
 import { Logo } from "../parts/logo";
-import { PRO_LEAD, PRO_MORE, Peek, ProLeadShot, proPrivacyLink } from "../parts/pro";
+import { PRO_LEAD, PRO_PAIRS, PRO_PEOPLE, Peek, ProWideShot, proPrivacyLink } from "../parts/pro";
 import { DESIGN_SHOTS, Shot, type ShotName } from "../parts/shot";
 import { WM_ANCHOR, WM_BENEFITS, WM_SHOT, WhatMattersNews } from "../parts/what-matters";
 import { Waitlist } from "../parts/waitlist";
@@ -96,12 +96,30 @@ function ProFeature({ f, children }: { f: SiteCopy["pro"]["reply"] | SiteCopy["p
 
 /**
  * Terno Pro (plan 97), after the features: a new part of the letter with a "Coming soon" chip and the planned
- * price, “What matters” (plan 224), the drafted reply as a wide figure, the other four in the column, each picture
- * peeking up into a quiet stage, then what AI sends and the own-key note. Violet marks the name, nothing louder.
+ * price, “What matters” (plan 224), the drafted reply as a wide figure, Ask and Follow-ups in the column, People as
+ * a wide figure (plan 288), the digest and summaries, each smaller picture peeking up into a quiet stage, then what AI sends and the own-key note. Violet marks the name, nothing louder.
  */
 function Pro({ copy }: { copy: SiteCopy }) {
   const p = copy.pro;
   const privacyAi = proPrivacyLink(copy);
+  const wide = ({ id, shot }: typeof PRO_LEAD | typeof PRO_PEOPLE) => (
+    <ProFeature key={id} f={p[id]}>
+      <figure className="letter-wide mt-14">
+        <Window className="letter-window site-pro-lead-window">
+          <ProWideShot name={shot} copy={copy} sizes="(min-width: 1180px) 1088px, (min-width: 640px) calc(100vw - 2.5rem), 200vw" />
+        </Window>
+        <figcaption className="letter-caption">{copy.alt[shot]}</figcaption>
+      </figure>
+    </ProFeature>
+  );
+  const small = ({ id, shot }: (typeof PRO_PAIRS)[number][number]) => (
+    <ProFeature key={id} f={p[id]}>
+      <figure className="mt-10">
+        <Peek name={shot} copy={copy} sizes="(min-width: 700px) 600px, 92vw" className="letter-pro-stage pt-[6%]" frameClassName="letter-pro-frame" />
+        <figcaption className="letter-caption">{copy.alt[shot]}</figcaption>
+      </figure>
+    </ProFeature>
+  );
   return (
     <section id="pro" aria-labelledby="pro-title" className="letter-sub mt-28 scroll-mt-20 sm:mt-36">
       <p className="flex flex-wrap items-center gap-3 text-[15px]">
@@ -116,22 +134,10 @@ function Pro({ copy }: { copy: SiteCopy }) {
 
       <WhatMatters copy={copy} />
 
-      <ProFeature f={p[PRO_LEAD.id]}>
-        <figure className="letter-wide mt-14">
-          <Window className="letter-window site-pro-lead-window">
-            <ProLeadShot copy={copy} sizes="(min-width: 1180px) 1088px, (min-width: 640px) calc(100vw - 2.5rem), 200vw" />
-          </Window>
-          <figcaption className="letter-caption">{copy.alt[PRO_LEAD.shot]}</figcaption>
-        </figure>
-      </ProFeature>
-      {PRO_MORE.map(({ id, shot }) => (
-        <ProFeature key={id} f={p[id]}>
-          <figure className="mt-10">
-            <Peek name={shot} copy={copy} sizes="(min-width: 700px) 600px, 92vw" className="letter-pro-stage pt-[6%]" frameClassName="letter-pro-frame" />
-            <figcaption className="letter-caption">{copy.alt[shot]}</figcaption>
-          </figure>
-        </ProFeature>
-      ))}
+      {wide(PRO_LEAD)}
+      {PRO_PAIRS[0].map(small)}
+      {wide(PRO_PEOPLE)}
+      {PRO_PAIRS[1].map(small)}
 
       <p className="letter-prose mt-20 sm:mt-24">{p.privacy}</p>
       <p className="mt-4 text-[14px] leading-relaxed text-(--l-muted)">

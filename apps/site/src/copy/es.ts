@@ -141,6 +141,11 @@ export const es: SiteCopy = {
       body: "Haz una pregunta, archívala, y si en unos días nadie contesta, Terno te la recuerda, con un seguimiento a un clic.",
       points: [],
     },
+    people: {
+      title: "Lo pendiente con cada persona.",
+      body: "Personas pone primero a quienes tienen algo pendiente contigo: lo que te pidieron, lo que les prometiste, las conversaciones que esperan tu respuesta, las respuestas que esperas tú. Después, todos los demás a quienes escribes. Elige a alguien para ver lo pendiente entre ustedes y sus conversaciones recientes.",
+      points: ["Primero lo que más lleva esperando, y cuánto lleva", "Marca cosas como Hecho o déjalas para Más tarde, con Deshacer", "Busca por nombre o dirección mientras escribes"],
+    },
     digest: {
       title: "Todos los boletines, en una página.",
       body: "Los boletines de hoy reunidos en una página, una línea cada uno. Lee lo que importa y luego archívalos todos de una vez.",
@@ -228,6 +233,7 @@ export const es: SiteCopy = {
     "ai-reply": "Una conversación abierta en Terno, con una respuesta ya redactada bajo el último mensaje y un hueco marcado para completar",
     "ai-ask": "Pregunta a tu correo respondiendo a «What did Isabella say about the payment?», con enlaces numerados a los correos de donde sale",
     "ai-what-matters": "La vista «Lo importante»: lo que se te pasó, lo que vence hoy y quién espera tu respuesta, una frase clara para cada cosa, con su fecha",
+    "ai-people": "La vista Personas: quienes tienen algo pendiente, primero lo que más lleva esperando y cuánto lleva, junto a la página de una persona con lo pendiente entre ustedes y sus conversaciones recientes",
     "ai-followups": "Una pregunta sin respuesta, de vuelta en Seguimientos con un botón para escribir un seguimiento",
     "ai-digest": "Los boletines de hoy en una página, una línea cada uno, con un botón para archivarlos todos",
     "ai-summary": "Un resumen breve sobre una conversación, con una tarea por hacer y un botón Responder",

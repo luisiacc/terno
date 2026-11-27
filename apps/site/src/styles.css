@@ -201,12 +201,15 @@ html[data-design="midnight"] .site-shot-modes button:not([aria-pressed="true"]):
 /* thumbnails: the same tools tucked into the corner (still 24 px targets, WCAG 2.2) */
 .lumen-thumb .site-shot-tools, .mn-thumb .site-shot-tools, .letter-window-small .site-shot-tools { --tools-bottom: 6px; --tools-right: 6px; }
 
-/* Terno Pro (parts/pro.tsx, plan 97). The lead picture: whole, or on a phone the reading pane with the drafted
-   reply (x 658–1260, y 50–800 of the 1280×800 shot), where the whole window would be too small to read */
+/* Terno Pro (parts/pro.tsx, plan 97). The wide pictures (1280×800): whole, or on a phone the right-hand pane, where
+   the whole window would be too small to read: a 602×750 box at (--crop-x, --crop-y) of the shot. The drafted reply:
+   the reading pane with the reply. People (plan 288): the person's page, its content at x 667–1250 from y 64. */
+.site-pro-ai-reply { --crop-x: 658; --crop-y: 50; }
+.site-pro-ai-people { --crop-x: 658; --crop-y: 50; }
 .site-pro-lead img { display: block; width: 100%; height: auto; }
 @media (max-width: 639px) {
   .site-pro-lead { position: relative; overflow: hidden; aspect-ratio: 602 / 750; }
-  .site-pro-lead img { position: absolute; max-width: none; width: calc(1280 / 602 * 100%); left: calc(-658 / 602 * 100%); top: calc(-50 / 750 * 100%); }
+  .site-pro-lead img { position: absolute; max-width: none; width: calc(1280 / 602 * 100%); left: calc(var(--crop-x) / -602 * 100%); top: calc(var(--crop-y) / -750 * 100%); }
   .site-pro-lead-window .site-window-bar { display: none; }
 }
 /* the smaller pictures: a window peeking into a stage, all at one scale (frame width = the shot's width / 760 of

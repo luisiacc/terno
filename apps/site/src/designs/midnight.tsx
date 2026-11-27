@@ -5,7 +5,7 @@ import { Check, ChevronRight, Github, Inbox, Languages, Mails, Search, Users, X 
 import { Kbd } from "../parts/kbd";
 import { Logo } from "../parts/logo";
 import { AgentSession, agentsPrivacyLink } from "../parts/agents";
-import { PRO_LEAD, PRO_MORE, Peek, ProLeadShot, proPrivacyLink } from "../parts/pro";
+import { PRO_LEAD, PRO_PAIRS, PRO_PEOPLE, Peek, ProWideShot, proPrivacyLink } from "../parts/pro";
 import { DESIGN_SHOTS, Shot, type ShotName } from "../parts/shot";
 import { WM_ANCHOR, WM_BENEFITS, WM_SHOT, WhatMattersNews } from "../parts/what-matters";
 import { Waitlist } from "../parts/waitlist";
@@ -148,13 +148,28 @@ function Card({ f, className = "", children }: { f: Feature; className?: string;
 
 /**
  * Terno Pro (plan 97), its own section after the features: the header with a "Coming soon" chip and the planned
- * price, “What matters” as its lead (plan 224), then the same hairline grid as the features with the drafted reply
- * across it and the other four two by two,
+ * price, “What matters” as its lead (plan 224), then the same hairline grid as the features: the drafted reply
+ * across it, Ask and Follow-ups, People across it (plan 288), the digest and summaries,
  * then what AI sends and the own-key note. Violet marks it as Pro, as quietly as the blue marks the rest.
  */
 function Pro({ copy }: { copy: SiteCopy }) {
   const p = copy.pro;
   const privacyAi = proPrivacyLink(copy);
+  const wide = ({ id, shot }: typeof PRO_LEAD | typeof PRO_PEOPLE) => (
+    <Card key={id} f={p[id]} className="md:col-span-2">
+      <div className="relative mt-2">
+        <div className="mn-glow mn-pro-glow" aria-hidden="true" />
+        <div className="relative overflow-hidden rounded-xl border border-(--mn-line) bg-(--mn-shot)">
+          <ProWideShot name={shot} copy={copy} sizes="(min-width: 1200px) 1024px, (min-width: 640px) 90vw, 200vw" />
+        </div>
+      </div>
+    </Card>
+  );
+  const small = ({ id, shot }: (typeof PRO_PAIRS)[number][number]) => (
+    <Card key={id} f={p[id]}>
+      <Peek name={shot} copy={copy} sizes="(min-width: 768px) 440px, 84vw" className="mn-pro-stage mt-auto rounded-xl border border-(--mn-line) pt-[6%]" frameClassName="mn-pro-frame" />
+    </Card>
+  );
   return (
     <section id="pro" className={`${wrap} mt-28 scroll-mt-20 sm:mt-36`} aria-labelledby="mn-pro">
       <div className="max-w-2xl">
@@ -172,19 +187,10 @@ function Pro({ copy }: { copy: SiteCopy }) {
       <WhatMatters copy={copy} />
 
       <div className="mn-grid mt-16 grid gap-px overflow-hidden rounded-2xl border border-(--mn-line) bg-(--mn-line) md:grid-cols-2">
-        <Card f={p[PRO_LEAD.id]} className="md:col-span-2">
-          <div className="relative mt-2">
-            <div className="mn-glow mn-pro-glow" aria-hidden="true" />
-            <div className="relative overflow-hidden rounded-xl border border-(--mn-line) bg-(--mn-shot)">
-              <ProLeadShot copy={copy} sizes="(min-width: 1200px) 1024px, (min-width: 640px) 90vw, 200vw" />
-            </div>
-          </div>
-        </Card>
-        {PRO_MORE.map(({ id, shot }) => (
-          <Card key={id} f={p[id]}>
-            <Peek name={shot} copy={copy} sizes="(min-width: 768px) 440px, 84vw" className="mn-pro-stage mt-auto rounded-xl border border-(--mn-line) pt-[6%]" frameClassName="mn-pro-frame" />
-          </Card>
-        ))}
+        {wide(PRO_LEAD)}
+        {PRO_PAIRS[0].map(small)}
+        {wide(PRO_PEOPLE)}
+        {PRO_PAIRS[1].map(small)}
       </div>
 
       <div className="mt-10 max-w-3xl">

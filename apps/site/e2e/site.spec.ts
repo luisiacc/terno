@@ -264,11 +264,11 @@ test("a picture's tools stay out of its way until it's pointed at or tabbed into
   await expect.poll(opacity).toBe("1");
 });
 
-test("“What matters” and Follow-ups have a real light and dark picture, and the switch shows each (plan 224)", async ({ page }) => {
+test("“What matters”, Follow-ups and People have a real light and dark picture, and the switch shows each (plans 224, 288)", async ({ page }) => {
   for (const [path, scheme] of [["/designs/lumen/", "light"], ["/designs/midnight/", "dark"]] as const) {
     await page.emulateMedia({ colorScheme: "light" });
     await page.goto(path);
-    for (const shot of [page.locator("#what-matters [data-shot]"), page.locator("#pro [data-shot]:has(img[src^='/shots/ai-followups-'])")]) {
+    for (const shot of [page.locator("#what-matters [data-shot]"), ...["ai-followups", "ai-people"].map((name) => page.locator(`#pro [data-shot]:has(img[src^='/shots/${name}-'])`))]) {
       const other = scheme === "light" ? "dark" : "light";
       await shot.locator(`img[data-mode=${scheme}]`).scrollIntoViewIfNeeded();
       await expect(shot.locator(`img[data-mode=${scheme}]`), path).toBeVisible();
@@ -282,6 +282,28 @@ test("“What matters” and Follow-ups have a real light and dark picture, and 
     }
   }
 });
+
+for (const design of DESIGNS)
+  test(`${design}: on a phone, People's picture is the person's page, as large as the drafted reply's (plan 288)`, async ({ page }) => {
+    for (const width of [390, 320]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/designs/${design}/`);
+      for (const name of ["ai-reply", "ai-people"]) {
+        const box = page.locator(`.site-pro-${name}`);
+        await box.scrollIntoViewIfNeeded();
+        const fit = await box.evaluate((b) => {
+          const outer = b.getBoundingClientRect();
+          const img = [...b.querySelectorAll("img")].find((i) => i.checkVisibility())!.getBoundingClientRect();
+          // the 602×750 box at x 658, y 50 of the 1280×800 shot (styles.css)
+          return { ratio: outer.width / outer.height, scale: img.width / outer.width, x: (outer.left - img.left) / outer.width, y: (outer.top - img.top) / outer.height };
+        });
+        expect(fit.ratio, `${name} ${width}`).toBeCloseTo(602 / 750, 2);
+        expect(fit.scale, `${name} ${width}`).toBeCloseTo(1280 / 602, 2);
+        expect(fit.x, `${name} ${width}`).toBeCloseTo(658 / 602, 2);
+        expect(fit.y, `${name} ${width}`).toBeCloseTo(50 / 750, 2);
+      }
+    }
+  });
 
 for (const colorScheme of ["light", "dark"] as const)
   for (const width of [1440, 390, 320])
