@@ -124,10 +124,15 @@ test.describe("Lumen: chips", () => {
       await page.getByTestId("quick-filter-unread").focus();
       await page.keyboard.press("ArrowRight");
       await expect(page.getByTestId("quick-filter-people")).toBeFocused();
-      await page.keyboard.press("ArrowRight");
-      await expect(page.getByTestId("quick-filter-attachments")).toBeFocused();
       await page.keyboard.press("Enter");
+      await showing(page, "people");
+      // what doesn't fit is behind More (With attachments, since plan 281 named People "From people"); chosen there, its
+      // chip shows on the strip
+      await expect(chips.getByTestId("quick-filter-attachments")).toHaveCount(0);
+      await page.getByTestId("quick-filter-more").click();
+      await page.getByTestId("quick-filter-attachments").click();
       await showing(page, "attachments");
+      await expect(chips.getByTestId("quick-filter-attachments")).toHaveAttribute("aria-pressed", "true");
       // pressing the chosen chip again keeps it (one choice is always on)
       await page.getByTestId("quick-filter-attachments").click();
       await showing(page, "attachments");
