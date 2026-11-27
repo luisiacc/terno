@@ -93,6 +93,8 @@ export const THEME_TOKENS = [
   "sidebar-primary-ink",
   // plan 282 (the owner): a link in blue text where the palette's primary isn't a colour (Lumen, Graphite, Relief, Atelier)
   "link",
+  // plan 285: Follow-ups' Late pill's words, on a wash of the late line's ink
+  "late-ink",
   // chrome
   "overlay",
   "shadow-color",

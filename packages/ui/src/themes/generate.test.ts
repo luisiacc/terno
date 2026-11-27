@@ -21,8 +21,9 @@ describe("generated theme CSS", () => {
   });
 
   // plan 137: 10 KB with Graphite's pair (about 400 bytes a pair); plan 160's field and draft-edge, about 15 bytes a theme
-  it("stays small: ≤ 11 KB gzip", () => {
-    expect(gzipSync(readFileSync(file)).length).toBeLessThanOrEqual(11 * 1024);
+  // (plan 285: 11 KB until late-ink, the first token past it)
+  it("stays small: ≤ 11.5 KB gzip", () => {
+    expect(gzipSync(readFileSync(file)).length).toBeLessThanOrEqual(11.5 * 1024);
   });
 
   it("is imported by globals.css, which no longer hard-codes theme values", () => {

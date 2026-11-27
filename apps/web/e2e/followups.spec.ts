@@ -443,9 +443,13 @@ test.describe("follow-ups (plan 142)", () => {
       // the two firm ones are late (one they wrote after still is: nothing says it came), both read
       await expect(page.getByTestId("nav-followups").locator("[data-slot=nav-count]")).toHaveText("2");
       for (const subject of ["Signed contract", "Venue deposit"]) {
+        // (the open one too: Signed contract is open)
+        await expect(row(subject).getByTestId("row-late")).toBeVisible();
         await expect(row(subject).getByTestId("row-late")).toHaveText("Late");
         await expect(row(subject).getByTestId("row-unread-dot")).toHaveCount(0);
+        // said once, with the row's states (the pill itself is hidden from a screen reader)
         await expect(row(subject)).toHaveAccessibleName(/, late,/);
+        await expect(row(subject)).not.toHaveAccessibleName(/late.*late/i);
         await expect(row(subject)).not.toHaveAccessibleName(/unread/);
       }
       // the tentative one: unread, its dot as anywhere, not late

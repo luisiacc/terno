@@ -12,11 +12,16 @@
 > hmm i'm thinking maybe not do the same 'unread', because they will expect to dissappear when they view it, so no, lets
 > have a small badge for the ones that are represented in the number, like 'due' or something like that, what do yo uthink
 
-The dot stays unread's everywhere. A row the sidebar's number counts says **Late** instead: BoardUI's Badge, outlined, in
-the late line's ink (`draft-foreground`, a pair on every row state), before the date with the row's other words (Spam,
-Trash, Opened), in every layout. "Late", not "Due": the number's description already says "N late" and the card "Was
+The dot stays unread's everywhere. A row the sidebar's number counts says **Late** instead, before the date with the
+row's other words (Spam, Trash, Opened), in every layout. Its look: the owner picked C of six mockups (an outlined box,
+the bare word, a soft pill, a status dot and word, the date in the late ink with a clock, "3 days late" in the date's
+place): BoardUI's Badge as a soft pill, no edge, on a 10% wash of the late line's ink (`draft-foreground`). Its words are
+a new derived token, `late-ink`: that ink stepped toward the row's until it holds AA on the wash over each of a row's
+fills (the ink itself is held only to the bare fills: 3.8–4.46 on the wash in seven palettes). Four pairs in
+`CONTRAST_PAIRS`. The token takes the generated themes' CSS past its 11 KB gzip guard (11 245 → 11 364 bytes); the guard
+is 11.5 KB now. "Late", not "Due": the number's description already says "N late" and the card "Was
 due …". Hidden from a screen reader as those words are; the row's states say "late" once (`list.row.late`). New key
-`list.late` (en "Late", es "Atrasado": the follow-up is). The Design section below is the first build's; where it says
+`list.late` (en "Late", es "Atrasada", the word a screen reader hears for the row, `list.row.late`). The Design section below is the first build's; where it says
 dot, read the tag.
 
 ## What exists
@@ -84,3 +89,12 @@ query, no backend change.
   account (a folder is always an account's; Follow-ups never is, `navigate`). Unit test for the folder's key.
 - Not taken: an e2e that holds the Inbox's answer to see the outgoing Follow-ups rows keep their dots. The gate reads the
   rows' own key (`itemsKey`), as sender icons do, and the e2e fixtures have no way to hold one RPC's answer.
+
+## What the Codex code review of the tag changed
+
+- Spanish showed "Atrasado" while a screen reader said "atrasada": one word, "Atrasada".
+- The e2e checks the pill is visible (on the open row too) and that "late" is said once.
+- The contrast pairs include the pane (the list's own fill) and the open row.
+- Not taken: a compact row at the narrowest list with six categories and the Spanish pill can push the date past the
+  edge (rare, and the date's group already holds every dot); a custom theme whose translucent selection sits differently
+  over the pane than over the background (the gate composites every translucent fill over the background, for all pairs).

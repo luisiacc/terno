@@ -209,6 +209,14 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
   def("draft-foreground", () =>
     stepUntil(o("destructive"), ["background", "row-hover", "row-selected", "accent"].map((k) => formatOklch(o(k as ThemeToken))), 4.5, bg, o("foreground"), light),
   );
+  // plan 285 (the owner's pick): Follow-ups' Late pill, words on a 10% wash of the late line's ink: that ink, stepped toward
+  // the row's until it holds AA on the wash over every fill a row has (the ink alone is only held to 4.5 on the fills)
+  def("late-ink", () => {
+    const wash = oklchToRgb(withAlpha(o("draft-foreground"), 0.1));
+    const ground = { ...oklchToRgb(o("background")), alpha: 1 };
+    const fills = (["background", "pane", "row-hover", "row-selected"] as const).map((k) => formatOklch(rgbToOklch(composite(wash, { ...composite(oklchToRgb(o(k)), ground), alpha: 1 }))));
+    return stepUntil(o("draft-foreground"), fills, 4.5, bg, o("foreground"), light);
+  });
   // plan 158: a quiet control that's still plainly enabled: the ink, at most a quarter of the way to the ground, as far as it still reads
   def("foreground-soft", () => {
     for (let t = 0.25; t > 0; t = Math.round((t - 0.01) * 100) / 100) {

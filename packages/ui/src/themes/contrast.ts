@@ -103,6 +103,8 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   // plan 158: a search's match on a row, in the row's ink on a wash of the star's gold; lighter on the cursor and on a checked row, whose fills are deeper
   ...(["pane", "background", "row-hover"] as const).map((over): ContrastPair => ({ fg: "foreground", bg: "star", alpha: 0.25, min: 4.5, overToken: over })),
   { fg: "row-selected-foreground", bg: "star", alpha: 0.14, min: 4.5, overToken: "row-selected" },
+  // plan 285 (the owner's pick): Follow-ups' Late pill, its ink on a 10% wash of the late line's, on a row at rest, hovered or open
+  ...(["background", "pane", "row-hover", "row-selected"] as const).map((over): ContrastPair => ({ fg: "late-ink", bg: "draft-foreground", alpha: 0.1, min: 4.5, overToken: over })),
   // plan 161: a gap a model left, in the same wash, on an AI card (tint) and in a composer (card or background)
   ...(["tint", "card"] as const).map((over): ContrastPair => ({ fg: "foreground", bg: "star", alpha: 0.25, min: 4.5, overToken: over })),
   // plan 163: words the model put in a gap the user left, in the primary's 15% wash (the owner's answers: a step up from 12%), in a composer (card, tint or background)

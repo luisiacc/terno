@@ -407,10 +407,10 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
     </span>
   );
   const keptTag = kept && <span data-testid="row-kept" className="shrink-0 text-2xs text-muted-foreground">{t("list.kept")}</span>;
-  // plan 285 (the owner): in Follow-ups, what the sidebar's number counts, in the late line's ink (said once, with the row's
-  // states); a word, not the unread dot, since reading the mail doesn't end it
+  // plan 285 (the owner's pick of six): in Follow-ups, what the sidebar's number counts, a soft pill on a wash of the late
+  // line's ink, no edge (said once, with the row's states); a word, not the unread dot, since reading the mail doesn't end it
   const lateTag = late && (
-    <Badge aria-hidden data-testid="row-late" variant="outline" className="border-draft-foreground/40 text-draft-foreground">
+    <Badge aria-hidden data-testid="row-late" variant="neutral" className="h-4 rounded-full bg-draft-foreground/10 px-1.5 text-late-ink">
       {t("list.late")}
     </Badge>
   );

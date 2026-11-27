@@ -139,6 +139,7 @@
   --color-ai: var(--ai);
   --color-highlight: var(--highlight);
   --color-draft-foreground: var(--draft-foreground);
+  --color-late-ink: var(--late-ink);
   --color-menu-highlight: var(--menu-highlight);
   --color-foreground-soft: var(--foreground-soft);
   --color-row-read: var(--row-read);
