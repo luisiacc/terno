@@ -20,8 +20,7 @@ describe("itemWhen", () => {
   it("not yet without a Later: What matters' own when, under Later; put off: when it's back; shown now: open", () => {
     const ahead = itemWhen(renewal({ ahead: new Date(2027, 0, 5, 9).getTime() }), NOW);
     expect(ahead.later).toBe(true);
-    expect(ahead.text).not.toMatch(/^Back/);
-    expect(ahead.text).toBe(itemWhen(renewal({}), NOW).text);
+    expect(ahead.text).toBe("Jan 12, 2027");
     const back = new Date(2026, 11, 30, 9).getTime();
     expect(itemWhen(renewal({ ahead: back, back }), NOW)).toMatchObject({ later: true, text: expect.stringMatching(/^Back/) });
     expect(itemWhen(renewal({}), NOW).later).toBe(false);

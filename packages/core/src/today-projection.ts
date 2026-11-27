@@ -392,7 +392,7 @@ export const placedThreads = (items: readonly PlacedItem[]): number[] => [...new
  * day ahead and Coming up by their day, then the same order), and the counts. `count`: only the counts are wanted (nothing
  * ordered, no words made, no reminders).
  */
-export function projectToday(f: ProjectionFacts, o: { count?: boolean; counted?: boolean } = {}): { rows: ProjectedRow[]; counts: TodayCounts; counted?: CountedMail } {
+export function projectToday(f: ProjectionFacts, o: { count?: boolean; counted?: boolean; forPeople?: boolean } = {}): { rows: ProjectedRow[]; counts: TodayCounts; counted?: CountedMail } {
   return projectRows(placeItems(f.dated, f.promises, f.now, { count: o.count }), f, o);
 }
 
@@ -400,7 +400,7 @@ export function projectToday(f: ProjectionFacts, o: { count?: boolean; counted?:
  * The projection's second step: placed items, what's waiting and your reminders as rows, and the counts' buckets; with
  * `counted` (plan 273), what the counted rows stand for, from the same pass.
  */
-export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFacts, "now" | "waiting" | "reminders" | "live" | "zone" | "visibility">, o: { count?: boolean; counted?: boolean } = {}): { rows: ProjectedRow[]; counts: TodayCounts; counted?: CountedMail } {
+export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFacts, "now" | "waiting" | "reminders" | "live" | "zone" | "visibility">, o: { count?: boolean; counted?: boolean; /** plan 281: People's read, with what it reads of each row's place (`ahead`, `from`) */ forPeople?: boolean } = {}): { rows: ProjectedRow[]; counts: TodayCounts; counted?: CountedMail } {
   const today = dayKeyOf(f.now);
   const placed: Placed[] = [];
   // each day's heading once (most rows share a few days)
@@ -443,7 +443,7 @@ export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFact
     // round 15's second morning: put off with Later, it says when it's back, never "since …" or its own day
     if (!o.count && at.group === "comingUp" && lead.row.deferredUntil != null && lead.row.deferredUntil > f.now) why.back = lead.row.deferredUntil;
     const came = lead.source === "dated" ? lead.row.arrivedAt : lead.row.sentAt;
-    if (!o.count) {
+    if (o.forPeople) {
       // plan 281 (owner, 2026-11-26): what People reads of this placement, one source for both views. Behind Coming up: until
       // it shows (its time to act, or Later's back if that's later; Codex's critique: never its heading's day, which is its
       // deadline). Shown now: when its time to act came, if after it came, so it's open since then, never since the mail
@@ -492,7 +492,8 @@ export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFact
     const row: Placed = deferred
       ? (() => {
           const day = dayKeyOf(w.deferredUntil!);
-          why.back = why.ahead = w.deferredUntil!;
+          why.back = w.deferredUntil!;
+          if (o.forPeople) why.ahead = why.back;
           return { id: waitingRowId(w.id), threadId: w.id, group: "comingUp" as const, day, bucket: bucketOf(day), why, waiting: true, dueAt: w.deferredUntil!, came: w.lastDate };
         })()
       : { id: waitingRowId(w.id), threadId: w.id, group: "today", day: null, why, waiting: true, part: "waiting", dueAt: w.lastDate, came: w.lastDate };

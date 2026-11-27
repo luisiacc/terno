@@ -1,4 +1,4 @@
-import { PEOPLE_LAST_MAX, personItemId, personKey, type PeopleList, type PersonItem, type PersonPage } from "@terno/core";
+import { PEOPLE_LAST_MAX, personItemId, personKey, personSince, type PeopleList, type PersonItem, type PersonPage } from "@terno/core";
 import { t } from "@terno/i18n";
 import type { LeftRows } from "~/lib/actions";
 import { aiFeaturesOffered } from "~/lib/ai";
@@ -451,7 +451,8 @@ export function withoutListItem(list: PeopleList, id: string): PeopleList {
   const open = list.open.flatMap((p) => {
     if (!p.items.some((i) => personItemId(i) === id)) return [p];
     const items = p.items.filter((i) => personItemId(i) !== id);
-    return items.length ? [{ ...p, items }] : [];
+    // (its open time as the rest says it: what's left may be only what isn't open yet, Codex code review)
+    return items.length ? [{ ...p, items, since: personSince(items, Date.now()) }] : [];
   });
   return { ...list, open };
 }

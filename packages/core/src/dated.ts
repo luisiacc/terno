@@ -545,12 +545,17 @@ const promiseShowsAt = (r: PromiseFacts): number => {
 const promiseLead = (r: PromiseFacts): number => shownFrom(new Date(startOfDay(r.dueAt)), DATED_LEAD_DAYS.respond);
 
 /**
- * Plan 281 (owner, 2026-11-26): when a promise of yours comes to act on, Later aside: its lead before the day it sits under
- * (as `promiseShowsAt`), or for one with no day, when it comes due (`promiseDue`).
+ * Plan 281 (owner, 2026-11-26): when a promise of yours came to act on, Later aside: its lead before the day it sits under
+ * (as `promiseShowsAt`), or for one with no day, when it came due (`promiseDue`). Moved to a new day (broken, or a request's
+ * day), the earliest of its days: it's been open since the first (Codex code review: an age never resets while it shows).
  */
 export function promiseActFrom(r: PromiseFacts, now: number): number {
-  r = effective(r, now);
-  return r.dated ? promiseLead(r) : r.dueAt;
+  const e = effective(r, now);
+  if (!e.dated) return e.dueAt;
+  let from = promiseLead(e);
+  if (e !== r && r.dated) from = Math.min(from, promiseLead(r));
+  if (r.brokenDueAt != null) from = Math.min(from, promiseLead({ ...r, dueAt: r.brokenDueAt }));
+  return from;
 }
 
 /**

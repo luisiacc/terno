@@ -170,9 +170,13 @@ describe("who has something open with you", () => {
     expect(await client.call("people.ready", {})).toEqual({ index: "ready" });
     expect((await client.call("people.search", { query: "gonz" })).hits.map((h) => [h.key, h.open])).toEqual([["gonzalo@people.test", 0]]);
     // its time to act comes: in What matters and People alike, open now, since that moment (never since the mail)
-    clock.now = shows + 3_600_000;
+    clock.now = shows - 1;
     backend.today.changed();
-    expect(await placed()).not.toBe("comingUp");
+    expect(await placed()).toBe("comingUp");
+    expect((await client.call("people.list", {})).open.find((p) => p.key === "gonzalo@people.test")?.since).toBeNull();
+    clock.now = shows;
+    backend.today.changed();
+    expect(await placed()).toBe("day");
     // (Bea's conversation is long past waiting on you by January)
     const later = await client.call("people.list", {});
     expect(later.open.map((p) => [p.key, p.since])).toEqual([["gonzalo@people.test", shows]]);

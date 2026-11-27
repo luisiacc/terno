@@ -9,7 +9,7 @@ vi.hoisted(() => {
 const call = vi.fn();
 vi.mock("~/rpc/connection", () => ({ client: { call: (...a: unknown[]) => call(...a), on: () => () => {}, onAttach: () => () => {} } }));
 
-const { matchedParts, peopleRows, usePeople } = await import("~/state/people");
+const { matchedParts, openNow, peopleRows, usePeople } = await import("~/state/people");
 const { getApp, navigate, ownList, setApp } = await import("~/state/app");
 const { withoutItem, withoutListItem, actOnPersonItem, movePerson, selectPerson, searchPeople, enterSearch, installPeople, openInPeople, returnFromPeople } = await import("~/lib/people");
 installPeople();
@@ -160,6 +160,14 @@ describe("acting on a person's page", () => {
     const list: PeopleList = { open: [open("ana@x.test", "Ana Ruiz", [waiting(1, "Phase 2")])], everyone: [{ name: "Bea", email: "bea@x.test", key: "bea@x.test", last: 0, written: true }, { name: "Ana Ruiz", email: "ana@x.test", key: "ana@x.test", last: 0, written: true }], everyoneVersion: 1, index: "ready" };
     expect(peopleRows(list, "", null).map((r) => r.id)).toEqual(["open", "ana@x.test", "everyone", "bea@x.test"]);
     expect(peopleRows(withoutListItem(list, "waiting:1"), "", null).map((r) => r.id)).toEqual(["everyone", "bea@x.test", "ana@x.test"]);
+  });
+
+  it("their last open item done, only what isn't open yet left: Open counts them no more (Codex code review, plan 281's 2026-11-26 fix)", () => {
+    const renewal: PersonItem = { kind: "today", item: { id: "dated:9", thread: thread(9, "Renew"), why: { kind: "dated", came: 1, ahead: Date.now() + 86_400_000 } } };
+    const list: PeopleList = { open: [open("ana@x.test", "Ana Ruiz", [waiting(1, "Phase 2"), renewal])], everyone: [], everyoneVersion: 1, index: "ready" };
+    expect(openNow(list)).toBe(1);
+    const after = withoutListItem(list, "waiting:1");
+    expect([after.open[0]?.items.length, openNow(after)]).toEqual([1, 0]);
   });
 
   it("a page read for someone no longer selected never lands, even late in a morph", async () => {
