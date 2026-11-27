@@ -1,4 +1,4 @@
-import { addressKey, addressOnly, isPersonRequest, PEOPLE_EVERYONE_MAX, PEOPLE_SEARCH_MAX, PERSON_CONVERSATIONS_MAX, personKey, personItemAhead, personSince, senderIsPerson, sortPeopleOpen, sortPersonItems, type FollowupRow, type PeopleList, type PeopleSearch, type PersonItem, type PersonOpen, type PersonPage, type ThreadSummary, type TodayItem } from "@terno/core";
+import { addressKey, addressOnly, isPersonRequest, PEOPLE_EVERYONE_MAX, PEOPLE_SEARCH_MAX, PERSON_CONVERSATIONS_MAX, peopleSince, personItemThread, personKey, personItemAhead, personSince, senderIsPerson, sortPeopleOpen, sortPersonItems, type FollowupRow, type PeopleFilter, type PeopleList, type PeopleSearch, type PersonItem, type PersonOpen, type PersonPage, type ThreadSummary, type TodayItem } from "@terno/core";
 import type { BackendCore as Backend } from "./core";
 import { readSettings } from "./settings";
 
@@ -15,8 +15,14 @@ export class PeopleService {
   /** plan 278's rules (your word on who is a person), read once per change of them */
   private rules: { at: number; map: Promise<ReadonlyMap<string, boolean>> } | null = null;
   private rulesAt = 0;
-  /** Everyone's version as the renderer holds it: the index's scores and the rules (either changes who's in it) */
-  private everyoneAt: { score: number; rules: number; version: number } = { score: -1, rules: -1, version: 0 };
+  /**
+   * Everyone's version as the renderer holds it, per filter (plan 287: two windows on two filters don't make each other
+   * send it again): the index (which one, and its scores) and the rules; each changes who's in it.
+   */
+  private readonly everyoneAt = new Map<string, { index: string; rules: number; version: number }>();
+  private versions = 0;
+  /** an identity per index object (a rebuilt index may count its scores from where an old one was) */
+  private readonly indexIds = new WeakMap<object, number>();
 
   constructor(private readonly b: Backend) {}
 
@@ -24,15 +30,15 @@ export class PeopleService {
    * Open and Everyone. Everyone needs the index: started here (as a recipient field starts it), never waited for; sent only
    * when it isn't the version the renderer holds (`known`).
    */
-  async list(known?: number): Promise<PeopleList> {
+  async list(known?: number, filter?: PeopleFilter): Promise<PeopleList> {
     if (!(await this.b.today.offered())) return { open: [], everyone: [], everyoneVersion: -1, index: "ready" };
     void this.b.warmAutocomplete().catch(() => {});
-    const open = await this.open();
+    const scope = await this.scope(filter);
+    const open = this.within(await this.open(), scope);
     const index = this.b.autocomplete.peopleIndex();
     if (!index) return { open, everyone: [], everyoneVersion: -1, index: this.indexState() };
-    if (this.everyoneAt.score !== index.scoreVersion || this.everyoneAt.rules !== this.rulesAt) this.everyoneAt = { score: index.scoreVersion, rules: this.rulesAt, version: this.everyoneAt.version + 1 };
-    const version = this.everyoneAt.version;
-    if (known === version) return { open, everyoneVersion: version, index: "ready" };
+    const held = this.everyoneAt.get(scope.key);
+    if (held && held.index === this.indexAt(index) && held.rules === this.rulesAt && known === held.version) return { open, everyoneVersion: held.version, index: "ready" };
     const mine = await this.mine();
     // (each written to: no correspondents to look up)
     const person = await this.isPerson([]);
@@ -40,13 +46,20 @@ export class PeopleService {
     // each at their place, so one whose last item goes falls into it there (the list leaves them out while they're open)
     const seen = new Set<string>();
     const everyone = [];
-    for (const p of index.written(PEOPLE_EVERYONE_MAX * 2)) {
+    for (const p of index.written(PEOPLE_EVERYONE_MAX * 2, scope.index)) {
       const key = personKey(p.email);
       if (seen.has(key) || mine.has(key) || !person(p.email)) continue;
       seen.add(key);
       everyone.push({ ...p, key });
       if (everyone.length === PEOPLE_EVERYONE_MAX) break;
     }
+    // (named as it was read: the index and the rules after the awaits above, so a change meanwhile reads again next time)
+    const at = { index: this.indexAt(index), rules: this.rulesAt };
+    const was = this.everyoneAt.get(scope.key);
+    const version = was && was.index === at.index && was.rules === at.rules ? was.version : ++this.versions;
+    this.everyoneAt.delete(scope.key);
+    this.everyoneAt.set(scope.key, { ...at, version });
+    if (this.everyoneAt.size > EVERYONE_FILTERS) this.everyoneAt.delete(this.everyoneAt.keys().next().value!);
     return { open, everyone, everyoneVersion: version, index: "ready" };
   }
 
@@ -58,15 +71,17 @@ export class PeopleService {
   }
 
   /** Names and addresses only, never content; each hit with how many things are open with them. */
-  async search(query: string): Promise<PeopleSearch> {
+  async search(query: string, filter?: PeopleFilter): Promise<PeopleSearch> {
     if (!(await this.b.today.offered())) return { hits: [], index: "ready" };
     const index = this.b.autocomplete.peopleIndex();
     if (!index) return { hits: [], index: this.indexState() };
     const now = this.b.now();
-    const open = new Map((await this.open()).map((p) => [p.key, p.items.filter((i) => openNow(i, now)).length]));
+    const scope = await this.scope(filter);
+    // (each hit's count is what's open with them in the filter's accounts, as their row and page say it)
+    const open = new Map(this.within(await this.open(), { ...scope, since: 0 }).map((p) => [p.key, p.items.filter((i) => openNow(i, now)).length]));
     const mine = await this.mine();
     // (asked for more than are shown: senders that aren't people are left out after)
-    const found = index.people(query, PEOPLE_SEARCH_MAX * 4);
+    const found = index.people(query, PEOPLE_SEARCH_MAX * 4, scope.index);
     const person = await this.isPerson(found.map((h) => h.email));
     const seen = new Set<string>();
     const hits = [];
@@ -84,19 +99,21 @@ export class PeopleService {
    * One person: what's open, their recent conversations (newest first, never Spam or Trash). For the card (`except`, the
    * conversation open beside it): the newest other one's stored summary, its "Last time"; the page reads none.
    */
-  async person(email: string, conversations = PERSON_CONVERSATIONS_MAX, except?: number): Promise<PersonPage | null> {
+  async person(email: string, conversations = PERSON_CONVERSATIONS_MAX, except?: number, filter?: PeopleFilter): Promise<PersonPage | null> {
     if (!(await this.b.today.offered())) return null;
     const key = personKey(email);
     // you're never a person here
     if ((await this.mine()).has(key)) return null;
-    const found = (await this.open()).find((p) => p.key === key);
+    // plan 287: the page is the person whole in the filter's accounts (its date chooses who's listed, not what they show)
+    const scope = await this.scope({ accounts: filter?.accounts });
+    const found = this.within(await this.open(), scope).find((p) => p.key === key);
     const want = Math.max(0, Math.min(conversations, PERSON_CONVERSATIONS_MAX));
     // the address as it was seen (the search is exact on it), All Mail: Spam and Trash are left out by the store
-    const page = want ? await this.b.store.threads.searchText({ query: email, place: "all", limit: want, now: this.b.now() }) : null;
+    const page = want ? await this.conversations(email, want, scope.accounts) : null;
     const shown = page?.items ?? [];
     // which of them they wrote in (the rest, a group email they were only on): theirs are a subset, newest first by the
     // same date, so the newest `want` of theirs hold every one of these they wrote
-    const wrote = want > 0 && shown.length > 0 ? await this.wroteIn(email, want, shown) : undefined;
+    const wrote = want > 0 && shown.length > 0 ? await this.wroteIn(email, want, shown, scope.accounts) : undefined;
     const name = this.b.autocomplete.peopleIndex()?.person(email)?.name || found?.name || "";
     // the card's last time you wrote each other (r06): the newest other conversation they wrote in, or whose last message
     // is yours (to them); never a group email someone else wrote that they were only on
@@ -112,7 +129,7 @@ export class PeopleService {
       name,
       items: found?.items ?? [],
       conversations: shown,
-      more: page?.nextCursor != null,
+      more: page?.more === true,
       ...(last ? { lastBetween: last.id } : {}),
       ...(last && lastSummary ? { lastSummary, lastSummaryOf: last.id } : {}),
       ...(lastFromMe ? { lastFromMe } : {}),
@@ -120,11 +137,11 @@ export class PeopleService {
     };
   }
 
-  private async wroteIn(email: string, want: number, shown: readonly ThreadSummary[]): Promise<number[]> {
+  private async wroteIn(email: string, want: number, shown: readonly ThreadSummary[], accounts: readonly number[] | null): Promise<number[]> {
     // the address as it was seen, as the page's own search has it (a +tag is another sender's address to the store)
     const address = email.trim().toLowerCase();
     if (!address.includes("@") || /[\s"]/.test(address)) return shown.map((t) => t.id);
-    const theirs = await this.b.store.threads.searchText({ query: `from:${address}`, place: "all", limit: want, now: this.b.now() });
+    const theirs = await this.conversations(`from:${address}`, want, accounts);
     const ids = new Set(theirs.items.map((t) => t.id));
     return shown.filter((t) => ids.has(t.id)).map((t) => t.id);
   }
@@ -133,15 +150,66 @@ export class PeopleService {
    * Each address's last conversation, by its date (0: none): the page's own read (its newest conversation, never in Spam or
    * Trash), so a row's "Last email" and the page's are one date. One indexed search each, only the rows drawn.
    */
-  async lastEmails(emails: readonly string[]): Promise<{ last: Record<string, number> }> {
+  async lastEmails(emails: readonly string[], filter?: PeopleFilter): Promise<{ last: Record<string, number> }> {
     if (!(await this.b.today.offered())) return { last: {} };
-    const now = this.b.now();
+    // plan 287: in the filter's accounts, as the page reads them
+    const { accounts } = await this.scope({ accounts: filter?.accounts });
     const last: Record<string, number> = {};
-    for (const email of new Set(emails)) {
-      const page = await this.b.store.threads.searchText({ query: email, place: "all", limit: 1, now });
-      last[email] = page.items[0]?.lastDate ?? 0;
-    }
+    for (const email of new Set(emails)) last[email] = (await this.conversations(email, 1, accounts)).items[0]?.lastDate ?? 0;
     return { last };
+  }
+
+  /** Plan 287: the newest conversations a search finds (never in Spam or Trash), in the filter's accounts: one search. */
+  private async conversations(query: string, limit: number, accounts: readonly number[] | null): Promise<{ items: ThreadSummary[]; more: boolean }> {
+    const page = await this.b.store.threads.searchText({ query, place: "all", limit, now: this.b.now(), ...(accounts ? { accountIds: accounts } : {}) });
+    return { items: page.items, more: page.nextCursor != null };
+  }
+
+  /**
+   * Plan 287: a filter as People applies it: the accounts that still exist (none left: every account, as an empty choice
+   * is), the oldest last email it lets in, and the index's form of both. `key` names it for Everyone's version.
+   */
+  private async scope(filter: PeopleFilter | undefined): Promise<Scope> {
+    const since = peopleSince(filter?.within, this.b.now());
+    let accounts: number[] | null = null;
+    if (filter?.accounts?.length) {
+      const ids = new Set((await this.b.store.accounts.list()).map((a) => a.id));
+      const kept = [...new Set(filter.accounts)].filter((id) => ids.has(id)).sort((a, b) => a - b);
+      accounts = kept.length ? kept : null;
+    }
+    // the date in the key by the hour: Everyone isn't sent again every read for a boundary that moved by milliseconds
+    const key = `${accounts?.join(",") ?? ""}|${filter?.within ?? ""}|${since ? Math.floor(since / HOUR) : 0}`;
+    return { accounts, since, key, index: { ...(accounts ? { accounts } : {}), ...(since ? { since } : {}) } };
+  }
+
+  /**
+   * Plan 287: Open within a filter, from the grouping as it is (never changed: every filter reads the one cache). By
+   * account, each person's items whose conversation is in one of them (who has none left isn't in it); by date, whose last
+   * email (in those accounts) is recent enough: the index's date, else their items' newest conversation.
+   */
+  private within(open: PersonOpen[], scope: Pick<Scope, "accounts" | "since">): PersonOpen[] {
+    const { accounts, since } = scope;
+    if (!accounts && !since) return open;
+    const index = this.b.autocomplete.peopleIndex();
+    const now = this.b.now();
+    const inAccounts = accounts ? new Set(accounts) : null;
+    const out: PersonOpen[] = [];
+    let changed = false;
+    for (const p of open) {
+      const kept = inAccounts ? p.items.filter((i) => inAccounts.has(personItemThread(i).accountId)) : p.items;
+      // (one the index doesn't know, or not yet, is kept: their date is unknown)
+      if (!kept.length || (since && (index?.lastWith(p.email, accounts ?? undefined) ?? since) < since)) {
+        changed = true;
+        continue;
+      }
+      // (the items keep their order: since is read again only when some went)
+      if (kept.length === p.items.length) out.push(p);
+      else {
+        changed = true;
+        out.push({ ...p, items: kept, since: personSince(kept, now) });
+      }
+    }
+    return changed ? sortPeopleOpen(out, now) : open;
   }
 
   /** Plan 278's rules changed: who is a person may have (the grouping and the lists read them again). */
@@ -171,6 +239,13 @@ export class PeopleService {
     const written = (email: string) => index?.person(email)?.written === true || keys.has(addressKey(email));
     const person = (email: string) => !index?.spam(email) && senderIsPerson(addressOnly(email), { written: () => written(email), rule: (key) => rules.get(key) });
     return Object.assign(person, { written });
+  }
+
+  /** Which index, at which scores: Everyone's version is of this. */
+  private indexAt(index: object & { scoreVersion: number }): string {
+    let id = this.indexIds.get(index);
+    if (id === undefined) this.indexIds.set(index, (id = ++this.versions));
+    return `${id}:${index.scoreVersion}`;
   }
 
   private indexState(): PeopleList["index"] {
@@ -259,6 +334,18 @@ export class PeopleService {
     }
     return out.sort((x, y) => x.row.sentAt - y.row.sentAt || x.row.id - y.row.id);
   }
+}
+
+const HOUR = 3_600_000;
+/** Everyone's versions kept, one per filter asked lately */
+const EVERYONE_FILTERS = 8;
+
+/** Plan 287: People's filter as the service applies it (`PeopleService.scope`). */
+interface Scope {
+  accounts: number[] | null;
+  since: number;
+  key: string;
+  index: { accounts?: readonly number[]; since?: number };
 }
 
 /** Open now: not put off with Later, nor behind What matters' Coming up. */

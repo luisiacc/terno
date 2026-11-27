@@ -24,7 +24,7 @@ import {
   type DevAiProvider,
 } from "../ai";
 import { FOLLOWUP_REPLY_MAX, type FollowupRow, type FollowupsSetting, type FollowupsSnapshot } from "../followups";
-import { PEOPLE_LAST_MAX, PERSON_CONVERSATIONS_MAX, type PeopleIndexState, type PeopleList, type PeopleSearch, type PersonPage } from "../people-view";
+import { PEOPLE_FILTER_ACCOUNTS_MAX, PEOPLE_LAST_MAX, PEOPLE_WITHIN, PERSON_CONVERSATIONS_MAX, type PeopleIndexState, type PeopleList, type PeopleSearch, type PersonPage } from "../people-view";
 import type { DatedRow, DatedSetting } from "../dated";
 import { HANDOFF_ITEMS_MAX, type Handoff, type HandoffItem } from "../handoff";
 import type { DatedMute, MuteOffer } from "../dated-mutes";
@@ -762,6 +762,8 @@ function m<R>() {
 }
 
 const empty = z.object({}).strict();
+/** plan 287: People's filter (an empty `accounts` is every account) */
+const peopleFilter = z.object({ within: z.enum(PEOPLE_WITHIN).optional(), accounts: z.array(id).max(PEOPLE_FILTER_ACCOUNTS_MAX).optional() });
 
 /** compose.send's parameters (plan 94's compose.schedule adds the moment and requires the draft) */
 const composeSend = z.object({
@@ -1325,16 +1327,17 @@ export const contract = {
   "putAway.removeKept": m<{ removed: boolean }>()(z.object({ categoryId: id, sender: z.string().min(1).max(400) })),
 
   // plan 281: People. Renderer-only (not in MCP_ALLOWED): what's open between you and each person is mail content.
+  // plan 287: each read takes People's filter (the page and the last emails its accounts only)
   /** `known`: the Everyone the renderer holds (`everyoneVersion`): it isn't sent again unless it changed */
-  "people.list": m<PeopleList>()(z.object({ known: z.number().int().optional() })),
+  "people.list": m<PeopleList>()(z.object({ known: z.number().int().optional(), filter: peopleFilter.optional() })),
   /** resolves once the recipient index answers (or won't this session): the list reads again then, nothing polled */
   "people.ready": m<{ index: PeopleIndexState }>()(empty, { timeoutMs: 300_000 }),
   /** names and addresses only, never content; latest wins per client */
-  "people.search": m<PeopleSearch>()(z.object({ query: z.string().max(320) })),
+  "people.search": m<PeopleSearch>()(z.object({ query: z.string().max(320), filter: peopleFilter.optional() })),
   /** `except`: the card's, the conversation open beside it ("Last time" is another's) */
   /** each address's last conversation (its date, 0 for none), as a person's page heads with it: the rows drawn in Everyone and a search */
-  "people.lastEmails": m<{ last: Record<string, number> }>()(z.object({ emails: z.array(z.string().min(3).max(320)).max(PEOPLE_LAST_MAX) })),
-  "people.person": m<PersonPage | null>()(z.object({ email: z.string().min(3).max(320), conversations: z.number().int().min(0).max(PERSON_CONVERSATIONS_MAX).optional(), except: z.number().int().positive().optional() })),
+  "people.lastEmails": m<{ last: Record<string, number> }>()(z.object({ emails: z.array(z.string().min(3).max(320)).max(PEOPLE_LAST_MAX), filter: peopleFilter.optional() })),
+  "people.person": m<PersonPage | null>()(z.object({ email: z.string().min(3).max(320), conversations: z.number().int().min(0).max(PERSON_CONVERSATIONS_MAX).optional(), except: z.number().int().positive().optional(), filter: peopleFilter.optional() })),
 
   // plan 142. All renderer-only: none of these is in MCP_ALLOWED.
   "followups.list": m<FollowupsSnapshot>()(empty),

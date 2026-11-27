@@ -90,6 +90,24 @@ export interface PersonPage {
   wrote?: number[];
 }
 
+/**
+ * Plan 287: People's filter. `within`: the last email with them (either way) no older than this, counted back from now;
+ * `accounts`: emailed with in one of these (absent or empty: every account). It chooses who is listed and, by account,
+ * which of their items and conversations; a person's items aren't filtered by date.
+ */
+export const PEOPLE_WITHIN = ["week", "month", "quarter", "year"] as const;
+export type PeopleWithin = (typeof PEOPLE_WITHIN)[number];
+export interface PeopleFilter {
+  within?: PeopleWithin;
+  accounts?: number[];
+}
+const DAY_MS = 86_400_000;
+const WITHIN_DAYS: Record<PeopleWithin, number> = { week: 7, month: 30, quarter: 91, year: 365 };
+/** The oldest last email a filter's `within` lets in (0: any time). */
+export const peopleSince = (within: PeopleWithin | undefined, now: number): number => (within ? now - WITHIN_DAYS[within] * DAY_MS : 0);
+/** The most accounts a filter names. */
+export const PEOPLE_FILTER_ACCOUNTS_MAX = 64;
+
 /** Everyone is capped (past it, search finds them). */
 export const PEOPLE_EVERYONE_MAX = 5000;
 /** A page's recent conversations. */

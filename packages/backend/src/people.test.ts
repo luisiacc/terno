@@ -394,3 +394,99 @@ describe("whom an item is between you and", () => {
     expect(personOf({ id: "r:1", thread, why: { kind: "reminder" } } as never, () => true)).toBeNull();
   });
 });
+
+describe("People's filter (plan 287)", () => {
+  /** a second account, and mail in it: from someone (waiting on you or not), or to someone */
+  async function second(t: Awaited<ReturnType<typeof setup>>) {
+    const { account } = await t.backend.store.accounts.create({ kind: "gmail", email: "work@terno.test", displayName: "Work", color: "brown", now: 0 });
+    let n = 0;
+    const me = { name: "Me", email: account.email };
+    const from = (name: string, email: string, o: { waiting?: boolean; date?: number } = {}) => t.from(name, email, { waiting: o.waiting, over: { accountId: account.id, to: [me], ...(o.date ? { date: o.date } : {}) } });
+    const to = async (name: string, email: string, date = NOW - 2 * DAY) => {
+      const id = `ws-${n++}`;
+      await t.backend.store.sync.ingest([msg({ accountId: account.id, date, from: me, to: [{ name, email }], subject: `To ${name}`, providerMsgId: id, isSent: true, isRead: true })], { applyFilters: false, now: NOW, classifier: null });
+      return threadOf(t.backend.store, id);
+    };
+    return { work: account, from, to };
+  }
+  const ids = (list: readonly { email: string }[] | undefined) => (list ?? []).map((p) => p.email).sort();
+  const threads = (p: { items: readonly PersonItemLike[] } | undefined) => (p?.items ?? []).map((i) => (i.kind === "today" ? i.item.thread.id : i.thread.id)).sort();
+  type PersonItemLike = { kind: "today"; item: { thread: { id: number } } } | { kind: "awaiting"; thread: { id: number } };
+
+  it("by account: Open's items, Everyone, the search, the page and the last emails are those accounts'; one gone is every account", async () => {
+    const t = await setup();
+    const w = await second(t);
+    const ana1 = await t.from("Ana", "ana@people.test");
+    const ana2 = await w.from("Ana", "ana@people.test");
+    await w.from("Bob", "bob@people.test");
+    await t.to("Marco", "marco@people.test");
+    await w.to("Zoe", "zoe@people.test");
+    expect(await t.client.call("people.ready", {})).toEqual({ index: "ready" });
+    const home = { accounts: [t.account.id] };
+    const work = { accounts: [w.work.id] };
+
+    const inWork = await t.client.call("people.list", { filter: work });
+    expect(inWork.open.map((p) => p.key).sort()).toEqual(["ana@people.test", "bob@people.test"]);
+    expect(threads(inWork.open.find((p) => p.key === "ana@people.test"))).toEqual([ana2]);
+    expect(ids(inWork.everyone)).toEqual(["zoe@people.test"]);
+    const inHome = await t.client.call("people.list", { filter: home });
+    expect(inHome.open.map((p) => p.key)).toEqual(["ana@people.test"]);
+    expect(threads(inHome.open[0])).toEqual([ana1]);
+    expect(ids(inHome.everyone)).toEqual(["marco@people.test"]);
+    // both, and an account that's gone (as none: every account)
+    expect(ids((await t.client.call("people.list", { filter: { accounts: [t.account.id, w.work.id] } })).everyone)).toEqual(["marco@people.test", "zoe@people.test"]);
+    expect(ids((await t.client.call("people.list", { filter: { accounts: [999] } })).everyone)).toEqual(["marco@people.test", "zoe@people.test"]);
+
+    // the search finds whoever was seen in those accounts, each with what's open there
+    const found = await t.client.call("people.search", { query: "people.test", filter: home });
+    expect(ids(found.hits)).toEqual(["ana@people.test", "marco@people.test"]);
+    expect(found.hits.find((h) => h.key === "ana@people.test")!.open).toBe(1);
+
+    // the page: its items and conversations of those accounts; New message's account is the newest shown's
+    const page = (await t.client.call("people.person", { email: "ana@people.test", filter: work }))!;
+    expect(threads(page)).toEqual([ana2]);
+    expect(page.conversations.map((c) => c.id)).toEqual([ana2]);
+    const whole = (await t.client.call("people.person", { email: "ana@people.test" }))!;
+    expect(whole.conversations.map((c) => c.id).sort()).toEqual([ana1, ana2].sort());
+    const { last } = await t.client.call("people.lastEmails", { emails: ["ana@people.test", "marco@people.test"], filter: work });
+    expect(last["ana@people.test"]).toBe(page.conversations[0]!.lastDate);
+    expect(last["marco@people.test"]).toBe(0);
+  });
+
+  it("by date: whose last email is recent enough, Open and Everyone alike; a person's items aren't filtered by it", async () => {
+    const t = await setup();
+    const w = await second(t);
+    // Ana: last email from Work, 20 days ago (waiting on you); Bob: Work, 2 days ago; Cara: written from Work 60 days ago
+    const ana = await w.from("Ana", "ana@people.test", { date: NOW - 20 * DAY });
+    await w.from("Bob", "bob@people.test", { date: NOW - 2 * DAY });
+    await w.to("Cara", "cara@people.test", NOW - 60 * DAY);
+    await w.to("Bob", "bob@people.test", NOW - 3 * DAY);
+    await t.client.call("people.ready", {});
+    const week = await t.client.call("people.list", { filter: { within: "week" } });
+    expect(week.open.map((p) => p.key)).toEqual(["bob@people.test"]);
+    expect(ids(week.everyone)).toEqual(["bob@people.test"]);
+    const month = await t.client.call("people.list", { filter: { within: "month" } });
+    expect(month.open.map((p) => p.key).sort()).toEqual(["ana@people.test", "bob@people.test"]);
+    expect(ids(month.everyone)).toEqual(["bob@people.test"]);
+    expect(ids((await t.client.call("people.list", { filter: { within: "quarter" } })).everyone)).toEqual(["bob@people.test", "cara@people.test"]);
+    // her page is hers whole (the date chooses who's listed)
+    expect(threads((await t.client.call("people.person", { email: "ana@people.test", filter: { within: "week" } }))!)).toEqual([ana]);
+    // the search within the date
+    expect(ids((await t.client.call("people.search", { query: "people.test", filter: { within: "week" } })).hits)).toEqual(["bob@people.test"]);
+  });
+
+  it("Everyone's version is per filter: two windows on two filters don't make each other send it again", async () => {
+    const t = await setup();
+    const w = await second(t);
+    await t.to("Marco", "marco@people.test");
+    await w.to("Zoe", "zoe@people.test");
+    await t.client.call("people.ready", {});
+    const a = await t.client.call("people.list", { filter: { accounts: [t.account.id] } });
+    const b = await t.client.call("people.list", { filter: { accounts: [w.work.id] } });
+    expect(a.everyoneVersion).not.toBe(b.everyoneVersion);
+    expect((await t.client.call("people.list", { known: a.everyoneVersion, filter: { accounts: [t.account.id] } })).everyone).toBeUndefined();
+    expect((await t.client.call("people.list", { known: b.everyoneVersion, filter: { accounts: [w.work.id] } })).everyone).toBeUndefined();
+    // another filter's version is no answer to this one
+    expect(ids((await t.client.call("people.list", { known: a.everyoneVersion, filter: { accounts: [w.work.id] } })).everyone)).toEqual(["zoe@people.test"]);
+  });
+});
