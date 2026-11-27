@@ -202,3 +202,7 @@ The dated eval's wrong-text threshold fails on both prompts in every run (Luna's
 ### Spend
 
 One ledger, `/tmp/terno-ai/spend-cache-1.jsonl` (cap $55): **$1.91 counted**, of which about $0.42 is worst-case reservations for Anthropic requests refused before running (not billed), so about $1.50 billed: the replay's arms $0.58, the evals $0.80, probes $0.02, and a first before run that was interrupted (its arrival times repeated; moved aside to `discarded-before-1.jsonl`) about $0.05.
+
+## Tests run
+
+After rebasing on main (b498eefef), Node 24.21: `packages/ai/src` (all 17 files, `cache.test.ts` new) and the backend's AI jobs (`ai-limiter`, `ai-service`, `ai-backend`, `categorize`, `summaries`, `dated`, `dated-second-look`, `followups`, `ask`, `writing`, `replies`, `preferences`, `dev-ai`, `architecture`): 31 files, 1,148 tests, all pass. `pnpm typecheck` and `pnpm lint` clean. No perf gate covers request building; nothing on a hot path changed.
