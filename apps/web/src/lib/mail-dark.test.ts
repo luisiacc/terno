@@ -106,6 +106,19 @@ describe("darkenMail (plan 295)", () => {
     expect(contrast($("#t").style.color, $("#t").style.backgroundColor)).toBeGreaterThanOrEqual(4.5);
   });
 
+  it("a gradient it can't read, or whose stops end up apart, stays as written with its ink; an <hr>'s color leaves a side the style names", () => {
+    darkenMail(mail(`<p style="color:#222">${"Plenty of ordinary text on the page. ".repeat(6)}</p>
+      <div id="o" style="background-color:#ffffff;background-image:linear-gradient(oklch(0.98 0 0), oklch(0.96 0 0));color:#111111">Over a modern gradient</div>
+      <div id="b" style="background-image:linear-gradient(#666666, #ee0000);color:#ffffff">Over a brand gradient</div>
+      <hr id="hr" color="#eeeeee" style="border-top:1px solid #ff0000">`), DRACULA);
+    expect(hexOf($("#o").style.backgroundColor)).toBe("#ffffff");
+    expect(hexOf($("#o").style.color)).toBe("#111111");
+    expect(hexOf($("#b").style.color)).toBe("#ffffff");
+    expect($("#b").style.backgroundImage).toMatch(/102, 102, 102|#666666/i);
+    expect(hexOf($("#hr").style.borderTopColor)).toBe("#ff0000");
+    expect(hexOf($("#hr").style.borderBottomColor)).not.toBe("#eeeeee");
+  });
+
   it("turns a black call to action into the theme's light button, and keeps its label readable", () => {
     darkenMail(mail(`<p style="color:#111">Update the app to try the new keyboard in every app you use today.</p><table><tr><td id="btn" style="background-color:#111111"><a id="label" href="https://x.test" style="color:#ffffff">Update app</a></td></tr></table>`), DRACULA);
     const button = mailColor($("#btn").style.backgroundColor)!;

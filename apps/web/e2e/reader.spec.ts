@@ -704,6 +704,37 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
     await expect(page.getByTestId("expand-all")).toHaveText("Expand all");
   });
 
+  test("plan 295: a darkened mail's full view is themed whole: no theme ink left on a picture or gradient behind it", async ({ app: page, server }) => {
+    await server.backend.server.invoke("settings.update", { theme: "dark", darkTheme: "dracula", htmlMailAppearance: "auto" }, { clientId: "setup", origin: "dev" });
+    const store = server.backend.store;
+    const account = (await store.accounts.list())[0]!;
+    // a tall light newsletter (clipped, so it offers the full view) with a white-to-red band the converter leaves as written
+    const tall = `<table style="background-color:#ffffff;width:560px"><tr><td><h1 style="color:#1d5bb0">Boletín</h1><div id="band" style="background-image:linear-gradient(#ffffff, #ee0000);color:#111111">Sobre el degradado</div>${Array.from({ length: 1400 }, (_, i) => `<p style="margin:0;height:20px;color:#222">Line ${i}</p>`).join("")}</td></tr></table>`;
+    const { touched } = await store.sync.ingest([{ accountId: account.id, providerMsgId: "dark-tall", providerThreadId: null, rfcMessageId: "<dark-tall@e2e.test>", inReplyTo: null, references: [], from: { name: "Boletín", email: "news@acme.studio" }, replyTo: [], to: [{ name: "", email: account.email }], cc: [], bcc: [], subject: "Un boletín largo", date: E2E_NOW, snippet: "Boletín", bodyText: null, bodyHtml: tall, bodyState: "full", listId: null, isRead: true, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: tall.length }], { applyFilters: false, now: E2E_NOW, classifier: null });
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await selectThread(page, touched[0]!, 'subject:"Un boletín largo"');
+    await expect(page.locator("iframe[data-mail]").first()).toHaveAttribute("data-mail", "dark");
+    await page.getByRole("button", { name: "Show full message", exact: true }).click();
+    const scroller = page.locator("[data-full-message-scroller]");
+    await expect(scroller.locator("iframe").first()).toBeVisible();
+    const band = async () => {
+      for (const frame of await scroller.locator("iframe").all()) {
+        const found = await frame.evaluate((f) => {
+          const d = (f as HTMLIFrameElement).contentDocument!;
+          const el = d.getElementById("band");
+          return el && { image: getComputedStyle(el).backgroundImage, color: getComputedStyle(el).color, body: getComputedStyle(d.body).color };
+        });
+        if (found) return found;
+      }
+      return null;
+    };
+    await expect.poll(async () => (await band())?.image).toBe("none");
+    const found = (await band())!;
+    expect(found.color).toBe(found.body);
+    await page.keyboard.press("Escape");
+  });
+
   test("the keyboard through a conversation: N and P go message by message, o and Enter open, ⇧E opens or folds them all", async ({ app: page, server }) => {
     const id = await ingestConversation(server, { subject: "Un hilo largo", count: 7, now: E2E_NOW });
     await selectThread(page, id, 'subject:"Un hilo largo"');

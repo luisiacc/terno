@@ -248,6 +248,8 @@ const NO_IMAGE = new Set(["", "none", "initial", "unset", "inherit", "revert"]);
 const COLOR_IN_CSS = /#[0-9a-f]{3,8}\b|(?:rgb|hsl)a?\([^)]*\)|\b[a-z]{3,20}\b/gi;
 const SIDES = ["top", "right", "bottom", "left"] as const;
 const HAS_COLOR = /colou?r|background|border|fill/i;
+/** color notations the mail parser doesn't read */
+const OTHER_COLOR = /\b(?:oklch|oklab|lab|lch|hwb|color|color-mix|light-dark)\(/i;
 
 function px(v: string | null | undefined): number | null {
   if (!v) return null;
@@ -371,27 +373,34 @@ export function darkenMail(root: HTMLElement, palette: DarkPalette): DarkResult 
     if (!ink && (tag === "font" || tag === "basefont") && el.hasAttribute("color")) ink = mailColor(el.getAttribute("color"));
     if (el.hasAttribute("background") && (tag === "table" || tag === "td" || tag === "th" || tag === "tr" || tag === "tbody")) picture = true;
     // a gradient's stops through the surface mapping, written opaque (each was composited over its backdrop to be mapped).
-    // No stop it can read: just its fill. Stops that end up both light and dark: no one ink reads on all of it, so it
-    // stays as written, an island like a picture
+    // Only see-through stops: just its fill. A stop it can't read, or stops that end up apart (a brand gradient, or one that
+    // goes from light to a color the mapping keeps): no one ink is sure to read on all of it, so it stays as written, an
+    // island like a picture
     let grad: { css: string; was: Rgb; now: Rgb } | null = null;
     if (gradient && !kept[p]) {
       const stops: Rgb[] = [], mapped: Rgb[] = [];
+      let unread = OTHER_COLOR.test(gradient);
       const css = gradient.replace(COLOR_IN_CSS, (m) => {
         const c = mailColor(m);
-        if (!c) return m;
+        if (!c) {
+          if (m[0] === "#" || m.endsWith(")")) unread = true;
+          return m;
+        }
         const solid = over(c, wasBg[p]!);
         const to = mapSurface(t, solid, pageL, surfaces);
         stops.push(solid);
         mapped.push(to);
         return hex(to);
       });
-      if (stops.length) {
+      if (unread) picture = true;
+      else if (stops.length) {
         let lo = 0, hi = 0;
         for (let j = 1; j < mapped.length; j++) {
           if (luminance(mapped[j]!) < luminance(mapped[lo]!)) lo = j;
           if (luminance(mapped[j]!) > luminance(mapped[hi]!)) hi = j;
         }
-        if (ratio(mapped[lo]!, mapped[hi]!) > 3) picture = true;
+        // (close enough that the ink judged against the hardest stop reads on the other too)
+        if (ratio(mapped[lo]!, mapped[hi]!) > 1.5) picture = true;
         else {
           // the text over it is judged against its hardest stop: the lightest on a dark mapping
           const k = luminance(mapped[hi]!) < 0.18 ? hi : lo;
@@ -474,7 +483,9 @@ export function darkenMail(root: HTMLElement, palette: DarkPalette): DarkResult 
       const c = mailColor(el.getAttribute("color"));
       if (c) {
         const to = hex(mapLine(t, c, wasBg[p]!, nowBg[p]!));
-        writes.push([el, "background-color", to], ...sides(el, to));
+        // (what the style names outranks the attribute, and was mapped above)
+        if (!(styled && s.getPropertyValue("background-color"))) writes.push([el, "background-color", to]);
+        writes.push(...sides(el, to).filter(([, prop]) => !(styled && s.getPropertyValue(prop))));
       }
     }
 

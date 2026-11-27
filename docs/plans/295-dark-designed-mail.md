@@ -131,3 +131,9 @@ Also found while testing: simple (themed) mail in a dark theme had the same vani
 Not changed: **9**, white text on an unchanged brand button below 4.5:1 (Evexia's pink, 4.25:1). The pair is exactly as the sender wrote it and as it shows on paper; the conversion doesn't make it worse, and rewriting a brand's button label is not the converter's call.
 
 **Not rated (plan 158):** the rated screens' conversation is person-to-person mail, which this doesn't change; designed mail in dark appears in none of them.
+
+**Second round** (on the fix, four findings, all fixed with tests; review rounds stop here):
+
+- A gradient converts only when its mapped stops end up close (≤ 1.5:1 apart), so the ink judged against the hardest stop reads on all of it; a wider one (a brand gradient, light into a kept red) stays as written. A gradient in a notation the parser doesn't read (`oklch()`, `color-mix()`…) stays as written too, never its fill mapped under an unmapped gradient.
+- `<hr color>` leaves the fill and any side the style names.
+- The themed sheet also clears `background-image`: a simple mail never has one (it would be designed), and a darkened mail's full view, which is themed, no longer puts the theme's ink on a picture or gradient left behind.
