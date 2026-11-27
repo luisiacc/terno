@@ -1,6 +1,7 @@
 import type { AppSettings } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
+import { IconButton } from "@terno/ui/components/icon-button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Check, Copy } from "@terno/ui/icons";
 import { useEffect, useState } from "react";
@@ -23,45 +24,48 @@ function reportsHint(settings: AppSettings, dsn: boolean): string {
   return t("diag.settings.hint.ask");
 }
 
-/** The build line: version, commit and channel, the way support asks for it. */
-function BuildLine() {
-  const [copied, setCopied] = useState(false);
+/** The build line: version, commit and channel, the way support asks for it (the full commit, unlike About's card). */
+export function buildLine(): string {
   const key = CHANNEL[BUILD.channel];
   const channel = key ? t(key) : "";
-  const text = `Terno ${BUILD.version} (${BUILD.sha}${channel ? `, ${channel}` : ""})`;
+  return `Terno ${BUILD.version} (${BUILD.sha}${channel ? `, ${channel}` : ""})`;
+}
+
+/** The build's channel when it isn't a release ("Test", "Dev"), for About's version line. */
+export function buildChannel(): string | null {
+  const key = CHANNEL[BUILD.channel];
+  return key ? t(key) : null;
+}
+
+/** Copies the build line: beside About's version, where support asks people to look. */
+export function CopyBuild() {
+  const [copied, setCopied] = useState(false);
   return (
-    <span className="flex items-center gap-1.5" data-testid="build-line">
-      <span className="tabular-nums select-text">
-        Terno {BUILD.version} · {BUILD.sha}
-        {channel && ` · ${channel}`}
-      </span>
-      <button
-        type="button"
-        className="inline-flex size-5 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        aria-label={t("diag.settings.copyVersion")}
-        data-testid="build-copy"
-        onClick={() =>
-          void navigator.clipboard.writeText(text).then(() => {
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
-          })
-        }
-      >
-        {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
-      </button>
-    </span>
+    <IconButton
+      label={t("diag.settings.copyVersion")}
+      size="icon-xs"
+      data-testid="build-copy"
+      onClick={() =>
+        void navigator.clipboard.writeText(buildLine()).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        })
+      }
+    >
+      {copied ? <Check /> : <Copy />}
+    </IconButton>
   );
 }
 
-/** Settings → General → Diagnostics: whether reports may go, what one holds, and the logs. */
+/** Settings → About → Diagnostics (plan 294: it was General's): whether reports may go, what one holds, and the logs. */
 export function DiagnosticsSection({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
   const dsn = useDiag((s) => s.view?.reporting.dsn ?? false);
   useEffect(() => void refreshDiag(), []);
   // plan 78: local mode doesn't decide reports; the user's choice here does
   const locked = !dsn;
   return (
-    <SettingsGroup title={t("diag.settings.title")} testId="diagnostics-section" footer={<BuildLine />}>
-      <SettingsRow find="general.reports" label={t("diag.settings.reports")} hint={reportsHint(settings, dsn)} testId="error-reports-row">
+    <SettingsGroup title={t("diag.settings.title")} testId="diagnostics-section">
+      <SettingsRow find="about.reports" label={t("diag.settings.reports")} hint={reportsHint(settings, dsn)} testId="error-reports-row">
         {({ id: _id, ...a }) => (
           <Select value={locked ? "never" : settings.errorReports} disabled={locked} onValueChange={(v) => void update({ errorReports: v as AppSettings["errorReports"] })} items={REPORTS.map((r) => ({ value: r.value, label: t(r.label) }))}>
             <SelectTrigger {...a} size="sm" className="w-32" data-testid="error-reports-select">
@@ -77,14 +81,14 @@ export function DiagnosticsSection({ settings, update }: { settings: AppSettings
           </Select>
         )}
       </SettingsRow>
-      <SettingsRow find="general.reportContents" label={t("diag.settings.contains")} hint={t("diag.settings.containsHint")}>
+      <SettingsRow find="about.reportContents" label={t("diag.settings.contains")} hint={t("diag.settings.containsHint")}>
         {({ id: _id, "aria-labelledby": _l, ...a }) => (
           <Button {...a} variant="outline" size="sm" data-testid="report-sample" onClick={() => void openPreview("sample")}>
             {t("diag.settings.viewExample")}
           </Button>
         )}
       </SettingsRow>
-      <SettingsRow find="general.logs" label={t("diag.settings.logs")} hint={t("diag.settings.logsHint")}>
+      <SettingsRow find="about.logs" label={t("diag.settings.logs")} hint={t("diag.settings.logsHint")}>
         {({ id: _id, "aria-labelledby": _l, ...a }) => (
           <>
             {DESKTOP_DIAG && (

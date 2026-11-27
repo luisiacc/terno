@@ -2,6 +2,7 @@ import { CUSTOM_PREFIX, DESIGN_PALETTE, customThemeSchema, MAX_CUSTOM_THEMES, ty
 import type { AppSettings } from "@terno/core/rpc";
 import { Button, GHOST_DANGER_PRESS } from "@terno/ui/components/button";
 import { RadioCard, RadioGroup } from "@terno/ui/components/radio-group";
+import { Switch } from "@terno/ui/components/switch";
 import { Textarea } from "@terno/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
 import { contrastFailures } from "@terno/ui/themes/contrast";
@@ -19,7 +20,7 @@ import { resolvedMode, resolveTheme, styleFont, updateAppearance, useAppearance 
 import { FontField } from "./font-field";
 import { ConfirmDialog, SettingsGroup, SettingsRow, type RowA11y, type SettingsUpdate } from "./parts";
 import { ListSettings } from "./list-settings";
-import { SenderPictures } from "./sender-pictures";
+import { SiteIconRows } from "./sender-pictures";
 
 /** Under a theme picked for the mode not showing now. */
 const APPLIES_IN = { light: "settings.appearance.appliesLight", dark: "settings.appearance.appliesDark" } as const satisfies Record<ThemeMode, string>;
@@ -319,26 +320,6 @@ export function AppearanceTab({ settings, update }: { settings: AppSettings; upd
         <SettingsRow find="appearance.font" label={t("settings.appearance.font")} hint={t("settings.appearance.font.hint", { style: designName(settings.design) })}>
           {(a) => <FontField settings={settings} a={a} />}
         </SettingsRow>
-      </SettingsGroup>
-      <SettingsGroup>
-        <SettingsRow find="appearance.mode" label={t("settings.appearance.mode")} hint={t("settings.appearance.mode.hint")}>
-          {(a) => (
-            <ToggleGroup aria-labelledby={a["aria-labelledby"]} aria-describedby={a["aria-describedby"]} variant="segmented" value={[settings.theme]} onValueChange={(v: string[]) => v[0] && void updateAppearance({ theme: v[0] as AppSettings["theme"] })} data-testid="mode-toggle">
-              <ToggleGroupItem value="system" data-testid="mode-system">{t("settings.appearance.system")}</ToggleGroupItem>
-              <ToggleGroupItem value="light" data-testid="mode-light">{t("settings.appearance.light")}</ToggleGroupItem>
-              <ToggleGroupItem value="dark" data-testid="mode-dark">{t("settings.appearance.dark")}</ToggleGroupItem>
-            </ToggleGroup>
-          )}
-        </SettingsRow>
-        <SettingsRow find="appearance.lightTheme" stacked label={t("settings.appearance.lightTheme")}>
-          {(a) => grid("light", a)}
-        </SettingsRow>
-        <SettingsRow find="appearance.darkTheme" stacked label={t("settings.appearance.darkTheme")}>
-          {(a) => grid("dark", a)}
-        </SettingsRow>
-      </SettingsGroup>
-
-      <SettingsGroup title={t("settings.appearance.motionMail")}>
         <SettingsRow find="appearance.motion" stacked label={t("settings.appearance.motion")} hint={reduced ? t("settings.appearance.motion.reduced") : t("settings.appearance.motion.hint")}>
           {(a) => (
             <div className="flex items-center gap-4">
@@ -363,6 +344,27 @@ export function AppearanceTab({ settings, update }: { settings: AppSettings; upd
             </div>
           )}
         </SettingsRow>
+      </SettingsGroup>
+      <SettingsGroup>
+        <SettingsRow find="appearance.mode" label={t("settings.appearance.mode")} hint={t("settings.appearance.mode.hint")}>
+          {(a) => (
+            <ToggleGroup aria-labelledby={a["aria-labelledby"]} aria-describedby={a["aria-describedby"]} variant="segmented" value={[settings.theme]} onValueChange={(v: string[]) => v[0] && void updateAppearance({ theme: v[0] as AppSettings["theme"] })} data-testid="mode-toggle">
+              <ToggleGroupItem value="system" data-testid="mode-system">{t("settings.appearance.system")}</ToggleGroupItem>
+              <ToggleGroupItem value="light" data-testid="mode-light">{t("settings.appearance.light")}</ToggleGroupItem>
+              <ToggleGroupItem value="dark" data-testid="mode-dark">{t("settings.appearance.dark")}</ToggleGroupItem>
+            </ToggleGroup>
+          )}
+        </SettingsRow>
+        <SettingsRow find="appearance.lightTheme" stacked label={t("settings.appearance.lightTheme")}>
+          {(a) => grid("light", a)}
+        </SettingsRow>
+        <SettingsRow find="appearance.darkTheme" stacked label={t("settings.appearance.darkTheme")}>
+          {(a) => grid("dark", a)}
+        </SettingsRow>
+      </SettingsGroup>
+
+      {/* plan 294: how a message and its sender show, each with what it reaches (it was General's, then "Motion and mail" and "Sender pictures") */}
+      <SettingsGroup title={t("settings.appearance.messages")} testId="messages-group" footer={t("settings.appearance.senderPictures.footer")}>
         <SettingsRow find="appearance.htmlMail" stacked label={t("settings.appearance.htmlMail")} hint={t("settings.appearance.htmlMail.hint")}>
           {(a) => (
             <ToggleGroup aria-labelledby={a["aria-labelledby"]} aria-describedby={a["aria-describedby"]} variant="segmented" value={[settings.htmlMailAppearance]} onValueChange={(v: string[]) => v[0] && void updateAppearance({ htmlMailAppearance: v[0] as AppSettings["htmlMailAppearance"] })} data-testid="mail-appearance-toggle">
@@ -371,9 +373,11 @@ export function AppearanceTab({ settings, update }: { settings: AppSettings; upd
             </ToggleGroup>
           )}
         </SettingsRow>
+        <SettingsRow find="appearance.remoteImages" label={t("settings.general.remoteImages")} hint={t(settings.remoteImages === "always" ? "settings.general.remoteImages.hintOn" : "settings.general.remoteImages.hint")}>
+          {(a) => <Switch {...a} data-testid="remote-images-switch" checked={settings.remoteImages === "always"} onCheckedChange={(on) => void update({ remoteImages: on ? "always" : "ask" })} />}
+        </SettingsRow>
+        <SiteIconRows settings={settings} update={update} />
       </SettingsGroup>
-
-      <SenderPictures settings={settings} update={update} />
 
       <SettingsGroup find="appearance.customThemes" title={t("settings.appearance.custom")} testId="custom-themes" footer={t("settings.appearance.custom.footer")}>
         {settings.customThemes.map((c) => (

@@ -5,7 +5,7 @@ import type { PrintTarget } from "~/lib/print-open";
 import { LEGACY_FILTERS, loadListFilters } from "~/lib/unread-filter";
 
 export type DialogName = "settings" | "shortcuts" | "palette" | "categoryPicker" | "filters" | "addAccount" | "print" | "remind" | "todayLater" | "personLater" | "todayChange" | "firstScreen" | null;
-export type SettingsTab = "general" | "whatMatters" | "appearance" | "accounts" | "categories" | "filters" | "snippets" | "ai" | "agents" | "dev" | "data" | "storage" | "about";
+export type SettingsTab = "general" | "whatMatters" | "appearance" | "accounts" | "categories" | "filters" | "snippets" | "ai" | "agents" | "dev" | "storage" | "about";
 
 /** The draft being written (lib/drafts holds its content); seq changes each time it is (re)opened, for focus. */
 export interface ComposeState {

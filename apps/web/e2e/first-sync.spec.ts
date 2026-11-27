@@ -37,7 +37,7 @@ for (const theme of ["light", "dark"] as const) {
 
       await page.getByTestId("sidebar").getByRole("button", { name: "Add account", exact: true }).click();
       const dialog = page.getByTestId("add-account-dialog");
-      // the General setting's 180 days, preselected
+      // the default sync window's 180 days (Settings → Accounts), preselected
       const choice = dialog.getByTestId("sync-window-choice");
       await expect(choice).toHaveText(/The last 180 days/);
       await expect(choice).toHaveAccessibleName("Download mail from");

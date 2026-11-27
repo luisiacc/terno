@@ -14,7 +14,6 @@ import { CategoriesTab } from "./settings/categories-tab";
 import { AboutTab } from "./settings/about-tab";
 import { AccountsTab } from "./settings/accounts-tab";
 import { AgentsTab } from "./settings/agents-tab";
-import { DataTab } from "./settings/data-tab";
 import { FiltersTab } from "./settings/filters-tab";
 import { SnippetsTab } from "./settings/snippets-tab";
 import { closeSnippetEditor, setDeletedSnippet, useSnippetEditor } from "~/lib/snippet-editor-state";
@@ -268,10 +267,6 @@ export function SettingsDialog() {
                 <AiTab settings={settings} update={update} />
               </TabsContent>
 
-              <TabsContent value="data">
-                <DataTab />
-              </TabsContent>
-
               <TabsContent value="storage">
                 <StorageTab />
               </TabsContent>
@@ -281,7 +276,7 @@ export function SettingsDialog() {
               </TabsContent>
 
               <TabsContent value="about">
-                <AboutTab />
+                <AboutTab settings={settings} update={update} />
               </TabsContent>
             </PaneBoundary>
           </SettingsPane>

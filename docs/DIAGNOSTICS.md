@@ -1,6 +1,6 @@
 # Diagnostics and error reports
 
-Every process logs structured lines (a dotted code plus typed, allowlisted fields; never free text, not even error messages), leaves breadcrumbs, and records unexpected errors and crashes. A report goes to Sentry (the `terno` project) only from a build given a DSN, and only as the user chose (Settings → General → Diagnostics: Ask, Always or Never): clicking Send is their choice ([plan 78](plans/78-send-error-reports.md)). No Sentry SDK ships: the app posts its own envelope. [Plan 10](plans/10-observability.md) has the design and the privacy rules.
+Every process logs structured lines (a dotted code plus typed, allowlisted fields; never free text, not even error messages), leaves breadcrumbs, and records unexpected errors and crashes. A report goes to Sentry (the `terno` project) only from a build given a DSN, and only as the user chose (Settings → About → Diagnostics: Ask, Always or Never): clicking Send is their choice ([plan 78](plans/78-send-error-reports.md)). No Sentry SDK ships: the app posts its own envelope. [Plan 10](plans/10-observability.md) has the design and the privacy rules.
 
 ## How Sentry is used
 

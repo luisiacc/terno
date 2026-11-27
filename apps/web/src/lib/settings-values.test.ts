@@ -26,7 +26,7 @@ describe("sync window", () => {
 describe("plan 79: the window asked for when connecting", () => {
   afterEach(() => setLocale("en", en));
 
-  it("lists the usual choices, and the General setting when it's none of them", () => {
+  it("lists the usual choices, and the default sync window when it's none of them", () => {
     expect(windowChoices(180)).toEqual([30, 90, 180, 365, 730]);
     expect(windowChoices(45)).toEqual([30, 45, 90, 180, 365, 730]);
   });

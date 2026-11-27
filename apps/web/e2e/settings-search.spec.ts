@@ -104,6 +104,27 @@ test("Settings' search finds every kind of setting, says where and why, and open
     await expect(setting(page, "ai.followups")).toHaveAttribute("data-found", "on", { timeout: 4000 });
   });
 
+  await scenario("plan 294: a moved setting is found, said and opened where it lives now; the default sync window apart from an account's", async () => {
+    const opens = async (query: string, name: string, where: RegExp, tab: string, id: string) => {
+      await page.keyboard.press("Meta+f");
+      await find(page, query);
+      const hit = results(page).filter({ has: page.getByTestId("settings-find-name").getByText(name, { exact: true }) }).first();
+      await expect(hit.getByTestId("settings-find-where")).toHaveText(where);
+      await hit.click();
+      await expect(page.getByTestId(`tab-${tab}`)).toHaveAttribute("aria-selected", "true");
+      await expect(setting(page, id)).toBeInViewport();
+    };
+    await opens("remote images", "Always load remote images", /^Appearance.*Messages/, "appearance", "appearance.remoteImages");
+    await opens("default sync", "Default sync window", /^Accounts.*All accounts/, "accounts", "accounts.syncWindow");
+    await opens("export", "Export", /^Storage.*Backup/, "storage", "storage.export");
+    await opens("error reports", "Error reports", /^About.*Diagnostics/, "about", "about.reports");
+    // the default and each account's own are named apart, an account's under that account
+    await page.keyboard.press("Meta+f");
+    await find(page, "sync window");
+    await expect(results(page).getByTestId("settings-find-name").getByText("Default sync window", { exact: true })).toHaveCount(1);
+    await expect(results(page).filter({ has: page.getByTestId("settings-find-name").getByText("Sync window", { exact: true }) }).first().getByTestId("settings-find-where")).toHaveText(/^Accounts.*(Personal|Acme|Freelance|iCloud)/);
+  });
+
   await scenario("a group comes into view untinted: only rows are marked (owner, 2026-11-12)", async () => {
     await page.keyboard.press("Meta+f");
     await find(page, "account");

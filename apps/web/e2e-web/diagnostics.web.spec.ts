@@ -41,7 +41,7 @@ test("local mode offers Send; nothing leaves before the click, and what leaves i
   await boot(page);
   // a new install starts in local mode
   await page.getByTestId("open-settings").click();
-  await page.getByTestId("tab-general").click();
+  await page.getByTestId("tab-about").click();
   await page.keyboard.press("Escape");
   await deadTab(page);
   const row = page.getByTestId("report-row");
@@ -97,7 +97,7 @@ test("Settings: the choice is open in local mode; Never keeps reports here", asy
   const net = ingest(page, () => 200);
   await boot(page);
   await page.getByTestId("open-settings").click();
-  await page.getByTestId("tab-general").click();
+  await page.getByTestId("tab-about").click();
   await page.getByTestId("diagnostics-section").scrollIntoViewIfNeeded();
   const select = page.getByTestId("error-reports-select");
   await expect(select).toBeEnabled();
@@ -117,7 +117,7 @@ test("Always: an ordinary error that couldn't go keeps a row with Send (review f
   const net = ingest(page, () => status);
   await boot(page);
   await page.getByTestId("open-settings").click();
-  await page.getByTestId("tab-general").click();
+  await page.getByTestId("tab-about").click();
   await page.getByTestId("diagnostics-section").scrollIntoViewIfNeeded();
   await page.getByTestId("error-reports-select").click();
   await page.getByTestId("error-reports-always").click();

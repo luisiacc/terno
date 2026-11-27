@@ -13,6 +13,7 @@ import { useStorageJob } from "~/lib/storage-job";
 import { clearSummaries } from "~/lib/summaries";
 import { StorageSection } from "~/lib/web-parts";
 import { client } from "~/rpc/connection";
+import { BackupGroup } from "./backup-group";
 import { ConfirmDialog, SettingsGroup, SettingsRow } from "./parts";
 
 const WEB = import.meta.env.VITE_TARGET === "web";
@@ -200,6 +201,9 @@ export function StorageTab() {
           </SettingsGroup>
         </>
       )}
+
+      {/* plan 294: what Data held, after what's on this device (it shows when the report fails too) */}
+      <BackupGroup />
 
       {StorageSection && (
         <StorageSection />

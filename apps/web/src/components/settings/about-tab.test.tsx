@@ -3,6 +3,7 @@
  * Plan 190: Settings → About in a shell without the updater (the web) and the status row's focus. The desktop flow
  * through main's states is the e2e (updates.spec.ts); these are the branches a stand-in for main can't reach.
  */
+import type { AppSettings } from "@terno/core/rpc";
 import { initialUpdateState, type UpdateState } from "@terno/core/updates";
 import { setLocale } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
@@ -14,6 +15,8 @@ vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 vi.hoisted(() => Object.assign(globalThis, { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) }));
 
 const { AboutTab } = await import("./about-tab");
+// Diagnostics, below the card (plan 294), reads only the reports choice
+const SETTINGS = { errorReports: "ask" } as unknown as AppSettings;
 const { UpdateStatusRow } = await import("./updates-section");
 const { useUpdates } = await import("~/lib/updates");
 const { useWeb } = await import("~/web/lifecycle");
@@ -38,7 +41,7 @@ afterEach(() => {
 describe("Settings → About", () => {
   it("without the updater (web): the version and the links, no update preferences; a waiting deployment offers Reload", () => {
     useUpdates.setState({ available: false, state: null });
-    act(() => root.render(<AboutTab />));
+    act(() => root.render(<AboutTab settings={SETTINGS} update={async () => {}} />));
     expect(q("about-version")?.textContent).toMatch(/^Version \d+\.\d+\.\d+/);
     expect(q("updates-status-row")).toBeNull();
     expect(q("updates-section")).toBeNull();
@@ -54,7 +57,7 @@ describe("Settings → About", () => {
 
   it("a link opens in a new tab (no shell to hand it to), never in the app", () => {
     const open = vi.spyOn(window, "open").mockImplementation(() => null);
-    act(() => root.render(<AboutTab />));
+    act(() => root.render(<AboutTab settings={SETTINGS} update={async () => {}} />));
     act(() => q("about-source")!.click());
     expect(open).toHaveBeenCalledWith("https://github.com/luisiacc/terno", "_blank", "noopener,noreferrer");
     open.mockRestore();

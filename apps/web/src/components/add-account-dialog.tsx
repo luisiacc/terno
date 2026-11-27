@@ -68,7 +68,7 @@ function browserButton(method: BrowserMethod) {
 
 /** What the add-account form holds: kept by its host, so the first-run setup keeps it across Back (memory only, never stored). */
 export interface AccountDraft {
-  /** null: not chosen yet, the General setting (read when the host has it) */
+  /** null: not chosen yet, the default sync window (read when the host has it) */
   picked: number | null;
   /** plan 276: the ways in, or the IMAP form (the first run comes back to the step it left) */
   way: "choose" | "imap";

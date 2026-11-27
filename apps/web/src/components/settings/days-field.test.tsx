@@ -2,11 +2,11 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DaysField } from "./general-tab";
+import { DaysField } from "./days-field";
 
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 vi.mock("~/rpc/connection", () => ({ client: { call: vi.fn() } }));
-// general-tab's imports read the media queries as they load
+// the settings modules' imports may read the media queries as they load
 vi.hoisted(() => Object.assign(globalThis, { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) }));
 
 let cleanup: (() => void) | null = null;

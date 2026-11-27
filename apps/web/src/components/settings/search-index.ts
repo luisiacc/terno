@@ -60,10 +60,8 @@ const shows = (c: FindContext) => ai(c) && (!c.devMode || c.settings.devAi === t
  * them). A row says which entry it is with `find` (parts.tsx); settings-search.test.ts keeps the two in step.
  */
 export const SETTINGS_INDEX = [
-  // General
-  { id: "general.remoteImages", tab: "general", label: "settings.general.remoteImages", hint: "settings.general.remoteImages.hint", words: "settings.find.words.remoteImages" },
+  // General (plan 294: remote images, the sync window and Diagnostics moved out)
   { id: "general.language", tab: "general", label: "language.label", hint: "language.hint", words: "settings.find.words.language" },
-  { id: "general.syncWindow", tab: "general", group: "settings.general.sync", label: "settings.general.syncWindow", hint: "settings.general.syncWindow.hint", words: "settings.find.words.syncWindow" },
   // plan 278
   { id: "general.people", tab: "general", label: "settings.general.people", hint: "settings.general.people.hint", words: "settings.find.words.people" },
   { id: "general.notify", tab: "general", group: "settings.general.notifications", label: "settings.general.notify", words: "settings.find.words.notify", when: (c) => c.notifications },
@@ -76,9 +74,48 @@ export const SETTINGS_INDEX = [
   { id: "general.sendSound", tab: "general", group: "settings.general.writing", label: "settings.general.sendSound", hint: "settings.general.sendSound.hint" },
   { id: "general.characterKeys", tab: "general", group: "settings.general.keyboard", label: "settings.general.characterKeys", hint: "settings.general.characterKeys.hint" },
   { id: "general.shortcuts", tab: "general", group: "settings.general.keyboard", label: "settings.general.shortcuts", hint: "settings.general.shortcuts.hint", words: "settings.find.words.shortcuts" },
-  { id: "general.reports", tab: "general", group: "diag.settings.title", label: "diag.settings.reports", words: "settings.find.words.reports" },
-  { id: "general.reportContents", tab: "general", group: "diag.settings.title", label: "diag.settings.contains", hint: "diag.settings.containsHint" },
-  { id: "general.logs", tab: "general", group: "diag.settings.title", label: "diag.settings.logs", hint: "diag.settings.logsHint" },
+
+  // Accounts (plan 294: the accounts first, then what holds for all of them, then the Terno account)
+  { id: "accounts.add", tab: "accounts", group: "account.list", label: "account.add", words: "settings.find.words.addAccount" },
+  { id: "account.name", tab: "accounts", label: "account.name", hint: "account.name.hint", scope: "account" },
+  { id: "account.sender", tab: "accounts", label: "account.sender", hint: "account.sender.hint", scope: "account" },
+  { id: "account.color", tab: "accounts", label: "settings.color", scope: "account" },
+  { id: "account.signature", tab: "accounts", label: "account.signature", hint: "account.signature.hint", scope: "account" },
+  { id: "account.syncWindow", tab: "accounts", label: "settings.general.syncWindow", words: "settings.find.words.syncWindow", scope: "account" },
+  { id: "account.allInbox", tab: "accounts", label: "account.allInbox", hint: "account.allInbox.hint", words: "settings.find.words.allInbox", scope: "account", when: (ctx, a) => !!a && allInboxOffered(a, ctx.accounts) },
+  { id: "account.separateTabs", tab: "accounts", label: "account.separateTabs", hint: "account.separateTabs.hint", words: "settings.find.words.separateTabs", scope: "account", when: (_c, a) => a?.kind === "gmail" },
+  { id: "account.separateOther", tab: "accounts", label: "account.separateOther", hint: "account.separateOther.hint", words: "settings.find.words.separateOther", scope: "account", when: (_c, a) => a?.kind === "outlook" },
+  // plan 211: where AI features can run; what depends on the account's AI only while it's on
+  { id: "account.ai", tab: "accounts", label: "account.ai", hint: "account.ai.hint", scope: "account", when: ai },
+  { id: "account.feed", tab: "accounts", label: "account.feed", hint: "account.feed.hint", scope: "account", when: ai },
+  { id: "account.followups", tab: "accounts", label: "account.followups", hint: "account.followups.hint", scope: "account", when: accountAi },
+  { id: "account.instructions", tab: "accounts", label: "aiDraft.account.instructions", hint: "aiDraft.account.instructionsHint", words: "settings.find.words.instructions", scope: "account", when: accountAi },
+  { id: "account.replies", tab: "accounts", label: "replies.account", hint: "replies.accountHint", scope: "account", when: accountAi },
+  { id: "account.useGeneral", tab: "accounts", label: "aiDraft.account.useGeneral", hint: "aiDraft.account.useGeneralHint", scope: "account", when: accountAi },
+  { id: "account.connection", tab: "accounts", label: "account.status", words: "settings.find.words.connection", scope: "account" },
+  { id: "account.sentCopies", tab: "accounts", label: "account.sentCopies", hint: "account.sentCopies.hint", scope: "account", when: (_c, a) => a?.kind === "imap" },
+  { id: "account.recipientReceipts", tab: "accounts", label: "account.recipientReceipts", hint: "account.recipientReceipts.hint", scope: "account", when: (_c, a) => a?.kind === "imap" },
+  { id: "account.remove", tab: "accounts", label: "account.remove", hint: "account.remove.hint", words: "settings.find.words.remove", scope: "account" },
+  { id: "accounts.syncWindow", tab: "accounts", group: "account.all", label: "account.defaultSyncWindow", hint: "settings.general.syncWindow.hint", words: "settings.find.words.syncWindow" },
+  // plan 207 (the owner): the accounts' numbers in the sidebar
+  { id: "accounts.counts", tab: "accounts", group: "account.all", label: "account.counts", hint: "account.counts.hint", words: "settings.find.words.accountCounts" },
+  { id: "accounts.owner", tab: "accounts", label: "account.owner.title", hint: "account.owner.footer", words: "settings.find.words.owner" },
+
+  // Appearance
+  { id: "appearance.layout", tab: "appearance", group: "settings.appearance.list", label: "settings.appearance.layout", hint: "settings.appearance.layout.hint" },
+  { id: "appearance.density", tab: "appearance", group: "settings.appearance.list", label: "settings.appearance.density", hint: "settings.appearance.density.hint", words: "settings.find.words.density" },
+  { id: "appearance.preview", tab: "appearance", group: "settings.appearance.list", label: "settings.appearance.preview", hint: "settings.appearance.preview.hint", under: "appearance.layout" },
+  { id: "appearance.style", tab: "appearance", label: "settings.appearance.style", hint: "settings.appearance.style.hint", words: "settings.find.words.style" },
+  { id: "appearance.font", tab: "appearance", label: "settings.appearance.font", words: "settings.find.words.font" },
+  { id: "appearance.motion", tab: "appearance", label: "settings.appearance.motion", hint: "settings.appearance.motion.hint", words: "settings.find.words.motion" },
+  { id: "appearance.mode", tab: "appearance", label: "settings.appearance.mode", hint: "settings.appearance.mode.hint", words: "settings.find.words.mode" },
+  { id: "appearance.lightTheme", tab: "appearance", label: "settings.appearance.lightTheme", words: "settings.find.words.theme" },
+  { id: "appearance.darkTheme", tab: "appearance", label: "settings.appearance.darkTheme", words: "settings.find.words.theme" },
+  { id: "appearance.htmlMail", tab: "appearance", group: "settings.appearance.messages", label: "settings.appearance.htmlMail", hint: "settings.appearance.htmlMail.hint" },
+  { id: "appearance.remoteImages", tab: "appearance", group: "settings.appearance.messages", label: "settings.general.remoteImages", hint: "settings.general.remoteImages.hint", words: "settings.find.words.remoteImages" },
+  { id: "appearance.siteIcons", tab: "appearance", group: "settings.appearance.messages", label: "settings.appearance.siteIcons", hint: "settings.appearance.siteIcons.hint", words: "settings.find.words.siteIcons" },
+  { id: "appearance.forgetIcons", tab: "appearance", group: "settings.appearance.messages", label: "settings.appearance.forgetIcons" },
+  { id: "appearance.customThemes", tab: "appearance", label: "settings.appearance.custom", hint: "settings.appearance.custom.footer", words: "settings.find.words.customThemes" },
 
   // What matters (plan 247): its own section, where it can exist; the rows' own rules
   { id: "whatMatters.show", tab: "whatMatters", label: "settings.whatMatters.show", hint: "settings.whatMatters.show.hint", words: "settings.find.words.whatMattersShow", when: ai },
@@ -98,46 +135,6 @@ export const SETTINGS_INDEX = [
   // with two accounts or more (with one, Accounts' own switch)
   { id: "whatMatters.accounts", tab: "whatMatters", label: "settings.whatMatters.accounts", hint: "settings.whatMatters.accounts.footer", words: "settings.find.words.feedAccounts", when: (c) => ai(c) && c.accounts > 1 },
 
-  // Appearance
-  { id: "appearance.layout", tab: "appearance", group: "settings.appearance.list", label: "settings.appearance.layout", hint: "settings.appearance.layout.hint" },
-  { id: "appearance.density", tab: "appearance", group: "settings.appearance.list", label: "settings.appearance.density", hint: "settings.appearance.density.hint", words: "settings.find.words.density" },
-  { id: "appearance.preview", tab: "appearance", group: "settings.appearance.list", label: "settings.appearance.preview", hint: "settings.appearance.preview.hint", under: "appearance.layout" },
-  { id: "appearance.style", tab: "appearance", label: "settings.appearance.style", hint: "settings.appearance.style.hint", words: "settings.find.words.style" },
-  { id: "appearance.font", tab: "appearance", label: "settings.appearance.font", words: "settings.find.words.font" },
-  { id: "appearance.mode", tab: "appearance", label: "settings.appearance.mode", hint: "settings.appearance.mode.hint", words: "settings.find.words.mode" },
-  { id: "appearance.lightTheme", tab: "appearance", label: "settings.appearance.lightTheme", words: "settings.find.words.theme" },
-  { id: "appearance.darkTheme", tab: "appearance", label: "settings.appearance.darkTheme", words: "settings.find.words.theme" },
-  { id: "appearance.motion", tab: "appearance", group: "settings.appearance.motionMail", label: "settings.appearance.motion", hint: "settings.appearance.motion.hint", words: "settings.find.words.motion" },
-  { id: "appearance.htmlMail", tab: "appearance", group: "settings.appearance.motionMail", label: "settings.appearance.htmlMail", hint: "settings.appearance.htmlMail.hint" },
-  { id: "appearance.siteIcons", tab: "appearance", group: "settings.appearance.senderPictures", label: "settings.appearance.siteIcons", hint: "settings.appearance.siteIcons.hint", words: "settings.find.words.siteIcons" },
-  { id: "appearance.forgetIcons", tab: "appearance", group: "settings.appearance.senderPictures", label: "settings.appearance.forgetIcons" },
-  { id: "appearance.customThemes", tab: "appearance", label: "settings.appearance.custom", hint: "settings.appearance.custom.footer", words: "settings.find.words.customThemes" },
-
-  // Accounts
-  { id: "accounts.owner", tab: "accounts", label: "account.owner.title", hint: "account.owner.footer", words: "settings.find.words.owner" },
-  // plan 207 (the owner): the accounts' numbers in the sidebar
-  { id: "accounts.counts", tab: "accounts", label: "account.counts", hint: "account.counts.hint", words: "settings.find.words.accountCounts" },
-  { id: "accounts.add", tab: "accounts", group: "account.list", label: "account.add", words: "settings.find.words.addAccount" },
-  { id: "account.name", tab: "accounts", label: "account.name", hint: "account.name.hint", scope: "account" },
-  { id: "account.sender", tab: "accounts", label: "account.sender", hint: "account.sender.hint", scope: "account" },
-  { id: "account.color", tab: "accounts", label: "settings.color", scope: "account" },
-  { id: "account.signature", tab: "accounts", label: "account.signature", hint: "account.signature.hint", scope: "account" },
-  // plan 211: where AI features can run; what depends on the account's AI only while it's on
-  { id: "account.ai", tab: "accounts", label: "account.ai", hint: "account.ai.hint", scope: "account", when: ai },
-  { id: "account.feed", tab: "accounts", label: "account.feed", hint: "account.feed.hint", scope: "account", when: ai },
-  { id: "account.instructions", tab: "accounts", label: "aiDraft.account.instructions", hint: "aiDraft.account.instructionsHint", words: "settings.find.words.instructions", scope: "account", when: accountAi },
-  { id: "account.replies", tab: "accounts", label: "replies.account", hint: "replies.accountHint", scope: "account", when: accountAi },
-  { id: "account.useGeneral", tab: "accounts", label: "aiDraft.account.useGeneral", hint: "aiDraft.account.useGeneralHint", scope: "account", when: accountAi },
-  { id: "account.syncWindow", tab: "accounts", label: "settings.general.syncWindow", words: "settings.find.words.syncWindow", scope: "account" },
-  { id: "account.allInbox", tab: "accounts", label: "account.allInbox", hint: "account.allInbox.hint", words: "settings.find.words.allInbox", scope: "account", when: (ctx, a) => !!a && allInboxOffered(a, ctx.accounts) },
-  { id: "account.separateTabs", tab: "accounts", label: "account.separateTabs", hint: "account.separateTabs.hint", words: "settings.find.words.separateTabs", scope: "account", when: (_c, a) => a?.kind === "gmail" },
-  { id: "account.separateOther", tab: "accounts", label: "account.separateOther", hint: "account.separateOther.hint", words: "settings.find.words.separateOther", scope: "account", when: (_c, a) => a?.kind === "outlook" },
-  { id: "account.followups", tab: "accounts", label: "account.followups", hint: "account.followups.hint", scope: "account", when: accountAi },
-  { id: "account.connection", tab: "accounts", label: "account.connection", words: "settings.find.words.connection", scope: "account" },
-  { id: "account.sentCopies", tab: "accounts", label: "account.sentCopies", hint: "account.sentCopies.hint", scope: "account", when: (_c, a) => a?.kind === "imap" },
-  { id: "account.recipientReceipts", tab: "accounts", label: "account.recipientReceipts", hint: "account.recipientReceipts.hint", scope: "account", when: (_c, a) => a?.kind === "imap" },
-  { id: "account.remove", tab: "accounts", label: "account.remove", hint: "account.remove.hint", words: "settings.find.words.remove", scope: "account" },
-
   // Categories
   { id: "categories.smart", tab: "categories", label: "settings.categories.smart", hint: "settings.categories.smart.hint", words: "settings.find.words.smart" },
   { id: "categories.askAi", tab: "categories", label: "settings.categories.askAi" },
@@ -151,7 +148,7 @@ export const SETTINGS_INDEX = [
 
   // Rules, Snippets
   { id: "filters.yours", tab: "filters", label: "filters.group.yours", hint: "filters.footer", words: "settings.find.words.filters" },
-  { id: "snippets.list", tab: "snippets", label: "settings.tab.snippets", words: "settings.find.words.snippets" },
+  { id: "snippets.list", tab: "snippets", label: "snippets.yours", words: "settings.find.words.snippets" },
 
   // AI
   { id: "ai.devNote", tab: "ai", label: "settings.dev.aiNote", hint: "settings.dev.aiNote.hint", when: (c) => c.settings.ai.fromEnv === true },
@@ -188,20 +185,23 @@ export const SETTINGS_INDEX = [
   { id: "agents.other", tab: "agents", group: "common.connect", label: "settings.agents.other", hint: "settings.agents.other.hint", when: (c) => c.agents },
   { id: "agents.skill", tab: "agents", group: "common.connect", label: "settings.agents.skill", when: (c) => c.agents && c.desktop },
 
-  // Data, Storage
-  { id: "data.export", tab: "data", group: "settings.data.backup", label: "settings.data.export", hint: "settings.data.export.hint", words: "settings.find.words.backup" },
-  { id: "data.import", tab: "data", group: "settings.data.backup", label: "settings.data.import", hint: "settings.data.import.hint", words: "settings.find.words.backup" },
+  // Storage (plan 294: with Data's backup)
   { id: "storage.byMailbox", tab: "storage", label: "storage.byMailbox", hint: "storage.byMailbox.footer", words: "settings.find.words.storage" },
   { id: "storage.olderThan", tab: "storage", group: "storage.free", label: "storage.olderThan", words: "settings.find.words.storage" },
   { id: "storage.clearAi", tab: "storage", label: "storage.clearAi" },
+  { id: "storage.export", tab: "storage", group: "settings.data.backup", label: "settings.data.export", hint: "settings.data.export.hint", words: "settings.find.words.backup" },
+  { id: "storage.import", tab: "storage", group: "settings.data.backup", label: "settings.data.import", hint: "settings.data.import.hint", words: "settings.find.words.backup" },
   { id: "storage.engine", tab: "storage", group: "web.storage.title", label: "web.storage.engine", hint: "web.storage.engineHint", words: "settings.find.words.engine", when: (c) => c.webStorage },
 
-  // Dev mode, About
+  // Dev mode, About (plan 294: with General's Diagnostics)
   { id: "dev.proAi", tab: "dev", label: "settings.dev.proAi", hint: "settings.dev.proAi.hint", when: (c) => c.devMode },
   { id: "dev.env", tab: "dev", label: "settings.dev.env", when: (c) => c.devMode },
   { id: "about.version", tab: "about", label: "settings.find.version", words: "settings.find.words.version" },
   { id: "about.autoUpdate", tab: "about", group: "updates.settings.title", label: "updates.settings.auto", words: "settings.find.words.version", when: (c) => c.updater },
   { id: "about.channel", tab: "about", group: "updates.settings.title", label: "updates.settings.channel", words: "settings.find.words.channel", when: (c) => c.updater },
+  { id: "about.reports", tab: "about", group: "diag.settings.title", label: "diag.settings.reports", words: "settings.find.words.reports" },
+  { id: "about.reportContents", tab: "about", group: "diag.settings.title", label: "diag.settings.contains", hint: "diag.settings.containsHint" },
+  { id: "about.logs", tab: "about", group: "diag.settings.title", label: "diag.settings.logs", hint: "diag.settings.logsHint" },
 ] as const satisfies readonly IndexEntry[];
 
 export type SettingId = (typeof SETTINGS_INDEX)[number]["id"];

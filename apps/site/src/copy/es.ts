@@ -423,7 +423,7 @@ export const es: SiteCopy = {
             "**Tus proveedores de correo** (Gmail, iCloud, Outlook o cualquier servidor IMAP/SMTP), para descargar, enviar y organizar tu correo.",
             "**Iconos de sitios web.** Para mostrar el logo de una empresa junto a su correo, Terno pide el icono al propio sitio web de esa empresa. El sitio ve tu dirección IP y nada más. Activado por defecto; puedes desactivarlo en Ajustes → Apariencia.",
             "**Las imágenes remotas de los mensajes** solo se cargan cuando tú lo decides, para un mensaje o siempre. Entonces el servidor del remitente ve tu dirección IP, como con cualquier app de correo.",
-            "**Actualizaciones.** Donde Terno puede actualizarse solo, consulta GitHub si hay una versión nueva al abrirse y cada pocas horas. No se envía nada sobre ti ni sobre tu correo. En Ajustes → General eliges si las versiones nuevas se descargan solas.",
+            "**Actualizaciones.** Donde Terno puede actualizarse solo, consulta GitHub si hay una versión nueva al abrirse y cada pocas horas. No se envía nada sobre ti ni sobre tu correo. En Ajustes → Acerca de eliges si las versiones nuevas se descargan solas.",
             "**IA**, solo si configuras un proveedor. Consulta [Proveedores de IA](#ai).",
             "**Informes de error**, solo si aceptas. Consulta [Informes de error](#errors).",
             "**Cancelar suscripciones.** Cuando pulsas Cancelar suscripción, Terno contacta con la dirección que el remitente dio para ello.",

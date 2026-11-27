@@ -70,7 +70,7 @@ async function fixtureStrings(): Promise<string[]> {
 
 async function setReports(value: "ask" | "always" | "never"): Promise<void> {
   await page.getByTestId("open-settings").click();
-  await page.getByTestId("tab-general").click();
+  await page.getByTestId("tab-about").click();
   await page.getByTestId("error-reports-select").click();
   await page.getByTestId(`error-reports-${value}`).click();
   await expect.poll(() => hooks((h) => h.view().reporting.errorReports)).toBe(value);

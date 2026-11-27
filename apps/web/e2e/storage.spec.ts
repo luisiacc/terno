@@ -84,7 +84,7 @@ test.describe("Settings → Storage", () => {
       await page.getByTestId("storage-remove").click();
       await page.getByTestId("storage-confirm-confirm").click();
       // away and back while it runs: the tab that started it is gone, this one must still learn it ended
-      await page.getByTestId("tab-data").click();
+      await page.getByTestId("tab-about").click();
       await page.getByTestId("tab-storage").click();
       await expect(page.getByText(/^Removed \d+ conversations from this Mac\.$/).first()).toBeVisible();
       await expect(page.getByTestId("storage-age")).toContainText("2 years");

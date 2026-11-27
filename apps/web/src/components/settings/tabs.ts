@@ -1,5 +1,5 @@
 import { t } from "@terno/i18n";
-import { AtSign, Bot, Database, HardDrive, Info, ListFilter, Palette, SlidersHorizontal, Sparkles, Sun, Tag, Terminal, NotepadText } from "@terno/ui/icons";
+import { AtSign, Bot, HardDrive, Info, ListFilter, Palette, SlidersHorizontal, Sparkles, Sun, Tag, Terminal, NotepadText } from "@terno/ui/icons";
 import type { SettingsTab } from "~/state/app";
 
 const LABEL_KEYS = {
@@ -12,7 +12,6 @@ const LABEL_KEYS = {
   snippets: "settings.tab.snippets",
   ai: "settings.tab.ai",
   agents: "settings.tab.agents",
-  data: "settings.tab.data",
   storage: "settings.tab.storage",
   dev: "settings.tab.dev",
   about: "settings.tab.about",
@@ -37,16 +36,16 @@ type TabEntry = { readonly value: SettingsTab; readonly label: string; readonly 
 
 export const SETTINGS_TABS: readonly TabEntry[] = [
   tab("general", SlidersHorizontal),
+  // plan 294: Accounts, the first thing set up, before how it all looks
+  tab("accounts", AtSign),
+  tab("appearance", Palette),
   // plan 247: only where What matters can exist (settingsTabs)
   tab("whatMatters", Sun),
-  tab("appearance", Palette),
-  tab("accounts", AtSign),
   tab("categories", Tag),
   tab("filters", ListFilter),
   tab("snippets", NotepadText),
   tab("ai", Sparkles),
   tab("agents", Bot),
-  tab("data", Database),
   tab("storage", HardDrive),
   tab("about", Info),
 ];

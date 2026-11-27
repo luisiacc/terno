@@ -270,8 +270,8 @@ describe("the export in main's language", () => {
     const spanish = unzip(await zip(await collectExport({ paths, system: {} })));
     expect([...english.keys()].sort()).toEqual(["README.txt", "logs/main.jsonl", "system.json"]);
     expect([...spanish.keys()].sort()).toEqual([...english.keys()].sort());
-    expect(english.get("README.txt")!.toString("utf8")).toMatch(/^Terno diagnostics\n=+\n[\s\S]*Settings → General → Diagnostics[\s\S]*logs\/[\s\S]*system\.json/);
-    expect(spanish.get("README.txt")!.toString("utf8")).toMatch(/^Diagnóstico de Terno\n=+\n[\s\S]*Ajustes → General → Diagnóstico[\s\S]*logs\/[\s\S]*system\.json/);
+    expect(english.get("README.txt")!.toString("utf8")).toMatch(/^Terno diagnostics\n=+\n[\s\S]*Settings → About → Diagnostics[\s\S]*logs\/[\s\S]*system\.json/);
+    expect(spanish.get("README.txt")!.toString("utf8")).toMatch(/^Diagnóstico de Terno\n=+\n[\s\S]*Ajustes → Acerca de → Diagnóstico[\s\S]*logs\/[\s\S]*system\.json/);
   });
 
   it("the dialog's copy and the offered file name follow the locale", () => {

@@ -7,7 +7,9 @@ import { openLink } from "~/lib/open-link";
 import { releaseNotesUrl, TERNO_LINKS } from "~/lib/terno-links";
 import { useHasUpdates, useUpdates } from "~/lib/updates";
 import { useWeb } from "~/web/lifecycle";
-import { SettingsGroup } from "./parts";
+import type { AppSettings } from "@terno/core/rpc";
+import { buildChannel, CopyBuild, DiagnosticsSection } from "./diagnostics-section";
+import { SettingsGroup, type SettingsUpdate } from "./parts";
 import { UpdatePrefsGroup, UpdateStatusRow } from "./updates-section";
 
 /** The first year Terno was published; the © line names it. */
@@ -26,12 +28,13 @@ function shortSha(sha: string): string | null {
  * Plan 190: Settings → About. What this copy is (the version, selectable for a report), whether it is current and
  * what is pending, with the one action that matters; how updates come (desktop); where to read more.
  */
-export function AboutTab() {
+export function AboutTab({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
   const updater = useHasUpdates();
   const state = useUpdates((s) => s.state);
   const webUpdate = useWeb((s) => s.update);
   const sha = shortSha(BUILD.sha);
   const version = sha ? `${BUILD.version} (${sha})` : BUILD.version;
+  const channel = buildChannel();
   return (
     <div data-testid="about-tab">
       <SettingsGroup find="about.version" testId="about-card">
@@ -42,8 +45,13 @@ export function AboutTab() {
           </span>
           <div className="min-w-0">
             <h3 className="text-base font-semibold tracking-tight">Terno</h3>
-            <p className="text-xs text-muted-foreground tabular-nums select-text" data-testid="about-version">
-              {t("about.version", { version })}
+            {/* plan 294: the support line's copy (full commit and channel) beside the version, as Diagnostics is below */}
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="tabular-nums select-text" data-testid="about-version">
+                {t("about.version", { version })}
+                {channel && ` · ${channel}`}
+              </span>
+              <CopyBuild />
             </p>
           </div>
         </div>
@@ -66,6 +74,8 @@ export function AboutTab() {
       </SettingsGroup>
 
       {updater && state && <UpdatePrefsGroup state={state} />}
+
+      <DiagnosticsSection settings={settings} update={update} />
 
       <footer className="mt-6 flex flex-col gap-2 px-1 text-xs text-muted-foreground" data-testid="about-footer">
         <nav aria-label={t("about.links")} className="flex flex-wrap gap-x-4 gap-y-1">

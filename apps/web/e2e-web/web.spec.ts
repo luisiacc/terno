@@ -170,6 +170,8 @@ test("plan 37: in local mode the browser loads a newsletter's images on “Load 
   await expect.poll(() => hits.length).toBeGreaterThan(0);
 
   await page.getByTestId("open-settings").click();
+  // plan 294: in Appearance → Messages
+  await page.getByTestId("tab-appearance").click();
   const always = page.getByRole("switch", { name: "Always load remote images" });
   await expect(always).toBeEnabled();
   await always.click();
@@ -413,7 +415,7 @@ test("blocking screens take focus, make the app behind them inert and suspend it
   await expect(page.getByTestId("web-take-back")).toBeFocused();
 });
 
-test("storage: persistence is requested and shown in Settings → Storage, and the mailbox's own data exports as JSON from Data", async ({ page }) => {
+test("storage: persistence is requested and shown in Settings → Storage, and the mailbox's own data exports as JSON from its Backup (plan 294)", async ({ page }) => {
   await boot(page);
   await page.getByTestId("open-settings").click();
   await page.getByTestId("tab-storage").click();
@@ -424,7 +426,7 @@ test("storage: persistence is requested and shown in Settings → Storage, and t
   await expect(page.getByRole("combobox", { name: "Engine" })).toContainText("SQLite (OPFS)");
   // plan 69: what the mailbox takes, measured by the OPFS SQLite store, above it
   await expect(page.getByTestId("storage-total")).toBeVisible();
-  await page.getByTestId("tab-data").click();
+  await page.getByTestId("tab-storage").click();
   const download = page.waitForEvent("download");
   await page.getByTestId("data-export").click();
   const file = await download;
@@ -476,7 +478,7 @@ test("Settings → Storage: switching the engine to IndexedDB carries settings a
   await expect(page.locator("[data-testid^=nav-category-]").filter({ hasText: "Mudanza" })).toHaveCount(1);
 });
 
-test("Settings → Data: an export imports into another mailbox (categories by name, settings), and a wrong file says why", async ({ page }) => {
+test("Settings → Storage → Backup: an export imports into another mailbox (categories by name, settings), and a wrong file says why", async ({ page }) => {
   await boot(page, "/?demo=200&mailbox=import-a");
   const dump = await page.evaluate(async () => {
     const c = window.__ternoWeb!.client;
@@ -485,7 +487,7 @@ test("Settings → Data: an export imports into another mailbox (categories by n
   });
   await boot(page, "/?demo=200&mailbox=import-b");
   await page.keyboard.press("Meta+Comma");
-  await page.getByTestId("tab-data").click();
+  await page.getByTestId("tab-storage").click();
   const input = page.getByTestId("data-import-input");
   await input.setInputFiles({ name: "malo.json", mimeType: "application/json", buffer: Buffer.from("{}") });
   await expect(page.getByTestId("data-import-error")).toContainText("This isn’t a Terno export");

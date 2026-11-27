@@ -15,16 +15,18 @@ const ctx = { clientId: "setup", origin: "dev" as const };
 const COLOR_NAMES = { rose: "Rose", amber: "Amber", lime: "Lime", emerald: "Emerald", cyan: "Cyan", brown: "Brown", violet: "Violet", slate: "Slate" } as const;
 const TABS = [
   ["general", "General"],
+  // plan 294: Accounts second, What matters after Appearance
+  ["accounts", "Accounts"],
+  ["appearance", "Appearance"],
   // plan 247: with the demo's AI, What matters has its section
   ["whatMatters", "What matters"],
-  ["appearance", "Appearance"],
-  ["accounts", "Accounts"],
   ["categories", "Categories"],
   ["filters", "Rules"],
   ["snippets", "Snippets"],
   ["ai", "AI"],
   ["agents", "Agents"],
-  ["data", "Data"],
+  // plan 294: Data's backup is in Storage
+  ["storage", "Storage"],
 ] as const;
 type Tab = (typeof TABS)[number][0];
 
@@ -117,18 +119,18 @@ test("General and Appearance edit, persist and take effect; the sidebar's rows; 
   await scenario("the sidebar's rows stand 1 px apart: a hovered row's fill never runs into the selected one's", async () => {
     await openVia(page, "gear", "general");
     const general = await page.getByTestId("tab-general").boundingBox();
-    const appearance = page.getByTestId("tab-whatMatters");
-    await appearance.hover();
-    const below = await appearance.boundingBox();
+    const next = page.getByTestId("tab-accounts");
+    await next.hover();
+    const below = await next.boundingBox();
     expect(below!.y - (general!.y + general!.height)).toBeCloseTo(1, 1);
     // the hovered row is filled, and the line between them is the sidebar's own
     const fill = (id: string) => page.getByTestId(id).evaluate((el) => getComputedStyle(el).backgroundColor);
-    expect(await fill("tab-whatMatters")).not.toBe("rgba(0, 0, 0, 0)");
-    expect(await fill("tab-general")).not.toBe(await fill("tab-whatMatters"));
+    expect(await fill("tab-accounts")).not.toBe("rgba(0, 0, 0, 0)");
+    expect(await fill("tab-general")).not.toBe(await fill("tab-accounts"));
     if (process.env.SETTINGS_SHOTS) {
       for (const scheme of ["light", "dark"] as const) {
         await page.emulateMedia({ colorScheme: scheme });
-        await appearance.hover();
+        await next.hover();
       }
     }
   });
@@ -149,14 +151,17 @@ test("General and Appearance edit, persist and take effect; the sidebar's rows; 
     const pane = (await scroller.boundingBox())!;
     expect(close.y + close.height).toBeLessThanOrEqual(pane.y);
   });
-  await scenario("General: remote images, sync window (validated); no local-mode row (plan 97)", async () => {
+  await scenario("plan 294: remote images in Appearance → Messages, the default sync window (validated) in Accounts; no local-mode row in General (plan 97)", async () => {
     await fresh(page);
     await openVia(page, "gear", "general");
     await expect(page.getByTestId("general-tab")).not.toContainText("Local mode");
-    const images = page.getByRole("switch", { name: "Always load remote images" });
+    await expect(page.getByTestId("general-tab")).not.toContainText("remote images");
+    await show(page, "appearance");
+    const images = page.getByTestId("messages-group").getByRole("switch", { name: "Always load remote images" });
     await images.click();
     await expect(images).toBeChecked();
-    const days = page.getByLabel("Sync window");
+    await show(page, "accounts");
+    const days = page.getByLabel("Default sync window");
     await days.fill("3");
     await days.press("Enter");
     await expect(page.getByTestId("sync-window-error")).toHaveText("Enter a number of days from 7 to 3,650.");
@@ -166,10 +171,12 @@ test("General and Appearance edit, persist and take effect; the sidebar's rows; 
     await days.press("Enter");
     await expect(page.getByTestId("sync-window-error")).toHaveCount(0);
 
-    await reopen(page, "general");
+    await reopen(page, "accounts");
+    await expect(page.getByLabel("Default sync window")).toHaveValue("45");
+    await show(page, "appearance");
     await expect(page.getByRole("switch", { name: "Always load remote images" })).toBeChecked();
-    await expect(page.getByLabel("Sync window")).toHaveValue("45");
     await expect(page.getByRole("switch", { name: "Always load remote images" })).toHaveAccessibleDescription(/senders can tell when you open their mail/);
+    await show(page, "general");
     await page.getByTestId("open-shortcuts").click();
     await expect(page.getByRole("dialog", { name: "Keyboard shortcuts" })).toContainText("Settings");
   });
@@ -399,7 +406,7 @@ test.describe("editable, persisted and in effect", () => {
     });
   });
 
-  test("AI, Agents and Data edit and persist; a saved key waits for its endpoint", async ({ app: page, server }) => {
+  test("AI, Agents and Storage's backup edit and persist; a saved key waits for its endpoint", async ({ app: page, server }) => {
     await scenario("AI: provider, endpoint (validated, announced), model, all persisted", async () => {
       await openVia(page, "gear", "ai");
       // exact: the Summaries group has its own provider and model (plan 132)
@@ -433,7 +440,7 @@ test.describe("editable, persisted and in effect", () => {
       await page.getByTestId("ai-key-confirm").click();
       await expect(page.getByTestId("ai-key-saved")).toBeVisible();
     });
-    await scenario("Agents and Data: agent sending persists; export downloads and imports back", async () => {
+    await scenario("Agents and Storage's backup (plan 294): agent sending persists; export downloads and imports back", async () => {
       await fresh(page);
       await openVia(page, "gear", "agents");
       // plan 183: sending is the highest access level; agents are allowed by default (owner, 2026-11-24)
@@ -444,7 +451,7 @@ test.describe("editable, persisted and in effect", () => {
       await expect(page.getByRole("switch", { name: "Allow agents" })).toBeChecked();
       await expect(page.getByTestId("agents-access")).toHaveText("Read, organize and send");
 
-      await page.getByTestId("tab-data").click();
+      await page.getByTestId("tab-storage").click();
       const download = page.waitForEvent("download");
       await page.getByTestId("data-export").click();
       const file = await download;
@@ -491,7 +498,7 @@ test.describe("editable, persisted and in effect", () => {
       await page.getByTestId("language-select").click();
       await page.getByTestId("language-en").click();
       await expect(page.locator("html")).toHaveAttribute("lang", /^en/);
-      await page.getByTestId("tab-data").click();
+      await page.getByTestId("tab-storage").click();
       // a confirmation goes with the room it was said in: none waits behind Settings for after it closes. Closed with focus
       // in its card (a click that doesn't move focus), nothing stays held: the next snack runs out
       await input.setInputFiles({ name: "terno.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(dump)) });
@@ -542,7 +549,10 @@ test("accessible: axe finds nothing serious on any tab; controls have names and 
   // the color pickers are radio groups; descriptions are linked
   await show(page, "accounts");
   await expect(panel(page).getByRole("radiogroup", { name: "Color" }).getByRole("radio")).toHaveCount(8);
-  await page.getByTestId("tab-general").click();
+  // plan 294: an account's parts are sections named by their titles, under the account's own heading
+  for (const part of ["Name and signature", "Mailbox", "Connection"]) await expect(panel(page).getByRole("region", { name: part }).first()).toBeVisible();
+  await expect(panel(page).getByRole("heading", { level: 5, name: "Mailbox" }).first()).toBeVisible();
+  await page.getByTestId("tab-appearance").click();
   await expect(page.getByRole("switch", { name: "Always load remote images" })).toHaveAccessibleDescription(/Blocked by default to prevent tracking/);
 });
 

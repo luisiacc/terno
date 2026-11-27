@@ -24,7 +24,7 @@ import { getApp, setApp, useApp } from "~/state/app";
 import { reopenedRows } from "~/lib/settings-place";
 import { patchAccount, setAccountFeed, type AccountEdit } from "~/lib/accounts";
 import { aiFeaturesOffered } from "~/lib/ai";
-import { DaysField } from "./general-tab";
+import { DaysField } from "./days-field";
 import { AccountWriting } from "./ai-drafting";
 import { OwnerCard } from "./owner-card";
 import { AccountRemoveDialog } from "../account-remove-dialog";
@@ -194,81 +194,107 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
   const allInbox = useApp((s) => allInboxOffered(account, s.accounts.length));
   return (
     <div className="hairline-divide pb-1 pl-5" data-testid="account-editor">
-      <SettingsRow find="account.name" labelFor label={t("account.name")} hint={t("account.name.hint")}>
-        {(a) => <CommitInput a11y={a} className="w-56" data-testid="account-name" value={account.displayName} validate={(v) => (v.trim() ? null : t("settings.nameEmpty"))} onCommit={(v) => save({ displayName: v.trim() })} />}
-      </SettingsRow>
-      <SettingsRow find="account.sender" labelFor label={t("account.sender")} hint={t("account.sender.hint")}>
-        {(a) => <CommitInput a11y={a} className="w-56" data-testid="account-sender" value={account.senderName} onCommit={(v) => save({ senderName: v.trim() })} />}
-      </SettingsRow>
-      <SettingsRow find="account.color" label={t("settings.color")}>
-        {(a) => <ColorPicker a11y={a} name={`account-color-${account.id}`} testId="account-color" value={account.color} onChange={(color) => save({ color }).catch((e: unknown) => { snack.error(errorText(e)); throw e; })} />}
-      </SettingsRow>
-      <SettingsRow find="account.signature" stacked labelFor label={t("account.signature")} hint={t("account.signature.hint")}>
-        {(a) => <CommitInput multiline a11y={a} data-testid="account-signature" value={account.signature} placeholder={t("account.signature.placeholder")} maxLength={10_000} onCommit={(v) => save({ signature: v })} />}
-      </SettingsRow>
-      {aiOffered && (
-        <>
-          <SettingsRow find="account.ai" label={t("account.ai")} hint={t("account.ai.hint")}>
-            {(a) => <Switch {...a} data-testid="account-ai" checked={aiOn} onCheckedChange={(on) => void client.call("accounts.update", { id: account.id, ai: on })} />}
+      <AccountPart title={t("account.part.identity")} testId="account-part-identity">
+        <SettingsRow find="account.name" labelFor label={t("account.name")} hint={t("account.name.hint")}>
+          {(a) => <CommitInput a11y={a} className="w-56" data-testid="account-name" value={account.displayName} validate={(v) => (v.trim() ? null : t("settings.nameEmpty"))} onCommit={(v) => save({ displayName: v.trim() })} />}
+        </SettingsRow>
+        <SettingsRow find="account.sender" labelFor label={t("account.sender")} hint={t("account.sender.hint")}>
+          {(a) => <CommitInput a11y={a} className="w-56" data-testid="account-sender" value={account.senderName} onCommit={(v) => save({ senderName: v.trim() })} />}
+        </SettingsRow>
+        <SettingsRow find="account.color" label={t("settings.color")}>
+          {(a) => <ColorPicker a11y={a} name={`account-color-${account.id}`} testId="account-color" value={account.color} onChange={(color) => save({ color }).catch((e: unknown) => { snack.error(errorText(e)); throw e; })} />}
+        </SettingsRow>
+        <SettingsRow find="account.signature" stacked labelFor label={t("account.signature")} hint={t("account.signature.hint")}>
+          {(a) => <CommitInput multiline a11y={a} data-testid="account-signature" value={account.signature} placeholder={t("account.signature.placeholder")} maxLength={10_000} onCommit={(v) => save({ signature: v })} />}
+        </SettingsRow>
+      </AccountPart>
+      <AccountPart title={t("account.part.mailbox")} testId="account-part-mailbox">
+        <SettingsRow find="account.syncWindow" labelFor label={t("settings.general.syncWindow")} hint={t("account.syncWindow.hint", { days: generalWindow })}>
+          {(a) => (
+            <DaysField
+              a11y={a}
+              testId="account-window"
+              value={account.syncWindowDays}
+              placeholder={String(generalWindow)}
+              allowEmpty
+              onSave={(days) => save({ syncWindowDays: days })}
+            />
+          )}
+        </SettingsRow>
+        {/* plan 238: in the all-accounts Inbox, or only under its row */}
+        {allInbox && (
+          <SettingsRow find="account.allInbox" label={t("account.allInbox")} hint={t("account.allInbox.hint")}>
+            {(a) => <Switch {...a} data-testid="account-all-inbox" checked={inAllInbox(account)} onCheckedChange={(on) => void setInAllInbox(account.id, on)} />}
           </SettingsRow>
-          <SettingsRow find="account.feed" label={t("account.feed")} hint={t("account.feed.hint")}>
-            {(a) => <Switch {...a} data-testid="account-feed" checked={account.feed !== false} onCheckedChange={(on) => void setAccountFeed(account.id, on)} />}
+        )}
+        {/* plan 86: Gmail's Promotions and Social, under the account and out of the Inbox */}
+        {account.kind === "gmail" && (
+          <SettingsRow find="account.separateTabs" label={t("account.separateTabs")} hint={t("account.separateTabs.hint")}>
+            {(a) => <Switch {...a} data-testid="account-separate-tabs" checked={separatesTabs(account)} onCheckedChange={(on) => void setSeparateTabs(account.id, on)} />}
           </SettingsRow>
-        </>
-      )}
-      {aiOn && <AccountWriting accountId={account.id} />}
-      <SettingsRow find="account.syncWindow" labelFor label={t("settings.general.syncWindow")} hint={t("account.syncWindow.hint", { days: generalWindow })}>
-        {(a) => (
-          <DaysField
-            a11y={a}
-            testId="account-window"
-            value={account.syncWindowDays}
-            placeholder={String(generalWindow)}
-            allowEmpty
-            onSave={(days) => save({ syncWindowDays: days })}
-          />
         )}
-      </SettingsRow>
-      {/* plan 238: in the all-accounts Inbox, or only under its row */}
-      {allInbox && (
-        <SettingsRow find="account.allInbox" label={t("account.allInbox")} hint={t("account.allInbox.hint")}>
-          {(a) => <Switch {...a} data-testid="account-all-inbox" checked={inAllInbox(account)} onCheckedChange={(on) => void setInAllInbox(account.id, on)} />}
-        </SettingsRow>
-      )}
-      {/* plan 86: Gmail's Promotions and Social, under the account and out of the Inbox */}
-      {account.kind === "gmail" && (
-        <SettingsRow find="account.separateTabs" label={t("account.separateTabs")} hint={t("account.separateTabs.hint")}>
-          {(a) => <Switch {...a} data-testid="account-separate-tabs" checked={separatesTabs(account)} onCheckedChange={(on) => void setSeparateTabs(account.id, on)} />}
-        </SettingsRow>
-      )}
-      {/* plan 275: Outlook's Focused Inbox Other, the same preference */}
-      {account.kind === "outlook" && (
-        <SettingsRow find="account.separateOther" label={t("account.separateOther")} hint={t("account.separateOther.hint")}>
-          {(a) => <Switch {...a} data-testid="account-separate-other" checked={separatesTabs(account)} onCheckedChange={(on) => void setSeparateTabs(account.id, on)} />}
-        </SettingsRow>
-      )}
-      {/* plan 142 */}
-      {aiOn && (
-        <SettingsRow find="account.followups" label={t("account.followups")} hint={t("account.followups.hint")}>
-          {(a) => <Switch {...a} data-testid="account-followups" checked={account.followups !== false} onCheckedChange={(on) => void client.call("accounts.update", { id: account.id, followups: on })} />}
-        </SettingsRow>
-      )}
-      <SettingsRow find="account.connection" stacked label={t("account.connection")} hint={<span className="whitespace-pre-wrap [overflow-wrap:anywhere]">{status(account)}</span>}>
-        {() => <Reconnect account={account} />}
-      </SettingsRow>
-      <CaptureRecovery key={`capture:${account.id}`} accountId={account.id} />
-      {account.kind === "imap" && <><SentCopies key={`copy:${account.id}`} accountId={account.id} /><RecipientReceipts key={`recipients:${account.id}`} accountId={account.id} /></>}
-      <SettingsRow find="account.remove" label={t("account.remove")} hint={isOwner ? t("account.remove.hintOwner") : t("account.remove.hint")}>
-        {({ id: _id, "aria-labelledby": _l, ...a }) => (
-          <>
-            <Button {...a} variant="ghost" size="sm" className={cn("text-destructive-ink", GHOST_DANGER_PRESS)} data-testid="account-remove" onClick={() => setRemoving(true)}>
-              <Trash2 /> {t("account.remove.button")}
-            </Button>
-            <AccountRemoveDialog account={account} open={removing} onOpenChange={setRemoving} from="settings" />
-          </>
+        {/* plan 275: Outlook's Focused Inbox Other, the same preference */}
+        {account.kind === "outlook" && (
+          <SettingsRow find="account.separateOther" label={t("account.separateOther")} hint={t("account.separateOther.hint")}>
+            {(a) => <Switch {...a} data-testid="account-separate-other" checked={separatesTabs(account)} onCheckedChange={(on) => void setSeparateTabs(account.id, on)} />}
+          </SettingsRow>
         )}
-      </SettingsRow>
+      </AccountPart>
+      {(aiOffered || aiOn) && (
+        <AccountPart title={t("account.part.ai")} testId="account-part-ai">
+          {aiOffered && (
+            <>
+              <SettingsRow find="account.ai" label={t("account.ai")} hint={t("account.ai.hint")}>
+                {(a) => <Switch {...a} data-testid="account-ai" checked={aiOn} onCheckedChange={(on) => void client.call("accounts.update", { id: account.id, ai: on })} />}
+              </SettingsRow>
+              <SettingsRow find="account.feed" label={t("account.feed")} hint={t("account.feed.hint")}>
+                {(a) => <Switch {...a} data-testid="account-feed" checked={account.feed !== false} onCheckedChange={(on) => void setAccountFeed(account.id, on)} />}
+              </SettingsRow>
+            </>
+          )}
+          {/* plan 142 */}
+          {aiOn && (
+            <SettingsRow find="account.followups" label={t("account.followups")} hint={t("account.followups.hint")}>
+              {(a) => <Switch {...a} data-testid="account-followups" checked={account.followups !== false} onCheckedChange={(on) => void client.call("accounts.update", { id: account.id, followups: on })} />}
+            </SettingsRow>
+          )}
+          {aiOn && <AccountWriting accountId={account.id} />}
+        </AccountPart>
+      )}
+      <AccountPart title={t("account.part.connection")} testId="account-part-connection">
+        <SettingsRow find="account.connection" stacked label={t("account.status")} hint={<span className="whitespace-pre-wrap [overflow-wrap:anywhere]">{status(account)}</span>}>
+          {() => <Reconnect account={account} />}
+        </SettingsRow>
+        <CaptureRecovery key={`capture:${account.id}`} accountId={account.id} />
+        {account.kind === "imap" && <><SentCopies key={`copy:${account.id}`} accountId={account.id} /><RecipientReceipts key={`recipients:${account.id}`} accountId={account.id} /></>}
+        <SettingsRow find="account.remove" label={t("account.remove")} hint={isOwner ? t("account.remove.hintOwner") : t("account.remove.hint")}>
+          {({ id: _id, "aria-labelledby": _l, ...a }) => (
+            <>
+              <Button {...a} variant="ghost" size="sm" className={cn("text-destructive-ink", GHOST_DANGER_PRESS)} data-testid="account-remove" onClick={() => setRemoving(true)}>
+                <Trash2 /> {t("account.remove.button")}
+              </Button>
+              <AccountRemoveDialog account={account} open={removing} onOpenChange={setRemoving} from="settings" />
+            </>
+          )}
+        </SettingsRow>
+      </AccountPart>
     </div>
+  );
+}
+
+/**
+ * Plan 294: a part of an account's settings (name and signature, mailbox, AI, connection) under a small title, its
+ * rows split by hairlines as before; the account's name above is the h4.
+ */
+function AccountPart({ title, testId, children }: { title: string; testId: string; children: React.ReactNode }) {
+  const id = useId();
+  return (
+    <section aria-labelledby={id} data-testid={testId}>
+      <h5 id={id} className="pt-3.5 pb-0.5 text-xs font-semibold text-muted-foreground">
+        {title}
+      </h5>
+      <div className="hairline-divide">{children}</div>
+    </section>
   );
 }
 
@@ -343,13 +369,6 @@ export function AccountsTab({ settings, update }: { settings: AppSettings; updat
   const [reopen] = useState(reopenedRows);
   return (
     <div data-testid="accounts-tab">
-      {/* plan 207 (the owner): first here, off until turned on */}
-      <SettingsGroup testId="account-counts-group">
-        <SettingsRow find="accounts.counts" label={t("account.counts")} hint={t("account.counts.hint")} testId="account-counts-row">
-          {(a) => <Switch {...a} data-testid="account-counts" checked={settings.accountCounts} onCheckedChange={(on) => void update({ accountCounts: on })} />}
-        </SettingsRow>
-      </SettingsGroup>
-      <OwnerCard owner={owner} demo={demo} accounts={accounts} />
       <SettingsGroup title={t("account.list")} testId="accounts-group">
         {/* plan 106: Settings opened on an account (the sidebar's Account Settings…) opens it; later events leave it be.
             Plan 246: come back to, the ones open when Settings was left */}
@@ -364,6 +383,17 @@ export function AccountsTab({ settings, update }: { settings: AppSettings; updat
           </Button>
         </div>
       </SettingsGroup>
+      {/* plan 294: what holds for every account, under them (the default sync window was General's; the counts row,
+          plan 207's, was first) */}
+      <SettingsGroup title={t("account.all")} testId="accounts-all-group">
+        <SettingsRow find="accounts.syncWindow" labelFor label={t("account.defaultSyncWindow")} hint={t("settings.general.syncWindow.hint")}>
+          {(a) => <DaysField a11y={a} testId="sync-window" value={settings.syncWindowDays} onSave={(days) => update({ syncWindowDays: days ?? settings.syncWindowDays }, { quiet: true })} />}
+        </SettingsRow>
+        <SettingsRow find="accounts.counts" label={t("account.counts")} hint={t("account.counts.hint")} testId="account-counts-row">
+          {(a) => <Switch {...a} data-testid="account-counts" checked={settings.accountCounts} onCheckedChange={(on) => void update({ accountCounts: on })} />}
+        </SettingsRow>
+      </SettingsGroup>
+      <OwnerCard owner={owner} demo={demo} accounts={accounts} />
     </div>
   );
 }

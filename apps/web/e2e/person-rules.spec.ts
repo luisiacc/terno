@@ -78,7 +78,9 @@ test("plan 278: Counts as a person from a sender's menu, with Undo; Reset in Set
     await page.keyboard.press("Enter");
     await expect(snack(page)).toContainText("Terno decides again whether Carlos Mena is a person");
     await expect(page.getByTestId("people-rules-list-empty")).toHaveText("No one yet. Right-click a sender’s mail and choose More, then Counts as a person.");
-    await expect(page.getByTestId("sync-window").locator("input").or(page.locator("input[data-testid=sync-window]"))).toBeFocused();
+    // plan 294: the language above (the sync window went to Accounts), and General stays
+    await expect(page.getByTestId("language-select")).toBeFocused();
+    await expect(page.getByTestId("tab-general")).toHaveAttribute("aria-selected", "true");
     await page.keyboard.press("Escape");
   });
 

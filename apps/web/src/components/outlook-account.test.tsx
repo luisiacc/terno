@@ -256,7 +256,7 @@ describe("signing an Outlook account in again (plan 259)", () => {
     await render(<AccountsTab settings={{ syncWindowDays: 180, accountCounts: false } as never} update={async () => {}} />);
     expect(q("account-toggle")!.textContent).toContain("ana@outlook.com · Outlook · Up to date");
     const reconnect = q<HTMLButtonElement>("account-reconnect")!;
-    expect(reconnect.textContent!.trim()).toBe("Connect with Microsoft");
+    expect(reconnect.textContent!.trim()).toBe("Sign in again with Microsoft");
     await act(async () => reconnect.click());
     expect(calls.filter((c) => c.method === "accounts.reconnect")).toEqual([expect.objectContaining({ params: { id: 7, password: undefined } })]);
   });

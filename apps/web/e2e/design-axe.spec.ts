@@ -159,7 +159,7 @@ test.describe("axe", { tag: ["@variant", "@variant-relief"] }, () => {
     await page.getByTestId("pinned-ask-close").click();
 
     await page.getByTestId("open-settings").click();
-    for (const tab of ["general", "appearance", "accounts", "categories", "filters", "ai", "agents", "data"]) {
+    for (const tab of ["general", "accounts", "appearance", "categories", "filters", "ai", "agents", "storage", "about"]) {
       await page.getByTestId(`tab-${tab}`).click();
       await page.getByTestId(`${tab}-tab`).waitFor();
       await clean(page, `Settings, ${tab}`, "[data-testid=settings-dialog]");

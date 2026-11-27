@@ -57,12 +57,16 @@ test.describe("diagnostics", () => {
       await expect(page.getByTestId("reader-boundary")).toBeVisible();
 
       await page.getByTestId("open-settings").click();
-      await page.getByTestId("tab-general").click();
+      await page.getByTestId("tab-about").click();
       const section = page.getByTestId("diagnostics-section");
       await section.scrollIntoViewIfNeeded();
       await expect(page.getByTestId("error-reports-select")).toBeDisabled();
       await expect(page.getByTestId("error-reports-row")).toContainText("doesn’t send reports");
-      await expect(page.getByTestId("build-line")).toContainText(/Terno \d+\.\d+\.\d+ · /);
+      // plan 294: the version line above it, whose copy is support's full line (commit and channel)
+      await expect(page.getByTestId("about-version")).toContainText(/Version \d+\.\d+\.\d+ \(/);
+      await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+      await page.getByTestId("build-copy").click();
+      expect(await page.evaluate(() => navigator.clipboard.readText())).toMatch(/^Terno \d+\.\d+\.\d+ \([0-9a-f]{7,}|^Terno \d+\.\d+\.\d+ \(dev/);
 
       await page.getByTestId("report-sample").click();
       const sample = (await page.getByTestId("report-preview-json").textContent()) ?? "";

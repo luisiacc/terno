@@ -177,6 +177,8 @@ test.describe("local mode and AI providers", () => {
       const hits: string[] = [];
       await page.route(remote, (route) => (hits.push(route.request().url()), route.abort()));
       await page.getByTestId("open-settings").click();
+      // plan 294: in Appearance → Messages
+      await page.getByTestId("tab-appearance").click();
       const always = page.getByRole("switch", { name: "Always load remote images" });
       await expect(always).toBeEnabled();
       await expect(always).not.toBeChecked();

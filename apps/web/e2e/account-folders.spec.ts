@@ -93,8 +93,8 @@ test.describe("accounts open into their folders", () => {
       await page.getByTestId("palette-input").fill("settings accounts");
       await expect(page.getByRole("option", { selected: true })).toHaveAttribute("data-testid", "palette-settings-accounts");
       await page.keyboard.press("Enter");
-      // the first thing there
-      await expect(page.getByTestId("accounts-tab").locator("[data-testid=settings-row], [role=switch], [data-testid$=-row]").first()).toHaveAttribute("data-testid", "account-counts-row");
+      // plan 294: under the accounts, in All accounts (plan 207 had it first)
+      await expect(page.getByTestId("accounts-all-group").getByTestId("account-counts-row")).toBeVisible();
       await page.getByTestId("account-counts").click();
       await expect(page.getByTestId("account-counts")).toBeChecked();
       await page.keyboard.press("Escape");

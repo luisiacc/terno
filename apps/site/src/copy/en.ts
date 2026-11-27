@@ -439,7 +439,7 @@ export const en = {
             "**Your mail providers** (Gmail, iCloud, Outlook or any IMAP/SMTP server), to fetch, send and organize your mail.",
             "**Website icons.** To show a company’s logo next to its mail, Terno asks that company’s own website for its icon. The site sees your IP address and nothing else. On by default; turn it off in Settings → Appearance.",
             "**Remote images in messages** load only when you choose to, for one message or always. The sender’s server then sees your IP address, as with any mail app.",
-            "**Updates.** Where Terno can update itself, it checks GitHub for a new version after it opens and every few hours. Nothing about you or your mail is sent. In Settings → General you choose whether new versions download on their own.",
+            "**Updates.** Where Terno can update itself, it checks GitHub for a new version after it opens and every few hours. Nothing about you or your mail is sent. In Settings → About you choose whether new versions download on their own.",
             "**AI**, only if you set up a provider. See [AI providers](#ai).",
             "**Error reports**, only if you agree. See [Error reports](#errors).",
             "**Unsubscribing.** When you click Unsubscribe, Terno contacts the address the sender gave for it.",
