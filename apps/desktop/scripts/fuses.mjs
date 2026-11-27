@@ -1,7 +1,7 @@
 // Plan 283 (CASA 6.2.1): the Electron fuses every package carries, and the check that reads them back from the
 // built binary. A shipped build (release.mjs) has Node's inspector off; an inspectable one (`pnpm dist:mac`, update
 // test builds) keeps only that on, so Playwright can attach for the smoke suite. Main's DevTools-protocol rule follows
-// the same fuse (src/debugging.ts), so nothing else differs between the two.
+// the same fuse (src/debugging.ts), so nothing else differs between the two. RunAsNode is off in both (plan 293).
 //
 // The wire is read here, without a dependency (release.mjs's draft job installs none): Electron's sentinel, a version
 // byte, a length byte, then one byte per fuse, as @electron/fuses reads it (`npx @electron/fuses read --app <path>`).
@@ -25,13 +25,14 @@ export const WIRE = {
 };
 
 /**
- * electron-builder's `electronFuses` for a platform and kind. RunAsNode stays on: the agents' connector
- * (resources/bin/terno-mcp) runs the app's binary as Node, and plan 283 says why it isn't moved yet. Embedded asar
- * integrity is Electron's on macOS and Windows only; Linux leaves it at its default.
+ * electron-builder's `electronFuses` for a platform and kind. RunAsNode is off in both (plan 293): the agents'
+ * connector is a native bridge to the MCP server inside the app, so nothing runs Terno's binary as Node, and
+ * Playwright needs only the inspect fuse. Embedded asar integrity is Electron's on macOS and Windows only; Linux
+ * leaves it at its default.
  */
 export function fuseTable({ platform, shipped }) {
   return {
-    runAsNode: true,
+    runAsNode: false,
     enableNodeOptionsEnvironmentVariable: false,
     enableNodeCliInspectArguments: !shipped,
     ...(platform === "darwin" ? { enableEmbeddedAsarIntegrityValidation: true } : {}),

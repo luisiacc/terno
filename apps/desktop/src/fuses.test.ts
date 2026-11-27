@@ -18,12 +18,12 @@ const DEFAULTS = [ON, OFF, ON, ON, OFF, OFF, OFF, ON, ON];
 /** a binary with one wire (or two, as a universal Mach-O has) */
 const binary = (states: number[], copies = 1) => Buffer.concat(Array.from({ length: copies }, () => Buffer.concat([Buffer.from("padding"), Buffer.from(SENTINEL), Buffer.from([1, states.length, ...states]), Buffer.from("more")])));
 const set = (states: number[], at: Record<number, number>) => states.map((s, i) => at[i] ?? s);
-const shippedMac = set(DEFAULTS, { 2: OFF, 3: OFF, 4: ON, 5: ON });
+const shippedMac = set(DEFAULTS, { 0: OFF, 2: OFF, 3: OFF, 4: ON, 5: ON });
 
 describe("release: Electron's fuses (plan 283)", () => {
-  it("pins the table: NODE_OPTIONS off, the asar only and integrity-checked (macOS), the inspector off when shipped; RunAsNode on for the agents' connector", () => {
+  it("pins the table: RunAsNode off (plan 293), NODE_OPTIONS off, the asar only and integrity-checked (macOS), the inspector off when shipped", () => {
     expect(fuseTable({ platform: "darwin", shipped: true })).toEqual({
-      runAsNode: true,
+      runAsNode: false,
       enableNodeOptionsEnvironmentVariable: false,
       enableNodeCliInspectArguments: false,
       enableEmbeddedAsarIntegrityValidation: true,
@@ -31,13 +31,14 @@ describe("release: Electron's fuses (plan 283)", () => {
     });
     expect(fuseTable({ platform: "darwin", shipped: false })).toEqual({ ...fuseTable({ platform: "darwin", shipped: true }), enableNodeCliInspectArguments: true });
     // Electron checks an embedded asar hash on macOS and Windows only
-    expect(fuseTable({ platform: "linux", shipped: true })).toEqual({ runAsNode: true, enableNodeOptionsEnvironmentVariable: false, enableNodeCliInspectArguments: false, onlyLoadAppFromAsar: true });
+    expect(fuseTable({ platform: "linux", shipped: true })).toEqual({ runAsNode: false, enableNodeOptionsEnvironmentVariable: false, enableNodeCliInspectArguments: false, onlyLoadAppFromAsar: true });
   });
 
   it("reads a wire back: a shipped build's passes, Electron's defaults fail by name, an inspectable build isn't shipped", () => {
     const table = fuseTable({ platform: "darwin", shipped: true });
     expect(fuseProblems(readWire(binary(shippedMac)), table)).toEqual([]);
     expect(fuseProblems(readWire(binary(DEFAULTS)), table)).toEqual([
+      "RunAsNode is on, not off",
       "EnableNodeOptionsEnvironmentVariable is on, not off",
       "EnableNodeCliInspectArguments is on, not off",
       "EnableEmbeddedAsarIntegrityValidation is off, not on",
@@ -47,7 +48,7 @@ describe("release: Electron's fuses (plan 283)", () => {
     expect(fuseProblems(local, table)).toEqual(["EnableNodeCliInspectArguments is on, not off"]);
     expect(fuseProblems(local, fuseTable({ platform: "darwin", shipped: false }))).toEqual([]);
     // a removed fuse, a short wire, another version or no wire at all is never taken for a match
-    expect(fuseProblems(readWire(binary(set(shippedMac, { 0: 114 }))), table)).toEqual(["RunAsNode is in state 114, not on"]);
+    expect(fuseProblems(readWire(binary(set(shippedMac, { 0: 114 }))), table)).toEqual(["RunAsNode is in state 114, not off"]);
     expect(fuseProblems(readWire(binary([ON, OFF])), table)).toContain("OnlyLoadAppFromAsar is missing, not on");
     expect(fuseProblems({ version: 2, states: shippedMac }, table)).toEqual(["unknown fuse wire version 2"]);
     expect(() => readWire(Buffer.from("no wire here"))).toThrow(/no fuse wire/);
@@ -83,7 +84,13 @@ describe("release: Electron's fuses (plan 283)", () => {
     const release = readFileSync(join(scripts, "release.mjs"), "utf8");
     expect(release).toContain('assertFuses(app, { platform: "darwin", shipped: true });');
     expect(release).toContain('assertFuses(join(dir, "Terno.app"), { platform: "darwin", shipped: true });');
-    expect(release.match(/assertFuses\(join\(dir, "opt\/Terno\/terno"\), \{ platform: "linux", shipped: true \}\)/g)).toHaveLength(2);
+    // every deb and rpm: the executable's fuses and (plan 293) the agents' bridge beside it
+    expect(release).toContain('assertFuses(join(dir, "opt/Terno/terno"), { platform: "linux", shipped: true });');
+    expect(release.match(/installed\(dir, a\.arch\);/g)).toHaveLength(2);
+    // plan 293: the bridge is checked wherever the fuses are
+    expect(readFileSync(join(scripts, "package.mjs"), "utf8").match(/assertMacBridge\(/g)).toHaveLength(2);
+    expect(release.match(/assertMacBridge\(/g)).toHaveLength(2);
+    expect(readFileSync(join(scripts, "package-linux.mjs"), "utf8")).toContain("assertLinuxBridge(");
     expect(release).toContain("env: { ...process.env, ...STEP_ENV }");
   });
 });

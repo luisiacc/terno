@@ -111,22 +111,33 @@ test("the DevTools protocol is refused without Node's inspector, before anything
   }
 });
 
-test("NODE_OPTIONS reaches nothing, not even Terno run as Node (the agents' connector)", async () => {
+test("RunAsNode is off: ELECTRON_RUN_AS_NODE=1 gives no Node runtime (with --inspect on a shipped build), and NODE_OPTIONS reaches nothing (plan 293)", async () => {
+  const marker = join(work, "node-ran");
   const probe = join(work, "probe.cjs");
-  const marker = join(work, "probe-ran");
-  writeFileSync(probe, `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "ran");`);
-  const node = (bin: string) => run(bin, ["-e", "0"], env({ ELECTRON_RUN_AS_NODE: "1", NODE_OPTIONS: `--require ${probe}` }));
-  // the control: Electron's own binary, its fuses at their defaults, does run it
+  const preloaded = join(work, "probe-ran");
+  writeFileSync(probe, `require("node:fs").writeFileSync(${JSON.stringify(preloaded)}, "ran");`);
+  const script = `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "ran")`;
+  const asNode = { ELECTRON_RUN_AS_NODE: "1", NODE_OPTIONS: `--require ${probe}` };
+  // the controls: Electron's own binary, its fuses at their defaults, is a Node runtime under the variable, and
+  // preloads what NODE_OPTIONS names; so the files below would be written if Terno were one
   const stock = linux ? join(electronDist, "electron") : join(electronDist, "Electron.app/Contents/MacOS/Electron");
-  if (shipped && !existsSync(stock)) throw new Error(`${stock} missing: the probe's control needs Electron's own binary (pnpm install)`);
+  if (shipped && !existsSync(stock)) throw new Error(`${stock} missing: the probe's controls need Electron's own binary (pnpm install)`);
   if (existsSync(stock)) {
-    await node(stock);
-    expect(existsSync(marker), "NODE_OPTIONS reaches an unfused Electron run as Node").toBe(true);
+    await run(stock, ["-e", script], env({ ELECTRON_RUN_AS_NODE: "1" }));
+    expect(existsSync(marker), "ELECTRON_RUN_AS_NODE makes an unfused Electron a Node runtime").toBe(true);
+    await run(stock, ["-e", "0"], env(asNode));
+    expect(existsSync(preloaded), "NODE_OPTIONS reaches an unfused Electron run as Node").toBe(true);
     rmSync(marker);
+    rmSync(preloaded);
   }
-  const { code } = await node(executable);
-  expect(code).toBe(0);
-  expect(existsSync(marker)).toBe(false);
+  // Terno, asked the same, is Terno: its own main refuses the DevTools protocol before anything starts (a shipped
+  // build can't open the inspector, so --inspect changes nothing), and neither the script nor the preload ran
+  const { code, out } = await run(executable, [...(shipped ? ["--inspect=0"] : []), "--remote-debugging-port=0", "-e", script], env(asNode));
+  expect(out).toContain("Terno doesn't open the DevTools protocol (--remote-debugging-port)");
+  expect(out).not.toContain("Debugger listening");
+  expect(code).toBe(1);
+  expect(existsSync(marker), "Terno ran -e as Node").toBe(false);
+  expect(existsSync(preloaded), "NODE_OPTIONS reached Terno").toBe(false);
 });
 
 test("Node's inspector: only an inspectable build opens it, and a shipped one refuses Playwright's launch outright", async () => {
