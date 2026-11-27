@@ -31,23 +31,35 @@ function remove(storage: "localStorage" | "sessionStorage", key: string): void {
   }
 }
 
-/** `gone`: the accounts just removed; `remaining`: how many are left. */
-export function forgetAccountsUi(gone: readonly number[], remaining: number): void {
-  const last = remaining === 0;
-  const dropped = new Set(gone);
-  // the list filters: that account's mailboxes (all of them, after the last account)
-  const listFilters = last ? new Map() : new Map([...getApp().listFilters].filter(([key]) => !dropped.has(accountOfMailbox(key) ?? -1)));
-  if (listFilters.size !== getApp().listFilters.size) setApp({ listFilters });
-  if (last) remove("localStorage", LIST_FILTER_KEY);
-  else saveListFilters(listFilters);
+/**
+ * Reconciles this window's storage with the accounts that exist (the backend's list, at boot and on every accounts
+ * event): what names an account that's gone goes; with no account at all, every mail-derived key goes too. Run against
+ * the authoritative list, a reload after a removal, a removal from another window, or two removals at once can't skip
+ * it (Codex code review #7). Idempotent and cheap: a few small keys.
+ */
+export function reconcileAccountsUi(accounts: readonly { id: number }[]): void {
+  const present = new Set(accounts.map((a) => a.id));
+  const last = present.size === 0;
+  const gone = (id: number | null) => id !== null && !present.has(id);
+  // the list filters: an account's mailboxes (all of them, with no account left)
+  const was = getApp().listFilters;
+  const listFilters = last ? new Map() : new Map([...was].filter(([key]) => !gone(accountOfMailbox(key))));
+  if (listFilters.size !== was.size) {
+    setApp({ listFilters });
+    if (last) remove("localStorage", LIST_FILTER_KEY);
+    else saveListFilters(listFilters);
+  }
   remove("localStorage", LEGACY_KEY);
   // People's filter: its accounts
   const people = usePeople.getState().filter;
-  const filter = last ? NO_PEOPLE_FILTER : { ...people, accounts: people.accounts.filter((id) => !dropped.has(id)) };
-  usePeople.setState({ filter });
-  savePeopleFilter(filter);
-  // the palette's usage: commands that name the account
-  forgetUsage((id) => last || dropped.has(accountOfCommand(id) ?? -1));
+  const accountsKept = last ? [] : people.accounts.filter((id) => !gone(id));
+  if (accountsKept.length !== people.accounts.length) {
+    const filter = last ? NO_PEOPLE_FILTER : { ...people, accounts: accountsKept };
+    usePeople.setState({ filter });
+    savePeopleFilter(filter);
+  }
+  // the palette's usage: commands that name an account that's gone (all of it, with no account left)
+  forgetUsage((id) => last || gone(accountOfCommand(id)));
   if (!last) return;
   // learned-rule offers seen (sender addresses and domains) and this launch's hush
   forgetSeenOffers();

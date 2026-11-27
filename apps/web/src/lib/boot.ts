@@ -7,6 +7,7 @@ import { installShownSenders } from "~/state/shown-senders";
 import { installPersonRules } from "~/state/person-rules";
 import { installSendWarnings } from "./send-warning";
 import { reconcileAccounts, rememberFocus, restoredFocus } from "~/lib/account-folders";
+import { reconcileAccountsUi } from "~/lib/account-ui-storage";
 import { setSyncProgress } from "~/state/sync-progress";
 import { localized } from "~/lib/i18n";
 import { t } from "@terno/i18n";
@@ -68,6 +69,8 @@ export async function boot(): Promise<void> {
     rememberFocus();
     // a remembered open account that's no longer there (plan 67)
     reconcileAccounts(b.accounts);
+    // plan 293 (CASA 6.6.1): what storage keeps of an account that's gone goes
+    reconcileAccountsUi(b.accounts);
     installAppearanceListeners();
     // every stored draft comes back: replies onto their conversations, new ones to the drafts strip
     void loadDrafts().catch((error) => console.warn("[drafts] could not load", error));
@@ -134,6 +137,7 @@ export async function boot(): Promise<void> {
       // plan 169: and an order still on its way stays shown
       setAccounts(withPendingOrder("accounts", withPendingEdits(accounts)));
       reconcileAccounts(accounts);
+      reconcileAccountsUi(accounts);
       // plan 25: an account that works again ends what was said about its sign-in
       accountsChanged(accounts);
     });

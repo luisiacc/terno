@@ -11,7 +11,7 @@ window.matchMedia = (() => ({ matches: false, addEventListener() {}, removeEvent
 const { getApp, setApp } = await import("~/state/app");
 const { usePeople } = await import("~/state/people");
 const { useOffer } = await import("./learned");
-const { forgetAccountsUi } = await import("./account-ui-storage");
+const { reconcileAccountsUi } = await import("./account-ui-storage");
 
 const PREFERENCES = { "terno:appearance": '{"v":2}', "terno:language": "es", "terno:panes": '{"v":1}', "terno:first-run": "done", "terno:sidebar-more": "open" };
 
@@ -32,7 +32,7 @@ beforeEach(() => {
 });
 
 it("removing one account drops its list filters (and its folder names), its People choice and its palette entries; the others' stay", () => {
-  forgetAccountsUi([1], 1);
+  reconcileAccountsUi([{ id: 2 }]);
   expect([...getApp().listFilters.keys()]).toEqual(["inbox|2|", "inbox|||"]);
   expect(JSON.parse(localStorage.getItem("terno:list-filter")!)).toEqual([["inbox|2|", "starred"], ["inbox|||", "unread"]]);
   expect(localStorage.getItem("terno:list-filter")).not.toContain("ACME");
@@ -44,8 +44,18 @@ it("removing one account drops its list filters (and its folder names), its Peop
   expect(localStorage.getItem("terno:learned-seen")).not.toBeNull();
 });
 
+it("the accounts that exist are what counts: run again, or with every account still there, nothing more goes", () => {
+  reconcileAccountsUi([{ id: 1 }, { id: 2 }]);
+  expect(getApp().listFilters.size).toBe(4);
+  expect(usePeople.getState().filter.accounts).toEqual([1, 2]);
+  reconcileAccountsUi([{ id: 2 }]);
+  const after = { ...localStorage };
+  reconcileAccountsUi([{ id: 2 }]);
+  expect({ ...localStorage }).toEqual(after);
+});
+
 it("removing the last account leaves only preferences, in storage and in memory", () => {
-  forgetAccountsUi([1, 2], 0);
+  reconcileAccountsUi([]);
   const keys = Object.keys(localStorage).sort();
   expect(keys).toEqual(Object.keys(PREFERENCES).sort());
   expect(Object.keys(sessionStorage)).toEqual([]);

@@ -1,4 +1,3 @@
-import { forgetAccountsUi } from "~/lib/account-ui-storage";
 import { unhandled, type Account } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
@@ -68,8 +67,6 @@ export function AccountRemoveDialog({ account, open, onOpenChange, from }: { acc
         const next = ids[at + 1] ?? ids[at - 1];
         try {
           const removed = await client.call("accounts.remove", { id: account.id });
-          // plan 293 (CASA 6.6.1): and what this window kept of it in its storage
-          forgetAccountsUi([account.id], ids.filter((id) => id !== account.id).length);
           // plan 125: removed here either way; if Google couldn't be told, the user withdraws the access there
           if (removed.google === "failed")
             snack.warning(t("account.removed"), { description: t("account.removed.googleFailedHint"), duration: 15_000, action: { label: t("account.removed.googleOpen"), onClick: () => openLink(GOOGLE_PERMISSIONS) } });
