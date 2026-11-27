@@ -660,9 +660,15 @@ test.describe("plan 281: People's Done morphs the page and the list together", (
     await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" } }, ctx);
     const db = sqlDb(server.backend.store);
     const ana = { name: "Ana Ruiz", email: "ana.ruiz@greenway.studio" };
+    // waiting a little longer than anyone else in the demo mailbox, inside Needs you's 30 days: Open is longest waiting
+    // first (8e694bf55, plan 281), so her row leads it, in view without a scroll
+    const cutoff = E2E_NOW - 30 * 86_400_000;
+    const oldest = db.get<{ at: number }>("SELECT MIN(waiting_since) AS at FROM threads WHERE waiting_since >= ?", cutoff)!.at;
+    const since = Math.max(oldest - 60_000, cutoff + 60_000);
     for (const subject of ["Phase 2 scope", "Homepage copy", "Invoice 1042"]) {
-      const id = await ingestConversation(server, { subject, count: 3, from: { 0: ana, 2: ana }, now: E2E_NOW });
-      db.run("UPDATE threads SET waiting_since = ?, has_sent = 1, person = 1 WHERE id = ?", E2E_NOW - 3_600_000, id);
+      // (her last message an hour before `now`: her wait is since then)
+      const id = await ingestConversation(server, { subject, count: 3, from: { 0: ana, 2: ana }, now: since + 3_600_000 });
+      db.run("UPDATE threads SET waiting_since = ?, has_sent = 1, person = 1 WHERE id = ?", since, id);
     }
     server.backend.today.changed();
     await page.reload();
